@@ -41,8 +41,9 @@ def fixture_zones():
     return fixture_zone_tariffs()
 
 
-def test_the_contract_holds_the_26_cases_of_the_plan():
-    assert [case["id"] for case in GOLDEN_CASES] == [f"G{number:02d}" for number in range(1, 27)]
+def test_the_contract_holds_the_38_cases():
+    # G01..G26 are the cases of the plan; G27..G38 pin rounding, thresholds and the rule order.
+    assert [case["id"] for case in GOLDEN_CASES] == [f"G{number:02d}" for number in range(1, 39)]
     assert all(case["expected_outcome"] in cost.OUTCOMES for case in GOLDEN_CASES if not case["expected_error"])
     assert [case["id"] for case in GOLDEN_CASES if case["expected_error"]] == ["G26"]
 
@@ -123,8 +124,8 @@ def test_inconsistent_tariffs_are_rejected_at_construction(base_type, overrides,
 
 
 def test_residents_park_free_only_where_the_zone_exempts_them():
-    # The golden cases only put a resident into a resident-exempt zone (G19); a resident of a paid zone
-    # without the exemption pays like everybody else.
+    # A resident of a paid zone without the exemption pays like everybody else (golden G31 on the fixture
+    # set; here on a synthetic tariff, both ways).
     flags = {"purpose": "shop", "parking_free": False, "resident_of_zone": True}
     assert cost.parking_cost_cents(_tariff(), 36000, 37860, **flags) == (93, cost.PAID_METERED)
     assert cost.parking_cost_cents(_tariff(resident_exempt=True), 36000, 37860, **flags) == (0, cost.RESIDENT_FREE)
@@ -133,6 +134,14 @@ def test_residents_park_free_only_where_the_zone_exempts_them():
 def test_a_stay_without_a_zone_is_free():
     assert cost.parking_cost_cents(None, 36000, 37860, purpose="shop", parking_free=False,
                                    resident_of_zone=False) == (0, cost.NO_ZONE)
+
+
+def test_no_zone_precedes_the_home_rule():
+    # Rule order: a stay outside every zone is NO_ZONE even for the home purpose, so the outcome counts
+    # separate "outside the zones" from "home inside a zone". Not a golden case: the golden cases price stays
+    # inside fixture zones, and the Java port decides NO_ZONE in its cost model before the calculator.
+    assert cost.parking_cost_cents(None, 36000, 39600, purpose="home", parking_free=False,
+                                   resident_of_zone=False) == (0, "NO_ZONE")
 
 
 def test_flags_must_be_booleans_so_a_text_false_is_never_truthy():
@@ -146,7 +155,7 @@ def test_flags_must_be_booleans_so_a_text_false_is_never_truthy():
 
 def test_thresholds_compare_the_chargeable_minutes_rounded_up():
     # One second past a threshold is a started minute (spec 3.2: chargeable_min = ceil(chargeable_s / 60)).
-    # The golden cases only use whole minutes, so this pins the rounding for both thresholds.
+    # Golden G32..G34 pin the same on the fixture set; this pins both sides of both thresholds on one tariff.
     free_limit = _tariff(hourly_rate_cents=100, billing_unit_min=6, free_if_stay_at_most_min=30,
                          first_period_min=60, first_period_cents=70)
     flags = {"purpose": "shop", "parking_free": False, "resident_of_zone": False}

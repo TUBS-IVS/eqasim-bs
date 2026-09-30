@@ -1,4 +1,4 @@
-"""The 26 golden parking-cost cases: the contract the Python reference and the Java port must both meet.
+"""The 38 golden parking-cost cases: the contract the Python reference and the Java port must both meet.
 
 Each case is one car stay in a zone of the fixture tariff set (loaded by
 ``scripts/export_parking_golden_cases.py``; the set is inspired by the real tariff table but pins
@@ -9,7 +9,7 @@ with the fixture tariffs in cents, to ``tests/fixtures/parking/parking_golden_ca
 
 Fields of a case (they are the keys of the JSON cases, too):
 
-- ``id``: ``G01`` .. ``G26``.
+- ``id``: ``G01`` .. ``G38``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -21,10 +21,23 @@ Fields of a case (they are the keys of the JSON cases, too):
 - ``expected_cents`` (integer euro cents) and ``expected_outcome`` (a ``cost.OUTCOMES`` name); both None
   when ``expected_error`` is true, i.e. the stay is invalid and the calculation must raise ``ValueError``.
 
-What the 26 cases do NOT pin: every stay is a whole number of minutes and no metered price has a sub-cent
-remainder, and no resident parks in a zone without the resident exemption. The minute ceiling of the
-thresholds, the half-up rounding to the cent and that exemption rule are pinned by separate unit tests in
-``tests/test_parking_cost.py``; a port needs equivalent tests.
+G01..G26 are the cases of the implementation plan. G27..G38 pin what those leave open:
+
+- the half-up rounding of a metered price to the cent, on the fixture zone ``fx_frac`` (175 ct/h in 1-min
+  units, i.e. 175/60 ct a minute): G27 rounds 2.917 ct up to 3 ct, G28 rounds the exact half 52.5 ct up to
+  53 ct (banker's rounding would give 52 ct), G29 rounds 20.417 ct down to 20 ct, and G30 caps 1050 ct at
+  the daily cap of 700 ct;
+- the resident-exemption condition: a resident of a zone WITHOUT the exemption pays like everybody else (G31);
+- the minute ceiling of the thresholds: one second past the maximum stay buys the long-stay product (G32),
+  exactly the maximum does not (G33), and one second past the free threshold pays the first period (G34);
+- a started billing unit: one second inside the fee window is one charged minute (G35);
+- the order of the early rules: the chargeable-time check precedes the campus day products (G36), the home
+  rule precedes the employer-free rule (G37), and the resident exemption precedes the chargeable-time check
+  (G38).
+
+The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file, so a port that meets the file
+meets these pins, too. That a stay outside every zone is ``NO_ZONE`` even for the home purpose is not a golden case (every case lies
+in a fixture zone); ``tests/test_parking_cost.py`` pins it for the Python reference.
 """
 from __future__ import annotations
 
@@ -88,6 +101,31 @@ _CASE_ROWS = (
     ("G25", "fx_bs_ib",  68400, 118800, "shop",      False, False, False,  180, "PAID_METERED",       False),
     # Departure before arrival is invalid input and raises.
     ("G26", "fx_bs_ia",  37860,  36000, "shop",      False, False, False, None, None,                 True),
+    # G27..G30: fx_frac meters 175 ct/h in 1-min units (08:00-18:00, cap 700 ct), i.e. 175/60 ct a minute.
+    # 1 min: (1 * 175 + 30) // 60 = 3 (2.917 ct rounds half up).
+    ("G27", "fx_frac",   36000,  36060, "shop",      False, False, False,    3, "PAID_METERED",       False),
+    # 18 min: (18 * 175 + 30) // 60 = 53 (the exact half 52.5 ct rounds up; banker's rounding would give 52).
+    ("G28", "fx_frac",   36000,  37080, "shop",      False, False, False,   53, "PAID_METERED",       False),
+    # 7 min: (7 * 175 + 30) // 60 = 20 (20.417 ct rounds down).
+    ("G29", "fx_frac",   36000,  36420, "shop",      False, False, False,   20, "PAID_METERED",       False),
+    # 360 min: (360 * 175 + 30) // 60 = 1050 ct, capped at 700.
+    ("G30", "fx_frac",   36000,  57600, "shop",      False, False, False,  700, "PAID_METERED",       False),
+    # fx_bs_ib is not resident-exempt: a resident pays 31 min at 3 ct = 93 ct like everybody else (R1).
+    ("G31", "fx_bs_ib",  36000,  37860, "shop",      False, True,  False,   93, "PAID_METERED",       False),
+    # 180 min + 1 s: ceil(10801 / 60) = 181 chargeable min > max stay 180 -> long-stay product (M1).
+    ("G32", "fx_bs_ia",  36000,  46801, "shop",      False, False, False,  900, "PAID_LONG_STAY",     False),
+    # Exactly 180 min is not above the max stay: 180 min at 3 ct = 540 ct.
+    ("G33", "fx_bs_ia",  36000,  46800, "shop",      False, False, False,  540, "PAID_METERED",       False),
+    # 30 min + 1 s: ceil 31 > free 30; the first period (60 min, 70 ct) is charged in full, no remainder.
+    ("G34", "fx_sz",     36000,  37801, "shop",      False, False, False,   70, "PAID_METERED",       False),
+    # Only 71999..72000 (19:59:59-20:00) lies in the 09:00-20:00 window: 1 s is one started minute = 3 ct.
+    ("G35", "fx_bs_ib",  71999,  75600, "shop",      False, False, False,    3, "PAID_METERED",       False),
+    # Zero-length stay: the chargeable-time check precedes the campus day products.
+    ("G36", "fx_campus", 36000,  36000, "work",      False, False, False,    0, "OUTSIDE_FEE_HOURS",  False),
+    # Home with parkingFree: the home rule (H1) precedes the employer-free rule.
+    ("G37", "fx_bs_ia",  36000,  39600, "home",      True,  False, False,    0, "HOME",               False),
+    # Zero-length stay of a resident: the resident exemption (R1) precedes the chargeable-time check.
+    ("G38", "fx_res_a",  36000,  36000, "shop",      False, True,  False,    0, "RESIDENT_FREE",      False),
 )
 
 GOLDEN_CASES: tuple[dict, ...] = tuple(dict(zip(CASE_FIELDS, row)) for row in _CASE_ROWS)

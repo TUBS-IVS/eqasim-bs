@@ -7,8 +7,9 @@ truth. The script
    loader ``braunschweig.parking.zones.load_tariffs`` (the documented CSV: ``#`` comment lines, identifier
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
 2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``) and
-   evaluates the 26 golden cases of ``braunschweig.parking.golden_cases`` with the Python reference
-   ``braunschweig.parking.cost``; it writes nothing when a result differs from its hard-coded expectation;
+   evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``) with the Python
+   reference ``braunschweig.parking.cost``; it writes nothing when a result differs from its hard-coded
+   expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
    ``parking_golden_cases.json`` (``schema_version``, the fixture ``tariffs`` in cents, the ``cases``; read by
    ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
@@ -98,7 +99,7 @@ def fixture_zone_tariffs() -> dict[str, ZoneTariff]:
 
 
 def build_golden_document(model: Mapping) -> dict:
-    """The golden-case fixture: schema version, the fixture tariffs in cents and the 26 cases."""
+    """The golden-case fixture: schema version, the fixture tariffs in cents and every golden case."""
     return {"schema_version": GOLDEN_SCHEMA_VERSION, "tariffs": dict(model["zones"]),
             "cases": [dict(case) for case in GOLDEN_CASES]}
 

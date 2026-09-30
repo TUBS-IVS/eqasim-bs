@@ -14,7 +14,7 @@ from braunschweig.parking.cost import ZoneTariff
 
 FIXTURE_JSON = Path(__file__).resolve().parent / "fixtures" / "parking" / "parking_tariffs_fixture.json"
 SNAPSHOT_DATE = "2026-09-28"
-FIXTURE_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus"}
+FIXTURE_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
 # Table column in euros -> JSON field in cents, written out here independently of the implementation.
 EURO_FIELDS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
                "daily_cap_eur": "daily_cap_cents", "long_stay_product_eur": "long_stay_product_cents",
@@ -55,7 +55,7 @@ def _row(table, row_zone_id: str, /, **changes) -> dict:
     return {**row, **changes}
 
 
-def test_the_model_has_the_schema_1_header_and_the_seven_fixture_zones(model):
+def test_the_model_has_the_schema_1_header_and_the_fixture_zones(model):
     assert model["schema_version"] == 1
     assert model["tariff_snapshot_date"] == SNAPSHOT_DATE
     assert model["currency"] == "EUR" and model["weekday_only"] is True

@@ -2,7 +2,7 @@
 
 This module implements the algorithm of the design spec section 3.2
 (``docs/superpowers/specs/2026-09-28-parking-cost-zones-design.md``, local). The Java
-``ParkingCostCalculator`` (eqasim-java-bs) must reproduce it exactly; the shared contract is the 26 golden
+``ParkingCostCalculator`` (eqasim-java-bs) must reproduce it exactly; the shared contract is the golden
 cases of ``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
 ``tests/fixtures/parking/parking_golden_cases.json``. All money is in integer euro cents and all times are
 in integer simulation seconds, so both implementations run the same integer arithmetic and cannot drift
@@ -229,10 +229,11 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2).
 
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
-    outcome ``NO_ZONE``). ``arrival_s`` is the car arrival and ``departure_s`` the activity departure in
-    simulation seconds (for a terminal activity use ``terminal_departure_s``); ``purpose`` is the MATSim
-    activity type, ``parking_free`` the activity attribute ``parkingFree``, ``resident_of_zone`` whether the
-    person lives in this zone (R1). The checks run in the order of spec 3.2; the first that applies decides:
+    outcome ``NO_ZONE``, decided before every check below, so also for the home purpose). ``arrival_s`` is
+    the car arrival and ``departure_s`` the activity departure in simulation seconds (for a terminal
+    activity use ``terminal_departure_s``); ``purpose`` is the MATSim activity type, ``parking_free`` the
+    activity attribute ``parkingFree``, ``resident_of_zone`` whether the person lives in this zone (R1). The
+    checks run in the order of spec 3.2; the first that applies decides:
 
     1. home purpose -> 0, ``HOME`` (H1);
     2. ``parking_free`` -> 0, ``EMPLOYER_FREE``;

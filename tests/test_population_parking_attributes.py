@@ -759,9 +759,9 @@ def _fixture_release():
     """The Task 2 fixture release of ``tests/fixtures/parking`` (pins arithmetic, not truth) with a small
     shares frame: bs_zentrum and bs_innenbereich park free with share 1.0, the other classes never."""
     shares = pd.DataFrame({
-        "workplace_class": ["bs_zentrum", "bs_innenbereich", "03102", "03103", "03157", "total"],
-        "level": ["class"] * 5 + ["total"],
-        "share_free_total": [1.0, 1.0, 0.0, 0.0, 0.0, 0.9],
+        "workplace_class": ["bs_zentrum", "bs_innenbereich", "bs_outer", "03102", "03103", "03157", "total"],
+        "level": ["class"] * 6 + ["total"],
+        "share_free_total": [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.9],
     })
     return {"zones": pz.load_zone_polygons(FIXTURES / "parking_zones_fixture.geojson"),
             "tariffs": pz.load_tariffs(FIXTURES / "parking_tariffs_fixture.csv"),
