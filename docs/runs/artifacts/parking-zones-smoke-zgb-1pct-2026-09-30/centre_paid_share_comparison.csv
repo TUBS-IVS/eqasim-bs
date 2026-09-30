@@ -1,0 +1,6 @@
+universe,car_arrivals,paid_share,outside_fee_hours_share
+model_all_car_arrivals_in_bs_centre_zones,225,0.1733,0.0889
+model_non_home_car_arrivals_in_bs_centre_zones,151,0.2583,0.1325
+model_non_home_non_commute_car_arrivals_in_bs_centre_zones,47,0.5957,0.4043
+model_non_home_non_commute_car_arrivals_in_bs_centre_zones_home_within_8km,43,0.5814,0.4186
+srv2023_bs_residents_usual_centre_parking_all_places,,0.8333,

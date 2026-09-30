@@ -1,0 +1,140 @@
+id: parking-zones-smoke-zgb-1pct-2026-09-30
+date: '2026-09-30'
+repository:
+  commit: 2d990e702721e1f281b88f47340966f3c585350a
+  branch: feature/i249-parking-cost-zones
+  notes: 'eqasim-bs integration branch of #436. The ZONES inputs were prepared on 2026-09-30 05:31 from e557b1fb;
+    re-preparing them from 2d990e70 (the two commits in between merge the final-wave golden cases and change the
+    default snapshot date to the value the run already passed explicitly) gives byte-identical files (sha256
+    prefixes: population 7ce5ba6a, tariff model e0770b1b, config 6d5e8768). Java: eqasim-java-bs
+    feature/i249-parking-cost-zones, shaded jar built from 06b65b3c8 with `mvn -pl braunschweig -am -DskipTests
+    -Pstandalone package` (the later commit 1e32c87b6 changes tests only). The same jar ran all three arms. The OFF
+    and LEGACY arms were also run with the jar of origin/main 21c1045c4 (2.3.1) and with the branch jar of
+    3b2232176; see validation.'
+configuration:
+  base: configs/base_bs.yml
+  config: 'local: prepared MATSim scenario of 2026-06 (eqasim-data/cache_bs_cordon_gatecheck/braunschweig.matsim.simulation.prepare__326159939484cb8cd4c639f4e9c53e56.cache,
+    prefix braunschweig_cordon_gatecheck_), copied once per arm'
+  notes: 'NOT a pipeline run: the local machine has no raw MATSim inputs (OSM, GTFS, VG250), so the three arms ran
+    MATSim directly on the June 2026 prepared 1 % scenario. Harness (committed under the artifact directory, harness/):
+    the scenario config was regenerated with the branch jar (RunGenerateConfig --sample-size 0.01 --threads 6
+    --random-seed 1234, then RunAdaptConfig), because the June config named a DMC tour filter that no longer
+    exists; qsim.personInitializedEvents all; 676 missing car/car_passenger vehicles added identically in every arm
+    (complete_vehicles.py). OFF = the June plans with every isParis attribute removed. LEGACY = isParis attributes
+    re-added by the 8 km rule around Braunschweig Hbf (605170/5790274, EPSG:25832; the person flag APPROXIMATED by
+    a home activity within the ring). ZONES = the OFF plans plus parkingZone / parkingFree / residentParkingZone
+    computed by the real package code (braunschweig.parking.zones_stage on the committed release,
+    braunschweig.parking.attach with random_seed 1234 and parking_workplace_free_share_shift 0.0), the tariff model
+    JSON of braunschweig.parking.tariff_export (snapshot 2026-09-29, terminal stay rule until_fee_end) and the
+    braunschweigParking config module written by braunschweig.matsim.config_modules, exactly as
+    braunschweig.matsim.simulation.prepare does. MATSim: 10 iterations, 6 threads, writeEventsInterval 10.'
+sampling:
+  rate: 1% (the June 2026 1 % scenario)
+  scope: ZGB-8 with cordon in-commuters (12,073 persons in the plans)
+  notes: 'Counts are sample counts of the final iteration, never expanded. The June population predates several
+    current pipeline features; it is a wiring and A/B vehicle, not the current synthetic population.'
+pipeline:
+  notes: 'No synpp stage ran. Three direct MATSim runs (org.eqasim.braunschweig.RunSimulation) via harness/run_arm.sh:
+    ZONES and OFF concurrently 2026-09-30 05:31-05:44, LEGACY alone 05:45-05:55, each exit 0 with no ERROR line in
+    logfileWarningsErrors.log.'
+classification:
+- smoke
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: 'About 12.5 min per arm with two arms running concurrently and 9.5 min alone, on the local machine (Windows
+    11, 22 cores, 63 GB; an unrelated MATSim run with a 16 GB heap limit ran at the same time). 10 iterations at the eqasim default of 5 % DMC replanning per iteration: an agent replans in an
+    iteration with probability 0.05, so about 40 % of the agents replanned at least once; the arms are far from an
+    equilibrium. A smoke, not a validation, and not the planned 25 % A/B on the server.'
+environment: 'Windows 11 Pro; conda env eqasim (Python 3.10.10, pandas 1.5.3, geopandas 1.0.1); Temurin JDK
+  25.0.4.1; MATSim 2026.0-2026w12 and eqasim 2.3.1 as pinned by eqasim-java-bs'
+validation:
+- metric: Java wiring of the ZONES arm (startup population check and per-iteration outcome counts)
+  reference: 'none -- implementation check'
+  result: 'Startup: tariff model 24 zones (street_paid 17, resident_zone 1, campus 6), snapshot 2026-09-29, schema 1,
+    4 sources; "[parking] population: 12073 persons, 49293 activities; 1964 in a zone (4.0 %: street_paid 1608,
+    resident_zone 49, campus 307), 407 parkingFree, 18 persons with residentParkingZone (0.1 %)" -- the same counts
+    the Python attach functions reported. Iteration 0 prices no car stay (no replanning); iterations 1-10 price
+    1,078-1,321 car candidates each: NO_ZONE 94.1-97.0 %, HOME 0.9-3.3 %, EMPLOYER_FREE 0.4-1.7 %, paid outcomes
+    0.74-1.97 %, all ten outcome rows written to ITERS/it.N/N.parking_outcomes.csv.'
+  artifact: 'docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_outcomes_by_iteration_zones.csv,
+    docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_log_lines_zones.txt'
+  notes: 'The Java counts are per evaluated car CANDIDATE of mode choice, not per chosen trip.'
+- metric: OFF-path and legacy parity of the branch jar
+  reference: 'the OFF and LEGACY arms run with the jar of origin/main 21c1045c4 (2.3.1) on the same inputs'
+  result: 'pass: eqasim_trips.csv.gz (decompressed) and scorestats.csv are byte-identical across the jars of
+    origin/main, 3b2232176 and 06b65b3c8, for OFF and for LEGACY; eqasim_legs.csv.gz is identical as a sorted row set
+    (93,419 legs for OFF; only the row order of the parallel writer differs).'
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/modestats_off.csv
+  notes: 'Without a braunschweigParking module the branch changes nothing; the legacy ring reproduces exactly.'
+- metric: Python reference vs Java calculator on the committed 24-zone release
+  reference: 'none -- consistency of the two implementations of the ADR-0139 rules'
+  result: '60,000 random stays (seed 20260929), 0 mismatches in cents and outcome; all nine calculator outcomes
+    occur (NO_ZONE is decided before the calculator and is pinned by unit tests on both sides).'
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/python_java_differential.txt
+- metric: car share of the final iteration, OFF / LEGACY / ZONES
+  reference: 'none -- a change between the arms, not a comparison with observed behaviour'
+  result: 'All trips (36,124; LEGACY 36,122): 49.03 / 48.33 / 48.96 %. Trips ending within 8 km of Braunschweig Hbf
+    (7,984): 44.04 / 42.21 / 43.79 %. Trips ending in a parking zone polygon of the release (1,393): 47.24 / 46.37 /
+    46.45 %. The zones reduce the car share of zone-bound trips by 0.8 pp (about 11 trips at this scale) and of
+    ring-bound trips by 0.25 pp; the ring by 1.8 pp on ring-bound trips, because it charged every non-resident
+    stay within 8 km at 3 EUR per started hour. No direction or size can be read from one 1 % draw after 10
+    iterations.'
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/mode_shares_by_arm.csv
+- metric: outcomes of the CHOSEN car trips ending in a zone (ZONES arm, final iteration, Python reference on the
+    executed times)
+  reference: 'none -- descriptive'
+  result: '703 chosen car arrivals in a zone: HOME 269, EMPLOYER_FREE 213, PAID_CAMPUS_MEMBER 104, PAID_METERED 67,
+    OUTSIDE_FEE_HOURS 39, PAID_CAMPUS_GUEST 5, PAID_LONG_STAY 4, FREE_WITHIN_LIMIT 2; 180 paid (25.6 %) at a mean
+    of 3.23 EUR per paid stay. 49 of the 703 (7.0 %) are zero-length stays (the car arrives after the planned end
+    of the activity) and pay nothing; over all 17,685 chosen car arrivals the share of zero-length stays is 11.8 %.'
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zone_outcomes_chosen_car_trips.csv
+  notes: 'Arrival = destination activity start, departure = its end, terminal activities by rule T1, from
+    eqasim_activities.csv.gz of the final iteration.'
+- metric: share of chosen car arrivals in the Braunschweig centre street zones (bs_zone_*) with a paid outcome
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_city_center_parking.csv paid_share_overall = 0.8333 -- a
+    COMPARISON with a universe caveat, not a validation: SrV asks Braunschweig residents where they USUALLY park
+    when they drive to the city centre, including garages and large lots; the model counts executed car arrivals
+    in the street zones of one simulated day'
+  result: 'All 225 arrivals: 17.3 % paid. Without home arrivals (151): 25.8 %. Without home, work and education
+    arrivals (47): 59.6 % paid, 40.4 % outside fee hours; persons whose home lies within 8 km of the Hbf (43, an
+    APPROXIMATION of "Braunschweig residents"): 58.1 %. Of the 19 outside-fee-hours visits in the 47, 9 lie outside
+    9-20 h (6 arrive 7-9 h, 3 after 20 h) and 10 are zero-length stays inside the fee window.'
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_paid_share_comparison.csv
+  notes: 'The closest model universe (non-home, non-commute arrivals) is small (47) and inflated in its free share by
+    zero-length stays of an unconverged run; commute arrivals follow the separate SrV commute table through the
+    employer-free draw. The SrV figure also covers the garages and large lots that 70.8 % of those respondents use,
+    which v1 prices only for the five BgA car parks.'
+features:
+- parking_cost_zones
+artifacts:
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/harness/
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/mode_shares_by_arm.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zone_outcomes_chosen_car_trips.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_paid_share_comparison.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_outcomes_by_iteration_zones.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_log_lines_zones.txt
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_tariff_model_zones_arm_2026-09-29.json
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/python_java_differential.txt
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/modestats_off.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/modestats_legacy.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/modestats_zones.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_off.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_legacy.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_zones.csv
+issues:
+- '#436'
+- '#249'
+decisions:
+- ADR-0139
+notes: 'Local-only outputs (not committed; per-person data of a synthetic population): the three simulation_output
+  directories of the session scratchpad smoke/{off,legacy,zones}. Open points this run exposes, for the 25 % A/B and
+  the calibration: (1) zero-length stays price as free (11.8 % of chosen car arrivals here), an approximation the
+  zone model inherits from the legacy car cost model (parked duration = planned activity stay); (2) zone II of the
+  Braunschweig ParkGO and the southern part of zone Ia are not zoned in v1 (coverage register); (3) the SrV centre
+  figure is dominated by garage parking, which v1 prices only at five car parks. Convergence of any arm would not
+  be validation either.'
+source: 'harness/evaluate_smoke.py --repo <integration worktree at 2d990e70> --smoke-dir <scratchpad>/smoke --out-dir
+  docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30 on the three final-iteration outputs; the Java lines
+  from smoke/zones/run.log; the parity hashes with sha256sum over the decompressed tables.'

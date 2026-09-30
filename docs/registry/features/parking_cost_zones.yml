@@ -99,14 +99,17 @@ evidence:
       validation.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - parking-zones-smoke-zgb-1pct-2026-09-30
   metric: null
   note: >-
-    No run is recorded yet. The Python reference and the Java calculator agree on the shared golden cases
-    and in randomised differential tests (ADR-0139, Evidence); these are consistency checks of the
-    implementation, not a validation. Planned: the local 1 % ON/OFF/LEGACY smoke (a wiring proof) and the
-    25 % legacy-vs-zones A/B on the server; neither compares an observed behavioural reference, so the
-    feature stays unvalidated after them. Convergence of a run is not validation.
+    The local 1 % OFF/LEGACY/ZONES smoke (run manifest parking-zones-smoke-zgb-1pct-2026-09-30) is a wiring
+    proof and an indicative A/B on the June 2026 scenario after 10 iterations: the zone attributes, the tariff
+    model and the braunschweigParking module work end to end, the branch jar without the module reproduces the
+    origin/main jar byte for byte, and the Python reference and the Java calculator agree on the golden cases
+    and in randomised differential tests. These are consistency checks, not a validation; the one comparison
+    with an observed quantity (the SrV city-centre paid share) carries a universe caveat and is recorded as a
+    comparison. Planned: the 25 % legacy-vs-zones A/B on the server. Convergence of a run is not validation.
 assessment:
   status: pending
   by: null
