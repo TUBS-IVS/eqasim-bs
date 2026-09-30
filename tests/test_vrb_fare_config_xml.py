@@ -31,6 +31,21 @@ def test_identical_rerun_is_a_no_op_and_conflict_is_refused(tmp_path):
         fcx.write_vrb_fare_module(path, dict(PARAMS, maximumUnsupportedShare="0.10"))
 
 
+def test_rerun_with_non_text_values_compares_the_text_it_writes(tmp_path):
+    # The module holds str(value): an int or float value is written as the text of PARAMS, so a re-run with the
+    # same values must find its own module identical, while a value with a different text is still refused.
+    path = tmp_path / "bs_config.xml"
+    path.write_text(CONFIG, encoding="utf-8")
+    params = dict(PARAMS, unsupportedFallbackPriceCents=370, maximumUnsupportedShare=0.05)
+    fcx.write_vrb_fare_module(path, params)
+    assert fcx.read_vrb_fare_module(path) == PARAMS
+    before = path.read_bytes()
+    fcx.write_vrb_fare_module(path, params)
+    assert path.read_bytes() == before
+    with pytest.raises(ValueError, match="conflicting vrbFare configuration"):
+        fcx.write_vrb_fare_module(path, dict(params, maximumUnsupportedShare=0.1))
+
+
 def test_missing_config_root_is_rejected(tmp_path):
     path = tmp_path / "broken.xml"
     path.write_text("<notconfig/>", encoding="utf-8")
