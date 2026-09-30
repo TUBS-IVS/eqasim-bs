@@ -39,6 +39,10 @@ acquisition:
     municipality, written by scripts/build_parking_zones_from_osm.py) and raw_sources/ (retrieved pages and
     documents; SHA-256 of the zone map image 20251126_Karte-Parkzone-Innenstadt-a-b-2025-01 94a8d46e...,
     of the BgA order 50444731..., of the Stadthalle concept plan ac9275bf..., of the ParkGO 59957701...). The
+    Overpass QL of the five successful requests (03101000, 03102000, 03103000, 03154028, 03157006; bounding boxes
+    and tag filters only, no OSM data), which the builder writes next to each response as
+    <ags>_overpass_2026-09-29.query.txt, is committed under scripts/curation/parking_zones_2026/overpass_queries/;
+    the raw responses stay local. The
     one-off curation scripts that produced the geometry are committed under scripts/curation/parking_zones_2026/
     (not pipeline stages; they read the gitignored raw inputs): georeference_zone_map.py (chamfer fit of the
     zone map to OSM centrelines) and extract_braunschweig_zone_map.py (pixel masks of the dotted 1a outline and
