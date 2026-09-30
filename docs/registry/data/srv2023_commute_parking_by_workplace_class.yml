@@ -34,12 +34,13 @@ storage:
   committed: true
   local_only: false
 verification:
-  verifier_entry: null
+  verifier_entry: D8
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed. Read by
+    Listed as D8 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py. Read by
     braunschweig.parking.zones_stage (config key parking_workplace_shares_path) when
-    parking_zones_enabled is true; that stage raises for a tariff workplace class without a
-    class row (tests/test_parking_zones_stage.py).
+    parking_zones_enabled is true, which configs/base_bs.yml sets since ADR-0139; that stage
+    raises for a missing file and for a tariff workplace class without a class row
+    (tests/test_parking_zones_stage.py).
     Guarded by tests/test_srv_parking.py: the builders on synthetic
     input (code maps, missing codes, duplicate respondents across the modules, the min_cell_n
     guard, the total row pooling exactly the class rows), the extractor's provenance header on
@@ -47,8 +48,8 @@ verification:
     share bounds and sums, bs_zentrum as the Braunschweig class with the lowest free share).
 requirements:
   synthesis: not_needed
-  matsim: optional
-  production: optional
+  matsim: required
+  production: required
 licensing:
   license: derived aggregate of a scientific-use file; no microdata
   restricted: false

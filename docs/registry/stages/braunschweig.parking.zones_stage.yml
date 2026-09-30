@@ -24,33 +24,32 @@ description: 'Loads the four inputs of the zone-based parking costs (issue #249)
 lineage:
   type: braunschweig_new
   upstream: null
-  notes: New for the zone-based parking costs, the successor of the 8 km ring of enable_urban_parking
-    (legacy isParis attributes, no data stage). Declared by braunschweig.matsim.scenario.population (zone,
-    resident-zone and free-parking attributes through braunschweig.parking.attach) and
-    braunschweig.matsim.simulation.prepare (tariff model JSON) only when parking_zones_enabled is true.
+  notes: New for the zone-based parking costs (ADR-0139), the successor of the 8 km ring of
+    enable_urban_parking (legacy isParis attributes, no data stage). Declared by
+    braunschweig.matsim.scenario.population (zone, resident-zone and free-parking attributes through
+    braunschweig.parking.attach) and braunschweig.matsim.simulation.prepare (tariff model JSON) only when
+    parking_zones_enabled is true, which configs/base_bs.yml sets (popsim_mid); the open workflow fixture
+    configurations leave the flag off, so their DAG snapshots do not contain the stage.
 code:
 - braunschweig/parking/zones_stage.py
 - braunschweig/parking/zones.py
 - braunschweig/parking/attach.py
 - braunschweig/parking/tariff_export.py
 pipelines:
-  popsim_mid: not_used
+  popsim_mid: active
   popsim_open: not_used
   simple_ipf_open: not_used
-production: false
+production: true
 inputs:
 - parking_zones_2026
 - parking_tariffs_2026
 - parking_coverage_register_2026
 - srv2023_commute_parking_by_workplace_class
+features:
+- parking_cost_zones
 decisions:
-- ADR-TBD-PARKING
-notes: 'STATE AT THIS COMMIT: parking_zones_enabled is false in every committed configuration, so no DAG
-  snapshot contains the stage and the record is parked (production false, every pipeline not_used), as the
-  registry tests require for a stage outside every DAG. The change that turns the flag on in
-  configs/base_bs.yml re-extracts the DAG snapshots and must then set production true and popsim_mid
-  active here, add features [parking_cost_zones] once that feature record exists, and replace the
-  placeholder decision ADR-TBD-PARKING with the ADR id of the zone-based parking costs. Unit tests:
-  tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected tariff row,
-  inconsistent register, cache token, and the committed release through the stage) and
+- ADR-0139
+notes: 'Mechanism, attribute names and maintenance rules: docs/codebase/notes/parking-cost-zones.md. Unit
+  tests: tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected
+  tariff row, inconsistent register, cache token, and the committed release through the stage) and
   tests/test_parking_attach.py (the attach functions the release feeds).'

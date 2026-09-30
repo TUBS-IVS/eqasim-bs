@@ -74,6 +74,9 @@ variables.
 | [mikrozensus_school_distance](../registry/data/mikrozensus_school_distance.yml) | calibration_target | auto_script (`scripts/seed_mikrozensus_school_distance.py`) | `data/braunschweig/mikrozensus/mikrozensus2024_school*.csv` | o/-/o | no |
 | [osm_cordon_ring](../registry/data/osm_cordon_ring.yml) | network | derived (`scripts/clip_osm_to_cordon_ring.py`) | `data/osm/germany-latest.zgb_ring.osm.pbf (+ osm/cordon/)` | -/r/r | no |
 | [osm_niedersachsen](../registry/data/osm_niedersachsen.yml) | spatial_input, network | manual_download (`scripts/preprocess_osm_pois.py`) | `data/osm/niedersachsen-latest.osm.pbf -> braunschweig/preprocessed/osm_pois.parquet` | r/r/r | no |
+| [parking_coverage_register_2026](../registry/data/parking_coverage_register_2026.yml) | assumption_basis, reference_table | committed | `data/braunschweig/parking/parking_coverage_register_2026.csv` | -/o/o | no |
+| [parking_tariffs_2026](../registry/data/parking_tariffs_2026.yml) | supply_input, reference_table | committed | `data/braunschweig/parking/parking_tariffs_2026.csv` | -/o/o | no |
+| [parking_zones_2026](../registry/data/parking_zones_2026.yml) | spatial_input | committed (`scripts/build_parking_zones_from_osm.py`) | `data/braunschweig/parking/parking_zones_2026.geojson` | -/o/o | no |
 | [regiostar](../registry/data/regiostar.yml) | spatial_input, reference_table | auto_script (`scripts/download_regiostar.py`) | `data/regiostar/regiostar_referenzdatei.xlsx` | r/-/r | no |
 | [rvb_visum_taz](../registry/data/rvb_visum_taz.yml) | spatial_input | restricted_delivery (`scripts/import_rvb_verkehrszellen.py`) | `data/braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet` | -/-/- | YES |
 | [srv2023_absence_by_age_band](../registry/data/srv2023_absence_by_age_band.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_absence.py`) | `data/braunschweig/srv/srv2023_absence_by_age_band.csv` | r/-/r | no |
@@ -81,6 +84,8 @@ variables.
 | [srv2023_absence_household_by_size](../registry/data/srv2023_absence_household_by_size.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_absence.py`) | `data/braunschweig/srv/srv2023_absence_household_by_size.csv` | r/-/r | no |
 | [srv2023_absence_partial_subset_size](../registry/data/srv2023_absence_partial_subset_size.yml) | reference_table | committed (`scripts/extract_srv_absence.py`) | `data/braunschweig/srv/srv2023_absence_partial_subset_size.csv` | -/-/o | no |
 | [srv2023_activity_duration_reference](../registry/data/srv2023_activity_duration_reference.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_departure_times.py`) | `data/braunschweig/srv/srv2023_activity_duration_reference.csv` | o/-/r | no |
+| [srv2023_city_center_parking](../registry/data/srv2023_city_center_parking.yml) | validation_reference | committed (`scripts/extract_srv_commute_parking.py`) | `data/braunschweig/srv/srv2023_city_center_parking.csv` | -/-/o | no |
+| [srv2023_commute_parking_by_workplace_class](../registry/data/srv2023_commute_parking_by_workplace_class.yml) | calibration_target, validation_reference | committed (`scripts/extract_srv_commute_parking.py`) | `data/braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv` | -/r/r | no |
 | [srv2023_departure_time_reference](../registry/data/srv2023_departure_time_reference.yml) | calibration_target, validation_reference, reference_table | committed (`scripts/extract_srv_departure_times.py`) | `data/braunschweig/srv/srv2023_departure_time_reference.csv` | r/-/r | no |
 | [srv2023_education_by_age](../registry/data/srv2023_education_by_age.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_participation_universe.py`) | `data/braunschweig/srv/srv2023_education_by_age_by_kreis.csv` | -/-/o | no |
 | [srv2023_fine_purpose_reference](../registry/data/srv2023_fine_purpose_reference.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_fine_purpose_reference.py`) | `data/braunschweig/srv/srv2023_fine_purpose_reference.csv` | -/-/- | no |
@@ -88,8 +93,9 @@ variables.
 | [srv2023_participation](../registry/data/srv2023_participation.yml) | control, reference_table | committed (`scripts/build_srv_participation_aggregate.py`) | `data/braunschweig/srv/srv2023_participation_by_kreis.csv` | o/-/o | no |
 | [srv2023_plan_structure_reference](../registry/data/srv2023_plan_structure_reference.yml) | validation_reference | committed (`scripts/extract_srv_plan_structure.py`) | `data/braunschweig/srv/srv2023_plan_structure_reference.csv` | -/-/r | no |
 | [srv2023_primary_distance_targets](../registry/data/srv2023_primary_distance_targets.yml) | calibration_target, validation_reference | committed (`scripts/extract_srv_primary_distance_targets.py`) | `data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv` | -/-/r | no |
-| [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv, codebook
-in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
+| [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv and the
+add-on modules SrV2023_Personen_Zusatz_{Braunschweig,RGB}.csv, codebook in
+srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 ` | -/-/o | YES |
 | [srv2023_reference_tables](../registry/data/srv2023_reference_tables.yml) | control, calibration_target, validation_reference | committed | `data/braunschweig/srv/srv2023_*.csv` | o/-/r | no |
 | [srv2023_ticket_groups4_14plus_by_kreis](../registry/data/srv2023_ticket_groups4_14plus_by_kreis.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_ticket_groups4_14plus_by_kreis.csv` | -/-/o | no |

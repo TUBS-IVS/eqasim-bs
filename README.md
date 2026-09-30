@@ -182,7 +182,8 @@ See [testing](docs/codebase/TESTING.md) for focused selection and duration repor
 > `braunschweig/kba/derived/*.csv`, `braunschweig/buildings/bosserhof_class_to_*.csv`,
 > `braunschweig/calibration/detour_circuity_params.csv`,
 > `braunschweig/lsn/lsn2022_income_tax_by_kreis.csv`,
-> `braunschweig/nds_bbs_share_by_age.csv`) plus their provenance docs. **Everything else is
+> `braunschweig/nds_bbs_share_by_age.csv`), the curated parking cost zone release
+> (`braunschweig/parking/parking_*_2026.*`, see *Parking cost zones* below) plus their provenance docs. **Everything else is
 > downloaded/obtained by you** and placed under `eqasim-data/data/` at the exact
 > path below. Restricted inputs are never committed and never redistributed.
 
@@ -280,6 +281,22 @@ python scripts/measure_combustion_split.py          # realised petrol/diesel vs 
 python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverage of the EV tilt
 python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
+
+**Parking cost zones (committed, ADR-0139).** Nothing to download: the zone polygons
+(`braunschweig/parking/parking_zones_2026.geojson`), the tariff table
+(`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
+(`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
+(`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository and are read by
+`braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, and
+`python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the three parking files. The
+zone polygons are partly derived from OpenStreetMap and therefore licensed under the ODbL 1.0: keep the attribution
+"(c) OpenStreetMap contributors" and the share-alike terms when you redistribute them. The two SrV parking tables
+(the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a comparison quantity only) are
+regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir> --out-dir
+eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
+(restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,
+`parking_tariffs_2026`, `parking_coverage_register_2026`, `srv2023_commute_parking_by_workplace_class` and
+`srv2023_city_center_parking`; acquisition notes: section F of the checklist below.
 
 The exhaustive acquisition companion (with every note and edge case) is
 [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
