@@ -10,7 +10,7 @@ provider: >-
 vintage: >-
   Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of every row); valid_from per row
   is the first date the source confirms (the retrieval date where the start is not published).
-geography: The 21 zones of parking_zones_2026 (eight ZGB municipalities)
+geography: The 24 zones of parking_zones_2026 (eight ZGB municipalities)
 crs: null
 roles:
 - supply_input
@@ -54,20 +54,25 @@ licensing:
   redistribution: allowed
 limitations: >-
   Assumption-labelled fee windows (fee_window_source assumption, F1): bs_bga_kannengiesserstrasse,
-  bs_bga_an_der_martinikirche and bs_bga_jodutenstrasse_klint (Mo-Sa 9-20 as at the directory-listed BgA car
-  parks), gs_altstadt_zone1 and he_innenstadt (9-18 h, not published; most frequent start and median end of
-  the documented municipal meter windows of the table). Braunschweig's ParkGO sets no fee hours (machine
-  display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page). Long-stay products
-  chosen by assumption M1: Ia (zone Ib day ticket 9.00 EUR), Peine (8-hour lot ticket 4.20 EUR), Stadthalle
-  (Parkscheininsel 24-h ticket 9.00 EUR). One regime per zone (S1): Wolfsburg takes the municipal Rathaus
-  garage tariff for the whole centre, Wolfenbuettel the garage day tariff, Gifhorn the city meter tariff;
-  night, shoulder and Saturday tariffs are not modelled (D1). Campus members pay the 3.50 EUR day ticket
+  bs_bga_an_der_martinikirche and bs_bga_jodutenstrasse_klint (Mo-Sa 9-20 as at the directory-listed BgA car parks),
+  gs_altstadt_zone1 and he_innenstadt (9-18 h, not published; most frequent start and median end of the documented
+  municipal meter windows of the table), the three Parkscheininseln of the Stadthalle concept (8-18 h, the concept's
+  regulated daytime window; their fee hours are not published). The islands take the ParkGO zone II amounts (0.50
+  EUR per 30 min, 9.00 EUR for 9-24 h), which parkraummanagement.php quotes for them. Braunschweig's ParkGO sets no
+  fee hours (machine display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page).
+  Long-stay products chosen by assumption M1: Ia (zone Ib day ticket 9.00 EUR), Peine (8-hour lot ticket 4.20 EUR;
+  overprices stays of 3-4 h, for which the same car parks sell a 4-hour ticket of 2.60 EUR), Stadthalle
+  (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of 2-9 h, which cost 2.00-9.00 EUR at 1.00 EUR per hour on
+  an island); the v1 schema has one long-stay product per zone. One regime per zone (S1): Wolfsburg takes the
+  municipal Rathaus garage tariff for the whole centre, Wolfenbuettel the garage day tariff, Gifhorn the city meter
+  tariff; night, shoulder and Saturday tariffs are not modelled (D1). Campus members pay the 3.50 EUR day ticket
   (C1, owner decision 3) although the 10 EUR month ticket costs 0.50 EUR per working day. Resident permits A/B/C
-  (exempt in the centre) and the night-time residents-only rule of the Stadthalle concept are not modelled.
-  Workplace classes of the Braunschweig rows follow the location of each zone relative to the SrV 2023
-  Oberbezirke (Unterbezirk names of the SrV sub-area coding), not a polygon overlay. The Wolfenbuettel URL of
-  the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the current pages were used.
+  (exempt in the centre), the exemption of zone-132 permit holders on the Parkscheininseln and the night-time
+  residents-only rule of the Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
+  the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
+  a polygon overlay. The Wolfenbuettel URL of the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the
+  current pages were used.
 notes: >-
-  21 rows: street_paid 14, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
-  assumption 5 (validator summary of 2026-09-29, see parking_zones_2026). The synthetic test set with the same
+  24 rows: street_paid 17, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
+  assumption 8 (validator summary of 2026-09-30, see parking_zones_2026). The synthetic test set with the same
   columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth).

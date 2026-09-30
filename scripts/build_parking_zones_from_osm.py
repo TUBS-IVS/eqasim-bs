@@ -34,6 +34,7 @@ import re
 import ssl
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -140,6 +141,26 @@ def fetch_overpass(query: str, *, url: str = OVERPASS_URL, timeout_s: int = REQU
                                      headers={"User-Agent": user_agent}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout_s, context=context) as response:
         return response.read()
+
+
+FAILURE_LOG_NAME = "overpass_failures.log"
+
+
+def check_remark(payload: dict) -> None:
+    """Refuse a response whose ``remark`` reports a runtime error or timeout: the element list may be truncated."""
+    remark = payload.get("remark")
+    if remark:
+        raise ValueError(f"Overpass response carries a remark, the result may be incomplete: {remark}")
+
+
+def log_failed_request(out_dir: Path, ags: str, error: BaseException, *, now=None) -> Path:
+    """Append one line (UTC time, AGS, HTTP status or error) to ``<out-dir>/overpass_failures.log``."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    detail = f"HTTP {error.code}" if isinstance(error, urllib.error.HTTPError) else f"{type(error).__name__}: {error}"
+    path = Path(out_dir) / FAILURE_LOG_NAME
+    with open(path, "a", encoding="utf-8", newline="\n") as stream:
+        stream.write(f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')}\t{ags}\t{detail}\n")
+    return path
 
 
 def _has_fee_evidence(tags: dict) -> bool:
@@ -286,14 +307,17 @@ def main(argv=None) -> int:
         time.sleep(max(0.0, args.pause_s))
         log.info("sending one Overpass request for %s (TLS trust store: %s)", args.ags,
                  args.ca_bundle or "interpreter default")
-        body = fetch_overpass(query, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
+        try:
+            body = fetch_overpass(query, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            failure_log = log_failed_request(out_dir, args.ags, error)
+            log.error("Overpass request for %s failed (%s); recorded in %s", args.ags, error, failure_log)
+            raise
         raw_path.write_bytes(body)
         raw_path.with_suffix(".query.txt").write_text(query, encoding="utf-8")
         payload = json.loads(body.decode("utf-8"))
         log.info("saved the raw response (%d bytes) to %s", len(body), raw_path)
-    remark = payload.get("remark")
-    if remark:
-        log.warning("Overpass remark: %s", remark)
+    check_remark(payload)
     features = elements_to_features(payload)
     candidates = build_candidates(features)
     candidates.insert(0, "ags", args.ags)

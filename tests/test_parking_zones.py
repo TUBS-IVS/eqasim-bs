@@ -7,6 +7,7 @@ The fixture tariff set under ``tests/fixtures/parking`` pins arithmetic, not tru
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import geopandas as gpd
@@ -140,6 +141,23 @@ def test_resident_zone_needs_exemption_and_zero_rate():
         pz.validate_tariffs(broken)
 
 
+def test_resident_zone_rejects_threshold_and_day_cap():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    for field, value in (("free_if_stay_at_most_min", 30), ("daily_cap_eur", 9.0)):
+        broken = tariffs.copy()
+        broken.loc[broken["zone_id"] == "fx_res_a", field] = value
+        with pytest.raises(ValueError, match=field):
+            pz.validate_tariffs(broken)
+
+
+def test_zero_day_cap_is_rejected():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_wob", "daily_cap_eur"] = 0.0
+    with pytest.raises(ValueError, match="daily_cap_eur"):
+        pz.validate_tariffs(broken)
+
+
 def test_campus_rows_carry_no_metering_fields():
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     broken = tariffs.copy()
@@ -203,9 +221,11 @@ def test_fixture_zones_load_in_metric_crs():
 
 
 def test_overlapping_zones_are_rejected():
-    zones = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(5, 0, 15, 10)]}, crs="EPSG:25832")
-    with pytest.raises(ValueError, match="overlap"):
+    zones = gpd.GeoDataFrame({"zone_id": ["alpha", "beta"], "geometry": [box(0, 0, 10, 10), box(5, 0, 15, 10)]},
+                             crs="EPSG:25832")
+    with pytest.raises(ValueError, match="overlap") as raised:
         pz.validate_zone_polygons(zones)
+    assert "alpha" in str(raised.value) and "beta" in str(raised.value)
 
 
 def test_touching_zones_within_tolerance_are_accepted():
@@ -230,6 +250,15 @@ def test_load_zone_polygons_requires_provenance(tmp_path):
     zones.to_file(path, driver="GeoJSON")
     with pytest.raises(ValueError, match="digitising_note"):
         pz.load_zone_polygons(path)
+
+
+def test_load_zone_polygons_tolerates_licence_members(tmp_path):
+    document = json.loads(ZONE_FIXTURE.read_text(encoding="utf-8"))
+    document["license"] = "ODbL-1.0"
+    document["attribution"] = "(c) OpenStreetMap contributors"
+    path = tmp_path / "zones.geojson"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert len(pz.load_zone_polygons(path)) == 7
 
 
 def test_load_zone_polygons_repairs_a_self_intersecting_ring(tmp_path, caplog):
@@ -271,6 +300,15 @@ def test_assign_zones_raises_for_a_point_in_two_zones():
     points = gpd.GeoDataFrame({"person_id": [1]}, geometry=[Point(7, 5)], crs="EPSG:25832")
     with pytest.raises(ValueError, match="more than one zone"):
         pz.assign_zones(points, zones)
+
+
+def test_assign_zones_rejects_points_without_coordinates():
+    zones = gpd.GeoDataFrame({"zone_id": ["a"], "geometry": [box(0, 0, 10, 10)]}, crs="EPSG:25832")
+    points = gpd.GeoDataFrame({"person_id": [1, 2, 3]}, geometry=[Point(5, 5), None, Point()], crs="EPSG:25832",
+                              index=["p1", "p2", "p3"])
+    with pytest.raises(ValueError, match="2 point") as raised:
+        pz.assign_zones(points, zones)
+    assert "p2" in str(raised.value) and "p3" in str(raised.value)
 
 
 def test_assign_zones_requires_the_same_crs():
@@ -367,6 +405,28 @@ def test_overpass_query_covers_every_fee_statement_and_escapes_names():
     assert query.rstrip().endswith("out tags geom;")
 
 
+def test_overpass_remark_refuses_the_response():
+    from scripts.build_parking_zones_from_osm import check_remark
+
+    check_remark({"elements": []})
+    with pytest.raises(ValueError, match="runtime error"):
+        check_remark({"elements": [], "remark": "runtime error: Query timed out in \"query\" at line 3"})
+
+
+def test_failed_overpass_request_is_logged(tmp_path):
+    import datetime as dt
+    import urllib.error
+
+    from scripts.build_parking_zones_from_osm import FAILURE_LOG_NAME, log_failed_request
+
+    when = dt.datetime(2026, 9, 29, 5, 14, tzinfo=dt.timezone.utc)
+    error = urllib.error.HTTPError("https://overpass-api.de/api/interpreter", 504, "Gateway Timeout", {}, None)
+    log_failed_request(tmp_path, "03153017", error, now=when)
+    log_failed_request(tmp_path, "03158037", TimeoutError("timed out"), now=when)
+    lines = (tmp_path / FAILURE_LOG_NAME).read_text(encoding="utf-8").splitlines()
+    assert lines == ["2026-09-29T05:14:00Z\t03153017\tHTTP 504", "2026-09-29T05:14:00Z\t03158037\tTimeoutError: timed out"]
+
+
 def test_overpass_fixture_dissolves_into_the_expected_candidates():
     from scripts.build_parking_zones_from_osm import build_candidates, elements_to_features
 
@@ -388,6 +448,9 @@ def test_overpass_fixture_dissolves_into_the_expected_candidates():
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
+COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv")
+PARKSCHEININSELN = ("bs_parkscheininsel_marthastrasse_koernerstrasse",
+                    "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse")
 
 
 def test_committed_parking_data_is_valid(capsys):
@@ -398,6 +461,44 @@ def test_committed_parking_data_is_valid(capsys):
     out = capsys.readouterr().out
     assert "[parking-validate] OK" in out
     assert "register status" in out
+
+
+def test_committed_zones_carry_the_licence_notice():
+    document = json.loads((COMMITTED_PARKING_DIR / "parking_zones_2026.geojson").read_text(encoding="utf-8"))
+    assert "ODbL" in document["license"]
+    assert "OpenStreetMap contributors" in document["attribution"]
+
+
+def test_committed_parking_files_are_ascii():
+    for name in COMMITTED_PARKING_FILES:
+        text = (COMMITTED_PARKING_DIR / name).read_text(encoding="utf-8")
+        offending = sorted({character for character in text if ord(character) > 127})
+        assert not offending, f"{name} contains non-ASCII characters {offending}"
+
+
+def test_committed_texts_do_not_call_the_parkgo_annex_unpublished():
+    # The annex map ('Anlage zur ParkGO') is page 3 of the ParkGO PDF: not digitised in v1, but published.
+    paths = [COMMITTED_PARKING_DIR / name for name in COMMITTED_PARKING_FILES]
+    paths.append(REPO_ROOT / "docs" / "registry" / "data" / "parking_zones_2026.yml")
+    for path in paths:
+        for sentence in re.split(r"[.;]\s", path.read_text(encoding="utf-8").lower()):
+            if "annex" in sentence:
+                assert "not published" not in sentence, f"{path.name}: {sentence.strip()[:160]}"
+
+
+def test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_resident_zone():
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson").set_index("zone_id")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    resident = zones.loc["bs_resident_stadthalle_132", "geometry"]
+    for zone_id in PARKSCHEININSELN:
+        assert tariffs.loc[zone_id, "zone_type"] == "street_paid"
+        assert zones.loc[zone_id, "geometry_source"] == "street_list_buffer"
+        assert zones.loc[zone_id, "geometry"].intersection(resident).area <= pz.OVERLAP_TOLERANCE_M2
+    # Marthastrasse/Koernerstrasse and Gerstaeckerstrasse/Kleine Campestrasse were cut out of zone 132, so they
+    # share its outline; Mentestrasse lies outside the concept's resident streets.
+    assert zones.loc[PARKSCHEININSELN[0], "geometry"].buffer(1.0).intersects(resident)
+    assert zones.loc[PARKSCHEININSELN[1], "geometry"].buffer(1.0).intersects(resident)
+    assert not zones.loc[PARKSCHEININSELN[2], "geometry"].buffer(1.0).intersects(resident)
 
 
 def test_committed_zones_carry_real_provenance_only():
@@ -411,7 +512,7 @@ def test_committed_zones_carry_real_provenance_only():
     assert flagged["notes"].str.contains("ASSUMPTION F1").all()
 
 
-def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path):
+def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, capsys):
     import shutil
 
     from scripts.validate_parking_zones import main
@@ -421,6 +522,8 @@ def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path):
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
         shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
     register = target / "parking_coverage_register_2026.csv"
-    text = register.read_text(encoding="utf-8").replace("03102000,\"Salzgitter, Stadt\",zoned", "03102000,\"Salzgitter, Stadt\",not_audited")
+    text = register.read_text(encoding="utf-8").replace("03102000,\"Salzgitter, Stadt\",zoned",
+                                                        "03102000,\"Salzgitter, Stadt\",not_audited")
     register.write_text(text, encoding="utf-8")
     assert main(["--data-path", str(tmp_path)]) == 1
+    assert "tariff rows in municipalities not marked 'zoned': ['03102000']" in capsys.readouterr().out

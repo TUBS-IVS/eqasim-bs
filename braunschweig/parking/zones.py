@@ -79,7 +79,10 @@ REQUIRED_FIELDS_BY_TYPE = {
 #: Fields the cost function of spec 3.2 would silently ignore (or that contradict the regime) per type.
 FORBIDDEN_FIELDS_BY_TYPE = {
     "street_paid": ("member_day_eur", "guest_day_eur"),
-    "resident_zone": ("member_day_eur", "guest_day_eur", "first_period_min", "first_period_eur"),
+    # free_if_stay_at_most_min is not inert on a resident zone: FREE_WITHIN_LIMIT precedes the max-stay check of
+    # spec 3.2; a day cap would cap the long-stay product. The cost reference (Task 3) rejects both as well.
+    "resident_zone": ("member_day_eur", "guest_day_eur", "first_period_min", "first_period_eur",
+                      "free_if_stay_at_most_min", "daily_cap_eur"),
     "campus": ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                "first_period_eur", "daily_cap_eur", "max_stay_min", "long_stay_product_eur"),
 }
@@ -274,6 +277,8 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
                     problem(field, f"negative amount {row[field]}")
                 elif abs(row[field] * 100 - round(row[field] * 100)) > MONEY_CENT_TOLERANCE:
                     problem(field, f"{row[field]} EUR is not a whole number of cents")
+        if _is_set(row["daily_cap_eur"]) and row["daily_cap_eur"] == 0:
+            problem("daily_cap_eur", "a day cap of 0 EUR makes the zone free; leave the field empty or drop the zone")
         for field in MINUTE_COLUMNS:
             if _is_set(row[field]) and row[field] <= 0:
                 problem(field, f"must be a positive number of minutes, found {row[field]}")
@@ -405,11 +410,17 @@ def assign_zones(points: gpd.GeoDataFrame, zones: gpd.GeoDataFrame) -> pd.Series
     """Zone id of every point (``within`` its polygon) or NaN outside every zone; indexed like ``points``.
 
     The spatial join runs on a positional copy of the points, so a duplicated index of ``points`` is
-    preserved. A point inside two zones means overlapping polygons and raises. Coverage is logged as a
-    rate because "no zone" means free parking downstream (assumption Z1), never a silent default.
+    preserved. A point inside two zones means overlapping polygons and raises. A null or empty point
+    geometry raises too: a missing coordinate must not become free parking. Under ``within`` a point exactly
+    on a shared zone edge lies in neither zone and gets NaN (a measure-zero case, accepted). Coverage is
+    logged as a rate because "no zone" means free parking downstream (assumption Z1), never a silent default.
     """
     if points.crs is None or zones.crs is None or not points.crs.equals(zones.crs):
         raise ValueError(f"assign_zones needs points and zones in the same CRS, found {points.crs} and {zones.crs}")
+    missing = points.geometry.isna() | points.geometry.is_empty
+    if missing.any():
+        raise ValueError(f"assign_zones: {int(missing.sum())} point(s) without coordinates (null or empty geometry), "
+                         f"first index labels {list(points.index[missing][:5])}; locate them before assigning zones")
     positions = gpd.GeoDataFrame({"_position": np.arange(len(points))}, geometry=list(points.geometry), crs=points.crs)
     joined = gpd.sjoin(positions, zones[["zone_id", "geometry"]], how="left", predicate="within")
     hits = joined.dropna(subset=["zone_id"])
