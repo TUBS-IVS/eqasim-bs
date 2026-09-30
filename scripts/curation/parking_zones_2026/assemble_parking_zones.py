@@ -695,9 +695,10 @@ SUPPLY_QA_INTRO = (
     "precision per town (the four towns only) = rule inside the references / rule inside the town's query box; pass",
     "when the pooled recall (area-weighted over every reference) and the pooled precision reach 0.70 and every town's",
     "recall reaches 0.50 (ASSUMPTION Q6). The arms (the Amendment B arms around its share 0.5 and the information arms",
-    "S = street supply only and T = payment evidence of owner decision 3 within 75 m, ASSUMPTION T-a) are computed",
-    "with H1 and H2 and never applied: seven arms of owner decisions 2 and 3 (B and six information arms) plus four",
-    "Amendment B arms, so a passing information arm is no validation of that arm.",
+    "S = street supply only and T = payment evidence of owner decision 3 within 75 m, ASSUMPTION T-a: ticket machines",
+    "and parking elements with an app-payment tag, never phone wallets or non-parking elements, ruling R-T1c-a) are",
+    "computed with H1 and H2 and never applied: seven arms of owner decisions 2 and 3 (B and six information arms) plus",
+    "four Amendment B arms, so a passing information arm is no validation of that arm.",
     "Element counts are street sides (two per way), street-side areas and lots inside the query box; spaces are",
     "usable capacity. Interpretations beyond B-a..B-f (implementation choices, not owner rulings) are listed in the data",
     "record parking_zones_2026; the one that decided B5 at the share 0.5 (parking:<side>=yes read as street parking,",
@@ -750,11 +751,12 @@ SUPPLY_QA_COLUMN_GLOSSARY = {
     "offstreet_spaces_without_fee_tag_share": "share of the public off-street capacity (usable lots plus those excluded "
                                               "for their fee tag) that is excluded for lack of a fee tag (ASSUMPTION "
                                               "B-c)",
-    "ticket_machines": "variant T evidence: parking ticket machines inside the query box (nodes with amenity="
-                       "vending_machine and vending=parking_tickets)",
-    "app_payment_elements": "variant T evidence: elements inside the query box with an app-payment tag (a key starting "
-                            "payment:app or payment:mobile whose value is not no; the literal pattern also matches "
-                            "payment:apple_pay), whatever the element is",
+    "ticket_machines": "variant T evidence (from the arm T at the default share): parking ticket machines inside the "
+                       "query box (nodes with amenity=vending_machine and vending=parking_tickets)",
+    "app_payment_elements": "variant T evidence (ruling R-T1c-a): parking elements inside the query box (parking "
+                            "facilities, street ways with parking:* tags, parking payment devices) with an app-payment "
+                            "key (payment:app*, payment:mobile* or a named parking-app key, value not no; phone "
+                            "wallets and non-parking elements never count)",
     "payment_evidence_paid_elements": "variant T at the default share (information only): street sides, street-side "
                                       "areas and lots inside the query box that the payment evidence turns paid",
     "payment_evidence_paid_spaces": "their capacity, spaces",
@@ -792,8 +794,8 @@ SUPPLY_QA_COLUMN_GLOSSARY = {
                    "area, H1 in Braunschweig, the holdout overlaps in the holdout towns and the pooled H2 on the "
                    "Braunschweig row (information only, never used to select a passing combination)",
     "variant_arms": "information arms of owner decisions 2 and 3 (S = street supply only, T = payment evidence within "
-                    "75 m, S+T; each at 0.3 and 0.5), reported like the sensitivity column plus the elements T turns "
-                    "paid; never applied",
+                    "75 m after ruling R-T1c-a, S+T; each at 0.3 and 0.5), reported like the sensitivity column plus "
+                    "the elements T turns paid; never applied",
     "applied": "true when the rule became release polygons (geometry_source osm_supply_majority)",
     "zone_ids": "the osm_supply_majority polygons of an applied row (';'-separated)",
     "decision": "applied; gate_failed (H1 or H2 failed, nothing is applied anywhere); no_rule_polygon (both passed, "
@@ -1103,25 +1105,25 @@ def arms_text(entry: dict, arms, *, ags: str, pooled: dict, closing: str) -> str
                       for arm in arms) + f" ({closing})"
 
 
+def payment_evidence(entry: dict) -> dict:
+    """The payment evidence of variant T of one town: the ``payment_evidence`` block of the arm T at the default share
+    (``PAYMENT_EVIDENCE_ARM``; its one source), empty when that arm was not run."""
+    return (entry["arms"].get(PAYMENT_EVIDENCE_ARM.tag()) or {}).get("payment_evidence") or {}
+
+
 def payment_evidence_text(entry: dict) -> str:
-    """The note on the payment evidence of variant T in the town's query box and what T at the default share turns
-    paid (information only)."""
-    evidence = (entry["qa"].get("payment_evidence") or {}).get("evidence")
-    if not evidence:
-        return "payment evidence of variant T: not read (inventory before Task 1c)"
-    text = (f"payment evidence of variant T in the query box: {evidence['ticket_machines']} parking ticket machines, "
-            f"{evidence['app_payment_elements']} elements with an app-payment tag ({evidence['app_payment_parking_objects']} "
-            f"on parking objects, {evidence['app_payment_other_objects']} on other elements, "
-            f"{evidence['apple_pay_only_elements']} only through payment:apple_pay)")
-    payment = (entry["arms"].get(PAYMENT_EVIDENCE_ARM.tag()) or {}).get("payment_evidence") or {}
-    if payment.get("converted") is not None:
-        by = payment["converted_by"]
-        text += (f"; T within {payment['distance_m']:.0f} m turns {payment['converted']['street_side']} street sides, "
-                 f"{payment['converted']['street_side_area']} street-side areas and {payment['converted']['lot']} lots "
-                 f"({payment['converted_spaces']:.0f} spaces) paid: {by['ticket_machine']} by a ticket machine, "
-                 f"{by['app_payment_parking']} by an app-payment tag on a parking object, {by['app_payment_other']} by "
-                 f"one on another element, {by['own_app_payment_tag']} by their own app-payment tag (information only)")
-    return text
+    """The note on the payment evidence of variant T in the town's query box (ruling R-T1c-a: ticket machines and
+    parking elements with an app-payment tag) and what T at the default share turns paid (information only)."""
+    payment = payment_evidence(entry)
+    if not payment.get("evidence"):
+        return "payment evidence of variant T: the arm T at the default share was not run"
+    evidence, converted, by = payment["evidence"], payment["converted"], payment["converted_by"]
+    return (f"payment evidence of variant T in the query box (ruling R-T1c-a): {evidence['ticket_machines']} parking "
+            f"ticket machines, {evidence['app_payment_elements']} parking elements with an app-payment tag; T within "
+            f"{payment['distance_m']:.0f} m turns {converted['street_side']} street sides, {converted['street_side_area']} "
+            f"street-side areas and {converted['lot']} lots ({payment['converted_spaces']:.0f} spaces) paid: "
+            f"{by['ticket_machine']} by a ticket machine, {by['app_payment_parking']} by an app-payment tag on a parking "
+            f"element, {by['own_app_payment_tag']} by their own app-payment tag (information only)")
 
 
 def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_zones, decision: str,
@@ -1169,14 +1171,13 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
         row[f"overpass_{name}_elements"] = str(sum(int(cross["overpass"][kind][name]) for kind in ss.ELEMENT_KINDS))
     for name in ss.USABLE_CLASSES:
         row[f"{name}_spaces"] = _number(s["spaces_by_class"][name], 1)
-    evidence = (qa.get("payment_evidence") or {}).get("evidence")
-    if evidence:
-        row.update({"ticket_machines": str(int(evidence["ticket_machines"])),
-                    "app_payment_elements": str(int(evidence["app_payment_elements"]))})
-    converted = (entry["arms"].get(PAYMENT_EVIDENCE_ARM.tag()) or {}).get("payment_evidence") or {}
-    if converted.get("converted") is not None:
-        row.update({"payment_evidence_paid_elements": str(sum(int(value) for value in converted["converted"].values())),
-                    "payment_evidence_paid_spaces": _number(converted["converted_spaces"], 1)})
+    payment = payment_evidence(entry)
+    if payment.get("evidence"):
+        row.update({"ticket_machines": str(int(payment["evidence"]["ticket_machines"])),
+                    "app_payment_elements": str(int(payment["evidence"]["app_payment_elements"]))})
+    if payment.get("converted") is not None:
+        row.update({"payment_evidence_paid_elements": str(sum(int(value) for value in payment["converted"].values())),
+                    "payment_evidence_paid_spaces": _number(payment["converted_spaces"], 1)})
     holdout = qa.get("holdout")
     if ags in ss.HOLDOUT_REFERENCE_ZONES and holdout:
         row.update({"holdout_references": ";".join(ss.HOLDOUT_REFERENCE_ZONES[ags]),

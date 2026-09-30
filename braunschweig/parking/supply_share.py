@@ -66,10 +66,13 @@ money.
   ``apply_payment_evidence``; pre-registered before any T result): a street side or street-side area that is free only
   because it carries no fee tag (B-a) becomes paid when its geometry lies within ``PAYMENT_EVIDENCE_DISTANCE_M`` (75 m,
   ASSUMPTION T-a: about one block face served by one machine) of a parking ticket machine
-  (``is_parking_ticket_machine``) or of any element with an app-payment tag (``app_payment_keys``); a street-side area
-  or lot with an app-payment tag of its own and no fee tag is paid (payment implies a fee); an explicit fee=no is
-  never overridden, disc parking (B-b) stays free and the evidence adds no capacity. Arms: ``VARIANT_ARMS``
-  (``SupplyArm``: S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at 0.5 and 0.3); only ``DEFAULT_ARM`` (B) may be applied.
+  (``is_parking_ticket_machine``) or of a parking element (``is_parking_element``) with an app-payment tag
+  (``app_payment_keys``); a street-side area or lot with an app-payment tag of its own and no fee tag is paid (payment
+  implies a fee); an explicit fee=no is never overridden, disc parking (B-b) stays free and the evidence adds no
+  capacity. Ruling R-T1c-a corrected the evidence definition of the controller before the task review (not a tuning
+  step; T is information only): phone wallets (``PHONE_WALLET_PAYMENT_KEYS``) and non-parking elements (shops,
+  charging stations) never count. Arms: ``VARIANT_ARMS`` (``SupplyArm``: S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
+  0.5 and 0.3); only ``DEFAULT_ARM`` (B) may be applied.
 
 Discretisation (B3): the capacity of every usable element is spread over points so that the radius sum is length- and
 area-correct (``discretise_capacity``). A line is cut into ``ceil(length / step_m)`` equal pieces, each carrying its
@@ -197,13 +200,18 @@ OFFSTREET_WITHOUT_FEE_TAG_WARNING_SHARE = 0.5
 PAYMENT_EVIDENCE_DISTANCE_M = 75.0
 #: A parking ticket machine: a node with amenity=vending_machine whose vending=* lists parking_tickets.
 TICKET_MACHINE_VENDING = "parking_tickets"
-#: App-payment evidence: a key starting with one of these prefixes whose value is not "no" (the literal reading of the
-#: pre-registered patterns payment:app* and payment:mobile*, so payment:apple_pay counts as well).
-APP_PAYMENT_KEY_PREFIXES = ("payment:app", "payment:mobile")
+#: App-payment keys (ruling R-T1c-a): a key starting with payment:app or payment:mobile, or a named parking-app key (a
+#: closed list: the three the ruling names; none occurs in the inventory box of the pinned extract), whose value is set
+#: and not "no" ...
+APP_PAYMENT_KEY_PREFIXES = ("payment:app", "payment:mobile", "payment:easypark", "payment:parkster",
+                            "payment:paybyphone")
+#: ... never a phone-wallet key, although payment:apple_pay starts with payment:app.
+PHONE_WALLET_PAYMENT_KEYS = ("payment:apple_pay", "payment:google_pay", "payment:android_pay", "payment:samsung_pay",
+                             "payment:garmin_pay", "payment:huawei_pay", "payment:fitbit_pay")
 #: Evidence behind a conversion by variant T (column ``payment_evidence``), in the order of attribution: a ticket
-#: machine within the distance, else an app-payment tag on a parking object (amenity=parking or a ticket machine), else
-#: one on any other element; ``own_app_payment_tag`` for a street-side area or lot paid by its own tag.
-PAYMENT_EVIDENCE_SOURCES = ("ticket_machine", "app_payment_parking", "app_payment_other", "own_app_payment_tag")
+#: machine within the distance, else an app-payment tag on a parking element; ``own_app_payment_tag`` for a street-side
+#: area or lot paid by its own tag.
+PAYMENT_EVIDENCE_SOURCES = ("ticket_machine", "app_payment_parking", "own_app_payment_tag")
 #: Reasons of B1 that variant T may override: street parking free only for lack of a fee tag (B-a) by proximity; a
 #: street-side area or lot without a fee tag (B-a, B-b disc area, B-c) by its own app-payment tag.
 PROXIMITY_CONVERTIBLE_REASONS = ("no_fee_tag",)
@@ -212,8 +220,7 @@ OWN_TAG_CONVERTIBLE_REASONS = ("no_fee_tag", "disc", "no_fee_tag_offstreet")
 ELEMENT_COLUMNS = ("element_id", "osm_type", "osm_id", "kind", "side", "side_position", "parking_type", "class",
                    "reason", "capacity_spaces", "capacity_source", "capacity_basis", "capacity_tag_invalid", "levels",
                    "app_payment_keys", "payment_evidence", "geometry")
-EVIDENCE_COLUMNS = ("evidence_id", "osm_type", "osm_id", "evidence", "app_payment_keys", "parking_object", "object",
-                    "geometry")
+EVIDENCE_COLUMNS = ("evidence_id", "osm_type", "osm_id", "evidence", "app_payment_keys", "object", "geometry")
 RASTER_COLUMNS = ("x_m", "y_m", "paid_share", "usable_spaces", "heuristic_capacity_share", "classified", "paid_spaces",
                   "restricted_spaces", "free_spaces")
 #: B7: the committed release of the classified cells.
@@ -581,15 +588,34 @@ def is_parking_ticket_machine(tags: Mapping) -> bool:
         TICKET_MACHINE_VENDING in zg._tokens(zg._tag_text(tags, "vending"))
 
 
-def app_payment_keys(tags: Mapping) -> tuple:
-    """The app-payment keys of an element, sorted: keys starting with one of ``APP_PAYMENT_KEY_PREFIXES`` whose value
-    is set and not ``no`` (the literal reading of the pre-registered patterns, so ``payment:apple_pay`` counts)."""
+def _set_payment_keys(tags: Mapping, prefixes) -> tuple:
+    """Sorted keys starting with one of ``prefixes`` whose value is set and not ``no``."""
     keys = []
     for key, value in tags.items():
         text = "" if value is None else str(value).strip().lower()
-        if str(key).startswith(APP_PAYMENT_KEY_PREFIXES) and text and text != "no":
+        if str(key).startswith(tuple(prefixes)) and text and text != "no":
             keys.append(str(key))
     return tuple(sorted(keys))
+
+
+def app_payment_keys(tags: Mapping) -> tuple:
+    """The app-payment keys of an element (ruling R-T1c-a), sorted: keys starting with one of
+    ``APP_PAYMENT_KEY_PREFIXES`` whose value is set and not ``no``, never a phone-wallet key
+    (``PHONE_WALLET_PAYMENT_KEYS``)."""
+    return tuple(key for key in _set_payment_keys(tags, APP_PAYMENT_KEY_PREFIXES)
+                 if not key.startswith(PHONE_WALLET_PAYMENT_KEYS))
+
+
+def is_parking_element(tags: Mapping) -> bool:
+    """A parking element of ruling R-T1c-a, the only carrier of app-payment evidence: a parking facility
+    (``amenity=parking`` of any geometry, i.e. street-side areas, lots and nodes; a highway way with street-parking tags
+    ``parking:*``) or a parking payment device (``vending=*`` lists ``parking_tickets``). Shops, charging stations and
+    every other element are none."""
+    if (zg._tag_text(tags, "amenity") or "").lower() == "parking":
+        return True
+    if zg._tag_text(tags, "highway") and any(str(key).startswith("parking:") for key in tags):
+        return True
+    return TICKET_MACHINE_VENDING in zg._tokens(zg._tag_text(tags, "vending"))
 
 
 def _object_label(tags: Mapping) -> str:
@@ -603,16 +629,17 @@ def _object_label(tags: Mapping) -> str:
 def payment_evidence(objects: gpd.GeoDataFrame, *, label: str = "") -> gpd.GeoDataFrame:
     """The payment evidence of variant T among OSM elements (``tags`` column, any geometry, EPSG:25832; optional
     ``osm_type`` / ``osm_id``): every parking ticket machine that is a node (``is_parking_ticket_machine``; owner
-    decision 3) and every element with an app-payment tag (``app_payment_keys``), whatever its own parking class.
+    decision 3) and every parking element (``is_parking_element``) with an app-payment tag (``app_payment_keys``),
+    whatever its own parking class (ruling R-T1c-a).
 
-    Returns ``EVIDENCE_COLUMNS``: ``evidence`` is ``ticket_machine``, ``app_payment`` or both (';'),
-    ``parking_object`` marks an ``amenity=parking`` object or a ticket machine (the attribution of a conversion),
-    ``object`` names the element by its main tag. Logs the counts, among them the machines that are no node (left out)
-    and the elements whose only app-payment key is ``payment:apple_pay`` (a wallet the literal key pattern matches).
+    Returns ``EVIDENCE_COLUMNS``: ``evidence`` is ``ticket_machine``, ``app_payment`` or both (';'), ``object`` names
+    the element by its main tag. Logs the counts and what the definition leaves out: ticket machines that are no node,
+    elements with an app-payment tag that are no parking element (shops, charging stations) and elements whose only
+    payment keys of that kind are phone wallets.
     """
     zg._require_metric(objects, "payment evidence candidates")
     zg._require_tags(objects, "payment evidence candidates")
-    rows, not_nodes, without_geometry = [], 0, 0
+    rows, not_nodes, not_parking, wallet_only, without_geometry = [], 0, 0, 0, 0
     for position, row in enumerate(objects.itertuples(index=False)):
         tags = dict(row.tags or {})
         osm_type, osm_id, element = _identity(row, position)
@@ -621,43 +648,42 @@ def payment_evidence(objects: gpd.GeoDataFrame, *, label: str = "") -> gpd.GeoDa
             not_nodes += 1
             machine = False
         keys = app_payment_keys(tags)
-        if not (machine or keys):
+        if not keys and _set_payment_keys(tags, PHONE_WALLET_PAYMENT_KEYS):
+            wallet_only += 1
+        app = bool(keys) and is_parking_element(tags)
+        if keys and not app:
+            not_parking += 1
+        if not (machine or app):
             continue
         if row.geometry is None or row.geometry.is_empty:
             without_geometry += 1
             continue
-        evidence = ";".join(name for name, flag in (("ticket_machine", machine), ("app_payment", bool(keys))) if flag)
-        parking = is_parking_ticket_machine(tags) or zg._tag_text(tags, "amenity") == "parking"
+        evidence = ";".join(name for name, flag in (("ticket_machine", machine), ("app_payment", app)) if flag)
         rows.append({"evidence_id": element, "osm_type": osm_type, "osm_id": osm_id, "evidence": evidence,
-                     "app_payment_keys": ";".join(keys), "parking_object": bool(parking), "object": _object_label(tags),
+                     "app_payment_keys": ";".join(keys) if app else "", "object": _object_label(tags),
                      "geometry": row.geometry})
     frame = gpd.GeoDataFrame(rows, columns=list(EVIDENCE_COLUMNS), geometry="geometry", crs=METRIC_CRS)
     frame["osm_id"] = frame["osm_id"].astype("Int64")
-    frame["parking_object"] = frame["parking_object"].astype(bool)
     summary = summarise_payment_evidence(frame)["evidence"]
-    log.info("%s %spayment evidence of variant T: %d parking ticket machines (nodes), %d elements with an app-payment tag "
-             "(%d on parking objects, %d on other elements, %d only through payment:apple_pay); %d ticket machines that "
-             "are no node left out, %d elements without geometry skipped", _LOG_TAG, f"{label}: " if label else "",
-             summary["ticket_machines"], summary["app_payment_elements"], summary["app_payment_parking_objects"],
-             summary["app_payment_other_objects"], summary["apple_pay_only_elements"], not_nodes, without_geometry)
+    log.info("%s %spayment evidence of variant T (ruling R-T1c-a): %d parking ticket machines (nodes), %d parking "
+             "elements with an app-payment tag; left out: %d elements with an app-payment tag that are no parking "
+             "element, %d elements with a phone-wallet key only, %d ticket machines that are no node, %d elements "
+             "without geometry", _LOG_TAG, f"{label}: " if label else "", summary["ticket_machines"],
+             summary["app_payment_elements"], not_parking, wallet_only, not_nodes, without_geometry)
     return frame
 
 
 def summarise_payment_evidence(evidence: gpd.GeoDataFrame, elements: Optional[gpd.GeoDataFrame] = None,
                                distance_m: Optional[float] = None) -> dict:
-    """QA numbers of variant T (JSON-serialisable): the evidence (``payment_evidence``) and, for an inventory after
-    ``apply_payment_evidence`` (``elements`` with ``distance_m``), the elements it turned paid per kind, their spaces
-    and the evidence behind them (``PAYMENT_EVIDENCE_SOURCES``); the conversion keys are None otherwise."""
+    """QA numbers of variant T (JSON-serialisable): the evidence (``payment_evidence``: ticket machines, parking
+    elements with an app-payment tag) and, for an inventory after ``apply_payment_evidence`` (``elements`` with
+    ``distance_m``), the elements it turned paid per kind, their spaces and the evidence behind them
+    (``PAYMENT_EVIDENCE_SOURCES``); the conversion keys are None otherwise."""
     zg._require_columns(evidence, EVIDENCE_COLUMNS, "payment evidence (run payment_evidence first)")
     machines = evidence["evidence"].str.contains("ticket_machine", regex=False).to_numpy(dtype=bool)
     app = evidence["evidence"].str.contains("app_payment", regex=False).to_numpy(dtype=bool)
-    parking = evidence["parking_object"].to_numpy(dtype=bool)
-    apple_only = (evidence["app_payment_keys"] == "payment:apple_pay").to_numpy(dtype=bool)
     summary = {"distance_m": None if distance_m is None else float(distance_m),
-               "evidence": {"ticket_machines": int(machines.sum()), "app_payment_elements": int(app.sum()),
-                            "app_payment_parking_objects": int((app & parking).sum()),
-                            "app_payment_other_objects": int((app & ~parking).sum()),
-                            "apple_pay_only_elements": int((app & apple_only).sum())},
+               "evidence": {"ticket_machines": int(machines.sum()), "app_payment_elements": int(app.sum())},
                "converted": None, "converted_spaces": None, "converted_by": None}
     if elements is not None and distance_m is not None:
         zg._require_columns(elements, ELEMENT_COLUMNS, "supply elements (run supply_elements first)")
@@ -676,8 +702,9 @@ def apply_payment_evidence(elements: gpd.GeoDataFrame, evidence: gpd.GeoDataFram
 
     A street side or street-side area free only for lack of a fee tag (reason ``no_fee_tag``, B-a) becomes ``paid``
     (reason ``payment_evidence``) when its geometry, not only its centroid, lies within ``distance_m`` (EPSG:25832,
-    ``dwithin``) of any evidence element (``payment_evidence``); ``payment_evidence`` names the evidence in the order of
-    ``PAYMENT_EVIDENCE_SOURCES`` (a ticket machine first). A street-side area or lot with an app-payment tag of its own
+    ``dwithin``) of any evidence element (``payment_evidence``: ticket machines and parking elements with an app-payment
+    tag); ``payment_evidence`` names the evidence in the order of ``PAYMENT_EVIDENCE_SOURCES`` (a ticket machine
+    first). A street-side area or lot with an app-payment tag of its own
     and no fee tag (reasons ``OWN_TAG_CONVERTIBLE_REASONS``: B-a, a disc area, B-c) becomes ``paid`` (reason
     ``app_payment_tag``). Never overridden: an explicit ``fee=no``, disc street sides (B-b), charged, not public or
     forbidden elements. The evidence adds no element and no capacity. Logs the conversions as a share of the elements
@@ -700,15 +727,14 @@ def apply_payment_evidence(elements: gpd.GeoDataFrame, evidence: gpd.GeoDataFram
     near = np.zeros(len(result), dtype=bool)
     positions = np.flatnonzero(candidates)
     if len(positions) and len(evidence):
-        # rank of every evidence element in the attribution order: 0 ticket machine, 1 app payment on a parking object,
-        # 2 app payment on any other element
+        # rank of every evidence element in the attribution order: 0 ticket machine, 1 app payment on a parking element
         machine = evidence["evidence"].str.contains("ticket_machine", regex=False).to_numpy(dtype=bool)
-        rank = np.where(machine, 0, np.where(evidence["parking_object"].to_numpy(dtype=bool), 1, 2))
+        rank = np.where(machine, 0, 1)
         tree = shapely.STRtree(np.asarray(evidence.geometry.values))
         pairs = tree.query(np.asarray(result.geometry.values)[positions], predicate="dwithin", distance=distance_m)
-        best = np.full(len(positions), 3)
+        best = np.full(len(positions), 2)
         np.minimum.at(best, pairs[0], rank[pairs[1]])
-        hit = best < 3
+        hit = best < 2
         near[positions[hit]] = True
         source[positions[hit]] = np.asarray(PAYMENT_EVIDENCE_SOURCES)[best[hit]]
     converted = own | near
@@ -720,12 +746,11 @@ def apply_payment_evidence(elements: gpd.GeoDataFrame, evidence: gpd.GeoDataFram
     own_possible = (np.isin(kinds, ("street_side_area", "lot")) & np.isin(reasons, OWN_TAG_CONVERTIBLE_REASONS))
     log.info("%s %s%s: variant T within %.0f m: %d of %d street sides and street-side areas free only for lack of a fee "
              "tag became paid (%s; %.0f of %.0f spaces), %d of %d street-side areas and lots without a fee tag by their "
-             "own app-payment tag (%.0f spaces); by ticket machine %d, app payment on a parking object %d, on another "
-             "element %d", _LOG_TAG, f"{label}, " if label else "", region, distance_m, int(near.sum()),
-             int(candidates.sum()), _share_text(near.sum() / candidates.sum() if candidates.sum() else math.nan),
-             float(spaces[near].sum()), float(spaces[candidates].sum()), int(own.sum()), int(own_possible.sum()),
-             float(spaces[own].sum()), int((source == "ticket_machine").sum()),
-             int((source == "app_payment_parking").sum()), int((source == "app_payment_other").sum()))
+             "own app-payment tag (%.0f spaces); by ticket machine %d, by an app-payment tag on a parking element %d",
+             _LOG_TAG, f"{label}, " if label else "", region, distance_m, int(near.sum()), int(candidates.sum()),
+             _share_text(near.sum() / candidates.sum() if candidates.sum() else math.nan), float(spaces[near].sum()),
+             float(spaces[candidates].sum()), int(own.sum()), int(own_possible.sum()), float(spaces[own].sum()),
+             int((source == "ticket_machine").sum()), int((source == "app_payment_parking").sum()))
     return result
 
 
@@ -1201,9 +1226,11 @@ class SupplyVariant:
         return "+".join(names) or "full"
 
     def suffix(self) -> str:
-        """File-name suffix after the parameter tag: '' (full), ``_streetonly``, ``_payment<m>m`` or both."""
+        """File-name suffix after the parameter tag: '' (full), ``_streetonly``, ``_parkingpayment<m>m`` or both. The T
+        suffix names the evidence definition of ruling R-T1c-a (parking elements only); the files ``_payment<m>m`` of
+        the superseded literal reading keep their names and are never read as T."""
         return ("_streetonly" if self.street_supply_only else "") + (
-            f"_payment{_number_text(self.payment_evidence_m)}m" if self.payment_evidence_m is not None else "")
+            f"_parkingpayment{_number_text(self.payment_evidence_m)}m" if self.payment_evidence_m is not None else "")
 
     def as_dict(self) -> dict:
         return {"label": self.label, "street_supply_only": self.street_supply_only,

@@ -181,16 +181,26 @@ acquisition:
     supply up to W plus one cell beyond the box; the capacity is spread every 5 m along lines and on a 5 m grid in
     areas; a share within 1e-9 of the threshold counts as reaching it and a supply within 1e-6 spaces of the
     minimum; the smoothing uses round joins; the inventory box is the union of the eight query boxes grown by 1 km.
-    (11) Variant T (owner decision 3): the literal reading of the pre-registered key patterns payment:app* and
-    payment:mobile* is a key starting with payment:app or payment:mobile whose value is not no, on any element
-    whatever it is, so payment:apple_pay (a wallet; 32 of the 87 app-payment elements of the inventory box carry only
-    it) and the app-payment tags of shops, cafes and charging stations count; parking ticket machines count as nodes
-    only (none is mapped as a way or an area); 'within 75 m' is the smallest distance between the geometry of the
-    side or area and the evidence, so a long side converts whole; the own-tag rule applies to street-side areas and
-    lots without a fee tag (B-a, a disc area, B-c), never to fee=no, not public, restricted or forbidden elements;
-    disc street sides (B-b) stay free; an evidence element may itself stay free (a car park with fee=no and
-    payment:app=yes, eight of them in Goslar) and still convert a street side near it. These readings were fixed from
-    a tag census of the extract (counts of keys and element types only) before any T result was computed. (12) H2
+    (11) Variant T (owner decision 3 with ruling R-T1c-a): the payment evidence is every parking ticket machine
+    (amenity=vending_machine with vending=parking_tickets, nodes only; none is mapped as a way or an area) and every
+    parking element with an app-payment key. A parking element is a parking facility (amenity=parking of any
+    geometry: street-side areas, lots and nodes; a highway way with street-parking tags parking:*) or a parking
+    payment device (vending=parking_tickets). An app-payment key starts with payment:app or payment:mobile or is a
+    named parking-app key (payment:easypark, payment:parkster, payment:paybyphone), with a value that is not no;
+    phone-wallet keys (payment:apple_pay, payment:google_pay, payment:samsung_pay and the like) and non-parking
+    elements (shops, cafes, charging stations) never count. Ruling R-T1c-a corrects a definition error of the
+    controller before the task review, not a tuning step: the first T run of Task 1c read the pre-registered pattern
+    payment:app* literally, so payment:apple_pay and the app tags of shops and charging stations counted (87 elements
+    in the inventory box against 40 now; its files *_payment75m stay as superseded evidence and are never read as T);
+    T is information only and cannot be applied, and 75 m and every other T parameter are unchanged. The only named
+    parking-app key in the inventory box is payment:paybyphone on 13 parking ticket machines (a read-only census of
+    the extract found no element with a named key in the lines or multipolygons layer), all of them in the cached
+    inventory of Task 1c, which the re-run of the T arms re-used. 'Within 75 m' is the smallest distance between the
+    geometry of the side or area and the evidence, so a long side converts whole; the own-tag rule applies to
+    street-side areas and lots without a fee tag (B-a, a disc area, B-c), never to fee=no, not public, restricted or
+    forbidden elements; disc street sides (B-b) stay free; an evidence element counts whatever its own class (the
+    Goslar car parks with payment:app=yes are paid by fee:conditional).
+    (12) H2
     (owner decision 2): the per-town minimum of 0.50 covers every town with holdout references, Braunschweig included
     (its four street-list references, recall only); the reference polygons are those of this release
     (bs_resident_stadthalle_132 without the three Parkscheininseln cut out of it); a reference of a precision town
@@ -211,14 +221,17 @@ acquisition:
     recall reaches 0.50 (ASSUMPTION Q6, the set value of Q5). Owner decision 3 added the payment evidence of variant
     T (pre-registered before any T result: a street side or street-side area free only for lack of a fee tag becomes
     paid when its geometry lies within 75 m, ASSUMPTION T-a, of a parking ticket machine, amenity=vending_machine
-    with vending=parking_tickets, or of any element with an app-payment tag; a street-side area or lot with its own
-    app-payment tag and no fee tag is paid; fee=no is never overridden; the evidence adds no capacity) and the
+    with vending=parking_tickets, or of a parking element with an app-payment tag (ruling R-T1c-a, interpretation
+    (11)); a street-side area or lot with its own app-payment tag and no fee tag is paid; fee=no is never
+    overridden; the evidence adds no capacity) and the
     street-supply variant S (off-street lots and garages leave the inventory). Seven arms of owner decisions 2 and 3
     were computed with H1 and H2 (B, S at 0.3 and 0.5, T and S+T at 0.5 and 0.3), plus the four Amendment B arms on
     the same code; only B may be applied. Run on 2026-09-30: python scripts/build_parking_zones_from_osm.py
     --supply-share --osm-extract raw_osm/niedersachsen-260929.osm.pbf with the eight --town boxes, the --reference
     outlines and the B5 inputs above, --holdout-zones parking_zones_2026.geojson --out-dir
-    raw_osm/derived_supply_share_task_1c --variant-arms --sensitivity-arms (8 min 27 s; the extract re-read once per
+    raw_osm/derived_supply_share_task_1c --variant-arms --sensitivity-arms (the T and S+T arms re-run after ruling
+    R-T1c-a from its saved inventory with --from-inventory, --osm-extract-md5, --variant-arms --arms-only
+    --variants T S+T into files *_parkingpayment75m, 88 s; the first run 8 min 27 s; the extract re-read once per
     layer with the layer filters of Task 1c, which add the payment evidence, reading times and feature counts in
     the data record parking_paid_share_2026; the supply selection is exact, so the rasters and rule
     polygons of fix round 1 are reproduced byte for byte), then assemble_parking_zones.py --supply-share-dir
@@ -235,19 +248,23 @@ acquisition:
     approximations and zone II and the southern part of zone Ia stay unzoned. H2 counts every rule area outside a
     reference as wrong, although the references are no complete maps of the paid parking in their boxes
     (wob_innenstadt, for instance, leaves out the Autostadt car parks north of the canal, inside the Wolfsburg box);
-    the pre-registered metric does not distinguish this. Every arm fails H2 as well (pooled recall / pooled precision
-    / smallest town recall): S 0.3 0.406 / 0.382 / 0.000, S 0.5 0.345 / 0.402 / 0.000 (Peine and Salzgitter have no
-    paid street supply), T 0.5 0.856 / 0.328 / 0.558, T 0.3 0.877 / 0.311 / 0.592, S+T 0.5 0.431 / 0.335 / 0.000, S+T
-    0.3 0.440 / 0.311 / 0.000; the Amendment B arms share 0.5 0.811 / 0.342 / 0.381, W 150 m 0.606 / 0.473 / 0.276, W
-    400 m 0.832 / 0.248 / 0.172, share 0.7 0.621 / 0.365 / 0.009. H1 of the information arms (recall / precision): S
-    0.3 0.848 / 0.967, S 0.5 0.609 / 0.971, T 0.5 0.893 / 0.836, T 0.3 0.961 / 0.743, S+T 0.5 0.886 / 0.913, S+T 0.3
-    0.964 / 0.787 (the Amendment B arms as in fix round 1). With eleven arms computed, a passing information arm
-    would not have validated that arm; none passed H2. Payment evidence inside the query boxes (QA columns
-    ticket_machines and app_payment_elements): parking ticket machines Braunschweig 102, Goslar 14, Wolfenbuettel 19,
-    Gifhorn 26, Wolfsburg 36, Helmstedt 9, Peine 0, Salzgitter 0; elements with an app-payment tag 23, 21, 7, 1, 5,
-    3, 1, 1. T within 75 m turns 151 street sides and street-side areas with 3,868 spaces
-    paid in Braunschweig (94 by a ticket machine, 1 by an app-payment tag on a parking object, 56 by one on another
-    element such as a shop or a charging station) and 0 to 21 elements elsewhere (column
+    the pre-registered metric does not distinguish this.
+    Every arm fails H2 as well (pooled recall / pooled precision / smallest town recall): S 0.3 0.406 / 0.382 /
+    0.000, S 0.5 0.345 / 0.402 / 0.000 (Peine and Salzgitter have no paid street supply), T 0.5 0.854 / 0.328 /
+    0.558, T 0.3 0.877 / 0.311 / 0.592, S+T 0.5 0.429 / 0.335 / 0.000, S+T 0.3 0.440 / 0.311 / 0.000 (the T arms
+    after ruling R-T1c-a); the Amendment B arms share 0.5 0.811 / 0.342 / 0.381, W 150 m 0.606 / 0.473 / 0.276, W 400
+    m 0.832 / 0.248 / 0.172, share 0.7 0.621 / 0.365 / 0.009. H1 of the information arms (recall / precision): S 0.3
+    0.848 / 0.967, S 0.5 0.609 / 0.971, T 0.5 0.893 / 0.853, T 0.3 0.958 / 0.808, S+T 0.5 0.886 / 0.941, S+T 0.3
+    0.961 / 0.885 (the Amendment B arms as in fix round 1; with the superseded literal reading of T: T 0.5 0.893 /
+    0.836, T 0.3 0.961 / 0.743, S+T 0.5 0.886 / 0.913, S+T 0.3 0.964 / 0.787, H2 of the T arms nearly unchanged,
+    because the conversions of the four precision towns rest on ticket machines in both readings). With eleven arms
+    computed, a passing information arm would not have validated that arm; none passed H2. Payment evidence inside
+    the query boxes after ruling R-T1c-a (QA columns ticket_machines and app_payment_elements, from the arm T at
+    0.3): parking ticket machines Braunschweig 102, Goslar 14, Wolfenbuettel 19, Gifhorn 26, Wolfsburg 36, Helmstedt
+    9, Peine 0, Salzgitter 0; parking elements with an app-payment tag 13, 19, 0, 0, 3, 3, 0, 0 (the literal reading
+    counted 23, 21, 7, 1, 5, 3, 1, 1). T within 75 m turns 94 street sides and street-side areas with 2,288 spaces
+    paid in Braunschweig, all by a ticket machine (the literal reading: 151 with 3,868 spaces, 56 of them through the
+    app tags of shops, cafes or charging stations), and 0 to 21 elements elsewhere, all by ticket machines (column
     payment_evidence_paid_elements).
     The committed QA table parking_zones_2026_supply_share_qa.csv (since Task 1c the assembly run above; its header
     defines every column) holds per town the element counts per class, the cross-check, the tagged vs heuristic

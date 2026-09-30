@@ -75,12 +75,14 @@ holdout town (``supply_share.HOLDOUT_REFERENCE_ZONES``) gets the overlaps of the
 precision in the frame of the town's query box for the four towns of ``HOLDOUT_PRECISION_TOWNS``), and once every
 holdout town of an arm is run the pooled H2 is logged (``holdout_pooled_metrics``; the assembly re-applies it). The
 inventory also holds the payment evidence of variant T (``SUPPLY_LAYER_FILTERS``, ``inventory_evidence``: parking ticket
-machines and every element with an app-payment tag; an inventory read before Task 1c has none and is refused for T);
-its counts inside the query box are in every QA file (``payment_evidence``). ``--variant-arms`` adds the information
-arms ``supply_share.VARIANT_ARMS`` (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at 0.5 and 0.3; tag suffixes
-``_streetonly`` and ``_payment75m``), ``--sensitivity-arms`` the Amendment B arms ``supply_share.AMENDMENT_B_ARMS``
-(its pre-registered share 0.5 and the B5 arms W 150 / 400 m and share 0.7), ``--arms-only`` skips the chosen parameters.
-The Overpass cross-check always compares the B1 classification of the full inventory.
+machines and every parking element with an app-payment tag, ruling R-T1c-a; an inventory read before Task 1c has none
+and is refused for T, one read with other layer filters is warned about); its counts and conversions inside the query
+box are in the QA file of every T arm (``payment_evidence``). ``--variant-arms`` adds the information arms
+``supply_share.VARIANT_ARMS`` (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at 0.5 and 0.3; tag suffixes ``_streetonly``
+and ``_parkingpayment75m``; ``--variants`` restricts them to some variants), ``--sensitivity-arms`` the Amendment B arms
+``supply_share.AMENDMENT_B_ARMS`` (its pre-registered share 0.5 and the B5 arms W 150 / 400 m and share 0.7),
+``--arms-only`` skips the chosen parameters. The Overpass cross-check always compares the B1 classification of the full
+inventory.
 
 Example::
 
@@ -665,9 +667,10 @@ def run_regulation(payload: dict, *, ags: str, out_dir: Path, raw_name: str, bbo
 
 # --------------------------------------------------------------------------- supply-share mode (v2 Amendment B, #436)
 
-#: OGR SQL pre-filter of the payment evidence of variant T (owner decision 3): an HSTORE key starting with
-#: ``payment:app`` or ``payment:mobile`` (``supply_share.app_payment_keys`` checks the tags exactly).
-PAYMENT_EVIDENCE_FILTER = "other_tags LIKE '%\"payment:app%' OR other_tags LIKE '%\"payment:mobile%'"
+#: OGR SQL pre-filter of the payment evidence of variant T (owner decision 3, ruling R-T1c-a): an HSTORE key starting
+#: with one of ``supply_share.APP_PAYMENT_KEY_PREFIXES`` (``supply_share.app_payment_keys`` and ``is_parking_element``
+#: check the tags exactly).
+PAYMENT_EVIDENCE_FILTER = " OR ".join(f"other_tags LIKE '%\"{prefix}%'" for prefix in supply_share.APP_PAYMENT_KEY_PREFIXES)
 #: OGR SQL pre-filters of the three GDAL OSM layers read for the supply inventory (``read_supply_inventory``); they
 #: keep a superset of the elements of the regulation query (``REGULATION_STATEMENTS``), which ``inventory_frames``
 #: selects exactly: kerbside streets, every other highway way with a ``parking:*`` key, every ``amenity=parking``
@@ -1111,10 +1114,10 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
                                       parameters.minimum_island_m2, cell_m=parameters.cell_m, label=ags)
     paid = supply_share.paid_cells(raster, parameters.share_threshold)
     payment = None
-    if evidence is not None:
-        payment = supply_share.summarise_payment_evidence(
-            evidence[evidence.intersects(query).to_numpy()],
-            elements[in_box] if variant.payment_evidence_m is not None else None, variant.payment_evidence_m)
+    if variant.payment_evidence_m is not None:
+        # the payment evidence belongs to variant T: its counts and conversions inside the query box
+        payment = supply_share.summarise_payment_evidence(evidence[evidence.intersects(query).to_numpy()],
+                                                          elements[in_box], variant.payment_evidence_m)
     qa = {"ags": ags, "parameters": parameters.as_dict(), "tag": arm.tag(), "variant": variant.as_dict(),
           "counterfactual": counterfactual, "bbox": list(bbox),
           "bounds_m": [round(value, 1) for value in bounds], "osm_timestamp": meta["osm_timestamp"],
@@ -1165,12 +1168,13 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
 
 def _arms(args) -> list:
     """The arms of an invocation: the chosen parameters (default: owner decision 2, share 0.3) on the full inventory,
-    unless ``--arms-only``, plus ``AMENDMENT_B_ARMS`` (``--sensitivity-arms``) and ``VARIANT_ARMS`` (``--variant-arms``)."""
+    unless ``--arms-only``, plus ``AMENDMENT_B_ARMS`` (``--sensitivity-arms``) and ``VARIANT_ARMS`` (``--variant-arms``,
+    restricted to the variant labels of ``--variants`` when given)."""
     chosen = supply_share.SupplyArm(supply_share.SupplyShareParameters(
         walk_m=args.walk_m, share_threshold=args.share_threshold, minimum_usable_spaces=args.minimum_usable_spaces))
     arms = [] if args.arms_only else [chosen]
-    for flag, extra in ((args.sensitivity_arms, supply_share.AMENDMENT_B_ARMS),
-                        (args.variant_arms, supply_share.VARIANT_ARMS)):
+    variant_arms = [arm for arm in supply_share.VARIANT_ARMS if not args.variants or arm.variant.label in args.variants]
+    for flag, extra in ((args.sensitivity_arms, supply_share.AMENDMENT_B_ARMS), (args.variant_arms, variant_arms)):
         if flag:
             arms += [arm for arm in extra if arm not in arms]
     if not arms:
@@ -1268,12 +1272,19 @@ def run_supply_share(args) -> int:
     ways, objects = inventory_frames(layers)
     # the payment evidence of variant T exists only in an inventory read with the layer filters of Task 1c
     evidence = inventory_evidence(layers) if meta.get("payment_evidence") else None
+    runs_t = any(arm.variant.payment_evidence_m is not None for arm in arms)
     if evidence is None:
         log.warning("[parking-supply] the inventory %s was read without the payment evidence (before Task 1c): no "
                     "evidence counts, variant T cannot run", meta.get("file"))
-        if any(arm.variant.payment_evidence_m is not None for arm in arms):
+        if runs_t:
             raise SystemExit(f"variant T needs an inventory read with the payment evidence; {meta.get('file')} has none "
                              "(re-read the extract with --osm-extract)")
+    elif runs_t and meta.get("layer_filters") != SUPPLY_LAYER_FILTERS:
+        changed = sorted(layer for layer, where in SUPPLY_LAYER_FILTERS.items()
+                         if (meta.get("layer_filters") or {}).get(layer) != where)
+        log.warning("[parking-supply] the inventory %s was read with other layer filters (%s differ from the current "
+                    "ones): payment evidence that only the current filters select is missing from it; confirm by a "
+                    "census that no such element exists before relying on variant T", meta.get("file"), changed)
     holdout = holdout_references(args.holdout_zones, towns) if holdout_towns else {}
     b5_inputs = None
     if b5_needed:
@@ -1374,6 +1385,8 @@ def main(argv=None) -> int:
                              "evidence within 75 m) at 0.5 and 0.3 and S+T at 0.5 and 0.3 (owner decisions 2 and 3)")
     supply.add_argument("--arms-only", action="store_true",
                         help="with --sensitivity-arms or --variant-arms: run only the arms")
+    supply.add_argument("--variants", nargs="+", choices=sorted({arm.variant.label for arm in supply_share.VARIANT_ARMS}),
+                        help="with --variant-arms: run only the information arms of these variants (default all)")
     supply.add_argument("--counterfactual", choices=sorted(SUPPLY_COUNTERFACTUAL_SUFFIXES),
                         help="POST HOC diagnostic: yes_sides_no_information reads parking:<side>=yes as no parking "
                              "information (files tagged '_yesnoinfo', never a release input)")

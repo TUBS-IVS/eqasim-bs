@@ -462,12 +462,14 @@ def test_default_share_is_the_owners_0_3_and_every_output_name_carries_it():
     assert arms == {"w150_t0.5_u50_c25_s12.5_i10000", "w400_t0.5_u50_c25_s12.5_i10000",
                     "w250_t0.3_u50_c25_s12.5_i10000", "w250_t0.7_u50_c25_s12.5_i10000"}
     # B is the default arm; the information arms of owner decisions 2 and 3 (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
-    # 0.5 and 0.3) carry their share and their inventory variant in the name, so no arm shares a file with B
+    # 0.5 and 0.3) carry their share and their inventory variant in the name, so no arm shares a file with B; T names
+    # its evidence definition of ruling R-T1c-a (parking elements only), never a file of the superseded _payment75m
     assert ss.DEFAULT_ARM.tag() == ss.DEFAULT_SUPPLY_PARAMETERS.tag()
     assert [arm.tag() for arm in ss.VARIANT_ARMS] == [
         "w250_t0.3_u50_c25_s12.5_i10000_streetonly", "w250_t0.5_u50_c25_s12.5_i10000_streetonly",
-        "w250_t0.5_u50_c25_s12.5_i10000_payment75m", "w250_t0.3_u50_c25_s12.5_i10000_payment75m",
-        "w250_t0.5_u50_c25_s12.5_i10000_streetonly_payment75m", "w250_t0.3_u50_c25_s12.5_i10000_streetonly_payment75m"]
+        "w250_t0.5_u50_c25_s12.5_i10000_parkingpayment75m", "w250_t0.3_u50_c25_s12.5_i10000_parkingpayment75m",
+        "w250_t0.5_u50_c25_s12.5_i10000_streetonly_parkingpayment75m",
+        "w250_t0.3_u50_c25_s12.5_i10000_streetonly_parkingpayment75m"]
     with pytest.raises(ValueError, match="share_threshold"):
         ss.SupplyShareParameters(share_threshold=1.5)
     with pytest.raises(ValueError, match="payment_evidence_m"):
@@ -550,6 +552,31 @@ def _osm_objects(rows) -> gpd.GeoDataFrame:
                              "tags": [dict(row[3]) for row in rows]}, geometry=[row[2] for row in rows], crs=METRIC_CRS)
 
 
+@pytest.mark.parametrize("osm_type, tags, evidence", [
+    # ruling R-T1c-a: only parking elements with an app-payment key (payment:app*, payment:mobile*, a named
+    # parking-app key) count; phone wallets never count, non-parking elements never count
+    ("node", {"shop": "bakery", "payment:apple_pay": "yes"}, False),
+    ("node", {"shop": "supermarket", "payment:app": "yes"}, False),
+    ("node", {"amenity": "charging_station", "payment:app": "yes"}, False),
+    ("way", {"amenity": "parking", "parking": "surface", "payment:app": "yes"}, True),
+    ("way", {"amenity": "parking", "parking": "surface", "payment:app": "no"}, False),
+    ("way", {"amenity": "parking", "parking": "surface", "payment:apple_pay": "yes"}, False),
+    ("way", {"amenity": "parking", "parking": "street_side", "payment:easypark": "yes"}, True),
+    ("node", {"amenity": "parking", "payment:mobile_phone": "yes"}, True),
+    ("way", {"highway": "residential", "parking:right": "lane", "payment:app": "yes"}, True),
+    ("way", {"highway": "residential", "payment:app": "yes"}, False),
+    # a parking payment device, also when it is no node (as ticket machine only nodes count)
+    ("way", {"amenity": "vending_machine", "vending": "parking_tickets", "payment:app": "yes"}, True),
+    ("way", {"amenity": "vending_machine", "vending": "parking_tickets"}, False),
+    ("node", {"amenity": "vending_machine", "vending": "parking_tickets"}, True),
+], ids=["wallet_on_shop", "app_on_shop", "app_on_charging_station", "app_on_parking_area", "app_no_on_parking_area",
+        "wallet_on_parking_area", "named_app_on_street_side_area", "mobile_on_parking_node", "app_on_parking_street",
+        "app_on_street_without_parking_tags", "app_on_ticket_machine_way", "ticket_machine_way", "ticket_machine_node"])
+def test_app_payment_evidence_needs_a_parking_element_and_never_a_phone_wallet(osm_type, tags, evidence):
+    geometry = Point(X0, Y0) if osm_type == "node" else _line(0, 0, 50, 0) if "highway" in tags else _box(0, 0, 10, 10)
+    assert len(ss.payment_evidence(_osm_objects([(osm_type, 7, geometry, tags)]))) == int(evidence)
+
+
 def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
     machine = {"amenity": "vending_machine", "vending": "parking_tickets;public_transport_tickets"}
     ways = [(_line(50, 0, 50, 400), _street(**{"parking:both": "lane"})),   # 1: 50 m away at its end, centroid 206 m
@@ -558,7 +585,7 @@ def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
             (_line(-100, -10, -20, -10), _street(**{"parking:both": "lane",
                                                    "parking:both:authentication:disc": "yes"})),  # 4: disc, B-b
             (_line(500, 50, 520, 50), _street(**{"parking:right": "lane"})),  # 5: 30 m from the fee=no lot 201
-            (_line(700, 0, 750, 0), _street(**{"parking:right": "lane"}))]  # 6: 20 m from a shop with payment:apple_pay
+            (_line(700, 0, 750, 0), _street(**{"parking:right": "lane"}))]  # 6: 20 m from a shop with app tags
     areas = [(_box(0, 60, 10, 70), _area())]                                 # 100: 60 m from the machine
     lots = [(_box(300, 300, 320, 320), _lot(**{"payment:app": "yes"})),       # 200: app payment, no fee tag
             (_box(500, 0, 520, 20), _lot(fee="no", **{"payment:app": "yes"})),  # 201: app payment and fee=no
@@ -567,18 +594,19 @@ def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
     osm = _osm_objects([("node", 1, Point(X0, Y0), machine),
                         ("node", 2, Point(X0 - 50, Y0 - 60), {"amenity": "vending_machine", "vending": "cigarettes"}),
                         ("node", 3, Point(X0 - 100, Y0 - 70), {"shop": "bakery", "payment:app": "no"}),
-                        # the literal reading of the pre-registered key pattern payment:app* (data record)
-                        ("node", 4, Point(X0 + 725, Y0 + 20), {"shop": "bakery", "payment:apple_pay": "yes"}),
+                        # no parking element, and a phone wallet: no evidence (ruling R-T1c-a)
+                        ("node", 4, Point(X0 + 725, Y0 + 20), {"shop": "bakery", "payment:app": "yes",
+                                                               "payment:apple_pay": "yes"}),
                         ("way", 200, _box(300, 300, 320, 320), lots[0][1]), ("way", 201, _box(500, 0, 520, 20), lots[1][1])])
     assert ss.is_parking_ticket_machine(machine) and not ss.is_parking_ticket_machine(osm["tags"].iloc[1])
     evidence = ss.payment_evidence(osm)
-    assert sorted(zip(evidence["osm_type"], evidence["osm_id"])) == [("node", 1), ("node", 4), ("way", 200), ("way", 201)]
+    assert sorted(zip(evidence["osm_type"], evidence["osm_id"])) == [("node", 1), ("way", 200), ("way", 201)]
     paid = ss.variant_elements(elements, ss.PAYMENT_EVIDENCE, evidence).set_index("element_id")
     expected = {"way/1:left": ("paid", "payment_evidence", "ticket_machine"),
                 "way/1:right": ("paid", "payment_evidence", "ticket_machine"),
                 "way/2:left": ("free", "no_fee_tag", ""), "way/3:left": ("free", "fee_no", ""),
                 "way/4:left": ("free", "disc", ""), "way/5:right": ("paid", "payment_evidence", "app_payment_parking"),
-                "way/6:right": ("paid", "payment_evidence", "app_payment_other"),
+                "way/6:right": ("free", "no_fee_tag", ""),
                 "way/100": ("paid", "payment_evidence", "ticket_machine"),
                 "way/200": ("paid", "app_payment_tag", "own_app_payment_tag"), "way/201": ("free", "fee_no", ""),
                 "way/202": ("excluded", "no_fee_tag_offstreet", "")}
@@ -838,11 +866,8 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     # H2 in Braunschweig: recall over the four street-list references only, no precision frame
     assert sorted(qa["holdout"]["references"]) == sorted(ss.HOLDOUT_REFERENCE_ZONES["03101000"])
     assert 0.0 <= qa["holdout"]["recall"] <= 1.0 and qa["holdout"]["precision"] is None
-    # the payment evidence of the box is counted in every run (the ticket machine 40, the area 603), applied in T only
-    assert qa["payment_evidence"]["evidence"] == {"ticket_machines": 1, "app_payment_elements": 1,
-                                                  "app_payment_parking_objects": 1, "app_payment_other_objects": 0,
-                                                  "apple_pay_only_elements": 0}
-    assert qa["payment_evidence"]["converted"] is None
+    # the payment evidence belongs to variant T: B carries none
+    assert qa["payment_evidence"] is None
     assert qa["supply"]["elements_by_kind_and_class"] == {
         "street_side": {"paid": 2, "restricted": 2, "free": 4, "excluded": 6},
         "street_side_area": {"paid": 0, "restricted": 0, "free": 1, "excluded": 0},
@@ -889,23 +914,28 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     with pytest.raises(SystemExit, match="payment evidence"):
         main(common + ["--from-inventory", str(tmp_path / "old_inventory.gpkg"), "--variant-arms", "--arms-only"])
     assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in ss.VARIANT_ARMS)
-    # the information arms S, T and S+T: their own tagged files; S drops the lots, T turns the service way 507 (11 m
-    # from the ticket machine 40) paid and the street-side area 603 by its own payment:app tag; the free side of way 509
-    # lies 89 m away and way 504 carries fee=no
-    assert main(common + inventory + ["--variant-arms", "--arms-only"]) == 0
+    # the information arms S, T and S+T: their own tagged files (run one variant at a time with --variants); S drops
+    # the lots, T turns the service way 507 (11 m from the ticket machine 40) paid and the street-side area 603 by its
+    # own payment:app tag; the free side of way 509 lies 89 m away and way 504 carries fee=no
+    assert main(common + inventory + ["--variant-arms", "--arms-only", "--variants", "S"]) == 0
+    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in ss.VARIANT_ARMS
+                   if arm.variant.payment_evidence_m is not None)
+    assert main(common + inventory + ["--variant-arms", "--arms-only", "--variants", "T", "S+T"]) == 0
     arms = {arm.tag(): json.loads((out / f"03101000_supply_qa_{arm.tag()}.json").read_text(encoding="utf-8"))
             for arm in ss.VARIANT_ARMS}
     street = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.STREET_SUPPLY_ONLY).tag()]
-    assert street["variant"] == ss.STREET_SUPPLY_ONLY.as_dict()
+    assert street["variant"] == ss.STREET_SUPPLY_ONLY.as_dict() and street["payment_evidence"] is None
     assert street["supply"]["elements_by_kind_and_class"]["lot"] == {name: 0 for name in ss.SUPPLY_CLASSES}
     payment = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE).tag()]
     assert payment["supply"]["elements_by_kind_and_class"] == {
         "street_side": {"paid": 3, "restricted": 2, "free": 3, "excluded": 6},
         "street_side_area": {"paid": 1, "restricted": 0, "free": 0, "excluded": 0},
         "lot": {"paid": 2, "restricted": 0, "free": 1, "excluded": 1}}
+    # the payment evidence of the box (the ticket machine 40, the area 603; the bakery 41 has payment:app=no)
+    assert payment["payment_evidence"]["evidence"] == {"ticket_machines": 1, "app_payment_elements": 1}
     assert payment["payment_evidence"]["converted"] == {"street_side": 1, "street_side_area": 1, "lot": 0}
     assert payment["payment_evidence"]["converted_by"] == {"ticket_machine": 1, "app_payment_parking": 0,
-                                                           "app_payment_other": 0, "own_app_payment_tag": 1}
+                                                           "own_app_payment_tag": 1}
     # the cross-check stays the B1 classification of the extract in every arm
     assert payment["cross_check"] == qa["cross_check"] and qa_path.read_bytes() == before
     # G1: the POST HOC counterfactual (yes sides as no information) writes its own tagged files, named in the QA,
@@ -932,10 +962,11 @@ BS, GS, WOB, SZ, PE, HE = "03101000", "03153017", "03103000", "03102000", "03157
 MD5 = "0c513947b19145d84afb0b3bc36d95f5"
 #: synthetic supply of each town placed apart, because the release holds one row per cell
 SHIFTS = {BS: 0.0, GS: 10_000.0, WOB: 20_000.0, SZ: 30_000.0, PE: 40_000.0, HE: 50_000.0}
-NO_EVIDENCE = {"distance_m": None, "evidence": {"ticket_machines": 2, "app_payment_elements": 1,
-                                                "app_payment_parking_objects": 1, "app_payment_other_objects": 0,
-                                                "apple_pay_only_elements": 0},
-               "converted": None, "converted_spaces": None, "converted_by": None}
+#: the arm T at the default share, whose QA carries the payment evidence of the QA table
+T_ARM = ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE)
+T_EVIDENCE = {"distance_m": 75.0, "evidence": {"ticket_machines": 2, "app_payment_elements": 1},
+              "converted": {"street_side": 3, "street_side_area": 1, "lot": 0}, "converted_spaces": 40.0,
+              "converted_by": {"ticket_machine": 3, "app_payment_parking": 1, "own_app_payment_tag": 0}}
 
 
 def _holdout_block(ags: str, recall: float, precision: float) -> dict:
@@ -950,7 +981,7 @@ def _holdout_block(ags: str, recall: float, precision: float) -> dict:
 
 
 def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=None, reference=None, holdout=None,
-                         arm=ss.DEFAULT_ARM) -> None:
+                         arm=ss.DEFAULT_ARM, payment=None) -> None:
     """The files of ``build_parking_zones_from_osm.py --supply-share`` for one town and arm, on a small synthetic
     supply (placed per town, because the release holds one row per cell and the real town boxes are disjoint)."""
     shift = SHIFTS[ags]
@@ -963,7 +994,7 @@ def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=No
                             geometry=list(rule_parts), crs=METRIC_CRS)
     tag, parameters = arm.tag(), arm.parameters
     document = {"ags": ags, "parameters": parameters.as_dict(), "tag": tag, "variant": arm.variant.as_dict(),
-                "holdout": holdout, "payment_evidence": NO_EVIDENCE, "bbox": [52.2, 10.5, 52.3, 10.6],
+                "holdout": holdout, "payment_evidence": payment, "bbox": [52.2, 10.5, 52.3, 10.6],
                 "osm_timestamp": SNAPSHOT, "extract": {"file": "niedersachsen-260929.osm.pbf", "md5": MD5,
                                                        "sha256": "c2b33b84", "bytes": 506480293},
                 "supply": ss.summarise_supply(elements), "street_ways": 1,
@@ -1010,6 +1041,8 @@ def _assemble(assembly, directory: Path, recall: float, precision: float, *, hol
                                          _box(5000, 5000, 5200, 5200)], validation=validation,
                          reference={"path": "annex.geojson", "core_share_inside_reference": 0.8,
                                     "reference_share_covered": 0.2, "largest_outline_distance_m": 900.0},
+                         holdout=_holdout_block(BS, holdout_recall, holdout_precision))
+    _write_supply_inputs(directory, BS, [_box(100, 100, 900, 800)], arm=T_ARM, payment=T_EVIDENCE,
                          holdout=_holdout_block(BS, holdout_recall, holdout_precision))
     _write_supply_inputs(directory, GS, [_box(20_100, -39_900, 20_900, -39_100)])
     _write_supply_inputs(directory, WOB, [_box(17_100, 20_100, 17_300, 20_300)],
@@ -1080,7 +1113,10 @@ def test_b6_applies_the_rule_polygons_when_h1_and_h2_pass(assembly, tmp_path):
     assert (qa.loc[BS, "holdout_recall"], qa.loc[BS, "holdout_precision"]) == ("0.800000", "")
     assert (qa.loc[WOB, "holdout_references"], qa.loc[WOB, "holdout_precision"]) == ("wob_innenstadt", "0.900000")
     assert qa.loc[GS, ["holdout_references", "holdout_recall", "h2_passed"]].tolist() == ["", "", ""]
-    assert (qa.loc[BS, "ticket_machines"], qa.loc[BS, "app_payment_elements"]) == ("2", "1")
+    # the payment evidence comes from the arm T at the default share (Goslar ran no T arm)
+    assert (qa.loc[BS, "ticket_machines"], qa.loc[BS, "app_payment_elements"],
+            qa.loc[BS, "payment_evidence_paid_elements"]) == ("2", "1", "4")
+    assert qa.loc[GS, ["ticket_machines", "app_payment_elements"]].tolist() == ["", ""]
     document = json.loads((tmp_path / "zones.geojson").read_text(encoding="utf-8"))
     assert "osm_supply_majority" in document["license"] and "OpenStreetMap contributors" in document["attribution"]
     text = (tmp_path / "qa.csv").read_text(encoding="utf-8")
