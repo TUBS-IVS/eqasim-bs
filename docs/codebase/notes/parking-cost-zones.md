@@ -30,19 +30,25 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    tariffs become the tariff model `<prefix>parking_tariffs_<parking_tariff_snapshot_date>.json`
    (`tariff_export.build_tariff_model`: integer cents and seconds, the rendered `ASSUMPTIONS_REGISTER`, the release
    `sources`), `braunschweig.matsim.config_modules.write_module` adds the module `braunschweigParking` (`enabled`,
-   `tariffsPath` relative to the config, `terminalStayRule`) to the final config, and
-   `<prefix>parking_inputs_report.json` lists the files. `matsim.output.copy_parking_inputs` copies the listed files
-   next to the exported config and raises for a missing one.
+   `tariffsPath` relative to the config, `terminalStayRule`, and `minimumStayMinutes` from
+   `parking_minimum_stay_min` in plain digits) to the final config, and `<prefix>parking_inputs_report.json` lists
+   the files and records the terminal-stay rule and the minimum stay. `_check_parking_parameters` rejects at
+   configure time a minimum stay that is not a whole number in `[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]` (its seconds
+   must fit a Java int), a bool included. `matsim.output.copy_parking_inputs` copies the listed files next to the
+   exported config and raises for a missing one.
 4. Java (eqasim-java-bs, `org.eqasim.braunschweig.parking`): `BraunschweigConfigurator.updateConfig` switches the
    car cost model to `ZoneParkingCarCostModel` when the module is enabled. `ParkingModule` reads the model into
    `ParkingTariffs` and binds `ParkingPopulationCheck`, which fails the run at controller start for an unknown zone
    id, a resident zone of another type, `parkingFree` without a zone, any legacy `isParis` attribute or a mistyped
-   parking attribute, and logs the coverage in one `[parking] population:` line. `ZoneParkingCarCostModel` prices
-   the stay at each car trip's destination with `ParkingCostCalculator` and adds it to the driving cost;
-   `ParkingOutcomeCounter` counts one `ParkingOutcome` per pricing call and `ParkingOutcomeReportListener` writes
+   parking attribute, and logs the coverage in one `[parking] population:` line. `ZoneParkingCarCostModel` extends
+   the stay at each car trip's destination to the minimum stay (`ParkingCostCalculator.minimumStayDeparture_s`,
+   after the terminal-stay rule for a terminal stay; 0 min when the module has no `minimumStayMinutes`), prices it
+   with `ParkingCostCalculator` and adds it to the driving cost; `ParkingOutcomeCounter` counts one `ParkingOutcome`
+   per pricing call and the stays the minimum extended, and `ParkingOutcomeReportListener` writes
    `ITERS/it.N/N.parking_outcomes.csv` (columns `outcome`, `count`, `share`; one row per outcome, zero counts
-   included) and one `[parking]` log line per iteration. The counts are pricing calls, one per car alternative that
-   mode choice priced, chosen or not: not distinct trips or persons.
+   included) and one `[parking]` log line per iteration, logs the active minimum stay once at startup and, per
+   iteration, how many priced stays in a zone the minimum extended. The counts are pricing calls, one per car
+   alternative that mode choice priced, chosen or not: not distinct trips or persons.
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
    the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
    config enables `braunschweigParking`, `require_parking_package` refuses a jar without
@@ -70,7 +76,9 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   Java `ParkingOutcome` enum, and a golden case. Never price silently; an unknown zone id raises in Python and in
   Java.
 - `braunschweig.parking.cost` is the reference; the Java `ParkingCostCalculator` must agree with it on the golden
-  cases. After changing the fixture table, the golden cases or the export, re-run
+  cases and on the eight minimum-stay cases L01 to L08, which both sides hard-code on the fixture tariffs
+  (`tests/test_parking_cost.py`, Java `ParkingCostCalculatorTest`) instead of reading them from the golden JSON.
+  After changing the fixture table, the golden cases or the export, re-run
   `python scripts/export_parking_golden_cases.py` and copy `parking_golden_cases.json` and
   `parking_tariffs_fixture.json` into the Java test resources (eqasim-java-bs
   `braunschweig/src/test/resources/parking/`).
@@ -89,7 +97,9 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 - The seed offset `PARKING_FREE_SEED_OFFSET` (7371) must stay unused by every other seeded stream.
 - Assumption parameters live in `configs/base_bs.yml` under `parking_*`; the two popsim fixture configurations
   carry the same block, pinned equal by `tests/test_popsim_config_parity.py`. A change of an assumption needs an
-  ADR amendment and an update of `ASSUMPTIONS_REGISTER`.
+  ADR amendment and an update of `ASSUMPTIONS_REGISTER`, except the minimum stay L1 (`parking_minimum_stay_min`):
+  a run parameter that travels in the `braunschweigParking` module and the inputs report, not in the register, so
+  the tariff model JSON does not change with it.
 
 ## Known limitations
 

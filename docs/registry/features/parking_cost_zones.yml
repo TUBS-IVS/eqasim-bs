@@ -8,7 +8,10 @@ description: >-
   member and guest day products, and the resident exemption of resident zones. Outside every zone
   parking is free (assumption Z1; the coverage register parking_coverage_register_2026 states the status
   of every municipality). Work and education parking is free for a share of persons per workplace class
-  equal to the SrV 2023 free share among car commuters (assumption A1). The Java car cost model adds the
+  equal to the SrV 2023 free share among car commuters (assumption A1). Every priced stay lasts at least
+  L = parking_minimum_stay_min minutes (assumption L1, 15 by default, 0 prices as before L1), so the stay of
+  a car that arrives after the planned end of its activity is priced for L minutes instead of none; the rule
+  changes the price only, never the simulated timing. The Java car cost model adds the
   parking cost to the driving cost behind the existing eqasim car cost model seam; the car utility and its
   coefficients are unchanged. Replaces the legacy 8 km ring (feature urban_parking) when
   parking_zones_enabled is on; the two flags are mutually exclusive (ADR-0139).
@@ -93,7 +96,9 @@ evidence:
       parking attributes and logs the plans' zone coverage in one [parking] population line. During the run
       every pricing call is counted by outcome (ITERS/it.N/N.parking_outcomes.csv and one [parking] log line
       per iteration); the counts are pricing calls, one per car alternative that mode choice evaluated,
-      chosen or not, and version 1 reports the mix without a threshold. When the prepared config enables
+      chosen or not, and version 1 reports the mix without a threshold. The Java ParkingOutcomeReportListener
+      also logs the active minimum stay (L1) once at startup and per iteration how many priced stays in a
+      zone it extended, likewise per pricing call. When the prepared config enables
       the braunschweigParking module, matsim.simulation.run refuses a jar without the Java parking package
       before the run and a run whose last iteration wrote no outcome report after it
       (braunschweig.parking.runtime_checks), so a zones-prepared scenario cannot run unpriced.
@@ -126,7 +131,8 @@ assessment:
   by: null
   date: null
   pending_reason: >-
-    Owner review of the 25 % legacy-vs-zones A/B, which is still to run on the server, and of the
+    Owner review of the 25 % legacy-vs-zones A/B (with the L1 arms parking_minimum_stay_min 0 and 30 next
+    to the default 15), which is still to run on the server, and of the
     production flip of parking_zones_enabled to true, which is part of the reviewed branch although the
     design had planned it for after the A/B; the owner decides the flip at PR review. The two popsim
     fixture configurations follow the flip with the parking block of configs/base_bs.yml

@@ -48,6 +48,7 @@ code paths:
    the free threshold pay 0; above the maximum stay the long-stay product is due (M1); otherwise the first period
    is charged once and the rest in started billing units at the hourly rate, rounded half up to the cent and capped
    by the day cap. A trip to the plan's last activity pays until the fee window of the arrival day ends (T1).
+   Every priced stay lasts at least the minimum parked duration of decision 9 (L1), applied before these rules.
    Outside every zone parking is free (Z1); an unknown zone id raises.
 3. **Free parking at work and education (D3).** `parkingFree` is drawn once per person for the person's work and
    education activities in `street_paid` and `resident_zone` zones, with P(free | workplace class) =
@@ -60,9 +61,9 @@ code paths:
 5. **Coupling (D5).** `org.eqasim.braunschweig.parking.ZoneParkingCarCostModel` returns the driving cost plus the
    parking cost behind the existing `@Named("car") CostModel` seam: no logsum, no second cost coefficient, no
    search, no cache, no plan mutation; car passengers pay nothing, as before. The preparation stage writes the MATSim
-   module `braunschweigParking` (`enabled`, `tariffsPath`, `terminalStayRule`) next to the tariff model JSON, and
-   `BraunschweigConfigurator.updateConfig` switches the car cost model name only when the module is enabled, so an
-   absent module keeps the legacy names (the `vrbFare` pattern of ADR-0133).
+   module `braunschweigParking` (`enabled`, `tariffsPath`, `terminalStayRule`, `minimumStayMinutes`) next to the
+   tariff model JSON, and `BraunschweigConfigurator.updateConfig` switches the car cost model name only when the
+   module is enabled, so an absent module keeps the legacy names (the `vrbFare` pattern of ADR-0133).
 6. **Configuration (D6).** Two explicit flags in `configs/base_bs.yml`, mutually exclusive:
 
    | `parking_zones_enabled` | `enable_urban_parking` | Behaviour |
@@ -72,20 +73,24 @@ code paths:
    | true | false | ZONES: this decision, the canonical configuration of the reviewed branch |
    | true | true | configure-time error: ring fees and zone tariffs must never be combined |
 
-   The seven parameters `parking_zones_path`, `parking_tariffs_path`, `parking_coverage_register_path`,
-   `parking_workplace_shares_path`, `parking_tariff_snapshot_date`, `parking_workplace_free_share_shift` and
-   `parking_terminal_stay_rule` are set explicitly in `configs/base_bs.yml`, which holds their values. The design
-   had planned the flip to ZONES for after the 25 % A/B; it is part of the reviewed branch instead, and the owner
-   decides it at PR review.
+   The eight parameters `parking_zones_path`, `parking_tariffs_path`, `parking_coverage_register_path`,
+   `parking_workplace_shares_path`, `parking_tariff_snapshot_date`, `parking_workplace_free_share_shift`,
+   `parking_terminal_stay_rule` and `parking_minimum_stay_min` are set explicitly in `configs/base_bs.yml`, which
+   holds their values. The design had planned the flip to ZONES for after the 25 % A/B; it is part of the reviewed
+   branch instead, and the owner decides it at PR review.
 7. **Observability (D7).** The attach functions log their coverage as rates under `[parking]`, and zones present
    without a single activity inside raise (a broken join or CRS, not a population that never parks there). At
    controller start `ParkingPopulationCheck` fails the run for plans with unknown zone ids, legacy `isParis`
    attributes or mistyped parking attributes and logs the plans' zone coverage. During the run every pricing call is
    counted by outcome (`ITERS/it.N/N.parking_outcomes.csv` and one `[parking]` log line per iteration). Version 1
-   reports the mix and has no failure threshold. Because MATSim reads the module of a jar without the parking
-   package as an untyped group, `matsim.simulation.run` refuses a run whose prepared config enables the module when
-   the jar lacks `org.eqasim.braunschweig.parking` or when the last iteration wrote no outcome report
-   (`braunschweig.parking.runtime_checks`).
+   reports the mix and has no failure threshold. `ParkingOutcomeReportListener` also logs the active minimum stay
+   of decision 9 once at startup and, per iteration, how many priced stays in a zone it extended
+   (`[parking] it N: minimum stay L min extended e of p priced stays (x %)`); like the outcome counts these are
+   pricing calls of car alternatives, and a stay counts when it is shorter than L, zero-length or not, so this rate
+   is a different quantity from the zero-length share of chosen car arrivals in decision 9. Because MATSim reads the
+   module of a jar without the parking package as an untyped group, `matsim.simulation.run` refuses a run whose
+   prepared config enables the module when the jar lacks `org.eqasim.braunschweig.parking` or when the last
+   iteration wrote no outcome report (`braunschweig.parking.runtime_checks`).
 8. **Assumptions (D8).** Z1 outside every zone parking is free; D1 the simulated day is an average weekday
    (Saturday and holiday windows are not modelled); T1 a terminal stay pays until the fee window of the arrival
    day ends; M1 the maximum stay compares the chargeable duration and a longer stay buys the long-stay product; A1
@@ -93,7 +98,35 @@ code paths:
    pay the day product, passes are not modelled; R1 residence inside a resident zone equals permit possession; H1
    home activities are free everywhere; F1 fee windows without an ordinance or signage source are marked
    `assumption` in the tariff row; S1 each zone has one regime. Where each bites and its sensitivity:
-   `braunschweig.parking.tariff_export.ASSUMPTIONS_REGISTER`, whose texts every tariff model JSON carries.
+   `braunschweig.parking.tariff_export.ASSUMPTIONS_REGISTER`, whose texts every tariff model JSON carries. L1, the
+   minimum parked duration of decision 9, is a run parameter rather than a property of the tariffs: it travels in
+   the `braunschweigParking` module and the parking inputs report, not in that register, and the tariff model JSON
+   (schema 1) is unchanged by it, so a tariff file alone does not state the minimum stay it was priced with.
+9. **Minimum parked duration (L1, owner decision 2026-09-30).** ASSUMPTION L1: every priced car stay lasts at
+   least L minutes, L = `parking_minimum_stay_min` = 15 in `configs/base_bs.yml`. The priced interval is
+   `[arrival_s, max(departure_s, arrival_s + 60 L))` (`braunschweig.parking.cost.minimum_stay_departure_s`, ported
+   to Java as `ParkingCostCalculator.minimumStayDeparture_s`), computed before the rules of D2, so each of them
+   prices the extended stay unchanged: fee window, free threshold, first period, maximum stay, day cap and the
+   campus products; the home, employer-free and resident exemptions do not depend on the duration. A terminal stay
+   gets the minimum after T1. L changes the price only, never the simulated timing, and L = 0 prices exactly as
+   before this decision. The preparation writes L as the module parameter `minimumStayMinutes` in whole minutes
+   and records it in `<prefix>parking_inputs_report.json`; `matsim.simulation.prepare` rejects at configure time
+   anything but a whole number from 0 to 35,791,394 (the largest value whose seconds fit a Java int), and the Java
+   side reads 0 when the parameter is absent, so a scenario prepared before L1 keeps its pricing. Rationale: the
+   timing model stays exactly as in eqasim France (activity end times from the synthesis, eqasim's `GenerateConfig`
+   sets `plans.tripDurationHandling = shiftActivityEndTimes`, discrete mode choice for 5 % of the agents per
+   iteration and `KeepLastSelected` for the rest), so a car that arrives after the planned end of its activity has
+   a zero-length stay, which the pricing before L1 left free (`OUTSIDE_FEE_HOURS`). Such stays are not rare, and
+   they do not disappear when a run ends by the eqasim mode-share termination criterion (the mode shares
+   stabilised, which is no validation): among the chosen car arrivals of the final iteration they are 11.9 % in the
+   OFF arm of the local 1 % smoke (iteration 10), 6.1 % and 6.2 % in two local 25 % runs of April 2026 without
+   parking costs and with the legacy ring (final iterations 91 and 94) and 10.3 % in the 100 % run of June 2026 (run
+   manifest `100pct-2026-06-06`, final iteration 83); table and script:
+   `docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_share_long_runs.csv` and
+   `zero_length_share.py` in the same directory. In eqasim the MATSim score does not steer the mode choice, so
+   nothing else penalises a car alternative that parks for free only because the car arrives late. The value
+   15 min is the owner's choice, not an estimate: no committed source gives a minimum parked duration for the
+   region. Sensitivity: the 25 % A/B adds the arms L = 0 (the pricing before L1) and L = 30 min.
 
 ## Rejected alternatives
 
@@ -117,6 +150,10 @@ code paths:
 - **Four-minute search and access penalties (earlier phase C):** transferred constants without local evidence; not
   before the ASC calibration (#23).
 - **Tariffs as per-activity attributes:** a zone id plus one tariff table is leaner and diffable.
+- **Removing the zero-length stays through the timing model instead of L1** (another `plans.tripDurationHandling` or
+  activity duration interpretation): the owner decision of 2026-09-30 keeps the timing model of eqasim France, and a
+  time interpretation that ends an activity before the car arrives makes `ZoneParkingCarCostModel` fail by design;
+  L1 changes the price only.
 
 ## Consequences
 
@@ -128,6 +165,10 @@ code paths:
   How much the mode shares move is not established: the local 1 % smoke after 10 iterations (run manifest
   `parking-zones-smoke-zgb-1pct-2026-09-30`) is too small and too far from an equilibrium to read a direction or a
   size from, and the 25 % legacy-vs-zones A/B with frozen ASCs is pending.
+- The minimum stay L1 (decision 9) changes results against the pricing before it: the stay of a late car arrival in
+  a zone is priced for L minutes instead of none, so the car cost rises at such destinations unless those minutes
+  lie outside the fee window or within a free threshold. The recorded 1 % smoke ran before L1 (its prices equal
+  L = 0); the 25 % A/B runs L = 15 min with the sensitivity arms 0 and 30 min.
 - Mode-choice parameters are not recalibrated by this decision; the calibration of #23 starts with the zones on.
 - OFF and LEGACY stay reproducible: the plans writer's OFF and LEGACY output is pinned byte for byte against the
   writer before this feature, the prepared config is unchanged with the flag off, and the Java car cost model names
@@ -156,9 +197,10 @@ code paths:
     `parking_workplace_free_share_shift` covers both directions.
   - The parked duration is approximated by the activity stay (from the car's arrival to the end of the activity),
     and a plan's first activity (no incoming car trip) is never priced; both are inherited from the legacy car cost
-    model. A car that arrives after the planned end of its activity therefore has a zero-length stay, which pays
-    nothing (D2): in the final iteration of the local 1 % smoke 11.8 % of the chosen car arrivals were such stays
-    (run manifest `parking-zones-smoke-zgb-1pct-2026-09-30`).
+    model. A car that arrives after the planned end of its activity therefore has a zero-length stay, which pays for
+    the minimum stay L of decision 9 instead of its actual duration; L is an assumption without a regional source.
+    In the final iteration of the ZONES arm of the local 1 % smoke, which ran before L1 (its prices equal L = 0),
+    11.8 % of the chosen car arrivals were such stays (run manifest `parking-zones-smoke-zgb-1pct-2026-09-30`).
   - Under T1 a car whose terminal stay begins after the fee window of its arrival day has ended counts as
     `OUTSIDE_FEE_HOURS` and pays nothing.
   - Cross-cordon in-commuters carry the parking attributes but keep their fixed modes
@@ -200,5 +242,11 @@ code paths:
 - Recorded smoke: the local 1 % smoke of ZONES, OFF and LEGACY on the June 2026 scenario, 10 iterations (run
   manifest `parking-zones-smoke-zgb-1pct-2026-09-30`), shows the Java wiring working end to end and the jar parity
   above; its A/B is indicative only. A smoke, not a validation.
+- Minimum parked duration (L1): the zero-length shares of decision 9 per travel mode, with the provenance of the
+  four output directories in its header, are in
+  `docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_share_long_runs.csv`, generated by
+  `zero_length_share.py` in the same directory; descriptive measurements, not a validation. The Python helper and the
+  Java calculator are pinned to the same eight cases L01 to L08 on the fixture tariffs, with L = 15 and with L = 0,
+  which reproduces the pricing before L1 (`tests/test_parking_cost.py`; eqasim-java-bs `ParkingCostCalculatorTest`).
 - Pending evidence: the 25 % legacy-vs-zones A/B on the server; its run manifest will be linked from the feature
   record.

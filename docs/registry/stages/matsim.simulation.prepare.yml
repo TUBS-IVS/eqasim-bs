@@ -10,7 +10,8 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   writes, as its last step and next to the final config, the parking tariff model
   <prefix>parking_tariffs_<parking_tariff_snapshot_date>.json (built by braunschweig.parking.tariff_export
   from the release of braunschweig.parking.zones_stage, carrying the release's source hashes), the MATSim
-  config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule) that
+  config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
+  minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1) that
   switches the Java car cost model to the zone tariffs, and the inputs report
   <prefix>parking_inputs_report.json listing the files matsim.output copies; with the flag off it declares
   no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
