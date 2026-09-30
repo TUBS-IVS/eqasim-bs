@@ -171,6 +171,40 @@ def test_row_conversion_rejects_cells_it_cannot_convert_exactly(table, changes, 
         te.tariff_row_to_zone(_row(table, "fx_bs_ia", **changes))
 
 
+@pytest.mark.parametrize("fee_start_h, fee_end_h", [(20.0, 9.0), (9.0, 9.0), (9.0, 24.5)],
+                         ids=["reversed", "zero_length", "past_midnight"])
+def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, fee_start_h, fee_end_h):
+    # The table holds decimal hours; the message must speak in those columns, not in the derived seconds.
+    with pytest.raises(ValueError) as error:
+        te.tariff_row_to_zone(_row(table, "fx_bs_ia", fee_start_h=fee_start_h, fee_end_h=fee_end_h))
+    message = str(error.value)
+    assert message.startswith("tariff row 'fx_bs_ia': ")
+    assert f"fee_start_h = {fee_start_h:g} h" in message and f"fee_end_h = {fee_end_h:g} h" in message
+    assert "0 <= fee_start_h < fee_end_h <= 24" in message
+    assert "fee_start_s" not in message and "fee_end_s" not in message and "86400" not in message
+
+
+@pytest.mark.parametrize("zone_id, changes, column", [
+    ("fx_bs_ia", {"member_day_eur": 3.50}, "member_day_eur"),
+    ("fx_res_a", {"daily_cap_eur": 9.00}, "daily_cap_eur"),
+    ("fx_res_a", {"free_if_stay_at_most_min": 30}, "free_if_stay_at_most_min"),
+    ("fx_campus", {"hourly_rate_eur": 1.80}, "hourly_rate_eur"),
+])
+def test_a_cell_the_zone_type_does_not_have_is_named_with_the_hint_to_leave_it_empty(table, zone_id, changes, column):
+    with pytest.raises(ValueError) as error:
+        te.tariff_row_to_zone(_row(table, zone_id, **changes))
+    message = str(error.value)
+    assert message.startswith(f"tariff row {zone_id!r}: {column} does not apply to zone_type ")
+    assert "leave the cell empty" in message
+
+
+def test_a_daily_cap_below_the_first_period_price_is_rejected_for_the_row(table):
+    # fx_wob charges a first period of 1.10 EUR; a cap of 1.00 EUR contradicts it.
+    with pytest.raises(ValueError, match=r"'fx_wob'.*daily_cap_cents 100 is below first_period_cents 110"):
+        te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.00))
+    assert te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.10)).daily_cap_cents == 110
+
+
 def test_write_tariff_model_writes_sorted_keys_and_lf_line_endings(tmp_path, model):
     raw = te.write_tariff_model(tmp_path / "model.json", model).read_bytes()
     text = raw.decode("ascii")

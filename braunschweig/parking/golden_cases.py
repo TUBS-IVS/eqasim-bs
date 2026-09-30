@@ -19,7 +19,8 @@ Fields of a case (they are the keys of the JSON cases, too):
 - ``purpose``: the MATSim activity type; ``parking_free``: the activity attribute ``parkingFree``;
   ``resident_of_zone``: whether the person lives in this zone (assumption R1).
 - ``expected_cents`` (integer euro cents) and ``expected_outcome`` (a ``cost.OUTCOMES`` name); both None
-  when ``expected_error`` is true, i.e. the stay is invalid and the calculation must raise ``ValueError``.
+  when ``expected_error`` is true, i.e. the stay is invalid -- its departure lies before its arrival -- and
+  the calculation must raise the ``ValueError`` of the stay check (``STAY_ERROR_PATTERN``), not any other.
 
 G01..G26 are the cases of the implementation plan. G27..G38 pin what those leave open:
 
@@ -36,17 +37,23 @@ G01..G26 are the cases of the implementation plan. G27..G38 pin what those leave
   (G38).
 
 The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file, so a port that meets the file
-meets these pins, too. That a stay outside every zone is ``NO_ZONE`` even for the home purpose is not a golden case (every case lies
-in a fixture zone); ``tests/test_parking_cost.py`` pins it for the Python reference.
+meets these pins, too. That a stay outside every zone is ``NO_ZONE`` even for the home purpose is not a golden
+case (every case lies in a fixture zone); ``tests/test_parking_cost.py`` pins it for the Python reference.
 """
 from __future__ import annotations
 
+import re
 from typing import Mapping, Sequence
 
 from braunschweig.parking import cost
 
 CASE_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "resident_of_zone",
                "terminal", "expected_cents", "expected_outcome", "expected_error")
+
+#: The message of the stay check of ``cost.parking_cost_cents`` (and ``cost.chargeable_seconds``) for a
+#: departure before the arrival: the only ValueError an ``expected_error`` case may raise. Any other ValueError
+#: (an unknown zone id, a rejected tariff) means the case failed for a different reason than it pins.
+STAY_ERROR_PATTERN = re.compile(r"departure_s -?\d+ is before arrival_s -?\d+")
 
 # Columns in CASE_FIELDS order; the comment above a row is its hand derivation. Times of day on day 0:
 # 32400 = 09:00, 36000 = 10:00, 61200 = 17:00, 64800 = 18:00, 72000 = 20:00, 86400 = 24:00.
@@ -135,8 +142,9 @@ def evaluate_case(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff])
     """Cost in integer cents and outcome of one golden case, computed with the Python reference.
 
     A terminal case gets its departure from the terminal-stay rule (T1). Raises ``ValueError`` for an
-    invalid stay (that is what an ``expected_error`` case expects) and for a zone id missing from
-    ``tariffs_by_zone`` (the tariffs and the cases must come from the same fixture set).
+    invalid stay (the stay check's error, ``STAY_ERROR_PATTERN``, is what an ``expected_error`` case expects)
+    and for a zone id missing from ``tariffs_by_zone`` (the tariffs and the cases must come from the same
+    fixture set).
     """
     zone_id = case["zone_id"]
     if zone_id not in tariffs_by_zone:
@@ -153,8 +161,9 @@ def golden_case_mismatches(tariffs_by_zone: Mapping[str, cost.ZoneTariff],
                            cases: Sequence[Mapping] = GOLDEN_CASES) -> list[str]:
     """One message per case whose evaluation differs from its expectation; empty when all cases hold.
 
-    Only ``ValueError`` counts as the expected error of an invalid stay; any other exception propagates,
-    because it signals a defect rather than a rejected input.
+    Only the stay check's ``ValueError`` (``STAY_ERROR_PATTERN``) counts as the expected error of an invalid
+    stay: another ``ValueError``, e.g. for an unknown zone id, is a mismatch, and any other exception
+    propagates, because it signals a defect rather than a rejected input.
     """
     problems = []
     for case in cases:
@@ -163,6 +172,9 @@ def golden_case_mismatches(tariffs_by_zone: Mapping[str, cost.ZoneTariff],
         except ValueError as error:
             if not case["expected_error"]:
                 problems.append(f"{case['id']}: raised ValueError({error})")
+            elif not STAY_ERROR_PATTERN.search(str(error)):
+                problems.append(f"{case['id']}: expected the stay check's ValueError (departure before arrival), "
+                                f"got ValueError({error})")
             continue
         if case["expected_error"]:
             problems.append(f"{case['id']}: expected a ValueError, got {result}")

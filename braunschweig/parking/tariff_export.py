@@ -25,7 +25,7 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from braunschweig.parking.cost import ZoneTariff
+from braunschweig.parking.cost import SECONDS_PER_DAY, ZONE_TYPES, ZoneTariff, not_applicable_fields
 
 SCHEMA_VERSION = 1
 CURRENCY = "EUR"
@@ -51,6 +51,9 @@ HOUR_COLUMNS = {"fee_start_h": "fee_start_s", "fee_end_h": "fee_end_s"}
 #: zone attachment (spec 3.4); name, municipality_ags, source_url, source_date, valid_from, fee_window_source
 #: and notes document provenance in the table itself.
 TARIFF_COLUMNS = ("zone_id", "zone_type", *EURO_COLUMNS, *MINUTE_COLUMNS, *HOUR_COLUMNS, "resident_exempt")
+# ZoneTariff money/minute field -> the table column it is read from, so that row errors name the column.
+_COLUMN_OF_FIELD = {**{field: column for column, field in EURO_COLUMNS.items()},
+                    **{column: column for column in MINUTE_COLUMNS}}
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
@@ -177,6 +180,31 @@ def _identifier(value, column: str, where: str) -> str:
     return value
 
 
+def _check_fee_window_columns(row: Mapping, fields: Mapping, where: str) -> None:
+    """Report an invalid fee window in the table's decimal-hour columns; ``ZoneTariff`` reports seconds.
+
+    Checked on the converted seconds, the values the model carries, so a window that rounding to whole seconds
+    empties is caught as well.
+    """
+    if not 0 <= fields["fee_start_s"] < fields["fee_end_s"] <= SECONDS_PER_DAY:
+        start_h = _number(row["fee_start_h"], "fee_start_h", where)
+        end_h = _number(row["fee_end_h"], "fee_end_h", where)
+        raise ValueError(f"{where}: fee_start_h = {start_h:g} h and fee_end_h = {end_h:g} h do not form a fee "
+                         "window; the decimal hours of the weekday must satisfy 0 <= fee_start_h < fee_end_h <= 24 "
+                         "(compared after rounding to whole seconds)")
+
+
+def _check_empty_cells(fields: Mapping, where: str) -> None:
+    """A column the zone type does not have (``cost.not_applicable_fields``) must be an empty cell."""
+    zone_type = fields["zone_type"]
+    if zone_type not in ZONE_TYPES:
+        return  # not a fallback: ZoneTariff rejects the unknown zone type right after this check
+    for field in not_applicable_fields(zone_type):
+        if fields[field] is not None:
+            raise ValueError(f"{where}: {_COLUMN_OF_FIELD[field]} does not apply to zone_type {zone_type!r}; "
+                             "leave the cell empty")
+
+
 def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     """Convert one tariff-table row (spec 5.3 columns; a dict or a pandas Series) into a ``ZoneTariff``.
 
@@ -185,7 +213,10 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     ``int(round(h * 3600))``, ``resident_exempt`` accepts booleans or the texts true/false (any case), and
     an empty cell (None, NaN or blank text) becomes None. Text cells are parsed as numbers, so a table read
     with ``dtype=str`` converts the same way. Raises ``ValueError`` for a missing column or a cell it cannot
-    convert exactly; ``ZoneTariff`` then validates the tariff against its zone type.
+    convert exactly; ``ZoneTariff`` then validates the tariff against its zone type. Two of those errors are
+    reported in the table's own terms before ``ZoneTariff`` sees the row: an invalid fee window names
+    ``fee_start_h`` and ``fee_end_h`` in hours, and a filled cell of a column the zone type does not have names
+    that column and says to leave the cell empty.
     """
     missing = [column for column in TARIFF_COLUMNS if column not in row]
     if missing:
@@ -200,6 +231,8 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     for column, field in HOUR_COLUMNS.items():
         fields[field] = _hours_to_seconds(row[column], column, where)
     fields["resident_exempt"] = _flag(row["resident_exempt"], "resident_exempt", where)
+    _check_fee_window_columns(row, fields, where)
+    _check_empty_cells(fields, where)
     return ZoneTariff(**fields)
 
 

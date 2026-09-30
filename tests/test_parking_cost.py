@@ -67,6 +67,15 @@ def test_the_committed_golden_json_is_in_sync(fixture_zones):
     assert golden_case_mismatches(zones, document["cases"]) == []
 
 
+def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones):
+    # G26 is invalid because its departure lies before its arrival. The same stay in a zone the tariffs do not
+    # know raises a ValueError too -- but the lookup's, not the stay check's -- and must count as a mismatch.
+    g26 = next(case for case in GOLDEN_CASES if case["id"] == "G26")
+    assert golden_case_mismatches(fixture_zones, [g26]) == []
+    [problem] = golden_case_mismatches(fixture_zones, [{**g26, "zone_id": "fx_unknown"}])
+    assert problem.startswith("G26:") and "departure before arrival" in problem and "unknown zone id" in problem
+
+
 def test_outcomes_are_ten_constants_named_as_their_values():
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE")
@@ -112,15 +121,68 @@ def test_street_paid_with_max_stay_but_without_long_stay_product_is_rejected_at_
     ("street_paid", {"hourly_rate_cents": -1}, "hourly_rate_cents must be at least 0"),
     ("street_paid", {"hourly_rate_cents": 1.8}, "hourly_rate_cents must be an integer"),
     ("street_paid", {"fee_start_s": 72000, "fee_end_s": 32400}, "fee window"),
+    # A zero-length window is no fee window either.
+    ("street_paid", {"fee_start_s": 32400, "fee_end_s": 32400}, "fee window"),
     ("street_paid", {"member_day_cents": 350}, "member_day_cents does not apply"),
     ("resident_zone", {"hourly_rate_cents": 100}, "hourly_rate_cents must be 0"),
     ("resident_zone", {"resident_exempt": False}, "resident_exempt must be true"),
+    # Spec 3.1 does not list it for resident zones, but the metered step divides by it for every non-campus zone.
+    ("resident_zone", {"billing_unit_min": None}, "billing_unit_min is required for zone_type 'resident_zone'"),
     ("campus", {"hourly_rate_cents": 180}, "hourly_rate_cents does not apply"),
     ("campus", {"resident_exempt": "false"}, "resident_exempt must be a bool"),
 ])
 def test_inconsistent_tariffs_are_rejected_at_construction(base_type, overrides, message):
     with pytest.raises(ValueError, match=message):
         _tariff(base_type, **overrides)
+
+
+# Written out here, independently of cost._NOT_APPLICABLE_FIELDS: per zone type every field it does not have
+# (a pair is set together, so the pair rule passes and the applicability rule decides).
+@pytest.mark.parametrize("base_type, overrides, field", [
+    ("street_paid", {"member_day_cents": 350}, "member_day_cents"),
+    ("street_paid", {"guest_day_cents": 900}, "guest_day_cents"),
+    ("resident_zone", {"free_if_stay_at_most_min": 30}, "free_if_stay_at_most_min"),
+    ("resident_zone", {"first_period_min": 60, "first_period_cents": 70}, "first_period_min"),
+    ("resident_zone", {"daily_cap_cents": 900}, "daily_cap_cents"),
+    ("resident_zone", {"member_day_cents": 350}, "member_day_cents"),
+    ("resident_zone", {"guest_day_cents": 900}, "guest_day_cents"),
+    ("campus", {"hourly_rate_cents": 180}, "hourly_rate_cents"),
+    ("campus", {"billing_unit_min": 1}, "billing_unit_min"),
+    ("campus", {"free_if_stay_at_most_min": 30}, "free_if_stay_at_most_min"),
+    ("campus", {"first_period_min": 60, "first_period_cents": 70}, "first_period_min"),
+    ("campus", {"daily_cap_cents": 900}, "daily_cap_cents"),
+    ("campus", {"max_stay_min": 180, "long_stay_product_cents": 900}, "max_stay_min"),
+])
+def test_a_field_the_zone_type_does_not_have_must_stay_empty(base_type, overrides, field):
+    with pytest.raises(ValueError, match=f"{field} does not apply to zone_type '{base_type}' and must be empty"):
+        _tariff(base_type, **overrides)
+
+
+@pytest.mark.parametrize("overrides, field", [
+    ({"billing_unit_min": 0}, "billing_unit_min"),
+    ({"free_if_stay_at_most_min": 0}, "free_if_stay_at_most_min"),
+    ({"first_period_min": 0, "first_period_cents": 70}, "first_period_min"),
+    ({"daily_cap_cents": 0}, "daily_cap_cents"),
+    ({"max_stay_min": 0, "long_stay_product_cents": 900}, "max_stay_min"),
+])
+def test_zero_is_rejected_in_every_field_the_cost_rule_tests_for_truthiness(overrides, field):
+    # Spec 3.2 reads these fields as "is set" by truthiness (and divides by the billing unit), so a 0 would
+    # silently mean "not set"; ZoneTariff therefore requires at least 1 when a value is given.
+    with pytest.raises(ValueError, match=f"{field} must be at least 1, got 0"):
+        _tariff(**overrides)
+
+
+def test_a_daily_cap_below_the_first_period_price_is_a_contradictory_tariff():
+    # The first period is charged in full for any use, so a lower cap would replace its price on every stay:
+    # the tariff contradicts itself. The error names the zone and both values.
+    with pytest.raises(ValueError) as error:
+        _tariff(first_period_min=60, first_period_cents=110, daily_cap_cents=100)
+    message = str(error.value)
+    assert "'test_street_paid'" in message and "daily_cap_cents 100" in message and "first_period_cents 110" in message
+    # A cap equal to the first-period price is consistent, and so is either field alone.
+    _tariff(first_period_min=60, first_period_cents=110, daily_cap_cents=110)
+    _tariff(first_period_min=60, first_period_cents=110)
+    _tariff(daily_cap_cents=100)
 
 
 def test_residents_park_free_only_where_the_zone_exempts_them():
