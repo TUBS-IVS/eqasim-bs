@@ -47,6 +47,8 @@
   <node id="35" lat="52.2597" lon="10.5224"/>
   <node id="36" lat="52.2598" lon="10.5224"/>
   <node id="37" lat="52.2598" lon="10.5222"/>
+  <node id="38" lat="52.2618" lon="10.5205"/>
+  <node id="39" lat="52.2618" lon="10.5225"/>
   <way id="501">
     <nd ref="1"/><nd ref="2"/>
     <tag k="highway" v="residential"/>
@@ -94,6 +96,13 @@
     <nd ref="27"/><nd ref="28"/>
     <tag k="highway" v="residential"/>
     <tag k="parking:both" v="lane"/>
+  </way>
+  <!-- way 509: parking:left=yes, the fallback value of the street parking scheme (free by the literal B-a reading, no
+       parking information in the POST HOC counterfactual yes_sides_no_information); only in this fixture -->
+  <way id="509">
+    <nd ref="38"/><nd ref="39"/>
+    <tag k="highway" v="residential"/>
+    <tag k="parking:left" v="yes"/>
   </way>
   <way id="601">
     <nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="14"/><nd ref="11"/>

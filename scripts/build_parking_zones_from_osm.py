@@ -62,7 +62,11 @@ ordinance polygons ``bs_zone_ia`` and ``bs_zone_ib``, ``--reference 03101000=<an
 the parameter tag (``SupplyShareParameters.tag``, e.g. ``w250_t0.5_u50_c25_s12.5_i10000``): ``<ags>_supply_qa_<tag>
 .json``, ``<ags>_supply_zones_<tag>.geojson``, ``<ags>_paid_share_<tag>.csv.gz`` (every cell) and
 ``<ags>_supply_elements_<tag>.geojson`` (every classified element). Every existing output is refused before any
-reading unless ``--overwrite`` is given (write-through data of the main checkout).
+reading unless ``--overwrite`` is given (write-through data of the main checkout). With ``--from-inventory``,
+``--osm-extract-md5`` checks that the inventory was read from the extract of that Geofabrik MD5 file. ``--counterfactual
+yes_sides_no_information`` is a POST HOC diagnostic (``supply_share.YES_SIDES_COUNTERFACTUAL``: ``parking:<side>=yes``
+read as no parking information, as lever 1 reads it, instead of the literal B-a reading): its files carry the suffix
+``_yesnoinfo``, its QA file names the counterfactual, and the assembly never takes it for a release input.
 
 Example::
 
@@ -866,15 +870,35 @@ def write_supply_inventory(layers: dict, meta: dict, paths: dict) -> None:
                              newline="\n")
 
 
+def read_inventory_meta(path) -> dict:
+    """The metadata of a saved inventory (``<inventory>.json`` next to the GeoPackage)."""
+    path = Path(path)
+    meta_path = path.with_suffix(".json")
+    if not path.is_file() or not meta_path.is_file():
+        raise SystemExit(f"inventory {path} or its metadata {meta_path} is missing")
+    return json.loads(meta_path.read_text(encoding="utf-8"))
+
+
+def check_inventory_md5(meta: dict, md5_path) -> None:
+    """The inventory must have been read from the extract of the Geofabrik MD5 file ``md5_path`` (same file name,
+    same MD5); ``SystemExit`` otherwise. Keys a re-processed inventory to the pinned extract without reading it."""
+    fields = Path(md5_path).read_text(encoding="ascii").split()
+    if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{32}", fields[0]):
+        raise SystemExit(f"{md5_path}: expected one line '<md5>  <file name>', found {fields}")
+    extract = meta.get("extract") or {}
+    if fields[1].lstrip("*") != extract.get("file") or fields[0] != extract.get("md5"):
+        raise SystemExit(f"the inventory was read from {extract.get('file')} (MD5 {extract.get('md5')}), not from "
+                         f"{fields[1]} (MD5 {fields[0]} of {md5_path})")
+    log.info("[parking-supply] the inventory was read from %s, MD5 %s = the Geofabrik MD5 of %s", extract["file"],
+             extract["md5"], Path(md5_path).name)
+
+
 def load_supply_inventory(path) -> tuple:
     """(layers, metadata) of a saved inventory (``write_supply_inventory``; the metadata file next to it)."""
     import pyogrio
 
     path = Path(path)
-    meta_path = path.with_suffix(".json")
-    if not path.is_file() or not meta_path.is_file():
-        raise SystemExit(f"inventory {path} or its metadata {meta_path} is missing")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = read_inventory_meta(path)
     layers = {}
     for layer in SUPPLY_LAYER_FILTERS:
         frame = pyogrio.read_dataframe(path, layer=layer)
@@ -926,11 +950,14 @@ def annex_map_frame(affine_path, image_path):
     return affine_transform(box(0, 0, width, height), extract_parkgo_annex_zones.inverse_affine(fit))
 
 
-def overpass_supply_elements(payload: dict, *, label: str = "") -> gpd.GeoDataFrame:
+def overpass_supply_elements(payload: dict, *, label: str = "", yes_position_is_parking: bool = True
+                             ) -> gpd.GeoDataFrame:
     """The supply elements of a saved Overpass regulation response (same classification as the extract)."""
     segments, lots = regulation_features(payload)
     areas, offstreet = supply_share.split_parking_objects(lots)
-    return supply_share.supply_elements(segments, areas, offstreet, label=label)
+    return supply_share.supply_elements(segments, areas, offstreet, label=label,
+                                        region="Overpass regulation response of the query box",
+                                        yes_position_is_parking=yes_position_is_parking)
 
 
 def _counts_by_kind_and_class(elements) -> dict:
@@ -948,9 +975,14 @@ def cross_check(extract_elements, overpass_elements, *, response: str, overpass_
             "overpass": overpass_counts, "difference": difference}
 
 
-def supply_output_paths(out_dir: Path, ags: str, parameters) -> dict:
-    """The four derived files of one town and parameter set, named by ``SupplyShareParameters.tag``."""
-    tag = parameters.tag()
+#: File-name suffix of the POST HOC counterfactuals of the supply-share mode.
+SUPPLY_COUNTERFACTUAL_SUFFIXES = {supply_share.YES_SIDES_COUNTERFACTUAL: "_yesnoinfo"}
+
+
+def supply_output_paths(out_dir: Path, ags: str, parameters, *, counterfactual: Optional[str] = None) -> dict:
+    """The four derived files of one town and parameter set, named by ``SupplyShareParameters.tag`` (and the suffix of
+    a counterfactual)."""
+    tag = parameters.tag() + (SUPPLY_COUNTERFACTUAL_SUFFIXES[counterfactual] if counterfactual else "")
     return {"qa": out_dir / f"{ags}_supply_qa_{tag}.json", "zones": out_dir / f"{ags}_supply_zones_{tag}.geojson",
             "raster": out_dir / f"{ags}_paid_share_{tag}.csv.gz",
             "elements": out_dir / f"{ags}_supply_elements_{tag}.geojson"}
@@ -977,19 +1009,23 @@ def check_query_box(response: Path, bbox) -> None:
                          f"{tuple(bbox)}; the cross-check needs the same box")
 
 
-def overpass_cross_check_input(path: Path, ags: str) -> tuple:
+def overpass_cross_check_input(path: Path, ags: str, *, yes_position_is_parking: bool = True) -> tuple:
     """(response name, OSM snapshot, supply elements) of a saved regulation response, for ``cross_check``."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     check_remark(payload)
-    elements = overpass_supply_elements(payload, label=f"{ags} Overpass {path.name}")
+    elements = overpass_supply_elements(payload, label=f"{ags} Overpass {path.name}",
+                                        yes_position_is_parking=yes_position_is_parking)
     return path.name, (payload.get("osm3s") or {}).get("timestamp_osm_base", ""), elements
 
 
 def run_supply_town(ags: str, bbox, ways, objects, parameters, *, meta: dict, overpass: tuple, reference,
-                    b5_inputs: Optional[tuple], out_dir: Path) -> dict:
+                    b5_inputs: Optional[tuple], out_dir: Path, counterfactual: Optional[str] = None) -> dict:
     """The majority rule for one town and parameter set: inventory, raster, rule polygons, cross-check (``overpass``
     = ``overpass_cross_check_input``), B5 (when ``b5_inputs`` = (legal zones, annex zones, map frame)) and the reference
-    comparison; writes the four files of ``supply_output_paths`` and returns the QA document."""
+    comparison; writes the four files of ``supply_output_paths`` and returns the QA document. ``counterfactual``
+    ``supply_share.YES_SIDES_COUNTERFACTUAL`` is the POST HOC diagnostic (tagged files, never a release input)."""
+    if counterfactual not in (None, supply_share.YES_SIDES_COUNTERFACTUAL):
+        raise ValueError(f"unknown counterfactual {counterfactual!r}")
     started = time.perf_counter()
     query = town_query_polygon(bbox)
     bounds = query.bounds
@@ -1000,9 +1036,16 @@ def run_supply_town(ags: str, bbox, ways, objects, parameters, *, meta: dict, ov
                          f"{meta['box']}; read the extract with a larger margin")
     town_ways = ways[ways.intersects(region)]
     areas, lots = supply_share.split_parking_objects(objects[objects.intersects(region)])
-    elements = supply_share.supply_elements(town_ways, areas, lots, label=ags)
+    if counterfactual:
+        log.warning("[parking-supply] %s: POST HOC counterfactual %s (parking:<side>=yes read as no parking "
+                    "information): a diagnostic, not a validation, never a release input", ags, counterfactual)
+    elements = supply_share.supply_elements(
+        town_ways, areas, lots, label=ags, region=f"supply region: query box + {parameters.walk_m:g} m + one cell",
+        yes_position_is_parking=counterfactual is None)
     in_box = elements.intersects(query).to_numpy()
     supply = supply_share.summarise_supply(elements[in_box])
+    # the QA numbers are those of the query box (the log line above covers the supply region around it)
+    supply_share.log_fallback_rates(supply, label=ags, region="query box (the QA numbers)")
     response, overpass_timestamp, overpass_elements = overpass
     checked = cross_check(elements[in_box], overpass_elements, response=response,
                           overpass_timestamp=overpass_timestamp)
@@ -1011,7 +1054,8 @@ def run_supply_town(ags: str, bbox, ways, objects, parameters, *, meta: dict, ov
     rule = supply_share.zone_polygons(raster, parameters.share_threshold, parameters.smoothing_m,
                                       parameters.minimum_island_m2, cell_m=parameters.cell_m, label=ags)
     paid = supply_share.paid_cells(raster, parameters.share_threshold)
-    qa = {"ags": ags, "parameters": parameters.as_dict(), "tag": parameters.tag(), "bbox": list(bbox),
+    qa = {"ags": ags, "parameters": parameters.as_dict(), "tag": parameters.tag(), "counterfactual": counterfactual,
+          "bbox": list(bbox),
           "bounds_m": [round(value, 1) for value in bounds], "osm_timestamp": meta["osm_timestamp"],
           "extract": meta["extract"], "inventory": {key: meta[key] for key in ("file", "box", "read_seconds",
                                                                                "features")},
@@ -1036,7 +1080,7 @@ def run_supply_town(ags: str, bbox, ways, objects, parameters, *, meta: dict, ov
     rule_out = rule.copy()
     rule_out.insert(0, "ags", ags)
     rule_out["tag"] = parameters.tag()
-    paths = supply_output_paths(out_dir, ags, parameters)
+    paths = supply_output_paths(out_dir, ags, parameters, counterfactual=counterfactual)
     _write_geojson(rule_out, paths["zones"])
     paths["raster"].write_bytes(supply_share.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
     _write_geojson(elements.assign(in_query_box=in_box, osm_id=elements["osm_id"].astype(float)), paths["elements"])
@@ -1080,16 +1124,19 @@ def run_supply_share(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     parameter_sets = _parameter_sets(args)
+    counterfactual = args.counterfactual
     targets = {}
     if args.osm_extract:
         targets.update(supply_inventory_paths(out_dir, args.osm_extract))
     for ags in towns:
         for parameters in parameter_sets:
-            targets.update({f"{ags}_{parameters.tag()}_{key}": path
-                            for key, path in supply_output_paths(out_dir, ags, parameters).items()})
+            targets.update({f"{ags}_{parameters.tag()}_{key}": path for key, path in supply_output_paths(
+                out_dir, ags, parameters, counterfactual=counterfactual).items()})
     responses = {ags: _overpass_response(args.overpass_dir, ags) for ags in towns}
     for ags, bbox in towns.items():
         check_query_box(responses[ags], bbox)
+    if args.from_inventory and args.osm_extract_md5:
+        check_inventory_md5(read_inventory_meta(args.from_inventory), args.osm_extract_md5)
     guard_outputs(targets, overwrite=args.overwrite)
 
     if args.from_inventory:
@@ -1135,10 +1182,11 @@ def run_supply_share(args) -> int:
         reference = None
         if ags in references:
             reference = (references[ags], gpd.read_file(references[ags]).to_crs(METRIC_CRS))
-        overpass = overpass_cross_check_input(responses[ags], ags)
+        overpass = overpass_cross_check_input(responses[ags], ags, yes_position_is_parking=counterfactual is None)
         for parameters in parameter_sets:
             run_supply_town(ags, bbox, ways, objects, parameters, meta=meta, overpass=overpass, reference=reference,
-                            b5_inputs=b5_inputs if ags == B5_AGS else None, out_dir=out_dir)
+                            b5_inputs=b5_inputs if ags == B5_AGS else None, out_dir=out_dir,
+                            counterfactual=counterfactual)
     return 0
 
 
@@ -1186,7 +1234,8 @@ def main(argv=None) -> int:
     supply.add_argument("--supply-share", action="store_true",
                         help="majority rule over the parking supply of the pinned extract for every --town")
     supply.add_argument("--osm-extract", help="OSM extract (Geofabrik PBF) read with the GDAL OSM driver")
-    supply.add_argument("--osm-extract-md5", help="Geofabrik MD5 file of the extract (default: <extract>.md5)")
+    supply.add_argument("--osm-extract-md5", help="Geofabrik MD5 file of the extract (default: <extract>.md5); with "
+                                                  "--from-inventory the inventory must come from that extract")
     supply.add_argument("--osm-timestamp", help="snapshot YYYY-MM-DDTHH:MM:SSZ for an extract without a PBF header "
                                                 "timestamp (checked against the header otherwise)")
     supply.add_argument("--osm-max-tmpfile-mb", type=int, default=DEFAULT_OSM_MAX_TMPFILE_MB,
@@ -1208,6 +1257,9 @@ def main(argv=None) -> int:
                         help="also run the B5 sensitivity arms (W 150 / 400 m, share 0.3 / 0.7; information only)")
     supply.add_argument("--skip-pre-registered", action="store_true",
                         help="with --sensitivity-arms: run only the arms")
+    supply.add_argument("--counterfactual", choices=sorted(SUPPLY_COUNTERFACTUAL_SUFFIXES),
+                        help="POST HOC diagnostic: yes_sides_no_information reads parking:<side>=yes as no parking "
+                             "information (files tagged '_yesnoinfo', never a release input)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if args.supply_share:

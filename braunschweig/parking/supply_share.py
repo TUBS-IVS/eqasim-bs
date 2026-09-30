@@ -9,7 +9,9 @@ money.
   on-street parking scheme, each side on its own), every separately mapped street-side area and every off-street lot or
   garage (``classify_supply_object``; ``amenity=parking``, told apart by ``parking=*`` in
   ``zone_geometry.STREET_SIDE_LOT_TYPES``). Classes ``SUPPLY_CLASSES``: ``paid`` (a fee applies), ``restricted``
-  (resident permit), ``free`` (street parking with ``fee=no`` or without any fee tag, ASSUMPTION B-a, street parking
+  (resident permit: ``access=permit``, resident-only parking ``access=private`` + ``private=residents`` on the side or
+  the object, or the legacy condition residents), ``free`` (street parking with ``fee=no`` or without any fee tag,
+  ASSUMPTION B-a, street parking
   only; disc parking is free, ASSUMPTION B-b; an off-street lot only with an explicit ``fee=no``, ruling T1b-a),
   ``excluded`` (not public: private or customers; forbidden; a side mapped separately, whose area is counted instead;
   an off-street lot without an explicit fee tag, ASSUMPTION B-c; a fee value that is neither yes nor no; no parking
@@ -22,6 +24,17 @@ money.
   street-side area drawn as a line counts as a street side (length / 5.5 m); a node without a capacity tag has no extent
   and carries 0 spaces (``capacity_basis`` ``no_extent``, counted). The heuristic is the fallback: its share of the
   usable capacity is logged per call and reported per town (``summarise_supply``).
+* **Fallback transparency:** B-a (free street capacity without a fee tag), B-c (public off-street capacity excluded for
+  lack of a fee tag) and B-d (heuristic capacity) are default-when-absent rules; ``log_fallback_rates`` logs the three
+  rates of every inventory with the region it covers and warns when a rate exceeds its reporting threshold
+  (``FREE_WITHOUT_FEE_TAG_WARNING_SHARE``, ``OFFSTREET_WITHOUT_FEE_TAG_WARNING_SHARE``,
+  ``HEURISTIC_CAPACITY_WARNING_SHARE``: 0.5 each, a majority of the class resting on the fallback; not gates).
+* **Interpretations beyond B-a..B-f** (implementation choices, not owner rulings; recorded in the data record
+  ``parking_zones_2026``): ``parking:<side>=yes`` (the fallback value of the street parking scheme) is a parking
+  position, so such a side is free street parking without a fee tag (the literal B-a reading, decisive for B5 in
+  Braunschweig; ``YES_SIDES_COUNTERFACTUAL`` reads it as no parking information, as lever 1 does, a POST HOC
+  counterfactual only); precedence, access values, fee values, capacity keys, levels and edge rules as documented at
+  ``classify_supply_side``, ``classify_supply_object`` and B2 above.
 * **B3 paid-share raster** (``paid_share_raster``): cells of ``cell_m`` (25 m) on the EPSG:25832 lattice of multiples
   of ``cell_m``, covering the bounds; for every cell centre the usable spaces (paid + restricted + free) within
   ``walk_m`` (250 m, Euclidean) and ``paid_share`` = (paid + restricted) / usable. A cell is classified when it has at
@@ -96,7 +109,9 @@ ELEMENT_KINDS = ("street_side", "street_side_area", "lot")
 #: Rule behind every class (column ``reason``).
 SUPPLY_REASONS = {
     "fee": "paid: fee=yes, a fee:conditional clause 'yes @ (...)' or the legacy condition ticket",
-    "permit": "restricted: access=permit or the legacy condition residents (resident permit)",
+    "permit": "restricted: access=permit (a permit is needed)",
+    "residents": "restricted: resident-only parking (access=private with private=residents, or the legacy condition "
+                 "residents)",
     "disc": "free: disc parking without a fee (ASSUMPTION B-b)",
     "fee_no": "free: fee=no or the legacy condition free",
     "no_fee_tag": "free: street parking without any fee tag (ASSUMPTION B-a)",
@@ -108,10 +123,17 @@ SUPPLY_REASONS = {
     "no_parking_info": "excluded: no parking information",
 }
 #: New-scheme ``parking:<side>`` values that place parking on the street: the lever-1 positions plus ``yes``, the
-#: fallback value of the street parking scheme (parking exists, its position is unknown).
+#: fallback value of the street parking scheme (parking exists, its position is unknown). Reading ``yes`` as street
+#: parking is the literal B-a reading (interpretation beyond B-a..B-f, decisive for B5 in Braunschweig).
 SUPPLY_PARKING_POSITIONS = zg.PARKING_POSITIONS + ("yes",)
+#: POST HOC counterfactual (never a default, never a release input): ``parking:<side>=yes`` read as no parking
+#: information, as lever 1 reads it (``zone_geometry.PARKING_POSITIONS``).
+YES_SIDES_COUNTERFACTUAL = "yes_sides_no_information"
 #: Legacy ``parking:condition:<side>`` values of parking that is not public (B1: private or customers).
 NOT_PUBLIC_CONDITIONS = ("private", "customers")
+#: ``private=*`` / ``parking:<side>:private=*`` value of resident-only parking (with ``access=private``): B1 names
+#: resident permits restricted (fix round 1, ruling R-T1b-d); any other private value stays not public.
+RESIDENT_PRIVATE_VALUES = ("residents",)
 #: ASSUMPTION B-d: metres of street side per space, square metres per space of a street-side area and of a lot.
 STREET_SIDE_METRES_PER_SPACE = 5.5
 STREET_SIDE_AREA_M2_PER_SPACE = 12.5
@@ -136,11 +158,16 @@ SPACE_TOLERANCE = 1e-6
 SHARE_TOLERANCE = 1e-9
 #: Cells per KD-tree query (bounds the memory of the neighbour lists).
 RASTER_QUERY_CHUNK_CELLS = 2048
-#: A heuristic share of the usable capacity above this is logged as a warning (reporting threshold, not a gate).
+#: Reporting thresholds of the fallback rates (not gates): above them a majority of the class rests on the fallback
+#: and ``log_fallback_rates`` warns. B-d: heuristic share of the usable capacity; B-a: share of the free street capacity
+#: without a fee tag; B-c: share of the public off-street capacity excluded because it carries no fee tag.
 HEURISTIC_CAPACITY_WARNING_SHARE = 0.5
+FREE_WITHOUT_FEE_TAG_WARNING_SHARE = 0.5
+OFFSTREET_WITHOUT_FEE_TAG_WARNING_SHARE = 0.5
 
-ELEMENT_COLUMNS = ("element_id", "osm_type", "osm_id", "kind", "side", "parking_type", "class", "reason",
-                   "capacity_spaces", "capacity_source", "capacity_basis", "capacity_tag_invalid", "levels", "geometry")
+ELEMENT_COLUMNS = ("element_id", "osm_type", "osm_id", "kind", "side", "side_position", "parking_type", "class",
+                   "reason", "capacity_spaces", "capacity_source", "capacity_basis", "capacity_tag_invalid", "levels",
+                   "geometry")
 RASTER_COLUMNS = ("x_m", "y_m", "paid_share", "usable_spaces", "heuristic_capacity_share", "classified", "paid_spaces",
                   "restricted_spaces", "free_spaces")
 #: B7: the committed release of the classified cells.
@@ -154,13 +181,15 @@ _AGS = re.compile(r"^\d{8}$")
 # --------------------------------------------------------------------------- B1: classification
 
 
-def classify_supply_side(tags: Mapping, side: str) -> tuple:
+def classify_supply_side(tags: Mapping, side: str, *, yes_position_is_parking: bool = True) -> tuple:
     """(class, reason) of one street side (``left`` or ``right``) under B1; tags of the new and the legacy scheme,
     ``<prefix>:<side>:*`` falling back to ``<prefix>:both:*`` (``zone_geometry._side_tag``).
 
-    Order: not public (the way or the side) -> mapped separately -> paid -> resident permit -> forbidden -> disc (free,
-    B-b) -> any other access, restriction or condition (not public) -> a parking position with ``fee=no`` or without
-    a fee tag (free, B-a) -> a fee value that is no yes/no -> no parking information.
+    Order: the way not public -> mapped separately -> private or customers on the side (restricted when
+    ``access=private`` comes with ``private=residents``, excluded otherwise) -> paid -> resident permit -> forbidden ->
+    disc (free, B-b) -> any other access, restriction or condition (not public) -> a parking position with ``fee=no``
+    or without a fee tag (free, B-a) -> a fee value that is no yes/no -> no parking information. ``yes_position_is_parking``
+    False is the POST HOC counterfactual ``YES_SIDES_COUNTERFACTUAL`` (``parking:<side>=yes`` is no parking position).
     """
     if side not in zg.SIDES:
         raise ValueError(f"side must be one of {zg.SIDES}, got {side!r}")
@@ -178,12 +207,17 @@ def classify_supply_side(tags: Mapping, side: str) -> tuple:
     if position == zg.SEPARATE_POSITION or zg.SEPARATE_POSITION in lane:
         return "excluded", "separate"
     if access & set(zg.NOT_PUBLIC_ACCESS) or condition & set(NOT_PUBLIC_CONDITIONS):
+        private = zg._tokens(zg._side_tag(tags, "parking", side, "private"))
+        if "private" in access and private & set(RESIDENT_PRIVATE_VALUES):
+            return "restricted", "residents"
         return "excluded", "not_public"
     if "yes" in fee or zg._conditional_yes(zg._side_tag(tags, "parking", side, "fee:conditional")) \
             or "ticket" in condition:
         return "paid", "fee"
-    if "permit" in access or "residents" in condition:
+    if "permit" in access:
         return "restricted", "permit"
+    if "residents" in condition:
+        return "restricted", "residents"
     if (position in zg.NO_PARKING_POSITIONS or restriction & set(zg.FORBIDDEN_RESTRICTIONS) or "no" in access
             or lane & set(zg.LEGACY_NO_PARKING_LANE_TYPES) or condition & set(zg.FORBIDDEN_RESTRICTIONS)):
         return "excluded", "forbidden"
@@ -191,7 +225,8 @@ def classify_supply_side(tags: Mapping, side: str) -> tuple:
         return "free", "disc"
     if access - set(zg.PUBLIC_ACCESS) or restriction - {"none"} or condition - {"free"}:
         return "excluded", "not_public"
-    if not (position in SUPPLY_PARKING_POSITIONS or lane & set(zg.LEGACY_PARKING_LANE_TYPES)):
+    positions = SUPPLY_PARKING_POSITIONS if yes_position_is_parking else zg.PARKING_POSITIONS
+    if not (position in positions or lane & set(zg.LEGACY_PARKING_LANE_TYPES)):
         return "excluded", "no_parking_info"
     if fee - {"no"}:
         return "excluded", "fee_unrecognised"
@@ -206,15 +241,18 @@ def is_street_side_object(tags: Mapping) -> bool:
 def classify_supply_object(tags: Mapping) -> tuple:
     """(class, reason) of an ``amenity=parking`` object under B1 (a street-side area or an off-street lot).
 
-    Order: not public (access private or customers) -> paid -> resident permit -> any other access limit (not public)
-    -> a fee value that is no yes/no -> ``fee=no`` (free) -> no fee tag: a street-side area is free (disc: B-b, else
-    B-a), an off-street lot is excluded (B-c).
+    Order: private or customers (restricted when ``access=private`` comes with ``private=residents``, excluded
+    otherwise) -> paid -> resident permit -> any other access limit (not public) -> a fee value that is no yes/no ->
+    ``fee=no`` (free) -> no fee tag: a street-side area is free (disc: B-b, else B-a), an off-street lot is excluded
+    (B-c).
     """
     if zg._tag_text(tags, "amenity") != "parking":
         return "excluded", "no_parking_info"
     access = zg._tokens(zg._tag_text(tags, "access"))
     fee = zg._tokens(zg._tag_text(tags, "fee"))
     if access & set(zg.NOT_PUBLIC_ACCESS):
+        if "private" in access and zg._tokens(zg._tag_text(tags, "private")) & set(RESIDENT_PRIVATE_VALUES):
+            return "restricted", "residents"
         return "excluded", "not_public"
     if "yes" in fee or zg._conditional_yes(zg._tag_text(tags, "fee:conditional")):
         return "paid", "fee"
@@ -325,14 +363,17 @@ def _check_input(frame: gpd.GeoDataFrame, what: str, dimensions) -> None:
 
 
 def supply_elements(ways: gpd.GeoDataFrame, areas: gpd.GeoDataFrame, lots: gpd.GeoDataFrame, *,
-                    label: str = "") -> gpd.GeoDataFrame:
+                    label: str = "", region: str = "the elements passed",
+                    yes_position_is_parking: bool = True) -> gpd.GeoDataFrame:
     """The supply inventory B1 with the capacity B2: one row per street side (two per way), street-side area and lot.
 
     ``ways``: street ways (lines) with a ``tags`` column; ``areas``: ``amenity=parking`` objects whose ``parking=*`` is
     a street-side type; ``lots``: the other ``amenity=parking`` objects (``split_parking_objects`` tells them apart; a
     misplaced object raises, because B-a and B-c differ). All EPSG:25832; optional ``osm_type`` / ``osm_id`` columns
-    name the elements. Returns ``ELEMENT_COLUMNS`` (EPSG:25832). Logs the counts per kind and class and the tagged vs
-    heuristic share of the usable capacity (fallback transparency).
+    name the elements. Returns ``ELEMENT_COLUMNS`` (EPSG:25832; ``side_position`` is the new-scheme ``parking:<side>``
+    value of a street side). Logs the counts per kind and class and the fallback rates B-a, B-c and B-d
+    (``log_fallback_rates``), naming ``region``. ``yes_position_is_parking`` False is the POST HOC counterfactual
+    ``YES_SIDES_COUNTERFACTUAL``.
     """
     _check_input(ways, "street ways", (1,))
     _check_input(areas, "street-side areas", (0, 1, 2))
@@ -350,25 +391,26 @@ def supply_elements(ways: gpd.GeoDataFrame, areas: gpd.GeoDataFrame, lots: gpd.G
         tags = dict(row.tags or {})
         osm_type, osm_id, element = _identity(row, position)
         for side in zg.SIDES:
-            supply_class, reason = classify_supply_side(tags, side)
+            supply_class, reason = classify_supply_side(tags, side, yes_position_is_parking=yes_position_is_parking)
             capacity = _capacity("street_side", row.geometry, tags, side, supply_class in USABLE_CLASSES)
+            position = (zg._side_tag(tags, "parking", side) or "").lower()
             rows.append({"element_id": f"{element}:{side}", "osm_type": osm_type, "osm_id": osm_id,
-                         "kind": "street_side", "side": side, "parking_type": "", "class": supply_class,
-                         "reason": reason, **capacity, "geometry": row.geometry})
+                         "kind": "street_side", "side": side, "side_position": position, "parking_type": "",
+                         "class": supply_class, "reason": reason, **capacity, "geometry": row.geometry})
     for kind, frame in (("street_side_area", areas), ("lot", lots)):
         for position, row in enumerate(frame.itertuples(index=False)):
             tags = dict(row.tags or {})
             osm_type, osm_id, element = _identity(row, position)
             supply_class, reason = classify_supply_object(tags)
             rows.append({"element_id": element, "osm_type": osm_type, "osm_id": osm_id, "kind": kind, "side": "",
-                         "parking_type": str(tags.get("parking") or ""), "class": supply_class, "reason": reason,
-                         **_capacity(kind, row.geometry, tags, None, True), "geometry": row.geometry})
+                         "side_position": "", "parking_type": str(tags.get("parking") or ""), "class": supply_class,
+                         "reason": reason, **_capacity(kind, row.geometry, tags, None, True), "geometry": row.geometry})
     elements = gpd.GeoDataFrame(rows, columns=list(ELEMENT_COLUMNS), geometry="geometry", crs=METRIC_CRS)
     elements["osm_id"] = elements["osm_id"].astype("Int64")
     elements["capacity_tag_invalid"] = elements["capacity_tag_invalid"].astype(bool)
     elements["capacity_spaces"] = elements["capacity_spaces"].astype(float)
     elements["levels"] = elements["levels"].astype(float)
-    _log_supply(elements, label)
+    _log_supply(elements, label, region)
     return elements
 
 
@@ -388,6 +430,13 @@ def summarise_supply(elements: gpd.GeoDataFrame) -> dict:
     free_street_spaces = float(free_street["capacity_spaces"].sum())
     without_fee_tag = float(free_street.loc[free_street["reason"] == "no_fee_tag", "capacity_spaces"].sum())
     offstreet_without_fee = elements[elements["reason"] == "no_fee_tag_offstreet"]
+    # public off-street lots: usable ones and those excluded only for their fee tag (B-c or an unrecognised value)
+    lots = elements[elements["kind"] == "lot"]
+    public_lots = lots[lots["class"].isin(USABLE_CLASSES) | lots["reason"].isin(("no_fee_tag_offstreet",
+                                                                                  "fee_unrecognised"))]
+    public_lot_spaces = float(public_lots["capacity_spaces"].sum())
+    offstreet_without_fee_spaces = float(offstreet_without_fee["capacity_spaces"].sum())
+    yes_sides = free_street[(free_street["kind"] == "street_side") & (free_street["side_position"] == "yes")]
     multi_storey = elements[(elements["kind"] == "lot") & elements["parking_type"].isin(MULTI_STOREY_TYPES)]
 
     def reasons_by_kind():
@@ -417,26 +466,58 @@ def summarise_supply(elements: gpd.GeoDataFrame) -> dict:
         "multi_storey_lots": int(len(multi_storey)),
         "multi_storey_lots_without_levels": int((multi_storey["capacity_basis"] == "area").sum()),
         "offstreet_lots_without_fee_tag": int(len(offstreet_without_fee)),
-        "offstreet_lot_spaces_without_fee_tag": round(float(offstreet_without_fee["capacity_spaces"].sum()), 2),
+        "offstreet_lot_spaces_without_fee_tag": round(offstreet_without_fee_spaces, 2),
+        "offstreet_public_lots": int(len(public_lots)),
+        "offstreet_public_lot_spaces": round(public_lot_spaces, 2),
+        "offstreet_without_fee_tag_share": len(offstreet_without_fee) / len(public_lots) if len(public_lots)
+        else math.nan,
+        "offstreet_spaces_without_fee_tag_share": offstreet_without_fee_spaces / public_lot_spaces
+        if public_lot_spaces > 0 else math.nan,
+        "free_street_sides_position_yes": int(len(yes_sides)),
+        "free_street_side_spaces_position_yes": round(float(yes_sides["capacity_spaces"].sum()), 2),
     }
 
 
-def _log_supply(elements: gpd.GeoDataFrame, label: str) -> None:
+def _share_text(value) -> str:
+    return "undefined" if value is None or not math.isfinite(value) else f"{100.0 * value:.1f} %"
+
+
+def log_fallback_rates(summary: Mapping, *, label: str = "", region: str) -> None:
+    """Log the three default-when-absent rates of an inventory (``summarise_supply``) in one line naming ``region``,
+    and warn for every rate above its reporting threshold: B-a the free street capacity without a fee tag, B-c the
+    public off-street capacity excluded for lack of a fee tag, B-d the heuristic capacity (primary: the tag)."""
+    prefix = f"{label}, {region}" if label else region
+    rates = (("B-a", "of the free street capacity rests on a missing fee tag (free by assumption)",
+              summary["free_street_spaces_without_fee_tag_share"], FREE_WITHOUT_FEE_TAG_WARNING_SHARE),
+             ("B-c", "of the public off-street capacity is excluded because it carries no fee tag",
+              summary["offstreet_spaces_without_fee_tag_share"], OFFSTREET_WITHOUT_FEE_TAG_WARNING_SHARE),
+             ("B-d", "of the usable capacity comes from the capacity heuristic (primary: the capacity tag)",
+              summary["heuristic_capacity_share"], HEURISTIC_CAPACITY_WARNING_SHARE))
+    log.info("%s %s: fallback rates B-a %s (%.0f of %.0f free street spaces without a fee tag), B-c %s (%d of %d public "
+             "off-street lots, %.0f of %.0f spaces, without a fee tag), B-d %s (%.0f of %.0f usable spaces heuristic)",
+             _LOG_TAG, prefix, _share_text(rates[0][2]), summary["free_street_spaces_without_fee_tag"],
+             summary["free_street_spaces"], _share_text(rates[1][2]), summary["offstreet_lots_without_fee_tag"],
+             summary["offstreet_public_lots"], summary["offstreet_lot_spaces_without_fee_tag"],
+             summary["offstreet_public_lot_spaces"], _share_text(rates[2][2]), summary["heuristic_spaces"],
+             summary["usable_spaces"])
+    for name, what, value, threshold in rates:
+        if value is not None and math.isfinite(value) and value > threshold:
+            log.warning("%s %s: %s %s %s (above the reporting threshold %.0f %%)", _LOG_TAG, prefix, name,
+                        _share_text(value), what, 100.0 * threshold)
+
+
+def _log_supply(elements: gpd.GeoDataFrame, label: str, region: str) -> None:
     summary = summarise_supply(elements)
     counts = "; ".join(f"{kind} {', '.join(f'{name} {count}' for name, count in classes.items() if count)}"
                        for kind, classes in summary["elements_by_kind_and_class"].items() if any(classes.values()))
-    share = summary["heuristic_capacity_share"]
-    shown = "undefined" if math.isnan(share) else f"{100.0 * share:.1f} %"
-    log.info("%s %s%d elements (%s); usable capacity %.0f spaces (%s): tagged %.0f, heuristic %.0f (%s, fallback "
-             "B-d); %d usable nodes without a capacity tag carry 0 spaces; %d capacity tags not a whole number; %d of %d "
-             "multi-storey car parks without a levels tag count one level", _LOG_TAG, f"{label}: " if label else "",
+    log.info("%s %s%s: %d elements (%s); usable capacity %.0f spaces (%s): tagged %.0f, heuristic %.0f; %d usable nodes "
+             "without a capacity tag carry 0 spaces; %d capacity tags not a whole number; %d of %d multi-storey car "
+             "parks without a levels tag count one level", _LOG_TAG, f"{label}, " if label else "", region,
              summary["elements"], counts or "none", summary["usable_spaces"], summary["spaces_by_class"],
-             summary["tagged_spaces"], summary["heuristic_spaces"], shown, summary["usable_elements_without_extent"],
+             summary["tagged_spaces"], summary["heuristic_spaces"], summary["usable_elements_without_extent"],
              summary["capacity_tags_invalid"], summary["multi_storey_lots_without_levels"],
              summary["multi_storey_lots"])
-    if not math.isnan(share) and share > HEURISTIC_CAPACITY_WARNING_SHARE:
-        log.warning("%s %s%.1f %% of the usable capacity rests on the capacity heuristic B-d (above %.0f %%)", _LOG_TAG,
-                    f"{label}: " if label else "", 100.0 * share, 100.0 * HEURISTIC_CAPACITY_WARNING_SHARE)
+    log_fallback_rates(summary, label=label, region=region)
 
 
 # --------------------------------------------------------------------------- B3: discretisation and raster
@@ -816,7 +897,8 @@ SUPPLY_SHARE_QA_COLUMNS = (
     "overpass_osm_timestamp", "overpass_paid_elements", "overpass_restricted_elements", "overpass_free_elements",
     "overpass_excluded_elements", "cross_check", "usable_spaces", "paid_spaces", "restricted_spaces", "free_spaces",
     "tagged_capacity_share", "heuristic_capacity_share", "free_street_spaces_without_fee_tag_share",
-    "offstreet_lots_without_fee_tag", "cells", "classified_cells", "classified_cell_share", "paid_cells",
+    "offstreet_lots_without_fee_tag", "offstreet_spaces_without_fee_tag_share", "cells", "classified_cells",
+    "classified_cell_share", "paid_cells",
     "rule_area_m2", "rule_parts", "b5_recall", "b5_precision", "b5_passed", "reference", "rule_share_inside_reference",
     "reference_share_covered_by_rule", "largest_outline_distance_m", "sensitivity", "applied", "zone_ids", "decision",
     "note",
@@ -829,6 +911,7 @@ _QA_COUNTS = ("street_ways", "street_side_areas", "offstreet_lots", "paid_elemen
               "classified_cells", "paid_cells", "rule_parts")
 _QA_AMOUNTS = ("usable_spaces", "paid_spaces", "restricted_spaces", "free_spaces", "rule_area_m2")
 _QA_SHARES = ("tagged_capacity_share", "heuristic_capacity_share", "free_street_spaces_without_fee_tag_share",
+              "offstreet_spaces_without_fee_tag_share",
               "classified_cell_share", "b5_recall", "b5_precision", "rule_share_inside_reference",
               "reference_share_covered_by_rule")
 #: QA column -> ``SupplyShareParameters`` field and the provenance column of an ``osm_supply_majority`` polygon.

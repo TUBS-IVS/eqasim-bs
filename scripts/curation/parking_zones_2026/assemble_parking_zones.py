@@ -42,7 +42,8 @@ overlap most (``assign_braunschweig_pieces``, ruling R-T1-f: ``bs_zone_ia_sued``
 QA only. Written in every case: the QA table ``--supply-qa-out`` (``supply_qa_rows``, every column defined in its
 header, ``SUPPLY_QA_COLUMN_GLOSSARY``) and the B7 release of the classified cells ``--paid-share-out``
 (``write_paid_share_release``, gzip CSV, EPSG:25832). When B5 fails nothing is applied and the zone file stays the v1
-file byte for byte.
+file byte for byte. ``--supply-counterfactual-qa`` cites POST HOC counterfactual runs (``--counterfactual`` of the
+builder) in the note of their town, next to the interpretation they vary; they are never applied.
 
 Usage (from the repository root)::
 
@@ -682,7 +683,10 @@ SUPPLY_QA_INTRO = (
     "Ib / their area) and precision (rule inside the annex zones / rule inside the annex map frame) must both reach",
     "0.70 with the defaults before the rule is applied anywhere (B6); the sensitivity arms are information only.",
     "Element counts are street sides (two per way), street-side areas and lots inside the query box; spaces are",
-    "usable capacity. Units m, m2, spaces; empty = undefined. scripts/validate_parking_zones.py re-applies the B5 gate",
+    "usable capacity. Interpretations beyond B-a..B-f (implementation choices, not owner rulings) are listed in the data",
+    "record parking_zones_2026; the one that decides B5 (parking:<side>=yes read as street parking, literal B-a) is",
+    "stated with a POST HOC counterfactual in the Braunschweig note.",
+    "Units m, m2, spaces; empty = undefined. scripts/validate_parking_zones.py re-applies the B5 gate",
     "and the pre-registered parameters. Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap",
     "contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright). Columns:",
 )
@@ -725,6 +729,9 @@ SUPPLY_QA_COLUMN_GLOSSARY = {
     "free_street_spaces_without_fee_tag_share": "share of the free street capacity (street sides and street-side "
                                                 "areas) that rests on a missing fee tag (ASSUMPTION B-a)",
     "offstreet_lots_without_fee_tag": "off-street lots excluded because they carry no explicit fee tag (ASSUMPTION B-c)",
+    "offstreet_spaces_without_fee_tag_share": "share of the public off-street capacity (usable lots plus those excluded "
+                                              "for their fee tag) that is excluded for lack of a fee tag (ASSUMPTION "
+                                              "B-c)",
     "cells": "25 m cells over the query box (its EPSG:25832 bounds)",
     "classified_cells": "cells with at least minimum_usable_spaces usable spaces within W",
     "classified_cell_share": "classified_cells / cells (the rest is unclassified)",
@@ -795,6 +802,9 @@ def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTE
         qa = json.loads(qa_path.read_text(encoding="utf-8"))
         if qa["ags"] != ags:
             raise SystemExit(f"{qa_path} belongs to {qa['ags']}, not {ags}")
+        if qa.get("counterfactual"):
+            raise SystemExit(f"{qa_path}: counterfactual {qa['counterfactual']!r} is a POST HOC diagnostic, never a "
+                             "release input")
         mismatch = {key: qa["parameters"].get(key) for key, value in expected.items()
                     if not math.isclose(float(qa["parameters"].get(key, math.nan)), value, rel_tol=1e-9)}
         if mismatch:
@@ -812,6 +822,46 @@ def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTE
     if len(sources) > 1:
         raise SystemExit(f"the towns were read from different extracts or snapshots {sorted(sources)}")
     return supply
+
+
+def load_supply_counterfactuals(paths) -> list:
+    """The QA files of POST HOC counterfactual runs (builder ``--counterfactual``) named on the command line; each
+    must name its counterfactual and carry the pre-registered parameters (only the tag reading differs)."""
+    documents = []
+    expected = ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
+    for path in paths or ():
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not document.get("counterfactual"):
+            raise SystemExit(f"{path} is not a counterfactual QA file")
+        if any(not math.isclose(float(document["parameters"].get(key, math.nan)), value, rel_tol=1e-9)
+               for key, value in expected.items()):
+            raise SystemExit(f"{path}: a counterfactual varies the tag reading only, not the pre-registered "
+                             f"parameters {expected}")
+        documents.append(dict(document, _path=Path(path).name))
+    return documents
+
+
+def decisive_interpretation_text(entry: dict, counterfactuals=()) -> str:
+    """The Braunschweig note on the interpretation beyond B-a..B-f that decides B5: parking:<side>=yes read as street
+    parking (literal B-a) with its B5 numbers, and every POST HOC counterfactual run of it with its numbers."""
+    qa = entry["qa"]
+    validation, supply = qa.get("validation") or {}, qa["supply"]
+    text = (f"decisive interpretation beyond B-a..B-f (an implementation choice fixed before the result was known, not "
+            f"an owner ruling): parking:<side>=yes, the fallback value of the street parking scheme, is read as street "
+            f"parking, free without a fee tag (the literal B-a reading; {supply['free_street_sides_position_yes']} free "
+            f"sides with {supply['free_street_side_spaces_position_yes']:.0f} spaces in the query box): recall "
+            f"{validation.get('recall', math.nan):.3f}, precision {validation.get('precision', math.nan):.3f}")
+    cited = [document for document in counterfactuals if document["ags"] == qa["ags"]]
+    for document in cited:
+        other = document.get("validation") or {}
+        passes = ss.passes_validation(other)
+        text += (f"; POST HOC counterfactual {document['counterfactual']} ({document['_path']}; those sides read as no "
+                 f"parking information, as lever 1 reads them): recall {other.get('recall', math.nan):.3f}, precision "
+                 f"{other.get('precision', math.nan):.3f}, which would {'pass' if passes else 'fail'} B5 - not a "
+                 "validation and never a default; the owner decides the tag meaning in the Amendment-B ADR")
+    if not cited:
+        text += "; no counterfactual run cited"
+    return text + "; every further interpretation: data record parking_zones_2026"
 
 
 def supply_b5(supply: dict) -> bool:
@@ -941,6 +991,7 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
         "heuristic_capacity_share": _share(s["heuristic_capacity_share"]),
         "free_street_spaces_without_fee_tag_share": _share(s["free_street_spaces_without_fee_tag_share"]),
         "offstreet_lots_without_fee_tag": str(int(s["offstreet_lots_without_fee_tag"])),
+        "offstreet_spaces_without_fee_tag_share": _share(s["offstreet_spaces_without_fee_tag_share"]),
         "cells": str(int(raster["cells"])), "classified_cells": str(int(raster["classified_cells"])),
         "classified_cell_share": _share(raster["classified_cell_share"]), "paid_cells": str(int(raster["paid_cells"])),
         "rule_area_m2": _number(qa["rule"]["area_m2"], 1), "rule_parts": str(int(qa["rule"]["parts"])),
@@ -961,8 +1012,9 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
     return row
 
 
-def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool) -> list:
-    """One supply-share QA row per town of ``supply`` (``EROSION_ZONES_FROM_CORE``, ``EROSION_QA_ONLY`` order)."""
+def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool, counterfactuals=()) -> list:
+    """One supply-share QA row per town of ``supply`` (``EROSION_ZONES_FROM_CORE``, ``EROSION_QA_ONLY`` order);
+    ``counterfactuals`` (``load_supply_counterfactuals``) are cited in the Braunschweig note."""
     by_id = {z["zone_id"]: z for z in zones}
     order = [ags for ags in list(EROSION_ZONES_FROM_CORE) + list(EROSION_QA_ONLY) if ags in supply]
     rows = []
@@ -985,6 +1037,7 @@ def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool) -> 
             notes.append(f"B5 (pre-registered: recall and precision >= {ss.VALIDATION_MINIMUM:.2f} with the defaults): "
                          f"recall {validation.get('recall', math.nan):.3f}, precision "
                          f"{validation.get('precision', math.nan):.3f}: {'passed' if b5_passed else 'failed'}")
+            notes.append(decisive_interpretation_text(entry, counterfactuals))
         elif role == "zones_from_rule":
             reference = f"v1 polygon {zone_id} (centre_approximation, replaced where the rule is applied)"
         else:
@@ -1100,6 +1153,8 @@ def main(argv=None) -> int:
                                                 "(parking_zones_2026_supply_share_qa.csv)")
     parser.add_argument("--paid-share-out", help="v2 Amendment B7: the release of the classified cells to write "
                                                  "(parking_paid_share_2026.csv.gz)")
+    parser.add_argument("--supply-counterfactual-qa", action="append", default=[],
+                        help="v2 Amendment B: QA file of a POST HOC --counterfactual run, cited in the note of its town")
     args = parser.parse_args(argv)
     if args.erosion_dir and not (args.reference_outline and args.qa_out):
         raise SystemExit("--erosion-dir needs --reference-outline and --qa-out")
@@ -1118,9 +1173,10 @@ def main(argv=None) -> int:
         annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
 
     # ---------------------------------------------------------------- v2 Amendment B: majority rule (issue #436)
-    supply, b5_passed = {}, False
+    supply, b5_passed, supply_counterfactuals = {}, False, []
     if args.supply_share_dir:
         supply = load_supply_inputs(args.supply_share_dir)
+        supply_counterfactuals = load_supply_counterfactuals(args.supply_counterfactual_qa)
         b5_passed = supply_b5(supply)
         if annex_zones is None:
             annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
@@ -1373,7 +1429,8 @@ def main(argv=None) -> int:
     if args.erosion_dir:
         write_qa_table(args.qa_out, qa_table_rows(erosion, zones, pieces, counterfactuals))
     if args.supply_share_dir:
-        write_supply_share_qa(args.supply_qa_out, supply_qa_rows(supply, zones, supply_pieces, b5_passed))
+        write_supply_share_qa(args.supply_qa_out, supply_qa_rows(supply, zones, supply_pieces, b5_passed,
+                                                                 supply_counterfactuals))
         write_paid_share_release(args.paid_share_out, paid_share_release(supply), paid_share_provenance(supply))
     return 0
 

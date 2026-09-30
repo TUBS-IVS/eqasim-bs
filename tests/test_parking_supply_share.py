@@ -152,11 +152,18 @@ def test_each_capacity_heuristic():
     ({"parking:right": "lane", "parking:right:fee": "no",
       "parking:right:fee:conditional": "yes @ (Mo-Sa 09:00-18:00)"}, ("paid", "fee")),
     ({"parking:lane:right": "parallel", "parking:condition:right": "ticket;residents"}, ("paid", "fee")),
-    # resident permit: restricted
+    # resident permit: restricted; resident-only parking of the street parking scheme (access=private +
+    # private=residents, also through parking:both) and the legacy condition residents as well (B1, fix round 1)
     ({"parking:right": "lane", "parking:right:access": "permit"}, ("restricted", "permit")),
-    ({"parking:lane:right": "parallel", "parking:condition:right": "residents"}, ("restricted", "permit")),
-    # not public: private and customers are excluded, also on the whole way
+    ({"parking:right": "lane", "parking:right:access": "private", "parking:right:private": "residents"},
+     ("restricted", "residents")),
+    ({"parking:both": "lane", "parking:both:access": "private", "parking:both:private": "residents"},
+     ("restricted", "residents")),
+    ({"parking:lane:right": "parallel", "parking:condition:right": "residents"}, ("restricted", "residents")),
+    # not public: private (any other private value) and customers are excluded, also on the whole way
     ({"parking:right": "lane", "parking:right:access": "private"}, ("excluded", "not_public")),
+    ({"parking:right": "lane", "parking:right:access": "private", "parking:right:private": "employees"},
+     ("excluded", "not_public")),
     ({"parking:right": "lane", "parking:right:access": "customers"}, ("excluded", "not_public")),
     ({"access": "private", "parking:right": "lane", "parking:right:fee": "yes"}, ("excluded", "not_public")),
     ({"parking:right": "lane", "parking:right:restriction": "loading_only"}, ("excluded", "not_public")),
@@ -187,11 +194,36 @@ def test_classify_supply_side(tags, expected):
     (_lot(fee="yes", access="private"), ("excluded", "not_public")),
     (_lot(fee="no", access="customers"), ("excluded", "not_public")),
     (_lot(access="permit"), ("restricted", "permit")),
+    # resident-only car parks and street-side areas (access=private + private=residents) are restricted (B1)
+    (_lot(access="private", private="residents"), ("restricted", "residents")),
+    (_area(access="private", private="residents"), ("restricted", "residents")),
+    (_lot(access="private", private="employees"), ("excluded", "not_public")),
     (_lot(fee="12 EUR"), ("excluded", "fee_unrecognised")),
     ({"amenity": "bicycle_parking"}, ("excluded", "no_parking_info")),
 ])
 def test_classify_supply_object(tags, expected):
     assert ss.classify_supply_object(tags) == expected
+
+
+def test_yes_side_reading_is_literal_b_a_and_the_lever_1_reading_is_a_named_counterfactual():
+    # parking:<side>=yes (the fallback value of the street parking scheme) is street parking: free without a fee tag
+    # (literal B-a, the default). The counterfactual reads it as no parking information, as lever 1 does; a paid,
+    # disc or legacy yes side keeps its class under both readings.
+    counterfactual = {"yes_position_is_parking": False}
+    yes = dict(STREET, **{"parking:right": "yes"})
+    assert ss.classify_supply_side(yes, "right") == ("free", "no_fee_tag")
+    assert ss.classify_supply_side(yes, "right", **counterfactual) == ("excluded", "no_parking_info")
+    for tags, expected in (({"parking:right:fee": "yes"}, ("paid", "fee")),
+                           ({"parking:right:authentication:disc": "yes"}, ("free", "disc"))):
+        assert ss.classify_supply_side(dict(yes, **tags), "right", **counterfactual) == expected
+    legacy = dict(STREET, **{"parking:lane:right": "yes"})
+    assert ss.classify_supply_side(legacy, "right", **counterfactual) == ("free", "no_fee_tag")
+    ways = [(_line(0, 0, 55, 0), yes)]
+    literal = _elements(ways=ways)
+    counted = ss.supply_elements(_frame(ways), _empty(), _empty(), **counterfactual)
+    assert literal["capacity_spaces"].sum() == pytest.approx(10.0) and counted["capacity_spaces"].sum() == 0.0
+    assert ss.summarise_supply(literal)["free_street_sides_position_yes"] == 1
+    assert ss.YES_SIDES_COUNTERFACTUAL == "yes_sides_no_information"
 
 
 def test_street_side_objects_and_offstreet_lots_are_told_apart_and_misplaced_ones_refused():
@@ -203,6 +235,43 @@ def test_street_side_objects_and_offstreet_lots_are_told_apart_and_misplaced_one
         ss.supply_elements(_empty(), lots, _empty())
     with pytest.raises(ValueError, match="off-street"):
         ss.supply_elements(_empty(), _empty(), areas)
+
+
+def test_fallback_rates_b_a_b_c_and_b_d_are_logged_and_warned_with_their_region(caplog):
+    # B-a: 2 x 110 / 5.5 = 40 free street spaces without a fee tag against 10 tagged fee=no; B-c: a 1,000 m2 lot
+    # without a fee tag (40 spaces) against a 250 m2 lot with fee=no (10), a private lot is no public capacity;
+    # B-d: every capacity is heuristic
+    region = "fixture region: box + 250 m + one cell"
+    fallback = _elements(ways=[(_line(0, 0, 110, 0), _street(**{"parking:both": "lane"})),
+                               (_line(0, 50, 27.5, 50), _street(**{"parking:both": "lane", "parking:both:fee": "no"}))],
+                         lots=[(_box(0, 100, 20, 150), _lot()), (_box(0, 200, 10, 225), _lot(fee="no")),
+                               (_box(0, 300, 20, 350), _lot(access="private"))])
+    summary = ss.summarise_supply(fallback)
+    assert summary["free_street_spaces_without_fee_tag_share"] == pytest.approx(0.8)
+    assert summary["offstreet_spaces_without_fee_tag_share"] == pytest.approx(0.8)
+    assert summary["offstreet_public_lots"] == 2 and summary["heuristic_capacity_share"] == pytest.approx(1.0)
+    caplog.clear()
+    with caplog.at_level("INFO", logger=ss.__name__):
+        ss.log_fallback_rates(summary, label="03101000", region=region)
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 3 and all(region in message and "03101000" in message for message in warnings)
+    assert [any(name in message for message in warnings) for name in ("B-a", "B-c", "B-d")] == [True, True, True]
+    info = [record.getMessage() for record in caplog.records if record.levelname == "INFO"]
+    assert len(info) == 1 and region in info[0] and all(name in info[0] for name in ("B-a", "B-c", "B-d"))
+    # tagged capacity, fee tags and no off-street lot without one: the rates are logged, nothing is warned
+    tagged = _elements(areas=[(_box(0, 0, 10, 25), _area(fee="no", capacity="20"))],
+                       lots=[(_box(0, 100, 20, 150), _lot(fee="yes", capacity="40"))])
+    caplog.clear()
+    with caplog.at_level("INFO", logger=ss.__name__):
+        ss.log_fallback_rates(ss.summarise_supply(tagged), label="03101000", region=region)
+    assert [record.levelname for record in caplog.records] == ["INFO"]
+    # supply_elements logs the same rates for its region
+    caplog.clear()
+    with caplog.at_level("INFO", logger=ss.__name__):
+        ss.supply_elements(_frame([(_line(0, 0, 110, 0), _street(**{"parking:both": "lane"}))]), _empty(), _empty(),
+                           label="03101000", region=region)
+    assert any(record.levelname == "WARNING" and "B-a" in record.getMessage() and region in record.getMessage()
+               for record in caplog.records)
 
 
 def test_supply_elements_need_metric_crs():
@@ -481,7 +550,8 @@ def test_supply_inventory_reads_the_parking_features_of_the_box_with_the_gdal_os
            for layer, frame in layers.items()}
     # the footway without parking key, the street outside the box and the building are not read
     assert ids == {"points": [("node", 29)],
-                   "lines": [("way", 501), ("way", 502), ("way", 503), ("way", 504), ("way", 505), ("way", 507)],
+                   "lines": [("way", 501), ("way", 502), ("way", 503), ("way", 504), ("way", 505), ("way", 507),
+                             ("way", 509)],
                    "multipolygons": [("relation", 800), ("way", 601), ("way", 602), ("way", 603)]}
     tags = {int(row.osm_id): row.tags for frame in layers.values() for row in frame.itertuples()}
     # other_tags (HSTORE) with an escaped quote and a comma inside a value, merged with the attribute columns
@@ -489,7 +559,7 @@ def test_supply_inventory_reads_the_parking_features_of_the_box_with_the_gdal_os
     assert tags[800]["building:levels"] == "3" and tags[800]["amenity"] == "parking"
     ways, objects = inventory_frames(layers)
     assert ways.crs.to_epsg() == 25832 and objects.crs.to_epsg() == 25832
-    assert sorted(ways["osm_id"]) == [501, 502, 503, 504, 505, 507]
+    assert sorted(ways["osm_id"]) == [501, 502, 503, 504, 505, 507, 509]
     assert sorted(objects["osm_id"]) == [29, 601, 602, 603, 800]
 
 
@@ -583,7 +653,7 @@ def _b5_inputs(directory: Path) -> list:
             "--annex-affine", str(paths["affine"]), "--annex-image", str(paths["image"])]
 
 
-def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_path):
+def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_path, caplog):
     import hashlib
     import shutil
 
@@ -602,7 +672,11 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     town = ["--town", "03101000=" + ",".join(str(value) for value in FIXTURE_BBOX)]
     common = ["--supply-share", "--overpass-dir", str(overpass), "--out-dir", str(out)] + town + _b5_inputs(tmp_path)
     read = ["--osm-extract", str(extract), "--osm-timestamp", "2026-09-28T00:00:00Z"]
-    assert main(common + read) == 0
+    with caplog.at_level("INFO"):
+        assert main(common + read) == 0
+    # G3: the rates of the query box (the QA numbers) are logged too, naming the region
+    assert any("query box (the QA numbers)" in record.getMessage() and "B-a" in record.getMessage()
+               for record in caplog.records)
 
     meta = json.loads((out / "supply_inventory_fixture-260928.json").read_text(encoding="utf-8"))
     assert meta["extract"]["md5"] == hashlib.md5(extract.read_bytes()).hexdigest()
@@ -613,13 +687,14 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     assert qa["osm_timestamp"] == "2026-09-28T00:00:00Z"
     assert qa["parameters"] == ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
     assert qa["supply"]["elements_by_kind_and_class"] == {
-        "street_side": {"paid": 2, "restricted": 2, "free": 3, "excluded": 5},
+        "street_side": {"paid": 2, "restricted": 2, "free": 4, "excluded": 6},
         "street_side_area": {"paid": 0, "restricted": 0, "free": 1, "excluded": 0},
         "lot": {"paid": 2, "restricted": 0, "free": 1, "excluded": 1}}
-    # the Overpass fixture lacks the service way 507, the street-side area 603, the node lot 700 and the car park 800
+    # the Overpass fixture lacks the service way 507, the way 509, the street-side area 603, the node lot 700 and the
+    # car park 800
     assert qa["cross_check"]["overpass_response"] == "03101000_regulation_overpass_2026-09-30.json"
     assert qa["cross_check"]["difference"] == {
-        "street_side": {"paid": 0, "restricted": 0, "free": 1, "excluded": 1},
+        "street_side": {"paid": 0, "restricted": 0, "free": 2, "excluded": 2},
         "street_side_area": {"paid": 0, "restricted": 0, "free": 1, "excluded": 0},
         "lot": {"paid": 1, "restricted": 0, "free": 1, "excluded": 0}}
     assert qa["rule"]["area_m2"] > 10_000 and 0 < qa["raster"]["classified_cells"] <= qa["raster"]["cells"]
@@ -645,6 +720,21 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     for arm in ss.SENSITIVITY_ARMS:
         assert (out / f"03101000_supply_qa_{arm.tag()}.json").is_file(), arm.tag()
     assert qa_path.read_bytes() == before
+    # G1: the POST HOC counterfactual (yes sides as no information) writes its own tagged files, named in the QA,
+    # checked against the Geofabrik MD5 of the extract the inventory was read from
+    md5_file = ["--osm-extract-md5", str(tmp_path / "fixture-260928.osm.md5")]
+    assert main(common + md5_file + ["--from-inventory", str(out / "supply_inventory_fixture-260928.gpkg"),
+                                     "--counterfactual", ss.YES_SIDES_COUNTERFACTUAL]) == 0
+    counterfactual = json.loads((out / f"03101000_supply_qa_{TAG}_yesnoinfo.json").read_text(encoding="utf-8"))
+    assert counterfactual["counterfactual"] == ss.YES_SIDES_COUNTERFACTUAL and qa_path.read_bytes() == before
+    # the left side of way 509 (parking:left=yes) is no parking information in the counterfactual only
+    assert counterfactual["supply"]["elements_by_kind_and_class"]["street_side"] == {"paid": 2, "restricted": 2,
+                                                                                   "free": 3, "excluded": 7}
+    assert json.loads(qa_path.read_text(encoding="utf-8"))["counterfactual"] is None
+    (tmp_path / "other.md5").write_text(f"{'0' * 32}  {extract.name}\n", encoding="ascii")
+    with pytest.raises(SystemExit, match="MD5"):
+        main(common + ["--osm-extract-md5", str(tmp_path / "other.md5"), "--from-inventory",
+                       str(out / "supply_inventory_fixture-260928.gpkg"), "--overwrite"])
 
 
 # --------------------------------------------------------------------------- B6: the assembly of the rule polygons
@@ -701,7 +791,7 @@ def _v1_zones(assembly) -> list:
                                  "centre_approximation", "https://v1", "v1")]
 
 
-def _assemble(assembly, directory: Path, recall: float, precision: float) -> tuple:
+def _assemble(assembly, directory: Path, recall: float, precision: float, counterfactuals=()) -> tuple:
     """Rule inputs of Braunschweig (a piece half under the v1 zone Ia, one inside zone II, one outside every annex
     zone), Goslar (replaces its centre approximation) and Wolfsburg (QA only), assembled like the script's main."""
     metrics = {"recall": recall, "precision": precision, "rule_area_m2": 1.0, "legal_area_m2": 1.0,
@@ -727,7 +817,8 @@ def _assemble(assembly, directory: Path, recall: float, precision: float) -> tup
                                                               noun="rule polygons")
         zones += records
     assembly.write_zone_file(assembly.zone_frame(zones), directory / "zones.geojson")
-    assembly.write_supply_share_qa(directory / "qa.csv", assembly.supply_qa_rows(supply, zones, pieces, b5_passed))
+    assembly.write_supply_share_qa(directory / "qa.csv", assembly.supply_qa_rows(supply, zones, pieces, b5_passed,
+                                                                                counterfactuals=counterfactuals))
     assembly.write_paid_share_release(directory / "release.csv.gz", assembly.paid_share_release(supply),
                                       provenance=assembly.paid_share_provenance(supply))
     loaded = pz_load(directory / "zones.geojson")
@@ -778,7 +869,13 @@ def test_b6_applies_the_rule_polygons_when_b5_passes(assembly, tmp_path):
 
 
 def test_b6_leaves_every_polygon_when_b5_fails(assembly, tmp_path):
-    zones, qa, pieces = _assemble(assembly, tmp_path, recall=0.689, precision=0.845)
+    # the POST HOC counterfactual is cited in the Braunschweig note next to the decisive interpretation, never applied
+    counterfactual = {"ags": BS, "counterfactual": ss.YES_SIDES_COUNTERFACTUAL, "_path": "counterfactual.json",
+                      "parameters": ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict(),
+                      "validation": {"recall": 0.762837, "precision": 0.854269, "passes": True}}
+    zones, qa, pieces = _assemble(assembly, tmp_path, recall=0.689, precision=0.845, counterfactuals=[counterfactual])
+    note = qa.loc[BS, "note"]
+    assert "parking:<side>=yes" in note and "POST HOC" in note and "0.763" in note and "not a validation" in note
     assert set(zones["geometry_source"]) == {"ordinance_map", "osm_fee_tags", "centre_approximation"}
     # without a rule-based polygon the release keeps its v1 layout (byte identity of the regenerated file)
     assert list(zones.columns) == ["geometry_source", "source_url", "source_date", "digitised_on", "digitising_note",
@@ -791,15 +888,19 @@ def test_b6_leaves_every_polygon_when_b5_fails(assembly, tmp_path):
 
 @pytest.mark.parametrize("change, message", [
     ("sensitivity_arm", "pre-registered"),
+    ("counterfactual", "counterfactual"),
     ("contradicting_gate", "contradicts"),
-], ids=["sensitivity_arm", "contradicting_gate"])
+], ids=["sensitivity_arm", "counterfactual", "contradicting_gate"])
 def test_assembly_refuses_supply_inputs_it_cannot_trust(assembly, tmp_path, change, message):
     metrics = {"recall": 0.60, "precision": 0.90}
-    if change == "sensitivity_arm":
+    if change in ("sensitivity_arm", "counterfactual"):
         _write_supply_inputs(tmp_path, GS, [_box(0, 0, 200, 200)])
         path = tmp_path / f"{GS}_supply_qa_{TAG}.json"
         document = json.loads(path.read_text(encoding="utf-8"))
-        document["parameters"]["walk_m"] = 400.0
+        if change == "sensitivity_arm":
+            document["parameters"]["walk_m"] = 400.0
+        else:
+            document["counterfactual"] = ss.YES_SIDES_COUNTERFACTUAL
         path.write_text(json.dumps(document), encoding="utf-8")
         with pytest.raises(SystemExit, match=message):
             assembly.load_supply_inputs(tmp_path, municipalities=(GS,))

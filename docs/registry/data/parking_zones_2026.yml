@@ -127,20 +127,66 @@ acquisition:
     up to at most two elements per class; the causes were identified per element: OSM edits in the day between the
     two snapshots (two Braunschweig street sides gained a parking tag, two ways are new) and eight multipolygon
     car-park relations in Braunschweig, Gifhorn, Peine and Salzgitter that the Overpass parser of the regulation
-    mode cannot build and skips (logged) while the GDAL OSM driver builds them. The pre-registered validation B5
-    FAILED in Braunschweig with the defaults: recall 0.689 (1,628,823 m2 of the 2,365,028 m2 of the ordinance
-    polygons bs_zone_ia and bs_zone_ib lie inside the rule; 91.7 % of Ia, 35.4 % of Ib) below 0.70, precision
-    0.845 (2,365,510 of the 2,800,145 m2 of the rule inside the annex map frame lie inside the annex zones). So B6
-    was applied nowhere and no polygon changed: re-running assemble_parking_zones.py with --supply-share-dir
-    raw_osm/derived_supply_share (without --erosion-dir) reproduces this file byte for byte (same git blob). The
-    sensitivity arms, information only and never used to select a passing combination (changing a default is an
-    owner decision recorded in an ADR): W 150 m recall 0.614 / precision 0.874, W 400 m 0.592 / 0.762, share 0.3
-    0.880 / 0.848, share 0.7 0.294 / 0.757. The committed QA table parking_zones_2026_supply_share_qa.csv (the
-    same assembly run with --supply-qa-out; its header defines every column) holds per town the element counts
-    per class, the cross-check, the tagged vs heuristic capacity share, the share of the free street capacity that
-    rests on a missing fee tag, the classified cell share, the rule area, B5 in Braunschweig, the overlap with the
-    v1 polygon elsewhere, the arms and the decision; the classified cells are the release parking_paid_share_2026
-    (B7).
+    mode cannot build and skips (logged) while the GDAL OSM driver builds them.
+    Correction of the task review (fix round 1, 2026-09-30, ruling R-T1b-d, justified by the text of B1, not a tuning
+    step): resident-only parking, tagged access=private with private=residents on the street side
+    (parking:<side>:access=private + parking:<side>:private=residents) or on the car park or street-side area, is
+    restricted (B1 names resident permits restricted); the first run excluded it as not public, any other private
+    value stays excluded. In Braunschweig the restricted elements rise from 13 to 39 (13 street sides, 12
+    street-side areas and 1 lot are resident-only and now restricted) and the restricted capacity from 397 to 854
+    spaces;
+    the other towns carry no such tagging and are unchanged. The eight towns were re-run with the corrected code from
+    the saved inventory of the first run (raw_osm/derived_supply_share/supply_inventory_niedersachsen-260929.gpkg,
+    checked against the Geofabrik MD5 with --from-inventory ... --osm-extract-md5 raw_osm/niedersachsen-260929
+    .osm.pbf.md5, 2 min 10 s) into the new folder raw_osm/derived_supply_share_fix_round_1/ (the first run's files
+    stay as the superseded evidence; nothing was rewritten). The pre-registered validation B5 FAILS in Braunschweig
+    with the defaults: recall 0.696 (0.696112: 1,646,324 m2 of the 2,365,028 m2 of the ordinance polygons
+    bs_zone_ia and bs_zone_ib lie inside the rule; 92.5 % of Ia, 36.1 % of Ib) below 0.70, precision 0.852
+    (0.852189: 2,505,847 of the 2,940,482 m2 of the rule inside the annex map frame lie inside the annex zones);
+    before the correction 0.688712 / 0.844781. So B6 was applied nowhere and no polygon changed: re-running
+    assemble_parking_zones.py with --supply-share-dir raw_osm/derived_supply_share_fix_round_1 (without
+    --erosion-dir) reproduces this file byte for byte (same git blob). The sensitivity arms, information only and
+    never used to select a passing combination (changing a default is an owner decision recorded in an ADR), after
+    (before) the correction: W 150 m recall 0.625 / precision 0.882 (0.614 / 0.874), W 400 m 0.613 / 0.772 (0.592 /
+    0.762), share 0.3 0.883 / 0.856 (0.880 / 0.848), share 0.7 0.306 / 0.765 (0.294 / 0.757).
+    Interpretations beyond B-a..B-f (implementation choices of Task 1b, not owner rulings; the one list, the other
+    records and the QA table point here): (1) parking:<side>=yes, the fallback value of the street parking scheme,
+    is a parking position, so such a side without a fee tag is free street parking (the literal B-a reading; lever 1
+    reads it as no parking information). This reading DECIDES the B5 outcome: 69 free sides with 1,219 heuristic
+    spaces in the Braunschweig query box, many within 250 m of zones Ia and Ib; with the literal reading B5 fails
+    (0.696112 / 0.852189), while the POST HOC counterfactual that reads these sides as no parking information, as
+    lever 1 does (builder --counterfactual yes_sides_no_information, files raw_osm/derived_supply_share_fix_round_1/
+    03101000_*_w250_t0.5_u50_c25_s12.5_i10000_yesnoinfo.*), gives recall 0.768669 and precision 0.860518, which
+    would pass (before the correction of fix round 1: 0.762837 / 0.854269, the figure of the task review, reproduced
+    to the sixth decimal by the project code). The literal reading stays the default (ruling R-T1b-c: it was fixed
+    before the result was known, and switching it because the other reading passes would select a passing
+    combination); the counterfactual is not a validation and never a release input; the owner decides the tag
+    meaning in the Amendment-B ADR. (2) Resident-only parking (access=private + private=residents) is restricted,
+    any other private value and customers are excluded (above). (3) Precedence of a street side: the way not public
+    -> mapped separately -> private or customers on the side -> paid -> permit or residents -> forbidden -> disc
+    (free) -> any other access, restriction or condition (not public) -> a parking position with fee=no or without
+    a fee tag (free); so a permit or a forbidden side wins over a disc tag. (4) fee:conditional with a 'yes @ (...)'
+    clause is paid, also next to fee=no. (5) A fee value that is neither yes nor no (for example a time interval or
+    an amount) excludes the element (fee_unrecognised). (6) access=designated, employees, delivery, no and every other
+    non-public access value exclude a car park or side; access=yes, permissive, public, destination are public.
+    (7) A side mapped separately (parking:<side>=separate) counts through its street-side area, never itself.
+    (8) Street-side area or off-street lot: decided by parking=* in street_side, lane, on_kerb, half_on_kerb,
+    shoulder, layby (B-a applies to those, B-c to all other car parks); a street-side area with authentication:disc=
+    yes is free (B-b), an off-street lot without a fee tag stays excluded even with a disc tag (B-c). (9) Capacity:
+    parking:<side>:capacity, legacy parking:lane:<side>:capacity and parking:condition:<side>:capacity, each falling
+    back to both, which applies to each side; only a plain whole number counts, otherwise the heuristic (counted); a
+    street-side area drawn as a line counts as a street side (length / 5.5 m); a node without a capacity tag carries
+    0 spaces (counted); the levels (levels, then building:levels) multiply only parking=multi-storey. (10) The raster
+    covers the EPSG:25832 bounds of the WGS84 query box (sliver cells beyond its corners) and its radius sums see the
+    supply up to W plus one cell beyond the box; the capacity is spread every 5 m along lines and on a 5 m grid in
+    areas; a share within 1e-9 of the threshold counts as reaching it and a supply within 1e-6 spaces of the
+    minimum; the smoothing uses round joins; the inventory box is the union of the eight query boxes grown by 1 km.
+    The committed QA table parking_zones_2026_supply_share_qa.csv (the same assembly run with --supply-qa-out and
+    --supply-counterfactual-qa <the Braunschweig _yesnoinfo QA file>; its header defines every column) holds per town
+    the element counts per class, the cross-check, the tagged vs heuristic capacity share, the B-a and B-c rates, the
+    classified cell share, the rule area, B5 in Braunschweig with the decisive interpretation and its POST HOC
+    counterfactual in the note, the overlap with the v1 polygon elsewhere, the arms and the decision; the classified
+    cells are the release parking_paid_share_2026 (B7).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -251,13 +297,16 @@ limitations: >-
   reference_conflicts names them per zone; conflicts are resolved by the source, not by the script). At the
   sensitivity arms W = 150 m and 400 m no town gives a core (Braunschweig at 150 m: erode(fill(R)) 294 m2, Z 0 once
   F is subtracted). The majority rule over the parking supply of spec Amendment B (2026-09-30) was not applied
-  either, because its pre-registered validation B5 failed in Braunschweig (recall 0.689 below 0.70), so the same
-  approximations and gaps stay. Its Braunschweig rule covers 91.7 % of the ordinance polygon of zone Ia (88.3 % of
-  the annex zone Ia, which includes the southern Ia) and 10.6 % of the annex zone II (the station quarter), but
-  only 35.4 % of zone Ib (the Wallring), where OSM maps much free street parking; 0.677 of its 3.043 km2 lie
-  outside every annex zone. Behind every cell lie the assumptions B-a (79.0 % of the free street capacity of the
-  Braunschweig box has no fee tag) and B-d (66.5 % of the usable capacity comes from the heuristic); columns
-  free_street_spaces_without_fee_tag_share and heuristic_capacity_share of parking_zones_2026_supply_share_qa.csv.
+  either, because its pre-registered validation B5 failed in Braunschweig (recall 0.696 below 0.70 after the
+  correction of fix round 1; decided by the reading of parking:<side>=yes, see the interpretations under
+  acquisition), so the same approximations and gaps stay. Its Braunschweig rule covers 92.5 % of the ordinance
+  polygon of zone Ia (89.0 % of the annex zone Ia, which includes the southern Ia) and 12.5 % of the annex zone II
+  (the station quarter), but only 36.1 % of zone Ib (the Wallring), where OSM maps much free street parking; 0.677
+  of its 3.183 km2 lie outside every annex zone. Behind every cell lie the assumptions B-a (79.0 % of the free
+  street capacity of the Braunschweig box has no fee tag), B-c (30.0 % of its public off-street capacity is
+  excluded for lack of a fee tag) and B-d (66.8 % of the usable capacity comes from the heuristic); columns
+  free_street_spaces_without_fee_tag_share, offstreet_spaces_without_fee_tag_share and heuristic_capacity_share of
+  parking_zones_2026_supply_share_qa.csv.
 notes: >-
   Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data,
   2026-09-30, after v2 lever 1): 24 zones, 24 tariff rows, 131 register rows (123 municipalities); zone_type
@@ -268,9 +317,9 @@ notes: >-
   03101000 Braunschweig 17 zones 3.048 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 1 zone
   0.592 km2, 03151009 Gifhorn 1 zone 0.284 km2, 03153017 Goslar 1 zone 0.642 km2, 03154028 Helmstedt 1 zone
   0.326 km2, 03157006 Peine 1 zone 0.343 km2, 03158037 Wolfenbuettel 1 zone 0.513 km2; register status zoned 8,
-  no_paid_parking_known 0, not_audited 115, excluded 8; after Amendment B also supply-share QA 8 towns, B5 recall
-  0.688712, precision 0.844781, passed false, decision b5_failed 4, qa_only 4; paid-share release 62,659 classified
-  cells; OK. Curation check, not a validation: assign_zones over
+  no_paid_parking_known 0, not_audited 115, excluded 8; after Amendment B (fix round 1) also supply-share QA 8
+  towns, B5 recall 0.696112, precision 0.852189, passed false, decision b5_failed 4, qa_only 4; paid-share release
+  62,659 classified cells; OK. Curation check, not a validation: assign_zones over
   the 47,362 activities of the local 1 % scenario eqasim-data/output_bs (2026-04-29) puts 1,950 (4.1 %) into a
   zone (Ia 375, Ib 220, Stadthalle 132 46, Parkscheininsel Marthastrasse/Koernerstrasse 13, the other two
   islands 0, TU campuses 274 of which 201 education and 44 work, Wolfsburg 283, Goslar 245, Peine 131,
