@@ -19,7 +19,13 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   (final-review fix wave, Important finding 8): an md5 over the vendored matsim.scenario.population
   writer''s source, so an edit to the VENDORED writer devalidates this stage''s synpp cache -- it
   previously had no validate() at all, leaving a stale cached plans.xml.gz in place after such an
-  edit.'
+  edit. Since ADR-0139 (issue #436), with parking_zones_enabled the wrapper hands the frames after the
+  in-commuter merge to braunschweig.parking.attach (zone of every activity location, resident zone of
+  every home, free-parking draw of the work/education activities, from the release of
+  braunschweig.parking.zones_stage), so add_person writes the activity attributes parkingZone and
+  parkingFree and the person attribute residentParkingZone; combining the flag with the legacy ring
+  enable_urban_parking is rejected in configure, and with the flag off no parking column is attached
+  (byte-identical plans). Mechanism: docs/codebase/notes/parking-cost-zones.md.'
 lineage:
   type: overridden
   upstream: matsim.scenario.population
@@ -42,9 +48,11 @@ features:
 - rbw_leg_convention
 - urban_parking
 - general_day_absence
+- parking_cost_zones
 decisions:
 - ADR-0121
 - ADR-0104
 - ADR-0022
 - ADR-0029
 - ADR-0110
+- ADR-0139

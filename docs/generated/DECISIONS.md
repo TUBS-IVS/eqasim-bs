@@ -48,7 +48,7 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0036](../decisions/ADR-0036-shared-persistent-stage-cache-prime-on-launch.md) | 2026-06-22 | active | Shared persistent stage-cache (prime-on-launch) |
 | [ADR-0037](../decisions/ADR-0037-tier-a-b-shareable-stage-set-fixed-popsim-work-dir.md) | 2026-06-22 | active (config wiring partial) | Tier-A/B shareable-stage set + fixed popsim work_dir |
 | [ADR-0038](../decisions/ADR-0038-own-editable-eqasim-java-bs-fork.md) | 2026-06 | active | Own editable `eqasim-java-bs` fork |
-| [ADR-0039](../decisions/ADR-0039-urban-parking-braunschweig-inner-ring.md) | 2026-06 | active | Urban parking (Braunschweig inner ring) |
+| [ADR-0039](../decisions/ADR-0039-urban-parking-braunschweig-inner-ring.md) | 2026-06 | superseded by ADR-0139 (2026-09-30): zone-based parking costs replace the ring in the canonical configuration; the ring stays reproducible as the legacy mode (`enable_urban_parking: true` with `parking_zones_enabled: false`). | Urban parking (Braunschweig inner ring) |
 | [ADR-0040](../decisions/ADR-0040-professionalized-pm-tracking-layer.md) | 2026-06-28 | active | Professionalized PM / tracking layer |
 | [ADR-0041](../decisions/ADR-0041-rejected-pin-commute-gravity-friction-factors.md) | 2026-06-25 | rejected | REJECTED — Pin commute gravity friction factors |
 | [ADR-0042](../decisions/ADR-0042-rejected-distance-dependent-detour-curve-f-d-as-default.md) | 2026-06-25 | rejected | REJECTED — Distance-dependent detour curve f(d) as default |
@@ -138,3 +138,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0127](../decisions/ADR-0127-passive-escort-surrogate-anchor-household-member.md) | 2026-09-17 | active | A passive escort child whose donor adult left the household anchors at a household surrogate's secondary location |
 | [ADR-0128](../decisions/ADR-0128-commute-day-diagnostics-as-committed-artifacts.md) | 2026-09-17 | active | Commute-day diagnostics as committed artifacts, not log excerpts |
 | [ADR-0133](../decisions/ADR-0133-compact-vrb-zone-fare-model-replaces-the-parked-tariff-engine.md) | 2026-09-24 | accepted (maintainer decision "A", 2026-09-24); production flag ON since the 1 % ON/OFF smoke | A compact VRB zone fare model replaces the parked tariff engine |
+| [ADR-0139](../decisions/ADR-0139-zone-based-parking-costs-replace-the-8-km-ring.md) | 2026-09-30 | accepted pending owner review at the PR; production flag ON in the reviewed branch, the 25 % legacy-vs-zones A/B is pending | Zone-based parking costs replace the 8 km ring |

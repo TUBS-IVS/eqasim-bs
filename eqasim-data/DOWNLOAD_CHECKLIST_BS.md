@@ -120,6 +120,10 @@ None of these are required for `synthesis.output`.
 | D2 | **GTFS Deutschland (Delfi) or ZGB feeds** (zip) | https://www.opendata-oepnv.de/ht/de/organisation/delfi/startseite or `https://www.zgb.de` | `gtfs/<any>.zip` | DELFI / ZGB terms |
 | D3 | **VRB tariff-zone mapping** for `braunschweig.data.vrb.zones` (consumed by Java `AddTransitZoneInformation` → ÖV-fare module). Built from the public VRB website (legacy name matching) or from the D4 polygon layer (preferred) | https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen (HTML) — alt: D4 polygons | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` (or D4 → same script, `--waben`) | VRB terms |
 | D4 | **VRB tariff zone polygons** (official, 46 polygons, EPSG:25832, field `Tarifzone`; zones 55/56 in Region Hannover missing) | https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0 — REST `query` export (`where=1=1`, `outFields=*`, `outSR=25832`, `f=geojson`) | `vrb/vrb_tarifzonen_rgb_25832.geojson` | **unknown** — no licence text on the service; confirmation pending (`docs/data/vrb-tariff-zone-polygons-provider-notes.md`); do not commit or redistribute |
+| D5 | **Parking cost zone polygons 2026** (zone-based parking costs, ADR-0139; required because `parking_zones_enabled` is on) | committed with the repository — nothing to download (Section F) | `braunschweig/parking/parking_zones_2026.geojson` | ODbL 1.0 for the OSM-derived outlines (data record `parking_zones_2026`) |
+| D6 | **Parking tariffs 2026** (one sourced row per zone) | committed (Section F) | `braunschweig/parking/parking_tariffs_2026.csv` | public tariff facts (data record `parking_tariffs_2026`) |
+| D7 | **Parking coverage register 2026** (status of every ZGB municipality) | committed (Section F) | `braunschweig/parking/parking_coverage_register_2026.csv` | own compilation (data record `parking_coverage_register_2026`) |
+| D8 | **SrV 2023 commute parking by workplace class** (free-parking shares of the draw) | committed (Section F) | `braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv` | derived aggregate, no microdata (data record `srv2023_commute_parking_by_workplace_class`) |
 
 GTFS should be pre-clipped to the ZGB bounding box (see below).
 
@@ -195,6 +199,8 @@ CLAUDE.md). Do **not** `git add -f` any other data file.
 |---|---|---|
 | `mid/mid2023_*.csv` | MiD 2023 numbered reference tables (P9/P12.1/P13/P17.1/P24.1/H4/H7/H12.3/P36.1/W1/W2/Tabelle 43 + margins + class-midpoint) — small aggregate tables, a few rows each | `scripts/seed_mid_constraint_tables.py`, `scripts/extract_mid_tables.py`, `scripts/seed_mid_t43_school_distance.py` |
 | `mid/education_calibration/*` | the project's own calibration-evaluation outputs (results CSV, figures, summary) — model diagnostics, no third-party data | `scripts/calibrate_education_slopes.py --output-dir ...` |
+| `parking/parking_zones_2026.geojson`, `parking/parking_tariffs_2026.csv`, `parking/parking_coverage_register_2026.csv` | the curated parking cost zone release (ADR-0139): zone polygons, one sourced tariff row per zone, the status of every ZGB municipality. The polygons are partly OSM-derived: ODbL 1.0, keep the attribution "(c) OpenStreetMap contributors" and the share-alike terms | hand curation (not one command; data records `parking_zones_2026`, `parking_tariffs_2026`, `parking_coverage_register_2026`); OSM outlines via `scripts/build_parking_zones_from_osm.py`; check with `scripts/validate_parking_zones.py --data-path eqasim-data/data` |
+| `srv/srv2023_commute_parking_by_workplace_class.csv`, `srv/srv2023_city_center_parking.csv` | SrV 2023 parking place and payment shares: car commuters by workplace class (model input of the free-parking draw) and usual Braunschweig city-centre parking (a comparison quantity only) | `scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (one run writes both) |
 
 **Local-only — NEVER committed (download / regenerate yourself):**
 
@@ -204,9 +210,13 @@ CLAUDE.md). Do **not** `git add -f` any other data file.
 | `schools/nds_hochschulen.csv` | Hochschule enrollment + campus coords (local + surrounding) | `scripts/seed_nds_hochschulen.py` (E3) |
 | `schools/nds_kitas_zgb.csv` | Kita Plätze per Einheits-/Samtgemeinde | `scripts/extract_nds_kitas.py` (E4) |
 | `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
-| all Section A–D inputs | population/employment/commuting/household/income registers, ALKIS/ATKIS, OSM, GTFS, ... | download per Sections A–D |
+| `srv/srv2023_raw/SrV2023_Personen_Zusatz_{Braunschweig,RGB}.csv`, `SrV2023_Personen.csv`, `SrV2023_Wege.csv` | SrV 2023 scientific-use microdata (the two P2 add-on person modules, the person and the trip file); restricted, never redistributed | needed only to regenerate the two SrV parking tables above (delivery under the SrV usage agreement, data record `srv2023_raw`) |
+| `parking/raw_overpass/`, `parking/raw_sources/` | Overpass responses and the retrieved tariff pages and documents behind the parking release | needed only to re-curate the zones; `scripts/build_parking_zones_from_osm.py --out-dir .../parking/raw_overpass` writes the Overpass part |
+| all Section A–D inputs except the committed D5–D8 | population/employment/commuting/household/income registers, ALKIS/ATKIS, OSM, GTFS, ... | download per Sections A–D |
 
-Licence note: the committed tables are small derived aggregate reference values;
+Licence note: the committed tables are small derived aggregate reference values, except the
+parking cost zone release, which holds curated public tariff facts and ODbL-licensed
+OSM-derived polygons (keep the OpenStreetMap attribution and share-alike terms);
 all other inputs are kept local. Check each dataset's own terms before reuse.
 
 ---

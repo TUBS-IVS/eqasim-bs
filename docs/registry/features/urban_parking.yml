@@ -1,17 +1,18 @@
 feature: urban_parking
-title: Urban parking (BS inner ring)
+title: Urban parking (BS inner ring, legacy)
 area: matsim
 description: Marks inner-city Braunschweig residents so the Java mode choice applies parking cost
-  inside the BS inner ring (ADR-0039).
+  inside the BS inner ring (ADR-0039). Superseded by parking_cost_zones (ADR-0139) and kept as legacy
+  reproduction; mutually exclusive with parking_zones_enabled.
 stages:
 - matsim.scenario.population
 pipelines:
-  popsim_mid: active
+  popsim_mid: inactive
   popsim_open: active
   simple_ipf_open: inactive
-lifecycle: active
+lifecycle: supported
 production:
-  enabled: true
+  enabled: false
   flags:
   - enable_urban_parking
 introduced:
@@ -27,16 +28,19 @@ evidence:
   - tests/test_matsim_id_types.py
   - tests/test_population_income_attribute.py
   - tests/test_popsim_config_parity.py
+  - tests/test_population_parking_attributes.py
   off_path_byte_identical:
     claimed: not_applicable
-    note: No dedicated OFF-path byte-identity test found for this flag.
+    note: No dedicated OFF-path byte-identity test found for this flag. The LEGACY plans (ring on, no zone
+      columns) are pinned byte for byte to the writer before the zone-based parking costs by
+      tests/test_population_parking_attributes.py::test_legacy_ring_frames_match_the_prechange_writer_bytes.
   fallback_rate:
     instrumented: false
     note: No fallback/primary logging pattern found near enable_urban_parking.
   reference:
     kind: none
     note: |
-      Infrastructure/scenario feature scoped to the Braunschweig inner ring; no external reference applies. docs/codebase/CONCERNS.md flags a MEDIUM-severity "parking scenario parity" concern -- enable_urban_parking defaults to false/absent in at least one fixture, inconsistent with the base config's true.
+      Infrastructure/scenario feature scoped to the Braunschweig inner ring; no external reference applies. docs/codebase/CONCERNS.md flags a MEDIUM-severity "parking scenario parity" concern about enable_urban_parking differing between the base config and the fixtures; since ADR-0139 the base config sets it false while configs/fixtures/config_popsim_mid_braunschweig.yml and config_popsim_open_braunschweig.yml keep it true.
 validation:
   state: unvalidated
   runs: []
@@ -48,5 +52,11 @@ assessment:
   date: null
   pending_reason: |
     ADR-0039 documents the design decision. The file-path discrepancy this record reported is FIXED (issue #254, 2026-08-17): ADR-0039's Decision text now names matsim/scenario/population.py and points at the enclosing symbols (registered in configure, forwarded by write_population, applied in add_person) rather than matsim/simulation/prepare.py, which contains no parking logic.
-    STILL PENDING: no owner verdict on the fixture parity gap noted above -- enable_urban_parking is false/absent in at least one fixture while configs/base_bs.yml sets it true.
+    SUPERSEDED by parking_cost_zones (ADR-0139), which is the canonical configuration's parking cost model; this record stays for the legacy reproduction (parking_zones_enabled false, enable_urban_parking true).
+    STILL PENDING: no owner verdict on the popsim fixture configs, which keep the ring on (tests/test_popsim_config_parity.py pins it) while configs/base_bs.yml runs the zones.
   source: ADR-0039
+notes: >-
+  superseded by parking_cost_zones (ADR-0139); kept as legacy reproduction. Lifecycle 'supported' is the
+  closest allowed state to 'deprecated' (braunschweig.documentation.schema.LIFECYCLES has no deprecated
+  value): the ring stays wired and usable but is no longer the configured default. popsim_open stays
+  active because its fixture configuration still enables the ring.

@@ -64,6 +64,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.ipf.model](../registry/stages/braunschweig.ipf.model.yml) | population | braunschweig_new | -- | -/-/A | -- | employment_margin, household_size_margin, ipf_synthesis_legacy |
 | [braunschweig.ipf.prepare](../registry/stages/braunschweig.ipf.prepare.yml) | population | braunschweig_new | -- | -/-/A | -- | household_size_margin, ipf_synthesis_legacy, joint_age_size_margin |
 | [braunschweig.locations.work](../registry/stages/braunschweig.locations.work.yml) | work | braunschweig_new | x | A/-/- | -- | building_potentials_work, taz_work_location_choice |
+| [braunschweig.parking.zones_stage](../registry/stages/braunschweig.parking.zones_stage.yml) | matsim | braunschweig_new | x | A/-/- | -- | parking_cost_zones |
 | [braunschweig.popsim.completed_donor](../registry/stages/braunschweig.popsim.completed_donor.yml) | population | braunschweig_new | x | A/-/- | -- | diary_plan_match, mid_passenger_availability, participation_universe_controls, performance_equivalence, popsim_method |
 | [braunschweig.synthesis.commute_day.home_office_donors_stage](../registry/stages/braunschweig.synthesis.commute_day.home_office_donors_stage.yml) | behavior | braunschweig_new | x | A/-/- | -- | commute_day_state, escort_passive_from_adult, performance_equivalence, purpose_main_fold_code_10 |
 | [braunschweig.synthesis.commute_day.state_stage](../registry/stages/braunschweig.synthesis.commute_day.state_stage.yml) | behavior | braunschweig_new | x | A/-/- | -- | commute_day_state |
@@ -97,7 +98,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [eqasim_common.gravity.distance_matrix](../registry/stages/eqasim_common.gravity.distance_matrix.yml) | work | extended | x | A/A/A | -- | -- |
 | [eqasim_common.locations.synthesis.education](../registry/stages/eqasim_common.locations.synthesis.education.yml) | education | inherited | -- | -/-/A | -- | -- |
 | [eqasim_common.spatial.codes](../registry/stages/eqasim_common.spatial.codes.yml) | spatial | inherited | x | A/A/A | -- | -- |
-| [matsim.output](../registry/stages/matsim.output.yml) | matsim | extended | x | A/A/A | -- | matsim_output_archive, vrb_zone_fare_model |
+| [matsim.output](../registry/stages/matsim.output.yml) | matsim | extended | x | A/A/A | -- | matsim_output_archive, parking_cost_zones, vrb_zone_fare_model |
 | [matsim.runtime.eqasim](../registry/stages/matsim.runtime.eqasim.yml) | infrastructure | extended | x | A/A/A | -- | eqasim_java_fork |
 | [matsim.runtime.git](../registry/stages/matsim.runtime.git.yml) | infrastructure | inherited | x | A/A/A | -- | -- |
 | [matsim.runtime.java](../registry/stages/matsim.runtime.java.yml) | infrastructure | extended | x | A/A/A | -- | -- |
@@ -105,12 +106,12 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [matsim.runtime.pt2matsim](../registry/stages/matsim.runtime.pt2matsim.yml) | matsim | inherited | x | A/A/A | -- | -- |
 | [matsim.scenario.facilities](../registry/stages/matsim.scenario.facilities.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.facilities`<br>popsim_open: `braunschweig.matsim.scenario.facilities` | -- |
 | [matsim.scenario.households](../registry/stages/matsim.scenario.households.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.households`<br>popsim_open: `braunschweig.matsim.scenario.households` | -- |
-| [matsim.scenario.population](../registry/stages/matsim.scenario.population.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.population`<br>popsim_open: `braunschweig.matsim.scenario.population` | carless_routing_remode, general_day_absence, mid_passenger_availability, rbw_leg_convention, urban_parking |
+| [matsim.scenario.population](../registry/stages/matsim.scenario.population.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.population`<br>popsim_open: `braunschweig.matsim.scenario.population` | carless_routing_remode, general_day_absence, mid_passenger_availability, parking_cost_zones, rbw_leg_convention, urban_parking |
 | [matsim.scenario.supply.gtfs](../registry/stages/matsim.scenario.supply.gtfs.yml) | matsim | configured | x | A/A/A | -- | -- |
 | [matsim.scenario.supply.osm](../registry/stages/matsim.scenario.supply.osm.yml) | matsim | configured | x | A/A/A | -- | -- |
 | [matsim.scenario.supply.processed](../registry/stages/matsim.scenario.supply.processed.yml) | matsim | inherited | x | A/A/A | -- | -- |
 | [matsim.scenario.vehicles](../registry/stages/matsim.scenario.vehicles.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.vehicles`<br>popsim_open: `braunschweig.matsim.scenario.vehicles` | -- |
-| [matsim.simulation.prepare](../registry/stages/matsim.simulation.prepare.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.simulation.prepare`<br>popsim_open: `braunschweig.matsim.simulation.prepare`<br>simple_ipf_open: `braunschweig.matsim.simulation.prepare` | cordon_network_ring, freight_assumptions, mid_passenger_availability, mode_choice, vrb_zone_fare_model |
+| [matsim.simulation.prepare](../registry/stages/matsim.simulation.prepare.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.simulation.prepare`<br>popsim_open: `braunschweig.matsim.simulation.prepare`<br>simple_ipf_open: `braunschweig.matsim.simulation.prepare` | cordon_network_ring, freight_assumptions, mid_passenger_availability, mode_choice, parking_cost_zones, vrb_zone_fare_model |
 | [matsim.simulation.run](../registry/stages/matsim.simulation.run.yml) | matsim | extended | x | A/A/A | -- | simwrapper_layer1 |
 | [synthesis.locations.education](../registry/stages/synthesis.locations.education.yml) | education | overridden | x | A/A/A | popsim_mid: `eqasim_common.locations.education`<br>popsim_open: `eqasim_common.locations.education`<br>simple_ipf_open: `eqasim_common.locations.education` | building_potentials_education |
 | [synthesis.locations.home.locations](../registry/stages/synthesis.locations.home.locations.yml) | home | overridden | -- | -/-/A | popsim_mid: `braunschweig.locations.home`<br>popsim_open: `braunschweig.locations.home`<br>simple_ipf_open: `braunschweig.locations.home` | -- |

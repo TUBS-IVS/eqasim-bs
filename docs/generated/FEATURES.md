@@ -76,6 +76,7 @@ may only name run manifests (no run, no claim).
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 4 | -- | marker | none | unvalidated | pending |
+| [parking_cost_zones](../registry/features/parking_cost_zones.yml) | matsim | experimental | ON | A/s/- | 9 | proven | marker | committed | unvalidated | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
@@ -105,7 +106,7 @@ may only name run manifests (no run, no claim).
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated | pending |
 | [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 3 | -- | none | none | unvalidated | pending |
-| [urban_parking](../registry/features/urban_parking.yml) | matsim | active | ON | A/A/i | 4 | -- | none | none | unvalidated | pending |
+| [urban_parking](../registry/features/urban_parking.yml) | matsim | supported | off | i/A/i | 5 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [vrb_zone_fare_model](../registry/features/vrb_zone_fare_model.yml) | matsim | experimental | ON | A/s/s | 8 | proven | marker | committed | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | pending |

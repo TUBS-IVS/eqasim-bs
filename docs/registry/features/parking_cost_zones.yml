@@ -1,0 +1,121 @@
+feature: parking_cost_zones
+title: Zone-based parking costs (sourced tariffs, SrV free-parking shares)
+area: matsim
+description: >-
+  Prices the parking stay at the destination of every car trip with the sourced tariff of the parking
+  zone the destination lies in (release parking_zones_2026 / parking_tariffs_2026): fee window, free
+  threshold, first period, billing unit, day cap, maximum stay with a long-stay product, TU campus
+  member and guest day products, and the resident exemption of resident zones. Outside every zone
+  parking is free (assumption Z1; the coverage register parking_coverage_register_2026 states the status
+  of every municipality). Work and education parking is free for a share of persons per workplace class
+  equal to the SrV 2023 free share among car commuters (assumption A1). The Java car cost model adds the
+  parking cost to the driving cost behind the existing eqasim car cost model seam; the car utility and its
+  coefficients are unchanged. Replaces the legacy 8 km ring (feature urban_parking) when
+  parking_zones_enabled is on; the two flags are mutually exclusive (ADR-0139).
+stages:
+- braunschweig.parking.zones_stage
+- matsim.scenario.population
+- matsim.simulation.prepare
+- matsim.output
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: not_used
+lifecycle: experimental
+production:
+  enabled: true
+  flags:
+  - parking_zones_enabled
+introduced:
+  issue: '#436'
+  pr: null
+  adr: ADR-0139
+detail_doc: docs/codebase/notes/parking-cost-zones.md
+code_paths:
+- braunschweig/parking/zones_stage.py
+- braunschweig/parking/zones.py
+- braunschweig/parking/attach.py
+- braunschweig/parking/cost.py
+- braunschweig/parking/tariff_export.py
+- braunschweig/parking/golden_cases.py
+- braunschweig/calibration/srv_parking.py
+- braunschweig/matsim/config_modules.py
+- braunschweig/matsim/scenario/population.py
+- matsim/scenario/population.py
+- braunschweig/matsim/simulation/prepare.py
+- matsim/output.py
+- scripts/extract_srv_commute_parking.py
+- scripts/validate_parking_zones.py
+- scripts/export_parking_golden_cases.py
+- scripts/build_parking_zones_from_osm.py
+evidence:
+  tests:
+  - tests/test_parking_cost.py
+  - tests/test_parking_tariff_export.py
+  - tests/test_parking_zones.py
+  - tests/test_parking_zones_stage.py
+  - tests/test_parking_attach.py
+  - tests/test_population_parking_attributes.py
+  - tests/test_parking_prepare_wiring.py
+  - tests/test_srv_parking.py
+  - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_population_parking_attributes.py::test_frames_without_parking_columns_match_the_prechange_writer_bytes
+    note: >-
+      With the flag off the plans writer attaches no parking column and writes the plans of the writer
+      before this feature byte for byte (golden literals generated from base commit 1fe22664; the legacy
+      ring is pinned the same way by test_legacy_ring_frames_match_the_prechange_writer_bytes, and the
+      wrapper never touches braunschweig.parking.attach, test_execute_off_never_touches_the_attach_module);
+      the preparation then declares no parking key and leaves the prepared config byte-identical
+      (tests/test_parking_prepare_wiring.py::test_off_declares_no_parking_parameter_and_leaves_the_prepared_config_byte_identical).
+      Without the braunschweigParking module the Java car cost model name is unchanged (eqasim-java-bs
+      BraunschweigConfiguratorParkingTest). The simulation-level check of the jar without the module is
+      described in ADR-0139 (Evidence) and not yet recorded in a run manifest.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[parking]'
+    note: >-
+      Every attach step logs its coverage as rates under [parking]: activities in zones with the most
+      frequent zones, persons with a resident zone, and per workplace class the persons, p_free and the
+      realised free share of the draw. An activity outside every zone is the modelled state of assumption
+      Z1, not a fallback; zones present but not one activity inside raise (the signature of a broken join
+      or a CRS mismatch), and an unknown zone id raises in Python and in Java. At controller start the Java
+      ParkingPopulationCheck fails the run for unknown zone ids, legacy isParis attributes or mistyped
+      parking attributes and logs the plans' zone coverage in one [parking] population line. During the run
+      every pricing call is counted by outcome (ITERS/it.N/N.parking_outcomes.csv and one [parking] log line
+      per iteration); the counts are pricing calls, one per car alternative that mode choice evaluated,
+      chosen or not, and version 1 reports the mix without a threshold.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
+    note: >-
+      The tariffs are committed, sourced facts per zone (data records parking_tariffs_2026,
+      parking_zones_2026 and parking_coverage_register_2026) and the free shares a committed SrV 2023
+      aggregate (srv2023_commute_parking_by_workplace_class). They are model inputs, not an observed
+      behavioural reference: this feature compares no model output with observed behaviour yet.
+      srv2023_city_center_parking is the planned comparison quantity of the 25 % A/B, a comparison with a
+      universe caveat (SrV asks Braunschweig residents, the model counts all car arrivals), not a
+      validation.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    No run is recorded yet. The Python reference and the Java calculator agree on the shared golden cases
+    and in randomised differential tests (ADR-0139, Evidence); these are consistency checks of the
+    implementation, not a validation. Planned: the local 1 % ON/OFF/LEGACY smoke (a wiring proof) and the
+    25 % legacy-vs-zones A/B on the server; neither compares an observed behavioural reference, so the
+    feature stays unvalidated after them. Convergence of a run is not validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Owner review of the 25 % legacy-vs-zones A/B, which is still to run on the server, and of the
+    production flip of parking_zones_enabled to true, which is part of the reviewed branch although the
+    design had planned it for after the A/B; the owner decides the flip at PR review.
+  note: >-
+    Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.parking, branch
+    feature/i249-parking-cost-zones) with its own unit tests; the golden cases are shared through
+    tests/fixtures/parking/parking_golden_cases.json.

@@ -117,8 +117,12 @@ zensus_hh_inspect.txt
 # (eqasim-data/data/braunschweig/kba/raw/kba_wohnmobile_holder_age_20250401.csv
 # -- force-added despite being a RAW file, unlike every other raw/ input
 # above, because no downloadable table exists behind the KBA source pages:
-# the transcription itself IS the source), plus the
-# documentation markdown. Do NOT `git add -f` any other data file here
+# the transcription itself IS the source), the curated parking cost zone
+# release (eqasim-data/data/braunschweig/parking/parking_*_2026.* -- NOT its
+# local raw_overpass/ and raw_sources/ folders; an explicit exception to the
+# OSM rule below), plus the documentation markdown.
+# ODbL: the parking zone polygons are partly OSM-derived -- ODbL 1.0, share-alike, attribution "(c) OpenStreetMap contributors" (details: docs/registry/data/parking_zones_2026.yml).
+# Do NOT `git add -f` any other data file here
 # (Mikrozensus tables, NDS school/Hochschule/Kita facility tables, ALKIS/ATKIS,
 # OSM, GTFS, population/employment registers, ...) -- they stay local only.
 eqasim-data/*

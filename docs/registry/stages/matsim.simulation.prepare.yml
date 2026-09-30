@@ -1,12 +1,20 @@
 stage: matsim.simulation.prepare
 title: MATSim run preparation
 layer: matsim
-description: Prepares the MATSim run (config, freight injection, urban parking, subpopulations)
-  via braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
+description: Prepares the MATSim run (config, freight injection, subpopulations) via
+  braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
   the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133). With
   cordon_enabled it cuts the scenario to the cordon extent with eqasim's RunScenarioCutter; the fork's
   TransitScheduleCutter keeps the last inside stop and the scheduled times of every cut transit route
-  (docs/codebase/notes/eqasim-transit-schedule-cutter.md).
+  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). With parking_zones_enabled (ADR-0139) it
+  writes, as its last step and next to the final config, the parking tariff model
+  <prefix>parking_tariffs_<parking_tariff_snapshot_date>.json (built by braunschweig.parking.tariff_export
+  from the release of braunschweig.parking.zones_stage, carrying the release's source hashes), the MATSim
+  config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule) that
+  switches the Java car cost model to the zone tariffs, and the inputs report
+  <prefix>parking_inputs_report.json listing the files matsim.output copies; with the flag off it declares
+  no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
+  (enable_urban_parking) has no preparation step (ADR-0039).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -30,8 +38,10 @@ features:
 - freight_assumptions
 - mode_choice
 - vrb_zone_fare_model
+- parking_cost_zones
 decisions:
 - ADR-0121
 - ADR-0030
 - ADR-0039
 - ADR-0133
+- ADR-0139
