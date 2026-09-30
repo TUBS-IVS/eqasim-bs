@@ -229,6 +229,8 @@ def test_select_mirror_draws_proportional_to_h_gew():
     })
     rng = np.random.RandomState(0)
     counts = {10: 0, 20: 0}
-    for _ in range(2000):
+    # 200 draws give 19 vs 181 (measured 2026-09-28): the 3x bar would need 50 light
+    # draws, about seven binomial standard deviations away; 2000 draws bought only time.
+    for _ in range(200):
         counts[member_completion._select_mirror(incomplete_row, candidates, household_id="H_ID", rng=rng)] += 1
     assert counts[20] > counts[10] * 3  # heavy mirror dominates

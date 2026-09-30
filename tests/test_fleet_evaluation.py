@@ -170,25 +170,11 @@ class TestHappyPath:
         assert "key" in df.columns
         assert "value" in df.columns
 
-    def test_summary_csv_has_brand_section(self, fleet_result):
+    def test_summary_csv_has_every_section(self, fleet_result):
         _, out = fleet_result
         df = pd.read_csv(out / "fleet_summary.csv")
-        assert "brand" in df["section"].values
-
-    def test_summary_csv_has_powertrain_section(self, fleet_result):
-        _, out = fleet_result
-        df = pd.read_csv(out / "fleet_summary.csv")
-        assert "powertrain" in df["section"].values
-
-    def test_summary_csv_has_consistency_section(self, fleet_result):
-        _, out = fleet_result
-        df = pd.read_csv(out / "fleet_summary.csv")
-        assert "consistency" in df["section"].values
-
-    def test_summary_csv_has_age_status_section(self, fleet_result):
-        _, out = fleet_result
-        df = pd.read_csv(out / "fleet_summary.csv")
-        assert "age_status" in df["section"].values
+        missing = {"brand", "powertrain", "consistency", "age_status"} - set(df["section"])
+        assert not missing, f"fleet_summary.csv lacks the section(s) {sorted(missing)}"
 
     def test_zero_contradictions_in_consistent_fleet(self, fleet_result):
         """All fuel_detail values are consistent -> contradiction count must be 0."""

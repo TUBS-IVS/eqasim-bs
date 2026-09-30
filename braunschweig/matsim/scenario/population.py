@@ -72,15 +72,16 @@ _LOG_TAG = "[commute day population]"
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
 _HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
 
-#: Helper modules imported INSIDE :func:`execute` (so this module imports without them), hashed by
-#: dotted NAME in :func:`validate` exactly like
-#: ``braunschweig.matsim.simulation.prepare._DEFERRED_HELPER_MODULE_NAMES``.
-#: ``braunschweig.parking.attach`` decides which zone, resident zone and free-parking value every
-#: plan element carries, i.e. the CONTENT of the parking attributes written here, and
-#: ``braunschweig.parking.zones`` supplies its point-in-polygon test (``assign_zones``), so it
-#: decides the ``parkingZone`` values as well. Hashed unconditionally, like the module objects
-#: above: a token must not depend on a flag.
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+#: ``braunschweig.parking.attach`` (imported inside :func:`execute` only when parking_zones_enabled)
+#: decides which zone, resident zone and free-parking value every plan element carries, and
+#: ``braunschweig.parking.zones`` supplies its point-in-polygon test (``assign_zones``), so both shape
+#: the CONTENT of the parking attributes written here. Hashed unconditionally, like the module
+#: objects above: a token must not depend on a flag.
 _DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.writers",
     "braunschweig.parking.attach",
     "braunschweig.parking.zones",
 )
@@ -168,9 +169,9 @@ def validate(context):
             deferred_source = inspect.getsource(deferred_module)
         except Exception as error:
             raise RuntimeError(
-                f"braunschweig.matsim.scenario.population validate(): cannot hash the deferred "
-                f"helper module {module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse a stale plans.xml.gz."
+                f"population validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
             ) from error
         digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()

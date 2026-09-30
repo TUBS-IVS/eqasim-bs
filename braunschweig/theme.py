@@ -14,6 +14,12 @@ from __future__ import annotations
 import os
 import sys
 
+#: Read by scripts/audit_synpp_helper_hash.py (ADR-0136): no synpp stage token hashes this
+#: module, because nothing here changes a value a stage returns. Remove the marker as soon as
+#: a function here starts to shape a stage result; the audit then asks every stage that
+#: reaches this module to hash it.
+_SYNPP_TOKEN_EXEMPTION = "terminal colours and the stage-to-phase map of log lines only"
+
 RESET = "\x1b[0m"
 DIM = "\x1b[2m"
 BOLD = "\x1b[1m"

@@ -231,19 +231,24 @@ def test_draw_states_eligibility_matches_assigned_gt_donor_rank(absent_share_far
     assert result.loc["p4", "reason"] == "donor_class_missing"
 
 
-def test_draw_states_far_person_becomes_absent_when_absent_share_far_is_one():
+@pytest.mark.parametrize("absent_share_far, expected_state, expected_reason, zero_counter", [
+    pytest.param(1.0, "absent", "absent_far", "n_escort_protected", id="share_one_absent"),
+    pytest.param(0.0, "home", "home_redraw", "n_absent", id="share_zero_home"),
+])
+def test_draw_states_far_person_follows_absent_share_far(absent_share_far, expected_state, expected_reason, zero_counter):
     workers = _synthetic_workers()
     table = _table_forcing_zero_keep_probability()
     rng = np.random.RandomState(1234)
     result, diagnostics = state.draw_states(
         workers, table, rng,
-        far_threshold_km=200.0, absent_share_far=1.0, escort_persons=set(),
+        far_threshold_km=200.0, absent_share_far=absent_share_far, escort_persons=set(),
     )
     result = result.set_index("person_id")
-    # p1 is far, not kept (p_keep forced to 0.0) and not escort-protected -> absent.
-    assert result.loc["p1", "commute_day_state"] == "absent"
-    assert result.loc["p1", "reason"] == "absent_far"
-    assert diagnostics["n_escort_protected"] == 0
+    # p1 is far, not kept (p_keep forced to 0.0) and not escort-protected, so
+    # absent_share_far alone decides its state.
+    assert result.loc["p1", "commute_day_state"] == expected_state
+    assert result.loc["p1", "reason"] == expected_reason
+    assert diagnostics[zero_counter] == 0
 
 
 def test_draw_states_escort_protected_far_person_never_absent():
@@ -259,20 +264,6 @@ def test_draw_states_escort_protected_far_person_never_absent():
     assert result.loc["p2", "reason"] == "home_escort_protected"
     assert diagnostics["n_escort_protected"] == 1
     assert diagnostics["n_absent"] == 1  # only p1
-
-
-def test_draw_states_far_person_becomes_home_when_absent_share_far_is_zero():
-    workers = _synthetic_workers()
-    table = _table_forcing_zero_keep_probability()
-    rng = np.random.RandomState(1234)
-    result, diagnostics = state.draw_states(
-        workers, table, rng,
-        far_threshold_km=200.0, absent_share_far=0.0, escort_persons=set(),
-    )
-    result = result.set_index("person_id")
-    assert result.loc["p1", "commute_day_state"] == "home"
-    assert result.loc["p1", "reason"] == "home_redraw"
-    assert diagnostics["n_absent"] == 0
 
 
 def test_draw_states_p_keep_matches_keep_probability_function():

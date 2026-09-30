@@ -85,13 +85,11 @@ def _make_small_cars(n: int = 200, seed: int = 7) -> pd.DataFrame:
 
 
 @pytest.fixture(scope="module")
-def small_sampler():
-    """Pre-built FleetSampler shared between the fleet-level tests."""
-    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
-
+def small_sampler(request):
+    """The session's FleetSampler (tests/conftest.py), shared by the fleet-level tests."""
     if not DATA.exists():
         pytest.skip(f"eqasim-data not available at {DATA}")
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+    return request.getfixturevalue("committed_fleet_sampler")
 
 
 def _assert_electric_euro_categories(df_spec: pd.DataFrame) -> None:

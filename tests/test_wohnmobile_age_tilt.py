@@ -268,8 +268,10 @@ def _synthetic_frame(n=400, seed=7, with_owner_age=True):
 
 
 @pytest.fixture(scope="module")
-def sampler():
-    return fleet.FleetSampler.from_data_path(DATA_PATH)
+def sampler(committed_fleet_sampler):
+    # The session's sampler (tests/conftest.py): every tilted draw re-fits the tilt and
+    # resets its counters, and no test below keeps a change to the sampler.
+    return committed_fleet_sampler
 
 
 def test_sampler_builds_the_tilt_from_committed_data(sampler):
@@ -330,7 +332,9 @@ def test_tilt_changes_motorhome_owner_ages(sampler):
     owner_age, so this preserves the test's intent without touching production
     code or the shared consistency_v2/model_brands gate (out of scope for #315).
     """
-    df = _synthetic_frame(n=20000, seed=3)
+    # ~200 motorhomes at n=10000; the realised gap is ~6.5 years against the
+    # 2-year threshold (measured 2026-09-25), so a larger frame buys only time.
+    df = _synthetic_frame(n=10000, seed=3)
     on, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
                                   wohnmobile_age_tilt=True)
     off, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
@@ -385,7 +389,10 @@ def test_acceptance_composition_and_preserved_aggregate(sampler):
     ``dev_untilted_pp`` (tilt-neutrality evidence, never flagged, carries the
     sonstige-redraw leak per ADR-0093); fallback rate ~0 on a frame with full
     owner ages."""
-    df = _synthetic_frame(n=60000, seed=13)
+    # ~400 motorhomes at n=20000; the MC band widens with n_eff, so the check
+    # stays calibrated: the largest class deviation is 0.21 of its band and the
+    # aggregate deviates 0.05 pp against a 0.40 pp band (measured 2026-09-28).
+    df = _synthetic_frame(n=20000, seed=13)
     df_spec, _, summary = fleet.sample_fleet(
         df, DATA_PATH, random_seed=99, sampler=sampler,
         wohnmobile_age_tilt=True)

@@ -194,6 +194,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.gravity.production_mass",
     "braunschweig.gravity.taz_margins",
     "braunschweig.gravity.verbindungen_anchor",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.analysis.verbindungen_validation",
 )
 
 # ``braunschweig.gravity.distance_matrix_taz`` is deliberately NOT covered: it

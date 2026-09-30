@@ -74,6 +74,9 @@ python scripts/run_tests.py -q                                                  
 - Never `git push` without explicit per-push confirmation; PRs only via
   `git pr` (base = fork `TUBS-IVS/eqasim-bs`).
 - New behaviour flag-gated, default-ON with a byte-identical, tested OFF path.
+- Write a test only for a defect it can plausibly catch, at the highest useful
+  level, and keep it cheap; the binding rules are in [CLAUDE.md](CLAUDE.md#tests)
+  (ADR-0134).
 - Update the registries/ADRs/run manifests with your change (PR checklist);
   never edit `docs/generated/*` by hand.
 - Parallel agents get separate worktrees; verify the branch before committing.

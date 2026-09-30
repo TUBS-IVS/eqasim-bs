@@ -147,33 +147,29 @@ class TestGemeindeElectricShare2026:
 # Integration test: fallback path (kba_gemeinde_ev.csv absent)
 # ---------------------------------------------------------------------------
 
-def test_from_data_path_fallback_when_ev_absent(caplog):
+def test_from_data_path_fallback_when_ev_absent(tmp_path, caplog):
     """When kba_gemeinde_ev.csv is not present, from_data_path must:
     * fall back to load_gemeinde_private_bev (FZ 27.17),
     * log a message identifying it as the FZ 27.17 fallback,
     * still build a working PowertrainModel.
-    """
-    # DATA_PATH points to the committed data where kba_gemeinde_ev.csv does not
-    # exist. We rely on that absence.
-    ev_path = (
-        Path(DATA_PATH) / "braunschweig" / "kba" / "derived" / "kba_gemeinde_ev.csv"
-    )
-    if ev_path.exists():
-        pytest.skip("kba_gemeinde_ev.csv present in committed data; fallback test skipped")
 
-    df_seg = ft.load_segment_powertrain(DATA_PATH)
+    The table is committed, so the absence is constructed: the mirror of the
+    derived tables that the primary-path tests below extend omits it. Until
+    2026-09-28 this test read the real data path and skipped whenever the table
+    was present, i.e. on every checkout since it was committed.
+    """
+    data_path = _build_tmp_data_path(tmp_path)
+    df_seg = ft.load_segment_powertrain(data_path)
     segments = list(df_seg["segment"].unique())
     with caplog.at_level(logging.INFO):
-        model = fs.PowertrainModel.from_data_path(DATA_PATH, segments)
+        model = fs.PowertrainModel.from_data_path(data_path, segments)
 
     assert isinstance(model, fs.PowertrainModel)
 
-    # Log must mention the FZ 27.17 fallback.
+    # The fallback line itself, not just any message containing "fallback".
     combined = " ".join(r.message for r in caplog.records).lower()
-    assert "fz27.17" in combined or "fallback" in combined
+    assert "fz27.17 fallback (kba_gemeinde_ev.csv absent)" in combined, combined
 
-    # A seeded sample must still run without error.
-    rng = np.random.default_rng(42)
     kreis = ft.ZGB_KREISE_AGS5[0]
     probs = model.powertrain_probabilities("kompaktklasse", kreis, None)
     assert probs.sum() == pytest.approx(1.0, abs=1e-6)
@@ -344,11 +340,14 @@ def test_2026_primary_tilt_increases_bev(tmp_data_with_high_bev_gemeinde):
     tmp_dp, kreis, gemeinde_norm, kreis_bev, high_bev = tmp_data_with_high_bev_gemeinde
 
     # Build cars: same Kreis, one batch with no Gemeinde, one with high-BEV Gemeinde.
-    base_cars = _make_synthetic_cars(kreis, np.nan, n=4000, seed=11)   # type: ignore[arg-type]
-    tilted_cars = _make_synthetic_cars(kreis, gemeinde_norm, n=4000, seed=11)
+    # 1500 cars each: 85 vs 156 BEVs (measured 2026-09-25), about 4.6 Poisson SD
+    # apart; the draw is seeded, so the margin only guards future model changes.
+    base_cars = _make_synthetic_cars(kreis, np.nan, n=1500, seed=11)   # type: ignore[arg-type]
+    tilted_cars = _make_synthetic_cars(kreis, gemeinde_norm, n=1500, seed=11)
 
-    spec_base, _, _ = fs.sample_fleet(base_cars, tmp_dp, random_seed=99)
-    spec_tilt, _, _ = fs.sample_fleet(tilted_cars, tmp_dp, random_seed=99)
+    sampler = fs.FleetSampler.from_data_path(tmp_dp)
+    spec_base, _, _ = fs.sample_fleet(base_cars, tmp_dp, random_seed=99, sampler=sampler)
+    spec_tilt, _, _ = fs.sample_fleet(tilted_cars, tmp_dp, random_seed=99, sampler=sampler)
 
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())

@@ -125,25 +125,6 @@ def test_inkar_high_income_scale():
 # Test 2: high_income consistent numeric rule
 # ---------------------------------------------------------------------------
 
-def test_high_income_consistent_rule():
-    """Two persons, EUR 4000 and 6000 -> high_income [False, True].
-
-    The threshold is HIGH_INCOME_THRESHOLD_EUR = 5000.0 exactly.
-    """
-    inkar = _inkar_scale({"03101": 1.0})  # scale 1.0: midpoint unchanged
-    persons = pd.DataFrame({
-        "person_id":      [0, 1],
-        "departement_id": ["03101", "03101"],
-        "household_income_eur": [4000.0, 6000.0],
-    })
-    midpoint_series = pd.Series([4000.0, 6000.0], index=persons.index)
-
-    out = apply_inkar_income_eur(persons, inkar, midpoint_series=midpoint_series)
-
-    assert out.loc[0, "high_income"] == False, "4000 EUR should not be high_income"
-    assert out.loc[1, "high_income"] == True,  "6000 EUR should be high_income"
-
-
 def test_high_income_boundary_at_5000():
     """Boundary condition: exactly 5000.0 EUR -> high_income True (>=)."""
     inkar = _inkar_scale({"03101": 1.0})

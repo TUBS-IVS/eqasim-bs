@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
@@ -16,12 +18,15 @@ SERVER = resources.MachineResources(
 )
 
 
-def test_effective_java_memory_clamps_a_pin_larger_than_the_machine():
-    assert resources.effective_java_memory("100G", machine=SERVER, env={}) == "86G"
-
-
-def test_effective_java_memory_leaves_a_fitting_pin_alone():
-    assert resources.effective_java_memory("50G", machine=SERVER, env={}) == "50G"
+@pytest.mark.parametrize("pin, expected", [
+    pytest.param("100G", "86G", id="clamps_a_pin_larger_than_the_machine"),
+    pytest.param("50G", "50G", id="leaves_a_fitting_pin_alone"),
+    # A sub-gigabyte-granular string must NOT be reformatted (it would round
+    # 1500M down to 1G).
+    pytest.param("1500M", "1500M", id="echoes_a_string_pin_verbatim"),
+])
+def test_effective_java_memory_of_a_pin(pin, expected):
+    assert resources.effective_java_memory(pin, machine=SERVER, env={}) == expected
 
 
 def test_effective_java_memory_honours_an_explicit_budget():
@@ -39,7 +44,3 @@ def test_effective_java_memory_formats_a_numeric_pin_as_gigabytes():
     assert resources.effective_java_memory(32.0, machine=SERVER, env={}) == "32G"
 
 
-def test_effective_java_memory_still_echoes_a_string_pin_verbatim():
-    # A sub-gigabyte-granular string must NOT be reformatted (it would round
-    # 1500M down to 1G).
-    assert resources.effective_java_memory("1500M", machine=SERVER, env={}) == "1500M"

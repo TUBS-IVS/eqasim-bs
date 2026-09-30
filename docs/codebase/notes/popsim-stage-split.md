@@ -47,13 +47,14 @@ submodules; the whole `braunschweig.popsim.mid` package one level deep (its
 `entd-source-split.md`); several other non-stage first-party helper modules
 imported at module level; and, covered by dotted name (imported lazily inside
 `validate()` because their only import site in this package is inside a
-function body), the deferred function-level dependencies, including the
-`synthesis.population.enriched` package one level deep and
-`braunschweig.data.census.household_size` — two synpp stages this stage calls
-as plain libraries without declaring them as synpp dependencies, so this
-token is the only mechanism that can see a source change in either. The
-transitive surface beyond this explicit, one-level-deep enumeration is
-deliberately **not** covered.
+function body), the deferred function-level dependencies, and
+`braunschweig.data.census.household_size`, a synpp stage this stage calls as a
+plain library without declaring it as a synpp dependency, so this token is the
+only mechanism that can see a source change in it. Since ADR-0136 the token also
+covers the rest of the stage's import closure, i.e. what those helpers import in
+turn, and `tests/test_audit_synpp_helper_hash.py` fails when the closure reaches an
+unhashed module. The enriched stage is no longer hashed as a package: the stage
+imports its one enriched helper from `enriched.housing_tenure` directly.
 
 First-run effect: this stage gained a validation token it never had, so the
 first run after merge recomputes it and everything downstream once; every run

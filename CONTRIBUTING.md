@@ -121,10 +121,12 @@ afterwards. Shrinking the REGION is what reduces the work. The overlay runs Brau
 and stops at `data.census.filtered` (population synthesis, no locations/trips/MATSim).
 
 **Delete the smoke cache before any code-change comparison.** synpp hashes only a stage
-module's own source; the helper surface rides on each stage's `validate()` token, and that
-token deliberately stops one import level deep (`docs/codebase/notes/synpp-helper-hash-audit.md`).
-A behaviour change in a module outside the token does NOT devalidate a warm cache, so an A/B
-on one silently compares two identical populations -- observed live on 2026-08-19, when the
-licence-floor and W_ZWECK fixes left the popsim stage hash byte-identical
+module's own source; the helper surface rides on each stage's `validate()` token. Since
+ADR-0136 that token covers the stage's whole static import closure, but it still cannot see
+data files, dynamic imports or a stage without a `validate()`
+(`docs/codebase/notes/synpp-helper-hash-audit.md`). A behaviour change outside the token does
+NOT devalidate a warm cache, so an A/B on one silently compares two identical populations --
+observed live on 2026-08-19, when the licence-floor and W_ZWECK fixes, one import level below
+the token of that time, left the popsim stage hash byte-identical
 (`docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml`). `rm -rf` the run's cache directory
 (never the shared `cache_shared` store) between the two arms of any code-change A/B.
