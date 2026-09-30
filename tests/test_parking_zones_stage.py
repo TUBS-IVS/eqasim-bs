@@ -209,8 +209,8 @@ def test_a_tariff_workplace_class_without_a_share_row_raises_naming_the_class(fi
 
 
 def test_a_tariff_row_the_java_tariff_model_rejects_raises(fixture_data):
-    """A daily cap on a resident zone passes the table validator but not the per-row contract of the tariff
-    model (braunschweig.parking.cost.ZoneTariff): the stage enforces the stricter one at load time."""
+    """A daily cap on a resident zone is rejected by the table validator AND by the per-row contract of the
+    tariff model (braunschweig.parking.cost.ZoneTariff); the stage fails at load time naming the zone."""
     path = fixture_data / FIXTURE_PATHS["parking_tariffs_path"]
     lines = path.read_bytes().decode("utf-8").replace("\r\n", "\n").split("\n")
     header = next(line for line in lines if line.startswith("zone_id,")).split(",")
@@ -221,7 +221,8 @@ def test_a_tariff_row_the_java_tariff_model_rejects_raises(fixture_data):
             fields[cap] = "9.00"
             lines[number] = ",".join(fields)
     path.write_bytes("\n".join(lines).encode("utf-8"))
-    pz.validate_tariffs(pz.load_tariffs(path), allow_fixture_marker=True)  # the table validator accepts it
+    with pytest.raises(ValueError, match="fx_res_a"):
+        pz.validate_tariffs(pz.load_tariffs(path), allow_fixture_marker=True)
 
     with pytest.raises(ValueError, match="fx_res_a") as error:
         _release(fixture_data)

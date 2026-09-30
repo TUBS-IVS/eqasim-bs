@@ -512,6 +512,31 @@ def test_committed_zones_carry_real_provenance_only():
     assert flagged["notes"].str.contains("ASSUMPTION F1").all()
 
 
+def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys, monkeypatch):
+    import shutil
+
+    import scripts.validate_parking_zones as cli
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    seen = []
+    original = cli.tariff_export.tariff_row_to_zone
+
+    def contract(row):
+        seen.append(row["zone_id"])
+        if row["zone_id"] == "bs_zone_ia":
+            raise ValueError("rejected by the test contract")
+        return original(row)
+
+    monkeypatch.setattr(cli.tariff_export, "tariff_row_to_zone", contract)
+    assert cli.main(["--data-path", str(tmp_path)]) == 1
+    tariffs = pz.load_tariffs(target / "parking_tariffs_2026.csv")
+    assert sorted(seen) == sorted(tariffs["zone_id"])
+    assert "zone 'bs_zone_ia': rejected by the test contract" in capsys.readouterr().out
+
+
 def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, capsys):
     import shutil
 

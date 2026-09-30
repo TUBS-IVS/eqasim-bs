@@ -36,16 +36,19 @@ storage:
   local_only: false
   notes: Force-added (git add -f); ASCII (umlauts transliterated), LF line endings, '#' header lines.
 verification:
-  verifier_entry: null
+  verifier_entry: D7
   script: scripts/validate_parking_zones.py
   notes: >-
+    Listed as D7 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml since
+    ADR-0139).
     braunschweig.parking.zones.validate_coverage_register: one non-excluded row per AGS, statuses, reasons of
     excluded rows, sources of no_paid_parking_known rows, zoned <=> tariff rows; the validator also requires
     123 municipality rows (--expected-municipality-count) and a polygon for every zoned municipality.
 requirements:
   synthesis: not_needed
-  matsim: optional
-  production: optional
+  matsim: required
+  production: required
 licensing:
   license: own compilation of public facts; municipality names BA Gemeindeband (Statistik der Bundesagentur fuer Arbeit)
   restricted: false

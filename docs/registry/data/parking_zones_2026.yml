@@ -59,9 +59,12 @@ storage:
   local_only: false
   notes: Force-added (git add -f) like the other committed reference tables; eqasim-data/ is ignored by default.
 verification:
-  verifier_entry: null
+  verifier_entry: D5
   script: scripts/validate_parking_zones.py
   notes: >-
+    Listed as D5 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml since
+    ADR-0139).
     braunschweig.parking.zones.load_zone_polygons reprojects to EPSG:25832, repairs invalid rings (0 on
     2026-09-30), checks provenance fields and pairwise overlap <= 1 m2; tests/test_parking_zones.py
     (test_committed_parking_data_is_valid, test_committed_zones_carry_real_provenance_only,
@@ -70,8 +73,8 @@ verification:
     pins the licence members, ASCII text and the cut-out islands of the committed files.
 requirements:
   synthesis: not_needed
-  matsim: optional
-  production: optional
+  matsim: required
+  production: required
 licensing:
   license: >-
     ODbL 1.0 for the whole file, (c) OpenStreetMap contributors: the coordinates of every polygon depend on

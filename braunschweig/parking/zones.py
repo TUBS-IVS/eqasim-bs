@@ -80,7 +80,9 @@ REQUIRED_FIELDS_BY_TYPE = {
 FORBIDDEN_FIELDS_BY_TYPE = {
     "street_paid": ("member_day_eur", "guest_day_eur"),
     # free_if_stay_at_most_min is not inert on a resident zone: FREE_WITHIN_LIMIT precedes the max-stay check of
-    # spec 3.2; a day cap would cap the long-stay product. The cost reference (Task 3) rejects both as well.
+    # spec 3.2, so it would change the price. A day cap has no element to cap (the rate is 0 and PAID_LONG_STAY
+    # returns before the metered block applies a cap), so it would be silently ignored. The cost reference
+    # (braunschweig.parking.cost.ZoneTariff) rejects both as well.
     "resident_zone": ("member_day_eur", "guest_day_eur", "first_period_min", "first_period_eur",
                       "free_if_stay_at_most_min", "daily_cap_eur"),
     "campus": ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",

@@ -1,7 +1,9 @@
 """Validate the committed parking cost zones, tariffs and coverage register and print their coverage (issue #249).
 
-Checks (all via ``braunschweig.parking.zones``): the tariff table (types, required fields per zone type, fee windows,
-paired fields, workplace classes, no test-set marker), the zone polygons (EPSG:25832 after loading, valid, provenance,
+Checks (via ``braunschweig.parking.zones``, plus the per-row contract of the tariff model through
+``braunschweig.parking.tariff_export.tariff_row_to_zone``): the tariff table (types, required fields per zone type,
+fee windows, paired fields, workplace classes, no test-set marker; every row must also convert into the tariff model
+the MATSim side reads), the zone polygons (EPSG:25832 after loading, valid, provenance,
 pairwise overlap <= ``OVERLAP_TOLERANCE_M2``), one tariff row per polygon and vice versa, the coverage register (one status
 row per municipality, reasons, sources, ``zoned`` <=> tariff rows, hence a polygon for every zoned municipality) and its
 size against the municipality universe of the pipeline (``--expected-municipality-count``). Prints counts per zone type,
@@ -21,6 +23,7 @@ from pathlib import Path
 
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import tariff_export  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 
 DEFAULT_ZONES_PATH = "braunschweig/parking/parking_zones_2026.geojson"
@@ -35,11 +38,29 @@ def _print_counts(title: str, counts) -> None:
     print(f"[parking-validate] {title}: " + ", ".join(f"{key} {value}" for key, value in counts.items()))
 
 
+def check_tariff_model_rows(tariffs) -> None:
+    """Raise ``ValueError`` listing every row the tariff-model export rejects (``tariff_row_to_zone``).
+
+    ``validate_tariffs`` checks the table rules of spec 3.1/5.3; the export additionally converts every row into
+    the integer-cent ``braunschweig.parking.cost.ZoneTariff`` whose construction is the contract the Java side
+    mirrors. Running both here keeps the CLI from printing OK for a table the prepared scenario would refuse.
+    """
+    problems = []
+    for row in tariffs.to_dict(orient="records"):
+        try:
+            tariff_export.tariff_row_to_zone(row)
+        except ValueError as error:
+            problems.append(f"zone {row['zone_id']!r}: {error}")
+    if problems:
+        raise ValueError("tariff rows the tariff model rejects:\n  " + "\n  ".join(problems))
+
+
 def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path: str,
              expected_municipality_count: int) -> None:
     """Run every check; raise ``ValueError`` on the first failing group and print the coverage summary."""
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
+    check_tariff_model_rows(tariffs)
     zones = pz.load_zone_polygons(data_path / zones_path)
     markers = sorted(zones.loc[zones["geometry_source"] == pz.FIXTURE_MARKER, "zone_id"])
     if markers:
