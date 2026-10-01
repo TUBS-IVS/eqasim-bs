@@ -79,9 +79,11 @@ def test_golden_case(case, fixture_zones):
 
 
 def test_the_committed_golden_json_is_in_sync(fixture_zones):
+    from scripts.export_parking_golden_cases import GOLDEN_SCHEMA_VERSION
+
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
     # 3 since the resident district rule R2: every case carries resident_of_district (2: minimum_stay_min)
-    assert document["schema_version"] == 3
+    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 3, REGENERATE_HINT
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
     assert zones == fixture_zones, REGENERATE_HINT

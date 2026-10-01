@@ -473,11 +473,13 @@ def test_the_resident_district_is_the_district_of_the_home():
         (1, 0, "home", "d_a"), (1, 1, "work", "d_res"), (1, 2, "home", "d_a"),   # lives in d_a, works in d_res
         (2, 0, "home", None), (2, 1, "leisure", "d_a"), (2, 2, "home", None),     # visits d_a, lives outside
         (3, 0, "home", "d_res"),                                                    # lives in d_res
+        # A plan that does not start at home: the first activity is not the home, so only the purpose decides.
+        (5, 0, "work", "d_a"), (5, 1, "home", "d_res"), (5, 2, "leisure", "d_a"),
     ])
-    persons = attach.attach_resident_districts(_persons([1, 2, 3, 4]), activities)
+    persons = attach.attach_resident_districts(_persons([1, 2, 3, 4, 5]), activities)
     assert persons["resident_parking_district"].dtype == object
     district = persons.set_index("person_id")["resident_parking_district"]
-    assert district[1] == "d_a" and district[3] == "d_res"
+    assert district[1] == "d_a" and district[3] == "d_res" and district[5] == "d_res"
     assert district[[2, 4]].isna().all()  # person 4 has no activity at all
 
 

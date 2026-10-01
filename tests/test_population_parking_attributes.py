@@ -674,9 +674,11 @@ def _wrapper_stages(incommuter_work):
                      Point(603250.0, 5791250.0), Point(607000.0, 5792000.0),
                      Point(605200.0, 5790300.0), Point(607000.0, 5792000.0)],
     }, crs=CRS)
+    # Resident 1 drives to work and walks home: only the trip INTO the work activity is a car trip, which makes the
+    # pairing of a trip with the activity it leads to observable in the own-district coverage line.
     trips = pd.DataFrame({
         "person_id": [1, 1, 2, 2], "trip_index": [0, 1, 0, 1],
-        "mode": ["car", "car", "walk", "walk"],
+        "mode": ["car", "walk", "walk", "walk"],
         "departure_time": [27000.0, 59400.0, 34200.0, 41400.0],
         "arrival_time": [28800.0, 61200.0, 36000.0, 43200.0],
     })
