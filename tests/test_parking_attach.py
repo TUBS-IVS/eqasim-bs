@@ -436,10 +436,15 @@ def test_the_district_attachment_checks_the_locations_like_the_zone_attachment(b
         attach.attach_parking_zones(activities, locations, _zones())
 
 
-def test_no_district_given_raises_instead_of_leaving_every_resident_unexempted():
+@pytest.mark.parametrize("districts, message", [
+    (_districts().iloc[0:0], "no resident parking districts"),
+    (_districts().rename(columns={"district_id": "id"}), "district_id"),
+], ids=["empty", "no_district_id_column"])
+def test_a_district_layer_without_districts_or_ids_raises_instead_of_leaving_every_resident_unexempted(districts,
+                                                                                                      message):
     activities, locations = _frames({1: [("home", _inside("z_res"))]})
-    with pytest.raises(ValueError, match="no resident parking districts"):
-        attach.attach_parking_districts(activities, locations, _districts().iloc[0:0])
+    with pytest.raises(ValueError, match=message):
+        attach.attach_parking_districts(activities, locations, districts)
 
 
 def test_a_population_that_never_enters_a_district_is_warned_about_not_failed(caplog):

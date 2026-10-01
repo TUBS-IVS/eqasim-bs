@@ -317,6 +317,7 @@ def attach_parking_districts(activities: pd.DataFrame, locations: gpd.GeoDataFra
     """
     points = _located_points(activities, locations)
     n_activities = len(activities)
+    _require_columns(districts, ("district_id",), "districts")
     if len(districts) == 0:
         raise ValueError(f"{_LOG_TAG} no resident parking districts given: the district rule (R2) would exempt nobody, "
                          "which is not a modelled state; the zones stage delivers the committed district layer")

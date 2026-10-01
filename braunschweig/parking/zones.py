@@ -830,9 +830,11 @@ def validate_resident_districts(districts: gpd.GeoDataFrame, *,
     repeated = sorted({key for key in keys if keys.count(key) > 1})
     if repeated:
         problems.append(f"duplicate (municipality_ags, district_code) {repeated}")
-    for district_id, code, ags, geometry in zip(ids, districts["district_code"], districts["municipality_ags"],
-                                                districts.geometry):
-        if not _ZONE_ID_PATTERN.match(district_id):
+    for raw_id, district_id, code, ags, geometry in zip(districts["district_id"], ids, districts["district_code"],
+                                                        districts["municipality_ags"], districts.geometry):
+        if not isinstance(raw_id, str):
+            problems.append(f"{district_id}: district_id {raw_id!r} is not text (the plans carry it as a string)")
+        elif not _ZONE_ID_PATTERN.match(district_id):
             problems.append(f"{district_id}: district_id uses other than lower-case ASCII letters, digits and '_'")
         if not isinstance(code, str) or not _DISTRICT_CODE_PATTERN.match(code):
             problems.append(f"{district_id}: district_code {code!r} must be a non-empty label of letters and digits")

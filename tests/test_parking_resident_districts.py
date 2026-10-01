@@ -324,11 +324,12 @@ def test_touching_districts_and_a_sliver_below_the_tolerance_are_accepted():
     ({"second_geometry": Point(150, 50)}, "not a polygon"),
     ({"second_geometry": Polygon([(100, 0), (200, 100), (200, 0), (100, 100)])}, "invalid geometry"),
     ({"second_id": "Bs District B"}, "lower-case ASCII"),
+    ({"second_id": 5}, "district_id 5 is not text"),
     ({"second_ags": "3101000"}, "8-digit AGS"),
     ({"second_ags": "09162000"}, "8-digit AGS of the ZGB counties"),
     ({"second_code": ""}, "district_code"),
 ], ids=["same_id", "same_code_in_a_town", "overlap_in_a_town", "overlap_across_towns", "point", "bow_tie", "bad_id",
-        "short_ags", "ags_outside_the_zgb", "empty_code"])
+        "numeric_id", "short_ags", "ags_outside_the_zgb", "empty_code"])
 def test_validate_rejects_what_would_misassign_an_activity(change, message):
     frame = _two_districts()
     frame.loc[1, "district_id"] = change.get("second_id", "bs_district_b")
