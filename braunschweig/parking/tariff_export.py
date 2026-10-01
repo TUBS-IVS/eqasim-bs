@@ -12,6 +12,13 @@ Schema 2 (parking cost zones v2, levers 2 and 4) is additive: every zone entry c
 ``search_time_min``, null where the table leaves the column empty or does not have it. A schema-1 table therefore
 exports as schema 2 with these keys null and prices as before.
 
+Spec Amendment C3 (resident parking districts) adds two more keys without a new schema version, because they are
+additive: every zone entry carries ``resident_permits_valid``, a bool that is never null (an empty table cell resolves to
+the default of the zone type, see ``braunschweig.parking.cost.ZoneTariff``; ASSUMPTION R2-a), and the model carries the
+top-level list ``resident_districts`` of ``{"district_id", "municipality_ags"}`` entries sorted by district id, the ids
+a plan attribute ``parkingDistrict`` or ``residentParkingDistrict`` may take, so that the Java plan check can reject an
+unknown one. A model built without a district layer lists none.
+
 The model carries the assumptions register of spec section 7 as ``ASSUMPTION <id>: ...`` texts and the
 provenance of its inputs (``sources``: path and LF-normalised sha256 of every input file, supplied by the
 caller, which knows the paths). Nothing here reads the tariff table itself; the functions are pure except
@@ -64,11 +71,12 @@ GARAGE_HOUR_COLUMNS = {"garage_fee_start_h": "garage_fee_start_s", "garage_fee_e
 #: zone attachment (spec 3.4); name, municipality_ags, source_url, source_date, valid_from, fee_window_source
 #: and notes document provenance in the table itself.
 TARIFF_COLUMNS = ("zone_id", "zone_type", *EURO_COLUMNS, *MINUTE_COLUMNS, *HOUR_COLUMNS, *GARAGE_HOUR_COLUMNS,
-                  "resident_exempt")
-#: The schema-2 columns (v2 levers 2 and 4): a table or row without them converts with their fields None.
+                  "resident_exempt", "resident_permits_valid")
+#: The schema-2 columns (v2 levers 2 and 4) and the permit flag of Amendment C3: a table or row without them converts
+#: with their fields None, i.e. no garage, no commuter product and the default of the zone type for the permit flag.
 OPTIONAL_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
                     "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h",
-                    "commuter_day_eur", "search_time_min")
+                    "commuter_day_eur", "search_time_min", "resident_permits_valid")
 #: The columns every table and row must have (schema 1).
 REQUIRED_COLUMNS = tuple(column for column in TARIFF_COLUMNS if column not in OPTIONAL_COLUMNS)
 # ZoneTariff money/minute/garage-hour field -> the table column it is read from, so that row errors name the column.
@@ -77,8 +85,12 @@ _COLUMN_OF_FIELD = {**{field: column for column, field in EURO_COLUMNS.items()},
                     **{field: column for column, field in GARAGE_HOUR_COLUMNS.items()}}
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+_AGS = re.compile(r"\d{8}")
 #: The keys of one ``sources`` entry; the Java ``ParkingTariffs`` reader accepts exactly these (``SOURCE_FIELDS``).
 SOURCE_KEYS = ("source_id", "path", "sha256")
+#: The keys of one ``resident_districts`` entry (spec Amendment C3): the district id of the plan attributes and the AGS of
+#: the municipality that owns the district.
+RESIDENT_DISTRICT_KEYS = ("district_id", "municipality_ags")
 
 
 @dataclass(frozen=True)
@@ -97,8 +109,8 @@ class Assumption:
 
 #: The assumptions register of the design spec section 7, in its order, followed by the product-minimum
 #: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact) and the resident district
-#: rule R2 of its Amendment C3. The model JSON carries the rendered texts, so every tariff file states the assumptions it
-#: is priced under.
+#: rule R2 of its Amendment C3 with its scope R2-a. The model JSON carries the rendered texts, so every tariff file
+#: states the assumptions it is priced under.
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -128,12 +140,20 @@ ASSUMPTIONS_REGISTER = (
     Assumption("P2", "commuter_day_eur is the cheapest long-term product per working day (21 working days); regular "
                "work/education commuters hold it, an effective daily cost for regulars, never a day tariff",
                "Work/education stays in zones with commuter_day_eur", "commuter_day_eur presence"),
-    # Parking cost zones v2, Amendment C3: the resident parking districts, a layer of their own.
+    # Parking cost zones v2, Amendment C3: the resident parking districts, a layer of their own, and where their permits
+    # are valid (ruling R-T1e-a).
     Assumption("R2", "Residence inside a resident parking district equals permit possession (extends R1): a stay "
-               "inside the district of the person's home is free, in every zone type; the districts are independent "
-               "of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1",
+               "inside the district of the person's home is free where the zone honours resident permits (R2-a); the "
+               "districts are independent of the fee zones and may overlap them, and a stay outside every fee zone "
+               "stays free by Z1",
                "Non-home activities of residents inside their own district (data record "
                "parking_resident_districts_2026)", "none: the district layer is a release input, not a parameter"),
+    Assumption("R2-a", "Resident parking permits are valid at street and resident-zone parking unless the tariff row "
+               "says otherwise (resident_permits_valid) and never on a campus; the separately operated car parks of "
+               "the city (BgA) are marked not valid, because no source states that permits are valid there",
+               "Stays of residents inside their own district at the BgA car parks of Braunschweig and on a campus "
+               "(rows with resident_permits_valid false)",
+               "set resident_permits_valid to true on a BgA row in an arm (a campus row rejects true)"),
 )
 
 
@@ -215,6 +235,13 @@ def _flag(value, column: str, where: str) -> bool:
     raise ValueError(f"{where}: {column} must be true or false, got {value!r}")
 
 
+def _optional_flag(value, column: str, where: str) -> bool | None:
+    """True or False from a table cell, None for an empty cell (the default of the zone type applies then)."""
+    if _is_empty(value):
+        return None
+    return _flag(value, column, where)
+
+
 def _identifier(value, column: str, where: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(f"{where}: {column} must be a non-empty text without surrounding whitespace, "
@@ -263,7 +290,9 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     cell it cannot convert exactly; ``ZoneTariff`` then validates the tariff against its zone type. Two of those
     errors are reported in the table's own terms before ``ZoneTariff`` sees the row: an invalid street or garage fee
     window names its ``*fee_start_h`` and ``*fee_end_h`` columns in hours, and a filled cell of a column the zone type
-    does not have names that column and says to leave the cell empty.
+    does not have names that column and says to leave the cell empty. ``resident_permits_valid`` is read like
+    ``resident_exempt`` (true/false in any case) but may be empty or absent; ``ZoneTariff`` then resolves the default of
+    the zone type (ASSUMPTION R2-a) and rejects true on a campus.
     """
     missing = [column for column in REQUIRED_COLUMNS if column not in row]
     if missing:
@@ -284,6 +313,7 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     for column, field in GARAGE_HOUR_COLUMNS.items():
         fields[field] = _hours_to_seconds(cell(column), column, where, required=False)
     fields["resident_exempt"] = _flag(row["resident_exempt"], "resident_exempt", where)
+    fields["resident_permits_valid"] = _optional_flag(cell("resident_permits_valid"), "resident_permits_valid", where)
     _check_fee_window_columns(row, fields, where)
     _check_empty_cells(fields, where)
     return ZoneTariff(**fields)
@@ -338,23 +368,53 @@ def _check_sources(sources: Sequence[Mapping]) -> list[dict]:
     return checked
 
 
+def resident_district_entries(districts: pd.DataFrame | None) -> list[dict]:
+    """The ``resident_districts`` list of the model: ``{"district_id", "municipality_ags"}`` per district, sorted by id.
+
+    ``districts`` is the district layer of the zones release (a ``GeoDataFrame`` of
+    ``braunschweig.parking.zones.load_resident_districts`` or any frame with the columns ``RESIDENT_DISTRICT_KEYS``);
+    only those two columns are read. None means no district layer and gives an empty list. Raises ``ValueError`` for a
+    missing column, an id that is not a non-empty text, a duplicate id or an AGS that is not an 8-digit text. Pure.
+    """
+    if districts is None:
+        return []
+    missing = [column for column in RESIDENT_DISTRICT_KEYS if column not in districts.columns]
+    if missing:
+        raise ValueError(f"resident districts lack the columns {missing}; the model lists {list(RESIDENT_DISTRICT_KEYS)}")
+    entries, seen = [], set()
+    for district_id, ags in zip(districts["district_id"], districts["municipality_ags"]):
+        _identifier(district_id, "district_id", "resident district")
+        where = f"resident district {district_id!r}"
+        if not isinstance(ags, str) or not _AGS.fullmatch(ags):
+            raise ValueError(f"{where}: municipality_ags must be an 8-digit text, got {ags!r}")
+        if district_id in seen:
+            raise ValueError(f"duplicate district_id {district_id!r}")
+        seen.add(district_id)
+        entries.append({"district_id": district_id, "municipality_ags": ags})
+    return sorted(entries, key=lambda entry: entry["district_id"])
+
+
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
-                       terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END) -> dict:
+                       terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END,
+                       resident_districts: pd.DataFrame | None = None) -> dict:
     """The tariff model of spec 5.4 (schema 2) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
     an entry with any other key raises, because the Java ``ParkingTariffs`` reader accepts exactly these
     three (``SOURCE_KEYS``). Only the terminal-stay rule ``until_fee_end`` (T1) exists. The schema-2 columns are
-    optional: a schema-1 table exports with every schema-2 key null. Raises ``ValueError`` for an empty table, a
-    missing schema-1 column, a duplicate zone id, an invalid row or invalid sources. The returned dict is plain
-    JSON data: integer cents and seconds, None for "not applicable".
+    optional: a schema-1 table exports with every schema-2 key null. ``resident_districts`` is the district layer of
+    the release (``resident_district_entries``): the model lists its ids for the plan check of the Java side, an empty
+    list when none is given. Raises ``ValueError`` for an empty table, a missing schema-1 column, a duplicate zone id,
+    an invalid row, invalid sources or invalid districts. The returned dict is plain JSON data: integer cents and
+    seconds, None for "not applicable".
     """
     if terminal_stay_rule not in SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
                          f"{SUPPORTED_TERMINAL_STAY_RULES}")
     check_snapshot_date(snapshot_date)
     checked_sources = _check_sources(sources)
+    district_entries = resident_district_entries(resident_districts)
     missing = [column for column in REQUIRED_COLUMNS if column not in tariffs.columns]
     if missing:
         raise ValueError(f"tariff table is missing the columns {missing}; spec 5.3 requires {list(REQUIRED_COLUMNS)}")
@@ -375,6 +435,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         "weekday_only": True,
         "assumptions": assumption_texts(),
         "sources": checked_sources,
+        "resident_districts": district_entries,
         "zones": zones,
     }
 

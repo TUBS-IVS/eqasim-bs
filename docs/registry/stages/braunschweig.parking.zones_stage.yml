@@ -14,7 +14,7 @@ description: 'Loads the five inputs of the zone-based parking costs (issue #249;
   logged as a warning). Any inconsistency raises. Rows carrying the synthetic test-set marker ''fixture'' are accepted (the
   tests run the stage on tests/fixtures/parking) but logged as one WARNING naming the zones and the districts.
   Returns {zones, tariffs, workplace_shares (as read, both levels, workplace_class as text), coverage_register,
-  districts (EPSG:25832), sources}; sources lists the four inputs in a fixed order as {source_id = Data Registry dataset id, path =
+  districts (EPSG:25832), sources}; sources lists the five inputs in a fixed order as {source_id = Data Registry dataset id, path =
   the configured path relative to data_path (POSIX), sha256 = LF-normalised content hash}, which the
   preparation stage copies into the tariff model JSON. Config keys (all relative to data_path, defaults of
   the first release): parking_zones_path (braunschweig/parking/parking_zones_2026.geojson),

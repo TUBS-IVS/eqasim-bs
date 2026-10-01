@@ -12,21 +12,67 @@
     "ASSUMPTION S1: Each zone has ONE regime; mixed streets are digitised as separate zones or take the dominant regime with a note. Where it bites: Per zone. Sensitivity: notes.",
     "ASSUMPTION P1: A stay pays the cheapest product the driver can use (street, garage, commuter): drivers know the local products. Where it bites: Zones with garage or commuter columns. Sensitivity: leave the garage and commuter columns empty in an arm (the v1 pricing).",
     "ASSUMPTION P2: commuter_day_eur is the cheapest long-term product per working day (21 working days); regular work/education commuters hold it, an effective daily cost for regulars, never a day tariff. Where it bites: Work/education stays in zones with commuter_day_eur. Sensitivity: commuter_day_eur presence.",
-    "ASSUMPTION R2: Residence inside a resident parking district equals permit possession (extends R1): a stay inside the district of the person's home is free, in every zone type; the districts are independent of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1. Where it bites: Non-home activities of residents inside their own district (data record parking_resident_districts_2026). Sensitivity: none: the district layer is a release input, not a parameter."
+    "ASSUMPTION R2: Residence inside a resident parking district equals permit possession (extends R1): a stay inside the district of the person's home is free where the zone honours resident permits (R2-a); the districts are independent of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1. Where it bites: Non-home activities of residents inside their own district (data record parking_resident_districts_2026). Sensitivity: none: the district layer is a release input, not a parameter.",
+    "ASSUMPTION R2-a: Resident parking permits are valid at street and resident-zone parking unless the tariff row says otherwise (resident_permits_valid) and never on a campus; the separately operated car parks of the city (BgA) are marked not valid, because no source states that permits are valid there. Where it bites: Stays of residents inside their own district at the BgA car parks of Braunschweig and on a campus (rows with resident_permits_valid false). Sensitivity: set resident_permits_valid to true on a BgA row in an arm (a campus row rejects true)."
   ],
   "currency": "EUR",
+  "resident_districts": [
+    {
+      "district_id": "fx_district_a",
+      "municipality_ags": "03101000"
+    },
+    {
+      "district_id": "fx_district_b",
+      "municipality_ags": "03101000"
+    },
+    {
+      "district_id": "fx_district_sz_a",
+      "municipality_ags": "03102000"
+    }
+  ],
   "schema_version": 2,
   "sources": [
     {
       "path": "tests/fixtures/parking/parking_tariffs_fixture.csv",
-      "sha256": "672b1cd4a2a4d9a75b28a947529883d68f542d80502cbb765be12438996fded0",
+      "sha256": "b180648d54d59e53496ee3952c7f665ef9e6a519639d63f0ca20c0afbb18311e",
       "source_id": "parking_tariffs_fixture"
+    },
+    {
+      "path": "tests/fixtures/parking/parking_resident_districts_fixture.geojson",
+      "sha256": "eb8ce1dea86699e15366fe35c81ecb3a7b1acec42832992e0b2a65336ed54e6c",
+      "source_id": "parking_resident_districts_fixture"
     }
   ],
   "tariff_snapshot_date": "2026-09-28",
   "terminal_stay_rule": "until_fee_end",
   "weekday_only": true,
   "zones": {
+    "fx_bga_v2": {
+      "billing_unit_min": 1,
+      "commuter_day_cents": null,
+      "daily_cap_cents": null,
+      "fee_end_s": 72000,
+      "fee_start_s": 32400,
+      "first_period_cents": null,
+      "first_period_min": null,
+      "free_if_stay_at_most_min": null,
+      "garage_billing_unit_min": null,
+      "garage_daily_cap_cents": null,
+      "garage_fee_end_s": null,
+      "garage_fee_start_s": null,
+      "garage_first_period_cents": null,
+      "garage_first_period_min": null,
+      "garage_hourly_rate_cents": null,
+      "guest_day_cents": null,
+      "hourly_rate_cents": 180,
+      "long_stay_product_cents": null,
+      "max_stay_min": null,
+      "member_day_cents": null,
+      "resident_exempt": false,
+      "resident_permits_valid": false,
+      "search_time_min": null,
+      "zone_type": "street_paid"
+    },
     "fx_bs_ia": {
       "billing_unit_min": 1,
       "commuter_day_cents": null,
@@ -49,6 +95,7 @@
       "max_stay_min": 180,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -74,6 +121,7 @@
       "max_stay_min": 180,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": 5,
       "zone_type": "street_paid"
     },
@@ -99,6 +147,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -124,6 +173,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": 5,
       "zone_type": "street_paid"
     },
@@ -149,6 +199,7 @@
       "max_stay_min": null,
       "member_day_cents": 350,
       "resident_exempt": false,
+      "resident_permits_valid": false,
       "search_time_min": null,
       "zone_type": "campus"
     },
@@ -174,6 +225,7 @@
       "max_stay_min": null,
       "member_day_cents": 350,
       "resident_exempt": false,
+      "resident_permits_valid": false,
       "search_time_min": null,
       "zone_type": "campus"
     },
@@ -199,6 +251,7 @@
       "max_stay_min": null,
       "member_day_cents": 350,
       "resident_exempt": false,
+      "resident_permits_valid": false,
       "search_time_min": 0,
       "zone_type": "campus"
     },
@@ -224,6 +277,7 @@
       "max_stay_min": 120,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -249,6 +303,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -274,6 +329,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -299,6 +355,7 @@
       "max_stay_min": 180,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -324,6 +381,7 @@
       "max_stay_min": 120,
       "member_day_cents": null,
       "resident_exempt": true,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "resident_zone"
     },
@@ -349,6 +407,33 @@
       "max_stay_min": 120,
       "member_day_cents": null,
       "resident_exempt": true,
+      "resident_permits_valid": true,
+      "search_time_min": null,
+      "zone_type": "resident_zone"
+    },
+    "fx_res_nopermit_v2": {
+      "billing_unit_min": 60,
+      "commuter_day_cents": null,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_min": null,
+      "free_if_stay_at_most_min": null,
+      "garage_billing_unit_min": null,
+      "garage_daily_cap_cents": null,
+      "garage_fee_end_s": null,
+      "garage_fee_start_s": null,
+      "garage_first_period_cents": null,
+      "garage_first_period_min": null,
+      "garage_hourly_rate_cents": null,
+      "guest_day_cents": null,
+      "hourly_rate_cents": 0,
+      "long_stay_product_cents": 900,
+      "max_stay_min": 120,
+      "member_day_cents": null,
+      "resident_exempt": true,
+      "resident_permits_valid": false,
       "search_time_min": null,
       "zone_type": "resident_zone"
     },
@@ -374,6 +459,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -399,6 +485,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": null,
       "zone_type": "street_paid"
     },
@@ -424,6 +511,7 @@
       "max_stay_min": null,
       "member_day_cents": null,
       "resident_exempt": false,
+      "resident_permits_valid": true,
       "search_time_min": 2,
       "zone_type": "street_paid"
     }

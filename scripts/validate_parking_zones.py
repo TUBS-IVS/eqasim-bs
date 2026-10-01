@@ -85,6 +85,19 @@ def check_tariff_model_rows(tariffs) -> None:
         raise ValueError("tariff rows the tariff model rejects:\n  " + "\n  ".join(problems))
 
 
+def _print_resident_permits(tariffs) -> None:
+    """One line on where rule R2 is off (ASSUMPTION R2-a): the rows that state ``resident_permits_valid`` false, and the
+    campus zones whose default is false. Read from the ``ZoneTariff`` of each row, so the default of the zone type is
+    the one the model carries."""
+    zones = [tariff_export.tariff_row_to_zone(row) for row in tariffs.to_dict(orient="records")]
+    not_valid = [zone for zone in zones if not zone.resident_permits_valid]
+    stated = sorted(zone.zone_id for zone in not_valid if zone.zone_type != "campus")
+    campus = sum(1 for zone in not_valid if zone.zone_type == "campus")
+    print(f"[parking-validate] resident permits (rule R2, ASSUMPTION R2-a): valid on {len(zones) - len(not_valid)} of "
+          f"{len(zones)} zones; not valid on {len(stated)} stated rows ({', '.join(stated) or 'none'}) and on {campus} "
+          "campus zones (default)")
+
+
 #: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).
 PRE_REGISTERED_QA_COLUMNS = {"walk_m": "walk_m", "maximum_filled_hole_m2": "maximum_filled_hole_m2",
                              "minimum_island_m2": "minimum_island_m2"}
@@ -270,6 +283,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     _print_counts("geometry_source", zones["geometry_source"].value_counts().sort_index().to_dict())
     _print_geometry_source_mix(zones)
     _print_counts("fee_window_source", tariffs["fee_window_source"].value_counts().sort_index().to_dict())
+    _print_resident_permits(tariffs)
     names = status_rows.set_index("ags")["name"]
     per_municipality = merged.groupby("municipality_ags").agg(zones=("zone_id", "count"), area_km2=("area_km2", "sum"))
     for ags, row in per_municipality.iterrows():

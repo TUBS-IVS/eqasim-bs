@@ -9,7 +9,9 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   (docs/codebase/notes/eqasim-transit-schedule-cutter.md). With parking_zones_enabled (ADR-0139) it
   writes, as its last step and next to the final config, the parking tariff model
   <prefix>parking_tariffs_<parking_tariff_snapshot_date>.json (built by braunschweig.parking.tariff_export
-  from the release of braunschweig.parking.zones_stage, carrying the release's source hashes), the MATSim
+  from the release of braunschweig.parking.zones_stage, carrying the release's source hashes, the permit flag
+  resident_permits_valid of every zone and the ids of the release's resident parking districts as resident_districts,
+  both additive to schema 2, spec Amendment C3), the MATSim
   config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
   minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1) that
   switches the Java car cost model to the zone tariffs, and the inputs report

@@ -33,7 +33,7 @@ STAGE_LOGGER = "braunschweig.parking.zones_stage"
 
 FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac",
                     "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2", "fx_garage_window_v2",
-                    "fx_capped_street_v2", "fx_campus_tie_v2", "fx_res_garage_v2"]
+                    "fx_capped_street_v2", "fx_campus_tie_v2", "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2"]
 DEFAULT_PATHS = {
     "parking_zones_path": "braunschweig/parking/parking_zones_2026.geojson",
     "parking_tariffs_path": "braunschweig/parking/parking_tariffs_2026.csv",
@@ -301,7 +301,7 @@ def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fi
     with caplog.at_level(logging.INFO, logger=STAGE_LOGGER):
         _release(fixture_data)
     [line] = [record.getMessage() for record in caplog.records if "zone release:" in record.getMessage()]
-    assert "16 zones (campus 3, resident_zone 2, street_paid 11) in 4 municipalities" in line
+    assert "18 zones (campus 3, resident_zone 3, street_paid 12) in 4 municipalities" in line
     assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
     assert "free shares for 6 workplace classes" in line
     assert "resident districts 3 (03101000 2, 03102000 1)" in line

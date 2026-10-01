@@ -354,8 +354,9 @@ def _write_parking_inputs(context, config_name):
     """Tariff model, braunschweigParking config module and an inputs report for the zone-based parking costs.
 
     The tariff table of ``braunschweig.parking.zones_stage`` (spec 5.3: euros, decimal hours) becomes the tariff
-    model JSON (spec 5.4: integer cents and seconds) next to ``config_name``. The module names that file without
-    a directory, so the Java side resolves it relative to the config wherever the scenario is moved, and the
+    model JSON (spec 5.4: integer cents and seconds) next to ``config_name``; the model also lists the ids of the
+    release's resident parking districts (spec Amendment C3), the ids a plan may carry. The module names that file
+    without a directory, so the Java side resolves it relative to the config wherever the scenario is moved, and the
     report lists every file ``matsim.output`` must copy with the scenario: the model and the report itself.
     The minimum stay (rule L1) is a run parameter, not a tariff property: it travels as the module parameter
     ``minimumStayMinutes`` (plain digits, the form the Java side reads) and is recorded in the report, while the
@@ -369,7 +370,8 @@ def _write_parking_inputs(context, config_name):
     minimum_stay_min = context.config("parking_minimum_stay_min")
     release = context.stage("braunschweig.parking.zones_stage")
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
-                                             sources=release["sources"], terminal_stay_rule=terminal_stay_rule)
+                                             sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
+                                             resident_districts=release["districts"])
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
@@ -378,13 +380,15 @@ def _write_parking_inputs(context, config_name):
         "minimumStayMinutes": str(int(minimum_stay_min))})
     zone_types = dict(sorted(Counter(zone["zone_type"] for zone in model["zones"].values()).items()))
     report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
-              "zone_types": zone_types, "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
+              "resident_districts": len(model["resident_districts"]), "zone_types": zone_types,
+              "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
-    print("[parking] prepared inputs: %d zones (%s), terminal stay rule %s, minimum stay %d min; tariff model %s, "
-          "module %s in %s, report %s" % (len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
-                                          terminal_stay_rule, minimum_stay_min, tariffs_name, PARKING_MODULE,
-                                          config_name, report_name))
+    print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
+          "%d min; tariff model %s, module %s in %s, report %s" % (
+              len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
+              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, tariffs_name, PARKING_MODULE,
+              config_name, report_name))
 
 
 def _cut_to_cordon(context):

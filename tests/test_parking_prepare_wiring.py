@@ -37,6 +37,8 @@ FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
 FIXTURE_TARIFFS_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
 #: The spec 5.4 model of the same table, built by the production export (scripts/export_parking_golden_cases.py).
 FIXTURE_MODEL_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.json"
+#: The fixture resident districts (spec Amendment C3), the districts layer of the faked zones stage.
+FIXTURE_DISTRICTS_PATH = FIXTURE_DIRECTORY / "parking_resident_districts_fixture.geojson"
 
 PARKING_STAGE = "braunschweig.parking.zones_stage"
 PREFIX = "bs_"
@@ -110,7 +112,8 @@ def _fixture_tariffs() -> pd.DataFrame:
 
 
 def _zones_stage_result() -> dict:
-    """The shape braunschweig.parking.zones_stage returns; the preparation reads only tariffs and sources."""
+    """The shape braunschweig.parking.zones_stage returns; the preparation reads the tariffs, the resident districts
+    (read by the production loader, EPSG:25832, as the real stage returns them) and the sources."""
     tariffs = _fixture_tariffs()
     zones = gpd.GeoDataFrame({"zone_id": tariffs["zone_id"],
                               "geometry": [box(index, 0, index + 1, 1) for index in range(len(tariffs))]},
@@ -120,7 +123,8 @@ def _zones_stage_result() -> dict:
                {"source_id": "parking_zones_2026", "path": "braunschweig/parking/parking_zones_2026.geojson",
                 "sha256": hashlib.sha256(b"fixture zone polygons").hexdigest()}]
     return {"zones": zones, "tariffs": tariffs, "workplace_shares": pd.DataFrame(),
-            "coverage_register": pd.DataFrame(), "sources": sources}
+            "coverage_register": pd.DataFrame(),
+            "districts": parking_zones.load_resident_districts(FIXTURE_DISTRICTS_PATH), "sources": sources}
 
 
 def _prepare_context(tmp_path, monkeypatch, **values):
@@ -215,12 +219,17 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     prepare.execute(context)
     model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
-    assert sorted(model["zones"]) == ["fx_bs_ia", "fx_bs_ia_v2", "fx_bs_ib", "fx_bs_ib_v2", "fx_campus",
+    assert sorted(model["zones"]) == ["fx_bga_v2", "fx_bs_ia", "fx_bs_ia_v2", "fx_bs_ib", "fx_bs_ib_v2", "fx_campus",
                                       "fx_campus_tie_v2", "fx_campus_v2", "fx_capped_street_v2", "fx_frac",
-                                      "fx_garage_window_v2", "fx_pe", "fx_res_a", "fx_res_garage_v2", "fx_sz", "fx_wob",
-                                      "fx_wob_v2"]
+                                      "fx_garage_window_v2", "fx_pe", "fx_res_a", "fx_res_garage_v2",
+                                      "fx_res_nopermit_v2", "fx_sz", "fx_wob", "fx_wob_v2"]
     # Same fixture table, same production export: the cents and seconds of the committed fixture model.
     assert model["zones"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["zones"]
+    # The districts of the release reach the model, so the Java plan check knows which district ids a plan may carry
+    # (not an empty list: the preparation passes the layer of the zones stage on).
+    assert [entry["district_id"] for entry in model["resident_districts"]] == [
+        "fx_district_a", "fx_district_b", "fx_district_sz_a"]
+    assert model["resident_districts"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["resident_districts"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
         2, "2026-09-29", "until_fee_end")
@@ -261,8 +270,8 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert (config.parent / tariffs_path).is_file()
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert report["parking_input_files"] == [tariffs_path, REPORT_NAME]
-    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 16,
-                      "zone_types": {"campus": 3, "resident_zone": 2, "street_paid": 11},
+    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 18, "resident_districts": 3,
+                      "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
                       "sources": context.stages[PARKING_STAGE]["sources"]}
 
@@ -272,7 +281,8 @@ def test_on_execute_logs_the_zone_count_and_the_file_names_once(tmp_path, monkey
     prepare.execute(context)
     lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
     assert len(lines) == 1, lines
-    assert "16 zones" in lines[0] and TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
+    assert "18 zones" in lines[0] and "3 resident districts" in lines[0], lines[0]
+    assert TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
 
 
 def test_a_second_execute_on_the_same_config_is_idempotent(tmp_path, monkeypatch):

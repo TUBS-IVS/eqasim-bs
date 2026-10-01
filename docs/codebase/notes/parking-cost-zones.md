@@ -36,8 +36,10 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    logs one more coverage line with the own-district stays, the exposure of assumption R2.
 3. `braunschweig.matsim.simulation.prepare._write_parking_inputs`, the last step of the preparation: the release
    tariffs become the tariff model `<prefix>parking_tariffs_<parking_tariff_snapshot_date>.json`
-   (`tariff_export.build_tariff_model`: integer cents and seconds, the rendered `ASSUMPTIONS_REGISTER`, the release
-   `sources`), `braunschweig.matsim.config_modules.write_module` adds the module `braunschweigParking` (`enabled`,
+   (`tariff_export.build_tariff_model`: integer cents and seconds, the permit flag `resident_permits_valid` of every
+   zone, the rendered `ASSUMPTIONS_REGISTER`, the release `sources` and the ids of the release's resident districts as
+   `resident_districts`, the ids a plan may carry), `braunschweig.matsim.config_modules.write_module` adds the module
+   `braunschweigParking` (`enabled`,
    `tariffsPath` relative to the config, `terminalStayRule`, and `minimumStayMinutes` from
    `parking_minimum_stay_min` in plain digits) to the final config, and `<prefix>parking_inputs_report.json` lists
    the files and records the terminal-stay rule and the minimum stay. `_check_parking_parameters` rejects at
@@ -86,9 +88,16 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   stay valid as stored (`load_resident_districts` raises, it never repairs) and is validated with
   `scripts/validate_parking_zones.py`. Rule R2 (`parking_cost_cents(..., resident_of_district=...)`, outcome
   `RESIDENT_FREE`) takes only the boolean "the activity lies in the district of the person's home"; the caller
-  compares `parkingDistrict` with `residentParkingDistrict`. It acts inside a fee zone only (Z1 first), in every
-  zone type, after the home and employer-free rules and before the fee-window check; the golden cases R01 to R11 pin
-  it, and the golden JSON has `schema_version` 3 since.
+  compares `parkingDistrict` with `residentParkingDistrict`. It acts inside a fee zone only (Z1 first) and only where
+  the zone honours resident permits (ASSUMPTION R2-a: the tariff column and `ZoneTariff` field
+  `resident_permits_valid`, valid by default on street and resident zones, never on a campus, false at the five BgA
+  car parks), after the home and employer-free rules and before the fee-window check. The flag switches off R2 only:
+  the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
+  `schema_version` 3 since.
+- The tariff model JSON stays schema 2 for additive keys (Amendment C3 added the per-zone bool
+  `resident_permits_valid`, never null, and the top-level list `resident_districts`), but the Java `ParkingTariffs`
+  reader requires the exact key sets of the document and of every zone entry (`DOCUMENT_FIELDS`, `ZONE_FIELDS`): a key
+  added to the model needs the reader's field list in the same change set.
 - One outcome per priced stay: a new pricing branch adds its name to `braunschweig.parking.cost.OUTCOMES` and to the
   Java `ParkingOutcome` enum, and a golden case. Never price silently; an unknown zone id raises in Python and in
   Java.

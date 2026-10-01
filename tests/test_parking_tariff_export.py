@@ -1,5 +1,5 @@
-"""The parking tariff JSON export (schema 2, spec 5.4 plus the v2 columns of issue #436) and its committed fixture
-model (issue #249)."""
+"""The parking tariff JSON export (schema 2, spec 5.4 plus the v2 columns of issue #436, the permit flag per zone and
+the list of resident districts of spec Amendment C3) and its committed fixture model (issue #249)."""
 from __future__ import annotations
 
 import csv
@@ -24,7 +24,10 @@ FIXTURE_CSV = FIXTURES / "parking_tariffs_fixture.csv"
 SNAPSHOT_DATE = "2026-09-28"
 V1_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
 V2_ZONE_IDS = {"fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2", "fx_garage_window_v2", "fx_capped_street_v2",
-               "fx_campus_tie_v2", "fx_res_garage_v2"}
+               "fx_campus_tie_v2", "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2"}
+# The zones whose table row states that resident permits are NOT valid (ASSUMPTION R2-a); every other street or resident
+# zone takes the default (valid), every campus the campus default (not valid).
+PERMITS_NOT_VALID_ZONE_IDS = {"fx_bga_v2", "fx_res_nopermit_v2"}
 FIXTURE_ZONE_IDS = V1_ZONE_IDS | V2_ZONE_IDS
 # Table column in euros -> JSON field in cents, written out here independently of the implementation.
 EURO_FIELDS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
@@ -41,6 +44,9 @@ V2_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first
 V2_FIELDS = ("garage_hourly_rate_cents", "garage_billing_unit_min", "garage_first_period_min",
              "garage_first_period_cents", "garage_daily_cap_cents", "garage_fee_start_s", "garage_fee_end_s",
              "commuter_day_cents", "search_time_min")
+# The permit column (Amendment C3) is optional too, but its JSON field is never null: an empty cell resolves to the
+# default of the zone type.
+PERMITS_COLUMN = "resident_permits_valid"
 SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
@@ -92,7 +98,8 @@ def test_the_documented_zone_entries_are_reproduced_field_by_field(model):
         "free_if_stay_at_most_min": None, "first_period_min": None, "first_period_cents": None,
         "daily_cap_cents": None, "max_stay_min": 180, "long_stay_product_cents": 900,
         "member_day_cents": None, "guest_day_cents": None,
-        "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False, **dict.fromkeys(V2_FIELDS)}
+        "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False, **dict.fromkeys(V2_FIELDS),
+        "resident_permits_valid": True}
     # A schema-2 row of the golden fixture table (garage 1.20/h in started hours, first hour 1.20, cap 9.60, all day;
     # commuter 3.76 per working day; 5 min search time).
     assert model["zones"]["fx_bs_ib_v2"] == {
@@ -103,7 +110,15 @@ def test_the_documented_zone_entries_are_reproduced_field_by_field(model):
         "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False,
         "garage_hourly_rate_cents": 120, "garage_billing_unit_min": 60, "garage_first_period_min": 60,
         "garage_first_period_cents": 120, "garage_daily_cap_cents": 960, "garage_fee_start_s": 0,
-        "garage_fee_end_s": 86400, "commuter_day_cents": 376, "search_time_min": 5}
+        "garage_fee_end_s": 86400, "commuter_day_cents": 376, "search_time_min": 5, "resident_permits_valid": True}
+
+
+def test_the_permit_flag_of_every_zone_is_a_resolved_bool_the_default_of_its_type_unless_the_row_states_it(model):
+    # Hand-derived: street and resident zones honour resident permits unless their row says false (ASSUMPTION R2-a),
+    # a campus never does; an empty cell is never exported as null.
+    for zone_id, zone in model["zones"].items():
+        expected = zone["zone_type"] != "campus" and zone_id not in PERMITS_NOT_VALID_ZONE_IDS
+        assert zone[PERMITS_COLUMN] is expected, zone_id
 
 
 def test_money_is_the_table_euros_in_whole_cents_and_empty_cells_are_null(model, table):
@@ -135,12 +150,45 @@ def test_fee_windows_are_the_table_hours_in_seconds(model, table):
 
 def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minimum_and_the_district_rule(model):
     # Spec section 7 (v1) followed by P1 (the cheapest usable product) and P2 (the commuter product per working day)
-    # of the v2 spec, lever 2, and R2 (the resident parking district rule) of its Amendment C3.
+    # of the v2 spec, lever 2, and R2 (the resident parking district rule) with its scope R2-a of its Amendment C3.
     assumptions = model["assumptions"]
-    assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9]: .+", text) for text in assumptions)
+    assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9](-[a-z])?: .+", text) for text in assumptions)
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
-        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2", "R2")]
+        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2", "R2", "R2-a")]
+    # R2 no longer claims every zone type: where the rule applies is R2-a, which names the BgA car parks and the campus
+    r2 = next(text for text in assumptions if text.startswith("ASSUMPTION R2:"))
+    r2_a = next(text for text in assumptions if text.startswith("ASSUMPTION R2-a:"))
+    assert "every zone type" not in r2 and "R2-a" in r2
+    assert "BgA" in r2_a and "campus" in r2_a and "resident_permits_valid" in r2_a
+
+
+def test_the_model_lists_the_resident_districts_sorted_by_id_for_the_plan_check(table, sources):
+    # The Java plan check rejects a parkingDistrict or residentParkingDistrict that is not in this list; the list is an
+    # additive top-level key, so the schema version stays 2.
+    districts = pd.DataFrame({"district_id": ["gs_district_b", "bs_district_a", "bs_district_b"],
+                              "name": ["B", "A", "B"], "municipality_ags": ["03153017", "03101000", "03101000"]})
+    with_districts = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources,
+                                           resident_districts=districts)
+    assert with_districts["schema_version"] == 2
+    assert with_districts["resident_districts"] == [
+        {"district_id": "bs_district_a", "municipality_ags": "03101000"},
+        {"district_id": "bs_district_b", "municipality_ags": "03101000"},
+        {"district_id": "gs_district_b", "municipality_ags": "03153017"}]
+    # no district layer given: an empty list, so a plan that carries a district fails the check instead of passing it
+    assert te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)["resident_districts"] == []
+
+
+@pytest.mark.parametrize("districts, message", [
+    (pd.DataFrame({"district_id": ["a", "a"], "municipality_ags": ["03101000"] * 2}), "duplicate district_id 'a'"),
+    (pd.DataFrame({"district_id": ["a"]}), r"lack the columns \['municipality_ags'\]"),
+    (pd.DataFrame({"district_id": [5], "municipality_ags": ["03101000"]}), "district_id must be a non-empty text"),
+    (pd.DataFrame({"district_id": ["a"], "municipality_ags": ["3101000"]}), "municipality_ags must be an 8-digit"),
+    (pd.DataFrame({"district_id": ["a"], "municipality_ags": [3101000]}), "municipality_ags must be an 8-digit"),
+], ids=["duplicate_id", "no_ags_column", "numeric_id", "short_ags", "numeric_ags"])
+def test_invalid_resident_districts_are_rejected(table, sources, districts, message):
+    with pytest.raises(ValueError, match=message):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, resident_districts=districts)
 
 
 def test_sources_carry_64_hex_content_hashes_and_posix_paths(model):
@@ -214,11 +262,28 @@ def test_row_conversion_reads_text_cells_as_a_csv_reader_delivers_them(table):
         100, 6, None, False)
 
 
+def test_the_permit_cell_is_true_false_or_empty_and_empty_takes_the_default_of_the_zone_type(table):
+    street, campus = _row(table, "fx_bs_ia"), _row(table, "fx_campus")
+    for empty in (None, "", "  ", pd.NA, float("nan")):
+        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: empty}).resident_permits_valid is True
+        assert te.tariff_row_to_zone({**campus, PERMITS_COLUMN: empty}).resident_permits_valid is False
+    for stated in (False, "false", "FALSE", " False "):
+        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: stated}).resident_permits_valid is False
+    assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: "TRUE"}).resident_permits_valid is True
+    # a row of a table that predates the column is a row with an empty cell
+    older = {key: value for key, value in street.items() if key != PERMITS_COLUMN}
+    assert te.tariff_row_to_zone(older) == te.tariff_row_to_zone(street)
+    # a campus cannot honour permits: the row is refused with the column named
+    with pytest.raises(ValueError, match=r"'fx_campus'.*resident_permits_valid must be false for zone_type 'campus'"):
+        te.tariff_row_to_zone({**campus, PERMITS_COLUMN: "true"})
+
+
 @pytest.mark.parametrize("changes, message", [
     ({"hourly_rate_eur": 1.805}, "whole number of cents"),
     ({"billing_unit_min": 1.5}, "whole number of minutes"),
     ({"resident_exempt": "yes"}, "resident_exempt must be true or false"),
     ({"resident_exempt": None}, "resident_exempt must be true or false"),
+    ({"resident_permits_valid": "yes"}, "resident_permits_valid must be true or false"),
     ({"fee_start_h": None}, "fee_start_h is required"),
     ({"hourly_rate_eur": True}, "hourly_rate_eur must be a number"),
     ({"zone_id": " fx_bs_ia"}, "zone_id"),
@@ -290,11 +355,12 @@ def test_content_hash_ignores_the_checkout_line_endings(tmp_path):
 
 
 def _schema_1_csv(path: Path) -> Path:
-    """The v1 rows of the fixture CSV in the schema-1 layout: the schema-2 columns removed, every cell kept as text."""
+    """The v1 rows of the fixture CSV in the schema-1 layout: the schema-2 columns and the permit column removed, every
+    cell kept as text."""
     lines = FIXTURE_CSV.read_text(encoding="utf-8").splitlines()
     comments = [line for line in lines if line.startswith("#")]
     header, *rows = list(csv.reader(line for line in lines if not line.startswith("#")))
-    keep = [index for index, column in enumerate(header) if column not in V2_COLUMNS]
+    keep = [index for index, column in enumerate(header) if column not in (*V2_COLUMNS, PERMITS_COLUMN)]
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerows([[header[index] for index in keep]] + [[row[index] for index in keep] for row in rows
@@ -305,21 +371,23 @@ def _schema_1_csv(path: Path) -> Path:
 
 def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_unchanged(tmp_path, model, sources):
     """Review focus 1 (Python): a schema-1 CSV, without any of the nine schema-2 columns, still loads, validates and
-    exports; every schema-2 field is null, every zone equals its schema-2 fixture entry, and G01..G38, L01..L08,
-    L01Z..L08Z and R01..R10 (the district rule R2 reads no tariff column) price on it exactly as their golden values
-    say."""
+    exports; every schema-2 field is null, every zone equals its schema-2 fixture entry (the permit flag takes the default
+    of its zone type), and G01..G38, L01..L08, L01Z..L08Z and R01..R10 (the district rule R2 reads the permit flag, which
+    the default resolves: valid on the street zones, not on the campus of R05) price on it exactly as their golden
+    values say."""
     path = _schema_1_csv(tmp_path / "schema_1_tariffs.csv")
     header = next(line for line in path.read_text(encoding="utf-8").splitlines() if not line.startswith("#"))
     assert header.split(",") == list(pz.SCHEMA_1_TARIFF_COLUMNS)
     table = pz.load_tariffs(path)
-    assert list(table.columns) == list(pz.TARIFF_COLUMNS) and table[list(V2_COLUMNS)].isna().all().all()
+    assert list(table.columns) == list(pz.TARIFF_COLUMNS)
+    assert table[[*V2_COLUMNS, PERMITS_COLUMN]].isna().all().all()
     pz.validate_tariffs(table, allow_fixture_marker=True)
     schema_1_model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
     assert schema_1_model["schema_version"] == 2
     assert schema_1_model["zones"] == {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
     assert all(zone[field] is None for zone in schema_1_model["zones"].values() for field in V2_FIELDS)
     # A frame that lacks the schema-2 columns altogether (not read through the loader) exports the same zones.
-    assert te.build_tariff_model(table.drop(columns=list(V2_COLUMNS)), snapshot_date=SNAPSHOT_DATE,
+    assert te.build_tariff_model(table.drop(columns=[*V2_COLUMNS, PERMITS_COLUMN]), snapshot_date=SNAPSHOT_DATE,
                                  sources=sources)["zones"] == schema_1_model["zones"]
     from scripts.export_parking_golden_cases import zones_from_model
     v1_cases = [case for case in GOLDEN_CASES if case["zone_id"] in V1_ZONE_IDS]
@@ -328,13 +396,14 @@ def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_
 
 
 def test_a_pre_v2_tariff_model_without_the_schema_2_keys_round_trips_through_zones_from_model(model):
-    """A tariff model written before schema 2 has no schema-2 keys at all (not null ones): zones_from_model reads its
-    zone entries into the same tariffs as the schema-2 entries with null keys, which export back unchanged."""
+    """A tariff model written before schema 2 has no schema-2 keys at all (not null ones), and none written before the
+    permit flag has that key: zones_from_model reads its zone entries into the same tariffs as the schema-2 entries with
+    null keys and the resolved flag, which export back unchanged."""
     from scripts.export_parking_golden_cases import zones_from_model
     v1_zones = {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
-    pre_v2_zones = {zone_id: {key: value for key, value in zone.items() if key not in V2_FIELDS}
+    pre_v2_zones = {zone_id: {key: value for key, value in zone.items() if key not in (*V2_FIELDS, PERMITS_COLUMN)}
                     for zone_id, zone in v1_zones.items()}
-    assert all(not set(V2_FIELDS) & set(zone) for zone in pre_v2_zones.values())
+    assert all(not {*V2_FIELDS, PERMITS_COLUMN} & set(zone) for zone in pre_v2_zones.values())
     tariffs = zones_from_model({"zones": pre_v2_zones})
     assert tariffs == zones_from_model({"zones": v1_zones})
     assert {zone_id: te.zone_to_json(tariff) for zone_id, tariff in tariffs.items()} == v1_zones
@@ -345,3 +414,17 @@ def test_the_committed_fixture_tariff_model_is_in_sync(table, sources):
     committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
     assert committed == build_fixture_tariff_model(table, sources), (
         "regenerate with: python scripts/export_parking_golden_cases.py")
+
+
+def test_the_committed_fixture_model_lists_the_fixture_districts_and_names_their_file_as_a_source():
+    # Hand-written from tests/fixtures/parking/parking_resident_districts_fixture.geojson, for the Java reader test of
+    # the plan check; the districts file is one of the model's sources, like the districts of the real release.
+    committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
+    assert committed["resident_districts"] == [
+        {"district_id": "fx_district_a", "municipality_ags": "03101000"},
+        {"district_id": "fx_district_b", "municipality_ags": "03101000"},
+        {"district_id": "fx_district_sz_a", "municipality_ags": "03102000"}]
+    source = next(source for source in committed["sources"] if source["source_id"] == "parking_resident_districts_fixture")
+    districts_file = FIXTURES / "parking_resident_districts_fixture.geojson"
+    assert source["path"] == "tests/fixtures/parking/parking_resident_districts_fixture.geojson"
+    assert source["sha256"] == te.content_sha256(districts_file)

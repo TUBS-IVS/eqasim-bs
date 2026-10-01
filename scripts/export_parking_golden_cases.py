@@ -7,15 +7,18 @@ truth. The script
    loader ``braunschweig.parking.zones.load_tariffs`` (the documented CSV: ``#`` comment lines, identifier
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
 2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 2)
-   and evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38,
-   L01..L08, L01Z..L08Z, V01..V23, R01..R11, each priced under its own minimum stay ``minimum_stay_min`` and its own
-   resident district flag ``resident_of_district``) with the Python reference ``braunschweig.parking.cost``; it
-   writes nothing when a result differs from its hard-coded expectation;
+   together with the fixture resident districts ``tests/fixtures/parking/parking_resident_districts_fixture.geojson``
+   (loaded by ``braunschweig.parking.zones.load_resident_districts``; the model lists their ids as
+   ``resident_districts``) and evaluates every golden case of ``braunschweig.parking.golden_cases``
+   (``GOLDEN_CASES``: G01..G38, L01..L08, L01Z..L08Z, V01..V23, R01..R13, each priced under its own minimum stay
+   ``minimum_stay_min`` and its own resident district flag ``resident_of_district``, and under the
+   ``resident_permits_valid`` of its fixture zone) with the Python reference ``braunschweig.parking.cost``; it writes
+   nothing when a result differs from its hard-coded expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
    ``parking_golden_cases.json`` (``schema_version`` ``GOLDEN_SCHEMA_VERSION``, the fixture ``tariffs`` in
    cents, the ``cases``; read by ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
    ``parking_tariffs_fixture.json`` (the spec 5.4 tariff model of the fixture set; ``sources`` holds the
-   path and LF-normalised sha256 of the table it was built from).
+   path and LF-normalised sha256 of the table and of the districts file it was built from).
 
 Re-run it after changing the fixture table, the golden cases or the export; the sync tests in
 ``tests/test_parking_cost.py`` and ``tests/test_parking_tariff_export.py`` fail until the files are current.
@@ -23,7 +26,8 @@ The recorded source of the fixture model is the fixture CSV (path and LF-normali
 that file needs a re-run too.
 
 Usage:
-    python scripts/export_parking_golden_cases.py [--tariffs-csv PATH] [--output-directory DIR]
+    python scripts/export_parking_golden_cases.py [--tariffs-csv PATH] [--districts-geojson PATH]
+                                                  [--output-directory DIR]
 """
 from __future__ import annotations
 
@@ -47,6 +51,7 @@ log = logging.getLogger("export_parking_golden_cases")
 
 FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
 FIXTURE_TARIFFS_CSV = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
+FIXTURE_DISTRICTS_GEOJSON = FIXTURE_DIRECTORY / "parking_resident_districts_fixture.geojson"
 GOLDEN_CASES_FILE_NAME = "parking_golden_cases.json"
 FIXTURE_MODEL_FILE_NAME = "parking_tariffs_fixture.json"
 #: 2 since parking cost zones v2 (issue #436): every case carries ``minimum_stay_min`` and the ``tariffs`` are zone
@@ -58,6 +63,7 @@ GOLDEN_SCHEMA_VERSION = 3
 #: real tariff state.
 FIXTURE_SNAPSHOT_DATE = "2026-09-28"
 FIXTURE_SOURCE_ID = "parking_tariffs_fixture"
+FIXTURE_DISTRICTS_SOURCE_ID = "parking_resident_districts_fixture"
 
 
 def read_fixture_tariffs_csv(path: Path) -> pd.DataFrame:
@@ -89,9 +95,29 @@ def load_fixture_tariffs(csv_path=None) -> tuple[pd.DataFrame, list[dict]]:
     return table, [source]
 
 
-def build_fixture_tariff_model(table: pd.DataFrame, sources: list[dict]) -> dict:
-    """The spec 5.4 tariff model of the fixture set, built by the production export."""
-    return tariff_export.build_tariff_model(table, snapshot_date=FIXTURE_SNAPSHOT_DATE, sources=sources)
+def load_fixture_districts(geojson_path=None) -> tuple:
+    """The fixture resident districts and their provenance record (one more ``sources`` entry of the fixture model).
+
+    ``geojson_path`` defaults to ``FIXTURE_DISTRICTS_GEOJSON``; the file must exist (``FileNotFoundError`` otherwise). It
+    is read by the production loader, which rejects an invalid layer.
+    """
+    path = Path(geojson_path) if geojson_path is not None else FIXTURE_DISTRICTS_GEOJSON
+    if not path.is_file():
+        raise FileNotFoundError(f"fixture resident districts not found: {path}")
+    districts = zones.load_resident_districts(path)
+    source = {"source_id": FIXTURE_DISTRICTS_SOURCE_ID, "path": _repository_path(path),
+              "sha256": tariff_export.content_sha256(path)}
+    log.info("fixture resident districts: %d districts from %s (sha256 %s)", len(districts), source["path"],
+             source["sha256"])
+    return districts, source
+
+
+def build_fixture_tariff_model(table: pd.DataFrame, sources: list[dict], districts_geojson_path=None) -> dict:
+    """The spec 5.4 tariff model of the fixture set, built by the production export: the tariff table, the fixture
+    resident districts (listed as ``resident_districts``, their file one more source after ``sources``)."""
+    districts, districts_source = load_fixture_districts(districts_geojson_path)
+    return tariff_export.build_tariff_model(table, snapshot_date=FIXTURE_SNAPSHOT_DATE,
+                                            sources=[*sources, districts_source], resident_districts=districts)
 
 
 def zones_from_model(model: Mapping) -> dict[str, ZoneTariff]:
@@ -115,13 +141,15 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tariffs-csv", type=Path, default=None,
                         help=f"fixture tariff CSV (default: {_repository_path(FIXTURE_TARIFFS_CSV)})")
+    parser.add_argument("--districts-geojson", type=Path, default=None,
+                        help=f"fixture resident districts (default: {_repository_path(FIXTURE_DISTRICTS_GEOJSON)})")
     parser.add_argument("--output-directory", type=Path, default=FIXTURE_DIRECTORY,
                         help=f"directory for the two JSON files (default: {_repository_path(FIXTURE_DIRECTORY)})")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
     table, sources = load_fixture_tariffs(args.tariffs_csv)
-    model = build_fixture_tariff_model(table, sources)
+    model = build_fixture_tariff_model(table, sources, args.districts_geojson)
     problems = golden_case_mismatches(zones_from_model(model))
     if problems:
         for problem in problems:

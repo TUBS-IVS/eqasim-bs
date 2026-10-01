@@ -32,7 +32,8 @@ acquisition:
     BgA Entgeltordnung 50444731..., TU Parkordnung 037bb432..., ParkGO Goslar c3008752..., Helmstedt
     Gebuehrenordnung 89622fb2..., city car-park directory parkplaetze.geojson 861bc290.... The file's '#'
     header states the cost semantics of design spec section 3.2 and the assumptions Z1, D1, T1, M1, C1, R1,
-    H1, F1, S1 (spec section 7) and ASSUMPTION C-b (spec Amendment C2; ruling R-T1d-a).
+    H1, F1, S1 (spec section 7), R2 and R2-a (spec Amendment C3; ruling R-T1e-a) and ASSUMPTION C-b (spec
+    Amendment C2; ruling R-T1d-a).
     The three Wolfsburg rows wob_tarifzone_1, wob_tarifzone_2 and wob_tarifzone_3 (spec Amendment C2, 2026-10-01)
     replace the row wob_innenstadt. Source per ruling R-C1: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand
     12/2024); open reuse licence not verified; used by owner decision 2026-10-01. The values come from the attributes
@@ -98,9 +99,13 @@ limitations: >-
   change is stated in the data record parking_zones_2026); a press report of 2024-02-05 (regionalheute.de) quotes
   zone 1 of the then valid ordinance at 1.30 EUR per started half hour, which is not reconciled with the layer's
   2.00 EUR per hour (ruling R-T1d-b: the layer stays). Campus members pay the 3.50 EUR day ticket
-  (C1, owner decision 3) although the 10 EUR month ticket costs 0.50 EUR per working day. Resident permits A/B/C
-  (exempt in the centre), the exemption of zone-132 permit holders on the Parkscheininseln and the night-time
-  residents-only rule of the Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
+  (C1, owner decision 3) although the 10 EUR month ticket costs 0.50 EUR per working day. The resident permits A/B/C
+  of Braunschweig and the Goslar permits are not part of this table: they are the second layer
+  parking_resident_districts_2026 (rule R2), which frees a stay only where the table's column resident_permits_valid
+  holds (ASSUMPTION R2-a, ruling R-T1e-a): by default on street and resident zones, never on a campus, and not at the five
+  BgA car parks bs_bga_*, which state false because no source says that resident permits are valid there. The
+  exemption of zone-132 permit holders on the Parkscheininseln and the night-time residents-only rule of the
+  Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
   the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
   a polygon overlay. The Wolfenbuettel URL of the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the
   current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
@@ -114,4 +119,10 @@ notes: >-
   (2026-09-30) accepted no rule-based core (parking_zones_2026_qa.csv), so no zone and hence no tariff row was
   added: the planned bs_zone_ii would take the ParkGO sec. 1(2) zone II amounts (0.50 EUR per 30 min, i.e.
   1.00 EUR/h, and the 9 h (540 min) to 24 h ticket of 9.00 EUR as day cap) and bs_zone_ia_sued the Ia row; both
-  rows are written only together with their polygons (cross_validate).
+  rows are written only together with their polygons (cross_validate). The optional last column
+  resident_permits_valid (spec Amendment C3, ruling R-T1e-a; true or false, empty = the default of the zone type: valid
+  on street_paid and resident_zone rows, not valid on a campus, where true is rejected) is empty on every row but the
+  five bs_bga_* rows, which state false with the note "separately operated car park (BgA); no source states that
+  resident permits are valid; ASSUMPTION R2-a". It switches off the district rule R2 only, never resident_exempt.
+  scripts/validate_parking_zones.py prints where R2 is off (11 of the 26 zones on 2026-10-01: the five BgA rows and
+  the six campus zones).

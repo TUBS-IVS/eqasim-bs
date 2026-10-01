@@ -11,8 +11,10 @@ The zone-based parking cost model (design spec ``2026-09-28-parking-cost-zones-d
   (e.g. a URL fragment) is data. Money in EUR as float, minutes as nullable integers (``Int64``), fee
   hours as decimal hours of the weekday, ``resident_exempt`` from the literals ``true``/``false``.
   Empty means "not applicable". Schema 2 (parking cost zones v2, issue #436, levers 2 and 4) appends the optional
-  columns ``OPTIONAL_TARIFF_COLUMNS``: the garage product, ``commuter_day_eur`` and ``search_time_min``. A
-  table without them (schema 1, ``SCHEMA_1_TARIFF_COLUMNS``) loads with every one of them empty, which prices as v1.
+  columns ``OPTIONAL_TARIFF_COLUMNS``: the garage product, ``commuter_day_eur``, ``search_time_min`` and, since spec
+  Amendment C3, ``resident_permits_valid`` (whether the parking honours resident permits, i.e. whether rule R2 applies;
+  empty = the default of the zone type, ASSUMPTION R2-a). A table without them (schema 1,
+  ``SCHEMA_1_TARIFF_COLUMNS``) loads with every one of them empty, which prices as v1.
 * **coverage register** -- one row per municipality of the eight ZGB counties with a status in
   ``REGISTER_STATUSES``, plus one ``excluded`` row per paid-parking area deliberately left out.
 
@@ -86,8 +88,11 @@ GARAGE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_f
 GARAGE_CORE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_fee_start_h", "garage_fee_end_h")
 GARAGE_FIRST_PERIOD_COLUMNS = ("garage_first_period_min", "garage_first_period_eur")
 #: Schema 2, all optional: the garage product, the commuter product per working day (ASSUMPTION P2; street_paid and
-#: campus rows only) and the parking search time in whole minutes >= 0 (lever 4; not a price input).
-OPTIONAL_TARIFF_COLUMNS = GARAGE_COLUMNS + ("commuter_day_eur", "search_time_min")
+#: campus rows only), the parking search time in whole minutes >= 0 (lever 4; not a price input) and, since spec
+#: Amendment C3, ``resident_permits_valid``: whether the parking honours resident parking permits (ASSUMPTION R2-a;
+#: ``true``/``false``, empty = valid on street_paid and resident_zone rows, not valid on a campus, where only false or
+#: empty is allowed).
+OPTIONAL_TARIFF_COLUMNS = GARAGE_COLUMNS + ("commuter_day_eur", "search_time_min", "resident_permits_valid")
 #: The loaded layout: schema 1 followed by the schema-2 columns ("schema 2 = schema 1 plus optional columns").
 TARIFF_COLUMNS = SCHEMA_1_TARIFF_COLUMNS + OPTIONAL_TARIFF_COLUMNS
 MONEY_COLUMNS = ("hourly_rate_eur", "first_period_eur", "daily_cap_eur", "long_stay_product_eur",
@@ -99,8 +104,10 @@ MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_
 NON_NEGATIVE_MINUTE_COLUMNS = ("search_time_min",)
 HOUR_COLUMNS = ("fee_start_h", "fee_end_h", "garage_fee_start_h", "garage_fee_end_h")
 BOOLEAN_COLUMNS = ("resident_exempt",)
-TEXT_COLUMNS = tuple(column for column in TARIFF_COLUMNS
-                     if column not in MONEY_COLUMNS + MINUTE_COLUMNS + HOUR_COLUMNS + BOOLEAN_COLUMNS)
+#: Boolean columns whose empty cell means "not stated" (pandas ``boolean`` with NA) instead of an error.
+NULLABLE_BOOLEAN_COLUMNS = ("resident_permits_valid",)
+TEXT_COLUMNS = tuple(column for column in TARIFF_COLUMNS if column not in (
+    MONEY_COLUMNS + MINUTE_COLUMNS + HOUR_COLUMNS + BOOLEAN_COLUMNS + NULLABLE_BOOLEAN_COLUMNS))
 #: Fields every row must carry, whatever its type (``notes`` is optional).
 ALWAYS_REQUIRED_COLUMNS = ("zone_id", "name", "municipality_ags", "zone_type", "workplace_class", "fee_start_h",
                            "fee_end_h", "resident_exempt", "source_url", "source_date", "valid_from",
@@ -263,15 +270,20 @@ def _parse_minutes(text: pd.Series, column: str, zone_ids: pd.Series, path) -> p
     return pd.Series(values, index=text.index, dtype="Int64")
 
 
-def _parse_boolean(text: pd.Series, column: str, zone_ids: pd.Series, path) -> pd.Series:
+def _parse_boolean(text: pd.Series, column: str, zone_ids: pd.Series, path, *, nullable: bool = False) -> pd.Series:
+    """The literals ``true``/``false`` as ``bool``; with ``nullable`` an empty cell is NA (pandas ``boolean``)."""
     literals = {"true": True, "false": False}
     values = []
     for zone_id, value in zip(zone_ids, text):
         value = value.strip()
-        if value not in literals:
-            raise ValueError(f"{path}: zone {zone_id!r}: {column} = {value!r}; use the literal 'true' or 'false'")
-        values.append(literals[value])
-    return pd.Series(values, index=text.index, dtype=bool)
+        if nullable and value == "":
+            values.append(pd.NA)
+        elif value in literals:
+            values.append(literals[value])
+        else:
+            raise ValueError(f"{path}: zone {zone_id!r}: {column} = {value!r}; use the literal 'true' or 'false'"
+                             + (", or leave the cell empty" if nullable else ""))
+    return pd.Series(values, index=text.index, dtype="boolean" if nullable else bool)
 
 
 def _is_set(value) -> bool:
@@ -318,6 +330,13 @@ def _log_schema_2_products(tariffs: pd.DataFrame, absent: list, path) -> None:
     log.info("[parking-zones] schema-2 products: garage on %d/%d rows, commuter product on %d/%d, search time on "
              "%d/%d", rows_with(GARAGE_CORE_COLUMNS), len(tariffs), rows_with(("commuter_day_eur",)), len(tariffs),
              rows_with(("search_time_min",)), len(tariffs))
+    # R2-a: say how many rows state the permit flag; the others take the default of their zone type, so the default
+    # is visible instead of silent.
+    permits = tariffs["resident_permits_valid"]
+    stated_false, stated_true = int(permits.eq(False).sum()), int(permits.eq(True).sum())
+    log.info("[parking-zones] resident permits (rule R2, ASSUMPTION R2-a): stated not valid on %d/%d rows, stated valid "
+             "on %d/%d, default of the zone type (valid on streets, not on a campus) on %d/%d", stated_false,
+             len(tariffs), stated_true, len(tariffs), len(tariffs) - stated_false - stated_true, len(tariffs))
 
 
 def load_tariffs(path) -> pd.DataFrame:
@@ -342,6 +361,8 @@ def load_tariffs(path) -> pd.DataFrame:
             typed[column] = _parse_minutes(raw[column], column, zone_ids, path)
         elif column in BOOLEAN_COLUMNS:
             typed[column] = _parse_boolean(raw[column], column, zone_ids, path)
+        elif column in NULLABLE_BOOLEAN_COLUMNS:
+            typed[column] = _parse_boolean(raw[column], column, zone_ids, path, nullable=True)
         else:
             stripped = raw[column].str.strip()
             typed[column] = stripped.where(stripped != "", pd.NA).astype(object)
@@ -463,6 +484,9 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
             for field in FORBIDDEN_FIELDS_BY_TYPE[zone_type]:
                 if _is_set(row[field]):
                     problem(field, f"not applicable to zone_type {zone_type!r}; leave it empty")
+            if zone_type == "campus" and _is_true(row["resident_permits_valid"]):
+                problem("resident_permits_valid", "a campus car park does not honour resident parking permits (no "
+                                                  "source says it does); leave the cell empty or false")
             if zone_type == "resident_zone":
                 if not _is_true(row["resident_exempt"]):
                     problem("resident_exempt", "a resident_zone must exempt its residents (true)")

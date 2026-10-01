@@ -17,9 +17,13 @@ Assumptions (spec section 7 and the v2 spec, lever 2; their full texts travel wi
 - H1: home activities are free everywhere.
 - R1: living inside a resident zone equals holding its permit (``resident_of_zone``).
 - R2 (v2, spec Amendment C3, extends R1): living inside a resident parking district equals holding its permit, so a
-  stay in the district of the person's home is free (``resident_of_district``). A district is a layer of its own,
-  independent of the fee zones and free to overlap them; the rule acts inside a fee zone only (Z1 is decided first),
-  in every zone type and whatever the zone's ``resident_exempt``.
+  stay in the district of the person's home is free (``resident_of_district``) where the zone honours resident
+  permits (R2-a). A district is a layer of its own, independent of the fee zones and free to overlap them; the rule
+  acts inside a fee zone only (Z1 is decided first) and whatever the zone's ``resident_exempt``.
+- R2-a (v2, Amendment C3, ruling R-T1e-a): resident permits are valid at the parking of a street_paid or
+  resident_zone row unless its tariff says otherwise (``resident_permits_valid`` false) and never on a campus. The
+  separately operated car parks of the city (BgA) are street_paid rows with ``resident_permits_valid`` false, because
+  no source states that permits are valid there. The flag switches off R2 only; R1 never reads it.
 - C1: members (work and education purposes) pay the campus day product, or the commuter product where the zone has
   a cheaper one (A4); other passes are not modelled.
 - M1: the maximum stay is compared with the CHARGEABLE duration; a longer stay buys the long-stay product, and where
@@ -97,6 +101,10 @@ GARAGE_FIELDS = ("garage_hourly_rate_cents", "garage_billing_unit_min", "garage_
 #: The optional fields schema 2 adds; ``ZoneTariff`` defaults them to None (a schema-1 tariff).
 SCHEMA_2_FIELDS = (*GARAGE_FIELDS, "commuter_day_cents", "search_time_min")
 
+#: R2-a: whether resident parking permits are valid at the parking of a zone type when the tariff does not say. A
+#: street or resident zone honours them; a campus car park is the university's and honours none.
+_DEFAULT_RESIDENT_PERMITS_VALID = {STREET_PAID: True, RESIDENT_ZONE: True, CAMPUS: False}
+
 # Tariff fields that may be None ("not applicable", an empty tariff-table cell).
 _OPTIONAL_FIELDS = ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                     "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents",
@@ -152,6 +160,11 @@ class ZoneTariff:
     working day ``commuter_day_cents`` (street_paid and campus only) and the parking search time ``search_time_min``
     (minutes >= 0, every zone type; not a price input). A maximum stay needs a long-stay product or a garage, because
     a longer stay loses the street product.
+
+    ``resident_permits_valid`` (spec Amendment C3, ASSUMPTION R2-a) says whether the parking honours resident parking
+    permits, i.e. whether the district rule R2 frees a stay there. Constructed without it (None) it resolves to True for
+    a street_paid or resident_zone row and to False for a campus, so it is always a bool afterwards and the table, the
+    model JSON and the Java port carry the same resolved value; True on a campus is rejected. It gates R2 only.
     """
 
     zone_id: str
@@ -178,8 +191,13 @@ class ZoneTariff:
     garage_fee_end_s: int | None = None
     commuter_day_cents: int | None = None
     search_time_min: int | None = None
+    resident_permits_valid: bool | None = None
 
     def __post_init__(self) -> None:
+        if self.resident_permits_valid is None and self.zone_type in ZONE_TYPES:
+            # Resolved at construction, not at the use, so that every reader of the tariff sees one bool. The class is
+            # frozen, hence object.__setattr__; an unknown zone type is left None and rejected by the check below.
+            object.__setattr__(self, "resident_permits_valid", _DEFAULT_RESIDENT_PERMITS_VALID[self.zone_type])
         _check_tariff(self)
 
     @property
@@ -229,6 +247,11 @@ def _check_tariff(tariff: ZoneTariff) -> None:
              f"0 <= fee_start_s < fee_end_s <= {SECONDS_PER_DAY}")
     if not isinstance(tariff.resident_exempt, bool):
         fail(f"resident_exempt must be a bool, got {tariff.resident_exempt!r}")
+    if not isinstance(tariff.resident_permits_valid, bool):
+        fail(f"resident_permits_valid must be a bool or None, got {tariff.resident_permits_valid!r}")
+    if tariff.zone_type == CAMPUS and tariff.resident_permits_valid:
+        fail(f"resident_permits_valid must be false for zone_type {tariff.zone_type!r}: a campus car park does not "
+             "honour resident parking permits (no source says it does); leave it empty or false")
     for first, second in _PAIRED_FIELDS:
         if (getattr(tariff, first) is None) != (getattr(tariff, second) is None):
             fail(f"{first} and {second} must be given together or both be empty")
@@ -451,8 +474,9 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
 
     1. home purpose -> 0, ``HOME`` (H1);
     2. ``parking_free`` -> 0, ``EMPLOYER_FREE``;
-    3. a resident-exempt zone and a resident of it (R1), or a stay in the person's own district (R2) -> 0,
-       ``RESIDENT_FREE``: one outcome for both, R2 in every zone type and whether or not the zone exempts residents;
+    3. a resident-exempt zone and a resident of it (R1), or a stay in the person's own district (R2) in a zone that
+       honours resident permits (``resident_permits_valid``, R2-a) -> 0, ``RESIDENT_FREE``: one outcome for both, R2
+       whether or not the zone exempts residents, and R1 whether or not the zone honours district permits;
     4. no chargeable second in the STREET fee window -> 0, ``OUTSIDE_FEE_HOURS``: a free street beats every garage;
     5. campus -> for work and education the cheaper of the member day product (C1) and the commuter product (A4,
        when set; a tie keeps the member day product), else the guest day product;
@@ -490,7 +514,7 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         return 0, HOME
     if parking_free:
         return 0, EMPLOYER_FREE
-    if (tariff.resident_exempt and resident_of_zone) or resident_of_district:
+    if (tariff.resident_exempt and resident_of_zone) or (resident_of_district and tariff.resident_permits_valid):
         return 0, RESIDENT_FREE
     if chargeable_s == 0:
         return 0, OUTSIDE_FEE_HOURS

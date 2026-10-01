@@ -30,6 +30,8 @@ def _write_tariffs(path: Path, frame: pd.DataFrame, header_lines=("# test tariff
         if column in text.columns:
             text[column] = text[column].astype("object").where(text[column].notna(), "")
     text["resident_exempt"] = text["resident_exempt"].map({True: "true", False: "false"})
+    if "resident_permits_valid" in text.columns:
+        text["resident_permits_valid"] = text["resident_permits_valid"].map({True: "true", False: "false"}).fillna("")
     body = text.to_csv(index=False, lineterminator="\n")
     path.write_text("\n".join(header_lines) + "\n" + body, encoding="utf-8")
     return path
@@ -43,7 +45,7 @@ def test_fixture_tariffs_load_typed():
     assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus",
                                         "fx_frac", "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2",
                                         "fx_garage_window_v2", "fx_capped_street_v2", "fx_campus_tie_v2",
-                                        "fx_res_garage_v2"]
+                                        "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2"]
     row = tariffs.set_index("zone_id").loc["fx_sz"]
     assert row["first_period_min"] == 60 and row["first_period_eur"] == pytest.approx(0.70)
     assert pd.isna(row["max_stay_min"])
@@ -74,6 +76,37 @@ def test_fixture_tariffs_pass_validation():
     pz.validate_tariffs(pz.load_tariffs(TARIFF_FIXTURE))
 
 
+def test_resident_permits_valid_is_an_optional_nullable_boolean_column(tmp_path):
+    # Spec Amendment C3, ASSUMPTION R2-a: empty = the default of the zone type, so the loader keeps "not stated" apart
+    # from false instead of turning the empty cell into either.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    assert "resident_permits_valid" in pz.OPTIONAL_TARIFF_COLUMNS and list(tariffs.columns) == list(pz.TARIFF_COLUMNS)
+    assert str(tariffs["resident_permits_valid"].dtype) == "boolean"
+    stated = tariffs.set_index("zone_id")["resident_permits_valid"].dropna()
+    assert {zone_id: bool(value) for zone_id, value in stated.items()} == {"fx_bga_v2": False,
+                                                                           "fx_res_nopermit_v2": False}
+    # true and false survive a round trip through the CSV; a table that predates the column reads it as empty
+    stated_true = tariffs.copy()
+    stated_true.loc[stated_true["zone_id"] == "fx_bs_ia", "resident_permits_valid"] = True
+    loaded = pz.load_tariffs(_write_tariffs(tmp_path / "stated.csv", stated_true)).set_index("zone_id")
+    assert loaded.loc["fx_bs_ia", "resident_permits_valid"] == True  # noqa: E712
+    assert loaded.loc["fx_bga_v2", "resident_permits_valid"] == False  # noqa: E712
+    assert loaded.loc["fx_sz", "resident_permits_valid"] is pd.NA
+    older = pz.load_tariffs(_write_tariffs(tmp_path / "older.csv", tariffs.drop(columns=["resident_permits_valid"])))
+    assert older["resident_permits_valid"].isna().all() and list(older.columns) == list(pz.TARIFF_COLUMNS)
+
+
+def test_resident_permits_valid_accepts_only_the_literals_true_false_or_empty(tmp_path):
+    text = TARIFF_FIXTURE.read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if line.startswith("fx_bga_v2,"))
+    assert row.endswith(",false")
+    path = tmp_path / "t.csv"
+    path.write_text(text.replace(row, row[:-len("false")] + "no"), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"zone 'fx_bga_v2': resident_permits_valid = 'no'; use the literal 'true' or "
+                                         r"'false', or leave the cell empty"):
+        pz.load_tariffs(path)
+
+
 _GARAGE_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
                                "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h",
                                "garage_fee_end_h"), float("nan"))
@@ -100,10 +133,12 @@ _GARAGE_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_mi
                    "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0}, "garage_hourly_rate_eur"),
     # The search time is a whole number of minutes >= 0 (0 is valid, fx_campus_v2).
     ("fx_bs_ib_v2", {"search_time_min": -1}, "search_time_min"),
+    # Spec Amendment C3 (R2-a): a campus car park honours no resident permit, so only empty or false is valid there.
+    ("fx_campus", {"resident_permits_valid": True}, "resident_permits_valid"),
 ], ids=["garage_core_without_unit", "garage_core_without_window_end", "garage_cap_without_core",
         "garage_first_period_unpaired", "garage_first_period_without_core", "garage_window_reversed",
         "garage_unit_zero", "garage_cap_zero", "max_stay_without_any_long_stay_product", "commuter_in_resident_zone",
-        "commuter_negative", "garage_on_campus", "search_time_negative"])
+        "commuter_negative", "garage_on_campus", "search_time_negative", "permits_valid_on_campus"])
 def test_the_schema_2_columns_are_validated_per_row(zone_id, changes, field):
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     broken = tariffs.copy()
@@ -272,7 +307,7 @@ def test_fixture_marker_can_be_rejected_for_committed_data():
 
 def test_fixture_zones_load_in_metric_crs():
     zones = pz.load_zone_polygons(ZONE_FIXTURE)
-    assert zones.crs.to_epsg() == 25832 and len(zones) == 16 and zones["zone_id"].is_unique
+    assert zones.crs.to_epsg() == 25832 and len(zones) == 18 and zones["zone_id"].is_unique
     for column in pz.ZONE_PROVENANCE_COLUMNS:
         assert zones[column].notna().all(), column
 
@@ -644,6 +679,11 @@ def test_committed_parking_data_is_valid(capsys):
     assert "geometry_source mix" in out
     # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
     assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
+    # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows state it, the six campus zones take the
+    # default, the other 15 of the 26 zones honour resident permits
+    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 15 of 26 zones; not valid on 5 stated rows "
+            "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_kannengiesserstrasse, bs_bga_markthalle, "
+            "bs_bga_suedstrasse) and on 6 campus zones (default)") in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -754,6 +794,22 @@ def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
     unpublished = ["free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur", "max_stay_min",
                    "long_stay_product_eur"]
     assert wolfsburg[unpublished].isna().all().all()
+
+
+def test_committed_bga_car_parks_state_that_resident_permits_are_not_valid():
+    # Ruling R-T1e-a, ASSUMPTION R2-a: no source states that resident permits are valid at the five separately
+    # operated BgA car parks of Braunschweig, so rule R2 must not free a stay there; every other row leaves the column
+    # empty, i.e. takes the default of its zone type (valid on streets, not on a campus).
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    bga = sorted(zone_id for zone_id in tariffs.index if zone_id.startswith("bs_bga_"))
+    assert bga == ["bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_kannengiesserstrasse",
+                   "bs_bga_markthalle", "bs_bga_suedstrasse"]
+    assert (tariffs.loc[bga, "zone_type"] == "street_paid").all()
+    assert (tariffs.loc[bga, "resident_permits_valid"] == False).all()  # noqa: E712
+    assert tariffs.loc[bga, "notes"].str.contains(
+        "separately operated car park (BgA); no source states that resident permits are valid; ASSUMPTION R2-a",
+        regex=False).all()
+    assert tariffs.drop(index=bga)["resident_permits_valid"].isna().all()
 
 
 def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys, monkeypatch):

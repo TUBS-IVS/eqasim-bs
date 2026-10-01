@@ -54,17 +54,18 @@ def test_the_contract_holds_the_g_l_lz_v_and_r_cases_each_with_its_minimum_stay(
     # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
-    # R01..R11 pin the resident district rule R2 (spec Amendment C3), at L = 0 except R10 and R11 at L = 15.
+    # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
+    # except R10 and R11 at L = 15.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
-    expected += [(f"R{number:02d}", 15 if number >= 10 else 0) for number in range(1, 12)]
+    expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     # only the R cases set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)
     assert [case["id"] for case in GOLDEN_CASES if case["resident_of_district"]] == [
-        "R01", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"]
+        "R01", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11", "R12", "R13"]
     assert all(case["expected_outcome"] in cost.OUTCOMES for case in GOLDEN_CASES if not case["expected_error"])
     assert [case["id"] for case in GOLDEN_CASES if case["expected_error"]] == ["G26"]
 
@@ -264,22 +265,71 @@ def test_no_zone_precedes_the_district_rule():
 
 
 # Rule R2 (spec Amendment C3, ASSUMPTION, extends R1): a stay is free when the activity lies in the district of the
-# person's home. The caller compares the district ids of the activity and of the person's home and passes the boolean.
-@pytest.mark.parametrize("zone_type, expected_without_the_rule", [
-    ("street_paid", (93, cost.PAID_METERED)),
-    ("resident_zone", (0, cost.FREE_WITHIN_LIMIT)),
-    ("campus", (350, cost.PAID_CAMPUS_MEMBER)),
+# person's home and the zone honours resident permits (ASSUMPTION R2-a: resident_permits_valid). The caller compares the
+# district ids of the activity and of the person's home and passes the boolean.
+@pytest.mark.parametrize("zone_type, expected_without_the_rule, expected_in_the_own_district", [
+    ("street_paid", (93, cost.PAID_METERED), (0, cost.RESIDENT_FREE)),
+    ("resident_zone", (0, cost.FREE_WITHIN_LIMIT), (0, cost.RESIDENT_FREE)),
+    # A campus honours no resident permit (the default of resident_permits_valid there): the stay pays as before.
+    ("campus", (350, cost.PAID_CAMPUS_MEMBER), (350, cost.PAID_CAMPUS_MEMBER)),
 ])
-def test_the_district_rule_frees_a_stay_in_every_zone_type_whatever_the_tariff_exempts(zone_type, expected_without_the_rule):
-    # The flag is independent of the zone type and of resident_exempt (False for the street zone and the campus): all
-    # three zones free the stay, and only the flag changes the result.
+def test_the_district_rule_frees_a_stay_where_the_zone_honours_resident_permits_whatever_it_exempts(
+        zone_type, expected_without_the_rule, expected_in_the_own_district):
+    # The street zone exempts nobody (resident_exempt False) and the resident zone exempts its own residents only, yet
+    # both free a resident of the district; the flag alone changes the result.
     tariff = _tariff(zone_type)
     arrival_s, departure_s = (36000, 37860) if zone_type != "campus" else (28800, 61200)
     purpose = "work" if zone_type == "campus" else "shop"
     flags = {"purpose": purpose, "parking_free": False, "resident_of_zone": False}
     assert cost.parking_cost_cents(tariff, arrival_s, departure_s, **flags) == expected_without_the_rule
     assert cost.parking_cost_cents(tariff, arrival_s, departure_s, **flags, resident_of_district=True) == (
-        0, cost.RESIDENT_FREE)
+        expected_in_the_own_district)
+
+
+def test_a_zone_that_does_not_honour_resident_permits_prices_the_stay_in_the_own_district_like_any_other():
+    # ASSUMPTION R2-a: a separately operated car park (BgA) is a street_paid row with resident_permits_valid false; the
+    # same stay in an otherwise equal zone that honours permits is free.
+    own_district = {**_SHOP, "resident_of_district": True}
+    assert cost.parking_cost_cents(_tariff(), 36000, 37860, **own_district) == (0, cost.RESIDENT_FREE)
+    assert cost.parking_cost_cents(_tariff(resident_permits_valid=False), 36000, 37860, **own_district) == (
+        93, cost.PAID_METERED)
+
+
+def test_the_permit_flag_switches_off_only_the_district_rule_never_the_residents_of_the_zone_itself():
+    # R1 reads resident_exempt and resident_of_zone only: a resident zone that does not honour district permits still
+    # exempts its own residents (a person living in the zone and in the district), and prices a stranger to it.
+    tariff = _tariff("resident_zone", resident_permits_valid=False)
+    stay = {"purpose": "work", "parking_free": False}
+    assert cost.parking_cost_cents(tariff, 28800, 61200, resident_of_zone=True, resident_of_district=True,
+                                   **stay) == (0, cost.RESIDENT_FREE)
+    assert cost.parking_cost_cents(tariff, 28800, 61200, resident_of_zone=False, resident_of_district=True,
+                                   **stay) == (900, cost.PAID_LONG_STAY)
+
+
+@pytest.mark.parametrize("base_type, expected", [("street_paid", True), ("resident_zone", True), ("campus", False)])
+def test_resident_permits_are_valid_by_default_on_street_and_resident_zones_and_never_on_a_campus(base_type, expected):
+    # The default is part of the tariff, so the table, the model JSON and Java read the same value: an unset field is
+    # resolved at construction, an explicit value that equals the default is the same tariff.
+    assert _tariff(base_type).resident_permits_valid is expected
+    assert _tariff(base_type, resident_permits_valid=expected) == _tariff(base_type)
+    assert _tariff(base_type).resident_permits_valid is not None
+
+
+def test_a_street_or_resident_zone_may_state_that_resident_permits_are_not_valid():
+    for base_type in ("street_paid", "resident_zone"):
+        tariff = _tariff(base_type, resident_permits_valid=False)
+        assert tariff.resident_permits_valid is False and tariff != _tariff(base_type)
+
+
+@pytest.mark.parametrize("base_type, value, message", [
+    # A campus car park sells no resident permits (no source states the opposite): true is a configuration error.
+    ("campus", True, "resident_permits_valid must be false for zone_type 'campus'"),
+    ("street_paid", "false", "resident_permits_valid must be a bool"),
+    ("street_paid", 0, "resident_permits_valid must be a bool"),
+], ids=["true_on_campus", "text", "number"])
+def test_resident_permits_valid_is_validated_when_the_tariff_is_built(base_type, value, message):
+    with pytest.raises(ValueError, match=message):
+        _tariff(base_type, resident_permits_valid=value)
 
 
 def test_the_district_rule_comes_after_home_and_employer_free_and_before_the_fee_hours_and_the_products():
@@ -436,11 +486,12 @@ def test_the_exported_minimum_stay_cases_keep_the_numbers_of_adr_0139_decision_9
             assert (case["expected_cents"], case["expected_outcome"]) == expected, twin_id
 
 
-# The resident district rule R2 (spec Amendment C3). This table pins the exported R cases against the numbers derived by
-# hand here, independently of braunschweig.parking.golden_cases, so that an export with a wrong flag, stay or expectation
-# cannot pass silently. Each entry names the result of the same stay WITHOUT the rule (the existing golden case), the
-# evidence that the rule, and nothing else, changes the result. Times of day: 28800 = 08:00, 36000 = 10:00,
-# 61200 = 17:00, 70200 = 19:30, 72000 = 20:00 (end of the fee window of fx_bs_ia and fx_bs_ib), 73800 = 20:30.
+# The resident district rule R2 (spec Amendment C3) and its scope R2-a. This table pins the exported R cases against the
+# numbers derived by hand here, independently of braunschweig.parking.golden_cases, so that an export with a wrong flag,
+# stay or expectation cannot pass silently. Each entry names the result of the same stay WITHOUT the rule (the existing
+# golden case, or for R02, R05, R12 and R13 the same result: there the rule moves nothing), the evidence that the rule,
+# and nothing else, changes the result. Times of day: 28800 = 08:00, 36000 = 10:00, 61200 = 17:00, 70200 = 19:30,
+# 72000 = 20:00 (end of the fee window of fx_bs_ia and fx_bs_ib), 73800 = 20:30.
 _DISTRICT_PINS = {
     # id: (zone, purpose, arrival_s, departure_s, free, of_zone, of_district, terminal, L, (cents, outcome), same stay without R2)
     # 31 min x 3 ct = 93 ct (G01) -> free.
@@ -452,8 +503,9 @@ _DISTRICT_PINS = {
     # Not a resident of the resident zone fx_res_a (R1 flag false), but the stay lies in the person's own district:
     # 540 min > max stay 120 -> long-stay product 900 ct (G18) -> free.
     "R04": ("fx_res_a", "work", 28800, 61200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (900, "PAID_LONG_STAY")),
-    # R2 reads neither the zone type nor resident_exempt: member day product 350 ct (G20) -> free.
-    "R05": ("fx_campus", "work", 28800, 61200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (350, "PAID_CAMPUS_MEMBER")),
+    # A campus honours no resident permit (R2-a): the member day product 350 ct (G20) stays although the flag is true.
+    "R05": ("fx_campus", "work", 28800, 61200, False, False, True, False, 0, (350, "PAID_CAMPUS_MEMBER"),
+            (350, "PAID_CAMPUS_MEMBER")),
     # Home first (H1): HOME, not RESIDENT_FREE (G05 without the flag is HOME as well).
     "R06": ("fx_bs_ia", "home", 36000, 39600, False, False, True, False, 0, (0, "HOME"), (0, "HOME")),
     # The employer's free parking comes before the district: EMPLOYER_FREE (G04 without the flag).
@@ -467,6 +519,13 @@ _DISTRICT_PINS = {
     "R10": ("fx_bs_ia", "shop", 36000, 36000, False, False, True, False, 15, (0, "RESIDENT_FREE"), (45, "PAID_METERED")),
     # L = 15 on a schema-2 row: the cheapest product would be the commuter product 376 ct (V04) -> free.
     "R11": ("fx_bs_ib_v2", "work", 28800, 61200, False, False, True, False, 15, (0, "RESIDENT_FREE"), (376, "PAID_COMMUTER")),
+    # fx_bga_v2 does not honour resident permits (R2-a): 31 min x 3 ct = 93 ct as in R01/G01 although the flag is true.
+    "R12": ("fx_bga_v2", "shop", 36000, 37860, False, False, True, False, 0, (93, "PAID_METERED"),
+            (93, "PAID_METERED")),
+    # fx_res_nopermit_v2 does not honour district permits, but a resident of the zone is exempt by R1 (G19): the flag
+    # switches off R2 only. Without R1 the 540 min > max stay 120 would pay the long-stay product 900 ct (G18).
+    "R13": ("fx_res_nopermit_v2", "work", 28800, 61200, False, True, True, False, 0, (0, "RESIDENT_FREE"),
+            (0, "RESIDENT_FREE")),
 }
 
 
@@ -481,7 +540,8 @@ def test_the_exported_district_cases_keep_the_hand_derived_numbers(fixture_zones
                 case["expected_error"]) == (zone_id, purpose, arrival_s, departure_s, free, of_zone, of_district,
                                             terminal, minimum_stay_min, False), case_id
         assert (case["expected_cents"], case["expected_outcome"]) == expected, case_id
-        # The same stay with the flag off gives the result of the existing golden case: the rule alone moved the result.
+        # The same stay with the flag off gives the result of the existing golden case: the rule alone moved the result
+        # (and moved nothing where R2-a switches it off or R1 frees the stay anyway).
         assert evaluate_case({**case, "resident_of_district": False}, fixture_zones) == without_the_rule, case_id
 
 
