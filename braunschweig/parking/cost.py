@@ -16,6 +16,10 @@ Assumptions (spec section 7 and the v2 spec, lever 2; their full texts travel wi
 - D1: the simulated day is an average weekday, so a zone's fee window repeats every 86,400 s.
 - H1: home activities are free everywhere.
 - R1: living inside a resident zone equals holding its permit (``resident_of_zone``).
+- R2 (v2, spec Amendment C3, extends R1): living inside a resident parking district equals holding its permit, so a
+  stay in the district of the person's home is free (``resident_of_district``). A district is a layer of its own,
+  independent of the fee zones and free to overlap them; the rule acts inside a fee zone only (Z1 is decided first),
+  in every zone type and whatever the zone's ``resident_exempt``.
 - C1: members (work and education purposes) pay the campus day product, or the commuter product where the zone has
   a cheaper one (A4); other passes are not modelled.
 - M1: the maximum stay is compared with the CHARGEABLE duration; a longer stay buys the long-stay product, and where
@@ -431,7 +435,7 @@ def _cheapest(products) -> tuple[int, str]:
 
 
 def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
-                       parking_free: bool, resident_of_zone: bool) -> tuple[int, str]:
+                       parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False) -> tuple[int, str]:
     """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2, v2 lever 2).
 
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
@@ -440,12 +444,15 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     activity use ``terminal_departure_s``; under the minimum stay L1 pass the departure of
     ``minimum_stay_departure_s``, so every product below prices the same extended stay, spec amendment A3);
     ``purpose`` is the MATSim activity type, ``parking_free`` the activity attribute ``parkingFree``,
-    ``resident_of_zone`` whether the person lives in this zone (R1). The checks run in the order of spec 3.2; the
-    first that applies decides:
+    ``resident_of_zone`` whether the person lives in this zone (R1), ``resident_of_district`` whether the activity lies
+    in the resident parking district of the person's home (R2, spec Amendment C3; the caller compares the district ids
+    of the activity and of the home, both set; ``False`` is the default, so every call that predates R2 is unchanged).
+    The checks run in the order of spec 3.2; the first that applies decides:
 
     1. home purpose -> 0, ``HOME`` (H1);
     2. ``parking_free`` -> 0, ``EMPLOYER_FREE``;
-    3. resident-exempt zone and a resident of it -> 0, ``RESIDENT_FREE`` (R1);
+    3. a resident-exempt zone and a resident of it (R1), or a stay in the person's own district (R2) -> 0,
+       ``RESIDENT_FREE``: one outcome for both, R2 in every zone type and whether or not the zone exempts residents;
     4. no chargeable second in the STREET fee window -> 0, ``OUTSIDE_FEE_HOURS``: a free street beats every garage;
     5. campus -> for work and education the cheaper of the member day product (C1) and the commuter product (A4,
        when set; a tie keeps the member day product), else the guest day product;
@@ -469,7 +476,8 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         raise ValueError(f"departure_s {departure_s} is before arrival_s {arrival_s}")
     if not isinstance(purpose, str) or not purpose:
         raise TypeError(f"purpose must be a non-empty activity type string, got {purpose!r}")
-    for name, flag in (("parking_free", parking_free), ("resident_of_zone", resident_of_zone)):
+    for name, flag in (("parking_free", parking_free), ("resident_of_zone", resident_of_zone),
+                       ("resident_of_district", resident_of_district)):
         if not isinstance(flag, bool):
             raise TypeError(f"{name} must be a bool, got {flag!r}")
     if tariff is None:
@@ -482,7 +490,7 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         return 0, HOME
     if parking_free:
         return 0, EMPLOYER_FREE
-    if tariff.resident_exempt and resident_of_zone:
+    if (tariff.resident_exempt and resident_of_zone) or resident_of_district:
         return 0, RESIDENT_FREE
     if chargeable_s == 0:
         return 0, OUTSIDE_FEE_HOURS

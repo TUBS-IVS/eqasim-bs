@@ -11,7 +11,8 @@
     "ASSUMPTION F1: Fee windows without an ordinance/signage source are marked 'assumption' in the table. Where it bites: Per zone. Sensitivity: documented per row.",
     "ASSUMPTION S1: Each zone has ONE regime; mixed streets are digitised as separate zones or take the dominant regime with a note. Where it bites: Per zone. Sensitivity: notes.",
     "ASSUMPTION P1: A stay pays the cheapest product the driver can use (street, garage, commuter): drivers know the local products. Where it bites: Zones with garage or commuter columns. Sensitivity: leave the garage and commuter columns empty in an arm (the v1 pricing).",
-    "ASSUMPTION P2: commuter_day_eur is the cheapest long-term product per working day (21 working days); regular work/education commuters hold it, an effective daily cost for regulars, never a day tariff. Where it bites: Work/education stays in zones with commuter_day_eur. Sensitivity: commuter_day_eur presence."
+    "ASSUMPTION P2: commuter_day_eur is the cheapest long-term product per working day (21 working days); regular work/education commuters hold it, an effective daily cost for regulars, never a day tariff. Where it bites: Work/education stays in zones with commuter_day_eur. Sensitivity: commuter_day_eur presence.",
+    "ASSUMPTION R2: Residence inside a resident parking district equals permit possession (extends R1): a stay inside the district of the person's home is free, in every zone type; the districts are independent of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1. Where it bites: Non-home activities of residents inside their own district (data record parking_resident_districts_2026). Sensitivity: none: the district layer is a release input, not a parameter."
   ],
   "currency": "EUR",
   "schema_version": 2,

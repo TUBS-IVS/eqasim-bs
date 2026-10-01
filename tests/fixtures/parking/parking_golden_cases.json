@@ -10,6 +10,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -24,6 +25,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -38,6 +40,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -52,6 +55,7 @@
       "minimum_stay_min": 0,
       "parking_free": true,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -66,6 +70,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "home",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -80,6 +85,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "leisure",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -94,6 +100,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": true,
       "zone_id": "fx_bs_ia"
@@ -108,6 +115,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": true,
       "zone_id": "fx_bs_ia"
@@ -122,6 +130,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -136,6 +145,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -150,6 +160,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -164,6 +175,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -178,6 +190,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "leisure",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob"
@@ -192,6 +205,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob"
@@ -206,6 +220,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_pe"
@@ -220,6 +235,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_pe"
@@ -234,6 +250,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_res_a"
@@ -248,6 +265,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_res_a"
@@ -262,6 +280,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": true,
       "terminal": false,
       "zone_id": "fx_res_a"
@@ -276,6 +295,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -290,6 +310,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "education",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -304,6 +325,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "leisure",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -318,6 +340,7 @@
       "minimum_stay_min": 0,
       "parking_free": true,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -332,6 +355,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -346,6 +370,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -360,6 +385,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -374,6 +400,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_frac"
@@ -388,6 +415,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_frac"
@@ -402,6 +430,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_frac"
@@ -416,6 +445,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_frac"
@@ -430,6 +460,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": true,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -444,6 +475,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -458,6 +490,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -472,6 +505,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -486,6 +520,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -500,6 +535,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -514,6 +550,7 @@
       "minimum_stay_min": 0,
       "parking_free": true,
       "purpose": "home",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -528,6 +565,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": true,
       "terminal": false,
       "zone_id": "fx_res_a"
@@ -542,6 +580,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -556,6 +595,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -570,6 +610,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -584,6 +625,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob"
@@ -598,6 +640,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -612,6 +655,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -626,6 +670,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -640,6 +685,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -654,6 +700,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -668,6 +715,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_sz"
@@ -682,6 +730,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -696,6 +745,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob"
@@ -710,6 +760,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -724,6 +775,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia"
@@ -738,6 +790,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus"
@@ -752,6 +805,7 @@
       "minimum_stay_min": 0,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib"
@@ -766,6 +820,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia_v2"
@@ -780,6 +835,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia_v2"
@@ -794,6 +850,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -808,6 +865,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -822,6 +880,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "leisure",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -836,6 +895,7 @@
       "minimum_stay_min": 15,
       "parking_free": true,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -850,6 +910,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -864,6 +925,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob_v2"
@@ -878,6 +940,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob_v2"
@@ -892,6 +955,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "education",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ib_v2"
@@ -906,6 +970,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia_v2"
@@ -920,6 +985,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_wob_v2"
@@ -934,6 +1000,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus_v2"
@@ -948,6 +1015,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus_v2"
@@ -962,6 +1030,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_bs_ia_v2"
@@ -976,6 +1045,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_garage_window_v2"
@@ -990,6 +1060,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "work",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_campus_tie_v2"
@@ -1004,6 +1075,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_garage_window_v2"
@@ -1018,6 +1090,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_garage_window_v2"
@@ -1032,6 +1105,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_capped_street_v2"
@@ -1046,6 +1120,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": true,
       "zone_id": "fx_capped_street_v2"
@@ -1060,6 +1135,7 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_res_garage_v2"
@@ -1074,12 +1150,178 @@
       "minimum_stay_min": 15,
       "parking_free": false,
       "purpose": "shop",
+      "resident_of_district": false,
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_res_garage_v2"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37860,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R01",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37860,
+      "expected_cents": 93,
+      "expected_error": false,
+      "expected_outcome": "PAID_METERED",
+      "id": "R02",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": false,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 61200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R03",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "work",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ib"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 61200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R04",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "work",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_res_a"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 61200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R05",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "work",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_campus"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 39600,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "HOME",
+      "id": "R06",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "home",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 61200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "EMPLOYER_FREE",
+      "id": "R07",
+      "minimum_stay_min": 0,
+      "parking_free": true,
+      "purpose": "work",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ib"
+    },
+    {
+      "arrival_s": 73800,
+      "departure_s": 79200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R08",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "leisure",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 70200,
+      "departure_s": null,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R09",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": true,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 36000,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R10",
+      "minimum_stay_min": 15,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 61200,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_outcome": "RESIDENT_FREE",
+      "id": "R11",
+      "minimum_stay_min": 15,
+      "parking_free": false,
+      "purpose": "work",
+      "resident_of_district": true,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ib_v2"
     }
   ],
-  "schema_version": 2,
+  "schema_version": 3,
   "tariffs": {
     "fx_bs_ia": {
       "billing_unit_min": 1,

@@ -8,9 +8,9 @@ truth. The script
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
 2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 2)
    and evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38,
-   L01..L08, L01Z..L08Z, V01..V23, each priced under its own minimum stay ``minimum_stay_min``) with the Python
-   reference ``braunschweig.parking.cost``; it writes nothing when a result differs from its hard-coded
-   expectation;
+   L01..L08, L01Z..L08Z, V01..V23, R01..R11, each priced under its own minimum stay ``minimum_stay_min`` and its own
+   resident district flag ``resident_of_district``) with the Python reference ``braunschweig.parking.cost``; it
+   writes nothing when a result differs from its hard-coded expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
    ``parking_golden_cases.json`` (``schema_version`` ``GOLDEN_SCHEMA_VERSION``, the fixture ``tariffs`` in
    cents, the ``cases``; read by ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
@@ -50,8 +50,10 @@ FIXTURE_TARIFFS_CSV = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
 GOLDEN_CASES_FILE_NAME = "parking_golden_cases.json"
 FIXTURE_MODEL_FILE_NAME = "parking_tariffs_fixture.json"
 #: 2 since parking cost zones v2 (issue #436): every case carries ``minimum_stay_min`` and the ``tariffs`` are zone
-#: entries of tariff schema 2. A reader of version 1 would price every case without its minimum stay.
-GOLDEN_SCHEMA_VERSION = 2
+#: entries of tariff schema 2. A reader of version 1 would price every case without its minimum stay. 3 since the
+#: resident district rule R2 (spec Amendment C3): every case also carries ``resident_of_district``; a reader of
+#: version 2 would price every R case as a stay outside the person's district.
+GOLDEN_SCHEMA_VERSION = 3
 #: Snapshot label of the fixture tariff model: the date the fixture set was defined. A test label, not a
 #: real tariff state.
 FIXTURE_SNAPSHOT_DATE = "2026-09-28"

@@ -2,19 +2,22 @@
 
 One note for the mechanism that prices car parking when `parking_zones_enabled` is on (ADR-0139, issue #436). The
 feature state lives in the feature record `parking_cost_zones`, the data in the data records `parking_zones_2026`,
-`parking_tariffs_2026`, `parking_coverage_register_2026` and `srv2023_commute_parking_by_workplace_class`.
+`parking_tariffs_2026`, `parking_coverage_register_2026`, `srv2023_commute_parking_by_workplace_class` and
+`parking_resident_districts_2026`.
 
 ## Data flow
 
 1. `braunschweig.parking.zones_stage` (synpp stage, declared only when the flag is on) reads the release relative
    to `data_path` (`RELEASE_INPUTS`: `parking_zones_path`, `parking_tariffs_path`, `parking_coverage_register_path`,
-   `parking_workplace_shares_path`). `braunschweig.parking.zones` loads and validates the polygons
-   (`load_zone_polygons`: EPSG:25832, repaired rings counted, overlap at most `OVERLAP_TOLERANCE_M2`), the tariffs
-   (`load_tariffs`, `validate_tariffs`), one row per polygon (`cross_validate`) and the register
-   (`validate_coverage_register`); every tariff row passes `braunschweig.parking.tariff_export.tariff_row_to_zone`,
-   and every workplace class needs an SrV class row (`braunschweig.parking.attach.free_share_by_class`,
-   `check_workplace_classes`). Output: `zones`, `tariffs`, `workplace_shares`, `coverage_register` and `sources`
-   (dataset id, relative path, LF-normalised sha256 per input).
+   `parking_workplace_shares_path`, `parking_resident_districts_path`). `braunschweig.parking.zones` loads and
+   validates the polygons (`load_zone_polygons`: EPSG:25832, repaired rings counted, overlap at most
+   `OVERLAP_TOLERANCE_M2`), the tariffs (`load_tariffs`, `validate_tariffs`), one row per polygon (`cross_validate`),
+   the register (`validate_coverage_register`) and the resident districts (`load_resident_districts`: valid as stored,
+   never repaired, unique ids, no overlap; `validate_district_municipalities`: a register status row per district
+   municipality); every tariff row passes `braunschweig.parking.tariff_export.tariff_row_to_zone`, and every workplace
+   class needs an SrV class row (`braunschweig.parking.attach.free_share_by_class`, `check_workplace_classes`).
+   Output: `zones`, `tariffs`, `workplace_shares`, `coverage_register`, `districts` and `sources` (dataset id,
+   relative path, LF-normalised sha256 per input).
 2. `braunschweig.matsim.scenario.population` (the plans-writer wrapper) calls, after the cordon in-commuter merge,
    `attach_parking_zones` (activity column `parking_zone`, point in polygon by `zones.assign_zones`),
    `attach_resident_zones` (person column `resident_parking_zone`) and `draw_parking_free` (activity column
@@ -25,7 +28,12 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    `residentParkingZone` (`java.lang.String`); a missing value writes no attribute, never `"nan"`. A very small
    smoke (a single Kreis at 0.1 %) can place no activity inside any of the small zone polygons and then stops with
    the zero-coverage error of `attach_parking_zones`, the broken-join guard: widen the region or the sample of such
-   a smoke instead of weakening the guard.
+   a smoke instead of weakening the guard. The resident parking districts (spec Amendment C3) are a second layer
+   on the same merged frames: `attach_parking_districts` (activity column `parking_district`, written as
+   `parkingDistrict`) and `attach_resident_districts` (person column `resident_parking_district`, the district of
+   the home, written as `residentParkingDistrict`), each only where set. The two layers are independent: an activity
+   can lie in a district and in no zone and the other way round, and neither attachment reads the other. The wrapper
+   logs one more coverage line with the own-district stays, the exposure of assumption R2.
 3. `braunschweig.matsim.simulation.prepare._write_parking_inputs`, the last step of the preparation: the release
    tariffs become the tariff model `<prefix>parking_tariffs_<parking_tariff_snapshot_date>.json`
    (`tariff_export.build_tariff_model`: integer cents and seconds, the rendered `ASSUMPTIONS_REGISTER`, the release
@@ -72,6 +80,15 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 
 ## Rules maintainers must keep
 
+- The resident districts are data of their own, not zones: `parking_resident_districts_2026.geojson` is built by
+  the curation step `scripts/curation/parking_zones_2026/resident_districts.py` from the owner's packages (ids
+  prefixed per town, the Goslar feature without a code joined to C, an overlap cut from the later district), must
+  stay valid as stored (`load_resident_districts` raises, it never repairs) and is validated with
+  `scripts/validate_parking_zones.py`. Rule R2 (`parking_cost_cents(..., resident_of_district=...)`, outcome
+  `RESIDENT_FREE`) takes only the boolean "the activity lies in the district of the person's home"; the caller
+  compares `parkingDistrict` with `residentParkingDistrict`. It acts inside a fee zone only (Z1 first), in every
+  zone type, after the home and employer-free rules and before the fee-window check; the golden cases R01 to R11 pin
+  it, and the golden JSON has `schema_version` 3 since.
 - One outcome per priced stay: a new pricing branch adds its name to `braunschweig.parking.cost.OUTCOMES` and to the
   Java `ParkingOutcome` enum, and a golden case. Never price silently; an unknown zone id raises in Python and in
   Java.

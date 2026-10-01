@@ -133,14 +133,14 @@ def test_fee_windows_are_the_table_hours_in_seconds(model, table):
         0, 86400)
 
 
-def test_the_assumptions_render_the_register_of_spec_section_7_and_the_product_minimum(model):
+def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minimum_and_the_district_rule(model):
     # Spec section 7 (v1) followed by P1 (the cheapest usable product) and P2 (the commuter product per working day)
-    # of the v2 spec, lever 2.
+    # of the v2 spec, lever 2, and R2 (the resident parking district rule) of its Amendment C3.
     assumptions = model["assumptions"]
     assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9]: .+", text) for text in assumptions)
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
-        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2")]
+        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2", "R2")]
 
 
 def test_sources_carry_64_hex_content_hashes_and_posix_paths(model):
@@ -305,8 +305,9 @@ def _schema_1_csv(path: Path) -> Path:
 
 def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_unchanged(tmp_path, model, sources):
     """Review focus 1 (Python): a schema-1 CSV, without any of the nine schema-2 columns, still loads, validates and
-    exports; every schema-2 field is null, every zone equals its schema-2 fixture entry, and G01..G38, L01..L08 and
-    L01Z..L08Z price on it exactly as their golden values say."""
+    exports; every schema-2 field is null, every zone equals its schema-2 fixture entry, and G01..G38, L01..L08,
+    L01Z..L08Z and R01..R10 (the district rule R2 reads no tariff column) price on it exactly as their golden values
+    say."""
     path = _schema_1_csv(tmp_path / "schema_1_tariffs.csv")
     header = next(line for line in path.read_text(encoding="utf-8").splitlines() if not line.startswith("#"))
     assert header.split(",") == list(pz.SCHEMA_1_TARIFF_COLUMNS)
@@ -321,8 +322,8 @@ def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_
     assert te.build_tariff_model(table.drop(columns=list(V2_COLUMNS)), snapshot_date=SNAPSHOT_DATE,
                                  sources=sources)["zones"] == schema_1_model["zones"]
     from scripts.export_parking_golden_cases import zones_from_model
-    v1_cases = [case for case in GOLDEN_CASES if not case["id"].startswith("V")]
-    assert len(v1_cases) == 38 + 8 + 8
+    v1_cases = [case for case in GOLDEN_CASES if case["zone_id"] in V1_ZONE_IDS]
+    assert len(v1_cases) == 38 + 8 + 8 + 10 and not [case for case in v1_cases if case["id"].startswith("V")]
     assert golden_case_mismatches(zones_from_model(schema_1_model), v1_cases) == []
 
 

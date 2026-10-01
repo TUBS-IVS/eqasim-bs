@@ -50,15 +50,21 @@ def fixture_zones():
     return fixture_zone_tariffs()
 
 
-def test_the_contract_holds_the_g_l_lz_and_v_cases_each_with_its_minimum_stay():
+def test_the_contract_holds_the_g_l_lz_v_and_r_cases_each_with_its_minimum_stay():
     # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
-    # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1).
+    # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
+    # R01..R11 pin the resident district rule R2 (spec Amendment C3), at L = 0 except R10 and R11 at L = 15.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
+    expected += [(f"R{number:02d}", 15 if number >= 10 else 0) for number in range(1, 12)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
+    # only the R cases set the district flag, and the flag is a key of every case
+    assert all("resident_of_district" in case for case in GOLDEN_CASES)
+    assert [case["id"] for case in GOLDEN_CASES if case["resident_of_district"]] == [
+        "R01", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"]
     assert all(case["expected_outcome"] in cost.OUTCOMES for case in GOLDEN_CASES if not case["expected_error"])
     assert [case["id"] for case in GOLDEN_CASES if case["expected_error"]] == ["G26"]
 
@@ -74,7 +80,8 @@ def test_golden_case(case, fixture_zones):
 
 def test_the_committed_golden_json_is_in_sync(fixture_zones):
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    assert document["schema_version"] == 2
+    # 3 since the resident district rule R2: every case carries resident_of_district (2: minimum_stay_min)
+    assert document["schema_version"] == 3
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
     assert zones == fixture_zones, REGENERATE_HINT
@@ -247,7 +254,70 @@ def test_no_zone_precedes_the_home_rule():
                                    resident_of_zone=False) == (0, "NO_ZONE")
 
 
+def test_no_zone_precedes_the_district_rule():
+    # Z1 is decided before every check, the resident district included (spec Amendment C3, ruling of the controller):
+    # a district is a second layer that only acts inside a fee zone. Not a golden case, like the home case above.
+    assert cost.parking_cost_cents(None, 36000, 37860, purpose="shop", parking_free=False, resident_of_zone=False,
+                                   resident_of_district=True) == (0, cost.NO_ZONE)
+
+
+# Rule R2 (spec Amendment C3, ASSUMPTION, extends R1): a stay is free when the activity lies in the district of the
+# person's home. The caller compares the district ids of the activity and of the person's home and passes the boolean.
+@pytest.mark.parametrize("zone_type, expected_without_the_rule", [
+    ("street_paid", (93, cost.PAID_METERED)),
+    ("resident_zone", (0, cost.FREE_WITHIN_LIMIT)),
+    ("campus", (350, cost.PAID_CAMPUS_MEMBER)),
+])
+def test_the_district_rule_frees_a_stay_in_every_zone_type_whatever_the_tariff_exempts(zone_type, expected_without_the_rule):
+    # The flag is independent of the zone type and of resident_exempt (False for the street zone and the campus): all
+    # three zones free the stay, and only the flag changes the result.
+    tariff = _tariff(zone_type)
+    arrival_s, departure_s = (36000, 37860) if zone_type != "campus" else (28800, 61200)
+    purpose = "work" if zone_type == "campus" else "shop"
+    flags = {"purpose": purpose, "parking_free": False, "resident_of_zone": False}
+    assert cost.parking_cost_cents(tariff, arrival_s, departure_s, **flags) == expected_without_the_rule
+    assert cost.parking_cost_cents(tariff, arrival_s, departure_s, **flags, resident_of_district=True) == (
+        0, cost.RESIDENT_FREE)
+
+
+def test_the_district_rule_comes_after_home_and_employer_free_and_before_the_fee_hours_and_the_products():
+    tariff = _tariff(**_GARAGE, commuter_day_cents=376)
+    district = {"resident_of_zone": False, "resident_of_district": True}
+    # home first (H1), then the employer's free parking, then the district, then the fee window and the products
+    assert cost.parking_cost_cents(tariff, 36000, 37860, purpose="home", parking_free=True, **district) == (0, cost.HOME)
+    assert cost.parking_cost_cents(tariff, 36000, 37860, purpose="work", parking_free=True, **district) == (
+        0, cost.EMPLOYER_FREE)
+    assert cost.parking_cost_cents(tariff, 36000, 37860, purpose="work", parking_free=False, **district) == (
+        0, cost.RESIDENT_FREE)
+    # 20:30-22:00 lies after the street fee window: the district rule still names the stay (R2 precedes the fee hours)
+    assert cost.parking_cost_cents(tariff, 73800, 79200, purpose="leisure", parking_free=False, **district) == (
+        0, cost.RESIDENT_FREE)
+    assert cost.parking_cost_cents(tariff, 73800, 79200, purpose="leisure", parking_free=False,
+                                   resident_of_zone=False) == (0, cost.OUTSIDE_FEE_HOURS)
+
+
+def test_either_resident_rule_alone_frees_the_stay_with_the_one_outcome():
+    # R1 (the zone's own residents) and R2 (the district) are separate inputs of one outcome, RESIDENT_FREE
+    tariff = _tariff(resident_exempt=True)
+    stay = {"purpose": "shop", "parking_free": False}
+    assert cost.parking_cost_cents(tariff, 36000, 37860, resident_of_zone=True, resident_of_district=False,
+                                   **stay) == (0, cost.RESIDENT_FREE)
+    assert cost.parking_cost_cents(tariff, 36000, 37860, resident_of_zone=False, resident_of_district=True,
+                                   **stay) == (0, cost.RESIDENT_FREE)
+    assert cost.parking_cost_cents(tariff, 36000, 37860, resident_of_zone=False, resident_of_district=False,
+                                   **stay) == (93, cost.PAID_METERED)
+
+
+def test_the_district_flag_defaults_to_false_so_that_every_existing_call_prices_as_before():
+    flags = {"purpose": "shop", "parking_free": False, "resident_of_zone": False}
+    assert cost.parking_cost_cents(_tariff(), 36000, 37860, **flags) == cost.parking_cost_cents(
+        _tariff(), 36000, 37860, **flags, resident_of_district=False) == (93, cost.PAID_METERED)
+
+
 def test_flags_must_be_booleans_so_a_text_false_is_never_truthy():
+    with pytest.raises(TypeError, match="resident_of_district must be a bool"):
+        cost.parking_cost_cents(_tariff(), 36000, 37860, purpose="shop", parking_free=False, resident_of_zone=False,
+                                resident_of_district="false")
     with pytest.raises(TypeError, match="parking_free"):
         cost.parking_cost_cents(_tariff(), 36000, 37860, purpose="shop", parking_free="false",
                                 resident_of_zone=False)
@@ -362,6 +432,55 @@ def test_the_exported_minimum_stay_cases_keep_the_numbers_of_adr_0139_decision_9
                     case["parking_free"], case["resident_of_zone"], case["terminal"], case["expected_error"]) == (
                 zone_id, purpose, arrival_s, departure_s, minimum_stay_min, False, False, False, False), twin_id
             assert (case["expected_cents"], case["expected_outcome"]) == expected, twin_id
+
+
+# The resident district rule R2 (spec Amendment C3). This table pins the exported R cases against the numbers derived by
+# hand here, independently of braunschweig.parking.golden_cases, so that an export with a wrong flag, stay or expectation
+# cannot pass silently. Each entry names the result of the same stay WITHOUT the rule (the existing golden case), the
+# evidence that the rule, and nothing else, changes the result. Times of day: 28800 = 08:00, 36000 = 10:00,
+# 61200 = 17:00, 70200 = 19:30, 72000 = 20:00 (end of the fee window of fx_bs_ia and fx_bs_ib), 73800 = 20:30.
+_DISTRICT_PINS = {
+    # id: (zone, purpose, arrival_s, departure_s, free, of_zone, of_district, terminal, L, (cents, outcome), same stay without R2)
+    # 31 min x 3 ct = 93 ct (G01) -> free.
+    "R01": ("fx_bs_ia", "shop", 36000, 37860, False, False, True, False, 0, (0, "RESIDENT_FREE"), (93, "PAID_METERED")),
+    # The flag is false for a stay in another district or in none: 93 ct as G01.
+    "R02": ("fx_bs_ia", "shop", 36000, 37860, False, False, False, False, 0, (93, "PAID_METERED"), (93, "PAID_METERED")),
+    # fx_bs_ib exempts nobody: 480 min = 1440 ct capped at 900 ct (G03) -> free.
+    "R03": ("fx_bs_ib", "work", 28800, 61200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (900, "PAID_METERED")),
+    # Not a resident of the resident zone fx_res_a (R1 flag false), but the stay lies in the person's own district:
+    # 540 min > max stay 120 -> long-stay product 900 ct (G18) -> free.
+    "R04": ("fx_res_a", "work", 28800, 61200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (900, "PAID_LONG_STAY")),
+    # R2 reads neither the zone type nor resident_exempt: member day product 350 ct (G20) -> free.
+    "R05": ("fx_campus", "work", 28800, 61200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (350, "PAID_CAMPUS_MEMBER")),
+    # Home first (H1): HOME, not RESIDENT_FREE (G05 without the flag is HOME as well).
+    "R06": ("fx_bs_ia", "home", 36000, 39600, False, False, True, False, 0, (0, "HOME"), (0, "HOME")),
+    # The employer's free parking comes before the district: EMPLOYER_FREE (G04 without the flag).
+    "R07": ("fx_bs_ib", "work", 28800, 61200, True, False, True, False, 0, (0, "EMPLOYER_FREE"), (0, "EMPLOYER_FREE")),
+    # 20:30-22:00 lies after the fee window 09:00-20:00: the district rule comes first, RESIDENT_FREE instead of
+    # OUTSIDE_FEE_HOURS (G06).
+    "R08": ("fx_bs_ia", "leisure", 73800, 79200, False, False, True, False, 0, (0, "RESIDENT_FREE"), (0, "OUTSIDE_FEE_HOURS")),
+    # Terminal (T1): the departure would be max(70200, 72000) = 72000, 30 min x 3 ct = 90 ct (G07) -> free.
+    "R09": ("fx_bs_ia", "shop", 70200, None, False, False, True, True, 0, (0, "RESIDENT_FREE"), (90, "PAID_METERED")),
+    # L = 15: the zero-length stay would be priced for 15 min x 3 ct = 45 ct (L01) -> free.
+    "R10": ("fx_bs_ia", "shop", 36000, 36000, False, False, True, False, 15, (0, "RESIDENT_FREE"), (45, "PAID_METERED")),
+    # L = 15 on a schema-2 row: the cheapest product would be the commuter product 376 ct (V04) -> free.
+    "R11": ("fx_bs_ib_v2", "work", 28800, 61200, False, False, True, False, 15, (0, "RESIDENT_FREE"), (376, "PAID_COMMUTER")),
+}
+
+
+def test_the_exported_district_cases_keep_the_hand_derived_numbers(fixture_zones):
+    cases = {case["id"]: case for case in GOLDEN_CASES}
+    assert [case_id for case_id in cases if case_id.startswith("R")] == list(_DISTRICT_PINS)
+    for case_id, (zone_id, purpose, arrival_s, departure_s, free, of_zone, of_district, terminal, minimum_stay_min,
+                  expected, without_the_rule) in _DISTRICT_PINS.items():
+        case = cases[case_id]
+        assert (case["zone_id"], case["purpose"], case["arrival_s"], case["departure_s"], case["parking_free"],
+                case["resident_of_zone"], case["resident_of_district"], case["terminal"], case["minimum_stay_min"],
+                case["expected_error"]) == (zone_id, purpose, arrival_s, departure_s, free, of_zone, of_district,
+                                            terminal, minimum_stay_min, False), case_id
+        assert (case["expected_cents"], case["expected_outcome"]) == expected, case_id
+        # The same stay with the flag off gives the result of the existing golden case: the rule alone moved the result.
+        assert evaluate_case({**case, "resident_of_district": False}, fixture_zones) == without_the_rule, case_id
 
 
 def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():

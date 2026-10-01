@@ -96,8 +96,9 @@ class Assumption:
 
 
 #: The assumptions register of the design spec section 7, in its order, followed by the product-minimum
-#: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact). The model JSON carries
-#: the rendered texts, so every tariff file states the assumptions it is priced under.
+#: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact) and the resident district
+#: rule R2 of its Amendment C3. The model JSON carries the rendered texts, so every tariff file states the assumptions it
+#: is priced under.
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -127,6 +128,12 @@ ASSUMPTIONS_REGISTER = (
     Assumption("P2", "commuter_day_eur is the cheapest long-term product per working day (21 working days); regular "
                "work/education commuters hold it, an effective daily cost for regulars, never a day tariff",
                "Work/education stays in zones with commuter_day_eur", "commuter_day_eur presence"),
+    # Parking cost zones v2, Amendment C3: the resident parking districts, a layer of their own.
+    Assumption("R2", "Residence inside a resident parking district equals permit possession (extends R1): a stay "
+               "inside the district of the person's home is free, in every zone type; the districts are independent "
+               "of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1",
+               "Non-home activities of residents inside their own district (data record "
+               "parking_resident_districts_2026)", "none: the district layer is a release input, not a parameter"),
 )
 
 

@@ -9,7 +9,7 @@ with the fixture tariffs in cents, to ``tests/fixtures/parking/parking_golden_ca
 
 Fields of a case (they are the keys of the JSON cases, too):
 
-- ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``.
+- ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``, ``R01`` .. ``R11``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -17,7 +17,11 @@ Fields of a case (they are the keys of the JSON cases, too):
   implementation derives it from ``arrival_s`` with the terminal-stay rule (assumption T1,
   ``cost.terminal_departure_s``).
 - ``purpose``: the MATSim activity type; ``parking_free``: the activity attribute ``parkingFree``;
-  ``resident_of_zone``: whether the person lives in this zone (assumption R1).
+  ``resident_of_zone``: whether the person lives in this zone (assumption R1); ``resident_of_district``: whether the
+  activity lies in the resident parking district of the person's home (assumption R2, spec Amendment C3), false for
+  every case but the R cases. The caller derives the flag by comparing the activity attribute ``parkingDistrict`` with
+  the person attribute ``residentParkingDistrict`` (both set and equal); the calculator receives only the boolean, so
+  a stay in another district and a stay in no district are the same input, ``false``.
 - ``minimum_stay_min``: the minimum parked duration L of rule L1 (ADR-0139 decision 9) in whole minutes the stay
   is priced under. The evaluation applies T1 (terminal cases), then ``cost.minimum_stay_departure_s`` with
   ``60 * minimum_stay_min`` seconds, then ``cost.parking_cost_cents`` (spec amendment A3 of parking cost zones v2).
@@ -25,7 +29,7 @@ Fields of a case (they are the keys of the JSON cases, too):
   when ``expected_error`` is true, i.e. the stay is invalid -- its departure lies before its arrival -- and
   the calculation must raise the ``ValueError`` of the stay check (``STAY_ERROR_PATTERN``), not any other.
 
-The four families:
+The five families:
 
 - G01..G38 (L = 0, the pricing before rule L1, on the v1 rows of the fixture set). G01..G26 are the cases of the
   implementation plan. G27..G38 pin what those leave open:
@@ -52,11 +56,19 @@ The four families:
   unused garage and its 0 ct outcome (V18, V19), the garage without a day cap (V19, V20; spec amendment A6), the
   street unavailable above the maximum stay where its price would be the cheapest (V20) and in a resident zone (V22),
   and a terminal stay under L1 (T1 first, then L1, V21).
+- R01..R11 (L = 0 except R10 and R11 at L = 15): the resident district rule R2 on the fixture rows, each with the
+  result of the same stay without the rule in its comment (the existing G, L or V case). R01 frees a stay in a paid
+  zone that exempts nobody and R02 is its twin with the flag false (a stay in another district or in none); R03 to
+  R05 free a stay in a street zone without the exemption, in a resident zone for a person who is no resident of it
+  and on a campus, so the rule reads neither the zone type nor ``resident_exempt``; R06 and R07 keep HOME and
+  EMPLOYER_FREE ahead of the rule; R08 names a stay after the fee window RESIDENT_FREE, so the rule precedes the
+  fee-window check; R09 (terminal, T1) and R10 (L1, a zero-length stay) free the stay whatever interval would be
+  priced; R11 frees a stay that would buy the cheapest schema-2 product, so the rule precedes the product minimum.
 
-The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file with its ``minimum_stay_min``, so a
-port that meets the file meets these pins, too. That a stay outside every zone is ``NO_ZONE`` even for the home
-purpose is not a golden case (every case lies in a fixture zone); ``tests/test_parking_cost.py`` pins it for the
-Python reference.
+The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file with its ``minimum_stay_min`` and its
+``resident_of_district``, so a port that meets the file meets these pins, too. That a stay outside every zone is
+``NO_ZONE`` even for the home purpose, and even in the own district, is not a golden case (every case lies in a fixture
+zone); ``tests/test_parking_cost.py`` pins both for the Python reference.
 """
 from __future__ import annotations
 
@@ -66,7 +78,8 @@ from typing import Mapping, Sequence
 from braunschweig.parking import cost
 
 CASE_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "resident_of_zone",
-               "terminal", "minimum_stay_min", "expected_cents", "expected_outcome", "expected_error")
+               "resident_of_district", "terminal", "minimum_stay_min", "expected_cents", "expected_outcome",
+               "expected_error")
 
 #: The message of the stay check of ``cost.parking_cost_cents`` (and ``cost.chargeable_seconds``) for a
 #: departure before the arrival: the only ValueError an ``expected_error`` case may raise. Any other ValueError
@@ -78,9 +91,9 @@ _WITHOUT_MINIMUM_STAY_MIN = 0
 #: L of L01..L08 and V01..V14: 15 min, the minimum parked duration of ADR-0139 decision 9.
 _MINIMUM_STAY_MIN = 15
 
-# The rows of every table but the minimum-stay one carry the CASE_FIELDS except minimum_stay_min, which the table
-# fixes for all its rows.
-_ROW_FIELDS = tuple(field for field in CASE_FIELDS if field != "minimum_stay_min")
+# The rows of the G and V tables carry the CASE_FIELDS except minimum_stay_min, which the table fixes for all its
+# rows, and resident_of_district, which is false in all of them (the R rows below set it).
+_ROW_FIELDS = tuple(field for field in CASE_FIELDS if field not in ("minimum_stay_min", "resident_of_district"))
 
 # The comment above a row is its hand derivation. Times of day on day 0: 32400 = 09:00, 36000 = 10:00,
 # 61200 = 17:00, 64800 = 18:00, 72000 = 20:00, 86400 = 24:00.
@@ -267,9 +280,56 @@ _V_CASE_ROWS = (
 )
 
 
+# Rule R2 (spec Amendment C3): one row per case, (id, zone_id, arrival_s, departure_s, purpose, parking_free,
+# resident_of_zone, resident_of_district, terminal, minimum_stay_min, expected_cents, expected_outcome). Times of day on
+# day 0: 28800 = 08:00, 36000 = 10:00, 61200 = 17:00, 70200 = 19:30, 72000 = 20:00 (the end of the fee window of
+# fx_bs_ia and fx_bs_ib), 73800 = 20:30, 79200 = 22:00. The comment above a row is its hand derivation, with the result
+# of the same stay without the rule.
+_R_CASE_ROWS = (
+    # G01 stay, 31 chargeable min x 3 ct = 93 ct PAID_METERED without the rule; in the own district it is free.
+    ("R01", "fx_bs_ia",   36000, 37860, "shop",    False, False, True,  False,  0,  0, "RESIDENT_FREE"),
+    # The twin of R01 for a stay in another district or in no district: the flag is false, so G01's 93 ct stand.
+    ("R02", "fx_bs_ia",   36000, 37860, "shop",    False, False, False, False,  0, 93, "PAID_METERED"),
+    # fx_bs_ib exempts nobody (resident_exempt false): G03 pays 480 min = 1440 ct capped at 900 ct; R2 does not need
+    # the exemption.
+    ("R03", "fx_bs_ib",   28800, 61200, "work",    False, False, True,  False,  0,  0, "RESIDENT_FREE"),
+    # A person who is no resident of the resident zone fx_res_a (R1 flag false) but lives in the district that holds
+    # the stay: G18 pays the long-stay product 900 ct (540 min > max stay 120), R2 frees it.
+    ("R04", "fx_res_a",   28800, 61200, "work",    False, False, True,  False,  0,  0, "RESIDENT_FREE"),
+    # R2 reads neither the zone type nor resident_exempt: G20 pays the member day product 350 ct on the campus.
+    ("R05", "fx_campus",  28800, 61200, "work",    False, False, True,  False,  0,  0, "RESIDENT_FREE"),
+    # Home is free everywhere (H1) and comes first: HOME, not RESIDENT_FREE.
+    ("R06", "fx_bs_ia",   36000, 39600, "home",    False, False, True,  False,  0,  0, "HOME"),
+    # The employer's free parking comes before the district rule: EMPLOYER_FREE, not RESIDENT_FREE.
+    ("R07", "fx_bs_ib",   28800, 61200, "work",    True,  False, True,  False,  0,  0, "EMPLOYER_FREE"),
+    # 20:30-22:00 lies after the fee window 09:00-20:00 (G06: OUTSIDE_FEE_HOURS); the district rule precedes the
+    # fee-window check, so the stay is RESIDENT_FREE.
+    ("R08", "fx_bs_ia",   73800, 79200, "leisure", False, False, True,  False,  0,  0, "RESIDENT_FREE"),
+    # Terminal stay (T1): departure max(70200, 72000) = 72000, 30 min x 3 ct = 90 ct without the rule (G07).
+    ("R09", "fx_bs_ia",   70200,  None, "shop",    False, False, True,  True,   0,  0, "RESIDENT_FREE"),
+    # L = 15: the zero-length stay would be priced for 15 min x 3 ct = 45 ct (L01); in the own district it is free.
+    ("R10", "fx_bs_ia",   36000, 36000, "shop",    False, False, True,  False, 15,  0, "RESIDENT_FREE"),
+    # L = 15 on a schema-2 row: the cheapest product would be the commuter product 376 ct (V04); R2 precedes the
+    # product minimum.
+    ("R11", "fx_bs_ib_v2", 28800, 61200, "work",    False, False, True,  False, 15,  0, "RESIDENT_FREE"),
+)
+
+
 def _case(row: Sequence, minimum_stay_min: int) -> dict:
-    """One golden case with its keys in ``CASE_FIELDS`` order from a ``_ROW_FIELDS`` row and its L."""
-    values = dict(zip(_ROW_FIELDS, row), minimum_stay_min=minimum_stay_min)
+    """One golden case with its keys in ``CASE_FIELDS`` order from a ``_ROW_FIELDS`` row and its L; the district flag is
+    false (only the R cases set it)."""
+    values = dict(zip(_ROW_FIELDS, row), minimum_stay_min=minimum_stay_min, resident_of_district=False)
+    return {field: values[field] for field in CASE_FIELDS}
+
+
+def _district_case(row: Sequence) -> dict:
+    """One R case (``_R_CASE_ROWS``): the case id, the stay, the flags, its own L and the expectation."""
+    (case_id, zone_id, arrival_s, departure_s, purpose, parking_free, resident_of_zone, resident_of_district, terminal,
+     minimum_stay_min, expected_cents, expected_outcome) = row
+    values = {"id": case_id, "zone_id": zone_id, "arrival_s": arrival_s, "departure_s": departure_s, "purpose": purpose,
+              "parking_free": parking_free, "resident_of_zone": resident_of_zone,
+              "resident_of_district": resident_of_district, "terminal": terminal, "minimum_stay_min": minimum_stay_min,
+              "expected_cents": expected_cents, "expected_outcome": expected_outcome, "expected_error": False}
     return {field: values[field] for field in CASE_FIELDS}
 
 
@@ -286,6 +346,7 @@ GOLDEN_CASES: tuple[dict, ...] = (
     + tuple(_minimum_stay_case(row, twin=False) for row in _MINIMUM_STAY_ROWS)
     + tuple(_minimum_stay_case(row, twin=True) for row in _MINIMUM_STAY_ROWS)
     + tuple(_case(row, _MINIMUM_STAY_MIN) for row in _V_CASE_ROWS)
+    + tuple(_district_case(row) for row in _R_CASE_ROWS)
 )
 
 
@@ -294,9 +355,10 @@ def evaluate_case(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff])
 
     A terminal case gets its departure from the terminal-stay rule (T1, from the STREET fee window); then the
     minimum stay of the case (``minimum_stay_min``, rule L1) extends the priced stay; then every product prices that
-    same interval (spec amendment A3). Raises ``ValueError`` for an invalid stay (the stay check's error,
-    ``STAY_ERROR_PATTERN``, is what an ``expected_error`` case expects) and for a zone id missing from
-    ``tariffs_by_zone`` (the tariffs and the cases must come from the same fixture set).
+    same interval (spec amendment A3), unless the stay lies in the person's own resident district (R2: the flag
+    ``resident_of_district`` of the case frees it before any interval is priced). Raises ``ValueError`` for an
+    invalid stay (the stay check's error, ``STAY_ERROR_PATTERN``, is what an ``expected_error`` case expects) and for
+    a zone id missing from ``tariffs_by_zone`` (the tariffs and the cases must come from the same fixture set).
     """
     zone_id = case["zone_id"]
     if zone_id not in tariffs_by_zone:
@@ -308,7 +370,8 @@ def evaluate_case(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff])
     priced_departure_s = cost.minimum_stay_departure_s(arrival_s, departure_s,
                                                        case["minimum_stay_min"] * cost.SECONDS_PER_MINUTE)
     return cost.parking_cost_cents(tariff, arrival_s, priced_departure_s, purpose=case["purpose"],
-                                   parking_free=case["parking_free"], resident_of_zone=case["resident_of_zone"])
+                                   parking_free=case["parking_free"], resident_of_zone=case["resident_of_zone"],
+                                   resident_of_district=case["resident_of_district"])
 
 
 def golden_case_mismatches(tariffs_by_zone: Mapping[str, cost.ZoneTariff],
