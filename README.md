@@ -296,9 +296,9 @@ re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf`
 (the pipeline's own OSM input D1 is not used for it). With the
 flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
 `org.eqasim.braunschweig.parking`: `matsim.simulation.run` fails fast when the jar lacks it or when the run writes
-no parking outcome report. The zone polygons are partly derived from OpenStreetMap and therefore licensed under
-the ODbL 1.0: keep the attribution "(c) OpenStreetMap contributors" and the share-alike terms when you redistribute
-them. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a
+no parking outcome report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the
+attribution "(c) OpenStreetMap contributors" and the share-alike terms when you redistribute them), Braunschweig 1a/1b
+and the Wolfsburg zones under their own terms, see the data record `parking_zones_2026`. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a
 comparison quantity only) are regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
 --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,

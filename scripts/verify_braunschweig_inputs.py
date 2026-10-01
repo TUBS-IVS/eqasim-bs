@@ -254,8 +254,9 @@ INPUTS: List[Input] = [
         rel_path="braunschweig/parking/parking_zones_2026.geojson",
         source="Committed with the repository (docs/registry/data/parking_zones_2026.yml); nothing to download.",
         notes=(
-            "Config key parking_zones_path. ODbL 1.0 for the OSM-derived outlines, (c) OpenStreetMap "
-            "contributors. Cross-check the release with python scripts/validate_parking_zones.py "
+            "Config key parking_zones_path. OSM-derived polygons: ODbL 1.0, (c) OpenStreetMap contributors; "
+            "Braunschweig 1a/1b and the Wolfsburg zones: their own terms, see the data record "
+            "parking_zones_2026. Cross-check the release with python scripts/validate_parking_zones.py "
             "--data-path eqasim-data/data."
         ),
         matsim_only=True,
