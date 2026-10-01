@@ -1,9 +1,10 @@
-"""Attach the parking cost zones to the plan elements of the MATSim population (issue #249).
+"""Attach the parking cost zones and resident districts to the plan elements of the MATSim population (issue #249).
 
 The zone-based parking costs (design spec 2026-09-28, sections 3.4 and 3.5) need three facts on the plans:
 the zone of every activity location, the resident zone of every person and the free-parking draw of the
-work/education activities. ``braunschweig.matsim.scenario.population`` calls the three functions below in
-this order on the frames the plans writer consumes, AFTER the cross-cordon in-commuter merge, so injected
+work/education activities; parking cost zones v2 (spec Amendment C3) adds the resident parking district of every
+activity location and of every person's home. ``braunschweig.matsim.scenario.population`` calls the five functions
+below in this order on the frames the plans writer consumes, AFTER the cross-cordon in-commuter merge, so injected
 in-commuters are treated exactly like residents:
 
 1. :func:`attach_parking_zones` adds ``parking_zone`` to the activities: the ``zone_id`` of the zone polygon
@@ -18,13 +19,22 @@ in-commuters are treated exactly like residents:
    of the SrV 2023 class row (assumption A1) shifted by the sensitivity arm
    ``parking_workplace_free_share_shift``; campus zones are never drawn (assumption C1: members pay the day
    product). Written as the activity attribute ``parkingFree`` (only where True).
+4. :func:`attach_parking_districts` adds ``parking_district`` to the activities: the ``district_id`` of the resident
+   parking district that contains the activity location (``braunschweig.parking.zones.assign_districts``), NaN
+   outside every district. The districts are a second layer, independent of the fee zones and free to overlap them.
+   Written as the activity attribute ``parkingDistrict``.
+5. :func:`attach_resident_districts` adds ``resident_parking_district`` to the persons: the district of the person's
+   home, NaN when the home lies in no district (assumption R2: residence inside a district equals permit possession;
+   the cost model exempts a stay inside that very district). Written as the person attribute
+   ``residentParkingDistrict``.
 
 Every function returns a COPY of the frame it extends with exactly one column added -- same rows, same
 order, same index -- and raises instead of writing a wrong attribute: a missing, duplicated or empty
-location, a zone id without a tariff row, a workplace class without an SrV share, conflicting home zones.
-Coverage is logged as explicit rates under ``[parking]`` (CLAUDE.md "Fallback transparency"): "no zone",
-"no resident zone" and "not free" are modelled states, and their rates are the evidence that the joins
-worked. CRS: locations and zones share one metric CRS (EPSG:25832, ``braunschweig.parking.zones.CRS``).
+location, a zone id without a tariff row, a workplace class without an SrV share, conflicting home zones or
+districts. Coverage is logged as explicit rates under ``[parking]`` (CLAUDE.md "Fallback transparency"): "no zone",
+"no resident zone", "no district" and "not free" are modelled states, and their rates are the evidence that the
+joins worked. CRS: locations, zones and districts share one metric CRS (EPSG:25832,
+``braunschweig.parking.zones.CRS``).
 """
 from __future__ import annotations
 
@@ -53,10 +63,13 @@ CAMPUS_ZONE_TYPE = "campus"
 HOME_PURPOSE = "home"
 
 #: The columns added here. ``matsim.scenario.population`` lists them in OPTIONAL_ACTIVITY_FIELDS and
-#: OPTIONAL_PERSON_FIELDS and writes them as parkingZone, parkingFree and residentParkingZone.
+#: OPTIONAL_PERSON_FIELDS and writes them as parkingZone, parkingFree, residentParkingZone, parkingDistrict and
+#: residentParkingDistrict.
 PARKING_ZONE_COLUMN = "parking_zone"
 PARKING_FREE_COLUMN = "parking_free"
 RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+PARKING_DISTRICT_COLUMN = "parking_district"
+RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
 
 #: Key of one activity in the activities and the locations frame of the plans writer.
 ACTIVITY_KEYS = ("person_id", "activity_index")
@@ -137,20 +150,13 @@ def _rate(count: int, total: int) -> float:
 # --------------------------------------------------------------------------- activity zones
 
 
-def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
-                         zones: gpd.GeoDataFrame) -> pd.DataFrame:
-    """Return ``activities`` with ``parking_zone``: the zone id of each activity location, NaN outside.
+def _located_points(activities: pd.DataFrame, locations: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    """The location point of every activity, in the row order of ``activities`` (shared by the zone and the district
+    attachment, so both layers see exactly the same validated points).
 
-    ``locations`` is the locations frame of the plans writer (``synthesis.population.spatial.locations``
-    plus the injected in-commuters): one Point per (person_id, activity_index) in the CRS of ``zones``
-    (EPSG:25832); rows are matched on that key, never on their order. ``zones`` carries ``zone_id`` and the
-    polygons (``braunschweig.parking.zones_stage``); ``braunschweig.parking.zones.assign_zones`` makes the
-    point-in-polygon test and raises for a point inside two zones. The new column is of object dtype.
-
-    Raises ``TypeError`` unless ``locations`` is a GeoDataFrame, and ``ValueError`` for a missing column, an
-    incomplete or duplicated key, an activity without a location row, a null, empty or non-point location,
-    a CRS mismatch, and -- the signature of a broken join or CRS -- zones present but not one activity
-    inside any of them. Logs ``[parking] activities in zones: n/N (x %)`` with the most frequent zones.
+    Rows are matched on ``ACTIVITY_KEYS``, never on their order. Raises ``TypeError`` unless ``locations`` is a
+    GeoDataFrame, and ``ValueError`` for a missing column, an incomplete or duplicated key, an activity without a
+    location row and a null, empty or non-point location.
     """
     _require_columns(activities, ACTIVITY_KEYS, "activities")
     if not isinstance(locations, gpd.GeoDataFrame):
@@ -159,7 +165,6 @@ def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
     _require_columns(locations, ACTIVITY_KEYS, "locations")
     _check_activity_keys(activities, "activities")
     _check_activity_keys(locations, "locations")
-    result = activities.copy()
     n_activities = len(activities)
 
     location_points = pd.DataFrame({key: locations[key].to_numpy() for key in ACTIVITY_KEYS})
@@ -182,6 +187,27 @@ def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
     if not_point.any():
         raise ValueError(f"{_LOG_TAG} {int(not_point.sum())} activity location geometries are not points, e.g. "
                          f"{sorted(set(points[not_point].geom_type))}; the plans writer places activities at points")
+    return points
+
+
+def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
+                         zones: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Return ``activities`` with ``parking_zone``: the zone id of each activity location, NaN outside.
+
+    ``locations`` is the locations frame of the plans writer (``synthesis.population.spatial.locations``
+    plus the injected in-commuters): one Point per (person_id, activity_index) in the CRS of ``zones``
+    (EPSG:25832); rows are matched on that key, never on their order. ``zones`` carries ``zone_id`` and the
+    polygons (``braunschweig.parking.zones_stage``); ``braunschweig.parking.zones.assign_zones`` makes the
+    point-in-polygon test and raises for a point inside two zones. The new column is of object dtype.
+
+    Raises ``TypeError`` unless ``locations`` is a GeoDataFrame, and ``ValueError`` for a missing column, an
+    incomplete or duplicated key, an activity without a location row, a null, empty or non-point location,
+    a CRS mismatch, and -- the signature of a broken join or CRS -- zones present but not one activity
+    inside any of them. Logs ``[parking] activities in zones: n/N (x %)`` with the most frequent zones.
+    """
+    points = _located_points(activities, locations)
+    result = activities.copy()
+    n_activities = len(activities)
 
     if len(zones) == 0:
         result[PARKING_ZONE_COLUMN] = pd.Series(np.nan, index=result.index, dtype=object)
@@ -206,6 +232,30 @@ def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
 # --------------------------------------------------------------------------- resident zones
 
 
+def _home_activities(activities: pd.DataFrame, column: str, what: str) -> pd.DataFrame:
+    """The ``person_id`` and ``column`` of the ``home`` activities (``what`` names the attribute read from them).
+
+    Raises ``ValueError`` when no activity at all has the purpose ``home``: that is a purpose-label mismatch that
+    would silently exempt nobody, not a population without homes.
+    """
+    is_home = (activities["purpose"] == HOME_PURPOSE).to_numpy()
+    if len(activities) > 0 and not is_home.any():
+        raise ValueError(f"{_LOG_TAG} none of the {len(activities)} activities has the purpose {HOME_PURPOSE!r}; "
+                         f"the {what} is read from the home activities, so this is a purpose-label mismatch, "
+                         "not a population without homes")
+    return activities.loc[is_home, ["person_id", column]]
+
+
+def _reject_conflicting_homes(homes: pd.DataFrame, column: str, what: str) -> None:
+    """Raise unless all home activities of every person share one ``column`` value (``what``: the plural noun)."""
+    values_per_person = homes.groupby("person_id")[column].nunique(dropna=False)
+    conflicting = list(values_per_person.index[values_per_person.to_numpy() > 1])
+    if conflicting:
+        raise ValueError(f"{_LOG_TAG} {len(conflicting)} person(s) have home activities in different {what}, e.g. "
+                         f"person_id {conflicting[:5]}; all home activities of a person lie at the household home, "
+                         "so the locations frame is broken")
+
+
 def attach_resident_zones(persons: pd.DataFrame, activities: pd.DataFrame, tariffs: pd.DataFrame) -> pd.DataFrame:
     """Return ``persons`` with ``resident_parking_zone``: the resident zone containing the person's home.
 
@@ -221,19 +271,9 @@ def attach_resident_zones(persons: pd.DataFrame, activities: pd.DataFrame, tarif
     _require_columns(persons, ("person_id",), "persons")
     _require_columns(activities, ("person_id", "purpose", PARKING_ZONE_COLUMN), "activities")
     zone_types = _zone_attribute(tariffs, "zone_type")
-    is_home = (activities["purpose"] == HOME_PURPOSE).to_numpy()
-    if len(activities) > 0 and not is_home.any():
-        raise ValueError(f"{_LOG_TAG} none of the {len(activities)} activities has the purpose {HOME_PURPOSE!r}; "
-                         "the resident zone is read from the home activities, so this is a purpose-label mismatch, "
-                         "not a population without homes")
-    homes = activities.loc[is_home, ["person_id", PARKING_ZONE_COLUMN]]
+    homes = _home_activities(activities, PARKING_ZONE_COLUMN, "resident zone")
     _reject_unknown_zones(homes[PARKING_ZONE_COLUMN], zone_types.index, "home activities")
-    zones_per_person = homes.groupby("person_id")[PARKING_ZONE_COLUMN].nunique(dropna=False)
-    conflicting = list(zones_per_person.index[zones_per_person.to_numpy() > 1])
-    if conflicting:
-        raise ValueError(f"{_LOG_TAG} {len(conflicting)} person(s) have home activities in different parking zones "
-                         f"(or inside and outside a zone), e.g. person_id {conflicting[:5]}; all home activities of "
-                         "a person lie at the household home, so the locations frame is broken")
+    _reject_conflicting_homes(homes, PARKING_ZONE_COLUMN, "parking zones (or inside and outside a zone)")
 
     home_zone = homes.drop_duplicates("person_id").set_index("person_id")[PARKING_ZONE_COLUMN]
     home_zone_type = home_zone.map(zone_types).to_numpy(dtype=object)
@@ -252,6 +292,76 @@ def attach_resident_zones(persons: pd.DataFrame, activities: pd.DataFrame, tarif
              "(no resident exemption, assumption R1); %d have no home activity", _LOG_TAG, n_resident, n_persons,
              _rate(n_resident, n_persons), format_value_counts(result[RESIDENT_PARKING_ZONE_COLUMN]), n_other_zone,
              n_without_home)
+    return result
+
+
+# --------------------------------------------------------------------------- resident parking districts
+
+
+def attach_parking_districts(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
+                             districts: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Return ``activities`` with ``parking_district``: the district id of each activity location, NaN outside.
+
+    The resident parking districts (spec Amendment C3) are a second layer next to the fee zones: independent of
+    them and free to overlap them, so an activity can lie in a district and in no zone, and the other way round.
+    ``locations`` is the locations frame of the plans writer, validated exactly as for :func:`attach_parking_zones`
+    (``_located_points``); ``districts`` carries ``district_id`` and the polygons (``braunschweig.parking.
+    zones_stage``, EPSG:25832) and ``braunschweig.parking.zones.assign_districts`` makes the point-in-polygon test.
+    The new column is of object dtype.
+
+    Raises like :func:`attach_parking_zones` for the locations, and ``ValueError`` for an empty ``districts`` frame:
+    the stage never delivers one, and the district rule would silently exempt nobody. A population in which not one
+    activity lies in a district is logged as a WARNING, not an error: unlike the zones, whose zero coverage is the
+    signature of a broken join, a population may live outside Braunschweig and Goslar. Logs ``[parking] activities in
+    resident districts: n/N (x %)`` with the most frequent districts.
+    """
+    points = _located_points(activities, locations)
+    n_activities = len(activities)
+    if len(districts) == 0:
+        raise ValueError(f"{_LOG_TAG} no resident parking districts given: the district rule (R2) would exempt nobody, "
+                         "which is not a modelled state; the zones stage delivers the committed district layer")
+    assigned = parking_zones.assign_districts(gpd.GeoDataFrame(geometry=points), districts)
+    result = activities.copy()
+    result[PARKING_DISTRICT_COLUMN] = pd.Series(assigned.to_numpy(dtype=object), index=result.index, dtype=object)
+    n_inside = int(assigned.notna().sum())
+    log.info("%s activities in resident districts: %d/%d (%.1f %%), %d outside every district (no district "
+             "exemption); districts: %s", _LOG_TAG, n_inside, n_activities, _rate(n_inside, n_activities),
+             n_activities - n_inside, format_value_counts(assigned, TOP_ZONES_LOGGED))
+    if n_activities > 0 and n_inside == 0:
+        log.warning("%s not one of the %d activities lies in a resident parking district (%d districts): the district "
+                    "rule (R2) exempts nobody in this population; if the population should reach Braunschweig or "
+                    "Goslar, check the locations and their CRS (locations %s, districts %s)", _LOG_TAG, n_activities,
+                    len(districts), locations.crs, districts.crs)
+    return result
+
+
+def attach_resident_districts(persons: pd.DataFrame, activities: pd.DataFrame) -> pd.DataFrame:
+    """Return ``persons`` with ``resident_parking_district``: the resident district containing the person's home.
+
+    ``activities`` must already carry ``parking_district`` (:func:`attach_parking_districts`). The home of a person is
+    where its ``home`` activities take place; all of them lie at the household home, so they share one district, and a
+    person whose home activities lie in different districts (or inside and outside a district) raises. A home outside
+    every district, and a person without a home activity, get NaN. Unlike the resident zone (R1) there is no
+    tariff to consult: every district is a resident district. The new column is of object dtype. Raises
+    ``ValueError`` as well for a missing column and for activities without a single ``home`` purpose (a label mismatch
+    that would silently exempt nobody). Logs the resident count per district as a rate.
+    """
+    _require_columns(persons, ("person_id",), "persons")
+    _require_columns(activities, ("person_id", "purpose", PARKING_DISTRICT_COLUMN), "activities")
+    homes = _home_activities(activities, PARKING_DISTRICT_COLUMN, "resident district")
+    _reject_conflicting_homes(homes, PARKING_DISTRICT_COLUMN, "resident parking districts (or inside and outside a "
+                                                              "district)")
+    home_district = homes.drop_duplicates("person_id").set_index("person_id")[PARKING_DISTRICT_COLUMN]
+    result = persons.copy()
+    result[RESIDENT_PARKING_DISTRICT_COLUMN] = pd.Series(result["person_id"].map(home_district).to_numpy(dtype=object),
+                                                         index=result.index, dtype=object)
+    n_persons = len(result)
+    n_resident = int(result[RESIDENT_PARKING_DISTRICT_COLUMN].notna().sum())
+    n_without_home = int((~result["person_id"].isin(home_district.index)).sum())
+    log.info("%s persons with a resident parking district: %d/%d (%.1f %%) (%s); %d live in no district (no district "
+             "exemption, assumption R2); %d have no home activity", _LOG_TAG, n_resident, n_persons,
+             _rate(n_resident, n_persons), format_value_counts(result[RESIDENT_PARKING_DISTRICT_COLUMN]),
+             n_persons - n_resident - n_without_home, n_without_home)
     return result
 
 

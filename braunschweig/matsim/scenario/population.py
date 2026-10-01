@@ -32,10 +32,12 @@ Zone-based parking costs (issue #436), the alternative to the legacy 8 km ring
 (``enable_urban_parking``; both flags on is rejected in ``configure``): with
 ``parking_zones_enabled`` the frames AFTER the in-commuter merge are handed to
 ``braunschweig.parking.attach`` -- the zone of every activity location, the resident zone of every
-home and the free-parking draw of the work/education activities -- so ``add_person`` emits
-``parkingZone`` / ``parkingFree`` on activities and ``residentParkingZone`` on persons,
-in-commuters included. With the flag false the zones stage is not even declared and no column is
-attached -> byte-identical plans.
+home and the free-parking draw of the work/education activities, and, since parking cost zones v2
+(spec Amendment C3), the resident parking district of every activity location and of every home --
+so ``add_person`` emits ``parkingZone`` / ``parkingFree`` / ``parkingDistrict`` on activities and
+``residentParkingZone`` / ``residentParkingDistrict`` on persons, in-commuters included. The districts
+are a second layer, independent of the zones. With the flag false the zones stage is not even
+declared and no column is attached -> byte-identical plans.
 """
 from __future__ import annotations
 
@@ -46,6 +48,7 @@ import logging
 import math
 
 import numpy as np
+import pandas as pd
 
 import matsim.scenario.population as base
 from braunschweig.synthesis.commute_day import day_view as _day_view
@@ -134,10 +137,17 @@ KEY_FREE_SHIFT = "parking_workplace_free_share_shift"
 DEFAULT_FREE_SHIFT = 0.0
 
 #: Frame columns ``braunschweig.parking.attach`` adds and ``matsim.scenario.population`` writes:
-#: activity attributes ``parkingZone`` / ``parkingFree``, person attribute ``residentParkingZone``.
+#: activity attributes ``parkingZone`` / ``parkingFree`` / ``parkingDistrict``, person attributes
+#: ``residentParkingZone`` / ``residentParkingDistrict``.
 PARKING_ZONE_COLUMN = "parking_zone"
 PARKING_FREE_COLUMN = "parking_free"
 RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+PARKING_DISTRICT_COLUMN = "parking_district"
+RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
+#: The purpose of the activities at the household home (they never pay, H1), and the mode of the initial plan's
+#: car-driver legs; only the own-district coverage rate reads them.
+HOME_PURPOSE = "home"
+CAR_MODE = "car"
 #: The identifying columns of the frames the attach functions extend, which must come back unchanged:
 #: an activity is keyed by (person_id, activity_index), a person by person_id.
 ACTIVITY_KEY_COLUMNS = ("person_id", "activity_index")
@@ -332,7 +342,33 @@ def _require_attach_result(before, after, column, producer, keys):
     return after
 
 
-def _log_parking_coverage(activities, persons, resident_person_ids):
+def _own_district_stay_counts(activities, persons, trips):
+    """(non-home activities, of them in the district of the person's home, of those reached by car in the initial plan).
+
+    An "own-district stay" is a non-home activity whose ``parking_district`` equals the ``resident_parking_district`` of
+    its person (both set): the stays assumption R2 can exempt. "Reached by car" reads the initial plan's trip into the
+    activity (``trips`` row ``trip_index`` k leads to activity ``activity_index`` k + 1, the pairing of
+    ``matsim.scenario.population.add_person``) with mode ``car``: a car-DRIVER leg of the plan the simulation starts from,
+    before the mode choice of the run, so the count is an exposure indicator and no forecast of the priced stays.
+    """
+    missing = [column for column in ("person_id", "trip_index", "mode") if column not in trips.columns]
+    if missing:
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} the trips frame lacks the column(s) {missing}; the own-district coverage rate pairs "
+            "every trip with the activity it leads to.")
+    non_home = (activities["purpose"] != HOME_PURPOSE).to_numpy()
+    person_district = activities["person_id"].map(
+        persons.set_index("person_id")[RESIDENT_PARKING_DISTRICT_COLUMN])
+    activity_district = activities[PARKING_DISTRICT_COLUMN]
+    own = (non_home & activity_district.notna().to_numpy() & person_district.notna().to_numpy()
+           & (activity_district == person_district).to_numpy())
+    car_legs = trips.loc[trips["mode"] == CAR_MODE, ["person_id", "trip_index"]]
+    reached_by_car = pd.MultiIndex.from_arrays([activities["person_id"], activities["activity_index"]]).isin(
+        pd.MultiIndex.from_arrays([car_legs["person_id"], car_legs["trip_index"] + 1]))
+    return int(non_home.sum()), int(own.sum()), int((own & reached_by_car).sum())
+
+
+def _log_parking_coverage(activities, persons, resident_person_ids, trips):
     """Log ONCE per population how many plan elements carry each parking attribute.
 
     An activity without ``parkingZone`` lies outside every zone and parks free, and a person
@@ -364,6 +400,22 @@ def _log_parking_coverage(activities, persons, resident_person_ids):
             "activities do; check the in-commuter locations handed to attach_parking_zones -- an "
             "all-unzoned in-commuter set is the signature of a broken join rather than of "
             "in-commuters who never enter a zone.", _PARKING_LOG_TAG, n_incommuter, n_zoned)
+
+    # The resident parking districts (spec Amendment C3), a second layer: their own coverage line, so that the zone
+    # line above stays what it was. The own-district stays are the exposure of assumption R2.
+    n_districted = int(activities[PARKING_DISTRICT_COLUMN].notna().sum())
+    n_incommuter_districted = int((activities[PARKING_DISTRICT_COLUMN].notna() & is_incommuter).sum())
+    n_resident_district = int(persons[RESIDENT_PARKING_DISTRICT_COLUMN].notna().sum())
+    n_non_home, n_own, n_own_by_car = _own_district_stay_counts(activities, persons, trips)
+    logger.info(
+        "%s parkingDistrict on %d/%d activities (%.1f%%), in-commuter activities with a parkingDistrict: %d/%d; "
+        "residentParkingDistrict on %d/%d persons (%.1f%%). Own-district stays (assumption R2): %d/%d non-home "
+        "activities lie in the district of the person's home (%.1f%%); reached by car in the initial plan: %d. "
+        "Activities without a parkingDistrict lie outside every district, and a person without a "
+        "residentParkingDistrict gets no district exemption.", _PARKING_LOG_TAG, n_districted, n_activities,
+        100.0 * n_districted / max(n_activities, 1), n_incommuter_districted, n_incommuter, n_resident_district,
+        n_persons, 100.0 * n_resident_district / max(n_persons, 1), n_own, n_non_home,
+        100.0 * n_own / max(n_non_home, 1), n_own_by_car)
 
 
 def execute(context):
@@ -468,12 +520,23 @@ def execute(context):
         raw["activities"] = _require_attach_result(
             raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free",
             ACTIVITY_KEY_COLUMNS)
-        _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids)
+        # The resident parking districts (spec Amendment C3): a second layer on the same merged frames. Attached
+        # after the zone columns only by convention; neither layer reads the other.
+        districted_activities = attach.attach_parking_districts(
+            raw["activities"], raw["locations"], release["districts"])
+        raw["activities"] = _require_attach_result(
+            raw["activities"], districted_activities, PARKING_DISTRICT_COLUMN, "attach_parking_districts",
+            ACTIVITY_KEY_COLUMNS)
+        persons_with_district = attach.attach_resident_districts(raw["persons"], raw["activities"])
+        raw["persons"] = _require_attach_result(
+            raw["persons"], persons_with_district, RESIDENT_PARKING_DISTRICT_COLUMN,
+            "attach_resident_districts", PERSON_KEY_COLUMNS)
+        _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids, raw["trips"])
     else:
         # No column -> matsim.scenario.population.effective_activity_fields and
         # effective_person_fields are unchanged -> no parking attribute -> byte-identical plans.
-        logger.info("%s %s is false -- no parkingZone, parkingFree or residentParkingZone "
-                    "attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
+        logger.info("%s %s is false -- no parkingZone, parkingFree, parkingDistrict, residentParkingZone or "
+                    "residentParkingDistrict attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])

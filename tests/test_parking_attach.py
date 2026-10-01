@@ -2,8 +2,10 @@
 
 ``braunschweig.parking.attach`` adds one column per call to the frames the MATSim plans writer consumes:
 ``parking_zone`` (activities), ``resident_parking_zone`` (persons) and ``parking_free`` (activities, the
-free-parking draw). Every frame here is small and synthetic: the zones are 100 m squares in EPSG:25832 and
-the free shares are made up, so these tests pin behaviour, not truth. The committed release is exercised
+free-parking draw), and, for the resident parking districts of spec Amendment C3 (a second layer that overlays the
+zones), ``parking_district`` (activities) and ``resident_parking_district`` (persons). Every frame here is small and
+synthetic: the zones are 100 m squares in EPSG:25832 and the free shares are made up, so these tests pin behaviour,
+not truth. The committed release is exercised
 by ``tests/test_parking_zones_stage.py``, the writer integration by
 ``tests/test_population_parking_attributes.py``.
 """
@@ -34,10 +36,20 @@ ZONE_TYPES = {"z_paid_a": "street_paid", "z_paid_b": "street_paid", "z_res": "re
 ZONE_CLASSES = {"z_paid_a": "bs_zentrum", "z_paid_b": "03102", "z_res": "bs_innenbereich",
                 "z_campus": "bs_innenbereich"}
 OUTSIDE = Point(610000.0, 5795000.0)
+#: Synthetic resident districts: 200 m squares that overlay the zones. d_a covers z_paid_a and reaches 50 m beyond it,
+#: d_res covers z_res; z_paid_b and z_campus lie in no district.
+DISTRICT_BOUNDS = {"d_a": (599950.0, 5789950.0, 600150.0, 5790150.0), "d_res": (600350.0, 5789950.0, 600550.0, 5790150.0)}
+#: A point inside district d_a and outside every zone.
+IN_DISTRICT_ONLY = Point(600125.0, 5790125.0)
 
 
 def _inside(zone_id, dx=50.0, dy=50.0):
     return Point(ZONE_ORIGINS_X[zone_id] + dx, 5790000.0 + dy)
+
+
+def _districts():
+    return gpd.GeoDataFrame({"district_id": list(DISTRICT_BOUNDS),
+                             "geometry": [box(*bounds) for bounds in DISTRICT_BOUNDS.values()]}, crs=CRS)
 
 
 def _zones():
@@ -135,8 +147,12 @@ def test_attached_columns_are_the_ones_the_plans_writer_writes():
     assert attach.PARKING_ZONE_COLUMN == wrapper.PARKING_ZONE_COLUMN
     assert attach.PARKING_FREE_COLUMN == wrapper.PARKING_FREE_COLUMN
     assert attach.RESIDENT_PARKING_ZONE_COLUMN == wrapper.RESIDENT_PARKING_ZONE_COLUMN
-    assert [attach.PARKING_ZONE_COLUMN, attach.PARKING_FREE_COLUMN] == writer.OPTIONAL_ACTIVITY_FIELDS
+    assert attach.PARKING_DISTRICT_COLUMN == wrapper.PARKING_DISTRICT_COLUMN
+    assert attach.RESIDENT_PARKING_DISTRICT_COLUMN == wrapper.RESIDENT_PARKING_DISTRICT_COLUMN
+    assert [attach.PARKING_ZONE_COLUMN, attach.PARKING_FREE_COLUMN,
+            attach.PARKING_DISTRICT_COLUMN] == writer.OPTIONAL_ACTIVITY_FIELDS
     assert attach.RESIDENT_PARKING_ZONE_COLUMN in writer.OPTIONAL_PERSON_FIELDS
+    assert attach.RESIDENT_PARKING_DISTRICT_COLUMN in writer.OPTIONAL_PERSON_FIELDS
 
 
 def test_share_table_vocabulary_matches_the_srv_table_builder():
@@ -341,6 +357,172 @@ def test_resident_zones_log_the_resident_count(caplog):
     assert "1/4 (25.0 %)" in line and "z_res 1" in line
     assert "1 live in a zone of another type" in line
     assert "1 have no home activity" in line
+
+
+# --------------------------------------------------------------------------- attach_parking_districts
+
+
+def _districted_activities(rows):
+    """Activities with ``parking_district`` attached: rows of (person_id, activity_index, purpose, district or None)."""
+    return pd.DataFrame({
+        "person_id": [row[0] for row in rows],
+        "activity_index": [row[1] for row in rows],
+        "purpose": [row[2] for row in rows],
+        "parking_district": pd.Series([np.nan if row[3] is None else row[3] for row in rows], dtype=object),
+    })
+
+
+def test_attach_parking_districts_assigns_district_ids_independently_of_the_zones():
+    """The districts are a second layer: an activity can lie in a district and no zone, in a zone and no district,
+    in both or in neither, and the zone attachment is not changed by the district one."""
+    activities, locations = _frames({1: [("home", _inside("z_res")), ("work", _inside("z_paid_a")),
+                                         ("shop", _inside("z_paid_b")), ("leisure", IN_DISTRICT_ONLY),
+                                         ("home", OUTSIDE)]})
+    districted = attach.attach_parking_districts(activities, locations, _districts())
+    assert districted["parking_district"].dtype == object
+    assert list(districted["parking_district"].fillna("-")) == ["d_res", "d_a", "-", "d_a", "-"]
+    zoned = attach.attach_parking_zones(activities, locations, _zones())
+    assert list(zoned["parking_zone"].fillna("-")) == ["z_res", "z_paid_a", "z_paid_b", "-", "-"]
+    assert "parking_zone" not in districted.columns and "parking_district" not in zoned.columns
+
+
+def test_attach_parking_districts_keeps_rows_order_index_and_the_input():
+    activities, locations = _frames({1: [("home", _inside("z_res")), ("work", _inside("z_paid_b"))],
+                                     2: [("home", OUTSIDE), ("shop", _inside("z_paid_a"))]})
+    # Rows out of key order, a non-default index, and locations in yet another order.
+    activities = activities.iloc[[3, 0, 2, 1]]
+    activities.index = [40, 10, 30, 20]
+    locations = locations.iloc[[1, 3, 0, 2]]
+    before = activities.copy()
+
+    districted = attach.attach_parking_districts(activities, locations, _districts())
+
+    assert list(districted.index) == [40, 10, 30, 20]
+    pd.testing.assert_frame_equal(districted.drop(columns="parking_district"), before)
+    assert list(districted["parking_district"].fillna("-")) == ["d_a", "d_res", "-", "-"]
+    assert "parking_district" not in activities.columns
+
+
+def test_attach_parking_districts_covers_injected_incommuters():
+    """In-commuters are appended to the resident frames by the cordon merge (concat, sort, new index); their
+    activities inside a district carry the district id exactly like residents' (their home lies outside)."""
+    residents, resident_locations = _frames({1: [("home", _inside("z_res")), ("work", _inside("z_paid_a"))]})
+    incommuter, incommuter_locations = _frames({INCOMMUTER_ID: [("home", Point(590000.0, 5770000.0)),
+                                                                ("work", _inside("z_paid_a")),
+                                                                ("home", Point(590000.0, 5770000.0))]})
+    activities = pd.concat([residents, incommuter], ignore_index=True).sort_values(KEYS).reset_index(drop=True)
+    locations = gpd.GeoDataFrame(pd.concat([resident_locations, incommuter_locations], ignore_index=True),
+                                 geometry="geometry", crs=CRS)
+    districted = attach.attach_parking_districts(activities, locations, _districts()).set_index(KEYS)["parking_district"]
+    assert districted[(INCOMMUTER_ID, 1)] == "d_a"
+    assert pd.isna(districted[(INCOMMUTER_ID, 0)]) and pd.isna(districted[(INCOMMUTER_ID, 2)])
+
+
+@pytest.mark.parametrize("break_frames, error, message", [
+    (lambda activities, locations: (activities, locations.iloc[[0]]), ValueError, "no location"),
+    (lambda activities, locations: (activities, locations.assign(geometry=[locations.geometry.iloc[0], None])),
+     ValueError, "geometry"),
+    (lambda activities, locations: (activities, pd.DataFrame(locations)), TypeError, "GeoDataFrame"),
+    (lambda activities, locations: (activities, locations.set_crs("EPSG:4326", allow_override=True)), ValueError, "CRS"),
+], ids=["no_location_row", "null_geometry", "not_a_geodataframe", "crs_mismatch"])
+def test_the_district_attachment_checks_the_locations_like_the_zone_attachment(break_frames, error, message):
+    """The districts take the locations through the same validation as the zones, so a broken locations frame cannot
+    pass for one layer and fail for the other."""
+    activities, locations = _frames({1: [("home", _inside("z_res")), ("work", _inside("z_paid_a"))]})
+    activities, locations = break_frames(activities, locations)
+    with pytest.raises(error, match=message):
+        attach.attach_parking_districts(activities, locations, _districts())
+    with pytest.raises(error, match=message):
+        attach.attach_parking_zones(activities, locations, _zones())
+
+
+def test_no_district_given_raises_instead_of_leaving_every_resident_unexempted():
+    activities, locations = _frames({1: [("home", _inside("z_res"))]})
+    with pytest.raises(ValueError, match="no resident parking districts"):
+        attach.attach_parking_districts(activities, locations, _districts().iloc[0:0])
+
+
+def test_a_population_that_never_enters_a_district_is_warned_about_not_failed(caplog):
+    """Zero activities in any district is not a broken join (the zone attachment fails on that signature, and the
+    districts share its locations): a population may live elsewhere. But a rate of zero means the district rule
+    exempts nobody, which must be said."""
+    activities, locations = _frames({1: [("home", OUTSIDE), ("work", _inside("z_paid_b"))]})
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        districted = attach.attach_parking_districts(activities, locations, _districts())
+    assert districted["parking_district"].isna().all()
+    [warning] = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert "not one of the 2 activities lies in a resident parking district" in warning.getMessage()
+
+
+def test_attach_parking_districts_logs_the_coverage_rate_and_the_districts(caplog):
+    activities, locations = _frames({1: [("home", _inside("z_res")), ("work", _inside("z_paid_a")),
+                                         ("shop", OUTSIDE), ("home", _inside("z_res"))]})
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.attach_parking_districts(activities, locations, _districts())
+    [line] = [record.getMessage() for record in caplog.records
+              if record.getMessage().startswith("[parking] activities in resident districts:")]
+    assert "3/4 (75.0 %)" in line and "1 outside every district" in line
+    assert "d_res 2" in line and "d_a 1" in line
+
+
+# --------------------------------------------------------------------------- attach_resident_districts
+
+
+def test_the_resident_district_is_the_district_of_the_home():
+    activities = _districted_activities([
+        (1, 0, "home", "d_a"), (1, 1, "work", "d_res"), (1, 2, "home", "d_a"),   # lives in d_a, works in d_res
+        (2, 0, "home", None), (2, 1, "leisure", "d_a"), (2, 2, "home", None),     # visits d_a, lives outside
+        (3, 0, "home", "d_res"),                                                    # lives in d_res
+    ])
+    persons = attach.attach_resident_districts(_persons([1, 2, 3, 4]), activities)
+    assert persons["resident_parking_district"].dtype == object
+    district = persons.set_index("person_id")["resident_parking_district"]
+    assert district[1] == "d_a" and district[3] == "d_res"
+    assert district[[2, 4]].isna().all()  # person 4 has no activity at all
+
+
+def test_resident_districts_keep_rows_order_index_and_the_input():
+    persons = _persons([3, 1, 2])
+    persons.index = [7, 5, 6]
+    before = persons.copy()
+    activities = _districted_activities([(1, 0, "home", "d_a"), (2, 0, "home", None), (3, 0, "home", "d_res")])
+
+    result = attach.attach_resident_districts(persons, activities)
+
+    assert list(result.index) == [7, 5, 6]
+    pd.testing.assert_frame_equal(result.drop(columns="resident_parking_district"), before)
+    assert list(result["resident_parking_district"].fillna("-")) == ["d_res", "d_a", "-"]
+    assert "resident_parking_district" not in persons.columns
+
+
+def test_conflicting_home_districts_raise():
+    """All home activities of a person are at the household home, so two home districts (or one district and none) are
+    a broken frame."""
+    activities = _districted_activities([(1, 0, "home", "d_a"), (1, 1, "work", None), (1, 2, "home", None)])
+    with pytest.raises(ValueError, match="home activities in different resident parking districts"):
+        attach.attach_resident_districts(_persons([1]), activities)
+
+
+def test_resident_districts_need_the_attached_parking_district_column():
+    activities = _districted_activities([(1, 0, "home", "d_a")]).drop(columns="parking_district")
+    with pytest.raises(ValueError, match="parking_district"):
+        attach.attach_resident_districts(_persons([1]), activities)
+
+
+def test_no_home_activity_at_all_raises_for_the_districts_too():
+    """No 'home' purpose anywhere is a label mismatch; silently it would exempt nobody (R2)."""
+    activities = _districted_activities([(1, 0, "Home", "d_a"), (2, 0, "work", None)])
+    with pytest.raises(ValueError, match="home"):
+        attach.attach_resident_districts(_persons([1, 2]), activities)
+
+
+def test_resident_districts_log_the_resident_count(caplog):
+    activities = _districted_activities([(1, 0, "home", "d_a"), (2, 0, "home", "d_a"), (3, 0, "home", None)])
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.attach_resident_districts(_persons([1, 2, 3, 4]), activities)
+    [line] = [record.getMessage() for record in caplog.records
+              if record.getMessage().startswith("[parking] persons with a resident parking district:")]
+    assert "2/4 (50.0 %)" in line and "d_a 2" in line and "1 have no home activity" in line
 
 
 # --------------------------------------------------------------------------- draw_parking_free

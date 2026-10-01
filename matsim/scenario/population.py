@@ -148,6 +148,10 @@ OPTIONAL_PERSON_FIELDS = [
     # Zone-based parking costs (issue #436): the resident parking zone containing the
     # person's home (written as residentParkingZone). Present only with parking_zones_enabled.
     "resident_parking_zone",
+    # Resident parking districts (parking cost zones v2, spec Amendment C3): the district
+    # containing the person's home (written as residentParkingDistrict). Present only with
+    # parking_zones_enabled; a second layer, independent of the zone above.
+    "resident_parking_district",
 ]
 
 
@@ -167,13 +171,18 @@ ACTIVITY_FIELDS = [
 #   parking_zone -> "parkingZone" (java.lang.String): zone_id of the parking tariff table whose
 #                   polygon contains the activity location; NaN outside every zone;
 #   parking_free -> "parkingFree" (java.lang.Boolean): free parking at the work/education place,
-#                   drawn once per person; a boolean for EVERY activity.
+#                   drawn once per person; a boolean for EVERY activity;
+#   parking_district -> "parkingDistrict" (java.lang.String): district_id of the resident parking
+#                   district layer (spec Amendment C3) whose polygon contains the activity
+#                   location; NaN outside every district. A second layer, independent of
+#                   parking_zone: an activity can lie in a district and in no zone and vice versa.
 # Appended to the projected fields ONLY when present, exactly like OPTIONAL_PERSON_FIELDS, so the
 # positional ACTIVITY_FIELDS.index(...) lookups are unaffected and frames without the columns are
 # written byte-identically.
 OPTIONAL_ACTIVITY_FIELDS = [
     "parking_zone",
     "parking_free",
+    "parking_district",
 ]
 
 
@@ -206,15 +215,31 @@ def _parking_zone_id(column, value):
     (``_STRINGIFIED_MISSING_VALUES``): outside every zone the value must stay missing, so that
     no attribute is written at all.
     """
+    return _parking_id(column, value, "parking zone id string (a zone_id of the parking tariff table)",
+                       "outside every zone", "zones")
+
+
+def _parking_district_id(column, value):
+    """Return a present resident parking district id, raising ValueError unless it is a non-empty string.
+
+    The id must match a ``district_id`` of the resident district layer (spec Amendment C3); the Java cost
+    model compares the activity's district with the district of the person's home, so a wrong id would
+    silently exempt nobody (or the wrong persons). Numbers, empty text and the text forms of a missing value
+    are rejected exactly as for zone ids: outside every district the value must stay missing.
+    """
+    return _parking_id(column, value, "resident parking district id string (a district_id of the resident "
+                                      "district layer)", "outside every district", "districts")
+
+
+def _parking_id(column, value, expected, outside, plural):
     if not isinstance(value, str) or value == "":
         raise ValueError(
-            "Invalid %s %r; expected a non-empty parking zone id string (a zone_id of the "
-            "parking tariff table) or a missing value outside every zone." % (column, value))
+            "Invalid %s %r; expected a non-empty %s or a missing value %s." % (column, value, expected, outside))
     if value in _STRINGIFIED_MISSING_VALUES:
         raise ValueError(
             "Invalid %s %r: the text form of a missing value, which a broken upstream join (or an "
-            "astype(str) over missing zones) leaves behind; outside every zone the value must stay "
-            "missing (NaN/None) so that no attribute is written." % (column, value))
+            "astype(str) over missing %s) leaves behind; %s the value must stay "
+            "missing (NaN/None) so that no attribute is written." % (column, value, plural, outside))
     return value
 
 
@@ -262,6 +287,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                           if "parking_zone" in activity_fields else None)
     parking_free_index = (activity_fields.index("parking_free")
                           if "parking_free" in activity_fields else None)
+    parking_district_index = (activity_fields.index("parking_district")
+                              if "parking_district" in activity_fields else None)
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
@@ -429,6 +456,18 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             writer.add_attribute("residentParkingZone", "java.lang.String",
                                  _parking_zone_id("resident_parking_zone", _resident_parking_zone))
 
+    # Resident parking districts (parking cost zones v2, spec Amendment C3): the district containing the
+    # person's home, attached by braunschweig.parking.attach.attach_resident_districts; the Java cost model
+    # exempts the person's stays inside that very district (assumption R2). ADDITIVE and emitted only when
+    # the column is present AND the home lies in a district: every other person carries NaN and gets NO
+    # attribute, never "nan"/"None". Independent of residentParkingZone above. Byte-identical when
+    # parking_zones_enabled is off (the column is then never attached).
+    if "resident_parking_district" in person_fields:
+        _resident_parking_district = person[person_fields.index("resident_parking_district")]
+        if not _is_missing_value(_resident_parking_district):
+            writer.add_attribute("residentParkingDistrict", "java.lang.String",
+                                 _parking_district_id("resident_parking_district", _resident_parking_district))
+
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])
     writer.add_attribute("sex", "java.lang.String", person[PERSON_FIELDS.index("sex")][0])
@@ -495,6 +534,13 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                     "java.lang.String", _parking_zone_id("parking_zone", parking_zone))
         if parking_free_index is not None and _is_free_parking(activity[parking_free_index]):
             activity_attributes["parkingFree"] = ("java.lang.Boolean", "true")
+        # The resident district (spec Amendment C3), a layer of its own: written whether or not the location
+        # lies in a zone, and absent (not "nan") outside every district.
+        if parking_district_index is not None:
+            parking_district = activity[parking_district_index]
+            if not _is_missing_value(parking_district):
+                activity_attributes["parkingDistrict"] = (
+                    "java.lang.String", _parking_district_id("parking_district", parking_district))
 
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],

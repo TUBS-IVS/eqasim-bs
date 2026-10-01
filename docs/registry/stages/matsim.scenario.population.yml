@@ -21,9 +21,12 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   previously had no validate() at all, leaving a stale cached plans.xml.gz in place after such an
   edit. Since ADR-0139 (issue #436), with parking_zones_enabled the wrapper hands the frames after the
   in-commuter merge to braunschweig.parking.attach (zone of every activity location, resident zone of
-  every home, free-parking draw of the work/education activities, from the release of
-  braunschweig.parking.zones_stage), so add_person writes the activity attributes parkingZone and
-  parkingFree and the person attribute residentParkingZone; combining the flag with the legacy ring
+  every home, free-parking draw of the work/education activities, and, since spec Amendment C3 of parking
+  cost zones v2, the resident parking district of every activity location and of every home, a second layer
+  independent of the zones; all from the release of braunschweig.parking.zones_stage), so add_person writes
+  the activity attributes parkingZone, parkingFree and parkingDistrict and the person attributes
+  residentParkingZone and residentParkingDistrict (each only where set, never as the text nan); the
+  coverage line also logs the own-district stays of rule R2; combining the flag with the legacy ring
   enable_urban_parking is rejected in configure, and with the flag off no parking column is attached
   (byte-identical plans). The plain writer, which the simple_ipf_open configurations run without the
   alias, attaches no parking column, so its own configure declares parking_zones_enabled and rejects it

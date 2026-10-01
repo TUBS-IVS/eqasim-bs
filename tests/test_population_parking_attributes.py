@@ -3,12 +3,15 @@
 Covered here, and why in this shape:
 
 * **The vendored writer** (``matsim.scenario.population``) emits the activity attributes
-  ``parkingZone`` (java.lang.String) and ``parkingFree`` (java.lang.Boolean, only ever ``true``)
-  and the person attribute ``residentParkingZone`` (java.lang.String) from the OPTIONAL frame
-  columns ``parking_zone`` / ``parking_free`` / ``resident_parking_zone``. A missing zone writes
-  NO attribute, never the literal "nan"/"None"; a malformed value raises. Asserted through the
-  real ``add_person`` / ``prepare_frames`` / ``write_population`` path on synthetic frames.
-* **OFF and LEGACY byte identity.** Frames without the three columns must give exactly the plans
+  ``parkingZone`` (java.lang.String), ``parkingFree`` (java.lang.Boolean, only ever ``true``) and
+  ``parkingDistrict`` (java.lang.String) and the person attributes ``residentParkingZone`` and
+  ``residentParkingDistrict`` (java.lang.String) from the OPTIONAL frame columns ``parking_zone`` /
+  ``parking_free`` / ``parking_district`` / ``resident_parking_zone`` / ``resident_parking_district``
+  (the district columns are the resident parking districts of spec Amendment C3, a second layer).
+  A missing zone or district writes NO attribute, never the literal "nan"/"None"; a malformed value
+  raises. Asserted through the real ``add_person`` / ``prepare_frames`` / ``write_population`` path
+  on synthetic frames.
+* **OFF and LEGACY byte identity.** Frames without the parking columns must give exactly the plans
   of the writer before this change, with the legacy ring (``enable_urban_parking``) off AND on
   (the ring's activity attribute now shares one attribute dict with the parking attributes). The
   two literals at the end of this module were generated from base commit 1fe22664 -- the
@@ -19,7 +22,7 @@ Covered here, and why in this shape:
   declares the key. Asserted with synpp's real ``ConfigurationContext``.
 * **The regional wrapper** (``braunschweig.matsim.scenario.population``): the flag declarations,
   the mutual exclusion with the legacy ring, and ``execute`` with a STUB
-  ``braunschweig.parking.attach`` module, which proves the wrapper hands the attach functions the
+  ``braunschweig.parking.attach`` module, which proves the wrapper hands the five attach functions the
   frames AFTER the cordon in-commuter merge and that the columns they return reach the plans; and
   ``execute`` once with the REAL module on the fixture release of ``tests/fixtures/parking`` (the
   attach functions themselves are tested in ``tests/test_parking_attach.py``).
@@ -47,7 +50,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
-from shapely.geometry import Point, box
+from shapely.geometry import MultiPolygon, Point, box
 from synpp.pipeline import ConfigurationContext
 
 REPO = Path(__file__).resolve().parents[1]
@@ -67,6 +70,8 @@ RANDOM_SEED = 1234
 
 #: Activity tuple order with both optional parking fields, in their declared order.
 ZONE_AND_FREE_FIELDS = pop.ACTIVITY_FIELDS + ["parking_zone", "parking_free"]
+#: ... and with the resident district of spec Amendment C3 as well.
+ALL_PARKING_FIELDS = ZONE_AND_FREE_FIELDS + ["parking_district"]
 
 
 # --------------------------------------------------------------------------- writer helpers
@@ -313,6 +318,55 @@ def test_the_text_form_of_a_missing_zone_raises_instead_of_becoming_a_zone_id(co
             _write_one_person([{}], person_fields=pop.PERSON_FIELDS + [column], person_overrides={column: text})
 
 
+def test_the_parking_district_is_written_as_an_activity_attribute_next_to_the_zone():
+    xml = _write_one_person(
+        [{"purpose": "work", "parking_zone": "bs_zone_ia", "parking_free": True, "parking_district": "bs_district_a"}],
+        activity_fields=ALL_PARKING_FIELDS)
+    assert '<attribute name="parkingDistrict" class="java.lang.String">bs_district_a</attribute>' in xml
+    # a district without a zone is an ordinary state: the layers are independent
+    xml = _write_one_person([{"purpose": "shop", "parking_zone": None, "parking_free": False,
+                              "parking_district": "gs_district_c"}], activity_fields=ALL_PARKING_FIELDS)
+    assert _activity_attributes(_parse(xml), 1) == [{"parkingDistrict": ("java.lang.String", "gs_district_c")}]
+
+
+@pytest.mark.parametrize("missing", [None, np.nan, pd.NA], ids=["none", "nan", "pd_na"])
+def test_missing_parking_district_writes_no_district_attribute_and_no_empty_block(missing):
+    xml = _write_one_person([{"purpose": "shop", "parking_zone": None, "parking_free": False,
+                              "parking_district": missing}], activity_fields=ALL_PARKING_FIELDS)
+    assert "parkingDistrict" not in xml
+    [activity] = _parse(xml).iter("activity")
+    assert len(activity) == 0
+
+
+def test_resident_parking_district_is_written_as_a_person_attribute():
+    xml = _write_one_person([{}], person_fields=pop.PERSON_FIELDS + ["resident_parking_district"],
+                            person_overrides={"resident_parking_district": "bs_district_b"})
+    assert ('<attribute name="residentParkingDistrict" class="java.lang.String">bs_district_b</attribute>' in xml)
+
+
+@pytest.mark.parametrize("missing", [None, np.nan, pd.NA], ids=["none", "nan", "pd_na"])
+def test_missing_resident_parking_district_writes_no_attribute(missing):
+    xml = _write_one_person([{}], person_fields=pop.PERSON_FIELDS + ["resident_parking_district"],
+                            person_overrides={"resident_parking_district": missing})
+    assert "residentParkingDistrict" not in xml
+    assert _person_attributes(_parse(xml), 1) == _person_attributes(_parse(_write_one_person([{}])), 1)
+
+
+@pytest.mark.parametrize("value", [5, 3.0, "", "nan", "None", "<NA>"], ids=["int", "float", "empty", "nan_text",
+                                                                              "none_text", "na_text"])
+@pytest.mark.parametrize("column", ["parking_district", "resident_parking_district"])
+def test_a_malformed_district_id_raises_instead_of_becoming_a_district_id(column, value):
+    """A district id is a non-empty string of the district layer; a number, an empty text or the text form of a missing
+    value (str(np.nan), str(None), str(pd.NA): what a broken join leaves) would name a district the layer does not
+    have, and the Java side would reject it at the first priced stay."""
+    with pytest.raises(ValueError, match=column):
+        if column == "parking_district":
+            _write_one_person([{"purpose": "work", "parking_zone": None, "parking_free": False,
+                                "parking_district": value}], activity_fields=ALL_PARKING_FIELDS)
+        else:
+            _write_one_person([{}], person_fields=pop.PERSON_FIELDS + [column], person_overrides={column: value})
+
+
 def test_default_add_person_call_writes_no_parking_attribute():
     """Existing callers pass no ``activity_fields``: the legacy tuple is read unchanged and every
     activity stays the bare element."""
@@ -329,16 +383,22 @@ def test_effective_activity_fields_without_parking_columns_is_the_legacy_list():
 
 
 def test_effective_activity_fields_appends_present_optional_fields_in_declared_order():
-    assert pop.OPTIONAL_ACTIVITY_FIELDS == ["parking_zone", "parking_free"]
-    columns = ["parking_free"] + pop.ACTIVITY_FIELDS + ["activity_index", "parking_zone"]
+    assert pop.OPTIONAL_ACTIVITY_FIELDS == ["parking_zone", "parking_free", "parking_district"]
+    columns = ["parking_district", "parking_free"] + pop.ACTIVITY_FIELDS + ["activity_index", "parking_zone"]
     frame = pd.DataFrame({field: [0] for field in columns})
-    assert pop.effective_activity_fields(frame) == ZONE_AND_FREE_FIELDS
+    assert pop.effective_activity_fields(frame) == ALL_PARKING_FIELDS
+    # the columns of one layer do not pull in the other's
+    only_zone = pd.DataFrame({field: [0] for field in pop.ACTIVITY_FIELDS + ["parking_zone"]})
+    assert pop.effective_activity_fields(only_zone) == pop.ACTIVITY_FIELDS + ["parking_zone"]
 
 
-def test_resident_parking_zone_is_an_optional_person_field():
+def test_the_resident_parking_columns_are_optional_person_fields():
     assert "resident_parking_zone" in pop.OPTIONAL_PERSON_FIELDS
-    frame = pd.DataFrame({field: [0] for field in pop.PERSON_FIELDS + ["resident_parking_zone"]})
-    assert pop.effective_person_fields(frame) == pop.PERSON_FIELDS + ["resident_parking_zone"]
+    assert "resident_parking_district" in pop.OPTIONAL_PERSON_FIELDS
+    columns = pop.PERSON_FIELDS + ["resident_parking_district", "resident_parking_zone"]
+    frame = pd.DataFrame({field: [0] for field in columns})
+    assert pop.effective_person_fields(frame) == pop.PERSON_FIELDS + ["resident_parking_zone",
+                                                                      "resident_parking_district"]
 
 
 # --------------------------------------------------------------------------- writer: whole frames
@@ -363,6 +423,31 @@ def test_write_population_carries_the_parking_columns_to_the_plans(tmp_path):
     ]
     assert _activity_attributes(root, 2) == [
         {}, {"parkingZone": ("java.lang.String", "fx_bs_ia")}, {}]
+
+
+def test_write_population_carries_the_district_columns_to_the_plans(tmp_path):
+    """Both layers on the same frames: a district without a zone and a zone without a district are ordinary."""
+    persons, activities, locations, trips, vehicles = _two_person_frames()
+    activities = activities.assign(
+        parking_zone=pd.Series(["fx_res_a", "fx_bs_ia", "fx_res_a", np.nan, "fx_bs_ia", np.nan], dtype=object),
+        parking_free=[False, True, False, False, False, False],
+        parking_district=pd.Series(["fx_district_a", np.nan, "fx_district_a", np.nan, "fx_district_b", np.nan],
+                                   dtype=object))
+    persons = persons.assign(resident_parking_zone=pd.Series(["fx_res_a", np.nan], dtype=object),
+                             resident_parking_district=pd.Series(["fx_district_a", np.nan], dtype=object))
+
+    root = _parse(_write_frames(tmp_path, persons, activities, locations, trips, vehicles))
+
+    assert _person_attributes(root, 1)["residentParkingDistrict"] == ("java.lang.String", "fx_district_a")
+    assert "residentParkingDistrict" not in _person_attributes(root, 2)
+    assert _activity_attributes(root, 1) == [
+        {"parkingZone": ("java.lang.String", "fx_res_a"), "parkingDistrict": ("java.lang.String", "fx_district_a")},
+        {"parkingZone": ("java.lang.String", "fx_bs_ia"), "parkingFree": ("java.lang.Boolean", "true")},
+        {"parkingZone": ("java.lang.String", "fx_res_a"), "parkingDistrict": ("java.lang.String", "fx_district_a")},
+    ]
+    assert _activity_attributes(root, 2) == [
+        {}, {"parkingZone": ("java.lang.String", "fx_bs_ia"), "parkingDistrict": ("java.lang.String", "fx_district_b")},
+        {}]
 
 
 def test_frames_without_parking_columns_match_the_prechange_writer_bytes(tmp_path):
@@ -397,9 +482,11 @@ def test_all_missing_parking_values_write_the_same_bytes_as_absent_columns(tmp_p
     golden = _write_frames(tmp_path / "absent", persons, activities, locations, trips, vehicles)
 
     activities = activities.assign(
-        parking_zone=pd.Series([np.nan] * len(activities), dtype=object), parking_free=False)
+        parking_zone=pd.Series([np.nan] * len(activities), dtype=object), parking_free=False,
+        parking_district=pd.Series([np.nan] * len(activities), dtype=object))
     persons = persons.assign(
-        resident_parking_zone=pd.Series([np.nan] * len(persons), dtype=object))
+        resident_parking_zone=pd.Series([np.nan] * len(persons), dtype=object),
+        resident_parking_district=pd.Series([np.nan] * len(persons), dtype=object))
     assert _write_frames(tmp_path / "missing", persons, activities, locations, trips,
                          vehicles) == golden
 
@@ -546,6 +633,15 @@ def _parking_release():
                                           "workplace_class": ["bs_zentrum", "bs_innenbereich"],
                                           "share_free_total": [0.4, 0.6]}),
         "coverage_register": pd.DataFrame({"ags": [], "status": []}),
+        # The resident districts (spec Amendment C3) overlay the zones: fx_district_a covers the home of resident 1
+        # and the work places of resident 1 and of the in-commuter, fx_district_b the home and the shop of resident 2.
+        "districts": gpd.GeoDataFrame({
+            "district_id": ["fx_district_a", "fx_district_b"],
+            "geometry": [MultiPolygon([box(602900.0, 5790900.0, 603600.0, 5791600.0),
+                                       box(605050.0, 5790150.0, 605170.0, 5790270.0)]),
+                         MultiPolygon([box(606900.0, 5791900.0, 607100.0, 5792100.0),
+                                       box(605180.0, 5790280.0, 605220.0, 5790320.0)])],
+        }, crs=CRS),
         "sources": [],
     }
 
@@ -685,9 +781,31 @@ def _stub_attach_module(calls, drop_a_row=False):
         result["parking_free"] = eligible.to_numpy(dtype=bool)
         return result
 
+    def attach_parking_districts(activities, locations, districts):
+        calls.setdefault("attach_parking_districts", []).append(
+            {"activities": activities.copy(), "locations": locations.copy(), "districts": districts})
+        merged = activities.merge(locations[["person_id", "activity_index", "geometry"]],
+                                  on=["person_id", "activity_index"], how="left")
+        district_ids = [next((district_id for district_id, polygon in zip(districts["district_id"], districts.geometry)
+                              if polygon.contains(point)), np.nan) for point in merged["geometry"]]
+        result = activities.copy()
+        result["parking_district"] = pd.Series(district_ids, index=result.index, dtype=object)
+        return result
+
+    def attach_resident_districts(persons, activities):
+        calls.setdefault("attach_resident_districts", []).append(
+            {"persons": persons.copy(), "activities": activities.copy()})
+        homes = activities[activities["purpose"] == "home"]
+        home_district = homes.drop_duplicates("person_id").set_index("person_id")["parking_district"]
+        result = persons.copy()
+        result["resident_parking_district"] = result["person_id"].map(home_district).astype(object)
+        return result
+
     module.attach_parking_zones = attach_parking_zones
     module.attach_resident_zones = attach_resident_zones
     module.draw_parking_free = draw_parking_free
+    module.attach_parking_districts = attach_parking_districts
+    module.attach_resident_districts = attach_resident_districts
     return module
 
 
@@ -735,25 +853,41 @@ def test_incommuter_activity_gets_zone_attribute(tmp_path, monkeypatch, caplog):
     assert draw_call["random_seed"] == RANDOM_SEED
     assert isinstance(draw_call["random_seed"], int)
     assert draw_call["shift"] == 0.25
+    # The resident districts (spec Amendment C3) get the same merged frames and the release's own layer.
+    [districts_call] = calls["attach_parking_districts"]
+    assert set(districts_call["activities"]["person_id"]) == {1, 2, INCOMMUTER_ID}
+    assert len(districts_call["activities"]) == 9
+    assert set(districts_call["locations"]["person_id"]) == {1, 2, INCOMMUTER_ID}
+    assert districts_call["districts"] is release["districts"]
+    [resident_district_call] = calls["attach_resident_districts"]
+    assert set(resident_district_call["persons"]["person_id"]) == {1, 2, INCOMMUTER_ID}
+    assert "parking_district" in resident_district_call["activities"].columns
 
     # ... and the columns they returned reach the plans, the in-commuter's included.
     root = _read_plans(tmp_path)
+    district_a = ("java.lang.String", "fx_district_a")
+    district_b = ("java.lang.String", "fx_district_b")
     assert _activity_attributes(root, INCOMMUTER_ID) == [
         {},
         {"parkingZone": ("java.lang.String", "fx_bs_ia"),
-         "parkingFree": ("java.lang.Boolean", "true")},
+         "parkingFree": ("java.lang.Boolean", "true"), "parkingDistrict": district_a},
         {},
     ]
     assert "residentParkingZone" not in _person_attributes(root, INCOMMUTER_ID)
+    assert "residentParkingDistrict" not in _person_attributes(root, INCOMMUTER_ID)
     assert _person_attributes(root, 1)["residentParkingZone"] == ("java.lang.String", "fx_res_a")
+    assert _person_attributes(root, 1)["residentParkingDistrict"] == district_a
+    assert _person_attributes(root, 2)["residentParkingDistrict"] == district_b
     assert _activity_attributes(root, 1) == [
-        {"parkingZone": ("java.lang.String", "fx_res_a")},
+        {"parkingZone": ("java.lang.String", "fx_res_a"), "parkingDistrict": district_a},
         {"parkingZone": ("java.lang.String", "fx_bs_ia"),
-         "parkingFree": ("java.lang.Boolean", "true")},
-        {"parkingZone": ("java.lang.String", "fx_res_a")},
+         "parkingFree": ("java.lang.Boolean", "true"), "parkingDistrict": district_a},
+        {"parkingZone": ("java.lang.String", "fx_res_a"), "parkingDistrict": district_a},
     ]
     assert _activity_attributes(root, 2) == [
-        {}, {"parkingZone": ("java.lang.String", "fx_bs_ia")}, {}]
+        {"parkingDistrict": district_b},
+        {"parkingZone": ("java.lang.String", "fx_bs_ia"), "parkingDistrict": district_b},
+        {"parkingDistrict": district_b}]
 
     # One coverage line for the whole population (fallback transparency).
     coverage = [record.getMessage() for record in caplog.records
@@ -765,6 +899,18 @@ def test_incommuter_activity_gets_zone_attribute(tmp_path, monkeypatch, caplog):
     assert "parkingFree=true on 2 activities" in coverage[0]
     assert "1/3 persons" in coverage[0]
 
+    # The districts: one more line, with the own-district stays of assumption R2. Resident 1 works in district A (own,
+    # reached by car in the initial plan), resident 2 shops in district B (own, reached on foot), the in-commuter works
+    # in district A but has no resident district.
+    [district_line] = [record.getMessage() for record in caplog.records
+                       if record.getMessage().startswith("[parking population]")
+                       and "parkingDistrict on" in record.getMessage()]
+    assert "parkingDistrict on 7/9 activities (77.8%)" in district_line
+    assert "in-commuter activities with a parkingDistrict: 1/3" in district_line
+    assert "residentParkingDistrict on 2/3 persons (66.7%)" in district_line
+    assert "2/3 non-home activities lie in the district of the person's home" in district_line
+    assert "reached by car in the initial plan: 1" in district_line
+
 
 def test_execute_off_never_touches_the_attach_module(tmp_path, monkeypatch):
     module = types.ModuleType(ATTACH_MODULE_NAME)
@@ -774,6 +920,7 @@ def test_execute_off_never_touches_the_attach_module(tmp_path, monkeypatch):
 
     module.attach_parking_zones = module.attach_resident_zones = refuse
     module.draw_parking_free = refuse
+    module.attach_parking_districts = module.attach_resident_districts = refuse
     _inject_attach(monkeypatch, module)
 
     POP.execute(_wrapper_context(tmp_path, parking_enabled=False))
@@ -790,6 +937,16 @@ def test_execute_rejects_an_attach_result_that_changes_the_row_count(tmp_path, m
         POP.execute(_wrapper_context(tmp_path))
 
 
+def test_execute_rejects_a_district_result_that_changes_the_row_count(tmp_path, monkeypatch):
+    module = _stub_attach_module({})
+    original = module.attach_parking_districts
+    module.attach_parking_districts = lambda activities, locations, districts: original(
+        activities, locations, districts).iloc[:-1]
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match="attach_parking_districts returned 8 rows for 9"):
+        POP.execute(_wrapper_context(tmp_path))
+
+
 def _relabel_first_row(function, key):
     """``function`` with the ``key`` of the first returned row replaced: same row count, changed key set."""
     def relabelled(frame, *args, **kwargs):
@@ -802,7 +959,9 @@ def _relabel_first_row(function, key):
 @pytest.mark.parametrize("producer, key", [("attach_parking_zones", "activity_index"),
                                            ("attach_parking_zones", "person_id"),
                                            ("attach_resident_zones", "person_id"),
-                                           ("draw_parking_free", "activity_index")])
+                                           ("draw_parking_free", "activity_index"),
+                                           ("attach_parking_districts", "activity_index"),
+                                           ("attach_resident_districts", "person_id")])
 def test_execute_rejects_an_attach_result_that_changes_a_key(tmp_path, monkeypatch, producer, key):
     """Same row count, changed keys: a duplicating plus dropping (or mismatching) join that a count check alone
     cannot see; it would attach the parking attributes to the wrong plan elements."""
@@ -818,6 +977,17 @@ def test_execute_rejects_an_attach_result_without_the_added_column(tmp_path, mon
     module.draw_parking_free = lambda activities, tariffs, workplace_shares, random_seed, shift=0.0: activities.copy()
     _inject_attach(monkeypatch, module)
     with pytest.raises(ValueError, match="draw_parking_free did not add the 'parking_free' column"):
+        POP.execute(_wrapper_context(tmp_path))
+
+
+@pytest.mark.parametrize("producer, column", [("attach_parking_districts", "parking_district"),
+                                              ("attach_resident_districts", "resident_parking_district")])
+def test_execute_rejects_a_district_result_without_the_added_column(tmp_path, monkeypatch, producer, column):
+    module = _stub_attach_module({})
+    original = getattr(module, producer)
+    setattr(module, producer, lambda frame, *arguments: original(frame, *arguments).drop(columns=column))
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match=f"{producer} did not add the '{column}' column"):
         POP.execute(_wrapper_context(tmp_path))
 
 
@@ -842,7 +1012,9 @@ def _fixture_release():
     })
     return {"zones": pz.load_zone_polygons(FIXTURES / "parking_zones_fixture.geojson"),
             "tariffs": pz.load_tariffs(FIXTURES / "parking_tariffs_fixture.csv"),
-            "workplace_shares": shares, "coverage_register": pd.DataFrame(), "sources": []}
+            "workplace_shares": shares, "coverage_register": pd.DataFrame(),
+            "districts": pz.load_resident_districts(FIXTURES / "parking_resident_districts_fixture.geojson"),
+            "sources": []}
 
 
 def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release(tmp_path, caplog):
@@ -871,23 +1043,78 @@ def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release
 
     root = _read_plans(tmp_path)
     assert _person_attributes(root, 1)["residentParkingZone"] == ("java.lang.String", "fx_res_a")
+    # fx_bs_ia lies inside fx_district_a and fx_sz inside fx_district_sz_a (a second layer on top of the zones); the
+    # homes and the campus lie in no district
     assert _activity_attributes(root, 1) == [
         {"parkingZone": ("java.lang.String", "fx_res_a")},
         {"parkingZone": ("java.lang.String", "fx_bs_ia"),
-         "parkingFree": ("java.lang.Boolean", "true")},
+         "parkingFree": ("java.lang.Boolean", "true"), "parkingDistrict": ("java.lang.String", "fx_district_a")},
         {"parkingZone": ("java.lang.String", "fx_res_a")},
     ]
     assert "residentParkingZone" not in _person_attributes(root, 2)
-    assert _activity_attributes(root, 2) == [{}, {"parkingZone": ("java.lang.String", "fx_sz")}, {}]
+    assert _activity_attributes(root, 2) == [
+        {}, {"parkingZone": ("java.lang.String", "fx_sz"), "parkingDistrict": ("java.lang.String", "fx_district_sz_a")},
+        {}]
     assert "residentParkingZone" not in _person_attributes(root, INCOMMUTER_ID)
     assert _activity_attributes(root, INCOMMUTER_ID) == [
         {}, {"parkingZone": ("java.lang.String", "fx_campus")}, {}]
+    assert not [name for person in (1, 2, INCOMMUTER_ID) for name in _person_attributes(root, person)
+                if name == "residentParkingDistrict"]
 
     messages = [record.getMessage() for record in caplog.records]
     assert any(message.startswith("[parking] activities in zones: 5/9") for message in messages)
     [coverage] = [message for message in messages if "parkingZone on" in message]
     assert "5/9 activities" in coverage and "in-commuter activities with a parkingZone: 1/3" in coverage
     assert "parkingFree=true on 1 activities" in coverage and "1/3 persons" in coverage
+    assert any(message.startswith("[parking] activities in resident districts: 2/9") for message in messages)
+    assert any(message.startswith("[parking] persons with a resident parking district: 0/3") for message in messages)
+
+
+def test_real_attach_module_writes_the_district_attributes_of_the_fixture_release(tmp_path, caplog):
+    """The wrapper with the REAL attach module and the fixture districts (spec Amendment C3). Resident 1 lives inside
+    fx_district_a but in no zone, and works in fx_bs_ia, which lies in the same district (an own-district stay,
+    reached by car); resident 2 lives in fx_district_b and shops in fx_sz, which lies in another district; the
+    in-commuter works in fx_bs_ia (district fx_district_a) and has no resident district."""
+    importlib.import_module(ATTACH_MODULE_NAME)
+    release = _fixture_release()
+    centre = release["zones"].set_index("zone_id").geometry.centroid
+    context = _wrapper_context(tmp_path, incommuter_work=centre["fx_bs_ia"], shift=0.0)
+    context._stages[ZONES_STAGE_NAME] = release
+    resident_locations = context._stages["synthesis.population.spatial.locations"]
+    moved = {(1, 0): Point(602950.0, 5790050.0), (1, 1): centre["fx_bs_ia"], (1, 2): Point(602950.0, 5790050.0),
+             (2, 0): Point(603650.0, 5790250.0), (2, 1): centre["fx_sz"], (2, 2): Point(603650.0, 5790250.0)}
+    context._stages["synthesis.population.spatial.locations"] = gpd.GeoDataFrame(
+        resident_locations.drop(columns="geometry"),
+        geometry=[moved.get((person_id, index), point) for person_id, index, point in zip(
+            resident_locations["person_id"], resident_locations["activity_index"],
+            resident_locations.geometry)], crs=CRS)
+
+    with caplog.at_level(logging.INFO, logger=POP.__name__), \
+            caplog.at_level(logging.INFO, logger=ATTACH_MODULE_NAME):
+        POP.execute(context)
+
+    root = _read_plans(tmp_path)
+    district_a = ("java.lang.String", "fx_district_a")
+    district_b = ("java.lang.String", "fx_district_b")
+    assert _person_attributes(root, 1)["residentParkingDistrict"] == district_a
+    assert _person_attributes(root, 2)["residentParkingDistrict"] == district_b
+    assert "residentParkingDistrict" not in _person_attributes(root, INCOMMUTER_ID)
+    assert "residentParkingZone" not in _person_attributes(root, 1)  # the home lies in a district, not in a zone
+    assert [attributes.get("parkingDistrict") for attributes in _activity_attributes(root, 1)] == [
+        district_a, district_a, district_a]
+    assert [attributes.get("parkingDistrict") for attributes in _activity_attributes(root, 2)] == [
+        district_b, ("java.lang.String", "fx_district_sz_a"), district_b]
+    assert [attributes.get("parkingDistrict") for attributes in _activity_attributes(root, INCOMMUTER_ID)] == [
+        None, district_a, None]
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(message.startswith("[parking] activities in resident districts: 7/9") for message in messages)
+    assert any(message.startswith("[parking] persons with a resident parking district: 2/3") for message in messages)
+    [line] = [message for message in messages if "parkingDistrict on" in message]
+    assert "parkingDistrict on 7/9 activities" in line and "in-commuter activities with a parkingDistrict: 1/3" in line
+    assert "residentParkingDistrict on 2/3 persons" in line
+    assert "1/3 non-home activities lie in the district of the person's home" in line
+    assert "reached by car in the initial plan: 1" in line
 
 
 # --------------------------------------------------------------------------- wrapper: validate
