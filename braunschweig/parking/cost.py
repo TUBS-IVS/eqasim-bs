@@ -1,7 +1,8 @@
-"""Deterministic parking cost of one car stay in a zone (issue #249): the Python reference implementation.
+"""Deterministic parking cost of one car stay in a zone (issues #249, #436): the Python reference implementation.
 
 ``parking_cost_cents`` applies the rules of a zone's tariff in a fixed order (listed in its docstring) to the
-part of the stay that falls inside the zone's daily fee window (``chargeable_seconds``), and ``ZoneTariff``
+part of the stay that falls inside the zone's daily fee window (``chargeable_seconds``) and, since schema 2, lets
+the stay pay the cheapest of the zone's products (street, garage in its own fee window, commuter); ``ZoneTariff``
 validates a tariff against its zone type when it is constructed. The Java ``ParkingCostCalculator``
 (eqasim-java-bs) must reproduce this calculation exactly; the shared contract is the golden cases of
 ``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
@@ -9,16 +10,27 @@ validates a tariff against its zone type when it is constructed. The Java ``Park
 in integer simulation seconds, so both implementations run the same integer arithmetic and cannot drift
 apart through floating-point rounding.
 
-Assumptions (spec section 7; their full texts travel with the tariff JSON, see
+Assumptions (spec section 7 and the v2 spec, lever 2; their full texts travel with the tariff JSON, see
 ``braunschweig.parking.tariff_export.ASSUMPTIONS_REGISTER``):
 
 - D1: the simulated day is an average weekday, so a zone's fee window repeats every 86,400 s.
 - H1: home activities are free everywhere.
 - R1: living inside a resident zone equals holding its permit (``resident_of_zone``).
-- C1: members (work and education purposes) pay the campus day product; passes are not modelled.
-- M1: the maximum stay is compared with the CHARGEABLE duration; a longer stay buys the long-stay product.
+- C1: members (work and education purposes) pay the campus day product, or the commuter product where the zone has
+  a cheaper one (A4); other passes are not modelled.
+- M1: the maximum stay is compared with the CHARGEABLE duration; a longer stay buys the long-stay product, and where
+  the zone has none it loses the street product (P1 then prices it with the garage or the commuter product).
 - T1: a terminal stay pays until the fee window of the arrival day ends (``terminal_departure_s``).
 - Z1: outside every zone parking is free (no tariff -> ``NO_ZONE``).
+- P1 (v2, issue #436): a stay pays the cheapest product the driver can use, the street product, the garage product
+  or the commuter product (drivers know the local products).
+- P2 (v2): ``commuter_day_cents`` is the cheapest long-term product per working day (21 working days); regular
+  commuters hold it, so it is offered to the commuter purposes work and education only (``COMMUTER_PURPOSES``).
+
+Schema 2 (v2 levers 2 and 4) adds optional tariff fields: the garage product family (``garage_*``), the commuter
+product ``commuter_day_cents`` and the parking search time ``search_time_min``. They default to None, so a tariff
+without them (schema 1) is valid and prices exactly as in v1. ``search_time_min`` is no price input: it travels with
+the tariff to the Java car utility (lever 4) and ``parking_cost_cents`` does not read it.
 
 L1 (ADR-0139) is a run parameter, not a tariff property, so it is not part of that register: every priced stay lasts
 at least L minutes (``minimum_stay_departure_s``, applied to the stay before ``parking_cost_cents``). L comes from the
@@ -46,6 +58,8 @@ ZONE_TYPES = (STREET_PAID, RESIDENT_ZONE, CAMPUS)
 HOME_PURPOSE = "home"
 #: C1: the activity types that pay the campus member day product; every other purpose pays the guest product.
 CAMPUS_MEMBER_PURPOSES = frozenset({"work", "education"})
+#: P2: the activity types offered the commuter product (``commuter_day_cents``), on street_paid and campus rows.
+COMMUTER_PURPOSES = frozenset({"work", "education"})
 
 # Outcome names: each constant's value is its name; the Java port and the golden cases use the same strings.
 HOME = "HOME"
@@ -58,24 +72,45 @@ PAID_LONG_STAY = "PAID_LONG_STAY"
 PAID_CAMPUS_MEMBER = "PAID_CAMPUS_MEMBER"
 PAID_CAMPUS_GUEST = "PAID_CAMPUS_GUEST"
 NO_ZONE = "NO_ZONE"
+#: Schema 2 (P1): the garage product or the commuter product was the cheapest; ``PAID_METERED`` and
+#: ``PAID_LONG_STAY`` still mean that the street product was.
+PAID_GARAGE = "PAID_GARAGE"
+PAID_COMMUTER = "PAID_COMMUTER"
+# The two v2 outcomes are appended at the END, so the declaration order of the v1 outcomes (the order of the Java
+# ParkingOutcome enum and of the outcome report) is unchanged.
 OUTCOMES = (HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT, PAID_METERED,
-            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE)
+            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER)
+
+#: Schema 2: the garage product family, given completely or not at all; the garage first period
+#: (``GARAGE_FIRST_PERIOD_FIELDS``) is optional within it and comes as a pair.
+GARAGE_FAMILY_FIELDS = ("garage_hourly_rate_cents", "garage_billing_unit_min", "garage_daily_cap_cents",
+                        "garage_fee_start_s", "garage_fee_end_s")
+GARAGE_FIRST_PERIOD_FIELDS = ("garage_first_period_min", "garage_first_period_cents")
+#: Every garage field, in the order of the tariff columns.
+GARAGE_FIELDS = ("garage_hourly_rate_cents", "garage_billing_unit_min", "garage_first_period_min",
+                 "garage_first_period_cents", "garage_daily_cap_cents", "garage_fee_start_s", "garage_fee_end_s")
+#: The optional fields schema 2 adds; ``ZoneTariff`` defaults them to None (a schema-1 tariff).
+SCHEMA_2_FIELDS = (*GARAGE_FIELDS, "commuter_day_cents", "search_time_min")
 
 # Tariff fields that may be None ("not applicable", an empty tariff-table cell).
 _OPTIONAL_FIELDS = ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                     "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents",
-                    "member_day_cents", "guest_day_cents")
+                    "member_day_cents", "guest_day_cents", *SCHEMA_2_FIELDS)
 # Spec 3.2 tests these fields for truthiness ("if t.daily_cap_cents: ..."), so a 0 would silently mean
 # "not set" (a zero cap would be ignored, not applied). Requiring them to be positive when set makes
-# "is set" and "is truthy" the same and keeps the Python and Java readings identical.
+# "is set" and "is truthy" the same and keeps the Python and Java readings identical. The garage family reuses the
+# primitives, so its billing unit (a divisor), first period and cap are positive for the same reasons.
 _POSITIVE_FIELDS = frozenset({"billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
-                              "daily_cap_cents", "max_stay_min"})
-_PAIRED_FIELDS = (("first_period_min", "first_period_cents"), ("max_stay_min", "long_stay_product_cents"))
+                              "daily_cap_cents", "max_stay_min", "garage_billing_unit_min", "garage_first_period_min",
+                              "garage_daily_cap_cents"})
+_PAIRED_FIELDS = (("first_period_min", "first_period_cents"), GARAGE_FIRST_PERIOD_FIELDS)
 # Spec 3.1 required fields per zone type. billing_unit_min is also required for resident zones although
-# spec 3.1 does not list it: the metered step of spec 3.2 divides by it for every non-campus zone.
+# spec 3.1 does not list it: the metered step of spec 3.2 divides by it for every non-campus zone. The long-stay
+# product of a resident zone is required by the maximum-stay rule of ``_check_tariff`` unless the zone has a garage
+# (v2: "long_stay_product_eur becomes optional when a garage family exists").
 _REQUIRED_FIELDS = {
     STREET_PAID: ("hourly_rate_cents", "billing_unit_min"),
-    RESIDENT_ZONE: ("hourly_rate_cents", "billing_unit_min", "max_stay_min", "long_stay_product_cents"),
+    RESIDENT_ZONE: ("hourly_rate_cents", "billing_unit_min", "max_stay_min"),
     CAMPUS: ("member_day_cents", "guest_day_cents"),
 }
 # Fields the zone type does not have (spec 3.1). A value there is rejected, because it would either be ignored
@@ -83,13 +118,15 @@ _REQUIRED_FIELDS = {
 # campus day products are returned before any metering step, the day products are read only on campus, and a
 # cap cannot bind on a resident zone, whose metered price is 0 ct. On a resident zone, however,
 # free_if_stay_at_most_min and the first period WOULD change the price: FREE_WITHIN_LIMIT is evaluated before
-# the maximum-stay check, and the first period is charged in the metered step.
+# the maximum-stay check, and the first period is charged in the metered step. Schema 2: a campus stay pays a day
+# product, so a garage family there would be ignored; the commuter product exists on street_paid and campus rows
+# only (spec amendment A4), never in a resident zone.
 _NOT_APPLICABLE_FIELDS = {
     STREET_PAID: ("member_day_cents", "guest_day_cents"),
     RESIDENT_ZONE: ("free_if_stay_at_most_min", "first_period_min", "first_period_cents", "daily_cap_cents",
-                    "member_day_cents", "guest_day_cents"),
+                    "member_day_cents", "guest_day_cents", "commuter_day_cents"),
     CAMPUS: ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
-             "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents"),
+             "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents", *GARAGE_FIELDS),
 }
 
 
@@ -102,6 +139,13 @@ class ZoneTariff:
     ``[fee_start_s, fee_end_s)`` in seconds after midnight of the (average weekday, D1) day. Construction
     validates the tariff against its zone type and raises ``ValueError`` on any inconsistency, so an
     invalid tariff table fails when it is read, not when a stay is priced.
+
+    Schema 2 (issue #436) adds the fields below ``resident_exempt``, all None by default (a schema-1 tariff): the
+    garage product family (rate per hour, billing unit, an optional first period, day cap and its own fee window
+    ``[garage_fee_start_s, garage_fee_end_s)``, street_paid and resident_zone only), the commuter product per working
+    day ``commuter_day_cents`` (street_paid and campus only) and the parking search time ``search_time_min`` (minutes
+    >= 0, every zone type; not a price input). A maximum stay needs a long-stay product or a garage, because a
+    longer stay loses the street product.
     """
 
     zone_id: str
@@ -119,9 +163,23 @@ class ZoneTariff:
     fee_start_s: int
     fee_end_s: int
     resident_exempt: bool
+    garage_hourly_rate_cents: int | None = None
+    garage_billing_unit_min: int | None = None
+    garage_first_period_min: int | None = None
+    garage_first_period_cents: int | None = None
+    garage_daily_cap_cents: int | None = None
+    garage_fee_start_s: int | None = None
+    garage_fee_end_s: int | None = None
+    commuter_day_cents: int | None = None
+    search_time_min: int | None = None
 
     def __post_init__(self) -> None:
         _check_tariff(self)
+
+    @property
+    def has_garage(self) -> bool:
+        """Whether the zone has the garage product family (validated complete at construction)."""
+        return self.garage_hourly_rate_cents is not None
 
 
 def not_applicable_fields(zone_type: str) -> tuple[str, ...]:
@@ -168,6 +226,24 @@ def _check_tariff(tariff: ZoneTariff) -> None:
     for first, second in _PAIRED_FIELDS:
         if (getattr(tariff, first) is None) != (getattr(tariff, second) is None):
             fail(f"{first} and {second} must be given together or both be empty")
+    garage_missing = [name for name in GARAGE_FAMILY_FIELDS if getattr(tariff, name) is None]
+    if 0 < len(garage_missing) < len(GARAGE_FAMILY_FIELDS):
+        fail(f"the garage product family {list(GARAGE_FAMILY_FIELDS)} must be given completely or not at all; "
+             f"missing {garage_missing}")
+    if garage_missing and tariff.garage_first_period_min is not None:
+        fail(f"{GARAGE_FIRST_PERIOD_FIELDS[0]} and {GARAGE_FIRST_PERIOD_FIELDS[1]} need the garage product family "
+             f"{list(GARAGE_FAMILY_FIELDS)}; a garage first period without a garage is never priced")
+    if tariff.has_garage and not 0 <= tariff.garage_fee_start_s < tariff.garage_fee_end_s <= SECONDS_PER_DAY:
+        fail(f"garage fee window [{tariff.garage_fee_start_s}, {tariff.garage_fee_end_s}) s must satisfy "
+             f"0 <= garage_fee_start_s < garage_fee_end_s <= {SECONDS_PER_DAY}")
+    # A long-stay product is sold only above a maximum stay. A stay above the maximum stay loses the street product
+    # (spec 3.2 rule 7, v2 lever 2), so it needs the long-stay product or a garage; the commuter product alone does
+    # not suffice, because it serves work and education only.
+    if tariff.long_stay_product_cents is not None and tariff.max_stay_min is None:
+        fail("long_stay_product_cents needs max_stay_min: a long-stay product without a maximum stay is never sold")
+    if tariff.max_stay_min is not None and tariff.long_stay_product_cents is None and not tariff.has_garage:
+        fail("max_stay_min is set but neither long_stay_product_cents nor the garage product family is: a stay above "
+             "the maximum stay would have no product")
     for name in _REQUIRED_FIELDS[tariff.zone_type]:
         if getattr(tariff, name) is None:
             fail(f"{name} is required for zone_type {tariff.zone_type!r}")
@@ -175,12 +251,12 @@ def _check_tariff(tariff: ZoneTariff) -> None:
         if getattr(tariff, name) is not None:
             fail(f"{name} does not apply to zone_type {tariff.zone_type!r} and must be empty")
     # The first period is charged in full for any use, so a lower cap would replace its price on every metered
-    # stay: the tariff contradicts itself.
-    if (tariff.daily_cap_cents is not None and tariff.first_period_cents is not None
-            and tariff.daily_cap_cents < tariff.first_period_cents):
-        fail(f"daily_cap_cents {tariff.daily_cap_cents} is below first_period_cents {tariff.first_period_cents}: "
-             "a daily cap below the first-period price contradicts the tariff (every metered stay would pay "
-             "exactly the cap)")
+    # stay: the tariff contradicts itself. The same holds for the garage family.
+    for prefix in ("", "garage_"):
+        cap, first_period = getattr(tariff, f"{prefix}daily_cap_cents"), getattr(tariff, f"{prefix}first_period_cents")
+        if cap is not None and first_period is not None and cap < first_period:
+            fail(f"{prefix}daily_cap_cents {cap} is below {prefix}first_period_cents {first_period}: a daily cap "
+                 "below the first-period price contradicts the tariff (every metered stay would pay exactly the cap)")
     if tariff.zone_type == RESIDENT_ZONE:
         if tariff.hourly_rate_cents != 0:
             fail(f"hourly_rate_cents must be 0 for a resident_zone (disc parking), got {tariff.hourly_rate_cents}")
@@ -273,29 +349,112 @@ def minimum_stay_departure_s(arrival_s: int, departure_s: int, minimum_stay_s: i
     return max(departure_s, arrival_s + minimum_stay_s)
 
 
+def _metered_cents(chargeable_s: int, *, hourly_rate_cents: int, billing_unit_min: int, first_period_min: int | None,
+                   first_period_cents: int | None, daily_cap_cents: int | None) -> int:
+    """The metering primitive of spec 3.2 rule 8, shared by the street and the garage product, in integer cents.
+
+    The first period is charged once in full when any part of it is used, the rest in started billing units at the
+    hourly rate rounded half up to the cent, then the daily cap applies once per stay. Without a chargeable second
+    nothing is used, not even the first period, so the price is 0 ct: the street product never meters such a stay
+    (rule 4 returns before), but the garage meters its own fee window and can miss a stay the street charges.
+    """
+    if chargeable_s == 0:
+        return 0
+    remaining_s = chargeable_s
+    cents = 0
+    if first_period_min is not None:
+        cents += first_period_cents
+        remaining_s -= min(remaining_s, first_period_min * SECONDS_PER_MINUTE)
+    units = _ceil_div(remaining_s, billing_unit_min * SECONDS_PER_MINUTE)
+    # Verbatim spec 3.2: units * minutes per unit * cents per hour is 60 times the price in cents; adding 30
+    # before the integer division by 60 rounds half up to the cent.
+    cents += (units * billing_unit_min * hourly_rate_cents + 30) // 60
+    if daily_cap_cents is not None:
+        cents = min(cents, daily_cap_cents)
+    return cents
+
+
+def _street_product(tariff: ZoneTariff, chargeable_s: int) -> tuple[int, str] | None:
+    """Spec 3.2 rules 6 to 8 on the street columns (v1), or None where the stay may not use the street.
+
+    ``chargeable_s`` (> 0) are the seconds in the STREET fee window. A stay above the maximum stay buys the
+    long-stay product (M1); where the zone has none the street product is unavailable (v2 lever 2) and
+    ``ZoneTariff`` guarantees a garage instead.
+    """
+    # "is not None" equals the spec's truthiness test here: ZoneTariff rejects 0 for these fields.
+    chargeable_min = _ceil_div(chargeable_s, SECONDS_PER_MINUTE)
+    if tariff.free_if_stay_at_most_min is not None and chargeable_min <= tariff.free_if_stay_at_most_min:
+        return 0, FREE_WITHIN_LIMIT
+    if tariff.max_stay_min is not None and chargeable_min > tariff.max_stay_min:
+        if tariff.long_stay_product_cents is None:
+            return None
+        return tariff.long_stay_product_cents, PAID_LONG_STAY
+    cents = _metered_cents(chargeable_s, hourly_rate_cents=tariff.hourly_rate_cents,
+                           billing_unit_min=tariff.billing_unit_min, first_period_min=tariff.first_period_min,
+                           first_period_cents=tariff.first_period_cents, daily_cap_cents=tariff.daily_cap_cents)
+    return cents, (FREE_WITHIN_LIMIT if cents == 0 else PAID_METERED)
+
+
+def _garage_product(tariff: ZoneTariff, arrival_s: int, departure_s: int) -> tuple[int, str] | None:
+    """The garage product (v2 lever 2), or None without a garage family.
+
+    The metering primitive on the garage columns over the stay's seconds in the GARAGE fee window; no free threshold
+    and no maximum stay. As for the street, 0 ct is ``FREE_WITHIN_LIMIT``, anything else ``PAID_GARAGE``.
+    """
+    if not tariff.has_garage:
+        return None
+    garage_s = chargeable_seconds(arrival_s, departure_s, tariff.garage_fee_start_s, tariff.garage_fee_end_s)
+    cents = _metered_cents(garage_s, hourly_rate_cents=tariff.garage_hourly_rate_cents,
+                           billing_unit_min=tariff.garage_billing_unit_min,
+                           first_period_min=tariff.garage_first_period_min,
+                           first_period_cents=tariff.garage_first_period_cents,
+                           daily_cap_cents=tariff.garage_daily_cap_cents)
+    return cents, (FREE_WITHIN_LIMIT if cents == 0 else PAID_GARAGE)
+
+
+def _commuter_product(tariff: ZoneTariff, purpose: str) -> tuple[int, str] | None:
+    """The commuter product per working day (P2) for the commuter purposes, or None."""
+    if tariff.commuter_day_cents is None or purpose not in COMMUTER_PURPOSES:
+        return None
+    return tariff.commuter_day_cents, PAID_COMMUTER
+
+
+def _cheapest(products) -> tuple[int, str]:
+    """The cheapest of the available products (P1); ``min`` keeps the first of equal prices, so a tie goes to the
+    product listed first (street, then garage, then commuter; on campus the member day product)."""
+    return min((product for product in products if product is not None), key=lambda product: product[0])
+
+
 def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                        parking_free: bool, resident_of_zone: bool) -> tuple[int, str]:
-    """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2).
+    """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2, v2 lever 2).
 
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
     outcome ``NO_ZONE``, decided before every check below, so also for the home purpose). ``arrival_s`` is
     the car arrival and ``departure_s`` the activity departure in simulation seconds (for a terminal
     activity use ``terminal_departure_s``; under the minimum stay L1 pass the departure of
-    ``minimum_stay_departure_s``); ``purpose`` is the MATSim activity type, ``parking_free`` the
-    activity attribute ``parkingFree``, ``resident_of_zone`` whether the person lives in this zone (R1). The
-    checks run in the order of spec 3.2; the first that applies decides:
+    ``minimum_stay_departure_s``, so every product below prices the same extended stay, spec amendment A3);
+    ``purpose`` is the MATSim activity type, ``parking_free`` the activity attribute ``parkingFree``,
+    ``resident_of_zone`` whether the person lives in this zone (R1). The checks run in the order of spec 3.2; the
+    first that applies decides:
 
     1. home purpose -> 0, ``HOME`` (H1);
     2. ``parking_free`` -> 0, ``EMPLOYER_FREE``;
     3. resident-exempt zone and a resident of it -> 0, ``RESIDENT_FREE`` (R1);
-    4. no chargeable second -> 0, ``OUTSIDE_FEE_HOURS``;
-    5. campus -> the member day product for work and education, else the guest day product (C1);
-    6. chargeable minutes (seconds rounded up) within the free threshold -> 0, ``FREE_WITHIN_LIMIT``;
-    7. chargeable minutes above the maximum stay -> the long-stay product, ``PAID_LONG_STAY`` (M1);
-    8. metered: the first period is charged once in full when any part of it is used, the rest in started
-       billing units at the hourly rate rounded half up to the cent, then capped by the daily cap, which
-       applies once per stay as spec 3.2 states; 0 ct is ``FREE_WITHIN_LIMIT``, anything else ``PAID_METERED``.
+    4. no chargeable second in the STREET fee window -> 0, ``OUTSIDE_FEE_HOURS``: a free street beats every garage;
+    5. campus -> for work and education the cheaper of the member day product (C1) and the commuter product (A4,
+       when set; a tie keeps the member day product), else the guest day product;
+    6. street_paid and resident_zone: the cheapest product the driver can use (P1), a tie going to the first of
+       a. the street product, spec 3.2 rules 6 to 8: chargeable minutes (seconds rounded up) within the free
+          threshold -> 0, ``FREE_WITHIN_LIMIT``; above the maximum stay the long-stay product, ``PAID_LONG_STAY``
+          (M1), or no street product where the zone has none; else metered (first period charged once in full when
+          any part of it is used, the rest in started billing units at the hourly rate rounded half up to the cent,
+          then the daily cap once per stay); 0 ct is ``FREE_WITHIN_LIMIT``, anything else ``PAID_METERED``;
+       b. the garage product, the same metering on the garage columns over the seconds in the garage's own fee
+          window, without free threshold and maximum stay; 0 ct is ``FREE_WITHIN_LIMIT``, else ``PAID_GARAGE``;
+       c. the commuter product ``commuter_day_cents`` for work and education (P2), ``PAID_COMMUTER``.
 
+    A schema-1 tariff (no garage, no commuter product) has only the street product, so it prices exactly as in v1.
     Raises ``ValueError`` for a departure before the arrival or negative times and ``TypeError`` for
     non-integer times or non-bool flags (a text "false" must never count as true). Pure function.
     """
@@ -324,25 +483,9 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         return 0, OUTSIDE_FEE_HOURS
     if tariff.zone_type == CAMPUS:
         if purpose in CAMPUS_MEMBER_PURPOSES:
-            return tariff.member_day_cents, PAID_CAMPUS_MEMBER
+            return _cheapest(((tariff.member_day_cents, PAID_CAMPUS_MEMBER), _commuter_product(tariff, purpose)))
         return tariff.guest_day_cents, PAID_CAMPUS_GUEST
-
-    # "is not None" equals the spec's truthiness test here: ZoneTariff rejects 0 for these fields.
-    chargeable_min = _ceil_div(chargeable_s, SECONDS_PER_MINUTE)
-    if tariff.free_if_stay_at_most_min is not None and chargeable_min <= tariff.free_if_stay_at_most_min:
-        return 0, FREE_WITHIN_LIMIT
-    if tariff.max_stay_min is not None and chargeable_min > tariff.max_stay_min:
-        return tariff.long_stay_product_cents, PAID_LONG_STAY
-
-    remaining_s = chargeable_s
-    cents = 0
-    if tariff.first_period_min is not None:
-        cents += tariff.first_period_cents
-        remaining_s -= min(remaining_s, tariff.first_period_min * SECONDS_PER_MINUTE)
-    units = _ceil_div(remaining_s, tariff.billing_unit_min * SECONDS_PER_MINUTE)
-    # Verbatim spec 3.2: units * minutes per unit * cents per hour is 60 times the price in cents; adding 30
-    # before the integer division by 60 rounds half up to the cent.
-    cents += (units * tariff.billing_unit_min * tariff.hourly_rate_cents + 30) // 60
-    if tariff.daily_cap_cents is not None:
-        cents = min(cents, tariff.daily_cap_cents)
-    return cents, (FREE_WITHIN_LIMIT if cents == 0 else PAID_METERED)
+    # Never empty: where the street product is unavailable, ZoneTariff guarantees the garage. A resident zone has no
+    # commuter product (ZoneTariff rejects it), so the commuter product competes on street_paid rows only.
+    return _cheapest((_street_product(tariff, chargeable_s), _garage_product(tariff, arrival_s, departure_s),
+                      _commuter_product(tariff, purpose)))

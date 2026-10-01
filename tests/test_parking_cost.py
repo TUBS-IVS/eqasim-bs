@@ -26,10 +26,18 @@ _VALID_FIELDS = {
 _OPTIONAL_FIELDS = ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                     "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents",
                     "member_day_cents", "guest_day_cents")
+# A complete garage product family of schema 2 (120 ct per started hour, capped at 960 ct, all day); the first
+# period is optional within the family.
+_GARAGE = {"garage_hourly_rate_cents": 120, "garage_billing_unit_min": 60, "garage_daily_cap_cents": 960,
+           "garage_fee_start_s": 0, "garage_fee_end_s": 86400}
+_SHOP = {"purpose": "shop", "parking_free": False, "resident_of_zone": False}
 
 
 def _tariff(base_type="street_paid", /, **overrides) -> cost.ZoneTariff:
-    """A valid tariff of ``base_type`` with ``overrides`` applied (which may replace the zone_type itself)."""
+    """A valid tariff of ``base_type`` with ``overrides`` applied (which may replace the zone_type itself).
+
+    The schema-2 fields are left out unless overridden: a tariff without them is a schema-1 tariff.
+    """
     fields = {"zone_type": base_type, **dict.fromkeys(_OPTIONAL_FIELDS), **_VALID_FIELDS[base_type], **overrides}
     return cost.ZoneTariff(zone_id=f"test_{base_type}", **fields)
 
@@ -42,9 +50,14 @@ def fixture_zones():
     return fixture_zone_tariffs()
 
 
-def test_the_contract_holds_the_38_cases():
-    # G01..G26 are the cases of the plan; G27..G38 pin rounding, thresholds and the rule order.
-    assert [case["id"] for case in GOLDEN_CASES] == [f"G{number:02d}" for number in range(1, 39)]
+def test_the_contract_holds_the_g_l_lz_and_v_cases_each_with_its_minimum_stay():
+    # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
+    # L = 0 (ADR-0139 decision 9); V01..V14 pin the product minimum of schema 2 at L = 15 (issue #436).
+    families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
+                ("V", "", range(1, 15), 15))
+    expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
+                for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
+    assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     assert all(case["expected_outcome"] in cost.OUTCOMES for case in GOLDEN_CASES if not case["expected_error"])
     assert [case["id"] for case in GOLDEN_CASES if case["expected_error"]] == ["G26"]
 
@@ -60,7 +73,7 @@ def test_golden_case(case, fixture_zones):
 
 def test_the_committed_golden_json_is_in_sync(fixture_zones):
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
     assert zones == fixture_zones, REGENERATE_HINT
@@ -77,11 +90,15 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
     assert problem.startswith("G26:") and "departure before arrival" in problem and "unknown zone id" in problem
 
 
-def test_outcomes_are_ten_constants_named_as_their_values():
+def test_outcomes_are_twelve_constants_named_as_their_values_with_the_v2_products_appended():
+    # Appended at the END, so the declaration order of the ten v1 outcomes (the order of the Java ParkingOutcome
+    # enum and of the outcome report) stays as it was.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
-                             "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE")
+                             "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
+                             "PAID_GARAGE", "PAID_COMMUTER")
     assert all(getattr(cost, outcome) == outcome for outcome in cost.OUTCOMES)
     assert cost.CAMPUS_MEMBER_PURPOSES == frozenset({"work", "education"})
+    assert cost.COMMUTER_PURPOSES == frozenset({"work", "education"})
 
 
 def test_chargeable_seconds_over_three_days_with_a_whole_day_window_is_the_full_duration():
@@ -131,6 +148,21 @@ def test_street_paid_with_max_stay_but_without_long_stay_product_is_rejected_at_
     ("resident_zone", {"billing_unit_min": None}, "billing_unit_min is required for zone_type 'resident_zone'"),
     ("campus", {"hourly_rate_cents": 180}, "hourly_rate_cents does not apply"),
     ("campus", {"resident_exempt": "false"}, "resident_exempt must be a bool"),
+    # Schema 2: the garage family is all-or-none; its first period comes as a pair and only with the family.
+    ("street_paid", {**_GARAGE, "garage_daily_cap_cents": None}, r"garage product family .*garage_daily_cap_cents"),
+    ("street_paid", {"garage_first_period_min": 60, "garage_first_period_cents": 120}, "garage product family"),
+    ("street_paid", {**_GARAGE, "garage_first_period_min": 60}, "garage_first_period_cents"),
+    ("street_paid", {**_GARAGE, "garage_fee_start_s": 72000, "garage_fee_end_s": 32400}, "garage fee window"),
+    ("street_paid", {**_GARAGE, "garage_billing_unit_min": 0}, "garage_billing_unit_min must be at least 1"),
+    ("street_paid", {**_GARAGE, "garage_daily_cap_cents": 0}, "garage_daily_cap_cents must be at least 1"),
+    ("street_paid", {**_GARAGE, "garage_first_period_min": 60, "garage_first_period_cents": 1000},
+     "garage_daily_cap_cents 960 is below garage_first_period_cents 1000"),
+    ("street_paid", {"commuter_day_cents": -1}, "commuter_day_cents must be at least 0"),
+    ("street_paid", {"search_time_min": -1}, "search_time_min must be at least 0"),
+    ("street_paid", {"search_time_min": 2.5}, "search_time_min must be an integer"),
+    # Without a long-stay product only a garage can price a stay above the maximum stay; v1 resident zones keep
+    # their long-stay product unless they have a garage.
+    ("resident_zone", {"long_stay_product_cents": None}, "long_stay_product_cents"),
 ])
 def test_inconsistent_tariffs_are_rejected_at_construction(base_type, overrides, message):
     with pytest.raises(ValueError, match=message):
@@ -153,6 +185,10 @@ def test_inconsistent_tariffs_are_rejected_at_construction(base_type, overrides,
     ("campus", {"first_period_min": 60, "first_period_cents": 70}, "first_period_min"),
     ("campus", {"daily_cap_cents": 900}, "daily_cap_cents"),
     ("campus", {"max_stay_min": 180, "long_stay_product_cents": 900}, "max_stay_min"),
+    # Schema 2: a campus stay pays a day product, never a garage; the commuter product is not one of the resident
+    # zone's products (A4 allows it on street_paid and campus rows only).
+    ("campus", dict(_GARAGE), "garage_hourly_rate_cents"),
+    ("resident_zone", {"commuter_day_cents": 376}, "commuter_day_cents"),
 ])
 def test_a_field_the_zone_type_does_not_have_must_stay_empty(base_type, overrides, field):
     with pytest.raises(ValueError, match=f"{field} does not apply to zone_type '{base_type}' and must be empty"):
@@ -242,44 +278,86 @@ def test_the_first_period_is_charged_in_full_for_any_use_and_the_rest_rounds_hal
                                        resident_of_zone=False) == expected
 
 
-# Rule L1 (ADR-0139): every priced car stay lasts at least L minutes, applied to the stay before the tariff rules.
-# The eight cases L01..L08 are shared with the Java ParkingCostCalculatorTest (fixture tariffs, derived by hand like
-# the golden cases). With L = 15 min (900 s) the stay is priced up to the priced departure; with L = 0 it is priced up
-# to its original departure, exactly as before rule L1. Times of day: 36000 = 10:00, 40000 = 11:06:40,
+@pytest.mark.parametrize("overrides, arrival_s, departure_s, purpose, expected", [
+    # 60 min: street 60 x 2 ct = 120 ct and garage one started hour = 120 ct; a tie goes to the street.
+    ({"hourly_rate_cents": 120, **_GARAGE}, 36000, 39600, "shop", (120, cost.PAID_METERED)),
+    # Street 600 ct; garage 120 ct and commuter 120 ct tie; the garage comes before the commuter product.
+    ({"hourly_rate_cents": 600, **_GARAGE, "commuter_day_cents": 120}, 36000, 39600, "work", (120, cost.PAID_GARAGE)),
+    # The commuter product competes only for the commuter purposes.
+    ({"hourly_rate_cents": 600, **_GARAGE, "commuter_day_cents": 100}, 36000, 39600, "work", (100, cost.PAID_COMMUTER)),
+    ({"hourly_rate_cents": 600, **_GARAGE, "commuter_day_cents": 100}, 36000, 39600, "other", (120, cost.PAID_GARAGE)),
+    # 19:00-20:00 lies inside the street window 09:00-20:00 (180 ct) but after the garage window 07:00-19:00: no garage
+    # second is used, so not even its first period is charged, and the garage costs 0 ct (FREE_WITHIN_LIMIT, as a
+    # metered 0 ct stay).
+    ({**_GARAGE, "garage_fee_start_s": 25200, "garage_fee_end_s": 68400, "garage_first_period_min": 60,
+      "garage_first_period_cents": 120}, 68400, 72000, "shop", (0, cost.FREE_WITHIN_LIMIT)),
+], ids=["street_beats_garage_on_a_tie", "garage_beats_commuter_on_a_tie", "commuter_for_work",
+        "no_commuter_for_other_purposes", "garage_unused_outside_its_window"])
+def test_the_cheapest_product_wins_and_ties_go_to_street_then_garage_then_commuter(overrides, arrival_s, departure_s,
+                                                                                  purpose, expected):
+    flags = {**_SHOP, "purpose": purpose}
+    assert cost.parking_cost_cents(_tariff(**overrides), arrival_s, departure_s, **flags) == expected
+
+
+def test_a_resident_zone_without_long_stay_product_prices_a_long_stay_with_its_garage():
+    # "long_stay_product_eur becomes optional when a garage family exists" holds for resident zones too: above the
+    # maximum stay of 120 min the street is unavailable and the garage prices 180 min as 3 started hours; within the
+    # maximum stay disc parking at rate 0 stays free and beats the garage.
+    tariff = _tariff("resident_zone", long_stay_product_cents=None, **_GARAGE)
+    assert cost.parking_cost_cents(tariff, 36000, 46800, **_SHOP) == (360, cost.PAID_GARAGE)
+    assert cost.parking_cost_cents(tariff, 36000, 41400, **_SHOP) == (0, cost.FREE_WITHIN_LIMIT)
+    # The residents of the zone stay exempt (R1), before any product.
+    assert cost.parking_cost_cents(tariff, 36000, 46800, **{**_SHOP, "resident_of_zone": True}) == (
+        0, cost.RESIDENT_FREE)
+
+
+def test_a_campus_commuter_product_wins_only_when_cheaper_than_the_member_day_product():
+    # A4: member purposes pay min(member day, commuter); a tie keeps the member day product, guests pay the guest day.
+    for commuter_cents, expected in ((349, (349, cost.PAID_COMMUTER)), (350, (350, cost.PAID_CAMPUS_MEMBER))):
+        tariff = _tariff("campus", commuter_day_cents=commuter_cents)
+        assert cost.parking_cost_cents(tariff, 28800, 61200, **{**_SHOP, "purpose": "education"}) == expected
+        assert cost.parking_cost_cents(tariff, 28800, 61200, **_SHOP) == (900, cost.PAID_CAMPUS_GUEST)
+
+
+# Rule L1 (ADR-0139 decision 9): every priced car stay lasts at least L minutes, applied to the stay before the tariff
+# rules. The eight cases L01..L08 (L = 15 min) and their twins L01Z..L08Z (L = 0, the pricing before L1) are golden
+# cases now, exported with the others and read by the Java ParkingCostCalculatorTest from the golden JSON. This table
+# pins them against the decision's numbers, independently of braunschweig.parking.golden_cases, so that an export with
+# a wrong stay, minimum or expectation cannot pass silently. Times of day: 36000 = 10:00, 40000 = 11:06:40,
 # 71400 = 19:50, 72000 = 20:00 (the end of the fee window of fx_bs_ia and fx_bs_ib), 73000 = 20:16:40.
 _MINIMUM_STAY_S = 900
-_MINIMUM_STAY_ROWS = (
-    # id, zone, purpose, arrival_s, departure_s, priced departure_s, result with L = 15 min, result with L = 0.
+_MINIMUM_STAY_PINS = {
+    # id: (zone, purpose, arrival_s, departure_s, priced departure_s with L = 15, result with L = 15, with L = 0).
     # A zero-length stay inside the fee window pays 15 min at 180 ct/h instead of nothing.
-    ("L01", "fx_bs_ia", "shop", 36000, 36000, 36900, (45, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    "L01": ("fx_bs_ia", "shop", 36000, 36000, 36900, (45, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
     # 15 min lie within the free threshold of 30 min.
-    ("L02", "fx_sz", "shop", 40000, 40000, 40900, (0, "FREE_WITHIN_LIMIT"), (0, "OUTSIDE_FEE_HOURS")),
+    "L02": ("fx_sz", "shop", 40000, 40000, 40900, (0, "FREE_WITHIN_LIMIT"), (0, "OUTSIDE_FEE_HOURS")),
     # Only the 10 min before the end of the fee window are chargeable: 30 ct.
-    ("L03", "fx_bs_ib", "shop", 71400, 71400, 72300, (30, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    "L03": ("fx_bs_ib", "shop", 71400, 71400, 72300, (30, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
     # Any use buys the first period (60 min, 110 ct) in full.
-    ("L04", "fx_wob", "shop", 36000, 36000, 36900, (110, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    "L04": ("fx_wob", "shop", 36000, 36000, 36900, (110, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
     # A 5-min stay pays 15 min: 45 ct instead of 15 ct.
-    ("L05", "fx_bs_ia", "shop", 36000, 36300, 36900, (45, "PAID_METERED"), (15, "PAID_METERED")),
+    "L05": ("fx_bs_ia", "shop", 36000, 36300, 36900, (45, "PAID_METERED"), (15, "PAID_METERED")),
     # A stay longer than the minimum is priced unchanged.
-    ("L06", "fx_bs_ia", "shop", 36000, 39600, 39600, (180, "PAID_METERED"), (180, "PAID_METERED")),
+    "L06": ("fx_bs_ia", "shop", 36000, 39600, 39600, (180, "PAID_METERED"), (180, "PAID_METERED")),
     # A zero-length work stay on campus pays the member day product.
-    ("L07", "fx_campus", "work", 36000, 36000, 36900, (350, "PAID_CAMPUS_MEMBER"), (0, "OUTSIDE_FEE_HOURS")),
+    "L07": ("fx_campus", "work", 36000, 36000, 36900, (350, "PAID_CAMPUS_MEMBER"), (0, "OUTSIDE_FEE_HOURS")),
     # The extended stay still lies after the fee window: free.
-    ("L08", "fx_bs_ib", "shop", 73000, 73000, 73900, (0, "OUTSIDE_FEE_HOURS"), (0, "OUTSIDE_FEE_HOURS")),
-)
+    "L08": ("fx_bs_ib", "shop", 73000, 73000, 73900, (0, "OUTSIDE_FEE_HOURS"), (0, "OUTSIDE_FEE_HOURS")),
+}
 
 
-@pytest.mark.parametrize("row", _MINIMUM_STAY_ROWS, ids=[row[0] for row in _MINIMUM_STAY_ROWS])
-def test_the_minimum_stay_extends_the_priced_stay_and_zero_prices_it_as_before(row, fixture_zones):
-    _, zone_id, purpose, arrival_s, departure_s, priced_departure_s, with_minimum, without_minimum = row
-    tariff = fixture_zones[zone_id]
-    flags = {"purpose": purpose, "parking_free": False, "resident_of_zone": False}
-    extended_s = cost.minimum_stay_departure_s(arrival_s, departure_s, _MINIMUM_STAY_S)
-    assert extended_s == priced_departure_s
-    assert cost.parking_cost_cents(tariff, arrival_s, extended_s, **flags) == with_minimum
-    unchanged_s = cost.minimum_stay_departure_s(arrival_s, departure_s, 0)
-    assert unchanged_s == departure_s
-    assert cost.parking_cost_cents(tariff, arrival_s, unchanged_s, **flags) == without_minimum
+def test_the_exported_minimum_stay_cases_keep_the_numbers_of_adr_0139_decision_9():
+    cases = {case["id"]: case for case in GOLDEN_CASES}
+    for case_id, (zone_id, purpose, arrival_s, departure_s, priced_s, with_minimum, without_minimum) in (
+            _MINIMUM_STAY_PINS.items()):
+        assert cost.minimum_stay_departure_s(arrival_s, departure_s, _MINIMUM_STAY_S) == priced_s, case_id
+        for twin_id, minimum_stay_min, expected in ((case_id, 15, with_minimum), (case_id + "Z", 0, without_minimum)):
+            case = cases[twin_id]
+            assert (case["zone_id"], case["purpose"], case["arrival_s"], case["departure_s"], case["minimum_stay_min"],
+                    case["parking_free"], case["resident_of_zone"], case["terminal"], case["expected_error"]) == (
+                zone_id, purpose, arrival_s, departure_s, minimum_stay_min, False, False, False, False), twin_id
+            assert (case["expected_cents"], case["expected_outcome"]) == expected, twin_id
 
 
 def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():

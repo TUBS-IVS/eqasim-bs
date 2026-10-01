@@ -27,7 +27,8 @@ def _write_tariffs(path: Path, frame: pd.DataFrame, header_lines=("# test tariff
     """Write a tariff frame back to CSV the way the committed file is laid out."""
     text = frame.copy()
     for column in pz.MINUTE_COLUMNS:
-        text[column] = text[column].astype("object").where(text[column].notna(), "")
+        if column in text.columns:
+            text[column] = text[column].astype("object").where(text[column].notna(), "")
     text["resident_exempt"] = text["resident_exempt"].map({True: "true", False: "false"})
     body = text.to_csv(index=False, lineterminator="\n")
     path.write_text("\n".join(header_lines) + "\n" + body, encoding="utf-8")
@@ -40,7 +41,7 @@ def _write_tariffs(path: Path, frame: pd.DataFrame, header_lines=("# test tariff
 def test_fixture_tariffs_load_typed():
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus",
-                                        "fx_frac"]
+                                        "fx_frac", "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2"]
     row = tariffs.set_index("zone_id").loc["fx_sz"]
     assert row["first_period_min"] == 60 and row["first_period_eur"] == pytest.approx(0.70)
     assert pd.isna(row["max_stay_min"])
@@ -51,10 +52,55 @@ def test_fixture_tariffs_load_typed():
     assert tariffs.set_index("zone_id").loc["fx_res_a", "resident_exempt"] == True  # noqa: E712
     assert tariffs.set_index("zone_id").loc["fx_sz", "workplace_class"] == "03102"
     assert tariffs.set_index("zone_id").loc["fx_pe", "municipality_ags"] == "03157006"
+    # Schema 2: money and hours as float, minutes (including the search time) as Int64; empty on every v1 row.
+    assert all(str(tariffs[column].dtype) == "Int64"
+               for column in ("garage_billing_unit_min", "garage_first_period_min", "search_time_min"))
+    assert all(tariffs[column].dtype == float for column in ("garage_hourly_rate_eur", "garage_first_period_eur",
+                                                             "garage_daily_cap_eur", "garage_fee_start_h",
+                                                             "garage_fee_end_h", "commuter_day_eur"))
+    v2 = tariffs.set_index("zone_id").loc["fx_bs_ib_v2"]
+    assert (v2["garage_hourly_rate_eur"], v2["garage_first_period_min"], v2["garage_fee_end_h"]) == (1.20, 60, 24.0)
+    assert (v2["commuter_day_eur"], v2["search_time_min"]) == (3.76, 5)
+    assert tariffs.set_index("zone_id").loc["fx_campus_v2", "search_time_min"] == 0
+    assert tariffs.loc[~tariffs["zone_id"].str.endswith("_v2"), list(pz.OPTIONAL_TARIFF_COLUMNS)].isna().all().all()
 
 
 def test_fixture_tariffs_pass_validation():
     pz.validate_tariffs(pz.load_tariffs(TARIFF_FIXTURE))
+
+
+_GARAGE_FAMILY_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_daily_cap_eur",
+                                      "garage_fee_start_h", "garage_fee_end_h"), float("nan"))
+
+
+@pytest.mark.parametrize("zone_id, changes, field", [
+    # The garage columns are all-or-none, except the first-period pair, which comes as a pair within the family.
+    ("fx_bs_ib_v2", {"garage_daily_cap_eur": float("nan")}, "garage_daily_cap_eur"),
+    ("fx_bs_ib_v2", {"garage_first_period_eur": float("nan")}, "garage_first_period_eur"),
+    ("fx_bs_ib", {"garage_first_period_min": 60, "garage_first_period_eur": 1.20}, "garage_first_period_min"),
+    ("fx_bs_ib_v2", {"garage_fee_start_h": 20.0, "garage_fee_end_h": 9.0}, "garage_fee_start_h"),
+    ("fx_bs_ib_v2", {"garage_billing_unit_min": 0}, "garage_billing_unit_min"),
+    ("fx_bs_ib_v2", {"garage_daily_cap_eur": 0.0}, "garage_daily_cap_eur"),
+    # A maximum stay without a long-stay product needs the garage: otherwise a longer stay would have no product.
+    ("fx_bs_ia_v2", _GARAGE_FAMILY_EMPTY, "long_stay_product_eur"),
+    # The commuter product exists on street_paid and campus rows only (A4) and is never negative.
+    ("fx_res_a", {"commuter_day_eur": 3.76}, "commuter_day_eur"),
+    ("fx_bs_ib_v2", {"commuter_day_eur": -1.0}, "commuter_day_eur"),
+    # A campus stay pays a day product, never a garage.
+    ("fx_campus", {"garage_hourly_rate_eur": 1.20, "garage_billing_unit_min": 60, "garage_daily_cap_eur": 9.60,
+                   "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0}, "garage_hourly_rate_eur"),
+    # The search time is a whole number of minutes >= 0 (0 is valid, fx_campus_v2).
+    ("fx_bs_ib_v2", {"search_time_min": -1}, "search_time_min"),
+], ids=["garage_family_incomplete", "garage_first_period_unpaired", "garage_first_period_without_family",
+        "garage_window_reversed", "garage_unit_zero", "garage_cap_zero", "max_stay_without_any_long_stay_product",
+        "commuter_in_resident_zone", "commuter_negative", "garage_on_campus", "search_time_negative"])
+def test_the_schema_2_columns_are_validated_per_row(zone_id, changes, field):
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    for column, value in changes.items():
+        broken.loc[broken["zone_id"] == zone_id, column] = value
+    with pytest.raises(ValueError, match=rf"zone '{zone_id}': {field}: "):
+        pz.validate_tariffs(broken)
 
 
 def test_hash_inside_a_field_is_not_a_comment(tmp_path):
@@ -216,7 +262,7 @@ def test_fixture_marker_can_be_rejected_for_committed_data():
 
 def test_fixture_zones_load_in_metric_crs():
     zones = pz.load_zone_polygons(ZONE_FIXTURE)
-    assert zones.crs.to_epsg() == 25832 and len(zones) == 8 and zones["zone_id"].is_unique
+    assert zones.crs.to_epsg() == 25832 and len(zones) == 12 and zones["zone_id"].is_unique
     for column in pz.ZONE_PROVENANCE_COLUMNS:
         assert zones[column].notna().all(), column
 

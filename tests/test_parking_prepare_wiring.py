@@ -215,13 +215,13 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     prepare.execute(context)
     model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
-    assert sorted(model["zones"]) == ["fx_bs_ia", "fx_bs_ib", "fx_campus", "fx_frac", "fx_pe", "fx_res_a", "fx_sz",
-                                      "fx_wob"]
+    assert sorted(model["zones"]) == ["fx_bs_ia", "fx_bs_ia_v2", "fx_bs_ib", "fx_bs_ib_v2", "fx_campus", "fx_campus_v2",
+                                      "fx_frac", "fx_pe", "fx_res_a", "fx_sz", "fx_wob", "fx_wob_v2"]
     # Same fixture table, same production export: the cents and seconds of the committed fixture model.
     assert model["zones"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["zones"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        1, "2026-09-29", "until_fee_end")
+        2, "2026-09-29", "until_fee_end")
 
 
 def test_on_execute_writes_the_parking_module_and_keeps_every_other_byte_of_the_config(tmp_path, monkeypatch):
@@ -259,8 +259,8 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert (config.parent / tariffs_path).is_file()
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert report["parking_input_files"] == [tariffs_path, REPORT_NAME]
-    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 8,
-                      "zone_types": {"campus": 1, "resident_zone": 1, "street_paid": 6},
+    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 12,
+                      "zone_types": {"campus": 2, "resident_zone": 1, "street_paid": 9},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
                       "sources": context.stages[PARKING_STAGE]["sources"]}
 
@@ -270,7 +270,7 @@ def test_on_execute_logs_the_zone_count_and_the_file_names_once(tmp_path, monkey
     prepare.execute(context)
     lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
     assert len(lines) == 1, lines
-    assert "8 zones" in lines[0] and TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
+    assert "12 zones" in lines[0] and TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
 
 
 def test_a_second_execute_on_the_same_config_is_idempotent(tmp_path, monkeypatch):

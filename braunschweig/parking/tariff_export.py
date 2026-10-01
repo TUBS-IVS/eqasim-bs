@@ -1,10 +1,16 @@
-"""Build the parking tariff model JSON (schema 1) that the Java parking cost model reads (issue #249).
+"""Build the parking tariff model JSON (schema 2) that the Java parking cost model reads (issues #249, #436).
 
 The tariff table (design spec section 5.3: money in euros, fee hours as decimal hours of the weekday) is
 converted ONCE, here, into integer euro cents and integer seconds after midnight; the Java side reads only
 the result (spec 5.4 contract, pinned by ``tests/test_parking_tariff_export.py``). Every row becomes a
 ``braunschweig.parking.cost.ZoneTariff``, whose construction validates it against its zone type, so an
 inconsistent table fails at export instead of being priced wrongly in the simulation.
+
+Schema 2 (parking cost zones v2, levers 2 and 4) is additive: every zone entry carries the schema-1 keys plus
+``garage_hourly_rate_cents``, ``garage_billing_unit_min``, ``garage_first_period_min``, ``garage_first_period_cents``,
+``garage_daily_cap_cents``, ``garage_fee_start_s``, ``garage_fee_end_s``, ``commuter_day_cents`` and
+``search_time_min``, null where the table leaves the column empty or does not have it. A schema-1 table therefore
+exports as schema 2 with these keys null and prices as before.
 
 The model carries the assumptions register of spec section 7 as ``ASSUMPTION <id>: ...`` texts and the
 provenance of its inputs (``sources``: path and LF-normalised sha256 of every input file, supplied by the
@@ -27,7 +33,8 @@ import pandas as pd
 
 from braunschweig.parking.cost import SECONDS_PER_DAY, ZONE_TYPES, ZoneTariff, not_applicable_fields
 
-SCHEMA_VERSION = 1
+#: 2 since parking cost zones v2 (issue #436): the zone entries gained the optional schema-2 keys.
+SCHEMA_VERSION = 2
 CURRENCY = "EUR"
 #: Assumption T1. The only rule implemented; the config key ``parking_terminal_stay_rule`` is reserved.
 TERMINAL_STAY_RULE_UNTIL_FEE_END = "until_fee_end"
@@ -42,18 +49,32 @@ _WHOLE_CENT_TOLERANCE = 1e-6
 # Table column (euros) -> ZoneTariff field (cents).
 EURO_COLUMNS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
                 "daily_cap_eur": "daily_cap_cents", "long_stay_product_eur": "long_stay_product_cents",
-                "member_day_eur": "member_day_cents", "guest_day_eur": "guest_day_cents"}
+                "member_day_eur": "member_day_cents", "guest_day_eur": "guest_day_cents",
+                "garage_hourly_rate_eur": "garage_hourly_rate_cents",
+                "garage_first_period_eur": "garage_first_period_cents",
+                "garage_daily_cap_eur": "garage_daily_cap_cents", "commuter_day_eur": "commuter_day_cents"}
 # Table columns in whole minutes, same name in the table and in ZoneTariff.
-MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min")
-# Table column (decimal hours of the day) -> ZoneTariff field (seconds after midnight).
+MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min",
+                  "garage_billing_unit_min", "garage_first_period_min", "search_time_min")
+# Table column (decimal hours of the day) -> ZoneTariff field (seconds after midnight). The street fee window is
+# required; the garage fee window belongs to the optional garage family.
 HOUR_COLUMNS = {"fee_start_h": "fee_start_s", "fee_end_h": "fee_end_s"}
+GARAGE_HOUR_COLUMNS = {"garage_fee_start_h": "garage_fee_start_s", "garage_fee_end_h": "garage_fee_end_s"}
 #: The spec 5.3 columns this module reads. The others are not part of the model: workplace_class serves the
 #: zone attachment (spec 3.4); name, municipality_ags, source_url, source_date, valid_from, fee_window_source
 #: and notes document provenance in the table itself.
-TARIFF_COLUMNS = ("zone_id", "zone_type", *EURO_COLUMNS, *MINUTE_COLUMNS, *HOUR_COLUMNS, "resident_exempt")
-# ZoneTariff money/minute field -> the table column it is read from, so that row errors name the column.
+TARIFF_COLUMNS = ("zone_id", "zone_type", *EURO_COLUMNS, *MINUTE_COLUMNS, *HOUR_COLUMNS, *GARAGE_HOUR_COLUMNS,
+                  "resident_exempt")
+#: The schema-2 columns (v2 levers 2 and 4): a table or row without them converts with their fields None.
+OPTIONAL_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
+                    "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h",
+                    "commuter_day_eur", "search_time_min")
+#: The columns every table and row must have (schema 1).
+REQUIRED_COLUMNS = tuple(column for column in TARIFF_COLUMNS if column not in OPTIONAL_COLUMNS)
+# ZoneTariff money/minute/garage-hour field -> the table column it is read from, so that row errors name the column.
 _COLUMN_OF_FIELD = {**{field: column for column, field in EURO_COLUMNS.items()},
-                    **{column: column for column in MINUTE_COLUMNS}}
+                    **{column: column for column in MINUTE_COLUMNS},
+                    **{field: column for column, field in GARAGE_HOUR_COLUMNS.items()}}
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 #: The keys of one ``sources`` entry; the Java ``ParkingTariffs`` reader accepts exactly these (``SOURCE_FIELDS``).
@@ -74,8 +95,9 @@ class Assumption:
                 f"Sensitivity: {self.sensitivity}.")
 
 
-#: The assumptions register of the design spec section 7, in its order. The model JSON carries the rendered
-#: texts, so every tariff file states the assumptions it is priced under.
+#: The assumptions register of the design spec section 7, in its order, followed by the product-minimum
+#: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact). The model JSON carries
+#: the rendered texts, so every tariff file states the assumptions it is priced under.
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -84,11 +106,13 @@ ASSUMPTIONS_REGISTER = (
     Assumption("T1", "A terminal stay pays until the fee window of the arrival day ends",
                "Non-home last activities in zones (rare)", "parking_terminal_stay_rule reserved"),
     Assumption("M1", "Maximum stay compares the chargeable duration; a longer stay buys the zone's long-stay "
-               "product", "Ia, Peine, resident zones", "long_stay_product_eur per zone"),
+               "product, and where the zone has none it loses the street product (P1)", "Ia, Peine, resident zones",
+               "long_stay_product_eur per zone"),
     Assumption("A1", "The free share observed for current SrV car commuters applies to all workers/students "
                "of the class", "Work/education in paid zones", "parking_workplace_free_share_shift"),
-    Assumption("C1", "Members (work/education on campus) pay the day product; passes are not modelled",
-               "TU zones", "set member_day_eur to 0 in an arm"),
+    Assumption("C1", "Members (work/education on campus) pay the day product, or the commuter product where the zone "
+               "has a cheaper one (P2); other passes are not modelled", "TU zones",
+               "set member_day_eur to 0 in an arm"),
     Assumption("R1", "Residence inside a resident zone equals permit possession",
                "Non-home activities of residents in their own zone", "none (small)"),
     Assumption("H1", "Home activities are free everywhere", "All", "none"),
@@ -96,6 +120,13 @@ ASSUMPTIONS_REGISTER = (
                "Per zone", "documented per row"),
     Assumption("S1", "Each zone has ONE regime; mixed streets are digitised as separate zones or take the "
                "dominant regime with a note", "Per zone", "notes"),
+    # Parking cost zones v2 (issue #436), lever 2 of the v2 design spec.
+    Assumption("P1", "A stay pays the cheapest product the driver can use (street, garage, commuter): drivers know "
+               "the local products", "Zones with garage or commuter columns",
+               "leave the garage and commuter columns empty in an arm (the v1 pricing)"),
+    Assumption("P2", "commuter_day_eur is the cheapest long-term product per working day (21 working days); regular "
+               "work/education commuters hold it, an effective daily cost for regulars, never a day tariff",
+               "Work/education stays in zones with commuter_day_eur", "commuter_day_eur presence"),
 )
 
 
@@ -158,10 +189,12 @@ def _whole_minutes(value, column: str, where: str) -> int | None:
     return int(minutes)
 
 
-def _hours_to_seconds(value, column: str, where: str) -> int:
+def _hours_to_seconds(value, column: str, where: str, *, required: bool = True) -> int | None:
     hours = _number(value, column, where)
     if hours is None:
-        raise ValueError(f"{where}: {column} is required (decimal hours of the day)")
+        if required:
+            raise ValueError(f"{where}: {column} is required (decimal hours of the day)")
+        return None
     # Decimal hours cannot hold every minute exactly (08:20 = 8.3333...), so the fee boundary is the nearest
     # second; ZoneTariff then checks 0 <= start < end <= 86400.
     return int(round(hours * SECONDS_PER_HOUR))
@@ -183,17 +216,21 @@ def _identifier(value, column: str, where: str) -> str:
 
 
 def _check_fee_window_columns(row: Mapping, fields: Mapping, where: str) -> None:
-    """Report an invalid fee window in the table's decimal-hour columns; ``ZoneTariff`` reports seconds.
+    """Report an invalid street or garage fee window in the table's decimal-hour columns; ``ZoneTariff`` reports
+    seconds.
 
     Checked on the converted seconds, the values the model carries, so a window that rounding to whole seconds
-    empties is caught as well.
+    empties is caught as well. A garage window with one bound empty is left to the family check of ``ZoneTariff``.
     """
-    if not 0 <= fields["fee_start_s"] < fields["fee_end_s"] <= SECONDS_PER_DAY:
-        start_h = _number(row["fee_start_h"], "fee_start_h", where)
-        end_h = _number(row["fee_end_h"], "fee_end_h", where)
-        raise ValueError(f"{where}: fee_start_h = {start_h:g} h and fee_end_h = {end_h:g} h do not form a fee "
-                         "window; the decimal hours of the weekday must satisfy 0 <= fee_start_h < fee_end_h <= 24 "
-                         "(compared after rounding to whole seconds)")
+    for prefix in ("", "garage_"):
+        start_s, end_s = fields[f"{prefix}fee_start_s"], fields[f"{prefix}fee_end_s"]
+        if start_s is None or end_s is None or 0 <= start_s < end_s <= SECONDS_PER_DAY:
+            continue
+        start, end = f"{prefix}fee_start_h", f"{prefix}fee_end_h"
+        start_h, end_h = _number(row[start], start, where), _number(row[end], end, where)
+        raise ValueError(f"{where}: {start} = {start_h:g} h and {end} = {end_h:g} h do not form a fee window; the "
+                         f"decimal hours of the weekday must satisfy 0 <= {start} < {end} <= 24 (compared after "
+                         "rounding to whole seconds)")
 
 
 def _check_empty_cells(fields: Mapping, where: str) -> None:
@@ -214,24 +251,31 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     raises), minutes must be whole numbers, decimal hours become seconds after midnight with
     ``int(round(h * 3600))``, ``resident_exempt`` accepts booleans or the texts true/false (any case), and
     an empty cell (None, NaN or blank text) becomes None. Text cells are parsed as numbers, so a table read
-    with ``dtype=str`` converts the same way. Raises ``ValueError`` for a missing column or a cell it cannot
-    convert exactly; ``ZoneTariff`` then validates the tariff against its zone type. Two of those errors are
-    reported in the table's own terms before ``ZoneTariff`` sees the row: an invalid fee window names
-    ``fee_start_h`` and ``fee_end_h`` in hours, and a filled cell of a column the zone type does not have names
-    that column and says to leave the cell empty.
+    with ``dtype=str`` converts the same way. The schema-2 columns (``OPTIONAL_COLUMNS``) may be absent from the
+    row, which converts like empty cells (a schema-1 row). Raises ``ValueError`` for a missing schema-1 column or a
+    cell it cannot convert exactly; ``ZoneTariff`` then validates the tariff against its zone type. Two of those
+    errors are reported in the table's own terms before ``ZoneTariff`` sees the row: an invalid street or garage fee
+    window names its ``*fee_start_h`` and ``*fee_end_h`` columns in hours, and a filled cell of a column the zone type
+    does not have names that column and says to leave the cell empty.
     """
-    missing = [column for column in TARIFF_COLUMNS if column not in row]
+    missing = [column for column in REQUIRED_COLUMNS if column not in row]
     if missing:
-        raise ValueError(f"tariff row is missing the columns {missing}; spec 5.3 requires {list(TARIFF_COLUMNS)}")
+        raise ValueError(f"tariff row is missing the columns {missing}; spec 5.3 requires {list(REQUIRED_COLUMNS)}")
     zone_id = _identifier(row["zone_id"], "zone_id", "tariff row")
     where = f"tariff row {zone_id!r}"
+
+    def cell(column):
+        return row[column] if column in row else None
+
     fields = {"zone_id": zone_id, "zone_type": _identifier(row["zone_type"], "zone_type", where)}
     for column, field in EURO_COLUMNS.items():
-        fields[field] = _euros_to_cents(row[column], column, where)
+        fields[field] = _euros_to_cents(cell(column), column, where)
     for column in MINUTE_COLUMNS:
-        fields[column] = _whole_minutes(row[column], column, where)
+        fields[column] = _whole_minutes(cell(column), column, where)
     for column, field in HOUR_COLUMNS.items():
         fields[field] = _hours_to_seconds(row[column], column, where)
+    for column, field in GARAGE_HOUR_COLUMNS.items():
+        fields[field] = _hours_to_seconds(cell(column), column, where, required=False)
     fields["resident_exempt"] = _flag(row["resident_exempt"], "resident_exempt", where)
     _check_fee_window_columns(row, fields, where)
     _check_empty_cells(fields, where)
@@ -289,23 +333,24 @@ def _check_sources(sources: Sequence[Mapping]) -> list[dict]:
 
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
                        terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END) -> dict:
-    """The tariff model of spec 5.4 (schema 1) for a tariff table with the spec 5.3 columns.
+    """The tariff model of spec 5.4 (schema 2) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
     an entry with any other key raises, because the Java ``ParkingTariffs`` reader accepts exactly these
-    three (``SOURCE_KEYS``). Only the terminal-stay rule ``until_fee_end`` (T1) exists. Raises ``ValueError``
-    for an empty table, a missing column, a duplicate zone id, an invalid row or invalid sources. The
-    returned dict is plain JSON data: integer cents and seconds, None for "not applicable".
+    three (``SOURCE_KEYS``). Only the terminal-stay rule ``until_fee_end`` (T1) exists. The schema-2 columns are
+    optional: a schema-1 table exports with every schema-2 key null. Raises ``ValueError`` for an empty table, a
+    missing schema-1 column, a duplicate zone id, an invalid row or invalid sources. The returned dict is plain
+    JSON data: integer cents and seconds, None for "not applicable".
     """
     if terminal_stay_rule not in SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
                          f"{SUPPORTED_TERMINAL_STAY_RULES}")
     check_snapshot_date(snapshot_date)
     checked_sources = _check_sources(sources)
-    missing = [column for column in TARIFF_COLUMNS if column not in tariffs.columns]
+    missing = [column for column in REQUIRED_COLUMNS if column not in tariffs.columns]
     if missing:
-        raise ValueError(f"tariff table is missing the columns {missing}; spec 5.3 requires {list(TARIFF_COLUMNS)}")
+        raise ValueError(f"tariff table is missing the columns {missing}; spec 5.3 requires {list(REQUIRED_COLUMNS)}")
     if tariffs.empty:
         raise ValueError("tariff table has no rows")
     zones: dict[str, dict] = {}

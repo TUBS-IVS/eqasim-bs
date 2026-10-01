@@ -1,8 +1,11 @@
-"""The parking tariff JSON export (schema 1, spec 5.4) and its committed fixture model (issue #249)."""
+"""The parking tariff JSON export (schema 2, spec 5.4 plus the v2 columns of issue #436) and its committed fixture
+model (issue #249)."""
 from __future__ import annotations
 
+import csv
 import datetime
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
@@ -11,16 +14,32 @@ import pandas as pd
 import pytest
 
 from braunschweig.parking import tariff_export as te
+from braunschweig.parking import zones as pz
 from braunschweig.parking.cost import ZoneTariff
+from braunschweig.parking.golden_cases import GOLDEN_CASES, golden_case_mismatches
 
-FIXTURE_JSON = Path(__file__).resolve().parent / "fixtures" / "parking" / "parking_tariffs_fixture.json"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "parking"
+FIXTURE_JSON = FIXTURES / "parking_tariffs_fixture.json"
+FIXTURE_CSV = FIXTURES / "parking_tariffs_fixture.csv"
 SNAPSHOT_DATE = "2026-09-28"
-FIXTURE_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
+V1_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
+V2_ZONE_IDS = {"fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2"}
+FIXTURE_ZONE_IDS = V1_ZONE_IDS | V2_ZONE_IDS
 # Table column in euros -> JSON field in cents, written out here independently of the implementation.
 EURO_FIELDS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
                "daily_cap_eur": "daily_cap_cents", "long_stay_product_eur": "long_stay_product_cents",
-               "member_day_eur": "member_day_cents", "guest_day_eur": "guest_day_cents"}
-MINUTE_FIELDS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min")
+               "member_day_eur": "member_day_cents", "guest_day_eur": "guest_day_cents",
+               "garage_hourly_rate_eur": "garage_hourly_rate_cents",
+               "garage_first_period_eur": "garage_first_period_cents",
+               "garage_daily_cap_eur": "garage_daily_cap_cents", "commuter_day_eur": "commuter_day_cents"}
+MINUTE_FIELDS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min",
+                 "garage_billing_unit_min", "garage_first_period_min", "search_time_min")
+# The table columns schema 2 adds (all optional) and the JSON fields they become; null where absent or empty.
+V2_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min", "garage_first_period_eur",
+              "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h", "commuter_day_eur", "search_time_min")
+V2_FIELDS = ("garage_hourly_rate_cents", "garage_billing_unit_min", "garage_first_period_min",
+             "garage_first_period_cents", "garage_daily_cap_cents", "garage_fee_start_s", "garage_fee_end_s",
+             "commuter_day_cents", "search_time_min")
 SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
@@ -56,22 +75,34 @@ def _row(table, row_zone_id: str, /, **changes) -> dict:
     return {**row, **changes}
 
 
-def test_the_model_has_the_schema_1_header_and_the_fixture_zones(model):
-    assert model["schema_version"] == 1
+def test_the_model_has_the_schema_2_header_and_the_fixture_zones(model):
+    assert model["schema_version"] == 2
     assert model["tariff_snapshot_date"] == SNAPSHOT_DATE
     assert model["currency"] == "EUR" and model["weekday_only"] is True
     assert model["terminal_stay_rule"] == "until_fee_end"
     assert set(model["zones"]) == FIXTURE_ZONE_IDS
 
 
-def test_the_documented_zone_entry_is_reproduced_field_by_field(model):
-    # The zone entry of the JSON fixture shape in the plan (schema of spec 5.4).
+def test_the_documented_zone_entries_are_reproduced_field_by_field(model):
+    # The zone entry of the JSON fixture shape in the plan (schema of spec 5.4): a v1 row carries every schema-2
+    # key as null.
     assert model["zones"]["fx_bs_ia"] == {
         "zone_type": "street_paid", "hourly_rate_cents": 180, "billing_unit_min": 1,
         "free_if_stay_at_most_min": None, "first_period_min": None, "first_period_cents": None,
         "daily_cap_cents": None, "max_stay_min": 180, "long_stay_product_cents": 900,
         "member_day_cents": None, "guest_day_cents": None,
-        "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False}
+        "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False, **dict.fromkeys(V2_FIELDS)}
+    # A schema-2 row of the golden fixture table (garage 1.20/h in started hours, first hour 1.20, cap 9.60, all day;
+    # commuter 3.76 per working day; 5 min search time).
+    assert model["zones"]["fx_bs_ib_v2"] == {
+        "zone_type": "street_paid", "hourly_rate_cents": 180, "billing_unit_min": 1,
+        "free_if_stay_at_most_min": None, "first_period_min": None, "first_period_cents": None,
+        "daily_cap_cents": 900, "max_stay_min": None, "long_stay_product_cents": None,
+        "member_day_cents": None, "guest_day_cents": None,
+        "fee_start_s": 32400, "fee_end_s": 72000, "resident_exempt": False,
+        "garage_hourly_rate_cents": 120, "garage_billing_unit_min": 60, "garage_first_period_min": 60,
+        "garage_first_period_cents": 120, "garage_daily_cap_cents": 960, "garage_fee_start_s": 0,
+        "garage_fee_end_s": 86400, "commuter_day_cents": 376, "search_time_min": 5}
 
 
 def test_money_is_the_table_euros_in_whole_cents_and_empty_cells_are_null(model, table):
@@ -91,16 +122,24 @@ def test_money_is_the_table_euros_in_whole_cents_and_empty_cells_are_null(model,
 def test_fee_windows_are_the_table_hours_in_seconds(model, table):
     for row in table.to_dict(orient="records"):
         zone = model["zones"][row["zone_id"]]
-        assert zone["fee_start_s"] == int(round(float(row["fee_start_h"]) * 3600)), row["zone_id"]
-        assert zone["fee_end_s"] == int(round(float(row["fee_end_h"]) * 3600)), row["zone_id"]
+        for prefix in ("", "garage_"):
+            for bound in ("start", "end"):
+                hours = row[f"{prefix}fee_{bound}_h"]
+                expected = None if _is_empty(hours) else int(round(float(hours) * 3600))
+                assert zone[f"{prefix}fee_{bound}_s"] == expected, (row["zone_id"], prefix, bound)
     assert (model["zones"]["fx_sz"]["fee_start_s"], model["zones"]["fx_wob"]["fee_end_s"]) == (36000, 86400)
+    assert (model["zones"]["fx_wob_v2"]["garage_fee_start_s"], model["zones"]["fx_wob_v2"]["garage_fee_end_s"]) == (
+        0, 86400)
 
 
-def test_the_assumptions_render_the_register_of_spec_section_7(model):
+def test_the_assumptions_render_the_register_of_spec_section_7_and_the_product_minimum(model):
+    # Spec section 7 (v1) followed by P1 (the cheapest usable product) and P2 (the commuter product per working day)
+    # of the v2 spec, lever 2.
     assumptions = model["assumptions"]
     assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9]: .+", text) for text in assumptions)
     assert [text.split(":")[0] for text in assumptions] == [
-        f"ASSUMPTION {assumption_id}" for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1")]
+        f"ASSUMPTION {assumption_id}"
+        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2")]
 
 
 def test_sources_carry_64_hex_content_hashes_and_posix_paths(model):
@@ -188,16 +227,18 @@ def test_row_conversion_rejects_cells_it_cannot_convert_exactly(table, changes, 
         te.tariff_row_to_zone(_row(table, "fx_bs_ia", **changes))
 
 
+@pytest.mark.parametrize("prefix, zone_id", [("", "fx_bs_ia"), ("garage_", "fx_bs_ib_v2")], ids=["street", "garage"])
 @pytest.mark.parametrize("fee_start_h, fee_end_h", [(20.0, 9.0), (9.0, 9.0), (9.0, 24.5)],
                          ids=["reversed", "zero_length", "past_midnight"])
-def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, fee_start_h, fee_end_h):
+def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, prefix, zone_id, fee_start_h, fee_end_h):
     # The table holds decimal hours; the message must speak in those columns, not in the derived seconds.
+    start, end = f"{prefix}fee_start_h", f"{prefix}fee_end_h"
     with pytest.raises(ValueError) as error:
-        te.tariff_row_to_zone(_row(table, "fx_bs_ia", fee_start_h=fee_start_h, fee_end_h=fee_end_h))
+        te.tariff_row_to_zone(_row(table, zone_id, **{start: fee_start_h, end: fee_end_h}))
     message = str(error.value)
-    assert message.startswith("tariff row 'fx_bs_ia': ")
-    assert f"fee_start_h = {fee_start_h:g} h" in message and f"fee_end_h = {fee_end_h:g} h" in message
-    assert "0 <= fee_start_h < fee_end_h <= 24" in message
+    assert message.startswith(f"tariff row {zone_id!r}: ")
+    assert f"{start} = {fee_start_h:g} h" in message and f"{end} = {fee_end_h:g} h" in message
+    assert f"0 <= {start} < {end} <= 24" in message
     assert "fee_start_s" not in message and "fee_end_s" not in message and "86400" not in message
 
 
@@ -206,6 +247,10 @@ def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, fee_start
     ("fx_res_a", {"daily_cap_eur": 9.00}, "daily_cap_eur"),
     ("fx_res_a", {"free_if_stay_at_most_min": 30}, "free_if_stay_at_most_min"),
     ("fx_campus", {"hourly_rate_eur": 1.80}, "hourly_rate_eur"),
+    # Schema 2: no garage on campus, no commuter product in a resident zone (A4).
+    ("fx_campus", {"garage_hourly_rate_eur": 1.20, "garage_billing_unit_min": 60, "garage_daily_cap_eur": 9.60,
+                   "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0}, "garage_hourly_rate_eur"),
+    ("fx_res_a", {"commuter_day_eur": 3.76}, "commuter_day_eur"),
 ])
 def test_a_cell_the_zone_type_does_not_have_is_named_with_the_hint_to_leave_it_empty(table, zone_id, changes, column):
     with pytest.raises(ValueError) as error:
@@ -241,6 +286,43 @@ def test_content_hash_ignores_the_checkout_line_endings(tmp_path):
     lf.write_bytes(b"a,b\n1,2\n")
     crlf.write_bytes(b"a,b\r\n1,2\r\n")
     assert te.content_sha256(lf) == te.content_sha256(crlf) == hashlib.sha256(b"a,b\n1,2\n").hexdigest()
+
+
+def _schema_1_csv(path: Path) -> Path:
+    """The v1 rows of the fixture CSV in the schema-1 layout: the schema-2 columns removed, every cell kept as text."""
+    lines = FIXTURE_CSV.read_text(encoding="utf-8").splitlines()
+    comments = [line for line in lines if line.startswith("#")]
+    header, *rows = list(csv.reader(line for line in lines if not line.startswith("#")))
+    keep = [index for index, column in enumerate(header) if column not in V2_COLUMNS]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerows([[header[index] for index in keep]] + [[row[index] for index in keep] for row in rows
+                                                              if row[header.index("zone_id")] in V1_ZONE_IDS])
+    path.write_text("\n".join(comments) + "\n" + buffer.getvalue(), encoding="utf-8")
+    return path
+
+
+def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_unchanged(tmp_path, model, sources):
+    """Review focus 1 (Python): a schema-1 CSV, without any of the nine schema-2 columns, still loads, validates and
+    exports; every schema-2 field is null, every zone equals its schema-2 fixture entry, and G01..G38, L01..L08 and
+    L01Z..L08Z price on it exactly as their golden values say."""
+    path = _schema_1_csv(tmp_path / "schema_1_tariffs.csv")
+    header = next(line for line in path.read_text(encoding="utf-8").splitlines() if not line.startswith("#"))
+    assert header.split(",") == list(pz.SCHEMA_1_TARIFF_COLUMNS)
+    table = pz.load_tariffs(path)
+    assert list(table.columns) == list(pz.TARIFF_COLUMNS) and table[list(V2_COLUMNS)].isna().all().all()
+    pz.validate_tariffs(table, allow_fixture_marker=True)
+    schema_1_model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
+    assert schema_1_model["schema_version"] == 2
+    assert schema_1_model["zones"] == {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
+    assert all(zone[field] is None for zone in schema_1_model["zones"].values() for field in V2_FIELDS)
+    # A frame that lacks the schema-2 columns altogether (not read through the loader) exports the same zones.
+    assert te.build_tariff_model(table.drop(columns=list(V2_COLUMNS)), snapshot_date=SNAPSHOT_DATE,
+                                 sources=sources)["zones"] == schema_1_model["zones"]
+    from scripts.export_parking_golden_cases import zones_from_model
+    v1_cases = [case for case in GOLDEN_CASES if not case["id"].startswith("V")]
+    assert len(v1_cases) == 38 + 8 + 8
+    assert golden_case_mismatches(zones_from_model(schema_1_model), v1_cases) == []
 
 
 def test_the_committed_fixture_tariff_model_is_in_sync(table, sources):

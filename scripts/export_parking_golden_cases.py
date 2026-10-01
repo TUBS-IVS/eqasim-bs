@@ -1,4 +1,4 @@
-"""Regenerate the parking golden-case and fixture tariff-model JSON files shared with the Java tests (#249).
+"""Regenerate the parking golden-case and fixture tariff-model JSON files shared with the Java tests (#249, #436).
 
 The fixture tariff set is INSPIRED by the real tariff table but is a test set: it pins arithmetic, not
 truth. The script
@@ -6,13 +6,14 @@ truth. The script
 1. loads the fixture tariff table ``tests/fixtures/parking/parking_tariffs_fixture.csv`` with the production
    loader ``braunschweig.parking.zones.load_tariffs`` (the documented CSV: ``#`` comment lines, identifier
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
-2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``) and
-   evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``) with the Python
+2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 2)
+   and evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38,
+   L01..L08, L01Z..L08Z, V01..V14, each priced under its own minimum stay ``minimum_stay_min``) with the Python
    reference ``braunschweig.parking.cost``; it writes nothing when a result differs from its hard-coded
    expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
-   ``parking_golden_cases.json`` (``schema_version``, the fixture ``tariffs`` in cents, the ``cases``; read by
-   ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
+   ``parking_golden_cases.json`` (``schema_version`` ``GOLDEN_SCHEMA_VERSION``, the fixture ``tariffs`` in
+   cents, the ``cases``; read by ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
    ``parking_tariffs_fixture.json`` (the spec 5.4 tariff model of the fixture set; ``sources`` holds the
    path and LF-normalised sha256 of the table it was built from).
 
@@ -48,11 +49,15 @@ FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
 FIXTURE_TARIFFS_CSV = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
 GOLDEN_CASES_FILE_NAME = "parking_golden_cases.json"
 FIXTURE_MODEL_FILE_NAME = "parking_tariffs_fixture.json"
-GOLDEN_SCHEMA_VERSION = 1
+#: 2 since parking cost zones v2 (issue #436): every case carries ``minimum_stay_min`` and the ``tariffs`` are zone
+#: entries of tariff schema 2. A reader of version 1 would price every case without its minimum stay.
+GOLDEN_SCHEMA_VERSION = 2
 #: Snapshot label of the fixture tariff model: the date the fixture set was defined. A test label, not a
 #: real tariff state.
 FIXTURE_SNAPSHOT_DATE = "2026-09-28"
 FIXTURE_SOURCE_ID = "parking_tariffs_fixture"
+
+
 def read_fixture_tariffs_csv(path: Path) -> pd.DataFrame:
     """The fixture tariff table read by the production loader (``#`` comment lines, identifiers as text)."""
     return zones.load_tariffs(path)

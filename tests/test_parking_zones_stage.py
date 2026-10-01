@@ -28,7 +28,8 @@ FIXTURES = REPO / "tests" / "fixtures" / "parking"
 COMMITTED_DATA = REPO / "eqasim-data" / "data"
 STAGE_LOGGER = "braunschweig.parking.zones_stage"
 
-FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"]
+FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac",
+                    "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2"]
 DEFAULT_PATHS = {
     "parking_zones_path": "braunschweig/parking/parking_zones_2026.geojson",
     "parking_tariffs_path": "braunschweig/parking/parking_tariffs_2026.csv",
@@ -257,7 +258,7 @@ def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fi
     with caplog.at_level(logging.INFO, logger=STAGE_LOGGER):
         _release(fixture_data)
     [line] = [record.getMessage() for record in caplog.records if "zone release:" in record.getMessage()]
-    assert "8 zones (campus 1, resident_zone 1, street_paid 6) in 4 municipalities" in line
+    assert "12 zones (campus 2, resident_zone 1, street_paid 9) in 4 municipalities" in line
     assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
     assert "free shares for 6 workplace classes" in line
 
@@ -332,3 +333,7 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert set(attach.free_share_by_class(release["workplace_shares"]).index) == set(pz.WORKPLACE_CLASSES)
     assert [source["path"] for source in release["sources"]] == [DEFAULT_PATHS[key] for key in PATH_KEYS]
     assert len(zones_stage.validate(context)) == 64
+    # The committed table, whatever schema-2 columns it carries yet, exports as the schema-2 tariff model the
+    # preparation writes.
+    model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"])
+    assert model["schema_version"] == 2 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
