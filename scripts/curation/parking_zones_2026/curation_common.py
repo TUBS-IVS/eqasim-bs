@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import unicodedata
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
@@ -119,3 +120,19 @@ def load_network_links(network_path) -> gpd.GeoDataFrame:
         records.append({"link_id": link["id"], "name": link["attrs"].get("osm:way:name", ""),
                         "highway": link["attrs"].get("osm:way:highway", ""), "geometry": LineString([start, end])})
     return gpd.GeoDataFrame(records, geometry="geometry", crs=METRIC_CRS)
+
+
+#: German letters in the ASCII form of the committed parking files (umlauts as two letters, sharp s as ss).
+GERMAN_ASCII = str.maketrans({"\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00c4": "Ae", "\u00d6": "Oe",
+                              "\u00dc": "Ue", "\u00df": "ss", "\u1e9e": "SS"})
+
+
+def ascii_transliteration(text: str) -> str:
+    """``text`` in the ASCII form of the committed files: German letters as ae/oe/ue/ss, other accents dropped
+    (NFKD); a character that has no ASCII form raises instead of being replaced silently."""
+    folded = unicodedata.normalize("NFKD", text.translate(GERMAN_ASCII))
+    folded = "".join(character for character in folded if not unicodedata.combining(character))
+    offending = sorted({character for character in folded if ord(character) > 127})
+    if offending:
+        raise SystemExit(f"no ASCII form for {offending} in the QA table")
+    return folded

@@ -3,8 +3,9 @@
 Checks (via ``braunschweig.parking.zones``, plus the per-row contract of the tariff model through
 ``braunschweig.parking.tariff_export.tariff_row_to_zone``): the tariff table (types, required fields per zone type,
 fee windows, paired fields, workplace classes, no test-set marker; every row must also convert into the tariff model
-the MATSim side reads), the zone polygons (EPSG:25832 after loading, valid, provenance,
-pairwise overlap <= ``OVERLAP_TOLERANCE_M2``), one tariff row per polygon and vice versa, the coverage register (one status
+the MATSim side reads), the zone polygons (EPSG:25832 after loading, valid as stored: no polygon may need the repair of
+the loader, ``max_repairs=0``; provenance, pairwise overlap <= ``OVERLAP_TOLERANCE_M2``), one tariff row per polygon and
+vice versa, the coverage register (one status
 row per municipality, reasons, sources, ``zoned`` <=> tariff rows, hence a polygon for every zoned municipality) and its
 size against the municipality universe of the pipeline (``--expected-municipality-count``), and the curation QA of the
 rule-based cores (``--qa-path``, ``parking_zones_2026_qa.csv``; required as soon as a polygon has geometry_source
@@ -205,7 +206,8 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
     check_tariff_model_rows(tariffs)
-    zones = pz.load_zone_polygons(data_path / zones_path)
+    # the committed polygons must be valid as stored: a polygon the loader has to repair is not the polygon the file states
+    zones = pz.load_zone_polygons(data_path / zones_path, max_repairs=0)
     markers = sorted(zones.loc[zones["geometry_source"] == pz.FIXTURE_MARKER, "zone_id"])
     if markers:
         raise ValueError(f"zone polygons carry the test-set marker {pz.FIXTURE_MARKER!r}: {markers}")

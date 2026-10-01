@@ -330,6 +330,9 @@ def test_load_zone_polygons_repairs_a_self_intersecting_ring(tmp_path, caplog):
     assert repaired.geometry.is_valid.all()
     assert repaired.geometry.iloc[0].area > 0
     assert "repaired 1" in caplog.text
+    # the committed release must be valid as stored (the validator and the assembly pass max_repairs=0)
+    with pytest.raises(ValueError, match="1 invalid polygon\\(s\\) would need a repair, at most 0 allowed"):
+        pz.load_zone_polygons(path, max_repairs=0)
 
 
 ERODED_ZONE = "fx_bs_ib"
@@ -669,10 +672,21 @@ def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsy
     assert message in capsys.readouterr().out
 
 
+#: The source wording of controller ruling R-C1 (spec Amendment C), binding for the committed release.
+BRAUNSCHWEIG_PROVENANCE = ("Stadt Braunschweig, published fee zone map (2025-11-26) and Amtsblatt 2024-04-30 map annex; "
+                           "digitised (owner-supplied package 2026-10-01); working accuracy 25 m; base map Open GeoData "
+                           "dl-de/by-2-0")
+WOLFSBURG_PROVENANCE = ("Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024); open reuse licence not verified; "
+                        "used by owner decision 2026-10-01")
+
+
 def test_committed_zones_carry_the_licence_notice():
     document = json.loads((COMMITTED_PARKING_DIR / "parking_zones_2026.geojson").read_text(encoding="utf-8"))
     assert "ODbL" in document["license"]
     assert "OpenStreetMap contributors" in document["attribution"]
+    # spec Amendment C: the licence is stated per source; no claim that every polygon derives from OpenStreetMap
+    assert "every polygon is derived from OpenStreetMap" not in document["license"]
+    assert BRAUNSCHWEIG_PROVENANCE in document["license"] and WOLFSBURG_PROVENANCE in document["license"]
 
 
 def test_committed_parking_files_are_ascii():
@@ -708,7 +722,8 @@ def test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_residen
 
 
 def test_committed_zones_carry_real_provenance_only():
-    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson")
+    # valid as stored: the first Task 1d release held a wob_tarifzone_2 that the loader repaired at every load
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0)
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
     assert set(zones["geometry_source"]) <= set(pz.GEOMETRY_SOURCES)
     assert not (tariffs["source_url"] == pz.FIXTURE_MARKER).any()
@@ -716,6 +731,24 @@ def test_committed_zones_carry_real_provenance_only():
     # every assumption-grade fee window is explained in its row
     flagged = tariffs[tariffs["fee_window_source"] == "assumption"]
     assert flagged["notes"].str.contains("ASSUMPTION F1").all()
+
+
+def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
+    # spec Amendment C2: three tariff zones of buffered street sections (ASSUMPTION C-a, 50 m) replace wob_innenstadt;
+    # each row opens with the R-C1 wording, bills by ASSUMPTION C-b (ruling R-T1d-a) and invents no value the city
+    # does not publish for the sections (ruling R-T1d-c: no cap, maximum stay or long-stay product)
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0).set_index("zone_id")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
+    wolfsburg = tariffs[tariffs["municipality_ags"] == "03103000"].set_index("zone_id")
+    assert sorted(wolfsburg.index) == ["wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3"]
+    assert "wob_innenstadt" not in zones.index
+    assert (zones.loc[wolfsburg.index, "geometry_source"] == pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE).all()
+    assert (zones.loc[wolfsburg.index, "section_buffer_m"] == 50.0).all()
+    assert wolfsburg["notes"].str.startswith(WOLFSBURG_PROVENANCE).all()
+    assert wolfsburg["notes"].str.contains("ASSUMPTION C-b").all() and (wolfsburg["billing_unit_min"] == 30).all()
+    unpublished = ["free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur", "max_stay_min",
+                   "long_stay_product_eur"]
+    assert wolfsburg[unpublished].isna().all().all()
 
 
 def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys, monkeypatch):

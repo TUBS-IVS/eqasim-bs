@@ -57,9 +57,11 @@ ordinance_map, so the v1 precedence still cuts the BgA car parks out, and ``fini
 reconstructed southern section of 1a in ``reconstructed_section_m2``) and replaces wob_innenstadt by one zone per
 Wolfsburg tariff zone, the area within 50 m of its Handyparkzonen street sections split by the nearer section
 (C2, geometry_source municipal_street_sections_buffered, provenance ``section_buffer_m``; simplified and cut with the
-clearance of the rule-based sources, ties to the higher tariff, parts below ``MINIMUM_PART_M2`` dropped). Goslar is a
-cross-check only (C4). The QA table ``--municipal-qa-out`` (``municipal_zones.qa_rows``) is measured in the written and
-reloaded zone file; ``--municipal-tariffs`` checks the Wolfsburg rows of the tariff table against the layer attributes
+clearance of the rule-based sources, ties to the higher tariff, then opened by ``MUNICIPAL_OPENING_M`` so that no sliver
+narrower than twice that radius reaches the file, parts below ``MINIMUM_PART_M2`` dropped). Goslar is a cross-check
+only (C4). The QA table ``--municipal-qa-out`` (``municipal_zones.qa_rows``) is measured in the written and reloaded
+zone file, and the step fails when a polygon of that file would need the loader's repair (``max_repairs=0``);
+``--municipal-tariffs`` checks the Wolfsburg rows of the tariff table against the layer attributes and ASSUMPTION C-b
 (``municipal_zones.check_tariff_rows``). The licence and attribution members then name the municipal sources (ruling
 R-C1). Without ``--municipal-dir`` the output is the previous release byte for byte.
 
@@ -90,7 +92,6 @@ import json
 import math
 import pickle
 import sys
-import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -148,6 +149,11 @@ EROSION_CUT_CLEARANCE_M = 0.05
 RULE_GEOMETRY_SOURCES = tuple(pz.RULE_PROVENANCE_COLUMNS)
 #: The OSM rule cores, of which a zone may vanish in the cuts (it is then not written); every other zone must survive.
 OPTIONAL_RULE_SOURCES = (pz.EROSION_GEOMETRY_SOURCE, pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE)
+#: Opening radius for the buffered municipal sections after the cuts, m (spec Amendment C2): a mitred erosion and
+#: dilation by it removes every part narrower than twice the radius, such as the slivers that the cut clearance leaves
+#: between two tariff zones and that the 1e-7 degree rounding of the zone file turns into self-intersections (seen in
+#: wob_tarifzone_2 of the first Task 1d release, task review fix round 1).
+MUNICIPAL_OPENING_M = 0.05
 LICENSE_V2 = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, the OSM on-street "
               "parking and car-park tags of the osm_fee_erosion zones, or a georeference on OSM street centrelines); "
               "Open Database License 1.0, https://opendatacommons.org/licenses/odbl/1-0/")
@@ -514,7 +520,8 @@ def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
         zone.update(zone_record(zone_id, zone["_ags"], values["geometry"], "ordinance_map", mz.BRAUNSCHWEIG_FEE_MAP_URL,
                                 values["note"], source_date=mz.MUNICIPAL_DIGITISED_ON,
                                 digitised_on=mz.MUNICIPAL_DIGITISED_ON))
-    wolfsburg = mz.wolfsburg_tariff_zones(inputs, simplify_m=SIMPLIFY_M, minimum_part_m2=MINIMUM_PART_M2)
+    wolfsburg = mz.wolfsburg_tariff_zones(inputs, simplify_m=SIMPLIFY_M, clearance_m=EROSION_CUT_CLEARANCE_M,
+                                          opening_m=MUNICIPAL_OPENING_M, minimum_part_m2=MINIMUM_PART_M2)
     mz.print_tariff_evidence(wolfsburg["evidence"])
     tariff_zones = [zone_record(wolfsburg["zone_ids"][key], mz.WOB_AGS, wolfsburg["split"]["zones"][key],
                                 pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, wolfsburg["source_url"], wolfsburg["notes"][key],
@@ -533,22 +540,36 @@ def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
     return zones, context
 
 
+def open_thin_features(geometry, opening_m: float):
+    """``geometry`` without its parts narrower than twice ``opening_m``: a mitred morphological opening (erosion, then
+    dilation), clipped to the input, so the polygon never grows into a neighbour."""
+    opened = geometry.buffer(-opening_m, join_style=2).buffer(opening_m, join_style=2)
+    return opened.intersection(geometry).buffer(0)
+
+
 def finish_municipal_zones(zones: list, context: dict) -> None:
-    """After the precedence: the flag ``reconstructed_section_m2`` of bs_zone_ia and bs_zone_ib (the area of the final
-    polygon inside the package's reconstructed section, 0 where there is none), and the parts the Wolfsburg zones lost
-    to the minimum part size, logged."""
+    """After the precedence: the buffered Wolfsburg zones opened by ``MUNICIPAL_OPENING_M`` (parts below their minimum
+    part size dropped again), the area each loses logged; the flag ``reconstructed_section_m2`` of bs_zone_ia and
+    bs_zone_ib (the area of the final polygon inside the package's reconstructed section, 0 where there is none)."""
     southern = mz.reconstructed_section(context["inputs"])
     by_id = {zone["zone_id"]: zone for zone in zones}
-    for zone_id in context["braunschweig"]:
-        by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN] = round(float(by_id[zone_id]["geometry"].intersection(
-            southern).area), 1)
     wolfsburg = context["wolfsburg"]
     for key in wolfsburg["ranking"]:
         zone_id = wolfsburg["zone_ids"][key]
-        split = wolfsburg["split"]["zones"][key]
+        zone, split = by_id[zone_id], wolfsburg["split"]["zones"][key]
+        cut = zone["geometry"]
+        opened = cc.largest_parts(open_thin_features(cut, MUNICIPAL_OPENING_M), zone["_minimum_part_m2"])
+        if opened.is_empty:
+            raise SystemExit(f"{zone_id}: nothing is left after the opening by {MUNICIPAL_OPENING_M} m")
+        zone["geometry"] = opened
         slivers = [part for part in getattr(split, "geoms", [split]) if part.area < MINIMUM_PART_M2]
-        print(f"{zone_id}: {split.area:.0f} m2 after the split, {by_id[zone_id]['geometry'].area:.0f} m2 after the "
-              f"precedence; {len(slivers)} part(s) below {MINIMUM_PART_M2:g} m2 ({sum(p.area for p in slivers):.1f} m2)")
+        print(f"{zone_id}: {split.area:.0f} m2 after the split, {cut.area:.1f} m2 after the precedence, "
+              f"{opened.area:.1f} m2 after the opening by {MUNICIPAL_OPENING_M:g} m ({opened.area - cut.area:+.3f} m2, "
+              f"{len(getattr(cut, 'geoms', [cut]))} -> {len(getattr(opened, 'geoms', [opened]))} parts); "
+              f"{len(slivers)} split part(s) below {MINIMUM_PART_M2:g} m2 ({sum(p.area for p in slivers):.1f} m2)")
+    for zone_id in context["braunschweig"]:
+        by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN] = round(float(by_id[zone_id]["geometry"].intersection(
+            southern).area), 1)
     print("reconstructed_section_m2: " + ", ".join(f"{zone_id} {by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN]}"
                                                   for zone_id in context["braunschweig"]))
 
@@ -744,32 +765,16 @@ def qa_table_rows(erosion: dict, zones: list, pieces: list, counterfactuals=()) 
     return rows
 
 
-#: German letters in the ASCII form of the committed parking files (umlauts as two letters, sharp s as ss).
-_GERMAN_ASCII = str.maketrans({"\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00c4": "Ae", "\u00d6": "Oe",
-                               "\u00dc": "Ue", "\u00df": "ss", "\u1e9e": "SS"})
-
-
-def ascii_transliteration(text: str) -> str:
-    """``text`` in the ASCII form of the committed files: German letters as ae/oe/ue/ss, other accents dropped
-    (NFKD); a character that has no ASCII form raises instead of being replaced silently."""
-    folded = unicodedata.normalize("NFKD", text.translate(_GERMAN_ASCII))
-    folded = "".join(character for character in folded if not unicodedata.combining(character))
-    offending = sorted({character for character in folded if ord(character) > 127})
-    if offending:
-        raise SystemExit(f"no ASCII form for {offending} in the QA table")
-    return folded
-
-
 def write_qa_table(path, rows: list) -> None:
     """The QA table with its header: the intro and one '# <column>: <definition>' line per column. OSM names are
-    written in their ASCII transliteration (``ascii_transliteration``), like every committed parking file."""
+    written in their ASCII transliteration (``curation_common.ascii_transliteration``), like every committed parking file."""
     missing = [column for column in pz.ZONE_QA_COLUMNS if column not in QA_COLUMN_GLOSSARY]
     if missing or len(QA_COLUMN_GLOSSARY) != len(pz.ZONE_QA_COLUMNS):
         raise SystemExit(f"QA_COLUMN_GLOSSARY and ZONE_QA_COLUMNS differ: missing {missing}")
     header = [f"# {line}" for line in QA_INTRO] + [f"# {column}: {QA_COLUMN_GLOSSARY[column]}"
                                                     for column in pz.ZONE_QA_COLUMNS]
     table = pd.DataFrame(rows, columns=list(pz.ZONE_QA_COLUMNS))
-    text = ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
+    text = cc.ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
     Path(path).write_text(text, encoding="utf-8", newline="\n")
     print(f"written {path} with {len(table)} rows: " + ", ".join(
         f"{row['ags']} {row['q4_decision']}{' applied ' + row['zone_ids'] if row['applied'] == 'true' else ''}"
@@ -1409,7 +1414,7 @@ def write_supply_share_qa(path, rows: list) -> None:
     header = [f"# {line}" for line in SUPPLY_QA_INTRO] + [f"# {column}: {SUPPLY_QA_COLUMN_GLOSSARY[column]}"
                                                            for column in sq.SUPPLY_SHARE_QA_COLUMNS]
     table = pd.DataFrame(rows, columns=list(sq.SUPPLY_SHARE_QA_COLUMNS))
-    text = ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
+    text = cc.ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
     Path(path).write_text(text, encoding="utf-8", newline="\n")
     print(f"written {path} with {len(table)} rows: " + ", ".join(f"{row['ags']} {row['decision']}" for row in rows))
 
@@ -1454,7 +1459,7 @@ def write_paid_share_release(path, frame: pd.DataFrame, provenance) -> None:
                          "paid_share": [f"{value:.6f}" for value in frame["paid_share"]],
                          "usable_spaces": [f"{value:.2f}" for value in frame["usable_spaces"]],
                          "heuristic_capacity_share": [f"{value:.6f}" for value in frame["heuristic_capacity_share"]]})
-    text = ascii_transliteration("\n".join(header) + "\n" + body.to_csv(index=False, lineterminator="\n"))
+    text = cc.ascii_transliteration("\n".join(header) + "\n" + body.to_csv(index=False, lineterminator="\n"))
     Path(path).write_bytes(sq.deterministic_gzip(text))
     counts = frame["municipality_ags"].value_counts().sort_index()
     print(f"written {path} with {len(frame)} classified cells: " + ", ".join(f"{ags} {count}"
@@ -1773,8 +1778,9 @@ def main(argv=None) -> int:
     write_zone_file(frame, out, municipal=municipal is not None)
     print(f"written {out} with {len(frame)} zones")
     if municipal is not None:
-        # measured in the written file, as the validator measures it
-        mz.write_qa_table(args.municipal_qa_out, mz.qa_rows(municipal, pz.load_zone_polygons(out)))
+        # measured in the written file, as the validator measures it; a polygon the loader would have to repair after
+        # the rounding of the file makes the step fail (max_repairs=0)
+        mz.write_qa_table(args.municipal_qa_out, mz.qa_rows(municipal, pz.load_zone_polygons(out, max_repairs=0)))
         if args.municipal_tariffs:
             mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], pz.load_tariffs(args.municipal_tariffs))
     if args.erosion_dir:

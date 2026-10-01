@@ -313,8 +313,11 @@ acquisition:
     decides: a generalised Voronoi split of the section boundaries sampled every 1 m (the split line lies within
     0.5 m of the exact one), each tariff zone competing with its sections minus those of every higher tariff, so
     that ties (overlapping sections and the points equidistant from both) go to the higher hourly rate; the zones are
-    then simplified by 0.5 m and cut in tariff order with the 5 cm clearance of the rule-based sources, and parts below
-    20 m2 are dropped (the sliver rule of every v1 zone, not the 1 ha island rule Q2 of the OSM rule cores; none
+    then simplified by 0.5 m and cut in tariff order with the 5 cm clearance of the rule-based sources, opened by 5 cm
+    (a mitred erosion and dilation, clipped to the zone, that removes every part narrower than 10 cm, such as the
+    slivers the clearance leaves between two tariff zones, which the rounding of the file would turn into
+    self-intersections; it removed 0.014 m2 from wob_tarifzone_2 and less than 0.001 m2 from the other two), and parts
+    below 20 m2 are dropped (the sliver rule of every v1 zone, not the 1 ha island rule Q2 of the OSM rule cores; none
     occurred). The three Wolfsburg tariff rows come from the section attributes (data record parking_tariffs_2026).
     C4: gs_altstadt_zone1 stays (centre approximation); the resident and facility areas of the Goslar service are
     compared with it. Every area and overlap (the package zones against the v1 tracings, both before the precedence
@@ -345,9 +348,11 @@ verification:
     Listed as D5 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
     braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml since
     ADR-0139).
-    braunschweig.parking.zones.load_zone_polygons reprojects to EPSG:25832, repairs invalid rings (0 on
-    2026-09-30), checks provenance fields and pairwise overlap <= 1 m2; tests/test_parking_zones.py
-    (test_committed_parking_data_is_valid, test_committed_zones_carry_real_provenance_only,
+    braunschweig.parking.zones.load_zone_polygons reprojects to EPSG:25832, repairs invalid rings, checks
+    provenance fields and pairwise overlap <= 1 m2; the committed file must need no repair: the validator and the
+    assembly reload it with max_repairs=0, which raises on any invalid polygon (0 repairs since fix round 1 of Task
+    1d, 2026-10-01; the first Amendment C release held an invalid wob_tarifzone_2 that every load repaired);
+    tests/test_parking_zones.py (test_committed_parking_data_is_valid, test_committed_zones_carry_real_provenance_only,
     test_committed_zones_carry_the_licence_notice, test_committed_parking_files_are_ascii,
     test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_resident_zone) runs the validator and
     pins the licence members, ASCII text and the cut-out islands of the committed files.
@@ -374,10 +379,12 @@ verification:
     braunschweig.parking.municipal_zone_qa.validate_municipal_qa recomputes the shares from the recorded areas and
     compares every release area with its polygon, so a regenerated release cannot keep a stale table;
     tests/test_parking_municipal_zones.py (the step on synthetic packages: C1 with the v1 cut-outs and the
-    reconstruction flag, C2 with the nearest-section split and the tie rule, the Goslar cross-check, the provenance and
-    licence wording, the refusal of changed packages, the Wolfsburg tariff evidence) and tests/test_parking_zones.py
+    reconstruction flag, C2 with the nearest-section split and the tie rule, also on irregular float sections, the
+    opening of thin features, the Goslar cross-check, the provenance and licence wording, the refusal of changed
+    packages, the Wolfsburg tariff evidence) and tests/test_parking_zones.py
     (test_municipal_zone_provenance_is_validated,
-    test_validator_requires_the_municipal_qa_table_of_the_municipal_zones) pin it.
+    test_validator_requires_the_municipal_qa_table_of_the_municipal_zones,
+    test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones) pin it.
 requirements:
   synthesis: not_needed
   matsim: required
@@ -513,10 +520,13 @@ notes: >-
   production default, ZONES runs place and price car stays on the new polygons, so parking costs change in
   Braunschweig (zone Ia now includes its southern part) and above all in Wolfsburg, where the three tariff zones cover
   1.565 km2 instead of the 0.592 km2 of wob_innenstadt (activity counts in the curation check below) at the rates of
-  their tariff rows, billed per started half hour (ASSUMPTION C-b). No day cap or maximum stay is published for the
-  street sections and none is invented, so a stay over the whole fee window of tariff zone 1 (7-18 h) costs 22.00
-  EUR, where the garage regime of the v1 row capped the day at 6.00 EUR; the garage products of plan Task 4 add the
-  Wolfsburg garages as an alternative product. Runs with parking_zones_enabled false (OFF, LEGACY) are not affected.
+  their tariff rows, billed per started half hour (ASSUMPTION C-b). The unpriced remainder: 126,265 m2 (21.3 %) of
+  wob_innenstadt lie in no new zone, where parking becomes free by ASSUMPTION Z1 (in the curation check below 62 of
+  its 283 activities, 41 of them non-home; the 21 home activities were free by H1 before). No day cap or maximum
+  stay is published for the street sections and none is invented, so a stay over the whole fee window of tariff zone
+  1 (7-18 h) costs 22.00 EUR, where the garage regime of the v1 row capped the day at 6.00 EUR; the garage products
+  of plan Task 4 add the Wolfsburg garages as an alternative product. Runs with parking_zones_enabled false (OFF,
+  LEGACY) are not affected.
   Curation check, not a validation: assign_zones over the 47,362 activities of the local 1 % scenario
   eqasim-data/output_bs (2026-04-29) puts 2,111 (4.5 %) into a zone since Amendment C, 1,950 (4.1 %) before
   (counts before in brackets): Ia 386 (375), Ib 213 (220), Wolfsburg tariff zones 1, 2 and 3 254, 131 and 55

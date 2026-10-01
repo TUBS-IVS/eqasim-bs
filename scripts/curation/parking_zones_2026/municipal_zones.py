@@ -39,16 +39,14 @@ import pandas as pd
 import shapely
 from shapely.ops import unary_union
 
+import curation_common as cc
+
 MUNICIPAL_DIGITISED_ON = "2026-10-01"
 #: The owner's packages this step reads (file ``<name>.zip``), with their SHA-256.
 PACKAGE_SHA256 = {
     "Braunschweig_Parkzonen": "b47c463296995b035afc9894fe58dc57abdaffa14fa9709b2de1bfd144cd5abe",
     "Wolfsburg_Parkdaten": "73407d5b23ed2517547a0e648b6a91357772f4d9af1e4d1bc3b3efda4a3cad71",
     "Goslar_Parkdaten": "aa1bc980ae605cbe5fc2f533a2a991b4ba32c0913dc9b27090cf9d67ddb5b9d9",
-}
-#: Copied with the others, not read here: the Braunschweig PULP garages are a source of the garage products (plan Task 4).
-UNREAD_PACKAGE_SHA256 = {
-    "Braunschweig_Parkhaeuser": "6e2c19d102eb9984f4ff8d857a3701476816820ecffebd775c37374eccb8513b",
 }
 #: The GeoPackage layers read per package (``<name>/<name>.gpkg`` inside the zip).
 PACKAGE_LAYERS = {
@@ -86,14 +84,23 @@ WOLFSBURG_ZONE_ID = "wob_tarifzone_{}"
 SECTION_BUFFER_M = 50.0
 #: Spacing of the boundary samples behind the nearest-section split, m (the split line lies within half of it).
 SAMPLE_SPACING_M = 1.0
+#: Precision grid of the nearest-section split, m: the boundary samples are snapped to it before duplicates are
+#: removed (near-coincident samples of touching or overlapping sections become one sample, keeping the higher tariff),
+#: and the overlays of the split run on it, so that float noise cannot break the Voronoi diagram or the overlays.
+SPLIT_GRID_M = 1e-6
 #: The Goslar facility classes of the package field fee_status (from the source attribute Hinweis).
 FACILITY_FEE_STATUSES = ("paid", "free", "unknown")
+#: The billing unit of the Wolfsburg tariff rows: the started half hour of the city's Parkgebuehrenordnung of 2016
+#: (ASSUMPTION C-b, ruling R-T1d-a); the layer states no unit.
+WOLFSBURG_BILLING_UNIT_MIN = 30
+#: Street-product columns of the Wolfsburg rows that no source fills (no first period, day cap, free period or
+#: long-stay product is published for the sections): they must stay empty.
+WOLFSBURG_EMPTY_COLUMNS = ("free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur",
+                           "long_stay_product_eur")
 
-_PRICE = re.compile(r"^\s*(\d+(?:,\d+)?)\s*€\s*pro\s+Stunde\s*$")
+_PRICE = re.compile(r"^\s*(\d+(?:,\d+)?)\s*\N{EURO SIGN}\s*pro\s+Stunde\s*$")
 _WEEKDAY_WINDOW = re.compile(r"^(?:Mo-Fr\s+)?(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 _SATURDAY_WINDOW = re.compile(r"^Sa\s+\d{2}:\d{2}-\d{2}:\d{2}$")
-_GERMAN_ASCII = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe",
-                               "Ü": "Ue", "ß": "ss"})
 
 
 # ---------------------------------------------------------------- packages
@@ -299,7 +306,7 @@ def tariff_zone_evidence(sections: gpd.GeoDataFrame) -> dict:
             "window_area_share": parsed[dominant][1] / area if dominant and area > 0 else None,
             "unparsed_windows": tally.get(None, [0])[0],
             "window_texts": dict(Counter(str(text) for text in group["paid_hours_raw"])),
-            "minority_windows": sorted(f"{ascii_text(name)} ({text})" for name, text, window
+            "minority_windows": sorted(f"{cc.ascii_transliteration(str(name))} ({text})" for name, text, window
                                        in zip(group["name"], group["paid_hours_raw"], windows) if window != dominant),
             "max_stay_min": next(iter(stated)) if unknown == 0 and len(stated) == 1 else None,
             "max_stay_stated": dict(sorted(stated.items())), "max_stay_unknown": unknown,
@@ -310,7 +317,9 @@ def tariff_zone_evidence(sections: gpd.GeoDataFrame) -> dict:
 
 def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
     """The Wolfsburg rows of ``tariffs`` are exactly the tariff zones of ``evidence`` and carry the layer's hourly rate,
-    weekday window and maximum stay (empty where the layer states none uniformly); else ``SystemExit``."""
+    weekday window and maximum stay (empty where the layer states none uniformly), the billing unit of ASSUMPTION C-b
+    (``WOLFSBURG_BILLING_UNIT_MIN``) and nothing in the columns no source fills (``WOLFSBURG_EMPTY_COLUMNS``); else
+    ``SystemExit``."""
     rows = tariffs.set_index("zone_id")
     problems = []
     expected = {WOLFSBURG_ZONE_ID.format(key): key for key in evidence}
@@ -330,9 +339,29 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
                 values["max_stay_min"] is not None and int(maximum) != values["max_stay_min"]):
             problems.append(f"{zone_id}: max_stay_min {maximum} but the layer gives {values['max_stay_min']} (only a "
                             "maximum duration every section states is taken)")
+        unit = row["billing_unit_min"]
+        if pd.isna(unit) or int(unit) != WOLFSBURG_BILLING_UNIT_MIN:
+            problems.append(f"{zone_id}: billing_unit_min {unit} but ASSUMPTION C-b gives {WOLFSBURG_BILLING_UNIT_MIN}")
+        filled = [column for column in WOLFSBURG_EMPTY_COLUMNS if pd.notna(row[column])]
+        if filled:
+            problems.append(f"{zone_id}: {filled} must stay empty (no source publishes them for the street sections)")
     if problems:
         raise SystemExit("Wolfsburg tariff rows contradict the layer attributes:\n  " + "\n  ".join(problems))
     print("Wolfsburg tariff rows agree with the layer attributes: " + ", ".join(sorted(expected)))
+
+
+def _polygonal(geometry):
+    """The polygonal part of an overlay on the precision grid: snap rounding can collapse slivers into lines or points,
+    which carry no area and would make the next overlay fail as mixed-dimension input."""
+    if geometry.is_empty or geometry.geom_type in ("Polygon", "MultiPolygon"):
+        return geometry
+    parts = [part for part in shapely.get_parts(geometry) if part.geom_type in ("Polygon", "MultiPolygon")]
+    return shapely.union_all(parts, grid_size=SPLIT_GRID_M) if parts else shapely.Polygon()
+
+
+def _on_grid(operation, *geometries):
+    """``operation`` (shapely.intersection, difference, union or union_all) on ``SPLIT_GRID_M``, polygonal part only."""
+    return _polygonal(operation(*geometries, grid_size=SPLIT_GRID_M))
 
 
 def _boundary_samples(geometry, window, spacing_m: float) -> np.ndarray:
@@ -351,8 +380,11 @@ def _nearest_regions(own: dict, ranking: list, region, buffer_m: float, spacing_
 
     A generalised Voronoi split by sampling: the boundaries of the sections are sampled every ``spacing_m`` (only within
     ``buffer_m`` plus two spacings of ``region``: a point of ``region`` lies within ``buffer_m`` of its nearest section,
-    so every sample that can be nearest is kept), the Voronoi cells of the samples are labelled with the key of their
-    sample and united per key. A coordinate sampled for two keys keeps the higher-ranked key. Outside the sections the
+    so every sample that can be nearest is kept), snapped to ``SPLIT_GRID_M`` and reduced to one sample per coordinate,
+    which keeps the higher-ranked key; the Voronoi cells of the samples are labelled with the key of their sample and
+    united per key. A cell is the set of points nearer to its own sample than to any other, so the sample nearest to
+    the cell's centroid (inside the cell: Voronoi cells are convex) is the cell's own sample; this labelling needs no
+    point-in-polygon test on the cell boundary, where near-coincident samples made one fail. Outside the sections the
     distance to a section is the distance to its boundary, so the split line lies within half a spacing of the exact
     one.
     """
@@ -362,7 +394,8 @@ def _nearest_regions(own: dict, ranking: list, region, buffer_m: float, spacing_
         samples = _boundary_samples(own[key], window, spacing_m)
         coordinates.append(samples)
         labels.append(np.full(len(samples), rank))
-    coordinates, labels = np.vstack(coordinates), np.concatenate(labels)
+    coordinates = np.round(np.vstack(coordinates) / SPLIT_GRID_M) * SPLIT_GRID_M
+    labels = np.concatenate(labels)
     order = np.lexsort((labels, coordinates[:, 1], coordinates[:, 0]))
     coordinates, labels = coordinates[order], labels[order]
     keep = np.ones(len(coordinates), dtype=bool)
@@ -370,12 +403,12 @@ def _nearest_regions(own: dict, ranking: list, region, buffer_m: float, spacing_
     coordinates, labels = coordinates[keep], labels[keep]
     points = shapely.points(coordinates)
     cells = shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(points), extend_to=window))
-    cell_index, point_index = shapely.STRtree(points).query(cells, predicate="contains")
-    cell_labels = np.full(len(cells), -1)
-    cell_labels[cell_index] = labels[point_index]
-    if (cell_labels < 0).any() or len(cell_index) != len(cells):
-        raise SystemExit(f"nearest-section split: {int((cell_labels < 0).sum())} Voronoi cells without their sample")
-    regions = {key: shapely.union_all(cells[cell_labels == rank]) for rank, key in enumerate(ranking)}
+    cell_index, sample_index = shapely.STRtree(points).query_nearest(shapely.centroid(cells), all_matches=False)
+    if not np.array_equal(cell_index, np.arange(len(cells))):
+        raise SystemExit(f"nearest-section split: {len(cells) - len(np.unique(cell_index))} of {len(cells)} Voronoi "
+                         "cells found no nearest sample")
+    cell_labels = labels[sample_index]
+    regions = {key: _on_grid(shapely.union_all, cells[cell_labels == rank]) for rank, key in enumerate(ranking)}
     return regions, len(points)
 
 
@@ -388,39 +421,44 @@ def split_by_nearest_section(sections: dict, ranking: list, buffer_m: float = SE
     its sections minus every higher-ranked section (``own``), which is the same nearest rule with the ties at distance 0
     (overlapping sections, and the points equidistant from both) resolved upwards. A point that only one key's area
     covers belongs to that key; a point that two keys' areas cover (``contested``) to the key of the nearest section
-    (``_nearest_regions``), the sections themselves to their key. Returns {"zones", "buffers", "contested" (per key:
-    the part of its area another key's area covers as well), "contested_area" (their union), "competitors" (per key:
-    the keys whose area overlaps its own), "samples"}.
+    (``_nearest_regions``), the sections themselves to their key. Every overlay runs on the precision grid
+    ``SPLIT_GRID_M``, so that sections touching or overlapping with float noise cannot break it. Returns {"zones",
+    "buffers", "contested" (per key: the part of its area another key's area covers as well), "contested_area" (their
+    union), "competitors" (per key: the keys whose area overlaps its own), "samples"}.
     """
     own, higher = {}, None
     for key in ranking:
-        own[key] = sections[key] if higher is None else sections[key].difference(higher)
-        higher = sections[key] if higher is None else higher.union(sections[key])
+        own[key] = sections[key] if higher is None else _on_grid(shapely.difference, sections[key], higher)
+        higher = sections[key] if higher is None else _on_grid(shapely.union, higher, sections[key])
     buffers = {key: sections[key].buffer(buffer_m) for key in ranking}
     contested, competitors = {}, {}
     for key in ranking:
-        competitors[key] = [other for other in ranking
-                            if other != key and buffers[key].intersection(buffers[other]).area > 0.0]
-        contested[key] = (buffers[key].intersection(unary_union([buffers[other] for other in competitors[key]]))
+        competitors[key] = [other for other in ranking if other != key
+                            and _on_grid(shapely.intersection, buffers[key], buffers[other]).area > 0.0]
+        contested[key] = (_on_grid(shapely.intersection, buffers[key],
+                                   _on_grid(shapely.union_all, [buffers[other] for other in competitors[key]]))
                           if competitors[key] else shapely.Polygon())
-    contested_area = unary_union(list(contested.values()))
-    zones = {key: buffers[key].difference(contested[key]) for key in ranking}
+    contested_area = _on_grid(shapely.union_all, list(contested.values()))
+    zones = {key: _on_grid(shapely.difference, buffers[key], contested[key]) for key in ranking}
     samples = 0
     if not contested_area.is_empty:
         regions, samples = _nearest_regions(own, ranking, contested_area, buffer_m, spacing_m)
-        every_section = unary_union(list(own.values()))
+        every_section = _on_grid(shapely.union_all, list(own.values()))
         for key in ranking:
-            inside = own[key].intersection(contested_area)
-            outside = regions[key].intersection(contested_area).intersection(buffers[key]).difference(every_section)
-            zones[key] = unary_union([zones[key], inside, outside])
+            inside = _on_grid(shapely.intersection, own[key], contested_area)
+            outside = _on_grid(shapely.intersection, regions[key], contested_area)
+            outside = _on_grid(shapely.difference, _on_grid(shapely.intersection, outside, buffers[key]), every_section)
+            zones[key] = _on_grid(shapely.union_all, [zones[key], inside, outside])
     return {"zones": zones, "buffers": buffers, "contested": contested, "contested_area": contested_area,
             "competitors": competitors, "samples": samples}
 
 
-def wolfsburg_tariff_zones(inputs: dict, *, simplify_m: float, minimum_part_m2: float) -> dict:
+def wolfsburg_tariff_zones(inputs: dict, *, simplify_m: float, clearance_m: float, opening_m: float,
+                           minimum_part_m2: float) -> dict:
     """C2: the tariff zones of the Wolfsburg street sections, ranked by hourly rate (highest first).
 
-    ``simplify_m`` and ``minimum_part_m2`` are the assembly's treatment of the polygons (stated in the notes). Returns
+    ``simplify_m``, ``clearance_m``, ``opening_m`` and ``minimum_part_m2`` are the assembly's treatment of the polygons
+    after the split (stated in the notes, like every parameter that shaped a polygon). Returns
     {"ranking", "evidence" (``tariff_zone_evidence``), "sections" (key -> union of its sections), "split"
     (``split_by_nearest_section``), "zone_ids", "notes", "source_url"}.
     """
@@ -442,9 +480,10 @@ def wolfsburg_tariff_zones(inputs: dict, *, simplify_m: float, minimum_part_m2: 
                       f"digitalisierung_handyparkzonen_a (Handyparkzonen; package Wolfsburg_Parkdaten.zip, SHA-256 "
                       f"{sha[:12]}..., retrieved 2026-10-01 from {source_url}): the area within {SECTION_BUFFER_M:.0f} "
                       f"m (ASSUMPTION C-a: the access walk from the destination to a paid street section) of its "
-                      f"{values['sections']} street-section polygons; {contest}; simplified {simplify_m:g} m, parts "
-                      f"below {minimum_part_m2:g} m2 dropped. QA rows {zone_ids[key]}_* of "
-                      "parking_zones_2026_municipal_qa.csv.")
+                      f"{values['sections']} street-section polygons; {contest}; simplified {simplify_m:g} m and cut "
+                      f"in tariff order with a {clearance_m:g} m clearance, opened by {opening_m:g} m (parts narrower "
+                      f"than {2.0 * opening_m:g} m removed), parts below {minimum_part_m2:g} m2 dropped. QA rows "
+                      f"{zone_ids[key]}_* of parking_zones_2026_municipal_qa.csv.")
     return {"ranking": ranking, "evidence": evidence, "sections": sections, "split": split, "zone_ids": zone_ids,
             "notes": notes, "source_url": source_url}
 
@@ -499,14 +538,6 @@ QA_COLUMN_GLOSSARY = {
     "reference_features_overlapping": "of them the features whose overlap with the subject has a positive area",
     "note": "what the comparison shows, the method and the caveats in words",
 }
-
-
-def ascii_text(text) -> str:
-    """ASCII form of a package text (German letters as ae/oe/ue/ss); any other non-ASCII character is refused."""
-    folded = str(text).translate(_GERMAN_ASCII)
-    if not folded.isascii():
-        raise SystemExit(f"no ASCII form for {text!r}")
-    return folded
 
 
 def _area(geometry) -> float:
@@ -589,7 +620,8 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame) -> list:
     per_area = []
     for code, description, geometry in zip(resident["Parkbereiche_Kennzeichen"], resident["Parkbereiche_Beschreibung"],
                                            resident.geometry):
-        label = str(code) if pd.notna(code) and str(code).strip() else f"(no code: {ascii_text(description)})"
+        label = (str(code) if pd.notna(code) and str(code).strip() else
+                 f"(no code: {cc.ascii_transliteration(str(description))})")
         per_area.append(f"{label} {goslar.intersection(geometry).area:.0f} of {geometry.area:.0f} m2")
     rows.append(_row(f"{GOSLAR_ZONE}_vs_resident_areas", GS_AGS,
                      f"release polygon {GOSLAR_ZONE} (centre approximation, unchanged)",

@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import math
+import random
 import sys
 import zipfile
 from pathlib import Path
@@ -21,7 +22,8 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import MultiPolygon, Point, box
+from shapely import affinity
+from shapely.geometry import MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
 from braunschweig.parking import municipal_zone_qa as mq
@@ -76,7 +78,7 @@ LONE_3 = _box(5000, 0, 5100, 10, WOB_X)
 
 
 def _wob_section(geometry, fee_zone, name, *, window="07:00-18:00, Sa 07:00-14:00", maximum=None, short=False):
-    price = {1: "2 € pro Stunde", 2: "1,20 € pro Stunde", 3: "1 € pro Stunde"}[fee_zone]
+    price = {1: "2 \N{EURO SIGN} pro Stunde", 2: "1,20 \N{EURO SIGN} pro Stunde", 3: "1 \N{EURO SIGN} pro Stunde"}[fee_zone]
     rate = {1: 2.0, 2: 1.2, 3: 1.0}[fee_zone]
     return {"name": name, "max_duration_raw": "NULL" if maximum is None else f"{maximum // 60}h{maximum % 60:02d}m",
             "owner": "Stadt Wolfsburg", "paid_hours_raw": window, "fee_zone_raw": str(fee_zone), "price_raw": price,
@@ -163,7 +165,7 @@ def release(assembly, packages, tmp_path_factory):
     assembly.finish_municipal_zones(zones, context)
     out = tmp_path_factory.mktemp("release")
     assembly.write_zone_file(assembly.zone_frame(zones), out / "zones.geojson", municipal=True)
-    loaded = pz.load_zone_polygons(out / "zones.geojson")
+    loaded = pz.load_zone_polygons(out / "zones.geojson", max_repairs=0)  # valid as written, no polygon repaired
     rows = assembly.mz.qa_rows(context, loaded)
     assembly.mz.write_qa_table(out / "municipal_qa.csv", rows)
     return {"zones": loaded.set_index("zone_id"), "trims": dict(trims), "qa_path": out / "municipal_qa.csv",
@@ -227,6 +229,71 @@ def test_wolfsburg_tariff_zones_replace_wob_innenstadt_split_by_the_nearer_secti
     assert three.geometry.area == pytest.approx(100 * 10 + 2 * 110 * 50 + math.pi * 50 ** 2, rel=SIMPLIFIED_BUFFER)
     assert three.geometry.symmetric_difference(LONE_3.buffer(50.0)).area < 0.01 * LONE_3.buffer(50.0).area
     assert release["zone_path"].read_text(encoding="utf-8").isascii()
+
+
+def _irregular_layout(seed: int) -> dict:
+    """Two tariff zones of rotated float-coordinate sections: each zone-2 section touches a zone-1 section with 1e-7 m
+    of noise, overlaps it by a few metres, or lies apart (the probe of the task review, which grew the real zone-2
+    sections 3 m into zone 1)."""
+    rng = random.Random(1000 + seed)
+    x0, y0 = X0 + WOB_X + rng.random(), Y0 + 9_000.0 + rng.random()
+    zone1, zone2 = [], []
+    for _ in range(3):
+        x, y = x0 + rng.uniform(0, 120), y0 + rng.uniform(0, 120)
+        shape = affinity.rotate(box(x, y, x + rng.uniform(20, 120), y + rng.uniform(4, 12)), rng.uniform(0, 180),
+                                origin=(x, y))
+        zone1.append(shape)
+        kind = rng.choice(["touch", "overlap", "apart"])
+        if kind == "touch":
+            zone2.append(affinity.translate(shape, 0.0, shape.bounds[3] - shape.bounds[1] + rng.uniform(-1e-7, 1e-7)))
+        elif kind == "overlap":
+            zone2.append(affinity.translate(shape.buffer(rng.uniform(1, 5)), rng.uniform(-3, 3), rng.uniform(-3, 3)))
+        else:
+            xx, yy = x0 + rng.uniform(0, 120), y0 + rng.uniform(0, 120)
+            zone2.append(affinity.rotate(box(xx, yy, xx + 60.123456789, yy + 7.987654321), rng.uniform(0, 180),
+                                         origin=(xx, yy)))
+    return {1: unary_union(zone1), 2: unary_union(zone2)}
+
+
+@pytest.mark.parametrize("seed", [5, 4, 45], ids=["cells_lost_their_sample", "topology_exception", "merged_samples"])
+def test_nearest_section_split_holds_on_irregular_float_sections(assembly, seed):
+    # The three layouts on which the first implementation aborted (a Voronoi cell lost its sample to a near-coincident
+    # one, a GEOS topology error, two samples in one cell). The split must still partition the 50 m areas, give the
+    # overlap of two sections to the higher tariff and every point clearly nearer to one zone's sections to that zone.
+    sections = _irregular_layout(seed)
+    split = assembly.mz.split_by_nearest_section(sections, [1, 2])
+    one, two = split["zones"][1], split["zones"][2]
+    union = unary_union([split["buffers"][1], split["buffers"][2]])
+    assert one.intersection(two).area < 1e-3
+    assert unary_union([one, two]).area == pytest.approx(union.area, abs=1e-2)
+    assert two.intersection(sections[1].intersection(sections[2])).area < 1e-3
+    minx, miny, maxx, maxy = split["contested_area"].bounds
+    checked = 0
+    for x in range(int(minx), int(maxx), 3):
+        for y in range(int(miny), int(maxy), 3):
+            point = Point(x + 0.5, y + 0.5)
+            first, second = point.distance(sections[1]), point.distance(sections[2])
+            if not split["contested_area"].contains(point) or abs(first - second) < 1.0:
+                continue  # within the sampling error of the split line, or a tie handled above
+            assert (one if first < second else two).contains(point), (seed, point.wkt, first, second)
+            checked += 1
+    assert checked > 100
+
+
+def test_opening_removes_parts_narrower_than_twice_the_radius_and_never_grows(assembly):
+    # The cut clearance left slivers and zero-width spikes in the first wob_tarifzone_2 that the 1e-7 degree rounding
+    # of the file turned into a self-intersection; the opening removes every part narrower than twice its radius,
+    # keeps wider ones and never grows the polygon into a neighbour.
+    square = _box(0, 0, 100, 100, WOB_X)
+    spike = Polygon([(X0 + WOB_X + 50, Y0 + 100), (X0 + WOB_X + 50.004, Y0 + 100), (X0 + WOB_X + 50.7, Y0 + 103.66)])
+    thin_island = _box(0, 120, 30, 120.04, WOB_X)  # 4 cm wide
+    kept_island = _box(0, 140, 30, 140.25, WOB_X)  # 25 cm wide
+    zone = unary_union([square, spike, thin_island, kept_island])
+    opened = assembly.open_thin_features(zone, assembly.MUNICIPAL_OPENING_M)
+    assert opened.difference(zone).area == 0.0
+    assert opened.area == pytest.approx(square.area + kept_island.area, abs=1e-6)
+    assert not opened.intersects(thin_island) and opened.contains(kept_island.centroid)
+    assert opened.intersection(spike).area < 1e-9  # the zero-width spike is gone, the square below it stays
 
 
 def test_release_licence_names_the_municipal_sources(release):
@@ -386,12 +453,22 @@ def test_wolfsburg_tariff_evidence_is_uniform_or_dominant_or_left_empty(assembly
     with pytest.raises(SystemExit, match="hourly"):
         mz.tariff_zone_evidence(sections.assign(hourly_rate_eur=[2.0, 2.0, 2.0, 1.5, 1.2, 1.0, 1.0]))
     with pytest.raises(SystemExit, match="price_raw"):
-        mz.tariff_zone_evidence(sections.assign(price_raw=["3 € pro Stunde"] + list(sections["price_raw"][1:])))
-    # the committed tariff rows must carry the layer's values
+        mz.tariff_zone_evidence(sections.assign(price_raw=["3 \N{EURO SIGN} pro Stunde"]
+                                                + list(sections["price_raw"][1:])))
+    # the committed tariff rows must carry the layer's values, the billing unit of ASSUMPTION C-b and nothing in the
+    # columns no source fills
+    empty = pd.array([pd.NA] * 3, dtype="Int64")
     tariffs = pd.DataFrame({"zone_id": ["wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3"],
                             "municipality_ags": [WOB] * 3, "hourly_rate_eur": [2.0, 1.2, 1.0],
                             "fee_start_h": [7.0, 7.0, 9.0], "fee_end_h": [18.0, 18.0, 18.0],
-                            "max_stay_min": pd.array([pd.NA, pd.NA, 120], dtype="Int64")})
+                            "max_stay_min": pd.array([pd.NA, pd.NA, 120], dtype="Int64"),
+                            "billing_unit_min": pd.array([30, 30, 30], dtype="Int64"),
+                            "free_if_stay_at_most_min": empty, "first_period_min": empty,
+                            "first_period_eur": [float("nan")] * 3, "daily_cap_eur": [float("nan")] * 3,
+                            "long_stay_product_eur": [float("nan")] * 3})
     mz.check_tariff_rows(evidence, tariffs)
-    with pytest.raises(SystemExit, match="fee_start_h"):
-        mz.check_tariff_rows(evidence, tariffs.assign(fee_start_h=[6.0, 7.0, 9.0]))
+    for change, message in (({"fee_start_h": [6.0, 7.0, 9.0]}, "fee_start_h"),
+                            ({"billing_unit_min": pd.array([60, 30, 30], dtype="Int64")}, "ASSUMPTION C-b"),
+                            ({"daily_cap_eur": [6.0, float("nan"), float("nan")]}, "must stay empty")):
+        with pytest.raises(SystemExit, match=message):
+            mz.check_tariff_rows(evidence, tariffs.assign(**change))

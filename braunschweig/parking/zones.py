@@ -50,7 +50,7 @@ from typing import Iterable, Optional
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely import make_valid
+from shapely import is_valid_reason, make_valid
 from shapely.ops import unary_union
 
 log = logging.getLogger(__name__)
@@ -565,8 +565,13 @@ def _reconstructed_section_problems(zones: gpd.GeoDataFrame) -> list:
     return []
 
 
-def load_zone_polygons(path) -> gpd.GeoDataFrame:
+def load_zone_polygons(path, *, max_repairs: Optional[int] = None) -> gpd.GeoDataFrame:
     """Load the zone polygons, reproject to EPSG:25832, repair invalid rings, validate; return the frame.
+
+    ``max_repairs`` bounds the number of polygons that may need the repair (``None``: any number, counted and logged):
+    a repair changes the polygon the file states, so the committed release must need none
+    (``scripts/validate_parking_zones.py`` and the curation assembly pass 0) and more raises ``ValueError`` naming the
+    invalid polygons and the reason.
 
     Required properties per feature: ``zone_id`` and ``ZONE_PROVENANCE_COLUMNS``; ``geometry_source`` must
     be one of ``GEOMETRY_SOURCES`` (or the test-set marker). A rule-based polygon also needs the provenance columns
@@ -603,6 +608,12 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
         raise ValueError(f"{path}: invalid zone provenance: " + "; ".join(problems))
     zones = zones.to_crs(CRS)
     invalid = ~zones.geometry.is_valid
+    if max_repairs is not None and int(invalid.sum()) > max_repairs:
+        reasons = [f"{zone_id}: {is_valid_reason(geometry)}"
+                   for zone_id, geometry in zip(zones.loc[invalid, "zone_id"], zones.geometry[invalid])]
+        raise ValueError(f"{path}: {int(invalid.sum())} invalid polygon(s) would need a repair, at most {max_repairs} "
+                         f"allowed (write valid polygons: clean thin features before the file is written): "
+                         + "; ".join(reasons))
     if invalid.any():
         repaired = [_polygonal_part(make_valid(geometry)) for geometry in zones.geometry[invalid]]
         zones.loc[invalid, "geometry"] = gpd.GeoSeries(repaired, index=zones.index[invalid], crs=CRS)
