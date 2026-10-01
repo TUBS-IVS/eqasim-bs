@@ -120,8 +120,9 @@ zensus_hh_inspect.txt
 # the transcription itself IS the source), the curated parking cost zone
 # release (eqasim-data/data/braunschweig/parking/parking_*_2026.*, incl. the
 # paid-share cells parking_paid_share_2026.csv.gz, and its curation QA tables
-# parking_zones_2026_qa.csv and parking_zones_2026_supply_share_qa.csv -- NOT its
-# local raw_overpass/, raw_sources/ and raw_osm/ folders; an explicit exception to the
+# parking_zones_2026_qa.csv, parking_zones_2026_supply_share_qa.csv and
+# parking_zones_2026_municipal_qa.csv -- NOT its local raw_overpass/, raw_sources/
+# (incl. the owner's municipal packages) and raw_osm/ folders; an explicit exception to the
 # OSM rule below), plus the documentation markdown.
 # ODbL: the parking zone polygons are partly OSM-derived -- ODbL 1.0, share-alike, attribution "(c) OpenStreetMap contributors" (details: docs/registry/data/parking_zones_2026.yml).
 # Do NOT `git add -f` any other data file here

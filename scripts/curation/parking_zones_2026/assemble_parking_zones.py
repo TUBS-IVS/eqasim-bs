@@ -50,6 +50,19 @@ nothing is applied and the zone file stays the v1 file byte for byte. ``--supply
 counterfactual runs (``--counterfactual`` of the builder) in the note of their town, next to the interpretation they
 vary; they are never applied.
 
+Parking cost zones v2, spec Amendment C (the owner's municipal packages of 2026-10-01, issue #436; ``--municipal-dir``,
+the step ``municipal_zones.py``): before the precedence, ``apply_municipal_packages`` replaces the geometry and the
+provenance of bs_zone_ia and bs_zone_ib by the digitised fee zones 1a and 1b of the city (C1; geometry_source stays
+ordinance_map, so the v1 precedence still cuts the BgA car parks out, and ``finish_municipal_zones`` records the
+reconstructed southern section of 1a in ``reconstructed_section_m2``) and replaces wob_innenstadt by one zone per
+Wolfsburg tariff zone, the area within 50 m of its Handyparkzonen street sections split by the nearer section
+(C2, geometry_source municipal_street_sections_buffered, provenance ``section_buffer_m``; simplified and cut with the
+clearance of the rule-based sources, ties to the higher tariff, parts below ``MINIMUM_PART_M2`` dropped). Goslar is a
+cross-check only (C4). The QA table ``--municipal-qa-out`` (``municipal_zones.qa_rows``) is measured in the written and
+reloaded zone file; ``--municipal-tariffs`` checks the Wolfsburg rows of the tariff table against the layer attributes
+(``municipal_zones.check_tariff_rows``). The licence and attribution members then name the municipal sources (ruling
+R-C1). Without ``--municipal-dir`` the output is the previous release byte for byte.
+
 Usage (from the repository root)::
 
     python scripts/curation/parking_zones_2026/assemble_parking_zones.py --ia-ib bs_zone_map_ia_ib.geojson \
@@ -66,6 +79,9 @@ Usage (from the repository root)::
          --reference-outline eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_zones_georeferenced.geojson \
          --supply-qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_supply_share_qa.csv \
          --paid-share-out eqasim-data/data/braunschweig/parking/parking_paid_share_2026.csv.gz]
+        [--municipal-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01 \
+         --municipal-qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_municipal_qa.csv \
+         --municipal-tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv]
 """
 from __future__ import annotations
 
@@ -92,6 +108,7 @@ from braunschweig.parking import supply_share_qa as sq  # noqa: E402
 from braunschweig.parking import supply_variants as sv  # noqa: E402
 from braunschweig.parking import zone_geometry as zg  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
+import municipal_zones as mz  # noqa: E402  (the curation directory, like curation_common)
 
 DIGITISED_ON = "2026-09-29"
 LICENSE = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, or a georeference "
@@ -126,8 +143,11 @@ EROSION_DIGITISED_ON = "2026-09-30"
 #: 7 decimals (up to 1.1 cm at 52 deg N), and two independently rounded outlines along a long shared edge would
 #: otherwise overlap by more than the 1 m2 tolerance of the validator (1.6 m2 along 800 m in the assembly test).
 EROSION_CUT_CLEARANCE_M = 0.05
-#: Rule-based geometry sources (lever 1 erosion, Amendment B supply majority): simplified before and cut with clearance.
+#: Rule-based geometry sources (lever 1 erosion, Amendment B supply majority, Amendment C2 buffered municipal street
+#: sections): simplified before and cut with clearance.
 RULE_GEOMETRY_SOURCES = tuple(pz.RULE_PROVENANCE_COLUMNS)
+#: The OSM rule cores, of which a zone may vanish in the cuts (it is then not written); every other zone must survive.
+OPTIONAL_RULE_SOURCES = (pz.EROSION_GEOMETRY_SOURCE, pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE)
 LICENSE_V2 = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, the OSM on-street "
               "parking and car-park tags of the osm_fee_erosion zones, or a georeference on OSM street centrelines); "
               "Open Database License 1.0, https://opendatacommons.org/licenses/odbl/1-0/")
@@ -225,13 +245,16 @@ BS_PIECE_DIAGNOSIS = ("the ParkGO annex outlines are a plausibility check and a 
 
 def zone_record(zone_id, ags, geometry, geometry_source, source_url, note, *, walk_m=None, osm_timestamp=None,
                 source_date=DIGITISED_ON, digitised_on=DIGITISED_ON, minimum_part_m2=MINIMUM_PART_M2,
-                supply_walk_m=None, paid_share_threshold=None, minimum_usable_spaces=None) -> dict:
+                supply_walk_m=None, paid_share_threshold=None, minimum_usable_spaces=None, section_buffer_m=None,
+                reconstructed_section_m2=None) -> dict:
     """One zone of the release as the assembly handles it (keys starting with '_' are not written; the provenance
-    keys of a rule-based source, ``pz.RULE_PROVENANCE_COLUMNS``, only appear in the file when such a zone exists)."""
+    keys of a rule-based source, ``pz.RULE_PROVENANCE_COLUMNS``, only appear in the file when such a zone exists, and
+    ``reconstructed_section_m2`` only when a zone sets it)."""
     return {"zone_id": zone_id, "_ags": ags, "geometry": geometry, "geometry_source": geometry_source,
             "source_url": source_url, "source_date": source_date, "digitised_on": digitised_on, "digitising_note": note,
             "unavoidable_walk_m": walk_m, "osm_timestamp": osm_timestamp, "supply_walk_m": supply_walk_m,
             "paid_share_threshold": paid_share_threshold, "minimum_usable_spaces": minimum_usable_spaces,
+            "section_buffer_m": section_buffer_m, pz.RECONSTRUCTED_SECTION_COLUMN: reconstructed_section_m2,
             "_minimum_part_m2": minimum_part_m2}
 
 
@@ -347,8 +370,9 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
     rule-based zone (``RULE_GEOMETRY_SOURCES``) is simplified BEFORE the cut and always cut against its neighbours grown by
     ``EROSION_CUT_CLEARANCE_M``, so the cut stays exact after the rounding of the file (simplifying a cut edge
     afterwards moves it by up to ``SIMPLIFY_M`` and lets a large core overlap its neighbours along long shared edges),
-    and its parts below the core's minimum island size are dropped (Q2). Returns (zones kept, trims); raises when a v1
-    zone is emptied.
+    and its parts below its minimum part size are dropped (Q2 for the OSM rule cores, ``MINIMUM_PART_M2`` for the
+    buffered municipal sections, whose tariff zones share edges and take precedence in tariff order). Returns (zones
+    kept, trims); raises when a zone is emptied, except an OSM rule core (``OPTIONAL_RULE_SOURCES``).
     """
     by_id = {z["zone_id"]: z for z in zones}
     order = list(precedence) + [z["zone_id"] for z in zones if z["zone_id"] not in precedence]
@@ -378,7 +402,7 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
         if not geometry.is_empty:
             taken = geometry if taken is None else taken.union(geometry)
     emptied = [z["zone_id"] for z in zones if z["geometry"].is_empty]
-    if [zone_id for zone_id in emptied if by_id[zone_id]["geometry_source"] not in RULE_GEOMETRY_SOURCES]:
+    if [zone_id for zone_id in emptied if by_id[zone_id]["geometry_source"] not in OPTIONAL_RULE_SOURCES]:
         raise SystemExit(f"zones emptied by the precedence cuts: {emptied}")
     if emptied:
         print("rule-based zones without a part of the minimum island size after the cuts (not written):", emptied)
@@ -468,27 +492,116 @@ def piece_assignment_text(pieces: list, minimum_island_m2: float) -> str:
     return "; ".join(clauses)
 
 
+def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
+    """Spec Amendment C on the v1 zone records, before the precedence (``mz.load_packages`` gives ``inputs``).
+
+    C1: bs_zone_ia and bs_zone_ib take the geometry of the package zones 1a and 1b with their provenance (geometry_source
+    ordinance_map, the wording of ruling R-C1, source and digitisation date 2026-10-01); C2: wob_innenstadt is replaced,
+    at its position, by one buffered-section zone per Wolfsburg tariff zone in tariff order, so the precedence gives a
+    shared edge to the higher tariff. A missing v1 zone (Ia, Ib, wob_innenstadt, the Goslar polygon) raises. Returns
+    (zones, context for ``finish_municipal_zones`` and ``mz.qa_rows``: the v1 geometries before the cuts, the package
+    values, the split).
+    """
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    needed = list(mz.BRAUNSCHWEIG_FEE_ZONES.values()) + [mz.WOLFSBURG_V1_ZONE, mz.GOSLAR_ZONE]
+    missing = [zone_id for zone_id in needed if zone_id not in by_id]
+    if missing:
+        raise SystemExit(f"the municipal step needs the v1 zones {missing}")
+    v1 = {zone_id: by_id[zone_id]["geometry"] for zone_id in needed}
+    braunschweig = mz.braunschweig_fee_zones(inputs)
+    for zone_id, values in braunschweig.items():
+        zone = by_id[zone_id]
+        zone.update(zone_record(zone_id, zone["_ags"], values["geometry"], "ordinance_map", mz.BRAUNSCHWEIG_FEE_MAP_URL,
+                                values["note"], source_date=mz.MUNICIPAL_DIGITISED_ON,
+                                digitised_on=mz.MUNICIPAL_DIGITISED_ON))
+    wolfsburg = mz.wolfsburg_tariff_zones(inputs, simplify_m=SIMPLIFY_M, minimum_part_m2=MINIMUM_PART_M2)
+    mz.print_tariff_evidence(wolfsburg["evidence"])
+    tariff_zones = [zone_record(wolfsburg["zone_ids"][key], mz.WOB_AGS, wolfsburg["split"]["zones"][key],
+                                pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, wolfsburg["source_url"], wolfsburg["notes"][key],
+                                source_date=mz.MUNICIPAL_DIGITISED_ON, digitised_on=mz.MUNICIPAL_DIGITISED_ON,
+                                section_buffer_m=mz.SECTION_BUFFER_M)
+                    for key in wolfsburg["ranking"]]
+    position = [zone["zone_id"] for zone in zones].index(mz.WOLFSBURG_V1_ZONE)
+    zones = zones[:position] + tariff_zones + zones[position + 1:]
+    split = wolfsburg["split"]
+    print("Wolfsburg nearest-section split: " + "; ".join(
+        f"{wolfsburg['zone_ids'][key]} {split['zones'][key].area:.0f} m2 (50 m area {split['buffers'][key].area:.0f} "
+        f"m2, contested {split['contested'][key].area:.0f} m2)" for key in wolfsburg["ranking"])
+        + f"; {split['samples']} boundary samples")
+    context = {"inputs": inputs, "v1": v1, "braunschweig": braunschweig, "wolfsburg": wolfsburg,
+               "simplify_m": SIMPLIFY_M, "clearance_m": EROSION_CUT_CLEARANCE_M}
+    return zones, context
+
+
+def finish_municipal_zones(zones: list, context: dict) -> None:
+    """After the precedence: the flag ``reconstructed_section_m2`` of bs_zone_ia and bs_zone_ib (the area of the final
+    polygon inside the package's reconstructed section, 0 where there is none), and the parts the Wolfsburg zones lost
+    to the minimum part size, logged."""
+    southern = mz.reconstructed_section(context["inputs"])
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    for zone_id in context["braunschweig"]:
+        by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN] = round(float(by_id[zone_id]["geometry"].intersection(
+            southern).area), 1)
+    wolfsburg = context["wolfsburg"]
+    for key in wolfsburg["ranking"]:
+        zone_id = wolfsburg["zone_ids"][key]
+        split = wolfsburg["split"]["zones"][key]
+        slivers = [part for part in getattr(split, "geoms", [split]) if part.area < MINIMUM_PART_M2]
+        print(f"{zone_id}: {split.area:.0f} m2 after the split, {by_id[zone_id]['geometry'].area:.0f} m2 after the "
+              f"precedence; {len(slivers)} part(s) below {MINIMUM_PART_M2:g} m2 ({sum(p.area for p in slivers):.1f} m2)")
+    print("reconstructed_section_m2: " + ", ".join(f"{zone_id} {by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN]}"
+                                                  for zone_id in context["braunschweig"]))
+
+
 def zone_frame(zones: list) -> gpd.GeoDataFrame:
     """The zones as the committed frame: provenance columns, plus the provenance columns of every rule-based source
-    that has a zone (``pz.RULE_PROVENANCE_COLUMNS``; so a v1-only release keeps its v1 layout)."""
+    that has a zone (``pz.RULE_PROVENANCE_COLUMNS``) and ``reconstructed_section_m2`` when a zone sets it (so a
+    v1-only release keeps its v1 layout)."""
     frame = gpd.GeoDataFrame([{k: v for k, v in z.items() if not k.startswith("_")} for z in zones],
                              geometry="geometry", crs=cc.METRIC_CRS)
     columns = ["zone_id", "geometry_source", "source_url", "source_date", "digitised_on", "digitising_note"]
     present = set(frame["geometry_source"])
     columns += list(dict.fromkeys(column for source, listed in pz.RULE_PROVENANCE_COLUMNS.items() if source in present
                                   for column in listed))
+    if frame[pz.RECONSTRUCTED_SECTION_COLUMN].notna().any():
+        columns.append(pz.RECONSTRUCTED_SECTION_COLUMN)
     return frame[columns + ["geometry"]]
 
 
-def write_zone_file(frame: gpd.GeoDataFrame, path) -> None:
-    """WGS84 GeoJSON with the licence and attribution members (the v2 wording when a rule-based zone exists)."""
-    sources = set(frame["geometry_source"])
+#: The licence wording of v1 and of the rule-based sources starts with this claim, which no longer holds once polygons
+#: from municipal sources join the file (spec Amendment C); ``licence_members`` narrows it to the OSM-derived polygons.
+_OSM_CLAIM = "ODbL-1.0: every polygon is derived from OpenStreetMap data"
+LICENSE_MUNICIPAL_SUFFIX = (
+    ". Polygons from municipal sources (spec Amendment C), under the terms of their sources: bs_zone_ia and bs_zone_ib "
+    "(the OSM car-park outlines of the BgA zones are cut out of bs_zone_ia): " + mz.BRAUNSCHWEIG_PROVENANCE + "; the "
+    "geometry_source " + pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE + " zones: " + mz.WOLFSBURG_PROVENANCE + ".")
+ATTRIBUTION_MUNICIPAL_SUFFIX = (
+    " Base map of the digitised zones 1a and 1b: Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: "
+    "dl-de/by-2-0 (https://www.govdata.de/dl-de/by-2-0); data changed (georeference of the digitised zones). "
+    "Wolfsburg tariff zones: " + mz.WOLFSBURG_PROVENANCE + ".")
+
+
+def licence_members(sources: set, municipal: bool = False) -> tuple:
+    """(license, attribution) of the zone file: the wording of the newest rule-based source present (v1 otherwise),
+    narrowed to the OSM-derived polygons and extended by the municipal sources when ``municipal`` (ruling R-C1)."""
     if pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE in sources:
         license_text, attribution = LICENSE_SUPPLY, ATTRIBUTION_SUPPLY
     elif pz.EROSION_GEOMETRY_SOURCE in sources:
         license_text, attribution = LICENSE_V2, ATTRIBUTION_V2
     else:
         license_text, attribution = LICENSE, ATTRIBUTION
+    if not municipal:
+        return license_text, attribution
+    if not license_text.startswith(_OSM_CLAIM):
+        raise SystemExit("the licence wording no longer starts with the OSM claim this step narrows")
+    narrowed = "ODbL-1.0: every polygon not named below is derived from OpenStreetMap data" + license_text[len(_OSM_CLAIM):]
+    return narrowed + LICENSE_MUNICIPAL_SUFFIX, attribution + ATTRIBUTION_MUNICIPAL_SUFFIX
+
+
+def write_zone_file(frame: gpd.GeoDataFrame, path, municipal: bool = False) -> None:
+    """WGS84 GeoJSON with the licence and attribution members (``licence_members``: the v2 wording when a rule-based
+    zone exists, the municipal sources when ``municipal``)."""
+    license_text, attribution = licence_members(set(frame["geometry_source"]), municipal)
     # RFC 7946 allows foreign members; GDAL writes them at the top level and GeoJSON readers ignore them.
     members = json.dumps({"license": license_text, "attribution": attribution})
     frame.to_crs("EPSG:4326").to_file(Path(path), driver="GeoJSON", COORDINATE_PRECISION=7,
@@ -1372,11 +1485,19 @@ def main(argv=None) -> int:
                                                  "(parking_paid_share_2026.csv.gz)")
     parser.add_argument("--supply-counterfactual-qa", action="append", default=[],
                         help="v2 Amendment B: QA file of a POST HOC --counterfactual run, cited in the note of its town")
+    parser.add_argument("--municipal-dir", help="v2 Amendment C: raw_sources/municipal_2026-10-01 with the owner's "
+                                                "packages (SHA-256 checked, municipal_zones.PACKAGE_SHA256)")
+    parser.add_argument("--municipal-qa-out", help="v2 Amendment C: the QA table to write "
+                                                   "(parking_zones_2026_municipal_qa.csv)")
+    parser.add_argument("--municipal-tariffs", help="v2 Amendment C: the tariff table whose Wolfsburg rows are checked "
+                                                    "against the layer attributes (parking_tariffs_2026.csv)")
     args = parser.parse_args(argv)
     if args.erosion_dir and not (args.reference_outline and args.qa_out):
         raise SystemExit("--erosion-dir needs --reference-outline and --qa-out")
     if args.supply_share_dir and not (args.reference_outline and args.supply_qa_out and args.paid_share_out):
         raise SystemExit("--supply-share-dir needs --reference-outline, --supply-qa-out and --paid-share-out")
+    if bool(args.municipal_dir) != bool(args.municipal_qa_out) or (args.municipal_tariffs and not args.municipal_dir):
+        raise SystemExit("--municipal-dir and --municipal-qa-out go together; --municipal-tariffs needs both")
     zones = []
 
     def add(zone_id, ags, geometry, geometry_source, source_url, note):
@@ -1610,9 +1731,16 @@ def main(argv=None) -> int:
             "output_bs, 2026-04-29; OSM-derived links with osm:way:name) because the Overpass request of 2026-09-29 for "
             "this municipality failed with HTTP 504 and was not repeated (at most one request per municipality).")
 
+    # ---------------------------------------------------------------- v2 Amendment C: municipal packages (issue #436)
+    municipal = None
+    if args.municipal_dir:
+        zones, municipal = apply_municipal_packages(zones, mz.load_packages(args.municipal_dir))
+
     # ---------------------------------------------------------------- precedence, Braunschweig pieces (A2), output
     zones, trims = apply_precedence(zones)
     print("trimmed by precedence:", trims)
+    if municipal is not None:
+        finish_municipal_zones(zones, municipal)
     pieces = []
     bs_core = accepted_core(erosion.get(BS_AGS))
     if bs_core is not None:
@@ -1642,8 +1770,13 @@ def main(argv=None) -> int:
         zone["digitising_note"].encode("ascii")
     frame = zone_frame(zones)
     out = Path(args.out)
-    write_zone_file(frame, out)
+    write_zone_file(frame, out, municipal=municipal is not None)
     print(f"written {out} with {len(frame)} zones")
+    if municipal is not None:
+        # measured in the written file, as the validator measures it
+        mz.write_qa_table(args.municipal_qa_out, mz.qa_rows(municipal, pz.load_zone_polygons(out)))
+        if args.municipal_tariffs:
+            mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], pz.load_tariffs(args.municipal_tariffs))
     if args.erosion_dir:
         write_qa_table(args.qa_out, qa_table_rows(erosion, zones, pieces, counterfactuals))
     if args.supply_share_dir:

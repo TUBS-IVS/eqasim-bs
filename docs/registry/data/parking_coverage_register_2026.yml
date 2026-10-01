@@ -5,7 +5,9 @@ provider: >-
   Own compilation (issue #249); municipality universe from the pipeline's data.spatial.municipalities (VG250,
   BKG), names from the BA Gemeindeband (Beschaeftigungsstatistik, Stichtag 2025-06-30) and, for the
   gemeindefreie Gebiete, Wikipedia
-vintage: Compiled 2026-09-29 together with parking_zones_2026 and parking_tariffs_2026
+vintage: >-
+  Compiled 2026-09-29 together with parking_zones_2026 and parking_tariffs_2026; the rows of Braunschweig, Wolfsburg
+  and Goslar and one excluded Wolfsburg row updated on 2026-10-01 (spec Amendment C)
 geography: >-
   The 123 spatial units of the eight ZGB counties (03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158):
   113 Gemeinden and 10 gemeindefreie Gebiete
@@ -60,9 +62,11 @@ limitations: >-
   airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight zoned
   municipalities; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
   (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, permit
-  districts A/B/C, ParkGO zone II apart from the three Parkscheininseln and the part of zone 1a south of the
-  city's overview map, both drawn on the ParkGO annex map on page 3 of the ParkGO PDF but not digitised in v1,
-  BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse).
+  districts A/B/C, ParkGO zone II apart from the three Parkscheininseln, drawn on the ParkGO annex map on page 3 of
+  the ParkGO PDF but not digitised, BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse); the part of
+  zone 1a south of the city's overview map, unzoned until 2026-10-01, belongs to bs_zone_ia since spec Amendment C1.
+  The Wolfsburg zones (spec Amendment C2) cover the city's phone-parking street sections and 50 m around them, no
+  complete map of the paid parking: everywhere else in Wolfsburg parking is free by assumption Z1.
 notes: >-
   Status counts 2026-09-29: zoned 8, no_paid_parking_known 0, not_audited 115, excluded 8 (131 rows). Unchanged by
   v2 lever 1 (2026-09-30), which accepted no rule-based core: the rows of Braunschweig (zone II and the southern
@@ -73,4 +77,10 @@ notes: >-
   the QA table parking_zones_2026_supply_share_qa.csv (statuses unchanged). Unchanged by owner decisions 2 and 3
   (Task 1c, 2026-09-30): at the owner's post hoc share 0.3 H1 passes but the pre-registered holdout check H2 fails,
   so still nothing is applied; the reason in the rows of Braunschweig, Goslar, Wolfenbuettel and Gifhorn names both
-  (statuses unchanged).
+  (statuses unchanged). Spec Amendment C (the owner's municipal packages, 2026-10-01), statuses unchanged (zoned 8,
+  no_paid_parking_known 0, not_audited 115, excluded 8): the Braunschweig row names zones Ia and Ib as digitised from
+  the city's fee zone map with the southern part of Ia, the Wolfsburg row the three tariff zones that replace the v1
+  Innenstadt zone and their source (Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024); open reuse licence
+  not verified; used by owner decision 2026-10-01), the Goslar row the cross-check in
+  parking_zones_2026_municipal_qa.csv; the excluded row of the Wolfsburg shopping-centre car parks reads 'inside a
+  zone' instead of 'inside the zone'.

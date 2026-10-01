@@ -1222,7 +1222,7 @@ def test_validator_reapplies_the_h1_and_h2_gates_and_the_default_parameters(asse
     target = tmp_path / "data" / "braunschweig" / "parking"
     target.mkdir(parents=True)
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
-                 "parking_zones_2026_qa.csv"):
+                 "parking_zones_2026_qa.csv", "parking_zones_2026_municipal_qa.csv"):
         shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
     inputs = tmp_path / "inputs"
     inputs.mkdir()

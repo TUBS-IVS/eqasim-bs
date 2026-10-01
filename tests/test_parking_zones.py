@@ -367,6 +367,33 @@ def test_osm_fee_erosion_zones_need_walk_and_snapshot_provenance(tmp_path, walk,
             pz.load_zone_polygons(path)
 
 
+@pytest.mark.parametrize("buffer_m, reconstructed_m2, message", [
+    (50.0, 1000.0, None),
+    (None, None, "section_buffer_m required for geometry_source municipal_street_sections_buffered"),
+    (0.0, None, "section_buffer_m must be a positive number"),
+    (50.0, -1.0, "reconstructed_section_m2 of zone"),
+    (50.0, 1e12, "reconstructed_section_m2 of zone"),
+], ids=["complete", "no_buffer", "zero_buffer", "negative_reconstruction", "reconstruction_above_the_polygon"])
+def test_municipal_zone_provenance_is_validated(tmp_path, buffer_m, reconstructed_m2, message):
+    # spec Amendment C: buffered municipal street sections carry their buffer (ASSUMPTION C-a); a polygon digitised
+    # from a municipal map may flag the area that rests on a reconstruction (Braunschweig 1a, the 2024 annex)
+    zones = gpd.read_file(ZONE_FIXTURE)
+    municipal = zones["zone_id"] == "fx_wob"
+    zones.loc[municipal, "geometry_source"] = pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE
+    zones["section_buffer_m"] = [buffer_m if flag else None for flag in municipal]
+    zones["reconstructed_section_m2"] = [reconstructed_m2 if zone_id == "fx_bs_ia" else None
+                                         for zone_id in zones["zone_id"]]
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    if message is None:
+        loaded = pz.load_zone_polygons(path).set_index("zone_id")
+        assert loaded.loc["fx_wob", "section_buffer_m"] == 50.0
+        assert loaded.loc["fx_bs_ia", "reconstructed_section_m2"] == 1000.0
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.load_zone_polygons(path)
+
+
 def _qa_row(**changes) -> pd.DataFrame:
     row = {"ags": "03101000", "name": "Braunschweig, Stadt", "role": "zones_from_core",
            "raw_response": "03101000_regulation_overpass_2026-09-30.json", "osm_timestamp": SNAPSHOT,
@@ -597,7 +624,8 @@ def test_overpass_fixture_dissolves_into_the_expected_candidates():
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
 COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
-                           "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv")
+                           "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
+                           "parking_zones_2026_municipal_qa.csv")
 PARKSCHEININSELN = ("bs_parkscheininsel_marthastrasse_koernerstrasse",
                     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse")
 
@@ -713,6 +741,25 @@ def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys,
     tariffs = pz.load_tariffs(target / "parking_tariffs_2026.csv")
     assert sorted(seen) == sorted(tariffs["zone_id"])
     assert "zone 'bs_zone_ia': rejected by the test contract" in capsys.readouterr().out
+
+
+def test_validator_requires_the_municipal_qa_table_of_the_municipal_zones(tmp_path, capsys):
+    # The committed release carries buffered municipal street sections (spec Amendment C2), whose areas and overlaps
+    # live in the municipal QA table; a release copied without that table must not validate.
+    import shutil
+
+    from scripts.validate_parking_zones import main
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
+                 "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    assert main(["--data-path", str(tmp_path)]) == 1
+    assert "but no municipal QA table" in capsys.readouterr().out
+    shutil.copy(COMMITTED_PARKING_DIR / "parking_zones_2026_municipal_qa.csv", target / "parking_zones_2026_municipal_qa.csv")
+    assert main(["--data-path", str(tmp_path)]) == 0
+    assert "municipal QA" in capsys.readouterr().out
 
 
 def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, capsys):

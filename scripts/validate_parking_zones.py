@@ -15,11 +15,14 @@ response. The QA table of the majority rule over the parking supply (``--supply-
 ``osm_supply_majority``): ``braunschweig.parking.supply_share_qa.validate_supply_share_qa`` against the polygons, the
 default parameters of owner decision 2 (share 0.3) on every row and the application gate re-applied: H1 (the B5 gate
 on the Braunschweig recall and precision) and H2 (the pre-registered holdout check recomputed from the holdout overlaps
-of the town rows); the recorded ``b5_passed`` and ``h2_passed`` and every decision must follow from them; and, when
+of the town rows); the recorded ``b5_passed`` and ``h2_passed`` and every decision must follow from them; when
 present, the release of the classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``,
-``supply_share_qa.load_paid_share_release``). Prints counts per zone type, geometry source (with the area mix),
-fee-window source and municipality, the register status counts, the QA decisions and the H1 and H2 results; exits 1 on
-any violation, 0 otherwise.
+``supply_share_qa.load_paid_share_release``); and the municipal QA table (``--municipal-qa-path``,
+``parking_zones_2026_municipal_qa.csv``; spec Amendment C; required as soon as a polygon has geometry_source
+``municipal_street_sections_buffered`` or a ``reconstructed_section_m2`` value):
+``braunschweig.parking.municipal_zone_qa.validate_municipal_qa`` against the polygons. Prints counts per zone type,
+geometry source (with the area mix), fee-window source and municipality, the register status counts, the QA decisions,
+the H1 and H2 results and the municipal QA rows; exits 1 on any violation, 0 otherwise.
 
 Usage::
 
@@ -35,6 +38,7 @@ from pathlib import Path
 
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import municipal_zone_qa  # noqa: E402
 from braunschweig.parking import supply_share  # noqa: E402
 from braunschweig.parking import supply_share_qa  # noqa: E402
 from braunschweig.parking import tariff_export  # noqa: E402
@@ -47,6 +51,7 @@ DEFAULT_REGISTER_PATH = "braunschweig/parking/parking_coverage_register_2026.csv
 DEFAULT_QA_PATH = "braunschweig/parking/parking_zones_2026_qa.csv"
 DEFAULT_SUPPLY_QA_PATH = "braunschweig/parking/parking_zones_2026_supply_share_qa.csv"
 DEFAULT_PAID_SHARE_PATH = "braunschweig/parking/parking_paid_share_2026.csv.gz"
+DEFAULT_MUNICIPAL_QA_PATH = "braunschweig/parking/parking_zones_2026_municipal_qa.csv"
 #: The spatial units of data.spatial.municipalities for the eight ZGB counties (113 Gemeinden and 10 gemeindefreie
 #: Gebiete, VG250 as cached by the pipeline); the register must carry exactly one status row for each.
 DEFAULT_EXPECTED_MUNICIPALITY_COUNT = 123
@@ -194,7 +199,8 @@ def _print_geometry_source_mix(zones) -> None:
 
 def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path: str,
              expected_municipality_count: int, qa_path: str = DEFAULT_QA_PATH,
-             supply_qa_path: str = DEFAULT_SUPPLY_QA_PATH, paid_share_path: str = DEFAULT_PAID_SHARE_PATH) -> None:
+             supply_qa_path: str = DEFAULT_SUPPLY_QA_PATH, paid_share_path: str = DEFAULT_PAID_SHARE_PATH,
+             municipal_qa_path: str = DEFAULT_MUNICIPAL_QA_PATH) -> None:
     """Run every check; raise ``ValueError`` on the first failing group and print the coverage summary."""
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
@@ -231,6 +237,15 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
                          f"{supply_file}")
     release_file = data_path / paid_share_path
     release = supply_share_qa.load_paid_share_release(release_file) if release_file.is_file() else None
+    municipal_file = data_path / municipal_qa_path
+    municipal = municipal_zone_qa.municipal_zone_ids(zones)
+    municipal_qa = None
+    if municipal_file.is_file():
+        municipal_qa = municipal_zone_qa.load_municipal_qa(municipal_file)
+        municipal_zone_qa.validate_municipal_qa(municipal_qa, zones)
+    elif municipal:
+        raise ValueError(f"{len(municipal)} zone(s) {municipal} from municipal sources but no municipal QA table at "
+                         f"{municipal_file}")
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6
@@ -268,6 +283,13 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         counts = release["municipality_ags"].value_counts().sort_index()
         print(f"[parking-validate] paid-share release: {len(release)} classified cells (" + ", ".join(
             f"{ags} {count}" for ags, count in counts.items()) + ")")
+    if municipal_qa is None:
+        print(f"[parking-validate] municipal QA: no table at {municipal_file} (no zone from municipal sources)")
+    else:
+        rows = municipal_qa["municipality_ags"].value_counts().sort_index()
+        print(f"[parking-validate] municipal QA: {len(municipal_qa)} rows (" + ", ".join(
+            f"{ags} {count}" for ags, count in rows.items()) + "); zones from municipal sources: "
+              + (", ".join(municipal) or "none"))
 
 
 def main(argv=None) -> int:
@@ -282,11 +304,14 @@ def main(argv=None) -> int:
                         help="supply-share QA table (spec Amendment B), relative to --data-path")
     parser.add_argument("--paid-share-path", default=DEFAULT_PAID_SHARE_PATH,
                         help="release of the classified cells (spec Amendment B7), relative to --data-path")
+    parser.add_argument("--municipal-qa-path", default=DEFAULT_MUNICIPAL_QA_PATH,
+                        help="municipal QA table (spec Amendment C), relative to --data-path")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     try:
         validate(Path(args.data_path), args.zones_path, args.tariffs_path, args.register_path,
-                 args.expected_municipality_count, args.qa_path, args.supply_qa_path, args.paid_share_path)
+                 args.expected_municipality_count, args.qa_path, args.supply_qa_path, args.paid_share_path,
+                 args.municipal_qa_path)
     except (ValueError, FileNotFoundError) as error:
         print(f"[parking-validate] FAILED: {error}")
         return 1

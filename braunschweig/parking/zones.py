@@ -25,6 +25,12 @@ the walking tolerance ``unavoidable_walk_m`` and the OSM snapshot ``osm_timestam
 supply (spec Amendment B; ``braunschweig.parking.supply_share``) carry ``geometry_source`` ``osm_supply_majority`` and,
 for that source only, the walk distance, the share threshold, the minimum supply and the OSM snapshot of the extract
 (``SUPPLY_MAJORITY_PROVENANCE_COLUMNS``); their QA table is checked by ``supply_share_qa.validate_supply_share_qa``.
+Polygons built from a municipality's published paid street sections (spec Amendment C2, the curation step
+``scripts/curation/parking_zones_2026/municipal_zones.py``) carry ``geometry_source``
+``municipal_street_sections_buffered`` and, for that source only, the buffer around the sections ``section_buffer_m``
+(``MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS``). Any polygon may carry ``reconstructed_section_m2``
+(``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source reconstructs from an older
+map (spec Amendment C1); the municipal QA table is checked by ``municipal_zone_qa.validate_municipal_qa``.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is
@@ -130,8 +136,12 @@ FEE_WINDOW_SOURCES = ("ordinance", "signage", "municipal_page", "assumption")
 EROSION_GEOMETRY_SOURCE = "osm_fee_erosion"
 #: Majority rule of v2 Amendment B (``braunschweig.parking.supply_share``): paid_share of the supply within W.
 SUPPLY_MAJORITY_GEOMETRY_SOURCE = "osm_supply_majority"
+#: Municipal street sections buffered (v2 spec Amendment C2): the area within ``section_buffer_m`` of the paid street
+#: sections a municipality publishes for one tariff zone, split by the nearer section where the areas of two tariff
+#: zones overlap (ties to the higher tariff).
+MUNICIPAL_SECTIONS_GEOMETRY_SOURCE = "municipal_street_sections_buffered"
 GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
-                    EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE)
+                    EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE, MUNICIPAL_SECTIONS_GEOMETRY_SOURCE)
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
 ZONE_PROVENANCE_COLUMNS = ("geometry_source", "source_url", "source_date", "digitised_on", "digitising_note")
@@ -142,9 +152,17 @@ EROSION_PROVENANCE_COLUMNS = ("unavoidable_walk_m", "osm_timestamp")
 #: share in (0, 1]), the minimum usable supply of a classified cell in spaces and the OSM snapshot of the extract.
 SUPPLY_MAJORITY_PROVENANCE_COLUMNS = ("supply_walk_m", "paid_share_threshold", "minimum_usable_spaces",
                                       "osm_timestamp")
+#: Required for ``municipal_street_sections_buffered`` polygons only: the buffer around the street sections in metres
+#: (the access walk from the destination to a paid street section, ASSUMPTION C-a of spec Amendment C2).
+MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS = ("section_buffer_m",)
 #: Provenance columns per rule-based source; a column is required on the sources that list it and empty elsewhere.
 RULE_PROVENANCE_COLUMNS = {EROSION_GEOMETRY_SOURCE: EROSION_PROVENANCE_COLUMNS,
-                           SUPPLY_MAJORITY_GEOMETRY_SOURCE: SUPPLY_MAJORITY_PROVENANCE_COLUMNS}
+                           SUPPLY_MAJORITY_GEOMETRY_SOURCE: SUPPLY_MAJORITY_PROVENANCE_COLUMNS,
+                           MUNICIPAL_SECTIONS_GEOMETRY_SOURCE: MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS}
+#: Optional on any polygon (empty = no reconstruction recorded): the part of its area in m2 whose boundary the digitised
+#: source reconstructs from an older map, the flag of spec Amendment C1 (Braunschweig zone 1a: the southern part cut off
+#: by the fee zone map of 2025-11-26, continued after the Amtsblatt annex of 2024-04-30). 0 means "none".
+RECONSTRUCTED_SECTION_COLUMN = "reconstructed_section_m2"
 
 REGISTER_COLUMNS = ("ags", "name", "status", "source", "note")
 REGISTER_STATUSES = ("zoned", "no_paid_parking_known", "not_audited", "excluded")
@@ -488,12 +506,14 @@ _RULE_PROVENANCE_RANGES = {
     "supply_walk_m": ("a positive number of metres", lambda value: value > 0),
     "paid_share_threshold": ("a share in (0, 1]", lambda value: 0 < value <= 1),
     "minimum_usable_spaces": ("a number of spaces >= 0", lambda value: value >= 0),
+    "section_buffer_m": ("a positive number of metres", lambda value: value > 0),
 }
 
 
 def _rule_provenance_problems(zones: pd.DataFrame) -> list:
     """Every column of ``RULE_PROVENANCE_COLUMNS`` set, valid and non-empty exactly on the polygons of the sources
-    that list it (``osm_timestamp`` belongs to both rule-based sources)."""
+    that list it (``osm_timestamp`` belongs to both OSM rule sources; every column without a numeric range is an OSM
+    snapshot)."""
     problems = []
     sources = zones["geometry_source"].to_numpy()
     ids = zones["zone_id"].astype(str).to_numpy()
@@ -528,6 +548,23 @@ def _rule_provenance_problems(zones: pd.DataFrame) -> list:
     return problems
 
 
+def _reconstructed_section_problems(zones: gpd.GeoDataFrame) -> list:
+    """``RECONSTRUCTED_SECTION_COLUMN`` where set: a number of m2 from 0 to the polygon's area (EPSG:25832; the
+    digitisation tolerance ``OVERLAP_TOLERANCE_M2`` absorbs the rounding of the stored WGS84 coordinates)."""
+    if RECONSTRUCTED_SECTION_COLUMN not in zones.columns:
+        return []
+    values = pd.to_numeric(zones[RECONSTRUCTED_SECTION_COLUMN], errors="coerce").to_numpy(dtype=float)
+    given = np.array([_is_set(value) and not (isinstance(value, str) and not value.strip())
+                      for value in zones[RECONSTRUCTED_SECTION_COLUMN]], dtype=bool)
+    areas = zones.geometry.area.to_numpy(dtype=float)
+    invalid = given & ~np.array([math.isfinite(value) and 0.0 <= value <= area + OVERLAP_TOLERANCE_M2
+                                 for value, area in zip(values, areas)], dtype=bool)
+    if invalid.any():
+        return [f"{RECONSTRUCTED_SECTION_COLUMN} of zone(s) {sorted(zones.loc[invalid, 'zone_id'].astype(str))} must be "
+                "a number of m2 from 0 to the polygon's area"]
+    return []
+
+
 def load_zone_polygons(path) -> gpd.GeoDataFrame:
     """Load the zone polygons, reproject to EPSG:25832, repair invalid rings, validate; return the frame.
 
@@ -535,8 +572,9 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
     be one of ``GEOMETRY_SOURCES`` (or the test-set marker). A rule-based polygon also needs the provenance columns
     of its source (``RULE_PROVENANCE_COLUMNS``: ``osm_fee_erosion`` a positive ``unavoidable_walk_m``,
     ``osm_supply_majority`` a positive ``supply_walk_m``, ``paid_share_threshold`` in (0, 1] and
-    ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ'), which every other
-    polygon leaves empty. Other properties are kept as they are.
+    ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ';
+    ``municipal_street_sections_buffered`` a positive ``section_buffer_m``), which every other polygon leaves empty. The
+    optional ``reconstructed_section_m2`` lies between 0 and the polygon's area. Other properties are kept as they are.
     """
     path = Path(path)
     if not path.is_file():
@@ -570,6 +608,9 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
         zones.loc[invalid, "geometry"] = gpd.GeoSeries(repaired, index=zones.index[invalid], crs=CRS)
     log.info("[parking-zones] loaded %d zone polygons from %s; repaired %d invalid geometries (%s)", len(zones),
              path, int(invalid.sum()), sorted(zones.loc[invalid, "zone_id"].astype(str)))
+    problems = _reconstructed_section_problems(zones)
+    if problems:
+        raise ValueError(f"{path}: invalid zone provenance: " + "; ".join(problems))
     validate_zone_polygons(zones)
     ordered = list(required) + [column for column in zones.columns if column not in required and column != "geometry"]
     return gpd.GeoDataFrame(zones[ordered + ["geometry"]], geometry="geometry", crs=CRS)

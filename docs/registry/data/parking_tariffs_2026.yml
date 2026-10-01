@@ -4,13 +4,15 @@ inventory_id: null
 provider: >-
   Own transcription (issue #249) of public tariff publications: Stadt Braunschweig (ParkGO 2022 as amended
   2025-11-04, BgA Entgeltordnung 2022, parkraummanagement.php, car-park directory of the city map), TU
-  Braunschweig (Parkordnung Stand 2026-06-03, GB3 pages), Aufbau-Gesellschaft Wolfsburg, Stadt Salzgitter,
+  Braunschweig (Parkordnung Stand 2026-06-03, GB3 pages), Stadt Wolfsburg (the Geoviewer theme Parken of the
+  owner-supplied package of 2026-10-01 and its Parkgebuehrenordnung of 2016 for the billing unit), Stadt Salzgitter,
   Stadt Peine, Stadt Goslar (ParkGO 2025-06-24 and the announced 2026 fees), Stadtbetriebe Wolfenbuettel,
   Parkraum- und Schwimmbadgesellschaft Stadt Gifhorn, Stadt Helmstedt (Gebuehrenordnung 2024)
 vintage: >-
-  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of every row); valid_from per row
-  is the first date the source confirms (the retrieval date where the start is not published).
-geography: The 24 zones of parking_zones_2026 (eight ZGB municipalities)
+  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of every row); the three Wolfsburg rows
+  (spec Amendment C2) come from the city's Geoviewer layer of Stand 12/2024, retrieved 2026-10-01. valid_from per
+  row is the first date the source confirms (the retrieval date where the start is not published).
+geography: The 26 zones of parking_zones_2026 (eight ZGB municipalities)
 crs: null
 roles:
 - supply_input
@@ -30,7 +32,23 @@ acquisition:
     BgA Entgeltordnung 50444731..., TU Parkordnung 037bb432..., ParkGO Goslar c3008752..., Helmstedt
     Gebuehrenordnung 89622fb2..., city car-park directory parkplaetze.geojson 861bc290.... The file's '#'
     header states the cost semantics of design spec section 3.2 and the assumptions Z1, D1, T1, M1, C1, R1,
-    H1, F1, S1 (spec section 7).
+    H1, F1, S1 (spec section 7) and C-b (spec Amendment C2).
+    The three Wolfsburg rows wob_tarifzone_1, wob_tarifzone_2 and wob_tarifzone_3 (spec Amendment C2, 2026-10-01)
+    replace the row wob_innenstadt. Source per ruling R-C1: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand
+    12/2024); open reuse licence not verified; used by owner decision 2026-10-01. The values come from the attributes
+    of the street sections of each tariff zone (layer digitalisierung_handyparkzonen_a of the owner-supplied package
+    Wolfsburg_Parkdaten.zip, SHA-256 in the data record parking_zones_2026), derived by
+    scripts/curation/parking_zones_2026/municipal_zones.py tariff_zone_evidence and checked against the rows by
+    assemble_parking_zones.py --municipal-tariffs: the one price of a tariff zone (attribute Preis); the weekday fee
+    window of most of its sections (S1; the interval of the attribute Kostenpflichtige Parkzeit without a day read as
+    Monday to Friday, the Saturday interval not modelled, D1); a maximum stay only where every section states the same
+    one (no tariff zone does); the short-stay flag (Kurzzeitparken) recorded in the notes only. The billing unit rests
+    on ASSUMPTION C-b: the started half hour of the city's Parkgebuehrenordnung (sec. 1(2) of the version of
+    2016-03-16, Amtsblatt Nr. 12 of 2016-03-24, read online on 2026-10-01; superseded), because the current version
+    of 2020-07-21 linked on the city's Ortsrecht page returned HTTP 404 on 2026-10-01 and the city's Handyparken page
+    only states that phone parking costs the same as the ticket machine. No first period, day cap or free period is
+    published for the street sections; the values of the v1 row came from the Aufbau-Gesellschaft garage Tiefgarage
+    Rathaus and cover no street section, so none was carried over.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
   committed: true
@@ -53,7 +71,10 @@ requirements:
   matsim: required
   production: required
 licensing:
-  license: public tariff publications (facts), attribution to the municipalities, their companies and TU Braunschweig
+  license: >-
+    public tariff publications (facts), attribution to the municipalities, their companies and TU Braunschweig; the
+    Wolfsburg rows: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024); open reuse licence not verified;
+    used by owner decision 2026-10-01
   restricted: false
   redistribution: allowed
 limitations: >-
@@ -67,9 +88,16 @@ limitations: >-
   Long-stay products chosen by assumption M1: Ia (zone Ib day ticket 9.00 EUR), Peine (8-hour lot ticket 4.20 EUR;
   overprices stays of 3-4 h, for which the same car parks sell a 4-hour ticket of 2.60 EUR), Stadthalle
   (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of 2-9 h, which cost 2.00-9.00 EUR at 1.00 EUR per hour on
-  an island); the v1 schema has one long-stay product per zone. One regime per zone (S1): Wolfsburg takes the
-  municipal Rathaus garage tariff for the whole centre, Wolfenbuettel the garage day tariff, Gifhorn the city meter
-  tariff; night, shoulder and Saturday tariffs are not modelled (D1). Campus members pay the 3.50 EUR day ticket
+  an island); the v1 schema has one long-stay product per zone. One regime per zone (S1): Wolfenbuettel takes the
+  garage day tariff, Gifhorn the city meter tariff, and each Wolfsburg tariff zone the weekday window of most of its
+  street sections (tariff zone 1: the sections Am Bahnhof 1 and 2 state 00:00-24:00; tariff zone 2: the section
+  Klieverhagen states 07:00-15:00); night, shoulder and Saturday tariffs are not modelled (D1). Wolfsburg (since spec
+  Amendment C2): the layer of Stand 12/2024 is the city's phone-parking map, and its retrieval in 2026 does not
+  confirm that every tariff is still valid (the package readme); the billing unit rests on ASSUMPTION C-b; no
+  maximum stay, first period or day cap is published for the sections, so a stay over the whole fee window pays the
+  hourly rate for every started half hour (in tariff zone 1, 7-18 h cost 22.00 EUR, against a day maximum of 6.00
+  EUR in the garage regime of the v1 row); a press report of 2024-02-05 (regionalheute.de) quotes zone 1 of the then
+  valid ordinance at 1.30 EUR per started half hour, which is not reconciled with the layer's 2.00 EUR per hour. Campus members pay the 3.50 EUR day ticket
   (C1, owner decision 3) although the 10 EUR month ticket costs 0.50 EUR per working day. Resident permits A/B/C
   (exempt in the centre), the exemption of zone-132 permit holders on the Parkscheininseln and the night-time
   residents-only rule of the Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
@@ -79,8 +107,9 @@ limitations: >-
   retrieval and snapshot date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts
   ticketing that campus on that day (GB3 page), so on the snapshot date this zone charged nothing.
 notes: >-
-  24 rows: street_paid 17, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
-  assumption 8 (validator summary of 2026-09-30, see parking_zones_2026). The synthetic test set with the same
+  26 rows: street_paid 19, resident_zone 1, campus 6; fee_window_source municipal_page 12, ordinance 6,
+  assumption 8 (validator summary of 2026-10-01, see parking_zones_2026; before spec Amendment C2 24 rows with the
+  single Wolfsburg row wob_innenstadt). The synthetic test set with the same
   columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth). v2 lever 1
   (2026-09-30) accepted no rule-based core (parking_zones_2026_qa.csv), so no zone and hence no tariff row was
   added: the planned bs_zone_ii would take the ParkGO sec. 1(2) zone II amounts (0.50 EUR per 30 min, i.e.
