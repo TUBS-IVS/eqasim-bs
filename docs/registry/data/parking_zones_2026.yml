@@ -305,7 +305,7 @@ verification:
     assembly) pin it. Since Amendment B the validator also checks the supply-share QA table when it exists
     (required as soon as a polygon has geometry_source osm_supply_majority, whose supply_walk_m,
     paid_share_threshold, minimum_usable_spaces and osm_timestamp load_zone_polygons requires for that source
-    only): braunschweig.parking.supply_share.validate_supply_share_qa against the polygons, the default parameters of
+    only): braunschweig.parking.supply_share_qa.validate_supply_share_qa against the polygons, the default parameters of
     owner decision 2 (share 0.3) on every row and the application gate re-applied (H1 on the Braunschweig row, H2
     recomputed from the holdout overlaps of the town rows); tests/test_parking_supply_share.py (the rule on synthetic
     layouts, the holdout metrics and the H2 gate, the variants S and T, the curation aid on an OSM XML fixture read

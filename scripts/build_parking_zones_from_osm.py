@@ -52,14 +52,14 @@ extract instead of the Overpass API. ``--osm-extract`` is checked against its Ge
 AGS=south,west,north,east`` boxes grown by ``SUPPLY_INVENTORY_MARGIN_M`` (``read_supply_inventory``, reading time per
 layer recorded); the parking-relevant features are saved as ``supply_inventory_<extract>.gpkg`` with a metadata
 ``.json``, which ``--from-inventory`` re-processes without reading the extract. Per town and arm
-(``SupplyArm``: the parameters ``--walk-m``, ``--share-threshold``, ``--minimum-usable-spaces`` on the full
+(``supply_variants.SupplyArm``: the parameters ``--walk-m``, ``--share-threshold``, ``--minimum-usable-spaces`` on the full
 inventory; the arm options below): the supply inventory inside the query box (B1, B2;
 the raster also sees the supply up to W plus one cell beyond it), the cross-check of its element counts per kind and
 class with the saved Overpass regulation response of Task 1 (``--overpass-dir``, read only), the paid-share raster
 (B3), the rule polygons (B4), in Braunschweig the pre-registered validation B5 (``--legal-zones`` with the
 ordinance polygons ``bs_zone_ia`` and ``bs_zone_ib``, ``--reference 03101000=<annex zones>``, the annex map frame from
 ``--annex-affine`` and ``--annex-image``) and the comparison with a ``--reference AGS=<outline>``. Outputs, named by
-the tag of the arm (``SupplyArm.tag``, e.g. ``w250_t0.3_u50_c25_s12.5_i10000``): ``<ags>_supply_qa_<tag>
+the tag of the arm (``supply_variants.SupplyArm.tag``, e.g. ``w250_t0.3_u50_c25_s12.5_i10000``): ``<ags>_supply_qa_<tag>
 .json``, ``<ags>_supply_zones_<tag>.geojson``, ``<ags>_paid_share_<tag>.csv.gz`` (every cell) and
 ``<ags>_supply_elements_<tag>.geojson`` (every classified element). Every existing output is refused before any
 reading unless ``--overwrite`` is given (write-through data of the main checkout). With ``--from-inventory``,
@@ -78,9 +78,9 @@ inventory also holds the payment evidence of variant T (``SUPPLY_LAYER_FILTERS``
 machines and every parking element with an app-payment tag, ruling R-T1c-a; an inventory read before Task 1c has none
 and is refused for T, one read with other layer filters is warned about); its counts and conversions inside the query
 box are in the QA file of every T arm (``payment_evidence``). ``--variant-arms`` adds the information arms
-``supply_share.VARIANT_ARMS`` (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at 0.5 and 0.3; tag suffixes ``_streetonly``
+``supply_variants.VARIANT_ARMS`` (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at 0.5 and 0.3; tag suffixes ``_streetonly``
 and ``_parkingpayment75m``; ``--variants`` restricts them to some variants), ``--sensitivity-arms`` the Amendment B arms
-``supply_share.AMENDMENT_B_ARMS`` (its pre-registered share 0.5 and the B5 arms W 150 / 400 m and share 0.7),
+``supply_variants.AMENDMENT_B_ARMS`` (its pre-registered share 0.5 and the B5 arms W 150 / 400 m and share 0.7),
 ``--arms-only`` skips the chosen parameters. The Overpass cross-check always compares the B1 classification of the full
 inventory.
 
@@ -131,6 +131,8 @@ from shapely.ops import polygonize, unary_union
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.parking import supply_share  # noqa: E402
+from braunschweig.parking import supply_share_qa  # noqa: E402
+from braunschweig.parking import supply_variants  # noqa: E402
 from braunschweig.parking import zone_geometry  # noqa: E402
 
 log = logging.getLogger("build_parking_zones_from_osm")
@@ -877,13 +879,13 @@ def inventory_frames(layers: dict) -> tuple:
 
 
 def inventory_evidence(layers: dict) -> gpd.GeoDataFrame:
-    """The payment evidence of variant T in the inventory layers, EPSG:25832 (``supply_share.payment_evidence``:
+    """The payment evidence of variant T in the inventory layers, EPSG:25832 (``supply_variants.payment_evidence``:
     parking ticket machine nodes and every element with an app-payment tag, whatever its parking class)."""
     columns = ["osm_type", "osm_id", "tags", "geometry"]
     crs = layers["points"].crs
     frame = gpd.GeoDataFrame(pd.concat([layers[layer][columns] for layer in SUPPLY_LAYER_FILTERS], ignore_index=True),
                              geometry="geometry", crs=crs)
-    return supply_share.payment_evidence(frame.to_crs(METRIC_CRS), label="inventory")
+    return supply_variants.payment_evidence(frame.to_crs(METRIC_CRS), label="inventory")
 
 
 def supply_inventory_paths(out_dir: Path, extract) -> dict:
@@ -1015,7 +1017,7 @@ SUPPLY_COUNTERFACTUAL_SUFFIXES = {supply_share.YES_SIDES_COUNTERFACTUAL: "_yesno
 
 
 def supply_output_paths(out_dir: Path, ags: str, arm, *, counterfactual: Optional[str] = None) -> dict:
-    """The four derived files of one town and arm (``supply_share.SupplyArm``), named by its tag (the parameters, the
+    """The four derived files of one town and arm (``supply_variants.SupplyArm``), named by its tag (the parameters, the
     inventory variant and the suffix of a counterfactual)."""
     tag = arm.tag() + (SUPPLY_COUNTERFACTUAL_SUFFIXES[counterfactual] if counterfactual else "")
     return {"qa": out_dir / f"{ags}_supply_qa_{tag}.json", "zones": out_dir / f"{ags}_supply_zones_{tag}.geojson",
@@ -1074,7 +1076,7 @@ def holdout_references(path, towns) -> dict:
 def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass: tuple, reference,
                     b5_inputs: Optional[tuple], out_dir: Path, holdout: Optional[gpd.GeoDataFrame] = None,
                     evidence: Optional[gpd.GeoDataFrame] = None, counterfactual: Optional[str] = None) -> dict:
-    """The majority rule for one town and arm (``supply_share.SupplyArm``): inventory (B1 plus the arm's variant, S or
+    """The majority rule for one town and arm (``supply_variants.SupplyArm``): inventory (B1 plus the arm's variant, S or
     T with ``evidence``), raster, rule polygons, cross-check of the B1 inventory (``overpass`` =
     ``overpass_cross_check_input``), B5 / H1 (when ``b5_inputs`` = (legal zones, annex zones, map frame)), the H2
     overlaps (``holdout``: the town's reference polygons), the payment evidence of the box and the reference
@@ -1102,7 +1104,7 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
     response, overpass_timestamp, overpass_elements = overpass
     checked = cross_check(base[base.intersects(query).to_numpy()], overpass_elements, response=response,
                           overpass_timestamp=overpass_timestamp)
-    elements = supply_share.variant_elements(base, variant, evidence, label=f"{ags} {variant.label}",
+    elements = supply_variants.variant_elements(base, variant, evidence, label=f"{ags} {variant.label}",
                                              region=supply_region)
     in_box = elements.intersects(query).to_numpy()
     supply = supply_share.summarise_supply(elements[in_box])
@@ -1116,7 +1118,7 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
     payment = None
     if variant.payment_evidence_m is not None:
         # the payment evidence belongs to variant T: its counts and conversions inside the query box
-        payment = supply_share.summarise_payment_evidence(evidence[evidence.intersects(query).to_numpy()],
+        payment = supply_variants.summarise_payment_evidence(evidence[evidence.intersects(query).to_numpy()],
                                                           elements[in_box], variant.payment_evidence_m)
     qa = {"ags": ags, "parameters": parameters.as_dict(), "tag": arm.tag(), "variant": variant.as_dict(),
           "counterfactual": counterfactual, "bbox": list(bbox),
@@ -1153,7 +1155,7 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
     rule_out["tag"] = arm.tag()
     paths = supply_output_paths(out_dir, ags, arm, counterfactual=counterfactual)
     _write_geojson(rule_out, paths["zones"])
-    paths["raster"].write_bytes(supply_share.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
+    paths["raster"].write_bytes(supply_share_qa.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
     _write_geojson(elements.assign(in_query_box=in_box, osm_id=elements["osm_id"].astype(float)), paths["elements"])
     qa["seconds"] = round(time.perf_counter() - started, 1)
     paths["qa"].write_text(json.dumps(_json_safe(qa), indent=1, allow_nan=False, ensure_ascii=True) + "\n",
@@ -1168,13 +1170,14 @@ def run_supply_town(ags: str, bbox, ways, objects, arm, *, meta: dict, overpass:
 
 def _arms(args) -> list:
     """The arms of an invocation: the chosen parameters (default: owner decision 2, share 0.3) on the full inventory,
-    unless ``--arms-only``, plus ``AMENDMENT_B_ARMS`` (``--sensitivity-arms``) and ``VARIANT_ARMS`` (``--variant-arms``,
-    restricted to the variant labels of ``--variants`` when given)."""
-    chosen = supply_share.SupplyArm(supply_share.SupplyShareParameters(
+    unless ``--arms-only``, plus ``supply_variants.AMENDMENT_B_ARMS`` (``--sensitivity-arms``) and
+    ``supply_variants.VARIANT_ARMS`` (``--variant-arms``, restricted to the variant labels of ``--variants`` when
+    given)."""
+    chosen = supply_variants.SupplyArm(supply_share.SupplyShareParameters(
         walk_m=args.walk_m, share_threshold=args.share_threshold, minimum_usable_spaces=args.minimum_usable_spaces))
     arms = [] if args.arms_only else [chosen]
-    variant_arms = [arm for arm in supply_share.VARIANT_ARMS if not args.variants or arm.variant.label in args.variants]
-    for flag, extra in ((args.sensitivity_arms, supply_share.AMENDMENT_B_ARMS), (args.variant_arms, variant_arms)):
+    variant_arms = [arm for arm in supply_variants.VARIANT_ARMS if not args.variants or arm.variant.label in args.variants]
+    for flag, extra in ((args.sensitivity_arms, supply_variants.AMENDMENT_B_ARMS), (args.variant_arms, variant_arms)):
         if flag:
             arms += [arm for arm in extra if arm not in arms]
     if not arms:
@@ -1385,7 +1388,7 @@ def main(argv=None) -> int:
                              "evidence within 75 m) at 0.5 and 0.3 and S+T at 0.5 and 0.3 (owner decisions 2 and 3)")
     supply.add_argument("--arms-only", action="store_true",
                         help="with --sensitivity-arms or --variant-arms: run only the arms")
-    supply.add_argument("--variants", nargs="+", choices=sorted({arm.variant.label for arm in supply_share.VARIANT_ARMS}),
+    supply.add_argument("--variants", nargs="+", choices=sorted({arm.variant.label for arm in supply_variants.VARIANT_ARMS}),
                         help="with --variant-arms: run only the information arms of these variants (default all)")
     supply.add_argument("--counterfactual", choices=sorted(SUPPLY_COUNTERFACTUAL_SUFFIXES),
                         help="POST HOC diagnostic: yes_sides_no_information reads parking:<side>=yes as no parking "

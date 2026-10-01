@@ -47,32 +47,26 @@ money.
   ordinance polygons Ia and Ib) / area(Ia and Ib); precision = area(rule inside the annex zones Ia, Ib and II, which
   include the southern Ia) / area(rule inside the annex map frame); both >= ``VALIDATION_MINIMUM`` (70 %, ASSUMPTION
   Q5) with ``PRE_REGISTERED_SUPPLY_PARAMETERS``. The arms ``SENSITIVITY_ARMS`` are information only.
-* **B7 release** (``release_frame``, ``PAID_SHARE_RELEASE_COLUMNS``): the classified cells, preparation of the
-  probabilistic variant C; no stage reads them yet.
 * **Owner decision 2** (2026-09-30, after B5 failed with the pre-registered share 0.5; a POST HOC change of B-f,
-  ADR-0139): the default share threshold is ``DEFAULT_SHARE_THRESHOLD`` 0.3 (``DEFAULT_SUPPLY_PARAMETERS``,
-  ``DEFAULT_ARM``); Amendment B's pre-registered 0.5 stays as ``PRE_REGISTERED_SUPPLY_PARAMETERS``, the centre of its
-  B5 arms (``AMENDMENT_B_ARMS``). The rule may be applied only when H1 (B5 recomputed with the default parameters) and
-  the holdout check H2, pre-registered before any holdout overlap at 0.3 was computed, both pass. H2
+  ADR-0139): the default share threshold is ``DEFAULT_SHARE_THRESHOLD`` 0.3 (``DEFAULT_SUPPLY_PARAMETERS``);
+  Amendment B's pre-registered 0.5 stays as ``PRE_REGISTERED_SUPPLY_PARAMETERS``, the centre of its B5 arms
+  ``SENSITIVITY_ARMS``. The rule may be applied only when H1 (B5 recomputed with the default parameters) and the
+  holdout check H2, pre-registered before any holdout overlap at 0.3 was computed, both pass
+  (``passes_application_gate``). H2
   (``holdout_town_metrics``, ``holdout_pooled_metrics``, ``passes_holdout``): the references
   ``HOLDOUT_REFERENCE_ZONES`` (not used by B5, no approximations); per town recall = area(rule inside the references) /
   area(references) and, for the four towns of ``HOLDOUT_PRECISION_TOWNS`` only, precision = area(rule inside the
   references) / area(rule inside the town's query box); pass when the pooled recall (area-weighted over every
   reference) and the pooled precision (over the four towns) reach ``HOLDOUT_POOLED_MINIMUM`` (0.70, the set value of
   Q5) and every town's recall reaches ``HOLDOUT_TOWN_RECALL_MINIMUM`` (0.50, ASSUMPTION Q6).
-* **Variants S and T** (owner decisions 2 and 3; information arms, never applied): ``SupplyVariant`` and
-  ``variant_elements`` on the B1 inventory. S (``STREET_SUPPLY_ONLY``, ``street_supply_only``): street sides and
-  street-side areas only, off-street lots and garages leave the inventory. T (``PAYMENT_EVIDENCE``,
-  ``apply_payment_evidence``; pre-registered before any T result): a street side or street-side area that is free only
-  because it carries no fee tag (B-a) becomes paid when its geometry lies within ``PAYMENT_EVIDENCE_DISTANCE_M`` (75 m,
-  ASSUMPTION T-a: about one block face served by one machine) of a parking ticket machine
-  (``is_parking_ticket_machine``) or of a parking element (``is_parking_element``) with an app-payment tag
-  (``app_payment_keys``); a street-side area or lot with an app-payment tag of its own and no fee tag is paid (payment
-  implies a fee); an explicit fee=no is never overridden, disc parking (B-b) stays free and the evidence adds no
-  capacity. Ruling R-T1c-a corrected the evidence definition of the controller before the task review (not a tuning
-  step; T is information only): phone wallets (``PHONE_WALLET_PAYMENT_KEYS``) and non-parking elements (shops,
-  charging stations) never count. Arms: ``VARIANT_ARMS`` (``SupplyArm``: S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
-  0.5 and 0.3); only ``DEFAULT_ARM`` (B) may be applied.
+* **App-payment keys** (``app_payment_keys``, ruling R-T1c-a): ``payment:app*``, ``payment:mobile*`` or a named
+  parking-app key with a value other than no, never a phone wallet (``PHONE_WALLET_PAYMENT_KEYS``); the element frame
+  records them per element (column ``app_payment_keys``) for variant T.
+
+Split in Task 1c fix round 1 (ruling R-T1c-b, behaviour-preserving): the variants S and T, the payment evidence and the
+arms live in ``braunschweig.parking.supply_variants``; the B7 release rows and the QA table schema, with the readers
+and validators of both files, in ``braunschweig.parking.supply_share_qa`` (the assembly script writes both files).
+Both build on this module.
 
 Discretisation (B3): the capacity of every usable element is spread over points so that the radius sum is length- and
 area-correct (``discretise_capacity``). A line is cut into ``ceil(length / step_m)`` equal pieces, each carrying its
@@ -86,22 +80,18 @@ radius sums use a KD-tree (``scipy.spatial.cKDTree.query_ball_point``, distance 
 Edge supply: a cell near the edge of the bounds needs the supply up to ``walk_m`` beyond it; the caller passes elements
 covering the bounds buffered by ``walk_m`` plus one cell (``scripts/build_parking_zones_from_osm.py --supply-share``).
 
-Pure functions except the two readers of the committed outputs (``load_paid_share_release``,
-``load_supply_share_qa``). GeoDataFrame inputs must be in EPSG:25832 (``ValueError`` otherwise); shapely geometries are
-EPSG:25832 by contract. Package-private helpers of ``zone_geometry`` (tag parsing, CRS guard, polygon parts) and
-``zones`` (documented CSV reader) are shared, not copied. Used by the curation aid, never a pipeline stage.
+Pure functions, no file access. GeoDataFrame inputs must be in EPSG:25832 (``ValueError`` otherwise); shapely
+geometries are EPSG:25832 by contract. Package-private helpers of ``zone_geometry`` (tag parsing, CRS guard, polygon
+parts) are shared, not copied. Used by the curation aid, never a pipeline stage.
 """
 from __future__ import annotations
 
 import dataclasses
-import gzip
-import io
 import itertools
 import logging
 import math
 import re
 import time
-from pathlib import Path
 from typing import Mapping, Optional
 
 import geopandas as gpd
@@ -112,7 +102,6 @@ from scipy.spatial import cKDTree
 from shapely.geometry.base import BaseGeometry
 
 from braunschweig.parking import zone_geometry as zg
-from braunschweig.parking import zones as pz
 
 log = logging.getLogger(__name__)
 
@@ -195,11 +184,6 @@ RASTER_QUERY_CHUNK_CELLS = 2048
 HEURISTIC_CAPACITY_WARNING_SHARE = 0.5
 FREE_WITHOUT_FEE_TAG_WARNING_SHARE = 0.5
 OFFSTREET_WITHOUT_FEE_TAG_WARNING_SHARE = 0.5
-#: Variant T (owner decision 3, pre-registered before any T result): ASSUMPTION T-a, metres (EPSG:25832) between the
-#: geometry of a street side or street-side area and the payment evidence.
-PAYMENT_EVIDENCE_DISTANCE_M = 75.0
-#: A parking ticket machine: a node with amenity=vending_machine whose vending=* lists parking_tickets.
-TICKET_MACHINE_VENDING = "parking_tickets"
 #: App-payment keys (ruling R-T1c-a): a key starting with payment:app or payment:mobile, or a named parking-app key (a
 #: closed list: the three the ruling names; none occurs in the inventory box of the pinned extract), whose value is set
 #: and not "no" ...
@@ -208,27 +192,14 @@ APP_PAYMENT_KEY_PREFIXES = ("payment:app", "payment:mobile", "payment:easypark",
 #: ... never a phone-wallet key, although payment:apple_pay starts with payment:app.
 PHONE_WALLET_PAYMENT_KEYS = ("payment:apple_pay", "payment:google_pay", "payment:android_pay", "payment:samsung_pay",
                              "payment:garmin_pay", "payment:huawei_pay", "payment:fitbit_pay")
-#: Evidence behind a conversion by variant T (column ``payment_evidence``), in the order of attribution: a ticket
-#: machine within the distance, else an app-payment tag on a parking element; ``own_app_payment_tag`` for a street-side
-#: area or lot paid by its own tag.
-PAYMENT_EVIDENCE_SOURCES = ("ticket_machine", "app_payment_parking", "own_app_payment_tag")
-#: Reasons of B1 that variant T may override: street parking free only for lack of a fee tag (B-a) by proximity; a
-#: street-side area or lot without a fee tag (B-a, B-b disc area, B-c) by its own app-payment tag.
-PROXIMITY_CONVERTIBLE_REASONS = ("no_fee_tag",)
-OWN_TAG_CONVERTIBLE_REASONS = ("no_fee_tag", "disc", "no_fee_tag_offstreet")
 
 ELEMENT_COLUMNS = ("element_id", "osm_type", "osm_id", "kind", "side", "side_position", "parking_type", "class",
                    "reason", "capacity_spaces", "capacity_source", "capacity_basis", "capacity_tag_invalid", "levels",
                    "app_payment_keys", "payment_evidence", "geometry")
-EVIDENCE_COLUMNS = ("evidence_id", "osm_type", "osm_id", "evidence", "app_payment_keys", "object", "geometry")
 RASTER_COLUMNS = ("x_m", "y_m", "paid_share", "usable_spaces", "heuristic_capacity_share", "classified", "paid_spaces",
                   "restricted_spaces", "free_spaces")
-#: B7: the committed release of the classified cells.
-PAID_SHARE_RELEASE_COLUMNS = ("x_m", "y_m", "municipality_ags", "paid_share", "usable_spaces",
-                              "heuristic_capacity_share")
 
 _WHOLE_NUMBER = re.compile(r"^\d+$")
-_AGS = re.compile(r"^\d{8}$")
 
 
 # --------------------------------------------------------------------------- B1: classification
@@ -578,14 +549,9 @@ def _log_supply(elements: gpd.GeoDataFrame, label: str, region: str) -> None:
     log_fallback_rates(summary, label=label, region=region)
 
 
-# --------------------------------------------------------------------------- variants S and T (owner decisions 2, 3)
-
-
-def is_parking_ticket_machine(tags: Mapping) -> bool:
-    """A parking ticket machine of variant T: ``amenity=vending_machine`` whose ``vending=*`` lists
-    ``TICKET_MACHINE_VENDING`` (possibly among other goods); ``payment_evidence`` keeps nodes only."""
-    return (zg._tag_text(tags, "amenity") or "").lower() == "vending_machine" and \
-        TICKET_MACHINE_VENDING in zg._tokens(zg._tag_text(tags, "vending"))
+# --------------------------------------------------------------------------- app-payment keys of an element (variant T)
+# They stay here, not in supply_variants: supply_elements records them per element, and supply_variants builds on this
+# module, which therefore must not import it.
 
 
 def _set_payment_keys(tags: Mapping, prefixes) -> tuple:
@@ -604,185 +570,6 @@ def app_payment_keys(tags: Mapping) -> tuple:
     (``PHONE_WALLET_PAYMENT_KEYS``)."""
     return tuple(key for key in _set_payment_keys(tags, APP_PAYMENT_KEY_PREFIXES)
                  if not key.startswith(PHONE_WALLET_PAYMENT_KEYS))
-
-
-def is_parking_element(tags: Mapping) -> bool:
-    """A parking element of ruling R-T1c-a, the only carrier of app-payment evidence: a parking facility
-    (``amenity=parking`` of any geometry, i.e. street-side areas, lots and nodes; a highway way with street-parking tags
-    ``parking:*``) or a parking payment device (``vending=*`` lists ``parking_tickets``). Shops, charging stations and
-    every other element are none."""
-    if (zg._tag_text(tags, "amenity") or "").lower() == "parking":
-        return True
-    if zg._tag_text(tags, "highway") and any(str(key).startswith("parking:") for key in tags):
-        return True
-    return TICKET_MACHINE_VENDING in zg._tokens(zg._tag_text(tags, "vending"))
-
-
-def _object_label(tags: Mapping) -> str:
-    for key in ("amenity", "shop", "highway", "leisure", "tourism", "office", "craft", "building"):
-        value = zg._tag_text(tags, key)
-        if value:
-            return f"{key}={value}"
-    return "other"
-
-
-def payment_evidence(objects: gpd.GeoDataFrame, *, label: str = "") -> gpd.GeoDataFrame:
-    """The payment evidence of variant T among OSM elements (``tags`` column, any geometry, EPSG:25832; optional
-    ``osm_type`` / ``osm_id``): every parking ticket machine that is a node (``is_parking_ticket_machine``; owner
-    decision 3) and every parking element (``is_parking_element``) with an app-payment tag (``app_payment_keys``),
-    whatever its own parking class (ruling R-T1c-a).
-
-    Returns ``EVIDENCE_COLUMNS``: ``evidence`` is ``ticket_machine``, ``app_payment`` or both (';'), ``object`` names
-    the element by its main tag. Logs the counts and what the definition leaves out: ticket machines that are no node,
-    elements with an app-payment tag that are no parking element (shops, charging stations) and elements whose only
-    payment keys of that kind are phone wallets.
-    """
-    zg._require_metric(objects, "payment evidence candidates")
-    zg._require_tags(objects, "payment evidence candidates")
-    rows, not_nodes, not_parking, wallet_only, without_geometry = [], 0, 0, 0, 0
-    for position, row in enumerate(objects.itertuples(index=False)):
-        tags = dict(row.tags or {})
-        osm_type, osm_id, element = _identity(row, position)
-        machine = is_parking_ticket_machine(tags)
-        if machine and osm_type and osm_type != "node":
-            not_nodes += 1
-            machine = False
-        keys = app_payment_keys(tags)
-        if not keys and _set_payment_keys(tags, PHONE_WALLET_PAYMENT_KEYS):
-            wallet_only += 1
-        app = bool(keys) and is_parking_element(tags)
-        if keys and not app:
-            not_parking += 1
-        if not (machine or app):
-            continue
-        if row.geometry is None or row.geometry.is_empty:
-            without_geometry += 1
-            continue
-        evidence = ";".join(name for name, flag in (("ticket_machine", machine), ("app_payment", app)) if flag)
-        rows.append({"evidence_id": element, "osm_type": osm_type, "osm_id": osm_id, "evidence": evidence,
-                     "app_payment_keys": ";".join(keys) if app else "", "object": _object_label(tags),
-                     "geometry": row.geometry})
-    frame = gpd.GeoDataFrame(rows, columns=list(EVIDENCE_COLUMNS), geometry="geometry", crs=METRIC_CRS)
-    frame["osm_id"] = frame["osm_id"].astype("Int64")
-    summary = summarise_payment_evidence(frame)["evidence"]
-    log.info("%s %spayment evidence of variant T (ruling R-T1c-a): %d parking ticket machines (nodes), %d parking "
-             "elements with an app-payment tag; left out: %d elements with an app-payment tag that are no parking "
-             "element, %d elements with a phone-wallet key only, %d ticket machines that are no node, %d elements "
-             "without geometry", _LOG_TAG, f"{label}: " if label else "", summary["ticket_machines"],
-             summary["app_payment_elements"], not_parking, wallet_only, not_nodes, without_geometry)
-    return frame
-
-
-def summarise_payment_evidence(evidence: gpd.GeoDataFrame, elements: Optional[gpd.GeoDataFrame] = None,
-                               distance_m: Optional[float] = None) -> dict:
-    """QA numbers of variant T (JSON-serialisable): the evidence (``payment_evidence``: ticket machines, parking
-    elements with an app-payment tag) and, for an inventory after ``apply_payment_evidence`` (``elements`` with
-    ``distance_m``), the elements it turned paid per kind, their spaces and the evidence behind them
-    (``PAYMENT_EVIDENCE_SOURCES``); the conversion keys are None otherwise."""
-    zg._require_columns(evidence, EVIDENCE_COLUMNS, "payment evidence (run payment_evidence first)")
-    machines = evidence["evidence"].str.contains("ticket_machine", regex=False).to_numpy(dtype=bool)
-    app = evidence["evidence"].str.contains("app_payment", regex=False).to_numpy(dtype=bool)
-    summary = {"distance_m": None if distance_m is None else float(distance_m),
-               "evidence": {"ticket_machines": int(machines.sum()), "app_payment_elements": int(app.sum())},
-               "converted": None, "converted_spaces": None, "converted_by": None}
-    if elements is not None and distance_m is not None:
-        zg._require_columns(elements, ELEMENT_COLUMNS, "supply elements (run supply_elements first)")
-        converted = elements[elements["reason"].isin(("payment_evidence", "app_payment_tag"))]
-        summary["converted"] = {kind: int((converted["kind"] == kind).sum()) for kind in ELEMENT_KINDS}
-        summary["converted_spaces"] = round(float(converted["capacity_spaces"].sum()), 2)
-        summary["converted_by"] = {source: int((converted["payment_evidence"] == source).sum())
-                                   for source in PAYMENT_EVIDENCE_SOURCES}
-    return summary
-
-
-def apply_payment_evidence(elements: gpd.GeoDataFrame, evidence: gpd.GeoDataFrame,
-                           distance_m: float = PAYMENT_EVIDENCE_DISTANCE_M, *, label: str = "",
-                           region: str = "the elements passed") -> gpd.GeoDataFrame:
-    """Variant T (owner decision 3, pre-registered before any T result) on a B1 inventory; returns a copy.
-
-    A street side or street-side area free only for lack of a fee tag (reason ``no_fee_tag``, B-a) becomes ``paid``
-    (reason ``payment_evidence``) when its geometry, not only its centroid, lies within ``distance_m`` (EPSG:25832,
-    ``dwithin``) of any evidence element (``payment_evidence``: ticket machines and parking elements with an app-payment
-    tag); ``payment_evidence`` names the evidence in the order of ``PAYMENT_EVIDENCE_SOURCES`` (a ticket machine
-    first). A street-side area or lot with an app-payment tag of its own
-    and no fee tag (reasons ``OWN_TAG_CONVERTIBLE_REASONS``: B-a, a disc area, B-c) becomes ``paid`` (reason
-    ``app_payment_tag``). Never overridden: an explicit ``fee=no``, disc street sides (B-b), charged, not public or
-    forbidden elements. The evidence adds no element and no capacity. Logs the conversions as a share of the elements
-    each rule may convert, naming ``region``.
-    """
-    zg._require_columns(elements, ELEMENT_COLUMNS, "supply elements (run supply_elements first)")
-    zg._require_metric(elements, "supply elements")
-    zg._require_columns(evidence, EVIDENCE_COLUMNS, "payment evidence (run payment_evidence first)")
-    zg._require_metric(evidence, "payment evidence")
-    if not (isinstance(distance_m, (int, float)) and math.isfinite(distance_m) and distance_m > 0):
-        raise ValueError(f"distance_m must be a distance > 0 in metres, got {distance_m!r}")
-    result = elements.copy()
-    kinds, reasons = result["kind"].to_numpy(dtype=object), result["reason"].to_numpy(dtype=object)
-    own = (np.isin(kinds, ("street_side_area", "lot")) & np.isin(reasons, OWN_TAG_CONVERTIBLE_REASONS)
-           & (result["app_payment_keys"].to_numpy(dtype=object) != ""))
-    candidates = np.isin(kinds, ("street_side", "street_side_area")) & np.isin(reasons, PROXIMITY_CONVERTIBLE_REASONS)
-    candidates &= ~own
-    source = np.full(len(result), "", dtype=object)
-    source[own] = "own_app_payment_tag"
-    near = np.zeros(len(result), dtype=bool)
-    positions = np.flatnonzero(candidates)
-    if len(positions) and len(evidence):
-        # rank of every evidence element in the attribution order: 0 ticket machine, 1 app payment on a parking element
-        machine = evidence["evidence"].str.contains("ticket_machine", regex=False).to_numpy(dtype=bool)
-        rank = np.where(machine, 0, 1)
-        tree = shapely.STRtree(np.asarray(evidence.geometry.values))
-        pairs = tree.query(np.asarray(result.geometry.values)[positions], predicate="dwithin", distance=distance_m)
-        best = np.full(len(positions), 2)
-        np.minimum.at(best, pairs[0], rank[pairs[1]])
-        hit = best < 2
-        near[positions[hit]] = True
-        source[positions[hit]] = np.asarray(PAYMENT_EVIDENCE_SOURCES)[best[hit]]
-    converted = own | near
-    result.loc[converted, "class"] = "paid"
-    result.loc[own, "reason"] = "app_payment_tag"
-    result.loc[near, "reason"] = "payment_evidence"
-    result["payment_evidence"] = source
-    spaces = result["capacity_spaces"].to_numpy(dtype=float)
-    own_possible = (np.isin(kinds, ("street_side_area", "lot")) & np.isin(reasons, OWN_TAG_CONVERTIBLE_REASONS))
-    log.info("%s %s%s: variant T within %.0f m: %d of %d street sides and street-side areas free only for lack of a fee "
-             "tag became paid (%s; %.0f of %.0f spaces), %d of %d street-side areas and lots without a fee tag by their "
-             "own app-payment tag (%.0f spaces); by ticket machine %d, by an app-payment tag on a parking element %d",
-             _LOG_TAG, f"{label}, " if label else "", region, distance_m, int(near.sum()), int(candidates.sum()),
-             _share_text(near.sum() / candidates.sum() if candidates.sum() else math.nan), float(spaces[near].sum()),
-             float(spaces[candidates].sum()), int(own.sum()), int(own_possible.sum()), float(spaces[own].sum()),
-             int((source == "ticket_machine").sum()), int((source == "app_payment_parking").sum()))
-    return result
-
-
-def street_supply_only(elements: gpd.GeoDataFrame, *, label: str = "",
-                       region: str = "the elements passed") -> gpd.GeoDataFrame:
-    """Variant S (owner decision 2): the inventory without its off-street lots and garages (kind ``lot``), i.e. the
-    street sides and the separately mapped street-side areas; a copy with a fresh index. Logs what leaves."""
-    zg._require_columns(elements, ELEMENT_COLUMNS, "supply elements (run supply_elements first)")
-    lots = (elements["kind"] == "lot").to_numpy()
-    usable = elements["class"].isin(USABLE_CLASSES).to_numpy()
-    log.info("%s %s%s: variant S keeps %d street sides and street-side areas and drops %d off-street lots and garages "
-             "(%d usable, %.0f usable spaces)", _LOG_TAG, f"{label}, " if label else "", region, int((~lots).sum()),
-             int(lots.sum()), int((lots & usable).sum()),
-             float(elements.loc[lots & usable, "capacity_spaces"].sum()))
-    return elements[~lots].reset_index(drop=True)
-
-
-def variant_elements(elements: gpd.GeoDataFrame, variant, evidence: Optional[gpd.GeoDataFrame] = None, *,
-                     label: str = "", region: str = "the elements passed") -> gpd.GeoDataFrame:
-    """The inventory of ``variant`` (``SupplyVariant``) from the B1 inventory of ``supply_elements``: unchanged for the
-    full inventory (B), ``street_supply_only`` for S, ``apply_payment_evidence`` with ``evidence`` for T, S first for
-    S+T. ``ValueError`` when T lacks its evidence."""
-    if not isinstance(variant, SupplyVariant):
-        raise TypeError(f"variant must be a SupplyVariant, got {type(variant).__name__}")
-    result = elements
-    if variant.street_supply_only:
-        result = street_supply_only(result, label=label, region=region)
-    if variant.payment_evidence_m is not None:
-        if evidence is None:
-            raise ValueError("variant T needs the payment evidence (supply_share.payment_evidence of the inventory)")
-        result = apply_payment_evidence(result, evidence, variant.payment_evidence_m, label=label, region=region)
-    return result
 
 
 # --------------------------------------------------------------------------- B3: discretisation and raster
@@ -990,6 +777,11 @@ def zone_polygons(raster: pd.DataFrame, share_threshold: float = DEFAULT_SHARE_T
 
 
 # --------------------------------------------------------------------------- B5: validation
+
+
+#: B5 is evaluated in Braunschweig against the ordinance polygons of zones Ia and Ib of the zone release.
+B5_MUNICIPALITY_AGS = "03101000"
+LEGAL_ZONE_IDS = ("bs_zone_ia", "bs_zone_ib")
 
 
 def _geometry(value, what: str) -> BaseGeometry:
@@ -1200,343 +992,3 @@ SENSITIVITY_ARMS = (dataclasses.replace(PRE_REGISTERED_SUPPLY_PARAMETERS, walk_m
                     dataclasses.replace(PRE_REGISTERED_SUPPLY_PARAMETERS, walk_m=400.0),
                     dataclasses.replace(PRE_REGISTERED_SUPPLY_PARAMETERS, share_threshold=0.3),
                     dataclasses.replace(PRE_REGISTERED_SUPPLY_PARAMETERS, share_threshold=0.7))
-
-
-@dataclasses.dataclass(frozen=True)
-class SupplyVariant:
-    """Inventory variant of owner decisions 2 and 3 (information arms, never applied): ``street_supply_only`` is S
-    (off-street lots and garages leave the inventory), ``payment_evidence_m`` is T (payment evidence within that many
-    metres turns untagged street parking paid, ASSUMPTION T-a; None = no payment evidence)."""
-    street_supply_only: bool = False
-    payment_evidence_m: Optional[float] = None
-
-    def __post_init__(self):
-        if not isinstance(self.street_supply_only, bool):
-            raise TypeError(f"street_supply_only must be a bool, got {self.street_supply_only!r}")
-        distance = self.payment_evidence_m
-        if distance is not None and not (isinstance(distance, (int, float)) and not isinstance(distance, bool)
-                                         and math.isfinite(distance) and distance > 0):
-            raise ValueError(f"payment_evidence_m must be None or a distance > 0 in metres, got {distance!r}")
-
-    @property
-    def label(self) -> str:
-        """``full`` (B1 as is), ``S``, ``T`` or ``S+T``."""
-        names = [name for name, used in (("S", self.street_supply_only), ("T", self.payment_evidence_m is not None))
-                 if used]
-        return "+".join(names) or "full"
-
-    def suffix(self) -> str:
-        """File-name suffix after the parameter tag: '' (full), ``_streetonly``, ``_parkingpayment<m>m`` or both. The T
-        suffix names the evidence definition of ruling R-T1c-a (parking elements only); the files ``_payment<m>m`` of
-        the superseded literal reading keep their names and are never read as T."""
-        return ("_streetonly" if self.street_supply_only else "") + (
-            f"_parkingpayment{_number_text(self.payment_evidence_m)}m" if self.payment_evidence_m is not None else "")
-
-    def as_dict(self) -> dict:
-        return {"label": self.label, "street_supply_only": self.street_supply_only,
-                "payment_evidence_m": None if self.payment_evidence_m is None else float(self.payment_evidence_m)}
-
-
-FULL_INVENTORY = SupplyVariant()
-STREET_SUPPLY_ONLY = SupplyVariant(street_supply_only=True)
-PAYMENT_EVIDENCE = SupplyVariant(payment_evidence_m=PAYMENT_EVIDENCE_DISTANCE_M)
-STREET_SUPPLY_ONLY_PAYMENT_EVIDENCE = SupplyVariant(street_supply_only=True,
-                                                    payment_evidence_m=PAYMENT_EVIDENCE_DISTANCE_M)
-
-
-@dataclasses.dataclass(frozen=True)
-class SupplyArm:
-    """One run of the rule: its parameters and its inventory variant; ``tag`` names every file of the run."""
-    parameters: SupplyShareParameters = DEFAULT_SUPPLY_PARAMETERS
-    variant: SupplyVariant = FULL_INVENTORY
-
-    def tag(self) -> str:
-        """``SupplyShareParameters.tag`` plus ``SupplyVariant.suffix``, e.g. ``w250_t0.3_u50_c25_s12.5_i10000_payment75m``."""
-        return self.parameters.tag() + self.variant.suffix()
-
-    @property
-    def label(self) -> str:
-        """Short label for QA text, e.g. ``S share 0.3`` or ``full share 0.5 W 150 m``."""
-        walk = "" if self.parameters.walk_m == DEFAULT_SUPPLY_PARAMETERS.walk_m else f" W {self.parameters.walk_m:g} m"
-        return f"{self.variant.label} share {self.parameters.share_threshold:g}{walk}"
-
-
-#: B: the owner's choice (share 0.3, full inventory, literal B-a reading, residents restricted), the only arm that may be
-#: applied (H1 and H2).
-DEFAULT_ARM = SupplyArm(DEFAULT_SUPPLY_PARAMETERS)
-#: The information arms of owner decisions 2 and 3 in the order of the spec: S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
-#: 0.5 and 0.3. Together with B seven arms are computed with H1 and H2 (multiplicity stated in the records).
-VARIANT_ARMS = (SupplyArm(DEFAULT_SUPPLY_PARAMETERS, STREET_SUPPLY_ONLY),
-                SupplyArm(PRE_REGISTERED_SUPPLY_PARAMETERS, STREET_SUPPLY_ONLY),
-                SupplyArm(PRE_REGISTERED_SUPPLY_PARAMETERS, PAYMENT_EVIDENCE),
-                SupplyArm(DEFAULT_SUPPLY_PARAMETERS, PAYMENT_EVIDENCE),
-                SupplyArm(PRE_REGISTERED_SUPPLY_PARAMETERS, STREET_SUPPLY_ONLY_PAYMENT_EVIDENCE),
-                SupplyArm(DEFAULT_SUPPLY_PARAMETERS, STREET_SUPPLY_ONLY_PAYMENT_EVIDENCE))
-#: Context of Task 1b recomputed on the same code: Amendment B's pre-registered defaults (share 0.5) and its B5 arms
-#: other than the new default (W 150 / 400 m at 0.5, share 0.7); information only.
-AMENDMENT_B_ARMS = (SupplyArm(PRE_REGISTERED_SUPPLY_PARAMETERS),) + tuple(
-    SupplyArm(parameters) for parameters in SENSITIVITY_ARMS if parameters != DEFAULT_SUPPLY_PARAMETERS)
-
-
-# --------------------------------------------------------------------------- B7: the release of the classified cells
-
-
-def release_frame(raster: pd.DataFrame, municipality_ags: str) -> pd.DataFrame:
-    """The classified cells of one town as release rows (``PAID_SHARE_RELEASE_COLUMNS``): cell centres in EPSG:25832
-    metres (0.1 m), ``paid_share`` and ``heuristic_capacity_share`` to 6 decimals, ``usable_spaces`` to 0.01 spaces."""
-    if not _AGS.match(str(municipality_ags)):
-        raise ValueError(f"municipality_ags must be an 8-digit AGS, got {municipality_ags!r}")
-    zg._require_columns(raster, RASTER_COLUMNS, "raster (run paid_share_raster first)")
-    classified = raster[raster["classified"].astype(bool)]
-    return pd.DataFrame({"x_m": classified["x_m"].round(1).to_numpy(), "y_m": classified["y_m"].round(1).to_numpy(),
-                         "municipality_ags": str(municipality_ags),
-                         "paid_share": classified["paid_share"].round(6).to_numpy(),
-                         "usable_spaces": classified["usable_spaces"].round(2).to_numpy(),
-                         "heuristic_capacity_share": classified["heuristic_capacity_share"].round(6).to_numpy()},
-                        columns=list(PAID_SHARE_RELEASE_COLUMNS))
-
-
-def validate_paid_share_release(release: pd.DataFrame) -> None:
-    """Raise ``ValueError`` listing every violation: the release columns in order, 8-digit AGS, finite coordinates, one
-    row per cell, ``paid_share`` and ``heuristic_capacity_share`` in [0, 1], ``usable_spaces`` > 0."""
-    if list(release.columns) != list(PAID_SHARE_RELEASE_COLUMNS):
-        raise ValueError(f"paid-share release: columns {list(release.columns)}, expected "
-                         f"{list(PAID_SHARE_RELEASE_COLUMNS)}")
-    problems = []
-    if release.empty:
-        problems.append("no rows")
-    bad_ags = sorted({str(value) for value in release["municipality_ags"] if not _AGS.match(str(value))})
-    if bad_ags:
-        problems.append(f"municipality_ags not an 8-digit AGS: {bad_ags[:5]}")
-    for column, low, high in (("paid_share", 0.0, 1.0), ("heuristic_capacity_share", 0.0, 1.0)):
-        values = pd.to_numeric(release[column], errors="coerce").to_numpy(dtype=float)
-        invalid = ~(np.isfinite(values) & (values >= low) & (values <= high))
-        if invalid.any():
-            problems.append(f"{column} outside [{low}, {high}] in {int(invalid.sum())} row(s)")
-    usable = pd.to_numeric(release["usable_spaces"], errors="coerce").to_numpy(dtype=float)
-    if (~(np.isfinite(usable) & (usable > 0))).any():
-        problems.append("usable_spaces must be > 0 (only classified cells are released)")
-    coordinates = release[["x_m", "y_m"]].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-    if (~np.isfinite(coordinates)).any():
-        problems.append("x_m / y_m must be finite EPSG:25832 metres")
-    duplicated = int(release.duplicated(subset=["x_m", "y_m"]).sum())
-    if duplicated:
-        problems.append(f"{duplicated} duplicate cell(s): one row per cell")
-    if problems:
-        raise ValueError("invalid paid-share release: " + "; ".join(problems))
-
-
-def deterministic_gzip(text: str) -> bytes:
-    """``text`` (UTF-8) gzip-compressed without a time stamp or file name in the header: equal text, equal bytes."""
-    buffer = io.BytesIO()
-    with gzip.GzipFile(filename="", mode="wb", fileobj=buffer, mtime=0) as stream:
-        stream.write(text.encode("utf-8"))
-    return buffer.getvalue()
-
-
-def load_paid_share_release(path) -> pd.DataFrame:
-    """Read the gzip CSV release (``#`` lines skipped), typed, and validate it (``validate_paid_share_release``)."""
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(f"paid-share release missing: {path}")
-    with gzip.open(path, "rt", encoding="utf-8") as stream:
-        lines = [line for line in stream.read().splitlines() if not line.startswith("#")]
-    release = pd.read_csv(io.StringIO("\n".join(lines)), dtype={"municipality_ags": str})
-    validate_paid_share_release(release)
-    return release
-
-
-# --------------------------------------------------------------------------- the committed QA table
-
-
-#: B5 is evaluated in Braunschweig against the ordinance polygons of zones Ia and Ib of the zone release.
-B5_MUNICIPALITY_AGS = "03101000"
-LEGAL_ZONE_IDS = ("bs_zone_ia", "bs_zone_ib")
-#: ``parking_zones_2026_supply_share_qa.csv``: one row per curated town, written by
-#: ``scripts/curation/parking_zones_2026/assemble_parking_zones.py --supply-share-dir`` (its header defines every
-#: column). ``role`` says whether the rule may replace polygons (``zones_from_rule``) or is QA only; ``decision`` is
-#: ``applied``, ``gate_failed`` (H1 or H2 of owner decision 2 failed, nothing applied anywhere), ``no_rule_polygon``
-#: (both passed, nothing to apply) or ``qa_only``; ``applied`` and ``zone_ids`` name the ``osm_supply_majority``
-#: polygons. The Braunschweig row carries H1 (the B5 columns, computed with the table's default parameters) and the
-#: pooled H2; every holdout town its holdout overlaps; every town its payment evidence (variant T).
-SUPPLY_SHARE_QA_COLUMNS = (
-    "ags", "name", "role", "osm_extract", "osm_extract_md5", "osm_timestamp", "walk_m", "share_threshold",
-    "minimum_usable_spaces", "cell_m", "smoothing_m", "minimum_island_m2", "street_ways", "street_side_areas",
-    "offstreet_lots", "paid_elements", "restricted_elements", "free_elements", "excluded_elements", "overpass_response",
-    "overpass_osm_timestamp", "overpass_paid_elements", "overpass_restricted_elements", "overpass_free_elements",
-    "overpass_excluded_elements", "cross_check", "usable_spaces", "paid_spaces", "restricted_spaces", "free_spaces",
-    "tagged_capacity_share", "heuristic_capacity_share", "free_street_spaces_without_fee_tag_share",
-    "offstreet_lots_without_fee_tag", "offstreet_spaces_without_fee_tag_share", "ticket_machines",
-    "app_payment_elements", "payment_evidence_paid_elements", "payment_evidence_paid_spaces", "cells",
-    "classified_cells", "classified_cell_share", "paid_cells",
-    "rule_area_m2", "rule_parts", "b5_recall", "b5_precision", "b5_passed", "h2_pooled_recall", "h2_pooled_precision",
-    "h2_minimum_town_recall", "h2_passed", "holdout_references", "holdout_reference_area_m2",
-    "holdout_rule_inside_reference_m2", "holdout_rule_inside_query_box_m2", "holdout_recall", "holdout_precision",
-    "reference", "rule_share_inside_reference", "reference_share_covered_by_rule", "largest_outline_distance_m",
-    "sensitivity", "variant_arms", "applied", "zone_ids", "decision", "note",
-)
-SUPPLY_SHARE_QA_ROLES = ("zones_from_rule", "qa_only")
-SUPPLY_SHARE_DECISIONS = ("applied", "gate_failed", "no_rule_polygon", "qa_only")
-_QA_COUNTS = ("street_ways", "street_side_areas", "offstreet_lots", "paid_elements", "restricted_elements",
-              "free_elements", "excluded_elements", "overpass_paid_elements", "overpass_restricted_elements",
-              "overpass_free_elements", "overpass_excluded_elements", "offstreet_lots_without_fee_tag", "cells",
-              "classified_cells", "paid_cells", "rule_parts")
-#: Counts that may stay empty (the payment evidence of an inventory read before Task 1c).
-_QA_OPTIONAL_COUNTS = ("ticket_machines", "app_payment_elements", "payment_evidence_paid_elements")
-_QA_AMOUNTS = ("usable_spaces", "paid_spaces", "restricted_spaces", "free_spaces", "rule_area_m2")
-_QA_OPTIONAL_AMOUNTS = ("largest_outline_distance_m", "payment_evidence_paid_spaces", "holdout_reference_area_m2",
-                        "holdout_rule_inside_reference_m2", "holdout_rule_inside_query_box_m2")
-_QA_SHARES = ("tagged_capacity_share", "heuristic_capacity_share", "free_street_spaces_without_fee_tag_share",
-              "offstreet_spaces_without_fee_tag_share",
-              "classified_cell_share", "b5_recall", "b5_precision", "h2_pooled_recall", "h2_pooled_precision",
-              "h2_minimum_town_recall", "holdout_recall", "holdout_precision", "rule_share_inside_reference",
-              "reference_share_covered_by_rule")
-#: Columns of the Braunschweig row only: H1 (B5 with the table's parameters) and the pooled H2.
-QA_GATE_COLUMNS = ("b5_recall", "b5_precision", "b5_passed", "h2_pooled_recall", "h2_pooled_precision",
-                   "h2_minimum_town_recall", "h2_passed")
-#: Columns of the holdout towns only (the precision pair of the four towns with a query-box frame only).
-QA_HOLDOUT_COLUMNS = ("holdout_references", "holdout_reference_area_m2", "holdout_rule_inside_reference_m2",
-                      "holdout_recall")
-QA_HOLDOUT_PRECISION_COLUMNS = ("holdout_rule_inside_query_box_m2", "holdout_precision")
-#: QA column -> ``SupplyShareParameters`` field and the provenance column of an ``osm_supply_majority`` polygon.
-QA_PARAMETER_COLUMNS = {"walk_m": "walk_m", "share_threshold": "share_threshold",
-                        "minimum_usable_spaces": "minimum_usable_spaces", "cell_m": "cell_m",
-                        "smoothing_m": "smoothing_m", "minimum_island_m2": "minimum_island_m2"}
-QA_POLYGON_PROVENANCE = {"walk_m": "supply_walk_m", "share_threshold": "paid_share_threshold",
-                         "minimum_usable_spaces": "minimum_usable_spaces"}
-
-
-def load_supply_share_qa(path) -> pd.DataFrame:
-    """Load ``parking_zones_2026_supply_share_qa.csv`` (``#`` lines skipped, every cell as stripped text)."""
-    qa = pz._read_documented_csv(path)
-    pz._check_columns(qa, SUPPLY_SHARE_QA_COLUMNS, str(path))
-    qa = qa[list(SUPPLY_SHARE_QA_COLUMNS)].apply(lambda column: column.str.strip())
-    log.info("%s loaded %d supply-share QA rows from %s", _LOG_TAG, len(qa), path)
-    return qa
-
-
-def validate_supply_share_qa(qa: pd.DataFrame, zones: pd.DataFrame, tariffs: pd.DataFrame) -> None:
-    """Check the supply-share QA table against itself and the polygons; raise ``ValueError`` listing every violation.
-
-    Rules: one row per 8-digit ZGB ``ags``; ``role``, ``decision`` and the literal ``applied`` valid; ``qa_only`` rows
-    decide ``qa_only``; an applied row (``decision`` applied) has role ``zones_from_rule`` and zone ids, every other row
-    none; snapshot, extract MD5, positive parameters, whole counts, non-negative amounts, shares in [0, 1]; only the
-    Braunschweig row carries the gate columns ``QA_GATE_COLUMNS`` (H1 recall and precision, the literal ``b5_passed``,
-    the pooled H2 and the literal ``h2_passed``) and it must carry them; the holdout overlaps sit on the holdout towns
-    only (``HOLDOUT_REFERENCE_ZONES``, the precision pair on ``HOLDOUT_PRECISION_TOWNS`` only) and name their
-    references; an applied row needs ``b5_passed`` and ``h2_passed`` true. Every zone id of an applied row is an
-    ``osm_supply_majority`` polygon whose tariff row lies in the row's municipality and whose provenance equals the
-    row's parameters and snapshot, and every ``osm_supply_majority`` polygon is listed by exactly one applied row. The
-    gates themselves and the default parameters are re-applied by ``scripts/validate_parking_zones.py``.
-    """
-    pz._check_columns(qa, SUPPLY_SHARE_QA_COLUMNS, "supply-share QA table")
-    problems = []
-    if qa.empty:
-        problems.append("no rows")
-    duplicated = sorted(set(qa["ags"][qa["ags"].duplicated()]))
-    if duplicated:
-        problems.append(f"duplicate rows for ags {duplicated}; one row per town")
-    b5_rows = qa[qa["ags"] == B5_MUNICIPALITY_AGS]
-    gate_passed = (len(b5_rows) == 1 and b5_rows.iloc[0]["b5_passed"] == "true"
-                   and b5_rows.iloc[0]["h2_passed"] == "true")
-    polygons = zones.set_index("zone_id")
-    municipality = tariffs.set_index("zone_id")["municipality_ags"]
-    listed = {}
-    for _, row in qa.iterrows():
-        ags, prefix = row["ags"], f"ags {row['ags']}"
-        if not _AGS.match(str(ags)) or str(ags)[:5] not in pz.ZGB_COUNTY_KEYS:
-            problems.append(f"{prefix}: not an 8-digit AGS of the ZGB counties")
-        if row["role"] not in SUPPLY_SHARE_QA_ROLES:
-            problems.append(f"{prefix}: role {row['role']!r} is not one of {list(SUPPLY_SHARE_QA_ROLES)}")
-        if row["decision"] not in SUPPLY_SHARE_DECISIONS:
-            problems.append(f"{prefix}: decision {row['decision']!r} is not one of {list(SUPPLY_SHARE_DECISIONS)}")
-        if (row["role"] == "qa_only") != (row["decision"] == "qa_only"):
-            problems.append(f"{prefix}: role {row['role']!r} and decision {row['decision']!r} disagree (qa_only rows "
-                            "decide qa_only)")
-        if row["applied"] not in ("true", "false"):
-            problems.append(f"{prefix}: applied {row['applied']!r}; use the literal 'true' or 'false'")
-        if not pz._OSM_TIMESTAMP_PATTERN.match(str(row["osm_timestamp"])):
-            problems.append(f"{prefix}: osm_timestamp {row['osm_timestamp']!r} is not 'YYYY-MM-DDTHH:MM:SSZ'")
-        if not re.fullmatch(r"[0-9a-f]{32}", str(row["osm_extract_md5"])) or not row["osm_extract"]:
-            problems.append(f"{prefix}: osm_extract and its 32-digit MD5 are required")
-        for column in QA_PARAMETER_COLUMNS:
-            value = pz._qa_number(row[column])
-            positive = column in ("walk_m", "cell_m", "share_threshold")
-            if value is None or not math.isfinite(value) or value < 0 or (positive and value <= 0) or \
-                    (column == "share_threshold" and value > 1):
-                problems.append(f"{prefix}: {column} = {row[column]!r} is not a valid parameter")
-        for column in _QA_COUNTS + _QA_OPTIONAL_COUNTS:
-            if (column in _QA_COUNTS or row[column]) and not re.fullmatch(r"\d+", str(row[column])):
-                problems.append(f"{prefix}: {column} = {row[column]!r} must be a whole number >= 0")
-        for column in _QA_AMOUNTS + _QA_OPTIONAL_AMOUNTS:
-            value = pz._qa_number(row[column])
-            required = column in _QA_AMOUNTS
-            if (value is None and required) or (value is not None and not (math.isfinite(value) and value >= 0)):
-                problems.append(f"{prefix}: {column} = {row[column]!r} must be a number >= 0")
-        for column in _QA_SHARES:
-            value = pz._qa_number(row[column])
-            if value is not None and not (math.isfinite(value) and 0.0 <= value <= 1.0):
-                problems.append(f"{prefix}: {column} = {row[column]!r} must lie in [0, 1] (or be empty)")
-        gate = [row[column] for column in QA_GATE_COLUMNS]
-        if ags == B5_MUNICIPALITY_AGS:
-            if row["b5_passed"] not in ("true", "false") or row["h2_passed"] not in ("true", "false") or not all(gate):
-                problems.append(f"{prefix}: the Braunschweig row carries {list(QA_GATE_COLUMNS)} with the literal "
-                                "b5_passed and h2_passed")
-        elif any(gate):
-            problems.append(f"{prefix}: only the Braunschweig row ({B5_MUNICIPALITY_AGS}) carries the gate columns "
-                            "(H1 and the pooled H2)")
-        references = HOLDOUT_REFERENCE_ZONES.get(ags)
-        framed = ags in HOLDOUT_PRECISION_TOWNS
-        for column in QA_HOLDOUT_COLUMNS + QA_HOLDOUT_PRECISION_COLUMNS:
-            expected = references is not None and (column in QA_HOLDOUT_COLUMNS or framed)
-            if bool(row[column]) != expected:
-                problems.append(f"{prefix}: {column} {'is required' if expected else 'must be empty'} (holdout "
-                                f"{'town' if references else 'references only in ' + str(sorted(HOLDOUT_REFERENCE_ZONES))}"
-                                f"{', precision frame' if framed else ''})")
-        if references is not None and row["holdout_references"] != ";".join(references):
-            problems.append(f"{prefix}: holdout_references {row['holdout_references']!r}, expected "
-                            f"{';'.join(references)!r}")
-        applied = row["applied"] == "true"
-        zone_ids = [zone_id.strip() for zone_id in str(row["zone_ids"] or "").split(";") if zone_id.strip()]
-        if applied != (row["decision"] == "applied"):
-            problems.append(f"{prefix}: applied {row['applied']!r} and decision {row['decision']!r} disagree")
-        if applied:
-            if row["role"] != "zones_from_rule":
-                problems.append(f"{prefix}: applied rows need role 'zones_from_rule', found {row['role']!r}")
-            if not gate_passed:
-                problems.append(f"{prefix}: applied although the Braunschweig row does not pass H1 and H2")
-            if not zone_ids:
-                problems.append(f"{prefix}: an applied row lists its zone_ids")
-        elif zone_ids:
-            problems.append(f"{prefix}: zone_ids {zone_ids} on a row that is not applied")
-        for zone_id in zone_ids if applied else []:
-            listed.setdefault(zone_id, []).append(ags)
-            if zone_id not in polygons.index:
-                problems.append(f"{prefix}: zone {zone_id!r} has no polygon")
-                continue
-            polygon = polygons.loc[zone_id]
-            if polygon["geometry_source"] != pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE:
-                problems.append(f"{prefix}: zone {zone_id!r} is not an osm_supply_majority polygon "
-                                f"({polygon['geometry_source']})")
-                continue
-            if municipality.get(zone_id) != ags:
-                problems.append(f"{prefix}: zone {zone_id!r} has municipality_ags {municipality.get(zone_id)!r}")
-            for column, provenance in QA_POLYGON_PROVENANCE.items():
-                value = pz._qa_number(row[column])
-                if value is None or not math.isclose(float(polygon[provenance]), value, rel_tol=1e-9):
-                    problems.append(f"{prefix}: zone {zone_id!r} has {provenance} {polygon[provenance]} but the QA row "
-                                    f"{column} {row[column]!r}")
-            if polygon["osm_timestamp"] != row["osm_timestamp"]:
-                problems.append(f"{prefix}: zone {zone_id!r} has osm_timestamp {polygon['osm_timestamp']!r} but the QA "
-                                f"row {row['osm_timestamp']!r}")
-    if len(b5_rows) != 1:
-        problems.append(f"the Braunschweig row ({B5_MUNICIPALITY_AGS}) with the H1 and H2 gates is missing")
-    majority = sorted(zones.loc[zones["geometry_source"] == pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE, "zone_id"]
-                      .astype(str))
-    for zone_id in majority:
-        if zone_id not in listed:
-            problems.append(f"zone {zone_id!r} (osm_supply_majority) is not listed in the zone_ids of an applied row")
-        elif len(listed[zone_id]) > 1:
-            problems.append(f"zone {zone_id!r} is listed by several applied rows {listed[zone_id]}")
-    if problems:
-        raise ValueError("invalid supply-share QA table:\n  " + "\n  ".join(problems))

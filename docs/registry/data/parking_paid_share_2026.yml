@@ -43,7 +43,7 @@ acquisition:
     sees the supply up to 250 m plus one cell beyond the box). (2)
     scripts/curation/parking_zones_2026/assemble_parking_zones.py --supply-share-dir
     raw_osm/derived_supply_share_task_1c --paid-share-out ... (with the v1 inputs of the zone release) keeps the
-    classified cells of the default parameters only (share 0.3 by owner decision 2; supply_share.release_frame; it
+    classified cells of the default parameters only (share 0.3 by owner decision 2; supply_share_qa.release_frame; it
     refuses other parameters, the variants S and T and counterfactuals) and writes them with their provenance header.
     The share threshold and the smoothing of the zone rule B4 are not applied to this file; the rule polygons, H1 and
     the holdout check H2 are in the QA table parking_zones_2026_supply_share_qa.csv (data record parking_zones_2026).
@@ -63,7 +63,7 @@ verification:
   script: scripts/validate_parking_zones.py
   notes: >-
     Listed as D9 (matsim_only, optional, committed) in scripts/verify_braunschweig_inputs.py: no stage reads it.
-    braunschweig.parking.supply_share.load_paid_share_release validates the columns, the 8-digit AGS, finite
+    braunschweig.parking.supply_share_qa.load_paid_share_release validates the columns, the 8-digit AGS, finite
     coordinates, one row per cell, paid_share and heuristic_capacity_share in [0, 1] and usable_spaces > 0;
     scripts/validate_parking_zones.py runs it when the file exists and prints the cells per town.
     tests/test_parking_supply_share.py pins the writer (test_release_file_holds_the_classified_cells_as_gzip_csv_in_epsg_25832:

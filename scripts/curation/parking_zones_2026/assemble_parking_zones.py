@@ -33,7 +33,7 @@ note of their municipality. Without ``--erosion-dir`` the output is the v1 file 
 
 Parking cost zones v2, spec Amendment B (majority rule over the parking supply, issue #436; ``--supply-share-dir``):
 the per-town outputs of ``scripts/build_parking_zones_from_osm.py --supply-share`` of arm B, the default parameters of
-owner decision 2 (``supply_share.DEFAULT_ARM``: share 0.3, a POST HOC change of the pre-registered 0.5, full inventory;
+owner decision 2 (``supply_variants.DEFAULT_ARM``: share 0.3, a POST HOC change of the pre-registered 0.5, full inventory;
 ``load_supply_inputs`` refuses other parameters, variants and counterfactuals). The application gate of owner
 decision 2 is re-applied (``supply_gate``): H1, B5 recomputed at the default parameters on the Braunschweig metrics
 (``supply_b5``), and H2, the pre-registered holdout check pooled from the holdout overlaps of the town QA files
@@ -88,6 +88,8 @@ import curation_common as cc
 # The script runs from its own directory (curation_common); the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from braunschweig.parking import supply_share as ss  # noqa: E402
+from braunschweig.parking import supply_share_qa as sq  # noqa: E402
+from braunschweig.parking import supply_variants as sv  # noqa: E402
 from braunschweig.parking import zone_geometry as zg  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 
@@ -707,7 +709,7 @@ SUPPLY_QA_INTRO = (
     "parameters. Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap contributors, ODbL 1.0",
     "(https://www.openstreetmap.org/copyright). Columns:",
 )
-#: One definition per column of ``supply_share.SUPPLY_SHARE_QA_COLUMNS``.
+#: One definition per column of ``supply_share_qa.SUPPLY_SHARE_QA_COLUMNS``.
 SUPPLY_QA_COLUMN_GLOSSARY = {
     "ags": "8-digit AGS of the curated town",
     "name": "municipality name (BA Gemeindeband, ASCII)",
@@ -827,12 +829,12 @@ RELEASE_COLUMN_GLOSSARY = {
 }
 #: The arms reported next to B (information only): the Amendment B arms (column sensitivity) and the information arms
 #: of owner decisions 2 and 3 (column variant_arms).
-REPORTED_ARMS = tuple(ss.AMENDMENT_B_ARMS) + tuple(ss.VARIANT_ARMS)
+REPORTED_ARMS = tuple(sv.AMENDMENT_B_ARMS) + tuple(sv.VARIANT_ARMS)
 #: The arm whose payment-evidence conversions the QA table reports (T at the default share).
-PAYMENT_EVIDENCE_ARM = ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE)
+PAYMENT_EVIDENCE_ARM = sv.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, sv.PAYMENT_EVIDENCE)
 
 
-def load_supply_inputs(directory, municipalities=None, arm=ss.DEFAULT_ARM) -> dict:
+def load_supply_inputs(directory, municipalities=None, arm=sv.DEFAULT_ARM) -> dict:
     """ags -> {"qa", "rule" (EPSG:25832), "raster", "arms" (tag -> QA of the ``REPORTED_ARMS`` present)}.
 
     Reads ``<ags>_supply_qa_<tag>.json``, ``<ags>_supply_zones_<tag>.geojson`` and ``<ags>_paid_share_<tag>.csv.gz``
@@ -974,12 +976,13 @@ def supply_h2(supply: dict) -> dict:
 
 
 def supply_gate(supply: dict) -> dict:
-    """The application gate of owner decision 2: H1 (``supply_b5``) and H2 (``supply_h2``) must both pass; returns
-    {"h1", "h1_passed", "h2", "h2_passed", "passed"}."""
+    """The application gate of owner decision 2 (``supply_share.passes_application_gate``): H1 (``supply_b5``) and H2
+    (``supply_h2``) must both pass; returns {"h1", "h1_passed", "h2", "h2_passed", "passed"}."""
     h1_passed = supply_b5(supply)
     h2 = supply_h2(supply)
-    gate = {"h1": supply[BS_AGS]["qa"]["validation"], "h1_passed": h1_passed, "h2": h2, "h2_passed": bool(h2["passes"]),
-            "passed": bool(h1_passed and h2["passes"])}
+    h1 = supply[BS_AGS]["qa"]["validation"]
+    gate = {"h1": h1, "h1_passed": h1_passed, "h2": h2, "h2_passed": bool(h2["passes"]),
+            "passed": ss.passes_application_gate(h1, h2)}
     print(f"application gate (H1 and H2): {'passed, B6 applies' if gate['passed'] else 'FAILED, nothing is applied'}")
     return gate
 
@@ -1128,7 +1131,7 @@ def payment_evidence_text(entry: dict) -> str:
 
 def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_zones, decision: str,
                   note: str, gate: Optional[dict] = None, pooled: Optional[dict] = None) -> dict:
-    """One row of the committed supply-share QA table (``supply_share.SUPPLY_SHARE_QA_COLUMNS``); ``gate``
+    """One row of the committed supply-share QA table (``supply_share_qa.SUPPLY_SHARE_QA_COLUMNS``); ``gate``
     (``supply_gate``) fills the H1 and H2 columns of the Braunschweig row, ``pooled`` (``pooled_holdout_by_arm``) the
     arms of that row."""
     pooled = pooled or {}
@@ -1137,7 +1140,7 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
     compared = qa.get("reference") or {}
     by_kind = s["elements_by_kind_and_class"]
     usable = s["usable_spaces"]
-    row = {column: "" for column in ss.SUPPLY_SHARE_QA_COLUMNS}
+    row = {column: "" for column in sq.SUPPLY_SHARE_QA_COLUMNS}
     row.update({
         "ags": ags, "name": MUNICIPALITY_NAMES[ags], "role": role, "osm_extract": qa["extract"]["file"],
         "osm_extract_md5": qa["extract"]["md5"], "osm_timestamp": qa["osm_timestamp"],
@@ -1160,9 +1163,9 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
         "reference": reference, "rule_share_inside_reference": _share(compared.get("core_share_inside_reference")),
         "reference_share_covered_by_rule": _share(compared.get("reference_share_covered")),
         "largest_outline_distance_m": _number(compared.get("largest_outline_distance_m"), 1),
-        "sensitivity": arms_text(entry, ss.AMENDMENT_B_ARMS, ags=ags, pooled=pooled, closing=(
+        "sensitivity": arms_text(entry, sv.AMENDMENT_B_ARMS, ags=ags, pooled=pooled, closing=(
             "Amendment B arms around its pre-registered share 0.5, information only")),
-        "variant_arms": arms_text(entry, ss.VARIANT_ARMS, ags=ags, pooled=pooled, closing=(
+        "variant_arms": arms_text(entry, sv.VARIANT_ARMS, ags=ags, pooled=pooled, closing=(
             "information arms of owner decisions 2 and 3, never applied")),
         "applied": "true" if applied_zones else "false",
         "zone_ids": ";".join(applied_zones), "decision": decision, "note": note})
@@ -1287,21 +1290,21 @@ def supply_qa_rows(supply: dict, zones: list, pieces: list, gate: dict, counterf
 
 def write_supply_share_qa(path, rows: list) -> None:
     """The supply-share QA table with its header: the intro and one '# <column>: <definition>' line per column."""
-    missing = [column for column in ss.SUPPLY_SHARE_QA_COLUMNS if column not in SUPPLY_QA_COLUMN_GLOSSARY]
-    if missing or len(SUPPLY_QA_COLUMN_GLOSSARY) != len(ss.SUPPLY_SHARE_QA_COLUMNS):
+    missing = [column for column in sq.SUPPLY_SHARE_QA_COLUMNS if column not in SUPPLY_QA_COLUMN_GLOSSARY]
+    if missing or len(SUPPLY_QA_COLUMN_GLOSSARY) != len(sq.SUPPLY_SHARE_QA_COLUMNS):
         raise SystemExit(f"SUPPLY_QA_COLUMN_GLOSSARY and SUPPLY_SHARE_QA_COLUMNS differ: missing {missing}")
     header = [f"# {line}" for line in SUPPLY_QA_INTRO] + [f"# {column}: {SUPPLY_QA_COLUMN_GLOSSARY[column]}"
-                                                           for column in ss.SUPPLY_SHARE_QA_COLUMNS]
-    table = pd.DataFrame(rows, columns=list(ss.SUPPLY_SHARE_QA_COLUMNS))
+                                                           for column in sq.SUPPLY_SHARE_QA_COLUMNS]
+    table = pd.DataFrame(rows, columns=list(sq.SUPPLY_SHARE_QA_COLUMNS))
     text = ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
     Path(path).write_text(text, encoding="utf-8", newline="\n")
     print(f"written {path} with {len(table)} rows: " + ", ".join(f"{row['ags']} {row['decision']}" for row in rows))
 
 
 def paid_share_release(supply: dict) -> pd.DataFrame:
-    """B7: the classified cells of every town (``supply_share.release_frame``), ordered by AGS, validated."""
-    release = pd.concat([ss.release_frame(supply[ags]["raster"], ags) for ags in sorted(supply)], ignore_index=True)
-    ss.validate_paid_share_release(release)
+    """B7: the classified cells of every town (``supply_share_qa.release_frame``), ordered by AGS, validated."""
+    release = pd.concat([sq.release_frame(supply[ags]["raster"], ags) for ags in sorted(supply)], ignore_index=True)
+    sq.validate_paid_share_release(release)
     return release
 
 
@@ -1327,11 +1330,11 @@ def write_paid_share_release(path, frame: pd.DataFrame, provenance) -> None:
     """The B7 release as gzip CSV without a time stamp (equal content, equal bytes): the intro, the provenance lines
     and one '# <column>: <definition>' line per column, then the cells (coordinates 0.1 m, shares 6 decimals,
     spaces 0.01)."""
-    ss.validate_paid_share_release(frame)
-    if set(RELEASE_COLUMN_GLOSSARY) != set(ss.PAID_SHARE_RELEASE_COLUMNS):
+    sq.validate_paid_share_release(frame)
+    if set(RELEASE_COLUMN_GLOSSARY) != set(sq.PAID_SHARE_RELEASE_COLUMNS):
         raise SystemExit("RELEASE_COLUMN_GLOSSARY and PAID_SHARE_RELEASE_COLUMNS differ")
     header = [f"# {line}" for line in list(RELEASE_INTRO) + list(provenance) + ["Columns:"]]
-    header += [f"# {column}: {RELEASE_COLUMN_GLOSSARY[column]}" for column in ss.PAID_SHARE_RELEASE_COLUMNS]
+    header += [f"# {column}: {RELEASE_COLUMN_GLOSSARY[column]}" for column in sq.PAID_SHARE_RELEASE_COLUMNS]
     body = pd.DataFrame({"x_m": [f"{value:.1f}" for value in frame["x_m"]],
                          "y_m": [f"{value:.1f}" for value in frame["y_m"]],
                          "municipality_ags": frame["municipality_ags"].astype(str),
@@ -1339,7 +1342,7 @@ def write_paid_share_release(path, frame: pd.DataFrame, provenance) -> None:
                          "usable_spaces": [f"{value:.2f}" for value in frame["usable_spaces"]],
                          "heuristic_capacity_share": [f"{value:.6f}" for value in frame["heuristic_capacity_share"]]})
     text = ascii_transliteration("\n".join(header) + "\n" + body.to_csv(index=False, lineterminator="\n"))
-    Path(path).write_bytes(ss.deterministic_gzip(text))
+    Path(path).write_bytes(sq.deterministic_gzip(text))
     counts = frame["municipality_ags"].value_counts().sort_index()
     print(f"written {path} with {len(frame)} classified cells: " + ", ".join(f"{ags} {count}"
                                                                              for ags, count in counts.items()))

@@ -12,12 +12,12 @@ rule-based cores (``--qa-path``, ``parking_zones_2026_qa.csv``; required as soon
 acceptance rule Q4 (``braunschweig.parking.zone_geometry.core_acceptance``) re-applied to every row that has a
 response. The QA table of the majority rule over the parking supply (``--supply-qa-path``,
 ``parking_zones_2026_supply_share_qa.csv``; spec Amendment B; required as soon as a polygon has geometry_source
-``osm_supply_majority``): ``braunschweig.parking.supply_share.validate_supply_share_qa`` against the polygons, the
+``osm_supply_majority``): ``braunschweig.parking.supply_share_qa.validate_supply_share_qa`` against the polygons, the
 default parameters of owner decision 2 (share 0.3) on every row and the application gate re-applied: H1 (the B5 gate
 on the Braunschweig recall and precision) and H2 (the pre-registered holdout check recomputed from the holdout overlaps
 of the town rows); the recorded ``b5_passed`` and ``h2_passed`` and every decision must follow from them; and, when
 present, the release of the classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``,
-``supply_share.load_paid_share_release``). Prints counts per zone type, geometry source (with the area mix),
+``supply_share_qa.load_paid_share_release``). Prints counts per zone type, geometry source (with the area mix),
 fee-window source and municipality, the register status counts, the QA decisions and the H1 and H2 results; exits 1 on
 any violation, 0 otherwise.
 
@@ -36,6 +36,7 @@ from pathlib import Path
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.parking import supply_share  # noqa: E402
+from braunschweig.parking import supply_share_qa  # noqa: E402
 from braunschweig.parking import tariff_export  # noqa: E402
 from braunschweig.parking import zone_geometry  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
@@ -142,16 +143,16 @@ def recompute_holdout(qa) -> tuple:
 
 
 def check_supply_share_qa(qa, zones, tariffs) -> None:
-    """``supply_share.validate_supply_share_qa`` plus the default parameters of owner decision 2 on every row (an arm
+    """``supply_share_qa.validate_supply_share_qa`` plus the default parameters of owner decision 2 on every row (an arm
     never stands in for B) and the application gate re-applied: H1 (the B5 gate on the Braunschweig recall and
     precision) and H2 (recomputed from the holdout overlaps of the town rows, ``recompute_holdout``); the recorded
     ``b5_passed`` and ``h2_passed`` and the decision of every ``zones_from_rule`` row must follow from them; raise
     ``ValueError``."""
-    supply_share.validate_supply_share_qa(qa, zones, tariffs)
+    supply_share_qa.validate_supply_share_qa(qa, zones, tariffs)
     problems = []
     default = supply_share.DEFAULT_SUPPLY_PARAMETERS.as_dict()
     for _, row in qa.iterrows():
-        for column, parameter in supply_share.QA_PARAMETER_COLUMNS.items():
+        for column, parameter in supply_share_qa.QA_PARAMETER_COLUMNS.items():
             expected = default[parameter]
             if not math.isclose(float(row[column]), expected, rel_tol=1e-9):
                 problems.append(f"ags {row['ags']}: {column} = {row[column]} is not the default {expected:g} (owner "
@@ -223,13 +224,13 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     majority = sorted(zones.loc[zones["geometry_source"] == pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE, "zone_id"])
     supply_qa = None
     if supply_file.is_file():
-        supply_qa = supply_share.load_supply_share_qa(supply_file)
+        supply_qa = supply_share_qa.load_supply_share_qa(supply_file)
         check_supply_share_qa(supply_qa, zones, tariffs)
     elif majority:
         raise ValueError(f"{len(majority)} osm_supply_majority zone(s) {majority} but no supply-share QA table at "
                          f"{supply_file}")
     release_file = data_path / paid_share_path
-    release = supply_share.load_paid_share_release(release_file) if release_file.is_file() else None
+    release = supply_share_qa.load_paid_share_release(release_file) if release_file.is_file() else None
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6
@@ -257,7 +258,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         print(f"[parking-validate] supply-share QA: no table at {supply_file} (no osm_supply_majority zones)")
     else:
         b5 = supply_qa[supply_qa["ags"] == supply_share.B5_MUNICIPALITY_AGS].iloc[0]
-        decisions = supply_qa["decision"].value_counts().reindex(supply_share.SUPPLY_SHARE_DECISIONS, fill_value=0)
+        decisions = supply_qa["decision"].value_counts().reindex(supply_share_qa.SUPPLY_SHARE_DECISIONS, fill_value=0)
         print(f"[parking-validate] supply-share QA: {len(supply_qa)} towns at the share {b5['share_threshold']}, H1 "
               f"recall {b5['b5_recall']}, precision {b5['b5_precision']}, passed {b5['b5_passed']}; H2 pooled recall "
               f"{b5['h2_pooled_recall']}, pooled precision {b5['h2_pooled_precision']}, smallest town recall "

@@ -22,7 +22,7 @@ the walking tolerance ``unavoidable_walk_m`` and the OSM snapshot ``osm_timestam
 ``validate_zone_qa``; it is not a release input of the synpp stage. Polygons of the majority rule over the parking
 supply (spec Amendment B; ``braunschweig.parking.supply_share``) carry ``geometry_source`` ``osm_supply_majority`` and,
 for that source only, the walk distance, the share threshold, the minimum supply and the OSM snapshot of the extract
-(``SUPPLY_MAJORITY_PROVENANCE_COLUMNS``); their QA table is checked by ``supply_share.validate_supply_share_qa``.
+(``SUPPLY_MAJORITY_PROVENANCE_COLUMNS``); their QA table is checked by ``supply_share_qa.validate_supply_share_qa``.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is

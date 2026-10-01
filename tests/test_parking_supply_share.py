@@ -28,6 +28,8 @@ import pytest
 from shapely.geometry import LineString, MultiLineString, Point, box
 
 from braunschweig.parking import supply_share as ss
+from braunschweig.parking import supply_share_qa as sq
+from braunschweig.parking import supply_variants as sv
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -464,8 +466,8 @@ def test_default_share_is_the_owners_0_3_and_every_output_name_carries_it():
     # B is the default arm; the information arms of owner decisions 2 and 3 (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
     # 0.5 and 0.3) carry their share and their inventory variant in the name, so no arm shares a file with B; T names
     # its evidence definition of ruling R-T1c-a (parking elements only), never a file of the superseded _payment75m
-    assert ss.DEFAULT_ARM.tag() == ss.DEFAULT_SUPPLY_PARAMETERS.tag()
-    assert [arm.tag() for arm in ss.VARIANT_ARMS] == [
+    assert sv.DEFAULT_ARM.tag() == ss.DEFAULT_SUPPLY_PARAMETERS.tag()
+    assert [arm.tag() for arm in sv.VARIANT_ARMS] == [
         "w250_t0.3_u50_c25_s12.5_i10000_streetonly", "w250_t0.5_u50_c25_s12.5_i10000_streetonly",
         "w250_t0.5_u50_c25_s12.5_i10000_parkingpayment75m", "w250_t0.3_u50_c25_s12.5_i10000_parkingpayment75m",
         "w250_t0.5_u50_c25_s12.5_i10000_streetonly_parkingpayment75m",
@@ -473,7 +475,7 @@ def test_default_share_is_the_owners_0_3_and_every_output_name_carries_it():
     with pytest.raises(ValueError, match="share_threshold"):
         ss.SupplyShareParameters(share_threshold=1.5)
     with pytest.raises(ValueError, match="payment_evidence_m"):
-        ss.SupplyVariant(payment_evidence_m=0.0)
+        sv.SupplyVariant(payment_evidence_m=0.0)
 
 
 # --------------------------------------------------------------------------- H2: the pre-registered holdout check
@@ -526,6 +528,18 @@ def test_h2_gate_needs_pooled_recall_and_precision_of_70_percent_and_every_town_
     assert ss.passes_holdout(metrics) is passes
 
 
+@pytest.mark.parametrize("h1_recall, h2_pooled_precision, passes", [
+    (0.70, 0.70, True),       # both at their bounds
+    (0.6999, 0.95, False),    # H1 fails, H2 passes
+    (0.95, 0.6999, False),    # H1 passes, H2 fails
+    (0.6999, 0.6999, False),  # both fail
+])
+def test_application_gate_needs_h1_and_h2(h1_recall, h2_pooled_precision, passes):
+    h1 = {"recall": h1_recall, "precision": 0.9}
+    h2 = {"pooled_recall": 0.9, "pooled_precision": h2_pooled_precision, "minimum_town_recall": 0.9}
+    assert ss.passes_application_gate(h1, h2) is passes
+
+
 # --------------------------------------------------------------------------- variants S and T (information arms)
 
 
@@ -535,7 +549,7 @@ def test_variant_s_drops_offstreet_lots_and_garages_from_the_inventory():
                          areas=[(_box(100, 40, 110, 50), _area(fee="yes", capacity="30"))],
                          lots=[(_box(150, 150, 170, 170), _lot(fee="yes", capacity="400")),
                                (_box(0, 150, 20, 170), _lot(parking="multi-storey", fee="yes", capacity="300"))])
-    street = ss.variant_elements(elements, ss.STREET_SUPPLY_ONLY)
+    street = sv.variant_elements(elements, sv.STREET_SUPPLY_ONLY)
     assert sorted(street["kind"]) == ["street_side", "street_side", "street_side_area"]
     assert ss.summarise_supply(street)["elements_by_kind_and_class"]["lot"] == {name: 0 for name in ss.SUPPLY_CLASSES}
     full_cell = ss.paid_share_raster(elements, ONE_CELL).iloc[0]
@@ -543,7 +557,7 @@ def test_variant_s_drops_offstreet_lots_and_garages_from_the_inventory():
     assert full_cell["paid_share"] == pytest.approx(730.0 / 770.0)
     assert street_cell["usable_spaces"] == pytest.approx(70.0) and street_cell["paid_share"] == pytest.approx(3.0 / 7.0)
     # the full inventory is B itself
-    assert ss.variant_elements(elements, ss.FULL_INVENTORY)["element_id"].tolist() == elements["element_id"].tolist()
+    assert sv.variant_elements(elements, sv.FULL_INVENTORY)["element_id"].tolist() == elements["element_id"].tolist()
 
 
 def _osm_objects(rows) -> gpd.GeoDataFrame:
@@ -574,7 +588,7 @@ def _osm_objects(rows) -> gpd.GeoDataFrame:
         "app_on_street_without_parking_tags", "app_on_ticket_machine_way", "ticket_machine_way", "ticket_machine_node"])
 def test_app_payment_evidence_needs_a_parking_element_and_never_a_phone_wallet(osm_type, tags, evidence):
     geometry = Point(X0, Y0) if osm_type == "node" else _line(0, 0, 50, 0) if "highway" in tags else _box(0, 0, 10, 10)
-    assert len(ss.payment_evidence(_osm_objects([(osm_type, 7, geometry, tags)]))) == int(evidence)
+    assert len(sv.payment_evidence(_osm_objects([(osm_type, 7, geometry, tags)]))) == int(evidence)
 
 
 def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
@@ -598,10 +612,10 @@ def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
                         ("node", 4, Point(X0 + 725, Y0 + 20), {"shop": "bakery", "payment:app": "yes",
                                                                "payment:apple_pay": "yes"}),
                         ("way", 200, _box(300, 300, 320, 320), lots[0][1]), ("way", 201, _box(500, 0, 520, 20), lots[1][1])])
-    assert ss.is_parking_ticket_machine(machine) and not ss.is_parking_ticket_machine(osm["tags"].iloc[1])
-    evidence = ss.payment_evidence(osm)
+    assert sv.is_parking_ticket_machine(machine) and not sv.is_parking_ticket_machine(osm["tags"].iloc[1])
+    evidence = sv.payment_evidence(osm)
     assert sorted(zip(evidence["osm_type"], evidence["osm_id"])) == [("node", 1), ("way", 200), ("way", 201)]
-    paid = ss.variant_elements(elements, ss.PAYMENT_EVIDENCE, evidence).set_index("element_id")
+    paid = sv.variant_elements(elements, sv.PAYMENT_EVIDENCE, evidence).set_index("element_id")
     expected = {"way/1:left": ("paid", "payment_evidence", "ticket_machine"),
                 "way/1:right": ("paid", "payment_evidence", "ticket_machine"),
                 "way/2:left": ("free", "no_fee_tag", ""), "way/3:left": ("free", "fee_no", ""),
@@ -616,7 +630,7 @@ def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
     assert np.allclose(paid["capacity_spaces"], elements["capacity_spaces"])
     assert (elements.set_index("element_id").loc["way/1:left", "class"], len(elements)) == ("free", len(paid))
     with pytest.raises(ValueError, match="payment evidence"):
-        ss.variant_elements(elements, ss.PAYMENT_EVIDENCE)
+        sv.variant_elements(elements, sv.PAYMENT_EVIDENCE)
 
 
 # --------------------------------------------------------------------------- B7: the release file
@@ -627,8 +641,8 @@ def test_release_file_holds_the_classified_cells_as_gzip_csv_in_epsg_25832(assem
     elements = _elements(areas=[(_box(0, 0, 10, 10), _area(fee="yes", capacity="80")),
                                 (_box(300, 0, 310, 10), _area(capacity="90"))])
     raster = ss.paid_share_raster(elements, (X0, Y0, X0 + 25.0 * 24, Y0 + 25.0))
-    release = ss.release_frame(raster, "03153017")
-    assert list(release.columns) == list(ss.PAID_SHARE_RELEASE_COLUMNS)
+    release = sq.release_frame(raster, "03153017")
+    assert list(release.columns) == list(sq.PAID_SHARE_RELEASE_COLUMNS)
     assert 0 < len(release) < len(raster) and (release["usable_spaces"] >= 50).all()
     path = tmp_path / "parking_paid_share_2026.csv.gz"
     assembly.write_paid_share_release(path, release, provenance=["fixture provenance line"])
@@ -637,10 +651,10 @@ def test_release_file_holds_the_classified_cells_as_gzip_csv_in_epsg_25832(assem
     text = gzip.decompress(data).decode("ascii")
     header = [line for line in text.splitlines() if line.startswith("#")]
     assert any("EPSG:25832" in line for line in header) and "# fixture provenance line" in header
-    for column in ss.PAID_SHARE_RELEASE_COLUMNS:
+    for column in sq.PAID_SHARE_RELEASE_COLUMNS:
         assert any(line.startswith(f"# {column}: ") for line in header), column
-    loaded = ss.load_paid_share_release(path)
-    assert list(loaded.columns) == list(ss.PAID_SHARE_RELEASE_COLUMNS) and len(loaded) == len(release)
+    loaded = sq.load_paid_share_release(path)
+    assert list(loaded.columns) == list(sq.PAID_SHARE_RELEASE_COLUMNS) and len(loaded) == len(release)
     assert loaded["municipality_ags"].eq("03153017").all()
     assert np.allclose(loaded["x_m"], release["x_m"]) and np.allclose(loaded["paid_share"], release["paid_share"])
     # byte-reproducible: gzip without a time stamp
@@ -648,7 +662,7 @@ def test_release_file_holds_the_classified_cells_as_gzip_csv_in_epsg_25832(assem
     assembly.write_paid_share_release(again, release, provenance=["fixture provenance line"])
     assert again.read_bytes() == data
     with pytest.raises(ValueError, match="paid_share"):
-        ss.validate_paid_share_release(release.assign(paid_share=1.5))
+        sq.validate_paid_share_release(release.assign(paid_share=1.5))
 
 
 # --------------------------------------------------------------------------- polygons of the rule (zones.py)
@@ -862,7 +876,7 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     qa = json.loads(qa_path.read_text(encoding="utf-8"))
     assert qa["osm_timestamp"] == "2026-09-28T00:00:00Z"
     assert qa["parameters"] == ss.DEFAULT_SUPPLY_PARAMETERS.as_dict() and qa["parameters"]["share_threshold"] == 0.3
-    assert qa["variant"] == ss.FULL_INVENTORY.as_dict()
+    assert qa["variant"] == sv.FULL_INVENTORY.as_dict()
     # H2 in Braunschweig: recall over the four street-list references only, no precision frame
     assert sorted(qa["holdout"]["references"]) == sorted(ss.HOLDOUT_REFERENCE_ZONES["03101000"])
     assert 0.0 <= qa["holdout"]["recall"] <= 1.0 and qa["holdout"]["precision"] is None
@@ -900,9 +914,9 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     # re-processing the saved inventory with the Amendment B arms (its pre-registered share 0.5 and the B5 arms other
     # than the default) writes their own tagged files only
     assert main(common + inventory + ["--sensitivity-arms", "--arms-only"]) == 0
-    assert [arm.parameters for arm in ss.AMENDMENT_B_ARMS] == [ss.PRE_REGISTERED_SUPPLY_PARAMETERS] + [
+    assert [arm.parameters for arm in sv.AMENDMENT_B_ARMS] == [ss.PRE_REGISTERED_SUPPLY_PARAMETERS] + [
         arm for arm in ss.SENSITIVITY_ARMS if arm != ss.DEFAULT_SUPPLY_PARAMETERS]
-    for arm in ss.AMENDMENT_B_ARMS:
+    for arm in sv.AMENDMENT_B_ARMS:
         assert (out / f"03101000_supply_qa_{arm.tag()}.json").is_file(), arm.tag()
     assert qa_path.read_bytes() == before
     # variant T needs an inventory read with the payment evidence: one saved before Task 1c is refused, nothing written
@@ -913,20 +927,20 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     (tmp_path / "old_inventory.json").write_text(json.dumps(old_meta), encoding="utf-8")
     with pytest.raises(SystemExit, match="payment evidence"):
         main(common + ["--from-inventory", str(tmp_path / "old_inventory.gpkg"), "--variant-arms", "--arms-only"])
-    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in ss.VARIANT_ARMS)
+    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in sv.VARIANT_ARMS)
     # the information arms S, T and S+T: their own tagged files (run one variant at a time with --variants); S drops
     # the lots, T turns the service way 507 (11 m from the ticket machine 40) paid and the street-side area 603 by its
     # own payment:app tag; the free side of way 509 lies 89 m away and way 504 carries fee=no
     assert main(common + inventory + ["--variant-arms", "--arms-only", "--variants", "S"]) == 0
-    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in ss.VARIANT_ARMS
+    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in sv.VARIANT_ARMS
                    if arm.variant.payment_evidence_m is not None)
     assert main(common + inventory + ["--variant-arms", "--arms-only", "--variants", "T", "S+T"]) == 0
     arms = {arm.tag(): json.loads((out / f"03101000_supply_qa_{arm.tag()}.json").read_text(encoding="utf-8"))
-            for arm in ss.VARIANT_ARMS}
-    street = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.STREET_SUPPLY_ONLY).tag()]
-    assert street["variant"] == ss.STREET_SUPPLY_ONLY.as_dict() and street["payment_evidence"] is None
+            for arm in sv.VARIANT_ARMS}
+    street = arms[sv.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, sv.STREET_SUPPLY_ONLY).tag()]
+    assert street["variant"] == sv.STREET_SUPPLY_ONLY.as_dict() and street["payment_evidence"] is None
     assert street["supply"]["elements_by_kind_and_class"]["lot"] == {name: 0 for name in ss.SUPPLY_CLASSES}
-    payment = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE).tag()]
+    payment = arms[sv.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, sv.PAYMENT_EVIDENCE).tag()]
     assert payment["supply"]["elements_by_kind_and_class"] == {
         "street_side": {"paid": 3, "restricted": 2, "free": 3, "excluded": 6},
         "street_side_area": {"paid": 1, "restricted": 0, "free": 0, "excluded": 0},
@@ -963,7 +977,7 @@ MD5 = "0c513947b19145d84afb0b3bc36d95f5"
 #: synthetic supply of each town placed apart, because the release holds one row per cell
 SHIFTS = {BS: 0.0, GS: 10_000.0, WOB: 20_000.0, SZ: 30_000.0, PE: 40_000.0, HE: 50_000.0}
 #: the arm T at the default share, whose QA carries the payment evidence of the QA table
-T_ARM = ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE)
+T_ARM = sv.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, sv.PAYMENT_EVIDENCE)
 T_EVIDENCE = {"distance_m": 75.0, "evidence": {"ticket_machines": 2, "app_payment_elements": 1},
               "converted": {"street_side": 3, "street_side_area": 1, "lot": 0}, "converted_spaces": 40.0,
               "converted_by": {"ticket_machine": 3, "app_payment_parking": 1, "own_app_payment_tag": 0}}
@@ -981,7 +995,7 @@ def _holdout_block(ags: str, recall: float, precision: float) -> dict:
 
 
 def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=None, reference=None, holdout=None,
-                         arm=ss.DEFAULT_ARM, payment=None) -> None:
+                         arm=sv.DEFAULT_ARM, payment=None) -> None:
     """The files of ``build_parking_zones_from_osm.py --supply-share`` for one town and arm, on a small synthetic
     supply (placed per town, because the release holds one row per cell and the real town boxes are disjoint)."""
     shift = SHIFTS[ags]
@@ -1010,7 +1024,7 @@ def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=No
     (directory / f"{ags}_supply_qa_{tag}.json").write_text(json.dumps(document), encoding="utf-8")
     (directory / f"{ags}_supply_zones_{tag}.geojson").write_text(rule.to_crs("EPSG:4326").to_json(), encoding="utf-8")
     (directory / f"{ags}_paid_share_{tag}.csv.gz").write_bytes(
-        ss.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
+        sq.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
 
 
 def _annex_zones() -> gpd.GeoDataFrame:
@@ -1072,8 +1086,8 @@ def _assemble(assembly, directory: Path, recall: float, precision: float, *, hol
     tariffs = pd.DataFrame({"zone_id": list(loaded["zone_id"]),
                             "municipality_ags": [GS if zone.startswith("gs_") else WOB if zone.startswith("wob_")
                                                  else BS for zone in loaded["zone_id"]]})
-    qa = ss.load_supply_share_qa(directory / "qa.csv")
-    ss.validate_supply_share_qa(qa, loaded, tariffs)
+    qa = sq.load_supply_share_qa(directory / "qa.csv")
+    sq.validate_supply_share_qa(qa, loaded, tariffs)
     return loaded.set_index("zone_id"), qa.set_index("ags", drop=False), pieces
 
 
@@ -1122,9 +1136,9 @@ def test_b6_applies_the_rule_polygons_when_h1_and_h2_pass(assembly, tmp_path):
     text = (tmp_path / "qa.csv").read_text(encoding="utf-8")
     assert text.isascii()
     header = [line for line in text.splitlines() if line.startswith("#")]
-    for column in ss.SUPPLY_SHARE_QA_COLUMNS:
+    for column in sq.SUPPLY_SHARE_QA_COLUMNS:
         assert any(line.startswith(f"# {column}: ") for line in header), column
-    release = ss.load_paid_share_release(tmp_path / "release.csv.gz")
+    release = sq.load_paid_share_release(tmp_path / "release.csv.gz")
     assert sorted(set(release["municipality_ags"])) == sorted([BS, GS, WOB, SZ, PE, HE])
 
 
@@ -1172,7 +1186,7 @@ def test_assembly_refuses_supply_inputs_it_cannot_trust(assembly, tmp_path, chan
         elif change == "counterfactual":
             document["counterfactual"] = ss.YES_SIDES_COUNTERFACTUAL
         else:
-            document["variant"] = ss.PAYMENT_EVIDENCE.as_dict()
+            document["variant"] = sv.PAYMENT_EVIDENCE.as_dict()
         path.write_text(json.dumps(document), encoding="utf-8")
         with pytest.raises(SystemExit, match=message):
             assembly.load_supply_inputs(tmp_path, municipalities=(GS,))
@@ -1214,7 +1228,7 @@ def test_validator_reapplies_the_h1_and_h2_gates_and_the_default_parameters(asse
     inputs.mkdir()
     _assemble(assembly, inputs, recall=0.689, precision=0.845)
     shutil.copy(inputs / "release.csv.gz", target / "parking_paid_share_2026.csv.gz")
-    rows = ss.load_supply_share_qa(inputs / "qa.csv")
+    rows = sq.load_supply_share_qa(inputs / "qa.csv")
 
     def run(table) -> tuple:
         (target / "parking_zones_2026_supply_share_qa.csv").write_text(
