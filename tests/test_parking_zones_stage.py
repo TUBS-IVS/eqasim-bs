@@ -1,14 +1,15 @@
 """The synpp stage ``braunschweig.parking.zones_stage``: one validated parking cost zone release (issue #249).
 
-Covered: ``configure`` declares ``data_path`` and the four release paths (defaults of design spec 5.5, all
-relative to ``data_path``); ``execute`` loads the Task 2 fixture release (fixture zones and tariffs plus a
-synthetic coverage register and a synthetic SrV-shaped shares table written here, all of which pin
-behaviour, not truth) and returns the release whose ``sources`` satisfy the tariff-model contract of the
-preparation stage; a tariff workplace class without an SrV class row, a tariff row the Java tariff model
-would reject and a coverage register that contradicts the tariffs raise; ``validate()`` changes with every
-input byte and every hashed module but not with line endings; the committed release loads through the stage
-(the primary path on real data). The context double follows ``tests/test_parking_prepare_wiring.py``: after
-``configure`` it is strict like synpp's ExecuteContext and ValidateContext.
+Covered: ``configure`` declares ``data_path`` and the five release paths (defaults of design spec 5.5 and of the
+resident districts of spec Amendment C3, all relative to ``data_path``); ``execute`` loads the Task 2 fixture release
+(fixture zones, tariffs and resident districts plus a synthetic coverage register and a synthetic SrV-shaped shares
+table written here, all of which pin behaviour, not truth) and returns the release whose ``sources`` satisfy the
+tariff-model contract of the preparation stage; a tariff workplace class without an SrV class row, a tariff row the
+Java tariff model would reject, a coverage register that contradicts the tariffs and a district layer that
+contradicts the register or itself raise; ``validate()`` changes with every input byte and every hashed module but
+not with line endings; the committed release loads through the stage (the primary path on real data). The context
+double follows ``tests/test_parking_prepare_wiring.py``: after ``configure`` it is strict like synpp's ExecuteContext
+and ValidateContext.
 """
 from __future__ import annotations
 
@@ -18,7 +19,9 @@ import shutil
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 import pytest
+from shapely.geometry import box
 
 from braunschweig.parking import attach, tariff_export, zones_stage
 from braunschweig.parking import zones as pz
@@ -36,6 +39,7 @@ DEFAULT_PATHS = {
     "parking_tariffs_path": "braunschweig/parking/parking_tariffs_2026.csv",
     "parking_coverage_register_path": "braunschweig/parking/parking_coverage_register_2026.csv",
     "parking_workplace_shares_path": "braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv",
+    "parking_resident_districts_path": "braunschweig/parking/parking_resident_districts_2026.geojson",
 }
 #: Deliberately NOT the defaults, so the tests prove that the configured paths are the ones read.
 FIXTURE_PATHS = {
@@ -43,9 +47,11 @@ FIXTURE_PATHS = {
     "parking_tariffs_path": "parking/tariffs_fixture.csv",
     "parking_coverage_register_path": "parking/coverage_register_fixture.csv",
     "parking_workplace_shares_path": "srv/workplace_shares_fixture.csv",
+    "parking_resident_districts_path": "parking/districts_fixture.geojson",
 }
 SOURCE_IDS = ["parking_zones_2026", "parking_tariffs_2026", "parking_coverage_register_2026",
-              "srv2023_commute_parking_by_workplace_class"]
+              "srv2023_commute_parking_by_workplace_class", "parking_resident_districts_2026"]
+FIXTURE_DISTRICT_IDS = ["fx_district_a", "fx_district_b", "fx_district_sz_a"]
 PATH_KEYS = list(FIXTURE_PATHS)
 
 #: One status row per municipality of the fixture tariffs (all zoned) plus one unaudited municipality.
@@ -122,6 +128,8 @@ def fixture_data(tmp_path):
         (data / FIXTURE_PATHS[key]).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(FIXTURES / "parking_zones_fixture.geojson", data / FIXTURE_PATHS["parking_zones_path"])
     shutil.copyfile(FIXTURES / "parking_tariffs_fixture.csv", data / FIXTURE_PATHS["parking_tariffs_path"])
+    shutil.copyfile(FIXTURES / "parking_resident_districts_fixture.geojson",
+                    data / FIXTURE_PATHS["parking_resident_districts_path"])
     _write_lines(data / FIXTURE_PATHS["parking_coverage_register_path"], REGISTER_LINES)
     _write_lines(data / FIXTURE_PATHS["parking_workplace_shares_path"], SHARES_LINES)
     return data
@@ -141,7 +149,7 @@ def _release(data_path):
 # --------------------------------------------------------------------------- configure
 
 
-def test_configure_declares_data_path_and_the_four_release_paths():
+def test_configure_declares_data_path_and_the_five_release_paths():
     context = _Context({"data_path": "/srv/eqasim-data/data"})
     zones_stage.configure(context)
     assert context.declared_config == {"data_path": "/srv/eqasim-data/data", **DEFAULT_PATHS}
@@ -164,7 +172,7 @@ def test_configure_rejects_a_release_path_that_is_not_relative_posix(key, value)
 
 def test_execute_returns_the_validated_fixture_release(fixture_data):
     release = _release(fixture_data)
-    assert set(release) == {"zones", "tariffs", "workplace_shares", "coverage_register", "sources"}
+    assert set(release) == {"zones", "tariffs", "workplace_shares", "coverage_register", "districts", "sources"}
     zones = release["zones"]
     assert isinstance(zones, gpd.GeoDataFrame) and zones.crs.to_epsg() == 25832
     assert sorted(zones["zone_id"]) == sorted(FIXTURE_ZONE_IDS)
@@ -177,9 +185,13 @@ def test_execute_returns_the_validated_fixture_release(fixture_data):
                                                "total"]
     assert attach.free_share_by_class(shares)["03102"] == pytest.approx(0.95)
     assert list(release["coverage_register"]["ags"]) == [line.split(",")[0] for line in REGISTER_LINES[2:]]
+    # The resident districts (spec Amendment C3) are a second, independent layer of the same release.
+    districts = release["districts"]
+    assert isinstance(districts, gpd.GeoDataFrame) and districts.crs.to_epsg() == 25832
+    assert list(districts["district_id"]) == FIXTURE_DISTRICT_IDS
 
 
-def test_sources_name_the_four_inputs_in_a_fixed_order(fixture_data):
+def test_sources_name_the_five_inputs_in_a_fixed_order(fixture_data):
     sources = _release(fixture_data)["sources"]
     assert [source["source_id"] for source in sources] == SOURCE_IDS
     assert [source["path"] for source in sources] == [FIXTURE_PATHS[key] for key in PATH_KEYS]
@@ -189,7 +201,7 @@ def test_sources_name_the_four_inputs_in_a_fixed_order(fixture_data):
 
 
 def test_sources_satisfy_the_tariff_model_contract_of_the_preparation(fixture_data):
-    """braunschweig.matsim.simulation.prepare hands exactly these two entries to build_tariff_model."""
+    """braunschweig.matsim.simulation.prepare hands exactly these entries to build_tariff_model."""
     release = _release(fixture_data)
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28",
                                              sources=release["sources"])
@@ -241,9 +253,39 @@ def test_a_coverage_register_that_contradicts_the_tariffs_raises(fixture_data):
         _release(fixture_data)
 
 
-def test_a_missing_input_raises_naming_its_config_key(fixture_data):
-    (fixture_data / FIXTURE_PATHS["parking_workplace_shares_path"]).unlink()
-    with pytest.raises(FileNotFoundError, match="parking_workplace_shares_path"):
+@pytest.mark.parametrize("key", ["parking_workplace_shares_path", "parking_resident_districts_path"])
+def test_a_missing_input_raises_naming_its_config_key(fixture_data, key):
+    (fixture_data / FIXTURE_PATHS[key]).unlink()
+    with pytest.raises(FileNotFoundError, match=key):
+        _release(fixture_data)
+
+
+def test_a_district_layer_that_overlaps_itself_raises(fixture_data):
+    """Overlapping districts would put one activity in two districts; the stage refuses the release at load time
+    instead of the plans writer failing on the first activity in the overlap."""
+    path = fixture_data / FIXTURE_PATHS["parking_resident_districts_path"]
+    frame = gpd.read_file(path).to_crs("EPSG:25832")
+    frame.loc[frame["district_id"] == "fx_district_b", "geometry"] = frame.loc[
+        frame["district_id"] == "fx_district_a", "geometry"].iloc[0].buffer(50.0)
+    frame.to_crs("EPSG:4326").to_file(path, driver="GeoJSON")
+    with pytest.raises(ValueError, match="overlap by more than"):
+        _release(fixture_data)
+
+
+def test_a_district_in_a_municipality_the_register_does_not_know_raises(fixture_data):
+    """A district of Goslar, whose status row is missing from the register: no tariff row is involved, so the
+    district check alone must refuse the release."""
+    path = fixture_data / FIXTURE_PATHS["parking_resident_districts_path"]
+    frame = gpd.read_file(path).to_crs("EPSG:25832")
+    extra = frame.iloc[[0]].copy()
+    extra["district_id"], extra["municipality_ags"] = "fx_district_gs_a", "03153017"
+    extra["geometry"] = box(620000.0, 5790000.0, 620400.0, 5790400.0)
+    pd.concat([frame, extra], ignore_index=True).set_crs("EPSG:25832", allow_override=True).to_crs("EPSG:4326").to_file(
+        path, driver="GeoJSON")
+    _release(fixture_data)  # with the Goslar row present (not_audited) the release loads, with a warning
+    _write_lines(fixture_data / FIXTURE_PATHS["parking_coverage_register_path"],
+                 [line for line in REGISTER_LINES if not line.startswith("03153017,")])
+    with pytest.raises(ValueError, match="03153017"):
         _release(fixture_data)
 
 
@@ -252,7 +294,7 @@ def test_a_fixture_marked_release_logs_a_warning_naming_the_zones(fixture_data, 
         _release(fixture_data)
     [warning] = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
     assert pz.FIXTURE_MARKER in warning
-    assert all(zone_id in warning for zone_id in FIXTURE_ZONE_IDS)
+    assert all(zone_id in warning for zone_id in FIXTURE_ZONE_IDS + FIXTURE_DISTRICT_IDS)
 
 
 def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fixture_data, caplog):
@@ -262,6 +304,7 @@ def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fi
     assert "16 zones (campus 3, resident_zone 2, street_paid 11) in 4 municipalities" in line
     assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
     assert "free shares for 6 workplace classes" in line
+    assert "resident districts 3 (03101000 2, 03102000 1)" in line
 
 
 # --------------------------------------------------------------------------- validate
@@ -333,6 +376,8 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert set(release["zones"]["zone_id"]) == set(release["tariffs"]["zone_id"])
     assert set(attach.free_share_by_class(release["workplace_shares"]).index) == set(pz.WORKPLACE_CLASSES)
     assert [source["path"] for source in release["sources"]] == [DEFAULT_PATHS[key] for key in PATH_KEYS]
+    # Braunschweig A, B, C and Goslar A, B, C, F, G, H, J (spec Amendment C3): a second layer, not fee zones.
+    assert len(release["districts"]) == 10 and set(release["districts"]["municipality_ags"]) == {"03101000", "03153017"}
     assert len(zones_stage.validate(context)) == 64
     # The committed table, whatever schema-2 columns it carries yet, exports as the schema-2 tariff model the
     # preparation writes.

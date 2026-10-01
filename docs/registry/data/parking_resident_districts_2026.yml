@@ -1,0 +1,120 @@
+dataset: parking_resident_districts_2026
+title: Resident parking districts of Braunschweig (A, B, C) and Goslar (A, B, C, F, G, H, J), a second layer next to the parking cost zones
+inventory_id: null
+provider: >-
+  Owner-supplied municipal packages of 2026-10-01 (parking cost zones v2, spec Amendment C3, issue #436): the resident
+  parking districts A, B and C of the City of Braunschweig, digitised from its published district map (the vector PDF
+  Bewohnerparkplaetze_ABC.pdf, map code 2012-11, for the inner boundaries and the current published overview map for
+  the outer boundary; package Braunschweig_Parkzonen.zip), and the districts A, B, C, F, G, H and J of the City of
+  Goslar as its ArcGIS feature service Bewohnerparken publishes them (layer 4, Parkbereiche; package
+  Goslar_Parkdaten.zip)
+vintage: >-
+  Packages supplied and the layer built on 2026-10-01. Braunschweig: district map of 2012-11 (inner boundaries) and the
+  overview map published on the supply date (outer boundary), georeferenced on the Open GeoData city map 1:20,000 of
+  March 2025. Goslar: last edit of the service 2018-11-22, which a retrieval in 2026 does not confirm as current.
+geography: >-
+  The resident parking districts A, B and C of Braunschweig (about 2.56 km2 around the inner city) and A, B, C, F, G, H
+  and J of Goslar (about 0.97 km2, essentially the old town with adjacent areas). No other municipality: the owner's
+  packages provide no districts for the other six zoned towns.
+crs: EPSG:25832 (stored as WGS84 GeoJSON, seven decimals)
+roles:
+- spatial_input
+used_by:
+- braunschweig.parking.zones_stage
+acquisition:
+  method: committed
+  source: >-
+    The owner's packages Braunschweig_Parkzonen.zip and Goslar_Parkdaten.zip (SHA-256 of both in the data record
+    parking_zones_2026), local and gitignored under eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/;
+    Braunschweig source pages https://www.braunschweig.de/leben/stadtplan_verkehr/parken-in-braunschweig/parken-in-der-innenstadt.php
+    and https://www.braunschweig.de/vv/32/Bewohnerparkplaetze_ABC.pdf; Goslar service
+    https://services3.arcgis.com/X0EQlGp2g40JN62M/arcgis/rest/services/Bewohnerparken/FeatureServer
+  script: scripts/curation/parking_zones_2026/resident_districts.py
+  notes: >-
+    A curation step run by a person, never a pipeline stage: python scripts/curation/parking_zones_2026/resident_districts.py
+    --municipal-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01 [--out PATH --replace]. It refuses a
+    package whose SHA-256 differs from municipal_zones.PACKAGE_SHA256, reads the layer resident_parking_zones of each package
+    straight from the zip, checks the attributes against the recorded source wording (Braunschweig: districts A, B, C, working
+    accuracy 30 m, map year 2012; Goslar: the seven codes once each, last edit 2018-11-22, exactly one feature without a code, and
+    that feature must be "Parkbereich C - Oberstadt"), prefixes the ids per town (bs_district_a ... gs_district_j; the
+    town's own label stays in district_code and the AGS in municipality_ags) and applies two changes to the published
+    geometry, both recorded in the note of the district concerned. (1) The Goslar feature "Parkbereich C - Oberstadt",
+    which has an empty code, is united with district C by owner decision 2026-10-01 (spec Amendment C3); the package kept
+    the two features apart. (2) The Goslar districts G and H overlap by 6.32 m2 in the package; no source says which owns
+    the overlap, so the district with the later id (H) gives it up, and every point lies in at most one district.
+    Overlaps up to 1 m2 (the loader tolerance) are left as published. The step writes the file next to its target,
+    reloads it with the strict production loader and replaces the target only if that succeeds; it never replaces an
+    existing file without --replace. Two runs give the same bytes.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_resident_districts_2026.geojson
+  committed: true
+  local_only: false
+  notes: >-
+    Force-added (git add -f) like the other files of the parking release; eqasim-data/ is ignored by default. ASCII, LF,
+    WGS84 GeoJSON with seven coordinate decimals and the licence and attribution as top-level members; one feature per
+    district with the properties district_id, district_code, municipality_ags, name, geometry_source, source_url,
+    source_date, digitised_on and digitising_note (braunschweig.parking.zones.DISTRICT_PROVENANCE_COLUMNS). The
+    owner's packages stay local.
+verification:
+  verifier_entry: D10
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    Listed as D10 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml, key
+    parking_resident_districts_path). braunschweig.parking.zones.load_resident_districts reprojects to EPSG:25832 and
+    checks the provenance fields and ISO dates; the layer must be valid as stored, so an invalid polygon raises and is
+    never repaired (a repair would change the district the file states); validate_resident_districts checks the ids (unique
+    across the layer), the codes (unique per municipality), the AGS and that no two districts overlap by more than 1 m2;
+    validate_district_municipalities requires a coverage-register status row per district municipality. The validator
+    scripts/validate_parking_zones.py runs all three, rejects the test-set marker and prints the districts per
+    municipality. tests/test_parking_resident_districts.py (the curation step on synthetic packages, the loader and
+    validator, the assignment, the committed layer), tests/test_parking_zones.py (the validator CLI) and
+    tests/test_parking_zones_stage.py (the stage) pin it.
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: >-
+    Per source; the layer holds polygons under two regimes. (1) bs_district_a, bs_district_b and bs_district_c: Stadt
+    Braunschweig, resident parking district map (vector PDF 2012 for the inner boundaries, the current overview for the
+    outer boundary); digitised (owner-supplied package 2026-10-01); working accuracy 30 m; base map Open GeoData
+    dl-de/by-2-0. (2) the gs_district_* districts: Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22);
+    open reuse licence not verified; used by owner decision 2026-10-01. The GeoJSON carries the licence and the attribution
+    as top-level members (license, attribution; resident_districts.py LICENSE, ATTRIBUTION).
+  notes: >-
+    Redistribution per source, so the layer as a whole is not cleared for redistribution (redistribution restricted): the
+    Braunschweig districts keep the attribution "Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: dl-de/by-2-0"
+    with the note that the data were changed, and the package states that this licence covers the base maps of the
+    georeference, not a separately verified release of the district graphics; for the Goslar districts the package states
+    that public query access is no proof of a licence and the open reuse licence is not verified. The file is committed by
+    owner decision 2026-10-01 (licensing.restricted stays false because the file is committed, as for parking_zones_2026).
+  redistribution: restricted
+  restricted: false
+limitations: >-
+  The districts are geographic envelopes digitised from maps or taken from a service, not surveyed boundaries and no proof
+  of parking supply or permission. Braunschweig: working accuracy 30 m, a conservative working estimate of the package and no
+  confidence bound (the georeference fit RMSE of 4.88 m is a consistency measure, not the boundary accuracy); the polygons
+  contain buildings, green spaces and other areas without parking, and street-side rules and overlapping permit areas are
+  not resolved. Goslar: the service states no positional accuracy, its last edit is 2018-11-22, and only the old town with
+  adjacent areas is covered. Districts exist for these two towns only. Three Goslar polygons (A, B, G) were repaired by the
+  package (ring self-touching, area change below 1e-8 m2); the layer holds the package's valid polygons. Rule R2 (the cost
+  model frees a stay inside the district of the person's home) is an assumption, residence equals permit possession, and
+  the rule reads neither the zone type nor the zone's resident exemption, so it also frees stays on car parks and campus
+  areas that overlap a district, although the sources do not say whether permits are valid there. By area, the districts
+  overlay the fee zones heavily (they are independent layers): Braunschweig A 0.104 km2 of zone Ia and 0.508 km2 of Ib, B
+  0.929 km2 of Ia and 0.295 km2 of Ib, C 0.463 km2 of Ia and 0.161 km2 of Ib; of the other zones the five BgA car parks
+  (about 1,400 to 2,800 m2 each, inside A, B and C) and about 2,600 m2 of the TU Zentralcampus (inside A); the Goslar
+  districts cover 0.402 km2 of the 0.642 km2 of the old-town zone gs_altstadt_zone1.
+notes: >-
+  Content on 2026-10-01: 10 districts, Braunschweig 3 (A 649,733 m2, B 1,252,014 m2, C 658,503 m2 in the package; the
+  file differs by the WGS84 rounding) and Goslar 7 (A, B, C, F, G, H, J; C includes the Oberstadt feature, H is 6.32 m2
+  smaller than in the package). Curation check, not a validation (assignment of the activities of the local 1 % scenario
+  of 2026-04-29, 47,362 activities of 11,472 persons, with the production functions of braunschweig.parking.attach):
+  937 activities (2.0 %) lie in a district, 797 of them also in a fee zone; 247 persons (2.2 %) live in a district; 20 of
+  the 21,082 non-home activities (0.09 %) lie in the district of the person's home, 1 of them reached by car in the plan of
+  the scenario, so rule R2 acts on a very small share of the stays of this scenario (an exposure indicator of an older
+  model state, no forecast). The second layer is read by braunschweig.parking.zones_stage, attached to the plans by
+  braunschweig.parking.attach (activity attribute parkingDistrict, person attribute residentParkingDistrict) and priced
+  by rule R2 of braunschweig.parking.cost (spec Amendment C3). The v1 resident zone (Stadthalle, its own tariff row in
+  parking_tariffs_2026) is a zone and unchanged.

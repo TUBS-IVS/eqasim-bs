@@ -660,13 +660,18 @@ config:
   parking_zones_enabled: true
   enable_urban_parking: false
   # The zone release, relative to data_path (Data Registry parking_zones_2026,
-  # parking_tariffs_2026, parking_coverage_register_2026 and
-  # srv2023_commute_parking_by_workplace_class), loaded and cross-validated as one unit by
-  # braunschweig.parking.zones_stage.
+  # parking_tariffs_2026, parking_coverage_register_2026,
+  # srv2023_commute_parking_by_workplace_class and parking_resident_districts_2026), loaded and
+  # cross-validated as one unit by braunschweig.parking.zones_stage.
   parking_zones_path: braunschweig/parking/parking_zones_2026.geojson
   parking_tariffs_path: braunschweig/parking/parking_tariffs_2026.csv
   parking_coverage_register_path: braunschweig/parking/parking_coverage_register_2026.csv
   parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
+  # The resident parking districts of Braunschweig (A, B, C) and Goslar (A, B, C, F, G, H, J): a
+  # second layer next to the fee zones, which it may overlap (spec Amendment C3). The plans carry
+  # the district of every activity (parkingDistrict) and of every home (residentParkingDistrict);
+  # a stay inside the district of the person's home is free (ASSUMPTION R2, extends R1).
+  parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
   # Tariff state of the release (the date its tariff rows were retrieved, source_date of
   # parking_tariffs_2026.csv); names the tariff model JSON. Quoted: an unquoted YAML date is
   # rejected at configure time.

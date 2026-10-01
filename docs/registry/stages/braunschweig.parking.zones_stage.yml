@@ -1,24 +1,28 @@
 stage: braunschweig.parking.zones_stage
 title: Parking cost zone release (polygons, tariffs, coverage register, SrV free-parking shares)
 layer: matsim
-description: 'Loads the four inputs of the zone-based parking costs (issue #249) as ONE release and
-  validates them together: the zone polygons (WGS84 GeoJSON, reprojected to EPSG:25832, invalid rings
+description: 'Loads the five inputs of the zone-based parking costs (issue #249; parking cost zones v2 added the
+  resident districts) as ONE release and validates them together: the zone polygons (WGS84 GeoJSON, reprojected to EPSG:25832, invalid rings
   repaired and counted, pairwise overlap at most 1 m2), the tariff table (typed, validated per zone type,
   then every row converted by braunschweig.parking.tariff_export.tariff_row_to_zone, the stricter per-row
   contract of the tariff model the Java cost model reads), exactly one tariff row per polygon, the coverage
   register against the tariffs (zoned municipalities own tariff rows and vice versa), and the SrV 2023
   free-parking shares (a level == class row with a share in [0, 1] for the workplace class of every tariff
-  row). Any inconsistency raises. Rows carrying the synthetic test-set marker ''fixture'' are accepted (the
-  tests run the stage on tests/fixtures/parking) but logged as a WARNING naming the zones. Returns
-  {zones, tariffs, workplace_shares (as read, both levels, workplace_class as text), coverage_register,
-  sources}; sources lists the four inputs in a fixed order as {source_id = Data Registry dataset id, path =
+  row), and the resident parking districts (spec Amendment C3, a second layer next to the fee zones: valid as
+  stored, never repaired, unique ids, no two districts overlapping by more than 1 m2, and a coverage-register
+  status row for every district municipality; a district in a municipality that is not zoned is inert and
+  logged as a warning). Any inconsistency raises. Rows carrying the synthetic test-set marker ''fixture'' are accepted (the
+  tests run the stage on tests/fixtures/parking) but logged as one WARNING naming the zones and the districts.
+  Returns {zones, tariffs, workplace_shares (as read, both levels, workplace_class as text), coverage_register,
+  districts (EPSG:25832), sources}; sources lists the four inputs in a fixed order as {source_id = Data Registry dataset id, path =
   the configured path relative to data_path (POSIX), sha256 = LF-normalised content hash}, which the
   preparation stage copies into the tariff model JSON. Config keys (all relative to data_path, defaults of
   the first release): parking_zones_path (braunschweig/parking/parking_zones_2026.geojson),
   parking_tariffs_path (braunschweig/parking/parking_tariffs_2026.csv), parking_coverage_register_path
   (braunschweig/parking/parking_coverage_register_2026.csv), parking_workplace_shares_path
-  (braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv); an absolute path or one with
-  backslashes is rejected at configure time. validate() hashes the LF-normalised content of the four files
+  (braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv), parking_resident_districts_path
+  (braunschweig/parking/parking_resident_districts_2026.geojson); an absolute path or one with
+  backslashes is rejected at configure time. validate() hashes the LF-normalised content of the five files
   plus the source of braunschweig.parking.zones, braunschweig.parking.attach,
   braunschweig.parking.tariff_export and braunschweig.parking.cost.'
 lineage:
@@ -47,11 +51,13 @@ inputs:
 - parking_tariffs_2026
 - parking_coverage_register_2026
 - srv2023_commute_parking_by_workplace_class
+- parking_resident_districts_2026
 features:
 - parking_cost_zones
 decisions:
 - ADR-0139
 notes: 'Mechanism, attribute names and maintenance rules: docs/codebase/notes/parking-cost-zones.md. Unit
   tests: tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected
-  tariff row, inconsistent register, cache token, and the committed release through the stage) and
-  tests/test_parking_attach.py (the attach functions the release feeds).'
+  tariff row, inconsistent register, the resident districts, cache token, and the committed release through the
+  stage), tests/test_parking_resident_districts.py (the district layer: loader, validator, assignment and the
+  curation step) and tests/test_parking_attach.py (the attach functions the release feeds).'

@@ -628,7 +628,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
 COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
                            "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
-                           "parking_zones_2026_municipal_qa.csv")
+                           "parking_zones_2026_municipal_qa.csv", "parking_resident_districts_2026.geojson")
 PARKSCHEININSELN = ("bs_parkscheininsel_marthastrasse_koernerstrasse",
                     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse")
 
@@ -642,6 +642,8 @@ def test_committed_parking_data_is_valid(capsys):
     assert "[parking-validate] OK" in out
     assert "register status" in out
     assert "geometry_source mix" in out
+    # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
+    assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -728,6 +730,9 @@ def test_committed_zones_carry_real_provenance_only():
     assert set(zones["geometry_source"]) <= set(pz.GEOMETRY_SOURCES)
     assert not (tariffs["source_url"] == pz.FIXTURE_MARKER).any()
     assert tariffs["source_url"].str.startswith("https://").all()
+    districts = pz.load_resident_districts(COMMITTED_PARKING_DIR / "parking_resident_districts_2026.geojson")
+    assert set(districts["geometry_source"]) <= set(pz.DISTRICT_GEOMETRY_SOURCES)
+    assert districts["source_url"].str.startswith("https://").all()
     # every assumption-grade fee window is explained in its row
     flagged = tariffs[tariffs["fee_window_source"] == "assumption"]
     assert flagged["notes"].str.contains("ASSUMPTION F1").all()
@@ -786,7 +791,8 @@ def test_validator_requires_the_municipal_qa_table_of_the_municipal_zones(tmp_pa
     target = tmp_path / "braunschweig" / "parking"
     target.mkdir(parents=True)
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
-                 "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv"):
+                 "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
+                 "parking_resident_districts_2026.geojson"):
         shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
     assert main(["--data-path", str(tmp_path)]) == 1
     assert "but no municipal QA table" in capsys.readouterr().out
@@ -810,3 +816,42 @@ def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, c
     register.write_text(text, encoding="utf-8")
     assert main(["--data-path", str(tmp_path)]) == 1
     assert "tariff rows in municipalities not marked 'zoned': ['03102000']" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("change, message", [
+    ("missing", "parking resident districts missing"),
+    ("overlap", "resident districts overlap by more than"),
+    ("unknown_municipality", "03101999"),
+    ("fixture_marker", "test-set marker"),
+])
+def test_validator_checks_the_resident_districts_against_themselves_and_the_register(tmp_path, capsys, change, message):
+    # spec Amendment C3: the district layer is part of the release, so a release without it, with overlapping
+    # districts, with a district in a municipality the register does not know or with test districts must not validate
+    import shutil
+
+    from scripts.validate_parking_zones import main
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
+                 "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
+                 "parking_zones_2026_municipal_qa.csv", "parking_resident_districts_2026.geojson"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    districts_file = target / "parking_resident_districts_2026.geojson"
+    if change == "missing":
+        districts_file.unlink()
+    elif change == "overlap":
+        districts = gpd.read_file(districts_file).to_crs("EPSG:25832")
+        districts.loc[districts["district_id"] == "bs_district_b", "geometry"] = districts.loc[
+            districts["district_id"] == "bs_district_a", "geometry"].iloc[0].buffer(100.0)
+        districts.to_crs("EPSG:4326").to_file(districts_file, driver="GeoJSON")
+    elif change == "unknown_municipality":
+        districts = gpd.read_file(districts_file)
+        districts.loc[districts["district_id"] == "bs_district_c", "municipality_ags"] = "03101999"
+        districts.to_file(districts_file, driver="GeoJSON")
+    else:
+        districts = gpd.read_file(districts_file)
+        districts["geometry_source"] = pz.FIXTURE_MARKER
+        districts.to_file(districts_file, driver="GeoJSON")
+    assert main(["--data-path", str(tmp_path)]) == 1
+    assert message in capsys.readouterr().out

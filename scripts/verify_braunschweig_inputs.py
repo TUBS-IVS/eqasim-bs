@@ -244,7 +244,7 @@ INPUTS: List[Input] = [
         matsim_only=True,
         optional=False,
     ),
-    # D5-D8: the release of the zone-based parking costs (ADR-0139). Committed with the repository
+    # D5-D8 and D10: the release of the zone-based parking costs (ADR-0139). Committed with the repository
     # (force-added per the .gitignore allowlist), so there is nothing to download; required because
     # parking_zones_enabled is on in configs/base_bs.yml, and braunschweig.parking.zones_stage raises
     # naming the config key when a file is missing. The sources are prose on purpose: --check-urls
@@ -304,6 +304,25 @@ INPUTS: List[Input] = [
         ),
         matsim_only=True,
         optional=True,
+    ),
+    # D10: the resident parking districts (parking cost zones v2, spec Amendment C3), the fifth input of the release
+    # of braunschweig.parking.zones_stage; committed like D5-D8 and required for the same reason, listed after the
+    # optional D9 because it was added after it.
+    Input(
+        name="D10 Parking resident districts 2026 (committed)",
+        rel_path="braunschweig/parking/parking_resident_districts_2026.geojson",
+        source=(
+            "Committed with the repository (docs/registry/data/parking_resident_districts_2026.yml); "
+            "nothing to download."
+        ),
+        notes=(
+            "Config key parking_resident_districts_path. Resident parking districts of Braunschweig (A, B, C) and "
+            "Goslar (A, B, C, F, G, H, J), a second layer next to the fee zones (rule R2). Licence per source: "
+            "Braunschweig districts with an Open GeoData dl-de/by-2-0 base map, Goslar districts with the open reuse "
+            "licence not verified (committed by owner decision), see the data record parking_resident_districts_2026. "
+            "Cross-check with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
     ),
 ]
 

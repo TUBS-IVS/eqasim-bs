@@ -673,37 +673,230 @@ def cross_validate(zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> None:
                          f"tariff rows without a polygon {without_polygon}")
 
 
-def assign_zones(points: gpd.GeoDataFrame, zones: gpd.GeoDataFrame) -> pd.Series:
-    """Zone id of every point (``within`` its polygon) or NaN outside every zone; indexed like ``points``.
+def _assign_polygon_ids(points: gpd.GeoDataFrame, polygons: gpd.GeoDataFrame, *, id_column: str, output_name: str,
+                        function_name: str, noun: str) -> pd.Series:
+    """The ``id_column`` value of the polygon containing each point (``within``), NaN outside; indexed like ``points``.
 
-    The spatial join runs on a positional copy of the points, so a duplicated index of ``points`` is
-    preserved. A point inside two zones means overlapping polygons and raises. A null or empty point
-    geometry raises too: a missing coordinate must not become free parking. Under ``within`` a point exactly
-    on a shared zone edge lies in neither zone and gets NaN (a measure-zero case, accepted). Coverage is
-    logged as a rate because "no zone" means free parking downstream (assumption Z1), never a silent default.
+    The one point-in-polygon join of ``assign_zones`` and ``assign_districts``; ``function_name`` and ``noun``
+    ("zone" or "district") only word the error messages. The spatial join runs on a positional copy of the points,
+    so a duplicated index of ``points`` is preserved. A point inside two polygons raises, and so does a null or empty
+    point geometry: a missing coordinate must not become free parking.
     """
-    if points.crs is None or zones.crs is None or not points.crs.equals(zones.crs):
-        raise ValueError(f"assign_zones needs points and zones in the same CRS, found {points.crs} and {zones.crs}")
+    if points.crs is None or polygons.crs is None or not points.crs.equals(polygons.crs):
+        raise ValueError(f"{function_name} needs points and {noun}s in the same CRS, found {points.crs} and "
+                         f"{polygons.crs}")
     missing = points.geometry.isna() | points.geometry.is_empty
     if missing.any():
-        raise ValueError(f"assign_zones: {int(missing.sum())} point(s) without coordinates (null or empty geometry), "
-                         f"first index labels {list(points.index[missing][:5])}; locate them before assigning zones")
+        raise ValueError(f"{function_name}: {int(missing.sum())} point(s) without coordinates (null or empty geometry), "
+                         f"first index labels {list(points.index[missing][:5])}; locate them before assigning {noun}s")
     positions = gpd.GeoDataFrame({"_position": np.arange(len(points))}, geometry=list(points.geometry), crs=points.crs)
-    joined = gpd.sjoin(positions, zones[["zone_id", "geometry"]], how="left", predicate="within")
-    hits = joined.dropna(subset=["zone_id"])
+    joined = gpd.sjoin(positions, polygons[[id_column, "geometry"]], how="left", predicate="within")
+    hits = joined.dropna(subset=[id_column])
     multiple = hits["_position"].value_counts()
     multiple = multiple[multiple > 1]
     if len(multiple):
-        examples = hits[hits["_position"].isin(multiple.index[:5])].groupby("_position")["zone_id"].apply(sorted)
-        raise ValueError(f"{len(multiple)} point(s) lie in more than one zone (overlapping polygons), e.g. "
+        examples = hits[hits["_position"].isin(multiple.index[:5])].groupby("_position")[id_column].apply(sorted)
+        raise ValueError(f"{len(multiple)} point(s) lie in more than one {noun} (overlapping polygons), e.g. "
                          f"{examples.to_dict()}")
-    by_position = hits.set_index("_position")["zone_id"]
+    by_position = hits.set_index("_position")[id_column]
     values = by_position.reindex(np.arange(len(points))).to_numpy(dtype=object)
-    assigned = pd.Series(values, index=points.index, name="parking_zone", dtype=object)
+    return pd.Series(values, index=points.index, name=output_name, dtype=object)
+
+
+def assign_zones(points: gpd.GeoDataFrame, zones: gpd.GeoDataFrame) -> pd.Series:
+    """Zone id of every point (``within`` its polygon) or NaN outside every zone; indexed like ``points``.
+
+    A point inside two zones means overlapping polygons and raises. A null or empty point geometry raises too: a
+    missing coordinate must not become free parking. Under ``within`` a point exactly on a shared zone edge lies in
+    neither zone and gets NaN (a measure-zero case, accepted). Coverage is logged as a rate because "no zone" means
+    free parking downstream (assumption Z1), never a silent default.
+    """
+    assigned = _assign_polygon_ids(points, zones, id_column="zone_id", output_name="parking_zone",
+                                   function_name="assign_zones", noun="zone")
     inside = int(assigned.notna().sum())
     share = 100.0 * inside / len(points) if len(points) else 0.0
     log.info("[parking-zones] %d of %d points (%.1f %%) lie in a parking zone; %d outside every zone (free, Z1)",
              inside, len(points), share, len(points) - inside)
+    return assigned
+
+
+# --------------------------------------------------------------------------- resident parking districts
+
+
+#: How a district polygon came to be (spec Amendment C3): digitised from the municipality's published district map
+#: (Braunschweig), or taken as published from the municipality's feature service (Goslar).
+DIGITISED_MAP_GEOMETRY_SOURCE = "digitised_published_map"
+FEATURE_SERVICE_GEOMETRY_SOURCE = "municipal_feature_service"
+DISTRICT_GEOMETRY_SOURCES = (DIGITISED_MAP_GEOMETRY_SOURCE, FEATURE_SERVICE_GEOMETRY_SOURCE)
+#: The properties of every district feature, in this order. ``district_id`` is unique across the layer (the curation
+#: prefixes it per town, e.g. ``bs_district_a``), ``district_code`` is the municipality's own label (A, B, C, ...),
+#: ``municipality_ags`` the 8-digit AGS. ``source_date`` is the ISO date the source was retrieved or supplied and
+#: ``digitised_on`` the ISO date the geometry was digitised (Braunschweig) or exported from the service (Goslar).
+DISTRICT_PROVENANCE_COLUMNS = ("district_id", "district_code", "municipality_ags", "name", "geometry_source",
+                               "source_url", "source_date", "digitised_on", "digitising_note")
+_DISTRICT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]+$")
+_ISO_DATE_COLUMNS = ("source_date", "digitised_on")
+
+
+def _iso_date_text(values: pd.Series) -> pd.Series:
+    """Provenance dates as text. GDAL reads a GeoJSON column whose values are all ``YYYY-MM-DD`` strings as a date
+    column; a midnight timestamp is written back as ``YYYY-MM-DD``, anything else keeps its ISO form and then fails
+    the date check."""
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return pd.Series([None if pd.isna(value) else
+                          (value.strftime("%Y-%m-%d") if value == value.normalize() else value.isoformat())
+                          for value in values], index=values.index, dtype=object)
+    return pd.Series([None if not _is_set(value) else str(value).strip() for value in values], index=values.index,
+                     dtype=object)
+
+
+def load_resident_districts(path) -> gpd.GeoDataFrame:
+    """Load the resident parking district layer (spec Amendment C3), reproject to EPSG:25832, validate; return it.
+
+    The layer is a second, independent layer next to the fee zones: districts may overlap fee zones, never each
+    other. Required properties per feature are ``DISTRICT_PROVENANCE_COLUMNS``, non-empty, with a
+    ``geometry_source`` from ``DISTRICT_GEOMETRY_SOURCES`` (or the test-set marker) and ISO dates. Unlike the zone
+    polygons the districts are NEVER repaired: a polygon the loader had to repair is not the district the file
+    states, so any invalid geometry raises ``ValueError`` naming the district and the reason ("valid as stored").
+    Further rules: ``validate_resident_districts``. Other properties are kept.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"parking resident districts missing: {path}")
+    districts = gpd.read_file(path)
+    if districts.crs is None:
+        raise ValueError(f"{path}: the district file declares no CRS")
+    missing_columns = [column for column in DISTRICT_PROVENANCE_COLUMNS if column not in districts.columns]
+    if missing_columns:
+        raise ValueError(f"{path}: resident districts lack the provenance field(s) {missing_columns}")
+    for column in _ISO_DATE_COLUMNS:
+        districts[column] = _iso_date_text(districts[column])
+    ids = districts["district_id"].astype(str)
+    problems = []
+    for column in DISTRICT_PROVENANCE_COLUMNS:
+        empty = districts[column].isna() | (districts[column].astype(str).str.strip() == "")
+        if empty.any():
+            problems.append(f"{column} empty for district(s) {sorted(ids[empty])}")
+    allowed_sources = DISTRICT_GEOMETRY_SOURCES + (FIXTURE_MARKER,)
+    unknown = ~districts["geometry_source"].isin(allowed_sources)
+    if unknown.any():
+        problems.append(f"geometry_source not one of {list(DISTRICT_GEOMETRY_SOURCES)} for district(s) "
+                        f"{sorted(ids[unknown])}")
+    for column in _ISO_DATE_COLUMNS:
+        bad = districts[column].notna() & ~districts[column].map(_is_iso_date).astype(bool)
+        if bad.any():
+            problems.append(f"{column} is not an ISO date YYYY-MM-DD for district(s) {sorted(ids[bad])}")
+    if problems:
+        raise ValueError(f"{path}: invalid district provenance: " + "; ".join(problems))
+    districts = districts.to_crs(CRS)
+    invalid = ~districts.geometry.is_valid
+    if invalid.any():
+        reasons = [f"{district_id}: {is_valid_reason(geometry)}"
+                   for district_id, geometry in zip(ids[invalid], districts.geometry[invalid])]
+        raise ValueError(f"{path}: {int(invalid.sum())} invalid district polygon(s): " + "; ".join(reasons)
+                         + ". The layer must be valid as stored: a repair would change the district the file states.")
+    validate_resident_districts(districts)
+    per_municipality = districts["municipality_ags"].value_counts().sort_index()
+    log.info("[parking-zones] loaded %d resident parking districts from %s (%s)", len(districts), path,
+             ", ".join(f"{ags} {count}" for ags, count in per_municipality.items()))
+    ordered = list(DISTRICT_PROVENANCE_COLUMNS) + [column for column in districts.columns
+                                                   if column not in DISTRICT_PROVENANCE_COLUMNS
+                                                   and column != "geometry"]
+    return gpd.GeoDataFrame(districts[ordered + ["geometry"]], geometry="geometry", crs=CRS)
+
+
+def validate_resident_districts(districts: gpd.GeoDataFrame, *,
+                                overlap_tolerance_m2: float = OVERLAP_TOLERANCE_M2) -> None:
+    """Check the district layer; raise ``ValueError`` listing every violation.
+
+    Non-empty, EPSG:25832, lower-case ASCII ``district_id`` unique across the layer, ``district_code`` unique per
+    municipality, 8-digit AGS of the ZGB counties, valid non-empty (multi)polygons, and no two districts overlapping
+    by more than ``overlap_tolerance_m2``: a point must lie in at most one district, whatever the municipality, so
+    that ``assign_districts`` is a function.
+    """
+    if districts is None or len(districts) == 0:
+        raise ValueError("resident districts: no districts")
+    if districts.crs is None or districts.crs.to_epsg() != 25832:
+        raise ValueError(f"resident districts must be in {CRS}, found {districts.crs}")
+    missing = [column for column in ("district_id", "district_code", "municipality_ags") if column not in districts.columns]
+    if missing:
+        raise ValueError(f"resident districts: columns {missing} missing")
+    problems = []
+    ids = districts["district_id"].astype(str)
+    duplicated = sorted(set(ids[ids.duplicated()]))
+    if duplicated:
+        problems.append(f"duplicate district_id(s) {duplicated}")
+    keys = list(zip(districts["municipality_ags"].astype(str), districts["district_code"].astype(str)))
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        problems.append(f"duplicate (municipality_ags, district_code) {repeated}")
+    for district_id, code, ags, geometry in zip(ids, districts["district_code"], districts["municipality_ags"],
+                                                districts.geometry):
+        if not _ZONE_ID_PATTERN.match(district_id):
+            problems.append(f"{district_id}: district_id uses other than lower-case ASCII letters, digits and '_'")
+        if not isinstance(code, str) or not _DISTRICT_CODE_PATTERN.match(code):
+            problems.append(f"{district_id}: district_code {code!r} must be a non-empty label of letters and digits")
+        if not _AGS_PATTERN.match(str(ags)):
+            problems.append(f"{district_id}: municipality_ags {ags!r} is not an 8-digit AGS")
+        elif str(ags)[:5] not in ZGB_COUNTY_KEYS:
+            problems.append(f"{district_id}: municipality_ags {ags!r} is not an 8-digit AGS of the ZGB counties "
+                            f"{list(ZGB_COUNTY_KEYS)}")
+        if geometry is None or geometry.is_empty:
+            problems.append(f"{district_id}: empty geometry")
+        elif geometry.geom_type not in ("Polygon", "MultiPolygon"):
+            problems.append(f"{district_id}: {geometry.geom_type} is not a polygon")
+        elif not geometry.is_valid:
+            problems.append(f"{district_id}: invalid geometry ({is_valid_reason(geometry)})")
+        elif not geometry.area > 0:
+            problems.append(f"{district_id}: zero area")
+    if problems:
+        raise ValueError("resident districts: " + "; ".join(problems))
+    geometries = list(districts.geometry)
+    left, right = districts.sindex.query(districts.geometry, predicate="intersects")
+    overlaps = []
+    for i, j in zip(left, right):
+        if i < j:
+            area = geometries[i].intersection(geometries[j]).area
+            if area > overlap_tolerance_m2:
+                overlaps.append(f"{ids.iloc[i]}/{ids.iloc[j]} {area:.1f} m2")
+    if overlaps:
+        raise ValueError(f"resident districts overlap by more than {overlap_tolerance_m2} m2: " + "; ".join(overlaps))
+
+
+def validate_district_municipalities(districts: gpd.GeoDataFrame, register: pd.DataFrame) -> None:
+    """Every district municipality needs a status row of the coverage register; warn where it is not ``zoned``.
+
+    A district in a municipality the register does not know is a release inconsistency and raises
+    ``ValueError``. A district in a municipality that is not ``zoned`` is inert -- the district rule acts inside a fee
+    zone only (``braunschweig.parking.cost.parking_cost_cents``) -- and is logged as a warning naming the
+    municipality and its status, never silently accepted.
+    """
+    status = register[register["status"] != "excluded"].set_index("ags")["status"]
+    municipalities = sorted(set(districts["municipality_ags"].astype(str)))
+    unknown = [ags for ags in municipalities if ags not in status.index]
+    if unknown:
+        raise ValueError(f"resident districts lie in municipality_ags {unknown} that the coverage register has no "
+                         "status row for: the districts and the register must belong to one release")
+    inert = {ags: status[ags] for ags in municipalities if status[ags] != "zoned"}
+    if inert:
+        log.warning("[parking-zones] resident districts in municipalities that are not 'zoned' have no effect (the "
+                    "district rule acts inside a fee zone only): %s", inert)
+
+
+def assign_districts(points: gpd.GeoDataFrame, districts: gpd.GeoDataFrame) -> pd.Series:
+    """District id of every point (``within`` its polygon) or NaN outside every district; indexed like ``points``.
+
+    The same join as :func:`assign_zones` on the ``district_id`` of a layer that passed
+    :func:`validate_resident_districts`, so a point lies in at most one district; a point inside two raises, and so
+    does a null or empty point geometry. Coverage is logged as a rate: "no district" only means that the person
+    gets no resident exemption there, but the rate is the evidence that the join worked.
+    """
+    assigned = _assign_polygon_ids(points, districts, id_column="district_id", output_name="parking_district",
+                                   function_name="assign_districts", noun="district")
+    inside = int(assigned.notna().sum())
+    share = 100.0 * inside / len(points) if len(points) else 0.0
+    log.info("[parking-zones] %d of %d points (%.1f %%) lie in a resident parking district; %d outside every "
+             "district (no district exemption)", inside, len(points), share, len(points) - inside)
     return assigned
 
 

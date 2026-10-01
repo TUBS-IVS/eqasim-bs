@@ -1,4 +1,5 @@
-"""Validate the committed parking cost zones, tariffs and coverage register and print their coverage (issue #249).
+"""Validate the committed parking cost zones, tariffs, coverage register and resident districts and print their
+coverage (issues #249 and #436).
 
 Checks (via ``braunschweig.parking.zones``, plus the per-row contract of the tariff model through
 ``braunschweig.parking.tariff_export.tariff_row_to_zone``): the tariff table (types, required fields per zone type,
@@ -21,9 +22,13 @@ present, the release of the classified cells (``--paid-share-path``, ``parking_p
 ``supply_share_qa.load_paid_share_release``); and the municipal QA table (``--municipal-qa-path``,
 ``parking_zones_2026_municipal_qa.csv``; spec Amendment C; required as soon as a polygon has geometry_source
 ``municipal_street_sections_buffered`` or a ``reconstructed_section_m2`` value):
-``braunschweig.parking.municipal_zone_qa.validate_municipal_qa`` against the polygons. Prints counts per zone type,
-geometry source (with the area mix), fee-window source and municipality, the register status counts, the QA decisions,
-the H1 and H2 results and the municipal QA rows; exits 1 on any violation, 0 otherwise.
+``braunschweig.parking.municipal_zone_qa.validate_municipal_qa`` against the polygons. The resident parking districts
+(``--districts-path``, ``parking_resident_districts_2026.geojson``; spec Amendment C3) are part of the release and
+always required: ``braunschweig.parking.zones.load_resident_districts`` (valid as stored, never repaired: unique ids,
+no overlap) and ``validate_district_municipalities`` (every district municipality has a register status row), without
+the test-set marker. Prints counts per zone type, geometry source (with the area mix), fee-window source and
+municipality, the register status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the
+districts per municipality; exits 1 on any violation, 0 otherwise.
 
 Usage::
 
@@ -53,6 +58,7 @@ DEFAULT_QA_PATH = "braunschweig/parking/parking_zones_2026_qa.csv"
 DEFAULT_SUPPLY_QA_PATH = "braunschweig/parking/parking_zones_2026_supply_share_qa.csv"
 DEFAULT_PAID_SHARE_PATH = "braunschweig/parking/parking_paid_share_2026.csv.gz"
 DEFAULT_MUNICIPAL_QA_PATH = "braunschweig/parking/parking_zones_2026_municipal_qa.csv"
+DEFAULT_DISTRICTS_PATH = "braunschweig/parking/parking_resident_districts_2026.geojson"
 #: The spatial units of data.spatial.municipalities for the eight ZGB counties (113 Gemeinden and 10 gemeindefreie
 #: Gebiete, VG250 as cached by the pipeline); the register must carry exactly one status row for each.
 DEFAULT_EXPECTED_MUNICIPALITY_COUNT = 123
@@ -201,7 +207,7 @@ def _print_geometry_source_mix(zones) -> None:
 def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path: str,
              expected_municipality_count: int, qa_path: str = DEFAULT_QA_PATH,
              supply_qa_path: str = DEFAULT_SUPPLY_QA_PATH, paid_share_path: str = DEFAULT_PAID_SHARE_PATH,
-             municipal_qa_path: str = DEFAULT_MUNICIPAL_QA_PATH) -> None:
+             municipal_qa_path: str = DEFAULT_MUNICIPAL_QA_PATH, districts_path: str = DEFAULT_DISTRICTS_PATH) -> None:
     """Run every check; raise ``ValueError`` on the first failing group and print the coverage summary."""
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
@@ -248,6 +254,13 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     elif municipal:
         raise ValueError(f"{len(municipal)} zone(s) {municipal} from municipal sources but no municipal QA table at "
                          f"{municipal_file}")
+    # The resident districts (spec Amendment C3) are valid as stored and free of overlaps, whatever the loader of the
+    # pipeline would accept; they never carry the test-set marker and every municipality has a register status row.
+    districts = pz.load_resident_districts(data_path / districts_path)
+    district_markers = sorted(districts.loc[districts["geometry_source"] == pz.FIXTURE_MARKER, "district_id"])
+    if district_markers:
+        raise ValueError(f"resident districts carry the test-set marker {pz.FIXTURE_MARKER!r}: {district_markers}")
+    pz.validate_district_municipalities(districts, register)
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6
@@ -285,6 +298,10 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         counts = release["municipality_ags"].value_counts().sort_index()
         print(f"[parking-validate] paid-share release: {len(release)} classified cells (" + ", ".join(
             f"{ags} {count}" for ags, count in counts.items()) + ")")
+    district_areas = districts.geometry.area.groupby(districts["municipality_ags"]).agg(["count", "sum"])
+    print(f"[parking-validate] resident districts: {len(districts)} districts in {len(district_areas)} municipalities ("
+          + ", ".join(f"{ags} {int(row['count'])} districts {row['sum'] / 1e6:.3f} km2"
+                      for ags, row in district_areas.iterrows()) + "); a second layer next to the fee zones")
     if municipal_qa is None:
         print(f"[parking-validate] municipal QA: no table at {municipal_file} (no zone from municipal sources)")
     else:
@@ -308,12 +325,14 @@ def main(argv=None) -> int:
                         help="release of the classified cells (spec Amendment B7), relative to --data-path")
     parser.add_argument("--municipal-qa-path", default=DEFAULT_MUNICIPAL_QA_PATH,
                         help="municipal QA table (spec Amendment C), relative to --data-path")
+    parser.add_argument("--districts-path", default=DEFAULT_DISTRICTS_PATH,
+                        help="resident parking districts (spec Amendment C3), relative to --data-path")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     try:
         validate(Path(args.data_path), args.zones_path, args.tariffs_path, args.register_path,
                  args.expected_municipality_count, args.qa_path, args.supply_qa_path, args.paid_share_path,
-                 args.municipal_qa_path)
+                 args.municipal_qa_path, args.districts_path)
     except (ValueError, FileNotFoundError) as error:
         print(f"[parking-validate] FAILED: {error}")
         return 1

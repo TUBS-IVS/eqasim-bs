@@ -76,6 +76,7 @@ variables.
 | [osm_niedersachsen](../registry/data/osm_niedersachsen.yml) | spatial_input, network | manual_download (`scripts/preprocess_osm_pois.py`) | `data/osm/niedersachsen-latest.osm.pbf -> braunschweig/preprocessed/osm_pois.parquet` | r/r/r | no |
 | [parking_coverage_register_2026](../registry/data/parking_coverage_register_2026.yml) | assumption_basis, reference_table | committed | `data/braunschweig/parking/parking_coverage_register_2026.csv` | -/r/r | no |
 | [parking_paid_share_2026](../registry/data/parking_paid_share_2026.yml) | derived_input | derived (`scripts/build_parking_zones_from_osm.py`) | `data/braunschweig/parking/parking_paid_share_2026.csv.gz` | -/-/- | no |
+| [parking_resident_districts_2026](../registry/data/parking_resident_districts_2026.yml) | spatial_input | committed (`scripts/curation/parking_zones_2026/resident_districts.py`) | `data/braunschweig/parking/parking_resident_districts_2026.geojson` | -/r/r | no |
 | [parking_tariffs_2026](../registry/data/parking_tariffs_2026.yml) | supply_input, reference_table | committed | `data/braunschweig/parking/parking_tariffs_2026.csv` | -/r/r | no |
 | [parking_zones_2026](../registry/data/parking_zones_2026.yml) | spatial_input | committed (`scripts/build_parking_zones_from_osm.py`) | `data/braunschweig/parking/parking_zones_2026.geojson` | -/r/r | no |
 | [regiostar](../registry/data/regiostar.yml) | spatial_input, reference_table | auto_script (`scripts/download_regiostar.py`) | `data/regiostar/regiostar_referenzdatei.xlsx` | r/-/r | no |

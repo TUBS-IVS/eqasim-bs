@@ -61,9 +61,10 @@ limitations: >-
   no_paid_parking_known (no source states it). The eight excluded rows cover only the hospital, station,
   airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight zoned
   municipalities; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
-  (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, permit
-  districts A/B/C, ParkGO zone II apart from the three Parkscheininseln, drawn on the ParkGO annex map on page 3 of
-  the ParkGO PDF but not digitised, BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse); the part of
+  (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, ParkGO zone II
+  apart from the three Parkscheininseln, drawn on the ParkGO annex map on page 3 of the ParkGO PDF but not digitised,
+  BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse) and says that the permit districts A/B/C are no fee
+  zones but the second layer parking_resident_districts_2026; the part of
   zone 1a south of the city's overview map, unzoned until 2026-10-01, belongs to bs_zone_ia since spec Amendment C1.
   The Wolfsburg zones (spec Amendment C2) cover the city's phone-parking street sections and 50 m around them, no
   complete map of the paid parking: everywhere else in Wolfsburg parking is free by assumption Z1.
