@@ -11,7 +11,7 @@ The zone-based parking cost model (design spec ``2026-09-28-parking-cost-zones-d
   (e.g. a URL fragment) is data. Money in EUR as float, minutes as nullable integers (``Int64``), fee
   hours as decimal hours of the weekday, ``resident_exempt`` from the literals ``true``/``false``.
   Empty means "not applicable". Schema 2 (parking cost zones v2, issue #436, levers 2 and 4) appends the optional
-  columns ``OPTIONAL_TARIFF_COLUMNS``: the garage product family, ``commuter_day_eur`` and ``search_time_min``. A
+  columns ``OPTIONAL_TARIFF_COLUMNS``: the garage product, ``commuter_day_eur`` and ``search_time_min``. A
   table without them (schema 1, ``SCHEMA_1_TARIFF_COLUMNS``) loads with every one of them empty, which prices as v1.
 * **coverage register** -- one row per municipality of the eight ZGB counties with a status in
   ``REGISTER_STATUSES``, plus one ``excluded`` row per paid-parking area deliberately left out.
@@ -71,15 +71,15 @@ SCHEMA_1_TARIFF_COLUMNS = (
     "long_stay_product_eur", "member_day_eur", "guest_day_eur", "fee_start_h", "fee_end_h", "resident_exempt",
     "source_url", "source_date", "valid_from", "fee_window_source", "notes",
 )
-#: Schema 2, the garage product family (v2 lever 2): rate per hour, billing unit, an optional first period, day cap
-#: and the garage's own fee window in decimal hours (usually 0 to 24). All-or-none per row, except the first period:
-#: ``GARAGE_FIRST_PERIOD_COLUMNS`` come as a pair and only together with ``GARAGE_FAMILY_COLUMNS``.
+#: Schema 2, the garage product (v2 lever 2, spec amendment A6): rate per hour, billing unit, an optional first
+#: period, an optional day cap and the garage's own fee window in decimal hours (usually 0 to 24). The core
+#: ``GARAGE_CORE_COLUMNS`` is all-or-none per row; ``garage_daily_cap_eur`` (empty = no day cap) and the pair
+#: ``GARAGE_FIRST_PERIOD_COLUMNS`` are optional, but only together with the core.
 GARAGE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
                   "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h")
-GARAGE_FAMILY_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_daily_cap_eur",
-                         "garage_fee_start_h", "garage_fee_end_h")
+GARAGE_CORE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_fee_start_h", "garage_fee_end_h")
 GARAGE_FIRST_PERIOD_COLUMNS = ("garage_first_period_min", "garage_first_period_eur")
-#: Schema 2, all optional: the garage family, the commuter product per working day (ASSUMPTION P2; street_paid and
+#: Schema 2, all optional: the garage product, the commuter product per working day (ASSUMPTION P2; street_paid and
 #: campus rows only) and the parking search time in whole minutes >= 0 (lever 4; not a price input).
 OPTIONAL_TARIFF_COLUMNS = GARAGE_COLUMNS + ("commuter_day_eur", "search_time_min")
 #: The loaded layout: schema 1 followed by the schema-2 columns ("schema 2 = schema 1 plus optional columns").
@@ -117,7 +117,7 @@ FORBIDDEN_FIELDS_BY_TYPE = {
     # campus rows only (v2 spec amendment A4).
     "resident_zone": ("member_day_eur", "guest_day_eur", "first_period_min", "first_period_eur",
                       "free_if_stay_at_most_min", "daily_cap_eur", "commuter_day_eur"),
-    # A campus stay pays a day product, so a garage family would be ignored.
+    # A campus stay pays a day product, so a garage would be ignored.
     "campus": ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                "first_period_eur", "daily_cap_eur", "max_stay_min", "long_stay_product_eur") + GARAGE_COLUMNS,
 }
@@ -298,7 +298,7 @@ def _log_schema_2_products(tariffs: pd.DataFrame, absent: list, path) -> None:
     if absent:
         log.info("[parking-zones] %s lacks the optional schema-2 column(s) %s; they are read as empty", path, absent)
     log.info("[parking-zones] schema-2 products: garage on %d/%d rows, commuter product on %d/%d, search time on "
-             "%d/%d", rows_with(GARAGE_FAMILY_COLUMNS), len(tariffs), rows_with(("commuter_day_eur",)), len(tariffs),
+             "%d/%d", rows_with(GARAGE_CORE_COLUMNS), len(tariffs), rows_with(("commuter_day_eur",)), len(tariffs),
              rows_with(("search_time_min",)), len(tariffs))
 
 
@@ -335,8 +335,9 @@ def load_tariffs(path) -> pd.DataFrame:
 def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True) -> None:
     """Check the tariff rows against spec 3.1/5.3 and the schema-2 rules; raise ``ValueError`` listing every violation.
 
-    Schema 2 (v2 lever 2): the garage family is all-or-none, its first period a pair within it; a maximum stay needs
-    a long-stay product or a garage (a longer stay loses the street product); ``commuter_day_eur`` exists on
+    Schema 2 (v2 lever 2, amendment A6): the garage core is all-or-none, its day cap (empty = no cap) and its
+    first-period pair are optional but need the core; a maximum stay needs a long-stay product or a garage (a longer
+    stay loses the street product); ``commuter_day_eur`` exists on
     street_paid and campus rows only and is never negative; ``search_time_min`` is a whole number >= 0. A frame
     without the schema-2 columns is checked as if they were empty. ``allow_fixture_marker=False`` additionally
     rejects the synthetic test-set marker ``fixture`` in ``source_url`` and ``fee_window_source`` (the committed data
@@ -415,16 +416,19 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
             if _is_set(row[first]) != _is_set(row[second]):
                 missing = second if _is_set(row[first]) else first
                 problem(missing, f"{first} and {second} are set together or not at all")
-        garage_set = [field for field in GARAGE_FAMILY_COLUMNS if _is_set(row[field])]
-        if garage_set and len(garage_set) < len(GARAGE_FAMILY_COLUMNS):
-            for field in GARAGE_FAMILY_COLUMNS:
-                if field not in garage_set:
-                    problem(field, f"the garage columns {list(GARAGE_FAMILY_COLUMNS)} are set together or not at "
-                                   f"all; this row sets {garage_set}")
-        has_garage = len(garage_set) == len(GARAGE_FAMILY_COLUMNS)
-        if not garage_set and any(_is_set(row[field]) for field in GARAGE_FIRST_PERIOD_COLUMNS):
-            problem(GARAGE_FIRST_PERIOD_COLUMNS[0], f"a garage first period needs the garage columns "
-                                                    f"{list(GARAGE_FAMILY_COLUMNS)}; it is never priced without them")
+        core_set = [field for field in GARAGE_CORE_COLUMNS if _is_set(row[field])]
+        if core_set and len(core_set) < len(GARAGE_CORE_COLUMNS):
+            for field in GARAGE_CORE_COLUMNS:
+                if field not in core_set:
+                    problem(field, f"the garage core {list(GARAGE_CORE_COLUMNS)} is set completely or not at all; "
+                                   f"this row sets {core_set}")
+        has_garage = len(core_set) == len(GARAGE_CORE_COLUMNS)
+        if not core_set and _is_set(row["garage_daily_cap_eur"]):
+            problem("garage_daily_cap_eur", f"a garage day cap needs the garage core {list(GARAGE_CORE_COLUMNS)}; "
+                                            "it is never priced without it")
+        if not core_set and any(_is_set(row[field]) for field in GARAGE_FIRST_PERIOD_COLUMNS):
+            problem(GARAGE_FIRST_PERIOD_COLUMNS[0], f"a garage first period needs the garage core "
+                                                    f"{list(GARAGE_CORE_COLUMNS)}; it is never priced without it")
         # A long-stay product is sold only above a maximum stay, and a longer stay loses the street product (v2): it
         # needs the long-stay product or a garage (the commuter product serves work and education only).
         if _is_set(row["long_stay_product_eur"]) and not _is_set(row["max_stay_min"]):

@@ -23,7 +23,8 @@ FIXTURE_JSON = FIXTURES / "parking_tariffs_fixture.json"
 FIXTURE_CSV = FIXTURES / "parking_tariffs_fixture.csv"
 SNAPSHOT_DATE = "2026-09-28"
 V1_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
-V2_ZONE_IDS = {"fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2"}
+V2_ZONE_IDS = {"fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2", "fx_garage_window_v2", "fx_capped_street_v2",
+               "fx_campus_tie_v2", "fx_res_garage_v2"}
 FIXTURE_ZONE_IDS = V1_ZONE_IDS | V2_ZONE_IDS
 # Table column in euros -> JSON field in cents, written out here independently of the implementation.
 EURO_FIELDS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
@@ -323,6 +324,19 @@ def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_
     v1_cases = [case for case in GOLDEN_CASES if not case["id"].startswith("V")]
     assert len(v1_cases) == 38 + 8 + 8
     assert golden_case_mismatches(zones_from_model(schema_1_model), v1_cases) == []
+
+
+def test_a_pre_v2_tariff_model_without_the_schema_2_keys_round_trips_through_zones_from_model(model):
+    """A tariff model written before schema 2 has no schema-2 keys at all (not null ones): zones_from_model reads its
+    zone entries into the same tariffs as the schema-2 entries with null keys, which export back unchanged."""
+    from scripts.export_parking_golden_cases import zones_from_model
+    v1_zones = {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
+    pre_v2_zones = {zone_id: {key: value for key, value in zone.items() if key not in V2_FIELDS}
+                    for zone_id, zone in v1_zones.items()}
+    assert all(not set(V2_FIELDS) & set(zone) for zone in pre_v2_zones.values())
+    tariffs = zones_from_model({"zones": pre_v2_zones})
+    assert tariffs == zones_from_model({"zones": v1_zones})
+    assert {zone_id: te.zone_to_json(tariff) for zone_id, tariff in tariffs.items()} == v1_zones
 
 
 def test_the_committed_fixture_tariff_model_is_in_sync(table, sources):

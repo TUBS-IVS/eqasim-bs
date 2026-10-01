@@ -57,7 +57,7 @@ EURO_COLUMNS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "fir
 MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min",
                   "garage_billing_unit_min", "garage_first_period_min", "search_time_min")
 # Table column (decimal hours of the day) -> ZoneTariff field (seconds after midnight). The street fee window is
-# required; the garage fee window belongs to the optional garage family.
+# required; the garage fee window belongs to the optional garage core (spec amendment A6).
 HOUR_COLUMNS = {"fee_start_h": "fee_start_s", "fee_end_h": "fee_end_s"}
 GARAGE_HOUR_COLUMNS = {"garage_fee_start_h": "garage_fee_start_s", "garage_fee_end_h": "garage_fee_end_s"}
 #: The spec 5.3 columns this module reads. The others are not part of the model: workplace_class serves the

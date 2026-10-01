@@ -26,8 +26,8 @@ _VALID_FIELDS = {
 _OPTIONAL_FIELDS = ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                     "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents",
                     "member_day_cents", "guest_day_cents")
-# A complete garage product family of schema 2 (120 ct per started hour, capped at 960 ct, all day); the first
-# period is optional within the family.
+# A garage of schema 2: the core (120 ct per started hour, all day) plus the optional day cap of 960 ct; the first
+# period is optional too.
 _GARAGE = {"garage_hourly_rate_cents": 120, "garage_billing_unit_min": 60, "garage_daily_cap_cents": 960,
            "garage_fee_start_s": 0, "garage_fee_end_s": 86400}
 _SHOP = {"purpose": "shop", "parking_free": False, "resident_of_zone": False}
@@ -52,9 +52,10 @@ def fixture_zones():
 
 def test_the_contract_holds_the_g_l_lz_and_v_cases_each_with_its_minimum_stay():
     # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
-    # L = 0 (ADR-0139 decision 9); V01..V14 pin the product minimum of schema 2 at L = 15 (issue #436).
+    # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
+    # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1).
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
-                ("V", "", range(1, 15), 15))
+                ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
@@ -148,9 +149,12 @@ def test_street_paid_with_max_stay_but_without_long_stay_product_is_rejected_at_
     ("resident_zone", {"billing_unit_min": None}, "billing_unit_min is required for zone_type 'resident_zone'"),
     ("campus", {"hourly_rate_cents": 180}, "hourly_rate_cents does not apply"),
     ("campus", {"resident_exempt": "false"}, "resident_exempt must be a bool"),
-    # Schema 2: the garage family is all-or-none; its first period comes as a pair and only with the family.
-    ("street_paid", {**_GARAGE, "garage_daily_cap_cents": None}, r"garage product family .*garage_daily_cap_cents"),
-    ("street_paid", {"garage_first_period_min": 60, "garage_first_period_cents": 120}, "garage product family"),
+    # Schema 2 (spec amendment A6): the garage core (rate, unit, fee window) is all-or-none; the day cap is optional
+    # (empty = no cap) and the first period comes as a pair, both only with the core.
+    ("street_paid", {**_GARAGE, "garage_billing_unit_min": None}, r"garage core .*garage_billing_unit_min"),
+    ("street_paid", {**_GARAGE, "garage_fee_end_s": None}, r"garage core .*garage_fee_end_s"),
+    ("street_paid", {"garage_daily_cap_cents": 960}, r"garage_daily_cap_cents .*garage core"),
+    ("street_paid", {"garage_first_period_min": 60, "garage_first_period_cents": 120}, "garage core"),
     ("street_paid", {**_GARAGE, "garage_first_period_min": 60}, "garage_first_period_cents"),
     ("street_paid", {**_GARAGE, "garage_fee_start_s": 72000, "garage_fee_end_s": 32400}, "garage fee window"),
     ("street_paid", {**_GARAGE, "garage_billing_unit_min": 0}, "garage_billing_unit_min must be at least 1"),

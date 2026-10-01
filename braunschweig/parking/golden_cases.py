@@ -9,7 +9,7 @@ with the fixture tariffs in cents, to ``tests/fixtures/parking/parking_golden_ca
 
 Fields of a case (they are the keys of the JSON cases, too):
 
-- ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V14``.
+- ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -44,10 +44,14 @@ The four families:
 
 - L01..L08 (L = 15 min, the value of ADR-0139 decision 9) and their twins L01Z..L08Z (the same stays at L = 0):
   the minimum stay on the v1 rows.
-- V01..V14 (L = 15 min): schema 2 of parking cost zones v2 (issue #436) on the ``fx_*_v2`` rows: the cheapest
+- V01..V23 (L = 15 min): schema 2 of parking cost zones v2 (issue #436) on the ``fx_*_v2`` rows: the cheapest
   product the driver can use among the street, the garage and the commuter product (ASSUMPTION P1), ties going to
   the street, then the garage; the commuter product only for work and education (P2), also on campus rows (A4); a
-  stay outside the STREET fee window stays free whatever the garage costs (rev-1 ruling, V07).
+  stay outside the STREET fee window stays free whatever the garage costs (rev-1 ruling, V07). V15..V23 pin the
+  edge rules: both tie orders and the campus tie (V15..V17), the garage's own fee window with no first period for an
+  unused garage and its 0 ct outcome (V18, V19), the garage without a day cap (V19, V20; spec amendment A6), the
+  street unavailable above the maximum stay where its price would be the cheapest (V20) and in a resident zone (V22),
+  and a terminal stay under L1 (T1 first, then L1, V21).
 
 The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file with its ``minimum_stay_min``, so a
 port that meets the file meets these pins, too. That a stay outside every zone is ``NO_ZONE`` even for the home
@@ -190,7 +194,16 @@ _MINIMUM_STAY_ROWS = (
 # fx_wob_v2: street first hour 110 ct, then 120 ct per started hour, cap 600, 06:00-24:00; garage 100 ct per started
 #   hour, cap 500, all day.
 # fx_campus_v2: member day 350 ct, guest day 900 ct, commuter 190 ct, all day.
-# Times of day: 28800 = 08:00, 37800 = 10:30, 37860 = 10:31, 46800 = 13:00, 73800 = 20:30, 79200 = 22:00.
+# The edge rows of V15..V23:
+# fx_garage_window_v2: street 180 ct/h in 1-min units, no cap, 09:00-20:00; garage first hour 120 ct, then 120 ct per
+#   started hour, NO day cap, only 10:00-18:00; commuter 240 ct.
+# fx_capped_street_v2: street 180 ct/h in 1-min units, cap 200, max stay 120 min WITHOUT a long-stay product,
+#   09:00-20:00; garage 60 ct/h in 1-min units (1 ct a minute), NO day cap, all day.
+# fx_campus_tie_v2: member day 350 ct, guest day 900 ct, commuter 350 ct, all day.
+# fx_res_garage_v2: resident zone, rate 0 in 60-min units, max stay 120 min WITHOUT a long-stay product, all day;
+#   garage 120 ct per started hour, cap 960, all day.
+# Times of day: 28800 = 08:00, 37800 = 10:30, 37860 = 10:31, 38400 = 10:40, 41400 = 11:30, 43200 = 12:00,
+# 46800 = 13:00, 50400 = 14:00, 64800 = 18:00, 68400 = 19:00, 71400 = 19:50, 73800 = 20:30, 79200 = 22:00.
 _V_CASE_ROWS = (
     # 240 chargeable min > street max stay 180 without a long-stay product: the street is unavailable; the garage
     # charges 4 started hours x 120 ct = 480 ct.
@@ -221,6 +234,36 @@ _V_CASE_ROWS = (
     ("V13", "fx_campus_v2", 28800, 61200, "work",      False, False, False, 190, "PAID_COMMUTER",     False),
     # A guest pays the guest day product; the commuter product does not apply to shopping.
     ("V14", "fx_campus_v2", 28800, 61200, "shop",      False, False, False, 900, "PAID_CAMPUS_GUEST", False),
+    # V15..V23 pin the edge rules of the product minimum that V01..V14 leave open (Task 2 review, rulings R-T2-a and
+    # R-T2-b), each with the wrong result a port that breaks the rule would produce.
+    # Tie: street 40 min x 3 ct = 120 ct = garage one started hour 120 ct; the street wins (garage first: PAID_GARAGE).
+    ("V15", "fx_bs_ia_v2",  36000, 38400, "shop",      False, False, False, 120, "PAID_METERED",      False),
+    # Tie: street 120 min = 360 ct; garage 10:00-12:00 inside its window 10:00-18:00 = first hour 120 + one started
+    # hour 120 = 240 ct; commuter 240 ct; the garage wins (commuter first: PAID_COMMUTER).
+    ("V16", "fx_garage_window_v2", 36000, 43200, "work", False, False, False, 240, "PAID_GARAGE",     False),
+    # Tie on campus: member day 350 ct = commuter 350 ct; the member day product wins (commuter first: PAID_COMMUTER).
+    ("V17", "fx_campus_tie_v2", 28800, 61200, "work",  False, False, False, 350, "PAID_CAMPUS_MEMBER", False),
+    # 18:00-19:00: street 60 min = 180 ct, but not one second lies in the garage window 10:00-18:00, so the garage
+    # charges nothing, not even its first period: 0 ct is FREE_WITHIN_LIMIT (first period charged: 120 PAID_GARAGE;
+    # 0 ct named PAID_GARAGE: wrong outcome; garage metered in the street window: 120 PAID_GARAGE).
+    ("V18", "fx_garage_window_v2", 64800, 68400, "shop", False, False, False,   0, "FREE_WITHIN_LIMIT", False),
+    # 09:00-19:00: street 600 min = 1800 ct (no street cap); the garage window clips the garage to 10:00-18:00 = 8 h:
+    # 120 + 7 x 120 = 960 ct, no garage cap (amendment A6) (garage metered over the whole stay: 1200; an empty cap
+    # read as 0: 0 ct).
+    ("V19", "fx_garage_window_v2", 32400, 68400, "shop", False, False, False, 960, "PAID_GARAGE",     False),
+    # 240 chargeable min > max stay 120 without a long-stay product: the street is unavailable, although its price
+    # would be the CHEAPEST (240 x 3 ct = 720, capped at 200 ct); the uncapped garage charges 240 min x 1 ct = 240 ct
+    # (street kept available: 200 PAID_METERED).
+    ("V20", "fx_capped_street_v2", 36000, 50400, "shop", False, False, False, 240, "PAID_GARAGE",     False),
+    # Terminal at 19:50 under L1 (T1 first, then L1, A3): T1 takes the end of the STREET window, 72000; L1 extends to
+    # 72300. Street: 10 chargeable min = 30 ct; garage (all day): 15 min x 1 ct = 15 ct (without L1: 10 ct; T1 from
+    # the garage window, 86400: garage 250 ct, street 30 PAID_METERED).
+    ("V21", "fx_capped_street_v2", 71400,  None, "shop", False, False, True,   15, "PAID_GARAGE",     False),
+    # Resident zone without a long-stay product: a non-resident's 180 min > max stay 120 lose the street (whose disc
+    # price would be 0 ct); the garage charges 3 started hours = 360 ct (street kept available: 0 FREE_WITHIN_LIMIT).
+    ("V22", "fx_res_garage_v2", 36000, 46800, "shop",  False, False, False, 360, "PAID_GARAGE",       False),
+    # 90 min <= max stay 120: disc parking at rate 0 is free and beats the garage (2 started hours = 240 ct).
+    ("V23", "fx_res_garage_v2", 36000, 41400, "shop",  False, False, False,   0, "FREE_WITHIN_LIMIT", False),
 )
 
 

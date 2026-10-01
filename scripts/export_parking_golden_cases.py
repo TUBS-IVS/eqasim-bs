@@ -8,7 +8,7 @@ truth. The script
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
 2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 2)
    and evaluates every golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38,
-   L01..L08, L01Z..L08Z, V01..V14, each priced under its own minimum stay ``minimum_stay_min``) with the Python
+   L01..L08, L01Z..L08Z, V01..V23, each priced under its own minimum stay ``minimum_stay_min``) with the Python
    reference ``braunschweig.parking.cost``; it writes nothing when a result differs from its hard-coded
    expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:

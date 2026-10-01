@@ -3,15 +3,17 @@
 # (section "Fixture tariff set and golden cases"), inspired by but not equal to the committed
 # eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv. Never use it as a source of real tariffs.
 # fx_frac is not in the plan table: its fractional per-minute rate pins the half-up rounding (G27..G30).
-# The four fx_*_v2 rows follow the fixture table of the v2 plan (parking cost zones v2, issue #436, section
-# "Golden cases v2"): they pin the product minimum of tariff schema 2 (street, garage and commuter products;
-# golden cases V01..V14). The v1 rows leave the nine schema-2 columns at the end of the header empty, so they
-# price as schema-1 rows (G01..G38, L01..L08).
+# The fx_*_v2 rows pin the product minimum of tariff schema 2 (parking cost zones v2, issue #436): the first four
+# follow the fixture table of the v2 plan (section "Golden cases v2", golden cases V01..V14); the last four are the
+# edge rows of the Task 2 review (golden cases V15..V23): a garage window inside the street window without a garage
+# day cap (spec amendment A6), a capped cheap street with a per-minute garage, a campus row whose commuter product
+# costs the member day product, a resident zone with a garage and no long-stay product. The v1 rows leave the nine
+# schema-2 columns at the end of the header empty, so they price as schema-1 rows (G01..G38, L01..L08).
 # Columns and cost semantics as in the committed tariff table (design spec sections 3.2 and 5.3) plus the
 # optional schema-2 columns (v2 design spec, levers 2 and 4): money in EUR, minutes as integers, fee hours
 # as decimal hours of the weekday, empty = not applicable.
 # Consumers: tests/test_parking_zones.py, scripts/export_parking_golden_cases.py (Task 3) and the
-# zones stage tests (Task 4); the matching polygons are parking_zones_fixture.geojson (twelve squares).
+# zones stage tests (Task 4); the matching polygons are parking_zones_fixture.geojson (sixteen squares).
 zone_id,name,municipality_ags,zone_type,workplace_class,hourly_rate_eur,billing_unit_min,free_if_stay_at_most_min,first_period_min,first_period_eur,daily_cap_eur,max_stay_min,long_stay_product_eur,member_day_eur,guest_day_eur,fee_start_h,fee_end_h,resident_exempt,source_url,source_date,valid_from,fee_window_source,notes,garage_hourly_rate_eur,garage_billing_unit_min,garage_first_period_min,garage_first_period_eur,garage_daily_cap_eur,garage_fee_start_h,garage_fee_end_h,commuter_day_eur,search_time_min
 fx_bs_ia,Fixture Braunschweig zone Ia,03101000,street_paid,bs_zentrum,1.80,1,,,,,180,9.00,,,9.0,20.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth,,,,,,,,,
 fx_bs_ib,Fixture Braunschweig zone Ib,03101000,street_paid,bs_zentrum,1.80,1,,,,9.00,,,,,9.0,20.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth,,,,,,,,,
@@ -25,3 +27,7 @@ fx_bs_ib_v2,Fixture Braunschweig zone Ib v2,03101000,street_paid,bs_zentrum,1.80
 fx_bs_ia_v2,Fixture Braunschweig zone Ia v2,03101000,street_paid,bs_zentrum,1.80,1,,,,,180,,,,9.0,20.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 (golden V01..V14),1.20,60,,,9.60,0.0,24.0,,5
 fx_wob_v2,Fixture Wolfsburg Innenstadt v2,03103000,street_paid,03103,1.20,60,,60,1.10,6.00,,,,,6.0,24.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 (golden V01..V14),1.00,60,,,5.00,0.0,24.0,,2
 fx_campus_v2,Fixture TU campus v2,03101000,campus,bs_innenbereich,,,,,,,,,3.50,9.00,0.0,24.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 (golden V01..V14),,,,,,,,1.90,0
+fx_garage_window_v2,Fixture garage window v2,03101000,street_paid,bs_zentrum,1.80,1,,,,,,,,,9.0,20.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 edge cases (golden V16 V18 V19),1.20,60,60,1.20,,10.0,18.0,2.40,
+fx_capped_street_v2,Fixture capped street v2,03101000,street_paid,bs_zentrum,1.80,1,,,,2.00,120,,,,9.0,20.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 edge cases (golden V20 V21),0.60,1,,,,0.0,24.0,,
+fx_campus_tie_v2,Fixture TU campus tie v2,03101000,campus,bs_innenbereich,,,,,,,,,3.50,9.00,0.0,24.0,false,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 edge cases (golden V17),,,,,,,,3.50,
+fx_res_garage_v2,Fixture resident zone with garage v2,03101000,resident_zone,bs_innenbereich,0.00,60,,,,,120,,,,0.0,24.0,true,fixture,2026-10-01,2026-01-01,fixture,fixture: pins arithmetic not truth; schema 2 edge cases (golden V22 V23),1.20,60,,,9.60,0.0,24.0,,
