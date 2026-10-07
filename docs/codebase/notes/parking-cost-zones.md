@@ -97,23 +97,15 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 
 ## Rules maintainers must keep
 
-- The free-parking draw (`braunschweig.parking.attach.draw_parking_free`, activity attribute `parkingFree`, outcome
-  `EMPLOYER_FREE`, evaluated by the Java calculator before every product on every zone type, the campus included) has
-  two options validated by `braunschweig.parking.free_draw_options` (at configure time by the plans-writer wrapper,
-  again by the draw; the code defaults are OFF, the production values live in `configs/base_bs.yml` and the two popsim
-  fixture configurations, pinned equal by `tests/test_popsim_config_parity.py`). `parking_free_share_proxy_classes`
-  (ASSUMPTION A1-b) maps a workplace class to the SrV class whose `share_free_total` the draw uses for the persons of
-  the mapped class: `{"03103": "bs_zentrum"}` makes Wolfsburg use the Braunschweig centre share (0.7938) instead of
-  its own in-commuter-only 0.9475; keys and values must be SrV class rows, a value must not itself be a key, a class
-  must not map to itself, the shift is added to the proxied share, the zones keep their county `workplace_class`, and
-  the draw logs per class the share used and its source class (`03103 -> bs_zentrum 0.7938`). `parking_campus_free_share`
-  (ASSUMPTION C2, an owner estimate without a source, [0, 1], 0.2 in the canonical configuration) is the share of the
-  persons with a work or education activity in a campus zone who park free; the shift never applies to it. There is
-  ONE uniform per person (common random numbers across releases, arms, mappings and shares). A paid-zone activity is
-  free when `u` is below the class probability of the person's first paid-zone work/education activity, a campus
-  activity when `u` is below the campus share, so a person with both kinds is free in none, one or both, and an empty
-  mapping with campus share 0.0 reproduces the v1 draw exactly. Do not add a third source of free parking without a
-  record: the draw is the only writer of `parkingFree`.
+- The free-parking draw (`braunschweig.parking.attach.draw_parking_free`; semantics, the single seeded uniform and
+  the rule for a person with paid-zone and campus activities are in its docstring) has two options, validated by
+  `braunschweig.parking.free_draw_options` at configure time (the plans-writer wrapper) and again in the draw:
+  `parking_free_share_proxy_classes` (ASSUMPTION A1-b, why Wolfsburg borrows another class: data record
+  `srv2023_commute_parking_by_workplace_class`) and `parking_campus_free_share` (ASSUMPTION C2, an owner estimate).
+  Their production values live in `configs/base_bs.yml` and, equal, in the two popsim fixture configurations
+  (`tests/test_popsim_config_parity.py`); the code defaults are OFF. A config overlay is deep-merged, so the sensitivity
+  arm without the proxy is `{"03103": null}`, never `{}`, which leaves the base entry in place. Do not add a third
+  source of free parking without a record: the draw is the only writer of `parkingFree`.
 - The resident districts are data of their own, not zones: `parking_resident_districts_2026.geojson` is built by
   the curation step `scripts/curation/parking_zones_2026/resident_districts.py` from the owner's packages (ids
   prefixed per town, the Goslar feature without a code joined to C, an overlap cut from the later district), must
