@@ -131,7 +131,7 @@ def _print_schema_2_products(tariffs) -> None:
 
 def _print_garages(garages, garage_qa_table, garages_file) -> None:
     """One line on the garage dataset: the garages listed, priced and not priced by reason, per municipality, the rates of
-    the assumptions P3 to P8 among the priced garages, the union rates (at least one assumption; P4 or P5), the garages in
+    the assumptions P3 to P11 among the priced garages, the union rates (at least one assumption; P4 or P5), the garages in
     the tiered form and in the banded form and the monthly products (fallback transparency: the share of the garages that
     rest on an assumption is on the record)."""
     if garages is None:
