@@ -131,9 +131,9 @@ def _print_schema_2_products(tariffs) -> None:
 
 def _print_garages(garages, garage_qa_table, garages_file) -> None:
     """One line on the garage dataset: the garages listed, priced and not priced by reason, per municipality, the rates of
-    the assumptions P3 to P7 among the priced garages, the union rates (at least one assumption; P4 or P5), the garages in
-    the tiered form and the monthly products (fallback transparency: the share of the garages that rest on an assumption is
-    on the record)."""
+    the assumptions P3 to P8 among the priced garages, the union rates (at least one assumption; P4 or P5), the garages in
+    the tiered form and in the banded form and the monthly products (fallback transparency: the share of the garages that
+    rest on an assumption is on the record)."""
     if garages is None:
         print(f"[parking-validate] garages: no dataset at {garages_file} (no stage reads it yet)")
         return
@@ -145,7 +145,7 @@ def _print_garages(garages, garage_qa_table, garages_file) -> None:
           f"priced ({_counts_text(coverage['not_priced_by_reason'])}); per municipality {_counts_text(towns)}; priced garages "
           f"resting on an assumption: {_counts_text(coverage['priced_by_assumption'])} of {coverage['priced']} (at least "
           f"one assumption {coverage['priced_with_assumption']}, P4 or P5 {coverage['priced_with_p4_or_p5']}; in the tiered "
-          f"form {coverage['priced_tiered']}); monthly "
+          f"form {coverage['priced_tiered']}, in the banded form {coverage['priced_banded']}); monthly "
           f"product on {coverage['with_monthly_product']} garages; QA: monthly products used {qa['monthly_used']}, recorded "
           f"and not used {qa['monthly_not_used']} ({_counts_text(qa['monthly_not_used_by_reason'])}), candidates that are no "
           f"garage {qa['candidates']} ({_counts_text(qa['candidates_by_reason'])})")

@@ -3,8 +3,9 @@
 The owner's package is gitignored, so the curation step ``regional_garages.py`` is pinned on a synthetic package written the
 way the owner supplied it (a zip holding ``<name>/daten/Regional_Parkdaten.gpkg`` in EPSG:25832, ``facilities.json``,
 ``tariff_rules.json`` and ``sources.json``) with small garage specifications of its own: the roles of the rules (a first
-period, a rate, a day cap, the fee window or the time-of-day tiers), the rule that is not preferred and therefore never sets a
-value (ruling R-4b-8), the assumptions P3 to P7 and their counts, the two readings, a garage that cannot be priced, the twin of
+period with its clock window, a rate, a day cap, the fee window, the time-of-day tiers or the duration bands), the rule that
+is not preferred and therefore never sets a value (ruling R-4b-8), the assumptions P3 to P8 and their counts, the two
+readings, a garage that cannot be priced, the twin of
 a garage in another layer, the monthly products and the candidates that are no garage (a station BahnPark, a lot of long-term
 renters). The committed dataset is pinned independently at the end (``PRICED_GARAGES``: the values as read from the sources,
 not from the code) and reproduced from the local package where it exists.
@@ -17,6 +18,7 @@ import json
 import sys
 import zipfile
 from pathlib import Path
+from typing import NamedTuple
 
 import geopandas as gpd
 import pandas as pd
@@ -103,9 +105,10 @@ def _rules() -> list:
         _rule("x-2", "published_day_tariff", "WOB_X", 9.0, period="day_definition_unspecified"),
         _rule("x-3", "unresolved_night_tariff", "WOB_X", 1.0, window={"from": "21:00", "to": "06:30", "days_raw": None},
               preferred=False),
-        # GS_A: a rate that changes after 3 h
+        # GS_A: a rate that changes after 3 h (two increment bands) and a published 24-hour price (the day cap)
         _rule("g-1", "increment", "GS_A", 1.50, unit=60, start=0, end=180, period="elapsed_first_3_hours"),
-        _rule("g-2", "increment", "GS_A", 0.80, unit=30, start=180, rounding="pro_rata"),
+        _rule("g-2", "increment", "GS_A", 0.80, unit=30, start=180, rounding="unspecified"),
+        _rule("g-3", "published_duration_tariff", "GS_A", 25.0, end=1440, period="24_hours"),
         # GS_B: one rate, all day, in a window that is stated as a time window with the days of the model's weekday
         _rule("h-1", "increment", "GS_B", 1.00, unit=60, rounding="started_unit",
               window={"from": "08:00", "to": "00:00", "days_raw": "Mo-Sa_except_public_holidays"}),
@@ -141,7 +144,7 @@ def _facilities() -> list:
         record("WOB_X", "Parkhaus X", ["x-1", "x-2", "x-3"], 956, "total", attributes={"operator": "Saba"},
                refs=["wob_parkhaeuser:1", "region_parkhaeuser:1"]),
         record("WOB_STATION", "Parkdeck Bahnhof", ["s-1", "s-m1"], refs=["wob_parkhaeuser:2"]),
-        record("GS_A", "Parkhaus Ga", ["g-1", "g-2"], refs=["region_parkhaeuser:2"]),
+        record("GS_A", "Parkhaus Ga", ["g-1", "g-2", "g-3"], refs=["region_parkhaeuser:2"]),
         record("GS_B", "Parkhaus Gb", ["h-1", "h-2"], 250, "secondary_directory_total",
                refs=["gos_parking_locations:1", "region_parkhaeuser:3"]),
         record("GOS_POINT_4", "Parkhaus Charley", [], refs=["gos_parking_locations:2"]),
@@ -219,8 +222,7 @@ def _specs() -> tuple:
          "attributes": ("region_parkhaeuser", ("facility_id", "WOB_X")), "facility": "WOB_X", "rate": "x-1", "cap": "x-2",
          "window": None, "other_tiers": ("x-3",), "comment": ""},
         {"garage_id": "gs_a", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_A"),
-         "facility": "GS_A", "reason": "banded_tariff", "reason_text": "the rate changes after 3 h",
-         "evidence": ("g-1", "g-2"), "comment": ""},
+         "facility": "GS_A", "bands": ("g-1", "g-2"), "cap": "g-3", "window": None, "comment": ""},
         {"garage_id": "gs_b", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_B"),
          "facility": "GS_B", "rate": "h-1", "cap": "h-2", "window": "rate", "comment": ""},
         {"garage_id": "gs_c", "town": "gs", "layer": "gos_parking_locations", "feature": ("facility_id", "GOS_POINT_4"),
@@ -310,12 +312,14 @@ def test_a_first_period_a_rate_a_cap_and_a_window_are_read_from_their_rules(step
     encoded = step.encode_tariff(_specs()[0], inputs["rules"])
     assert encoded["values"] == {"garage_hourly_rate_eur": 1.2, "garage_billing_unit_min": 60,
                                  "garage_first_period_min": 60, "garage_first_period_eur": 0.6,
+                                 "garage_first_period_start_h": 7.0, "garage_first_period_end_h": 18.0,
                                  "garage_daily_cap_eur": 9.6, "garage_fee_start_h": 7.0, "garage_fee_end_h": 18.0,
-                                 "tariff_tiers": None}
+                                 "tariff_tiers": None, "tariff_duration_bands": None}
     assert encoded["assumptions"] == ["P3"] and encoded["rounding_stated"] and encoded["window_stated"]
     assert encoded["rule_ids"] == ["a-1", "a-2", "a-3"]
-    assert encoded["sentence"] == ("0.60 EUR for the first 60 min, then 1.20 EUR per started 60 min, at most 9.60 EUR per "
-                                   "day, charged 07:00-18:00")
+    # the first period belongs to the clock window its rule states (ruling R-4b-12): the sentence says so
+    assert encoded["sentence"] == ("0.60 EUR for the first 60 min (arrival 07:00-18:00), then 1.20 EUR per started 60 min, "
+                                   "at most 9.60 EUR per day, charged 07:00-18:00")
 
 
 def test_a_first_period_equal_to_one_billing_unit_is_the_rate_alone(step, inputs):
@@ -339,7 +343,8 @@ def test_a_window_that_only_a_rule_that_is_not_preferred_states_is_not_taken(ste
 
 @pytest.mark.parametrize("garage_id, rule_id, role", [
     ("bs_a", "a-2", "rate"), ("bs_a", "a-1", "first period"), ("bs_a", "a-3", "cap"), ("bs_b", "b-1", "first unit"),
-    ("bs_t", "t-2", "tier"), ("bs_t", "t-4", "cap")])
+    ("bs_t", "t-2", "tier"), ("bs_t", "t-4", "cap"), ("gs_a", "g-1", "band"), ("gs_a", "g-2", "band"),
+    ("gs_a", "g-3", "cap")])
 def test_a_rule_that_is_not_preferred_never_sets_a_value_in_any_role(step, inputs, garage_id, rule_id, role):
     rules = {key: dict(value) for key, value in inputs["rules"].items()}
     step.encode_tariff(_spec(garage_id), rules)  # the unchanged rules are accepted
@@ -366,8 +371,9 @@ def test_tiers_are_read_from_their_rules_with_a_midnight_crossing_tier_the_cap_a
     encoded = step.encode_tariff(_spec("bs_t"), inputs["rules"])
     assert encoded["values"] == {
         "garage_hourly_rate_eur": None, "garage_billing_unit_min": None, "garage_first_period_min": None,
-        "garage_first_period_eur": None, "garage_daily_cap_eur": 5.0, "garage_fee_start_h": None, "garage_fee_end_h": None,
-        "tariff_tiers": "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-02:00 0.20/30"}
+        "garage_first_period_eur": None, "garage_first_period_start_h": None, "garage_first_period_end_h": None,
+        "garage_daily_cap_eur": 5.0, "garage_fee_start_h": None, "garage_fee_end_h": None,
+        "tariff_tiers": "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-02:00 0.20/30", "tariff_duration_bands": None}
     assert encoded["tiers"] == [pg.TariffTier(480, 600, 30, 0.30), pg.TariffTier(600, 1080, 30, 0.60),
                                 pg.TariffTier(1080, 120, 30, 0.20)] and encoded["tiers"][2].crosses_midnight
     assert encoded["assumptions"] == ["P6", "P7"] and encoded["rule_ids"] == ["t-1", "t-2", "t-3", "t-4"]
@@ -394,6 +400,8 @@ def test_the_tiered_form_refuses_what_the_tiers_cannot_express(step, inputs):
         step.encode_tariff({**_spec("bs_t"), "window": "rate"}, rules)
     with pytest.raises(SystemExit, match="first_equals_rate belongs to the single-window form"):
         step.encode_tariff({**_spec("bs_t"), "first_equals_rate": "b-1"}, rules)
+    with pytest.raises(SystemExit, match="names exactly one of 'rate'"):
+        step.encode_tariff({**_spec("bs_t"), "bands": ("g-1", "g-2")}, rules)  # tiers and bands exclude each other
     with pytest.raises(SystemExit, match="is no rate rule"):
         step.encode_tariff({**_spec("bs_t"), "tiers": ("t-1", "t-5")}, rules)
     changed = {key: dict(value) for key, value in rules.items()}
@@ -423,6 +431,167 @@ def test_a_first_period_of_a_tiered_garage_must_be_followed_directly_by_a_tier(s
     encoded = step.encode_tariff(spec, rules)
     assert (encoded["values"]["garage_first_period_min"], encoded["values"]["garage_first_period_eur"]) == (30, 0.5)
     assert encoded["rule_ids"][0] == "t-5" and encoded["sentence"].startswith("0.50 EUR for the first 30 min, then tiers per")
+    # t-5 states no clock window: the first period is tied to none (empty columns), the whole day
+    assert encoded["values"]["garage_first_period_start_h"] is None and encoded["values"]["garage_first_period_end_h"] is None
+
+
+def test_the_first_period_carries_the_clock_window_of_its_rule_and_a_midnight_crossing_window_is_refused(step, inputs):
+    # ruling R-4b-12: a first period that the source ties to a clock window carries it; the days are read as for a tier
+    spec = {**_spec("bs_t"), "first": "t-5"}
+    rules = {key: dict(value) for key, value in inputs["rules"].items()}
+    rules["t-2"]["elapsed_from_minutes"] = 30
+    rules["t-5"]["time_window"] = {"from": "06:00", "to": "00:00", "days_raw": None}
+    encoded = step.encode_tariff(spec, rules)
+    assert (encoded["values"]["garage_first_period_start_h"], encoded["values"]["garage_first_period_end_h"]) == (6.0, 24.0)
+    assert ("days", "t-5") in encoded["readings"]  # the window states no days: read as Monday to Friday, named
+    assert encoded["sentence"].startswith("0.50 EUR for the first 30 min (arrival 06:00-24:00), then tiers per")
+    rules["t-5"]["time_window"] = {"from": "06:00", "to": "00:00", "days_raw": "Mo-Su"}
+    assert ("days", "t-5") not in step.encode_tariff(spec, rules)["readings"]
+    # charging times of the weekdays are a window too (the Eiermarkt shape: a-1 states 07:00-18:00)
+    single = step.encode_tariff(_spec("bs_a"), inputs["rules"])
+    assert (single["values"]["garage_first_period_start_h"], single["values"]["garage_first_period_end_h"]) == (7.0, 18.0)
+    assert single["readings"] == []
+    rules["t-5"]["time_window"] = {"from": "22:00", "to": "06:00", "days_raw": None}
+    with pytest.raises(SystemExit, match="rule t-5: the window 22:00-06:00 crosses midnight"):
+        step.encode_tariff(spec, rules)
+
+
+def _band_rules() -> dict:
+    """Rules of a made-up garage F that cover every band kind: free, duration_total, increment (the Designer Outlets
+    shape), a published day total from a duration (the BRAWO shape) and a 24-hour price."""
+    rules = [
+        _rule("f-1", "free", "F", 0.0, start=0, end=20),
+        _rule("f-2", "duration_total", "F", 1.0, start=20, end=120),
+        _rule("f-3", "increment", "F", 0.5, unit=60, rounding="started_unit", start=120, end=240),
+        _rule("f-4", "increment", "F", 1.5, unit=60, rounding="started_unit", start=240, end=420),
+        _rule("f-5", "increment", "F", 5.0, unit=60, rounding="started_unit", start=420),
+        _rule("f-6", "published_day_total_from_duration", "F", 15.0, start=360, period="day_definition_unspecified"),
+        _rule("f-7", "daily_rate_published", "F", 15.0, cap=15.0, period="24_hours"),
+        _rule("f-8", "increment", "F", 1.5, unit=60, rounding="started_unit", start=0, end=360),
+        _rule("f-9", "conditional_free", "F", 0.0, end=90, period="retailer_validation"),
+    ]
+    return {rule["rule_id"]: rule for rule in rules}
+
+
+OUTLETS_BANDS = "0-20 free; 20-120 total 1.00; 120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60"
+F_SPEC = {"garage_id": "f", "bands": ("f-1", "f-2", "f-3", "f-4", "f-5"), "window": None}
+
+
+def test_every_rule_type_of_a_band_is_mapped_to_its_kind_and_a_stated_rounding_replaces_assumption_p4(step):
+    encoded = step.encode_tariff(F_SPEC, _band_rules())
+    assert encoded["values"] == {
+        "garage_hourly_rate_eur": None, "garage_billing_unit_min": None, "garage_first_period_min": None,
+        "garage_first_period_eur": None, "garage_first_period_start_h": None, "garage_first_period_end_h": None,
+        "garage_daily_cap_eur": None, "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0, "tariff_tiers": None,
+        "tariff_duration_bands": OUTLETS_BANDS}
+    # free -> free, duration_total -> total, increment -> increment; every increment states a started unit, so no P4
+    assert encoded["assumptions"] == ["P5", "P8"] and encoded["rounding_stated"] and not encoded["window_stated"]
+    assert encoded["rule_ids"] == ["f-1", "f-2", "f-3", "f-4", "f-5"] and encoded["tiers"] == []
+    assert encoded["readings"] == []
+    assert encoded["sentence"] == f"bands over the stay duration in minutes: {OUTLETS_BANDS}, charged 00:00-24:00"
+    # the bands are sorted by their start whatever the order of the specification
+    shuffled = step.encode_tariff({**F_SPEC, "bands": ("f-5", "f-3", "f-1", "f-4", "f-2")}, _band_rules())
+    assert shuffled["values"]["tariff_duration_bands"] == OUTLETS_BANDS and shuffled["rule_ids"] == encoded["rule_ids"]
+    # the text of the encoding is a valid schedule that evaluates to the anchors of the rules
+    parsed = pg.parse_duration_bands(encoded["values"]["tariff_duration_bands"])
+    assert pg.duration_band_price_eur(parsed, 20) == 0.0 and pg.duration_band_price_eur(parsed, 120) == 1.0
+
+
+def test_a_published_day_total_and_a_24_hour_price_are_the_band_and_the_day_cap(step):
+    spec = {"garage_id": "f", "bands": ("f-8", "f-6"), "window": None}
+    encoded = step.encode_tariff(spec, _band_rules())
+    assert encoded["values"]["tariff_duration_bands"] == "0-360 1.50/60; 360- total 15.00"
+    assert encoded["values"]["garage_daily_cap_eur"] is None and encoded["assumptions"] == ["P5", "P8"]
+    # a day total whose day boundary is not stated is read as a maximum per stay, named like the cap of a cap rule
+    assert encoded["readings"] == [("cap", "f-6", "day_definition_unspecified")]
+    # a daily_rate_published rule is the day cap of a banded garage (no reading: its period is stated)
+    capped = step.encode_tariff({**spec, "cap": "f-7"}, _band_rules())
+    assert capped["values"]["garage_daily_cap_eur"] == 15.0 and capped["rule_ids"] == ["f-8", "f-6", "f-7"]
+    assert capped["readings"] == [("cap", "f-6", "day_definition_unspecified")]
+    assert capped["sentence"] == ("bands over the stay duration in minutes: 0-360 1.50/60; 360- total 15.00, at most 15.00 EUR "
+                                  "per day, charged 00:00-24:00")
+
+
+def test_a_24_hour_total_that_spans_the_day_is_a_valid_cap_and_any_other_duration_total_is_not(step, inputs):
+    encoded = step.encode_tariff(_spec("gs_a"), inputs["rules"])
+    assert encoded["values"]["garage_daily_cap_eur"] == 25.0 and encoded["readings"] == []
+    assert encoded["values"]["tariff_duration_bands"] == "0-180 1.50/60; 180- 0.80/30"
+    assert encoded["assumptions"] == ["P4", "P5", "P8"] and encoded["rule_ids"] == ["g-1", "g-2", "g-3"]
+    assert encoded["sentence"] == ("bands over the stay duration in minutes: 0-180 1.50/60; 180- 0.80/30, at most 25.00 EUR "
+                                   "per day, charged 00:00-24:00")
+    with pytest.raises(SystemExit, match="rule f-2: type duration_total is no cap rule"):
+        step.encode_tariff({**F_SPEC, "cap": "f-2"}, _band_rules())  # 20-120 min is no 24-hour price
+    shorter = _band_rules()
+    shorter["f-2"]["elapsed_from_minutes"] = 0  # 0-120 min starts at the arrival but is not the whole day either
+    with pytest.raises(SystemExit, match="rule f-2: type duration_total is no cap rule"):
+        step.encode_tariff({**F_SPEC, "bands": ("f-8", "f-6"), "cap": "f-2"}, shorter)
+    whole_day = _band_rules()
+    whole_day["f-2"].update({"elapsed_from_minutes": None, "elapsed_to_minutes": 1440})  # a stated start is optional
+    assert step.encode_tariff({**F_SPEC, "bands": ("f-8", "f-6"), "cap": "f-2"}, whole_day)["values"][
+        "garage_daily_cap_eur"] == 1.0
+
+
+def test_the_banded_form_takes_a_window_from_a_stated_rule_and_refuses_what_the_bands_cannot_express(step):
+    rules = _band_rules()
+    with pytest.raises(SystemExit, match="which states none"):
+        step.encode_tariff({**F_SPEC, "window": "rate"}, rules)
+    rules["f-1"]["time_window"] = {"from": "06:00", "to": "21:30", "days_raw": "Mo-Su"}
+    windowed = step.encode_tariff({**F_SPEC, "window": "rate"}, rules)
+    assert (windowed["values"]["garage_fee_start_h"], windowed["values"]["garage_fee_end_h"]) == (6.0, 21.5)
+    assert windowed["assumptions"] == ["P8"] and windowed["window_stated"]
+    stated = step.encode_tariff({**F_SPEC, "window": ("stated", "08:00", "20:00", "q")}, _band_rules())
+    assert (stated["values"]["garage_fee_start_h"], stated["values"]["garage_fee_end_h"]) == (8.0, 20.0)
+    assert stated["window_quotation"] == "q"
+    for changes, message in (
+            ({"first": "f-2"}, "a banded specification has no first period"),
+            ({"first_equals_rate": "f-3"}, "a banded specification has no first period"),
+            ({"bands": ("f-1", "f-7")}, "rule f-7 of type daily_rate_published is no band rule"),
+            ({"bands": ("f-1", "f-9")}, "rule f-9 of type conditional_free is no band rule"),
+            ({"bands": ("f-1", "f-3", "f-4", "f-5")}, "make no valid bands: gap or overlap"),
+            ({"bands": ("f-2", "f-3", "f-4", "f-5")}, "make no valid bands: band '20-120 total 1.00': the first band must "
+                                                      "start at 0 min")):
+        with pytest.raises(SystemExit, match=f"garage f: .*{message}"):
+            step.encode_tariff({**F_SPEC, **changes}, _band_rules())
+    for rule_id, field, value, message in (
+            ("f-3", "rounding", "pro_rata", "rule f-3 states the rounding 'pro_rata'"),
+            ("f-2", "amount_eur", 1.005, "not a whole number of cents"),
+            ("f-2", "amount_eur", None, "rule f-2 needs a positive amount"),
+            ("f-3", "billing_unit_minutes", None, "needs a positive amount and a whole billing unit"),
+            ("f-1", "amount_eur", 0.5, "free rule f-1 states the amount 0.5")):
+        changed = _band_rules()
+        changed[rule_id][field] = value
+        with pytest.raises(SystemExit, match=message):
+            step.encode_tariff(F_SPEC, changed)
+
+
+def test_an_increment_band_without_a_stated_rounding_is_assumption_p4_and_an_all_total_schedule_needs_none(step):
+    rules = _band_rules()
+    rules["f-4"]["rounding"] = None
+    rules["f-3"]["rounding"] = "unspecified"
+    encoded = step.encode_tariff(F_SPEC, rules)
+    assert encoded["assumptions"] == ["P4", "P5", "P8"] and not encoded["rounding_stated"]
+    totals = {"garage_id": "f", "bands": ("f-1", "f-2"), "window": None}
+    assert step.encode_tariff(totals, _band_rules())["assumptions"] == ["P5", "P8"]  # a total and a free band round nothing
+
+
+def test_the_bands_of_a_garage_are_named_in_its_notes_with_assumption_p8(step, inputs):
+    row = step.build_garage(inputs, _spec("gs_a"))
+    assert row["assumptions"] == "P4;P5;P8" and row["tariff_duration_bands"] == "0-180 1.50/60; 180- 0.80/30"
+    assert "ASSUMPTION P8: " in row["notes"] and "ASSUMPTION P4: " in row["notes"] and "ASSUMPTION P5: " in row["notes"]
+    assert pd.isna(row["tariff_tiers"]) and pd.isna(row["garage_hourly_rate_eur"])
+
+
+def test_a_published_day_total_counts_as_a_cap_of_the_garage_and_the_banded_flag_is_a_fact(step, inputs):
+    # a garage with a day total from a duration (BRAWO shape) and no cap column counts as capped with its reading named
+    inputs["rules"].update(_band_rules())
+    inputs["facilities"]["GS_A"]["tariff_rule_ids"] = ["f-8", "f-6", "f-7"]
+    row = step.build_garage(inputs, {**_spec("gs_a"), "bands": ("f-8", "f-6"), "cap": None})
+    assert row["tariff_duration_bands"] == "0-360 1.50/60; 360- total 15.00" and pd.isna(row["garage_daily_cap_eur"])
+    assert row["_facts"]["banded"] and row["_facts"]["cap"] and not row["_facts"]["tiered"]
+    assert row["_facts"]["readings"] == [("cap", "f-6", "day_definition_unspecified")]
+    assert "Reading: the day boundary of the cap f-6 is not stated (cap period 'day_definition_unspecified')" in row["notes"]
+    plain = step.build_garage(inputs, {**_spec("gs_a"), "bands": ("f-8", "f-6"), "cap": "f-7"})
+    assert plain["_facts"]["cap"] and plain["garage_daily_cap_eur"] == 15.0
 
 
 def test_a_stated_window_needs_its_quotation_and_replaces_assumption_p5(step, inputs):
@@ -594,7 +763,8 @@ def test_the_dataset_rows_carry_the_values_the_provenance_and_the_assumptions(st
     assert bs_a["monthly_product"].startswith("Dauerparker Tag: 50.00 EUR per month; no minimum contract stated; waitlist")
     # the notes say what is encoded, name the assumption, list the tier that is not charged and the other capacity figure
     notes = bs_a["notes"]
-    assert "0.60 EUR for the first 60 min, then 1.20 EUR per started 60 min" in notes and "ASSUMPTION P3" in notes
+    assert "0.60 EUR for the first 60 min (arrival 07:00-18:00), then 1.20 EUR per started 60 min" in notes
+    assert "ASSUMPTION P3" in notes
     assert "Priced from the package rules a-1, a-2, a-3 (all marked preferred_for_current_use in the package)" in notes
     assert "a-4: 1.00 EUR per started 60 min Mo-Su 18:00-07:00" in notes and "operator_total 677" in notes
     assert "Monthly product a-m1" in notes
@@ -619,15 +789,25 @@ def test_the_dataset_rows_carry_the_values_the_provenance_and_the_assumptions(st
     assert tiered["garage_daily_cap_eur"] == 5.0
     assert "ASSUMPTION P6: units are counted from arrival and each started unit costs the rate of the tier in force at the " \
            "unit's start" in tiered["notes"]
+    assert "an arrival outside the window pays the tiers from the arrival" in tiered["notes"]
     assert "ASSUMPTION P7: the day cap column holds one cap and applies to the whole stay; not applied: t-6: 2.00 EUR at " \
            "most (night_18_02)." in tiered["notes"]
     assert "Rules from another page than source_url: t-3 (https://op.example/evening)." in tiered["notes"]
     assert pd.isna(rows.loc["bs_a", "tariff_tiers"])
     gs_a = rows.loc["gs_a"]
-    assert not gs_a["priced"] and gs_a["not_priced_reason"] == "banded_tariff" and gs_a["tariff_rule_ids"] == "g-1;g-2"
-    assert gs_a["garage_hourly_rate_eur"] != gs_a["garage_hourly_rate_eur"]  # NaN: no value on an unpriced garage
-    assert "Not priced (banded_tariff): the rate changes after 3 h" in gs_a["notes"]
-    assert "g-2: 0.80 EUR per 30 min for elapsed 180- min" in gs_a["notes"]
+    # the banded form: the bands text, the 24-hour price as the day cap, the fee window 0-24 h (P5), no rate and no unit
+    assert gs_a["priced"] and pd.isna(gs_a["not_priced_reason"]) and gs_a["tariff_rule_ids"] == "g-1;g-2;g-3"
+    assert gs_a["tariff_duration_bands"] == "0-180 1.50/60; 180- 0.80/30" and gs_a["garage_daily_cap_eur"] == 25.0
+    assert pd.isna(gs_a["garage_hourly_rate_eur"]) and pd.isna(gs_a["garage_billing_unit_min"])
+    assert pd.isna(gs_a["tariff_tiers"]) and (gs_a["garage_fee_start_h"], gs_a["garage_fee_end_h"]) == (0.0, 24.0)
+    assert gs_a["assumptions"] == "P4;P5;P8"
+    assert ("ASSUMPTION P8: a duration schedule is read cumulatively over the elapsed duration d of the stay: a total band "
+            "sets the price of the stay to its amount") in gs_a["notes"]
+    assert ("Priced from the package rules g-1, g-2, g-3 (all marked preferred_for_current_use in the package): bands over "
+            "the stay duration in minutes: 0-180 1.50/60; 180- 0.80/30, at most 25.00 EUR per day") in gs_a["notes"]
+    # the first-period window of the single-window form is the clock window of its rule
+    assert (bs_a["garage_first_period_start_h"], bs_a["garage_first_period_end_h"]) == (7.0, 18.0)
+    assert pd.isna(tiered["garage_first_period_start_h"]) and pd.isna(bs_b["garage_first_period_start_h"])
     # the twin of a garage in another layer is named with its distance, never hidden
     assert "second point of this garage in gos_parking_locations (coordinates differ by 55 m)" in rows.loc["gs_b", "notes"]
     gs_c = rows.loc["gs_c"]
@@ -639,20 +819,20 @@ def test_the_dataset_rows_carry_the_values_the_provenance_and_the_assumptions(st
 def test_the_rates_of_the_assumptions_are_printed(step, inputs, capsys):
     step.build_garages(inputs)
     out = capsys.readouterr().out
-    assert "[garages] 7 garages: priced 5 (71.4 %), not priced 2 (banded_tariff 1, no_published_tariff 1)" in out
-    for line in ("ASSUMPTION P3: 2/5 (40.0 %)", "ASSUMPTION P4: 1/5 (20.0 %)", "ASSUMPTION P5: 2/5 (40.0 %)",
-                 "ASSUMPTION P6: 1/5 (20.0 %)", "ASSUMPTION P7: 1/5 (20.0 %)"):
+    assert "[garages] 7 garages: priced 6 (85.7 %), not priced 1 (no_published_tariff 1)" in out
+    for line in ("ASSUMPTION P3: 2/6 (33.3 %)", "ASSUMPTION P4: 2/6 (33.3 %)", "ASSUMPTION P5: 3/6 (50.0 %)",
+                 "ASSUMPTION P6: 1/6 (16.7 %)", "ASSUMPTION P7: 1/6 (16.7 %)", "ASSUMPTION P8: 1/6 (16.7 %)"):
         assert f"priced garages resting on {line}" in out, line
-    assert "rounding stated by the source 4/5, ASSUMPTION P4 1/5; charging times stated 3/5, ASSUMPTION P5 2/5; tiered 1/5" \
-           in out
+    assert ("rounding stated by the source 4/6, ASSUMPTION P4 2/6; charging times stated 3/6, ASSUMPTION P5 3/6; tiered 1/6; "
+            "banded 1/6") in out
     assert "monthly product on 1 garages" in out
-    # the union rates: 4 of 5 rest on at least one assumption (above the warning threshold), 2 of 5 on P4 or P5
-    assert ("priced garages resting on at least one assumption: 4/5 (80.0 %); WARNING: more than 75 % of the priced "
+    # the union rates: 5 of 6 rest on at least one assumption (above the warning threshold), 3 of 6 on P4 or P5
+    assert ("priced garages resting on at least one assumption: 5/6 (83.3 %); WARNING: more than 75 % of the priced "
             "garages") in out
-    assert "priced garages resting on ASSUMPTION P4 or P5: 2/5 (40.0 %)\n" in out
-    # the two readings: three of the five capped garages have no stated day boundary, one window states no days
-    assert ("reading: a day cap whose day boundary is not stated is read as a maximum per stay: 3/5 garages with a cap; a "
-            "window without stated days is read as Monday to Friday: 1 garage(s)") in out
+    assert "priced garages resting on ASSUMPTION P4 or P5: 3/6 (50.0 %)\n" in out
+    # the two readings: three of the six capped garages have no stated day boundary, one window states no days
+    assert ("reading: a day cap whose day boundary is not stated is read as a maximum per stay: 3/6 garages with a cap or a "
+            "day total; a window without stated days is read as Monday to Friday: 1 garage(s)") in out
     # the layer accounting: the Wolfsburg and Goslar garages exist in two layers, the twin is skipped and counted
     assert "[garages] gos_parking_locations: 3 features, 2 garages, 1 used, 1 twin(s)" in out
     assert "[garages] region_parkhaeuser: 3 features, 3 garages, 3 used, 0 twin(s)" in out
@@ -666,8 +846,8 @@ def test_a_share_of_one_assumption_above_the_warning_threshold_is_a_warning(step
     monkeypatch.setattr(step, "ASSUMPTION_WARNING_SHARE", 0.3)
     step.build_garages(inputs)
     out = capsys.readouterr().out
-    assert "ASSUMPTION P3: 2/5 (40.0 %); WARNING: more than 30 % of the priced garages rest on it" in out
-    assert "ASSUMPTION P4: 1/5 (20.0 %) - " in out
+    assert "ASSUMPTION P3: 2/6 (33.3 %); WARNING: more than 30 % of the priced garages rest on it" in out
+    assert "ASSUMPTION P6: 1/6 (16.7 %) - " in out
 
 
 def test_a_garage_that_no_specification_covers_stops_the_step(step, inputs, monkeypatch):
@@ -752,14 +932,14 @@ def test_the_rounding_census_is_printed_and_cited_by_assumption_p4(step, package
     directory, sha256 = package
     loaded = step.load_garage_inputs(directory, expected_sha256=sha256)
     # 13 preferred rate rules of the facilities that have a point in a garage layer; the rule that is not preferred (b-5) and
-    # the facility without a point (BS_ADDITIONAL_1) are not counted; 9 state a rounding, 8 of those say started unit
-    assert loaded["rounding_census"] == {"rate_rules": 13, "stated": 9, "started_unit": 8}
-    assert ("rounding census (the basis of ASSUMPTION P4): of 13 preferred garage rate rules 9 state their rounding, 8 of "
+    # the facility without a point (BS_ADDITIONAL_1) are not counted; 8 state a rounding, 8 of those say started unit
+    assert loaded["rounding_census"] == {"rate_rules": 13, "stated": 8, "started_unit": 8}
+    assert ("rounding census (the basis of ASSUMPTION P4): of 13 preferred garage rate rules 8 state their rounding, 8 of "
             "them as started unit") in capsys.readouterr().out
     notes = step.build_garage(loaded, _spec("bs_b"))["notes"]
     assert "ASSUMPTION P4: the rounding of the rate is not stated, so it is billed per started unit." in notes
     assert "Ein angegebener Stundensatz beweist noch keine Aufrundung je Stunde" in notes
-    assert "9 of 13 state their rounding, and 8 of those 9 say started unit" in notes
+    assert "8 of 13 state their rounding, and 8 of those 8 say started unit" in notes
 
 
 # --------------------------------------------------------------------------- positions
@@ -939,66 +1119,99 @@ GARAGES_QA_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026_qa.csv"
 TARIFFS_PATH = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
 WF, GF, HE, PE, SZ = "03158037", "03151009", "03154028", "03157006", "03102000"
 
-#: The 19 priced garages as the sources state them (operator pages, the PULP feed, the Geoviewer and the package's preferred
-#: tariff rules), written by hand and not read back from the dataset: (municipality_ags, hourly rate in EUR, billing unit in
-#: minutes, first period in minutes, first period in EUR, day cap in EUR, fee window start and end in decimal hours, time-of-day
-#: tiers, monthly product in EUR, reported capacity, assumptions). A garage has EITHER the single window (rate, unit, start,
-#: end) OR tiers, never both. The assumptions: P3 a night tariff that is no per-unit rate is not charged, P4 a rate without a
-#: stated rounding is billed per started unit, P5 the fee window 0-24 h where no preferred rule states charging times, P6 the
-#: pricing of tiers (units counted from arrival, the tier in force at the unit's start), P7 caps other than the day cap are
-#: not applied.
+class Priced(NamedTuple):
+    """A priced garage as the sources state it (written by hand, not read back from the dataset): the municipality, the
+    single window (hourly rate in EUR, billing unit in minutes, fee window start and end in decimal hours; all None for a tiered
+    or banded garage except the fee window of a banded one), the first period (minutes, EUR and its clock window), the day cap in
+    EUR, the time-of-day tiers or the duration bands (one form per garage), the monthly product in EUR, the reported capacity
+    and the assumptions."""
+
+    ags: str
+    rate: object
+    unit: object
+    first_min: object
+    first_eur: object
+    cap: object
+    start: object
+    end: object
+    tiers: object
+    monthly: object
+    capacity: object
+    assumptions: object
+    first_window: object = None
+    bands: object = None
+
+
+#: The 26 priced garages as the sources state them (operator pages, the PULP feed, the Geoviewer and the package's preferred
+#: tariff rules). A garage has ONE form: the single window (rate, unit, start, end) OR tiers OR bands (with the fee window set).
+#: The assumptions: P3 a night tariff that is no per-unit rate is not charged, P4 a rate without a stated rounding is billed per
+#: started unit, P5 the fee window 0-24 h where no preferred rule states charging times, P6 the pricing of tiers (units counted
+#: from arrival, the tier in force at the unit's start; a first period inside its clock window), P7 caps other than the day cap
+#: are not applied, P8 the cumulative reading of duration bands.
+EIERMARKT_TIERS = "07:00-18:00 1.20/60; 18:00-07:00 1.00/60"
+RATHAUS_TIERS = "00:00-06:00 0.50/60; 06:00-24:00 1.20/60"
+PEINE_BANDS = "0-30 total 0.20; 30-60 total 0.80; 60-300 0.40/30; 300-1440 total 4.00"
+OUTLETS_BANDS_TEXT = "0-20 free; 20-120 total 1.00; 120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60"
 PRICED_GARAGES = {
-    "bs_eiermarkt": (BS, None, None, 60, 0.60, 9.60, None, None, "07:00-18:00 1.20/60; 18:00-07:00 1.00/60", None, 500,
-                     "P6;P7"),
-    "bs_lange_strasse_nord": (BS, 1.50, 60, None, None, 10.00, 0.0, 24.0, None, None, 150, "P4;P5"),
-    "bs_magni": (BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, None, None, "P5"),
-    "bs_packhof": (BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, None, 954, "P5"),
-    "bs_schloss": (BS, 2.00, 60, None, None, 20.00, 0.0, 24.0, None, None, 1300, "P4;P5"),
-    "bs_schuetzenstrasse": (BS, 2.00, 60, None, None, 15.00, 0.0, 24.0, None, None, 167, "P4;P5"),
-    "bs_wallstrasse": (BS, 2.90, 60, None, None, 19.00, 0.0, 24.0, None, None, 455, None),
-    "bs_wilhelmstrasse": (BS, 1.20, 60, None, None, 8.00, 0.0, 24.0, None, None, 530, "P4;P5"),
-    "wob_rathaus": (WOB, None, None, 60, 1.10, 6.00, None, None, "00:00-06:00 0.50/60; 06:00-24:00 1.20/60", 50.0, 732,
-                    "P4;P6;P7"),
-    "wob_poststrasse": (WOB, 2.00, 60, None, None, 9.00, 0.0, 24.0, None, None, 956, "P3;P5;P7"),
-    "wob_congresspark": (WOB, 1.00, 60, None, None, 6.00, 0.0, 24.0, None, None, 767, "P5"),
-    "wob_rothenfelder": (WOB, None, None, None, None, 12.00, None, None, "08:00-19:00 1.50/60; 19:00-08:00 1.00/60", None,
-                         470, "P6;P7"),
-    "wob_city_galerie": (WOB, 1.50, 60, None, None, 15.00, 0.0, 24.0, None, 98.0, 800, "P5"),
-    "wob_phaeno": (WOB, None, None, 60, 1.10, 7.00, None, None, "00:00-06:00 0.50/60; 06:00-24:00 1.20/60", 60.0, 408,
-                   "P4;P6;P7"),
-    "wf_schulwall": (WF, None, None, None, None, None, None, None,
-                     "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-22:00 0.30/30; 22:00-08:00 0.10/30", None, 189, "P6"),
-    "wf_rosenwall": (WF, None, None, None, None, None, None, None,
-                     "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-23:00 0.30/30; 23:00-08:00 0.10/30", 95.0, 172, "P6"),
-    "gf_hindenburgstrasse": (GF, 1.00, 60, None, None, 13.00, 0.0, 24.0, None, None, 280, "P5"),
-    "he_marktpassage": (HE, 0.80, 60, None, None, None, 6.0, 20.0, None, None, 60, "P4"),
-    "he_edelhoefe": (HE, 1.20, 30, None, None, 8.00, 0.0, 24.0, None, None, 17, "P4"),
+    "bs_eiermarkt": Priced(BS, None, None, 60, 0.60, 9.60, None, None, EIERMARKT_TIERS, None, 500, "P6;P7",
+                           first_window=(7.0, 18.0)),
+    "bs_lange_strasse_nord": Priced(BS, 1.50, 60, None, None, 10.00, 0.0, 24.0, None, None, 150, "P4;P5"),
+    "bs_magni": Priced(BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, None, None, "P5"),
+    "bs_packhof": Priced(BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, None, 954, "P5"),
+    "bs_ring_center": Priced(BS, None, None, None, None, 15.00, 0.0, 24.0, None, None, None, "P5;P8",
+                             bands="0-120 1.50/60; 120- 2.00/60"),
+    "bs_schloss": Priced(BS, 2.00, 60, None, None, 20.00, 0.0, 24.0, None, None, 1300, "P4;P5"),
+    "bs_schuetzenstrasse": Priced(BS, 2.00, 60, None, None, 15.00, 0.0, 24.0, None, None, 167, "P4;P5"),
+    "bs_wallstrasse": Priced(BS, 2.90, 60, None, None, 19.00, 0.0, 24.0, None, None, 455, None),
+    "bs_wilhelmstrasse": Priced(BS, 1.20, 60, None, None, 8.00, 0.0, 24.0, None, None, 530, "P4;P5"),
+    "wob_rathaus": Priced(WOB, None, None, 60, 1.10, 6.00, None, None, RATHAUS_TIERS, 50.0, 732, "P4;P6;P7",
+                          first_window=(6.0, 24.0)),
+    "wob_poststrasse": Priced(WOB, 2.00, 60, None, None, 9.00, 0.0, 24.0, None, None, 956, "P3;P5;P7"),
+    "wob_congresspark": Priced(WOB, 1.00, 60, None, None, 6.00, 0.0, 24.0, None, None, 767, "P5"),
+    "wob_rothenfelder": Priced(WOB, None, None, None, None, 12.00, None, None,
+                               "08:00-19:00 1.50/60; 19:00-08:00 1.00/60", None, 470, "P6;P7"),
+    "wob_schillerstrasse": Priced(WOB, None, None, None, None, 15.00, 0.0, 24.0, None, None, None, "P4;P5;P8",
+                                  bands="0-120 1.00/60; 120- 1.50/60"),
+    "wob_city_galerie": Priced(WOB, 1.50, 60, None, None, 15.00, 0.0, 24.0, None, 98.0, 800, "P5"),
+    "wob_designer_outlets": Priced(WOB, None, None, None, None, None, 0.0, 24.0, None, 55.0, 1000, "P4;P5;P8",
+                                   bands=OUTLETS_BANDS_TEXT),
+    "wob_phaeno": Priced(WOB, None, None, 60, 1.10, 7.00, None, None, RATHAUS_TIERS, 60.0, 408, "P4;P6;P7",
+                         first_window=(6.0, 24.0)),
+    "wf_schulwall": Priced(WF, None, None, None, None, None, None, None,
+                           "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-22:00 0.30/30; 22:00-08:00 0.10/30", None, 189,
+                           "P6"),
+    "wf_rosenwall": Priced(WF, None, None, None, None, None, None, None,
+                           "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-23:00 0.30/30; 23:00-08:00 0.10/30", 95.0, 172,
+                           "P6"),
+    "gf_hindenburgstrasse": Priced(GF, 1.00, 60, None, None, 13.00, 0.0, 24.0, None, None, 280, "P5"),
+    "he_marktpassage": Priced(HE, 0.80, 60, None, None, None, 6.0, 20.0, None, None, 60, "P4"),
+    "he_edelhoefe": Priced(HE, 1.20, 30, None, None, 8.00, 0.0, 24.0, None, None, 17, "P4"),
+    "pe_werderstrasse": Priced(PE, None, None, None, None, None, 0.0, 24.0, None, 48.0, 160, "P4;P5;P8", bands=PEINE_BANDS),
+    "pe_wallstrasse": Priced(PE, None, None, None, None, None, 0.0, 24.0, None, 48.0, 190, "P4;P5;P8", bands=PEINE_BANDS),
+    "sz_brawo_carree": Priced(SZ, None, None, None, None, None, 0.0, 24.0, None, None, 570, "P5;P8",
+                              bands="0-360 1.50/60; 360- total 15.00"),
+    "gs_ca": Priced(GS, None, None, None, None, 25.00, 0.0, 24.0, None, None, 250, "P4;P5;P8",
+                    bands="0-180 1.50/60; 180- 0.80/30"),
 }
-#: The garages whose window of 0-24 h is stated by the source (no ASSUMPTION P5): the operator page of Contipark and the
-#: city brochure with the ordinance.
+#: The garages whose window of 0-24 h is stated by the source (no assumption P5): the operator page of Contipark and the
+#: city brochure (the ordinance of 2018 states opening hours only).
 STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe")
-#: The 12 garages that are listed and not priced: (municipality_ags, reason, monthly product in EUR, reported capacity). A
-#: band structure that a first period plus one rate cannot express exactly (banded_tariff), a free first period that the
-#: columns cannot express (free_period), conflicting sources, an incomplete tariff and no published tariff stay unpriced
-#: (ruling R-4b-3: no approximation). The five garages of shopping centres (bs_schloss, bs_ring_center, wob_city_galerie,
-#: wob_suedkopf, wob_designer_outlets) stay garages: public garages with published tariffs (ruling R-4b-9).
+#: The 5 garages that are listed and not priced: (municipality_ags, reason, monthly product in EUR, reported capacity). A free
+#: first period whose deduction the source does not state (free_period), conflicting sources, an incomplete tariff and no
+#: published tariff stay unpriced (ruling R-4b-3: no approximation); no garage is left unpriced for a duration schedule any
+#: more (ruling R-4b-11). The five garages of shopping centres (bs_schloss, bs_ring_center, wob_city_galerie, wob_suedkopf,
+#: wob_designer_outlets) stay garages: public garages with published tariffs (ruling R-4b-9).
 UNPRICED_GARAGES = {
     "bs_forschungsflughafen": (BS, "free_period", None, None),
-    "bs_ring_center": (BS, "banded_tariff", None, None),
     "wob_suedkopf": (WOB, "free_period", None, None),
-    "wob_schillerstrasse": (WOB, "banded_tariff", None, None),
-    "wob_designer_outlets": (WOB, "banded_tariff", 55.0, 1000),
-    "pe_werderstrasse": (PE, "banded_tariff", 48.0, 160),
-    "pe_wallstrasse": (PE, "banded_tariff", 48.0, 190),
-    "sz_brawo_carree": (SZ, "banded_tariff", None, 570),
     "gs_achtermann": (GS, "conflicting_sources", None, None),
-    "gs_ca": (GS, "banded_tariff", None, 250),
     "gs_galeria": (GS, "incomplete_tariff", None, 193),
     "gs_charley_jacob_strasse": (GS, "no_published_tariff", None, None),
 }
 TARIFF_VALUE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
-                        "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h",
-                        "tariff_tiers")
+                        "garage_first_period_eur", "garage_first_period_start_h", "garage_first_period_end_h",
+                        "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h", "tariff_tiers",
+                        "tariff_duration_bands")
 
 
 def _committed_garages() -> pd.DataFrame:
@@ -1016,7 +1229,7 @@ def _plain(value):
 
 def test_the_committed_dataset_lists_exactly_the_garages_the_sources_name():
     garages = _committed_garages()
-    assert len(garages) == 31 and len(PRICED_GARAGES) + len(UNPRICED_GARAGES) == 31
+    assert len(garages) == 31 and len(PRICED_GARAGES) == 26 and len(UNPRICED_GARAGES) == 5
     # the station car park of DB BahnPark is no garage of the dataset (a QA candidate, ruling R-4b-9)
     assert "wob_hauptbahnhof" not in garages.index
     assert set(garages.index) == set(PRICED_GARAGES) | set(UNPRICED_GARAGES)
@@ -1026,23 +1239,35 @@ def test_the_committed_dataset_lists_exactly_the_garages_the_sources_name():
 
 @pytest.mark.parametrize("garage_id", sorted(PRICED_GARAGES))
 def test_a_committed_priced_garage_carries_the_published_tariff(garage_id):
-    ags, rate, unit, first_min, first_eur, cap, start, end, tiers, monthly, capacity, assumptions = PRICED_GARAGES[garage_id]
+    expected = PRICED_GARAGES[garage_id]
     row = _committed_garages().loc[garage_id]
-    assert row["municipality_ags"] == ags and bool(row["priced"]) and _plain(row["not_priced_reason"]) is None
-    assert (_plain(row["garage_hourly_rate_eur"]), _plain(row["garage_billing_unit_min"])) == (rate, unit)
-    assert (_plain(row["garage_first_period_min"]), _plain(row["garage_first_period_eur"])) == (first_min, first_eur)
+    assert row["municipality_ags"] == expected.ags and bool(row["priced"]) and _plain(row["not_priced_reason"]) is None
+    assert (_plain(row["garage_hourly_rate_eur"]), _plain(row["garage_billing_unit_min"])) == (expected.rate, expected.unit)
+    assert (_plain(row["garage_first_period_min"]), _plain(row["garage_first_period_eur"])) == (
+        expected.first_min, expected.first_eur)
+    window = (_plain(row["garage_first_period_start_h"]), _plain(row["garage_first_period_end_h"]))
+    assert window == (expected.first_window or (None, None))
     assert (_plain(row["garage_daily_cap_eur"]), _plain(row["garage_fee_start_h"]), _plain(row["garage_fee_end_h"])) == (
-        cap, start, end)
-    assert (_plain(row["tariff_tiers"]), _plain(row["monthly_eur"]), _plain(row["capacity_reported"]),
-            _plain(row["assumptions"])) == (tiers, monthly, capacity, assumptions)
-    parts = assumptions.split(";") if assumptions else []
+        expected.cap, expected.start, expected.end)
+    assert (_plain(row["tariff_tiers"]), _plain(row["tariff_duration_bands"]), _plain(row["monthly_eur"]),
+            _plain(row["capacity_reported"]), _plain(row["assumptions"])) == (
+        expected.tiers, expected.bands, expected.monthly, expected.capacity, expected.assumptions)
+    parts = expected.assumptions.split(";") if expected.assumptions else []
+    # one tariff structure per garage; a first period belongs with its clock window only where its rule states one
+    assert expected.tiers is None or expected.bands is None
+    assert (expected.first_window is None) or expected.first_min is not None
     # a tiered garage rests on ASSUMPTION P6, has no single window, and its tiers cover the whole day (no free hour)
-    assert ("P6" in parts) == (tiers is not None)
-    if tiers is not None:
-        assert rate is None and unit is None and start is None and end is None
-        assert pg.tier_coverage_minutes(pg.parse_tariff_tiers(tiers)) == pg.MINUTES_PER_DAY
+    assert ("P6" in parts) == (expected.tiers is not None) and ("P8" in parts) == (expected.bands is not None)
+    if expected.tiers is not None:
+        assert expected.rate is None and expected.unit is None and expected.start is None and expected.end is None
+        assert pg.tier_coverage_minutes(pg.parse_tariff_tiers(expected.tiers)) == pg.MINUTES_PER_DAY
+    if expected.bands is not None:
+        # a banded garage has no rate, unit or first period but its fee window; the text is a valid schedule
+        assert expected.rate is None and expected.unit is None and expected.first_min is None
+        assert (expected.start, expected.end) == (0.0, 24.0)
+        assert pg.format_duration_bands(pg.parse_duration_bands(expected.bands)) == expected.bands
     # the fee window is the garage's own: a window of 0-24 h is stated by the source (no assumption P5) or ASSUMPTION P5
-    if (start, end) == (0.0, 24.0):
+    if (expected.start, expected.end) == (0.0, 24.0):
         assert garage_id in STATED_FULL_DAY_WINDOWS or "P5" in parts
         assert garage_id not in STATED_FULL_DAY_WINDOWS or "P5" not in parts
 
@@ -1060,29 +1285,142 @@ def test_a_committed_unpriced_garage_states_why_and_holds_no_tariff_value(garage
 
 def test_the_committed_coverage_is_the_one_the_task_reports():
     coverage = pg.coverage(pg.load_garages(GARAGES_PATH))
-    assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (31, 19, 12)
-    assert coverage["not_priced_by_reason"] == {"banded_tariff": 7, "conflicting_sources": 1, "free_period": 2,
-                                                "incomplete_tariff": 1, "no_published_tariff": 1}
+    assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (31, 26, 5)
+    # no garage is left unpriced for a duration schedule: banded_tariff is no reason any more (ruling R-4b-11)
+    assert coverage["not_priced_by_reason"] == {"conflicting_sources": 1, "free_period": 2, "incomplete_tariff": 1,
+                                                "no_published_tariff": 1}
     assert coverage["by_municipality"] == {
-        BS: {"listed": 10, "priced": 8, "not_priced": 2}, SZ: {"listed": 1, "priced": 0, "not_priced": 1},
-        WOB: {"listed": 9, "priced": 6, "not_priced": 3}, GF: {"listed": 1, "priced": 1, "not_priced": 0},
-        GS: {"listed": 4, "priced": 0, "not_priced": 4}, HE: {"listed": 2, "priced": 2, "not_priced": 0},
-        PE: {"listed": 2, "priced": 0, "not_priced": 2}, WF: {"listed": 2, "priced": 2, "not_priced": 0}}
-    # the assumption rates (fallback transparency): P3 1 of 19, P4 8, P5 10, P6 6, P7 5 priced garages, 7 monthly products;
-    # the union rates 18 of 19 on at least one assumption and 14 of 19 on P4 or P5 (both above the 75 % warning threshold of
-    # the curation step and the loader, which is why the loader warns), 6 garages in the tiered form
-    assert coverage["priced_by_assumption"] == {"P3": 1, "P4": 8, "P5": 10, "P6": 6, "P7": 5}
+        BS: {"listed": 10, "priced": 9, "not_priced": 1}, SZ: {"listed": 1, "priced": 1, "not_priced": 0},
+        WOB: {"listed": 9, "priced": 8, "not_priced": 1}, GF: {"listed": 1, "priced": 1, "not_priced": 0},
+        GS: {"listed": 4, "priced": 1, "not_priced": 3}, HE: {"listed": 2, "priced": 2, "not_priced": 0},
+        PE: {"listed": 2, "priced": 2, "not_priced": 0}, WF: {"listed": 2, "priced": 2, "not_priced": 0}}
+    # the assumption rates (fallback transparency): P3 1 of 26, P4 13, P5 17, P6 6, P7 5, P8 7 priced garages, 7 monthly
+    # products; the union rates 25 of 26 on at least one assumption and 21 of 26 on P4 or P5 (both above the 75 % warning
+    # threshold of the curation step and the loader, which is why the loader warns), 6 garages in the tiered form and 7 in
+    # the banded form
+    assert coverage["priced_by_assumption"] == {"P3": 1, "P4": 13, "P5": 17, "P6": 6, "P7": 5, "P8": 7}
     assert coverage["with_monthly_product"] == 7
-    assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"]) == (18, 14, 6)
-    assigned = [values[-1].split(";") if values[-1] else [] for values in PRICED_GARAGES.values()]
-    counted = {key: sum(key in parts for parts in assigned) for key in ("P3", "P4", "P5", "P6", "P7")}
+    assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
+            coverage["priced_banded"]) == (25, 21, 6, 7)
+    assigned = [values.assumptions.split(";") if values.assumptions else [] for values in PRICED_GARAGES.values()]
+    counted = {key: sum(key in parts for parts in assigned) for key in ("P3", "P4", "P5", "P6", "P7", "P8")}
     assert counted == coverage["priced_by_assumption"]
     assert sum(bool(parts) for parts in assigned) == coverage["priced_with_assumption"]
     assert sum(bool({"P4", "P5"} & set(parts)) for parts in assigned) == coverage["priced_with_p4_or_p5"]
-    assert sum(values[8] is not None for values in PRICED_GARAGES.values()) == coverage["priced_tiered"]
-    with_monthly = [values[9] for values in PRICED_GARAGES.values() if values[9]] + [
+    assert sum(values.tiers is not None for values in PRICED_GARAGES.values()) == coverage["priced_tiered"]
+    assert sum(values.bands is not None for values in PRICED_GARAGES.values()) == coverage["priced_banded"]
+    with_monthly = [values.monthly for values in PRICED_GARAGES.values() if values.monthly] + [
         values[2] for values in UNPRICED_GARAGES.values() if values[2]]
     assert len(with_monthly) == coverage["with_monthly_product"]
+
+
+def _committed_price(garage_id: str, duration_min: float) -> float:
+    """The price of a stay under the committed bands of a garage and its day cap (the reference evaluation of the loader)."""
+    row = _committed_garages().loc[garage_id]
+    cap = _plain(row["garage_daily_cap_eur"])
+    return pg.duration_band_price_eur(pg.parse_duration_bands(row["tariff_duration_bands"]), duration_min, cap)
+
+
+@pytest.mark.parametrize("garage_id", ["pe_werderstrasse", "pe_wallstrasse"])
+def test_the_peine_schedule_reproduces_the_published_anchors_and_the_band_edges(garage_id):
+    # published (Stadtwerke Peine): 0.20 EUR for the first 30 min, 0.80 EUR up to 1 h, then 0.40 EUR per half hour up to 5 h,
+    # 4.00 EUR in total for 5 to 24 h
+    expected = {1: 0.20, 30: 0.20, 31: 0.80, 60: 0.80, 61: 1.20, 90: 1.20, 91: 1.60, 120: 1.60, 240: 3.20, 270: 3.60,
+                299: 4.00, 300: 4.00, 301: 4.00, 1440: 4.00}
+    for duration, price in expected.items():
+        assert _committed_price(garage_id, duration) == pytest.approx(price, abs=1e-9), (garage_id, duration)
+    # the last half-hour increment at the 5 h edge lands exactly on the published 5-to-24 h total: no jump at 300 min
+    assert _committed_price(garage_id, 300) == _committed_price(garage_id, 301)
+    with pytest.raises(ValueError, match="beyond the last band, which ends at 1440 min"):
+        _committed_price(garage_id, 1441)
+
+
+def test_the_designer_outlets_schedule_reproduces_the_published_anchors_and_the_band_edges():
+    # published: free for 20 min, 1.00 EUR up to 2 h, 0.50 EUR per hour up to 4 h, 1.50 EUR per hour up to 7 h, 5.00 EUR per
+    # hour from the 7th hour (no day cap)
+    expected = {20: 0.0, 21: 1.00, 120: 1.00, 121: 1.50, 180: 1.50, 181: 2.00, 240: 2.00, 241: 3.50, 300: 3.50, 301: 5.00,
+                420: 6.50, 421: 11.50, 480: 11.50, 481: 16.50}
+    for duration, price in expected.items():
+        assert _committed_price("wob_designer_outlets", duration) == pytest.approx(price, abs=1e-9), duration
+    assert _plain(_committed_garages().loc["wob_designer_outlets", "garage_daily_cap_eur"]) is None
+
+
+def test_the_brawo_schedule_jumps_to_the_published_day_total_after_the_sixth_hour():
+    # published: 1.50 EUR per started hour for the first 6 h, from the 7th started hour a day total of 15.00 EUR
+    for duration, price in {1: 1.50, 60: 1.50, 61: 3.00, 359: 9.00, 360: 9.00, 361: 15.00, 600: 15.00, 1440: 15.00}.items():
+        assert _committed_price("sz_brawo_carree", duration) == pytest.approx(price, abs=1e-9), duration
+
+
+def test_the_goslar_ca_schedule_is_capped_at_the_published_24_hour_price():
+    # published (tourism page, not confirmed by the operator): 1.50 EUR per hour for the first 3 h, then 0.80 EUR per half
+    # hour, 25.00 EUR for 24 h: 4.50 + 26 * 0.80 = 25.30 at 16 h, so the cap acts from there
+    for duration, price in {60: 1.50, 180: 4.50, 181: 5.30, 210: 5.30, 211: 6.10, 930: 24.50, 931: 25.00, 960: 25.00,
+                            1440: 25.00}.items():
+        assert _committed_price("gs_ca", duration) == pytest.approx(price, abs=1e-9), duration
+
+
+def test_the_braunschweig_ring_center_and_the_schillerstrasse_schedules_reproduce_the_published_hours():
+    # Ring-Center: 1.50 EUR for each of the first two started hours, then 2.00 EUR per started hour, day rate 15.00 EUR
+    for duration, price in {60: 1.50, 61: 3.00, 120: 3.00, 121: 5.00, 180: 5.00, 181: 7.00, 420: 13.00, 421: 15.00, 480: 15.00,
+                            481: 15.00, 1440: 15.00}.items():
+        assert _committed_price("bs_ring_center", duration) == pytest.approx(price, abs=1e-9), duration
+    # Wolfsburg Schillerstrasse: 1.00 EUR per started hour for the first 2 h, then 1.50 EUR per hour, day maximum 15.00 EUR
+    for duration, price in {60: 1.00, 120: 2.00, 121: 3.50, 181: 5.00, 600: 14.00, 601: 15.00, 1440: 15.00}.items():
+        assert _committed_price("wob_schillerstrasse", duration) == pytest.approx(price, abs=1e-9), duration
+
+
+def test_the_ring_center_identity_check_is_recorded_and_the_forschungsflughafen_keeps_its_own_rules():
+    garages = _committed_garages()
+    ring = garages.loc["bs_ring_center"]
+    prefix = "26057844400587384de83e9d214300551ccc28"
+    assert ring["tariff_rule_ids"] == f"{prefix}-19;{prefix}-20;{prefix}-21" and ring["package_facility_id"] == "BS_None"
+    for phrase in ("IDENTITY CHECKED", "NAMED 'Parkhaus Forschungsflughafen'", "mislabel", "Parkhaus Ring-Center",
+                   "'1. und 2. angef. Std.: 1,50 EUR'", "BS_SOURCE_4781292017fb49b091cc3066a17483fafbca28"):
+        assert phrase in ring["notes"], phrase
+    # the Forschungsflughafen stays unpriced (the deduction of its free 15 min is not stated) with its own rules -5 to -7
+    airport = garages.loc["bs_forschungsflughafen"]
+    assert not bool(airport["priced"]) and airport["not_priced_reason"] == "free_period"
+    assert airport["tariff_rule_ids"] == ";".join(f"4781292017fb49b091cc3066a17483fafbca28-{number}" for number in (5, 6, 7))
+    assert prefix not in airport["tariff_rule_ids"]
+
+
+def test_the_retailer_conditions_of_brawo_are_named_and_not_used_and_the_ordinance_is_cited_as_opening_hours_only():
+    garages = _committed_garages()
+    brawo = garages.loc["sz_brawo_carree", "notes"]
+    for rule in ("SZ_BRAWO_R03_178", "SZ_BRAWO_R04_179"):
+        assert rule in brawo
+    assert "customer condition: free for 90 min for customers of Kaufland or dm with a retailer validation" in brawo
+    assert "customer condition: free for 60 min for customers of MediaMarkt or ABC-Schuhcenter" in brawo
+    assert _plain(garages.loc["sz_brawo_carree", "tariff_rule_ids"]) == "SZ_BRAWO_R01_176;SZ_BRAWO_R02_177"
+    assert "Reading: the day boundary of the cap SZ_BRAWO_R02_177 is not stated" in brawo
+    edelhoefe = garages.loc["he_edelhoefe", "notes"]
+    assert "'Oeffnungszeit: 24 Stunden' in its column of fee-liable times" in edelhoefe
+    assert "states only the opening hours of the garage (geoeffnet 00.00 bis 24.00), which are no charging hours" in edelhoefe
+    assert "opens the garage from 00.00 to 24.00" not in edelhoefe
+
+
+def test_exactly_three_garages_tie_their_first_period_to_a_clock_window():
+    garages = _committed_garages()
+    with_first = garages[garages["garage_first_period_min"].notna()]
+    assert sorted(with_first.index) == ["bs_eiermarkt", "wob_phaeno", "wob_rathaus"]
+    windows = {garage: (_plain(row["garage_first_period_start_h"]), _plain(row["garage_first_period_end_h"]))
+               for garage, row in with_first.iterrows()}
+    # Eiermarkt rule -35 states 07:00-18:00, the Rathaus and Phaeno first-hour rules 06:00-00:00 (read as 6 to 24 h)
+    assert windows == {"bs_eiermarkt": (7.0, 18.0), "wob_rathaus": (6.0, 24.0), "wob_phaeno": (6.0, 24.0)}
+    assert garages["garage_first_period_start_h"].notna().sum() == 3
+    # P6 as amended: the first period is charged once when the arrival lies inside its window, the tiers then run on
+    for garage in windows:
+        assert "an arrival outside the window pays the tiers from the arrival" in garages.loc[garage, "notes"]
+
+
+def test_no_garage_is_left_unpriced_for_a_duration_schedule_and_the_five_unpriced_keep_their_reasons():
+    assert "banded_tariff" not in pg.NOT_PRICED_REASONS
+    assert {garage: values[1] for garage, values in UNPRICED_GARAGES.items()} == {
+        "bs_forschungsflughafen": "free_period", "wob_suedkopf": "free_period", "gs_achtermann": "conflicting_sources",
+        "gs_galeria": "incomplete_tariff", "gs_charley_jacob_strasse": "no_published_tariff"}
+    garages = _committed_garages()
+    assert sorted(garages.index[~garages["priced"]]) == sorted(UNPRICED_GARAGES)
+    assert garages["tariff_duration_bands"].notna().sum() == 7 and garages["tariff_tiers"].notna().sum() == 6
 
 
 def test_every_committed_garage_cites_the_package_and_a_source_and_every_assumption_is_named_in_its_notes():
@@ -1106,8 +1444,8 @@ def test_every_committed_garage_cites_the_package_and_a_source_and_every_assumpt
     # the tariff of the Braunschweig garage Eiermarkt, quoted: first hour 0.60, then 07:00-18:00 1.20 and 18:00-07:00 1.00 per
     # hour, 9.60 a day; the night cap and the 24-hour maximum are named and not applied (ASSUMPTION P7)
     eiermarkt = garages.loc["bs_eiermarkt", "notes"]
-    assert ("0.60 EUR for the first 60 min, then tiers per started 60 min, the tier in force at the unit's start: "
-            "07:00-18:00 1.20 EUR, 18:00-07:00 1.00 EUR, at most 9.60 EUR per day.") in eiermarkt
+    assert ("0.60 EUR for the first 60 min (arrival 07:00-18:00), then tiers per started 60 min, the tier in force at the "
+            "unit's start: 07:00-18:00 1.20 EUR, 18:00-07:00 1.00 EUR, at most 9.60 EUR per day.") in eiermarkt
     assert "15.60 EUR at most (24_hours)" in eiermarkt and "6.00 EUR at most (night_18_07) Mo-Su 18:00-07:00" in eiermarkt
     # Wolfsburg Poststrasse: the only rule that states a window is the unresolved night tier that is not preferred, so it sets
     # no window (ASSUMPTION P5) and is named, marked, and not charged (ASSUMPTION P3)
@@ -1173,7 +1511,7 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     assert "Parken_in_Helmstedt.pdf" in groepern["evidence"]
     used = qa[(qa["record_type"] == "monthly_product") & (qa["decision"] == "used")]
     assert sorted(used.loc[used["garage_id"] != "", "garage_id"]) == sorted(
-        [garage_id for garage_id, values in PRICED_GARAGES.items() if values[9]]
+        [garage_id for garage_id, values in PRICED_GARAGES.items() if values.monthly]
         + [garage_id for garage_id, values in UNPRICED_GARAGES.items() if values[2]])
     zone_products = used[used["zone_ids"] != ""]
     assert set(";".join(zone_products["zone_ids"]).split(";")) == {

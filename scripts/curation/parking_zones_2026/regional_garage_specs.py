@@ -12,18 +12,19 @@ a quoted number never enters a column, and no code reads these texts for a value
 the window of ``window=("stated", start, end, quotation)``, a window that a source states in a page text which the package
 keeps only as text, written with its quotation.
 
-Rules of the reading (rulings R-4b-3, R-4b-4, R-4b-8, R-4b-9 and R-4b-10b, assumptions P3 to P7 of
+Rules of the reading (rulings R-4b-3, R-4b-4, R-4b-8, R-4b-9, R-4b-10b, R-4b-11 and R-4b-12, assumptions P3 to P8 of
 ``braunschweig.parking.garages.ASSUMPTIONS``):
 
 * A tariff is encoded only where the published structure maps exactly to the garage columns: an optional first period (price
-  for the first minutes), one rate per started billing unit with one fee window or, where the rate changes with the time of
-  day, the time-of-day tiers, and an optional day cap. A first period whose price is the price of one billing unit is no
-  first period (the rate alone is the same tariff). Anything else (a free period, a rate that changes with the duration, a
-  continuation the source does not state, contradicting sources) stays listed and not priced with the reason code of
-  ``garages.NOT_PRICED_REASONS``.
+  for the first minutes, with the clock window its rule states, ruling R-4b-12), one rate per started billing unit with one
+  fee window or, where the rate changes with the time of day, the time-of-day tiers or, where the price follows the duration
+  of the stay, the duration bands (ruling R-4b-11), and an optional day cap. A first period whose price is the price of one
+  billing unit is no first period (the rate alone is the same tariff). Anything else (a free period whose deduction is not
+  stated, a continuation the source does not state, contradicting sources) stays listed and not priced with the reason code
+  of ``garages.NOT_PRICED_REASONS``.
 * Only a rule that the package marks ``preferred_for_current_use`` may name a role that sets a value (``rate``, ``tiers``,
-  ``first``, ``first_equals_rate``, ``cap``, the used monthly product); a rule that is not preferred never sets a value and
-  there is no waiver (ruling R-4b-8). A rule that sets no value may be named without the flag (``other_tiers``,
+  ``bands``, ``first``, ``first_equals_rate``, ``cap``, the used monthly product); a rule that is not preferred never sets a
+  value and there is no waiver (ruling R-4b-8). A rule that sets no value may be named without the flag (``other_tiers``,
   ``other_caps``, ``ignored``, the ``evidence`` of an unpriced garage): the notes mark it as not preferred from the flag of the
   package, and every other rule of the facility that is not preferred is listed once as not used.
 * Where the rate changes with the time of day (a morning, day, evening and night rate per started unit), the rules of the
@@ -32,6 +33,10 @@ Rules of the reading (rulings R-4b-3, R-4b-4, R-4b-8, R-4b-9 and R-4b-10b, assum
   caps that the single day-cap column cannot hold (a night cap, a maximum for day and night together): they are not applied and
   the day cap (or the 24-hour maximum where there is no day cap) applies to the whole stay (ASSUMPTION P7). A customer-specific
   tariff (a card, a retailer validation, a permit) is never encoded (``ignored``).
+* Where the price follows the elapsed duration of the stay (a free stretch, a total for a stretch, a rate per started unit
+  from a minute on), the rules of the bands are named in ``bands`` (ASSUMPTION P8, ruling R-4b-11); each band rule is a
+  ``free``, ``duration_total``, ``published_day_total_from_duration`` or ``increment`` rule with its own elapsed range, and the
+  published cap or 24-hour price is the ``cap``. A banded specification has no ``first`` period.
 * The single-window form takes its fee window from the charging times of the rate rule (``window="rate"``), from a window
   that a source states in a page text (``window=("stated", ...)``) or, where no preferred rule states one, is 0 to 24 h
   (``window=None``, ASSUMPTION P5). A rate without a stated rounding is billed per started unit (ASSUMPTION P4, found from the
@@ -62,9 +67,10 @@ def _bs(name: str, *numbers: int) -> tuple:
 #: layer feature that gives name and position: (column, value)); ``attributes`` (a second layer feature of the same
 #: garage, whose attributes complete the first: operator, geometry method); ``facility`` (the package facility record
 #: with the capacity and the rule list); ``operator`` (optional: the operator whose own page is the source, or None where
-#: the package's operator text is no operator); then either the roles of a priced garage (``rate`` with ``window`` or
-#: ``tiers``; ``first`` or ``first_equals_rate``; ``cap``; ``other_tiers``, ``other_caps`` and ``ignored``) or ``reason`` (a
-#: code of ``garages.NOT_PRICED_REASONS``), ``reason_text`` and ``evidence`` (the rule ids that show the reason); ``comment``.
+#: the package's operator text is no operator); then either the roles of a priced garage (``rate`` with ``window``, or
+#: ``tiers``, or ``bands`` with ``window``; ``first`` or ``first_equals_rate``, not with ``bands``; ``cap``; ``other_tiers``,
+#: ``other_caps`` and ``ignored``) or ``reason`` (a code of ``garages.NOT_PRICED_REASONS``), ``reason_text`` and ``evidence``
+#: (the rule ids that show the reason); ``comment``.
 GARAGE_SPECS = (
     # ------------------------------------------------------------------ Braunschweig: the PULP feed of the city
     {"garage_id": "bs_eiermarkt", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_PH004"),
@@ -102,11 +108,23 @@ GARAGE_SPECS = (
      "ignored": {_bs("packhof", 48)[0]: "a lost ticket, not a stay"},
      "comment": "Operator page of Park und Tank; the city feed states the same amounts."},
     {"garage_id": "bs_ring_center", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("source_id", _BS["ring_center"]),
-     "facility": "BS_None", "reason": "banded_tariff",
-     "reason_text": "1.50 EUR per started hour for the first and second hour, then 2.00 EUR per started hour, day ticket "
-                    "15.00 EUR: the rate changes after 2 h, which one rate after a first period cannot express",
-     "evidence": _bs("ring_center", 19, 20, 21),
-     "comment": "Not connected to the city's parking guidance system (feed text)."},
+     "facility": "BS_None", "bands": _bs("ring_center", 19, 20), "cap": _bs("ring_center", 21)[0], "window": None,
+     "comment": "IDENTITY CHECKED against the package (ruling R-4b-11): the facility record BS_None is NAMED 'Parkhaus "
+                "Forschungsflughafen' in facilities.json (the name of the first of its two features, bs_parkhaeuser:2, which "
+                "share the facility id BS_None), but the attributes of that record (source_id, address Berliner Platz 1, "
+                "description_text) and its rules -19 to -21 are those of the Parkhaus Ring-Center (feature bs_parkhaeuser:6), "
+                "not of the Forschungsflughafen: the raw records of the three rules name "
+                "facility_name 'Parkhaus Ring-Center', the rule ids carry the source id of the Ring-Center feature, and their "
+                "source excerpts ('1. und 2. angef. Std.: 1,50 EUR', 'jede weitere angef. Std.: 2 EUR / 60 Min.', 'Tagessatz (24 "
+                "Std.): 15 EUR') are the tariff lines of the Ring-Center feed text, whereas the feed text of the "
+                "Forschungsflughafen (free for 15 min, each hour 1.50 EUR, day ticket 15.00 EUR) has its own rules -5 to -9 under "
+                "the facility BS_SOURCE_4781292017fb49b091cc3066a17483fafbca28. The package's facility name is a mislabel of the "
+                "shared facility id (both features list the Ring-Center rules in their tariff_rule_ids); the Ring-Center "
+                "tariff is encoded and the Forschungsflughafen keeps its own rules. The feed text gives the opening hours "
+                "Mo-Fr 06:00-21:30, Sa 06:30-21:30 and closed on Sundays and public holidays, which are no charging hours "
+                "(ASSUMPTION P5); it also states that the garage is not connected to the city's parking guidance system. The "
+                "amount of the first two hours is understood as per started hour (the package notes that the wording does not "
+                "say 'je')."},
     {"garage_id": "bs_schloss", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_PH011"),
      "facility": "BS_PH011", "rate": _bs("schloss", 22)[0], "cap": _bs("schloss", 23)[0], "window": None,
      "ignored": {_bs("schloss", 24)[0]: "a lost ticket, not a stay"},
@@ -159,10 +177,9 @@ GARAGE_SPECS = (
      "comment": "Saba; the 24-hour maximum is the only cap for day and night together and is held as the cap; the night cap "
                 "lies below it; entry only Mo-Fr 06:30-20:00 and Sa 07:00-20:00."},
     {"garage_id": "wob_schillerstrasse", "town": "wob", "layer": "wob_parkhaeuser",
-     "feature": ("facility_id", "WOB_SCHILLER"), "facility": "WOB_SCHILLER", "reason": "banded_tariff",
-     "reason_text": "1.00 EUR per hour for the first 2 h, then 1.50 EUR per hour, day maximum 15.00 EUR: the rate changes "
-                    "after 2 h, which one rate after a first period cannot express",
-     "evidence": ("WOB_SCHILLER_R01", "WOB_SCHILLER_R02", "WOB_SCHILLER_R03"), "operator": None,
+     "feature": ("facility_id", "WOB_SCHILLER"), "facility": "WOB_SCHILLER",
+     "bands": ("WOB_SCHILLER_R01", "WOB_SCHILLER_R02"), "cap": "WOB_SCHILLER_R03",
+     "window": None, "operator": None,
      "comment": "The package states the operator as 'Saba per city; not listed among current Saba three facilities': the "
                 "city lists Saba, the operator's own page does not list the garage, so no operator is taken."},
     {"garage_id": "wob_city_galerie", "town": "wob", "layer": "wob_parkhaeuser",
@@ -171,12 +188,12 @@ GARAGE_SPECS = (
      "comment": "Shopping-centre garage City-Galerie (ECE), open to the public at the published tariff; special shopping "
                 "Sundays have their own fees (not modelled)."},
     {"garage_id": "wob_designer_outlets", "town": "wob", "layer": "wob_parkhaeuser",
-     "feature": ("facility_id", "WOB_OUTLETS"), "facility": "WOB_OUTLETS", "reason": "banded_tariff",
-     "reason_text": "free for 20 min, 1.00 EUR up to 2 h, 0.50 EUR per hour up to 4 h, 1.50 EUR per hour up to 7 h, 5.00 EUR "
-                    "per hour from the 7th hour, no day cap: a rate that changes in four steps",
-     "evidence": ("WOB_DESIGNEROUTLETS_R01", "WOB_DESIGNEROUTLETS_R02", "WOB_DESIGNEROUTLETS_R03",
-                  "WOB_DESIGNEROUTLETS_R04", "WOB_DESIGNEROUTLETS_R05"),
-     "comment": "Outlet-centre garage; the capacity of 1,000 is an approximate figure for all parking areas of the centre."},
+     "feature": ("facility_id", "WOB_OUTLETS"), "facility": "WOB_OUTLETS",
+     "bands": ("WOB_DESIGNEROUTLETS_R01", "WOB_DESIGNEROUTLETS_R02", "WOB_DESIGNEROUTLETS_R03", "WOB_DESIGNEROUTLETS_R04",
+               "WOB_DESIGNEROUTLETS_R05"), "window": None,
+     "comment": "Outlet-centre garage: free for 20 min, 1.00 EUR up to 2 h, 0.50 EUR per hour up to 4 h, 1.50 EUR per hour up to "
+                "7 h, 5.00 EUR per hour from the 7th hour, no day cap published; the capacity of 1,000 is an approximate "
+                "figure for all parking areas of the centre."},
     {"garage_id": "wob_phaeno", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_PHAENO"),
      "facility": "WOB_PHAENO", "tiers": ("WOB_PHAENO_R04", "WOB_PHAENO_R02"), "first": "WOB_PHAENO_R01",
      "cap": "WOB_PHAENO_R03", "other_caps": ("WOB_PHAENO_R05",),
@@ -210,36 +227,36 @@ GARAGE_SPECS = (
     {"garage_id": "he_edelhoefe", "town": "he", "layer": "region_parkhaeuser", "feature": ("facility_id", "HE_EDELHOEFE"),
      "facility": "HE_EDELHOEFE", "rate": "HE_EDELHOEFE_R01_166", "cap": "HE_EDELHOEFE_R02_167",
      "window": ("stated", "00:00", "24:00",
-                "the city brochure of December 2024 gives the garage the charging time 'Oeffnungszeit: 24 Stunden' in its "
-                "column of fee-liable times (gebuehrenpflichtige Zeit), and the ordinance of 2018-12-18 sec. 2(1) opens the "
-                "garage from 00.00 to 24.00"),
+                "the city brochure of December 2024 gives the garage 'Oeffnungszeit: 24 Stunden' in its column of fee-liable "
+                "times (gebuehrenpflichtige Zeit), which is the basis of the window; the ordinance of 2018-12-18 sec. 2(1) "
+                "states only the opening hours of the garage (geoeffnet 00.00 bis 24.00), which are no charging hours and not "
+                "a source of the window"),
      "comment": "Garage of the city of Helmstedt, tariff of the city brochure of December 2024. The ordinance of 2018-12-18 "
                 "(retrieved 2026-09-29) states another structure: 0.50 EUR for the first 30 min, 1.00 EUR up to 1 h, 2.00 "
                 "EUR up to 2 h, 0.50 EUR per further started hour, at most 8.00 EUR, and the garage's notice board decides; "
                 "the 2018 text is the older source and is not encoded."},
     {"garage_id": "pe_werderstrasse", "town": "pe", "layer": "region_parkhaeuser", "feature": ("facility_id", "PE_WERDER"),
-     "facility": "PE_WERDER", "reason": "banded_tariff",
-     "reason_text": "0.20 EUR for the first 30 min, 0.80 EUR in total up to 1 h, then 0.40 EUR per half hour up to 5 h, "
-                    "4.00 EUR in total for 5 to 24 h: the first half hour is a band of its own, which a first period plus "
-                    "one rate cannot express (a first period of 60 min at 0.80 EUR would overprice a short stay)",
-     "evidence": ("PE_WERDER_R01_168", "PE_WERDER_R02_169", "PE_WERDER_R03_170", "PE_WERDER_R04_171"),
-     "comment": "Stadtwerke Peine; the position is the OSM feature centre via mapcarta."},
+     "facility": "PE_WERDER",
+     "bands": ("PE_WERDER_R01_168", "PE_WERDER_R02_169", "PE_WERDER_R03_170", "PE_WERDER_R04_171"), "window": None,
+     "comment": "Stadtwerke Peine: 0.20 EUR in total for the first 30 min, 0.80 EUR in total up to 1 h, then 0.40 EUR per half "
+                "hour up to 5 h, 4.00 EUR in total for 5 to 24 h (the published anchors 0.20 at 30 min, 0.80 at 60 min and "
+                "4.00 at 300 min are reproduced by the bands); the position is the OSM feature centre via mapcarta."},
     {"garage_id": "pe_wallstrasse", "town": "pe", "layer": "region_parkhaeuser", "feature": ("facility_id", "PE_WALL"),
-     "facility": "PE_WALL", "reason": "banded_tariff",
-     "reason_text": "0.20 EUR for the first 30 min, 0.80 EUR in total up to 1 h, then 0.40 EUR per half hour up to 5 h, "
-                    "4.00 EUR in total for 5 to 24 h: the first half hour is a band of its own, which a first period plus "
-                    "one rate cannot express (a first period of 60 min at 0.80 EUR would overprice a short stay)",
-     "evidence": ("PE_WALL_R01_172", "PE_WALL_R02_173", "PE_WALL_R03_174", "PE_WALL_R04_175"),
-     "comment": "Stadtwerke Peine; daily 07:00-23:15 (longer after events in the Forum)."},
+     "facility": "PE_WALL", "bands": ("PE_WALL_R01_172", "PE_WALL_R02_173", "PE_WALL_R03_174", "PE_WALL_R04_175"),
+     "window": None,
+     "comment": "Stadtwerke Peine, the same schedule as the garage Werderstrasse (0.20 EUR in total for the first 30 min, 0.80 EUR "
+                "in total up to 1 h, then 0.40 EUR per half hour up to 5 h, 4.00 EUR in total for 5 to 24 h); the opening hours "
+                "are daily 07:00-23:15 (longer after events in the Forum), which are no charging hours."},
     {"garage_id": "sz_brawo_carree", "town": "sz", "layer": "region_parkhaeuser", "feature": ("facility_id", "SZ_BRAWO"),
-     "facility": "SZ_BRAWO", "reason": "banded_tariff",
-     "reason_text": "1.50 EUR per started hour for the first 6 h, from the 7th started hour a published day total of 15.00 "
-                    "EUR, which is a jump and no cap of the hourly rate (a cap at 15.00 EUR would underprice stays of 7 to "
-                    "9 h)",
-     "evidence": ("SZ_BRAWO_R01_176", "SZ_BRAWO_R02_177"),
-     "comment": "Shopping-centre garage BRAWO Carree; customers of two retailers park 60 or 90 min free with a validation "
-                "(rules -178 and -179); the capacity counts the regular spaces only; the position is an OSM node via "
-                "mapcarta."},
+     "facility": "SZ_BRAWO", "bands": ("SZ_BRAWO_R01_176", "SZ_BRAWO_R02_177"), "window": None,
+     "ignored": {"SZ_BRAWO_R03_178": "customer condition: free for 90 min for customers of Kaufland or dm with a retailer "
+                                     "validation, a customer group the model cannot identify",
+                 "SZ_BRAWO_R04_179": "customer condition: free for 60 min for customers of MediaMarkt or ABC-Schuhcenter with "
+                                     "a retailer validation, a customer group the model cannot identify"},
+     "comment": "Shopping-centre garage BRAWO Carree: 1.50 EUR per started hour for the first 6 h, from the 7th started hour a "
+                "published day total of 15.00 EUR, a jump and no cap of the hourly rate (the anchors 9.00 EUR at 360 min and "
+                "15.00 EUR beyond are reproduced by the bands); the capacity counts the regular spaces only; the position is an "
+                "OSM node via mapcarta."},
     {"garage_id": "gs_achtermann", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_ACHTERMANN"),
      "facility": "GS_ACHTERMANN", "reason": "conflicting_sources",
      "reason_text": "1.50 EUR per hour for the first 3 h and 0.80 EUR per hour after that contradict the separately "
@@ -249,11 +266,10 @@ GARAGE_SPECS = (
      "evidence": ("GS_ACHTERMANN_REV_01", "GS_ACHTERMANN_REV_02", "GS_ACHTERMANN_REV_03", "GS_ACHTERMANN_REV_04"),
      "comment": "The position is the city's point of 2018."},
     {"garage_id": "gs_ca", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_CA"),
-     "facility": "GS_CA", "reason": "banded_tariff",
-     "reason_text": "1.50 EUR per hour for the first 3 h, then 0.80 EUR per half hour, 25.00 EUR for 24 h: the rate changes "
-                    "after 3 h, which one rate after a first period cannot express",
-     "evidence": ("GS_CA_REV_01", "GS_CA_REV_02", "GS_CA_REV_03"),
-     "comment": "Tariff of the tourism page, not confirmed by the operator (package status)."},
+     "facility": "GS_CA", "bands": ("GS_CA_REV_01", "GS_CA_REV_02"), "cap": "GS_CA_REV_03", "window": None,
+     "comment": "Tariff of the tourism page, not confirmed by the operator (package status): 1.50 EUR per hour for the first 3 "
+                "h, then 0.80 EUR per half hour, 25.00 EUR for 24 h (the 24-hour price is the day cap; the package notes that "
+                "its cap mechanics and re-entry are not stated); the opening hours 06:00-20:00 are no charging hours."},
     {"garage_id": "gs_galeria", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_GALERIA"),
      "facility": "GS_GALERIA", "reason": "incomplete_tariff",
      "reason_text": "1.50 EUR for 1 h and 15.00 EUR for 24 h are published, but not how a stay is billed after the first "

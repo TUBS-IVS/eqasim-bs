@@ -10,17 +10,20 @@ the city car-park directory of Braunschweig ``bs_plan_parkplaetze.geojson`` (ret
 The dataset lists every garage of the package's garage layers (``bs_parkhaeuser``, ``wob_parkhaeuser``,
 ``region_parkhaeuser`` and the Parkhaus points of the Goslar service that have no other row) once, except the garages that
 are no garage option (the station car parks of DB BahnPark, ruling R-4b-9), which are rows of the QA table with their
-reason. A garage is PRICED where the garage columns or its time-of-day tiers express its published tariff exactly (rulings
-R-4b-3, R-4b-4 and R-4b-10b; ``regional_garage_specs`` names which rule carries which part and the reason of every garage that
-is not priced). Only rules that the package marks ``preferred_for_current_use`` set a value (a rate, a tier, a first period, a
-cap, a monthly product): a specification that names another rule for such a role stops the step, with no waiver (ruling
-R-4b-8). No tariff number is typed anywhere: the values are read from the rules by the roles, with one exception: a window
-that a source states only in a page text which the package keeps as text (``window=("stated", ...)``) is typed with its
-quotation. The assumptions P3 (a night tariff that is no per-unit rate is not charged), P4 (a rate without a stated rounding is
-billed per started unit), P5 (the fee window is 0 to 24 h where no preferred rule states charging times), P6 (how a stay is
-priced from tiers) and P7 (caps that the day-cap column cannot hold are not applied) are named in the row's ``assumptions`` and
-notes and counted. Two readings that name no assumption are counted and named in the notes as well: a day cap without a
-stated day boundary is read as a maximum per stay, and a time window without stated days as Monday to Friday.
+reason. A garage is PRICED where the garage columns, its time-of-day tiers or its duration bands express its published
+tariff exactly (rulings R-4b-3, R-4b-4, R-4b-10b and R-4b-11; ``regional_garage_specs`` names which rule carries which part
+and the reason of every garage that is not priced). Only rules that the package marks ``preferred_for_current_use`` set a
+value (a rate, a tier, a band, a first period, a cap, a monthly product): a specification that names another rule for such a
+role stops the step, with no waiver (ruling R-4b-8). No tariff number is typed anywhere: the values are read from the rules
+by the roles, with one exception: a window that a source states only in a page text which the package keeps as text
+(``window=("stated", ...)``) is typed with its quotation. A first period carries the clock window its rule states (ruling
+R-4b-12). The assumptions P3 (a night tariff that is no per-unit rate is not charged), P4 (a rate without a stated rounding
+is billed per started unit), P5 (the fee window is 0 to 24 h where no preferred rule states charging times), P6 (how a stay
+is priced from tiers, amended by ruling R-4b-12 for the clock window of a first period), P7 (caps that the day-cap column
+cannot hold are not applied) and P8 (how a stay is priced from duration bands, ruling R-4b-11) are named in the row's
+``assumptions`` and notes and counted. Two readings that name no assumption are counted and named in the notes as well: a day
+cap without a stated day boundary is read as a maximum per stay, and a time window without stated days as Monday to
+Friday.
 Monthly and 30-day products are read per spec Amendment D2 (the cheapest publicly purchasable fixed-price product per
 garage is ``monthly_eur``; products for a customer group the model cannot identify, without a fixed price or limited to a
 small number of places are recorded and not used). Every candidate that is no garage of the dataset (a BgA lot, a zone car
@@ -88,6 +91,14 @@ DIRECTORY_URL = "https://www.braunschweig.de/geojson/parkplaetze.geojson"
 RATE_RULE_TYPES = ("increment", "published_hourly_rate")
 FIRST_PERIOD_RULE_TYPES = ("duration_total", "increment")
 CAP_RULE_TYPES = ("cap", "daily_cap", "daily_rate_published", "published_day_tariff")
+#: A total for the whole day that the package states as a duration price (``elapsed_to_minutes`` 1440): a published 24-hour
+#: price is the day cap of a banded garage (ruling R-4b-11).
+DAY_TOTAL_RULE_TYPES = ("duration_total", "published_duration_tariff", "published_duration_price")
+MINUTES_PER_DAY = pg.MINUTES_PER_DAY
+#: The rule types of a duration band and the band kind each one is (ruling R-4b-11): a free stretch, a total for the stay while
+#: the duration is in the band, an increment per started unit counted from the band's start.
+BAND_RULE_KINDS = {"free": "free", "duration_total": "total", "published_day_total_from_duration": "total",
+                   "increment": "increment"}
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday")
 #: Day specifications of a time window that cover Monday to Friday (the model's average weekday, D1).
 WEEKDAY_SPECIFICATIONS = (None, "Mo-Su", "Mo-Sa", "Mo-Fr", "Mo-Sa_except_public_holidays", "all_days")
@@ -131,21 +142,40 @@ COLUMN_GLOSSARY = {
     "capacity_scope": "what capacity_reported counts, as the package states it",
     "garage_hourly_rate_eur": "EUR per hour of the garage tariff; the price of one billing unit is this rate times "
                               "garage_billing_unit_min / 60 (garage columns of the tariff table, spec Amendment A6); empty "
-                              "for a garage priced by tariff_tiers",
-    "garage_billing_unit_min": "length of a started billing unit in minutes; empty for a garage priced by tariff_tiers",
+                              "for a garage priced by tariff_tiers or tariff_duration_bands",
+    "garage_billing_unit_min": "length of a started billing unit in minutes; empty for a garage priced by tariff_tiers or "
+                               "tariff_duration_bands",
     "garage_first_period_min": "length of the first period in minutes, charged once in full when any part is used; empty "
                                "without a first period (the pair with garage_first_period_eur)",
     "garage_first_period_eur": "price of the first period in EUR",
+    "garage_first_period_start_h": "start of the clock window the source ties the first period to, in decimal hours of the "
+                                   "weekday (ruling R-4b-12); the first period is charged once when the arrival lies inside "
+                                   "the window and the tiers then run from its end, an arrival outside it pays the tiers "
+                                   "from the arrival (ASSUMPTION P6); empty where the source ties the first period to no "
+                                   "window; set only together with a first period and the end hour",
+    "garage_first_period_end_h": "end of the clock window of the first period in decimal hours (24 = midnight); see "
+                                 "garage_first_period_start_h",
     "garage_daily_cap_eur": "maximum charge of a stay in EUR; empty = no cap published; of several published caps only the "
                             "day cap (or the 24-hour maximum where there is none) is held here (ASSUMPTION P7)",
-    "garage_fee_start_h": "start of the fee window in decimal hours of the weekday; empty for a garage priced by tariff_tiers",
+    "garage_fee_start_h": "start of the fee window in decimal hours of the weekday; empty for a garage priced by tariff_tiers "
+                          "(a garage priced by tariff_duration_bands has its fee window set)",
     "garage_fee_end_h": "end of the fee window in decimal hours of the weekday (24 = midnight); empty for a garage priced by "
-                        "tariff_tiers",
+                        "tariff_tiers (a garage priced by tariff_duration_bands has its fee window set)",
     "tariff_tiers": "the time-of-day tiers of a garage whose rate changes with the time of day (ruling R-4b-10b): "
                     "'HH:MM-HH:MM <eur>/<unit_min>' per tier, joined by '; ', each tier the EUR of one started unit of "
                     "unit_min minutes that begins in it (a tier may cross midnight); a time of day outside every tier is "
                     "free; the four single-window columns are empty and the row rests on ASSUMPTION P6; empty for a garage "
-                    "priced by one fee window",
+                    "priced by one fee window or by duration bands",
+    "tariff_duration_bands": "the duration bands of a garage whose tariff is a published schedule over the elapsed duration d of "
+                             "the stay in minutes (ruling R-4b-11): '<from_min>-<to_min> <kind>' per band, joined by '; ', each "
+                             "band covering from < d <= to (the first starts at 0, the bands are contiguous, only the last may "
+                             "be open-ended with an empty end), kind = 'free' (costs 0), 'total <eur>' (the stay costs this "
+                             "amount, an absolute price) or '<eur>/<unit_min>' (this amount per started unit counted from the "
+                             "band's start, added to the price reached at its start), e.g. '0-20 free; 20-120 total 1.00; "
+                             "120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60'; the rate and the billing unit are empty, there is "
+                             "no first period and no tier, the fee window is set, a published cap or 24-hour price is "
+                             "garage_daily_cap_eur, and the row rests on ASSUMPTION P8; empty for a garage priced by one fee "
+                             "window or by tiers",
     "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2); "
                    "empty where the package holds none; independent of priced",
     "monthly_source_url": "source of monthly_eur",
@@ -390,10 +420,19 @@ def cap_boundary_unspecified(rule: dict) -> bool:
     return period is None or UNSPECIFIED_CAP_PERIOD_MARKER in str(period)
 
 
+def is_day_total(rule: dict) -> bool:
+    """Whether ``rule`` is a total for the whole day that the package states as a duration price: one of
+    ``DAY_TOTAL_RULE_TYPES`` that starts at 0 min (or states no start) and ends at 1440 min (a published 24-hour price)."""
+    return (rule["rule_type"] in DAY_TOTAL_RULE_TYPES and (rule.get("elapsed_from_minutes") or 0) == 0
+            and rule.get("elapsed_to_minutes") == MINUTES_PER_DAY)
+
+
 def cap_eur(rule: dict) -> float:
-    """The day cap of a cap rule: its ``daily_cap_eur`` or, for a published day tariff, its amount."""
-    if rule["rule_type"] not in CAP_RULE_TYPES:
-        raise SystemExit(f"rule {rule['rule_id']}: type {rule['rule_type']} is no cap rule {list(CAP_RULE_TYPES)}")
+    """The day cap of a cap rule: its ``daily_cap_eur`` or, for a published day tariff or a 24-hour price (a duration total
+    from 0 to 1440 min, ruling R-4b-11), its amount."""
+    if rule["rule_type"] not in CAP_RULE_TYPES and not is_day_total(rule):
+        raise SystemExit(f"rule {rule['rule_id']}: type {rule['rule_type']} is no cap rule {list(CAP_RULE_TYPES)} and no 24-hour "
+                         "price (a duration total from 0 to 1440 min)")
     value = rule.get("daily_cap_eur") if rule.get("daily_cap_eur") is not None else rule.get("amount_eur")
     if value is None or not float(value) > 0:
         raise SystemExit(f"rule {rule['rule_id']}: a cap needs a positive amount, found {value!r}")
@@ -432,36 +471,92 @@ def _rate_rule_values(rate: dict, garage_id: str) -> tuple:
     return int(unit), float(amount)
 
 
+def _band_values(rule: dict, garage: str) -> tuple:
+    """(kind, EUR, unit in minutes or None, start minute, end minute or None) of a band rule; ``SystemExit`` for a rule
+    that is no band, an amount that is no positive whole number of cents (a free band has none), an increment without a
+    positive whole unit or a stated rounding that is no started unit (ASSUMPTION P8 reads a stated pro-rata or a rounding
+    down as another tariff than the one the bands express)."""
+    kind = BAND_RULE_KINDS.get(rule["rule_type"])
+    if kind is None:
+        raise SystemExit(f"garage {garage}: rule {rule['rule_id']} of type {rule['rule_type']} is no band rule "
+                         f"{sorted(BAND_RULE_KINDS)}")
+    start = int(rule.get("elapsed_from_minutes") or 0)
+    end = rule.get("elapsed_to_minutes")
+    end = None if end is None else int(end)
+    amount = rule.get("amount_eur")
+    if kind == "free":
+        if amount not in (None, 0, 0.0):
+            raise SystemExit(f"garage {garage}: free rule {rule['rule_id']} states the amount {amount}; a free band has no "
+                             "price")
+        return kind, 0.0, None, start, end
+    if kind == "increment":
+        unit, amount = _rate_rule_values(rule, garage)
+        rounding = rule.get("rounding")
+        if rounding not in (None, "unspecified", "started_unit"):
+            raise SystemExit(f"garage {garage}: rule {rule['rule_id']} states the rounding {rounding!r}, which is not a "
+                             "started unit; the band text expresses a started unit only (ASSUMPTION P8)")
+    else:
+        unit = None
+        if amount is None or not float(amount) > 0:
+            raise SystemExit(f"garage {garage}: rule {rule['rule_id']} needs a positive amount, found {amount!r}")
+    if abs(float(amount) * 100 - round(float(amount) * 100)) > 1e-6:
+        raise SystemExit(f"garage {garage}: the amount {amount} EUR of the band rule {rule['rule_id']} is not a whole number "
+                         "of cents")
+    return kind, round(float(amount), 2), unit, start, end
+
+
+def _first_period_window(first: dict, garage: str) -> Optional[tuple]:
+    """The clock window (start, end in decimal hours of the weekday) that the rule of a first period states, else None (the
+    source ties the first period to no window); a window that crosses midnight is refused (ruling R-4b-12 needs a documented
+    wrap rule for it, and no source has one)."""
+    try:
+        return rule_window(first)
+    except SystemExit as error:
+        raise SystemExit(f"garage {garage}: the first-period window cannot be read: {error}") from None
+
+
 def encode_tariff(spec: dict, rules: dict) -> dict:
     """The tariff columns of a priced specification, read from the rules by their roles, with what they rest on.
 
-    A specification names either ``rate`` (one rate in started units with one fee window: the single-window form) or
-    ``tiers`` (the rules of the time-of-day tiers: the tiered form, ruling R-4b-10b), and optionally a ``first`` period (the
-    single-window form also ``first_equals_rate``) and a ``cap``. Every rule that sets a value must be marked
-    ``preferred_for_current_use`` (ruling R-4b-8). The single-window form takes its window from the rate rule
-    (``window="rate"``), from a window that a source states in a page text the package keeps as text
-    (``window=("stated", start, end, quotation)``) or, with ``window=None``, has none (ASSUMPTION P5); the tiered form takes
-    the window of each tier rule, and a tier may cross midnight.
+    A specification names exactly one of ``rate`` (one rate in started units with one fee window: the single-window form),
+    ``tiers`` (the rules of the time-of-day tiers: the tiered form, ruling R-4b-10b) and ``bands`` (the rules of the duration
+    bands: the banded form, ruling R-4b-11), and optionally a ``first`` period (the single-window form also
+    ``first_equals_rate``; a banded garage has none: its first band is the first period) and a ``cap``. Every rule that sets
+    a value must be marked ``preferred_for_current_use`` (ruling R-4b-8). The single-window and the banded form take their
+    window from the rate or first band rule (``window="rate"``), from a window that a source states in a page text the
+    package keeps as text (``window=("stated", start, end, quotation)``) or, with ``window=None``, have none (ASSUMPTION P5);
+    the tiered form takes the window of each tier rule, and a tier may cross midnight. A band rule is a ``free``,
+    ``duration_total``, ``published_day_total_from_duration`` (a total) or ``increment`` rule with its own elapsed range; the
+    cap of a banded garage may also be a published 24-hour price (a duration total from 0 to 1440 min). The clock window of a
+    first period is the window its rule states (ruling R-4b-12).
 
-    Returns {"values" (the seven tariff columns and ``tariff_tiers``, None where empty), "assumptions" (ids of
-    ``garages.ASSUMPTIONS``), "rule_ids" (the rules the values rest on), "sentence" (the tariff in words),
-    "rounding_stated", "window_stated", "tiers" (the ``garages.TariffTier`` list, empty for the single-window form),
-    "window_quotation" (the quotation of a stated window or None), "readings" (the readings the notes name: ``("cap", rule id,
-    cap period)`` for a cap whose day boundary is not stated and ``("days", rule id)`` for a window without stated days)}.
-    ``SystemExit`` for anything the columns would not express exactly: a rule that is not preferred, a rate rule that is
-    no rate or starts at a minute that no first period covers, a first period that does not begin at 0 min, a cap that is
-    not a cap, a window that crosses midnight in the single-window form, tiers that overlap or differ in their unit."""
+    Returns {"values" (the nine tariff columns, ``garage_first_period_start_h``, ``garage_first_period_end_h``,
+    ``tariff_tiers`` and ``tariff_duration_bands``, None where empty), "assumptions" (ids of ``garages.ASSUMPTIONS``),
+    "rule_ids" (the rules the values rest on), "sentence" (the tariff in words), "rounding_stated" (every rate, tier and
+    increment band states a started unit), "window_stated", "tiers" (the ``garages.TariffTier`` list, empty for the other
+    forms), "window_quotation" (the quotation of a stated window or None), "readings" (the readings the notes name: ``("cap",
+    rule id, cap period)`` for a cap or day total whose day boundary is not stated and ``("days", rule id)`` for a window
+    without stated days)}. ``SystemExit`` for anything the columns would not express exactly: a rule that is not preferred, a
+    rate rule that is no rate or starts at a minute that no first period covers, a first period that does not begin at 0 min,
+    a cap that is not a cap, a window that crosses midnight in the single-window form or for a first period, tiers that
+    overlap or differ in their unit, bands with a gap or an overlap."""
     garage = spec["garage_id"]
-    if bool(spec.get("tiers")) == bool(spec.get("rate")):
-        raise SystemExit(f"garage {garage}: a priced specification names exactly one of 'rate' (the single-window form) and "
-                         "'tiers' (the tiered form)")
-    tiered = bool(spec.get("tiers"))
+    forms = [name for name in ("rate", "tiers", "bands") if spec.get(name)]
+    if len(forms) != 1:
+        raise SystemExit(f"garage {garage}: a priced specification names exactly one of 'rate' (the single-window form), "
+                         "'tiers' (the tiered form) and 'bands' (the banded form)")
+    tiered, banded = forms[0] == "tiers", forms[0] == "bands"
     if tiered and spec.get("window") is not None:
         raise SystemExit(f"garage {garage}: a tiered specification has no window; the tiers carry the clock times")
     if tiered and spec.get("first_equals_rate"):
         raise SystemExit(f"garage {garage}: first_equals_rate belongs to the single-window form")
-    rate_rules = [_value_rule(rules, rule_id, garage, "tier" if tiered else "rate")
-                  for rule_id in (spec["tiers"] if tiered else (spec["rate"],))]
+    if banded and (spec.get("first") or spec.get("first_equals_rate")):
+        raise SystemExit(f"garage {garage}: a banded specification has no first period; its first band is the first period")
+    role = {"rate": "rate", "tiers": "tier", "bands": "band"}[forms[0]]
+    rate_rules = [_value_rule(rules, rule_id, garage, role)
+                  for rule_id in (spec["tiers"] if tiered else spec["bands"] if banded else (spec["rate"],))]
+    if banded:
+        return _encode_bands(spec, rules, rate_rules)
     values_of_rules = [_rate_rule_values(rate, garage) for rate in rate_rules]
     units = {unit for unit, _ in values_of_rules}
     if len(units) != 1:
@@ -472,6 +567,8 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
     rate_starts = [int(rate.get("elapsed_from_minutes") or 0) for rate in rate_rules]
     rule_ids = [rate["rule_id"] for rate in rate_rules]
     first_period_min = first_period_eur = None
+    first_window = None
+    readings = []
     if spec.get("first"):
         first = _value_rule(rules, spec["first"], garage, "first period")
         if (first["rule_type"] not in FIRST_PERIOD_RULE_TYPES or (first.get("elapsed_from_minutes") or 0) != 0
@@ -487,6 +584,9 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
                              f"{sorted(set(rate_starts))} min; one tier must follow the first period directly and none may "
                              "start elsewhere")
         first_period_min, first_period_eur = first_end, float(first["amount_eur"])
+        first_window = _first_period_window(first, garage)
+        if first_window is not None and not window_days_stated(first):
+            readings.append(("days", first["rule_id"]))
         rule_ids.insert(0, first["rule_id"])
     elif spec.get("first_equals_rate"):
         first = _value_rule(rules, spec["first_equals_rate"], garage, "first unit")
@@ -500,7 +600,6 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
         raise SystemExit(f"garage {garage}: a rate rule starts at {max(rate_starts)} min and no first period or first-unit "
                          "rule covers the start")
     cap = None
-    readings = []
     if spec.get("cap"):
         cap_rule = _value_rule(rules, spec["cap"], garage, "cap")
         cap = cap_eur(cap_rule)
@@ -527,24 +626,7 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
             raise SystemExit(f"garage {garage}: the tier rules {[rate['rule_id'] for rate in rate_rules]} make no valid "
                              f"tiers: {error}") from None
     else:
-        window_role = spec["window"]
-        if window_role == "rate":
-            window = rule_window(rate_rules[0])
-            if window is None:
-                raise SystemExit(f"garage {garage}: the window is to come from {rate_rules[0]['rule_id']}, which states "
-                                 "none; use window=None (ASSUMPTION P5) or name the page text that states it")
-            if not window_days_stated(rate_rules[0]):
-                readings.append(("days", rate_rules[0]["rule_id"]))
-        elif isinstance(window_role, tuple) and window_role[0] == "stated":
-            _, start_text, end_text, quotation = window_role
-            window = (_hours(start_text), _hours(end_text))
-            if not quotation or not 0.0 <= window[0] < window[1] <= 24.0:
-                raise SystemExit(f"garage {garage}: a stated window needs 0 <= start < end <= 24 and the quotation of the "
-                                 f"source that states it, found {window_role!r}")
-        elif window_role is None:
-            window = None
-        else:
-            raise SystemExit(f"garage {garage}: unknown window role {window_role!r}")
+        window, quotation = _single_window(spec, rate_rules[0], garage, readings)
     assumptions = []
     if spec.get("other_tiers"):
         assumptions.append("P3")
@@ -561,11 +643,14 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
     values = {"garage_hourly_rate_eur": None if tiered else round(float(amount) / unit * 60.0, 6),
               "garage_billing_unit_min": None if tiered else unit,
               "garage_first_period_min": first_period_min, "garage_first_period_eur": first_period_eur,
+              "garage_first_period_start_h": None if first_window is None else first_window[0],
+              "garage_first_period_end_h": None if first_window is None else first_window[1],
               "garage_daily_cap_eur": cap, "garage_fee_start_h": None if tiered else start,
-              "garage_fee_end_h": None if tiered else end, "tariff_tiers": tiers_text}
+              "garage_fee_end_h": None if tiered else end, "tariff_tiers": tiers_text, "tariff_duration_bands": None}
     sentence = ""
     if first_period_min is not None:
-        sentence += f"{_money(first_period_eur)} for the first {first_period_min} min, then "
+        arrival = "" if first_window is None else f" (arrival {_clock(first_window[0])}-{_clock(first_window[1])})"
+        sentence += f"{_money(first_period_eur)} for the first {first_period_min} min{arrival}, then "
     if tiered:
         sentence += (f"tiers per started {unit} min, the tier in force at the unit's start: "
                      + ", ".join(f"{_clock(tier.start_min / 60)}-{_clock(tier.end_min / 60)} {_money(tier.eur)}"
@@ -581,6 +666,88 @@ def encode_tariff(spec: dict, rules: dict) -> dict:
         sentence += f", charged {_clock(start)}-{_clock(end)}"
     return {"values": values, "assumptions": assumptions, "rule_ids": rule_ids, "sentence": sentence,
             "rounding_stated": rounding_stated, "window_stated": tiered or window is not None, "tiers": tiers,
+            "window_quotation": quotation, "readings": readings}
+
+
+def _single_window(spec: dict, window_rule: dict, garage: str, readings: list) -> tuple:
+    """(window or None, quotation or None) of the single-window and the banded form: from ``window_rule`` (``window="rate"``),
+    from a window that a source states in a page text (``window=("stated", ...)``) or none (``window=None``, ASSUMPTION P5);
+    a window without stated days adds the reading ``("days", rule id)``."""
+    window_role = spec["window"]
+    if window_role == "rate":
+        window = rule_window(window_rule)
+        if window is None:
+            raise SystemExit(f"garage {garage}: the window is to come from {window_rule['rule_id']}, which states none; use "
+                             "window=None (ASSUMPTION P5) or name the page text that states it")
+        if not window_days_stated(window_rule):
+            readings.append(("days", window_rule["rule_id"]))
+        return window, None
+    if isinstance(window_role, tuple) and window_role[0] == "stated":
+        _, start_text, end_text, quotation = window_role
+        window = (_hours(start_text), _hours(end_text))
+        if not quotation or not 0.0 <= window[0] < window[1] <= 24.0:
+            raise SystemExit(f"garage {garage}: a stated window needs 0 <= start < end <= 24 and the quotation of the "
+                             f"source that states it, found {window_role!r}")
+        return window, quotation
+    if window_role is None:
+        return None, None
+    raise SystemExit(f"garage {garage}: unknown window role {window_role!r}")
+
+
+def _encode_bands(spec: dict, rules: dict, band_rules: list) -> dict:
+    """:func:`encode_tariff` for the banded form (ruling R-4b-11): the bands from the band rules by their elapsed ranges, the
+    day cap, the fee window, ASSUMPTIONS P4 (an increment band without a stated rounding), P5 and P8."""
+    garage = spec["garage_id"]
+    entries = []
+    for rule in band_rules:
+        kind, eur, unit, start, end = _band_values(rule, garage)
+        entries.append((start, pg.DurationBand(start, end, kind, eur, unit), rule))
+    entries.sort(key=lambda entry: entry[0])
+    bands = [entry[1] for entry in entries]
+    ordered_rules = [entry[2] for entry in entries]
+    bands_text = pg.format_duration_bands(bands)
+    try:
+        pg.parse_duration_bands(bands_text)
+    except ValueError as error:
+        raise SystemExit(f"garage {garage}: the band rules {[rule['rule_id'] for rule in ordered_rules]} make no valid bands: "
+                         f"{error}") from None
+    rule_ids = [rule["rule_id"] for rule in ordered_rules]
+    readings = []
+    # a published day total from a duration whose day boundary the source does not state is read as a maximum per stay
+    for band, rule in zip(bands, ordered_rules):
+        if band.kind == "total" and UNSPECIFIED_CAP_PERIOD_MARKER in str(rule.get("cap_period")):
+            readings.append(("cap", rule["rule_id"], rule.get("cap_period")))
+    cap = None
+    if spec.get("cap"):
+        cap_rule = _value_rule(rules, spec["cap"], garage, "cap")
+        cap = cap_eur(cap_rule)
+        rule_ids.append(cap_rule["rule_id"])
+        if cap_boundary_unspecified(cap_rule):
+            readings.append(("cap", cap_rule["rule_id"], cap_rule.get("cap_period")))
+    window, quotation = _single_window(spec, ordered_rules[0], garage, readings)
+    increments = [rule for band, rule in zip(bands, ordered_rules) if band.kind == "increment"]
+    rounding_stated = all(rule.get("rounding") == "started_unit" for rule in increments)
+    assumptions = []
+    if spec.get("other_tiers"):
+        assumptions.append("P3")
+    if not rounding_stated:
+        assumptions.append("P4")
+    if window is None:
+        assumptions.append("P5")
+    if spec.get("other_caps"):
+        assumptions.append("P7")
+    assumptions.append("P8")
+    start, end = window if window is not None else (0.0, 24.0)
+    values = {"garage_hourly_rate_eur": None, "garage_billing_unit_min": None, "garage_first_period_min": None,
+              "garage_first_period_eur": None, "garage_first_period_start_h": None, "garage_first_period_end_h": None,
+              "garage_daily_cap_eur": cap, "garage_fee_start_h": start, "garage_fee_end_h": end, "tariff_tiers": None,
+              "tariff_duration_bands": bands_text}
+    sentence = f"bands over the stay duration in minutes: {bands_text}"
+    if cap is not None:
+        sentence += f", at most {_money(cap)} per day"
+    sentence += f", charged {_clock(start)}-{_clock(end)}"
+    return {"values": values, "assumptions": assumptions, "rule_ids": rule_ids, "sentence": sentence,
+            "rounding_stated": rounding_stated, "window_stated": window is not None, "tiers": [],
             "window_quotation": quotation, "readings": readings}
 
 
@@ -707,7 +874,7 @@ def build_garage(inputs: dict, spec: dict) -> dict:
     # the primary source of the tariff: the page of the (first) rate or tier rule, for a garage that is not priced the first
     # rule that shows the reason (a garage without any rule has the page of its position as its source)
     if priced:
-        primary = rules[spec["rate"] if spec.get("rate") else spec["tiers"][0]]
+        primary = rules[spec["rate"] if spec.get("rate") else (spec.get("tiers") or spec["bands"])[0]]
     else:
         primary = rules[mentioned[0]] if mentioned else None
     capacity, scope, other_capacity = _capacity(facility)
@@ -733,7 +900,7 @@ def build_garage(inputs: dict, spec: dict) -> dict:
     point = feature.geometry
     # ---- notes
     notes = [f"Package facility {spec['facility']}, feature {layer}:{match[1]}; position: {method}."]
-    facts = {"tiered": False, "cap": False, "readings": []}
+    facts = {"tiered": False, "banded": False, "cap": False, "readings": []}
     if priced:
         flags = {rules[rule_id].get("preferred_for_current_use") for rule_id in encoded["rule_ids"]}
         preferred = ("all marked preferred_for_current_use in the package" if flags == {True}
@@ -756,10 +923,11 @@ def build_garage(inputs: dict, spec: dict) -> dict:
             notes.append("ASSUMPTION P5: no preferred rule states charging times of the tariff, so the fee window is 0-24 h"
                          + (f" (opening hours, which are no charging hours: {hours})" if hours else "") + ".")
         if "P6" in encoded["assumptions"]:
-            notes.append("ASSUMPTION P6: units are counted from arrival and each started unit costs the rate of the tier in "
-                         "force at the unit's start; a first period, where published, is charged once and applies from "
-                         "arrival at every hour; a time of day outside every tier is free.")
+            notes.append(f"ASSUMPTION P6: {pg.ASSUMPTIONS['P6']}; a time of day outside every tier is free.")
             facts["tiered"] = True
+        if "P8" in encoded["assumptions"]:
+            notes.append(f"ASSUMPTION P8: {pg.ASSUMPTIONS['P8']}.")
+            facts["banded"] = True
         if "P7" in encoded["assumptions"]:
             caps = "; ".join(describe_rule(rules[rule_id]) for rule_id in spec["other_caps"])
             notes.append(f"ASSUMPTION P7: the day cap column holds one cap and applies to the whole stay; not applied: {caps}.")
@@ -770,7 +938,9 @@ def build_garage(inputs: dict, spec: dict) -> dict:
         undated = [reading[1] for reading in encoded["readings"] if reading[0] == "days"]
         if undated:
             notes.append(f"Reading: the window of {', '.join(undated)} states no days, so it is read as Monday to Friday.")
-        facts["cap"] = encoded["values"]["garage_daily_cap_eur"] is not None
+        # a garage counts as capped when it has a day cap or a published day total whose boundary is read as a stay maximum
+        facts["cap"] = (encoded["values"]["garage_daily_cap_eur"] is not None
+                        or any(reading[0] == "cap" for reading in encoded["readings"]))
         facts["readings"] = encoded["readings"]
         if spec.get("ignored"):
             notes.append("Not encoded: " + "; ".join(f"{describe_rule(rules[rule_id])} ({why})"
@@ -816,7 +986,7 @@ def build_garage(inputs: dict, spec: dict) -> dict:
            "tariff_rule_ids": ";".join(encoded["rule_ids"] if priced else mentioned) or None,
            "geometry_method": method, "geometry_source_url": geometry_url,
            "package_sha256": inputs["file"]["sha256"], "geometry": point}
-    for column in pg.TARIFF_COLUMNS + pg.TIER_COLUMNS:
+    for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
         row[column] = encoded["values"][column] if priced else None
     monthly = _monthly(inputs, spec["garage_id"])
     row.update({key: monthly.get(key) for key in ("monthly_eur", "monthly_source_url", "monthly_product")})
@@ -921,14 +1091,14 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
         print(f"[garages] priced garages resting on {label}: {count}/{priced} ({100.0 * share:.1f} %){warning}")
     print(f"[garages] rounding stated by the source {priced - counts.get('P4', 0)}/{priced}, ASSUMPTION P4 "
           f"{counts.get('P4', 0)}/{priced}; charging times stated {priced - counts.get('P5', 0)}/{priced}, ASSUMPTION P5 "
-          f"{counts.get('P5', 0)}/{priced}; tiered {summary['priced_tiered']}/{priced}; monthly product on "
-          f"{summary['with_monthly_product']} garages")
+          f"{counts.get('P5', 0)}/{priced}; tiered {summary['priced_tiered']}/{priced}; banded "
+          f"{summary['priced_banded']}/{priced}; monthly product on {summary['with_monthly_product']} garages")
     capped = [fact for fact in facts if fact["cap"]]
     cap_readings = sum(any(reading[0] == "cap" for reading in fact["readings"]) for fact in capped)
     window_rows = [fact for fact in facts if any(reading[0] == "days" for reading in fact["readings"])]
     print(f"[garages] reading: a day cap whose day boundary is not stated is read as a maximum per stay: {cap_readings}/"
-          f"{len(capped)} garages with a cap; a window without stated days is read as Monday to Friday: {len(window_rows)} "
-          "garage(s)")
+          f"{len(capped)} garages with a cap or a day total; a window without stated days is read as Monday to Friday: "
+          f"{len(window_rows)} garage(s)")
 
 
 def check_positions(frame: gpd.GeoDataFrame, municipalities: gpd.GeoDataFrame) -> None:
