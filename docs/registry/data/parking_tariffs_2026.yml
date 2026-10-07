@@ -55,7 +55,7 @@ acquisition:
     only states that phone parking costs the same as the ticket machine. No first period, day cap or free period is
     published for the street sections; the values of the v1 row came from the Aufbau-Gesellschaft garage Tiefgarage
     Rathaus and cover no street section, so none was carried over.
-    Spec Amendment D (2026-10-07; controller rulings R-4a-1 to R-4a-7 and R-D3-a) adds 13 rows and removes two. Added:
+    Spec Amendment D (2026-10-07; controller rulings R-4a-1 to R-4a-8 and R-D3-a) adds 13 rows and removes two. Added:
     the BgA car park bs_bga_willy_brandt_platz (BgA Entgeltordnung sec. 1(1), annex 6, sec. 2: 0.90 EUR per 30 min,
     minute-exact, no maximum stay, no day ticket; the package rule bs_bga_willy_brandt_platz_1 carries the same values;
     the fee window is ASSUMPTION F1, Mo-Sa 9-20 as at the directory-listed BgA car parks, because the city's car-park
@@ -94,7 +94,10 @@ acquisition:
     Bad Harzburg car parks, M2 where a source states a maximum stay (Bad Harzburg, Seesen), R2-a at the Goslar lots
     and the flagged rows and F1 for an assumed window; the notes of the Bad Harzburg rows must say that the package
     marks the ceiling rule not preferred and quote the OSM charge tag or say that there is none; the permit flag
-    must be false on exactly the six stated rows; the committed-data test pins the same). Removed:
+    must be false on exactly the two new rows that state it, bs_bga_willy_brandt_platz and
+    gs_parkplatz_klubgartenstrasse_zob (RESIDENT_PERMITS_NOT_VALID) and empty on every other new row; the committed-data
+    test test_committed_bga_car_parks_state_that_resident_permits_are_not_valid pins all six stated rows of the table,
+    the five BgA car parks and the ZOB car park, and an empty cell on every other). Removed:
     bs_bga_kannengiesserstrasse (a pocket park since April
     2026) and tu_international_house (merged into tu_campus_ost_langer_kamp, whose row is unchanged). Workplace class
     (SrV 2023): the rows of the municipalities of Landkreis Goslar take the county key 03153; bs_bga_willy_brandt_platz

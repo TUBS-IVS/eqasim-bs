@@ -21,7 +21,10 @@ used_by:
 - braunschweig.parking.zones_stage
 acquisition:
   method: committed
-  source: parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory (excluded rows); the regional evidence package of 2026-10-07 and the town pages named in the rows (the audit results of spec Amendment D)
+  source: >-
+    parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory
+    (excluded rows); the regional evidence package of 2026-10-07 and the town pages named in the rows (the audit
+    results of spec Amendment D)
   script: null
   notes: >-
     Universe: the cached output of data.spatial.municipalities of the main checkout (cache_bs_bpsmoke,
@@ -101,8 +104,9 @@ notes: >-
   Spec Amendment D (2026-10-07): status counts zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131
   rows). zoned: Braunschweig and Goslar (rows rewritten: Braunschweig names the BgA lots re-derived from the annex maps,
   the removed Kannengiesserstrasse, the six TU campus zones (the union of the v1 campus grounds and the detection
-  zones, ruling R-4a-8) with the Volkmaroder Strasse campus and the merged International House; Goslar the three car parks at 1 EUR/h and the cut-out of zone 1) and, new, Bad Harzburg 03153002
-  (five car parks), Seesen 03153012 (Am Markt) and Braunlage 03153016 (two car parks). no_paid_parking_known:
+  zones, ruling R-4a-8) with the Volkmaroder Strasse campus and the merged International House; Goslar the three car
+  parks at 1 EUR/h and the cut-out of zone 1) and, new, Bad Harzburg 03153002 (five car parks), Seesen 03153012 (Am
+  Markt) and Braunlage 03153016 (two car parks). no_paid_parking_known:
   Schoeningen 03154019 (source: the city's page 'Anfahrt und Parken'). not_audited with the audit result in the note:
   Clausthal-Zellerfeld 03153018 (paid parking confirmed, no site with geometry and short-stay tariff, so no zone),
   Koenigslutter am Elm 03154013 (P3 Niedernhof: paid status conflicting with disc parking), Wittingen 03151040,

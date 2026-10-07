@@ -106,7 +106,8 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   compares `parkingDistrict` with `residentParkingDistrict`. It acts inside a fee zone only (Z1 first) and only where
   the zone honours resident permits (ASSUMPTION R2-a: the tariff column and `ZoneTariff` field
   `resident_permits_valid`, valid by default on street and resident zones, never on a campus, false at the five BgA
-  car parks), after the home and employer-free rules and before the fee-window check. The flag switches off R2 only:
+  car parks and at the Goslar car park at the ZOB, `gs_parkplatz_klubgartenstrasse_zob`), after the home and
+  employer-free rules and before the fee-window check. The flag switches off R2 only:
   the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
   `schema_version` 3 since.
 - Overlaps of the release are settled by an explicit precedence in the curation (`PRECEDENCE_REGIONAL` in

@@ -29,9 +29,10 @@ no overlap) and ``validate_district_municipalities`` (every district municipalit
 the test-set marker. Since spec Amendment D the zone polygons of the regional evidence package of 2026-10-07 are checked
 as well: ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` polygons must be ``campus`` zones,
 ``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m``
-(``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table. Prints counts per zone type, geometry source (with the area mix), fee-window source and
-municipality, the register status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the
-districts per municipality; exits 1 on any violation, 0 otherwise.
+(``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table.
+Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the register
+status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the districts per municipality; exits
+1 on any violation, 0 otherwise.
 
 Usage::
 

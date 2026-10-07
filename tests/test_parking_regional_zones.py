@@ -443,8 +443,8 @@ def _v1_release(assembly) -> dict:
 
 #: zone id -> campus of the package layer (as written, with umlauts)
 CAMPUS_OF_ZONE = {"tu_zentralcampus": "Zentralcampus", "tu_campus_nord": "Campus Nord",
-                  "tu_campus_ost_beethovenstrasse": "Beethovenstraße", "tu_campus_ost_langer_kamp": "Langer Kamp",
-                  "tu_campus_volkmaroder_strasse": "Volkmaroder Straße", "tu_forschungsflughafen": "Forschungsflughafen"}
+                  "tu_campus_ost_beethovenstrasse": "Beethovenstra\u00dfe", "tu_campus_ost_langer_kamp": "Langer Kamp",
+                  "tu_campus_volkmaroder_strasse": "Volkmaroder Stra\u00dfe", "tu_forschungsflughafen": "Forschungsflughafen"}
 
 
 def _detection_union(campus: str):
@@ -500,6 +500,33 @@ def test_the_campus_zones_need_the_v1_zones_as_grounds(regional, package_dir):
     package = regional.load_package(directory, expected_sha256=sha256)
     with pytest.raises(SystemExit, match="need the v1 release polygons of .*tu_international_house"):
         regional.campus_zones(package, {})
+
+
+def _grounds(assembly) -> dict:
+    """The campus grounds as the step passes them to ``campus_zones``: the v1 release polygon and the v1 note of every
+    zone of ``TU_GROUNDS`` (the International House zone included)."""
+    release = _v1_release(assembly)
+    notes = {zone["zone_id"]: zone["digitising_note"] for zone in _v1_zones(assembly)}
+    return {zone_id: {"geometry": release[zone_id], "note": notes[zone_id]}
+            for zone_id in assembly.rz.TU_GROUND_ZONE_IDS}
+
+
+def test_a_v1_campus_note_without_the_closing_remark_is_refused_instead_of_kept_whole(assembly, regional, package_dir):
+    # The provenance of a campus outline is the v1 note up to its closing remark about the detection zones, which the
+    # detection zones supersede (ruling R-4a-8). A v1 note that no longer holds the remark would be kept whole and could
+    # claim more than the union states, so the step stops instead of keeping it silently.
+    directory, sha256 = package_dir
+    package = regional.load_package(directory, expected_sha256=sha256)
+    grounds = _grounds(assembly)
+    assert regional.campus_zones(package, grounds)  # the v1 notes of the fixture end in the remark: accepted
+    grounds["tu_campus_nord"]["note"] = "TU Braunschweig Campus Nord: OSM amenity=university way 4711 ('TU')."
+    with pytest.raises(SystemExit, match=r"tu_campus_nord.*closing remark"):
+        regional.campus_zones(package, grounds)
+    # the helper keeps the provenance only, without the remark and without the closing full stop
+    kept = regional._ground_provenance(V1_TU_NOTE.format(label="Zentralcampus"), "tu_zentralcampus")
+    assert kept.endswith("(OSM base 2026-09-29T05:10:00Z)") and "approximates the campus" not in kept
+    with pytest.raises(SystemExit, match="closing remark"):
+        regional._ground_provenance("a v1 note without the remark", "tu_zentralcampus")
 
 
 def test_the_langer_kamp_zone_keeps_the_v1_provenance_of_both_its_grounds(release):
@@ -1031,6 +1058,17 @@ def test_qa_table_compares_the_new_polygons_and_records_every_cut(release):
     for column in mq.MUNICIPAL_QA_COLUMNS:
         assert any(line.startswith(f"# {column}: ") for line in header), column
     assert "Spec Amendment D (the regional evidence package of 2026-10-07" in " ".join(header)
+    # the rulings of the step are R-4a-1 to R-4a-8 (the TU union is R-4a-8, task 4a fix round 1)
+    assert "controller rulings R-4a-1 to R-4a-8)" in " ".join(header)
+    # the Langer Kamp grounds hold the International House lots: buffered OSM amenity=parking ways, no university
+    # outline; the other campuses keep the label of their university outline
+    langer_kamp = qa.loc["tu_campus_ost_langer_kamp_release_vs_campus_grounds", "reference"]
+    assert "tu_international_house (two OSM amenity=parking ways buffered 5 m" in langer_kamp
+    assert langer_kamp.count("amenity=university") == 1
+    assert "tu_campus_ost_langer_kamp (OSM amenity=university outline)" in langer_kamp
+    assert qa.loc["tu_campus_ost_langer_kamp_detection_zones_vs_campus_grounds", "reference"] == langer_kamp
+    assert qa.loc["tu_zentralcampus_release_vs_campus_grounds", "reference"] == (
+        "the campus grounds: the v1 release polygon(s) of tu_zentralcampus (OSM amenity=university outline, 2026-09-29)")
 
 
 def test_the_qa_table_must_hold_rows_for_the_new_polygons(release):

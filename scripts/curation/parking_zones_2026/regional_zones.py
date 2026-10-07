@@ -405,10 +405,19 @@ def bga_zones(package: dict) -> dict:
 
 
 # ---------------------------------------------------------------- D1: TU campus zones
-def _ground_provenance(note: str) -> str:
+def _ground_provenance(note: str, zone_id: str) -> str:
     """The v1 provenance of a campus outline: the v1 note up to its closing remark about the detection zones
-    (``V1_CAMPUS_REMARK``), which the detection zones of the package supersede."""
-    return note.partition(V1_CAMPUS_REMARK)[0].rstrip().rstrip(".")
+    (``V1_CAMPUS_REMARK``), which the detection zones of the package supersede.
+
+    A v1 note without the remark raises ``SystemExit`` naming ``zone_id``: it would be kept whole, and a note that was
+    rewritten since the remark was written may claim more than the union of the grounds and the detection zones states.
+    The step stops instead of keeping it silently."""
+    provenance, separator, _ = note.partition(V1_CAMPUS_REMARK)
+    if not separator:
+        raise SystemExit(f"the v1 note of the campus grounds {zone_id} no longer holds the closing remark "
+                         f"{V1_CAMPUS_REMARK!r} that the detection zones supersede; the provenance of the campus "
+                         "outline cannot be separated from it, so read the v1 note and update V1_CAMPUS_REMARK")
+    return provenance.rstrip().rstrip(".")
 
 
 def campus_zones(package: dict, grounds: dict) -> dict:
@@ -463,7 +472,7 @@ def campus_zones(package: dict, grounds: dict) -> dict:
             body = (f": the paid car parks, where the tickets are checked, alone: {detection_text}. The zone has no campus "
                     f"grounds: {TU_NO_GROUNDS[zone_id]}. {outline_text}")
         else:
-            provenance = " / ".join(f"{ground_id}: {_ground_provenance(grounds[ground_id]['note'])}"
+            provenance = " / ".join(f"{ground_id}: {_ground_provenance(grounds[ground_id]['note'], ground_id)}"
                                     for ground_id in ground_ids)
             inside = detection_union.intersection(ground_union).area / detection_union.area
             body = (f" (ruling R-4a-8, owner decision 2026-10-07): the union of the campus grounds and the paid car parks. "
@@ -858,6 +867,25 @@ def _row(row_id: str, ags: str, subject: str, reference: str, subject_geometry, 
                    release_zone_id=release_zone_id)
 
 
+#: What a v1 zone of the campus grounds is, for the labels of the QA rows. A v1 zone is the OSM outline of the university
+#: unless it is listed here: the International House zone is no university outline, it is the two OSM amenity=parking
+#: ways of the car parks at the International House, buffered 5 m (ruling R-4a-8).
+UNIVERSITY_OUTLINE_KIND = "OSM amenity=university outline"
+GROUND_KINDS = {TU_MERGED_ZONE: "two OSM amenity=parking ways buffered 5 m, the car parks at the International House"}
+V1_OSM_DATE = "2026-09-29"
+
+
+def _grounds_reference(ground_ids: tuple) -> str:
+    """The label of the campus grounds of a campus zone in the QA rows: the v1 release polygons and what each is.
+    Campuses whose grounds are university outlines only keep one common kind; a campus with grounds of another kind
+    (Langer Kamp with the International House car parks) names the kind of every zone."""
+    prefix = "the campus grounds: the v1 release polygon(s) of "
+    if not any(ground_id in GROUND_KINDS for ground_id in ground_ids):
+        return f"{prefix}{', '.join(ground_ids)} ({UNIVERSITY_OUTLINE_KIND}, {V1_OSM_DATE})"
+    return prefix + " and ".join(f"{ground_id} ({GROUND_KINDS.get(ground_id, UNIVERSITY_OUTLINE_KIND)})"
+                                 for ground_id in ground_ids) + f", {V1_OSM_DATE}"
+
+
 def precedence_cuts(before: dict, after: dict, order: list, winners: set, minimum_m2: float = 0.5) -> list:
     """The precedence cuts that involve a zone of ``winners``: [(loser, winner, area in m2)], largest area first per
     loser. ``before`` holds the geometry of every zone before ``assemble_parking_zones.apply_precedence``, ``after`` the
@@ -933,8 +961,7 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame, municipalities: Optional[g
             1 for geometry in detection.loc[detection["campus_ascii"] == values["campus"], "geometry"]
             if polygons[zone_id].intersection(geometry).area > 0.0))
         if ground_union is not None:
-            grounds = (f"the campus grounds: the v1 release polygon(s) of {', '.join(TU_GROUNDS[zone_id])} (OSM "
-                       "amenity=university outline, 2026-09-29)")
+            grounds = _grounds_reference(TU_GROUNDS[zone_id])
             rows.append(_row(f"{zone_id}_release_vs_campus_grounds", BS_AGS, f"release polygon {zone_id}", grounds,
                              polygons[zone_id], mz._features(ground_union), release_zone_id=zone_id, note=(
                                  "R-4a-8: the campus grounds (the destination area, where the buildings are) lie in the "
@@ -1024,7 +1051,7 @@ def _slug(text: str) -> str:
 QA_INTRO_SUFFIX = (
     "Spec Amendment D (the regional evidence package of 2026-10-07, scripts/curation/parking_zones_2026/regional_zones.py "
     "via --regional-dir; owner-supplied package under raw_sources/municipal_2026-10-07/, gitignored, SHA-256 in the data "
-    "record parking_zones_2026; controller rulings R-4a-1 to R-4a-7). Sources: BgA car parks: " + BGA_PROVENANCE
+    "record parking_zones_2026; controller rulings R-4a-1 to R-4a-8). Sources: BgA car parks: " + BGA_PROVENANCE
     + ". TU campus zones (ruling R-4a-8), the detection zones of the TU campus maps: " + TU_PROVENANCE + "; the campus "
     "grounds: " + TU_GROUNDS_PROVENANCE + ". Goslar car parks at 1 EUR/h: " + GOSLAR_PROVENANCE + ". Bad Harzburg and "
     "Seesen: " + OSM_SITES_PROVENANCE + ". Braunlage: " + BRAUNLAGE_PROVENANCE + ". D1: every BgA zone is compared with "
@@ -1032,7 +1059,8 @@ QA_INTRO_SUFFIX = (
     "own); every TU campus zone, the union of the campus grounds (the v1 release polygons, the destination area) and the "
     "camera detection zones (the paid car parks), is compared with both parts and the detection zones with the grounds; "
     "the yellow parking areas of each campus map cross-check the georeference of its detection zones. D3: every "
-    "single-site zone is compared with the area within 50 m (ASSUMPTION C-a) of its source. Every precedence cut that involves a zone of the step is a row <loser>_cut_by_<winner> (R-4a-1), "
+    "single-site zone is compared with the area within 50 m (ASSUMPTION C-a) of its source. Every precedence cut that "
+    "involves a zone of the step is a row <loser>_cut_by_<winner> (R-4a-1), "
     "measured against the final polygon of the winner. The rows of a declared municipality exception compare the polygon "
     "with the municipality polygons of the pipeline.")
 #: The sentence of the municipal intro that precedes the column list; the regional paragraph goes before it.
