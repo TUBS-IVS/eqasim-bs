@@ -151,6 +151,7 @@ def _facilities() -> list:
         record("HE_STOBEN", "Stobenstrasse (Parkdeck)", ["stoben-fee"], 64, "spaces_listed_for_this_row"),
         record("HE_GROEPERN_STRASSE", "Groepern Strassenabschnitt", ["decoy-fee"], 18, "spaces_listed_for_this_row"),
         record("BS_PLAIN", "Parkhaus Plain", ["plain-1"], 300, "total", refs=["bs_parkhaeuser:2"]),
+        record("BS_None", "Parkhaus Flug / Ring (the ambiguous facility of the real package)", []),
     ]
 
 
@@ -695,6 +696,13 @@ def test_a_brochure_quotation_that_is_not_in_the_row_of_its_garage_is_refused(su
         sup.brochure_rules(loaded, ({**BROCHURE[0], **change},))
 
 
+def test_a_quotation_of_another_row_of_the_brochure_is_refused_even_when_the_capacity_fits(sup, supplement_package):
+    loaded = sup.load_supplement(supplement_package[0], expected_sha256=supplement_package[1])
+    loaded["facilities"]["HE_GROEPERN_TG_118"]["capacity"] = 17  # the capacity of the Edelhoefe row, so only the quotations can fail
+    with pytest.raises(SystemExit, match="is in the brochure text but not in the brochure row of 'Edelhoefe"):
+        sup.brochure_rules(loaded, ({**BROCHURE[0], "anchor": "Edelhoefe (Parkhaus)"},))
+
+
 def test_the_capacity_of_the_facility_must_be_in_the_brochure_row(sup, supplement_package):
     loaded = sup.load_supplement(supplement_package[0], expected_sha256=supplement_package[1])
     loaded["facilities"]["HE_GROEPERN_TG_118"]["capacity"] = 119
@@ -956,8 +964,8 @@ def test_a_specification_that_needs_the_supplement_stops_the_step_without_it(ste
 
 @pytest.mark.parametrize("change, message", [
     # the identity of the specification must be the supplement's: the Groepern garage is never the street section
-    ({"garage_id": "he_groepern", "facility": "HE_GROEPERN_STRASSE"}, "HE_GROEPERN_STRASSE"),
-    ({"garage_id": "bs_air", "facility": "BS_None"}, "BS_None"),
+    ({"garage_id": "he_groepern", "facility": "HE_GROEPERN_STRASSE"}, "specification names the facility HE_GROEPERN_STRASSE"),
+    ({"garage_id": "bs_air", "facility": "BS_None"}, "specification names the facility BS_None"),
     ({"garage_id": "bs_add1", "supplement": "BS_ADDITIONAL_9"}, "no facility BS_ADDITIONAL_9"),
 ])
 def test_a_specification_whose_facility_is_not_the_identity_of_the_supplement_is_refused(step, inputs, change, message):
