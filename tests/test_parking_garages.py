@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString, Point
 
+from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
 
@@ -304,3 +305,147 @@ def test_the_coverage_counts_garages_reasons_towns_assumptions_and_monthly_produ
     assert summary["with_monthly_product"] == 1
     # an unpriced garage's assumption (invalid anyway) never counts as a priced row's
     assert np.isclose(sum(summary["priced_by_assumption"].values()), 4)
+
+
+# --------------------------------------------------------------------------- QA table of the dataset and the monthly products
+
+
+def _qa_row(**changes) -> dict:
+    row = {"record_id": "garage_bs_eiermarkt", "record_type": "garage", "municipality_ags": "03101000",
+           "subject": "Parkhaus Eiermarkt", "garage_id": "bs_eiermarkt", "zone_ids": "", "decision": "priced",
+           "reason_code": "", "amount_eur": "", "count": "1", "evidence": "r-35;r-36;r-37",
+           "note": "day family 7 to 18 h"}
+    row.update(changes)
+    return row
+
+
+def _qa(*rows) -> pd.DataFrame:
+    return pd.DataFrame([{column: str(row.get(column, "")) for column in pq.GARAGE_QA_COLUMNS} for row in rows],
+                        columns=list(pq.GARAGE_QA_COLUMNS))
+
+
+def _qa_tables():
+    """A dataset of one priced garage with a monthly product and one unpriced garage, the matching QA rows and a tariff
+    table with one zone commuter product: 79 EUR / 21 working days = 3.76 EUR (ASSUMPTION P2)."""
+    garages = _frame(_row(monthly_eur=48.0, monthly_source_url="https://example.org/m", monthly_product="Dauerstellplatz"),
+                     _unpriced())
+    rows = [_qa_row(),
+            _qa_row(record_id="garage_bs_ring_center", subject="Parkhaus Ring-Center", garage_id="bs_ring_center",
+                    decision="not_priced", reason_code="banded_tariff"),
+            _qa_row(record_id="monthly_bs_eiermarkt", record_type="monthly_product", decision="used", amount_eur="48.0",
+                    evidence="r-m1", note="Dauerstellplatz, minimum term 2 months"),
+            _qa_row(record_id="monthly_bs_eiermarkt_plus", record_type="monthly_product", decision="not_used",
+                    reason_code="not_the_cheapest", amount_eur="60.0", evidence="r-m2", note="Tag/Nacht"),
+            _qa_row(record_id="monthly_bs_zone_ib", record_type="monthly_product", garage_id="", zone_ids="bs_zone_ib",
+                    decision="used", amount_eur="79.0", evidence="bs_zone_ib_30D", note="30-day ticket"),
+            _qa_row(record_id="candidate_hauptbahnhof_nord", record_type="candidate", garage_id="", decision="not_listed",
+                    reason_code="station_bahnpark", subject="Parkplatz Hauptbahnhof Nord", evidence="directory", note="x"),
+            _qa_row(record_id="candidate_wob_lots", record_type="candidate", garage_id="", municipality_ags="03103000",
+                    decision="not_listed", reason_code="no_published_tariff", count="24", subject="24 car parks",
+                    evidence="wob_parkplaetze", note="no tariff")]
+    tariffs = pd.DataFrame({"zone_id": ["bs_zone_ib", "bs_zone_ia"], "commuter_day_eur": [3.76, np.nan]})
+    return garages, _qa(*rows), tariffs
+
+
+def test_a_consistent_qa_table_passes_with_and_without_the_tariff_table():
+    garages, qa, tariffs = _qa_tables()
+    pq.validate_garage_qa(qa, garages)
+    pq.validate_garage_qa(qa, garages, tariffs)
+    assert pq.WORKING_DAYS_PER_MONTH == 21 and round(79 / pq.WORKING_DAYS_PER_MONTH, 2) == 3.76
+
+
+def _drop(record_id):
+    return lambda qa: qa[qa["record_id"] != record_id]
+
+
+def _set(target, /, **changes):
+    """An edit of the QA row whose record_id is ``target``."""
+    def edit(qa):
+        qa = qa.copy()
+        for column, value in changes.items():
+            qa.loc[qa["record_id"] == target, column] = value
+        return qa
+    return edit
+
+
+@pytest.mark.parametrize("edit, message", [
+    (_set("garage_bs_eiermarkt", record_type="garden"), "record_type 'garden' is not one of"),
+    (_set("garage_bs_eiermarkt", decision="used"), "decision 'used' is not one of"),
+    (_set("garage_bs_ring_center", reason_code=""), "reason_code '' is not one of"),
+    (_set("garage_bs_ring_center", reason_code="too_hard"), "reason_code 'too_hard' is not one of"),
+    (_set("garage_bs_eiermarkt", reason_code="banded_tariff"), "reason_code 'banded_tariff' on a row without a reason"),
+    (_set("monthly_bs_eiermarkt", reason_code="not_the_cheapest"), "on a row without a reason"),
+    (_set("monthly_bs_eiermarkt_plus", reason_code="no_such_reason"), "reason_code 'no_such_reason' is not one of"),
+    (_set("candidate_wob_lots", count="0"), "count '0' must be a positive whole number"),
+    (_set("candidate_wob_lots", count="two"), "must be a positive whole number"),
+    (_set("monthly_bs_eiermarkt_plus", amount_eur="-5"), "amount_eur '-5' must be a number >= 0"),
+    (_set("monthly_bs_eiermarkt", amount_eur=""), "a used product states its amount_eur"),
+    (_set("garage_bs_eiermarkt", evidence=""), "evidence is empty"),
+    (_set("garage_bs_eiermarkt", note=""), "note is empty"),
+    (_set("garage_bs_eiermarkt", subject=""), "subject is empty"),
+    (_set("garage_bs_eiermarkt", record_id="Garage 1"), "record_id uses other than"),
+    # against the dataset
+    (_drop("garage_bs_ring_center"), "garage 'bs_ring_center' of the dataset has no garage row"),
+    (_set("garage_bs_ring_center", garage_id="bs_unknown"), "garage row for 'bs_unknown', which the dataset does not hold"),
+    (_set("garage_bs_eiermarkt", decision="not_priced", reason_code="banded_tariff"),
+     "the QA decision is 'not_priced' but the dataset says priced True"),
+    (_set("garage_bs_ring_center", reason_code="free_period"),
+     "the QA reason_code is 'free_period' but the dataset says 'banded_tariff'"),
+    (_set("garage_bs_ring_center", municipality_ags="03103000"), "the QA municipality '03103000' differs"),
+    (_drop("monthly_bs_eiermarkt"), "has a monthly_eur but no used monthly product"),
+    (_set("monthly_bs_eiermarkt", amount_eur="50.0"),
+     "the used monthly product is '50.0' EUR but the dataset's monthly_eur is 48.0"),
+    (_set("monthly_bs_eiermarkt_plus", decision="used", reason_code=""), "has 2 used monthly products"),
+    (_set("monthly_bs_eiermarkt", garage_id="bs_ring_center"),
+     "the used monthly product is '48.0' EUR but the dataset's monthly_eur is None"),
+    (_set("monthly_bs_eiermarkt", garage_id="bs_nowhere"),
+     "used monthly product of 'bs_nowhere', which the dataset does not hold"),
+])
+def test_the_garage_qa_validator_rejects_a_table_that_contradicts_itself_or_the_dataset(edit, message):
+    garages, qa, tariffs = _qa_tables()
+    with pytest.raises(ValueError, match=message):
+        pq.validate_garage_qa(edit(qa), garages, tariffs)
+
+
+def test_a_duplicate_record_id_and_a_second_garage_row_are_rejected():
+    garages, qa, _ = _qa_tables()
+    doubled = pd.concat([qa, qa[qa["record_id"] == "garage_bs_eiermarkt"]], ignore_index=True)
+    with pytest.raises(ValueError) as error:
+        pq.validate_garage_qa(doubled, garages)
+    assert "duplicate record_id(s) ['garage_bs_eiermarkt']" in str(error.value)
+    assert "garage 'bs_eiermarkt' has several garage rows" in str(error.value)
+
+
+@pytest.mark.parametrize("edit, message", [
+    (_set("monthly_bs_zone_ib", amount_eur="84.0"),
+     "zone 'bs_zone_ib': commuter_day_eur is 3.76 but the used product 'monthly_bs_zone_ib' gives 84.0 EUR / 21 working "
+     "days = 4.00 EUR"),
+    (_set("monthly_bs_zone_ib", zone_ids="bs_zone_ia"), "zone 'bs_zone_ia': commuter_day_eur is nan but"),
+    (_set("monthly_bs_zone_ib", zone_ids="bs_zone_ib;bs_zone_xx"), "zone 'bs_zone_xx' is not in the tariff table"),
+    (_set("monthly_bs_zone_ib", decision="not_used", reason_code="not_the_cheapest"),
+     "zone 'bs_zone_ib' has a commuter_day_eur that no used monthly product of the QA table explains"),
+])
+def test_the_commuter_day_amounts_of_the_tariff_table_are_the_monthly_amount_over_21_working_days(edit, message):
+    garages, qa, tariffs = _qa_tables()
+    with pytest.raises(ValueError, match=message):
+        pq.validate_garage_qa(edit(qa), garages, tariffs)
+
+
+def test_the_qa_coverage_counts_products_and_candidates_by_reason():
+    garages, qa, _ = _qa_tables()
+    assert pq.qa_coverage(qa) == {
+        "monthly_used": 2, "monthly_not_used": 1, "monthly_not_used_by_reason": {"not_the_cheapest": 1},
+        "candidates": 25, "candidates_by_reason": {"no_published_tariff": 24, "station_bahnpark": 1}}
+
+
+def test_the_qa_table_loads_from_a_documented_csv(tmp_path):
+    garages, qa, _ = _qa_tables()
+    path = tmp_path / "qa.csv"
+    path.write_text("# QA of the garage dataset\n# garage_id: the id\n" + qa.to_csv(index=False, lineterminator="\n"),
+                    encoding="utf-8")
+    loaded = pq.load_garage_qa(path)
+    assert list(loaded.columns) == list(pq.GARAGE_QA_COLUMNS) and len(loaded) == len(qa)
+    pq.validate_garage_qa(loaded, garages)
+    path.write_text("# QA\nrecord_id,record_type\nx,garage\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="columns differ from the documented layout"):
+        pq.load_garage_qa(path)
