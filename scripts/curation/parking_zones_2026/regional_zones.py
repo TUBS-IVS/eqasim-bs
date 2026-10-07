@@ -243,7 +243,30 @@ def _ascii(text) -> str:
     return cc.ascii_transliteration(str(text).translate(TYPOGRAPHY_TO_ASCII))
 
 
-def _read_zip_layer(zip_path: Path, layer: str) -> gpd.GeoDataFrame:
+def verify_package_file(directory, expected_sha256: Optional[str] = None) -> tuple:
+    """(path, SHA-256) of the owner's package in ``directory``: it must exist as ``PACKAGE_FILE`` with exactly
+    ``PACKAGE_SHA256`` (or ``expected_sha256``, for a synthetic test package), else ``SystemExit``: a changed package is
+    never read. Shared by every curation step that reads the package (zones and garages)."""
+    path = Path(directory) / PACKAGE_FILE
+    if not path.is_file():
+        raise SystemExit(f"{path} missing: copy the owner's package {PACKAGE_FILE} unchanged into {path.parent}")
+    sha256 = expected_sha256 or PACKAGE_SHA256
+    actual = mz.file_sha256(path)
+    if actual != sha256:
+        raise SystemExit(f"{path}: SHA-256 {actual} is not the recorded {sha256} (data record parking_zones_2026); a "
+                         "changed package is never read")
+    return path, actual
+
+
+def read_zip_json(zip_path: Path, member: str):
+    """The JSON document ``member`` (a path inside the zip, UTF-8) of the package, read in place."""
+    with zipfile.ZipFile(zip_path) as archive:
+        return json.loads(archive.read(member).decode("utf-8"))
+
+
+def read_zip_layer(zip_path: Path, layer: str) -> gpd.GeoDataFrame:
+    """The GeoPackage layer of the package (GDAL ``/vsizip/``, no extracted copy): EPSG:25832, not empty, every geometry
+    valid and non-empty, else ``SystemExit``; nothing is repaired."""
     frame = gpd.read_file(f"/vsizip/{zip_path.resolve().as_posix()}/{GPKG_MEMBER}", layer=layer)
     if frame.crs is None or frame.crs.to_epsg() != 25832:
         raise SystemExit(f"{zip_path.name} layer {layer}: CRS {frame.crs} is not EPSG:25832, as the package states")
@@ -335,18 +358,10 @@ def load_package(directory, expected_sha256: Optional[str] = None) -> dict:
     "goslar" (each a GeoDataFrame indexed by the record key), "rules" (rule_id -> rule), "ledger" (the per-layer
     accounting, filled by the selection functions)}.
     """
-    path = Path(directory) / PACKAGE_FILE
-    if not path.is_file():
-        raise SystemExit(f"{path} missing: copy the owner's package {PACKAGE_FILE} unchanged into {path.parent}")
-    sha256 = expected_sha256 or PACKAGE_SHA256
-    actual = mz.file_sha256(path)
-    if actual != sha256:
-        raise SystemExit(f"{path}: SHA-256 {actual} is not the recorded {sha256} (data record parking_zones_2026); a "
-                         "changed package is never read")
-    layers = {layer: _read_zip_layer(path, layer) for layer in PACKAGE_LAYERS}
+    path, actual = verify_package_file(directory, expected_sha256)
+    layers = {layer: read_zip_layer(path, layer) for layer in PACKAGE_LAYERS}
     _check_attributes(layers)
-    with zipfile.ZipFile(path) as archive:
-        rules = {rule["rule_id"]: rule for rule in json.loads(archive.read(RULES_MEMBER).decode("utf-8"))["rules"]}
+    rules = {rule["rule_id"]: rule for rule in read_zip_json(path, RULES_MEMBER)["rules"]}
     package = {"file": {"file": path.name, "sha256": actual, "bytes": path.stat().st_size},
                "bga": _by_key(layers["bs_bga_parkflaechen"], "facility_id"),
                "abandoned": _by_key(layers["referenz_bs_aufgegeben"], "facility_id"),
