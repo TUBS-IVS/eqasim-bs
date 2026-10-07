@@ -623,8 +623,11 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame) -> list:
         label = (str(code) if pd.notna(code) and str(code).strip() else
                  f"(no code: {cc.ascii_transliteration(str(description))})")
         per_area.append(f"{label} {goslar.intersection(geometry).area:.0f} of {geometry.area:.0f} m2")
+    # spec Amendment D3 cuts the Goslar car parks at 1 EUR/h out of the polygon: it is then no longer 'unchanged'
+    state = ("centre approximation, unchanged" if context.get("regional") is None else
+             "centre approximation; the single-site car parks of spec Amendment D3 are cut out")
     rows.append(_row(f"{GOSLAR_ZONE}_vs_resident_areas", GS_AGS,
-                     f"release polygon {GOSLAR_ZONE} (centre approximation, unchanged)",
+                     f"release polygon {GOSLAR_ZONE} ({state})",
                      "the resident parking areas of the Goslar service (layer resident_parking_zones)", goslar,
                      list(resident.geometry), release_zone_id=GOSLAR_ZONE, note=(
                          f"C4, {GOSLAR_PROVENANCE}; cross-check only, no geometry or tariff change. Overlap per area: "
@@ -641,13 +644,14 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame) -> list:
     return rows
 
 
-def write_qa_table(path, rows: list) -> None:
-    """The municipal QA table with its header: the intro and one '# <column>: <definition>' line per column."""
+def write_qa_table(path, rows: list, intro: str = QA_INTRO) -> None:
+    """The municipal QA table with its header: the intro (``QA_INTRO``, extended by the regional step) and one
+    '# <column>: <definition>' line per column."""
     from braunschweig.parking import municipal_zone_qa as mq
 
     if set(QA_COLUMN_GLOSSARY) != set(mq.MUNICIPAL_QA_COLUMNS):
         raise SystemExit("QA_COLUMN_GLOSSARY and MUNICIPAL_QA_COLUMNS differ")
-    header = [f"# {line}" for line in textwrap.wrap(QA_INTRO, QA_HEADER_WIDTH, break_on_hyphens=False)]
+    header = [f"# {line}" for line in textwrap.wrap(intro, QA_HEADER_WIDTH, break_on_hyphens=False)]
     header += [f"# {column}: {QA_COLUMN_GLOSSARY[column]}" for column in mq.MUNICIPAL_QA_COLUMNS]
     table = pd.DataFrame(rows, columns=list(mq.MUNICIPAL_QA_COLUMNS))
     text = "\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n")

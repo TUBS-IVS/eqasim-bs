@@ -65,6 +65,27 @@ zone file, and the step fails when a polygon of that file would need the loader'
 (``municipal_zones.check_tariff_rows``). The licence and attribution members then name the municipal sources (ruling
 R-C1). Without ``--municipal-dir`` the output is the previous release byte for byte.
 
+Parking cost zones v2, spec Amendment D (the owner's regional evidence package of 2026-10-07, issue #436, rulings
+R-4a-1 to R-4a-7; ``--regional-dir``, the step ``regional_zones.py``, which builds on ``--municipal-dir``): after the
+municipal step and before the precedence, ``apply_regional_package`` (D1) re-derives the four remaining BgA car parks
+from the package layer bs_bga_parkflaechen (geometry_source ordinance_map), adds bs_bga_willy_brandt_platz and removes
+bs_bga_kannengiesserstrasse (a pocket park since April 2026); replaces the six TU campus polygons by the union of the
+red camera detection zones of each campus (geometry_source campus_detection_zones, no provenance column; the nested
+boundaries of Beethovenstrasse are recorded and the outer one is used; the International House zone is merged into
+Langer Kamp; Bevenroder Strasse is not zoned because no GB3 page states ticketing; Volkmaroder Strasse is new); and
+adds the eleven single paid sites of D3 (Bad Harzburg, Seesen, Braunlage and the three Goslar 1 EUR/h car parks,
+geometry_source single_site_buffered, provenance ``site_buffer_m``), each the area within 50 m (ASSUMPTION C-a) of a
+polygon, a street line or a source point, split by the nearer source where two areas overlap, ties to the higher
+tariff. The precedence is ``PRECEDENCE_REGIONAL`` (campus zones first, then the BgA lots, the D3 sites and the v1
+order), ``enforce_exact_cuts`` subtracts every winner once more after the simplification (the 0.5 m simplification of
+a cut zone can move its hole ring back across the winner), ``record_regional_cuts`` stores every cut as a QA row, and
+``check_municipality_containment`` accepts the declared exceptions of ``regional_zones.CONTAINMENT_EXCEPTIONS`` (the
+Bad Harzburg Grossparkplatz straddles the boundary of the unincorporated area Harz). The package is read straight
+from its zip (SHA-256 pinned, an invalid geometry stops the step, nothing is repaired, the per-layer accounting is
+printed); ``--regional-tariffs`` checks the new tariff rows against the package's ``tariff_rules.json``; the QA table
+gets the rows of ``regional_zones.qa_rows``; the licence and attribution members name the regional sources. Without
+``--regional-dir`` the output is the previous release byte for byte.
+
 Usage (from the repository root)::
 
     python scripts/curation/parking_zones_2026/assemble_parking_zones.py --ia-ib bs_zone_map_ia_ib.geojson \
@@ -83,7 +104,9 @@ Usage (from the repository root)::
          --paid-share-out eqasim-data/data/braunschweig/parking/parking_paid_share_2026.csv.gz]
         [--municipal-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01 \
          --municipal-qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_municipal_qa.csv \
-         --municipal-tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv]
+         --municipal-tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv \
+         --regional-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07 \
+         --regional-tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv]
 """
 from __future__ import annotations
 
@@ -110,6 +133,7 @@ from braunschweig.parking import supply_variants as sv  # noqa: E402
 from braunschweig.parking import zone_geometry as zg  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 import municipal_zones as mz  # noqa: E402  (the curation directory, like curation_common)
+import regional_zones as rz  # noqa: E402
 
 DIGITISED_ON = "2026-09-29"
 LICENSE = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, or a georeference "
@@ -134,6 +158,16 @@ PRECEDENCE = ["bs_bga_markthalle", "bs_bga_kannengiesserstrasse", "bs_bga_an_der
               "bs_parkscheininsel_mentestrasse", "bs_zone_ia", "bs_zone_ib", "bs_resident_stadthalle_132",
               "tu_zentralcampus", "tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
               "tu_forschungsflughafen"]
+#: Precedence of the release with the regional evidence package of 2026-10-07 (spec Amendment D, ruling R-4a-1): the TU
+#: campus zones take precedence over the street zones where they overlap (TU-managed grounds), then the specific zones
+#: (the BgA car parks, the single paid sites of D3, the Parkscheininseln, the Stadthalle resident zone) are cut out of the
+#: area zones (Ia, Ib, gs_altstadt_zone1 and every zone not listed, in insertion order). Zones that are absent are skipped.
+PRECEDENCE_REGIONAL = (list(rz.TU_ZONE_IDS) + list(rz.BGA_ZONE_IDS) + list(rz.D3_ZONE_IDS)
+                       + ["bs_parkscheininsel_marthastrasse_koernerstrasse",
+                          "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse",
+                          "bs_zone_ia", "bs_zone_ib", "bs_resident_stadthalle_132"])
+#: The zones the regional step adds or re-derives; the zones they take area from are recorded in the QA table.
+REGIONAL_ZONE_IDS = frozenset(rz.TU_ZONE_IDS) | frozenset(rz.BGA_ZONE_IDS) | frozenset(rz.D3_ZONE_IDS)
 MINIMUM_PART_M2 = 20.0
 SIMPLIFY_M = 0.5
 MINIMUM_INSIDE_SHARE = 0.99
@@ -252,16 +286,18 @@ BS_PIECE_DIAGNOSIS = ("the ParkGO annex outlines are a plausibility check and a 
 def zone_record(zone_id, ags, geometry, geometry_source, source_url, note, *, walk_m=None, osm_timestamp=None,
                 source_date=DIGITISED_ON, digitised_on=DIGITISED_ON, minimum_part_m2=MINIMUM_PART_M2,
                 supply_walk_m=None, paid_share_threshold=None, minimum_usable_spaces=None, section_buffer_m=None,
-                reconstructed_section_m2=None) -> dict:
+                reconstructed_section_m2=None, site_buffer_m=None, containment_exception=None) -> dict:
     """One zone of the release as the assembly handles it (keys starting with '_' are not written; the provenance
     keys of a rule-based source, ``pz.RULE_PROVENANCE_COLUMNS``, only appear in the file when such a zone exists, and
-    ``reconstructed_section_m2`` only when a zone sets it)."""
+    ``reconstructed_section_m2`` only when a zone sets it). ``containment_exception`` is (AGS, reason) of a zone whose
+    polygon lies in another municipality than its tariff row names (``check_municipality_containment``)."""
     return {"zone_id": zone_id, "_ags": ags, "geometry": geometry, "geometry_source": geometry_source,
             "source_url": source_url, "source_date": source_date, "digitised_on": digitised_on, "digitising_note": note,
             "unavoidable_walk_m": walk_m, "osm_timestamp": osm_timestamp, "supply_walk_m": supply_walk_m,
             "paid_share_threshold": paid_share_threshold, "minimum_usable_spaces": minimum_usable_spaces,
-            "section_buffer_m": section_buffer_m, pz.RECONSTRUCTED_SECTION_COLUMN: reconstructed_section_m2,
-            "_minimum_part_m2": minimum_part_m2}
+            "section_buffer_m": section_buffer_m, "site_buffer_m": site_buffer_m,
+            pz.RECONSTRUCTED_SECTION_COLUMN: reconstructed_section_m2, "_minimum_part_m2": minimum_part_m2,
+            "_containment_exception": containment_exception}
 
 
 def last_failure(directory, ags: str) -> str:
@@ -369,6 +405,14 @@ def erosion_replacement(zone_id, ags, url, what, erosion: dict) -> Optional[dict
         "local MATSim scenario because the fee request of that day failed with HTTP 504); the tariff row is unchanged."))
 
 
+def precedence_order(zones: list, precedence=PRECEDENCE) -> list:
+    """The zone ids in the order ``apply_precedence`` lets them take their area: the ids of ``precedence`` that are
+    present first, then every other zone in insertion order."""
+    present = {zone["zone_id"] for zone in zones}
+    return [zone_id for zone_id in precedence if zone_id in present] + [
+        zone["zone_id"] for zone in zones if zone["zone_id"] not in precedence]
+
+
 def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
     """Every zone in ``precedence`` order (then insertion order) takes its area; later zones lose the overlap.
 
@@ -381,11 +425,8 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
     kept, trims); raises when a zone is emptied, except an OSM rule core (``OPTIONAL_RULE_SOURCES``).
     """
     by_id = {z["zone_id"]: z for z in zones}
-    order = list(precedence) + [z["zone_id"] for z in zones if z["zone_id"] not in precedence]
     taken, trims = None, []
-    for zone_id in order:
-        if zone_id not in by_id:
-            continue
+    for zone_id in precedence_order(zones, precedence):
         zone = by_id[zone_id]
         geometry = zone["geometry"].buffer(0)
         rule_zone = zone["geometry_source"] in RULE_GEOMETRY_SOURCES
@@ -574,6 +615,148 @@ def finish_municipal_zones(zones: list, context: dict) -> None:
                                                   for zone_id in context["braunschweig"]))
 
 
+def apply_regional_package(zones: list, package: dict) -> tuple:
+    """Spec Amendment D on the zone records after the municipal step, before the precedence (``rz.load_package`` gives
+    ``package``).
+
+    D1: the four BgA lots that stay take the package polygons (geometry_source ordinance_map), ``bs_bga_willy_brandt_
+    platz`` is added after them and ``bs_bga_kannengiesserstrasse`` removed; the six TU campus zones become the union of
+    the detection zones of their campus (geometry_source campus_detection_zones), ``tu_campus_volkmaroder_strasse`` is
+    added after ``tu_forschungsflughafen`` and ``tu_international_house`` is merged into the Langer Kamp campus; D3: the
+    single paid sites become zones of their own (geometry_source single_site_buffered), the Goslar car parks after
+    ``gs_altstadt_zone1``, the other towns at the end. A missing v1 zone raises. Returns (zones, context for ``rz.qa_rows``:
+    the package, the v1 geometries the step replaces or removes, the new geometries, the split of the sites, the zone
+    municipalities and the declared containment exceptions).
+    """
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    replaced = list(rz.BGA_ZONE_IDS[:-1]) + [rz.BGA_ABANDONED_ZONE, rz.TU_MERGED_ZONE] + [
+        zone_id for zone_id in rz.TU_ZONE_IDS if zone_id != "tu_campus_volkmaroder_strasse"] + [mz.GOSLAR_ZONE]
+    missing = [zone_id for zone_id in replaced if zone_id not in by_id]
+    if missing:
+        raise SystemExit(f"the regional step needs the v1 zones {missing}")
+    v1 = {zone_id: by_id[zone_id]["geometry"] for zone_id in replaced}
+    bga, campus, sites = rz.bga_zones(package), rz.campus_zones(package), rz.single_sites(package)
+    evidence = rz.tariff_evidence(package)
+    ranking = sorted(sites, key=lambda zone_id: (-evidence[zone_id]["hourly_rate_eur"], zone_id))
+    split = rz.split_single_sites({zone_id: site["geometry"] for zone_id, site in sites.items()}, ranking)
+    contested = {zone_id: round(float(area.area), 1) for zone_id, area in split["contested"].items() if not area.is_empty}
+    print(f"single-site split: {len(sites)} zones, {sum(1 for area in contested.values() if area > 0)} with a contested "
+          f"area ({contested or 'none'}), {split['samples']} boundary samples")
+
+    def bga_record(zone_id):
+        values = bga[zone_id]
+        return zone_record(zone_id, rz.BS_AGS, values["geometry"], "ordinance_map", values["source_url"], values["note"],
+                           source_date=rz.REGIONAL_DIGITISED_ON, digitised_on=rz.REGIONAL_DIGITISED_ON)
+
+    def campus_record(zone_id):
+        values = campus[zone_id]
+        return zone_record(zone_id, rz.BS_AGS, values["geometry"], pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
+                           values["source_url"], values["note"], source_date=rz.REGIONAL_DIGITISED_ON,
+                           digitised_on=rz.REGIONAL_DIGITISED_ON)
+
+    def site_record(zone_id):
+        site = sites[zone_id]
+        return zone_record(zone_id, site["ags"], split["zones"][zone_id], pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE,
+                           site["source_url"], site["note"], source_date=rz.REGIONAL_DIGITISED_ON,
+                           digitised_on=rz.REGIONAL_DIGITISED_ON, site_buffer_m=rz.SITE_BUFFER_M,
+                           containment_exception=rz.CONTAINMENT_EXCEPTIONS.get(zone_id))
+
+    goslar_lots = [zone_id for zone_id, site in sites.items() if site["ags"] == rz.GS_AGS]
+    other_sites = [zone_id for zone_id in sites if zone_id not in goslar_lots]
+    result = []
+    for zone in zones:
+        zone_id = zone["zone_id"]
+        if zone_id in (rz.BGA_ABANDONED_ZONE, rz.TU_MERGED_ZONE):
+            continue
+        result.append(bga_record(zone_id) if zone_id in bga else campus_record(zone_id) if zone_id in campus else zone)
+        if zone_id == "bs_bga_suedstrasse":
+            result.append(bga_record("bs_bga_willy_brandt_platz"))
+        elif zone_id == "tu_forschungsflughafen":
+            result.append(campus_record("tu_campus_volkmaroder_strasse"))
+        elif zone_id == mz.GOSLAR_ZONE:
+            result += [site_record(site_id) for site_id in goslar_lots]
+    result += [site_record(site_id) for site_id in other_sites]
+    context = {"package": package, "v1": v1, "bga": bga, "campus": campus, "sites": sites, "split": split,
+               "ranking": ranking, "evidence": evidence, "ags": {zone["zone_id"]: zone["_ags"] for zone in result},
+               "exceptions": {zone_id: rz.CONTAINMENT_EXCEPTIONS[zone_id] for zone_id in sites
+                              if zone_id in rz.CONTAINMENT_EXCEPTIONS}}
+    return result, context
+
+
+#: Overlap, m2, below which a zone no longer needs the exact cut of ``enforce_exact_cuts``.
+EXACT_CUT_EPSILON_M2 = 1e-6
+
+
+def enforce_exact_cuts(zones: list, winners=REGIONAL_ZONE_IDS, precedence=PRECEDENCE_REGIONAL) -> list:
+    """After ``apply_precedence``: every zone that still overlaps a zone of ``winners`` (which precedes it) loses exactly
+    that overlap; returns [(loser, winner, m2 removed)] (the overlap before the exact cut, largest first per loser).
+
+    ``apply_precedence`` simplifies a v1 zone AFTER its cut, so the edge of the hole it leaves around a winner is
+    simplified again, from another start vertex of the ring, and can move by up to ``SIMPLIFY_M`` away from the winner's
+    edge: Ia overlapped the detailed Suedstrasse lot by 6.75 m2 in the first run of the regional release, above the 1 m2
+    tolerance of the loader. Subtracting the winner's FINAL polygon once more makes the two edges the same ring of
+    vertices (the same coordinates round alike in the file); parts below the zone's minimum part size are dropped as in
+    the precedence."""
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    order = precedence_order(zones, precedence)
+    removed = []
+    for position, loser_id in enumerate(order):
+        loser = by_id[loser_id]
+        for winner_id in order[:position]:
+            overlap = float(loser["geometry"].intersection(by_id[winner_id]["geometry"]).area)
+            if winner_id in winners and overlap > EXACT_CUT_EPSILON_M2:
+                loser["geometry"] = cc.largest_parts(loser["geometry"].difference(by_id[winner_id]["geometry"]).buffer(0),
+                                                     loser["_minimum_part_m2"])
+                removed.append((loser_id, winner_id, overlap))
+    if removed:
+        print("exact cuts after the simplification (loser <- winner, m2 still overlapping): " + "; ".join(
+            f"{loser} <- {winner} {area:.3f}" for loser, winner, area in removed))
+    return removed
+
+
+def record_regional_cuts(context: dict, before: dict, zones: list, precedence=PRECEDENCE_REGIONAL) -> None:
+    """After ``apply_precedence``: the precedence cuts that involve a zone of the regional step, printed and stored in
+    ``context`` ("before": the geometry of every zone before the cuts, "cuts": [(loser, winner, m2)]). ``zones`` is the
+    result of ``apply_precedence`` and ``before`` maps every zone id to its geometry before it."""
+    after = {zone["zone_id"]: zone["geometry"] for zone in zones}
+    order = precedence_order([{"zone_id": zone_id} for zone_id in before], precedence)
+    cuts = rz.precedence_cuts(before, after, order, set(REGIONAL_ZONE_IDS))
+    context["before"], context["cuts"] = before, cuts
+    print("regional precedence cuts (loser <- winner, m2): " + ("; ".join(
+        f"{loser} <- {winner} {area:.1f}" for loser, winner, area in cuts) or "none"))
+
+
+def check_municipality_containment(zones: list, municipalities: gpd.GeoDataFrame) -> None:
+    """Every zone lies at least ``MINIMUM_INSIDE_SHARE`` inside its municipality (EPSG:25832 polygons indexed by AGS),
+    else ``SystemExit``; the note of every zone must be ASCII. A zone with a declared ``_containment_exception`` (AGS,
+    reason: its outline lies in another municipality than its tariff row names, and the 50 m area around it crosses the
+    boundary) must lie that share inside its own municipality and the declared one together; all three shares are
+    printed with the reason, so that an exception is never silent."""
+    exceptions = 0
+    for zone in zones:
+        area = zone["geometry"].area
+        own = municipalities.loc[zone["_ags"], "geometry"]
+        inside = zone["geometry"].intersection(own).area / area
+        line = (f"{zone['zone_id']:58s} {zone['geometry_source']:22s} {area:10.0f} m2  inside {zone['_ags']}: "
+                f"{inside:.4f}")
+        exception = zone.get("_containment_exception")
+        if exception is not None:
+            ags, reason = exception
+            declared = zone["geometry"].intersection(municipalities.loc[ags, "geometry"]).area / area
+            together = zone["geometry"].intersection(unary_union([own, municipalities.loc[ags, "geometry"]])).area / area
+            line += (f"; DECLARED EXCEPTION: inside {ags} {declared:.4f}, inside both {together:.4f} ({reason})")
+            if together < MINIMUM_INSIDE_SHARE:
+                raise SystemExit(f"{zone['zone_id']} lies only {together:.3f} inside its municipality {zone['_ags']} and "
+                                 f"the declared municipality {ags} together")
+            exceptions += 1
+        elif inside < MINIMUM_INSIDE_SHARE:
+            raise SystemExit(f"{zone['zone_id']} lies only {inside:.3f} inside its municipality {zone['_ags']}")
+        print(line)
+        zone["digitising_note"].encode("ascii")
+    print(f"municipality containment: {len(zones) - exceptions}/{len(zones)} zones inside their own municipality, "
+          f"{exceptions} declared exception(s)")
+
+
 def zone_frame(zones: list) -> gpd.GeoDataFrame:
     """The zones as the committed frame: provenance columns, plus the provenance columns of every rule-based source
     that has a zone (``pz.RULE_PROVENANCE_COLUMNS``) and ``reconstructed_section_m2`` when a zone sets it (so a
@@ -602,9 +785,22 @@ ATTRIBUTION_MUNICIPAL_SUFFIX = (
     "Wolfsburg tariff zones: " + mz.WOLFSBURG_PROVENANCE + ".")
 
 
-def licence_members(sources: set, municipal: bool = False) -> tuple:
+# The municipal suffix above already ends with a full stop, so this one opens with a space only.
+LICENSE_REGIONAL_SUFFIX = (
+    " Polygons of the regional evidence package of 2026-10-07 (spec Amendment D), under the terms of their sources: the "
+    "bs_bga_* BgA car parks: " + rz.BGA_PROVENANCE + "; the geometry_source " + pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+    + " TU campus zones: " + rz.TU_PROVENANCE + "; the gs_parkplatz_* car parks: " + rz.GOSLAR_PROVENANCE + "; the bh_* "
+    "car parks and se_am_markt: " + rz.OSM_SITES_PROVENANCE + "; the br_* car parks: " + rz.BRAUNLAGE_PROVENANCE + ".")
+ATTRIBUTION_REGIONAL_SUFFIX = (
+    " Base map of the digitised BgA car parks: Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: dl-de/by-2-0 "
+    "(https://www.govdata.de/dl-de/by-2-0); data changed (georeference of the digitised car parks). TU campus zones: "
+    + rz.TU_PROVENANCE + ". Goslar car parks: " + rz.GOSLAR_PROVENANCE + ".")
+
+
+def licence_members(sources: set, municipal: bool = False, regional: bool = False) -> tuple:
     """(license, attribution) of the zone file: the wording of the newest rule-based source present (v1 otherwise),
-    narrowed to the OSM-derived polygons and extended by the municipal sources when ``municipal`` (ruling R-C1)."""
+    narrowed to the OSM-derived polygons and extended by the municipal sources when ``municipal`` (ruling R-C1) and by
+    the sources of the regional evidence package when ``regional`` (spec Amendment D; needs ``municipal``)."""
     if pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE in sources:
         license_text, attribution = LICENSE_SUPPLY, ATTRIBUTION_SUPPLY
     elif pz.EROSION_GEOMETRY_SOURCE in sources:
@@ -616,13 +812,18 @@ def licence_members(sources: set, municipal: bool = False) -> tuple:
     if not license_text.startswith(_OSM_CLAIM):
         raise SystemExit("the licence wording no longer starts with the OSM claim this step narrows")
     narrowed = "ODbL-1.0: every polygon not named below is derived from OpenStreetMap data" + license_text[len(_OSM_CLAIM):]
-    return narrowed + LICENSE_MUNICIPAL_SUFFIX, attribution + ATTRIBUTION_MUNICIPAL_SUFFIX
+    license_text, attribution = narrowed + LICENSE_MUNICIPAL_SUFFIX, attribution + ATTRIBUTION_MUNICIPAL_SUFFIX
+    if regional:
+        license_text, attribution = license_text + LICENSE_REGIONAL_SUFFIX, attribution + ATTRIBUTION_REGIONAL_SUFFIX
+    return license_text, attribution
 
 
-def write_zone_file(frame: gpd.GeoDataFrame, path, municipal: bool = False) -> None:
+def write_zone_file(frame: gpd.GeoDataFrame, path, municipal: bool = False, regional: bool = False) -> None:
     """WGS84 GeoJSON with the licence and attribution members (``licence_members``: the v2 wording when a rule-based
-    zone exists, the municipal sources when ``municipal``)."""
-    license_text, attribution = licence_members(set(frame["geometry_source"]), municipal)
+    zone exists, the municipal sources when ``municipal``, the regional evidence package when ``regional``)."""
+    if regional and not municipal:
+        raise SystemExit("the regional evidence package builds on the municipal step: pass municipal=True as well")
+    license_text, attribution = licence_members(set(frame["geometry_source"]), municipal, regional)
     # RFC 7946 allows foreign members; GDAL writes them at the top level and GeoJSON readers ignore them.
     members = json.dumps({"license": license_text, "attribution": attribution})
     frame.to_crs("EPSG:4326").to_file(Path(path), driver="GeoJSON", COORDINATE_PRECISION=7,
@@ -1496,6 +1697,12 @@ def main(argv=None) -> int:
                                                    "(parking_zones_2026_municipal_qa.csv)")
     parser.add_argument("--municipal-tariffs", help="v2 Amendment C: the tariff table whose Wolfsburg rows are checked "
                                                     "against the layer attributes (parking_tariffs_2026.csv)")
+    parser.add_argument("--regional-dir", help="v2 Amendment D: raw_sources/municipal_2026-10-07 with the owner's "
+                                               "regional evidence package (SHA-256 checked, "
+                                               "regional_zones.PACKAGE_SHA256); builds on --municipal-dir and writes "
+                                               "its QA rows into --municipal-qa-out")
+    parser.add_argument("--regional-tariffs", help="v2 Amendment D: the tariff table whose new rows are checked "
+                                                   "against the package's tariff rules (parking_tariffs_2026.csv)")
     args = parser.parse_args(argv)
     if args.erosion_dir and not (args.reference_outline and args.qa_out):
         raise SystemExit("--erosion-dir needs --reference-outline and --qa-out")
@@ -1503,6 +1710,9 @@ def main(argv=None) -> int:
         raise SystemExit("--supply-share-dir needs --reference-outline, --supply-qa-out and --paid-share-out")
     if bool(args.municipal_dir) != bool(args.municipal_qa_out) or (args.municipal_tariffs and not args.municipal_dir):
         raise SystemExit("--municipal-dir and --municipal-qa-out go together; --municipal-tariffs needs both")
+    if (args.regional_dir or args.regional_tariffs) and not (args.regional_dir and args.municipal_dir):
+        raise SystemExit("--regional-dir builds on --municipal-dir (and its --municipal-qa-out); --regional-tariffs "
+                         "needs --regional-dir")
     zones = []
 
     def add(zone_id, ags, geometry, geometry_source, source_url, note):
@@ -1741,11 +1951,22 @@ def main(argv=None) -> int:
     if args.municipal_dir:
         zones, municipal = apply_municipal_packages(zones, mz.load_packages(args.municipal_dir))
 
+    # ---------------------------------------------------------------- v2 Amendment D: regional evidence package
+    regional, precedence = None, PRECEDENCE
+    if args.regional_dir:
+        zones, regional = apply_regional_package(zones, rz.load_package(args.regional_dir))
+        municipal["regional"] = regional
+        precedence = PRECEDENCE_REGIONAL
+
     # ---------------------------------------------------------------- precedence, Braunschweig pieces (A2), output
-    zones, trims = apply_precedence(zones)
+    before = {zone["zone_id"]: zone["geometry"] for zone in zones}
+    zones, trims = apply_precedence(zones, precedence)
     print("trimmed by precedence:", trims)
     if municipal is not None:
         finish_municipal_zones(zones, municipal)
+    if regional is not None:
+        enforce_exact_cuts(zones, REGIONAL_ZONE_IDS, precedence)
+        record_regional_cuts(regional, before, zones, precedence)
     pieces = []
     bs_core = accepted_core(erosion.get(BS_AGS))
     if bs_core is not None:
@@ -1766,23 +1987,24 @@ def main(argv=None) -> int:
     ars = municipalities["commune_id"].astype(str)
     municipalities["ags"] = ars.str[:5] + ars.str[-3:]
     municipalities = municipalities.set_index("ags").to_crs(cc.METRIC_CRS)
-    for zone in zones:
-        inside = zone["geometry"].intersection(municipalities.loc[zone["_ags"], "geometry"]).area / zone["geometry"].area
-        print(f"{zone['zone_id']:58s} {zone['geometry_source']:22s} {zone['geometry'].area:10.0f} m2  inside "
-              f"{zone['_ags']}: {inside:.4f}")
-        if inside < MINIMUM_INSIDE_SHARE:
-            raise SystemExit(f"{zone['zone_id']} lies only {inside:.3f} inside its municipality {zone['_ags']}")
-        zone["digitising_note"].encode("ascii")
+    check_municipality_containment(zones, municipalities)
     frame = zone_frame(zones)
     out = Path(args.out)
-    write_zone_file(frame, out, municipal=municipal is not None)
+    write_zone_file(frame, out, municipal=municipal is not None, regional=regional is not None)
     print(f"written {out} with {len(frame)} zones")
     if municipal is not None:
         # measured in the written file, as the validator measures it; a polygon the loader would have to repair after
         # the rounding of the file makes the step fail (max_repairs=0)
-        mz.write_qa_table(args.municipal_qa_out, mz.qa_rows(municipal, pz.load_zone_polygons(out, max_repairs=0)))
+        loaded = pz.load_zone_polygons(out, max_repairs=0)
+        rows, intro = mz.qa_rows(municipal, loaded), mz.QA_INTRO
+        if regional is not None:
+            rows += rz.qa_rows(regional, loaded, municipalities)
+            intro = mz.QA_INTRO + " " + rz.QA_INTRO_SUFFIX
+        mz.write_qa_table(args.municipal_qa_out, rows, intro)
         if args.municipal_tariffs:
             mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], pz.load_tariffs(args.municipal_tariffs))
+        if args.regional_tariffs:
+            rz.check_tariff_rows(regional["evidence"], pz.load_tariffs(args.regional_tariffs))
     if args.erosion_dir:
         write_qa_table(args.qa_out, qa_table_rows(erosion, zones, pieces, counterfactuals))
     if args.supply_share_dir:
