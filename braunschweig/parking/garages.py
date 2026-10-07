@@ -4,7 +4,9 @@ Spec Amendment E1 makes garages entities of their own: ``parking_garages_2026.ge
 on disk like the zone polygons, EPSG:25832 in memory) with its identity, the garage tariff columns of spec Amendment A6, a
 monthly product where one is published, the reported capacity and the provenance of every value. The dataset is built by
 the curation step ``scripts/curation/parking_zones_2026/regional_garages.py`` from the regional evidence package of
-2026-10-07 and read by the distance-weighted garage options of spec Amendment E (task 4d); no stage reads it yet.
+2026-10-07 and read by the distance-weighted garage options of spec Amendment E (task 4d): the zone release stage
+(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3)
+and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
 
 The garage tariff columns are those of the tariff table (``braunschweig.parking.zones.GARAGE_COLUMNS``, money in EUR,
 minutes as whole numbers, fee window in decimal hours of the weekday) and mean the same: the core (hourly rate, billing
@@ -28,7 +30,7 @@ enforces it (one tariff structure per garage):
   ``"0-20 free; 20-120 total 1.00; 120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60"``), with the rate and the billing unit
   EMPTY, no first period and no tiers; the fee window (both hours) applies unchanged. A banded garage rests on
   ASSUMPTION P8 (the cumulative reading of the bands). :func:`duration_band_price_eur` is the reference evaluation of a
-  schedule; no pricing code or export calls it yet (the garage options are tasks 4d and 4e).
+  schedule and the one the garage option pricing of ``braunschweig.parking.cost`` calls (no logic is copied).
 
 The first period (``garage_first_period_min`` with ``garage_first_period_eur``, both or neither) and the day cap
 (``garage_daily_cap_eur``, empty = none) belong to the single-window and the tiered form and need one of them; a banded
@@ -113,8 +115,10 @@ NOT_PRICED_REASONS = {
 #: the pricing semantics of the tiered form, which the pricing code of the garage options implements (ruling R-4b-10b,
 #: amended by ruling R-4b-12 for the clock window of the first period); P7 names the caps the single day-cap column cannot
 #: hold; P8 is the pricing semantics of the banded form (ruling R-4b-11); P10 reads a published free period at the start of a
-#: stay as a grace period (spec E12, owner decision 2026-10-07; there is no P9); P11 prices a garage from the best available
-#: secondary evidence where no operator tariff is published (spec E13, ruling R-4b2-8). There is no reason code for a duration
+#: stay as a grace period (spec E12, owner decision 2026-10-07; P9, the pricing of a stay beyond a closed schedule, is a
+#: rule of the pricing code and no assumption a row rests on, so it lives in the assumptions register of the tariff model
+#: export only); P11 prices a garage from the best available secondary evidence where no operator tariff is published
+#: (spec E13, ruling R-4b2-8). There is no reason code for a duration
 #: schedule that the columns cannot express any more: every schedule of the sources is a band text.
 ASSUMPTIONS = {
     "P3": "a night tariff that is no per-unit rate of the preferred rules (a flat night fee, an unresolved night tier) is "
@@ -313,7 +317,12 @@ def parse_duration_bands(text) -> list:
     contiguous and ascending with no gap or overlap; only the last band may be open-ended; amounts and units are positive;
     the price never falls as the stay gets longer (a total band is not below the price reached at its start, and a free
     band can only be the first band). One canonical text per schedule: a published cap or 24-hour price is the day cap
-    column, not a band."""
+    column, not a band.
+
+    The rules "the price never falls" and "free only as the first band" are STRICTER than spec Amendment E11, which
+    states only the three band kinds and the cumulative reading (P8): a published schedule whose price falls with the
+    duration, or that is free again later, is rejected here although E11 would let it be written. No published
+    schedule of the dataset needs it; a source that does needs the rule relaxed (and the pricing code checked) first."""
     if not isinstance(text, str) or not text.strip():
         raise ValueError("the bands are empty")
     bands = []
@@ -372,7 +381,7 @@ def _band_price_cents(band: DurationBand, duration_min: float, reached_cents: in
 
 def duration_band_price_eur(bands, duration_min: float, daily_cap_eur: Optional[float] = None) -> float:
     """The price in EUR of a stay of ``duration_min`` minutes under a parsed duration schedule (ASSUMPTION P8): the reference
-    evaluation that the tests use and the pricing of the garage options (task 4d) is to reproduce.
+    evaluation that the tests use and that the pricing of the garage options (``braunschweig.parking.cost``) calls.
 
     The band with ``from_min < d <= to_min`` applies (a stay of exactly ``to_min`` still belongs to the band, one minute more
     to the next): ``free`` costs 0, ``total`` costs its amount (absolute) and ``increment`` costs the price reached at the
@@ -381,7 +390,10 @@ def duration_band_price_eur(bands, duration_min: float, daily_cap_eur: Optional[
     24-hour price; None = none) limits the result: the smaller of both. A stay of no length costs 0. No rounding beyond the
     published amounts (whole cents, summed exactly). Raises ``ValueError`` for a negative duration, a non-positive cap and a
     stay beyond a closed schedule (a schedule that ends at ``to_min`` says nothing about longer stays, so none is guessed).
-    No side effects; the day boundary of a cap and the fee window are the caller's concern."""
+    No side effects; the day boundary of a cap and the fee window are the caller's concern. A NaN or infinite duration raises
+    ``ValueError`` as well (NaN fails every comparison below and would be priced as a free stay)."""
+    if not math.isfinite(duration_min):
+        raise ValueError(f"the duration must be a finite number of minutes, found {duration_min}")
     if duration_min < 0:
         raise ValueError(f"the duration must not be negative, found {duration_min} min")
     if daily_cap_eur is not None and not daily_cap_eur > 0:

@@ -447,6 +447,14 @@ def test_a_stay_beyond_a_closed_schedule_is_refused_instead_of_priced_by_a_guess
     assert pg.duration_band_price_eur(pg.parse_duration_bands(BRAWO), 100_000) == 15.0  # an open last band covers every stay
 
 
+@pytest.mark.parametrize("duration_min", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_duration_is_refused_instead_of_priced_as_free(duration_min):
+    # Task 4b re-review carry-over: NaN passes `< 0` and `> 0` alike and used to return 0.0 (a free stay).
+    bands = pg.parse_duration_bands(BANDS)
+    with pytest.raises(ValueError, match="finite"):
+        pg.duration_band_price_eur(bands, duration_min)
+
+
 def test_the_day_cap_limits_the_schedule_price_from_the_duration_where_it_bites():
     # Goslar C&A: 1.50 per started hour for 3 h, then 0.80 per started half hour, 25.00 for 24 h (the day cap)
     bands = pg.parse_duration_bands(GS_CA_BANDS)
