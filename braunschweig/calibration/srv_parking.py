@@ -10,8 +10,11 @@ writes the two committed aggregates:
   of the parking-cost-zones design (spec 2026-09-28, section 3.4); its assumption A1 transfers
   the share observed among CURRENT car commuters to all workers/students of the class.
 * :data:`CITY_CENTER_TABLE_FILE` -- weighted place shares and the paid share of the usual
-  Braunschweig city-centre parking of Braunschweig residents; a validation quantity only (spec
-  section 6), never a model input.
+  Braunschweig city-centre parking of Braunschweig residents; the rows ``garage_large_lot`` and
+  ``street`` are the calibration target of the decay length of the garage options (spec Amendment E5,
+  ``scripts/parking/calibrate_garage_decay.py``), so the garage share no longer validates the model;
+  ``paid_share_overall`` and the other rows are comparison quantities (spec section 6), never a model
+  input.
 
 Survey variables (codebook ``SrV2023_Datenkodierung_SciUse.xlsx``; the audit with every column
 name is recorded in the docstring of ``tests/test_srv_parking.py``):

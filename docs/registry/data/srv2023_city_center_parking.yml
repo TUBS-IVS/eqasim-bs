@@ -10,6 +10,7 @@ geography: >-
   no boundary. Respondents are Braunschweig residents only.
 crs: null
 roles:
+- calibration_target
 - validation_reference
 used_by: []
 acquisition:
@@ -57,6 +58,13 @@ limitations: |
   Such a comparison is a comparison, not a validation. The employer-lot and other-place rows rest
   on a few dozen respondents each (n_unweighted column).
 notes: |
-  Issue #249 deliverable; a validation quantity only (parking-cost-zones design, section 6),
-  never a model input. Exclusion counts and the SHA-256 of the raw inputs live in the file
+  Issue #249 deliverable. Since parking cost zones v2 (spec Amendment E5, Task 4d) the rows garage_large_lot
+  and street are the CALIBRATION TARGET of the decay length of the garage options, garage_large_lot / (garage_large_lot +
+  street) = 0.708 / (0.708 + 0.2537) = 0.736, read by scripts/parking/calibrate_garage_decay.py (record
+  parking_garage_decay_calibration_2026); the garage share therefore no longer validates the model. paid_share_overall and
+  the other rows stay comparison quantities (parking-cost-zones design, section 6), never a model input. The file
+  header states this (the lines CITY_CENTER_USE_LINES of scripts/extract_srv_commute_parking.py); the raw SrV files are
+  local-only and were not at hand when the header changed, so the header lines were edited in place and only they
+  changed (the diff of the commit shows three header lines replaced by six, no data row touched); the next regeneration
+  with the extractor writes the same lines. Exclusion counts and the SHA-256 of the raw inputs live in the file
   header.

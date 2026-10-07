@@ -74,19 +74,20 @@ def test_url_from_source_resolves_every_catalog_entry_without_raising():
         assert result is None or result.startswith(("http://", "https://"))
 
 
-def test_the_committed_parking_release_entries_are_listed_and_only_the_unread_ones_are_optional():
-    """D5-D8 and D10 are read by braunschweig.parking.zones_stage (required); D9 (the paid-share cells) and D11 (the
-    garage dataset, parking cost zones v2 spec Amendment E1) are committed but read by no stage yet (optional). All of
-    them are MATSim-only, committed (no download) and carry a prose source that --check-urls skips."""
+def test_the_committed_parking_release_entries_are_listed_and_only_the_unread_one_is_optional():
+    """D5-D8, D10 and D11 (the garage dataset, parking cost zones v2 spec Amendment E1) are read by
+    braunschweig.parking.zones_stage (required); D9 (the paid-share cells) is committed but read by no stage yet
+    (optional). All of them are MATSim-only, committed (no download) and carry a prose source that --check-urls skips."""
     verify = _load_script()
     entries = {inp.name.split()[0]: inp for inp in verify.INPUTS if inp.name.split()[0] in (
         "D5", "D6", "D7", "D8", "D9", "D10", "D11")}
     assert sorted(entries) == ["D10", "D11", "D5", "D6", "D7", "D8", "D9"]
-    assert {name for name, inp in entries.items() if inp.optional} == {"D9", "D11"}
+    assert {name for name, inp in entries.items() if inp.optional} == {"D9"}
     assert all(inp.matsim_only and "(committed)" in inp.name and verify.url_from_source(inp.source) is None
                for inp in entries.values())
     assert entries["D11"].rel_path == "braunschweig/parking/parking_garages_2026.geojson"
-    assert "parking_garages_2026" in entries["D11"].source and "No stage reads it yet" in entries["D11"].notes
+    assert "parking_garages_2026" in entries["D11"].source and "parking_garages_path" in entries["D11"].notes
+    assert "No stage reads it yet" not in entries["D11"].notes
 
 
 def test_probe_url_is_memoised_per_distinct_url():

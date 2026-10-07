@@ -40,6 +40,17 @@ if str(REPO) not in sys.path:
 
 from braunschweig.calibration import srv_parking as sp  # noqa: E402
 
+#: The "Use:" lines of the header of srv2023_city_center_parking.csv (spec Amendment E5): the garage share became the
+#: calibration target of the garage decay length, so "never a model input" no longer holds for it. The committed table
+#: carries these lines (tests/test_srv_parking.py compares them).
+CITY_CENTER_USE_LINES = (
+    "# Use: the rows garage_large_lot and street are the CALIBRATION TARGET of the decay length of the garage options",
+    "#   (parking-cost-zones v2, spec Amendment E5: garage_large_lot / (garage_large_lot + street), read by",
+    "#   scripts/parking/calibrate_garage_decay.py); the garage share therefore no longer validates the model.",
+    "#   paid_share_overall and the other rows stay comparison quantities (parking-cost-zones design, section 6),",
+    "#   never a model input. A comparison with model output carries a universe caveat: SrV asks Braunschweig",
+    "#   residents about their usual city-centre parking, the model counts all car arrivals.",
+)
 RAW_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_raw"
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
 
@@ -219,9 +230,7 @@ def _city_center_header(report: dict, place_codes: str, hashes: dict, run_date: 
         "#   respondents naming that place), then paid_share_overall (share = weighted share paying",
         "#   among the universe respondents with a valid follow-up V_BRAU_PARKENCITY<k>_ENTGELT,",
         "#   n_unweighted = those respondents).",
-        "# Use: validation quantity only (parking-cost-zones design, section 6), never a model input.",
-        "#   A comparison with model output carries a universe caveat: SrV asks Braunschweig residents",
-        "#   about their usual city-centre parking, the model counts all car arrivals.",
+        *CITY_CENTER_USE_LINES,
         *_wrapped(f"Exclusions from the universe (each respondent once, in this order): {exclusions}. "
                   f"Place codes in the input: {place_codes}."),
         f"# Shares are weighted fractions in [0, 1], rounded to {SHARE_DECIMALS} decimals.",

@@ -28,7 +28,8 @@ crs: EPSG:25832 (CRS84 on disk)
 roles:
 - supply_input
 - reference_table
-used_by: []
+used_by:
+- braunschweig.parking.zones_stage
 acquisition:
   method: derived
   source: >-
@@ -107,8 +108,13 @@ acquisition:
     or 24-hour price in the day cap column (the price of a stay is the smaller of the schedule price and the cap).
     braunschweig.parking.garages.duration_band_price_eur is the pure reference evaluation (exact in cents, no rounding
     beyond the published amounts; it raises for a stay beyond a closed schedule instead of guessing a price); it is
-    pinned by tests on the published anchors and the band edges and is NOT wired into the pricing code, the tariff
-    export or a stage (tasks 4d and 4e). Package rule types of a band: free gives a free band, duration_total and
+    pinned by tests on the published anchors and the band edges and is called by the garage option pricing of
+    braunschweig.parking.cost (Task 4d; a stay beyond a closed schedule is priced there by ASSUMPTION P9, which is a rule
+    of the pricing code and no assumption a row rests on, see the assumptions register of the tariff model; a
+    non-finite duration raises). The parser's rules "the price never falls as the stay gets longer" and "a free band can
+    only be the first band" are STRICTER than spec Amendment E11, which states only the three band kinds and the cumulative
+    reading (ruling R-4d-15): a published schedule that breaks them is rejected by the loader although E11 would let it
+    be written; no schedule of this dataset needs it. Package rule types of a band: free gives a free band, duration_total and
     published_day_total_from_duration give a total band, increment gives an increment band; a cap rule,
     daily_rate_published or a 24-hour total (a duration total from 0 to 1440 min) is the day cap. A conditional free
     period tied to a purchase is a customer condition and is named in the notes and not used (Salzgitter BRAWO: 90 min
@@ -142,8 +148,8 @@ acquisition:
     Rathaus and Phaeno 06:00-24:00 (rule R01, read from 06:00-00:00; the days are not stated, so the reading Monday to
     Friday is named). Before the amendment the dataset applied the first period from arrival at every hour, which
     over-priced a night arrival at Rathaus and Phaeno (1.10 EUR against 0.50 EUR per hour) and under-priced one at
-    Eiermarkt (0.60 EUR against 1.00 EUR). The pricing of the window is tasks 4d and 4e; this dataset and its notes
-    state the semantics. The assumptions are named in the column assumptions and in the notes of the row, and counted
+    Eiermarkt (0.60 EUR against 1.00 EUR). The pricing of the window is braunschweig.parking.cost (Task 4d, Python
+    reference; the Java port is Task 4e); this dataset and its notes state the semantics. The assumptions are named in the column assumptions and in the notes of the row, and counted
     at every run: P3 a night tariff that is no per-unit rate of the preferred rules (a flat night fee, an unresolved
     night tier) is stated in the notes and not charged; P4 a rate without a stated rounding is billed per started unit
     (precedent D3-a of the tariff table; the note cites the caution of the package that a stated hourly rate does not
@@ -155,8 +161,8 @@ acquisition:
     period (where published) is charged once when the arrival lies inside its clock window (the whole day where the
     source ties it to none) and the tiers then apply per started unit from the end of the first period, an arrival
     outside the window pays the tiers from the arrival, a time of day outside every tier is free (the pricing itself
-    is implemented in the later tasks 4d and 4e; this record and the notes of every tiered garage state the semantics
-    the tiers were encoded for); P7 the day cap column holds ONE cap and applies to the whole stay: of several
+    is implemented by braunschweig.parking.cost.garage_metered_cents, Task 4d, pinned by the golden cases O11 to O24;
+    this record and the notes of every tiered garage state the semantics the tiers were encoded for); P7 the day cap column holds ONE cap and applies to the whole stay: of several
     published caps (a day cap, a night cap, a 24-hour maximum) the day cap or, where there is none, the 24-hour
     maximum is encoded and the others are named in the notes and not applied (five garages: Eiermarkt, Rathaus,
     Phaeno, Rothenfelder and Poststrasse); P8 the cumulative reading of the duration bands: a total band sets the
@@ -330,7 +336,10 @@ verification:
   verifier_entry: D11
   script: scripts/validate_parking_zones.py
   notes: >-
-    Listed as D11 (matsim_only, optional, committed) in scripts/verify_braunschweig_inputs.py: no stage reads it yet.
+    Listed as D11 (matsim_only, required, committed) in scripts/verify_braunschweig_inputs.py: the sixth input of the
+    release of braunschweig.parking.zones_stage (config key parking_garages_path), which loads and validates it with
+    the validator below; braunschweig.parking.tariff_export.garage_entries writes its priced garages into the tariff
+    model (schema 3).
     braunschweig.parking.garages.validate_garages checks unique ids, valid points inside the ZGB counties, the garage
     core all-or-none (spec Amendment A6), the three tariff forms (a tiered row has valid tariff_tiers and leaves the
     single window empty; a banded row has valid tariff_duration_bands, leaves the rate, the unit, the first period and
@@ -356,8 +365,8 @@ verification:
     product).
 requirements:
   synthesis: not_needed
-  matsim: optional
-  production: optional
+  matsim: required
+  production: required
 licensing:
   license: >-
     Per source; the dataset holds facts (tariffs, capacities, names and positions of garages) from public sources, none of
@@ -382,10 +391,14 @@ licensing:
     the data record parking_zones_2026. The file carries the licence and the attribution as top-level members; the QA table
     names its sources in its header.
 limitations: >-
-  No stage reads the dataset yet: the pricing code is unchanged, so no simulation output changes with this dataset,
-  and the zone-level garage columns of the tariff table stay empty (spec Amendment E8); the distance-weighted garage
-  options of spec Amendment E, the pricing of the tiers (ASSUMPTION P6, with the clock window of the first period), the
-  pricing of the duration bands (ASSUMPTION P8) and the grace period (ASSUMPTION P10) are later tasks (4d and 4e). The
+  The zone-level garage columns of the tariff table stay empty (spec Amendment E8). The zone release stage loads the
+  dataset and the tariff model lists its priced garages (schema 3), but a garage becomes an option of a stay only with a
+  decay length greater than 0 (config parking_garage_decay_m, spec E6); the decay length is 0 until it is calibrated on
+  the server plans (Task 5 of issue #436: the local reference plans were lost on 2026-10-07), so the model prices no
+  garage option and the simulated prices are those of the zone tariffs. The distance-weighted garage options of spec
+  Amendment E, the pricing of the tiers (ASSUMPTION P6, with the clock window of the first period), of the duration bands
+  (ASSUMPTION P8, with P9 beyond a closed schedule) and of the grace period (ASSUMPTION P10, encoded as bands) are the
+  reference implementation braunschweig.parking.cost.parking_cost_with_garages (Task 4d); the Java port is Task 4e. The
   dataset is a coverage of what the packages document, not a census of the garages of the towns. Not listed are: the
   Clausthal-Zellerfeld garage Am Rathaus (the package knows it without coordinates; no geometry is invented); the
   Seesen garage (outside the towns of spec Amendment E1); the BgA lots (zones); the ParkGO zone 1 car parks of

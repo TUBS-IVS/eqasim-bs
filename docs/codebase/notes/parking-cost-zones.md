@@ -9,7 +9,8 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 
 1. `braunschweig.parking.zones_stage` (synpp stage, declared only when the flag is on) reads the release relative
    to `data_path` (`RELEASE_INPUTS`: `parking_zones_path`, `parking_tariffs_path`, `parking_coverage_register_path`,
-   `parking_workplace_shares_path`, `parking_resident_districts_path`). `braunschweig.parking.zones` loads and
+   `parking_workplace_shares_path`, `parking_resident_districts_path`, `parking_garages_path`).
+   `braunschweig.parking.zones` loads and
    validates the polygons (`load_zone_polygons`: EPSG:25832, repaired rings counted, overlap at most
    `OVERLAP_TOLERANCE_M2`), the tariffs (`load_tariffs`, `validate_tariffs`), one row per polygon (`cross_validate`),
    the register (`validate_coverage_register`) and the resident districts (`load_resident_districts`: valid as stored,
@@ -125,8 +126,9 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its two optional
   supplement packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`), so a change is made in
   `regional_garage_specs.py` (which package rule plays which role) and the two files are regenerated, never edited by
-  hand. No stage reads it yet and the zone-level garage columns of the tariff table stay empty (Amendment E8); garages
-  enter the pricing only through the later garage options. A garage is priced only where the published structure maps
+  hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 3) lists its
+  priced garages; the zone-level garage columns of the tariff table stay empty (Amendment E8) and garages enter the
+  pricing only through the distance-weighted garage options ([parking-garage-options.md](parking-garage-options.md)). A garage is priced only where the published structure maps
   exactly to ONE of three exclusive forms (one tariff structure per garage; no approximation, `not_priced_reason` says
   why when none fits): the single window (first period, hourly rate in started units, day cap), the time-of-day tiers
   of the column `tariff_tiers` or the duration bands of the column `tariff_duration_bands` (grammar `0-20 free; 20-120
@@ -167,8 +169,9 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 - A zone that lies outside its own municipality of the pipeline's polygons fails the containment check of the
   assembly unless it is declared in `regional_zones.CONTAINMENT_EXCEPTIONS` with its reason; the declared exception
   still has to lie in its own and the declared municipality together.
-- The tariff model JSON stays schema 2 for additive keys (Amendment C3 added the per-zone bool
-  `resident_permits_valid`, never null, and the top-level list `resident_districts`), but the Java `ParkingTariffs`
+- The tariff model JSON is schema 3 since the garage options (Amendment E added `garages`, `garage_decay_m` and
+  `garage_max_distance_m`; Amendment C3 had added the per-zone bool
+  `resident_permits_valid`, never null, and the top-level list `resident_districts` without a new version), and the Java `ParkingTariffs`
   reader requires the exact key sets of the document and of every zone entry (`DOCUMENT_FIELDS`, `ZONE_FIELDS`): a key
   added to the model needs the reader's field list in the same change set.
 - One outcome per priced stay: a new pricing branch adds its name to `braunschweig.parking.cost.OUTCOMES` and to the

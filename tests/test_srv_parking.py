@@ -294,6 +294,11 @@ def test_extractor_writes_both_tables_with_the_provenance_header(tmp_path):
         2.5 / 4.5, abs=1e-4)
 
     city_text = (out / sp.CITY_CENTER_TABLE_FILE).read_text(encoding="utf-8")
+    # spec Amendment E5: the header states the calibration use of the garage share
+    use_lines = list(_load_extractor().CITY_CENTER_USE_LINES)
+    city_lines = city_text.splitlines()
+    assert city_lines[city_lines.index(use_lines[0]):][:len(use_lines)] == use_lines
+    assert "never a model input." in city_text and "validation quantity only" not in city_text
     assert sum("sha256=" in line for line in city_text.splitlines() if line.startswith("#")) == 2
     city = pd.read_csv(out / sp.CITY_CENTER_TABLE_FILE, comment="#").set_index("parking_type")
     assert list(city.columns) == ["share", "n_unweighted"]
@@ -363,6 +368,20 @@ def test_committed_city_center_table_has_the_place_rows_and_the_paid_share():
     assert abs(places["share"].sum() - 1) < ROUNDING_TOLERANCE
     paid = table.set_index("parking_type").loc[sp.PAID_SHARE_OVERALL]
     assert 0 < paid["n_unweighted"] <= places["n_unweighted"].sum()
+
+
+def test_the_city_center_header_states_the_calibration_use_of_the_garage_share_not_validation_only():
+    """Spec Amendment E5: the garage share became a calibration target; the header must no longer call the whole table a
+    validation quantity that is 'never a model input' for the garage rows. The committed table carries the very lines the
+    extractor writes (the raw SrV files are local-only, so the table is not regenerated in a test)."""
+    use_lines = list(_load_extractor().CITY_CENTER_USE_LINES)
+    header = _committed_header(sp.CITY_CENTER_TABLE_FILE)
+    start = header.index(use_lines[0])
+    assert header[start:start + len(use_lines)] == use_lines
+    assert any("CALIBRATION TARGET" in line for line in use_lines)
+    assert not any("validation quantity only" in line for line in header)
+    text = " ".join(header)
+    assert "garage_large_lot / (garage_large_lot + street)" in text and "calibrate_garage_decay.py" in text
 
 
 def test_committed_tables_carry_the_provenance_header():
