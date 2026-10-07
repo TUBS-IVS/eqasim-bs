@@ -116,10 +116,13 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   regional package, so a change is made in `regional_garage_specs.py` (which package rule plays which role) and the two
   files are regenerated, never edited by hand. No stage reads it yet and the zone-level garage columns of the tariff table
   stay empty (Amendment E8); garages enter the pricing only through the later garage options. A garage is priced only where
-  the published structure maps exactly to a first period, an hourly rate in started units and a day cap (no approximation:
-  `not_priced_reason` says why), the assumptions P3 to P5 are named in the row and counted at every run and by
-  `scripts/validate_parking_zones.py`, and a new garage needs a QA row (the validator refuses a dataset without its QA
-  table). A commuter product is data of the tariff table (`commuter_day_eur`, the cheapest monthly or 30-day product over
+  the published structure maps exactly to a first period, an hourly rate in started units and a day cap, or to the
+  time-of-day tiers of the column `tariff_tiers` (the two forms are exclusive; no approximation: `not_priced_reason` says
+  why). Only rules that the package marks `preferred_for_current_use` set a value: a specification that names another rule
+  for a role stops the step. The assumptions P3 to P7 are named in the row and counted at every run and by
+  `scripts/validate_parking_zones.py` (with the union rates, which warn above `garages.UNION_WARNING_SHARE`), a station
+  car park of DB BahnPark or a lot of long-term renters is a candidate QA row, not a garage, and a new garage needs a QA row
+  (the validator refuses a dataset without its QA table). The data record `parking_garages_2026` holds the full rules. A commuter product is data of the tariff table (`commuter_day_eur`, the cheapest monthly or 30-day product over
   21 working days, ASSUMPTION P2): the QA table holds the record of every monthly product, used or not, and the validator
   checks the table against the used product.
 - Overlaps of the release are settled by an explicit precedence in the curation (`PRECEDENCE_REGIONAL` in
