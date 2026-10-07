@@ -247,3 +247,16 @@ notes: >-
   ASSUMPTION R2-a in its note). It switches off the district rule R2 only, never resident_exempt.
   scripts/validate_parking_zones.py prints where R2 is off (12 of the 37 zones on 2026-10-07: the six stated rows and
   the six campus zones).
+  Expected output change of Task 4b (its one statement; spec Amendments A4, D1 and D2): with parking_zones_enabled, the
+  production default, ZONES runs price a work or education stay at the commuter product where it is cheaper: a campus stay
+  at 0.48 EUR instead of the 3.50 EUR day ticket, a stay in zone Ib at most 3.76 EUR instead of the metered amount up to the
+  9.00 EUR day cap; and the fee windows shrink to 9-16 h in Helmstedt (9-18 h before) and to 10-18 h in Goslar zone 1 (9-18 h
+  before), so a stay in the dropped hours is free. Each of the four lowers the parking cost of a car stay, so the car becomes
+  cheaper against the alternatives for those stays; the garage dataset changes nothing because no stage reads it. Exposure
+  indicator (scripts/curation/parking_zones_2026/count_zone_exposure.py with the production attach_parking_zones on the plans
+  eqasim-data/output_bs/braunschweig_1pct_population.xml.gz of 2026-04-29: 11,472 persons, 47,362 main activities, 17,301 car
+  arrivals; the zone file is unchanged, so the same 704 car arrivals lie in a zone as before): 95 of them are work or
+  education arrivals in a zone with a commuter product (Zentralcampus 20, Campus Nord 10, Beethovenstrasse 9, Langer Kamp 23,
+  Forschungsflughafen 18, Volkmaroder Strasse 0, zone Ib 15), 24 lie in Helmstedt (17 of them home arrivals, free by H1) and
+  78 in Goslar zone 1 (60 of them home arrivals). An exposure indicator of an older model state on a 1 % sample, not a
+  validation and no run of the cost model.
