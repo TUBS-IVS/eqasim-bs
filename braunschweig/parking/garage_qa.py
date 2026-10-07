@@ -66,6 +66,8 @@ CANDIDATE_REASONS = {
     "outside_source_list": "not in the towns and sources that spec Amendment E1 names for the dataset",
     "dauerparker_only": "currently open to long-term renters only, a closed group: no garage option (the free or contract "
                         "parking of such a group is covered by the free-parking share of the model)",
+    "user_group_only": "a car park or a part of one that is reserved for a user group (disabled parking), so no option of the "
+                       "general public",
 }
 _RECORD_ID = re.compile(r"^[a-z0-9_]+$")
 

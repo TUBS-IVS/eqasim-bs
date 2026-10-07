@@ -156,6 +156,8 @@ COLUMN_GLOSSARY = {
     "package_facility_id": "facility_id of the garage in the package's facilities.json (BS_None is shared by two Braunschweig "
                            "features there; this dataset joins by the feature's source id)",
     "name": "name of the garage in the package layer, ASCII transliteration",
+    "facility_kind": "what the row is (ruling R-4b3-0): garage (a multi-storey or underground garage, or a car park the sources "
+                     "call one) or surface_lot (an open car park of the Wolfsburg city layer); the pricing treats both alike",
     "operator": "operator as the package states it (feature or facility attribute) or, where the page named in source_url is "
                 "the operator's own page, that operator (the notes say which); empty where no source names one",
     "municipality": "municipality of the garage (the municipality of its zone tariff rows)",
@@ -1343,8 +1345,8 @@ def build_garage(inputs: dict, spec: dict) -> dict:
             if distance > 1.0:
                 notes.append(f"The package holds a second point of this garage in {other_layer} (coordinates differ by "
                              f"{distance:.0f} m); the point of {layer} is used.")
-    row = {"garage_id": spec["garage_id"], "package_facility_id": spec["facility"], "name": name, "operator": operator,
-           "municipality": municipality, "municipality_ags": ags, "capacity_reported": capacity,
+    row = {"garage_id": spec["garage_id"], "package_facility_id": spec["facility"], "name": name, "facility_kind": "garage",
+           "operator": operator, "municipality": municipality, "municipality_ags": ags, "capacity_reported": capacity,
            "capacity_scope": scope, "monthly_eur": None, "monthly_source_url": None, "monthly_product": None,
            "priced": priced, "not_priced_reason": None if priced else spec["reason"],
            "assumptions": ";".join(encoded["assumptions"]) if priced and encoded["assumptions"] else None,

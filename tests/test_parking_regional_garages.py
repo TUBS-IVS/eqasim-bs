@@ -754,6 +754,8 @@ def test_the_dataset_rows_carry_the_values_the_provenance_and_the_assumptions(st
     pg.validate_garages(frame)
     assert list(frame["garage_id"]) == ["bs_a", "bs_b", "wob_x", "gs_a", "gs_b", "gs_c", "bs_t"]
     rows = frame.set_index("garage_id")
+    # ruling R-4b3-0: every row of the regional layers is a garage (the surface lots come from the Wolfsburg car-park package)
+    assert set(frame["facility_kind"]) == {"garage"}
     bs_a = rows.loc["bs_a"]
     assert (bs_a["garage_hourly_rate_eur"], bs_a["garage_first_period_min"], bs_a["garage_first_period_eur"],
             bs_a["garage_daily_cap_eur"]) == (1.2, 60, 0.6, 9.6)

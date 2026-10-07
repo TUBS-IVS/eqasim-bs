@@ -28,7 +28,8 @@ def _row(**changes) -> dict:
     """A valid priced garage (the shape of the Braunschweig Eiermarkt row): day family 7 to 18 h, first hour 0.60 EUR,
     1.20 EUR per started hour, day cap 9.60 EUR, no monthly product."""
     row = {
-        "garage_id": "bs_eiermarkt", "package_facility_id": "BS_PH004", "name": "Parkhaus Eiermarkt", "operator": None,
+        "garage_id": "bs_eiermarkt", "package_facility_id": "BS_PH004", "name": "Parkhaus Eiermarkt",
+        "facility_kind": "garage", "operator": None,
         "municipality": "Braunschweig", "municipality_ags": "03101000", "capacity_reported": 500,
         "capacity_scope": "reported_in_PULP", "garage_hourly_rate_eur": 1.2, "garage_billing_unit_min": 60,
         "garage_first_period_min": 60, "garage_first_period_eur": 0.6, "garage_daily_cap_eur": 9.6,
@@ -82,6 +83,7 @@ def _banded(**changes) -> dict:
 GRACE_BANDS = "0-15 free; 15-60 total 1.50; 60- 1.50/60"
 SUPPLEMENT_SHA = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa"
 FOLLOWUP_SHA = "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8"
+WOLFSBURG_LOTS_SHA = "650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0"
 
 
 def _graced(**changes) -> dict:
@@ -131,8 +133,9 @@ def _frame(*rows, crs="EPSG:25832") -> gpd.GeoDataFrame:
 def test_the_dataset_layout_is_the_documented_one():
     assert pg.TARIFF_COLUMNS == pz.GARAGE_COLUMNS  # the garage columns of the tariff table (spec Amendment A6)
     assert len(pg.DATASET_COLUMNS) == len(set(pg.DATASET_COLUMNS))
-    assert pg.DATASET_COLUMNS[:6] == ("garage_id", "package_facility_id", "name", "operator", "municipality",
-                                      "municipality_ags")
+    assert pg.DATASET_COLUMNS[:7] == ("garage_id", "package_facility_id", "name", "facility_kind", "operator",
+                                      "municipality", "municipality_ags")
+    assert set(pg.FACILITY_KINDS) == {"garage", "surface_lot"}
     assert set(pg.TARIFF_COLUMNS) <= set(pg.DATASET_COLUMNS)
     # the clock window of the first period (ruling R-4b-12) follows the single-window columns, then the tiered form (ruling
     # R-4b-10b) and the banded form (ruling R-4b-11) are one text column each, before the monthly product
@@ -173,6 +176,23 @@ def test_the_dataset_layout_is_the_documented_one():
 
 def test_a_valid_priced_and_a_valid_unpriced_garage_pass():
     pg.validate_garages(_frame(_row(), _unpriced()))
+
+
+def test_the_facility_kind_is_a_garage_or_a_surface_lot_and_nothing_else_and_is_required():
+    pg.validate_garages(_frame(_row(), _row(garage_id="wob_lot_1", facility_kind="surface_lot")))
+    for value, message in ((None, "facility_kind: required for every garage but empty"),
+                           ("car_park", "facility_kind: 'car_park' is not one of"),
+                           ("Garage", "facility_kind: 'Garage' is not one of")):
+        with pytest.raises(ValueError, match=message):
+            pg.validate_garages(_frame(_row(facility_kind=value)))
+
+
+def test_the_coverage_counts_the_garages_and_the_surface_lots_separately():
+    frame = _frame(_row(garage_id="a"), _row(garage_id="b", facility_kind="surface_lot"),
+                   _row(garage_id="c", facility_kind="surface_lot", municipality_ags="03103000"),
+                   _unpriced(garage_id="d"), _unpriced(garage_id="e", facility_kind="surface_lot"))
+    assert pg.coverage(frame)["by_facility_kind"] == {"garage": {"listed": 2, "priced": 1, "not_priced": 1},
+                                                      "surface_lot": {"listed": 3, "priced": 2, "not_priced": 1}}
 
 
 def test_the_writer_and_the_loader_round_trip_typed_metric_points(tmp_path):
@@ -708,12 +728,16 @@ def test_a_row_may_cite_the_regional_package_and_the_two_supplement_packages_by_
     pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA}")))
     pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA}")))
     pg.validate_garages(_frame(_row(package_sha256=SHA)))  # a row that the supplement does not touch cites one package
+    # Task 4b3 (ruling R-4b3-0): the Wolfsburg car-park package of 2026-10-07 is the fourth package a row may cite
+    pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{WOLFSBURG_LOTS_SHA}")))
+    pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA}")))
+    assert pg.MAXIMUM_PACKAGE_HASHES == 4
 
 
 @pytest.mark.parametrize("value, message", [
     (f"{SHA};E789", "not a lower-case hexadecimal SHA-256"),
     (f"{SHA};{SHA}", "lists a package SHA-256 twice"),
-    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{SHA[::-1]}", "at most three package SHA-256 values"),
+    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]}", "at most four package SHA-256 values"),
     (f"{SHA}, {SUPPLEMENT_SHA}", "not a lower-case hexadecimal SHA-256"),
 ])
 def test_a_malformed_duplicated_or_too_long_package_sha256_list_is_rejected(value, message):
@@ -950,7 +974,9 @@ def test_the_qa_coverage_counts_products_and_candidates_by_reason():
 
 def test_the_qa_vocabulary_excludes_the_station_car_parks_of_both_cities_and_the_lots_of_long_term_renters():
     assert set(pq.CANDIDATE_REASONS) == {"bga_zone", "zone_street_product", "station_bahnpark", "customer_regime",
-                                         "no_coordinates", "no_published_tariff", "outside_source_list", "dauerparker_only"}
+                                         "no_coordinates", "no_published_tariff", "outside_source_list", "dauerparker_only",
+                                         "user_group_only"}
+    assert "reserved for a user group" in pq.CANDIDATE_REASONS["user_group_only"]
     station = pq.CANDIDATE_REASONS["station_bahnpark"]
     assert "Braunschweig and Wolfsburg alike" in station and "R-4b-4" in station and "R-4b-9" in station
     assert "long-term renters only" in pq.CANDIDATE_REASONS["dauerparker_only"]

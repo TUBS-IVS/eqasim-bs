@@ -478,7 +478,7 @@
     },
     {
       "path": "tests/fixtures/parking/parking_garages_fixture.geojson",
-      "sha256": "6715425330121a3d4f0072a920b79fe92af5606dc5ee4fe36992576a93bbf52b",
+      "sha256": "7ff8c8daa48f17c9104d02c77cbd780cd908f919534ea195aa8a412342bdea77",
       "source_id": "parking_garages_fixture"
     }
   ],

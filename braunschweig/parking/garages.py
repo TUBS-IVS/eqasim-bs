@@ -66,7 +66,15 @@ CRS = zones.CRS
 #: checks every garage against the polygon of its own municipality.
 ZGB_EXTENT_25832 = (567_000.0, 5_722_000.0, 643_000.0, 5_855_000.0)
 
-IDENTITY_COLUMNS = ("garage_id", "package_facility_id", "name", "operator", "municipality", "municipality_ags")
+IDENTITY_COLUMNS = ("garage_id", "package_facility_id", "name", "facility_kind", "operator", "municipality",
+                    "municipality_ags")
+#: What a row of the dataset is (``facility_kind``, ruling R-4b3-0): a ``garage`` (a multi-storey or underground garage, or a
+#: car park the sources call one) or a ``surface_lot`` (an open car park, e.g. the car parks of the Wolfsburg city layer). The
+#: pricing treats both alike (no special case); the kind is documentation and a count of the dataset.
+FACILITY_KINDS = {
+    "garage": "a multi-storey or underground garage, or a car park the sources call a garage",
+    "surface_lot": "an open surface car park (the car parks of the Wolfsburg city layer wob_parkplaetze)",
+}
 CAPACITY_COLUMNS = ("capacity_reported", "capacity_scope")
 #: The garage tariff columns of the tariff table (spec Amendment A6), in the order of the table.
 TARIFF_COLUMNS = zones.GARAGE_COLUMNS
@@ -92,13 +100,15 @@ TEXT_COLUMNS = tuple(column for column in DATASET_COLUMNS
                      if column not in MONEY_COLUMNS + MINUTE_COLUMNS + HOUR_COLUMNS + INTEGER_COLUMNS + ("priced",))
 #: Columns a row must carry whatever its status; ``operator``, ``capacity_*`` and the monthly product are optional
 #: (empty = the package states none).
-REQUIRED_TEXT_COLUMNS = ("garage_id", "package_facility_id", "name", "municipality", "municipality_ags", "source_url",
+REQUIRED_TEXT_COLUMNS = ("garage_id", "package_facility_id", "name", "facility_kind", "municipality", "municipality_ags",
+                         "source_url",
                          "source_date", "geometry_method", "geometry_source_url", "package_sha256", "notes")
 LIST_SEPARATOR = ";"
-#: A row cites the regional evidence package and, where the supplement package (spec E12) or the follow-up package (spec E13) of
-#: 2026-10-07 touches the row, that package too: its ``package_sha256`` holds one to three lower-case SHA-256 values separated by
-#: ``LIST_SEPARATOR`` (the regional package first).
-MAXIMUM_PACKAGE_HASHES = 3
+#: A row cites the regional evidence package and, where the supplement package (spec E12), the follow-up package (spec E13) or
+#: the Wolfsburg car-park package (spec E14) of 2026-10-07 touches the row, that package too: its ``package_sha256`` holds one
+#: to four lower-case SHA-256 values separated by ``LIST_SEPARATOR`` (the regional package first, then the supplement, the
+#: follow-up and the Wolfsburg car-park package in that order).
+MAXIMUM_PACKAGE_HASHES = 4
 
 #: Why a garage is listed and not priced (``not_priced_reason``): the column holds the code, the details of the garage
 #: (what is published, which rule ids) are in its notes.
@@ -600,6 +610,9 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
         elif not (min_x <= geometry.x <= max_x and min_y <= geometry.y <= max_y):
             problem("geometry", f"({geometry.x:.1f}, {geometry.y:.1f}) lies outside the ZGB extent {ZGB_EXTENT_25832} in "
                                 f"{CRS}: a wrong CRS or swapped axes")
+        kind = row["facility_kind"]
+        if zones._is_set(kind) and kind not in FACILITY_KINDS:
+            problem("facility_kind", f"{kind!r} is not one of {sorted(FACILITY_KINDS)}")
         for column in ("source_url", "geometry_source_url"):
             if zones._is_set(row[column]) and not _URL_PATTERN.match(str(row[column])):
                 problem(column, f"{row[column]!r} is not an http(s) URL")
@@ -613,8 +626,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             if len(set(hashes)) != len(hashes):
                 problem("package_sha256", f"{row['package_sha256']!r} lists a package SHA-256 twice")
             if len(hashes) > MAXIMUM_PACKAGE_HASHES:
-                problem("package_sha256", f"{row['package_sha256']!r}: at most three package SHA-256 values (the regional "
-                                          "package and the two supplement packages), separated by ';'")
+                problem("package_sha256", f"{row['package_sha256']!r}: at most four package SHA-256 values (the regional "
+                                          "package and the three supplement packages), separated by ';'")
         capacity = row["capacity_reported"]
         if zones._is_set(capacity):
             if capacity <= 0:
@@ -779,7 +792,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
 
 def coverage(frame: gpd.GeoDataFrame) -> dict:
     """The counts of the dataset: garages ``listed``, ``priced``, ``not_priced`` and ``not_priced_by_reason``, per town
-    (``by_municipality``: ags -> {listed, priced, not_priced}), the priced garages per assumption
+    (``by_municipality``: ags -> {listed, priced, not_priced}), per facility kind (``by_facility_kind``: the same counts for
+    the garages and the surface lots), the priced garages per assumption
     (``priced_by_assumption``, ids that no priced garage uses are absent), the union rates ``priced_with_assumption``
     (priced garages resting on at least one assumption) and ``priced_with_p4_or_p5`` (on a stated rounding or stated
     charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``) and in the banded
@@ -792,6 +806,10 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
     for ags, group in frame.groupby("municipality_ags"):
         flags = group["priced"].astype(bool)
         towns[str(ags)] = {"listed": int(len(group)), "priced": int(flags.sum()), "not_priced": int((~flags).sum())}
+    kinds = {}
+    for kind, group in frame.groupby("facility_kind"):
+        flags = group["priced"].astype(bool)
+        kinds[str(kind)] = {"listed": int(len(group)), "priced": int(flags.sum()), "not_priced": int((~flags).sum())}
     counts = {}
     with_assumption = with_p4_or_p5 = 0
     for _, row in frame[priced].iterrows():
@@ -802,6 +820,7 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
         with_p4_or_p5 += bool({"P4", "P5"} & set(ids))
     return {"listed": int(len(frame)), "priced": int(priced.sum()), "not_priced": int((~priced).sum()),
             "not_priced_by_reason": by_reason, "by_municipality": dict(sorted(towns.items())),
+            "by_facility_kind": dict(sorted(kinds.items())),
             "priced_by_assumption": dict(sorted(counts.items())), "priced_with_assumption": int(with_assumption),
             "priced_with_p4_or_p5": int(with_p4_or_p5),
             "priced_tiered": int(frame.loc[priced, "tariff_tiers"].map(zones._is_set).sum()),
