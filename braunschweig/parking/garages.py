@@ -394,6 +394,10 @@ def parse_duration_bands(text) -> list:
     return bands
 
 
+#: The free schedule as a text (spec E14): one open free band, a car park that is free for every stay.
+FREE_SCHEDULE_TEXT = "0- free"
+
+
 def bands_have_price(bands) -> bool:
     """Whether a parsed schedule has a band that costs something (a total or an increment band)."""
     return any(band.kind != "free" for band in bands)

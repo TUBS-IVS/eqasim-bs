@@ -664,3 +664,210 @@ FOLLOWUP_RELEASED = {
                                       "GOS_POINT_4:current_public_tariff": ("open_undated_secondary_tariff_only",)}),
     "SUEDKOPF_SECONDARY_CAP": ("R-4b2-8", {"WOB_SUEDKOPF:daily_cap_eur": ("open_secondary_five_euro_candidate",)}),
 }
+
+# ------------------------------------------------------------------------------------------------------------------------
+# The Wolfsburg car parks of the city layer wob_parkplaetze (spec Amendment E14, ruling R-4b3-1, owner direction 2026-10-07 on
+# Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip: "der Rest auch, alle integrieren"). Each of the 24 points has exactly one
+# class; ``wolfsburg_lots.classify`` and ``check_decision`` compare the class with the fee status of the package and with the
+# geometry (the committed zones and the published tariff areas), never with a name.
+
+#: The package ids of the Geoviewer and of the retrieval, used as the source of the rows that rest on the layer alone.
+GEOVIEWER_URL = "https://geoviewer.stadt.wolfsburg.de/default/ows/projects/gpt/parken"
+#: How the position of a lot was found: the point of the city layer as the package keeps it (no entrance, no polygon).
+LOT_GEOMETRY_METHOD = "geoviewer_car_park_point"
+
+#: The decisions on the 24 points, in the order of the package. Keys: ``facility`` (the package's facility id) and ``class``
+#: (``a`` to ``e``, spec E14); for the classes with a dataset row (``b``, ``c``, ``d``) the ``garage_id`` and the roles of the
+#: tariff; for the classes without one (``a``, ``e``) the QA ``record_id`` and, for ``e``, the ``reason`` code of
+#: ``garage_qa.CANDIDATE_REASONS`` and the ``note``.
+#:
+#: * ``a``: a paid municipal car park inside a zone: ``rule`` is its published hourly reference (the consistency check against
+#:   the zone's street rate);
+#: * ``b``: an operator tariff: ``tiers`` with ``tier_grace`` (the free rule read as a grace period next to the time-of-day
+#:   tiers, ASSUMPTION P10) or ``grace`` (the free rule and the rate, the banded form) with ``cap``; ``ignored`` names what is
+#:   not encoded; ``operator`` = ("lots_page", name, member, quotation, source id): the operator is taken only where the
+#:   package's copy of its own page holds the quotation; ``source`` is the package source that gives the row its source_url;
+#: * ``c``: free of charge for the public: ``free`` is the free rule, ``expect`` the field decisions (id: value) the reading
+#:   relies on;
+#: * ``d``: the municipal free default (ASSUMPTION P12): ``free_default`` is the field decision of the fee status; ``expect``
+#:   states its value;
+#: * ``e``: no public option; the reason and the note go to the QA table.
+#: ``p10_decisions`` and ``p11_decisions`` are (ruling, {field decision id: the statuses the ruling relied on}); ``p10_basis``
+#: and ``p11_basis`` state the evidence of the reading. Free texts (``comment``, ``note``, ``qa_comment``) explain a decision
+#: and may quote published numbers; no code reads them for a value.
+LOT_SPECS = (
+    {"facility": "WOB_PARK_262165", "class": "d", "garage_id": "wob_lot_262165", "free_default": "WOB_PARK_262165:fee_status",
+     "expect": {"WOB_PARK_262165:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_327689", "class": "d", "garage_id": "wob_lot_327689", "free_default": "WOB_PARK_327689:fee_status",
+     "expect": {"WOB_PARK_327689:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_327697", "class": "d", "garage_id": "wob_lot_327697", "free_default": "WOB_PARK_327697:fee_status",
+     "expect": {"WOB_PARK_327697:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_524301", "class": "d", "garage_id": "wob_lot_524301", "free_default": "WOB_PARK_524301:fee_status",
+     "expect": {"WOB_PARK_524301:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_524303", "class": "a", "record_id": "candidate_wob_lot_524303",
+     "rule": "WOB_PARK_524303_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_589853", "class": "d", "garage_id": "wob_lot_589853", "free_default": "WOB_PARK_589853:fee_status",
+     "expect": {"WOB_PARK_589853:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_720901", "class": "a", "record_id": "candidate_wob_lot_720901",
+     "rule": "WOB_PARK_720901_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_720902", "class": "d", "garage_id": "wob_lot_720902", "free_default": "WOB_PARK_720902:fee_status",
+     "expect": {"WOB_PARK_720902:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_786434", "class": "a", "record_id": "candidate_wob_lot_786434",
+     "rule": "WOB_PARK_786434_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_983050", "class": "a", "record_id": "candidate_wob_lot_983050",
+     "rule": "WOB_PARK_983050_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1048584", "class": "e", "record_id": "candidate_wob_lot_1048584", "reason": "user_group_only",
+     "note": "the disabled-parking point of the Theaterparkplatz (the city layer types it Behindertenparkplaetze): only persons "
+             "who may use marked disabled parking, with a valid blue permit, may park there; the 0 EUR statement of the Theater "
+             "pages concerns the whole car park (the point WOB_PARK_1900551, a free option) and no tariff board at this point; "
+             "the package keeps the point as a conditional free sub-area that is not to be treated as an alternative for "
+             "general cars; no option of the general public"},
+    {"facility": "WOB_PARK_1114127", "class": "e", "record_id": "candidate_wob_lot_1114127", "reason": "customer_regime",
+     "note": "the car park of the BadeLand and the Eis Arena: guests of the BadeLand park free of charge when the parking ticket "
+             "is validated at the exit (the package rule R02), whereas every other driver pays the fee of Zone I (1.00 EUR per "
+             "started 30 min by the bath tariff of 2025 part D, which refers to the current Zone I amount; recorded in the "
+             "package as rule R01 and NOT modelled: the rounding and the day maximum of the barrier car park are not stated); "
+             "the Eis Arena exemption is open; the lot lies 1.4 km outside every zone and its main users park free, so it is "
+             "no public option of the model (customer regime)"},
+    {"facility": "WOB_PARK_1245204", "class": "a", "record_id": "candidate_wob_lot_1245204",
+     "rule": "WOB_PARK_1245204_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1441813", "class": "c", "garage_id": "wob_lot_1441813", "free": "WOB_PARK_1441813_R01",
+     "expect": {"WOB_PARK_1441813:fee_status": "conditional"}, "source": "EV_WMG_P1_POI",
+     "comment": "Volkswagen Arena P1 and P2 are free of charge outside match days (the package rule: 'in der Regel kostenlos'; the "
+                "WMG point of interest of the named car park P1 states public, free of charge, open day and night). Match days "
+                "are NOT MODELLED (reading): on a VfL match day P1 is reserved for holders of a parking permit and the operator "
+                "can close P1 and P2 fully or partly for large events, for which no tariff or permit price is published; the "
+                "model's average weekday (spec D1) is a day without a match, so the car park is read as free. Capacity 494 is "
+                "the published total capacity of P1 (the package states its scope), not P2; no live availability."},
+    {"facility": "WOB_PARK_1638410", "class": "a", "record_id": "candidate_wob_lot_1638410",
+     "rule": "WOB_PARK_1638410_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1703940", "class": "d", "garage_id": "wob_lot_1703940", "free_default": "WOB_PARK_1703940:fee_status",
+     "expect": {"WOB_PARK_1703940:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_1703946", "class": "d", "garage_id": "wob_lot_1703946", "free_default": "WOB_PARK_1703946:fee_status",
+     "expect": {"WOB_PARK_1703946:fee_status": "unknown"}},
+    {"facility": "WOB_PARK_1703957", "class": "a", "record_id": "candidate_wob_lot_1703957",
+     "rule": "WOB_PARK_1703957_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1769502", "class": "a", "record_id": "candidate_wob_lot_1769502",
+     "rule": "WOB_PARK_1769502_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1835014", "class": "a", "record_id": "candidate_wob_lot_1835014",
+     "rule": "WOB_PARK_1835014_MOBILE_REFERENCE"},
+    {"facility": "WOB_PARK_1835028", "class": "c", "garage_id": "wob_lot_1835028", "free": "WOB_PARK_1835028_R01",
+     "expect": {"WOB_PARK_1835028:fee_status": "free_confirmed"}, "source": "EV_WMG_ALLERPARK_POI",
+     "comment": "Allerpark car park: public, open day and night and free of charge according to the WMG point of interest of the "
+                "named car park (wolfsburg-erleben.de); restrictions at large events are possible and not modelled; capacity and "
+                "maximum stay are not stated and left empty. The paid BadeLand, Eis Arena and pavilion car parks next to it are "
+                "separate lots whose prices are not transferred to it."},
+    {"facility": "WOB_PARK_1900551", "class": "c", "garage_id": "wob_lot_1900551", "free": "WOB_PARK_1900551_R01",
+     "expect": {"WOB_PARK_1900551:fee_status": "free_confirmed"}, "source": "EV_THEATER_SERVICE",
+     "comment": "Theaterparkplatz: free of charge for the public according to the service page of the Theater (a municipal "
+                "site that the Theater states is not reserved for its guests); opening hours, maximum stay and capacity are not "
+                "stated and left empty. No source names an operator (the package's 'Stadt Wolfsburg' rests on the statement that "
+                "the site is municipal property), so the operator stays empty. The disabled-parking point of the same car park "
+                "(WOB_PARK_1048584) is a separate point of the layer and no option."},
+    {"facility": "WOB_PARK_1900571", "class": "b", "garage_id": "wob_lot_1900571",
+     "tiers": ("OP_AUTOSTADT_P2_DAY", "OP_AUTOSTADT_P2_NIGHT"), "tier_grace": "OP_AUTOSTADT_P2_GRACE",
+     "source": "op_autostadt_prices",
+     "operator": ("lots_page", "Autostadt GmbH", "evidence/research/operators/text/op_autostadt_rules.txt",
+                  "Die Parkkarte ist Eigentum der Autostadt GmbH", "op_autostadt_rules"),
+     "ignored": {"OP_AUTOSTADT_P2_DAY:cap": "the daily maximum of 6.00 EUR applies only with the validation of the parking "
+                                            "ticket at the Welcome Desk, a customer condition (a visitor who has been in the "
+                                            "Autostadt), so it is not used; its day boundary is not stated either",
+                 "OP_AUTOSTADT_P2_PREMIUM": "free of charge for holders of a valid Autostadt Key Premium card (and the BF17 "
+                                            "accompanied-driving rule) after the parking ticket is activated at the Welcome "
+                                            "Desk, a customer group the model cannot identify",
+                 "OP_AUTOSTADT_COLLECTED_CAR": "a collected new car after the handover: no tariff of the arriving car"},
+     "p10_decisions": ("R-4b3-1", {"OP_AUTOSTADT_P2_GRACE:free_minutes_policy": ("unknown",)}),
+     "p10_basis": "the Parkplatzordnung of the Autostadt (Stand June 2026, section 4) states 'Bei einer Parkzeit von bis zu 30 "
+                  "Minuten fallen keine Parkgebuehren an' and says nothing about longer stays; the package keeps the deduction "
+                  "open (field decision OP_AUTOSTADT_P2_GRACE:free_minutes_policy unknown; open question 'Wird bei mehr als 30 "
+                  "Minuten ab Einfahrt oder ab Ende der Freiphase berechnet?'); the owner decided on 2026-10-07 (spec E14) to "
+                  "read the 30 free minutes as a grace period, as for the Forschungsflughafen and the Suedkopf-Center (spec E12)",
+     "comment": "Autostadt Wolfsburg, visitor car park P2 (the package assigns the point to P2: it lies inside the OSM polygon "
+                "190900790 that is labelled Autostadt P2 and the operator's plan shows P2 as its own surface; the short-stay car "
+                "park PK with 2.00 EUR per hour is another car park). Tariff of the visitor car parks P1 to P3 on the operator's "
+                "price page and in the Parkplatzordnung: 06:00-18:00 1.00 EUR per hour, 18:00-06:00 0.50 EUR per hour, no stay of "
+                "up to 30 minutes is charged. Encoded as the two time-of-day tiers per started 60 min with the grace period of "
+                "30 min (ASSUMPTION P10 for tiers: a longer stay is billed from the arrival). The rounding is not stated "
+                "(ASSUMPTION P4, started unit). The Autostadt's opening hours (10:00-18:00) are no charging hours. ACCESS: the "
+                "introduction of the Parkplatzordnung reserves the car parks for visitors of the Autostadt, whereas section 3 "
+                "says that P1 to P3 are open to all persons; the package keeps the contradiction as open, and the owner decided "
+                "to treat the car park as a public option (spec E14)."},
+    {"facility": "WOB_PARK_1966086", "class": "b", "garage_id": "wob_lot_1966086",
+     "grace": ("OP_CLINIC_GROUP_GRACE", "OP_CLINIC_SURFACE_GROUP"), "cap": "OP_CLINIC_SURFACE_GROUP:cap", "window": None,
+     "source": "op_clinic_visitors",
+     "operator": ("lots_page", "Klinikum Wolfsburg", "evidence/research/operators/search_clinic_precision_evidence.json",
+                  "unsere Besucherparkpl\u00e4tze P1 und P2", "op_clinic_visitors"),
+     "p10_decisions": ("R-4b3-1", {"OP_CLINIC_GROUP_GRACE:free_minutes_policy": ("unknown",)}),
+     "p10_basis": "the operator's visitor page states 'bis 30 Minuten kostenfrei, danach 0,80 Euro je halbe Stunde, maximal 5,00 "
+                  "Euro pro Tag' for P1 and P2/P3; the word 'danach' can be read as a deduction of the free minutes, and the "
+                  "package keeps the deduction open (field decision OP_CLINIC_GROUP_GRACE:free_minutes_policy unknown; open "
+                  "question '30-Minuten-Abzug, Rundung und Zeitraum 5-Euro-Tagesmaximum?'); the owner decided on 2026-10-07 "
+                  "(spec E14) to read the 30 free minutes as a grace period (a stay of 31 min costs two started half hours from "
+                  "its arrival, 1.60 EUR, where a deduction would give 0.80 EUR)",
+     "p11_decisions": ("R-4b3-1", {"WOB_PARK_1966086:geometry_match": ("reviewed_evidence",),
+                                   "OP_CLINIC_SURFACE_GROUP:amount_eur": ("documented_component",)}),
+     "p11_basis": "the operator tariff of the visitor car parks P1 and P2/P3 is assigned to the municipal point although the "
+                  "package cannot tell which car park it is (the point lies inside an OSM surface/customer area without a "
+                  "label, the geometry match is partial_subfacility_unresolved, and the official site plan could not be "
+                  "retrieved: HTTP 502) and keeps the three group rules as observed_group_rules_not_assigned; the owner decided "
+                  "on 2026-10-07 (spec E14) to assign the visitor-group rule to the point (the garage P4, 2.00 EUR per hour, "
+                  "10.00 EUR per day, is a different facility and is not used)",
+     "comment": "Klinikum Wolfsburg, visitor car park (P1, P2/P3) by the operator's current visitor page: 30 min free, then 0.80 "
+                "EUR per half hour, at most 5.00 EUR per day, ticketless parking with online payment up to 48 hours after "
+                "leaving. The point lies inside the zone wob_tarifzone_2: the car park is an off-street option of stays in that "
+                "zone (its tariff differs from the street product), not a zone street product. The operator page could not be "
+                "retrieved directly on 2026-10-07 (HTTP 502); the values are the search extract of that page that the package "
+                "keeps (evidence/research/operators/search_clinic_precision_evidence.json), which the package's sources record "
+                "as a primary operator page. The rounding is not stated (ASSUMPTION P4), no charging times are stated "
+                "(ASSUMPTION P5) and the day boundary of the 5.00 EUR maximum is not stated (read as a maximum per stay). A "
+                "historic blood-donor flyer of 2022 (free parking after the Park-Coin is validated) is no current rule and not "
+                "used."},
+)
+#: Package components that the garage rows use (converted to rules of the regional schema).
+LOT_RULE_IDS = ("OP_AUTOSTADT_P2_DAY", "OP_AUTOSTADT_P2_NIGHT", "OP_AUTOSTADT_P2_GRACE", "OP_AUTOSTADT_P2_PREMIUM",
+                "OP_AUTOSTADT_COLLECTED_CAR", "OP_CLINIC_SURFACE_GROUP", "OP_CLINIC_GROUP_GRACE", "WOB_PARK_1441813_R01",
+                "WOB_PARK_1835028_R01", "WOB_PARK_1900551_R01")
+
+#: Owner decisions that release a component of the Wolfsburg car-park package for use (spec E14, ruling R-4b3-1): {rule id:
+#: (the ruling, {field decision id of the package: the statuses it may have})}. The package marks every record
+#: full_cost_calculation_ready=false, so no component sets a value unless it is listed here, and it is released only while the
+#: package's own field decisions have the statuses the ruling relied on (``garage_supplement.release_rules``). A status
+#: ``unknown`` is relied on where the reading is the owner's (the rounding, the deduction of free minutes, the charging times).
+LOT_RELEASED = {
+    "OP_AUTOSTADT_P2_DAY": ("R-4b3-1", {
+        "OP_AUTOSTADT_P2_DAY:amount_eur": ("documented_component",),
+        "OP_AUTOSTADT_P2_DAY:billing_unit_minutes": ("documented_component",),
+        "OP_AUTOSTADT_P2_DAY:weekday_schedules": ("documented_component",),
+        "OP_AUTOSTADT_P2_DAY:free_minutes": ("documented_component",), "OP_AUTOSTADT_P2_DAY:rounding": ("unknown",)}),
+    "OP_AUTOSTADT_P2_NIGHT": ("R-4b3-1", {
+        "OP_AUTOSTADT_P2_NIGHT:amount_eur": ("documented_component",),
+        "OP_AUTOSTADT_P2_NIGHT:billing_unit_minutes": ("documented_component",),
+        "OP_AUTOSTADT_P2_NIGHT:weekday_schedules": ("documented_component",),
+        "OP_AUTOSTADT_P2_NIGHT:free_minutes": ("documented_component",), "OP_AUTOSTADT_P2_NIGHT:rounding": ("unknown",)}),
+    "OP_AUTOSTADT_P2_GRACE": ("R-4b3-1", {
+        "OP_AUTOSTADT_P2_GRACE:free_minutes": ("documented_component",),
+        "OP_AUTOSTADT_P2_GRACE:free_minutes_policy": ("unknown",)}),
+    "OP_CLINIC_SURFACE_GROUP": ("R-4b3-1", {
+        "OP_CLINIC_SURFACE_GROUP:amount_eur": ("documented_component",),
+        "OP_CLINIC_SURFACE_GROUP:billing_unit_minutes": ("documented_component",),
+        "OP_CLINIC_SURFACE_GROUP:free_minutes": ("documented_component",),
+        "OP_CLINIC_SURFACE_GROUP:rounding": ("unknown",), "OP_CLINIC_SURFACE_GROUP:weekday_schedules": ("unknown",)}),
+    "OP_CLINIC_SURFACE_GROUP:cap": ("R-4b3-1", {
+        "OP_CLINIC_SURFACE_GROUP:daily_cap_eur": ("documented_component",),
+        "OP_CLINIC_SURFACE_GROUP:daily_cap_period": ("unknown",)}),
+    "OP_CLINIC_GROUP_GRACE": ("R-4b3-1", {
+        "OP_CLINIC_GROUP_GRACE:free_minutes": ("documented_component",),
+        "OP_CLINIC_GROUP_GRACE:free_minutes_policy": ("unknown",)}),
+    "WOB_PARK_1441813_R01": ("R-4b3-1", {
+        "WOB_PARK_1441813_R01:amount_eur": ("documented_component",),
+        "WOB_PARK_1441813_R01:free_minutes_policy": ("documented_component",),
+        "WOB_PARK_1441813:fee_status": ("reviewed_evidence",)}),
+    "WOB_PARK_1835028_R01": ("R-4b3-1", {
+        "WOB_PARK_1835028_R01:amount_eur": ("documented_component",),
+        "WOB_PARK_1835028_R01:free_minutes_policy": ("documented_component",),
+        "WOB_PARK_1835028:fee_status": ("reviewed_evidence",)}),
+    "WOB_PARK_1900551_R01": ("R-4b3-1", {
+        "WOB_PARK_1900551_R01:amount_eur": ("documented_component",),
+        "WOB_PARK_1900551_R01:free_minutes_policy": ("documented_component",),
+        "WOB_PARK_1900551:fee_status": ("reviewed_evidence",)}),
+}

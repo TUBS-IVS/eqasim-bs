@@ -907,6 +907,7 @@ def step(garages_step, monkeypatch):
     monkeypatch.setattr(garages_step.specs, "SUPPLEMENT_RELEASED", RELEASED)
     monkeypatch.setattr(garages_step.specs, "BROCHURE_TARIFFS", BROCHURE)
     monkeypatch.setattr(garages_step.specs, "FOLLOWUP_RELEASED", FOLLOWUP_RELEASED)
+    monkeypatch.setattr(garages_step.specs, "LOT_SPECS", ())  # the Wolfsburg car-park package has its own tests
     return garages_step
 
 

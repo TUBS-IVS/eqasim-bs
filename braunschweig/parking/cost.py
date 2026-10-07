@@ -892,7 +892,8 @@ def garage_metered_cents(garage: GarageTariff, arrival_s: int, departure_s: int,
     Single-window form: the metering primitive of spec 3.2 rule 8 over the stay's seconds in the garage's fee window (the
     first period only when its clock window holds the arrival); tiered form: ``_tiered_cents`` (P6, E10; with a grace period
     P10); banded form: the duration schedule over the chargeable minutes (P8, E11, P9; P10 is encoded as bands, and a car
-    park that is free for every stay as the one open free band). A stay without a chargeable second costs 0. Raises ``ValueError`` for a negative time or a departure before the arrival. Pure.
+    park that is free for every stay as the one open free band). A stay without a chargeable second costs 0. Raises
+    ``ValueError`` for a negative time or a departure before the arrival. Pure.
     """
     arrival_s = _time_s("arrival_s", arrival_s)
     departure_s = _time_s("departure_s", departure_s)

@@ -129,11 +129,13 @@ def _print_schema_2_products(tariffs) -> None:
           f"enter through the dataset); search time on {search_rows} rows (decision D4)")
 
 
-def _print_garages(garages, garage_qa_table, garages_file) -> None:
-    """One line on the garage dataset: the garages listed, priced and not priced by reason, per municipality, the rates of
-    the assumptions P3 to P11 among the priced garages, the union rates (at least one assumption; P4 or P5), the garages in
-    the tiered form and in the banded form and the monthly products (fallback transparency: the share of the garages that
-    rest on an assumption is on the record)."""
+def _print_garages(garages, garage_qa_table, garages_file, tariffs=None) -> None:
+    """The lines on the garage dataset: the garages listed, priced and not priced by reason, per municipality and per facility
+    kind (garage, surface lot), the rates of the assumptions P3 to P12 among the priced garages, the union rates (at least one
+    assumption; P4 or P5), the garages in the tiered form, in the banded form and with the free schedule and the monthly
+    products (fallback transparency: the share of the garages that rest on an assumption is on the record); and, with the
+    tariff table, the consistency check of the Wolfsburg car parks inside a zone (spec E14): the published hourly reference of
+    their tariff area against the street rate of their zone, a difference named and never an error."""
     if garages is None:
         print(f"[parking-validate] garages: no dataset at {garages_file} (no stage reads it yet)")
         return
@@ -141,14 +143,22 @@ def _print_garages(garages, garage_qa_table, garages_file) -> None:
     qa = garage_qa.qa_coverage(garage_qa_table)
     towns = {ags: f"{values['listed']} listed {values['priced']} priced"
              for ags, values in sorted(coverage["by_municipality"].items())}
+    kinds = {kind: f"{values['listed']} listed {values['priced']} priced"
+             for kind, values in sorted(coverage["by_facility_kind"].items())}
     print(f"[parking-validate] garages: {coverage['listed']} listed, {coverage['priced']} priced, {coverage['not_priced']} not "
           f"priced ({_counts_text(coverage['not_priced_by_reason'])}); per municipality {_counts_text(towns)}; priced garages "
           f"resting on an assumption: {_counts_text(coverage['priced_by_assumption'])} of {coverage['priced']} (at least "
           f"one assumption {coverage['priced_with_assumption']}, P4 or P5 {coverage['priced_with_p4_or_p5']}; in the tiered "
-          f"form {coverage['priced_tiered']}, in the banded form {coverage['priced_banded']}); monthly "
+          f"form {coverage['priced_tiered']}, in the banded form {coverage['priced_banded']}, with the free schedule "
+          f"{coverage['priced_free']}); by facility kind {_counts_text(kinds)}; monthly "
           f"product on {coverage['with_monthly_product']} garages; QA: monthly products used {qa['monthly_used']}, recorded "
           f"and not used {qa['monthly_not_used']} ({_counts_text(qa['monthly_not_used_by_reason'])}), candidates that are no "
           f"garage {qa['candidates']} ({_counts_text(qa['candidates_by_reason'])})")
+    if tariffs is not None:
+        check = garage_qa.zone_reference_summary(garage_qa_table, tariffs)
+        print(f"[parking-validate] car parks inside a zone (spec E14): {check['checked']} checked, the published hourly "
+              f"reference of the tariff area against the street rate of the zone: {check['equal']} equal, "
+              f"{len(check['differing'])} differ ({', '.join(check['differing']) or 'none'})")
 
 
 #: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).
@@ -392,7 +402,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         print(f"[parking-validate] municipal QA: {len(municipal_qa)} rows (" + ", ".join(
             f"{ags} {count}" for ags, count in rows.items()) + "); zones from municipal sources: "
               + (", ".join(municipal) or "none"))
-    _print_garages(garages, garage_qa_table, garages_file)
+    _print_garages(garages, garage_qa_table, garages_file, tariffs)
 
 
 def main(argv=None) -> int:

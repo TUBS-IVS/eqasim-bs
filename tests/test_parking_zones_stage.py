@@ -398,10 +398,11 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     context = _context(COMMITTED_DATA, paths={})
     with caplog.at_level(logging.WARNING, logger=STAGE_LOGGER):
         release = zones_stage.execute(context)
-    # The only warnings are the two assumption-rate warnings of the garage loader (34 of 35 priced garages rest on an
-    # assumption, 30 of 35 on P4 or P5): by design at every load, no marker, no other problem.
+    # The only warning is the assumption-rate warning of the garage loader (44 of 48 priced rows rest on an assumption): by
+    # design at every load, no marker, no other problem. The second rate warning (P4 or P5) is silent since the Wolfsburg
+    # surface lots (spec E14): 32 of 48 rows (66.7 %) are below the 75 % threshold.
     warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
-    assert [record.name for record in warnings] == ["braunschweig.parking.garages"] * 2
+    assert [record.name for record in warnings] == ["braunschweig.parking.garages"]
     assert all(GARAGE_ASSUMPTION_RATE_WARNING in record.getMessage() for record in warnings)
     assert len(release["zones"]) > 0
     assert set(release["zones"]["zone_id"]) == set(release["tariffs"]["zone_id"])
@@ -409,12 +410,12 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert [source["path"] for source in release["sources"]] == [DEFAULT_PATHS[key] for key in PATH_KEYS]
     # Braunschweig A, B, C and Goslar A, B, C, F, G, H, J (spec Amendment C3): a second layer, not fee zones.
     assert len(release["districts"]) == 10 and set(release["districts"]["municipality_ags"]) == {"03101000", "03153017"}
-    # The committed garage dataset: 35 garages, every one priced (spec E13), in EPSG:25832.
-    assert len(release["garages"]) == 35 and release["garages"]["priced"].all()
+    # The committed garage dataset: 48 rows (35 garages, 13 surface lots), every one priced (specs E13 and E14), in EPSG:25832.
+    assert len(release["garages"]) == 48 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64
     # The committed release exports as the schema-3 tariff model the preparation writes: with the decay 0 (the garage
-    # options off) and with a decay value, both list the 35 priced garages.
+    # options off) and with a decay value, both list the 48 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],
                                              garages=release["garages"])
     assert model["schema_version"] == 3 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
-    assert len(model["garages"]) == 35 and model["garage_decay_m"] == 0.0
+    assert len(model["garages"]) == 48 and model["garage_decay_m"] == 0.0

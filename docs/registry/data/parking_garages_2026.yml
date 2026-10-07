@@ -1,5 +1,5 @@
 dataset: parking_garages_2026
-title: Parking garages of eight ZGB towns with their own tariff, one point per garage (October 2026)
+title: Parking garages and surface lots of eight ZGB towns with their own tariff, one point per facility (October 2026)
 inventory_id: null
 provider: >-
   Own curation (issue #436, parking cost zones v2, spec Amendment E1, Task 4b) of the owner-supplied regional evidence
@@ -12,18 +12,24 @@ provider: >-
   Themenkarte Parken, the ArcGIS service Bewohnerparken of Stadt Goslar (positions of 2018) and, for some positions,
   directory pages (parkinglist.de, parkito.ch) and OpenStreetMap features read through mapcarta.com; the check of the
   car parks that are no garage also reads the city car-park directory of Braunschweig (bs_plan_parkplaetze.geojson,
-  retrieved 2026-09-29); two further owner-supplied packages of 2026-10-07 complete it (spec E12 and E13): the supplement
+  retrieved 2026-09-29); three further owner-supplied packages of 2026-10-07 complete it (spec E12, E13 and E14): the
+  supplement
   Parkhaus_Ergaenzungen_2026-10-07.zip (SHA-256 76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa: four main points of garages without coordinates, from
   OpenStreetMap, and six tariff checks of Braunschweig, Wolfsburg and Goslar) and the follow-up
   Parkhaus_Nachrecherche_2026-10-07.zip (SHA-256 3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8: directory observations for Goslar Achtermann and
-  Charley-Jacob-Strasse and the Wolfsburg Suedkopf-Center, and their recommendations)
+  Charley-Jacob-Strasse and the Wolfsburg Suedkopf-Center, and their recommendations) and the Wolfsburg car-park package
+  Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256 650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0:
+  the review of the 24 car parks of the Wolfsburg city layer wob_parkplaetze, whose points are those of the Stadt Wolfsburg
+  Geoviewer theme Parken, whose operator tariffs are those of the Autostadt GmbH and the Klinikum Wolfsburg and whose free
+  car parks are those of the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg)
 vintage: >-
   Package of 2026-10-07: the tariff rules and pages were retrieved between 2026-10-02 and 2026-10-07 (source_date per
   garage); the Braunschweig car-park directory 2026-09-29; the Goslar positions are the city's snapshot of 2018-11-22.
   Tariffs as published in October 2026, applied to the model's average weekday.
 geography: >-
-  35 garages in eight towns: Braunschweig 12, Wolfsburg 9, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
-  Salzgitter 1, Goslar 4. Points, WGS84 (CRS84) on disk, EPSG:25832 in memory.
+  48 rows in eight towns: 35 garages (Braunschweig 12, Wolfsburg 9, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
+  Salzgitter 1, Goslar 4) and 13 surface lots (all Wolfsburg, so Wolfsburg 22). Points, WGS84 (CRS84) on disk, EPSG:25832 in
+  memory.
 crs: EPSG:25832 (CRS84 on disk)
 roles:
 - supply_input
@@ -36,12 +42,18 @@ acquisition:
     The package zip and the directory under eqasim-data/data/braunschweig/parking/raw_sources/ (local, gitignored): the
     garage layers bs_parkhaeuser, wob_parkhaeuser, region_parkhaeuser and gos_parking_locations of
     daten/Regional_Parkdaten.gpkg, the tables daten/facilities.json and daten/tariff_rules.json, and the directory
-    bs_plan_parkplaetze.geojson (SHA-256 861bc29046fe1ee95dead0ead198908505529cd26ba133de46335efcfb62fd43); and the two
-    supplement zips next to the package: Parkhaus_Ergaenzungen_2026-10-07.zip (SHA-256 76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa; members
+    bs_plan_parkplaetze.geojson (SHA-256 861bc29046fe1ee95dead0ead198908505529cd26ba133de46335efcfb62fd43); and the three
+    zips next to the package: Parkhaus_Ergaenzungen_2026-10-07.zip (SHA-256
+    76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa; members
     data/entrances.geojson, data/parking_patch.gpkg layer entrances, data/facility_updates.json, data/tariff_rules.json,
     data/tariff_observations.json, data/field_decisions.json, data/sources.json and two evidence texts) and
     Parkhaus_Nachrecherche_2026-10-07.zip (SHA-256 3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8; members data/facility_review.json, data/tariff_rules.json,
-    data/field_decisions.json, data/model_actions.json, data/archived_charley_point.geojson, data/sources.json)
+    data/field_decisions.json, data/model_actions.json, data/archived_charley_point.geojson, data/sources.json) and
+    Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256 650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0;
+    147 members; read: data/parking_lots.gpkg layer parking_lots and data/parking_lots.geojson, data/facility_review.json,
+    data/tariff_rules.json, data/field_decisions.json, data/sources.json, data/summary.json, data/point_area_matches.json,
+    data/published_tariff_areas.geojson, evidence/input/daten/geojson/wob_handyparkflaechen.geojson and the evidence texts
+    of the operators; the Wolfsburg package is the fourth optional input of the step)
   script: scripts/curation/parking_zones_2026/regional_garages.py
   notes: >-
     One-off curation, never a pipeline stage: python scripts/curation/parking_zones_2026/regional_garages.py
@@ -54,7 +66,9 @@ acquisition:
     eqasim-data/cache_bs_bpsmoke/data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421.p> --out
     eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson --qa-out
     eqasim-data/data/braunschweig/parking/parking_garages_2026_qa.csv --tariffs
-    eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv. The step checks the package and the directory
+    eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv --wolfsburg-lots-zip
+    eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip
+    --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson. The step checks the package and the directory
     against their pinned SHA-256 before it reads them, reads the layers from the zip (EPSG:25832, valid, non-empty;
     nothing is repaired) and prints a ledger per layer (features, garages, used, twins skipped). Every garage feature
     must be specified in regional_garage_specs.py or be a twin (a feature whose facility id another layer gives: three
@@ -230,8 +244,9 @@ acquisition:
     the supplement's BS_FORSCHUNGSFLUGHAFEN names as its legacy key), and the Helmstedt underground garage has the new key
     HE_GROEPERN_TG_118, never HE_GROEPERN_STRASSE (18 fee-liable street spaces). PROVENANCE COLUMN: package_sha256 holds the
     SHA-256 of the regional package and, where a package touches the row (a position, a tariff value or a finding), the
-    SHA-256 of the supplement and of the follow-up, in that order, ';'-joined: 25 rows cite the regional package only, 5
-    the regional and the supplement package, 5 all three. NEW GARAGES (ruling R-4b2-1; the four candidates with the reason
+    SHA-256 of the supplement and of the follow-up, in that order, ';'-joined: 25 rows cite the regional package only, 5 the
+    regional and the supplement package, 5 all three, and the 13 surface lots the regional and the Wolfsburg car-park
+    package. NEW GARAGES (ruling R-4b2-1; the four candidates with the reason
     no_coordinates are garage rows now, Clausthal-Zellerfeld Am Rathaus is the one left): the positions are the main
     points of the supplement (entrances.geojson, EPSG:4326, cross-checked with the GeoPackage layer entrances in
     EPSG:25832 to 1 cm), never the reference points (alternatives, never read or counted), as points without buffers;
@@ -323,6 +338,82 @@ acquisition:
     (no garage uses one now), because the validator and the tests refuse an unknown reason and a later garage may need
     one. Result: 35 garages listed and 35 priced; assumptions among the 35 priced: P4 22, P5 23, P6 7, P7 5, P8 10, P10 2,
     P11 4 (P3 0; at Groepern P11 covers the monthly product only); tiered 7, banded 10; monthly product on 9 garages.
+    WOLFSBURG CAR PARKS (Task 4b3, spec E14, rulings R-4b3-0 to R-4b3-4; owner direction 2026-10-07 'der Rest auch, alle
+    integrieren'). The fourth optional input (--wolfsburg-lots-zip, which needs --zones, the committed zone polygons, and
+    --tariffs) is the owner's review of the 24 car parks of the city layer wob_parkplaetze,
+    Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256
+    650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0). It is read by
+    scripts/curation/parking_zones_2026/wolfsburg_lots.py the way the supplements are read: pinned SHA-256, every member
+    read checked against the zip's own manifest.sha256, nothing extracted and its scripts never run; the GeoPackage layer
+    parking_lots (EPSG:25832) is checked against the GeoJSON points (EPSG:4326) to 1 cm and against the layer
+    wob_parkplaetze of the regional package (the same 24 points, 0.00 m apart). The package marks every record
+    full_cost_calculation_ready=false, so a component sets a value only where an owner decision of
+    regional_garage_specs.LOT_RELEASED releases it and only while the package's own field decisions have the statuses the
+    ruling relied on (the status unknown is relied on where the reading is the owner's: the rounding, the deduction of free
+    minutes, the charging times). NEW COLUMN facility_kind (ruling R-4b3-0): garage or surface_lot; the 35 earlier rows are
+    garages, the 13 car parks of the city layer are surface lots, and the pricing treats both alike (no special case).
+    package_sha256 may now hold up to four SHA-256 values (regional, supplement, follow-up, Wolfsburg car-park package); a
+    surface lot cites the regional package (it holds the layer, checked) and the Wolfsburg package. CLASSES: each of the 24
+    points has exactly one class, decided by the fee status of the package and by the position of the point (in the
+    committed zone polygons and in the published tariff areas of the city, EPSG:25832), never by a name; the data alone
+    decide the classes a and d, the owner decisions of regional_garage_specs.LOT_SPECS the others, and the step stops where
+    decision and data disagree (a class the fee status does not allow; a point decided as a municipal free default that lies
+    inside a tariff area or a zone). (a) 9 paid municipal car parks (fee status paid_confirmed) lie inside exactly one zone
+    and in the one published tariff area that the package matches to them strictly (wob_tarifzone_1: Kolpingstrasse,
+    Otto-Wels-Platz, Hallenbad, Cinemaxx; wob_tarifzone_2: Schachtweg, CongressPark, Amtsgericht; wob_tarifzone_3:
+    Hoffmannstrasse, Denkmalplatz): their fee is the street product of their zone (ruling R-E1, no double role), so each is
+    a QA candidate of the reason zone_street_product (zone_ids names the zone, amount_eur the published hourly reference of
+    its tariff area) with a CONSISTENCY CHECK of that reference (2.00, 1.20 or 1.00 EUR per hour) against hourly_rate_eur of
+    the zone in parking_tariffs_2026.csv: 9 of 9 equal; a difference would be named in the QA note and in the validator
+    summary and would never change the zone tariff (the paid hours of the areas differ at one car park, CongressPark
+    07:00-15:00 against the zone window 07:00-18:00, which the note states). (b) 2 car parks have an operator tariff and are
+    rows: the Autostadt P2 (06:00-18:00 1.00 EUR and 18:00-06:00 0.50 EUR per started hour, 30 min grace period) and the
+    Klinikum visitor car parks (0.80 EUR per half hour, 30 min grace period, day maximum 5.00 EUR). The grace periods are
+    ASSUMPTION P10 (the owner's reading; the package keeps the deduction open). GRAMMAR EXTENSION for the Autostadt, which
+    has time-of-day tiers and a grace period together (neither the tiered nor the banded form could express both): a tiered
+    garage may carry ONE closed free band in tariff_duration_bands as its grace period ('0-30 free'); a stay not longer than
+    the band costs 0 and a longer stay is priced by the tiers from its arrival, the free minutes are not deducted; the band
+    is the whole of the bands (no fee window, no first period, no priced band), the row rests on P6 and P10 and not on P8,
+    braunschweig.parking.cost prices it from the elapsed stay, and the keys of the schema 3 garage entry are unchanged
+    (tiers and bands are both given), so the golden cases do not change; the Java port (Task 4e) must read tiers and bands
+    together. The Klinikum free period equals its billing unit, so the bands are '0-30 free; 30-60 total 1.60; 60- 0.80/30':
+    a stay of 31 min has two started half hours counted from its arrival (the operator's wording 'danach' can also be read
+    as a deduction, which would give 0.80 EUR). The assignment of the observed visitor-group rule to the municipal point is
+    ASSUMPTION P11 (the package cannot tell which car park the point is and keeps the group rules as
+    observed_group_rules_not_assigned; the operator page could not be retrieved, HTTP 502 on 2026-10-07, so the values are
+    the search extract that the package keeps; the Tiefgarage P4, 2.00 EUR per hour, is another facility and not used). The
+    Autostadt maximum of 6.00 EUR needs the validation of the ticket at the Welcome Desk, a customer condition, and is not
+    used; the Key Premium rule and the collected car are customer conditions and not used; the Parkplatzordnung is
+    contradictory on access (visitors of the Autostadt; P1 to P3 open to all persons), which the package keeps open and the
+    notes name. The Klinikum point lies inside wob_tarifzone_2: it is an off-street option of stays in that zone (its tariff
+    differs from the street product), not a zone street product. (c) 3 free public car parks are rows at cost 0 without an
+    assumption: Allerpark and the Theaterparkplatz (fee status free_confirmed) and the Volkswagen Arena P1/P2 (free outside
+    match days; MATCH DAYS ARE NOT MODELLED, a named reading; capacity 494 is the published total of P1 with the scope the
+    package states). Cost 0 is the FREE SCHEDULE: tariff_duration_bands '0- free' (one open free band) with the formal fee
+    window 0-24 h; the loader, the validator and the export accept it with no change of their grammar (no P8, no P10) and
+    the pricing code prices it without a special case. (d) ASSUMPTION P12 (municipal free default, spec E14): the 8 points
+    with the fee status unknown that lie outside every published tariff area (checked against the 9 matched areas of
+    published_tariff_areas.geojson and the 73 areas of the complete layer that the package keeps) and outside every
+    committed zone (191 to 3,858 m) have no tariff component, no observed rule and no operator tariff: they are free rows
+    under P12, the evidence being the field decision of their fee status (no evidence of a fee is not evidence of none, so
+    the rows are named and counted: 8 of the 48 priced rows). (e) 2 points are no public option and are QA candidates: the
+    disabled-parking point of the Theater (user_group_only; the free statement concerns the whole car park, which is a row
+    of its own) and the BadeLand / Eis Arena car park (customer_regime; BadeLand guests park free with the validation of the
+    ticket, the fee of Zone I for everyone else, 1.00 EUR per started 30 min by the bath tariff of 2025, is recorded and not
+    modelled; the lot lies 1.4 km outside every zone). POSITIONS: the city's points as the layer states them
+    (geometry_method geoviewer_car_park_point, no entrance, no ring); capacity only where the package states it with a scope
+    (the Volkswagen Arena); the operator only where the package's copy of the operator's own page holds the quotation
+    (Autostadt GmbH, Klinikum Wolfsburg; the package's 'Stadt Wolfsburg' for the Theaterparkplatz rests on the statement
+    that the site is municipal property, no source names an operator, so it stays empty). The aggregated QA candidate row of
+    the 24 car parks (no_published_tariff, count 24) is replaced by one QA row per point (13 garage rows and 11 candidate
+    rows); the QA reason user_group_only is new. ASSUMPTION P12 (Task 4b3): a public car park of the Wolfsburg city layer
+    that lies outside every published municipal tariff area and has no operator tariff in the sources is free of charge for
+    every stay (municipal free default): the municipal fee ordinance levies fees where parking is permitted only with a
+    ticket machine and the city's published layer of those areas holds none at the point; the free schedule is its encoding.
+    Result after Task 4b3: 48 rows listed and priced (35 garages, 13 surface lots); assumptions among the 48 priced rows: P4
+    24, P5 24, P6 8, P7 5, P8 11, P10 4, P11 5, P12 8 (P3 0); at least one assumption 44, P4 or P5 32; tiered 8, banded 11,
+    free schedule 11; monthly product on 9 garages; QA table 96 rows (48 garages, 23 monthly products, 25 candidate
+    records).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson
   committed: true
@@ -347,19 +438,30 @@ verification:
     hours or neither, only with a first period, 0 <= start < end <= 24), positive units, a day cap not below the first
     period, fee windows 0 <= start < end <= 24, complete priced rows, a reason on every unpriced row, a monthly
     product only with a source, every assumption named in the notes, ASSUMPTION P6 exactly on the tiered rows and
-    ASSUMPTION P8 exactly on the banded rows, ASSUMPTION P10 only with a free first band, one to three distinct package
-    SHA-256 values per row; load_garages logs the union rates and the banded count and warns above
-    garages.UNION_WARNING_SHARE; braunschweig.parking.garage_qa.validate_garage_qa checks the QA table against the
-    dataset and, with the tariff table, commuter_day_eur against the used product over 21 working days.
+    ASSUMPTION P8 exactly on the rows with a priced duration schedule (not on the free schedule '0- free' and not on the
+    grace period of a tiered row, which is one closed free band next to the tiers), ASSUMPTION P10 only with a free first
+    band that something follows (a tiered row with a grace period lists it), ASSUMPTION P12 only with the free schedule, a
+    facility_kind of garage or surface_lot on every row, one to four distinct package SHA-256 values per row; load_garages
+    logs the union rates and the banded count and warns above
+    garages.UNION_WARNING_SHARE; braunschweig.parking.garage_qa.validate_garage_qa checks the QA table against the dataset
+    and, with the tariff table, commuter_day_eur against the used product over 21 working days and the zone and the
+    published hourly reference of every Wolfsburg car park inside a zone (garage_qa.zone_reference_check compares that
+    reference with hourly_rate_eur of the zone: a difference is a finding, never an error).
     scripts/validate_parking_zones.py runs both when the dataset exists and prints one summary line (garages listed,
     priced, not priced by reason, per municipality, the assumption rates with the union rates and the tiered and the
-    banded garages, the monthly products, the candidates). tests/test_parking_garages.py pins the loader, the writer,
+    banded garages and those with the free schedule, the facility kinds, the monthly products, the candidates) and a second
+    line with the consistency check of the car parks inside a zone (9 checked, 9 equal). tests/test_parking_garages.py pins
+    the loader, the writer,
     the band grammar, the evaluation and both validators on synthetic rows; tests/test_parking_regional_garages.py
     pins the curation step on a synthetic package and the committed files from a hand-written table of the sources (35
-    priced garages with their tier and band strings, the published anchors of the band schedules and
+    priced garages and the 13 surface lots with their tier and band strings, the published anchors of the band schedules and
     their edges, the identity check of the Ring-Center, the coverage numbers, the notes rules, the QA counts) and,
-    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_garage_supplement.py
-    pins the supplement and follow-up readers (pinned hashes, manifest, main points, identity, release by decision, brochure
+    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_wolfsburg_lots.py
+    pins the Wolfsburg package reader on a synthetic package (verification, the classes from the fee status and the
+    position, the owner decision against the data, the conversion and release of the components, the operator quotation, the
+    rows, the QA rows and the zone check) and the committed lot rows with the Autostadt and Klinikum tariffs at their edges
+    priced through the garage option code; tests/test_parking_garage_supplement.py pins the supplement and follow-up readers
+    (pinned hashes, manifest, main points, identity, release by decision, brochure
     quotations and the directory evidence, the grace form, the rest tier, the price table, the readings, the hash list) on synthetic packages; the curation tests also refuse a
     rule that is not preferred for every value role (rate, first period, first unit, tier, band, cap, monthly
     product).
@@ -380,7 +482,12 @@ licensing:
     (OpenStreetMap nodes, one of them a derived access point): ODbL 1.0, (c) OpenStreetMap contributors. The supplement and
     follow-up packages keep copies of operator, city and directory pages and a budget excerpt; the packages state that no
     general licence for the re-publication of those original files was found, and none is established here (the dataset
-    holds facts: tariffs, capacities, names, positions).
+    holds facts: tariffs, capacities, names, positions). The Wolfsburg car-park package (spec E14) holds the points of the
+    Stadt Wolfsburg Geoviewer theme Parken (open reuse licence not verified; used by owner decision 2026-10-07), the tariffs
+    of the Autostadt GmbH and the Klinikum Wolfsburg after their own pages and the statements of free parking of the pages
+    of the Wolfsburg Marketing GmbH and the Theater Wolfsburg; the package states that a separate licence for the re-use of
+    the municipal and operator geodata was not confirmed, and none is established here; its OpenStreetMap extracts only
+    check positions (ODbL 1.0, (c) OpenStreetMap contributors) and no position of the 13 surface lots is taken from them.
   restricted: false
   redistribution: restricted
   notes: >-
@@ -406,11 +513,15 @@ limitations: >-
   and R-4b-9; the Wolfsburg Parkdeck Hauptbahnhof P1 and its monthly products are a candidate and QA rows); the two
   Wolfenbuettel lots Parkpalette Karlstrasse and Parkplatzanlage Neue Strasse, which the operator page offers 'momentan
   nur Dauerparkern' (a closed group of long-term renters; the owner's direction is that their free or contract parking
-  is covered by the model's averaged free-parking share; reason dauerparker_only); and the Wolfsburg car parks (no
-  tariff in the package). Every one of the 35 listed garages is priced (spec E13), but not every price is an operator
-  statement: 5 of the 35 rows rest on a stronger assumption than the others (ASSUMPTION P10 or P11, counted from the
-  assumptions column of the dataset: the Forschungsflughafen, the Suedkopf-Center, Achtermann, Charley-Jacob-Strasse and the
-  Groepern garage). Four rows rest on ASSUMPTION P11, the best available secondary evidence where no operator tariff is
+  is covered by the model's averaged free-parking share; reason dauerparker_only); and, of the Wolfsburg car parks of the
+  city layer, the nine paid municipal car parks inside a zone (their fee is the street product of their zone), the
+  disabled-parking point of the Theater and the BadeLand car park (QA candidates, spec E14). Every one of the 48 listed rows
+  is priced (specs E13 and E14), but not every price is an operator statement: 7 of the 48 rows rest on a stronger
+  assumption than the others (ASSUMPTION P10 or P11, counted from the assumptions column of the dataset: the
+  Forschungsflughafen, the Suedkopf-Center, Achtermann, Charley-Jacob-Strasse, the Groepern garage, the Autostadt P2 and the
+  Klinikum visitor car parks), and 8 rows are free only by the municipal default (ASSUMPTION P12: no fee evidence outside
+  every published tariff area, so no source says that they are free). Five rows rest on ASSUMPTION P11, the best available
+  secondary evidence where no operator tariff is
   published (at Groepern for the monthly product only): Goslar Achtermann (an undated directory table
   that the follow-up package does not accept as the current operator tariff; operator unconfirmed), Goslar
   Charley-Jacob-Strasse (an undated directory entry; the identity of the archived 2018 map point with the municipal
@@ -418,20 +529,26 @@ limitations: >-
   exists; its 1.00 EUR per hour is below the 1.50 EUR per hour of the other Goslar garages, which the consistency check of
   P11 names and keeps), the day cap 5.00 EUR of the Wolfsburg Suedkopf-Center (a secondary directory; the follow-up package
   does not take it as confirmed) and the monthly product 33.00 EUR of the Helmstedt Groepern garage (an undated directory
-  entry whose 2 h price differs from the brochure, so the amount may be outdated); two rows (the Braunschweig
-  Forschungsflughafen and the Wolfsburg Suedkopf-Center, which rests on both assumptions) read a free
-  period as a grace period (ASSUMPTION P10), for the airport on the general FAQ of the parking provider, which is not
-  site-specific, and for the Suedkopf-Center on no source (by analogy). The tariff values are the preferred rules of the
+  entry whose 2 h price differs from the brochure, so the amount may be outdated) and the assignment of the observed
+  visitor-group tariff of the Klinikum to the municipal point (the package cannot tell which car park the point is); four
+  rows (the Braunschweig Forschungsflughafen, the Wolfsburg Suedkopf-Center, which rests on both assumptions, the Autostadt
+  P2 and the Klinikum, which rests on both too) read a free period as a grace period (ASSUMPTION P10), for the airport on
+  the general FAQ of the parking provider, which is not site-specific, for the Suedkopf-Center on no source (by analogy) and
+  for the Autostadt and the Klinikum on the owner's reading of the operators' statements (the package keeps the deduction
+  open). The tariff values are the preferred rules of the
   package of 2026-10-07, the released rules of the two supplement packages and the quotations of one brochure; they were not
   compared with any observed payment, occupancy or cash-desk data, so the dataset says what the operators and, where none
-  publishes a tariff, the directories publish, not what drivers pay. Eight assumptions and five readings carry the
-  encoding and are counted per row (see the acquisition notes): P3 on none of the 35 priced garages any more (it stays
-  defined), P4 on 22, P5 on 23, P6 on 7 (every tiered garage), P7 on 5, P8 on 10 (every banded garage), P10 on 2 and P11 on
-  4; 34 of the 35 priced garages rest on at least one assumption, and 30 of the 35 on P4 or P5, which is the share of the
-  priced garages whose rounding or charging times the sources do not state: the dataset is mostly a structure published by
+  publishes a tariff, the directories publish, not what drivers pay. Nine assumptions and five readings carry the encoding
+  and are counted per row (see the acquisition notes): P3 on none of the 48 priced rows any more (it stays defined), P4 on
+  24, P5 on 24, P6 on 8 (every tiered row), P7 on 5, P8 on 11 (every row with a priced duration schedule), P10 on 4 and P11
+  on 5, and P12 on 8; 44 of the 48 priced rows rest on at least one assumption (above the warning share of 75 %), and 32 of
+  the
+  48 on P4 or P5 (below it: the 13 surface lots rest on P4 or P5 on two rows only), which is the share of the priced rows
+  whose rounding or charging times the sources do not state: the dataset is mostly a structure published by
   the operators plus these assumptions, and a sensitivity arm can leave a group out by the id in the assumptions column.
-  The five READINGS: a day cap or a published day total whose day boundary is not stated is read as a maximum per stay (18
-  of the 26 garages with a cap or a day total), a cap stated per calendar day is held as a maximum per stay (2 garages,
+  The five READINGS: a day cap or a published day total whose day boundary is not stated is read as a maximum per stay (19
+  of the 27 rows with a cap or a day total; the Klinikum's day maximum is the added one), a cap stated per calendar day is
+  held as a maximum per stay (2 garages,
   GALERIA and Wallstrasse), a time window without stated days is read as Monday to Friday (4 garages), and the unit of
   'jede weitere' of the Groepern brochure is read as the hour (confirmed by the directory entry HE_PARKINGLIST, 'jede
   weitere Stunde'; 1 garage), and a day rate without
@@ -444,7 +561,20 @@ limitations: >-
   as maxima per stay because their day boundaries are not stated; a stay that spans several days is not modelled by the
   dataset (the model prices the stays of an average weekday). P10: a stay slightly above the free period pays the whole
   first unit (a free period of 15 min followed by 1.50 EUR per hour costs 1.50 EUR at 16 min), which is the owner's reading
-  and not an operator statement. Judgements in single rows: the Wolfsburg garage Poststrasse has a day tier and a night
+  and not an operator statement. At the Klinikum the free period equals the billing unit, so a stay of 31 min costs two
+  started half hours (1.60 EUR) where a deduction of the free minutes would give 0.80 EUR; at the Autostadt a stay of 31 min
+  costs the first started hour (1.00 EUR by day, 0.50 EUR by night). WOLFSBURG CAR PARKS (spec E14): the 11 free rows cost 0
+  for every stay (no maximum stay, no capacity except the Volkswagen Arena's 494 of P1): the Volkswagen Arena is free only
+  outside match days, which are not modelled, and large events can close P1 and P2; the Allerpark can be restricted at large
+  events; the 8 rows under P12 rest on the absence of a fee evidence and not on a statement that they are free (the
+  ordinance levies fees where parking is permitted only with a ticket machine, and the city's published layer of those
+  areas, with metadata of December 2024, has none at the point; an area that the city has not published is not excluded);
+  the Autostadt and Klinikum tariffs are those of their visitor car parks and their access is restricted by the operators'
+  own rules (the Parkplatzordnung of the Autostadt reserves the car parks for visitors in its introduction and opens P1 to
+  P3 to all persons in section 3; the Klinikum car parks serve patients and visitors), so a driver who is no visitor may not
+  have the option; availability, occupancy and capacity are not modelled; the 13 positions are the city's points and no
+  entrances, with the uncertainty of the layer. Judgements in single rows: the Wolfsburg garage Poststrasse has a day tier
+  and a night
   tier (the unit of the night tier is published by the city page only, the night rounding is unknown); Wolfenbuettel
   Schulwall and Rosenwall are priced from the operator pages of September 2026 with the four tiers of their weekday (the
   operator's Sunday and public-holiday line is not used, spec D1) and without a day cap (none is published); the
@@ -475,25 +605,30 @@ limitations: >-
   service of 2018, and the Goslar garage Ca has a directory point 54 m from the city's point of 2018; the position check
   only requires the point inside its municipality. The operator column is empty where neither the package nor the page
   of the source names one (Braunschweig Forschungsflughafen, Lange Strasse Nord and Sued, Ring Center, Schloss-Arkaden,
-  Schuetzenstrasse and Wilhelmstrasse, Helmstedt Stobenstrasse and Groepern, Wolfsburg Schillerstrasse and the Goslar
-  garages).
+  Schuetzenstrasse and Wilhelmstrasse, Helmstedt Stobenstrasse and Groepern, Wolfsburg Schillerstrasse, the Goslar garages
+  and the 11 Wolfsburg surface lots other than the Autostadt and the Klinikum).
 notes: >-
-  Content on 2026-10-07 (Task 4b2 after its fix round 1, specs E12 and E13): 35 garages (priced 35; not priced 0); per municipality
-  03101000 Braunschweig 12 listed 12 priced, 03102000 Salzgitter 1 and 1, 03103000 Wolfsburg 9 and 9, 03151009 Gifhorn 1
+  Content on 2026-10-07 (Task 4b3, spec E14, on top of Task 4b2 after its fix round 1, specs E12 and E13): 48 rows (35
+  garages and 13 surface lots; priced 48; not priced 0); by facility kind garage 35, surface_lot 13; per municipality
+  03101000 Braunschweig 12 listed 12 priced, 03102000 Salzgitter 1 and 1, 03103000 Wolfsburg 22 and 22, 03151009 Gifhorn 1
   and 1, 03153017 Goslar 4 and 4, 03154028 Helmstedt 4 and 4, 03157006 Peine 2 and 2, 03158037 Wolfenbuettel 2 and 2;
-  assumptions among the 35 priced garages P4 22, P5 23, P6 7, P7 5, P8 10, P10 2, P11 4 (P3 0); at least one assumption 34,
-  P4 or P5 30; tiered form 7, banded form 10; first period with a clock window 3 (Eiermarkt, Rathaus, Phaeno); monthly
-  product on 9 garages; 5 garages rest on P10 or P11. QA table 73 rows: 35 garages, 23 monthly products (used 11: nine
+  assumptions among the 48 priced rows P4 24, P5 24, P6 8, P7 5, P8 11, P10 4, P11 5, P12 8 (P3 0); at least one assumption
+  44, P4 or P5 32; tiered form 8, banded form 11, free schedule 11; first period with a clock window 3 (Eiermarkt, Rathaus,
+  Phaeno); monthly
+  product on 9 garages; 7 rows rest on P10 or P11. QA table 96 rows: 48 garages, 23 monthly products (used 11: nine
   garage rows, the zone Ib 30-day
   ticket and the TU member month ticket; recorded and not used 12: not_the_cheapest 3, outdated_source 2,
   not_monthly_or_30_day 2, capacity_limited_permits 1, garage_not_listed 1, no_coordinates 1, no_fixed_price 1,
-  restricted_customer_group 1) and 15 candidate records for 38 package or directory entries (no_published_tariff 24,
-  zone_street_product 4, station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 1, no_coordinates 1,
-  outside_source_list 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
+  restricted_customer_group 1) and 25 candidate records for 25 package or directory entries (zone_street_product 13,
+  station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 2, no_coordinates 1, outside_source_list 1,
+  user_group_only 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
   tests/test_parking_regional_garages.py. SHA-256 of the files as written by the step (LF; two runs identical):
-  parking_garages_2026.geojson 291ff1e5ab4b0cbc9ac8e91c23cd26557c6d5f01f1dcb4c57738eb0832c4cafd, parking_garages_2026_qa.csv
-  46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757.
-  History: the first Task 4b run listed 32 garages, fix round 1 31 garages with 19 priced (SHA-256
+  parking_garages_2026.geojson 489ea6c8c364c14274232d0894b3e20ff02485555fee544003be47e33c2c8223, parking_garages_2026_qa.csv
+  e21588b483d9e0478e4800c66196e8651154931068c4b7292e175207ddde9c52. History: Task 4b3 adds the 13 surface lots of the
+  Wolfsburg city layer, the column facility_kind, the free schedule and the grace period of a tiered garage; before it the
+  dataset had 35 garages (SHA-256 03ca4df651ef882a2192e1b9d3288934c3208c4573e13d77c05c98c9d9ef62d7 and
+  46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757). The first Task 4b run listed 32 garages, fix round 1 31
+  garages with 19 priced (SHA-256
   c2031fa3a4697ae3215e537133c9f1b88b84639cd26e64f73f6b8654a4421e3a and
   02ec613e4f2e89514926eb916cabad6e8b523f3e040dcfd8302daa3ae581a743), fix round 2 31 garages with 26 priced (SHA-256
   2883909b6d13f44acf99d91e836bb6964cac7db723f6ba5d83dddc5cece995fb and
@@ -508,4 +643,5 @@ notes: >-
   directory evidence in the notes, the Charley-Jacob-Strasse notes gained the P11 consistency statement, and the opening
   hours in the notes of four rows (City-Galerie, Designer Outlets, Schillerstrasse, Suedkopf-Center) got a space between
   a day name and a time; the QA table gained the row monthly_he_groepern_tiefgarage and one changed garage note; no other
-  value changed. The dataset is read by no stage, so no simulation output changes.
+  value changed. The dataset is read by the zone release stage and exported with the tariff model, but the decay length of
+  the garage options is 0 until it is calibrated (Task 5), so no simulation output changes yet.

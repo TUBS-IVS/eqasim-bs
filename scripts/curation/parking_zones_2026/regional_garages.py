@@ -35,16 +35,26 @@ at the end the rates: priced against not priced and, among the priced, how many 
 assumption and on P4 or P5 (a warning above ``garages.UNION_WARNING_SHARE``). CRS: EPSG:25832
 throughout in memory (WGS84 in the file), money in EUR, windows in decimal hours of the weekday, distances in m.
 
-Two further owner-supplied packages are optional inputs (``garage_supplement.py``; the garage specifications state which rows rest
-on them and the step stops where one is needed and missing): the supplement ``Parkhaus_Ergaenzungen_2026-10-07.zip``
-(``--supplement-zip``, spec E12: four main points for the garages without coordinates, six tariff checks) and the follow-up
-``Parkhaus_Nachrecherche_2026-10-07.zip`` (``--followup-zip``, spec E13: directory observations for the garages without a
-published tariff). Each is checked against its pinned SHA-256 and every member read against its own ``manifest.sha256``; their
-partial rules (the packages mark every rule full_cost_calculation_ready=false) are released only by the owner decisions of
-``regional_garage_specs`` and only while the package's field decision has the status the decision relied on. A row that a
-package touches cites its SHA-256 as well in ``package_sha256`` (regional, supplement, follow-up, ';'-separated). A free period at
-the start of a stay is read as a grace period (ASSUMPTION P10, spec E12); a garage without a published operator tariff is priced
-from its best secondary evidence (ASSUMPTION P11, spec E13); both name their basis in the notes.
+Three further owner-supplied packages are optional inputs (``garage_supplement.py`` and ``wolfsburg_lots.py``; the
+specifications state which rows rest on them and the step stops where one is needed and missing): the supplement
+``Parkhaus_Ergaenzungen_2026-10-07.zip`` (``--supplement-zip``, spec E12: four main points for the garages without
+coordinates, six tariff checks) and the follow-up ``Parkhaus_Nachrecherche_2026-10-07.zip`` (``--followup-zip``, spec E13:
+directory observations for the garages without a published tariff). Each is checked against its pinned SHA-256 and every
+member read against its own ``manifest.sha256``; their partial rules (the packages mark every rule
+full_cost_calculation_ready=false) are released only by the owner decisions of ``regional_garage_specs`` and only while the
+package's field decision has the status the decision relied on. A row that a package touches cites its SHA-256 as well in
+``package_sha256`` (regional, supplement, follow-up, Wolfsburg car-park package, ';'-separated). The third optional package
+is the Wolfsburg car-park package ``Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`` (``--wolfsburg-lots-zip``, spec E14,
+ruling R-4b3-1; it needs ``--zones``, the committed zone polygons, and ``--tariffs``): the review of the 24 car parks of the
+city layer ``wob_parkplaetze``. Each point has exactly one class, decided by its fee status and its position in the zones
+and the published tariff areas (``wolfsburg_lots``, never by a name) and by the owner decisions of
+``regional_garage_specs.LOT_SPECS``: a paid municipal car park inside a zone is a QA candidate (reason zone_street_product,
+with the consistency check of its published hourly reference against the street rate of its zone), an operator tariff, a car
+park free for the public and a car park without any fee evidence outside every tariff area (the municipal free default,
+ASSUMPTION P12) are rows of ``facility_kind`` surface_lot, a car park reserved for a user group or free only for customers
+is a QA candidate (user_group_only, customer_regime). A free period at the start of a stay is read as a grace period
+(ASSUMPTION P10, spec E12); a garage without a published operator tariff is priced from its best secondary evidence
+(ASSUMPTION P11, spec E13); both name their basis in the notes.
 
 Usage (from the repository root)::
 
@@ -56,7 +66,9 @@ Usage (from the repository root)::
         --municipalities <main checkout>/eqasim-data/cache_bs_bpsmoke/data.spatial.municipalities__<hash>.p \
         --out eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson \
         --qa-out eqasim-data/data/braunschweig/parking/parking_garages_2026_qa.csv \
-        [--tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv]
+        [--tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv] \
+        [--wolfsburg-lots-zip <the regional-dir above>/Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip \
+         --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson]
 """
 from __future__ import annotations
 
@@ -78,6 +90,7 @@ import garage_supplement as sup
 import municipal_zones as mz
 import regional_garage_specs as specs
 import regional_zones as rz
+import wolfsburg_lots as wl
 
 # The script runs from its own directory (curation_common); the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -140,15 +153,22 @@ LICENSE = (
     "parkito.ch) and OpenStreetMap features read through mapcarta.com (ODbL 1.0, (c) OpenStreetMap contributors; the terms of "
     "the directory pages are not verified); the supplement and follow-up packages of 2026-10-07 (their own evidence copies of "
     "operator, city and directory pages; the packages state that no general licence for the re-publication of the original "
-    "files was found), whose four main points of garages are OpenStreetMap features (ODbL 1.0, (c) OpenStreetMap contributors)")
+    "files was found), whose four main points of garages are OpenStreetMap features (ODbL 1.0, (c) OpenStreetMap "
+    "contributors); and the Wolfsburg car-park package of 2026-10-07 (the review of the 24 car parks of the city layer: the points "
+    "are those of the Stadt Wolfsburg Geoviewer theme Parken, the tariff facts are those of the operators' pages and the "
+    "municipal ordinance; the package states that no separate licence for the re-use of the municipal and operator data was "
+    "confirmed, and its OpenStreetMap extracts, which only check positions, are under the ODbL 1.0, (c) OpenStreetMap "
+    "contributors)")
 ATTRIBUTION = (
     "Tariffs and capacities after the garage operators and the cities of Braunschweig, Wolfsburg, Wolfenbuettel, Gifhorn, "
     "Helmstedt, Peine, Salzgitter and Goslar (source_url per feature); positions after the city feeds, the operators' map "
     "markers and directory pages (geometry_source_url per feature); (c) OpenStreetMap contributors for the positions taken "
     "from OpenStreetMap (Peine Werderstrasse, Salzgitter BRAWO Carree, and the four main points of the supplement package). "
     "Packages: " + rz.PACKAGE_FILE + " (SHA-256 " + rz.PACKAGE_SHA256 + "), supplement package " + sup.SUPPLEMENT_FILE
-    + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + ") and follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 "
-    + sup.FOLLOWUP_SHA256 + ").")
+    + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + "), follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 "
+    + sup.FOLLOWUP_SHA256 + ") and Wolfsburg car-park package " + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256
+    + "; the points of the Stadt Wolfsburg Geoviewer theme Parken, the tariffs of the Autostadt GmbH and the Klinikum Wolfsburg "
+    "after their own pages, the free car parks after the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg).")
 
 #: The definition of every column of the dataset (the foreign member ``documentation`` of the file and the data record).
 COLUMN_GLOSSARY = {
@@ -189,8 +209,9 @@ COLUMN_GLOSSARY = {
     "tariff_tiers": "the time-of-day tiers of a garage whose rate changes with the time of day (ruling R-4b-10b): "
                     "'HH:MM-HH:MM <eur>/<unit_min>' per tier, joined by '; ', each tier the EUR of one started unit of "
                     "unit_min minutes that begins in it (a tier may cross midnight); a time of day outside every tier is "
-                    "free; the four single-window columns are empty and the row rests on ASSUMPTION P6; empty for a garage "
-                    "priced by one fee window or by duration bands",
+                    "free; the four single-window columns are empty and the row rests on ASSUMPTION P6; a tiered garage "
+                    "may carry the one closed free band of tariff_duration_bands as its grace period (ASSUMPTION P10); "
+                    "empty for a garage priced by one fee window or by duration bands",
     "tariff_duration_bands": "the duration bands of a garage whose tariff is a published schedule over the elapsed duration d of "
                              "the stay in minutes (ruling R-4b-11): '<from_min>-<to_min> <kind>' per band, joined by '; ', each "
                              "band covering from < d <= to (the first starts at 0, the bands are contiguous, only the last may "
@@ -199,8 +220,12 @@ COLUMN_GLOSSARY = {
                              "band's start, added to the price reached at its start), e.g. '0-20 free; 20-120 total 1.00; "
                              "120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60'; the rate and the billing unit are empty, there is "
                              "no first period and no tier, the fee window is set, a published cap or 24-hour price is "
-                             "garage_daily_cap_eur, and the row rests on ASSUMPTION P8; empty for a garage priced by one fee "
-                             "window or by tiers",
+                             "garage_daily_cap_eur, and the row rests on ASSUMPTION P8; two uses are no schedule (spec E14): "
+                             "'0- free' is the free schedule of a car park that is free for every stay (the fee window 0-24 h "
+                             "is formal; no P8; ASSUMPTION P12 where it is a municipal default), and one closed free band "
+                             "('0-30 free') next to tariff_tiers is the grace period of a tiered garage (ASSUMPTION P10: a "
+                             "stay not longer than the band costs 0, a longer stay is priced by the tiers from its arrival); "
+                             "empty for a garage priced by one fee window or by tiers alone",
     "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2); "
                    "empty where the package holds none; independent of priced",
     "monthly_source_url": "source of monthly_eur",
@@ -212,13 +237,15 @@ COLUMN_GLOSSARY = {
     "source_url": "primary source of the tariff (the rate rule's page; for an unpriced garage the page or layer that shows the "
                   "reason)",
     "source_date": "retrieval date of source_url (ISO)",
-    "tariff_rule_ids": "';'-separated package rule ids the values (or the reason) rest on",
+    "tariff_rule_ids": "';'-separated package rule ids the values (or the reason) rest on; for a car park that is free by "
+                       "ASSUMPTION P12 the field decision of its fee status",
     "geometry_method": "how the position was found, as the package states it",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
-                      + sup.SUPPLEMENT_FILE + " (spec E12) or the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) "
-                      "touches (a position, a tariff value or a finding of it) lists that package's SHA-256 as well, in the order "
-                      "regional, supplement, follow-up, joined by ';'",
+                      + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
+                      "Wolfsburg car-park package " + wl.LOTS_FILE + " (spec E14) touches (a position, a tariff value or a "
+                      "finding of it) lists that package's SHA-256 as well, in the order regional, supplement, follow-up, "
+                      "Wolfsburg car-park package, joined by ';'",
     "notes": "the tariff in words, every assumption and reading by name, what the columns do not express (other tiers, "
              "caps not applied, ignored rules, conflicts), the rules that are not preferred and not used, and the other "
              "capacity observations",
@@ -228,7 +255,8 @@ QA_INTRO = (
     "E1, issue #436), written by scripts/curation/parking_zones_2026/regional_garages.py from the regional evidence package "
     "of 2026-10-07 (" + rz.PACKAGE_FILE + ", SHA-256 " + rz.PACKAGE_SHA256 + ", gitignored under raw_sources/"
     "municipal_2026-10-07/), the supplement package " + sup.SUPPLEMENT_FILE + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + "), the "
-    "follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 " + sup.FOLLOWUP_SHA256 + ") and the car-park directory of "
+    "follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 " + sup.FOLLOWUP_SHA256 + "), the Wolfsburg car-park package "
+    + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256 + ") and the car-park directory of "
     "Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
     + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "). One row per garage of the dataset (record_type garage), per "
     "monthly or 30-day product the sources publish (monthly_product: used, or recorded and not used with a reason, ruling "
@@ -242,14 +270,17 @@ QA_COLUMN_GLOSSARY = {
     "municipality_ags": "8-digit AGS of the record's municipality",
     "subject": "the garage, product or car park",
     "garage_id": "garage_id in parking_garages_2026.geojson (garage rows and the monthly products of a garage); empty otherwise",
-    "zone_ids": "';'-separated zone ids of parking_tariffs_2026.csv whose commuter_day_eur a used zone product sets; empty "
-                "otherwise",
+    "zone_ids": "';'-separated zone ids of parking_tariffs_2026.csv whose commuter_day_eur a used zone product sets; for a "
+                "candidate of the reason zone_street_product that is a Wolfsburg car park inside a zone (spec E14) the one zone "
+                "whose street product is its tariff; empty otherwise",
     "decision": "garage: priced or not_priced; monthly_product: used or not_used; candidate: not_listed",
     "reason_code": "not_priced: a code of garages.NOT_PRICED_REASONS; not_used: garage_qa.MONTHLY_NOT_USED_REASONS; not_listed: "
                    "garage_qa.CANDIDATE_REASONS; empty for priced and used rows",
-    "amount_eur": "monthly_product: the amount in EUR per month (or 30 days) as published; empty for the others and for a "
-                  "product without a fixed amount",
-    "count": "number of records the row stands for (1, except the aggregated Wolfsburg car parks)",
+    "amount_eur": "monthly_product: the amount in EUR per month (or 30 days) as published; candidate zone_street_product of a "
+                  "Wolfsburg car park inside a zone: the published hourly reference of its tariff area in EUR per hour (the "
+                  "consistency check against the street rate of the zone, garage_qa.zone_reference_check); empty for the "
+                  "others and for a product without a fixed amount",
+    "count": "number of records the row stands for (1)",
     "evidence": "';'-separated package rule ids, layer references or documents the row rests on",
     "note": "what is published and why the decision follows",
 }
@@ -351,10 +382,14 @@ def describe_rule(rule: dict) -> str:
 # ---------------------------------------------------------------- the package
 def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplement_path=None,
                         expected_supplement_sha256: Optional[str] = None, followup_path=None,
-                        expected_followup_sha256: Optional[str] = None) -> dict:
+                        expected_followup_sha256: Optional[str] = None, lots_path=None,
+                        expected_lots_sha256: Optional[str] = None, zones=None) -> dict:
     """The verified garage layers, facility records, tariff rules and sources of the owner's package in ``directory``, and, where
     given, the supplement package (``supplement_path``, spec E12) and the follow-up package (``followup_path``, spec E13) merged
-    into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to).
+    into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to) and the
+    Wolfsburg car-park package (``lots_path``, spec E14, ``wolfsburg_lots``: its 24 points are classified by their fee status and
+    their position in the committed zone polygons ``zones``, a GeoDataFrame in EPSG:25832 with ``zone_id``; the components that
+    the lot decisions use join the rules).
 
     The regional package must exist as ``regional_zones.PACKAGE_FILE`` with exactly the pinned SHA-256 (or ``expected_sha256``,
     for a synthetic test package), else ``SystemExit``; so must the other two zips. Returns {"file": {"file", "sha256",
@@ -386,6 +421,12 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
         if supplement_path is None:
             raise SystemExit("the follow-up package (--followup-zip) refines the supplement package: pass --supplement-zip too")
         sup.attach_followup(inputs, sup.load_followup(followup_path, expected_followup_sha256), specs.FOLLOWUP_RELEASED)
+    if lots_path is not None:
+        if zones is None:
+            raise SystemExit("the Wolfsburg car-park package classifies its points by the committed zone polygons: pass them "
+                             "(--zones parking_zones_2026.geojson)")
+        wl.attach(inputs, wl.load_lots(lots_path, expected_lots_sha256), specs.LOT_RULE_IDS, specs.LOT_RELEASED)
+        decide_lots(inputs, zones)
     return inputs
 
 
@@ -576,9 +617,12 @@ def _first_period_window(first: dict, garage: str) -> Optional[tuple]:
 
 
 def encode_tariff(spec: dict, rules: dict) -> dict:
-    """:func:`_encode_forms` plus ASSUMPTION P11 where the specification states the ``p11_basis`` of a value that rests on the
-    best available secondary evidence (spec E13)."""
+    """:func:`_encode_forms` plus the grace period of a tiered garage (``tier_grace``, ASSUMPTION P10, spec E14) and ASSUMPTION
+    P11 where the specification states the ``p11_basis`` of a value that rests on the best available secondary evidence (spec
+    E13)."""
     encoded = _encode_forms(spec, rules)
+    if spec.get("tier_grace"):
+        encoded = _add_tier_grace(spec, rules, encoded)
     if spec.get("p11_basis"):
         encoded["assumptions"] = encoded["assumptions"] + ["P11"]
     return encoded
@@ -610,11 +654,16 @@ def _encode_forms(spec: dict, rules: dict) -> dict:
     a cap that is not a cap, a window that crosses midnight in the single-window form or for a first period, tiers that
     overlap or differ in their unit, bands with a gap or an overlap."""
     garage = spec["garage_id"]
-    forms = [name for name in ("rate", "tiers", "bands", "grace", "table") if spec.get(name)]
+    forms = [name for name in ("rate", "tiers", "bands", "grace", "table", "free") if spec.get(name)]
     if len(forms) != 1:
         raise SystemExit(f"garage {garage}: a priced specification names exactly one of 'rate' (the single-window form), "
                          "'tiers' (the tiered form), 'bands' (the banded form), 'grace' (a free period read as a grace period, "
-                         "ASSUMPTION P10) and 'table' (a directory price table as bands, ASSUMPTION P11)")
+                         "ASSUMPTION P10), 'table' (a directory price table as bands, ASSUMPTION P11) and 'free' (a car park "
+                         "that is free for every stay)")
+    if spec.get("tier_grace") and forms[0] != "tiers":
+        raise SystemExit(f"garage {garage}: 'tier_grace' is the grace period of the tiered form and needs 'tiers'")
+    if forms[0] == "free":
+        return _encode_free(spec, rules)
     if forms[0] == "grace":
         return _encode_grace(spec, rules)
     if forms[0] == "table":
@@ -835,6 +884,62 @@ def _encode_bands(spec: dict, rules: dict, band_rules: list) -> dict:
     return _finish_bands(spec, rules, bands, ordered_rules, ordered_rules[0], increments, readings, [])
 
 
+def _free_values() -> dict:
+    """The tariff columns of a car park that is free for every stay: the free schedule with the formal fee window 0 to 24 h."""
+    values = {column: None for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS}
+    values.update(garage_fee_start_h=0.0, garage_fee_end_h=24.0, tariff_duration_bands=pg.FREE_SCHEDULE_TEXT)
+    return values
+
+
+def _free_encoding(rule_ids: list, assumptions: list, sentence: str) -> dict:
+    """The result of the free form, shaped as :func:`_encode_forms` returns it (no window, rounding or reading applies)."""
+    return {"values": _free_values(), "assumptions": assumptions, "rule_ids": rule_ids, "sentence": sentence,
+            "rounding_stated": True, "window_stated": False, "tiers": [], "window_quotation": None, "readings": []}
+
+
+def _encode_free(spec: dict, rules: dict) -> dict:
+    """:func:`encode_tariff` for a car park that is free for every stay (spec E14, class c): ``free`` names the package's free
+    component, which must be a ``free`` rule that states no amount (or 0), no free period and no end; the result is the free
+    schedule ``"0- free"`` with the formal fee window 0 to 24 h and no assumption (the source states the car park free)."""
+    garage = spec["garage_id"]
+    rule = _value_rule(rules, spec["free"], garage, "free component")
+    if rule["rule_type"] != "free" or rule.get("amount_eur") not in (None, 0, 0.0):
+        raise SystemExit(f"garage {garage}: rule {rule['rule_id']} of type {rule['rule_type']} with the amount "
+                         f"{rule.get('amount_eur')!r} is no free component (a free rule states the amount 0)")
+    if rule.get("elapsed_to_minutes") is not None or rule.get("free_period_minutes") is not None:
+        raise SystemExit(f"garage {garage}: the free component {rule['rule_id']} states a free period or an end: a free car "
+                         "park is free for every stay, a free period at the start of a stay is the grace form")
+    return _free_encoding([rule["rule_id"]], [], "free of charge for every stay (the free schedule 0- free, the fee window "
+                                                 "0-24 h is formal)")
+
+
+def _add_tier_grace(spec: dict, rules: dict, encoded: dict) -> dict:
+    """The tiered encoding plus the grace period of ``tier_grace`` (spec E14, ASSUMPTION P10 for tiers): the free band
+    ``0-<free minutes> free`` is the garage's whole duration bands; a stay not longer than it costs 0, a longer stay is priced
+    by the tiers from its arrival (the free minutes are not deducted). The free rule must be a free period from 0 min to a
+    stated end, and every tier rule that states its own free minutes must state the same end; the result lists ASSUMPTION P10
+    after the assumptions of the tiers and the free rule after their rules."""
+    garage = spec["garage_id"]
+    free = _value_rule(rules, spec["tier_grace"], garage, "free period")
+    if free["rule_type"] not in FREE_RULE_TYPES:
+        raise SystemExit(f"garage {garage}: rule {free['rule_id']} of type {free['rule_type']} is no free period "
+                         f"{list(FREE_RULE_TYPES)}")
+    end = free.get("elapsed_to_minutes")
+    if int(free.get("elapsed_from_minutes") or 0) != 0 or not end or int(end) <= 0:
+        raise SystemExit(f"garage {garage}: the free rule {free['rule_id']} must start at 0 min and state the end of the free "
+                         "period")
+    for rule_id in spec["tiers"]:
+        stated = rules[rule_id].get("free_period_minutes")
+        if stated is not None and int(stated) != int(end):
+            raise SystemExit(f"garage {garage}: the tier rule {rule_id} states a free period of {stated} min but the free rule "
+                             f"{free['rule_id']} ends at {end} min")
+    bands = pg.format_duration_bands([pg.DurationBand(0, int(end), "free", 0.0, None)])
+    return {**encoded, "values": {**encoded["values"], "tariff_duration_bands": bands},
+            "assumptions": encoded["assumptions"] + ["P10"], "rule_ids": encoded["rule_ids"] + [free["rule_id"]],
+            "sentence": encoded["sentence"] + f"; a stay of at most {int(end)} min is free (grace period) and a longer stay is "
+                                              "priced by the tiers from its arrival, the free minutes are not deducted"}
+
+
 def _grace_bands(free: dict, rate: dict, garage: str) -> list:
     """The bands of a free period read as a grace period (ASSUMPTION P10, spec E12): a free band up to the end of the free
     period, the total of the started units that the stay has at that point, and the rate per started unit counted from there.
@@ -975,6 +1080,31 @@ def _clock(hours: float) -> str:
 
 
 # ---------------------------------------------------------------- one garage
+def _reading_notes(readings: list, rules: dict) -> list:
+    """The sentences that name the readings of an encoding: a cap or day total whose day boundary is not stated (a maximum per
+    stay), a cap stated per calendar day, a rate whose unit is read from the first price, a day rate without charging times
+    and a window without stated days (read as Monday to Friday)."""
+    notes = []
+    for reading in readings:
+        if reading[0] == "cap":
+            notes.append(f"Reading: the day boundary of the cap {reading[1]} is not stated (cap period {reading[2]!r}), so "
+                         "it is read as a maximum per stay.")
+        elif reading[0] == "cap_calendar":
+            notes.append(f"Reading: the cap {reading[1]} is stated per calendar day (cap period {reading[2]!r}); the dataset "
+                         "column holds one maximum per stay, so the cap is read as a maximum per stay: a stay inside one "
+                         "calendar day pays what is published, a stay across midnight is capped once, not once per calendar "
+                         "day.")
+        elif reading[0] == "unit":
+            notes.append(f"Reading: {rules[reading[1]]['unit_reading']} ({reading[1]}).")
+        elif reading[0] == "rest":
+            notes.append(f"Reading: the day rate {reading[1]} states no charging times; it applies at every time of day that "
+                         f"the other tiers do not cover ({reading[2]}).")
+    undated = [reading[1] for reading in readings if reading[0] == "days"]
+    if undated:
+        notes.append(f"Reading: the window of {', '.join(undated)} states no days, so it is read as Monday to Friday.")
+    return notes
+
+
 def _capacity(facility: dict) -> tuple:
     """(capacity or None, scope or None, the other observations in words) of a facility record. A reported capacity
     always has its scope: the record's own, or the scope of the observation that carries the same value; where neither
@@ -1122,7 +1252,10 @@ def _released_phrase(rules: dict, rule_ids: list) -> str:
                           ("followup", "follow-up rules (the follow-up package marks every rule full_cost_calculation_ready=false "
                                        "and no observation as the current operator tariff; each is used as the owner decision "
                                        "that released it states)"),
-                          ("brochure", "brochure rules (quotations of the city brochure text, checked against it)")):
+                          ("brochure", "brochure rules (quotations of the city brochure text, checked against it)"),
+                          ("lots", "Wolfsburg car-park rules (the package marks every component "
+                                   "full_cost_calculation_ready=false; each is used as the owner decision that released it "
+                                   "states)")):
         used = [rule_id for rule_id in others if rules[rule_id]["origin"] == origin]
         if used:
             parts.append(f"{label}: " + ", ".join(f"{rule_id} ({rules[rule_id]['released_by']})" for rule_id in used))
@@ -1298,23 +1431,7 @@ def build_garage(inputs: dict, spec: dict) -> dict:
         if "P7" in encoded["assumptions"]:
             caps = "; ".join(describe_rule(rules[rule_id]) for rule_id in spec["other_caps"])
             notes.append(f"ASSUMPTION P7: the day cap column holds one cap and applies to the whole stay; not applied: {caps}.")
-        for reading in encoded["readings"]:
-            if reading[0] == "cap":
-                notes.append(f"Reading: the day boundary of the cap {reading[1]} is not stated (cap period {reading[2]!r}), so "
-                             "it is read as a maximum per stay.")
-            elif reading[0] == "cap_calendar":
-                notes.append(f"Reading: the cap {reading[1]} is stated per calendar day (cap period {reading[2]!r}); the dataset "
-                             "column holds one maximum per stay, so the cap is read as a maximum per stay: a stay inside one "
-                             "calendar day pays what is published, a stay across midnight is capped once, not once per calendar "
-                             "day.")
-            elif reading[0] == "unit":
-                notes.append(f"Reading: {rules[reading[1]]['unit_reading']} ({reading[1]}).")
-            elif reading[0] == "rest":
-                notes.append(f"Reading: the day rate {reading[1]} states no charging times; it applies at every time of day that "
-                             f"the other tiers do not cover ({reading[2]}).")
-        undated = [reading[1] for reading in encoded["readings"] if reading[0] == "days"]
-        if undated:
-            notes.append(f"Reading: the window of {', '.join(undated)} states no days, so it is read as Monday to Friday.")
+        notes.extend(_reading_notes(encoded["readings"], rules))
         # a garage counts as capped when it has a day cap or a published day total whose boundary is read as a stay maximum
         facts["cap"] = (encoded["values"]["garage_daily_cap_eur"] is not None
                         or any(reading[0] == "cap" for reading in encoded["readings"]))
@@ -1375,6 +1492,221 @@ def build_garage(inputs: dict, spec: dict) -> dict:
     return row
 
 
+# ---------------------------------------------------------------- the Wolfsburg car parks (spec E14)
+LOT_CLASS_TEXT = {
+    "b": "a car park with an operator tariff of its own: an off-street option, priced from the operator's published tariff",
+    "c": "a car park that is free of charge for the public: an option at cost 0",
+    "d": "a public car park of the city layer outside every published municipal tariff area, without any fee evidence: free by "
+         "the municipal default (ASSUMPTION P12)",
+}
+
+
+def lot_specs(classes=("b", "c", "d")) -> list:
+    """The decisions of ``regional_garage_specs.LOT_SPECS`` of the given classes, in specification order (the classes with a
+    row of the dataset by default)."""
+    return [spec for spec in specs.LOT_SPECS if spec["class"] in classes]
+
+
+def decide_lots(inputs: dict, zones: gpd.GeoDataFrame) -> None:
+    """Classify the 24 points (spec E14) and check every owner decision of ``LOT_SPECS`` against the data (in place: the facts
+    of every point are stored as ``inputs["lots"]["facts"]``).
+
+    Every point of the package must have exactly one decision and every decision a point; the class must be allowed by the
+    fee status of the package and, where the data alone decide the class (a paid municipal car park inside one zone and one
+    published tariff area, a point without any fee evidence outside every zone and area), agree with it; a point decided as
+    a municipal free default that lies inside an area stops the step. The points of the package must be the points of the
+    regional layer ``wob_parkplaetze`` (same ids, same coordinates to 1 cm)."""
+    lots = inputs["lots"]
+    by_id = {spec["facility"]: spec for spec in specs.LOT_SPECS}
+    if len(by_id) != len(specs.LOT_SPECS):
+        raise SystemExit("two lot decisions share a facility id")
+    points = set(lots["points"].index)
+    if set(by_id) != points:
+        raise SystemExit(f"the lot decisions and the points of the Wolfsburg car-park package differ: points without a decision "
+                         f"{sorted(points - set(by_id))}, decisions without a point {sorted(set(by_id) - points)}")
+    regional = inputs["wob_lots"].set_index("facility_id")
+    if set(regional.index) != points:
+        raise SystemExit(f"the layer {WOB_LOTS_LAYER} of the regional package and the Wolfsburg car-park package list different "
+                         f"points: {sorted(set(regional.index) ^ points)}")
+    for facility, geometry in regional.geometry.items():
+        distance = float(geometry.distance(lots["points"].loc[facility, "geometry"]))
+        if distance > wl.COORDINATE_TOLERANCE_M:
+            raise SystemExit(f"point {facility} lies {distance:.3f} m from the point of the regional layer {WOB_LOTS_LAYER} "
+                             f"(more than {wl.COORDINATE_TOLERANCE_M} m): the package must hold the city's points unchanged")
+    facts = {}
+    for facility in sorted(points):
+        facts[facility] = wl.point_facts(lots, zones, facility)
+        wl.check_decision(by_id[facility]["class"], facts[facility])
+    lots["facts"] = facts
+    counts = {}
+    for spec in specs.LOT_SPECS:
+        counts[spec["class"]] = counts.get(spec["class"], 0) + 1
+    print("[garages] Wolfsburg car parks: " + ", ".join(f"class {key} {counts[key]}" for key in sorted(counts))
+          + f" of {len(points)} points, each decided from its fee status and its position (committed zones, published tariff "
+          "areas), never from a name")
+
+
+def _lot_encoding(inputs: dict, spec: dict) -> dict:
+    """The tariff of a lot row of class b, c or d as :func:`encode_tariff` returns it (class d: the free schedule under ASSUMPTION
+    P12, whose evidence is the field decision of the fee status)."""
+    if spec["class"] == "d":
+        return _free_encoding([spec["free_default"]], ["P12"], "free of charge for every stay by the municipal default "
+                              "(ASSUMPTION P12; the free schedule 0- free, the fee window 0-24 h is formal)")
+    return encode_tariff(spec, inputs["rules"])
+
+
+def _primary_lot_rule_id(spec: dict) -> str:
+    """The component whose source is the primary source of a lot row: the first tier, the rate of a grace period or the free
+    component."""
+    if spec.get("tiers"):
+        return spec["tiers"][0]
+    if spec.get("grace"):
+        return spec["grace"][1]
+    return spec["free"]
+
+
+def _p4_lot_note(census: dict) -> str:
+    return ("ASSUMPTION P4: the package keeps the rounding unknown (no rounding is stated), so the rate is billed per started "
+            f"unit; the census of the preferred garage rate rules of the regional package supports the assumption: "
+            f"{census['stated']} of {census['rate_rules']} state their rounding, and {census['started_unit']} of those "
+            f"{census['stated']} say started unit.")
+
+
+def build_lot(inputs: dict, spec: dict) -> dict:
+    """The dataset row (properties and ``geometry``, EPSG:25832) and the QA facts (``_facts``) of one Wolfsburg car park of
+    class b, c or d (spec E14, ruling R-4b3-1): ``facility_kind`` surface_lot, the municipal point as it stands (no entrance), the
+    capacity only where the package states it with a scope, the operator only where the package's copy of the operator's own
+    page holds the quotation of the specification. The values are read from the package's components by their roles (no number
+    is typed): class b the operator tariff (tiers with a grace period, or a grace period with a rate and a cap), class c the
+    free component, class d the field decision of the fee status (ASSUMPTION P12)."""
+    lots, rules = inputs["lots"], inputs["rules"]
+    facility, cls, garage_id = spec["facility"], spec["class"], spec["garage_id"]
+    review, facts = lots["review"][facility], lots["facts"][facility]
+    ags, municipality = specs.TOWNS["wob"]
+    point = lots["points"].loc[facility, "geometry"]
+    name = _ascii(str(lots["points"].loc[facility, "name"]))
+    if cls not in ("b", "c", "d"):
+        raise SystemExit(f"lot {garage_id}: class {cls} has no row in the dataset")
+    layer_source = lots["sources"].get("ROOT_WOB_POINTS_CURRENT")
+    if layer_source is None or layer_source["url"] != specs.GEOVIEWER_URL:
+        raise SystemExit("the package's source of the city layer is not the Geoviewer URL of the lot specifications")
+    encoded = _lot_encoding(inputs, spec)
+    members = list(encoded["rule_ids"]) + list(spec.get("ignored") or {})
+    missing = [rule_id for rule_id in members if rule_id not in rules and cls != "d"]
+    if missing:
+        raise SystemExit(f"lot {garage_id}: the components {missing} are not tariff components of the Wolfsburg car-park package")
+    subject = f"lot {garage_id}: the decision (class {cls}) relies on the package's field decisions"
+    wl.require_decision_values(lots["decisions"], spec.get("expect") or {}, subject)
+    if cls == "d":
+        sup.require_decisions(lots["decisions"], {spec["free_default"]: ("reviewed_evidence",)}, subject)
+    source_id = spec.get("source", "ROOT_WOB_POINTS_CURRENT")
+    source = lots["sources"].get(source_id)
+    if source is None:
+        raise SystemExit(f"lot {garage_id}: the package holds no source {source_id}")
+    if cls != "d":
+        primary_rule = rules[_primary_lot_rule_id(spec)]
+        if source_id not in primary_rule["source_ids"]:
+            raise SystemExit(f"lot {garage_id}: the source {source_id} is no source of the component {primary_rule['rule_id']} "
+                             f"({primary_rule['source_ids']})")
+    source_url, source_date = str(source["url"]), str(source["retrieved_at_utc"])[:10]
+    capacity, scope = review.get("capacity"), review.get("capacity_scope")
+    if capacity is not None:
+        capacity = int(round(float(capacity)))
+        if not scope:
+            raise SystemExit(f"lot {garage_id}: the package states the capacity {capacity} without a scope; the scope of a "
+                             "reported capacity is never guessed")
+        sup.require_decisions(lots["decisions"], {f"{facility}:capacity": ("reviewed_evidence",)}, subject)
+        scope = _ascii(scope)
+    else:
+        scope = None
+    operator, operator_note = None, None
+    if spec.get("operator"):
+        _, wanted, member, quotation, operator_source = spec["operator"]
+        named = wl.operator_from_text(lots, operator_source, wanted, member, quotation)
+        operator = named["operator"]
+        operator_note = (f"Operator {operator}, named by its own page {named['url']} (quotation '{named['quotation']}', in the "
+                         f"copy that the package keeps: {member}).")
+    notes = [f"Package facility {facility} of the Wolfsburg car-park package {wl.LOTS_FILE} (SHA-256 "
+             f"{lots['file']['sha256']}), point '{name}' of the city layer {WOB_LOTS_LAYER}; position: "
+             f"{specs.LOT_GEOMETRY_METHOD}, the city's own point as the layer states it (no entrance, no ring, no tariff "
+             "extent); the regional package's layer holds the same point (checked).",
+             f"Class {cls} of spec E14: {LOT_CLASS_TEXT[cls]}. Fee status of the package: {review['fee_status']}; the package "
+             "marks every record full_cost_calculation_ready=false and each value is used as the owner decision R-4b3-1 "
+             "releases it."]
+    if cls == "d":
+        notes.append(f"Free of charge for every stay by ASSUMPTION P12: {pg.ASSUMPTIONS['P12']}. Evidence: the field decision "
+                     f"{spec['free_default']} states the fee status unknown (reviewed evidence); the package holds no tariff "
+                     "component and no observed rule for the point; it lies inside none of the "
+                     f"{len(lots['all_areas'])} published tariff areas of the city layer and inside none of the committed "
+                     f"zones (nearest zone {facts['zone_distance_m']:.0f} m).")
+    else:
+        notes.append(f"Priced from the package components {', '.join(encoded['rule_ids'])} "
+                     f"({_released_phrase(rules, encoded['rule_ids'])}): {encoded['sentence']}.")
+        if cls == "c":
+            policy = rules[spec["free"]].get("conditions")
+            if policy:
+                notes.append(f"Free component {spec['free']}: {policy}.")
+    assumptions = encoded["assumptions"]
+    if "P4" in assumptions:
+        notes.append(_p4_lot_note(inputs["rounding_census"]))
+    if "P5" in assumptions:
+        notes.append("ASSUMPTION P5: the package states no charging times of the rate (the field decision of its weekday "
+                     "schedule is unknown), so the fee window is 0-24 h.")
+    if "P6" in assumptions:
+        notes.append(f"ASSUMPTION P6: {pg.ASSUMPTIONS['P6']}; a time of day outside every tier is free.")
+    if "P8" in assumptions:
+        notes.append(f"ASSUMPTION P8: {pg.ASSUMPTIONS['P8']}.")
+    for assumption, key in (("P10", "p10_basis"), ("P11", "p11_basis")):
+        if assumption in assumptions:
+            if not spec.get(key):
+                raise SystemExit(f"lot {garage_id}: a row that rests on ASSUMPTION {assumption} states the basis of its reading "
+                                 f"in {key!r}")
+            notes.append(f"ASSUMPTION {assumption}: {pg.ASSUMPTIONS[assumption]}. Basis of the reading: {spec[key]}.")
+    for assumption, key in (("P10", "p10_decisions"), ("P11", "p11_decisions")):
+        if spec.get(key) and assumption not in assumptions:
+            raise SystemExit(f"lot {garage_id}: the specification states the field decisions of ASSUMPTION {assumption} but the "
+                             "row does not rest on it")
+        if assumption in assumptions:
+            if not spec.get(key):
+                raise SystemExit(f"lot {garage_id}: a row that rests on ASSUMPTION {assumption} states the field decisions of "
+                                 f"its ruling in {key!r}")
+            ruling, needed = spec[key]
+            sup.require_decisions(lots["decisions"], needed, f"lot {garage_id}: the reading (ASSUMPTION {assumption}) rests on "
+                                                            f"the ruling {ruling}")
+    if "P11" in assumptions:
+        group = [rule_id for rule_id in encoded["rule_ids"] if rules[rule_id].get("assigned") is False]
+        if not group:
+            raise SystemExit(f"lot {garage_id}: ASSUMPTION P11 assigns an observed group rule of the package to the point, but "
+                             "no component of the row is an observed group rule that the package leaves unassigned")
+        notes.append("The package keeps the group components " + ", ".join(group) + " under observed_group_rules_not_assigned "
+                     "(applicability conditional_on_subfacility_match); the assignment to this point is the owner's reading.")
+    notes.extend(_reading_notes(encoded["readings"], rules))
+    if spec.get("ignored"):
+        notes.append("Not encoded: " + "; ".join(f"{describe_rule(rules[rule_id])} ({why})"
+                                                   for rule_id, why in spec["ignored"].items()) + ".")
+    if spec.get("comment"):
+        notes.append(spec["comment"])
+    if operator_note:
+        notes.append(operator_note)
+    notes.append(f"Capacity {capacity} ({scope})." if capacity is not None else
+                 "The package states no capacity (the field decision of the capacity is unknown): none is taken.")
+    row = {"garage_id": garage_id, "package_facility_id": facility, "name": name, "facility_kind": "surface_lot",
+           "operator": operator, "municipality": municipality, "municipality_ags": ags, "capacity_reported": capacity,
+           "capacity_scope": scope, "monthly_eur": None, "monthly_source_url": None, "monthly_product": None,
+           "priced": True, "not_priced_reason": None, "assumptions": ";".join(assumptions) or None,
+           "source_url": source_url, "source_date": source_date, "tariff_rule_ids": ";".join(encoded["rule_ids"]),
+           "geometry_method": specs.LOT_GEOMETRY_METHOD, "geometry_source_url": specs.GEOVIEWER_URL,
+           "package_sha256": ";".join([inputs["file"]["sha256"], lots["file"]["sha256"]]), "geometry": point}
+    for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
+        row[column] = encoded["values"][column]
+    row["notes"] = _ascii(" ".join(notes))
+    row["_facts"] = {"tiered": False, "banded": False, "cap": encoded["values"]["garage_daily_cap_eur"] is not None
+                     or any(reading[0] == "cap" for reading in encoded["readings"]), "readings": encoded["readings"],
+                     "supplement": False, "followup": False, "point": False, "priced": True, "followup_values": False,
+                     "lot": True}
+    return row
+
+
 def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     """The dataset: one row per garage specification, in specification order, EPSG:25832. Stops (``SystemExit``) when a
     garage of the package's layers is covered by no specification and no candidate decision, when a facility is both a
@@ -1387,6 +1719,9 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     if any(spec.get("followup") for spec in specs.GARAGE_SPECS) and "followup" not in inputs:
         raise SystemExit("the garage specifications rest on the follow-up package: pass it as --followup-zip "
                          f"({sup.FOLLOWUP_FILE})")
+    if specs.LOT_SPECS and "lots" not in inputs:
+        raise SystemExit("the lot decisions of regional_garage_specs rest on the Wolfsburg car-park package: pass it as "
+                         f"--wolfsburg-lots-zip ({wl.LOTS_FILE}) with --zones")
     used = {layer: [] for layer in GARAGE_LAYERS}
     rows = []
     for spec in specs.GARAGE_SPECS:
@@ -1395,8 +1730,10 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
             used[spec["layer"]].append(spec["feature"])
         if spec.get("attributes"):
             used[spec["attributes"][0]].append(spec["attributes"][1])
+    for spec in lot_specs():
+        rows.append(build_lot(inputs, spec))
     facts = [row.pop("_facts") for row in rows]
-    ids = [spec["garage_id"] for spec in specs.GARAGE_SPECS]
+    ids = [spec["garage_id"] for spec in specs.GARAGE_SPECS] + [spec["garage_id"] for spec in lot_specs()]
     if len(set(ids)) != len(ids):
         raise SystemExit("two garage specifications share a garage_id")
     # Every garage of the package's layers must be known: specified explicitly, a twin (the same facility id in another
@@ -1477,7 +1814,10 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
     print(f"[garages] rounding stated by the source {priced - counts.get('P4', 0)}/{priced}, ASSUMPTION P4 "
           f"{counts.get('P4', 0)}/{priced}; charging times stated {priced - counts.get('P5', 0)}/{priced}, ASSUMPTION P5 "
           f"{counts.get('P5', 0)}/{priced}; tiered {summary['priced_tiered']}/{priced}; banded "
-          f"{summary['priced_banded']}/{priced}; monthly product on {summary['with_monthly_product']} garages")
+          f"{summary['priced_banded']}/{priced}; free {summary['priced_free']}/{priced}; monthly product on "
+          f"{summary['with_monthly_product']} garages")
+    print("[garages] by facility kind: " + ", ".join(
+        f"{kind} {counts['listed']} listed, {counts['priced']} priced" for kind, counts in summary["by_facility_kind"].items()))
     capped = [fact for fact in facts if fact["cap"]]
     cap_readings = sum(any(reading[0] == "cap" for reading in fact["readings"]) for fact in capped)
     window_rows = [fact for fact in facts if any(reading[0] == "days" for reading in fact["readings"])]
@@ -1495,6 +1835,10 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
     if touched:
         print(f"[garages] supplement package: {len(touched)} garages touched ({sum(fact['point'] for fact in touched)} at its "
               f"main points), {sum(fact['priced'] for fact in touched)} priced from its rules or points")
+    lot_rows = [fact for fact in facts if fact.get("lot")]
+    if lot_rows:
+        print(f"[garages] Wolfsburg car-park package: {len(lot_rows)} rows (surface lots), "
+              f"{sum(fact['priced'] for fact in lot_rows)} priced from its components or by the municipal free default")
     followed = [fact for fact in facts if fact["followup"]]
     if followed:
         print(f"[garages] follow-up package: {len(followed)} garages touched, "
@@ -1561,8 +1905,55 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", _ascii(text).lower()).strip("_")
 
 
-def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list) -> list:
-    """The rows of the QA table (``garage_qa.GARAGE_QA_COLUMNS``): one per garage, per monthly product and per candidate."""
+def zone_street_rate_eur(tariffs: pd.DataFrame, zone_id: str) -> tuple:
+    """(street rate in EUR per hour, fee window text) of the zone ``zone_id`` in the tariff table; ``SystemExit`` for a zone
+    that the table does not hold or that has no hourly rate."""
+    table = tariffs.set_index("zone_id")
+    if zone_id not in table.index or pd.isna(table.loc[zone_id, "hourly_rate_eur"]):
+        raise SystemExit(f"the tariff table holds no hourly street rate of the zone {zone_id}")
+    row = table.loc[zone_id]
+    return float(row["hourly_rate_eur"]), f"{row['fee_start_h']:g}-{row['fee_end_h']:g} h"
+
+
+def lot_zone_row(inputs: dict, spec: dict, tariffs: pd.DataFrame) -> dict:
+    """The fields of the QA candidate row of a paid municipal car park inside a zone (class a, spec E14): its fee is the street
+    product of its zone (ruling R-E1: no double role), so it is no option. The consistency check compares the published hourly
+    reference of its tariff area (the package's component, EUR per 60 min) with the street rate of the zone that contains the
+    point (``parking_tariffs_2026.csv``); a difference is named in the note and is no change of the zone tariff. The cells:
+    ``zone_ids`` the zone, ``amount_eur`` the published hourly reference. ``SystemExit`` where the package's component, its
+    area match or its fee zone do not belong together."""
+    lots = inputs["lots"]
+    facility = spec["facility"]
+    facts, rule = lots["facts"][facility], lots["rules"].get(spec["rule"])
+    matches = lots["matches"].get(facility, [])
+    if rule is None or rule.get("rule_type") != "published_hourly_reference" or rule["facility_id"] != facility:
+        raise SystemExit(f"point {facility}: {spec['rule']} is no published hourly reference of this point")
+    if len(matches) != 1 or matches[0]["area_id"] != rule.get("linked_mobile_facility_id") \
+            or matches[0].get("fee_zone") != rule.get("fee_zone"):
+        raise SystemExit(f"point {facility}: the strict match {matches} of the package does not belong to the component "
+                         f"{rule['rule_id']} (area {rule.get('linked_mobile_facility_id')}, fee zone {rule.get('fee_zone')})")
+    if not rule.get("billing_unit_minutes") or rule.get("amount_eur") is None:
+        raise SystemExit(f"point {facility}: the component {rule['rule_id']} states no amount per billing unit")
+    reference = round(float(rule["amount_eur"]) * 60.0 / float(rule["billing_unit_minutes"]), 4)
+    zone_id = facts["zone_ids"][0]
+    zone_rate, zone_window = zone_street_rate_eur(tariffs, zone_id)
+    verdict = ("equal" if abs(reference - zone_rate) < 0.005 else
+               f"DIFFERS by {abs(reference - zone_rate):.2f} EUR (the zone tariff is not changed here)")
+    match = dict(matches[0], price_raw=str(matches[0]["price_raw"]).replace("\u20ac", "EUR"))
+    note = (f"paid municipal car park (fee status {lots['review'][facility]['fee_status']}) inside the zone {zone_id} (committed "
+            f"geometry, point in polygon); the package matches it strictly to the published tariff area {match['area_name']} "
+            f"({match['area_id']}, fee zone {match['fee_zone']}, '{match['price_raw']}', paid hours '{match['paid_hours_raw']}'); "
+            "its fee is the municipal street product of the zone (ruling R-E1, no double role), so it is no option of the "
+            f"dataset. Consistency check of the published hourly reference {reference:.2f} EUR against the street rate "
+            f"{zone_rate:.2f} EUR per hour of {zone_id} (fee window {zone_window}): {verdict}. The reference is no rounding "
+            "rule: the package notes that the ordinance and the app bill to the minute")
+    return {"zone_ids": zone_id, "amount_eur": f"{reference:.2f}", "note": note, "verdict": verdict}
+
+
+def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Optional[pd.DataFrame] = None) -> list:
+    """The rows of the QA table (``garage_qa.GARAGE_QA_COLUMNS``): one per garage, per monthly product and per candidate. The
+    Wolfsburg car parks of spec E14 are one row each (garage rows for the classes b, c and d, candidate rows for a and e);
+    class a needs the tariff table (``tariffs``) for its consistency check."""
     rules = inputs["rules"]
     rows = []
 
@@ -1571,13 +1962,13 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list) -> list:
         record.update({key: ("" if value is None else str(value)) for key, value in fields.items()})
         rows.append(record)
 
-    specs_by_id = {spec["garage_id"]: spec for spec in specs.GARAGE_SPECS}
+    specs_by_id = {spec["garage_id"]: spec for spec in specs.GARAGE_SPECS + tuple(lot_specs())}
     for _, garage in frame.iterrows():
         spec = specs_by_id[garage["garage_id"]]
         priced = bool(garage["priced"])
         if priced:
-            note = encode_tariff(spec, rules)["sentence"] + (f" ({garage['assumptions'].replace(';', ', ')})"
-                                                              if garage["assumptions"] else "")
+            encoded = _lot_encoding(inputs, spec) if "class" in spec else encode_tariff(spec, rules)
+            note = encoded["sentence"] + (f" ({garage['assumptions'].replace(';', ', ')})" if garage["assumptions"] else "")
             if spec.get("qa_comment"):
                 note += f"; {spec['qa_comment']}"
         else:
@@ -1637,11 +2028,35 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list) -> list:
         row(record_id=candidate["record_id"], record_type="candidate", municipality_ags=ags, subject=candidate["subject"],
             decision="not_listed", reason_code=candidate["reason"], count=1, evidence=_ascii(evidence),
             note=_ascii(candidate["note"] + (f"; package rules: {tariff}" if tariff else "")))
+    if specs.LOT_SPECS:
+        # spec E14: one QA row per point of the city layer: garage rows (classes b, c, d) are written above, a candidate row
+        # (reason zone_street_product with its consistency check, user_group_only or customer_regime) is written here
+        for spec in lot_specs(("a", "e")):
+            facility, review = spec["facility"], inputs["lots"]["review"][spec["facility"]]
+            name = _ascii(str(inputs["lots"]["points"].loc[facility, "name"]))
+            if spec["class"] == "a":
+                if tariffs is None:
+                    raise SystemExit("the Wolfsburg car parks inside a zone are compared with the street rate of the zone: pass "
+                                     "the tariff table (--tariffs parking_tariffs_2026.csv)")
+                check = lot_zone_row(inputs, spec, tariffs)
+                row(record_id=spec["record_id"], record_type="candidate", municipality_ags="03103000",
+                    subject=f"{name} ({facility})", zone_ids=check["zone_ids"], decision="not_listed",
+                    reason_code="zone_street_product", amount_eur=check["amount_eur"], count=1,
+                    evidence=f"{facility}; {spec['rule']}; area {inputs['lots']['matches'][facility][0]['area_id']}",
+                    note=_ascii(check["note"]))
+            else:
+                row(record_id=spec["record_id"], record_type="candidate", municipality_ags="03103000",
+                    subject=f"{name} ({facility})", decision="not_listed", reason_code=spec["reason"], count=1,
+                    evidence=f"{facility}; fee status {review['fee_status']}; observed rules "
+                             f"{', '.join(review.get('tariff_rule_ids') or review.get('observed_rule_ids') or ['none'])}",
+                    note=_ascii(spec["note"]))
+        return rows
     lots = inputs["wob_lots"]
-    tariffs = [rule_ids for rule_ids in lots["tariff_rule_ids"] if rule_ids and str(rule_ids) not in ("[]", "None")]
-    if tariffs:
-        raise SystemExit(f"layer {WOB_LOTS_LAYER}: {len(tariffs)} car park(s) carry tariff rules; the dataset takes large "
+    tariff_rules = [rule_ids for rule_ids in lots["tariff_rule_ids"] if rule_ids and str(rule_ids) not in ("[]", "None")]
+    if tariff_rules:
+        raise SystemExit(f"layer {WOB_LOTS_LAYER}: {len(tariff_rules)} car park(s) carry tariff rules; the dataset takes large "
                          "public car parks with a published tariff, so the step needs a decision for them")
+    # a step without lot decisions (a synthetic package): the layer stays one aggregated candidate row, never silently dropped
     row(record_id="candidate_wob_car_parks", record_type="candidate", municipality_ags="03103000",
         subject=f"{len(lots)} Wolfsburg car parks of the Geoviewer layer {WOB_LOTS_LAYER}", decision="not_listed",
         reason_code="no_published_tariff", count=len(lots), evidence=f"layer {WOB_LOTS_LAYER}",
@@ -1677,8 +2092,9 @@ def dataset_members() -> dict:
     if missing or len(COLUMN_GLOSSARY) != len(pg.DATASET_COLUMNS):
         raise SystemExit(f"COLUMN_GLOSSARY and DATASET_COLUMNS differ: missing {missing}")
     return {"license": LICENSE, "attribution": ATTRIBUTION,
-            "documentation": {"dataset": "parking_garages_2026: one point per garage with its own tariff (parking cost zones "
-                                         "v2, spec Amendment E1, issue #436); written by scripts/curation/parking_zones_2026/"
+            "documentation": {"dataset": "parking_garages_2026: one point per garage or surface lot with its own tariff (parking "
+                                         "cost zones v2, spec Amendments E1 and E14, issue #436); written by "
+                                         "scripts/curation/parking_zones_2026/"
                                          "regional_garages.py; points in WGS84, loaded to EPSG:25832 by "
                                          "braunschweig.parking.garages.load_garages; money in EUR, minutes whole numbers, "
                                          "fee window in decimal hours of the weekday; null = not stated",
@@ -1699,21 +2115,30 @@ def main(argv=None) -> int:
                                                  "required where the garage specifications rest on it)")
     parser.add_argument("--followup-zip", help="the owner's follow-up package Parkhaus_Nachrecherche_2026-10-07.zip (spec E13; "
                                                "needs --supplement-zip; required where the specifications rest on it)")
+    parser.add_argument("--wolfsburg-lots-zip", help="the owner's Wolfsburg car-park package "
+                                                     "Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (spec E14; needs --zones and "
+                                                     "--tariffs; required where the lot decisions rest on it)")
+    parser.add_argument("--zones", help="parking_zones_2026.geojson: the committed zone polygons (EPSG:25832), which classify "
+                                        "the points of the Wolfsburg car-park package")
     args = parser.parse_args(argv)
-    inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip)
+    zones = None
+    if args.zones:
+        zones = gpd.read_file(args.zones).to_crs(cc.METRIC_CRS)
+    tariffs = pz.load_tariffs(args.tariffs) if args.tariffs else None
+    inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip,
+                                lots_path=args.wolfsburg_lots_zip, zones=zones)
     frame = build_garages(inputs)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
     ars = municipalities["commune_id"].astype(str)
     municipalities["ags"] = ars.str[:5] + ars.str[-3:]
     check_positions(frame, municipalities.set_index("ags").to_crs(cc.METRIC_CRS))
-    rows = qa_rows(inputs, frame, load_directory(args.directory))
+    rows = qa_rows(inputs, frame, load_directory(args.directory), tariffs)
     pg.write_garages(frame, args.out, members=dataset_members())
     write_garage_qa(args.qa_out, rows)
     # the written files are the release: read them back through the loaders of the pipeline side and validate
     loaded = pg.load_garages(args.out)
     pg.validate_garages(loaded)
-    tariffs = pz.load_tariffs(args.tariffs) if args.tariffs else None
     try:
         pq.validate_garage_qa(pq.load_garage_qa(args.qa_out), loaded, tariffs)
     except ValueError as error:

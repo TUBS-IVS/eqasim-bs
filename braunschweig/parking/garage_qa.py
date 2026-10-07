@@ -13,7 +13,9 @@ The committed table ``parking_garages_2026_qa.csv`` is written by the curation s
   BahnPark stay out in every city; a car park open to long-term renters only is no garage option).
 
 ``validate_garage_qa`` compares the table with the dataset (every garage once, the same status and reason; every
-``monthly_eur`` the amount of exactly one used product) and, when the tariff table is given, with ``commuter_day_eur``
+``monthly_eur`` the amount of exactly one used product; a car park inside a zone, spec E14, names its zone and the published
+hourly reference of its tariff area, and ``zone_reference_check`` compares that reference with the street rate of the zone)
+and, when the tariff table is given, with ``commuter_day_eur``
 (the amount of a used zone product divided by ``WORKING_DAYS_PER_MONTH``, ASSUMPTION P2, to whole cents), so a regenerated
 dataset or tariff table cannot keep a stale table. Money in EUR.
 """
@@ -139,6 +141,16 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
         for column in ("subject", "evidence", "note"):
             if not row[column]:
                 problems.append(f"{prefix}: {column} is empty")
+        if _is_zone_car_park(row):
+            if row["zone_ids"] == "":
+                problems.append(f"{prefix}: a car park inside a zone names the zone (zone_ids)")
+            elif pg.LIST_SEPARATOR in row["zone_ids"]:
+                problems.append(f"{prefix}: a car park inside a zone names one zone, found {row['zone_ids']!r}")
+            if row["amount_eur"] == "":
+                problems.append(f"{prefix}: a car park inside a zone states the published hourly reference (amount_eur)")
+            if tariffs is not None and row["zone_ids"] and pg.LIST_SEPARATOR not in row["zone_ids"]:
+                if row["zone_ids"] not in set(tariffs["zone_id"]):
+                    problems.append(f"{prefix}: zone {row['zone_ids']!r} is not in the tariff table")
     # --- the dataset
     dataset = garages.set_index("garage_id")
     garage_rows = qa[qa["record_type"] == "garage"]
@@ -202,6 +214,40 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
                                 "explains")
     if problems:
         raise ValueError("invalid parking garage QA table:\n  " + "\n  ".join(problems))
+
+
+def _is_zone_car_park(row) -> bool:
+    """A candidate row of reason ``zone_street_product`` that names a zone or states a published hourly reference: a car park
+    that lies inside a zone and whose fee is the street product of that zone (a Wolfsburg car park of spec E14). The older
+    candidates of the Braunschweig directory (a ParkGO car park of a zone) name neither."""
+    return (row["record_type"] == "candidate" and row["reason_code"] == "zone_street_product"
+            and (row["zone_ids"] != "" or row["amount_eur"] != ""))
+
+
+def zone_reference_check(qa: pd.DataFrame, tariffs: pd.DataFrame) -> list:
+    """The consistency check of the car parks inside a zone (spec E14, class a): per candidate row ``zone_street_product`` that
+    names its zone (``zone_ids``) and the published hourly reference of its tariff area (``amount_eur``, EUR per hour), the
+    reference against the street rate of the zone (``hourly_rate_eur`` of the tariff table): a list of {"record_id", "zone_id",
+    "reference_eur", "zone_rate_eur", "equal" (to the cent)}. A difference is a finding, never an error; the zone tariff is not
+    changed by a car park. Rows without a zone and an amount (the directory candidates) are no check."""
+    table = tariffs.set_index("zone_id")
+    checks = []
+    for _, row in qa[qa.apply(_is_zone_car_park, axis=1)].iterrows():
+        if row["zone_ids"] == "" or row["amount_eur"] == "" or pg.LIST_SEPARATOR in row["zone_ids"]:
+            continue  # reported by validate_garage_qa
+        if row["zone_ids"] not in table.index:
+            continue  # reported by validate_garage_qa
+        reference, rate = float(row["amount_eur"]), float(table.loc[row["zone_ids"], "hourly_rate_eur"])
+        checks.append({"record_id": row["record_id"], "zone_id": row["zone_ids"], "reference_eur": reference,
+                       "zone_rate_eur": rate, "equal": abs(reference - rate) < 0.005})
+    return checks
+
+
+def zone_reference_summary(qa: pd.DataFrame, tariffs: pd.DataFrame) -> dict:
+    """{"checked", "equal", "differing" (the record ids whose reference differs from the street rate of their zone)}."""
+    checks = zone_reference_check(qa, tariffs)
+    return {"checked": len(checks), "equal": sum(check["equal"] for check in checks),
+            "differing": [check["record_id"] for check in checks if not check["equal"]]}
 
 
 def qa_coverage(qa: pd.DataFrame) -> dict:

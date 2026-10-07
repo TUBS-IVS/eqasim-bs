@@ -776,12 +776,20 @@ def test_committed_parking_data_is_valid(capsys):
             "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
             "through the dataset); search time on 0 rows (decision D4)") in out
     # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
-    # specs E12 and E13: the supplement and follow-up packages price every listed garage (35 of 35)
-    assert ("garages: 35 listed, 35 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
-    assert ("priced garages resting on an assumption: P10 2, P11 4, P4 22, P5 23, P6 7, P7 5, P8 10 of 35 (at least one "
-            "assumption 34, P4 or P5 30; in the tiered form 7, in the banded form 10); monthly product on 9 garages") in out
+    # specs E12 to E14: the supplement, follow-up and Wolfsburg car-park packages price every listed garage (48 of 48: 35
+    # garages and the 13 surface lots of the city layer)
+    assert ("garages: 48 listed, 48 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
+    assert "03103000 22 listed 22 priced" in out
+    assert ("priced garages resting on an assumption: P10 4, P11 5, P12 8, P4 24, P5 24, P6 8, P7 5, P8 11 of 48 (at least one "
+            "assumption 44, P4 or P5 32; in the tiered form 8, in the banded form 11, with the free schedule 11); by facility "
+            "kind garage 35 listed 35 priced, surface_lot 13 listed 13 priced; monthly product on 9 garages") in out
     assert "QA: monthly products used 11, recorded and not used 12 (capacity_limited_permits 1, garage_not_listed 1" in out
-    assert "candidates that are no garage 38 (bga_zone 2, customer_regime 1, dauerparker_only 2, no_coordinates 1" in out
+    # one QA row per Wolfsburg car park instead of the aggregated row: the 38 candidates (no_published_tariff 24) became 25
+    assert ("candidates that are no garage 25 (bga_zone 2, customer_regime 2, dauerparker_only 2, no_coordinates 1, "
+            "outside_source_list 1, station_bahnpark 3, user_group_only 1, zone_street_product 13)") in out
+    # the consistency check of the nine paid municipal car parks inside a zone (spec E14)
+    assert ("car parks inside a zone (spec E14): 9 checked, the published hourly reference of the tariff area against the "
+            "street rate of the zone: 9 equal, 0 differ (none)") in out
 
 
 @pytest.mark.parametrize("changes, message", [

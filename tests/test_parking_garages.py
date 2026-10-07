@@ -771,7 +771,7 @@ def test_the_validator_rejects_assumption_p10_without_a_free_first_band(changes,
         pg.validate_garages(_frame(_graced(**changes)))
 
 
-# --------------------------------------------------------------------------- the free schedule and the tiered grace period (spec E14)
+# ----------------------------------------------------------------- the free schedule and the tiered grace period (spec E14)
 
 
 def test_a_free_car_park_is_the_one_open_free_band_and_needs_no_assumption_and_a_municipal_default_names_p12():
@@ -827,7 +827,8 @@ def test_a_tiered_garage_may_carry_one_closed_free_band_as_its_grace_period():
     ({"tariff_duration_bands": "0- free"}, "a tiered garage carries duration bands only as a grace period"),
     ({"tariff_duration_bands": "0-30 total 1.00"}, "a tiered garage carries duration bands only as a grace period"),
     # the grace period is ASSUMPTION P10, the tiers are P6, and no schedule is read cumulatively (no P8)
-    ({"assumptions": "P4;P6", "notes": "ASSUMPTION P4. ASSUMPTION P6."}, "a tiered garage with a grace period rests on ASSUMPTION P10"),
+    ({"assumptions": "P4;P6", "notes": "ASSUMPTION P4. ASSUMPTION P6."},
+     "a tiered garage with a grace period rests on ASSUMPTION P10"),
     ({"assumptions": "P4;P6;P8;P10", "notes": "ASSUMPTION P4. ASSUMPTION P6. ASSUMPTION P8. ASSUMPTION P10."},
      "ASSUMPTION P8 prices a stay from a duration schedule with a priced band"),
     ({"assumptions": "P4;P10", "notes": "ASSUMPTION P4. ASSUMPTION P10."}, "a tiered garage rests on ASSUMPTION P6"),
@@ -1101,6 +1102,59 @@ def test_the_qa_coverage_counts_products_and_candidates_by_reason():
     assert pq.qa_coverage(qa) == {
         "monthly_used": 2, "monthly_not_used": 1, "monthly_not_used_by_reason": {"not_the_cheapest": 1},
         "candidates": 25, "candidates_by_reason": {"no_published_tariff": 24, "station_bahnpark": 1}}
+
+
+def _zone_candidate(facility="524303", zone_id="wob_tarifzone_1", reference="2.00", **changes) -> dict:
+    """A Wolfsburg car park inside a zone (class a, spec E14): the candidate row names the zone and the published hourly
+    reference of the car park's tariff area in EUR per hour."""
+    row = _qa_row(record_id=f"candidate_wob_lot_{facility}", record_type="candidate", garage_id="",
+                  municipality_ags="03103000", zone_ids=zone_id, decision="not_listed", reason_code="zone_street_product",
+                  amount_eur=reference, subject=f"Parkplatz ({facility})", evidence=f"WOB_PARK_{facility}",
+                  note="inside the zone; the consistency check is in the note")
+    row.update(changes)
+    return row
+
+
+def _wolfsburg_tariffs() -> pd.DataFrame:
+    return pd.DataFrame({"zone_id": ["wob_tarifzone_1", "wob_tarifzone_2", "bs_zone_ib"], "hourly_rate_eur": [2.0, 1.2, 1.8],
+                         "commuter_day_eur": [np.nan, np.nan, 3.76]})
+
+
+def test_the_published_hourly_reference_of_a_car_park_inside_a_zone_is_compared_with_the_street_rate_of_the_zone():
+    garages, qa, _ = _qa_tables()
+    rows = [_zone_candidate(), _zone_candidate("983050", "wob_tarifzone_2", "1.20"),
+            _zone_candidate("1245204", "wob_tarifzone_2", "1.00")]  # the third differs: 1.00 against 1.20 EUR per hour
+    qa = pd.concat([qa, _qa(*rows)], ignore_index=True)
+    tariffs = _wolfsburg_tariffs()
+    # a difference is reported, never an error: the zone tariff is not changed by the car park (spec E14)
+    pq.validate_garage_qa(qa, garages, tariffs)
+    checks = pq.zone_reference_check(qa, tariffs)
+    assert [(check["record_id"], check["zone_id"], check["reference_eur"], check["zone_rate_eur"], check["equal"])
+            for check in checks] == [("candidate_wob_lot_524303", "wob_tarifzone_1", 2.0, 2.0, True),
+                                     ("candidate_wob_lot_983050", "wob_tarifzone_2", 1.2, 1.2, True),
+                                     ("candidate_wob_lot_1245204", "wob_tarifzone_2", 1.0, 1.2, False)]
+    # the candidates of the directory without a zone and an amount (a ParkGO car park of Braunschweig) are no check
+    qa = pd.concat([qa, _qa(_qa_row(record_id="candidate_bs_werder", record_type="candidate", garage_id="", decision="not_listed",
+                                    reason_code="zone_street_product", subject="Parkplatz Werder", evidence="directory",
+                                    note="ParkGO zone 1"))], ignore_index=True)
+    pq.validate_garage_qa(qa, garages, tariffs)
+    assert len(pq.zone_reference_check(qa, tariffs)) == 3
+    summary = pq.zone_reference_summary(qa, tariffs)
+    assert summary == {"checked": 3, "equal": 2, "differing": ["candidate_wob_lot_1245204"]}
+    assert pq.zone_reference_summary(_qa(_qa_row()), tariffs) == {"checked": 0, "equal": 0, "differing": []}
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"zone_ids": "wob_tarifzone_9"}, "zone 'wob_tarifzone_9' is not in the tariff table"),
+    ({"zone_ids": "wob_tarifzone_1;wob_tarifzone_2"}, "names one zone"),
+    ({"amount_eur": ""}, "states the published hourly reference"),
+    ({"zone_ids": ""}, "names the zone"),
+])
+def test_a_car_park_inside_a_zone_names_its_zone_and_its_reference_and_the_zone_must_exist(changes, message):
+    garages, qa, _ = _qa_tables()
+    qa = pd.concat([qa, _qa(_zone_candidate(**changes))], ignore_index=True)
+    with pytest.raises(ValueError, match=message):
+        pq.validate_garage_qa(qa, garages, _wolfsburg_tariffs())
 
 
 def test_the_qa_vocabulary_excludes_the_station_car_parks_of_both_cities_and_the_lots_of_long_term_renters():
