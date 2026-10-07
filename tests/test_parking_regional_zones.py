@@ -767,6 +767,9 @@ def test_release_licence_names_the_regional_sources(release):
     assert "Stadt Braunschweig - Open GeoData" in document["attribution"]
     # the municipal and the regional wording join at a sentence boundary: one full stop, not two
     assert ".." not in document["license"] and ".." not in document["attribution"]
+    # the BgA lots cut out of bs_zone_ia are the package polygons now, no longer the OSM outlines of v1
+    assert "the OSM car-park outlines of the BgA zones" not in document["license"]
+    assert "(the BgA car parks of the regional evidence package are cut out of bs_zone_ia)" in document["license"]
     assert release["zone_path"].read_text(encoding="utf-8").isascii()
 
 

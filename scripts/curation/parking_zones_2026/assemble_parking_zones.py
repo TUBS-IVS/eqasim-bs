@@ -797,10 +797,18 @@ ATTRIBUTION_REGIONAL_SUFFIX = (
     + rz.TU_PROVENANCE + ". Goslar car parks: " + rz.GOSLAR_PROVENANCE + ".")
 
 
+# The municipal wording says the BgA car parks cut out of bs_zone_ia are OSM outlines (v1). With the regional package
+# (spec Amendment D1) they are the package's polygons, digitised from the annex maps of the Amtsblatt, so the clause
+# would claim a licence regime the cut-outs no longer fall under.
+_OSM_BGA_CUTOUT_CLAUSE = "(the OSM car-park outlines of the BgA zones are cut out of bs_zone_ia)"
+_REGIONAL_BGA_CUTOUT_CLAUSE = "(the BgA car parks of the regional evidence package are cut out of bs_zone_ia)"
+
+
 def licence_members(sources: set, municipal: bool = False, regional: bool = False) -> tuple:
     """(license, attribution) of the zone file: the wording of the newest rule-based source present (v1 otherwise),
     narrowed to the OSM-derived polygons and extended by the municipal sources when ``municipal`` (ruling R-C1) and by
-    the sources of the regional evidence package when ``regional`` (spec Amendment D; needs ``municipal``)."""
+    the sources of the regional evidence package when ``regional`` (spec Amendment D; needs ``municipal``), where the
+    BgA cut-outs of bs_zone_ia are the package polygons, no longer OSM outlines."""
     if pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE in sources:
         license_text, attribution = LICENSE_SUPPLY, ATTRIBUTION_SUPPLY
     elif pz.EROSION_GEOMETRY_SOURCE in sources:
@@ -814,6 +822,9 @@ def licence_members(sources: set, municipal: bool = False, regional: bool = Fals
     narrowed = "ODbL-1.0: every polygon not named below is derived from OpenStreetMap data" + license_text[len(_OSM_CLAIM):]
     license_text, attribution = narrowed + LICENSE_MUNICIPAL_SUFFIX, attribution + ATTRIBUTION_MUNICIPAL_SUFFIX
     if regional:
+        if _OSM_BGA_CUTOUT_CLAUSE not in license_text:
+            raise SystemExit("the municipal licence wording no longer holds the BgA cut-out clause this step replaces")
+        license_text = license_text.replace(_OSM_BGA_CUTOUT_CLAUSE, _REGIONAL_BGA_CUTOUT_CLAUSE)
         license_text, attribution = license_text + LICENSE_REGIONAL_SUFFIX, attribution + ATTRIBUTION_REGIONAL_SUFFIX
     return license_text, attribution
 

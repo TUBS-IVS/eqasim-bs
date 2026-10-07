@@ -815,6 +815,8 @@ def test_committed_zones_carry_the_licence_notice():
     for wording in REGIONAL_PROVENANCE:
         assert wording in document["license"], wording
     assert ".." not in document["license"] and ".." not in document["attribution"]
+    # the BgA lots cut out of bs_zone_ia are the package polygons, no longer the OSM outlines of v1
+    assert "the OSM car-park outlines of the BgA zones" not in document["license"]
     assert "explicit consent for reuse of TU graphics not obtained" in document["attribution"]
 
 
