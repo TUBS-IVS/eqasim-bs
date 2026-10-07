@@ -164,7 +164,8 @@ acquisition:
     the band's start to the price reached at the band's start, a free band costs nothing, where the source states no
     rounding the unit is a started unit (as in P4), and a published cap or 24-hour price applies as the day cap (the
     smaller of the schedule price and the cap); a stay beyond a closed schedule (Peine ends at 1440 min) has no price
-    (the evaluation raises). Two READINGS name no assumption id and are counted and named in the notes: a day cap or a
+    (the evaluation raises). Five READINGS name no assumption id and are counted and named in the notes (the same five as in
+    the limitations; the first two here, the three that Task 4b2 added in its paragraphs below): a day cap or a
     published day total whose day boundary the source does not state (cap period unspecified or absent) is read as a
     maximum per stay (18 of the 26 garages with a cap or a day total after Task 4b2; 13 of 20 at the end of fix round
     2), and a time window without stated days is read
@@ -187,7 +188,7 @@ acquisition:
     bay, entry and exit Mo-Fr 05:00-23:00, publicly purchasable, the only product) and Peine Werderstrasse and
     Wallstrasse (48.00 EUR, Dauerstellplatz, minimum contract 2 months) are used; Ring-Center, Schillerstrasse, BRAWO
     and Goslar C&A have no monthly product in the package. The counts at the end of fix round 2 were: monthly product
-    on 7 garages, used 9, recorded and not used 11 (Task 4b2: 8, 10 and 12, see below). The QA table parking_garages_2026_qa.csv has three record types: garage (the
+    on 7 garages, used 9, recorded and not used 11 (Task 4b2: 8, 10 and 12; after its fix round 1: 9, 11 and 12, see below). The QA table parking_garages_2026_qa.csv has three record types: garage (the
     decision on every garage), monthly_product (every product that the sources publish, used or not, with its amount;
     the used products of zone rows are the 30-day ticket of zone Ib and the TU member month ticket behind
     commuter_day_eur of the tariff table) and candidate (a package or directory entry that is no garage of the
@@ -238,16 +239,32 @@ acquisition:
     Stobenstrasse: 0.80 EUR per started 60 min, Mo-Sa 07-19 h, 64 spaces; Groepern: 0.70 EUR first hour, 0.30 EUR each
     further hour, 24 h, 118 spaces. The Groepern tariff is the one tariff that no package rule holds: it is read from the
     quotations of the brochure text that the supplement keeps ('0,70 EUR / 1 Std.', 'jede weitere 0,30 EUR',
-    'Oeffnungszeit: 24 Stunden'), PARSED from the quotations and checked to lie in the brochure row of the garage; the
-    brochure states no unit for 'jede weitere', which ruling R-4b2-1 reads as the hour of the first price (a named
-    reading, counted). ASSUMPTION P10 (grace period, spec E12, owner
+    'Oeffnungszeit: 24 Stunden'), PARSED from the quotations and checked to lie in the brochure row of the garage. The
+    brochure (official, Stadt Helmstedt, December 2024; its column header is only 'Kosten') states no unit for 'jede
+    weitere'. GROEPERN DIRECTORY (fix round 1 of Task 4b2, ruling R-4b2-9): the supplement's evidence copy of an undated
+    directory entry of the same garage (source HE_PARKINGLIST, parkinglist.de, retrieved 2026-10-07, operator Stadt
+    Helmstedt as the entry states it) states '0.70 Euro / 1 Stunde', '1.20 Euro / 2 Stunden', '0.30 Euro / jede weitere
+    Stunde' and '33.00 Euro / Monat'. The encoded tariff stays the brochure's, because an official and dated source
+    outranks an undated directory. The unit 'hour' of 'jede weitere' rests on the directory ('jede weitere Stunde'; the
+    step stops unless the directory's first and further prices equal the brochure's), no longer on the ruling alone; the
+    reading stays named and counted (1 garage). The directory's 1.20 EUR at 2 h against the 1.00 EUR that the encoded
+    tariff gives (0.70 + 0.30) is a CONFLICTING variant: recorded in the notes and the QA table, not used. The directory's
+    monthly product 33.00 EUR is the only product of the garage and names no restricted customer group, so under the
+    rules of spec D2 it is the cheapest publicly purchasable one and is USED, under ASSUMPTION P11 (the best available
+    evidence of the same facility, because the brochure states no monthly product; P11 covers the monthly product only,
+    the tariff itself rests on the brochure). Basis and limits: the entry is secondary and undated and differs from the
+    brochure at 2 h, so the amount may be outdated, and contract terms and availability are not stated; the decision is the
+    QA row monthly_he_groepern_tiefgarage (used). ASSUMPTION P10 (grace period, spec E12, owner
     decision): a published free period at the start of a stay is a grace period, a stay not longer than it costs 0 and a
     longer stay is billed from the arrival as if there were no free period (the free minutes are not deducted); encoded as
     a free first band, the total of the first unit and the rate from the end of the first unit (bands '0-15 free; 15-60
     total 1.50; 60- 1.50/60' at the Forschungsflughafen, '0-30 free; 30-60 total 1.00; 60- 1.00/60' at the Suedkopf-Center).
     Basis: the general FAQ of the parking provider that the Forschungsflughafen's site page links (mh-parkservice.com),
     which describes a grace period without a deduction and is NOT site-specific (the supplement's field decision on the
-    deduction stays open); for the Suedkopf-Center there is no source and the same reading is applied by analogy. The
+    deduction stays open); for the Suedkopf-Center there is no source and the same reading is applied by analogy. Both rows
+    state in their specification the supplement's field decision on the deduction and the status the ruling relied on
+    (airport: open_with_general_operator_indication; Suedkopf-Center: open), and the build stops if the package holds the
+    decision in another status. The
     Forschungsflughafen is priced (ruling R-4b2-2) with 1.50 EUR per started 60 min (rounding ceil, resolved), the day
     maximum 18.00 EUR of the visible operator block (the 15.00 EUR blocks of the same page are CSS-hidden templates, both
     named in the notes; its period is not stated, a maximum per stay) and the 99.00 EUR seven-day prebooked product as a
@@ -266,7 +283,8 @@ acquisition:
     (2.00 EUR per started 60 min), which states no charging times and so applies at every time of day outside the night
     tier (06:30-21:00; a named reading, counted), and the night tier 21:00-06:30 costs 1.00 EUR per 60 min, with price and
     times from the operator page (which states '1 EUR' without a unit) and the unit from the city page only (currentness
-    unclear), night rounding unknown (P4); ASSUMPTION P3 stands on no garage any more. The caps were re-checked against the
+    unclear), night rounding unknown (P4); ASSUMPTION P3 stands on no garage any more. The step refuses a rest tier (a day rate without
+    clock times) whose rule states charging times or a time window: such a rate is a tier of its own. The caps were re-checked against the
     tiers: the single cap column holds the day tariff 9.00 EUR and applies to the whole stay (P7), so a stay that includes
     the night is capped at 9.00 EUR where the operator's maximum for day and night together is 10.00 EUR (not applied).
     ASSUMPTION P11 (best available secondary evidence, spec E13, ruling R-4b2-8, which replaces ruling R-4b2-6 and
@@ -285,7 +303,11 @@ acquisition:
     for 2026 (product 546-01, the barrier system of the garage, and the asset plan of the GGM) documents that the garage
     exists, not its tariff; the position is the archived municipal point of 2018 (the same coordinate as before, checked
     to 1 cm, geometry_method archived_municipal_point_2018), not a current entrance; the directory's restriction 'public
-    access outside core working hours' is not modelled (availability is not modelled, spec E3). Wolfsburg
+    access outside core working hours' is not modelled (availability is not modelled, spec E3). CONSISTENCY CHECK of the P11 value against the garages of the
+    same town: 1.00 EUR per hour is below the 1.50 EUR per hour of Parkhaus bei C&A, GALERIA and Achtermann in Goslar; the
+    directory value is kept, because the garage is a municipal office garage that is public only outside the core working
+    hours, where a lower municipal tariff is plausible, and no source for this garage states another price (the result
+    of the check, with the difference named in the notes). Wolfsburg
     Suedkopf-Center additionally gets the day cap 5.00 EUR of the secondary directory (parkingworld.ch, undated, not
     confirmed; a maximum per stay; P11). The Forschungsflughafen and GALERIA notes carry the follow-up findings (18.00 EUR
     confirmed with the period unspecified, the 24 hours of the page concern late payment; a third provider page states
@@ -294,7 +316,7 @@ acquisition:
     taken. No garage is left unpriced; the reason codes stay in the vocabulary of the loader, the validator and the QA table
     (no garage uses one now), because the validator and the tests refuse an unknown reason and a later garage may need
     one. Result: 35 garages listed and 35 priced; assumptions among the 35 priced: P4 22, P5 23, P6 7, P7 5, P8 10, P10 2,
-    P11 3 (P3 0); tiered 7, banded 10; monthly product on 8 garages.
+    P11 4 (P3 0; at Groepern P11 covers the monthly product only); tiered 7, banded 10; monthly product on 9 garages.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson
   committed: true
@@ -329,7 +351,7 @@ verification:
     their edges, the identity check of the Ring-Center, the coverage numbers, the notes rules, the QA counts) and,
     where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_garage_supplement.py
     pins the supplement and follow-up readers (pinned hashes, manifest, main points, identity, release by decision, brochure
-    quotations, the grace form, the rest tier, the price table, the readings, the hash list) on synthetic packages; the curation tests also refuse a
+    quotations and the directory evidence, the grace form, the rest tier, the price table, the readings, the hash list) on synthetic packages; the curation tests also refuse a
     rule that is not preferred for every value role (rate, first period, first unit, tier, band, cap, monthly
     product).
 requirements:
@@ -373,13 +395,18 @@ limitations: >-
   nur Dauerparkern' (a closed group of long-term renters; the owner's direction is that their free or contract parking
   is covered by the model's averaged free-parking share; reason dauerparker_only); and the Wolfsburg car parks (no
   tariff in the package). Every one of the 35 listed garages is priced (spec E13), but not every price is an operator
-  statement: five rows rest on a stronger assumption than the others. Three rows rest on ASSUMPTION P11, the best
-  available secondary evidence where no operator tariff is published: Goslar Achtermann (an undated directory table
+  statement: 5 of the 35 rows rest on a stronger assumption than the others (ASSUMPTION P10 or P11, counted from the
+  assumptions column of the dataset: the Forschungsflughafen, the Suedkopf-Center, Achtermann, Charley-Jacob-Strasse and the
+  Groepern garage). Four rows rest on ASSUMPTION P11, the best available secondary evidence where no operator tariff is
+  published (at Groepern for the monthly product only): Goslar Achtermann (an undated directory table
   that the follow-up package does not accept as the current operator tariff; operator unconfirmed), Goslar
   Charley-Jacob-Strasse (an undated directory entry; the identity of the archived 2018 map point with the municipal
   garage and the current public access and tariff are not verified; the budget of 2026 only documents that the garage
-  exists) and the day cap 5.00 EUR of the Wolfsburg Suedkopf-Center (a secondary directory; the follow-up package does not
-  take it as confirmed); two rows (the Braunschweig Forschungsflughafen and the Wolfsburg Suedkopf-Center) read a free
+  exists; its 1.00 EUR per hour is below the 1.50 EUR per hour of the other Goslar garages, which the consistency check of
+  P11 names and keeps), the day cap 5.00 EUR of the Wolfsburg Suedkopf-Center (a secondary directory; the follow-up package
+  does not take it as confirmed) and the monthly product 33.00 EUR of the Helmstedt Groepern garage (an undated directory
+  entry whose 2 h price differs from the brochure, so the amount may be outdated); two rows (the Braunschweig
+  Forschungsflughafen and the Wolfsburg Suedkopf-Center, which rests on both assumptions) read a free
   period as a grace period (ASSUMPTION P10), for the airport on the general FAQ of the parking provider, which is not
   site-specific, and for the Suedkopf-Center on no source (by analogy). The tariff values are the preferred rules of the
   package of 2026-10-07, the released rules of the two supplement packages and the quotations of one brochure; they were not
@@ -387,13 +414,14 @@ limitations: >-
   publishes a tariff, the directories publish, not what drivers pay. Eight assumptions and five readings carry the
   encoding and are counted per row (see the acquisition notes): P3 on none of the 35 priced garages any more (it stays
   defined), P4 on 22, P5 on 23, P6 on 7 (every tiered garage), P7 on 5, P8 on 10 (every banded garage), P10 on 2 and P11 on
-  3; 34 of the 35 priced garages rest on at least one assumption, and 30 of the 35 on P4 or P5, which is the share of the
+  4; 34 of the 35 priced garages rest on at least one assumption, and 30 of the 35 on P4 or P5, which is the share of the
   priced garages whose rounding or charging times the sources do not state: the dataset is mostly a structure published by
   the operators plus these assumptions, and a sensitivity arm can leave a group out by the id in the assumptions column.
   The five READINGS: a day cap or a published day total whose day boundary is not stated is read as a maximum per stay (18
   of the 26 garages with a cap or a day total), a cap stated per calendar day is held as a maximum per stay (2 garages,
   GALERIA and Wallstrasse), a time window without stated days is read as Monday to Friday (4 garages), and the unit of
-  'jede weitere' of the Groepern brochure is read as the hour of the first price (1 garage), and a day rate without
+  'jede weitere' of the Groepern brochure is read as the hour (confirmed by the directory entry HE_PARKINGLIST, 'jede
+  weitere Stunde'; 1 garage), and a day rate without
   charging times takes the rest of the day beside a night tier (1 garage, the Poststrasse). P7: where a garage
   publishes a night cap or a 24-hour maximum next to its day cap (Eiermarkt, Rathaus, Phaeno, Rothenfelder, Poststrasse)
   the model applies the day cap to the whole stay, so a long stay is capped higher or lower than the operator's
@@ -411,16 +439,21 @@ limitations: >-
   ordinance of 2018-12-18 states another structure (0.50 EUR first 30 min, 1.00 EUR up to 1 h, 2.00 EUR up to 2 h, 0.50 EUR
   per further hour, at most 8.00 EUR), which is recorded in the notes and not encoded, and its 24 h window rests on the
   brochure's 'Oeffnungszeit: 24 Stunden' in its column of fee-liable times (the ordinance names opening hours only); the
-  Helmstedt Groepern garage rests on the same brochure with the unit of its further hours read as one hour; the
+  Helmstedt Groepern garage rests on the same brochure with the unit of its further hours read as one hour (the undated
+  directory entry HE_PARKINGLIST confirms the hour but states 1.20 EUR at 2 h against the encoded 1.00 EUR, a conflicting
+  variant that is not used, and its monthly product 33.00 EUR is used under P11 although the entry may be older than the
+  brochure); the
   Braunschweig Ring-Center is priced from rules that the package files under a facility named 'Parkhaus
   Forschungsflughafen' (identity check above); the first two hours of the Ring-Center are read as 1.50 EUR per started
   hour (the package notes that the wording does not say 'je'); the Salzgitter BRAWO customer conditions (free time with a
   retailer validation) and the Wolfsburg and other customer-only tariffs are not encoded; the Goslar garage
-  Charley-Jacob-Strasse keeps a municipal point of 2018 (its current entrance is unknown); the monthly products named
+  Charley-Jacob-Strasse keeps a municipal point of 2018 (its current entrance is unknown) and a directory tariff that is below the other Goslar
+  garages (consistency check of ASSUMPTION P11: kept, the difference named); the monthly products named
   Dauerparker Tag have no defined time scope in the application and are used as the cheapest product of their garage
   (D2); a product limited by a waiting list is used, a capacity-limited permit of a closed group (Goslar) is not; the
   GALERIA Dauerstellplatz (39.00 EUR, direct operator, contract required, terms unverified) is used as the only public
-  product; the shopping-centre garages are kept as garage options although the coverage register excludes their areas
+  product, and so is the Groepern monthly product (33.00 EUR, undated directory entry, terms not stated); the
+  shopping-centre garages are kept as garage options although the coverage register excludes their areas
   from the zone layer (ruling R-4b-9); the capacity is the reported value and no model input (conflicting totals and a
   total without a scope are left empty or not taken, and named in the notes). Positions are of different quality: the
   city feeds and the Geoviewer give points of the garage, operator map markers and directory navigation points are
@@ -432,19 +465,21 @@ limitations: >-
   Schuetzenstrasse and Wilhelmstrasse, Helmstedt Stobenstrasse and Groepern, Wolfsburg Schillerstrasse and the Goslar
   garages).
 notes: >-
-  Content on 2026-10-07 (Task 4b2, specs E12 and E13): 35 garages (priced 35; not priced 0); per municipality
+  Content on 2026-10-07 (Task 4b2 after its fix round 1, specs E12 and E13): 35 garages (priced 35; not priced 0); per municipality
   03101000 Braunschweig 12 listed 12 priced, 03102000 Salzgitter 1 and 1, 03103000 Wolfsburg 9 and 9, 03151009 Gifhorn 1
   and 1, 03153017 Goslar 4 and 4, 03154028 Helmstedt 4 and 4, 03157006 Peine 2 and 2, 03158037 Wolfenbuettel 2 and 2;
-  assumptions among the 35 priced garages P4 22, P5 23, P6 7, P7 5, P8 10, P10 2, P11 3 (P3 0); at least one assumption 34,
+  assumptions among the 35 priced garages P4 22, P5 23, P6 7, P7 5, P8 10, P10 2, P11 4 (P3 0); at least one assumption 34,
   P4 or P5 30; tiered form 7, banded form 10; first period with a clock window 3 (Eiermarkt, Rathaus, Phaeno); monthly
-  product on 8 garages. QA table 72 rows: 35 garages, 22 monthly products (used 10: eight garage rows, the zone Ib 30-day
+  product on 9 garages; 5 garages rest on P10 or P11. QA table 73 rows: 35 garages, 23 monthly products (used 11: nine
+  garage rows, the zone Ib 30-day
   ticket and the TU member month ticket; recorded and not used 12: not_the_cheapest 3, outdated_source 2,
   not_monthly_or_30_day 2, capacity_limited_permits 1, garage_not_listed 1, no_coordinates 1, no_fixed_price 1,
   restricted_customer_group 1) and 15 candidate records for 38 package or directory entries (no_published_tariff 24,
   zone_street_product 4, station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 1, no_coordinates 1,
   outside_source_list 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
   tests/test_parking_regional_garages.py. SHA-256 of the files as written by the step (LF; two runs identical):
-  parking_garages_2026.geojson 08eec999beb637dc9e9d2be2368cc27bd9dc755853d6f5b4795c4f6c0ec09a0e, parking_garages_2026_qa.csv f01d9f1f43dc3a80fe212b46dac24c262730efb154176fcf2c5888306546ab3f.
+  parking_garages_2026.geojson 03ca4df651ef882a2192e1b9d3288934c3208c4573e13d77c05c98c9d9ef62d7, parking_garages_2026_qa.csv
+  46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757.
   History: the first Task 4b run listed 32 garages, fix round 1 31 garages with 19 priced (SHA-256
   c2031fa3a4697ae3215e537133c9f1b88b84639cd26e64f73f6b8654a4421e3a and
   02ec613e4f2e89514926eb916cabad6e8b523f3e040dcfd8302daa3ae581a743), fix round 2 31 garages with 26 priced (SHA-256
@@ -453,5 +488,11 @@ notes: >-
   the first-period window, ruling R-4b-12); Task 4b2 adds the four garages without coordinates, prices the Forschungsflughafen,
   Suedkopf-Center, GALERIA, Achtermann and Charley-Jacob-Strasse and gives the Poststrasse its night tier (35 garages, 35
   priced; the follow-up package's recommendation to leave Achtermann and Charley-Jacob-Strasse unpriced is overridden by
-  the owner, ruling R-4b2-8, and the earlier plan R-4b2-6 to leave them unpriced is superseded). The dataset is read by
-  no stage, so no simulation output changes.
+  the owner, ruling R-4b2-8, and the earlier plan R-4b2-6 to leave them unpriced is superseded; first run SHA-256
+  08eec999beb637dc9e9d2be2368cc27bd9dc755853d6f5b4795c4f6c0ec09a0e and
+  f01d9f1f43dc3a80fe212b46dac24c262730efb154176fcf2c5888306546ab3f). Fix round 1 of Task 4b2 (review) changed the files to
+  the values above: the Groepern row gained the monthly product and ASSUMPTION P11 (assumptions P4 to P4;P11) and its
+  directory evidence in the notes, the Charley-Jacob-Strasse notes gained the P11 consistency statement, and the opening
+  hours in the notes of four rows (City-Galerie, Designer Outlets, Schillerstrasse, Suedkopf-Center) got a space between
+  a day name and a time; the QA table gained the row monthly_he_groepern_tiefgarage and one changed garage note; no other
+  value changed. The dataset is read by no stage, so no simulation output changes.

@@ -143,8 +143,12 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   row that a package touches cites its SHA-256 after the regional one in `package_sha256`; a facility is matched by its
   `facility_id` or a verified `legacy_id`, never `BS_None` (airport: legacy key `BS_SOURCE_4781...`) and never
   `HE_GROEPERN_STRASSE` for the Groepern garage (`HE_GROEPERN_TG_118`). A free period is read as a grace period (P10: a
-  stay not longer than it costs 0, a longer stay is billed from the arrival, a free first band) and a garage without an
-  operator tariff is priced from the best secondary evidence (P11), each with its basis in the notes. The assumptions P3
+  stay not longer than it costs 0, a longer stay is billed from the arrival, a free first band; the specification of every
+  P10 row names the supplement's field decision and the status its ruling relied on, `p10_decisions`, and the build checks
+  it) and a garage without an operator tariff is priced from the best secondary evidence (P11; at Groepern the monthly
+  product only: the brochure tariff stays the official one and the undated directory entry, which confirms the unit and
+  conflicts at 2 h, is recorded as a variant), each with its basis in the notes. A rest tier (a day rate without
+  charging times beside a night tier) refuses a rule that states charging times. The assumptions P3
   to P8, P10 and P11 are named in the row and counted at every run and by `scripts/validate_parking_zones.py` (with the union rates, which warn above
   `garages.UNION_WARNING_SHARE`), a station car park of DB BahnPark or a lot of long-term renters is a candidate QA
   row, not a garage, and a new garage needs a QA row (the validator refuses a dataset without its QA table). The

@@ -1641,6 +1641,29 @@ def test_the_opening_hours_in_the_notes_do_not_run_a_day_name_into_a_clock_time(
     assert "Mo-Fr 06:00-22:00; Sa 06:00-21:00; Su/holidays closed" in _committed_garages().loc["wob_suedkopf", "notes"]
 
 
+def test_the_data_record_counts_the_rows_on_a_stronger_assumption_as_the_dataset_does():
+    # the numbers of the record are derived from the assumptions column, never typed beside it (review of fix round 1)
+    import yaml
+
+    garages = _committed_garages()
+    parts = {garage: set((value or "").split(";")) for garage, value in garages["assumptions"].items()}
+    strong = [garage for garage, assumptions in parts.items() if {"P10", "P11"} & assumptions]
+    on_p10 = sum("P10" in assumptions for assumptions in parts.values())
+    on_p11 = sum("P11" in assumptions for assumptions in parts.values())
+    record = yaml.safe_load((REPO_ROOT / "docs" / "registry" / "data" / "parking_garages_2026.yml").read_text(encoding="utf-8"))
+    limitations = " ".join(record["limitations"].split())
+    assert f"{len(strong)} of the {len(garages)} rows rest on a stronger assumption" in limitations
+    assert f"P10 on {on_p10} and P11 on {on_p11}" in limitations
+    assert (len(strong), on_p10, on_p11) == (5, 2, 4)
+    # the readings of the acquisition notes are the five of the limitations list
+    assert "Five READINGS name no assumption id" in " ".join(record["acquisition"]["notes"].split())
+    assert "The five READINGS" in limitations
+    notes = " ".join(record["notes"].split())
+    for path in (GARAGES_PATH, GARAGES_QA_PATH):  # the repository holds LF; a checkout with core.autocrlf holds CRLF
+        digest = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        assert digest in notes, (path.name, digest)
+
+
 def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff():
     for path in (GARAGES_PATH, GARAGES_QA_PATH):
         assert path.read_bytes().isascii(), path.name
