@@ -122,7 +122,8 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 - The garage dataset is data of its own, not zones (spec Amendment E1): `parking_garages_2026.geojson` (points, WGS84
   on disk, EPSG:25832 after `braunschweig.parking.garages.load_garages`) with its QA table
   `parking_garages_2026_qa.csv` (`braunschweig.parking.garage_qa`) is built by
-  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package, so a change is made in
+  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its two optional
+  supplement packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`), so a change is made in
   `regional_garage_specs.py` (which package rule plays which role) and the two files are regenerated, never edited by
   hand. No stage reads it yet and the zone-level garage columns of the tariff table stay empty (Amendment E8); garages
   enter the pricing only through the later garage options. A garage is priced only where the published structure maps
@@ -136,8 +137,15 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   `garage_first_period_end_h` (empty where the source ties it to none; P6 as amended: charged once when the arrival
   lies inside the window, the tiers then run per started unit from its end, an arrival outside the window pays the
   tiers from the arrival). Only rules that the package marks `preferred_for_current_use` set a value: a specification
-  that names another rule for a role stops the step. The assumptions P3 to P8 are named in the row and counted at
-  every run and by `scripts/validate_parking_zones.py` (with the union rates, which warn above
+  that names another rule for a role stops the step; a rule of a supplement package never sets a value by itself (the
+  packages mark every rule `full_cost_calculation_ready=false`): `SUPPLEMENT_RELEASED` and `FOLLOWUP_RELEASED` name the owner
+  decision that releases it, and only while the package's field decision still has the status the decision relied on. A
+  row that a package touches cites its SHA-256 after the regional one in `package_sha256`; a facility is matched by its
+  `facility_id` or a verified `legacy_id`, never `BS_None` (airport: legacy key `BS_SOURCE_4781...`) and never
+  `HE_GROEPERN_STRASSE` for the Groepern garage (`HE_GROEPERN_TG_118`). A free period is read as a grace period (P10: a
+  stay not longer than it costs 0, a longer stay is billed from the arrival, a free first band) and a garage without an
+  operator tariff is priced from the best secondary evidence (P11), each with its basis in the notes. The assumptions P3
+  to P8, P10 and P11 are named in the row and counted at every run and by `scripts/validate_parking_zones.py` (with the union rates, which warn above
   `garages.UNION_WARNING_SHARE`), a station car park of DB BahnPark or a lot of long-term renters is a candidate QA
   row, not a garage, and a new garage needs a QA row (the validator refuses a dataset without its QA table). The
   package's facility BS_None is named 'Parkhaus Forschungsflughafen' although its rules are the Ring-Center's
