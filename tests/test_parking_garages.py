@@ -79,6 +79,25 @@ def _banded(**changes) -> dict:
     return _row(**base)
 
 
+GRACE_BANDS = "0-15 free; 15-60 total 1.50; 60- 1.50/60"
+SUPPLEMENT_SHA = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa"
+
+
+def _graced(**changes) -> dict:
+    """A valid priced garage whose first band is a free period read as a grace period (ASSUMPTION P10, spec E12; the shape of
+    the Forschungsflughafen row): ASSUMPTIONS P5, P8 and P10, a cap, two package SHA-256 values."""
+    base = {"garage_id": "bs_forschungsflughafen", "package_facility_id": "BS_SOURCE_4781", "name": "Parkhaus Forschungsflughafen",
+            "municipality": "Braunschweig", "municipality_ags": "03101000", "garage_hourly_rate_eur": None,
+            "garage_billing_unit_min": None, "garage_first_period_min": None, "garage_first_period_eur": None,
+            "garage_first_period_start_h": None, "garage_first_period_end_h": None, "garage_daily_cap_eur": 18.0,
+            "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0, "tariff_tiers": None, "tariff_duration_bands": GRACE_BANDS,
+            "assumptions": "P5;P8;P10", "tariff_rule_ids": "r-5;r-6", "package_sha256": f"{SHA};{SUPPLEMENT_SHA}",
+            "notes": "Grace period (ASSUMPTION P10); bands (ASSUMPTION P8); no charging times (ASSUMPTION P5).",
+            "x": 603200.0, "y": 5793100.0}
+    base.update(changes)
+    return _row(**base)
+
+
 def _unpriced(**changes) -> dict:
     """A valid unpriced garage: an incomplete tariff, no tariff value, no assumption."""
     base = {"garage_id": "bs_ring_center", "package_facility_id": "BS_None", "name": "Parkhaus Ring-Center",
@@ -126,7 +145,7 @@ def test_the_dataset_layout_is_the_documented_one():
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10"}
     assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
                                            "in force at the unit's start")
     # P6 as amended (ruling R-4b-12): the first period belongs to its clock window, the tiers run on from its end
@@ -137,6 +156,10 @@ def test_the_dataset_layout_is_the_documented_one():
     for phrase in ("a total band sets the price of the stay", "an increment band adds", "started unit",
                    "applies as the day cap"):
         assert phrase in pg.ASSUMPTIONS["P8"], phrase
+    # P10 (spec E12, owner decision 2026-10-07): a published free period at the start of a stay is a grace period
+    for phrase in ("grace period", "a stay not longer than it costs 0", "billed from the arrival",
+                   "the free minutes are not deducted"):
+        assert phrase in pg.ASSUMPTIONS["P10"], phrase
     assert 0.5 < pg.UNION_WARNING_SHARE < 1.0  # a named share of the priced garages, above which the loader warns
 
 
@@ -637,6 +660,50 @@ def test_a_banded_garage_passes_with_and_without_a_day_cap_and_with_a_stated_fee
 def test_the_validator_rejects_a_broken_banded_garage(changes, message):
     with pytest.raises(ValueError, match=message):
         pg.validate_garages(_frame(_banded(**changes)))
+
+
+# --------------------------------------------------------------------------- the grace period (ASSUMPTION P10, spec E12)
+
+
+def test_a_grace_period_garage_is_a_banded_garage_with_a_free_first_band_and_assumption_p10():
+    pg.validate_garages(_frame(_graced()))
+    bands = pg.parse_duration_bands(GRACE_BANDS)
+    # a stay not longer than the free period costs 0; a longer stay is billed from the arrival (the minutes are not deducted)
+    assert [pg.duration_band_price_eur(bands, minutes) for minutes in (0, 1, 15, 16, 60, 61, 120, 121)] == [
+        0.0, 0.0, 0.0, 1.5, 1.5, 3.0, 3.0, 4.5]
+    assert pg.duration_band_price_eur(bands, 24 * 60, 18.0) == 18.0  # the day cap acts on the schedule price
+
+
+@pytest.mark.parametrize("changes, message", [
+    # P10 reads a free first band: without bands, or without a free first band, there is no grace period
+    ({"tariff_duration_bands": "0-15 total 1.00; 15- 1.50/60"}, "ASSUMPTION P10 reads the free first band of "
+                                                              "tariff_duration_bands as a grace period, but this garage's first band is not free"),
+    ({"tariff_duration_bands": None, "garage_hourly_rate_eur": 1.5, "garage_billing_unit_min": 60,
+      "assumptions": "P8;P10"}, "ASSUMPTION P10 reads the free first band of tariff_duration_bands as a grace period"),
+    ({"assumptions": "P5;P8;P10", "notes": "ASSUMPTION P5. ASSUMPTION P8."}, "the notes must name ASSUMPTION P10"),
+])
+def test_the_validator_rejects_assumption_p10_without_a_free_first_band(changes, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_graced(**changes)))
+
+
+# --------------------------------------------------------------------------- the packages of a row (spec E12)
+
+
+def test_a_row_may_cite_the_regional_package_and_the_supplement_package_by_their_two_sha256_values():
+    pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA}")))
+    pg.validate_garages(_frame(_row(package_sha256=SHA)))  # a row that the supplement does not touch cites one package
+
+
+@pytest.mark.parametrize("value, message", [
+    (f"{SHA};E789", "not a lower-case hexadecimal SHA-256"),
+    (f"{SHA};{SHA}", "lists a package SHA-256 twice"),
+    (f"{SHA};{SUPPLEMENT_SHA};{SHA[::-1]}", "at most two package SHA-256 values"),
+    (f"{SHA}, {SUPPLEMENT_SHA}", "not a lower-case hexadecimal SHA-256"),
+])
+def test_a_malformed_duplicated_or_too_long_package_sha256_list_is_rejected(value, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_row(package_sha256=value)))
 
 
 def test_a_day_cap_or_a_first_period_alone_never_prices_a_garage():
