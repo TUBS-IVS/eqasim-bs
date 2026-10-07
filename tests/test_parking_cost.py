@@ -63,13 +63,13 @@ def test_the_contract_holds_the_g_l_lz_v_r_and_e_cases_each_with_its_minimum_sta
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
     # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
-    # except R10 and R11 at L = 15; E01..E26 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15.
+    # except R10 and R11 at L = 15; E01..E28 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
-    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 27)]
+    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 29)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     # only the R cases and E12 (R2 before the garages) set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)

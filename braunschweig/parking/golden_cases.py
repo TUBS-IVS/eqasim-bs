@@ -10,7 +10,7 @@ for the Java ``ParkingCostCalculatorTest``.
 Fields of a case (they are the keys of the JSON cases, too):
 
 - ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``, ``R01`` .. ``R13``,
-  ``E01`` .. ``E26``.
+  ``E01`` .. ``E28``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -80,14 +80,15 @@ The six families:
   (terminal, T1) and R10 (L1, a zero-length stay) free the stay whatever interval would be priced; R11 frees a stay
   that would buy the cheapest schema-2 product, so the rule precedes the product minimum.
 
-- E01..E26 (schema 3, spec Amendment E; the fixture garages ``tests/fixtures/parking/parking_garages_fixture.geojson``):
+- E01..E28 (schema 3, spec Amendment E; the fixture garages ``tests/fixtures/parking/parking_garages_fixture.geojson``):
   the distance-weighted garage options priced as an expected cost (``cost.parking_cost_with_garages``), one case per
   rule: no garage in range (E01, the schema-2 result), one garage (E02), commuter month at a garage for work and for shop
   (E03, E04), two garages at different distances (E05), a garage at exactly 1000 m in and one at 1001 m out (E06), the
   street free (E07) and just not free (E08), the street unavailable (E09) and the zone garage family superseded (E10),
   the early rules before the mixture (E11..E14), a campus (E15), decay 0 (E16), a 0 ct garage option (E17), a tiered, a
   banded, a first-period and a grace-period garage inside the mixture (E18..E23), the zone commuter product as street
-  option (E24), T1 (E25) and L1 (E26). Every expected number is hand-derived in the comment above its row and its
+  option (E24), T1 (E25), L1 (E26) and a resident zone with garage options (E27, E28).
+  Every expected number is hand-derived in the comment above its row and its
   unrounded expectation keeps at least ``ROUNDING_MARGIN_CENTS`` from a half cent (the generator asserts it), so that
   ``Math.exp`` of Java cannot flip a rounding.
 - O01..O44 (``GOLDEN_GARAGE_OPTION_CASES``, the key ``garage_option_cases`` of the JSON): the price of ONE garage option
@@ -496,6 +497,16 @@ _E_CASE_ROWS = (
     # (45 + 0.4723665527 x 200) / 1.4723665527 = 94.727 -> 95.
     ("E26", "fx_bs_ib", 36000, 36000, "shop", False, False, False, False, 15, *_D1, 400.0, 95, "PAID_EXPECTED",
      0.3208213008),
+    # R-4d-2: garage options act on a resident zone too. fx_res_garage_v2 is disc parking (rate 0 per 60 min, all day) with a
+    # maximum stay of 120 min and no long-stay product; a non-resident staying 90 min is within the maximum stay: the street
+    # product costs 0 ct, so the stay pays 0 (E4) although fx_g01_core lies 300 m away.
+    ("E27", "fx_res_garage_v2", 36000, 41400, "shop", False, False, False, False, 0, *_D1, 400.0, 0, "FREE_WITHIN_LIMIT",
+     0.0),
+    # 180 min > the maximum stay 120 without a long-stay product (no commuter product on a resident zone): the street is
+    # unavailable and the zone garage family (3 x 120 = 360 ct) is superseded (E8); the weights renormalise over the one
+    # garage: 3 started hours x 200 ct = 600 ct, P = w / w = 1, expected = 1.0 x 600 = 600 exactly.
+    ("E28", "fx_res_garage_v2", 36000, 46800, "shop", False, False, False, False, 0, *_D1, 400.0, 600, "PAID_EXPECTED",
+     1.0),
 )
 
 # Garage option cases (the price of ONE garage option, no mixture): (id, garage_id, arrival_s, departure_s, purpose,
