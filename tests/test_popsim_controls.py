@@ -29,23 +29,17 @@ def test_largest_remainder_preserves_total():
     assert all(isinstance(x, int) for x in out)
 
 
-def test_largest_remainder_zero_total():
-    assert controls.largest_remainder_round([0.0, 0.0], 0) == [0, 0]
-
-
-def test_largest_remainder_exact_integers_unchanged():
-    assert controls.largest_remainder_round([2.0, 3.0], 5) == [2, 3]
-
-
-def test_largest_remainder_ties_break_by_index():
+@pytest.mark.parametrize("values, total, expected", [
+    pytest.param([0.0, 0.0], 0, [0, 0], id="zero_total"),
+    pytest.param([2.0, 3.0], 5, [2, 3], id="exact_integers_unchanged"),
     # Equal remainders (0.5 each); only one +1 to give -> lowest index wins.
-    assert controls.largest_remainder_round([0.5, 0.5], 1) == [1, 0]
-
-
-def test_largest_remainder_can_round_down():
-    # total below the sum of floors -> remove from the smallest remainder.
-    # floors [2,2] = 4, total 3 -> drop one from the smallest frac (index 0).
-    assert controls.largest_remainder_round([2.4, 2.6], 3) == [1, 2]
+    pytest.param([0.5, 0.5], 1, [1, 0], id="ties_break_by_index"),
+    # Total below the sum of floors ([2, 2] = 4, total 3) -> drop one from the
+    # smallest remainder (index 0).
+    pytest.param([2.4, 2.6], 3, [1, 2], id="can_round_down"),
+])
+def test_largest_remainder_edge_cases(values, total, expected):
+    assert controls.largest_remainder_round(values, total) == expected
 
 
 def test_largest_remainder_empty():

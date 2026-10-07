@@ -304,7 +304,7 @@ def test_plans_df_no_decider_leaves_escort_untouched():
 
 def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeypatch):
     # Estimation must run on W_ZWECK {5,10} only with groups {errand, rest}.
-    import braunschweig.popsim.mid as mid_module
+    import braunschweig.popsim.mid.donor as mid_donor
     mini = pd.DataFrame({
         "W_ZWECK": [5, 5, 10, 6, 6],
         "W_ZWD": [601, 603, 999, 7704, 7704],
@@ -312,7 +312,7 @@ def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeyp
         "W_SZS": [8]*5, "W_SZM": [0]*5, "W_AZS": [8]*5, "W_AZM": [10]*5,
         "W_GEW": [1.0]*5,
     })
-    monkeypatch.setattr(mid_module, "load_mid_wege", lambda _dir: mini.copy())
+    monkeypatch.setattr(mid_donor, "load_mid_wege", lambda _dir: mini.copy())
     ctx = _Ctx({
         "secondary_other_subtype_split": True,
         "escort_purpose": True,

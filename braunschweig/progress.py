@@ -13,6 +13,15 @@ from typing import Iterable, Iterator, TypeVar
 from braunschweig import theme
 from braunschweig.theme import want_color
 
+#: Read by scripts/audit_synpp_helper_hash.py (ADR-0136): no synpp stage token hashes this
+#: module, because nothing here changes a value a stage returns. Remove the marker as soon as
+#: a function here starts to shape a stage result; the audit then asks every stage that
+#: reaches this module to hash it.
+_SYNPP_TOKEN_EXEMPTION = (
+    "progress reporting only: progress_iter yields its items unchanged and progress_parallel "
+    "yields every future's result; neither reorders, drops or alters a value a stage keeps"
+)
+
 T = TypeVar("T")
 
 _PARTIALS = "▏▎▍▌▋▊▉"

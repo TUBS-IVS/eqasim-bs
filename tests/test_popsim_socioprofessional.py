@@ -44,7 +44,7 @@ def test_socioprofessional_does_not_use_p_bkat_crosswalk():
     studies)`` -- identical whether or not P_BKAT is present -- and must NOT apply
     the removed SPC_BY_P_BKAT occupation crosswalk.
     """
-    from braunschweig.ipf.attributed import derive_socioprofessional_class
+    from braunschweig.population.socioprofessional_class import derive_socioprofessional_class
 
     persons = pd.DataFrame({
         "P_BKAT":    [1,  2,  3],

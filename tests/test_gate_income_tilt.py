@@ -494,29 +494,20 @@ class TestDecideGate:
         assert "FLIP_DEFAULT_OFF" in rec, f"cf=0.5 should FLIP, got: {rec}"
         assert code == 1
 
-    def test_delta_spearman_at_tolerance_boundary_keeps(self) -> None:
-        """delta_spearman = -0.009 (within -0.01 tolerance) -> KEEP."""
+    @pytest.mark.parametrize("delta_spearman, expected_recommendation, expected_code", [
+        pytest.param(-0.009, "KEEP_DEFAULT_ON", 0, id="within_tolerance_keeps"),
+        # The tolerance is inclusive (>= -0.01).
+        pytest.param(-0.01, "KEEP_DEFAULT_ON", 0, id="exactly_at_tolerance_keeps"),
+        pytest.param(-0.011, "FLIP_DEFAULT_OFF", 1, id="just_below_tolerance_flips"),
+    ])
+    def test_delta_spearman_tolerance_boundary(
+            self, delta_spearman, expected_recommendation, expected_code) -> None:
+        """delta_spearman at or above the -0.01 tolerance keeps the default ON; below it flips."""
         off = self._make_off()
         on = self._make_on()
-        deltas = self._make_deltas(delta_spearman=-0.009)
+        deltas = self._make_deltas(delta_spearman=delta_spearman)
         rec, code = decide_gate(off, on, deltas)
-        assert "KEEP_DEFAULT_ON" in rec, f"delta_spearman=-0.009 should KEEP, got: {rec}"
-        assert code == 0
+        assert expected_recommendation in rec, (
+            f"delta_spearman={delta_spearman} should give {expected_recommendation}, got: {rec}")
+        assert code == expected_code
 
-    def test_delta_spearman_exactly_at_tolerance_keeps(self) -> None:
-        """delta_spearman = -0.01 (exactly at tolerance boundary) -> KEEP (>= -0.01)."""
-        off = self._make_off()
-        on = self._make_on()
-        deltas = self._make_deltas(delta_spearman=-0.01)
-        rec, code = decide_gate(off, on, deltas)
-        assert "KEEP_DEFAULT_ON" in rec, f"delta_spearman=-0.01 should KEEP (>=), got: {rec}"
-        assert code == 0
-
-    def test_delta_spearman_just_below_tolerance_flips(self) -> None:
-        """delta_spearman = -0.011 (just below -0.01 tolerance) -> FLIP."""
-        off = self._make_off()
-        on = self._make_on()
-        deltas = self._make_deltas(delta_spearman=-0.011)
-        rec, code = decide_gate(off, on, deltas)
-        assert "FLIP_DEFAULT_OFF" in rec, f"delta_spearman=-0.011 should FLIP, got: {rec}"
-        assert code == 1

@@ -44,8 +44,8 @@ def _make_cell(lon_center, lat_center, crs_3857_size=5000.0):
     return box(x - half, y - half, x + half, y + half)
 
 
-@pytest.fixture()
-def ev_grid_gpkg(tmp_path):
+@pytest.fixture(scope="module")
+def ev_grid_gpkg(tmp_path_factory):
     """Write a 3-cell EV-grid gpkg; return the path."""
     # Cell A: Braunschweig area (~10.53 E, 52.27 N) — inside, not suppressed
     geom_a = _make_cell(10.53, 52.27)
@@ -65,60 +65,71 @@ def ev_grid_gpkg(tmp_path):
         crs="EPSG:3857",
     )
 
-    path = tmp_path / "kba_ev_grid_5km_2026.gpkg"
+    path = tmp_path_factory.mktemp("ev_grid") / "kba_ev_grid_5km_2026.gpkg"
     gdf.to_file(str(path), driver="GPKG")
     return path
 
 
-def test_clip_drops_outside_cell(ev_grid_gpkg):
+@pytest.fixture(scope="module")
+def _extracted_once(ev_grid_gpkg):
+    return ex.extract_ev_grid(ev_grid_gpkg)
+
+
+@pytest.fixture
+def extracted(_extracted_once):
+    """The extraction of the 3-cell gpkg, run once per module; a copy per test."""
+    return _extracted_once.copy()
+
+
+def test_clip_drops_outside_cell(extracted):
     """Cell C (Munich, lat ~48.14) must be dropped by the ZGB bbox clip."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     assert len(df) == 2, f"Expected 2 cells after clip, got {len(df)}"
 
 
-def test_cell_ids_correct(ev_grid_gpkg):
+def test_cell_ids_correct(extracted):
     """Surviving cells must have the expected id_5km values."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     assert set(df["cell_id"]) == {"5kmN2695E4340", "5kmN2700E4360"}
 
 
-def test_ev_share_is_fraction(ev_grid_gpkg):
+def test_ev_share_is_fraction(extracted):
     """ev_share must equal elektro_an / 100 (fraction, not percent)."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     row_a = df[df["cell_id"] == "5kmN2695E4340"].iloc[0]
     assert abs(row_a["ev_share"] - 5.2 / 100.0) < 1e-9, (
         f"ev_share expected {5.2 / 100.0}, got {row_a['ev_share']}"
     )
 
 
-def test_suppressed_flag_true_for_dash_cell(ev_grid_gpkg):
+def test_suppressed_flag_true_for_dash_cell(extracted):
     """Cell B with ZS_Anteil_ == '-' must have suppressed == True."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     row_b = df[df["cell_id"] == "5kmN2700E4360"].iloc[0]
     assert bool(row_b["suppressed"]) is True, "suppressed flag should be True for '-' cell"
 
 
-def test_suppressed_flag_false_for_normal_cell(ev_grid_gpkg):
+def test_suppressed_flag_false_for_normal_cell(extracted):
     """Cell A with ZS_Anteil_ == 'ok' must have suppressed == False."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     row_a = df[df["cell_id"] == "5kmN2695E4340"].iloc[0]
     assert bool(row_a["suppressed"]) is False, "suppressed flag should be False for non-dash cell"
 
 
-def test_stichtag_is_2026_04_01(ev_grid_gpkg):
+def test_stichtag_is_2026_04_01(extracted):
     """Every row must carry stichtag == '2026-04-01'."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     assert list(df["stichtag"].unique()) == ["2026-04-01"]
 
 
-def test_bounds_columns_present(ev_grid_gpkg):
+def test_bounds_columns_present(extracted):
     """All four bound columns (minx, miny, maxx, maxy) must be present."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     for col in ("minx", "miny", "maxx", "maxy"):
         assert col in df.columns, f"Column {col!r} missing"
 
 
-def test_bounds_match_geometry(ev_grid_gpkg):
+def test_bounds_match_geometry(ev_grid_gpkg, extracted):
     """minx/miny/maxx/maxy must match the cell geometry bounds in EPSG:3857."""
     import geopandas as gpd
     gdf = gpd.read_file(str(ev_grid_gpkg))
@@ -127,7 +138,7 @@ def test_bounds_match_geometry(ev_grid_gpkg):
     inside = (cent.x >= 10.0) & (cent.x <= 11.7) & (cent.y >= 51.5) & (cent.y <= 52.9)
     gdf_inside = gdf[inside].copy()
 
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     for cell_id, row in df.set_index("cell_id").iterrows():
         orig = gdf_inside[gdf_inside["id_5km"] == cell_id].iloc[0]
         bounds = orig.geometry.bounds  # (minx, miny, maxx, maxy)
@@ -137,9 +148,9 @@ def test_bounds_match_geometry(ev_grid_gpkg):
         assert abs(row["maxy"] - bounds[3]) < 1.0, f"maxy mismatch for {cell_id}"
 
 
-def test_required_columns_present(ev_grid_gpkg):
+def test_required_columns_present(extracted):
     """All 8 required output columns must be present."""
-    df = ex.extract_ev_grid(ev_grid_gpkg)
+    df = extracted
     required = {"cell_id", "stichtag", "ev_share", "minx", "miny", "maxx", "maxy", "suppressed"}
     assert required.issubset(set(df.columns)), (
         f"Missing columns: {required - set(df.columns)}"

@@ -122,31 +122,18 @@ def test_the_bound_binds_from_about_33gb_of_driver_rss(driver_rss_gb, expected_w
     assert workers == expected_workers
 
 
-def test_auto_sentinel_is_derived_from_the_ceiling():
+@pytest.mark.parametrize("requested, origin, effective", [
+    pytest.param(0, "derived", 62, id="auto_sentinel_derived"),
+    pytest.param(10, "pinned", 10, id="fitting_pin_verbatim"),
+    pytest.param(999, "clamped", 62, id="pin_above_ceiling_clamped"),
+])
+def test_chainsolver_worker_resolution(requested, origin, effective):
     resolution = resources.resolve_chainsolver_workers(
-        0, resources.resolve_budget(machine=NEW_SERVER, env={}),
+        requested, resources.resolve_budget(machine=NEW_SERVER, env={}),
         worker_memory_gb=0.86, driver_rss_gb=25.0,
     )
-    assert resolution.origin == "derived"
-    assert resolution.effective == 62
-
-
-def test_a_fitting_pin_is_used_verbatim():
-    resolution = resources.resolve_chainsolver_workers(
-        10, resources.resolve_budget(machine=NEW_SERVER, env={}),
-        worker_memory_gb=0.86, driver_rss_gb=25.0,
-    )
-    assert resolution.origin == "pinned"
-    assert resolution.effective == 10
-
-
-def test_a_pin_above_the_ceiling_is_clamped():
-    resolution = resources.resolve_chainsolver_workers(
-        999, resources.resolve_budget(machine=NEW_SERVER, env={}),
-        worker_memory_gb=0.86, driver_rss_gb=25.0,
-    )
-    assert resolution.origin == "clamped"
-    assert resolution.effective == 62
+    assert resolution.origin == origin
+    assert resolution.effective == effective
 
 
 def test_an_unmeasurable_driver_rss_warns_and_falls_back_to_the_core_bound(monkeypatch, caplog):

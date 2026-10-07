@@ -17,6 +17,7 @@ OFF path has exactly the inputs it had before and no new DAG edge.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 import numbers
@@ -45,6 +46,16 @@ STAGE_NAME = "braunschweig.synthesis.day_absence.absence_stage"
 #: :mod:`braunschweig.synthesis.escort_duty` (issue #425) decides WHO is escort-protected, so an
 #: edit to the escort-leg definition must devalidate the cache too.
 _HELPER_MODULES = (_absence, srv_absence, escort_duty)
+
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.calibration.srv_plan_structure",
+    "braunschweig.gravity.friction",
+)
+
 #: Pre-assignment trips, declared as an input ONLY when escort protection is on.
 TRIPS_STAGE = "synthesis.population.trips"
 
@@ -83,6 +94,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"absence_stage validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

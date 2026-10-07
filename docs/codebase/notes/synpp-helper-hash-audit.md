@@ -66,7 +66,9 @@
 > scale) on a pure formatting change, and narrowing the import cannot help because the stage
 > genuinely calls `json_safe()`. The register is a debt list, not a mute button: the gate
 > fails if that set changes at all, and on any NEW unhashed import. The inventory below can
-> therefore no longer drift back into debt unnoticed.
+> therefore no longer drift back into debt unnoticed. Since 2026-09-28
+> `test_every_source_hashing_stage_hashes_its_whole_import_closure` extends the same gate from
+> each stage's own imports to its whole import closure (ADR-0136; "Limitations" below).
 >
 > **The live authority is the gate, not this file.**
 > `tests/test_synpp_helper_hash_invariant.py` enforces the narrower
@@ -78,12 +80,15 @@
 > first-party surface this file inventories is no longer un-gated either: since the
 > 2026-09-09 re-audit
 > `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
-> enforces it for every source-hashing stage. That test's
-> docstring also records the two AST-resolver bugs (an `ast.AnnAssign`-typed
-> `_HELPER_MODULES` declaration, and a bare `from . import name` relative-import
-> binding) that a sizing probe hit — the re-audit script reproduced BOTH on its
-> first pass before they were fixed there, which is the best argument for keeping
-> the method in code where it can be corrected once.
+> enforces it for every source-hashing stage. That test module also records the
+> AST-resolver bugs found so far. A sizing probe hit the first two (an
+> `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare `from . import name`
+> relative-import binding), and the re-audit script reproduced BOTH on its first pass
+> before they were fixed there, which is the best argument for keeping the method in
+> code where it can be corrected once. Two more surfaced on 2026-09-29: a relative
+> import in a plain module was anchored at the module instead of its package and
+> silently dropped, and a module object re-exported through another module was not
+> credited (see "Limitations").
 >
 > **Reproduce:** `python scripts/audit_synpp_helper_hash.py . --json <out.json>`.
 > The counts below are that script's output; the per-name category (a) and (c)
@@ -643,10 +648,9 @@ What this method cannot see, checked rather than assumed:
   otherwise-uncounted module). None of the three introduces an import this
   scan would miss.
 - **Dynamic `importlib.import_module` with a computed name:** the only
-  non-trivial use found is inside `popsim.stage`'s own `validate()`, over the
-  fixed, literal `_DEFERRED_HELPER_MODULE_NAMES` tuple — not a computed name,
-  so fully resolvable statically; no other first-party module in the five
-  roots uses `importlib.import_module` at all (checked by `grep`).
+  non-trivial use found was inside the stages' own `validate()` hooks, over their
+  fixed, literal `_DEFERRED_HELPER_MODULE_NAMES` tuples — not a computed name,
+  so fully resolvable statically (checked by `grep` on 2026-08-14).
 - **A `def`-only stage-detection rule:** confirmed (by `grep` for
   `^configure\s*=`/`^execute\s*=` across all five roots) that no stage in this
   codebase is produced by a factory function returning `(configure, execute)`
@@ -661,19 +665,48 @@ What this method cannot see, checked rather than assumed:
   scripts, unrelated to the `braunschweig`/`data`/`eqasim_common`/`matsim`/
   `synthesis` package tree). Its coverage status is genuinely `unknown` here,
   not derived.
-- **Every count here is a LOWER BOUND, not a total.** Because the scan stops at
-  one level (next bullet), a stage counted as (b) "fully covered" is covered
-  only to that same depth, and the uncovered-module lists for (c) name only the
-  stage module's own direct imports. `secondary_chainsolvers` illustrates the
-  difference: the stage module has 4 uncovered direct imports, while its covered
-  submodules import roughly as many more first-party modules again, all equally
-  outside the token. Read a (c) row as "at least these".
-- **Transitive imports beyond one level:** by design (matching the two
-  reference implementations' own stated boundary), this audit resolves only
-  each stage's **own direct** imports, not what its helpers in turn import.
-  A change buried two levels deep (a helper's helper) is out of scope for
-  every category here, including (b) — this mirrors the explicit boundary
-  `popsim.stage`'s own `validate()` docstring states for itself.
+- **Every count in the categories is a LOWER BOUND, not a total.** The
+  categories stop at one level (next bullet), so a stage counted as (b) "fully
+  covered" is covered only to that same depth, and the uncovered-module lists for
+  (c) name only the stage module's own direct imports. Read a (c) row as "at least
+  these". Source-hashing stages are held to their whole closure since 2026-09-28.
+- **Transitive imports beyond one level:** the categories above resolve only
+  each stage's **own direct** imports, not what its helpers in turn import,
+  matching the two reference implementations' own stated boundary. Since
+  2026-09-28 the script also follows the imports through every first-party
+  module a source-hashing stage reaches (step 5) and reports what the token
+  misses as `transitive_uncovered` (ADR-0136). That boundary had hidden a real
+  gap: the enriched stage's car-ownership draw read its base table and raumtyp
+  tilt from `braunschweig.data.mid.cars_by_status`, imported inside a
+  `vehicle_ownership` function, and no token hashed it. At commit `ed1f263a`,
+  with the enriched stage already covered, 20 of the 25 source-hashing stages
+  still had such gaps: 479 stage-module pairs over 154 modules. All are closed,
+  and `test_every_source_hashing_stage_hashes_its_whole_import_closure` gates
+  every source-hashing stage on its whole closure. How the gaps were closed:
+  - Imports that reached a whole package for one name were narrowed to the
+    submodule defining it: the MiD loaders to `braunschweig.popsim.mid.donor`,
+    the two enriched helpers to `economic_status` and `housing_tenure`, the
+    candidate builders to the chainsolver's `candidates` and `srv_candidates`,
+    and `KEY_MID` to `braunschweig.popsim.stage.config_keys`.
+  - The walk ends at a module that declares a `_SYNPP_TOKEN_EXEMPTION` reason,
+    because it never shapes a stage result (`braunschweig.progress`,
+    `braunschweig.theme`, `braunschweig.monitoring.process_tree`), and at a
+    stage module that the walking stage lists in `_TOKEN_CLOSURE_BOUNDARIES`.
+    The only boundary is the trips stage, for `popsim.stage` and
+    `data.hts.mid_donor`, which reach it through `build_trips`;
+    `test_only_the_trips_stage_builds_trips_through_a_donor_source` pins that
+    only the trips stage calls it.
+  - Everything else the walk reaches is hashed by dotted name, in a commented
+    group at the end of each stage's `_DEFERRED_HELPER_MODULE_NAMES`.
+  - A helper tuple counts only when the stage's `validate()` reads it, and a stage
+    token may hash each module once (`test_no_stage_token_hashes_a_module_twice`).
+  - Two resolver bugs hid part of the closure until 2026-09-29. Relative imports in
+    plain modules were dropped, so the candidates stage hashed none of the three
+    chainsolver submodules its `candidates` builder imports relatively
+    (`activity_types`, `candidate_columns`, `srv_location_types`). And a module object
+    re-exported through another module was not credited. With both fixed, the
+    inverse-CDF draw moved from `deciders` into the leaf module `inverse_cdf`, which
+    keeps the decider machinery out of the candidates stage's closure.
 - **No dynamic/computed `context.stage(...)` calls exist today** (checked:
   every call across all 230 stages had a literal string first argument), so
   no stage needed an `unknown` mark for declared-dependency resolution this

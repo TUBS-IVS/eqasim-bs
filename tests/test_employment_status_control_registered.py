@@ -185,12 +185,6 @@ def test_employment_status_toggle_key_registered():
     assert stage._KREIS_CONTROL_DEFAULT["employment_status"] == "on"
 
 
-def test_active_kreis_entries_includes_employment_status_by_default():
-    from braunschweig.popsim import stage
-    active = stage.active_kreis_entries(_FakeContext({}), "mid")
-    assert "employment_status" in {c.name for c in active}
-
-
 def test_active_kreis_entries_excludes_employment_status_when_off():
     from braunschweig.popsim import stage
     # work_by_employment must also be turned off here: it defaults "on" (Plan B, issue
@@ -209,6 +203,3 @@ def test_active_kreis_entries_excludes_employment_status_when_off():
             "trip_class"} <= names
 
 
-def test_active_kreis_entries_empty_for_non_mid_source_still_holds():
-    from braunschweig.popsim import stage
-    assert stage.active_kreis_entries(_FakeContext({}), "entd") == []

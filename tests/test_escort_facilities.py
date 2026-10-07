@@ -182,10 +182,15 @@ def test_secondary_facility_frame_srv_location_types_fold_is_conditional():
     assert not bool(off.loc[off["location_id"] == "sec_lu_errand_2", "offers_other"].iloc[0])
 
 
-def test_secondary_facility_frame_srv_location_types_missing_column_raises():
-    """Test that when secondary_srv_location_types is ON but a required
-    category column is missing, a ValueError is raised (not silently skipped)."""
-    candidates = _srv_candidates().drop(columns=["offers_leisure_outdoor"])
+@pytest.mark.parametrize("column", [
+    pytest.param("offers_leisure_outdoor", id="leisure_column"),
+    pytest.param("offers_errand_authority_medical", id="errand_column"),
+])
+def test_secondary_facility_frame_missing_srv_category_column_raises(column):
+    """With secondary_srv_location_types ON, a missing category column (leisure or errand)
+    raises a ValueError naming it instead of being skipped silently.
+    """
+    candidates = _srv_candidates().drop(columns=[column])
 
     with pytest.raises(ValueError) as exc_info:
         bs_facilities.secondary_facility_frame(
@@ -193,17 +198,6 @@ def test_secondary_facility_frame_srv_location_types_missing_column_raises():
             leisure_visit_enabled=True,
             secondary_srv_location_types=True
         )
-    assert "offers_leisure_outdoor" in str(exc_info.value)
+    assert column in str(exc_info.value)
 
 
-def test_secondary_facility_frame_srv_location_types_missing_errand_column_raises():
-    """Test that missing errand category columns also raise hard errors."""
-    candidates = _srv_candidates().drop(columns=["offers_errand_authority_medical"])
-
-    with pytest.raises(ValueError) as exc_info:
-        bs_facilities.secondary_facility_frame(
-            candidates,
-            leisure_visit_enabled=True,
-            secondary_srv_location_types=True
-        )
-    assert "offers_errand_authority_medical" in str(exc_info.value)

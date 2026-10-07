@@ -34,9 +34,9 @@ def _default_active_kreis_entry_names() -> set:
     The per-toggle tests below assert "switching this entry off drops EXACTLY this entry",
     which is the behaviour under test; they derive the expected remainder from the registry
     instead of re-listing it, so adding a control (e.g. pt_ticket_group, issue #321) does not
-    require touching every one of them. The full default-on set stays pinned explicitly in
-    tests/test_popsim_seed_kreis_columns.py::test_all_kreis_entries_default_on, so a
-    silently vanishing entry is still caught.
+    require touching every one of them. The full default-on list stays pinned explicitly,
+    in order, by test_active_kreis_entries_all_default_on_for_mid below, so a silently
+    vanishing entry is still caught (the one pin; the per-control files no longer copy it).
 
     ``pt_ticket_group`` is excluded because it is not merely registered but SUBSTITUTED:
     with ``pt_ticket_never_group`` on (the default, issue #329) the four-group
@@ -142,35 +142,24 @@ def test_build_controls_df_off_path_has_no_kreis_controls():
     )
 
 
-def test_build_controls_df_renders_requested_kreis_controls():
-    from braunschweig.popsim.stage import build_controls_df
-
-    on = build_controls_df(
-        controls_source="catalog", seed="mid", tiers=("tier0",),
-        kreis_control_names=("number_of_cars",),
-    )
-    fields = set(on["control_field"])
-    expected = {f"{c}_KREIS" for c in control_columns(_entry("number_of_cars"))}
-    assert expected <= fields
-    rows = on[on["control_field"].isin(expected)]
-    assert (rows["geography"] == "KREIS").all()
-    assert (rows["seed_table"] == "households").all()
-
-
-def test_build_controls_df_renders_trip_class_person_controls():
+@pytest.mark.parametrize("control, seed_table", [
+    pytest.param("number_of_cars", "households", id="number_of_cars_households"),
     # The person-level trip_class entry renders four KREIS controls on the persons table.
+    pytest.param("trip_class", "persons", id="trip_class_persons"),
+])
+def test_build_controls_df_renders_the_requested_kreis_controls(control, seed_table):
     from braunschweig.popsim.stage import build_controls_df
 
     on = build_controls_df(
         controls_source="catalog", seed="mid", tiers=("tier0",),
-        kreis_control_names=("trip_class",),
+        kreis_control_names=(control,),
     )
     fields = set(on["control_field"])
-    expected = {f"{c}_KREIS" for c in control_columns(_entry("trip_class"))}
+    expected = {f"{c}_KREIS" for c in control_columns(_entry(control))}
     assert expected <= fields
     rows = on[on["control_field"].isin(expected)]
     assert (rows["geography"] == "KREIS").all()
-    assert (rows["seed_table"] == "persons").all()
+    assert (rows["seed_table"] == seed_table).all()
 
 
 def test_build_controls_df_status_kreis_alias_still_renders_economic_status():
@@ -240,6 +229,7 @@ def test_active_kreis_entries_empty_for_non_mid_source():
 
     # KREIS attribute controls are MiD-only (no ENTD pendant) -> empty for any other source.
     assert stage.active_kreis_entries(_FakeContext({}), "entd") == []
+
 
 
 def test_active_kreis_entries_all_off_is_empty():

@@ -105,11 +105,18 @@ def test_is_auto_rejects_real_values(value):
     assert resources.is_auto(value) is False
 
 
-def test_java_memory_pin_that_fits_is_passed_through_verbatim():
+@pytest.mark.parametrize("requested, effective, origin", [
+    pytest.param("50G", "50G", "pinned", id="fitting_pin_verbatim"),
+    pytest.param("auto", "86G", "derived", id="auto_derived_from_the_budget"),
+    # Reformatting a pin that nothing clamped would silently shrink it:
+    # format_memory_gb("1500M") floors 1.46 GB to "1G".
+    pytest.param("1500M", "1500M", "pinned", id="fitting_pin_not_reformatted"),
+])
+def test_java_memory_resolution(requested, effective, origin):
     budget = resources.resolve_budget(SERVER, env={})
-    result = resources.resolve_java_memory("50G", budget)
-    assert result.effective == "50G"
-    assert result.origin == "pinned"
+    result = resources.resolve_java_memory(requested, budget)
+    assert result.effective == effective
+    assert result.origin == origin
 
 
 def test_java_memory_pin_that_exceeds_the_machine_is_clamped():
@@ -119,13 +126,6 @@ def test_java_memory_pin_that_exceeds_the_machine_is_clamped():
     assert result.effective == "86G"
     assert result.origin == "clamped"
     assert "100G" in result.note and "86G" in result.note
-
-
-def test_java_memory_auto_is_derived_from_the_budget():
-    budget = resources.resolve_budget(SERVER, env={})
-    result = resources.resolve_java_memory("auto", budget)
-    assert result.effective == "86G"
-    assert result.origin == "derived"
 
 
 def test_popsim_workers_are_bounded_by_memory_not_by_cores():
@@ -207,15 +207,6 @@ def test_a_non_positive_java_memory_is_rejected():
     budget = resources.resolve_budget(SERVER, env={})
     with pytest.raises(ValueError):
         resources.resolve_java_memory("0G", budget)
-
-
-def test_a_fitting_java_memory_pin_is_echoed_verbatim_not_reformatted():
-    # Reformatting a pin that nothing clamped would silently shrink it:
-    # format_memory_gb("1500M") floors 1.46 GB to "1G".
-    budget = resources.resolve_budget(SERVER, env={})
-    result = resources.resolve_java_memory("1500M", budget)
-    assert result.effective == "1500M"
-    assert result.origin == "pinned"
 
 
 # ---------------------------------------------------------------------------

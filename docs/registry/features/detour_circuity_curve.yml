@@ -30,7 +30,7 @@ evidence:
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_metrics_circuity.py
-    note: test_apply_detour_constant_mode_matches_legacy confirms the default mode="constant"
+    note: test_apply_detour_default_and_constant_mode_reproduce_the_legacy_factor_1_3 confirms the default mode="constant"
       (1.3) matches legacy behaviour.
   fallback_rate:
     instrumented: false

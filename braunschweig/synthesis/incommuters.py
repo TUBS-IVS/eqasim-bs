@@ -1157,6 +1157,18 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.pt_reachability",
     "braunschweig.data.external_workplaces",
     "braunschweig.synthesis.vehicles.fleet_sampling_de",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.cordon.external_points",
+    "braunschweig.data.kba.feasible_fuels",
+    "braunschweig.data.kba.fleet_tables",
+    "braunschweig.data.kba.hsn_tsn",
+    "braunschweig.ipf.joint_age_size",
+    "braunschweig.synthesis.vehicles.age_income",
+    "braunschweig.synthesis.vehicles.fleet_validation",
+    "braunschweig.synthesis.vehicles.hbefa",
+    "braunschweig.synthesis.vehicles.segment",
+    "braunschweig.synthesis.vehicles.wohnmobile_age",
 )
 
 

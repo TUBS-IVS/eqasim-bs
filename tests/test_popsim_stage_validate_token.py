@@ -18,17 +18,16 @@ have:
   submodules AND the other first-party helper modules the stage imports at module
   level, so a future edit that DROPS coverage fails loudly here instead of
   silently re-opening the gap,
-- the DEFERRED (function-level) first-party dependencies named in
-  ``_DEFERRED_HELPER_MODULE_NAMES`` -- including the
-  ``braunschweig.synthesis.population.enriched`` package, enumerated one level
-  deep -- are all importable and every one of them really contributes to the
-  digest; they are direct dependencies of the stage's result (``control_spec``
-  owns the control catalog), so a name that silently stopped being hashed would
-  re-open the trap for it,
-- every submodule DISCOVERED on disk under those four packages is covered by ONE
-  of the two mechanisms, so a helper ADDED later cannot stay silently uncovered
-  (the literal expectation lists only catch removals),
-- and the only synpp stages listed are the two documented UNDECLARED library
+- the DEFERRED dependencies named in ``_DEFERRED_HELPER_MODULE_NAMES`` are all
+  importable and really contribute to the digest; which names that tuple must hold
+  is decided by the stage's import closure and gated in
+  tests/test_audit_synpp_helper_hash.py (ADR-0136), not by a literal copy here,
+- every submodule DISCOVERED on disk under the three enumerated packages is covered
+  by ONE of the two mechanisms, so a helper ADDED later cannot stay silently
+  uncovered even when it is only imported dynamically,
+- the enriched stage is not hashed as a package: this stage calls one helper of it,
+  imported from its submodule,
+- and the only synpp stages listed are the documented UNDECLARED library
   dependencies: a stage this one declares via ``context.stage(...)`` is hashed by
   synpp and propagated through that declared edge, so listing it would only add
   churn, whereas an undeclared one is reached by no other mechanism at all.
@@ -110,84 +109,52 @@ EXPECTED_OTHER_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.prepared_cells",
 )
 
-# The two modules that ARE synpp stages (``configure`` + ``execute``) yet MUST be
-# covered, because the stage uses them as plain function libraries WITHOUT
+# The modules that ARE synpp stages (``configure`` + ``execute``) yet MUST be
+# covered, because this stage runs their code as plain function libraries WITHOUT
 # declaring the dependency via ``context.stage(...)``: synpp's own stage hash for
 # them therefore never reaches this stage, and no declared DAG edge propagates it
 # either, so this token is the ONLY mechanism that can see a change in them.
 # ``household_size`` is imported at MODULE level for ``kreis_household_stats``, so
-# it is covered as a module OBJECT in ``_HELPER_MODULES``; ``enriched`` is imported
-# at FUNCTION level for ``_apply_housing_tenure``, so it is covered by dotted NAME
-# in ``_DEFERRED_HELPER_MODULE_NAMES``. Named explicitly so a THIRD synpp stage
-# cannot silently join the token: adding one has to be a visible edit to this
-# tuple, justified on the same two grounds.
+# it is covered as a module OBJECT in ``_HELPER_MODULES``; the other four are reached
+# through helpers (the census income-class map of the enriched economic-status
+# helper, and the eqasim donor matching with the two HTS cleaners it imports), so
+# they are covered by dotted NAME. Named explicitly so a further synpp stage cannot
+# silently join the token: adding one has to be a visible edit to this tuple.
 UNDECLARED_STAGE_LIBRARY_MODULE_NAMES = (
     "braunschweig.data.census.household_size",
-    "braunschweig.synthesis.population.enriched",
+    "braunschweig.data.census.household_income",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "synthesis.population.matched",
 )
 
-# The ``enriched`` package enumerated ONE level deep: its stage ``__init__`` plus
-# every submodule. ``inspect.getsource`` of a package returns only its
-# ``__init__``, and the function the popsim stage actually calls,
-# ``_apply_housing_tenure``, lives in ``enriched.housing_tenure`` -- so covering the
-# package alone would hash the facade and leave an edit to the tenure helper
-# invisible to the token. Every entry is covered by dotted NAME (the package is
-# imported at function level only): a dotted-name entry enumerates a package one
-# level deep just as module objects do, one literal entry per submodule. Written
-# out literally for the same reason as the lists above.
-EXPECTED_ENRICHED_MODULE_NAMES = (
-    "braunschweig.synthesis.population.enriched",
-    "braunschweig.synthesis.population.enriched.availability",
-    "braunschweig.synthesis.population.enriched.base",
-    "braunschweig.synthesis.population.enriched.economic_status",
-    "braunschweig.synthesis.population.enriched.housing_tenure",
-    "braunschweig.synthesis.population.enriched.income_distribution",
-    "braunschweig.synthesis.population.enriched.vehicle_ownership",
-)
+# The one helper this stage takes from the enriched stage, and the stage package it
+# lives in. ``_apply_housing_tenure`` is imported from ``enriched.housing_tenure``
+# directly: importing it through the package would put the whole enriched stage into
+# this token although this stage runs one function of it (ADR-0136).
+ENRICHED_HELPER_MODULE_NAME = "braunschweig.synthesis.population.enriched.housing_tenure"
+ENRICHED_STAGE_PACKAGE_NAME = "braunschweig.synthesis.population.enriched"
 
-# The DEFERRED (function-level) first-party direct dependencies, covered by dotted
-# NAME in ``_DEFERRED_HELPER_MODULE_NAMES`` and imported lazily inside
-# ``validate()``. Written out literally, again as an independent statement of what
-# MUST be covered: dropping one from the stage tuple cannot hide by also
-# disappearing from this list. The ``enriched`` names are appended from the literal
-# tuple above rather than repeated here (one fact, one place); the result is still
-# an explicit literal list, in the stage tuple's own dotted-path order.
-EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
-    "braunschweig.data.mid.tenure_by_income",
-    "braunschweig.parallelism",
-    # Resolves this stage's worker count against the detected machine (memory-bound
-    # ceiling). Imported inside _read_batching_and_scope_config, so it is a deferred
-    # dependency like every other entry here (ADR-0126).
-    "braunschweig.resources",
-    # attributes / trips / escort_pairing: the three deliberate SECOND-LEVEL exceptions to
-    # the one-level boundary (attributes via assembly / mid.seed_loading, trips and
-    # escort_pairing via mid.participation). The first two were added after the 2026-08-19
-    # verification smoke showed both changing behaviour while the token stayed
-    # byte-identical, so a warm cache reused the pre-fix population
-    # (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml); escort_pairing (issue #372,
-    # ADR-0112) decides which W_ZWECK-13 legs the education_flag seed counts, which is the
-    # same hazard.
-    "braunschweig.popsim.attributes",
+# A few DEFERRED names whose source change must be seen by the token, one per kind of
+# entry: a direct function-level import (``control_spec`` owns the control catalog),
+# the enriched helper, a module reached only through a helper, and an undeclared
+# upstream stage reached that way. That EVERY name is hashed, in order, is pinned by
+# test_validate_hashes_exactly_the_listed_modules_in_order.
+REPRESENTATIVE_DEFERRED_MODULE_NAMES = (
     "braunschweig.popsim.control_spec",
-    "braunschweig.popsim.employment_grid",
-    "braunschweig.popsim.escort_pairing",
-    "braunschweig.popsim.folders",
-    "braunschweig.popsim.kreis_attribute_control",
-    "braunschweig.popsim.ownership_grid",
-    "braunschweig.popsim.placement_income",
-    "braunschweig.popsim.trips",
-    "braunschweig.popsim.zensus_employment_age",
-) + EXPECTED_ENRICHED_MODULE_NAMES
+    ENRICHED_HELPER_MODULE_NAME,
+    "braunschweig.popsim.expand",
+    "synthesis.population.matched",
+)
 
 # Packages whose submodules must ALL appear in _HELPER_MODULES. Discovered
-# dynamically (see test_helper_modules_cover_every_discovered_submodule) so a
+# dynamically (see test_every_discovered_submodule_is_covered_by_one_of_the_two_mechanisms) so a
 # helper module ADDED later cannot stay unlisted. Enumerated one level deep only,
 # matching the token's own documented bound.
 DYNAMICALLY_ENUMERATED_PACKAGE_NAMES = (
     "braunschweig.popsim.stage",
     "braunschweig.popsim.mid",
     "braunschweig.popsim.sources",
-    "braunschweig.synthesis.population.enriched",
 )
 
 HEX_DIGITS = set("0123456789abcdef")
@@ -250,8 +217,8 @@ def test_validate_hashes_exactly_the_listed_modules_in_order():
     expectation is recomputed FROM those two tuples, so this pins the hashing rule
     and the deterministic ITERATION ORDER only -- a set or ``dir()`` based order
     would make the token vary between processes -- not which modules are covered.
-    The covered set is pinned by the literal expectation lists and the discovery
-    test below.
+    The covered set is gated on the stage's import closure in
+    tests/test_audit_synpp_helper_hash.py.
     """
     expected = hashlib.md5()
     for module in stage._HELPER_MODULES:
@@ -323,16 +290,15 @@ def test_deferred_helper_modules_are_all_importable():
         assert inspect.getsource(module).strip(), f"no source for {module_name}"
 
 
-@pytest.mark.parametrize("target_module_name", EXPECTED_DEFERRED_HELPER_MODULE_NAMES)
+@pytest.mark.parametrize("target_module_name", REPRESENTATIVE_DEFERRED_MODULE_NAMES)
 def test_validate_token_changes_when_a_deferred_helper_source_changes(
         monkeypatch, target_module_name):
     """A changed DEFERRED dependency's source must change the token too.
 
-    These are function-level imports, so they were absent from the module-level
-    set the token was originally built from -- ``control_spec`` in particular owns
-    the control catalog, so an edit there changes the stage's controls without
-    changing this file. Parametrised over EVERY name, so a single one falling out
-    of the hashed loop fails here rather than silently reusing stale cached output.
+    These modules are not imported at module level by this package -- ``control_spec``
+    in particular owns the control catalog, so an edit there changes the stage's
+    controls without changing this file. One name per kind of entry; that no name
+    falls out of the hashed loop is pinned by the order test above.
     """
     baseline_token = stage.validate(None)
     target_module = importlib.import_module(target_module_name)
@@ -352,16 +318,6 @@ def test_validate_token_changes_when_a_deferred_helper_source_changes(
 
     monkeypatch.undo()
     assert stage.validate(None) == baseline_token
-
-
-def test_deferred_helper_module_names_are_exactly_the_expected_names():
-    """The deferred set must match the literal expectation, in the same order.
-
-    Order matters because the digest is order-dependent, and the covered SET
-    matters because each entry is a direct dependency of the stage's result. An
-    addition or a removal therefore has to be a visible edit to BOTH tuples.
-    """
-    assert stage._DEFERRED_HELPER_MODULE_NAMES == EXPECTED_DEFERRED_HELPER_MODULE_NAMES
 
 
 def test_deferred_names_do_not_duplicate_the_module_level_helpers():
@@ -452,15 +408,14 @@ def test_helper_modules_cover_the_sources_package_one_level_deep():
 
 
 def test_the_undeclared_stage_libraries_are_covered_by_one_of_the_two_mechanisms():
-    """The two undeclared synpp-stage libraries must be covered.
+    """The undeclared synpp-stage libraries must be covered.
 
-    Both are synpp stages used here as plain function libraries whose dependency
-    ``configure()`` does NOT declare, so neither synpp's own stage hashing nor a
-    declared DAG edge propagates their source into this stage's cache key. If one
-    is dropped from BOTH tuples, an edit to ``kreis_household_stats`` or
-    ``_apply_housing_tenure`` silently reuses stale output -- fail loudly here.
-    Which tuple covers which is fixed by the import site and asserted separately
-    below, so this test only pins that neither can fall out of the token entirely.
+    All of them are synpp stages whose code this stage runs as a plain function
+    library while ``configure()`` does NOT declare the dependency, so neither synpp's
+    own stage hashing nor a declared DAG edge propagates their source into this
+    stage's cache key. If one is dropped from BOTH tuples, an edit to it (for example
+    to ``kreis_household_stats`` or ``match_donors``) silently reuses stale output --
+    fail loudly here.
     """
     covered = _covered_module_names()
 
@@ -473,54 +428,23 @@ def test_the_undeclared_stage_libraries_are_covered_by_one_of_the_two_mechanisms
     )
 
 
-def test_household_size_is_covered_as_a_module_object_and_enriched_by_name():
-    """Each undeclared library must sit in the tuple its import site dictates.
+def test_household_size_is_a_module_object_and_the_enriched_helper_a_dotted_name():
+    """Each library sits in the tuple its import site dictates, and the enriched stage
+    package itself stays out of the token.
 
     ``braunschweig.data.census.household_size`` is imported at MODULE level (for
     ``kreis_household_stats``), so it belongs in ``_HELPER_MODULES``.
-    ``braunschweig.synthesis.population.enriched`` is imported at FUNCTION level
-    only (``_apply_housing_tenure_parity``), so it belongs in
-    ``_DEFERRED_HELPER_MODULE_NAMES``: adding seven module-level imports purely to
-    obtain module objects covers not one extra line of source. This pins the
-    placement so those imports cannot creep back in unnoticed. (Note that the
-    ``enriched`` package IS loaded during this package's import anyway, via
-    ``braunschweig.popsim.sources.entd``, so the placement is about a single
-    consistent rule -- import site decides the tuple -- not about import cost.)
+    ``_apply_housing_tenure`` is imported at FUNCTION level from
+    ``enriched.housing_tenure`` (``_apply_housing_tenure_parity``), so that submodule
+    is a dotted NAME. Importing the helper through the enriched package instead would
+    make every edit to the enriched stage devalidate this, the most expensive, stage.
     """
     module_objects = {module.__name__ for module in stage._HELPER_MODULES}
+    covered = _covered_module_names()
 
     assert "braunschweig.data.census.household_size" in module_objects
-    assert "braunschweig.synthesis.population.enriched" not in module_objects
-    assert not [
-        name for name in module_objects
-        if name.startswith("braunschweig.synthesis.population.enriched.")
-    ], "enriched submodules must be covered by dotted NAME, not as module objects"
-    assert (
-        "braunschweig.synthesis.population.enriched"
-        in stage._DEFERRED_HELPER_MODULE_NAMES
-    )
-
-
-def test_deferred_helper_modules_cover_the_enriched_package_one_level_deep():
-    """The ``enriched`` package must be covered ``__init__`` + submodules.
-
-    ``inspect.getsource`` of a package yields only its ``__init__``, while the
-    function the popsim stage calls -- ``_apply_housing_tenure`` -- lives in
-    ``enriched.housing_tenure``. Covering the package alone therefore hashes the
-    facade and leaves an edit to the tenure sampling (or to any sibling reached
-    through the facade) invisible to the token, which is the same trap the ``mid``
-    and ``sources`` packages are enumerated one level deep to avoid. The
-    enumeration works identically through dotted names -- one literal entry per
-    submodule -- which is why the deferral does not have to be given up for it.
-    """
-    listed = list(stage._DEFERRED_HELPER_MODULE_NAMES)
-
-    missing = [
-        name for name in EXPECTED_ENRICHED_MODULE_NAMES if name not in listed
-    ]
-    assert not missing, (
-        f"enriched modules missing from _DEFERRED_HELPER_MODULE_NAMES: {missing}"
-    )
+    assert ENRICHED_HELPER_MODULE_NAME in stage._DEFERRED_HELPER_MODULE_NAMES
+    assert ENRICHED_STAGE_PACKAGE_NAME not in covered
 
 
 def test_every_discovered_submodule_is_covered_by_one_of_the_two_mechanisms():
@@ -567,7 +491,7 @@ def test_helper_modules_cover_the_other_first_party_helpers():
 
 
 def test_helper_modules_contains_no_synpp_stage():
-    """Only the two documented undeclared stage libraries may be synpp stages.
+    """Only the documented undeclared stage libraries may be synpp stages.
 
     A synpp stage whose dependency this stage DECLARES (``context.stage(...)`` in
     ``configure``) is hashed by synpp from its own source and propagated through
@@ -577,12 +501,12 @@ def test_helper_modules_contains_no_synpp_stage():
     import site, so a declared stage could just as easily slip into the deferred
     names as into the module objects.
 
-    The two exceptions in ``UNDECLARED_STAGE_LIBRARY_MODULE_NAMES`` are allowed
+    The exceptions in ``UNDECLARED_STAGE_LIBRARY_MODULE_NAMES`` are allowed
     precisely because that propagation does NOT happen for them: they are used as
     plain function libraries and are not declared dependencies, so the token is
     the only mechanism that can see them (see
     ``test_the_undeclared_stage_libraries_are_covered_by_one_of_the_two_mechanisms``).
-    They are named explicitly rather than waved through by a predicate, so a THIRD
+    They are named explicitly rather than waved through by a predicate, so a further
     synpp stage joining the token has to be justified in a visible edit here
     instead of slipping in silently.
     """

@@ -149,24 +149,25 @@ def test_feature_pipelines_must_name_all_three_workflows():
         schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
 
 
-def test_feature_byte_identity_claim_without_test_is_rejected():
+@pytest.mark.parametrize("evidence_key, field, value, message", [
+    pytest.param(
+        "off_path_byte_identical",
+        "claimed",
+        "true",
+        "no 'test' is named",
+        id="byte_identity_claim_without_test"),
+    pytest.param(
+        "reference",
+        "kind",
+        "assumption",
+        "requires a 'note'",
+        id="assumption_reference_without_note"),
+    pytest.param("reference", "kind", "committed", "no 'path'", id="committed_reference_without_path"),
+])
+def test_feature_evidence_missing_its_required_field_is_rejected(evidence_key, field, value, message):
     doc = minimal_feature()
-    doc["evidence"]["off_path_byte_identical"] = {"claimed": "true"}
-    with pytest.raises(schema.SchemaError, match="no 'test' is named"):
-        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
-
-
-def test_feature_assumption_reference_requires_note():
-    doc = minimal_feature()
-    doc["evidence"]["reference"] = {"kind": "assumption"}
-    with pytest.raises(schema.SchemaError, match="requires a 'note'"):
-        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
-
-
-def test_feature_committed_reference_requires_path():
-    doc = minimal_feature()
-    doc["evidence"]["reference"] = {"kind": "committed"}
-    with pytest.raises(schema.SchemaError, match="no 'path'"):
+    doc["evidence"][evidence_key] = {field: value}
+    with pytest.raises(schema.SchemaError, match=message):
         schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
 
 

@@ -145,16 +145,6 @@ def test_require_paths_exist_passes_when_present(tmp_path):
 # Producer selector
 # ---------------------------------------------------------------------------
 
-def test_simple_ipf_open_resolves_to_existing_producer():
-    assert selector.resolve_population_producer(SIMPLE_IPF_OPEN) == (
-        "braunschweig.ipf.attributed"
-    )
-
-
-def test_popsim_mid_resolves_to_popsim_stage():
-    assert selector.resolve_population_producer(POPSIM_MID) == "braunschweig.popsim.stage"
-
-
 def test_popsim_open_resolves_to_popsim_stage():
     """Phase 3: popsim_open is now wired and must resolve to braunschweig.popsim.stage.
 

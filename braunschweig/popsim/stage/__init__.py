@@ -141,11 +141,10 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 # its source text is reachable for hashing; the module is imported at module level
 # either way (see the ``kreis_household_stats`` import above), so this alias only
 # names what is already loaded. See ``validate()`` for the criterion that admits a
-# synpp stage into this token. The second such stage,
-# ``braunschweig.synthesis.population.enriched``, has no module-level import site
-# in this package -- it is imported inside _apply_housing_tenure_parity -- so it is
-# covered by dotted NAME in ``_DEFERRED_HELPER_MODULE_NAMES`` instead of by seven
-# module-level aliases here.
+# synpp stage into this token. The one helper this stage takes from the enriched
+# stage, ``_apply_housing_tenure``, is imported from its ``housing_tenure`` submodule
+# inside _apply_housing_tenure_parity, never through the enriched stage package, and
+# is covered by dotted NAME in ``_DEFERRED_HELPER_MODULE_NAMES``.
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
@@ -185,7 +184,11 @@ from braunschweig.popsim.mid import seed_loading as _mid_seed_loading
 # popsim_open path, ``base`` the shared adapter protocol they implement. Listing
 # the registry alone would leave a seed-build or attribute-mapping edit invisible
 # to the token. Deliberately NOT recursed deeper: the covered set stays bounded
-# to one level, exactly as for the mid package above.
+# to one level, exactly as for the mid package above. The package itself is bound
+# by its own import rather than through the ``source_resolution`` re-export, so the
+# name ``sources`` in ``_HELPER_MODULES`` reads as the package it is, also for the
+# static audit (scripts/audit_synpp_helper_hash.py).
+from braunschweig.popsim import sources
 from braunschweig.popsim.sources import base as _sources_base
 from braunschweig.popsim.sources import entd as _sources_entd
 from braunschweig.popsim.sources import mid as _sources_mid
@@ -344,7 +347,6 @@ from . import source_resolution
 from .source_resolution import (  # noqa: F401  (re-exports)
     _resolve_source,
     active_kreis_entries,
-    sources,
 )
 from . import tilt_columns
 from .tilt_columns import (  # noqa: F401  (re-exports)
@@ -425,9 +427,7 @@ _HELPER_MODULES = (
     prepared_cells,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
-    # stage hash never reaches this stage (see the import comment above). The
-    # second such stage, ``braunschweig.synthesis.population.enriched``, is
-    # imported at FUNCTION level and is covered by dotted NAME below.
+    # stage hash never reaches this stage (see the import comment above).
     _census_household_size,
 )
 
@@ -442,20 +442,19 @@ _HELPER_MODULES = (
 # import site in this package is a function body -- deferred to keep its cost off
 # the module-import path and, for the ``braunschweig.popsim`` siblings, to stay
 # clear of import-time cycles -- so adding a module-level import here purely to
-# obtain a module object would undo that deferral for no gain in coverage (for
-# ``enriched`` the cost is already paid elsewhere; see its note below).
+# obtain a module object would undo that deferral for no gain in coverage.
 # ``validate()`` runs at RUN time, long after every module is importable, so the
 # lazy ``importlib.import_module`` inside it carries no import-time cost at all
 # either way. A dotted-name entry is fully equivalent to a module
 # object for hashing purposes, including one-level-deep PACKAGE enumeration: each
-# submodule simply gets its own literal entry (see the ``enriched`` block below).
+# submodule simply gets its own literal entry.
 # The import SITE is therefore the only thing that decides which of the two tuples
 # a module belongs in.
 #
 # Written out EXPLICITLY (hand-maintained literal strings -- never a glob, never
 # ``dir()``, never an import-graph walk) and ordered by dotted module path, so the
-# digest is deterministic and every coverage change is a visible diff. Each entry
-# was verified against an actual function-level import site in this package:
+# digest is deterministic and every coverage change is a visible diff. Each DIRECT
+# entry was verified against an actual function-level import site in this package:
 #
 #   braunschweig.data.mid.tenure_by_income      _apply_housing_tenure_parity
 #   braunschweig.parallelism                    NOT a direct import of this package --
@@ -491,30 +490,18 @@ _HELPER_MODULES = (
 #   braunschweig.popsim.placement_income        _resolve_placement_income_flag,
 #                                               the placement_income block
 #   braunschweig.popsim.zensus_employment_age   _inject_employment_grid_columns
-#   braunschweig.synthesis.population.enriched  _apply_housing_tenure_parity
-#     (+ its six submodules)
+#   braunschweig.synthesis.population.enriched.housing_tenure
+#                                               _apply_housing_tenure_parity
 #
-# ``braunschweig.synthesis.population.enriched`` is the second of the two synpp
-# stages this package uses as a plain function LIBRARY (``_apply_housing_tenure``)
-# without declaring the dependency, so -- exactly like
-# ``braunschweig.data.census.household_size`` in ``_HELPER_MODULES`` -- this token
-# is the only mechanism that can see a change in it; see ``validate()`` for the
-# criterion. It is a PACKAGE and ``inspect.getsource`` of a package yields only its
-# ``__init__``, while the called ``_apply_housing_tenure`` lives in
-# ``enriched.housing_tenure``, so it is enumerated ONE level deep: the package plus
-# each submodule on disk, deliberately not recursed deeper.
+# ``_apply_housing_tenure`` is imported from ``enriched.housing_tenure`` itself rather than
+# through the enriched stage package: that package's ``__init__`` imports every enrichment
+# submodule, so importing the facade would put the whole enriched stage into this token
+# although this stage runs one function of it (ADR-0136).
 #
-# It is covered HERE rather than by module object because its only import site in
-# THIS package is a function-level one, so a module-level import would have to be
-# added purely to obtain a module object the digest does not need. That is a
-# consistency argument, NOT a performance one: measured, the seven aliases this
-# replaced cost no stage-import time at all, because
-# ``braunschweig.popsim.sources.entd`` (reached from the module-level ``sources``
-# import above) already imports the ``enriched`` package -- and its ``__init__``
-# already imports all six submodules -- so all seven modules are loaded during this
-# package's import either way. The deferral in _apply_housing_tenure_parity is
-# therefore already nullified upstream, by that adapter and not by anything here;
-# nullifying it a second time locally would only make the shape harder to read.
+# After the direct entries the tuple lists the rest of this stage's import closure: the
+# modules its helpers import, whose code this stage runs without importing it itself.
+# tests/test_audit_synpp_helper_hash.py keeps that group complete; ``validate()`` states the
+# boundary.
 #
 # The third-party function-level imports (``pyarrow.parquet``) are out of scope:
 # this token covers first-party source only; third-party versions are pinned by
@@ -545,14 +532,54 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.placement_income",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
-    "braunschweig.synthesis.population.enriched",
-    "braunschweig.synthesis.population.enriched.availability",
-    "braunschweig.synthesis.population.enriched.base",
-    "braunschweig.synthesis.population.enriched.economic_status",
     "braunschweig.synthesis.population.enriched.housing_tenure",
-    "braunschweig.synthesis.population.enriched.income_distribution",
-    "braunschweig.synthesis.population.enriched.vehicle_ownership",
+    # The rest of this stage's import closure: modules its helpers import, whose code
+    # this stage runs without importing it itself (ADR-0136).
+    "braunschweig.constants",
+    "braunschweig.data.census.household_income",
+    "braunschweig.data.mid.raumtyp_tilt",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.data.mid.status_by_kreis",
+    "braunschweig.popsim.cells",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.controls",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.diary_plan_match",
+    "braunschweig.popsim.expand",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.merge",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.stratum",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.methods",
+    "braunschweig.population.schema",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.synthesis.population.enriched.economic_status",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
 )
+
+
+#: Stage modules this package's imports reach although it never runs their code, each with the
+#: reason. The import-closure gate stops at them (tests/test_audit_synpp_helper_hash.py,
+#: ADR-0136). The donor-source adapters of braunschweig.popsim.sources import the trips stage
+#: for PopsimSource.build_trips, and only the trips stage calls build_trips (pinned by
+#: test_only_the_trips_stage_builds_trips_through_a_donor_source): this stage uses the adapters
+#: to build seeds and load donors, never to build trips.
+_TOKEN_CLOSURE_BOUNDARIES = {
+    "braunschweig.popsim.trips_stage": (
+        "reached only through the donor-source adapters' build_trips, which only the trips "
+        "stage calls; this stage builds seeds and loads donors with them, never trips"
+    ),
+}
 
 
 def validate(context):
@@ -573,31 +600,24 @@ def validate(context):
     leave the token unchanged and the stale cached output would be reused
     silently.
 
-    THE COVERED BOUNDARY is: every first-party module this package imports
-    DIRECTLY, whether at module level or inside a function body, with the helper
-    PACKAGES enumerated ONE LEVEL DEEP (``__init__`` plus each submodule on disk,
-    because ``inspect.getsource`` of a package yields only its ``__init__``). The
-    transitive surface beyond that one level is deliberately NOT covered, with
-    EXACTLY THREE named exceptions: ``braunschweig.popsim.attributes`` (reached via
-    ``assembly`` and ``mid.seed_loading``), ``braunschweig.popsim.trips``
-    (reached via ``mid.participation``, whose PARTICIPATION_W_ZWECK derives from
-    ``trips.PURPOSE_BY_W_ZWECK``) and ``braunschweig.popsim.escort_pairing``
-    (reached via the same ``mid.participation``, whose education_flag seed drops the
-    passive escort legs the pairing does not resolve to education, issue #372).
-    All three carry BEHAVIOUR this stage's output
-    depends on, and the 2026-08-19 verification smoke proved the hazard is real:
-    the under-16 licence floor (attributes) and the W_ZWECK purpose fix (trips)
-    changed the population while leaving this token untouched, so a warm cache
-    would have silently reused the pre-fix output
-    (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). ``escort_pairing`` is
-    admitted on the same evidence, not on convenience: it DECIDES which code-13 legs
-    the education_flag seed counts, so the identical stale-seed hazard applies to it.
-    Any FURTHER second-level exception needs that same standard of evidence. Which of
-    the two tuples a module lands in is decided ONLY by its import site --
-    module-level imports are hashed as module objects, function-level (deferred)
-    imports by dotted name -- and not by what kind of module it is: a dotted-name
-    entry hashes a module, and enumerates a package one level deep, exactly as a
-    module object does.
+    THE COVERED BOUNDARY is this stage's whole first-party import closure
+    (ADR-0136): every first-party module this package imports, at module level or
+    inside a function body, and every module those import in turn. The walk ends at a
+    declared synpp dependency, at a module whose ``_SYNPP_TOKEN_EXEMPTION`` states that
+    it never shapes a stage result, and at the stage named in
+    ``_TOKEN_CLOSURE_BOUNDARIES``, which this stage reaches but never runs. A package
+    entry hashes its ``__init__`` only (``inspect.getsource`` of a package yields
+    nothing else), so every submodule the walk reaches is an entry of its own. The
+    2026-08-19 verification smoke showed why the one-level boundary this token had
+    before was not enough: the under-16 licence floor (``attributes``) and the W_ZWECK
+    purpose fix (``trips``), each one import further out, changed the population while
+    leaving the token untouched, so a warm cache would have silently reused the pre-fix
+    output (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml).
+    tests/test_audit_synpp_helper_hash.py fails when the closure reaches a module
+    neither tuple lists. Which of the two tuples a module lands in is decided ONLY by
+    its import site: module-level imports of this package are hashed as module
+    objects, function-level imports and everything reached only through the helpers by
+    dotted name.
 
     COVERED via ``_HELPER_MODULES`` (module objects, hashed first): this package's
     own six submodules; all nine ``braunschweig.popsim.mid`` modules (the seed /
@@ -613,39 +633,39 @@ def validate(context):
     is used here as a plain function library (``kreis_household_stats``).
 
     COVERED via ``_DEFERRED_HELPER_MODULE_NAMES`` (dotted names, imported LAZILY
-    here and hashed second): the first-party modules this package imports inside a
-    function body -- ``braunschweig.popsim.control_spec`` (the control catalog
+    here and hashed second): first the first-party modules this package imports inside
+    a function body -- ``braunschweig.popsim.control_spec`` (the control catalog
     itself), ``kreis_attribute_control``, ``ownership_grid``, ``placement_income``,
     ``employment_grid``, ``zensus_employment_age``, ``folders``,
     ``braunschweig.parallelism``, ``braunschweig.resources`` (the machine-derived
-    worker-count ceiling), ``braunschweig.data.mid.tenure_by_income``, and
-    the ``braunschweig.synthesis.population.enriched`` package one level deep
-    (``__init__`` plus ``availability`` / ``base`` / ``economic_status`` /
-    ``housing_tenure`` / ``income_distribution`` / ``vehicle_ownership``), which is
-    the second synpp stage used here as a plain function library
-    (``_apply_housing_tenure``, which lives in the ``housing_tenure`` submodule).
-    They are DIRECT dependencies of this stage's result, so an edit to any of them
-    must devalidate the cache; they are reached by name because their only import
-    site in this package is inside a function body (deferred on purpose: import
-    cost, and cycle avoidance among the ``braunschweig.popsim`` siblings) and this
-    function runs at RUN time, long after every module is importable. A module that
-    fails to import here raises ``RuntimeError`` naming it: a broken direct
-    dependency must be loud, never silently dropped from the token (which would
-    leave the cache stale precisely when the code is broken).
+    worker-count ceiling), ``braunschweig.data.mid.tenure_by_income`` and
+    ``braunschweig.synthesis.population.enriched.housing_tenure`` (whose
+    ``_apply_housing_tenure`` this stage calls), together with ``attributes``,
+    ``trips`` and ``escort_pairing``, the three second-level modules listed here since
+    the 2026-08-19 smoke and issue #372 -- and then the rest of the import closure.
+    They are reached by name because none of them has a module-level import site in
+    this package (deferred on purpose: import cost, and cycle avoidance among the
+    ``braunschweig.popsim`` siblings), and this function runs at RUN time, long after
+    every module is importable. A module that fails to import here raises
+    ``RuntimeError`` naming it: a broken dependency must be loud, never silently
+    dropped from the token (which would leave the cache stale precisely when the code
+    is broken).
 
     WHEN A SYNPP STAGE LEGITIMATELY BELONGS IN THIS TOKEN: when -- and only when --
     BOTH of these hold:
 
-      (a) this stage calls into it as a LIBRARY (``kreis_household_stats`` /
-          ``_apply_housing_tenure``), not via ``context.stage(...)``, and
+      (a) this stage runs its code as a LIBRARY, itself (``kreis_household_stats``) or
+          through one of its helpers, not via ``context.stage(...)``, and
       (b) it is NOT among the stage dependencies ``configure()`` declares, so synpp
           never propagates its own stage hash into this stage's cache key.
 
-    Neither mechanism therefore reaches those two modules, and without their
-    entries an edit confined to either helper function leaves this stage's cached
-    output silently stale. Exactly two modules qualify today:
-    ``braunschweig.data.census.household_size`` and
-    ``braunschweig.synthesis.population.enriched``.
+    Neither mechanism therefore reaches those modules, and without their entries an
+    edit confined to one of them leaves this stage's cached output silently stale.
+    Five modules qualify today: ``braunschweig.data.census.household_size``, imported
+    here, and four reached through helpers -- ``braunschweig.data.census.household_income``
+    (the income-class map of the enriched economic-status helper the ENTD adapters use),
+    ``synthesis.population.matched`` (``match_donors``) and the two HTS cleaners it
+    imports, ``data.hts.egt.cleaned`` and ``data.hts.entd.cleaned``.
 
     DELIBERATELY NOT COVERED:
 
@@ -661,10 +681,10 @@ def validate(context):
     * THIRD-PARTY imports, whether module-level or deferred (e.g. the
       function-level ``pyarrow.parquet``). This token covers first-party source
       text; third-party versions are pinned by the environment, not hashed here.
-    * The TRANSITIVE import surface beyond the one level of package enumeration.
-      The set is bounded to modules imported directly by this package; a module
-      imported only by one of the listed helpers is not walked, so an edit deep
-      inside such a dependency is not reflected in the token.
+    * Modules whose ``_SYNPP_TOKEN_EXEMPTION`` states that they never shape a stage
+      result (progress output, terminal colours, process monitoring), and the trips
+      stage named in ``_TOKEN_CLOSURE_BOUNDARIES``: the donor adapters import it for
+      ``build_trips``, which only the trips stage calls, so this stage never runs it.
 
     Both tuples are iterated in the order written -- not a set, not ``dir()``
     output -- and ``_HELPER_MODULES`` always before
@@ -2191,7 +2211,7 @@ def _apply_housing_tenure_parity(context, persons: pd.DataFrame, random_seed: in
             load_tenure_by_income_bundesland,
             load_tenure_by_income_raumtyp,
         )
-        from braunschweig.synthesis.population.enriched import _apply_housing_tenure
+        from braunschweig.synthesis.population.enriched.housing_tenure import _apply_housing_tenure
 
         data_path = context.config("data_path")
         persons = _apply_housing_tenure(
