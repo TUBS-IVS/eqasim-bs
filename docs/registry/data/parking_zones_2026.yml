@@ -400,9 +400,12 @@ acquisition:
     every precedence cut and the municipality exception. Two independent runs of the whole chain from the raw inputs,
     the three prerequisite curation scripts included, are byte-identical (SHA-256 of the zone file
     d1ae91e86c4fe3c789d41a2ee3b3670fa739a080b7da11bf35cf954818ce26cb, of the municipal QA table
-    89f459803ab0cd7572f70755f0905517fc7065801cbb0a9301e75490bf57f5c2); without --regional-dir the chain reproduces the
+    d1034c582cf4e8c8cdecd7056b387d3b8acf1df6ea8351551c15835997a39850); without --regional-dir the chain reproduces the
     release before Amendment D byte for byte (SHA-256 19db8d1c5415784a64033760950709521e7784be8c3b6343a84265718809dcb9
-    and 35c93e417e456c373d2113e91be1c31c9ceb5700a7ae08b36609bd0b1a676e26).
+    and 35c93e417e456c373d2113e91be1c31c9ceb5700a7ae08b36609bd0b1a676e26). The QA tables of lever 1
+    (parking_zones_2026_qa.csv) and of Amendment B (parking_zones_2026_supply_share_qa.csv) stay as computed against the
+    release before Amendment C: Amendment D changes none of their references except gs_altstadt_zone1, which they compare
+    with the Goslar rule polygon and which has since lost the Glockengiesserstrasse car park (5,966 m2).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true

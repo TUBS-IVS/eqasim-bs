@@ -297,7 +297,7 @@ def release(assembly, package_dir, tmp_path_factory):
     assembly.write_zone_file(assembly.zone_frame(zones), out / "zones.geojson", municipal=True, regional=True)
     loaded = pz.load_zone_polygons(out / "zones.geojson", max_repairs=0)  # valid as written, no polygon repaired
     rows = assembly.rz.qa_rows(context, loaded, _municipalities())
-    assembly.mz.write_qa_table(out / "qa.csv", rows, assembly.mz.QA_INTRO + " " + assembly.rz.QA_INTRO_SUFFIX)
+    assembly.mz.write_qa_table(out / "qa.csv", rows, assembly.rz.qa_intro(assembly.mz.QA_INTRO))
     return {"zones": loaded.set_index("zone_id"), "loaded": loaded, "context": context, "package": package,
             "qa_path": out / "qa.csv", "zone_path": out / "zones.geojson", "trims": dict(trims), "sha256": sha256}
 
@@ -781,6 +781,22 @@ def test_the_regional_step_needs_the_municipal_step(assembly):
     with pytest.raises(SystemExit, match="--regional-dir builds on --municipal-dir"):
         assembly.main(["--ia-ib", "a", "--affine", "b", "--fee-islands", "c", "--raw-overpass", "d", "--network", "e",
                        "--municipalities", "f", "--out", "g", "--regional-dir", "h"])
+
+
+def test_the_qa_header_puts_the_regional_paragraph_before_the_column_list(release):
+    header = [line[2:] for line in release["qa_path"].read_text(encoding="utf-8").split("\n") if line.startswith("# ")]
+    glossary_start = next(index for index, line in enumerate(header) if line.startswith("row_id: "))
+    intro = " ".join(header[:glossary_start])
+    # the municipal intro, the regional paragraph, the units sentence, and last the lead-in of the column list
+    assert (intro.index("Curation QA of the municipal parking data")
+            < intro.index("Spec Amendment D (the regional evidence package of 2026-10-07")
+            < intro.index("Units m2 (EPSG:25832") < intro.index("Columns:"))
+    assert intro.endswith("Columns:")
+
+
+def test_the_qa_intro_refuses_a_municipal_intro_without_the_units_sentence(regional):
+    with pytest.raises(SystemExit, match="units sentence"):
+        regional.qa_intro("an intro that no longer holds the sentence before the column list")
 
 
 def test_qa_table_compares_the_new_polygons_and_records_every_cut(release):

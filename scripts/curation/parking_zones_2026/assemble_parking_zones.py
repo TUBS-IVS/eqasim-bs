@@ -2010,7 +2010,7 @@ def main(argv=None) -> int:
         rows, intro = mz.qa_rows(municipal, loaded), mz.QA_INTRO
         if regional is not None:
             rows += rz.qa_rows(regional, loaded, municipalities)
-            intro = mz.QA_INTRO + " " + rz.QA_INTRO_SUFFIX
+            intro = rz.qa_intro(mz.QA_INTRO)
         mz.write_qa_table(args.municipal_qa_out, rows, intro)
         if args.municipal_tariffs:
             mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], pz.load_tariffs(args.municipal_tariffs))

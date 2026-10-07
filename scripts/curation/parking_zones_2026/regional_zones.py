@@ -870,7 +870,8 @@ def _slug(text: str) -> str:
     return _ascii(text).lower().replace(" ", "_")
 
 
-#: The header text the regional step appends to ``municipal_zones.QA_INTRO`` (ASCII; the municipal QA table is ASCII).
+#: The paragraph the regional step adds to the header of the municipal QA table (``qa_intro`` places it; ASCII, like the
+#: whole table).
 QA_INTRO_SUFFIX = (
     "Spec Amendment D (the regional evidence package of 2026-10-07, scripts/curation/parking_zones_2026/regional_zones.py "
     "via --regional-dir; owner-supplied package under raw_sources/municipal_2026-10-07/, gitignored, SHA-256 in the data "
@@ -883,3 +884,15 @@ QA_INTRO_SUFFIX = (
     "its source. Every precedence cut that involves a zone of the step is a row <loser>_cut_by_<winner> (R-4a-1), "
     "measured against the final polygon of the winner. The rows of a declared municipality exception compare the polygon "
     "with the municipality polygons of the pipeline.")
+#: The sentence of the municipal intro that precedes the column list; the regional paragraph goes before it.
+_QA_UNITS_SENTENCE = " Units m2 (EPSG:25832"
+
+
+def qa_intro(municipal_intro: str) -> str:
+    """``municipal_intro`` (``municipal_zones.QA_INTRO``) with ``QA_INTRO_SUFFIX`` inserted before its units sentence,
+    so that the header still ends with the lead-in of the column list. Raises ``SystemExit`` when the municipal intro
+    no longer has that sentence."""
+    head, separator, tail = municipal_intro.partition(_QA_UNITS_SENTENCE)
+    if not separator:
+        raise SystemExit("the municipal QA intro no longer holds the units sentence the regional paragraph precedes")
+    return head + " " + QA_INTRO_SUFFIX + separator + tail
