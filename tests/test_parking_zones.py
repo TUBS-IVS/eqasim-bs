@@ -1054,6 +1054,69 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
     assert "free condition for a stay of up to 15 min is not modelled" in tariffs.loc["bh_sole_therme", "notes"]
 
 
+#: The monthly or 30-day products behind the commuter products of spec Amendment D2 (ruling R-D2-a), written by hand from
+#: the sources: the 30-day ticket of Braunschweig zone Ib (ParkGO sec. 1(2), 79.00 EUR, valid for 30 consecutive calendar
+#: days) and the month ticket of the TU members (Parkordnung of 2026-06-03 sec. 6(2), 10 EUR). The Ib 7-day ticket (29 EUR)
+#: is no monthly or 30-day product and stays unused.
+COMMUTER_MONTHLY_PRODUCT_EUR = {"bs_zone_ib": 79.0, **{zone_id: 10.0 for zone_id in TU_CAMPUS_ZONES}}
+#: ASSUMPTION P2: 21 working days per month.
+COMMUTER_WORKING_DAYS = 21
+#: The rows that keep the assumption-grade fee window (ASSUMPTION F1) in the release of spec Amendment D1, 13 of 37: the
+#: two rows that Amendment D1 moves to a sourced window (he_innenstadt 9-16 h, gs_altstadt_zone1 10-18 h) are not among them.
+F1_ASSUMPTION_ZONES = (
+    "bh_berliner_platz", "bh_burgberg", "bh_grossparkplatz", "bh_kurpark", "bh_sole_therme", "br_hexenritt", "br_wurmberg",
+    "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz",
+    "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_marthastrasse_koernerstrasse",
+    "bs_parkscheininsel_mentestrasse")
+
+
+def test_committed_commuter_products_follow_spec_amendment_d2():
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    # exactly the Braunschweig zone Ib and the six campus rows carry a commuter product, every other row none
+    commuter = tariffs["commuter_day_eur"].dropna()
+    assert commuter.to_dict() == {"bs_zone_ib": 3.76, **{zone_id: 0.48 for zone_id in TU_CAMPUS_ZONES}}
+    # the amount is the cheapest monthly or 30-day product over 21 working days, rounded to the cent (ASSUMPTION P2)
+    assert set(COMMUTER_MONTHLY_PRODUCT_EUR) == set(commuter.index)
+    for zone_id, monthly_eur in COMMUTER_MONTHLY_PRODUCT_EUR.items():
+        assert commuter[zone_id] == round(monthly_eur / COMMUTER_WORKING_DAYS, 2), zone_id
+    assert set(tariffs.loc[commuter.index, "zone_type"]) == {"street_paid", "campus"}
+    # the zone Ib row keeps its street product and states the commuter product; the Ia row has none (the tickets are Ib's)
+    assert tariffs.loc["bs_zone_ib", "notes"].count("ASSUMPTION P2") == 1
+    assert "79.00 EUR" in tariffs.loc["bs_zone_ib", "notes"] and "7-day ticket (29.00 EUR)" in tariffs.loc["bs_zone_ib", "notes"]
+    assert pd.isna(tariffs.loc["bs_zone_ia", "commuter_day_eur"])
+    assert (tariffs.loc["bs_zone_ib", "hourly_rate_eur"], tariffs.loc["bs_zone_ib", "daily_cap_eur"]) == (1.80, 9.0)
+    # the campus rows keep the day tickets: the month ticket competes with the member day ticket (spec Amendment A4)
+    campus = tariffs.loc[list(TU_CAMPUS_ZONES)]
+    assert (campus["member_day_eur"] == 3.5).all() and (campus["guest_day_eur"] == 9.0).all()
+    assert campus["notes"].str.contains("ASSUMPTION P2", regex=False).all()
+    assert campus["notes"].str.contains("monthly_tu_member_month_ticket", regex=False).all()
+    assert not campus["notes"].str.contains("overstates", regex=False).any()  # the v1 sentence on the day ticket is gone
+    # no garage product on any zone row and no search time (spec Amendment E8, decision D4); the table has no such columns
+    assert tariffs[list(pz.GARAGE_COLUMNS)].isna().all().all()
+    assert tariffs["search_time_min"].isna().all()
+
+
+def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendment_d1():
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    helmstedt, goslar = tariffs.loc["he_innenstadt"], tariffs.loc["gs_altstadt_zone1"]
+    # the city brochure of 12/2024 (most places Mo-Fr 09:00-16:00) and the Goslar service page (Kornstrasse Mo-Sa
+    # 10:00-18:00 at 2 EUR/h) replace the assumption F1 window 9-18 h; the rates and billing units do not change
+    assert (helmstedt["fee_start_h"], helmstedt["fee_end_h"], helmstedt["fee_window_source"]) == (9.0, 16.0, "municipal_page")
+    assert (goslar["fee_start_h"], goslar["fee_end_h"], goslar["fee_window_source"]) == (10.0, 18.0, "municipal_page")
+    assert (helmstedt["hourly_rate_eur"], helmstedt["billing_unit_min"]) == (1.2, 30)
+    assert (goslar["hourly_rate_eur"], goslar["billing_unit_min"]) == (2.0, 30)
+    assert "ASSUMPTION F1" not in helmstedt["notes"] and "ASSUMPTION F1" not in goslar["notes"]
+    assert "Parken_in_Helmstedt.pdf" in helmstedt["notes"] and "helmstedt_gebuehrenzeiten.json" in helmstedt["notes"]
+    assert "Wallplatz" in helmstedt["notes"] and "Saturday 09:00-13:00 is not modelled" in helmstedt["notes"]
+    assert "https://www.meingoslar.de/service" in goslar["notes"] and "Kornstrasse" in goslar["notes"]
+    assert "inference" in goslar["notes"]
+    # the Edelhoefe garage left the zone row: it is a garage of the dataset (spec Amendment E8), not a note on the street
+    assert "0.50 EUR first 30 min" not in helmstedt["notes"] and "parking_garages_2026" in helmstedt["notes"]
+    # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
+    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 17, "assumption": 13, "ordinance": 7}
+    assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
+
+
 def test_committed_register_records_the_regional_audit_of_spec_amendment_d3():
     register = pz.load_coverage_register(COMMITTED_PARKING_DIR / "parking_coverage_register_2026.csv")
     register = register[register["status"] != "excluded"]  # the excluded areas share the AGS of a status row

@@ -698,7 +698,8 @@ notes: >-
   municipal_street_sections_buffered 3 (1.565 km2, 20.3 %), ordinance_map 7 (2.480 km2, 32.1 %), osm_fee_tags 2 (0.670
   km2, 8.7 %), single_site_buffered 11 (0.245 km2, 3.2 %), street_list_buffer 5 (0.733 km2, 9.5 %), osm_fee_erosion 0;
   zone QA 8 municipalities, q4_decision rejected 8, applied none; fee_window_source assumption 15, municipal_page 15,
-  ordinance 7; resident permits (rule R2): valid on 25 of 37 zones, not valid on the six stated rows (the five BgA rows
+  ordinance 7 (13, 17 and 7 after the window corrections of Task 4b, data record parking_tariffs_2026); resident permits
+  (rule R2): valid on 25 of 37 zones, not valid on the six stated rows (the five BgA rows
   and the Goslar car park at the ZOB) and the six campus zones (default); per municipality 03101000 Braunschweig 17
   zones 3.234 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 3 zones 1.565 km2, 03151009 Gifhorn 1 zone
   0.284 km2, 03153002 Bad Harzburg 5 zones 0.140 km2, 03153012 Seesen 1 zone 0.017 km2, 03153016 Braunlage 2 zones 0.016
@@ -757,8 +758,9 @@ notes: >-
   Goslar car parks at 1.00 EUR/h, five Bad Harzburg car parks at 1.00 EUR/h, Seesen Am Markt at 0.60 EUR/h, Braunlage
   Hexenritt (the published total-stay bands) and Wurmberg at 1.00 EUR/h; where a fee window, a rate or a billing unit is
   an assumption (F1, D3-a, D3-b) the tariff table labels it, and maximum stays are not modelled (M2). The Goslar car
-  park Glockengiesserstrasse is cut out of gs_altstadt_zone1 (5,966 m2), which charges 2.00 EUR/h at an assumed 9-18 h
-  window where the car park charges 1.00 EUR/h. Runs with parking_zones_enabled false (OFF, LEGACY) are not affected.
+  park Glockengiesserstrasse is cut out of gs_altstadt_zone1 (5,966 m2), which charges 2.00 EUR/h (fee window 9-18 h,
+  an assumption, in the release of this amendment; 10-18 h from the tariff data of Task 4b, data record
+  parking_tariffs_2026) where the car park charges 1.00 EUR/h. Runs with parking_zones_enabled false (OFF, LEGACY) are not affected.
   Curation check of spec Amendment D, not a validation: scripts/curation/parking_zones_2026/count_zone_exposure.py (the
   production attach_parking_zones, point in polygon, on the polygons of both releases) over the plans of the local 1 %
   scenario eqasim-data/output_bs/braunschweig_1pct_population.xml.gz (2026-04-29; 11,472 persons, 47,362 main activities
