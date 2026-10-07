@@ -10,7 +10,8 @@ provider: >-
   maps, the Stadt Wolfsburg Geoviewer theme Parken and, as a cross-check only, the Stadt Goslar ArcGIS service
   Bewohnerparken; since 2026-10-07 (spec Amendment D) the owner-supplied regional evidence package: the BgA car
   parks digitised from the annex maps of the Amtsblatt 2022 Nr. 16, the red camera detection zones of the TU GB3
-  campus maps, the facility areas of the Goslar ArcGIS service for three car parks, OpenStreetMap outlines in Bad
+  campus maps (united with the v1 OSM campus outlines, ruling R-4a-8), the facility areas of the Goslar ArcGIS service
+  for three car parks, OpenStreetMap outlines in Bad
   Harzburg and Seesen and the tourism coordinates of two Braunlage car parks
 vintage: >-
   Sources retrieved and zones digitised on 2026-09-29; OSM base timestamps 2026-09-29T05:10Z to 05:13Z;
@@ -76,9 +77,10 @@ acquisition:
     Overpass requests for Goslar, Wolfenbuettel and Gifhorn failed (HTTP 504) and were not repeated; their
     centre polygons use the OSM-derived car network of the local MATSim scenario eqasim-data/output_bs
     (2026-04-29) instead. Overlaps are resolved by precedence (v1: BgA car parks and the International House lots
-    cut out of Ia and the campus areas, the Parkscheininseln cut out of zone 132; since spec Amendment D the campus
-    zones take precedence over the street zones and the International House zone is merged into Langer Kamp, see
-    the paragraph on Amendment D below), so no two zones overlap by more than 1 m2.
+    cut out of Ia and the campus areas, the Parkscheininseln cut out of zone 132; since spec Amendment D the detection
+    zones of the campus zones take precedence over the street zones, the campus zones keep the v1 outlines as their
+    grounds and the International House zone is merged into Langer Kamp, see the paragraph on Amendment D below), so
+    no two zones overlap by more than 1 m2.
     Rule-based geometry, parking cost zones v2 lever 1 (issue #436, spec amendments A1 and A2, 2026-09-30; fix
     round 1 rulings R-T1-e to R-T1-g):
     scripts/build_parking_zones_from_osm.py --regulation sent one regulation request per municipality (every
@@ -345,67 +347,101 @@ acquisition:
     wob_innenstadt among the H2 holdout references) are the polygons of the release before Amendment C, so re-deriving
     them needs that file.
     Regional evidence package, parking cost zones v2 spec Amendment D (2026-10-07; the owner's decisions of 2026-10-07
-    and the controller rulings R-4a-1 to R-4a-7 and R-D3-a). The package Regional_Parkdaten_Belege_2026-10-07.zip
-    (62,237,402 bytes, SHA-256 e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7) is the owner's
-    consolidated evidence package: 356 files, the GeoPackage daten/Regional_Parkdaten.gpkg (27 layers, EPSG:25832) and
-    daten/tariff_rules.json; it freezes and supersedes the four working packages of 2026-10-02 that lie in the same
-    local folder raw_sources/municipal_2026-10-07/, which the curation does not read. The curation step
-    scripts/curation/parking_zones_2026/regional_zones.py, run as assemble_parking_zones.py with the inputs of Amendment
-    C and --regional-dir raw_sources/municipal_2026-10-07 --regional-tariffs parking_tariffs_2026.csv (it builds on
-    --municipal-dir), refuses a zip whose SHA-256 differs from the pinned one, reads eight GeoPackage layers straight
-    from the zip (GDAL /vsizip/, no extracted copy), checks the attributes the provenance states and prints per layer
-    the accounting: features, used, dropped with the reason, repaired 0 (an invalid, empty or foreign-CRS geometry stops
-    the step; nothing is repaired). Ledger of the committed release: bs_bga_parkflaechen 5 features, 5 used;
-    referenz_bs_aufgegeben 1, 1 dropped (Kannengiesserstrasse, a pocket park since April 2026, kept as the QA reference
-    of the removed zone); tu_kamera_detektionszonen 32, 31 used, 1 dropped (TU_KAM_05_01, Bevenroder Strasse: no GB3
-    page states ticketing); tu_kartenflaechen 82 yellow parking areas, none used as geometry (a QA cross-check of the
-    georeference); gos_1eur_parkplatzflaechen 3, 3 used; vier_staedte_parking_areas 9, 5 used, 4 dropped
-    (se_bahnhofsplatz: a fee reported in 2019, the current tariff unconfirmed; se_parkhaus: a private garage, free on
-    the upper levels; ko_p3: conflicting status; sc_burgplatz: free); vier_staedte_street_references 1, 1 used;
-    neue_orte_parkstandorte 2, 2 used; vier_staedte_parking_locations (the navigation points of the Bad Harzburg sites)
-    is not read, because every Bad Harzburg site has an outline.
+    and the controller rulings R-4a-1 to R-4a-8 and R-D3-a; ruling R-4a-8, the owner's decision on the TU campus zones,
+    came with fix round 1 of the task). The local, gitignored folder raw_sources/municipal_2026-10-07/ holds five
+    packages handed over on 2026-10-07, byte for byte as received (sizes and SHA-256 verified against its MANIFEST.md):
+    Braunschweig_Parkgebuehrenzonen_2023.zip (26,473,044 bytes, SHA-256
+    7ce77084a61fa79b42b3321fb6b8f0660c8cb85260827be2ee665c211192535e), Goslar_Zone2_Gesamtpaket.zip (390,047 bytes,
+    61f2368ecf5d41a67adc49ff3d5344c6ad4b963063ce44694a1ad099b7a87bda), TU_Braunschweig_Parkbereiche.zip (4,810,416
+    bytes, 12afddef2b6c1bc583b5542537aa8e99eccdc465958fcfdf10e11f61c2e83f65),
+    Parken_BadHarzburg_Seesen_Koenigslutter_Schoeningen.zip (1,859,183 bytes,
+    32d4fd9b71d07ee6b6bf874d2d71386b98d40db6f7c7bb40246eb5ec049776e9) and Regional_Parkdaten_Belege_2026-10-07.zip
+    (62,237,402 bytes, SHA-256 e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7), the only one the
+    curation reads. The latter is the owner's consolidated evidence package (356 files, the GeoPackage
+    daten/Regional_Parkdaten.gpkg with 27 layers in EPSG:25832 and daten/tariff_rules.json); it freezes and supersedes
+    the four working packages of 2026-10-02 (under eingangsdaten/bestand/). The municipal packages of 2026-10-01 were
+    re-supplied the same day byte-identical and are not duplicated. Licence status in the package: its draft licence
+    requests (LIZENZANFRAGEN_ENTWURF.txt, to the cities of Goslar and Wolfsburg and to the TU) were NOT sent; its
+    license_status.json records no open licence for the Goslar service (permission_or_dataset_license_needed), the
+    Wolfsburg data (dataset_specific_license_needed) and the TU maps (graphic_reuse_permission_needed: the TU requires
+    explicit consent for the reuse of its graphics, the OSM base map and the TU overlay to be checked separately), and
+    has no entry for Braunlage: the two Braunlage source points are the town's official tourism coordinates (UTM numbers
+    on https://www.braunlage.de/tour/wurmberg-gipfeltour, retrieved 2026-10-07 and converted to WGS84 by the package;
+    positions, no outline), for which the package records no licence or terms of reuse and none was verified. The
+    curation step scripts/curation/parking_zones_2026/regional_zones.py, run as assemble_parking_zones.py with the
+    inputs of Amendment C and --regional-dir raw_sources/municipal_2026-10-07 --regional-tariffs
+    parking_tariffs_2026.csv (it builds on --municipal-dir), refuses a zip whose SHA-256 differs from the pinned one,
+    reads eight GeoPackage layers straight from the zip (GDAL /vsizip/, no extracted copy), checks the attributes the
+    provenance states and prints per layer the accounting: features, used, dropped with the reason, repaired 0 (an
+    invalid, empty or foreign-CRS geometry stops the step; nothing is repaired). Ledger of the committed release:
+    bs_bga_parkflaechen 5 features, 5 used; referenz_bs_aufgegeben 1, 1 dropped (Kannengiesserstrasse, a pocket park
+    since April 2026, kept as the QA reference of the removed zone); tu_kamera_detektionszonen 32, 31 used, 1 dropped
+    (TU_KAM_05_01, Bevenroder Strasse: no GB3 page states ticketing); tu_kartenflaechen 82 yellow parking areas, none
+    used as geometry (a QA cross-check of the georeference of the detection zones); gos_1eur_parkplatzflaechen 3, 3
+    used; vier_staedte_parking_areas 9, 5 used, 4 dropped (se_bahnhofsplatz: a fee reported in 2019, the current tariff
+    unconfirmed; se_parkhaus: a private garage, free on the upper levels; ko_p3: conflicting status; sc_burgplatz:
+    free); vier_staedte_street_references 1, 1 used; neue_orte_parkstandorte 2, 2 used; vier_staedte_parking_locations
+    (the navigation points of the Bad Harzburg sites) is not read, because every Bad Harzburg site has an outline.
     D1: the four remaining BgA car parks take the package polygons (geometry_source ordinance_map: the lots as drawn on
     annexes 1, 3, 4 and 5 of the Amtsblatt Nr. 16 of 2022, digitised at the stroke midpoint, estimated position
-    uncertainty 5 m), bs_bga_willy_brandt_platz (annex 6) is added and bs_bga_kannengiesserstrasse removed. The six TU
-    campus zones are the union per campus of the red camera detection zones (geometry_source campus_detection_zones, no
-    provenance column; Zentralcampus 12 parts 93,940 m2, Campus Nord 1 part 84,541 m2, Beethovenstrasse 2 parts 151,992
-    m2 with the nested outline TU_KAM_03_02 (3,305 m2) inside the outer TU_KAM_03_01 (145,877 m2), Langer Kamp 6 parts
-    88,002 m2, Forschungsflughafen 8 parts 18,982 m2, Volkmaroder Strasse 1 part 5,331 m2, new); tu_international_house
-    is merged into tu_campus_ost_langer_kamp (its car parks lie in the two small detection zones west of
-    Brucknerstrasse) and Bevenroder Strasse is not zoned. D3: the eleven single paid sites
-    (gs_parkplatz_baeringerstrasse, gs_parkplatz_klubgartenstrasse_zob, gs_parkplatz_glockengiesserstrasse,
-    bh_sole_therme, bh_kurpark, bh_grossparkplatz, bh_burgberg, bh_berliner_platz, se_am_markt, br_hexenritt,
-    br_wurmberg; geometry_source single_site_buffered, provenance site_buffer_m 50) are each the area within 50 m
-    (ASSUMPTION C-a) of the site's polygon (8 sites), street line (Seesen Am Markt) or source point (the two Braunlage
-    car parks), 7,803 to 42,976 m2; where two such areas overlap the nearer source decides (a generalised Voronoi split
-    with a 1 mm proxy for points and lines, ties to the higher tariff; no two sites overlap in the release); every zone
-    is then simplified by 0.5 m and cut with the 5 cm clearance of the rule-based sources. Precedence (ruling R-4a-1):
-    the campus zones first (no campus overlaps a street zone in the release), then the BgA lots, the single sites, the
-    Parkscheininseln, Ia, Ib, the Stadthalle zone 132 and the other zones in insertion order; after the simplification
-    every winner is subtracted once more (enforce_exact_cuts), because the 0.5 m simplification of a cut zone can move
-    its hole ring back across the winner (Ia overlapped the Suedstrasse lot by 6.7 m2 in the first run). Every cut is a
-    row of the QA table (<loser>_cut_by_<winner>): Ia loses 2,628.3 m2 to Markthalle, 654.8 to Suedstrasse, 608.2 to
-    Jodutenstrasse/Klint and 414.6 to An der Martinikirche, gs_altstadt_zone1 loses 5,966.2 m2 to the
-    Glockengiesserstrasse car park. The municipality check (every polygon at least 99 % inside its own municipality) has
-    one declared exception (regional_zones.CONTAINMENT_EXCEPTIONS): the 50 m area of the Bad Harzburg Grossparkplatz
-    lies 14.7 % in Bad Harzburg and 85.3 % in the unincorporated area Harz (03153504) of the pipeline's municipality
-    polygons (the outline is 13 m beyond the boundary), and the check requires both together to reach 99 %. The geometry
-    rate of the single sites is printed at every run: polygon 8 of 11 (72.7 %), street line 1 (9.1 %), source point 2
-    (18.2 %, the fallback where no outline exists, the lot extent being unknown). The new tariff rows are checked
-    against the package's tariff_rules.json (fee window sourced 4 of 12 rows, ASSUMPTION F1 8 of 12; data record
-    parking_tariffs_2026). The licence and attribution members name the regional sources (the BgA lots cut out of
-    bs_zone_ia as package polygons, no longer OSM outlines) and the QA table gets 48 rows: the release against the
-    package and the v1 polygon, the cross-checks of the campus unions with the yellow parking areas and the v1 polygons,
-    the nested boundaries, the merged International House, the dropped Bevenroder detection zone, the single-site areas,
-    every precedence cut and the municipality exception. Two independent runs of the whole chain from the raw inputs,
-    the three prerequisite curation scripts included, are byte-identical (SHA-256 of the zone file
-    d1ae91e86c4fe3c789d41a2ee3b3670fa739a080b7da11bf35cf954818ce26cb, of the municipal QA table
-    d1034c582cf4e8c8cdecd7056b387d3b8acf1df6ea8351551c15835997a39850); without --regional-dir the chain reproduces the
+    uncertainty 5 m), bs_bga_willy_brandt_platz (annex 6) is added and bs_bga_kannengiesserstrasse removed. The TU
+    campus zones (ruling R-4a-8, the owner's decision of 2026-10-07 on the review of this task: the camera detection
+    zones are where one pays, for example the NFF car park and the large Mensa car park, while the activities lie at the
+    buildings next to them) are each the UNION of (1) the campus grounds, the release polygons of the v1 zones (the OSM
+    amenity=university outlines, the destination area where the buildings are, kept with their v1 provenance; for Langer
+    Kamp together with the v1 zone tu_international_house, the two TU car parks at the International House) and (2) the
+    red camera detection zones of the campus map (the paid car parks; the layer states that they are no parking
+    footprints, and they do not contain the buildings), geometry_source campus_outline_and_detection_zones, no
+    provenance column. The grounds are the v1 RELEASE polygons (the v1 precedence applied to copies of the records, as
+    the previous release was built), so a v1 outline never takes area from a street zone. Result (m2: zone / grounds /
+    detection zones / both): Zentralcampus 136,610 (8 parts) / 97,180 / 93,934 / 54,501, Campus Nord 129,466 (1 part) /
+    120,711 / 84,543 / 75,786, Beethovenstrasse 158,571 (2 parts) / 151,937 / 151,990 / 145,329 with the nested outline
+    TU_KAM_03_02 (3,305 m2) inside the outer TU_KAM_03_01 (145,877 m2), the outer one used, Langer Kamp 100,002 (5
+    parts) / 87,712 / 87,990 / 75,703, Forschungsflughafen 65,118 (4 parts) / 56,553 / 18,982 / 10,418. Volkmaroder
+    Strasse (new, 5,331 m2, 1 part, geometry_source campus_detection_zones) has no v1 zone and no OSM amenity=university
+    outline at the site, so its zone is its detection zone alone: checked on 2026-10-07 in the v1 Overpass response of
+    Braunschweig (OSM base 2026-09-29T05:10Z; every amenity=university feature of the city box, 21 features, the nearest
+    outline 1.1 km from the detection zone) and in the pinned Geofabrik extract niedersachsen-260929 (OSM snapshot
+    2026-09-29T20:22:51Z; read with the GDAL OSM driver in a box of 4 km around the detection zone: 6 amenity=university
+    multipolygons, the nearest 1.1 km away). tu_international_house is merged into tu_campus_ost_langer_kamp (99.6 % of
+    its v1 polygon lie in the zone, the rest is lost to the 0.5 m simplification) and Bevenroder Strasse is not zoned.
+    No TU zone overlaps another zone above the tolerance (the largest overlap of the whole release is 0.012 m2). D3: the
+    eleven single paid sites (gs_parkplatz_baeringerstrasse, gs_parkplatz_klubgartenstrasse_zob,
+    gs_parkplatz_glockengiesserstrasse, bh_sole_therme, bh_kurpark, bh_grossparkplatz, bh_burgberg, bh_berliner_platz,
+    se_am_markt, br_hexenritt, br_wurmberg; geometry_source single_site_buffered, provenance site_buffer_m 50) are each
+    the area within 50 m (ASSUMPTION C-a) of the site's polygon (8 sites), street line (Seesen Am Markt) or source point
+    (the two Braunlage car parks), 7,803 to 42,976 m2; where two such areas overlap the nearer source decides (a
+    generalised Voronoi split with a 1 mm proxy for points and lines, ties to the higher tariff; no two sites overlap in
+    the release); every zone is then simplified by 0.5 m and cut with the 5 cm clearance of the rule-based sources.
+    Precedence (ruling R-4a-1): the campus zones first (their detection zones win over the street zones; no campus
+    overlaps another zone in the release), then the BgA lots, the single sites, the Parkscheininseln, Ia, Ib, the
+    Stadthalle zone 132 and the other zones in insertion order; after the simplification every winner is subtracted once
+    more (enforce_exact_cuts), because the 0.5 m simplification of a cut zone can move its hole ring back across the
+    winner (Ia overlapped the Suedstrasse lot by 6.7 m2 in the first run). Every cut is a row of the QA table
+    (<loser>_cut_by_<winner>): Ia loses 2,628.3 m2 to Markthalle, 654.8 to Suedstrasse, 608.2 to Jodutenstrasse/Klint
+    and 414.6 to An der Martinikirche, gs_altstadt_zone1 loses 5,966.2 m2 to the Glockengiesserstrasse car park. The
+    municipality check (every polygon at least 99 % inside its own municipality) has one declared exception
+    (regional_zones.CONTAINMENT_EXCEPTIONS): the 50 m area of the Bad Harzburg Grossparkplatz lies 14.7 % in Bad
+    Harzburg and 85.3 % in the unincorporated area Harz (03153504) of the pipeline's municipality polygons (the outline
+    is 13 m beyond the boundary), and the check requires both together to reach 99 %; the register row of the
+    unincorporated area points to it. The geometry rate of the single sites is printed at every run: polygon 8 of 11
+    (72.7 %), street line 1 (9.1 %), source point 2 (18.2 %, the fallback where no outline exists, the lot extent being
+    unknown). The new tariff rows are checked against the package's tariff_rules.json (fee window sourced 4 of 12 rows,
+    ASSUMPTION F1 8 of 12, and the notes naming every assumption they rest on; data record parking_tariffs_2026). The
+    licence and attribution members name the regional sources (the BgA lots cut out of bs_zone_ia as package polygons,
+    no longer OSM outlines; the TU campus grounds as OSM outlines, their detection zones as TU map graphics) and the QA
+    table gets 53 rows: the release against the package and the v1 polygon (BgA), against the detection zones and the
+    campus grounds (TU), the detection zones against the grounds, the yellow parking areas against the detection zones
+    of the same map, the nested boundaries, the merged International House, the dropped Bevenroder detection zone, the
+    single-site areas, every precedence cut and the municipality exception. Two independent runs of the whole chain from
+    the raw inputs, the three prerequisite curation scripts included, are byte-identical (SHA-256 of the zone file
+    0bf44df5588171bc0edd05e31f3ecdcaf1a96a3e3d14c3dd6eb76e348e975ba4, of the municipal QA table
+    5d8b86ff28f01ec74940b180486bed153c44a13acdd37c2cc37fa2086c4738c3); without --regional-dir the chain reproduces the
     release before Amendment D byte for byte (SHA-256 19db8d1c5415784a64033760950709521e7784be8c3b6343a84265718809dcb9
     and 35c93e417e456c373d2113e91be1c31c9ceb5700a7ae08b36609bd0b1a676e26). The QA tables of lever 1
     (parking_zones_2026_qa.csv) and of Amendment B (parking_zones_2026_supply_share_qa.csv) stay as computed against the
-    release before Amendment C: Amendment D changes none of their references except gs_altstadt_zone1, which they compare
-    with the Goslar rule polygon and which has since lost the Glockengiesserstrasse car park (5,966 m2).
+    release before Amendment C: Amendment D changes none of their references except gs_altstadt_zone1, which they
+    compare with the Goslar rule polygon and which has since lost the Glockengiesserstrasse car park (5,966 m2).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -462,19 +498,23 @@ verification:
     (test_municipal_zone_provenance_is_validated,
     test_validator_requires_the_municipal_qa_table_of_the_municipal_zones,
     test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones) pin it.
-    Since Amendment D (2026-10-07) load_zone_polygons accepts the geometry sources campus_detection_zones (no
-    provenance column) and single_site_buffered (site_buffer_m, a positive number of metres, empty for every other
-    source), braunschweig.parking.zones.validate_geometry_source_zone_types (called by the validator after
-    cross_validate) requires the tariff rows of such polygons to be of the zone type the source describes (campus,
-    street_paid), and the municipal QA table must hold rows for these zones, too
+    Since Amendment D (2026-10-07) load_zone_polygons accepts the geometry sources campus_outline_and_detection_zones
+    and campus_detection_zones (no provenance column) and single_site_buffered (site_buffer_m, a positive number of
+    metres, empty for every other source), braunschweig.parking.zones.validate_geometry_source_zone_types (called by the
+    validator after cross_validate) requires the tariff rows of such polygons to be of the zone type the source
+    describes (campus, street_paid), and the municipal QA table must hold rows for these zones, too
     (braunschweig.parking.municipal_zone_qa.municipal_zone_ids). The curation step is pinned by
-    tests/test_parking_regional_zones.py on a synthetic package (the refusals of a changed package, an invalid
-    geometry, a missing layer or attribute; the per-layer ledger; the BgA, campus and single-site zones; the split
-    rule; the exact re-cut; the containment exception; the tariff evidence; the QA rows; byte-identical re-runs; the
-    licence wording), the exposure check by tests/test_parking_zone_exposure.py, and the committed release by
-    tests/test_parking_zones.py (test_committed_braunschweig_zones_follow_spec_amendment_d1,
+    tests/test_parking_regional_zones.py on a synthetic package (the refusals of a changed package, an invalid geometry,
+    a missing layer or attribute; the per-layer ledger; the BgA zones; the campus zones as the union of the v1 grounds
+    and the detection zones with the v1 provenance, the grounds never taking area from a street zone and the detection
+    zones winning over it; the single-site zones; the split rule; the exact re-cut; the containment exception; the
+    tariff evidence and the notes that must name their assumptions, the permit flag and the corroborating OSM tags; the
+    QA rows; byte-identical re-runs; the licence wording), the exposure check by tests/test_parking_zone_exposure.py,
+    and the committed release by tests/test_parking_zones.py
+    (test_committed_braunschweig_zones_follow_spec_amendment_d1,
     test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs,
     test_committed_register_records_the_regional_audit_of_spec_amendment_d3,
+    test_committed_texts_do_not_claim_that_the_detection_zones_include_the_buildings,
     test_validator_rejects_a_single_site_zone_with_a_campus_geometry_source).
 requirements:
   synthesis: not_needed
@@ -487,20 +527,23 @@ licensing:
     outlines of the five Bad Harzburg car parks and the street Am Markt of Seesen, spec Amendment D3), OSM street
     geometry (the street_list_buffer zones: Stadthalle 132, the three Parkscheininseln, Salzgitter; the fee-tagged
     objects of Peine and Helmstedt; the Goslar, Wolfenbuettel and Gifhorn hulls from the OSM-derived car network) or a
-    georeference on OSM street centrelines (the Stadthalle concept plan behind the Parkscheininseln); the BgA car parks
-    and the TU campus areas were OSM-derived in v1 and are not any more (regimes 4 and 5). (2) bs_zone_ia and
-    bs_zone_ib: Stadt Braunschweig, published fee zone map (2025-11-26) and Amtsblatt 2024-04-30 map annex; digitised
+    georeference on OSM street centrelines (the Stadthalle concept plan behind the Parkscheininseln), and the campus
+    grounds of the TU zones (the OSM university outlines and the two OSM car parks at the International House of
+    the v1 release, which each campus zone keeps, united with the detection zones of regime 5); the BgA car parks
+    were OSM-derived in v1 and are not any more (regime 4). (2) bs_zone_ia and bs_zone_ib: Stadt Braunschweig, published fee zone map (2025-11-26) and Amtsblatt 2024-04-30 map annex; digitised
     (owner-supplied package 2026-10-01); working accuracy 25 m; base map Open GeoData dl-de/by-2-0. (3)
     wob_tarifzone_1, wob_tarifzone_2 and wob_tarifzone_3: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand
     12/2024); open reuse licence not verified; used by owner decision 2026-10-01. Spec Amendment D (the regional
     evidence package of 2026-10-07): (4) the five bs_bga_* BgA car parks: Stadt Braunschweig, Amtsblatt 2022 Nr. 16
     (annex maps of the BgA Entgeltordnung B 660); digitised (owner-supplied package 2026-10-07); working accuracy 5 m;
-    base map Open GeoData dl-de/by-2-0. (5) the six TU campus zones (geometry_source campus_detection_zones): TU
-    Braunschweig, GB3 Parkbereiche campus maps (retrieved 2026-10-02; (c) d&d design & distribution); explicit consent
-    for reuse of TU graphics not obtained; used by owner decision 2026-10-07. (6) the three gs_parkplatz_* car parks:
+    base map Open GeoData dl-de/by-2-0. (5) the camera detection zones of the six TU campus zones (geometry_source
+    campus_outline_and_detection_zones, and campus_detection_zones for Volkmaroder Strasse): TU Braunschweig, GB3
+    Parkbereiche campus maps (retrieved 2026-10-02; (c) d&d design & distribution); explicit consent for reuse of TU
+    graphics not obtained; used by owner decision 2026-10-07. (6) the three gs_parkplatz_* car parks:
     Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22); open reuse licence not verified; used by owner
     decision 2026-10-07. (7) the two br_* car parks: Stadt Braunlage, official tourism coordinates of the car parks
-    (source points, not outlines). Which areas are paid follows the municipal maps and ordinances (facts of public
+    (source points, not outlines; the package records no licence or terms of reuse for them, none was verified).
+    Which areas are paid follows the municipal maps and ordinances (facts of public
     law; maps of the Stadt Braunschweig, Abt. Geoinformation); attribution to the municipalities. The GeoJSON
     carries the licence and the attribution as top-level members (license, attribution;
     assemble_parking_zones.py licence_members names the sources of every regime; with the regional package the BgA
@@ -520,8 +563,9 @@ licensing:
     note that the data were changed, and the package states that this licence covers the base maps of the
     georeference, not a separately verified release of the zone graphics; the Wolfsburg tariff zones: redistribution
     not verified; the TU campus zones: the TU requires explicit consent for the reuse of its graphics, which was NOT
-    obtained (the polygons are traced from the TU maps; used by owner decision 2026-10-07); the Goslar car parks:
-    open reuse licence of the city's service not verified. The file is committed by owner decisions 2026-10-01 and
+    obtained (the detection zones are traced from the TU maps; used by owner decision 2026-10-07; the campus grounds
+    are OSM, ODbL); the Goslar car parks: open reuse licence of the city's service not verified; the Braunlage car
+    parks: the terms of reuse of the town's tourism coordinates not verified. The file is committed by owner decisions 2026-10-01 and
     2026-10-07. The QA table
     parking_zones_2026_qa.csv holds counts and areas derived from the OSM regulation responses and carries the
     OpenStreetMap attribution (ODbL 1.0) in its header, as does the QA table parking_zones_2026_supply_share_qa.csv for
@@ -531,19 +575,21 @@ limitations: >-
   Centre approximations (not sourced boundaries): gs_altstadt_zone1 (streets chosen to stand for zone 1, no official
   street list; the Glockengiesserstrasse car park is cut out of it since spec Amendment D3), wf_innenstadt and
   gf_innenstadt (hulls of centre streets); sz_lebenstedt, pe_innenstadt and he_innenstadt are hulls of named streets or
-  fee-tagged car parks, not ordinance extents. The six TU campus zones are, since spec Amendment D1 (2026-10-07), the
-  union per campus of the red camera detection zones of the GB3 campus maps, no centre approximation any more: the maps
-  call themselves 'approximate; schematic source; deviations of several tens of metres possible' (georeferencing
-  residuals 5.7-16.1 m, a consistency measure, not an accuracy), the zones are detection zones, not parking footprints
-  (they include buildings, which is the intended destination area), and the unions differ strongly from the v1 polygons:
-  the share of each new polygon inside its v1 polygon is 58.0 % for the Zentralcampus, 89.8 % Campus Nord, 95.6 %
-  Beethovenstrasse, 83.3 % Langer Kamp and 54.9 % Forschungsflughafen (which shrinks from 56,553 to 18,982 m2 and moves
-  by 133 m); the yellow parking areas of the same maps lie 99.5 % to 100 % inside the unions, which supports the
-  georeference of the detection zones relative to the parking areas, not their absolute position. The nested red
-  boundaries of Beethovenstrasse are unresolved: the outer one is used and the inner area (3,305 m2) belongs to the
-  zone. The International House zone of v1 is merged into Langer Kamp: 26.6 % of its v1 polygon (3,250 m2) lies outside
-  the Langer Kamp union and is no zone any more. Bevenroder Strasse (detection zone TU_KAM_05_01, 7,015 m2) is not
-  zoned, because no GB3 page states ticketing there. The five BgA lots (D1) are digitised from raster annex maps at the
+  fee-tagged car parks, not ordinance extents. The six TU campus zones are, since spec Amendment D1 and ruling R-4a-8 (2026-10-07), the union of two sources that
+  answer different questions: the campus grounds of the v1 release (the OSM amenity=university outlines, with the two
+  OSM TU car parks at the International House merged into Langer Kamp; the destination area, where the buildings and so
+  the activities are, an approximation of the campus and no surveyed boundary) and the red camera detection zones of the
+  GB3 campus maps (the paid car parks, where the tickets are checked; the layer states they are no parking footprints,
+  and they do not contain the buildings; the maps call themselves 'approximate; schematic source; deviations of several
+  tens of metres possible', georeferencing residuals 5.7-16.1 m, a consistency measure, not an accuracy). How much the
+  detection zones add to the grounds differs by campus: 54.9 % of the detection zones of the Forschungsflughafen lie
+  inside its grounds (the zone grows from 56,553 to 65,118 m2), 58.0 % at the Zentralcampus (97,180 to 136,610 m2), 86.0
+  % at Langer Kamp, 89.6 % at Campus Nord and 95.6 % at Beethovenstrasse; the yellow parking areas of the same maps lie
+  99.5 % to 100 % inside the detection zones, which supports their georeference relative to the parking areas, not its
+  absolute position. The nested red boundaries of Beethovenstrasse are unresolved: the outer one is used and the inner
+  area (3,305 m2) belongs to the zone. Volkmaroder Strasse has no campus grounds (no v1 zone, no OSM university outline
+  at the site), so its zone is the detection zone alone, a car park whose buildings are not in the zone. Bevenroder
+  Strasse (detection zone TU_KAM_05_01, 7,015 m2) is not zoned, because no GB3 page states ticketing there. The five BgA lots (D1) are digitised from raster annex maps at the
   stroke midpoint (estimated position uncertainty 5 m, the package's working estimate and no confidence bound); the 0.5
   m simplification takes 0.2 % to 1.8 % off their areas; the new An der Martinikirche polygon shares no area with the v1
   polygon (an OSM lot buffered 5 m, its centroid 53 m away, on the neighbouring kerbside stalls) and
@@ -626,7 +672,9 @@ limitations: >-
   circle of 50 m. The outlines of the Bad Harzburg lots are OSM ways (not surveyed, no official fee boundary) and those
   of the three Goslar lots the city's facility areas of 2018 (no confirmed current tariff extent; their membership of
   Goslar zone 2 is not asserted). The rates, windows and stays are stated in the tariff table (data record
-  parking_tariffs_2026): the Bad Harzburg rate is the ParkGO ceiling for every car park (ASSUMPTION D3-b), the Goslar
+  parking_tariffs_2026): the Bad Harzburg rate is the ParkGO ceiling for every car park (ASSUMPTION D3-b; a rule the package marks as not
+  preferred for current use, status prior_snapshot, which the OSM charge tags of four of the five car parks
+  corroborate), the Goslar
   billing unit the ParkGO half hour (ASSUMPTION D3-a), the fee windows of the Bad Harzburg and Braunlage sites are
   ASSUMPTION F1, and maximum stays (Bad Harzburg 6 h and 10 h, Seesen 6 h against 10 h in conflicting sources) are not
   modelled (ASSUMPTION M2). No zone overlaps another zone of the step, so the nearer-source split of overlapping 50 m
@@ -639,21 +687,22 @@ limitations: >-
   Schoeppenstedt have no zone (see the coverage register).
 notes: >-
   Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data, 2026-10-07,
-  after spec Amendment D): 37 zones, 37 tariff rows, 131 register rows (123 municipalities); zone_type campus 6,
-  resident_zone 1, street_paid 30; geometry_source campus_detection_zones 6 (0.443 km2, 5.9 % of the zone area),
-  centre_approximation 3 (1.432 km2, 18.9 %), municipal_street_sections_buffered 3 (1.565 km2, 20.7 %), ordinance_map 7
-  (2.480 km2, 32.8 %), osm_fee_tags 2 (0.670 km2, 8.8 %), single_site_buffered 11 (0.245 km2, 3.2 %), street_list_buffer
-  5 (0.733 km2, 9.7 %), osm_fee_erosion 0; zone QA 8 municipalities, q4_decision rejected 8, applied none;
-  fee_window_source assumption 15, municipal_page 15, ordinance 7; resident permits (rule R2): valid on 26 of 37 zones,
-  not valid on the five BgA rows and the six campus zones (default); per municipality 03101000 Braunschweig 17 zones
-  3.082 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 3 zones 1.565 km2, 03151009 Gifhorn 1 zone 0.284
-  km2, 03153002 Bad Harzburg 5 zones 0.140 km2, 03153012 Seesen 1 zone 0.017 km2, 03153016 Braunlage 2 zones 0.016 km2,
-  03153017 Goslar 4 zones 0.707 km2, 03154028 Helmstedt 1 zone 0.326 km2, 03157006 Peine 1 zone 0.343 km2, 03158037
+  after spec Amendment D and fix round 1 of its task): 37 zones, 37 tariff rows, 131 register rows (123 municipalities);
+  zone_type campus 6, resident_zone 1, street_paid 30; geometry_source campus_detection_zones 1 (0.005 km2, 0.1 % of the
+  zone area), campus_outline_and_detection_zones 5 (0.590 km2, 7.6 %), centre_approximation 3 (1.432 km2, 18.6 %),
+  municipal_street_sections_buffered 3 (1.565 km2, 20.3 %), ordinance_map 7 (2.480 km2, 32.1 %), osm_fee_tags 2 (0.670
+  km2, 8.7 %), single_site_buffered 11 (0.245 km2, 3.2 %), street_list_buffer 5 (0.733 km2, 9.5 %), osm_fee_erosion 0;
+  zone QA 8 municipalities, q4_decision rejected 8, applied none; fee_window_source assumption 15, municipal_page 15,
+  ordinance 7; resident permits (rule R2): valid on 25 of 37 zones, not valid on the six stated rows (the five BgA rows
+  and the Goslar car park at the ZOB) and the six campus zones (default); per municipality 03101000 Braunschweig 17
+  zones 3.234 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 3 zones 1.565 km2, 03151009 Gifhorn 1 zone
+  0.284 km2, 03153002 Bad Harzburg 5 zones 0.140 km2, 03153012 Seesen 1 zone 0.017 km2, 03153016 Braunlage 2 zones 0.016
+  km2, 03153017 Goslar 4 zones 0.707 km2, 03154028 Helmstedt 1 zone 0.326 km2, 03157006 Peine 1 zone 0.343 km2, 03158037
   Wolfenbuettel 1 zone 0.513 km2; register status zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8;
   supply-share QA (unchanged since owner decision 2, Task 1c) 8 towns at the share 0.300, H1 recall 0.883332, precision
   0.855943, passed true; H2 pooled recall 0.861247, pooled precision 0.314482, smallest town recall 0.592318, passed
   false; decision applied 0, gate_failed 4, no_rule_polygon 0, qa_only 4; paid-share release 62,659 classified cells;
-  municipal QA 69 rows (Braunschweig 39, Wolfsburg 12, Goslar 8, Bad Harzburg 6, Seesen 1, Braunlage 2, the
+  municipal QA 74 rows (Braunschweig 44, Wolfsburg 12, Goslar 8, Bad Harzburg 6, Seesen 1, Braunlage 2, the
   unincorporated area Harz 1), zones from municipal sources 22 (bh_*, br_*, bs_zone_ia, bs_zone_ib, gs_parkplatz_*,
   se_am_markt, the six tu_* zones, wob_tarifzone_1 to 3); OK. The summary before spec Amendment D (2026-10-01, after
   spec Amendment C) is the one that follows.
@@ -693,10 +742,11 @@ notes: >-
   Goslar 245, Peine 131, Wolfenbuettel 125, Helmstedt 115, Salzgitter 98, Gifhorn 25, BgA car parks and
   International House 0.
   Expected output change of spec Amendment D (its one statement): with parking_zones_enabled, the production default,
-  ZONES runs place and price car stays on the new polygons. The TU zones change most: the six campus polygons are now
-  the unions of the camera detection zones, so the member day ticket (3.50 EUR, assumption C1) and the guest ticket fall
-  on other areas than before: the Forschungsflughafen zone shrinks from 56,553 to 18,982 m2 (a stay in the former
-  polygon outside the new one is free by Z1), and Volkmaroder Strasse is a new campus zone (ticketed from 2026-10-01).
+  ZONES runs place and price car stays on the new polygons. The TU zones grow: each campus zone is now its v1 campus
+  grounds united with its detection zones, so the member day ticket (3.50 EUR, assumption C1) and the guest ticket fall
+  on the v1 area plus the paid car parks outside it (Zentralcampus 97,180 to 136,610 m2, Forschungsflughafen 56,553 to
+  65,118 m2, Langer Kamp 84,470 to 100,002 m2 including the International House lots, Beethovenstrasse by 4 %, Campus
+  Nord by 7 %), and Volkmaroder Strasse is a new campus zone (its detection zone, 5,331 m2, ticketed from 2026-10-01).
   The BgA lots become smaller (415 to 2,628 m2 instead of 1,447 to 2,766 m2) and bs_bga_willy_brandt_platz is new at
   1.80 EUR/h; the cut-outs of bs_zone_ia follow the package lots. New priced areas around 11 single paid sites: three
   Goslar car parks at 1.00 EUR/h, five Bad Harzburg car parks at 1.00 EUR/h, Seesen Am Markt at 0.60 EUR/h, Braunlage
@@ -708,16 +758,18 @@ notes: >-
   production attach_parking_zones, point in polygon, on the polygons of both releases) over the plans of the local 1 %
   scenario eqasim-data/output_bs/braunschweig_1pct_population.xml.gz (2026-04-29; 11,472 persons, 47,362 main activities
   of the selected plans without the router's interaction activities, 17,301 of them reached by a trip with a car leg)
-  puts 2,058 activities (4.3 %) into a zone with the release of 2026-10-07 against 2,111 (4.5 %) with that of
-  2026-10-01; car arrivals in a zone 676 against 693. Per zone (activities / car arrivals, before -> after): bs_zone_ia
-  386 / 148 and gs_altstadt_zone1 245 / 78 unchanged; TU Zentralcampus 81 / 20 -> 44 / 11 (39 activities leave, 2
-  enter), Campus Nord 37 / 14 -> 35 / 13, Beethovenstrasse 49 / 7 -> 53 / 11, Langer Kamp 66 / 25 -> 69 / 26,
-  Forschungsflughafen 41 / 18 -> 4 / 1 (37 activities, 17 of them car arrivals, leave the zone), together the TU zones
-  274 -> 205 activities, Volkmaroder Strasse 0 and the removed International House 0; the five BgA car parks 0 before
-  and after (the removed Kannengiesserstrasse 0); new single-site zones: Goslar Baeringerstrasse 11 / 3 (10 home, 1
-  work), Glockengiesserstrasse 1 / 0 (leisure), Klubgartenstrasse/ZOB 0, Seesen Am Markt 4 / 2 (all home), the five Bad
-  Harzburg zones and the two Braunlage zones 0. Of the 16 activities in the new single-site zones 14 are home activities
-  (free by H1). The counts are exposure indicators of an older model state on a 1 % sample, not forecasts: a zone holds
-  a handful of activities at most, and whether a car arrival is charged depends on the stay and the fee window. The
-  Forschungsflughafen and Zentralcampus shifts rest on georeferenced schematic maps (limitations above).
+  puts 2,138 activities (4.5 %) into a zone with the release of 2026-10-07 against 2,111 (4.5 %) with that of
+  2026-10-01; car arrivals in a zone 704 against 693; no activity leaves a zone, 27 enter one. Per zone (activities /
+  car arrivals, before -> after): bs_zone_ia 386 / 148 and gs_altstadt_zone1 245 / 78 unchanged; TU Zentralcampus 81 /
+  20 -> 83 / 21 (education 59, work 17, leisure 4, other 2, home 1), Campus Nord 37 / 14 -> 37 / 14, Beethovenstrasse 49
+  / 7 -> 53 / 11, Langer Kamp 66 / 25 -> 71 / 26, Forschungsflughafen 41 / 18 -> 41 / 18 (education 34, work 7),
+  together the TU zones 274 -> 285 activities, Volkmaroder Strasse 0 and the removed International House 0; the five BgA
+  car parks 0 before and after (the removed Kannengiesserstrasse 0); new single-site zones: Goslar Baeringerstrasse 11 /
+  3 (10 home, 1 work), Glockengiesserstrasse 1 / 0 (leisure), Klubgartenstrasse/ZOB 0, Seesen Am Markt 4 / 2 (all home),
+  the five Bad Harzburg zones and the two Braunlage zones 0. Of the 16 activities in the new single-site zones 14 are
+  home activities (free by H1). The counts are exposure indicators of an older model state on a 1 % sample, not
+  forecasts: a zone holds a handful of activities at most, and whether a car arrival is charged depends on the stay and
+  the fee window. Before the owner's ruling R-4a-8 the TU zones were the detection zones alone (205 activities;
+  Forschungsflughafen 4 / 1, Zentralcampus 44 / 11): the activities lie at the buildings of the campus grounds, not in
+  the paid car parks.
   Tariffs: parking_tariffs_2026; coverage: parking_coverage_register_2026.

@@ -105,11 +105,11 @@ limitations: >-
   where no source states that permits are valid; it does not read the zone's resident exemption. By area, the districts
   overlay the fee zones heavily (they are independent layers): Braunschweig A 0.104 km2 of zone Ia and 0.508 km2 of Ib, B
   0.933 km2 of Ia and 0.295 km2 of Ib, C 0.464 km2 of Ia and 0.161 km2 of Ib; of the other zones four of the five BgA car
-  parks (about 400 to 2,600 m2 each, inside A, B and C; Willy-Brandt-Platz lies in no district) and about 1,650 m2 of the
-  TU Zentralcampus (472 m2 in A and 1,177 m2 in C), where R2 is off by R2-a; the Goslar districts cover 0.396 km2 of the
-  0.636 km2 of the old-town zone gs_altstadt_zone1 (with the zone release of 2026-10-07, spec Amendment D; the release
-  of 2026-10-01 gave B 0.929 km2 of Ia, C 0.463 km2 of Ia, BgA car parks of about 1,400 to 2,800 m2, about 2,600 m2 of
-  the Zentralcampus and 0.402 of 0.642 km2 in Goslar).
+  parks (about 400 to 2,600 m2 each, inside A, B and C; Willy-Brandt-Platz lies in no district) and about 3,700 m2 of the
+  TU Zentralcampus (2,555 m2 in A and 1,177 m2 in C), where R2 is off by R2-a; the Goslar districts cover 0.396 km2 of the
+  0.636 km2 of the old-town zone gs_altstadt_zone1 (with the zone release of 2026-10-07, spec Amendment D with its fix
+  round 1; the release of 2026-10-01 gave B 0.929 km2 of Ia, C 0.463 km2 of Ia, BgA car parks of about 1,400 to 2,800
+  m2, about 2,600 m2 of the Zentralcampus, all in A, and 0.402 of 0.642 km2 in Goslar).
 notes: >-
   Content on 2026-10-01: 10 districts, Braunschweig 3 (A 649,733 m2, B 1,252,014 m2, C 658,503 m2 in the package; the
   file differs by the WGS84 rounding) and Goslar 7 (A, B, C, F, G, H, J; C includes the Oberstadt feature, H is 6.32 m2

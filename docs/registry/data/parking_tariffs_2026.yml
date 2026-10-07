@@ -66,11 +66,21 @@ acquisition:
     gs_parkplatz_glockengiesserstrasse (the service page meingoslar.de/service of 2026-10-07: 1 EUR per hour,
     Baeringerstrasse Mo-Sa 10-18, Klubgartenstrasse/ZOB Mo-Fr 10-16, Glockengiesserstrasse Mo-Fr 10-18, the Saturday
     parts not modelled, D1; the billing unit is ASSUMPTION D3-a, the started half hour of the ParkGO of Goslar of
-    2025-06-24 sec. 1(2), because the page states none); the five Bad Harzburg car parks bh_sole_therme, bh_kurpark,
+    2025-06-24 sec. 1(2), because the page states none; the permit flag follows ASSUMPTION R2-a: the service lists the
+    Baeringerstrasse lot under 'Bewohnerparken Bereich A, C' and the Glockengiesserstrasse lot under 'Bereich H', so
+    resident permits are valid there, the empty default of the zone type, and the notes of both rows name R2-a;
+    for the ZOB car park the service states no resident regime, so resident_permits_valid is false as for the BgA
+    car parks; the ZOB lies in no resident district, so R2 cannot act there today); the five Bad Harzburg car parks bh_sole_therme, bh_kurpark,
     bh_grossparkplatz, bh_burgberg and bh_berliner_platz (ParkGO of the Stadt Bad Harzburg, Ratsbeschluss 2020-12-08, in
     force 2021-01-01, sec. 2(1): at most 0.50 EUR per started half hour; the tourism page names the car parks as paid
-    and publishes no price, so the ceiling is taken as the rate at every car park, ASSUMPTION D3-b; no current source
-    gives the fee window, so ASSUMPTION F1 8-18 h; the maximum stays of 6 h and 10 h are not modelled, ASSUMPTION M2);
+    and publishes no price, so the ceiling is taken as the rate at every car park, ASSUMPTION D3-b (the package marks
+    this rule, bh_ordinary_ceiling, a legal ceiling with the scope 'signed fee-paying areas within the ParkGO, no
+    municipality-wide flat tariff', as not preferred for current use, status prior_snapshot, and ruling R-4a-3 uses it
+    as the rate; the OSM tag charge='0.50 EUR/30 min' at four of the five car parks, all but Berliner Platz,
+    corroborates it, crowd-sourced and no official source; the notes of the rows say so); no current source gives the
+    fee window, so ASSUMPTION F1 8-18 h; the maximum stays of 6 h and 10 h are not modelled, ASSUMPTION M2; the free
+    condition 'stay > 15 min' that the OSM tag of the Sole-Therme states is not modelled either, and its note says
+    so);
     se_am_markt (ParkGO of the Stadt Seesen, Ratsbeschluss 2017-03-22: 0.10 EUR per started 10 min, Mo-Fr 8-18 h, the
     Saturday part not modelled; the maximum stay is 6 h in the ordinance and 10 h on the information page, so none is
     modelled, ASSUMPTION M2); and the two Braunlage car parks br_hexenritt (the published total-stay bands of the
@@ -80,7 +90,12 @@ acquisition:
     2018-01-10), both with the fee window of ASSUMPTION F1, 9-18 h, because no charging hours are published. The values
     are those of the package's tariff_rules.json (derived by regional_zones.tariff_evidence) and are checked against the
     rows by assemble_parking_zones.py --regional-tariffs: every number of a row is its rule's value or an assumption
-    named in the row, and the check fails on any other. Removed: bs_bga_kannengiesserstrasse (a pocket park since April
+    named in the row, and the check fails on any other (the notes must name C-a, D3-a at the Goslar lots, D3-b at the
+    Bad Harzburg car parks, M2 where a source states a maximum stay (Bad Harzburg, Seesen), R2-a at the Goslar lots
+    and the flagged rows and F1 for an assumed window; the notes of the Bad Harzburg rows must say that the package
+    marks the ceiling rule not preferred and quote the OSM charge tag or say that there is none; the permit flag
+    must be false on exactly the six stated rows; the committed-data test pins the same). Removed:
+    bs_bga_kannengiesserstrasse (a pocket park since April
     2026) and tu_international_house (merged into tu_campus_ost_langer_kamp, whose row is unchanged). Workplace class
     (SrV 2023): the rows of the municipalities of Landkreis Goslar take the county key 03153; bs_bga_willy_brandt_platz
     and tu_campus_volkmaroder_strasse take bs_outer by the location of the site relative to the SrV Oberbezirke (the
@@ -162,7 +177,9 @@ limitations: >-
   of Braunschweig and the Goslar permits are not part of this table: they are the second layer
   parking_resident_districts_2026 (rule R2), which frees a stay only where the table's column resident_permits_valid
   holds (ASSUMPTION R2-a, ruling R-T1e-a): by default on street and resident zones, never on a campus, and not at the five
-  BgA car parks bs_bga_*, which state false because no source says that resident permits are valid there. The
+  BgA car parks bs_bga_* and the Goslar car park gs_parkplatz_klubgartenstrasse_zob, which state false because no
+  source says that resident permits are valid there (the code register of the model JSON, ASSUMPTIONS_REGISTER, names
+  the BgA car parks as its example of such rows; the flag is per row and the ZOB row has no effect today). The
   exemption of zone-132 permit holders on the Parkscheininseln and the night-time residents-only rule of the
   Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
   the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
@@ -183,6 +200,7 @@ notes: >-
   resident_permits_valid (spec Amendment C3, ruling R-T1e-a; true or false, empty = the default of the zone type: valid
   on street_paid and resident_zone rows, not valid on a campus, where true is rejected) is empty on every row but the
   five bs_bga_* rows, which state false with the note "separately operated car park (BgA); no source states that
-  resident permits are valid; ASSUMPTION R2-a". It switches off the district rule R2 only, never resident_exempt.
-  scripts/validate_parking_zones.py prints where R2 is off (11 of the 37 zones on 2026-10-07: the five BgA rows and
+  resident permits are valid; ASSUMPTION R2-a", and gs_parkplatz_klubgartenstrasse_zob (no resident regime stated;
+  ASSUMPTION R2-a in its note). It switches off the district rule R2 only, never resident_exempt.
+  scripts/validate_parking_zones.py prints where R2 is off (12 of the 37 zones on 2026-10-07: the six stated rows and
   the six campus zones).
