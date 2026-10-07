@@ -30,9 +30,15 @@ the test-set marker. Since spec Amendment D the zone polygons of the regional ev
 as well: ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` polygons must be ``campus`` zones,
 ``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m``
 (``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table.
-Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the register
-status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the districts per municipality; exits
-1 on any violation, 0 otherwise.
+The garage dataset (``--garages-path``, ``parking_garages_2026.geojson``, and its QA table ``--garages-qa-path``,
+``parking_garages_2026_qa.csv``; spec Amendment E1) is optional like the release of the classified cells, because no
+stage reads it yet: when the dataset exists, ``braunschweig.parking.garages.load_garages`` and ``validate_garages`` check
+it and ``braunschweig.parking.garage_qa.validate_garage_qa`` checks the QA table against the dataset and the tariff table
+(``commuter_day_eur`` against the used monthly products); a dataset without its QA table, or the QA table without the
+dataset, fails. Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the
+schema-2 products of the tariff table, the register status counts, the QA decisions, the H1 and H2 results, the municipal
+QA rows, the districts per municipality and the garage dataset (listed, priced, not priced by reason, the assumption
+rates, the monthly products); exits 1 on any violation, 0 otherwise.
 
 Usage::
 
@@ -48,6 +54,8 @@ from pathlib import Path
 
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import garage_qa  # noqa: E402
+from braunschweig.parking import garages as pg  # noqa: E402
 from braunschweig.parking import municipal_zone_qa  # noqa: E402
 from braunschweig.parking import supply_share  # noqa: E402
 from braunschweig.parking import supply_share_qa  # noqa: E402
@@ -63,6 +71,8 @@ DEFAULT_SUPPLY_QA_PATH = "braunschweig/parking/parking_zones_2026_supply_share_q
 DEFAULT_PAID_SHARE_PATH = "braunschweig/parking/parking_paid_share_2026.csv.gz"
 DEFAULT_MUNICIPAL_QA_PATH = "braunschweig/parking/parking_zones_2026_municipal_qa.csv"
 DEFAULT_DISTRICTS_PATH = "braunschweig/parking/parking_resident_districts_2026.geojson"
+DEFAULT_GARAGES_PATH = "braunschweig/parking/parking_garages_2026.geojson"
+DEFAULT_GARAGES_QA_PATH = "braunschweig/parking/parking_garages_2026_qa.csv"
 #: The spatial units of data.spatial.municipalities for the eight ZGB counties (113 Gemeinden and 10 gemeindefreie
 #: Gebiete, VG250 as cached by the pipeline); the register must carry exactly one status row for each.
 DEFAULT_EXPECTED_MUNICIPALITY_COUNT = 123
@@ -100,6 +110,42 @@ def _print_resident_permits(tariffs) -> None:
     print(f"[parking-validate] resident permits (rule R2, ASSUMPTION R2-a): valid on {len(zones) - len(not_valid)} of "
           f"{len(zones)} zones; not valid on {len(stated)} stated rows ({', '.join(stated) or 'none'}) and on {campus} "
           "campus zones (default)")
+
+
+def _counts_text(counts) -> str:
+    """``key value, key value`` of a dict in its order, or ``none`` for an empty one."""
+    return ", ".join(f"{key} {value}" for key, value in counts.items()) or "none"
+
+
+def _print_schema_2_products(tariffs) -> None:
+    """One line on the schema-2 products of the tariff table (spec Amendments A4, D2, D4 and E8): the rows with a commuter
+    product, and the rows with a zone-level garage product or a search time, which the release leaves empty, so that a
+    table without them is visibly priced by the street alone."""
+    commuter = sorted(tariffs.loc[tariffs["commuter_day_eur"].notna(), "zone_id"])
+    garage_rows = int(tariffs[list(pz.GARAGE_CORE_COLUMNS)].notna().all(axis=1).sum())
+    search_rows = int(tariffs["search_time_min"].notna().sum())
+    print(f"[parking-validate] tariff products (schema 2): commuter product on {len(commuter)} of {len(tariffs)} rows ("
+          f"{', '.join(commuter) or 'none'}); zone-level garage product on {garage_rows} rows (spec Amendment E8: garages "
+          f"enter through the dataset); search time on {search_rows} rows (decision D4)")
+
+
+def _print_garages(garages, garage_qa_table, garages_file) -> None:
+    """One line on the garage dataset: the garages listed, priced and not priced by reason, per municipality, the rates of
+    the assumptions P3 to P5 among the priced garages and the monthly products (fallback transparency: the share of the
+    garages that rest on an assumption is on the record)."""
+    if garages is None:
+        print(f"[parking-validate] garages: no dataset at {garages_file} (no stage reads it yet)")
+        return
+    coverage = pg.coverage(garages)
+    qa = garage_qa.qa_coverage(garage_qa_table)
+    towns = {ags: f"{values['listed']} listed {values['priced']} priced"
+             for ags, values in sorted(coverage["by_municipality"].items())}
+    print(f"[parking-validate] garages: {coverage['listed']} listed, {coverage['priced']} priced, {coverage['not_priced']} not "
+          f"priced ({_counts_text(coverage['not_priced_by_reason'])}); per municipality {_counts_text(towns)}; priced garages "
+          f"resting on an assumption: {_counts_text(coverage['priced_by_assumption'])} of {coverage['priced']}; monthly "
+          f"product on {coverage['with_monthly_product']} garages; QA: monthly products used {qa['monthly_used']}, recorded "
+          f"and not used {qa['monthly_not_used']} ({_counts_text(qa['monthly_not_used_by_reason'])}), candidates that are no "
+          f"garage {qa['candidates']} ({_counts_text(qa['candidates_by_reason'])})")
 
 
 #: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).
@@ -224,7 +270,8 @@ def _print_geometry_source_mix(zones) -> None:
 def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path: str,
              expected_municipality_count: int, qa_path: str = DEFAULT_QA_PATH,
              supply_qa_path: str = DEFAULT_SUPPLY_QA_PATH, paid_share_path: str = DEFAULT_PAID_SHARE_PATH,
-             municipal_qa_path: str = DEFAULT_MUNICIPAL_QA_PATH, districts_path: str = DEFAULT_DISTRICTS_PATH) -> None:
+             municipal_qa_path: str = DEFAULT_MUNICIPAL_QA_PATH, districts_path: str = DEFAULT_DISTRICTS_PATH,
+             garages_path: str = DEFAULT_GARAGES_PATH, garages_qa_path: str = DEFAULT_GARAGES_QA_PATH) -> None:
     """Run every check; raise ``ValueError`` on the first failing group and print the coverage summary."""
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
@@ -279,6 +326,19 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     if district_markers:
         raise ValueError(f"resident districts carry the test-set marker {pz.FIXTURE_MARKER!r}: {district_markers}")
     pz.validate_district_municipalities(districts, register)
+    # The garage dataset (spec Amendment E1) is optional: no stage reads it yet. When it exists it must load, validate and
+    # agree with its QA table and with the tariff table; one file without the other is a broken release.
+    garages_file, garages_qa_file = data_path / garages_path, data_path / garages_qa_path
+    garages = garage_qa_table = None
+    if garages_file.is_file():
+        garages = pg.load_garages(garages_file)
+        pg.validate_garages(garages)
+        if not garages_qa_file.is_file():
+            raise ValueError(f"garage dataset {garages_file} but no garage QA table at {garages_qa_file}")
+        garage_qa_table = garage_qa.load_garage_qa(garages_qa_file)
+        garage_qa.validate_garage_qa(garage_qa_table, garages, tariffs)
+    elif garages_qa_file.is_file():
+        raise ValueError(f"garage QA table {garages_qa_file} but no garage dataset at {garages_file}")
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6
@@ -289,6 +349,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     _print_geometry_source_mix(zones)
     _print_counts("fee_window_source", tariffs["fee_window_source"].value_counts().sort_index().to_dict())
     _print_resident_permits(tariffs)
+    _print_schema_2_products(tariffs)
     names = status_rows.set_index("ags")["name"]
     per_municipality = merged.groupby("municipality_ags").agg(zones=("zone_id", "count"), area_km2=("area_km2", "sum"))
     for ags, row in per_municipality.iterrows():
@@ -328,6 +389,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         print(f"[parking-validate] municipal QA: {len(municipal_qa)} rows (" + ", ".join(
             f"{ags} {count}" for ags, count in rows.items()) + "); zones from municipal sources: "
               + (", ".join(municipal) or "none"))
+    _print_garages(garages, garage_qa_table, garages_file)
 
 
 def main(argv=None) -> int:
@@ -346,12 +408,16 @@ def main(argv=None) -> int:
                         help="municipal QA table (spec Amendment C), relative to --data-path")
     parser.add_argument("--districts-path", default=DEFAULT_DISTRICTS_PATH,
                         help="resident parking districts (spec Amendment C3), relative to --data-path")
+    parser.add_argument("--garages-path", default=DEFAULT_GARAGES_PATH,
+                        help="garage dataset (spec Amendment E1; optional), relative to --data-path")
+    parser.add_argument("--garages-qa-path", default=DEFAULT_GARAGES_QA_PATH,
+                        help="QA table of the garage dataset (needed when the dataset exists), relative to --data-path")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     try:
         validate(Path(args.data_path), args.zones_path, args.tariffs_path, args.register_path,
                  args.expected_municipality_count, args.qa_path, args.supply_qa_path, args.paid_share_path,
-                 args.municipal_qa_path, args.districts_path)
+                 args.municipal_qa_path, args.districts_path, args.garages_path, args.garages_qa_path)
     except (ValueError, FileNotFoundError) as error:
         print(f"[parking-validate] FAILED: {error}")
         return 1

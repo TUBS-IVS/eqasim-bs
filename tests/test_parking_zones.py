@@ -768,6 +768,19 @@ def test_committed_parking_data_is_valid(capsys):
     assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 25 of 37 zones; not valid on 6 stated rows "
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
             "bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob) and on 6 campus zones (default)") in out
+    # Task 4b (spec Amendments D1, D2, D4, E8): 13 assumption windows remain, the commuter product is on zone Ib and the six
+    # campus zones, no zone row carries a garage product or a search time
+    assert "fee_window_source: assumption 13, municipal_page 17, ordinance 7" in out
+    assert ("tariff products (schema 2): commuter product on 7 of 37 rows (bs_zone_ib, tu_campus_nord, "
+            "tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, "
+            "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
+            "through the dataset); search time on 0 rows (decision D4)") in out
+    # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
+    assert ("garages: 32 listed, 20 priced, 12 not priced (banded_tariff 7, conflicting_sources 1, free_period 2, "
+            "incomplete_tariff 1, no_published_tariff 1); per municipality 03101000 10 listed 8 priced") in out
+    assert "priced garages resting on an assumption: P3 7, P4 9, P5 11 of 20; monthly product on 8 garages" in out
+    assert "QA: monthly products used 10, recorded and not used 10 (capacity_limited_permits 1" in out
+    assert "candidates that are no garage 38 (bga_zone 2" in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -1259,5 +1272,81 @@ def test_validator_checks_the_resident_districts_against_themselves_and_the_regi
         districts = gpd.read_file(districts_file)
         districts["geometry_source"] = pz.FIXTURE_MARKER
         districts.to_file(districts_file, driver="GeoJSON")
+    assert main(["--data-path", str(tmp_path)]) == 1
+    assert message in capsys.readouterr().out
+
+
+def _copy_committed_release(tmp_path, leave_out=()) -> Path:
+    """The committed parking files as a data path of a temporary release (``<data path>/braunschweig/parking``), without
+    the files named in ``leave_out``; returns the parking folder."""
+    import shutil
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in COMMITTED_PARKING_FILES:
+        if name not in leave_out:
+            shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    return target
+
+
+def test_validator_counts_the_zone_level_garage_and_search_time_rows_of_a_tariff_table(capsys):
+    # the release leaves them empty (spec Amendment E8, decision D4); a table that fills them shows up in the summary line
+    from scripts.validate_parking_zones import _print_schema_2_products
+
+    nan = float("nan")
+    tariffs = pd.DataFrame({
+        "zone_id": ["a", "b", "c"], "commuter_day_eur": [nan, 1.0, nan],
+        "garage_hourly_rate_eur": [nan, 1.2, 1.2], "garage_billing_unit_min": [pd.NA, 60, 60],
+        "garage_fee_start_h": [nan, 0.0, 0.0], "garage_fee_end_h": [nan, 24.0, 24.0],
+        "search_time_min": pd.array([pd.NA, pd.NA, 5], dtype="Int64")})
+    _print_schema_2_products(tariffs)
+    assert capsys.readouterr().out.strip() == (
+        "[parking-validate] tariff products (schema 2): commuter product on 1 of 3 rows (b); zone-level garage product on 2 "
+        "rows (spec Amendment E8: garages enter through the dataset); search time on 1 rows (decision D4)")
+
+
+def test_validator_accepts_a_release_without_the_garage_dataset_and_says_so(tmp_path, capsys):
+    # spec Amendment E1: no stage reads the dataset yet, so a release without it validates, visibly
+    from scripts.validate_parking_zones import main
+
+    _copy_committed_release(tmp_path, leave_out=("parking_garages_2026.geojson", "parking_garages_2026_qa.csv"))
+    assert main(["--data-path", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "[parking-validate] garages: no dataset at" in out and "(no stage reads it yet)" in out
+    assert "[parking-validate] OK" in out
+
+
+@pytest.mark.parametrize("change, message", [
+    ("dataset_without_qa", "but no garage QA table at"),
+    ("qa_without_dataset", "but no garage dataset at"),
+    ("invalid_garage", "garage 'bs_eiermarkt': garage_hourly_rate_eur: must be a positive amount"),
+    ("monthly_contradicts_qa",
+     "garage 'wob_rathaus': the used monthly product is '50.00' EUR but the dataset's monthly_eur is 51.0"),
+    ("tariff_contradicts_qa",
+     "zone 'bs_zone_ib': commuter_day_eur is 3.75 but the used product 'monthly_bs_zone_ib_30_day' gives"),
+])
+def test_validator_checks_the_garage_dataset_against_itself_its_qa_table_and_the_tariffs(tmp_path, capsys, change, message):
+    from scripts.validate_parking_zones import main
+
+    target = _copy_committed_release(tmp_path)
+    garages_file, qa_file = target / "parking_garages_2026.geojson", target / "parking_garages_2026_qa.csv"
+    if change == "dataset_without_qa":
+        qa_file.unlink()
+    elif change == "qa_without_dataset":
+        garages_file.unlink()
+    elif change in ("invalid_garage", "monthly_contradicts_qa"):
+        garage_id, column, value = (("bs_eiermarkt", "garage_hourly_rate_eur", -1.2) if change == "invalid_garage"
+                                    else ("wob_rathaus", "monthly_eur", 51.0))
+        document = json.loads(garages_file.read_text(encoding="utf-8"))
+        features = [feature for feature in document["features"] if feature["properties"]["garage_id"] == garage_id]
+        assert len(features) == 1
+        features[0]["properties"][column] = value
+        garages_file.write_text(json.dumps(document), encoding="utf-8")
+    else:
+        # the commuter product of zone Ib no longer follows from the used 30-day ticket (79.00 EUR over 21 working days)
+        tariffs_file = target / "parking_tariffs_2026.csv"
+        text = tariffs_file.read_text(encoding="utf-8")
+        assert text.count('",3.76,') == 1
+        tariffs_file.write_text(text.replace('",3.76,', '",3.75,'), encoding="utf-8")
     assert main(["--data-path", str(tmp_path)]) == 1
     assert message in capsys.readouterr().out

@@ -760,7 +760,8 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
 def test_every_committed_garage_cites_the_package_and_a_source_and_every_assumption_is_named_in_its_notes():
     garages = _committed_garages()
     assert set(garages["package_sha256"]) == {REGIONAL_PACKAGE_SHA256}
-    assert garages["source_url"].str.startswith("https://").all() and garages["geometry_source_url"].str.startswith("https://").all()
+    for column in ("source_url", "geometry_source_url"):
+        assert garages[column].str.startswith("https://").all(), column
     assert garages["source_date"].str.fullmatch(r"\d{4}-\d{2}-\d{2}").all() and garages["geometry_method"].notna().all()
     for garage_id, row in garages.iterrows():
         for assumption in (_plain(row["assumptions"]) or "").split(";"):
