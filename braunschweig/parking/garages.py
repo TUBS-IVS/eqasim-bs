@@ -93,9 +93,10 @@ TEXT_COLUMNS = tuple(column for column in DATASET_COLUMNS
 REQUIRED_TEXT_COLUMNS = ("garage_id", "package_facility_id", "name", "municipality", "municipality_ags", "source_url",
                          "source_date", "geometry_method", "geometry_source_url", "package_sha256", "notes")
 LIST_SEPARATOR = ";"
-#: A row cites the regional evidence package and, where the supplement package of 2026-10-07 (spec E12) touches the row, that
-#: package too: its ``package_sha256`` holds one or two lower-case SHA-256 values separated by ``LIST_SEPARATOR``.
-MAXIMUM_PACKAGE_HASHES = 2
+#: A row cites the regional evidence package and, where the supplement package (spec E12) or the follow-up package (spec E13) of
+#: 2026-10-07 touches the row, that package too: its ``package_sha256`` holds one to three lower-case SHA-256 values separated by
+#: ``LIST_SEPARATOR`` (the regional package first).
+MAXIMUM_PACKAGE_HASHES = 3
 
 #: Why a garage is listed and not priced (``not_priced_reason``): the column holds the code, the details of the garage
 #: (what is published, which rule ids) are in its notes.
@@ -112,7 +113,8 @@ NOT_PRICED_REASONS = {
 #: the pricing semantics of the tiered form, which the pricing code of the garage options implements (ruling R-4b-10b,
 #: amended by ruling R-4b-12 for the clock window of the first period); P7 names the caps the single day-cap column cannot
 #: hold; P8 is the pricing semantics of the banded form (ruling R-4b-11); P10 reads a published free period at the start of a
-#: stay as a grace period (spec E12, owner decision 2026-10-07; there is no P9). There is no reason code for a duration
+#: stay as a grace period (spec E12, owner decision 2026-10-07; there is no P9); P11 prices a garage from the best available
+#: secondary evidence where no operator tariff is published (spec E13, ruling R-4b2-8). There is no reason code for a duration
 #: schedule that the columns cannot express any more: every schedule of the sources is a band text.
 ASSUMPTIONS = {
     "P3": "a night tariff that is no per-unit rate of the preferred rules (a flat night fee, an unresolved night tier) is "
@@ -136,6 +138,10 @@ ASSUMPTIONS = {
     "P10": "a published free period at the start of a stay is a grace period: a stay not longer than it costs 0; a longer "
            "stay is billed from the arrival as if there were no free period (the free minutes are not deducted); encoded as "
            "a free first duration band (ASSUMPTION P8) followed by the total of the first billing unit",
+    "P11": "where no current operator tariff is published, the garage is priced from the best available secondary evidence "
+           "for the same facility (a directory or tourism table, newest and most detailed first), checked for consistency "
+           "against the garages of the same town; the source, its lack of a date and the operator's missing confirmation "
+           "are named in the notes",
 }
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a
@@ -526,8 +532,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     Dataset: not empty, EPSG:25832, exactly the columns ``DATASET_COLUMNS``, unique lower-case ASCII ``garage_id``.
     Position: a non-empty point with finite coordinates inside ``ZGB_EXTENT_25832``. Identity and provenance: the required
     text columns set, an 8-digit AGS of the ZGB counties, ``source_url`` and ``geometry_source_url`` http(s) URLs, an ISO
-    ``source_date``, one or two distinct hexadecimal SHA-256 values of the packages (the regional package, and the supplement
-    package where it touches the row, spec E12), ``notes`` set. Tariff (spec Amendment A6, rulings R-4b-10b and
+    ``source_date``, one to three distinct hexadecimal SHA-256 values of the packages (the regional package, and the supplement
+    and follow-up packages where they touch the row, specs E12 and E13), ``notes`` set. Tariff (spec Amendment A6, rulings R-4b-10b and
     R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee start, fee end;
     set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the four core
     columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the
@@ -595,8 +601,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             if len(set(hashes)) != len(hashes):
                 problem("package_sha256", f"{row['package_sha256']!r} lists a package SHA-256 twice")
             if len(hashes) > MAXIMUM_PACKAGE_HASHES:
-                problem("package_sha256", f"{row['package_sha256']!r}: at most two package SHA-256 values (the regional "
-                                          "package and the supplement package), separated by ';'")
+                problem("package_sha256", f"{row['package_sha256']!r}: at most three package SHA-256 values (the regional "
+                                          "package and the two supplement packages), separated by ';'")
         capacity = row["capacity_reported"]
         if zones._is_set(capacity):
             if capacity <= 0:

@@ -81,6 +81,7 @@ def _banded(**changes) -> dict:
 
 GRACE_BANDS = "0-15 free; 15-60 total 1.50; 60- 1.50/60"
 SUPPLEMENT_SHA = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa"
+FOLLOWUP_SHA = "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8"
 
 
 def _graced(**changes) -> dict:
@@ -145,7 +146,7 @@ def test_the_dataset_layout_is_the_documented_one():
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11"}
     assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
                                            "in force at the unit's start")
     # P6 as amended (ruling R-4b-12): the first period belongs to its clock window, the tiers run on from its end
@@ -160,6 +161,10 @@ def test_the_dataset_layout_is_the_documented_one():
     for phrase in ("grace period", "a stay not longer than it costs 0", "billed from the arrival",
                    "the free minutes are not deducted"):
         assert phrase in pg.ASSUMPTIONS["P10"], phrase
+    # P11 (spec E13, ruling R-4b2-8): the best available secondary evidence where no operator tariff is published
+    for phrase in ("best available secondary evidence", "no current operator tariff", "checked for consistency",
+                   "lack of a date", "operator's missing confirmation"):
+        assert phrase in pg.ASSUMPTIONS["P11"], phrase
     assert 0.5 < pg.UNION_WARNING_SHARE < 1.0  # a named share of the priced garages, above which the loader warns
 
 
@@ -690,15 +695,16 @@ def test_the_validator_rejects_assumption_p10_without_a_free_first_band(changes,
 # --------------------------------------------------------------------------- the packages of a row (spec E12)
 
 
-def test_a_row_may_cite_the_regional_package_and_the_supplement_package_by_their_two_sha256_values():
+def test_a_row_may_cite_the_regional_package_and_the_two_supplement_packages_by_their_sha256_values():
     pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA}")))
+    pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA}")))
     pg.validate_garages(_frame(_row(package_sha256=SHA)))  # a row that the supplement does not touch cites one package
 
 
 @pytest.mark.parametrize("value, message", [
     (f"{SHA};E789", "not a lower-case hexadecimal SHA-256"),
     (f"{SHA};{SHA}", "lists a package SHA-256 twice"),
-    (f"{SHA};{SUPPLEMENT_SHA};{SHA[::-1]}", "at most two package SHA-256 values"),
+    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{SHA[::-1]}", "at most three package SHA-256 values"),
     (f"{SHA}, {SUPPLEMENT_SHA}", "not a lower-case hexadecimal SHA-256"),
 ])
 def test_a_malformed_duplicated_or_too_long_package_sha256_list_is_rejected(value, message):
