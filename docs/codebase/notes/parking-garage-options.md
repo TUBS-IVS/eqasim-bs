@@ -22,8 +22,7 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
 | Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P12) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_max_distance_m`) |
-| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E32 and O01..O69,
-`scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
+| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E32, O01..O69), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
 | Calibration of lambda | `scripts/parking/calibrate_garage_decay.py` |
 
 ## Rules maintainers must keep
