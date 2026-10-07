@@ -457,18 +457,24 @@ def test_single_site_zone_provenance_is_validated(tmp_path, buffer_m, other_buff
             pz.load_zone_polygons(path)
 
 
-def test_campus_detection_zones_are_an_allowed_geometry_source_without_a_provenance_column(tmp_path):
-    # spec Amendment D1: a TU campus zone is the union of the camera detection zones of its campus map; the method is
-    # a digitisation, so it takes no rule parameter (the method, the uncertainty and the feature ids are in the note)
-    assert pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE == "campus_detection_zones"
-    assert {"campus_detection_zones", "single_site_buffered"} <= set(pz.GEOMETRY_SOURCES)
-    assert pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE not in pz.RULE_PROVENANCE_COLUMNS
+@pytest.mark.parametrize("source_name, source", [
+    ("CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE", "campus_detection_zones"),
+    ("CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE", "campus_outline_and_detection_zones"),
+], ids=["detection_zones_only", "outline_and_detection_zones"])
+def test_campus_sources_are_allowed_geometry_sources_without_a_provenance_column(tmp_path, source_name, source):
+    # spec Amendment D1 and ruling R-4a-8: a TU campus zone is the union of the camera detection zones of its campus map
+    # (the paid car parks) and, where a v1 outline of the campus grounds exists, of that outline (the destination area);
+    # the method is a digitisation, so it takes no rule parameter (the method, the uncertainty and the feature ids are in
+    # the note)
+    assert getattr(pz, source_name) == source
+    assert {source, "single_site_buffered"} <= set(pz.GEOMETRY_SOURCES)
+    assert getattr(pz, source_name) not in pz.RULE_PROVENANCE_COLUMNS
     assert pz.RULE_PROVENANCE_COLUMNS[pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE] == ("site_buffer_m",)
     zones = gpd.read_file(ZONE_FIXTURE)
-    zones.loc[zones["zone_id"] == "fx_campus", "geometry_source"] = pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+    zones.loc[zones["zone_id"] == "fx_campus", "geometry_source"] = source
     path = tmp_path / "zones.geojson"
     zones.to_file(path, driver="GeoJSON")
-    assert pz.load_zone_polygons(path).set_index("zone_id").loc["fx_campus", "geometry_source"] == "campus_detection_zones"
+    assert pz.load_zone_polygons(path).set_index("zone_id").loc["fx_campus", "geometry_source"] == source
     zones.loc[zones["zone_id"] == "fx_campus", "geometry_source"] = "tu_detection_polygons"  # not a known source
     zones.to_file(path, driver="GeoJSON")
     with pytest.raises(ValueError, match="geometry_source not one of"):
@@ -477,15 +483,19 @@ def test_campus_detection_zones_are_an_allowed_geometry_source_without_a_provena
 
 @pytest.mark.parametrize("zone_id, source, message", [
     ("fx_campus", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, None),
+    ("fx_campus", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE, None),
     ("fx_sz", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, None),
     ("fx_sz", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, "campus_detection_zones .* zone_type campus .*fx_sz"),
+    ("fx_sz", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
+     "campus_outline_and_detection_zones .* zone_type campus .*fx_sz"),
     ("fx_campus", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_campus"),
     ("fx_res_a", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_res_a"),
-], ids=["campus_union_on_a_campus", "site_buffer_on_a_street_zone", "campus_union_on_a_street_zone",
-        "site_buffer_on_a_campus", "site_buffer_on_a_resident_zone"])
+], ids=["campus_union_on_a_campus", "campus_outline_union_on_a_campus", "site_buffer_on_a_street_zone",
+        "campus_union_on_a_street_zone", "campus_outline_union_on_a_street_zone", "site_buffer_on_a_campus",
+        "site_buffer_on_a_resident_zone"])
 def test_the_new_geometry_sources_fit_the_zone_types_they_describe(zone_id, source, message):
-    # A campus detection zone is a campus; a single paid site (car park or street section) is a street_paid zone: the
-    # tariff row and the polygon must agree on what the zone is.
+    # A campus zone (detection zones, or campus grounds united with them) is a campus; a single paid site (car park or
+    # street section) is a street_paid zone: the tariff row and the polygon must agree on what the zone is.
     zones = pz.load_zone_polygons(ZONE_FIXTURE)
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     zones.loc[zones["zone_id"] == zone_id, "geometry_source"] = source
@@ -746,14 +756,17 @@ def test_committed_parking_data_is_valid(capsys):
     # and the International House); the register has 11 zoned municipalities and the audited Schoeningen
     assert "[parking-validate] 37 zones, 37 tariff rows, 131 register rows (123 municipalities)" in out
     assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8" in out
-    assert "campus_detection_zones 6" in out and "single_site_buffered 11" in out
+    # ruling R-4a-8: the five campuses with a v1 outline are the union of the outline and the detection zones, Volkmaroder
+    # Strasse (no outline exists) its detection zone alone
+    assert "campus_outline_and_detection_zones 5" in out and "campus_detection_zones 1," in out
+    assert "single_site_buffered 11" in out
     # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
     assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
-    # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows state it, the six campus zones take the
-    # default, the other 26 of the 37 zones honour resident permits
-    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 26 of 37 zones; not valid on 5 stated rows "
+    # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows and the Goslar car park at the ZOB state
+    # it, the six campus zones take the default, the other 25 of the 37 zones honour resident permits
+    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 25 of 37 zones; not valid on 6 stated rows "
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
-            "bs_bga_willy_brandt_platz) and on 6 campus zones (default)") in out
+            "bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob) and on 6 campus zones (default)") in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -800,7 +813,11 @@ REGIONAL_PROVENANCE = (
     "Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22); open reuse licence not verified; used by owner "
     "decision 2026-10-07",
     "(c) OpenStreetMap contributors, ODbL 1.0: the outlines of the Bad Harzburg car parks and the street Am Markt in Seesen",
-    "Stadt Braunlage, official tourism coordinates of the car parks (source points, not outlines)")
+    "Stadt Braunlage, official tourism coordinates of the car parks (source points, not outlines)",
+    # ruling R-4a-8: the campus grounds of the TU zones are OSM outlines (ODbL), united with the detection zones of the TU maps
+    "the geometry_source campus_outline_and_detection_zones TU campus zones: the campus grounds are (c) OpenStreetMap "
+    "contributors, ODbL 1.0 (the OSM university outlines and the OSM car parks at the International House of the v1 release)",
+    "the geometry_source campus_detection_zones zone tu_campus_volkmaroder_strasse: TU Braunschweig, GB3 Parkbereiche campus maps")
 
 
 def test_committed_zones_carry_the_licence_notice():
@@ -852,6 +869,17 @@ def test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_residen
     assert not zones.loc[PARKSCHEININSELN[2], "geometry"].buffer(1.0).intersects(resident)
 
 
+def test_committed_texts_do_not_claim_that_the_detection_zones_include_the_buildings():
+    # ruling R-4a-8 (task 4a review): the camera detection zones mark the paid car parks; the buildings, where the
+    # activities lie, are in the campus grounds that the TU zones keep from the v1 release
+    paths = [COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv",
+             COMMITTED_PARKING_DIR / "parking_zones_2026_municipal_qa.csv",
+             REPO_ROOT / "docs" / "registry" / "data" / "parking_zones_2026.yml",
+             REPO_ROOT / "scripts" / "curation" / "parking_zones_2026" / "regional_zones.py"]
+    for path in paths:
+        assert "include buildings" not in path.read_text(encoding="utf-8"), path.name
+
+
 def test_committed_zones_carry_real_provenance_only():
     # valid as stored: the first Task 1d release held a wob_tarifzone_2 that the loader repaired at every load
     zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0)
@@ -899,14 +927,22 @@ def test_committed_bga_car_parks_state_that_resident_permits_are_not_valid():
     assert tariffs.loc[bga, "notes"].str.contains(
         "separately operated car park (BgA); no source states that resident permits are valid; ASSUMPTION R2-a",
         regex=False).all()
-    assert tariffs.drop(index=bga)["resident_permits_valid"].isna().all()
+    # the only other stated flag is the Goslar car park at the ZOB (fix round 1 of task 4a, M-1): no resident regime is
+    # stated for it, so it is treated like a BgA lot
+    assert tariffs.loc["gs_parkplatz_klubgartenstrasse_zob", "resident_permits_valid"] == False  # noqa: E712
+    assert tariffs.drop(index=bga + ["gs_parkplatz_klubgartenstrasse_zob"])["resident_permits_valid"].isna().all()
 
 
-#: The six TU campus zones of spec Amendment D1 (2026-10-07): the union of the camera detection zones per campus. The
-#: International House of v1 is part of the Langer Kamp union; Bevenroder Strasse is not zoned (no GB3 page states
-#: ticketing).
-TU_CAMPUS_ZONES = ("tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
-                   "tu_campus_volkmaroder_strasse", "tu_forschungsflughafen", "tu_zentralcampus")
+#: The six TU campus zones of spec Amendment D1 and ruling R-4a-8 (owner decision of 2026-10-07): the union of the
+#: campus grounds of the v1 release (the OSM university outline, the destination area; the International House of v1 is
+#: part of the Langer Kamp grounds) and the camera detection zones (the paid car parks) per campus; Volkmaroder Strasse
+#: has no v1 outline and is its detection zone alone. Bevenroder Strasse is not zoned (no GB3 page states ticketing).
+#: Areas in m2 as released (a regression guard: the zone is the union, not the detection zones alone, whose areas are
+#: 93,940, 84,541, 151,992, 88,002, 18,982 and 5,331 m2).
+TU_CAMPUS_AREAS_M2 = {"tu_campus_nord": 129_466.0, "tu_campus_ost_beethovenstrasse": 158_571.0,
+                      "tu_campus_ost_langer_kamp": 100_002.0, "tu_campus_volkmaroder_strasse": 5_331.0,
+                      "tu_forschungsflughafen": 65_118.0, "tu_zentralcampus": 136_610.0}
+TU_CAMPUS_ZONES = tuple(sorted(TU_CAMPUS_AREAS_M2))
 
 #: SHA-256 of the owner's data package of 2026-10-07 that the new rows and polygons cite.
 REGIONAL_PACKAGE_SHA256 = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
@@ -938,12 +974,24 @@ def test_committed_braunschweig_zones_follow_spec_amendment_d1():
     bga = [zone_id for zone_id in zones.index if zone_id.startswith("bs_bga_")]
     assert len(bga) == 5 and "bs_bga_willy_brandt_platz" in bga
     assert (zones.loc[bga, "geometry_source"] == "ordinance_map").all()
-    # one campus zone per ticketed campus, a polygon that is the union of its detection zones
+    # one campus zone per ticketed campus, the union of its campus grounds and its detection zones (ruling R-4a-8)
     campus = sorted(tariffs.index[tariffs["zone_type"] == "campus"])
     assert campus == list(TU_CAMPUS_ZONES)
-    assert (zones.loc[campus, "geometry_source"] == pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE).all()
+    with_outline = [zone_id for zone_id in campus if zone_id != "tu_campus_volkmaroder_strasse"]
+    assert (zones.loc[with_outline, "geometry_source"] == pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE).all()
+    assert zones.loc["tu_campus_volkmaroder_strasse", "geometry_source"] == pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+    for zone_id, area in TU_CAMPUS_AREAS_M2.items():
+        assert zones.loc[zone_id, "geometry"].area == pytest.approx(area, rel=2e-3), zone_id
     assert zones.loc[campus, "digitising_note"].str.contains("explicit consent for reuse of TU graphics not obtained",
                                                               regex=False).all()
+    # the outline is the destination area (the buildings), the detection zones the paid car parks; no note claims that
+    # the detection zones include the buildings, and the outline's v1 provenance (OSM ways) is kept
+    notes = zones.loc[campus, "digitising_note"]
+    assert not notes.str.contains("include buildings", regex=False).any()
+    assert notes.str.contains("paid car parks", regex=False).all()
+    assert notes.loc[with_outline].str.contains("destination area", regex=False).all()
+    assert notes.loc[with_outline].str.contains("OSM amenity=university", regex=False).all()
+    assert "no campus grounds" in notes.loc["tu_campus_volkmaroder_strasse"]
     # no campus is cut out of the street zones by accident: the precedence of ruling R-4a-1 leaves no overlap
     street = [zone_id for zone_id in zones.index if zone_id.startswith("bs_") and zone_id not in campus]
     for campus_id in campus:
@@ -973,7 +1021,24 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
         # no source states a maximum stay that this table can model as a rule, a resident permit validity, a garage or
         # commuter price, or a search time: the cells stay empty (never invented, Task 4b owns the later columns)
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["long_stay_product_eur"]), zone_id
-        assert pd.isna(row["resident_permits_valid"]) and pd.isna(row["search_time_min"]), zone_id
+        assert pd.isna(row["search_time_min"]), zone_id
+        # ASSUMPTION R2-a: the permit flag is false where no resident regime is stated (the ZOB), else the empty default
+        if zone_id == "gs_parkplatz_klubgartenstrasse_zob":
+            assert row["resident_permits_valid"] == False, zone_id  # noqa: E712
+        else:
+            assert pd.isna(row["resident_permits_valid"]), zone_id
+        # the notes name every assumption the row rests on (fix round 1, M-1, M-3)
+        notes = row["notes"]
+        if zone_id.startswith("gs_"):
+            assert "ASSUMPTION D3-a" in notes and "ASSUMPTION R2-a" in notes, zone_id
+        if zone_id.startswith("bh_"):
+            assert "ASSUMPTION D3-b" in notes and "ASSUMPTION M2" in notes, zone_id
+            # M-4: the package marks the ceiling rule not preferred (prior_snapshot); the OSM charge tags corroborate it
+            assert "bh_ordinary_ceiling" in notes and "not preferred for current use" in notes and "prior_snapshot" in notes
+            assert ("charge='0.50 EUR/30 min'" in notes) == (zone_id != "bh_berliner_platz"), zone_id
+            assert ("no charge tag" in notes) == (zone_id == "bh_berliner_platz"), zone_id
+        if zone_id == "se_am_markt":
+            assert "ASSUMPTION M2" in notes, zone_id
         # every row cites the package it was built from and states the buffer assumption and its own site kind
         assert "Single paid site of spec Amendment D3" in row["notes"] and "ASSUMPTION C-a" in row["notes"], zone_id
         assert f"Regional_Parkdaten_Belege_2026-10-07.zip (SHA-256 {REGIONAL_PACKAGE_SHA256}" in row["notes"], zone_id
@@ -985,6 +1050,8 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
     # an F1 window is labelled as an assumption in the row, a sourced one is not
     for zone_id, spec in D3_SITES.items():
         assert ("ASSUMPTION F1" in tariffs.loc[zone_id, "notes"]) == (spec[5] == "assumption"), zone_id
+    # M-8: the OSM free condition of the Sole-Therme (a stay of up to 15 min) is not modelled, and the note says so
+    assert "free condition for a stay of up to 15 min is not modelled" in tariffs.loc["bh_sole_therme", "notes"]
 
 
 def test_committed_register_records_the_regional_audit_of_spec_amendment_d3():
@@ -1002,6 +1069,10 @@ def test_committed_register_records_the_regional_audit_of_spec_amendment_d3():
         assert "Audit result of 2026-10-07" in notes[ags], ags
     schoeningen = register[register["ags"] == "03154019"].iloc[0]
     assert schoeningen["source"].startswith("https://www.schoeningen.de/")
+    # M-7: the unincorporated area Harz holds 85 % of the Bad Harzburg car park Grossparkplatz (a declared exception of the
+    # municipality check) and says so, without becoming a zoned municipality
+    assert status["03153504"] == "not_audited" and "bh_grossparkplatz" in notes["03153504"]
+    assert "declared exception" in notes["03153504"]
 
 
 def test_validator_rejects_a_single_site_zone_with_a_campus_geometry_source(tmp_path, capsys):
