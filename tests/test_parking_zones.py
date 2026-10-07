@@ -741,13 +741,19 @@ def test_committed_parking_data_is_valid(capsys):
     assert "[parking-validate] OK" in out
     assert "register status" in out
     assert "geometry_source mix" in out
+    # spec Amendment D (2026-10-07): 37 zones (26 before: 11 single paid sites of Bad Harzburg, Seesen, Braunlage and
+    # Goslar came in, Braunschweig stays at 17 with Willy-Brandt-Platz and Volkmaroder Strasse for Kannengiesserstrasse
+    # and the International House); the register has 11 zoned municipalities and the audited Schoeningen
+    assert "[parking-validate] 37 zones, 37 tariff rows, 131 register rows (123 municipalities)" in out
+    assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8" in out
+    assert "campus_detection_zones 6" in out and "single_site_buffered 11" in out
     # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
     assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
     # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows state it, the six campus zones take the
-    # default, the other 15 of the 26 zones honour resident permits
-    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 15 of 26 zones; not valid on 5 stated rows "
-            "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_kannengiesserstrasse, bs_bga_markthalle, "
-            "bs_bga_suedstrasse) and on 6 campus zones (default)") in out
+    # default, the other 26 of the 37 zones honour resident permits
+    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 26 of 37 zones; not valid on 5 stated rows "
+            "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
+            "bs_bga_willy_brandt_platz) and on 6 campus zones (default)") in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -784,6 +790,17 @@ BRAUNSCHWEIG_PROVENANCE = ("Stadt Braunschweig, published fee zone map (2025-11-
                            "dl-de/by-2-0")
 WOLFSBURG_PROVENANCE = ("Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024); open reuse licence not verified; "
                         "used by owner decision 2026-10-01")
+#: The source wordings of spec Amendment D (owner data package of 2026-10-07): BgA annex maps, TU campus maps, the Goslar
+#: ArcGIS service, the OSM outlines of Bad Harzburg and Seesen, the Braunlage tourism coordinates.
+REGIONAL_PROVENANCE = (
+    "Stadt Braunschweig, Amtsblatt 2022 Nr. 16 (annex maps of the BgA Entgeltordnung B 660); digitised (owner-supplied "
+    "package 2026-10-07); working accuracy 5 m; base map Open GeoData dl-de/by-2-0",
+    "TU Braunschweig, GB3 Parkbereiche campus maps (retrieved 2026-10-02; (c) d&d design & distribution); explicit "
+    "consent for reuse of TU graphics not obtained; used by owner decision 2026-10-07",
+    "Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22); open reuse licence not verified; used by owner "
+    "decision 2026-10-07",
+    "(c) OpenStreetMap contributors, ODbL 1.0: the outlines of the Bad Harzburg car parks and the street Am Markt in Seesen",
+    "Stadt Braunlage, official tourism coordinates of the car parks (source points, not outlines)")
 
 
 def test_committed_zones_carry_the_licence_notice():
@@ -793,6 +810,12 @@ def test_committed_zones_carry_the_licence_notice():
     # spec Amendment C: the licence is stated per source; no claim that every polygon derives from OpenStreetMap
     assert "every polygon is derived from OpenStreetMap" not in document["license"]
     assert BRAUNSCHWEIG_PROVENANCE in document["license"] and WOLFSBURG_PROVENANCE in document["license"]
+    # spec Amendment D: every source of the regional package is named with its terms, the TU consent gap and the
+    # unverified Goslar licence included; the municipal and the regional wording join at a sentence boundary
+    for wording in REGIONAL_PROVENANCE:
+        assert wording in document["license"], wording
+    assert ".." not in document["license"] and ".." not in document["attribution"]
+    assert "explicit consent for reuse of TU graphics not obtained" in document["attribution"]
 
 
 def test_committed_parking_files_are_ascii():
@@ -862,18 +885,144 @@ def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
 
 def test_committed_bga_car_parks_state_that_resident_permits_are_not_valid():
     # Ruling R-T1e-a, ASSUMPTION R2-a: no source states that resident permits are valid at the five separately
-    # operated BgA car parks of Braunschweig, so rule R2 must not free a stay there; every other row leaves the column
-    # empty, i.e. takes the default of its zone type (valid on streets, not on a campus).
+    # operated BgA car parks of Braunschweig (spec Amendment D1: Kannengiesserstrasse is gone, Willy-Brandt-Platz is
+    # new), so rule R2 must not free a stay there; every other row leaves the column empty, i.e. takes the default of
+    # its zone type (valid on streets, not on a campus).
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
     bga = sorted(zone_id for zone_id in tariffs.index if zone_id.startswith("bs_bga_"))
-    assert bga == ["bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_kannengiesserstrasse",
-                   "bs_bga_markthalle", "bs_bga_suedstrasse"]
+    assert bga == ["bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_markthalle",
+                   "bs_bga_suedstrasse", "bs_bga_willy_brandt_platz"]
     assert (tariffs.loc[bga, "zone_type"] == "street_paid").all()
     assert (tariffs.loc[bga, "resident_permits_valid"] == False).all()  # noqa: E712
     assert tariffs.loc[bga, "notes"].str.contains(
         "separately operated car park (BgA); no source states that resident permits are valid; ASSUMPTION R2-a",
         regex=False).all()
     assert tariffs.drop(index=bga)["resident_permits_valid"].isna().all()
+
+
+#: The six TU campus zones of spec Amendment D1 (2026-10-07): the union of the camera detection zones per campus. The
+#: International House of v1 is part of the Langer Kamp union; Bevenroder Strasse is not zoned (no GB3 page states
+#: ticketing).
+TU_CAMPUS_ZONES = ("tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
+                   "tu_campus_volkmaroder_strasse", "tu_forschungsflughafen", "tu_zentralcampus")
+
+#: SHA-256 of the owner's data package of 2026-10-07 that the new rows and polygons cite.
+REGIONAL_PACKAGE_SHA256 = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
+
+#: The eleven single paid sites of spec Amendment D3 (2026-10-07): municipality, hourly rate in EUR, billing unit in
+#: minutes, fee window start and end in hours, fee window source. The 50 m area of each site is ASSUMPTION C-a.
+D3_SITES = {
+    "gs_parkplatz_baeringerstrasse": ("03153017", 1.0, 30, 10.0, 18.0, "municipal_page"),
+    "gs_parkplatz_klubgartenstrasse_zob": ("03153017", 1.0, 30, 10.0, 16.0, "municipal_page"),
+    "gs_parkplatz_glockengiesserstrasse": ("03153017", 1.0, 30, 10.0, 18.0, "municipal_page"),
+    "bh_sole_therme": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "bh_kurpark": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "bh_grossparkplatz": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "bh_burgberg": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "bh_berliner_platz": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "se_am_markt": ("03153012", 0.6, 10, 8.0, 18.0, "ordinance"),
+    "br_hexenritt": ("03153016", 1.25, 120, 9.0, 18.0, "assumption"),
+    "br_wurmberg": ("03153016", 1.0, 30, 9.0, 18.0, "assumption"),
+}
+
+
+def test_committed_braunschweig_zones_follow_spec_amendment_d1():
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0).set_index("zone_id")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    # Kannengiesserstrasse is a pocket park since April 2026; the International House is part of the Langer Kamp union
+    for removed in ("bs_bga_kannengiesserstrasse", "tu_international_house"):
+        assert removed not in zones.index and removed not in tariffs.index
+    # the BgA lots come from the annex maps of the Amtsblatt, the new Willy-Brandt-Platz lot included
+    bga = [zone_id for zone_id in zones.index if zone_id.startswith("bs_bga_")]
+    assert len(bga) == 5 and "bs_bga_willy_brandt_platz" in bga
+    assert (zones.loc[bga, "geometry_source"] == "ordinance_map").all()
+    # one campus zone per ticketed campus, a polygon that is the union of its detection zones
+    campus = sorted(tariffs.index[tariffs["zone_type"] == "campus"])
+    assert campus == list(TU_CAMPUS_ZONES)
+    assert (zones.loc[campus, "geometry_source"] == pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE).all()
+    assert zones.loc[campus, "digitising_note"].str.contains("explicit consent for reuse of TU graphics not obtained",
+                                                              regex=False).all()
+    # no campus is cut out of the street zones by accident: the precedence of ruling R-4a-1 leaves no overlap
+    street = [zone_id for zone_id in zones.index if zone_id.startswith("bs_") and zone_id not in campus]
+    for campus_id in campus:
+        for street_id in street:
+            overlap = zones.loc[campus_id, "geometry"].intersection(zones.loc[street_id, "geometry"]).area
+            assert overlap <= pz.OVERLAP_TOLERANCE_M2, f"{campus_id} overlaps {street_id} by {overlap:.1f} m2"
+    # Volkmaroder Strasse: the TU's GB3 page states the ticketing from 2026-10-01, the campus lies in the outer ring
+    assert tariffs.loc["tu_campus_volkmaroder_strasse", "valid_from"] == "2026-10-01"
+    assert tariffs.loc["tu_campus_volkmaroder_strasse", "workplace_class"] == "bs_outer"
+    # the Willy-Brandt-Platz lot lies in the outer ring of the SrV workplace classes (ASSUMPTION, location based)
+    assert tariffs.loc["bs_bga_willy_brandt_platz", "workplace_class"] == "bs_outer"
+    assert "ASSUMPTION" in tariffs.loc["bs_bga_willy_brandt_platz", "notes"]
+
+
+def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0).set_index("zone_id")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    single = zones[zones["geometry_source"] == pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE]
+    assert sorted(single.index) == sorted(D3_SITES)
+    assert (single["site_buffer_m"] == 50.0).all()  # ASSUMPTION C-a, the same distance as the Wolfsburg sections
+    for zone_id, (ags, rate, unit, start, end, window_source) in D3_SITES.items():
+        row = tariffs.loc[zone_id]
+        assert (row["municipality_ags"], row["zone_type"], row["workplace_class"]) == (ags, "street_paid", "03153"), zone_id
+        assert (row["hourly_rate_eur"], row["billing_unit_min"]) == (rate, unit), zone_id
+        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (start, end, window_source), zone_id
+        assert row["resident_exempt"] == False, zone_id  # noqa: E712
+        # no source states a maximum stay that this table can model as a rule, a resident permit validity, a garage or
+        # commuter price, or a search time: the cells stay empty (never invented, Task 4b owns the later columns)
+        assert pd.isna(row["max_stay_min"]) and pd.isna(row["long_stay_product_eur"]), zone_id
+        assert pd.isna(row["resident_permits_valid"]) and pd.isna(row["search_time_min"]), zone_id
+        # every row cites the package it was built from and states the buffer assumption and its own site kind
+        assert "Single paid site of spec Amendment D3" in row["notes"] and "ASSUMPTION C-a" in row["notes"], zone_id
+        assert f"Regional_Parkdaten_Belege_2026-10-07.zip (SHA-256 {REGIONAL_PACKAGE_SHA256}" in row["notes"], zone_id
+    # the published total-stay bands of Hexenritt (free up to 30 min, 2.50 EUR up to 2 h, then 1.25 EUR per 2 h, 10 EUR
+    # a day) are encoded exactly, no other single-band approximation
+    hexenritt = tariffs.loc["br_hexenritt"]
+    assert (hexenritt["free_if_stay_at_most_min"], hexenritt["first_period_min"], hexenritt["first_period_eur"],
+            hexenritt["daily_cap_eur"]) == (30, 120, 2.5, 10.0)
+    # an F1 window is labelled as an assumption in the row, a sourced one is not
+    for zone_id, spec in D3_SITES.items():
+        assert ("ASSUMPTION F1" in tariffs.loc[zone_id, "notes"]) == (spec[5] == "assumption"), zone_id
+
+
+def test_committed_register_records_the_regional_audit_of_spec_amendment_d3():
+    register = pz.load_coverage_register(COMMITTED_PARKING_DIR / "parking_coverage_register_2026.csv")
+    register = register[register["status"] != "excluded"]  # the excluded areas share the AGS of a status row
+    status = dict(zip(register["ags"], register["status"]))
+    for ags in ("03101000", "03153002", "03153012", "03153016", "03153017"):  # Braunschweig, Bad Harzburg, Seesen, ...
+        assert status[ags] == "zoned", ags
+    assert status["03154019"] == "no_paid_parking_known"  # Schoeningen
+    # the audited towns without a zone stay not_audited: an audit that finds no confirmed paid site is no proof of free
+    # parking; the result is in the note
+    notes = dict(zip(register["ags"], register["note"]))
+    for ags in ("03153018", "03154013", "03151040", "03153019", "03158027"):
+        assert status[ags] == "not_audited", ags
+        assert "Audit result of 2026-10-07" in notes[ags], ags
+    schoeningen = register[register["ags"] == "03154019"].iloc[0]
+    assert schoeningen["source"].startswith("https://www.schoeningen.de/")
+
+
+def test_validator_rejects_a_single_site_zone_with_a_campus_geometry_source(tmp_path, capsys):
+    # The zone polygons and the tariff rows describe the same zone type (spec Amendment D, validator rule): a car park
+    # polygon labelled as a campus detection zone must not validate with a street tariff row.
+    import shutil
+
+    from scripts.validate_parking_zones import main
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in COMMITTED_PARKING_FILES:
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    path = target / "parking_zones_2026.geojson"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    relabelled = [feature["properties"] for feature in document["features"] if feature["properties"]["zone_id"] == "bh_kurpark"]
+    assert len(relabelled) == 1
+    relabelled[0]["geometry_source"] = pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+    relabelled[0].pop("site_buffer_m")  # a campus polygon carries no site buffer, so the zone type is what fails
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert main(["--data-path", str(tmp_path)]) == 1
+    assert ("geometry_source campus_detection_zones describes zone_type campus zones, but the tariff row of zone(s) "
+            "{'bh_kurpark': 'street_paid'} has another type") in capsys.readouterr().out
 
 
 def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys, monkeypatch):
