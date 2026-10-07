@@ -48,12 +48,31 @@ def test_a_proxy_mapping_must_be_a_mapping(value):
 
 
 @pytest.mark.parametrize("mapping", [{3103: "bs_zentrum"}, {"03103": 7}, {"03103": ""}, {" ": "bs_zentrum"},
-                                     {"03103": None}],
-                         ids=["int_key", "int_value", "blank_value", "blank_key", "none_value"])
+                                     {"03103": 1.5}],
+                         ids=["int_key", "int_value", "blank_value", "blank_key", "float_value"])
 def test_proxy_keys_and_values_must_be_class_names_as_text(mapping):
     # An unquoted 03103 in YAML is an integer, never the county key: the message says so.
     with pytest.raises(ValueError, match="parking_free_share_proxy_classes.*text"):
         options.require_proxy_classes(mapping)
+
+
+def test_a_none_value_is_the_explicit_no_proxy_marker_and_is_kept():
+    # R-4c-9: {"03103": null} survives the deep merge of a config overlay and means "own class share".
+    assert options.require_proxy_classes({"03103": None}) == {"03103": None}
+    assert options.require_proxy_classes({"03103": None, "03102": "bs_zentrum"}) == {
+        "03103": None, "03102": "bs_zentrum"}
+
+
+def test_a_none_marked_class_may_be_a_proxy_source_of_another_class():
+    # 03103 uses its own share; 03102 reads the class row of 03103: resolved once, no chain.
+    assert options.require_proxy_classes({"03103": None, "03102": "03103"}) == {"03103": None, "03102": "03103"}
+
+
+def test_a_none_marker_cannot_hide_a_blank_key_or_a_chain():
+    with pytest.raises(ValueError, match="text"):
+        options.require_proxy_classes({"": None})
+    with pytest.raises(ValueError, match="chain"):
+        options.require_proxy_classes({"03103": "bs_zentrum", "bs_zentrum": "03102", "03102": None})
 
 
 def test_a_self_mapping_is_rejected():
@@ -84,6 +103,12 @@ def test_proxy_keys_and_values_must_be_srv_class_rows(mapping, unknown):
     assert "parking_free_share_proxy_classes" in str(error.value)
 
 
+def test_the_table_check_covers_the_keys_of_none_entries_and_no_value_for_them():
+    options.require_proxy_classes_in_table({"03103": None}, CLASSES)
+    with pytest.raises(ValueError, match="03199.*class row"):
+        options.require_proxy_classes_in_table({"03199": None}, CLASSES)
+
+
 def test_a_mapping_inside_the_class_rows_passes_the_table_check():
     options.require_proxy_classes_in_table({"03103": "bs_zentrum"}, CLASSES)
     options.require_proxy_classes_in_table({}, CLASSES)
@@ -100,6 +125,48 @@ def test_the_campus_free_share_accepts_the_closed_unit_interval(value, expected)
 def test_the_campus_free_share_rejects_everything_else(value):
     with pytest.raises(ValueError, match="parking_campus_free_share.*\\[0, 1\\]"):
         options.require_campus_free_share(value)
+
+
+def _compose_with_overlay(tmp_path, overlay_mapping_yaml):
+    """The REAL composition (``braunschweig.config_compose.compose``) of configs/base_bs.yml and a minimal overlay."""
+    from pathlib import Path
+
+    from braunschweig.config_compose import compose
+
+    base = Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
+    overlay = tmp_path / "overlay.yml"
+    overlay.write_text("working_directory: eqasim-data/cache_test\nrun:\n  - synthesis.output\nconfig:\n"
+                       + overlay_mapping_yaml, encoding="utf-8")
+    return compose(str(base), str(overlay))["config"]
+
+
+def test_an_overlay_with_an_empty_mapping_does_not_remove_the_base_entry(tmp_path):
+    """Documents the merge semantics (deep_merge merges nested mappings recursively): an overlay {} leaves the
+    base proxy in place, which is why the no-proxy arm is written {"03103": null}."""
+    config = _compose_with_overlay(tmp_path, "  parking_free_share_proxy_classes: {}\n")
+    assert config[options.KEY_PROXY_CLASSES] == {"03103": "bs_zentrum"}
+
+
+def test_an_overlay_with_the_null_marker_survives_the_composition_and_the_draw_uses_the_class_share(tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    from braunschweig.parking import attach
+
+    config = _compose_with_overlay(tmp_path, '  parking_free_share_proxy_classes: {"03103": null}\n')
+    assert config[options.KEY_PROXY_CLASSES] == {"03103": None}
+    assert options.require_proxy_classes(config[options.KEY_PROXY_CLASSES]) == {"03103": None}
+    tariffs = pd.DataFrame({"zone_id": ["z_wob"], "zone_type": ["street_paid"], "workplace_class": ["03103"]})
+    shares = pd.DataFrame({"workplace_class": ["bs_zentrum", "03103", "total"], "level": ["class", "class", "total"],
+                           "share_free_total": [0.3, 0.9, 0.8]})
+    activities = pd.DataFrame({"person_id": np.repeat(np.arange(1, 1001), 2), "activity_index": [0, 1] * 1000,
+                               "purpose": ["home", "work"] * 1000, "parking_zone": [np.nan, "z_wob"] * 1000})
+    proxied = attach.draw_parking_free(activities, tariffs, shares, 1234, proxy_classes={"03103": "bs_zentrum"})
+    marked = attach.draw_parking_free(activities, tariffs, shares, 1234,
+                                      proxy_classes=config[options.KEY_PROXY_CLASSES])
+    own = attach.draw_parking_free(activities, tariffs, shares, 1234)
+    pd.testing.assert_frame_equal(marked, own)
+    assert marked["parking_free"].sum() > proxied["parking_free"].sum() + 400  # 0.9 versus 0.3 of 1000 persons
 
 
 def test_the_canonical_configuration_states_both_options_with_the_owner_values_and_validates_them():

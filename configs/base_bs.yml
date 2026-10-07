@@ -685,8 +685,10 @@ config:
   # the workplace class on the left, the SrV share of the class on the right. Wolfsburg (03103) takes the share of
   # Braunschweig Zentrum (bs_zentrum) instead of its own 0.9475, which was measured on in-commuters only and is
   # dominated by commuters to the VW plant, which has its own free parking and lies outside every paid zone. The
-  # zones keep their county workplace_class. Keys and values are quoted SrV class rows without chains; {} restores
-  # the class shares (the sensitivity arm).
+  # zones keep their county workplace_class. Keys and values are quoted SrV class rows without chains. The
+  # sensitivity arm that restores the class share is {"03103": null} in an overlay: overlays are deep-merged
+  # (braunschweig/config_compose.py), so an overlay {} would leave this entry unchanged; null is the explicit
+  # "no proxy" marker (the class uses its own SrV share) and survives the merge.
   parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
   # ASSUMPTION C2 (owner estimate, no source; spec Amendment D6): the share of the persons with a work or education
   # activity on a campus who find a free parking place (drawn once per person like the employer-free draw, never

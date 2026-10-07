@@ -455,7 +455,9 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
     ``workplace_class`` of the zone of the person's FIRST paid-zone eligible activity (by ``activity_index``), and
     ``p = clip(share + shift, 0, 1)``, where ``share`` is ``share_free_total`` of the SrV class row of
     ``workplace_shares`` (:func:`free_share_by_class`) -- or, for a class that ``proxy_classes`` maps, of the mapped
-    SrV class (ASSUMPTION A1-b; the zone keeps its county class, only the share is taken from the other row). The
+    SrV class (ASSUMPTION A1-b; the zone keeps its county class, only the share is taken from the other row); a null
+    value ``{"03103": None}`` is the explicit no-proxy marker, so the class uses its own share (the configuration
+    overlay arm, because an overlay is deep-merged and ``{}`` would not remove a base entry). The
     shift applies to the proxied share like to any other. Campus zones: ``p = campus_free_share`` (ASSUMPTION C2);
     neither the class share, the proxy nor the shift reaches it.
 
@@ -480,7 +482,8 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
     incomplete or duplicated key, a ``shift`` outside [-1, 1], an invalid ``proxy_classes`` mapping (see
     ``braunschweig.parking.free_draw_options``), a ``campus_free_share`` outside [0, 1], a zone id without a tariff
     row, a workplace class of a street_paid/resident_zone tariff zone without a class row and an invalid shares
-    table. Logs the mapping, per workplace class ``persons n, the share used and its source class, p_free,
+    table. Warns for a mapped class (non-null value) without any paid-zone work/education person. Logs the mapping, per
+    workplace class ``persons n, the share used and its source class, p_free,
     realised``, the campus persons with the campus share and the realised campus rate, and one summary line.
     """
     random_seed = _require_seed(random_seed)
@@ -499,14 +502,15 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
     _reject_unknown_zones(zone_ids, zone_types.index, "activities")
 
     # The share the draw uses per class and the class it was read from (the class itself unless it is mapped).
-    source_class = {workplace_class: proxy_classes.get(workplace_class, workplace_class)
+    source_class = {workplace_class: proxy_classes.get(workplace_class) or workplace_class
                     for workplace_class in free_shares.index}
     used_shares = pd.Series({workplace_class: float(free_shares[source]) for workplace_class, source
                              in source_class.items()}, name=FREE_SHARE_COLUMN)
     log.info("%s free-parking draw, share proxies (%s): %s; campus_free_share %.4f", _LOG_TAG,
              draw_options.KEY_PROXY_CLASSES,
-             ", ".join(f"{key} -> {value} {used_shares[key]:.4f}" for key, value in sorted(proxy_classes.items()))
-             or "none", campus_free_share)
+             ", ".join(f"{key} -> {value} {used_shares[key]:.4f}" if value is not None
+                       else f"{key}: own class share {used_shares[key]:.4f} (proxy disabled by config)"
+                       for key, value in sorted(proxy_classes.items())) or "none", campus_free_share)
 
     zone_type = zone_ids.map(zone_types)
     purpose_eligible = activities["purpose"].isin(ELIGIBLE_PURPOSES).to_numpy()
@@ -540,11 +544,20 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
     for workplace_class in sorted(person_class.unique()):
         members = person_class.index[person_class.to_numpy(dtype=object) == workplace_class]
         share = float(used_shares[workplace_class])
-        origin = (f"{workplace_class} -> {source_class[workplace_class]} {share:.4f} (proxy)"
-                  if source_class[workplace_class] != workplace_class else f"own class share {share:.4f}")
+        if source_class[workplace_class] != workplace_class:
+            origin = f"{workplace_class} -> {source_class[workplace_class]} {share:.4f} (proxy)"
+        elif workplace_class in proxy_classes:
+            origin = f"own class share {share:.4f} (proxy disabled by config)"
+        else:
+            origin = f"own class share {share:.4f}"
         log.info("%s free-parking draw, workplace class %s: persons %d, share used %s, p_free %.4f, realised %.4f",
                  _LOG_TAG, workplace_class, len(members), origin, min(max(share + shift, 0.0), 1.0),
                  float(person_free[members].mean()))
+    drawn_classes = set(person_class.unique())
+    for key, value in sorted(proxy_classes.items()):
+        if value is not None and key not in drawn_classes:
+            log.warning("%s proxy mapping %s -> %s changed no person (no paid-zone work/education activity of class "
+                        "%s)", _LOG_TAG, key, value, key)
     n_campus_persons, n_campus_free_persons = len(campus_persons), int(campus_person_free.sum())
     log.info("%s free-parking draw, campus persons %d: campus_free_share %.4f (ASSUMPTION C2; no shift), %d park free, "
              "realised %.4f", _LOG_TAG, n_campus_persons, campus_free_share, n_campus_free_persons,

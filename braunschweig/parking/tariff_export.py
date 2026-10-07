@@ -131,7 +131,7 @@ ASSUMPTIONS_REGISTER = (
                "and lies outside every paid zone, while the paid zones are the city centre with paid street parking "
                "like the Braunschweig centre; the zones keep their county workplace class",
                "Work/education in the paid zones of workplace class 03103",
-               "parking_free_share_proxy_classes (an empty mapping restores the class share)"),
+               "parking_free_share_proxy_classes (a null entry, {\"03103\": null}, restores the class share)"),
     Assumption("C1", "Members (work/education on campus) pay the day product, or the commuter product where the zone "
                "has a cheaper one (P2); other passes are not modelled", "TU zones",
                "set member_day_eur to 0 in an arm"),

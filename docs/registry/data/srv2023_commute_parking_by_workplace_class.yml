@@ -83,7 +83,8 @@ limitations: |
   while the paid zones are the city centre with paid street parking like the Braunschweig centre. The draw takes
   the share of the class bs_zentrum (Braunschweig Oberbezirk Zentrum, 0.7938, the only centre-specific SrV value)
   instead, through the configuration key parking_free_share_proxy_classes ({"03103": "bs_zentrum"} in
-  configs/base_bs.yml; the empty mapping restores the class share and is the sensitivity arm). The file itself is
+  configs/base_bs.yml; the entry {"03103": null} in a config overlay restores the class share and is the
+  sensitivity arm, an overlay {} would not, because overlays are deep-merged). The file itself is
   unchanged and its 03103 row stays what it is, an in-commuter measurement. Salzgitter (03102, 0.9870) and the
   Landkreis towns keep their own class shares. The 2023 survey also predates the TU ticketing of the Parkordnung
   2026, so it cannot supply the free share of the campus work/education persons (ASSUMPTION C2, the configuration key

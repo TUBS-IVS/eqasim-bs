@@ -575,8 +575,9 @@ def test_the_wrapper_defaults_without_the_two_options_pass_the_v1_draw_to_the_at
     assert draw_call["proxy_classes"] == {} and draw_call["campus_free_share"] == 0.0
 
 
-@pytest.mark.parametrize("mapping", [{"03103": "bs_zentrum"}, {}, {"03103": "bs_zentrum", "03102": "bs_zentrum"}],
-                         ids=["wolfsburg", "empty", "two_classes"])
+@pytest.mark.parametrize("mapping", [{"03103": "bs_zentrum"}, {}, {"03103": "bs_zentrum", "03102": "bs_zentrum"},
+                                     {"03103": None}],
+                         ids=["wolfsburg", "empty", "two_classes", "null_marker"])
 def test_configure_accepts_a_valid_proxy_mapping(mapping):
     recorder = _declare(parking_zones_enabled=True, parking_free_share_proxy_classes=mapping)
     assert ZONES_STAGE_NAME in recorder.stages

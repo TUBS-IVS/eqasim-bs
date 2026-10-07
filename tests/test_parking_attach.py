@@ -861,6 +861,44 @@ def test_the_draw_logs_the_share_used_and_its_source_class_per_class(caplog):
     assert "own class share 0.3000" in own and "->" not in own
 
 
+def test_a_none_marker_draws_with_the_own_class_share_and_logs_that_the_proxy_is_disabled(caplog):
+    """R-4c-9: {"03102": None} is the config-overlay arm that restores the class share."""
+    shares = _shares({"03102": 0.95, "bs_zentrum": 0.3})
+    activities = _commuters(range(1, 41), "z_paid_b")
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        marked = attach.draw_parking_free(activities, _tariffs(), shares, SEED, proxy_classes={"03102": None})
+    pd.testing.assert_frame_equal(marked, attach.draw_parking_free(activities, _tariffs(), shares, SEED))
+    messages = [record.getMessage() for record in caplog.records]
+    [line] = [message for message in messages if "workplace class 03102:" in message]
+    assert "own class share 0.9500 (proxy disabled by config)" in line and "->" not in line
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_a_none_marker_for_a_class_that_is_no_class_row_raises():
+    with pytest.raises(ValueError, match="03199"):
+        attach.draw_parking_free(_commuters([1], "z_paid_b"), _tariffs(), _shares(), SEED,
+                                 proxy_classes={"03199": None})
+
+
+def test_a_mapped_class_that_changes_no_person_is_warned_about(caplog):
+    """M1: the mapping 03102 -> bs_zentrum matches no paid-zone work/education person here."""
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.draw_parking_free(_commuters(range(1, 11), "z_paid_a"), _tariffs(), _shares(), SEED,
+                                 proxy_classes=PROXY)
+    warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
+    assert warnings == ["[parking] proxy mapping 03102 -> bs_zentrum changed no person (no paid-zone work/education "
+                        "activity of class 03102)"]
+
+
+def test_a_mapped_class_with_persons_and_a_none_entry_raise_no_warning(caplog):
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.draw_parking_free(_commuters(range(1, 11), "z_paid_b"), _tariffs(), _shares(), SEED,
+                                 proxy_classes={"03102": "bs_zentrum"})
+        attach.draw_parking_free(_commuters(range(1, 11), "z_paid_a"), _tariffs(), _shares(), SEED,
+                                 proxy_classes={"03102": None})
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
 def test_the_draw_defaults_are_the_v1_draw():
     # A call without options is the v1 draw; the production values come from the configuration through the wrapper
     # (tests/test_population_parking_attributes.py pins the wrapper, including the OFF path).
