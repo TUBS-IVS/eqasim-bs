@@ -1,15 +1,15 @@
 """The synpp stage ``braunschweig.parking.zones_stage``: one validated parking cost zone release (issue #249).
 
-Covered: ``configure`` declares ``data_path`` and the six release paths (defaults of design spec 5.5, of the
-resident districts of spec Amendment C3 and of the garages of Amendment E1, all relative to ``data_path``); ``execute``
-loads the Task 2 fixture release (fixture zones, tariffs, resident districts and garages plus a synthetic coverage
-register and a synthetic SrV-shaped shares table written here, all of which pin behaviour, not truth) and returns the
-release whose ``sources`` satisfy the tariff-model contract of the preparation stage; a tariff workplace class
-without an SrV class row, a tariff row the Java tariff model would reject, a coverage register that contradicts the
-tariffs and a district layer that contradicts the register or itself raise; ``validate()`` changes with every input byte and every hashed module but
-not with line endings; the committed release loads through the stage (the primary path on real data). The context
-double follows ``tests/test_parking_prepare_wiring.py``: after ``configure`` it is strict like synpp's ExecuteContext
-and ValidateContext.
+Covered: ``configure`` declares ``data_path`` and the six release paths (defaults of design spec 5.5, of the resident
+districts of spec Amendment C3 and of the garages of Amendment E1, all relative to ``data_path``); ``execute`` loads
+the Task 2 fixture release (fixture zones, tariffs, resident districts and garages plus a synthetic coverage register
+and a synthetic SrV-shaped shares table written here, all of which pin behaviour, not truth) and returns the release
+whose ``sources`` satisfy the tariff-model contract of the preparation stage; a tariff workplace class without an SrV
+class row, a tariff row the Java tariff model would reject, a coverage register that contradicts the tariffs and a
+district layer that contradicts the register or itself raise; ``validate()`` changes with every input byte and every
+hashed module but not with line endings; the committed release loads through the stage (the primary path on real
+data). The context double follows ``tests/test_parking_prepare_wiring.py``: after ``configure`` it is strict like
+synpp's ExecuteContext and ValidateContext.
 """
 from __future__ import annotations
 
