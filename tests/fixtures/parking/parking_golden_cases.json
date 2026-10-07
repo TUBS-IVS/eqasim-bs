@@ -2241,6 +2241,82 @@
       "resident_of_zone": false,
       "terminal": false,
       "zone_id": "fx_res_garage_v2"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 39600,
+      "destination_x_m": 599700.0,
+      "destination_y_m": 5770000.0,
+      "expected_cents": 122,
+      "expected_error": false,
+      "expected_garage_probability": 0.3208213008,
+      "expected_outcome": "PAID_EXPECTED",
+      "garage_decay_m": 400.0,
+      "id": "E29",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": false,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ib"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 39600,
+      "destination_x_m": 599900.0,
+      "destination_y_m": 5770000.0,
+      "expected_cents": 101,
+      "expected_error": false,
+      "expected_garage_probability": 0.4378234991,
+      "expected_outcome": "PAID_EXPECTED",
+      "garage_decay_m": 400.0,
+      "id": "E30",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": false,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ib"
+    },
+    {
+      "arrival_s": 39600,
+      "departure_s": 41100,
+      "destination_x_m": 600000.0,
+      "destination_y_m": 5770000.0,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_garage_probability": 0.0,
+      "expected_outcome": "FREE_WITHIN_LIMIT",
+      "garage_decay_m": 400.0,
+      "id": "E31",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": false,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_sz"
+    },
+    {
+      "arrival_s": 32400,
+      "departure_s": 46800,
+      "destination_x_m": 599700.0,
+      "destination_y_m": 5770000.0,
+      "expected_cents": 0,
+      "expected_error": false,
+      "expected_garage_probability": 1.0,
+      "expected_outcome": "PAID_EXPECTED",
+      "garage_decay_m": 400.0,
+      "id": "E32",
+      "minimum_stay_min": 0,
+      "parking_free": false,
+      "purpose": "shop",
+      "resident_of_district": false,
+      "resident_of_zone": false,
+      "terminal": false,
+      "zone_id": "fx_bs_ia_v2"
     }
   ],
   "garage_max_distance_m": 1000.0,
@@ -2595,6 +2671,206 @@
       "expected_cents": 300,
       "garage_id": "fx_g14_closed_capped",
       "id": "O44",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37800,
+      "expected_cents": 0,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O45",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37801,
+      "expected_cents": 100,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O46",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37860,
+      "expected_cents": 100,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O47",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 39660,
+      "expected_cents": 200,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O48",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 63900,
+      "departure_s": 65700,
+      "expected_cents": 0,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O49",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 63900,
+      "departure_s": 65760,
+      "expected_cents": 100,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O50",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 63000,
+      "departure_s": 68400,
+      "expected_cents": 150,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O51",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 64800,
+      "departure_s": 66660,
+      "expected_cents": 50,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O52",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 21000,
+      "departure_s": 22800,
+      "expected_cents": 0,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O53",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 21000,
+      "departure_s": 22860,
+      "expected_cents": 50,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O54",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 79200,
+      "departure_s": 108000,
+      "expected_cents": 400,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O55",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 72000,
+      "departure_s": 115200,
+      "expected_cents": 700,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O56",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 43200,
+      "departure_s": 43200,
+      "expected_cents": 0,
+      "garage_id": "fx_g15_tier_grace",
+      "id": "O57",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 64800,
+      "expected_cents": 600,
+      "garage_id": "fx_g16_tier_grace_cap",
+      "id": "O58",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37740,
+      "expected_cents": 0,
+      "garage_id": "fx_g16_tier_grace_cap",
+      "id": "O59",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 36000,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O60",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 36001,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O61",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37800,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O62",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 72000,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O63",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 165600,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O64",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 28800,
+      "departure_s": 57600,
+      "expected_cents": 0,
+      "garage_id": "fx_g17_free",
+      "id": "O65",
+      "purpose": "work"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37800,
+      "expected_cents": 0,
+      "garage_id": "fx_g18_grace_total",
+      "id": "O66",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 37801,
+      "expected_cents": 160,
+      "garage_id": "fx_g18_grace_total",
+      "id": "O67",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 39660,
+      "expected_cents": 240,
+      "garage_id": "fx_g18_grace_total",
+      "id": "O68",
+      "purpose": "shop"
+    },
+    {
+      "arrival_s": 36000,
+      "departure_s": 46860,
+      "expected_cents": 500,
+      "garage_id": "fx_g18_grace_total",
+      "id": "O69",
       "purpose": "shop"
     }
   ],
@@ -3014,6 +3290,146 @@
       "tiers": null,
       "x_m": 630000.0,
       "y_m": 5760000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": 30,
+          "unit_min": null
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": null,
+      "fee_end_s": null,
+      "fee_start_s": null,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g15_tier_grace",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": [
+        {
+          "end_s": 64800,
+          "price_cents": 100,
+          "start_s": 21600,
+          "unit_min": 60
+        },
+        {
+          "end_s": 21600,
+          "price_cents": 50,
+          "start_s": 64800,
+          "unit_min": 60
+        }
+      ],
+      "x_m": 610000.0,
+      "y_m": 5770000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": 30,
+          "unit_min": null
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": 600,
+      "fee_end_s": null,
+      "fee_start_s": null,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g16_tier_grace_cap",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": [
+        {
+          "end_s": 64800,
+          "price_cents": 100,
+          "start_s": 21600,
+          "unit_min": 60
+        },
+        {
+          "end_s": 21600,
+          "price_cents": 50,
+          "start_s": 64800,
+          "unit_min": 60
+        }
+      ],
+      "x_m": 620000.0,
+      "y_m": 5770000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": null,
+          "unit_min": null
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g17_free",
+      "hourly_rate_cents": null,
+      "monthly_cents": 5000,
+      "tiers": null,
+      "x_m": 600000.0,
+      "y_m": 5770000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": 30,
+          "unit_min": null
+        },
+        {
+          "from_min": 30,
+          "kind": "total",
+          "price_cents": 160,
+          "to_min": 60,
+          "unit_min": null
+        },
+        {
+          "from_min": 60,
+          "kind": "increment",
+          "price_cents": 80,
+          "to_min": null,
+          "unit_min": 30
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": 500,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g18_grace_total",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 630000.0,
+      "y_m": 5770000.0
     }
   ],
   "schema_version": 4,

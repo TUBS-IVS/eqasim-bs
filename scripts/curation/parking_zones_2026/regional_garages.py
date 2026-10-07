@@ -1501,6 +1501,24 @@ LOT_CLASS_TEXT = {
 }
 
 
+def lot_override_sentence(spec: dict, review: dict) -> Optional[str]:
+    """One sentence for a Wolfsburg car park whose row goes against a recommendation of the package (spec E14 amendment (2)):
+    every class d row and every row whose specification names its ``override``. It quotes the recommendation of the package's
+    facility review and names the owner direction that overrides it; ``None`` for a row that follows the package. Stops when
+    the package holds no recommendation to quote, so a provenance claim is never made up."""
+    if spec["class"] != "d" and not spec.get("override"):
+        return None
+    recommendation = review.get("recommendation")
+    if not recommendation:
+        raise SystemExit(f"lot {spec['garage_id']}: the row goes against the package's recommendation but the package's facility "
+                         "review holds none to quote")
+    what = spec.get("override") or ("the row takes the municipal free default of ASSUMPTION P12 although the package keeps the "
+                                    "fee status unknown")
+    return (f"The package recommends against this value ('{recommendation}', facility_review.json of the package); {what}; the "
+            "owner direction 'alle integrieren' (spec E14 and its amendment, as R-4b2-8 for the follow-up package) overrides the "
+            "recommendation.")
+
+
 def lot_specs(classes=("b", "c", "d")) -> list:
     """The decisions of ``regional_garage_specs.LOT_SPECS`` of the given classes, in specification order (the classes with a
     row of the dataset by default)."""
@@ -1646,6 +1664,9 @@ def build_lot(inputs: dict, spec: dict) -> dict:
             policy = rules[spec["free"]].get("conditions")
             if policy:
                 notes.append(f"Free component {spec['free']}: {policy}.")
+    override = lot_override_sentence(spec, review)
+    if override:
+        notes.append(override)
     assumptions = encoded["assumptions"]
     if "P4" in assumptions:
         notes.append(_p4_lot_note(inputs["rounding_census"]))
@@ -1971,6 +1992,10 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
             note = encoded["sentence"] + (f" ({garage['assumptions'].replace(';', ', ')})" if garage["assumptions"] else "")
             if spec.get("qa_comment"):
                 note += f"; {spec['qa_comment']}"
+            if "class" in spec:
+                override = lot_override_sentence(spec, inputs["lots"]["review"][spec["facility"]])
+                if override:
+                    note += f"; {override}"
         else:
             note = spec["reason_text"]
         row(record_id=f"garage_{garage['garage_id']}", record_type="garage", municipality_ags=garage["municipality_ags"],

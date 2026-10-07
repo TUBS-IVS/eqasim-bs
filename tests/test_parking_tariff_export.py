@@ -484,7 +484,7 @@ def test_the_garages_are_the_priced_garages_of_the_dataset_sorted_by_id_in_integ
                                  garage_decay_m=400.0, garage_max_distance_m=1000.0)
     assert full["garage_decay_m"] == 400.0 and full["garage_max_distance_m"] == 1000.0
     ids = [entry["garage_id"] for entry in full["garages"]]
-    assert ids == sorted(ids) and len(ids) == 15
+    assert ids == sorted(ids) and len(ids) == 19
     assert all(sorted(entry) == GARAGE_KEYS for entry in full["garages"])
     by_id = {entry["garage_id"]: entry for entry in full["garages"]}
     # hand-derived from the fixture rows: 2.00 EUR per started 60 min, all day (0 to 86400 s), monthly 63.00 EUR
@@ -520,7 +520,7 @@ def test_an_unpriced_garage_is_listed_in_the_dataset_and_left_out_of_the_model(t
                    "monthly_eur"):
         unpriced.loc[0, column] = None
     entries = te.garage_entries(unpriced)
-    assert len(entries) == 14 and unpriced.loc[0, "garage_id"] not in [entry["garage_id"] for entry in entries]
+    assert len(entries) == 18 and unpriced.loc[0, "garage_id"] not in [entry["garage_id"] for entry in entries]
     with pytest.raises(ValueError, match="not priced"):
         te.garage_row_to_tariff(unpriced.iloc[0])
 
@@ -566,7 +566,7 @@ def test_a_garage_price_that_is_no_whole_cent_is_refused(garage_frame):
 def test_the_committed_fixture_model_lists_the_fixture_garages_and_names_their_file_as_a_source():
     committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
     assert committed["schema_version"] == 3 and committed["garage_decay_m"] == 400.0
-    assert committed["garage_max_distance_m"] == 1000.0 and len(committed["garages"]) == 15
+    assert committed["garage_max_distance_m"] == 1000.0 and len(committed["garages"]) == 19
     source = next(source for source in committed["sources"] if source["source_id"] == "parking_garages_fixture")
     assert source["path"] == "tests/fixtures/parking/parking_garages_fixture.geojson"
     assert source["sha256"] == te.content_sha256(FIXTURE_GARAGES)

@@ -13,9 +13,9 @@ truth. The script
    validated by ``braunschweig.parking.garages``; the model lists the priced ones as ``garages`` with the illustrative
    decay ``golden_cases.FIXTURE_GARAGE_DECAY_M`` and the maximum distance 1000 m) and evaluates every golden case of
    ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38, L01..L08, L01Z..L08Z, V01..V23, R01..R13,
-   E01..E26, each priced under its own minimum stay ``minimum_stay_min``, its own resident district flag
+   E01..E32, each priced under its own minimum stay ``minimum_stay_min``, its own resident district flag
    ``resident_of_district``, its destination and decay, and under the ``resident_permits_valid`` of its fixture zone) and every
-   garage option case (``GOLDEN_GARAGE_OPTION_CASES``: O01..O44) with the Python reference ``braunschweig.parking.cost``;
+   garage option case (``GOLDEN_GARAGE_OPTION_CASES``: O01..O69) with the Python reference ``braunschweig.parking.cost``;
    it writes nothing when a result differs from its hard-coded expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
    ``parking_golden_cases.json`` (``schema_version`` ``GOLDEN_SCHEMA_VERSION``, the fixture ``tariffs`` in

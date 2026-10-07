@@ -193,8 +193,9 @@ acquisition:
     missing weekdays were not automatically read as Monday to Sunday; the first-period rules of Rathaus and Phaeno
     join the named rules). The step warns above two documented thresholds: more than 75 % (ASSUMPTION_WARNING_SHARE)
     of the priced garages on one assumption, and more than 75 % (garages.UNION_WARNING_SHARE, which the loader also
-    applies) on at least one assumption or on P4 or P5; the union rates are 34 of 35 (97.1 %, a warning) on at least
-    one assumption and 30 of 35 (85.7 %, a warning) on P4 or P5 (25 of 26 and 21 of 26 at the end of fix round 2); P8
+    applies) on at least one assumption or on P4 or P5; the union rates are 34 of 35 (97.1 %, a warning) on at least one
+    assumption and 30 of 35 (85.7 %, a warning) on P4 or P5 (after Task 4b2; 44/48 and 32/48 after 4b3; 25 of 26 and 21 of
+    26 at the end of fix round 2); P8
     alone puts all ten banded garages into the first rate. The operator column is the package's (a feature or facility attribute) or, where the page named in
     source_url is the operator's own page, that operator, with a note naming the page (Contipark: Eiermarkt and
     Wallstrasse; Park und Tank: Magni and Packhof). Monthly and 30-day products follow spec Amendment D2 and ruling
@@ -366,26 +367,32 @@ acquisition:
     its tariff area) with a CONSISTENCY CHECK of that reference (2.00, 1.20 or 1.00 EUR per hour) against hourly_rate_eur of
     the zone in parking_tariffs_2026.csv: 9 of 9 equal; a difference would be named in the QA note and in the validator
     summary and would never change the zone tariff (the paid hours of the areas differ at one car park, CongressPark
-    07:00-15:00 against the zone window 07:00-18:00, which the note states). (b) 2 car parks have an operator tariff and are
+    07:00-15:00 against the zone window 07:00-18:00, which the QA note lists side by side, the paid hours of the area and
+    the fee window of the zone). (b) 2 car parks have an operator tariff and are
     rows: the Autostadt P2 (06:00-18:00 1.00 EUR and 18:00-06:00 0.50 EUR per started hour, 30 min grace period) and the
     Klinikum visitor car parks (0.80 EUR per half hour, 30 min grace period, day maximum 5.00 EUR). The grace periods are
     ASSUMPTION P10 (the owner's reading; the package keeps the deduction open). GRAMMAR EXTENSION for the Autostadt, which
     has time-of-day tiers and a grace period together (neither the tiered nor the banded form could express both): a tiered
-    garage may carry ONE closed free band in tariff_duration_bands as its grace period ('0-30 free'); a stay not longer than
+    garage may carry ONE closed free band in tariff_duration_bands as its grace period ('0-30 free'; spec E14 amendment (1)
+    narrows E11's 'bands exclude tiers' to: no other band may stand next to tiers); a stay not longer than
     the band costs 0 and a longer stay is priced by the tiers from its arrival, the free minutes are not deducted; the band
     is the whole of the bands (no fee window, no first period, no priced band), the row rests on P6 and P10 and not on P8,
     braunschweig.parking.cost prices it from the elapsed stay, and the keys of the schema 3 garage entry are unchanged
     (tiers and bands are both given), so the golden cases do not change; the Java port (Task 4e) must read tiers and bands
     together. The Klinikum free period equals its billing unit, so the bands are '0-30 free; 30-60 total 1.60; 60- 0.80/30':
-    a stay of 31 min has two started half hours counted from its arrival (the operator's wording 'danach' can also be read
-    as a deduction, which would give 0.80 EUR). The assignment of the observed visitor-group rule to the municipal point is
+    a stay of 31 min has two started half hours counted from its arrival: 1.60 EUR under P10, 0.80 EUR under the deduction
+    reading (the operator words the free period twice, 'bis zu 30 Minuten: kostenfrei; jede weitere halbe Stunde: 0,80' and
+    'danach 0,80 Euro je halbe Stunde', and both can be read as a deduction). The assignment of the observed visitor-group
+    rule to the municipal point is
     ASSUMPTION P11 (the package cannot tell which car park the point is and keeps the group rules as
     observed_group_rules_not_assigned; the operator page could not be retrieved, HTTP 502 on 2026-10-07, so the values are
     the search extract that the package keeps; the Tiefgarage P4, 2.00 EUR per hour, is another facility and not used). The
     Autostadt maximum of 6.00 EUR needs the validation of the ticket at the Welcome Desk, a customer condition, and is not
-    used; the Key Premium rule and the collected car are customer conditions and not used; the Parkplatzordnung is
-    contradictory on access (visitors of the Autostadt; P1 to P3 open to all persons), which the package keeps open and the
-    notes name. The Klinikum point lies inside wob_tarifzone_2: it is an off-street option of stays in that zone (its tariff
+    used; the Key Premium rule and the collected car are customer conditions and not used; the Autostadt car park is listed
+    as a public option under E14 (b) by the owner direction although the sources contradict each other on access
+    (introduction of the Parkplatzordnung: visitors of the Autostadt only; section 3: P1 to P3 open to all persons), which
+    the package keeps open and the notes name: not resolved. The Klinikum point lies inside wob_tarifzone_2: it is an
+    off-street option of stays in that zone (its tariff
     differs from the street product), not a zone street product. (c) 3 free public car parks are rows at cost 0 without an
     assumption: Allerpark and the Theaterparkplatz (fee status free_confirmed) and the Volkswagen Arena P1/P2 (free outside
     match days; MATCH DAYS ARE NOT MODELLED, a named reading; capacity 494 is the published total of P1 with the scope the
@@ -396,7 +403,16 @@ acquisition:
     published_tariff_areas.geojson and the 73 areas of the complete layer that the package keeps) and outside every
     committed zone (191 to 3,858 m) have no tariff component, no observed rule and no operator tariff: they are free rows
     under P12, the evidence being the field decision of their fee status (no evidence of a fee is not evidence of none, so
-    the rows are named and counted: 8 of the 48 priced rows). (e) 2 points are no public option and are QA candidates: the
+    the rows are named and counted: 8 of the 48 priced rows). P12 stays the weakest assumption of the dataset: section 2(2)
+    of the fee ordinance (Parkgebuehrenordnung of 2020-07-15) defines Zone II as all other streets and places of the city
+    area, so the 73 areas of the app layer are not shown to be exhaustive. OVERRIDES (spec E14 amendment (2)): the package
+    recommends against taking a value for the P12 points ('keine 0-Euro-Regel anlegen' for the Dunantplatz; 'keinen Preis
+    und keine Gebuehrenfreiheit in ein Tarifmodell uebernehmen' for five points; 'bis dahin keine Kostenberechnung' for
+    two), against a precise price function of the Autostadt ('Keine praezise Preisfunktion ergaenzen') and against the
+    Klinikum tariff before the sub-facility is confirmed ('Erst bei bestaetigter Unteranlagenidentitaet als wirksamen
+    Punkttarif uebernehmen'); the owner direction 'alle integrieren' overrides each of these recommendations, as R-4b2-8
+    overrode the follow-up package, and the notes and the QA note of each of the 10 rows quote the recommendation and name
+    the override. (e) 2 points are no public option and are QA candidates: the
     disabled-parking point of the Theater (user_group_only; the free statement concerns the whole car park, which is a row
     of its own) and the BadeLand / Eis Arena car park (customer_regime; BadeLand guests park free with the validation of the
     ticket, the fee of Zone I for everyone else, 1.00 EUR per started 30 min by the bath tariff of 2025, is recorded and not
@@ -623,8 +639,8 @@ notes: >-
   station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 2, no_coordinates 1, outside_source_list 1,
   user_group_only 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
   tests/test_parking_regional_garages.py. SHA-256 of the files as written by the step (LF; two runs identical):
-  parking_garages_2026.geojson 489ea6c8c364c14274232d0894b3e20ff02485555fee544003be47e33c2c8223, parking_garages_2026_qa.csv
-  e21588b483d9e0478e4800c66196e8651154931068c4b7292e175207ddde9c52. History: Task 4b3 adds the 13 surface lots of the
+  parking_garages_2026.geojson 6b2138da2c7946b2e42f617028898dc61944d75044db098e3577cecab74ab349, parking_garages_2026_qa.csv
+  404c8b8d474e3de747a5d13f29f71174eecd216532e208ba6bc53bb7bde73190. History: Task 4b3 adds the 13 surface lots of the
   Wolfsburg city layer, the column facility_kind, the free schedule and the grace period of a tiered garage; before it the
   dataset had 35 garages (SHA-256 03ca4df651ef882a2192e1b9d3288934c3208c4573e13d77c05c98c9d9ef62d7 and
   46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757). The first Task 4b run listed 32 garages, fix round 1 31

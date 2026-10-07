@@ -122,6 +122,10 @@ POINTS = {"WOB_PARK_A": ((10_000.0, 300.0), "Parkplatz A", "paid_confirmed", "Pa
           "WOB_PARK_D": ((11_000.0, -500.0), "Parkplatz", "unknown", "Parkplaetze", None),
           "WOB_PARK_E": ((11_200.0, 0.0), "Parkplatz Sonder", "conditional", "Behindertenparkplaetze", None)}
 CAPACITY_SCOPE = "Test car park, published total capacity; no live availability"
+#: the recommendations of the synthetic facility review that the rows of classes b (with an override) and d quote
+RECOMMENDATIONS = {"WOB_PARK_B1": "Erfassen, aber keine pr\u00e4zise Preisfunktion erg\u00e4nzen.",
+                   "WOB_PARK_B2": "Erst bei best\u00e4tigter Unteranlage als Punkttarif \u00fcbernehmen.",
+                   "WOB_PARK_D": "Gebuehrenstatus unbekannt belassen; keine 0-Euro-Regel anlegen."}
 OPERATOR_QUOTATION = "Die Parkkarte ist Eigentum der Testbetrieb GmbH"
 CLINIC_QUOTATION = "unsere Besucherparkpl\u00e4tze P1 und P2"
 
@@ -156,7 +160,8 @@ def _members(edit=None) -> dict:
         record = {"facility_id": facility, "name": name, "fee_status": fee_status,
                   "tariff_rule_ids": [rule["rule_id"] for rule in RULES if rule["facility_id"] == facility],
                   "observed_rule_ids": [rule["rule_id"] for rule in GROUP_RULES if rule["facility_id"] == facility],
-                  "capacity": capacity, "capacity_scope": CAPACITY_SCOPE if capacity else None}
+                  "capacity": capacity, "capacity_scope": CAPACITY_SCOPE if capacity else None,
+                  "recommendation": RECOMMENDATIONS.get(facility, f"Keep {facility} as a test point.")}
         review.append(record)
     decisions = []
     for rule in RULES + GROUP_RULES:
@@ -523,6 +528,7 @@ LOT_SPECS = (
     {"facility": "WOB_PARK_A", "class": "a", "record_id": "candidate_wob_lot_a", "rule": "WOB_PARK_A_MOBILE_REFERENCE"},
     {"facility": "WOB_PARK_B1", "class": "b", "garage_id": "wob_lot_b1", "tiers": ("B1_DAY", "B1_NIGHT"),
      "tier_grace": "B1_GRACE", "source": "op_prices",
+     "override": "the row encodes a price function although the package advises against one",
      "operator": ("lots_page", "Testbetrieb GmbH", RULES_TEXT_MEMBER, OPERATOR_QUOTATION, "op_rules"),
      "ignored": {"B1_DAY:cap": "needs the validation of the ticket, a customer condition",
                  "B1_PREMIUM": "a premium card, a customer group the model cannot identify"},
@@ -530,6 +536,7 @@ LOT_SPECS = (
      "p10_basis": "the regulation states no fee up to 30 minutes and nothing on longer stays", "comment": "Test visitor car park."},
     {"facility": "WOB_PARK_B2", "class": "b", "garage_id": "wob_lot_b2", "grace": ("B2_GRACE", "B2_RATE"),
      "cap": "B2_RATE:cap", "window": None, "source": "op_clinic",
+     "override": "the row takes the group tariff before the sub-facility is confirmed",
      "operator": ("lots_page", "Klinik", CLINIC_MEMBER, CLINIC_QUOTATION, "op_clinic"),
      "p10_decisions": ("R-T", {"B2_GRACE:free_minutes_policy": ("unknown",)}),
      "p10_basis": "the page says 'danach'; the deduction is open",
@@ -699,6 +706,34 @@ def test_the_notes_name_every_assumption_the_evidence_and_what_is_not_used(rows)
     assert all(note.isascii() for note in rows["notes"])
 
 
+def test_a_row_that_goes_against_a_package_recommendation_quotes_it_and_names_the_owner_direction(rows):
+    # spec E14 amendment (2): every class d row and every row with an override; a row that follows the package carries none
+    for garage_id, recommendation, what in (
+            ("wob_lot_b1", "Erfassen, aber keine praezise Preisfunktion ergaenzen.",
+             "the row encodes a price function although the package advises against one"),
+            ("wob_lot_b2", "Erst bei bestaetigter Unteranlage als Punkttarif uebernehmen.",
+             "the row takes the group tariff before the sub-facility is confirmed"),
+            ("wob_lot_d", "Gebuehrenstatus unbekannt belassen; keine 0-Euro-Regel anlegen.",
+             "the row takes the municipal free default of ASSUMPTION P12 although the package keeps the fee status unknown")):
+        note = rows.loc[garage_id, "notes"]
+        sentence = (f"The package recommends against this value ('{recommendation}', facility_review.json of the package); "
+                    f"{what}; the owner direction 'alle integrieren' (spec E14 and its amendment, as R-4b2-8 for the "
+                    "follow-up package) overrides the recommendation.")
+        assert sentence in note, garage_id
+    assert "recommends against" not in rows.loc["wob_lot_c", "notes"]
+
+
+def test_the_override_sentence_needs_a_recommendation_to_quote_and_exists_only_for_an_override_or_a_class_d(step, inputs):
+    spec_b = next(spec for spec in LOT_SPECS if spec["facility"] == "WOB_PARK_B1")
+    spec_c = next(spec for spec in LOT_SPECS if spec["facility"] == "WOB_PARK_C")
+    review = {"recommendation": "Eine Empfehlung."}
+    assert "('Eine Empfehlung.', facility_review.json" in step.lot_override_sentence(spec_b, review)
+    assert step.lot_override_sentence(spec_c, review) is None
+    assert step.lot_override_sentence({**spec_b, "override": None}, review) is None
+    with pytest.raises(SystemExit, match="holds none to quote"):
+        step.lot_override_sentence(spec_b, {"recommendation": None})
+
+
 @pytest.mark.parametrize("facility, spec_class, change, message", [
     ("WOB_PARK_B1", "b", {"p10_basis": None}, "states the basis of its reading in 'p10_basis'"),
     ("WOB_PARK_B1", "b", {"p10_decisions": None}, "states the field decisions of its ruling in 'p10_decisions'"),
@@ -793,9 +828,9 @@ def test_every_point_has_one_qa_row_the_aggregated_row_is_gone_and_the_table_val
     assert by_id["garage_wob_lot_b1"]["note"].startswith("tiers per started 60 min, the tier in force at the unit's start: "
                                                           "06:00-18:00 1.00 EUR, 18:00-06:00 0.50 EUR; a stay of at most 30 min "
                                                           "is free (grace period)")
-    assert by_id["garage_wob_lot_b1"]["note"].endswith("(P4, P6, P10)")
+    assert "(P4, P6, P10); The package recommends against this value" in by_id["garage_wob_lot_b1"]["note"]
     assert by_id["garage_wob_lot_d"]["note"].startswith("free of charge for every stay by the municipal default") and \
-        by_id["garage_wob_lot_d"]["note"].endswith("(P12)")
+        "(P12); The package recommends against this value" in by_id["garage_wob_lot_d"]["note"]
     assert by_id["garage_wob_lot_c"]["note"] == "free of charge for every stay (the free schedule 0- free, the fee window 0-24 h " \
                                                "is formal)"
     a, e = by_id["candidate_wob_lot_a"], by_id["candidate_wob_lot_e"]
@@ -973,7 +1008,7 @@ def test_the_autostadt_and_klinikum_rows_name_their_grace_period_the_conditions_
     autostadt = committed.loc["wob_lot_1900571", "notes"]
     for phrase in ("ASSUMPTION P10", "ASSUMPTION P4", "ASSUMPTION P6", "a stay of at most 30 min is free (grace period)",
                    "OP_AUTOSTADT_P2_DAY:cap: 6.00 EUR at most", "Welcome Desk", "customer condition",
-                   "OP_AUTOSTADT_P2_PREMIUM", "OP_AUTOSTADT_COLLECTED_CAR", "contradiction", "Operator Autostadt GmbH",
+                   "OP_AUTOSTADT_P2_PREMIUM", "OP_AUTOSTADT_COLLECTED_CAR", "contradict each other", "Operator Autostadt GmbH",
                    "visitor car park P2", "short-stay car park PK"):
         assert phrase in autostadt, phrase
     klinikum = committed.loc["wob_lot_1966086", "notes"]
@@ -983,6 +1018,42 @@ def test_the_autostadt_and_klinikum_rows_name_their_grace_period_the_conditions_
                    "inside the zone wob_tarifzone_2", "maximum per stay"):
         assert phrase in klinikum, phrase
     assert committed.loc["wob_lot_1966086", "garage_daily_cap_eur"] == 5.0
+
+
+def test_the_committed_rows_that_go_against_a_package_recommendation_name_it_and_the_owner_direction(committed, committed_qa):
+    owner = "the owner direction 'alle integrieren' (spec E14 and its amendment, as R-4b2-8 for the follow-up package) " \
+            "overrides the recommendation."
+    for number in (262165, 589853, 720902, 1703940, 1703946):
+        assert ("The package recommends against this value ('Als Pruefpunkt erhalten; keinen Preis und keine Gebuehrenfreiheit "
+                "in ein Tarifmodell uebernehmen.") in committed.loc[f"wob_lot_{number}", "notes"]
+    for number in (327689, 327697):
+        assert ("('Gebuehren und Bedingungen vor Ort feststellen; bis dahin keine Kostenberechnung.', facility_review.json"
+                in committed.loc[f"wob_lot_{number}", "notes"])
+    assert "('Gebuehrenstatus und alle Tarifwerte unbekannt belassen; keine 0-Euro-Regel anlegen.', facility_review.json" in \
+        committed.loc["wob_lot_524301", "notes"]
+    for garage_id in [f"wob_lot_{number}" for number in (262165, 327689, 327697, 524301, 589853, 720902, 1703940, 1703946)] + [
+            "wob_lot_1900571", "wob_lot_1966086"]:
+        assert owner in committed.loc[garage_id, "notes"], garage_id
+        assert "The package recommends against this value" in committed_qa.loc[f"garage_{garage_id}", "note"], garage_id
+    assert "Keine praezise Preisfunktion ergaenzen" in committed.loc["wob_lot_1900571", "notes"]
+    assert "Erst bei bestaetigter Unteranlagenidentitaet" in committed.loc["wob_lot_1966086", "notes"]
+    for garage_id in ("wob_lot_1441813", "wob_lot_1835028", "wob_lot_1900551"):
+        assert "recommends against" not in committed.loc[garage_id, "notes"]
+    # the weakest assumption names why the published areas are no proof of a free car park
+    assert "section 2(2) of the ordinance defines Zone II as all other streets and places" in pg.ASSUMPTIONS["P12"]
+    assert "the weakest assumption of the dataset" in committed.loc["wob_lot_262165", "notes"]
+
+
+def test_the_committed_autostadt_access_is_unresolved_and_the_klinikum_p10_basis_quotes_both_operator_wordings(committed):
+    autostadt = committed.loc["wob_lot_1900571", "notes"]
+    assert ("ACCESS: listed as a public option under E14 (b) by the owner direction; the sources contradict each other on "
+            "access (introduction of the Parkplatzordnung: visitors of the Autostadt only; section 3: P1 to P3 open to all "
+            "persons); not resolved.") in autostadt
+    klinikum = committed.loc["wob_lot_1966086", "notes"]
+    for phrase in ("'bis zu 30 Minuten: kostenfrei; jede weitere halbe Stunde: 0,80'", "'danach 0,80 Euro je halbe Stunde'",
+                   "a stay of 31 min costs 1.60 EUR (two started half hours from its arrival) under P10 and 0.80 EUR under "
+                   "the deduction reading"):
+        assert phrase in klinikum, phrase
 
 
 def _tariff(committed, garage_id):

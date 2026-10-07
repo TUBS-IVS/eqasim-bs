@@ -247,7 +247,7 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum
     # distance 1000 m (spec Amendment E6).
     fixture_model = json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))
-    assert model["garages"] == fixture_model["garages"] and len(model["garages"]) == 15
+    assert model["garages"] == fixture_model["garages"] and len(model["garages"]) == 19
     assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (0.0, 1000.0)
 
 
@@ -259,9 +259,9 @@ def test_on_execute_writes_the_configured_garage_parameters_into_the_model_and_t
     assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (400.0, 800.0)
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert (report["garages_listed"], report["garages_priced"], report["garage_decay_m"],
-            report["garage_max_distance_m"]) == (15, 15, 400.0, 800.0)
+            report["garage_max_distance_m"]) == (19, 19, 400.0, 800.0)
     [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
-    assert "garages priced 15 of 15 listed" in line and "garage options ON" in line
+    assert "garages priced 19 of 19 listed" in line and "garage options ON" in line
 
 
 def test_garage_options_without_a_priced_garage_fail_instead_of_pricing_nothing(tmp_path, monkeypatch):
@@ -310,7 +310,7 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 18, "resident_districts": 3,
                       "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
-                      "garages_listed": 15, "garages_priced": 15, "garage_decay_m": 0.0, "garage_max_distance_m": 1000.0,
+                      "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_max_distance_m": 1000.0,
                       "sources": context.stages[PARKING_STAGE]["sources"]}
 
 

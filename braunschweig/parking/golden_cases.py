@@ -10,7 +10,7 @@ for the Java ``ParkingCostCalculatorTest``.
 Fields of a case (they are the keys of the JSON cases, too):
 
 - ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``, ``R01`` .. ``R13``,
-  ``E01`` .. ``E28``.
+  ``E01`` .. ``E32``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -409,6 +409,10 @@ def _district_case(row: Sequence) -> dict:
 # fx_g03_edge at exactly 1000 m (dx 600, dy 800) and fx_g03_far at 1001 m; D4 (610000, 5750000): fx_g04_core at 0 m; D6
 # (620000, 5750000): fx_g06_window at 0 m (fee window 10:00-12:00, 100 ct/h); D7 (630000, 5750000): fx_g07_tiers at 0 m;
 # D8 (640000, 5750000): fx_g08_bands at 0 m; D9 (580000, 5760000): fx_g09_fp at 0 m; D10 (590000, 5760000): fx_g10_grace at 0 m.
+# The free option of spec Amendment E14 (cases E29..E32) lives in its own corner of the plane, 10 km north of every earlier
+# destination and garage (well beyond D_max = 1000 m), so the option set of E01..E28 is unchanged: fx_g17_free at
+# (600000, 5770000) with D11 (599700, 5770000) 300 m west of it, D12 (599900, 5770000) 100 m west and D13 (600000, 5770000)
+# at 0 m; fx_g15_tier_grace, fx_g16_tier_grace_cap and fx_g18_grace_total (O cases only) lie 10 km and more east of it.
 # lambda = 400 m: w(300 m) = exp(-0.75) = 0.4723665527, w(700 m) = exp(-1.75) = 0.1737739435, w(1000 m) = exp(-2.5) =
 # 0.0820849986, w(0 m) = 1 (P = 0.5 each with one garage at the destination). expected = sum(w_i c_i) / sum(w_i) over the
 # options (the street w 1, c = street product; a garage c = its option price), the result rounded half up once. Times of day
@@ -418,6 +422,7 @@ _D0, _D1, _D2, _D3, _D4 = ((570000.0, 5750000.0), (580000.0, 5750000.0), (590000
                            (610000.0, 5750000.0))
 _D6, _D7, _D8, _D9, _D10 = ((620000.0, 5750000.0), (630000.0, 5750000.0), (640000.0, 5750000.0), (580000.0, 5760000.0),
                             (590000.0, 5760000.0))
+_D11, _D12, _D13 = ((599700.0, 5770000.0), (599900.0, 5770000.0), (600000.0, 5770000.0))
 _E_CASE_ROWS = (
     # D0 has no garage within 1000 m: the schema-2 price of G-like stays, 60 min x 3 ct = 180 ct, probability 0.
     ("E01", "fx_bs_ib", 36000, 39600, "shop", False, False, False, False, 0, *_D0, 400.0, 180, "PAID_METERED", 0.0),
@@ -507,6 +512,21 @@ _E_CASE_ROWS = (
     # garage: 3 started hours x 200 ct = 600 ct, P = w / w = 1, expected = 1.0 x 600 = 600 exactly.
     ("E28", "fx_res_garage_v2", 36000, 46800, "shop", False, False, False, False, 0, *_D1, 400.0, 600, "PAID_EXPECTED",
      1.0),
+    # E14: a free option (fx_g17_free, cost 0) at 300 m lowers the expected cost; w = exp(-0.75) = 0.4723665527. Street 60 min x
+    # 3 ct = 180 ct: (180 + 0.4723665527 x 0) / 1.4723665527 = 122.252 -> 122; P_garage = 0.4723665527 / 1.4723665527 =
+    # 0.3208213008 (the same weight as E02: only the garage price differs).
+    ("E29", "fx_bs_ib", 36000, 39600, "shop", False, False, False, False, 0, *_D11, 400.0, 122, "PAID_EXPECTED",
+     0.3208213008),
+    # the free garage at 100 m: w = exp(-0.25) = 0.7788007831: 180 / 1.7788007831 = 101.192 -> 101; P_garage = 0.7788007831 /
+    # 1.7788007831 = 0.4378234991.
+    ("E30", "fx_bs_ib", 36000, 39600, "shop", False, False, False, False, 0, *_D12, 400.0, 101, "PAID_EXPECTED",
+     0.4378234991),
+    # E4 with a free garage at 0 m: 25 min <= the free threshold of 30 min, the street costs 0 and the stay pays 0, the outcome
+    # stays FREE_WITHIN_LIMIT (the free option adds nothing and never turns a free street stay into a mixture), probability 0.
+    ("E31", "fx_sz", 39600, 41100, "shop", False, False, False, False, 0, *_D13, 400.0, 0, "FREE_WITHIN_LIMIT", 0.0),
+    # E4: 240 chargeable min > max stay 180 without a long-stay product: no street option, the weights renormalise over the one
+    # free garage at 300 m: P = 1, expected = 1.0 x 0 = 0 ct (the zone garage family is superseded, E8).
+    ("E32", "fx_bs_ia_v2", 32400, 46800, "shop", False, False, False, False, 0, *_D11, 400.0, 0, "PAID_EXPECTED", 1.0),
 )
 
 # Garage option cases (the price of ONE garage option, no mixture): (id, garage_id, arrival_s, departure_s, purpose,
@@ -598,6 +618,49 @@ _O_CASE_ROWS = (
     # min(400, 300) = 300 ct.
     ("O43", "fx_g14_closed_capped", 36000, 122460, "shop", 320),
     ("O44", "fx_g14_closed_capped", 36000, 122400, "shop", 300),
+    # E14 (spec Amendment E14, rulings R-4b3): fx_g15_tier_grace (tiers 06:00-18:00 1.00 and 18:00-06:00 0.50 EUR per started
+    # 60 min, grace period 0-30 free, no fee window, no cap). A stay up to 30 min costs 0 (elapsed, from the arrival), a longer
+    # stay is billed by the tiers from the arrival. 10:00 + 30:00 = 0; 30:01 = one unit at 10:00 (day) = 100 ct; 31 min = 100 ct;
+    # 61 min = units 10:00 and 11:00 = 200 ct.
+    ("O45", "fx_g15_tier_grace", 36000, 37800, "shop", 0),
+    ("O46", "fx_g15_tier_grace", 36000, 37801, "shop", 100),
+    ("O47", "fx_g15_tier_grace", 36000, 37860, "shop", 100),
+    ("O48", "fx_g15_tier_grace", 36000, 39660, "shop", 200),
+    # 17:45 + 30 min = 0; 17:45 + 31 min = one unit started 17:45 (day tier) = 100 ct (the grace does not shift the unit start).
+    ("O49", "fx_g15_tier_grace", 63900, 65700, "shop", 0),
+    ("O50", "fx_g15_tier_grace", 63900, 65760, "shop", 100),
+    # 17:30-19:00 = 90 min = 2 units: 17:30 (day, 100 ct) and 18:30 (night, 50 ct) = 150 ct.
+    ("O51", "fx_g15_tier_grace", 63000, 68400, "shop", 150),
+    # 18:00 + 31 min: one unit started at 18:00 (the night tier starts at 18:00) = 50 ct.
+    ("O52", "fx_g15_tier_grace", 64800, 66660, "shop", 50),
+    # 05:50 + 30 min = 0; 05:50 + 31 min = one unit started 05:50 (night tier, which ends at 06:00) = 50 ct.
+    ("O53", "fx_g15_tier_grace", 21000, 22800, "shop", 0),
+    ("O54", "fx_g15_tier_grace", 21000, 22860, "shop", 50),
+    # 22:00-06:00 (next day) = 8 units, all night: 400 ct. 20:00-08:00 (next day) = 12 units: 10 night units 20:00 .. 05:00
+    # (500 ct) and the day units 06:00 and 07:00 (200 ct) = 700 ct. A stay of no length costs 0.
+    ("O55", "fx_g15_tier_grace", 79200, 108000, "shop", 400),
+    ("O56", "fx_g15_tier_grace", 72000, 115200, "shop", 700),
+    ("O57", "fx_g15_tier_grace", 43200, 43200, "shop", 0),
+    # fx_g16_tier_grace_cap (the same tiers and grace period, day cap 6.00 EUR): 10:00-18:00 = 8 day units = 800 ct, capped
+    # at 600 ct; 10:00-10:29 lies inside the grace period: 0 ct.
+    ("O58", "fx_g16_tier_grace_cap", 36000, 64800, "shop", 600),
+    ("O59", "fx_g16_tier_grace_cap", 36000, 37740, "shop", 0),
+    # fx_g17_free (the open free band "0- free", fee window 0-24 h, monthly product 50.00 EUR): every stay costs 0 ct: no length,
+    # one second, 30 min, 10 h, 36 h; the work stay 08:00-16:00 costs 0 too (the monthly product 5000 / 21 = 238 ct never
+    # raises a free option: the price is the minimum of the metered price 0 and the product).
+    ("O60", "fx_g17_free", 36000, 36000, "shop", 0),
+    ("O61", "fx_g17_free", 36000, 36001, "shop", 0),
+    ("O62", "fx_g17_free", 36000, 37800, "shop", 0),
+    ("O63", "fx_g17_free", 36000, 72000, "shop", 0),
+    ("O64", "fx_g17_free", 36000, 165600, "shop", 0),
+    ("O65", "fx_g17_free", 28800, 57600, "work", 0),
+    # fx_g18_grace_total (0-30 free; 30-60 total 1.60; 60- 0.80/30, day cap 5.00 EUR; the free period equals the billing unit):
+    # 30 min = 0; 30:01 = the total band 160 ct; 61 min = 160 + 1 started 30 min beyond 60 min (80 ct) = 240 ct; 181 min =
+    # 160 + ceil(121 / 30) = 5 units x 80 ct = 560 ct, capped at 500 ct.
+    ("O66", "fx_g18_grace_total", 36000, 37800, "shop", 0),
+    ("O67", "fx_g18_grace_total", 36000, 37801, "shop", 160),
+    ("O68", "fx_g18_grace_total", 36000, 39660, "shop", 240),
+    ("O69", "fx_g18_grace_total", 36000, 46860, "shop", 500),
 )
 
 

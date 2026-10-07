@@ -170,8 +170,10 @@ ASSUMPTIONS = {
     "P12": "a public car park of the Wolfsburg city layer that lies outside every published municipal tariff area and has "
            "no operator tariff in the sources is free of charge for every stay (municipal free default): the municipal fee "
            "ordinance levies fees where parking is permitted only with a ticket machine and the city's published layer of "
-           "those areas holds none at the point; no evidence of a fee is not evidence of none, so every such row is named "
-           "and counted; encoded as the free schedule '0- free'",
+           "those areas holds none at the point, but section 2(2) of the ordinance defines Zone II as all other streets "
+           "and places of the city area, so the published areas are not shown to be exhaustive; no evidence of a fee is not "
+           "evidence of none (the weakest assumption of the dataset), so every such row is named and counted; encoded as "
+           "the free schedule '0- free'",
 }
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a

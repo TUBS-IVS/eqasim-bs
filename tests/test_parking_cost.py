@@ -63,13 +63,14 @@ def test_the_contract_holds_the_g_l_lz_v_r_and_e_cases_each_with_its_minimum_sta
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
     # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
-    # except R10 and R11 at L = 15; E01..E28 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15.
+    # except R10 and R11 at L = 15; E01..E32 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15
+    # (E29..E32 the free options of E14: a free garage lowers the expected cost, never raises a street-free stay).
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
-    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 29)]
+    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 33)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     # only the R cases and E12 (R2 before the garages) set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)
@@ -93,10 +94,32 @@ def test_golden_garage_option_case(case, fixture_garages):
     assert option_case_mismatches(fixture_garages, [case]) == []
 
 
-def test_the_garage_option_cases_are_named_o01_to_o44_and_name_known_fixture_garages(fixture_garages):
-    assert [case["id"] for case in GOLDEN_GARAGE_OPTION_CASES] == [f"O{number:02d}" for number in range(1, 45)]
+def test_the_garage_option_cases_are_named_o01_to_o69_and_name_known_fixture_garages(fixture_garages):
+    assert [case["id"] for case in GOLDEN_GARAGE_OPTION_CASES] == [f"O{number:02d}" for number in range(1, 70)]
     assert {case["garage_id"] for case in GOLDEN_GARAGE_OPTION_CASES} <= {garage.garage_id for garage in fixture_garages}
     assert option_case_mismatches(fixture_garages, [{**GOLDEN_GARAGE_OPTION_CASES[0], "garage_id": "fx_unknown"}])
+
+
+_E14_GARAGE_IDS = ("fx_g15_tier_grace", "fx_g16_tier_grace_cap", "fx_g17_free", "fx_g18_grace_total")
+_E14_SEPARATION_MARGIN_M = 1000.0
+
+
+def test_the_e14_fixture_garages_leave_every_earlier_garage_option_set_unchanged(fixture_garages):
+    # The Java contract copies the golden file byte for byte, so the cases written before the E14 garages (E01..E28) must
+    # keep their option sets: no destination of those cases may see an E14 garage, and the E14 cases (E29..E32) see
+    # only fx_g17_free. The margin keeps a clear distance beyond D_max, so no rounding of coordinates can change this.
+    earlier_cases = [case for case in GOLDEN_CASES if case["destination_x_m"] is not None and int(case["id"][1:]) <= 28]
+    e14_cases = [case for case in GOLDEN_CASES if case["id"] in ("E29", "E30", "E31", "E32")]
+    assert len(earlier_cases) == 28 and len(e14_cases) == 4
+    assert {garage.garage_id for garage in fixture_garages} >= set(_E14_GARAGE_IDS)
+    for case in earlier_cases + e14_cases:
+        in_range = {garage.garage_id for garage, _ in cost.garage_options_in_range(
+            fixture_garages, case["destination_x_m"], case["destination_y_m"],
+            cost.GARAGE_MAX_DISTANCE_M + _E14_SEPARATION_MARGIN_M)}
+        if case in earlier_cases:
+            assert not in_range & set(_E14_GARAGE_IDS), case["id"]
+        else:
+            assert in_range == {"fx_g17_free"}, case["id"]
 
 
 def test_the_cases_without_a_destination_price_exactly_as_before_the_garage_options(fixture_zones):

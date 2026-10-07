@@ -767,6 +767,8 @@ LOT_SPECS = (
     {"facility": "WOB_PARK_1900571", "class": "b", "garage_id": "wob_lot_1900571",
      "tiers": ("OP_AUTOSTADT_P2_DAY", "OP_AUTOSTADT_P2_NIGHT"), "tier_grace": "OP_AUTOSTADT_P2_GRACE",
      "source": "op_autostadt_prices",
+     "override": "the row encodes a price function (two time-of-day tiers and a grace period) although the package advises "
+                 "to record the tariff family with its conditional maximum and to add no precise price function",
      "operator": ("lots_page", "Autostadt GmbH", "evidence/research/operators/text/op_autostadt_rules.txt",
                   "Die Parkkarte ist Eigentum der Autostadt GmbH", "op_autostadt_rules"),
      "ignored": {"OP_AUTOSTADT_P2_DAY:cap": "the daily maximum of 6.00 EUR applies only with the validation of the parking "
@@ -788,22 +790,27 @@ LOT_SPECS = (
                 "price page and in the Parkplatzordnung: 06:00-18:00 1.00 EUR per hour, 18:00-06:00 0.50 EUR per hour, no stay of "
                 "up to 30 minutes is charged. Encoded as the two time-of-day tiers per started 60 min with the grace period of "
                 "30 min (ASSUMPTION P10 for tiers: a longer stay is billed from the arrival). The rounding is not stated "
-                "(ASSUMPTION P4, started unit). The Autostadt's opening hours (10:00-18:00) are no charging hours. ACCESS: the "
-                "introduction of the Parkplatzordnung reserves the car parks for visitors of the Autostadt, whereas section 3 "
-                "says that P1 to P3 are open to all persons; the package keeps the contradiction as open, and the owner decided "
-                "to treat the car park as a public option (spec E14)."},
+                "(ASSUMPTION P4, started unit). The Autostadt's opening hours (10:00-18:00) are no charging hours. ACCESS: "
+                "listed as a public option under E14 (b) by the owner direction; the sources contradict each other on access "
+                "(introduction of the Parkplatzordnung: visitors of the Autostadt only; section 3: P1 to P3 open to all "
+                "persons); not resolved."},
     {"facility": "WOB_PARK_1966086", "class": "b", "garage_id": "wob_lot_1966086",
      "grace": ("OP_CLINIC_GROUP_GRACE", "OP_CLINIC_SURFACE_GROUP"), "cap": "OP_CLINIC_SURFACE_GROUP:cap", "window": None,
      "source": "op_clinic_visitors",
+     "override": "the row takes the visitor-group tariff of the car parks P1 and P2/P3 as the tariff of this point although the "
+                 "package advises to do so only once the identity of the sub-facility is confirmed (the geometry match is "
+                 "partial_subfacility_unresolved)",
      "operator": ("lots_page", "Klinikum Wolfsburg", "evidence/research/operators/search_clinic_precision_evidence.json",
                   "unsere Besucherparkpl\u00e4tze P1 und P2", "op_clinic_visitors"),
      "p10_decisions": ("R-4b3-1", {"OP_CLINIC_GROUP_GRACE:free_minutes_policy": ("unknown",)}),
-     "p10_basis": "the operator's visitor page states 'bis 30 Minuten kostenfrei, danach 0,80 Euro je halbe Stunde, maximal 5,00 "
-                  "Euro pro Tag' for P1 and P2/P3; the word 'danach' can be read as a deduction of the free minutes, and the "
-                  "package keeps the deduction open (field decision OP_CLINIC_GROUP_GRACE:free_minutes_policy unknown; open "
-                  "question '30-Minuten-Abzug, Rundung und Zeitraum 5-Euro-Tagesmaximum?'); the owner decided on 2026-10-07 "
-                  "(spec E14) to read the 30 free minutes as a grace period (a stay of 31 min costs two started half hours from "
-                  "its arrival, 1.60 EUR, where a deduction would give 0.80 EUR)",
+     "p10_basis": "the operator words the free period twice: 'bis zu 30 Minuten: kostenfrei; jede weitere halbe Stunde: 0,80' "
+                  "(list of the visitor car parks P1 and P2) and 'danach 0,80 Euro je halbe Stunde' (table P1, P2/P3, with "
+                  "'bis 30 Minuten kostenfrei, maximal 5,00 Euro pro Tag'); both 'jede weitere' and 'danach' can be read as a "
+                  "deduction of the free minutes, and the package keeps the deduction open (field decision "
+                  "OP_CLINIC_GROUP_GRACE:free_minutes_policy unknown; open question '30-Minuten-Abzug, Rundung und Zeitraum "
+                  "5-Euro-Tagesmaximum?'); the owner decided on 2026-10-07 (spec E14) to read the 30 free minutes as a grace "
+                  "period: a stay of 31 min costs 1.60 EUR (two started half hours from its arrival) under P10 and 0.80 EUR "
+                  "under the deduction reading",
      "p11_decisions": ("R-4b3-1", {"WOB_PARK_1966086:geometry_match": ("reviewed_evidence",),
                                    "OP_CLINIC_SURFACE_GROUP:amount_eur": ("documented_component",)}),
      "p11_basis": "the operator tariff of the visitor car parks P1 and P2/P3 is assigned to the municipal point although the "

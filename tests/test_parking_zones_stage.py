@@ -54,7 +54,7 @@ FIXTURE_PATHS = {
 SOURCE_IDS = ["parking_zones_2026", "parking_tariffs_2026", "parking_coverage_register_2026",
               "srv2023_commute_parking_by_workplace_class", "parking_resident_districts_2026", "parking_garages_2026"]
 FIXTURE_DISTRICT_IDS = ["fx_district_a", "fx_district_b", "fx_district_sz_a"]
-FIXTURE_GARAGE_COUNT = 15
+FIXTURE_GARAGE_COUNT = 19
 #: The loader of the garage dataset warns when most priced garages rest on an assumption (P4, P5 and the others); the
 #: committed dataset does (34 of 35), so these two warnings are expected at every load and are no defect of the release.
 GARAGE_ASSUMPTION_RATE_WARNING = "rest on"
