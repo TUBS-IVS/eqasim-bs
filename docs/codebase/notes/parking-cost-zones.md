@@ -70,15 +70,27 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 ## Adding or changing a zone
 
 1. Digitise the polygon into `parking_zones_2026.geojson` with every `ZONE_PROVENANCE_COLUMNS` field; cut it out of
-   any zone it overlaps (a paid island inside a resident zone is its own polygon).
+   any zone it overlaps (a paid island inside a resident zone is its own polygon). The committed file is the output of
+   the one-off curation chain `scripts/curation/parking_zones_2026/assemble_parking_zones.py` (its steps
+   `municipal_zones.py` for `--municipal-dir` and `regional_zones.py` for `--regional-dir`; the raw inputs are
+   gitignored), so a change is made in the curation and the file regenerated, never edited by hand; the data record
+   `parking_zones_2026` holds the command line and the inputs. The geometry source is one of `GEOMETRY_SOURCES`; a
+   source that implies a zone type (`GEOMETRY_SOURCE_ZONE_TYPES`: `campus_detection_zones` is a campus,
+   `single_site_buffered` a street zone) must match the tariff row (`validate_geometry_source_zone_types`), and the
+   municipal QA table needs rows for every `municipal_street_sections_buffered`, `campus_detection_zones` and
+   `single_site_buffered` zone (`municipal_zone_qa.municipal_zone_ids`).
 2. Add its row to `parking_tariffs_2026.csv` (`TARIFF_COLUMNS`; the required and forbidden fields per zone type are
    `REQUIRED_FIELDS_BY_TYPE` and `FORBIDDEN_FIELDS_BY_TYPE`), with `source_url`, `source_date`, `valid_from` and a
-   `fee_window_source` (`assumption` where no ordinance or signage gives the window, F1).
+   `fee_window_source` (`assumption` where no ordinance or signage gives the window, F1). A value no source gives
+   stays empty or is a named assumption in the row's notes; the curation checks the rows of a regional package
+   against the package's tariff rules (`--regional-tariffs`).
 3. Set the municipality to `zoned` in `parking_coverage_register_2026.csv`; its workplace class must have a class row
    in `srv2023_commute_parking_by_workplace_class.csv`.
 4. Run `python scripts/validate_parking_zones.py --data-path eqasim-data/data` and `tests/test_parking_zones.py`,
    force-add the changed files (`git add -f`), and update the validator summary and limitations in the three data
-   records.
+   records. To see what a release change touches, run `scripts/curation/parking_zones_2026/count_zone_exposure.py` on
+   the earlier and the new zone file (activities and car arrivals of a plans file per added, removed or changed
+   zone; an exposure indicator, not a validation).
 
 ## Rules maintainers must keep
 
@@ -94,6 +106,15 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   car parks), after the home and employer-free rules and before the fee-window check. The flag switches off R2 only:
   the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
   `schema_version` 3 since.
+- Overlaps of the release are settled by an explicit precedence in the curation (`PRECEDENCE_REGIONAL` in
+  `assemble_parking_zones.py`: the campus zones first, then the BgA lots and the single paid sites, then the older
+  zones), never by the order of the file. Every cut that involves a zone of the regional step is a QA row
+  `<loser>_cut_by_<winner>` of `parking_zones_2026_municipal_qa.csv`, and after the 0.5 m simplification the winner
+  is subtracted once more (`enforce_exact_cuts`): the simplification of a cut zone can move its hole ring back across
+  the winner. The release must load with `load_zone_polygons(..., max_repairs=0)`, nothing is repaired.
+- A zone that lies outside its own municipality of the pipeline's polygons fails the containment check of the
+  assembly unless it is declared in `regional_zones.CONTAINMENT_EXCEPTIONS` with its reason; the declared exception
+  still has to lie in its own and the declared municipality together.
 - The tariff model JSON stays schema 2 for additive keys (Amendment C3 added the per-zone bool
   `resident_permits_valid`, never null, and the top-level list `resident_districts`), but the Java `ParkingTariffs`
   reader requires the exact key sets of the document and of every zone entry (`DOCUMENT_FIELDS`, `ZONE_FIELDS`): a key

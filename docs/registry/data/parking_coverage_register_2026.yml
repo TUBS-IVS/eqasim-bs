@@ -7,7 +7,9 @@ provider: >-
   gemeindefreie Gebiete, Wikipedia
 vintage: >-
   Compiled 2026-09-29 together with parking_zones_2026 and parking_tariffs_2026; the rows of Braunschweig, Wolfsburg
-  and Goslar and one excluded Wolfsburg row updated on 2026-10-01 (spec Amendment C)
+  and Goslar and one excluded Wolfsburg row updated on 2026-10-01 (spec Amendment C); the rows of Braunschweig and
+  Goslar and of Bad Harzburg, Seesen, Braunlage, Clausthal-Zellerfeld, Schoeningen, Koenigslutter am Elm, Wittingen,
+  Langelsheim and Schoeppenstedt updated on 2026-10-07 (spec Amendment D)
 geography: >-
   The 123 spatial units of the eight ZGB counties (03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158):
   113 Gemeinden and 10 gemeindefreie Gebiete
@@ -19,7 +21,7 @@ used_by:
 - braunschweig.parking.zones_stage
 acquisition:
   method: committed
-  source: parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory (excluded rows)
+  source: parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory (excluded rows); the regional evidence package of 2026-10-07 and the town pages named in the rows (the audit results of spec Amendment D)
   script: null
   notes: >-
     Universe: the cached output of data.spatial.municipalities of the main checkout (cache_bs_bpsmoke,
@@ -32,6 +34,11 @@ acquisition:
     (Landkreis Goslar) 03153504, Am Grossen Rhode 03158501). Excluded rows: hospital, station, airport and
     shopping-centre car parks with fee=yes in the Overpass responses of 2026-09-29 (Braunschweig, Wolfsburg,
     Salzgitter) and the airport tariff of the city car-park directory.
+    Spec Amendment D (2026-10-07): the status and the note of Braunschweig, Goslar, Bad Harzburg, Seesen, Braunlage,
+    Clausthal-Zellerfeld, Schoeningen, Koenigslutter am Elm, Wittingen, Langelsheim and Schoeppenstedt follow the audit
+    of the owner's regional evidence package Regional_Parkdaten_Belege_2026-10-07.zip (SHA-256 in the data record
+    parking_zones_2026), the sources it cites and the town pages named in the rows; the statements of coverage of that
+    audit ('no confirmed paid parking found') are kept as research coverage, never as proof that parking is free.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true
@@ -56,14 +63,20 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: >-
-  115 of 123 municipalities are not_audited: parking there is free by assumption Z1 of the tariff table,
-  including town centres that may charge (not checked in the first release). No municipality is marked
-  no_paid_parking_known (no source states it). The eight excluded rows cover only the hospital, station,
-  airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight zoned
-  municipalities; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
-  (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, ParkGO zone II
-  apart from the three Parkscheininseln, drawn on the ParkGO annex map on page 3 of the ParkGO PDF but not digitised,
-  BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse) and says that the permit districts A/B/C are no fee
+  111 of 123 municipalities are not_audited: parking there is free by assumption Z1 of the tariff table, including town
+  centres that may charge (not checked in the first release). Five of them (Clausthal-Zellerfeld, Koenigslutter am Elm,
+  Wittingen, Langelsheim, Schoeppenstedt) were audited on 2026-10-07 without yielding a zone; the result is in their
+  notes and is research coverage, not proof that parking is free (Clausthal-Zellerfeld has confirmed paid parking, but
+  no site with both a geometry and a short-stay tariff). One municipality, Schoeningen, is marked no_paid_parking_known
+  on the statement of the city's page about the town hall and the nearby city car parks, which does not cover every area
+  of the town. The eight excluded rows cover only the hospital, station,
+  airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight municipalities
+  zoned on 2026-09-29; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
+  (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, ParkGO zone II,
+  which needs no area zone because the city's phone-parking map of 2024 shows paid city parking outside the
+  Okerumflut only at the three Parkscheininseln and at the BgA car park Willy-Brandt-Platz, a zone since spec
+  Amendment D1, and the TU campus Bevenroder Strasse, whose detection zone is digitised but not zoned because no GB3
+  page states ticketing) and says that the permit districts A/B/C are no fee
   zones but the second layer parking_resident_districts_2026; the part of
   zone 1a south of the city's overview map, unzoned until 2026-10-01, belongs to bs_zone_ia since spec Amendment C1.
   The Wolfsburg zones (spec Amendment C2) cover the city's phone-parking street sections and 50 m around them, no
@@ -85,3 +98,13 @@ notes: >-
   not verified; used by owner decision 2026-10-01), the Goslar row the cross-check in
   parking_zones_2026_municipal_qa.csv; the excluded row of the Wolfsburg shopping-centre car parks reads 'inside a
   zone' instead of 'inside the zone'.
+  Spec Amendment D (2026-10-07): status counts zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131
+  rows). zoned: Braunschweig and Goslar (rows rewritten: Braunschweig names the BgA lots re-derived from the annex maps,
+  the removed Kannengiesserstrasse, the six TU campus unions with the Volkmaroder Strasse campus and the merged
+  International House; Goslar the three car parks at 1 EUR/h and the cut-out of zone 1) and, new, Bad Harzburg 03153002
+  (five car parks), Seesen 03153012 (Am Markt) and Braunlage 03153016 (two car parks). no_paid_parking_known:
+  Schoeningen 03154019 (source: the city's page 'Anfahrt und Parken'). not_audited with the audit result in the note:
+  Clausthal-Zellerfeld 03153018 (paid parking confirmed, no site with geometry and short-stay tariff, so no zone),
+  Koenigslutter am Elm 03154013 (P3 Niedernhof: paid status conflicting with disc parking), Wittingen 03151040,
+  Langelsheim 03153019 and Schoeppenstedt 03158027 (no confirmed paid passenger-car parking found). The excluded rows
+  are unchanged.

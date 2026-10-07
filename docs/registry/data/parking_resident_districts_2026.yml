@@ -104,15 +104,19 @@ limitations: >-
   parking_tariffs_2026): by default on street and resident zones, never on a campus, and not at the five BgA car parks,
   where no source states that permits are valid; it does not read the zone's resident exemption. By area, the districts
   overlay the fee zones heavily (they are independent layers): Braunschweig A 0.104 km2 of zone Ia and 0.508 km2 of Ib, B
-  0.929 km2 of Ia and 0.295 km2 of Ib, C 0.463 km2 of Ia and 0.161 km2 of Ib; of the other zones the five BgA car parks
-  (about 1,400 to 2,800 m2 each, inside A, B and C) and about 2,600 m2 of the TU Zentralcampus (inside A), where R2 is
-  off by R2-a; the Goslar districts cover 0.402 km2 of the 0.642 km2 of the old-town zone gs_altstadt_zone1.
+  0.933 km2 of Ia and 0.295 km2 of Ib, C 0.464 km2 of Ia and 0.161 km2 of Ib; of the other zones four of the five BgA car
+  parks (about 400 to 2,600 m2 each, inside A, B and C; Willy-Brandt-Platz lies in no district) and about 1,650 m2 of the
+  TU Zentralcampus (472 m2 in A and 1,177 m2 in C), where R2 is off by R2-a; the Goslar districts cover 0.396 km2 of the
+  0.636 km2 of the old-town zone gs_altstadt_zone1 (with the zone release of 2026-10-07, spec Amendment D; the release
+  of 2026-10-01 gave B 0.929 km2 of Ia, C 0.463 km2 of Ia, BgA car parks of about 1,400 to 2,800 m2, about 2,600 m2 of
+  the Zentralcampus and 0.402 of 0.642 km2 in Goslar).
 notes: >-
   Content on 2026-10-01: 10 districts, Braunschweig 3 (A 649,733 m2, B 1,252,014 m2, C 658,503 m2 in the package; the
   file differs by the WGS84 rounding) and Goslar 7 (A, B, C, F, G, H, J; C includes the Oberstadt feature, H is 6.32 m2
   smaller than in the package). Curation check, not a validation (assignment of the activities of the local 1 % scenario
   of 2026-04-29, 47,362 activities of 11,472 persons, with the production functions of braunschweig.parking.attach):
-  937 activities (2.0 %) lie in a district, 797 of them also in a fee zone; 247 persons (2.2 %) live in a district; 20 of
+  937 activities (2.0 %) lie in a district, 809 of them also in a fee zone (797 with the zone release of 2026-10-01,
+  809 with that of 2026-10-07); 247 persons (2.2 %) live in a district; 20 of
   the 21,082 non-home activities (0.09 %) lie in the district of the person's home, 1 of them reached by car in the plan of
   the scenario, so rule R2 acts on a very small share of the stays of this scenario (an upper bound, because the count
   knows neither the fee zone nor the permit flag of the zone, and an exposure indicator of an older model state, no
