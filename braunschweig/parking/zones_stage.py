@@ -91,8 +91,9 @@ RELEASE_INPUTS = (
 _HELPER_MODULES = (parking_zones, attach, tariff_export)
 #: Reached through ``tariff_export`` rather than imported here: ``tariff_row_to_zone`` builds a
 #: ``cost.ZoneTariff``, whose construction IS the per-row validation. Hashed by dotted name, like the deferred
-#: helpers of ``braunschweig.matsim.simulation.prepare``.
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.parking.cost",)
+#: helpers of ``braunschweig.matsim.simulation.prepare``. ``free_draw_options`` is imported by ``attach`` (the draw
+#: options of the free-parking draw, not part of the release itself) and hashed with it.
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.parking.cost", "braunschweig.parking.free_draw_options")
 
 
 def _require_relative_posix_path(key: str, value, default: str) -> str:

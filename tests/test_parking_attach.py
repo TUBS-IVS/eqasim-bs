@@ -535,14 +535,15 @@ def test_resident_districts_log_the_resident_count(caplog):
 # --------------------------------------------------------------------------- draw_parking_free
 
 
-def test_draw_skips_campus_zones():
-    """Campus members pay the day product (assumption C1): never a parkingFree draw there, even at p = 1
-    (plan review focus 3)."""
+def test_campus_zones_are_drawn_with_the_campus_share_not_the_class_share():
+    """Campus work/education is drawn (parking cost zones v2, ASSUMPTION C2), but with its own share and never the
+    class share: at p(class) = 1 and campus share 0.0 the campus activity stays priced, the paid-zone one is free."""
     activities = _zoned_activities([
         (1, 0, "home", None), (1, 1, "work", "z_campus"), (1, 2, "home", None),
         (2, 0, "home", None), (2, 1, "education", "z_campus"), (2, 2, "work", "z_paid_a"), (2, 3, "home", None),
     ])
-    free = _free_by_key(attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, shift=1.0))
+    free = _free_by_key(attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, shift=1.0,
+                                                 campus_free_share=0.0))
     assert not free[(1, 1)] and not free[(2, 1)]
     assert free[(2, 2)]
 
@@ -738,3 +739,214 @@ def test_check_workplace_classes_names_every_missing_class_with_its_zones():
         attach.check_workplace_classes(_tariffs(), shares, zone_types=attach.FREE_DRAW_ZONE_TYPES)
     assert "z_campus" not in str(error.value)
     attach.check_workplace_classes(_tariffs().iloc[[0, 1]], shares)
+
+
+# --------------------------------------------------------------------------- proxy classes and campus share (D5, D6)
+
+#: The synthetic zone z_paid_b (class 03102) stands in for the Wolfsburg zones (class 03103) of production.
+PROXY = {"03102": "bs_zentrum"}
+PAID_TYPES = ("street_paid", "resident_zone")
+
+
+def _expected_free(activities, shares_by_class, shift=0.0, campus_free_share=0.0):
+    """Independent reproduction of the draw, {(person_id, activity_index): free} for the eligible activities.
+
+    ONE RandomState(random_seed + 7371), one uniform per person of the frame in person_id order. A paid-zone
+    activity is free when u < clip(share of the class of the person's first paid-zone eligible activity + shift),
+    a campus activity when u < campus_free_share (the shift never reaches it).
+    """
+    person_ids = sorted(activities["person_id"].unique())
+    uniform = dict(zip(person_ids, np.random.RandomState(SEED + 7371).random_sample(len(person_ids))))
+    tariffs = _tariffs().set_index("zone_id")
+    eligible = activities[activities["purpose"].isin(("work", "education")) & activities["parking_zone"].notna()]
+    eligible = eligible.sort_values(KEYS)
+    expected = {}
+    for person_id, rows in eligible.groupby("person_id"):
+        types = rows["parking_zone"].map(tariffs["zone_type"])
+        paid_rows = rows[types.isin(PAID_TYPES)]
+        paid_probability = None
+        if not paid_rows.empty:
+            first_class = tariffs.loc[paid_rows.iloc[0]["parking_zone"], "workplace_class"]
+            paid_probability = min(max(shares_by_class[first_class] + shift, 0.0), 1.0)
+        for index, row in rows.iterrows():
+            probability = campus_free_share if types[index] == "campus" else paid_probability
+            expected[(person_id, row["activity_index"])] = bool(uniform[person_id] < probability)
+    return expected
+
+
+def _assert_free_as_expected(drawn, expected):
+    free = _free_by_key(drawn)
+    assert {key: bool(free[key]) for key in expected} == expected
+    assert not free.drop(list(expected)).any()  # every other activity is False
+
+
+# --------------------------------------------------------------------------- the Wolfsburg proxy class (D5)
+
+
+def test_the_mapped_class_draws_with_the_proxy_share_within_a_binomial_bound():
+    """2000 persons of class 03102 draw with the share of bs_zentrum (0.5), not their own 0.95."""
+    shares = _shares({"03102": 0.95, "bs_zentrum": 0.5})
+    drawn = attach.draw_parking_free(_commuters(range(1, 2001), "z_paid_b"), _tariffs(), shares, SEED,
+                                     proxy_classes=PROXY)
+    realised = drawn.loc[drawn["activity_index"] == 1, "parking_free"].mean()
+    assert abs(realised - 0.5) <= 4.0 * math.sqrt(0.5 * 0.5 / 2000)
+    assert abs(realised - 0.95) > 0.3  # not vacuous: the own class share is far away
+
+
+def test_the_proxy_share_equals_the_class_share_of_the_source_class_on_the_same_uniforms():
+    """Common random numbers: mapping 03102 -> bs_zentrum equals setting 03102 to the bs_zentrum share."""
+    activities = _mixed_population()
+    proxied = attach.draw_parking_free(activities, _tariffs(), _shares({"03102": 0.95, "bs_zentrum": 0.4}), SEED,
+                                       proxy_classes=PROXY)
+    replaced = attach.draw_parking_free(activities, _tariffs(), _shares({"03102": 0.4, "bs_zentrum": 0.4}), SEED)
+    pd.testing.assert_frame_equal(proxied, replaced)
+
+
+def test_the_shift_is_added_to_the_proxy_share():
+    activities = _mixed_population()
+    drawn = attach.draw_parking_free(activities, _tariffs(), _shares({"03102": 0.95, "bs_zentrum": 0.3}), SEED,
+                                     shift=0.2, proxy_classes=PROXY)
+    _assert_free_as_expected(drawn, _expected_free(
+        activities, {"bs_zentrum": 0.3, "03102": 0.3, "bs_innenbereich": 0.5}, shift=0.2))
+
+
+def test_persons_of_unmapped_classes_keep_their_draw_and_the_mapped_class_changes():
+    shares = _shares({"03102": 0.95, "bs_zentrum": 0.3})
+    activities = _mixed_population()
+    plain = _free_by_key(attach.draw_parking_free(activities, _tariffs(), shares, SEED))
+    proxied = _free_by_key(attach.draw_parking_free(activities, _tariffs(), shares, SEED, proxy_classes=PROXY))
+    first = activities[activities["purpose"].isin(("work", "education")) & activities["parking_zone"].isin(
+        ("z_paid_a", "z_paid_b", "z_res"))].sort_values(KEYS).drop_duplicates("person_id").set_index("person_id")
+    mapped = {key for key in plain.index if first.loc[key[0], "parking_zone"] == "z_paid_b"}
+    unmapped = set(plain.index) - mapped
+    assert mapped and (plain[list(unmapped)] == proxied[list(unmapped)]).all()
+    assert (plain[list(mapped)] != proxied[list(mapped)]).any()  # not vacuous
+
+
+@pytest.mark.parametrize("proxy_classes", [None, {}], ids=["none", "empty_mapping"])
+def test_an_empty_mapping_and_campus_share_zero_reproduce_the_v1_draw_byte_for_byte(proxy_classes):
+    """The v1 behaviour, reproduced independently on a population in which persons have paid-zone AND campus
+    activities: campus activities never free, paid-zone activities by the class of the first paid-zone activity."""
+    activities = _mixed_population()
+    expected = _expected_free(activities, {"bs_zentrum": 0.5, "03102": 0.5, "bs_innenbereich": 0.5})
+    assert any(activities.loc[activities["parking_zone"] == "z_campus", "person_id"].isin(
+        activities.loc[activities["parking_zone"].isin(["z_paid_a", "z_paid_b", "z_res"]), "person_id"]))
+    drawn = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, proxy_classes=proxy_classes,
+                                     campus_free_share=0.0)
+    _assert_free_as_expected(drawn, expected)
+    assert not drawn.loc[activities["parking_zone"] == "z_campus", "parking_free"].any()
+    pd.testing.assert_frame_equal(drawn, attach.draw_parking_free(activities, _tariffs(), _shares(), SEED))
+
+
+@pytest.mark.parametrize("mapping, message", [
+    ({"03199": "bs_zentrum"}, "03199"), ({"03102": "bs_nowhere"}, "bs_nowhere"),
+    ({"03102": "03102"}, "self-mapping"), ({"03102": "bs_zentrum", "bs_zentrum": "bs_innenbereich"}, "chain"),
+    ({"03102": 5}, "text"), ("03102", "mapping")],
+    ids=["unknown_key", "unknown_value", "self", "chain", "not_text", "not_a_mapping"])
+def test_the_draw_rejects_an_invalid_mapping(mapping, message):
+    with pytest.raises(ValueError, match=message):
+        attach.draw_parking_free(_commuters([1], "z_paid_b"), _tariffs(), _shares(), SEED, proxy_classes=mapping)
+
+
+def test_the_draw_logs_the_share_used_and_its_source_class_per_class(caplog):
+    activities = pd.concat([_commuters(range(1, 41), "z_paid_a"), _commuters(range(41, 81), "z_paid_b")],
+                           ignore_index=True)
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.draw_parking_free(activities, _tariffs(), _shares({"03102": 0.95, "bs_zentrum": 0.3}), SEED,
+                                 proxy_classes=PROXY)
+    messages = [record.getMessage() for record in caplog.records]
+    [mapped] = [message for message in messages if "workplace class 03102:" in message]
+    assert "03102 -> bs_zentrum 0.3000" in mapped and "persons 40" in mapped and "p_free 0.3000" in mapped
+    [own] = [message for message in messages if "workplace class bs_zentrum:" in message]
+    assert "own class share 0.3000" in own and "->" not in own
+
+
+def test_the_draw_defaults_are_the_v1_draw():
+    # A call without options is the v1 draw; the production values come from the configuration through the wrapper
+    # (tests/test_population_parking_attributes.py pins the wrapper, including the OFF path).
+    assert attach.draw_parking_free.__defaults__ == (0.0, None, 0.0)
+
+
+# --------------------------------------------------------------------------- the campus free share (D6)
+
+
+def test_campus_activities_are_drawn_once_per_person_with_the_campus_share():
+    activities = _zoned_activities([
+        (1, 0, "home", None), (1, 1, "work", "z_campus"), (1, 2, "education", "z_campus"), (1, 3, "home", None),
+        (2, 0, "home", None), (2, 1, "education", "z_campus"), (2, 2, "home", None),
+        (3, 0, "home", None), (3, 1, "work", "z_campus"), (3, 2, "home", None),
+        (4, 0, "home", None), (4, 1, "work", "z_campus"), (4, 2, "home", None),
+        (5, 0, "home", None), (5, 1, "work", "z_campus"), (5, 2, "home", None),
+        (6, 0, "home", None), (6, 1, "work", "z_campus"), (6, 2, "home", None),
+    ])
+    drawn = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, campus_free_share=0.5)
+    _assert_free_as_expected(drawn, _expected_free(activities, {"bs_innenbereich": 0.5}, campus_free_share=0.5))
+    free = _free_by_key(drawn)
+    assert free[(1, 1)] == free[(1, 2)]  # one draw per person covers its work and its education activity
+    assert len({bool(free[(person_id, 1)]) for person_id in range(1, 7)}) == 2  # both outcomes occur
+
+
+def test_campus_share_zero_keeps_the_campus_pricing_and_one_frees_every_campus_person():
+    activities = _mixed_population()
+    campus_rows = (activities["parking_zone"] == "z_campus").to_numpy()
+    assert campus_rows.any()
+    never = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, shift=1.0, campus_free_share=0.0)
+    assert not never.loc[campus_rows, "parking_free"].any()
+    always = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, shift=-1.0, campus_free_share=1.0)
+    assert always.loc[campus_rows, "parking_free"].all()  # unshifted: the shift never reaches the campus share
+
+
+def test_the_realised_campus_free_share_is_within_a_binomial_bound():
+    drawn = attach.draw_parking_free(_commuters(range(1, 4001), "z_campus"), _tariffs(), _shares(), SEED,
+                                     campus_free_share=0.2)
+    realised = drawn.loc[drawn["activity_index"] == 1, "parking_free"].mean()
+    assert abs(realised - 0.2) <= 4.0 * math.sqrt(0.2 * 0.8 / 4000)
+
+
+def test_campus_guests_and_other_purposes_are_unaffected():
+    """Only work and education are drawn; guests (other purposes) pay the guest product as before."""
+    activities = _zoned_activities([
+        (1, 0, "home", None), (1, 1, "shop", "z_campus"), (1, 2, "leisure", "z_campus"), (1, 3, "other", "z_campus"),
+        (1, 4, "home", None)])
+    assert not attach.draw_parking_free(activities, _tariffs(), _shares(), SEED,
+                                        campus_free_share=1.0)["parking_free"].any()
+
+
+def test_the_campus_draw_ignores_the_class_shares_the_shift_and_the_mapping():
+    activities = _commuters(range(1, 301), "z_campus")
+    reference = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, campus_free_share=0.3)
+    other = attach.draw_parking_free(activities, _tariffs(), _shares({"bs_innenbereich": 0.99, "bs_zentrum": 0.01}),
+                                     SEED, shift=0.4, campus_free_share=0.3, proxy_classes=PROXY)
+    pd.testing.assert_frame_equal(reference, other)
+
+
+def test_a_person_with_paid_zone_and_campus_activities_uses_each_kind_probability_on_one_uniform():
+    """Mixed person: the paid-zone activities follow the class share of the first paid-zone activity, the campus
+    activities the campus share, both on the person's single uniform."""
+    activities = _zoned_activities([
+        (1, 0, "home", None), (1, 1, "work", "z_campus"), (1, 2, "work", "z_paid_a"), (1, 3, "home", None)])
+    uniform = np.random.RandomState(SEED + 7371).random_sample(1)[0]
+    for paid_share, campus_share in ((0.0, 1.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)):
+        free = _free_by_key(attach.draw_parking_free(
+            activities, _tariffs(), _shares({"bs_zentrum": paid_share}), SEED, campus_free_share=campus_share))
+        assert bool(free[(1, 2)]) == bool(uniform < paid_share)
+        assert bool(free[(1, 1)]) == bool(uniform < campus_share)
+
+
+@pytest.mark.parametrize("campus_free_share", [-0.1, 1.1, 20, float("nan"), "0.2", True, None], ids=str)
+def test_the_draw_rejects_an_invalid_campus_share(campus_free_share):
+    with pytest.raises(ValueError, match="parking_campus_free_share"):
+        attach.draw_parking_free(_commuters([1], "z_campus"), _tariffs(), _shares(), SEED,
+                                 campus_free_share=campus_free_share)
+
+
+def test_the_campus_line_reports_persons_share_and_the_realised_campus_rate_and_nothing_is_never_drawn(caplog):
+    activities = pd.concat([_commuters(range(1, 201), "z_campus"), _commuters(range(201, 221), "z_paid_a")],
+                           ignore_index=True)
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        drawn = attach.draw_parking_free(activities, _tariffs(), _shares(), SEED, campus_free_share=0.25)
+    messages = [record.getMessage() for record in caplog.records]
+    realised = drawn.loc[(drawn["activity_index"] == 1) & (drawn["person_id"] <= 200), "parking_free"].mean()
+    [campus] = [message for message in messages if "campus persons 200" in message]
+    assert "campus_free_share 0.2500" in campus and f"realised {realised:.4f}" in campus
+    assert not any("never drawn" in message for message in messages)

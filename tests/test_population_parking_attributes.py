@@ -561,6 +561,53 @@ def test_configure_declares_the_zones_stage_the_shift_and_the_seed_when_enabled(
     assert "random_seed" in recorder.config_keys
 
 
+def test_configure_declares_the_proxy_mapping_and_the_campus_share_with_the_off_defaults_when_enabled():
+    recorder = _declare(parking_zones_enabled=True)
+    assert recorder.config_keys["parking_free_share_proxy_classes"] == {}
+    assert recorder.config_keys["parking_campus_free_share"] == 0.0
+
+
+def test_the_wrapper_defaults_without_the_two_options_pass_the_v1_draw_to_the_attach_module(tmp_path, monkeypatch):
+    calls = {}
+    _inject_attach(monkeypatch, _stub_attach_module(calls))
+    POP.execute(_wrapper_context(tmp_path))
+    [draw_call] = calls["draw_parking_free"]
+    assert draw_call["proxy_classes"] == {} and draw_call["campus_free_share"] == 0.0
+
+
+@pytest.mark.parametrize("mapping", [{"03103": "bs_zentrum"}, {}, {"03103": "bs_zentrum", "03102": "bs_zentrum"}],
+                         ids=["wolfsburg", "empty", "two_classes"])
+def test_configure_accepts_a_valid_proxy_mapping(mapping):
+    recorder = _declare(parking_zones_enabled=True, parking_free_share_proxy_classes=mapping)
+    assert ZONES_STAGE_NAME in recorder.stages
+
+
+@pytest.mark.parametrize("mapping", [None, "03103", {3103: "bs_zentrum"}, {"03103": "03103"},
+                                     {"03103": "bs_zentrum", "bs_zentrum": "03102"}],
+                         ids=["none", "text", "int_key", "self_mapping", "chain"])
+def test_configure_rejects_an_invalid_proxy_mapping(mapping):
+    with pytest.raises(ValueError, match="parking_free_share_proxy_classes"):
+        _declare(parking_zones_enabled=True, parking_free_share_proxy_classes=mapping)
+
+
+@pytest.mark.parametrize("share", [0.0, 0.2, 1.0, 0, 1])
+def test_configure_accepts_a_campus_free_share_in_the_closed_unit_interval(share):
+    assert ZONES_STAGE_NAME in _declare(parking_zones_enabled=True, parking_campus_free_share=share).stages
+
+
+@pytest.mark.parametrize("share", [-0.1, 1.1, 20, float("nan"), "0.2", True, None], ids=str)
+def test_configure_rejects_a_campus_free_share_outside_zero_to_one(share):
+    with pytest.raises(ValueError, match="parking_campus_free_share"):
+        _declare(parking_zones_enabled=True, parking_campus_free_share=share)
+
+
+def test_configure_off_does_not_validate_or_declare_the_two_options():
+    # The OFF path (the legacy ring and every fixture configuration) must not even look at them.
+    recorder = _declare(parking_free_share_proxy_classes="not a mapping", parking_campus_free_share=7)
+    assert "parking_free_share_proxy_classes" not in recorder.config_keys
+    assert "parking_campus_free_share" not in recorder.config_keys
+
+
 def test_configure_off_declares_neither_the_zones_stage_nor_the_shift():
     recorder = _declare()
     assert recorder.config_keys["parking_zones_enabled"] is False
@@ -729,11 +776,16 @@ def _wrapper_stages(incommuter_work):
 
 
 def _wrapper_context(tmp_path, parking_enabled=True, incommuter_work=Point(605150.0, 5790250.0),
-                     shift=0.25):
+                     shift=0.25, proxy_classes=None, campus_free_share=None):
     config = dict(_OTHER_FEATURES_OFF, cordon_enabled=True, enable_urban_parking=False,
                   write_income_eur=False, parking_zones_enabled=parking_enabled)
     if parking_enabled:
         config.update(parking_workplace_free_share_shift=shift, random_seed=RANDOM_SEED)
+        # Left out of the configuration unless given: the wrapper then runs on its code defaults (both options off).
+        if proxy_classes is not None:
+            config["parking_free_share_proxy_classes"] = proxy_classes
+        if campus_free_share is not None:
+            config["parking_campus_free_share"] = campus_free_share
     declared = _ConfigureRecorder(config=config)
     POP.configure(declared)
     return _ExecuteContext(declared, _wrapper_stages(incommuter_work), config, tmp_path)
@@ -772,10 +824,12 @@ def _stub_attach_module(calls, drop_a_row=False):
         result["resident_parking_zone"] = result["person_id"].map(home_zone).astype(object)
         return result
 
-    def draw_parking_free(activities, tariffs, workplace_shares, random_seed, shift=0.0):
+    def draw_parking_free(activities, tariffs, workplace_shares, random_seed, shift=0.0, proxy_classes=None,
+                          campus_free_share=0.0):
         calls.setdefault("draw_parking_free", []).append(
             {"activities": activities.copy(), "tariffs": tariffs,
-             "workplace_shares": workplace_shares, "random_seed": random_seed, "shift": shift})
+             "workplace_shares": workplace_shares, "random_seed": random_seed, "shift": shift,
+             "proxy_classes": proxy_classes, "campus_free_share": campus_free_share})
         zone_type = activities["parking_zone"].map(tariffs.set_index("zone_id")["zone_type"])
         eligible = (activities["purpose"].isin(("work", "education"))
                     & zone_type.isin(("street_paid", "resident_zone")))
@@ -832,7 +886,7 @@ def _read_plans(tmp_path):
 def test_incommuter_activity_gets_zone_attribute(tmp_path, monkeypatch, caplog):
     calls = {}
     _inject_attach(monkeypatch, _stub_attach_module(calls))
-    context = _wrapper_context(tmp_path)
+    context = _wrapper_context(tmp_path, proxy_classes={"03103": "bs_zentrum"}, campus_free_share=0.2)
     release = context._stages[ZONES_STAGE_NAME]
 
     with caplog.at_level(logging.INFO, logger=POP.__name__):
@@ -855,6 +909,9 @@ def test_incommuter_activity_gets_zone_attribute(tmp_path, monkeypatch, caplog):
     assert draw_call["random_seed"] == RANDOM_SEED
     assert isinstance(draw_call["random_seed"], int)
     assert draw_call["shift"] == 0.25
+    # ... the two options of parking cost zones v2 (spec Amendment D5, D6) as configured, with the types the draw expects
+    assert draw_call["proxy_classes"] == {"03103": "bs_zentrum"}
+    assert draw_call["campus_free_share"] == 0.2 and isinstance(draw_call["campus_free_share"], float)
     # The resident districts (spec Amendment C3) get the same merged frames and the release's own layer.
     [districts_call] = calls["attach_parking_districts"]
     assert set(districts_call["activities"]["person_id"]) == {1, 2, INCOMMUTER_ID}
@@ -976,7 +1033,7 @@ def test_execute_rejects_an_attach_result_that_changes_a_key(tmp_path, monkeypat
 
 def test_execute_rejects_an_attach_result_without_the_added_column(tmp_path, monkeypatch):
     module = _stub_attach_module({})
-    module.draw_parking_free = lambda activities, tariffs, workplace_shares, random_seed, shift=0.0: activities.copy()
+    module.draw_parking_free = lambda activities, tariffs, workplace_shares, random_seed, **options: activities.copy()
     _inject_attach(monkeypatch, module)
     with pytest.raises(ValueError, match="draw_parking_free did not add the 'parking_free' column"):
         POP.execute(_wrapper_context(tmp_path))
@@ -1022,8 +1079,8 @@ def _fixture_release():
 def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release(tmp_path, caplog):
     """The wrapper with the REAL braunschweig.parking.attach on the fixture release: resident 1 lives in
     the resident zone fx_res_a and works in fx_bs_ia (class bs_zentrum, share 1.0); resident 2 lives
-    outside every zone and shops in fx_sz; the in-commuter works on campus (fx_campus), which is zoned but
-    never drawn (assumption C1) although its class parks free."""
+    outside every zone and shops in fx_sz; the in-commuter works on campus (fx_campus), which is zoned and drawn with
+    the campus share, 0.0 here (the wrapper default), so it stays priced although its class parks free."""
     real_attach = importlib.import_module(ATTACH_MODULE_NAME)
     assert real_attach.PARKING_FREE_SEED_OFFSET == 7371  # the real module, not a stub left behind
     release = _fixture_release()
@@ -1070,6 +1127,21 @@ def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release
     assert "parkingFree=true on 1 activities" in coverage and "1/3 persons" in coverage
     assert any(message.startswith("[parking] activities in resident districts: 2/9") for message in messages)
     assert any(message.startswith("[parking] persons with a resident parking district: 0/3") for message in messages)
+
+
+def test_real_attach_module_frees_the_campus_in_commuter_with_the_campus_share_one(tmp_path):
+    """Same run as above on the campus, with ``parking_campus_free_share`` 1.0 (ASSUMPTION C2 at its upper edge): the
+    in-commuter who works on campus carries parkingFree; the campus zone is accepted by the plan writer."""
+    importlib.import_module(ATTACH_MODULE_NAME)
+    release = _fixture_release()
+    centre = release["zones"].set_index("zone_id").geometry.centroid
+    context = _wrapper_context(tmp_path, incommuter_work=centre["fx_campus"], shift=0.0, campus_free_share=1.0)
+    context._stages[ZONES_STAGE_NAME] = release
+
+    POP.execute(context)
+
+    assert _activity_attributes(_read_plans(tmp_path), INCOMMUTER_ID) == [
+        {}, {"parkingZone": ("java.lang.String", "fx_campus"), "parkingFree": ("java.lang.Boolean", "true")}, {}]
 
 
 def test_real_attach_module_writes_the_district_attributes_of_the_fixture_release(tmp_path, caplog):

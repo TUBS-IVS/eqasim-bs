@@ -51,6 +51,7 @@ import numpy as np
 import pandas as pd
 
 import matsim.scenario.population as base
+from braunschweig.parking import free_draw_options as _free_draw_options
 from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
 from braunschweig.synthesis.incommuter_merge import _base as _incommuter_merge_base
@@ -73,7 +74,7 @@ _LOG_TAG = "[commute day population]"
 #: id collisions are rejected. Both therefore decide the CONTENT of the written plans while
 #: leaving this file's own source untouched; both were module-level imports outside the token
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
-_HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
+_HELPER_MODULES = (base, _day_view, _incommuter_merge_base, _free_draw_options)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
@@ -135,6 +136,14 @@ ZONES_STAGE = "braunschweig.parking.zones_stage"
 #: probability to [0, 1]. 0.0 keeps the observed shares. Declared only when the flag is on.
 KEY_FREE_SHIFT = "parking_workplace_free_share_shift"
 DEFAULT_FREE_SHIFT = 0.0
+
+#: The two options of the free-parking draw added by parking cost zones v2 (spec Amendment D5, D6), declared only when
+#: the flag is on, validated by ``braunschweig.parking.free_draw_options`` (hashed above, imported by name so the stage
+#: token covers it): the explicit mapping workplace class -> SrV class whose share the draw uses
+#: (ASSUMPTION A1-b), and the share of the campus work/education persons who park free (ASSUMPTION C2, valid range
+#: [0, 1]). The code defaults switch both OFF (the v1 draw); configs/base_bs.yml states the production values.
+KEY_PROXY_CLASSES = _free_draw_options.KEY_PROXY_CLASSES
+KEY_CAMPUS_FREE_SHARE = _free_draw_options.KEY_CAMPUS_FREE_SHARE
 
 #: Frame columns ``braunschweig.parking.attach`` adds and ``matsim.scenario.population`` writes:
 #: activity attributes ``parkingZone`` / ``parkingFree`` / ``parkingDistrict``, person attributes
@@ -226,6 +235,10 @@ def configure(context):
                 f"{KEY_PARKING_ZONES_ENABLED}: false to reproduce the legacy ring.")
         context.stage(ZONES_STAGE)
         _require_free_share_shift(context.config(KEY_FREE_SHIFT, DEFAULT_FREE_SHIFT))
+        _free_draw_options.require_proxy_classes(
+            context.config(KEY_PROXY_CLASSES, _free_draw_options.default_proxy_classes()))
+        _free_draw_options.require_campus_free_share(
+            context.config(KEY_CAMPUS_FREE_SHARE, _free_draw_options.DEFAULT_CAMPUS_FREE_SHARE))
         context.config("random_seed")
 
 
@@ -516,7 +529,9 @@ def execute(context):
             "attach_resident_zones", PERSON_KEY_COLUMNS)
         drawn_activities = attach.draw_parking_free(
             raw["activities"], release["tariffs"], release["workplace_shares"],
-            int(context.config("random_seed")), shift=float(context.config(KEY_FREE_SHIFT)))
+            int(context.config("random_seed")), shift=float(context.config(KEY_FREE_SHIFT)),
+            proxy_classes=_free_draw_options.require_proxy_classes(context.config(KEY_PROXY_CLASSES)),
+            campus_free_share=_free_draw_options.require_campus_free_share(context.config(KEY_CAMPUS_FREE_SHARE)))
         raw["activities"] = _require_attach_result(
             raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free",
             ACTIVITY_KEY_COLUMNS)

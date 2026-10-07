@@ -14,11 +14,12 @@ in-commuters are treated exactly like residents:
    home when that zone is a ``resident_zone`` (assumption R1: residence equals permit possession), NaN
    otherwise. Written as the person attribute ``residentParkingZone``.
 3. :func:`draw_parking_free` adds ``parking_free`` to the activities: True on the ``ELIGIBLE_PURPOSES``
-   activities in a ``street_paid`` or ``resident_zone`` zone of a person drawn to park free at the
-   workplace, False everywhere else. One draw per person, P(free | workplace class) = ``share_free_total``
-   of the SrV 2023 class row (assumption A1) shifted by the sensitivity arm
-   ``parking_workplace_free_share_shift``; campus zones are never drawn (assumption C1: members pay the day
-   product). Written as the activity attribute ``parkingFree`` (only where True).
+   activities of a person drawn to park free there, False everywhere else. One uniform per person; in a
+   ``street_paid`` or ``resident_zone`` zone P(free | workplace class) = ``share_free_total`` of the SrV 2023 class
+   row (assumption A1; the class of ``parking_free_share_proxy_classes`` supplies the share for a mapped class,
+   assumption A1-b) shifted by the sensitivity arm ``parking_workplace_free_share_shift``; in a campus zone
+   P(free) = ``parking_campus_free_share`` (assumption C2, an owner estimate; the members otherwise pay the day
+   product, assumption C1). Written as the activity attribute ``parkingFree`` (only where True).
 4. :func:`attach_parking_districts` adds ``parking_district`` to the activities: the ``district_id`` of the resident
    parking district that contains the activity location (``braunschweig.parking.zones.assign_districts``), NaN
    outside every district. The districts are a second layer, independent of the fee zones and free to overlap them.
@@ -45,6 +46,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.parking import free_draw_options as draw_options
 from braunschweig.parking import zones as parking_zones
 
 log = logging.getLogger(__name__)
@@ -56,7 +58,8 @@ _LOG_TAG = "[parking]"
 PARKING_FREE_SEED_OFFSET = 7371
 #: Activity purposes whose parking the free-parking draw covers (spec 3.4).
 ELIGIBLE_PURPOSES = ("work", "education")
-#: Zone types in which the free-parking draw applies; campus zones use the member day product (C1).
+#: Zone types of the free-parking draw with the SrV class share (A1); a campus zone is drawn too, but with its own
+#: share (``parking_campus_free_share``, C2), never a class share.
 FREE_DRAW_ZONE_TYPES = ("street_paid", "resident_zone")
 RESIDENT_ZONE_TYPE = "resident_zone"
 CAMPUS_ZONE_TYPE = "campus"
@@ -441,15 +444,28 @@ def _require_shift(shift) -> float:
 
 
 def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace_shares: pd.DataFrame,
-                      random_seed: int, shift: float = 0.0) -> pd.DataFrame:
-    """Return ``activities`` with the boolean ``parking_free``: the free-parking draw of spec 3.4.
+                      random_seed: int, shift: float = 0.0, proxy_classes: dict | None = None,
+                      campus_free_share: float = draw_options.DEFAULT_CAMPUS_FREE_SHARE) -> pd.DataFrame:
+    """Return ``activities`` with the boolean ``parking_free``: the free-parking draw of spec 3.4 and Amendment D5, D6.
 
     Eligible: an activity whose purpose is in ``ELIGIBLE_PURPOSES`` and whose ``parking_zone`` (attached by
-    :func:`attach_parking_zones`) is of a type in ``FREE_DRAW_ZONE_TYPES``. The workplace class of a person
-    is the tariff ``workplace_class`` of the zone of the person's FIRST eligible activity (by
-    ``activity_index``), and ``p = clip(share_free_total[class] + shift, 0, 1)`` with the class rows of the
-    SrV table ``workplace_shares`` (:func:`free_share_by_class`). A person parks free at ALL its eligible
-    activities when ``u < p`` and at none otherwise; every other activity is False.
+    :func:`attach_parking_zones`) is a paid-zone type (``FREE_DRAW_ZONE_TYPES``) or a campus zone.
+
+    Paid zones (``street_paid``, ``resident_zone``): the workplace class of a person is the tariff
+    ``workplace_class`` of the zone of the person's FIRST paid-zone eligible activity (by ``activity_index``), and
+    ``p = clip(share + shift, 0, 1)``, where ``share`` is ``share_free_total`` of the SrV class row of
+    ``workplace_shares`` (:func:`free_share_by_class`) -- or, for a class that ``proxy_classes`` maps, of the mapped
+    SrV class (ASSUMPTION A1-b; the zone keeps its county class, only the share is taken from the other row). The
+    shift applies to the proxied share like to any other. Campus zones: ``p = campus_free_share`` (ASSUMPTION C2);
+    neither the class share, the proxy nor the shift reaches it.
+
+    One uniform ``u`` per person decides ALL its eligible activities, each against the probability of its own zone
+    kind: a paid-zone activity is free when ``u < p`` of the person's class, a campus activity when
+    ``u < campus_free_share``. A person with eligible activities in both kinds of zone is therefore free at none, one
+    or both kinds -- the same ``u``, two thresholds -- which keeps the draw of a paid-zone activity independent of
+    whether the person also has a campus activity, so that ``campus_free_share`` 0.0 and an empty mapping give
+    exactly the v1 draw (campus never free). Every other activity (guests, other purposes, outside every zone) is
+    False. The defaults reproduce the v1 draw; production passes the values of ``configs/base_bs.yml``.
 
     Random numbers: ONE ``numpy.random.RandomState(random_seed + PARKING_FREE_SEED_OFFSET)`` draws one
     uniform ``u`` per person of the WHOLE frame -- eligible or not -- with the persons sorted by
@@ -457,64 +473,92 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
     concatenated chunks, in either order, give identical results. Separate calls on disjoint subsets of the
     persons do NOT reproduce the draw of the whole frame, because each call numbers the persons it is given.
     Drawing for every person rather than for the eligible ones keeps common random numbers across zone
-    releases and shift arms: a person keeps its ``u`` when another release makes it eligible, and the free
-    set only grows with ``shift``.
+    releases, shift arms, proxy mappings and campus shares: a person keeps its ``u`` when another release makes
+    it eligible, and the free set only grows with ``shift`` and with ``campus_free_share``.
 
     Raises ``TypeError`` for a non-integer ``random_seed`` and ``ValueError`` for a missing column, an
-    incomplete or duplicated key, a ``shift`` outside [-1, 1], a zone id without a tariff row, a workplace
-    class of a street_paid/resident_zone tariff zone without a class row and an invalid shares table. Logs
-    per workplace class ``persons n, p_free, realised`` and one summary line with the rates.
+    incomplete or duplicated key, a ``shift`` outside [-1, 1], an invalid ``proxy_classes`` mapping (see
+    ``braunschweig.parking.free_draw_options``), a ``campus_free_share`` outside [0, 1], a zone id without a tariff
+    row, a workplace class of a street_paid/resident_zone tariff zone without a class row and an invalid shares
+    table. Logs the mapping, per workplace class ``persons n, the share used and its source class, p_free,
+    realised``, the campus persons with the campus share and the realised campus rate, and one summary line.
     """
     random_seed = _require_seed(random_seed)
     shift = _require_shift(shift)
+    proxy_classes = draw_options.require_proxy_classes(
+        draw_options.default_proxy_classes() if proxy_classes is None else proxy_classes)
+    campus_free_share = draw_options.require_campus_free_share(campus_free_share)
     _require_columns(activities, ACTIVITY_KEYS + ("purpose", PARKING_ZONE_COLUMN), "activities")
     _check_activity_keys(activities, "activities")
     zone_types = _zone_attribute(tariffs, "zone_type")
     zone_classes = _zone_attribute(tariffs, "workplace_class")
     free_shares = free_share_by_class(workplace_shares)
+    draw_options.require_proxy_classes_in_table(proxy_classes, free_shares.index)
     check_workplace_classes(tariffs, free_shares, zone_types=FREE_DRAW_ZONE_TYPES)
     zone_ids = activities[PARKING_ZONE_COLUMN]
     _reject_unknown_zones(zone_ids, zone_types.index, "activities")
 
+    # The share the draw uses per class and the class it was read from (the class itself unless it is mapped).
+    source_class = {workplace_class: proxy_classes.get(workplace_class, workplace_class)
+                    for workplace_class in free_shares.index}
+    used_shares = pd.Series({workplace_class: float(free_shares[source]) for workplace_class, source
+                             in source_class.items()}, name=FREE_SHARE_COLUMN)
+    log.info("%s free-parking draw, share proxies (%s): %s; campus_free_share %.4f", _LOG_TAG,
+             draw_options.KEY_PROXY_CLASSES,
+             ", ".join(f"{key} -> {value} {used_shares[key]:.4f}" for key, value in sorted(proxy_classes.items()))
+             or "none", campus_free_share)
+
     zone_type = zone_ids.map(zone_types)
     purpose_eligible = activities["purpose"].isin(ELIGIBLE_PURPOSES).to_numpy()
-    eligible = purpose_eligible & zone_type.isin(FREE_DRAW_ZONE_TYPES).to_numpy()
+    in_paid_zone = purpose_eligible & zone_type.isin(FREE_DRAW_ZONE_TYPES).to_numpy()
     on_campus = purpose_eligible & (zone_type == CAMPUS_ZONE_TYPE).to_numpy()
 
     person_ids = np.sort(activities["person_id"].unique())
     random = np.random.RandomState(random_seed + PARKING_FREE_SEED_OFFSET)
     uniform = pd.Series(random.random_sample(len(person_ids)), index=person_ids)
 
-    first_eligible_zone = (activities.loc[eligible, list(ACTIVITY_KEYS) + [PARKING_ZONE_COLUMN]]
-                           .sort_values(list(ACTIVITY_KEYS), kind="mergesort")
-                           .drop_duplicates("person_id", keep="first")
-                           .set_index("person_id")[PARKING_ZONE_COLUMN])
-    person_class = first_eligible_zone.map(zone_classes)
-    probability = (person_class.map(free_shares) + shift).clip(lower=0.0, upper=1.0)
+    first_paid_zone = (activities.loc[in_paid_zone, list(ACTIVITY_KEYS) + [PARKING_ZONE_COLUMN]]
+                       .sort_values(list(ACTIVITY_KEYS), kind="mergesort")
+                       .drop_duplicates("person_id", keep="first")
+                       .set_index("person_id")[PARKING_ZONE_COLUMN])
+    person_class = first_paid_zone.map(zone_classes)
+    probability = (person_class.map(used_shares) + shift).clip(lower=0.0, upper=1.0)
     person_free = uniform.reindex(probability.index) < probability
+    campus_persons = pd.Index(np.sort(activities.loc[on_campus, "person_id"].unique()))
+    campus_person_free = uniform.reindex(campus_persons) < campus_free_share
 
-    free_by_activity = activities.loc[eligible, "person_id"].map(person_free)
-    if free_by_activity.isna().any():  # impossible by construction; guards the bool cast, where NaN is True
-        raise RuntimeError(f"{_LOG_TAG} free-parking draw: {int(free_by_activity.isna().sum())} eligible activities "
-                           "lost their person's draw")
     parking_free = np.zeros(len(activities), dtype=bool)
-    parking_free[eligible] = free_by_activity.to_numpy(dtype=bool)
+    for mask, free_by_person in ((in_paid_zone, person_free), (on_campus, campus_person_free)):
+        free_by_activity = activities.loc[mask, "person_id"].map(free_by_person)
+        if free_by_activity.isna().any():  # impossible by construction; guards the bool cast, where NaN is True
+            raise RuntimeError(f"{_LOG_TAG} free-parking draw: {int(free_by_activity.isna().sum())} eligible "
+                               "activities lost their person's draw")
+        parking_free[mask] = free_by_activity.to_numpy(dtype=bool)
     result = activities.copy()
     result[PARKING_FREE_COLUMN] = pd.Series(parking_free, index=result.index, dtype=bool)
 
     for workplace_class in sorted(person_class.unique()):
         members = person_class.index[person_class.to_numpy(dtype=object) == workplace_class]
-        share = float(free_shares[workplace_class])
-        log.info("%s free-parking draw, workplace class %s: persons %d, share_free_total %.4f, p_free %.4f, "
-                 "realised %.4f", _LOG_TAG, workplace_class, len(members), share,
-                 min(max(share + shift, 0.0), 1.0), float(person_free[members].mean()))
-    n_persons, n_eligible_persons = len(person_ids), len(probability)
+        share = float(used_shares[workplace_class])
+        origin = (f"{workplace_class} -> {source_class[workplace_class]} {share:.4f} (proxy)"
+                  if source_class[workplace_class] != workplace_class else f"own class share {share:.4f}")
+        log.info("%s free-parking draw, workplace class %s: persons %d, share used %s, p_free %.4f, realised %.4f",
+                 _LOG_TAG, workplace_class, len(members), origin, min(max(share + shift, 0.0), 1.0),
+                 float(person_free[members].mean()))
+    n_campus_persons, n_campus_free_persons = len(campus_persons), int(campus_person_free.sum())
+    log.info("%s free-parking draw, campus persons %d: campus_free_share %.4f (ASSUMPTION C2; no shift), %d park free, "
+             "realised %.4f", _LOG_TAG, n_campus_persons, campus_free_share, n_campus_free_persons,
+             n_campus_free_persons / n_campus_persons if n_campus_persons else 0.0)
+    n_persons, n_paid_persons = len(person_ids), len(probability)
     n_free_persons = int(person_free.sum())
-    n_eligible = int(eligible.sum())
+    n_paid, n_campus = int(in_paid_zone.sum()), int(on_campus.sum())
     log.info("%s free-parking draw (RandomState(random_seed %d + %d), shift %+.3f): %d/%d persons (%.1f %%) have a "
-             "work/education activity in a street_paid or resident_zone zone, %d of them (%.1f %%) park free; "
-             "parkingFree on %d of %d eligible activities; %d work/education activities in campus zones are never "
-             "drawn (assumption C1)", _LOG_TAG, random_seed, PARKING_FREE_SEED_OFFSET, shift, n_eligible_persons,
-             n_persons, _rate(n_eligible_persons, n_persons), n_free_persons, _rate(n_free_persons, n_eligible_persons),
-             int(parking_free.sum()), n_eligible, int(on_campus.sum()))
+             "work/education activity in a street_paid or resident_zone zone, %d of them (%.1f %%) park free; %d/%d "
+             "persons (%.1f %%) have one in a campus zone, %d of them (%.1f %%) park free; parkingFree on %d of %d "
+             "eligible activities (paid zones %d of %d, campus %d of %d)", _LOG_TAG, random_seed,
+             PARKING_FREE_SEED_OFFSET, shift, n_paid_persons, n_persons, _rate(n_paid_persons, n_persons),
+             n_free_persons, _rate(n_free_persons, n_paid_persons), n_campus_persons, n_persons,
+             _rate(n_campus_persons, n_persons), n_campus_free_persons,
+             _rate(n_campus_free_persons, n_campus_persons), int(parking_free.sum()), n_paid + n_campus,
+             int(parking_free[in_paid_zone].sum()), n_paid, int(parking_free[on_campus].sum()), n_campus)
     return result
