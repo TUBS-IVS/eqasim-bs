@@ -55,6 +55,7 @@ def test_the_target_is_read_from_the_committed_city_center_table_and_is_0_736(ca
 
 
 def test_the_commuter_and_paid_references_are_read_from_the_committed_tables(cal):
+    # the paid reference is no longer used by the calibration; the comparison script reads it through this reader
     commuters = cal.read_commuter_reference(COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv")
     # class bs_zentrum: street 0.2225, garage or large lot 0.1923: 0.1923 / 0.4148 = 0.46359
     assert (commuters.numerator, commuters.other) == (0.1923, 0.2225)
@@ -157,18 +158,19 @@ def test_the_destination_universe_leaves_out_home_work_education_and_everything_
     assert commuters.tolist() == [False, False, False, False, True, True, False, False]
 
 
-def test_the_street_paid_share_counts_the_zones_with_a_positive_street_rate(cal):
-    tariffs = pd.DataFrame({"zone_id": ["a", "b"], "hourly_rate_eur": [1.8, 0.0]})
-    assert cal.street_paid_share(pd.Series(["a", "a", "b", "a"]), tariffs) == 0.75
-    with pytest.raises(ValueError, match="no tariff row"):
-        cal.street_paid_share(pd.Series(["c"]), tariffs)
-    with pytest.raises(ValueError, match="no activity"):
-        cal.street_paid_share(pd.Series([], dtype=object), tariffs)
+def test_the_zone_level_paid_share_check_is_gone_the_time_aware_one_is_the_comparison_scripts(cal):
+    # R-5-4 (issue #436, Task 5): the zone-level street-paid share was blind to the fee window, the free threshold and the
+    # maximum stay and read 1.0 in the zones Ia and Ib, so it carried no information. The paid share of a run is the
+    # time-aware one of scripts/parking/compare_parking_targets.py, computed from the outcomes the Java side priced.
+    assert not hasattr(cal, "street_paid_share")
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "street_paid_share" not in text and "check_street_paid_share_zone_level" not in text
+    assert "compare_parking_targets.py" in text
 
 
 @pytest.fixture
 def inputs(tmp_path):
-    """The synthetic universe of tests/fixtures/parking/calibration_plans_fixture.xml: zones, garages, tariffs, SrV tables."""
+    """The synthetic universe of tests/fixtures/parking/calibration_plans_fixture.xml: zones, garages, SrV tables."""
     plans = FIXTURES / "calibration_plans_fixture.xml"
     zones = gpd.GeoDataFrame(
         {"zone_id": ["bs_zone_ia", "bs_zone_ib"], "geometry_source": "centre_approximation",
@@ -182,16 +184,12 @@ def inputs(tmp_path):
     frame["geometry"] = [Point(603100.0, 5790400.0), Point(603100.0, 5792000.0)]
     garages_path = tmp_path / "garages.geojson"
     pg.write_garages(gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:25832"), garages_path)
-    tariffs_path = tmp_path / "tariffs.csv"
-    text = (FIXTURES / "parking_tariffs_fixture.csv").read_text(encoding="utf-8")
-    tariffs_path.write_text(text.replace("\nfx_bs_ia,", "\nbs_zone_ia,").replace("\nfx_bs_ib,", "\nbs_zone_ib,"),
-                            encoding="utf-8")
     city_center = tmp_path / "srv2023_city_center_parking.csv"
     # target 0.2718 / (0.2718 + 0.7282) = 0.2718; the mean at lambda 400 m is 0.27176 (derived in the test below)
     city_center.write_text("# synthetic\nparking_type,share,n_unweighted\nemployer_lot,0.01,1\nstreet,0.7282,1\n"
                            "garage_large_lot,0.2718,1\nother,0.01,1\npaid_share_overall,0.8,1\n", encoding="utf-8")
     commute = COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv"
-    return {"plans": plans, "zones_path": zones_path, "tariffs_path": tariffs_path, "garages_path": garages_path,
+    return {"plans": plans, "zones_path": zones_path, "garages_path": garages_path,
             "city_center_path": city_center, "commute_path": commute}
 
 
@@ -213,15 +211,16 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
     assert result["commuter_mean"] == pytest.approx((_probability(300.0, at_lambda) + _probability(500.0, at_lambda)) / 2,
                                                     abs=1e-5)
     assert result["commuter_reference"] == pytest.approx(0.464, abs=5e-4)
-    assert result["street_paid_share"] == 1.0 and result["paid_reference"] == 0.8
+    assert "street_paid_share" not in result and "paid_reference" not in result   # R-5-4: dropped, see the comparison script
     # the table: ASCII, provenance header, the rows, readable by the reader that the config test uses
     text = out.read_bytes().decode("ascii")
     assert text == result["text"] and "\r" not in text
+    assert "paid_share" not in text and "tariffs" not in text and "compare_parking_targets.py" in text
     for needle in ("calibrate_garage_decay.py on 2026-10-07", "sha256=", "ASSUMPTIONS G1 to G3", "Universe caveat",
                    "bs_zone_ia, bs_zone_ib", "4 activities, 4 of them with at least one priced garage",
                    "garage_large_lot / (garage_large_lot + street) = 0.2718 / (0.2718 + 0.7282)", "no validation"):
         assert needle in text, needle
-    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 6
+    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 5   # plans, zones, garages and the two SrV tables
     values = cal.read_calibration_table(out)
     assert values["decay_length_m"] == result["decay_length_m"] and values["universe_activities"] == 4
     assert values["target_garage_probability"] == pytest.approx(0.2718, abs=1e-6)

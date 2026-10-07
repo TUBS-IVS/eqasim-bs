@@ -23,13 +23,13 @@ Definitions (the committed calibration table records them, so that its number ca
   garage probability is within ``--tolerance`` (default 0.0005) of the target; the mean probability rises with lambda, so
   the search fails (``ValueError``) when the target lies outside the range at its two ends. The reported lambda is rounded
   to 0.01 m and its achieved mean recomputed.
-* Independent checks on the SAME plans, reported as numbers and never as validation: (1) the mean garage probability of the
+* Independent check on the SAME plans, reported as a number and never as validation: the mean garage probability of the
   work and education activities in the calibration zones against ``share(garage_large_lot) / (share(garage_large_lot) +
   share(street))`` of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class`` (0.464 in the committed
-  table); (2) the share of universe stays whose zone has a street product with a positive hourly rate (zone level and blind
-  to the time of day and the stay length, an upper bound of the paid share of a stay) next to ``paid_share_overall`` of
-  ``srv2023_city_center_parking`` (0.8333, among the respondents with a valid payment answer). Both references are
-  quantities of residents, the model averages over destinations.
+  table); the reference is a quantity of residents, the model averages over destinations. The paid share is NOT checked
+  here (ruling R-5-4, issue #436): a zone-level check, blind to the fee window, the free threshold and the maximum stay,
+  read 1.0 in the zones Ia and Ib and said nothing. The time-aware paid share is computed on the outcomes of a model run
+  by ``scripts/parking/compare_parking_targets.py``.
 
 Fallback transparency: the log and the table report how many universe stays have a garage within D_max (the share whose
 probability can be positive at all); a target that the garages cannot reach fails instead of returning the end of the range.
@@ -64,13 +64,12 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from braunschweig.parking import cost, garages as parking_garages, zones as parking_zones  # noqa: E402
+from braunschweig.parking import cost, garages as parking_garages  # noqa: E402
 
 log = logging.getLogger("calibrate_garage_decay")
 
 DEFAULT_DATA_PATH = REPO / "eqasim-data" / "data"
 ZONES_RELATIVE = "braunschweig/parking/parking_zones_2026.geojson"
-TARIFFS_RELATIVE = "braunschweig/parking/parking_tariffs_2026.csv"
 GARAGES_RELATIVE = "braunschweig/parking/parking_garages_2026.geojson"
 CITY_CENTER_RELATIVE = "braunschweig/srv/srv2023_city_center_parking.csv"
 COMMUTE_RELATIVE = "braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv"
@@ -82,7 +81,8 @@ CALIBRATION_ZONE_IDS = ("bs_zone_ia", "bs_zone_ib")
 #: Spec E5: the destination universe leaves out these activity types; work and education are the commuter purposes of the
 #: independent check (cost.COMMUTER_PURPOSES).
 HOME_AND_COMMUTER_PURPOSES = frozenset({cost.HOME_PURPOSE, *cost.COMMUTER_PURPOSES})
-#: The rows of the SrV tables the targets are read from.
+#: The rows of the SrV tables the targets are read from (PAID_ROW is read by ``read_paid_share_reference`` for the
+#: comparison script; the calibration itself does not use it).
 GARAGE_ROW, STREET_ROW, PAID_ROW = "garage_large_lot", "street", "paid_share_overall"
 COMMUTER_CLASS = "bs_zentrum"
 DEFAULT_LAMBDA_MIN_M, DEFAULT_LAMBDA_MAX_M = 10.0, 5000.0
@@ -121,7 +121,7 @@ def file_sha256(path) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _read_srv_table(path) -> pd.DataFrame:
+def read_srv_table(path) -> pd.DataFrame:
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"SrV table missing: {path}")
@@ -137,7 +137,7 @@ def _positive_share(value, what: str) -> float:
 def read_city_center_target(path) -> Target:
     """The calibration target of spec E5 from ``srv2023_city_center_parking``: ``garage_large_lot / (garage_large_lot +
     street)``. Raises ``ValueError`` when a row is missing, duplicated or no share in (0, 1]."""
-    table = _read_srv_table(path)
+    table = read_srv_table(path)
     if "parking_type" not in table.columns or "share" not in table.columns:
         raise ValueError(f"{path}: columns parking_type and share are required, found {list(table.columns)}")
     shares = {}
@@ -151,8 +151,9 @@ def read_city_center_target(path) -> Target:
 
 
 def read_paid_share_reference(path) -> float:
-    """``paid_share_overall`` of ``srv2023_city_center_parking`` (the independent paid-share reference)."""
-    table = _read_srv_table(path)
+    """``paid_share_overall`` of ``srv2023_city_center_parking``, the paid-share reference of
+    ``scripts/parking/compare_parking_targets.py`` (not used by the calibration)."""
+    table = read_srv_table(path)
     rows = table.loc[table["parking_type"] == PAID_ROW, "share"]
     if len(rows) != 1:
         raise ValueError(f"{path}: expected exactly one row {PAID_ROW!r}, found {len(rows)}")
@@ -163,7 +164,7 @@ def read_commuter_reference(path) -> Target:
     """The commuter garage share of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class`` among street
     and garage users: ``share_garage_large_lot / (share_garage_large_lot + share_street)`` (spec E5, not used in the
     calibration)."""
-    table = _read_srv_table(path)
+    table = read_srv_table(path)
     rows = table[(table["workplace_class"] == COMMUTER_CLASS) & (table["level"] == "class")]
     if len(rows) != 1:
         raise ValueError(f"{path}: expected exactly one class row {COMMUTER_CLASS!r}, found {len(rows)}")
@@ -172,7 +173,7 @@ def read_commuter_reference(path) -> Target:
     return Target(garage / (garage + street), "share_garage_large_lot", garage, "share_street", street, Path(path).name)
 
 
-def _load_exposure_module():
+def load_exposure_module():
     """The plans reader of the earlier exposure checks (``count_zone_exposure.py``), loaded from its file: it streams the
     selected plans and assigns the zones with the production function, so no plan or zone logic is copied here."""
     spec = importlib.util.spec_from_file_location("count_zone_exposure_for_calibration", EXPOSURE_SCRIPT)
@@ -258,19 +259,7 @@ def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zon
     return universe, commuters
 
 
-def street_paid_share(zone_id: pd.Series, tariffs: pd.DataFrame) -> float:
-    """Share of the activities (``zone_id`` of each, all inside a zone) whose zone has a street product with a positive hourly
-    rate: zone level, blind to the time of day, the purpose and the stay length (an upper bound of the paid share of a stay)."""
-    rate = tariffs.set_index("zone_id")["hourly_rate_eur"]
-    if zone_id.empty:
-        raise ValueError("no activity to count the street-paid share over")
-    missing = sorted(set(zone_id) - set(rate.index))
-    if missing:
-        raise ValueError(f"zones {missing} have no tariff row")
-    return float((pd.to_numeric(rate.reindex(zone_id).fillna(0.0)) > 0).mean())
-
-
-def _git_state() -> str:
+def git_state() -> str:
     try:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True,
                                 timeout=20).stdout.strip()
@@ -284,7 +273,7 @@ def _git_state() -> str:
 def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: int, priced_garages: int, listed_garages: int,
                target: Target, calibration: Calibration, tolerance: float, lambda_min_m: float, lambda_max_m: float,
                max_distance_m: float, commuter_mean: float, commuter_count: int, commuter_reference: Target,
-               paid_share: float, paid_reference: float, generated_on: str, code_state: str) -> str:
+               generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
     header = [
         "# Table: parking_garage_decay_calibration_2026.csv",
@@ -308,14 +297,14 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         f"{calibration.low_end_mean:.4f} at the lower end. lambda is rounded to {LAMBDA_DECIMALS} decimals.",
         "# The same lambda applies in every town (transfer assumption). The config value parking_garage_decay_m of "
         "configs/base_bs.yml equals decay_length_m below (tests/test_parking_garage_decay_config.py).",
-        "# Independent checks, computed on the same plans, numbers only and no validation (both references are "
-        "quantities of residents, the model averages over destinations):",
+        "# Independent check, computed on the same plans, a number only and no validation (the reference is a "
+        "quantity of residents, the model averages over destinations):",
         f"#   commuters: mean garage probability of the {commuter_count} work and education activities inside "
         f"{', '.join(CALIBRATION_ZONE_IDS)} against {commuter_reference.value:.4f} = {commuter_reference.numerator_name} / "
         f"({commuter_reference.numerator_name} + {commuter_reference.other_name}) of the class {COMMUTER_CLASS} of "
         f"{commuter_reference.table}, which the calibration does not use.",
-        f"#   paid share: share of the universe activities whose zone has a positive street hourly rate (zone level, blind "
-        f"to the time of day and the stay length) against paid_share_overall {paid_reference:.4f} of {target.table}.",
+        "# The paid share of a run is compared with the SrV by scripts/parking/compare_parking_targets.py on the outcomes "
+        "the model priced (time-aware); no paid share is checked here (ruling R-5-4).",
     ]
     rows = [
         ("decay_length_m", f"{calibration.decay_m:.{LAMBDA_DECIMALS}f}", "m", "calibrated lambda of the garage weights"),
@@ -330,8 +319,6 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         ("check_commuter_mean_garage_probability", f"{commuter_mean:.6f}", "share", "independent check and no validation"),
         ("check_commuter_reference_share", f"{commuter_reference.value:.6f}", "share", f"{commuter_reference.table}"),
         ("check_commuter_activities", str(commuter_count), "count", "work and education activities in the zones"),
-        ("check_street_paid_share_zone_level", f"{paid_share:.6f}", "share", "independent check and time-blind and no validation"),
-        ("check_paid_share_srv_reference", f"{paid_reference:.6f}", "share", f"{target.table} row {PAID_ROW}"),
     ]
     if any("," in field for row in rows for field in row):
         raise ValueError("a table field contains a comma")   # the long format has no quoting
@@ -356,7 +343,7 @@ def read_calibration_table(path) -> dict:
     return values
 
 
-def run(*, plans, zones_path, tariffs_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
+def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
         max_distance_m: float = cost.GARAGE_MAX_DISTANCE_M, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
         generated_on: str | None = None) -> dict:
@@ -369,7 +356,7 @@ def run(*, plans, zones_path, tariffs_path, garages_path, city_center_path, comm
     out_path = Path(out_path) if out_path is not None else None
     if out_path is not None and out_path.exists() and not overwrite:
         raise FileExistsError(f"{out_path} exists; a calibrated release value is not replaced silently (use --overwrite)")
-    exposure = _load_exposure_module()
+    exposure = load_exposure_module()
     activities, persons = exposure.read_main_activities(plans)
     zone_id = exposure.zone_per_activity(activities, zones_path)
     universe, commuters = universe_masks(activities, zone_id)
@@ -398,32 +385,27 @@ def run(*, plans, zones_path, tariffs_path, garages_path, city_center_path, comm
         commuter_mean = mean_garage_probability(commuter_distances, calibration.decay_m, max_distance_m)
     else:
         raise ValueError("no work or education activity inside the calibration zones: the commuter check has no universe")
-    tariffs = parking_zones.load_tariffs(tariffs_path)
-    paid_share = street_paid_share(zone_id[universe], tariffs)
-    paid_reference = read_paid_share_reference(city_center_path)
-    log.info("[garage-decay] independent checks (numbers, no validation): commuter garage probability %.4f over %d "
-             "activities vs reference %.4f; street-paid share (zone level) %.4f vs SrV paid share %.4f", commuter_mean,
-             int(commuters.sum()), commuter_reference.value, paid_share, paid_reference)
+    log.info("[garage-decay] independent check (a number, no validation): commuter garage probability %.4f over %d "
+             "activities vs reference %.4f", commuter_mean, int(commuters.sum()), commuter_reference.value)
     text = table_text(
-        inputs={name: (_label(path), file_sha256(path)) for name, path in (
-            ("plans", plans), ("zones", zones_path), ("tariffs", tariffs_path), ("garages", garages_path),
+        inputs={name: (path_label(path), file_sha256(path)) for name, path in (
+            ("plans", plans), ("zones", zones_path), ("garages", garages_path),
             ("srv2023_city_center_parking", city_center_path), ("srv2023_commute_parking_by_workplace_class", commute_path))},
         universe_size=int(universe.sum()), persons=persons, with_garage=with_garage, priced_garages=len(priced),
         listed_garages=len(garage_frame), target=target, calibration=calibration, tolerance=tolerance,
         lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m, commuter_mean=commuter_mean,
-        commuter_count=int(commuters.sum()), commuter_reference=commuter_reference, paid_share=paid_share,
-        paid_reference=paid_reference, generated_on=generated_on or datetime.date.today().isoformat(),
-        code_state=_git_state())
+        commuter_count=int(commuters.sum()), commuter_reference=commuter_reference,
+        generated_on=generated_on or datetime.date.today().isoformat(),
+        code_state=git_state())
     if out_path is not None:
         out_path.write_bytes(text.encode("ascii"))
         log.info("[garage-decay] wrote %s", out_path)
     return {"decay_length_m": calibration.decay_m, "target": target.value, "achieved": calibration.achieved,
             "universe_activities": int(universe.sum()), "with_garage_in_range": with_garage,
-            "commuter_mean": commuter_mean, "commuter_reference": commuter_reference.value,
-            "street_paid_share": paid_share, "paid_reference": paid_reference, "text": text}
+            "commuter_mean": commuter_mean, "commuter_reference": commuter_reference.value, "text": text}
 
 
-def _label(path) -> str:
+def path_label(path) -> str:
     """The path as recorded in the table: relative to the repository when inside it (POSIX), else as given."""
     resolved = Path(path).resolve()
     try:
@@ -446,8 +428,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     data = args.data_path
-    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, tariffs_path=data / TARIFFS_RELATIVE,
-        garages_path=data / GARAGES_RELATIVE, city_center_path=data / CITY_CENTER_RELATIVE,
+    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE, city_center_path=data / CITY_CENTER_RELATIVE,
         commute_path=data / COMMUTE_RELATIVE, out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite,
         max_distance_m=args.max_distance_m, lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m,
         tolerance=args.tolerance)

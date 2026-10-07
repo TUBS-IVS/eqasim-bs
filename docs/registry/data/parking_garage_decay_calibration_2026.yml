@@ -49,11 +49,12 @@ limitations: |
   share 0.708 / (0.708 + 0.2537) = 0.736 of garages and large lots among the Braunschweig residents who park on the street
   or in a garage when they drive to the city centre; SrV asks residents about their usual place, the model averages over the
   destinations of all persons of the plans (universe caveat, spec E5). The garage probability is the choice share of the
-  options (weights exp(-d / lambda), street 1, garages within 1000 m), without price, early rules or E4. Independent checks on
+  options (weights exp(-d / lambda), street 1, garages within 1000 m), without price, early rules or E4. Independent check on
   the same plans: the mean garage probability of the work and education activities in the two zones against the commuter
-  garage share 0.464 of the class bs_zentrum, and the zone-level street-paid share of the universe (time-blind, an upper
-  bound) against the SrV paid share 0.8333. One lambda for every town is a transfer assumption (G3). The value depends on the
-  plans file it was calibrated on: another scenario gives another lambda.
+  garage share 0.464 of the class bs_zentrum. The table checks no paid share (ruling R-5-4: the zone-level paid share was
+  blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run is compared with the SrV by
+  scripts/parking/compare_parking_targets.py. One lambda for every town is a transfer assumption (G3). The value depends on
+  the plans file it was calibrated on: another scenario gives another lambda.
 notes: |
   Record of the table that Task 5 produces; until then parking_garage_decay_m is 0 in configs/base_bs.yml and the two popsim
   fixture configs (the garage options are off, spec E6). Task 4d built the script and tested it on a synthetic fixture only

@@ -75,8 +75,21 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`). The reference plans were lost on 2026-10-07, so
 the calibration has NOT been run: `parking_garage_decay_m` is 0 in `configs/base_bs.yml` and the two popsim fixture
 configs, and `tests/test_parking_garage_decay_config.py` requires 0 until the table exists and the table value once it does.
-The independent checks the table reports (commuter garage share against 0.464, a zone-level street-paid share against the
-SrV paid share 0.8333) are numbers and never validation. Setting the value is part of the server run of Task 5.
+The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
+checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
+time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
+on the run's own outcome report (see below). Setting the value is part of the server run of Task 5.
+
+## Comparison with the SrV references
+
+`scripts/parking/compare_parking_targets.py` reads, per model arm, the outcome report `ITERS/it.N/N.parking_outcomes.csv`
+(v3, or v2 without the two garage columns; rows keyed by outcome name, zone id and purpose, never by position) and the
+run's `eqasim_trips`, and the two committed SrV tables; it writes one table of metrics (`model`, `reference`, `delta_pp`,
+the universe and its caveat per row) and a per-arm delta table. Every `count` of the report is a pricing call (a car
+alternative that mode choice evaluated, chosen or not), not a trip or a person, so the garage share of the report is NOT
+the E5 calibration universe (all stays of all modes at destinations, no early rules); the table says so per row. The garage
+share against its target is labelled "calibration target, not validation"; the commuter garage share and the free shares
+are independent checks, the car mode shares in and out of the zones have no reference (model only).
 
 ## Known limitations
 
