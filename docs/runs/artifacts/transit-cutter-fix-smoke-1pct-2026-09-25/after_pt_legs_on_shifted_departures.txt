@@ -1,0 +1,2 @@
+PT legs 4815: 34 without a transit line id (no ride), 4781 rides checked, all found in both schedules
+rides on a shifted departure: 0 of 4781 (0.0%); persons 0

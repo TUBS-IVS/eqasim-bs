@@ -200,7 +200,7 @@ from braunschweig.popsim.trips_stage import (  # noqa: F401  (namespace parity, 
 # from braunschweig.popsim (verified), and this package already imports from the
 # shared synthesis tree (synthesis.population.matched below). Moved to
 # entd_attributes.py (Task 4); namespace-parity import, see docstring.
-from braunschweig.synthesis.population.enriched import (  # noqa: F401  (namespace parity, see above)
+from braunschweig.synthesis.population.enriched.economic_status import (  # noqa: F401  (namespace parity, see above)
     ECONOMIC_STATUS_BY_INCOME_CLASS,
 )
 

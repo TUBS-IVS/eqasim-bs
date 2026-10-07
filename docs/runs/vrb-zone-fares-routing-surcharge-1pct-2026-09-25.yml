@@ -1,0 +1,109 @@
+id: vrb-zone-fares-routing-surcharge-1pct-2026-09-25
+date: '2026-09-25'
+repository:
+  commit: ab2a2c90
+  branch: feature/i430-vrb-zone-fare-model
+  notes: 'A rerun of ONLY the MATSim stage of the ON arm of vrb-zone-fares-smoke-1pct-2026-09-25, on its
+    unchanged prepared scenario (prepare cache braunschweig.matsim.simulation.prepare__acc3a371..., built by
+    eqasim-bs ab2a2c90), with the JAR of eqasim-java-bs 23e7c66f9 (the long-distance routing surcharge,
+    valued per person and trip; ADR-0133 D6) instead of 9998db31d. JAR built on felix from
+    ~/eqasim-java-bs-i430 with the pipeline''s own Maven arguments (-Pstandalone --projects braunschweig
+    --also-make package -DskipTests=true), sha256
+    1b0ac7cb22c7b2c87ad5272d98aa8bd7f9f2c41a36e5c72f9ee48f064c180094. Of the eqasim-bs commits after ab2a2c90,
+    only 3d0f5152 changes what prepare writes for this config: the key
+    vrb_fare_long_distance_routing_surcharge_enabled (written as vrbFare.longDistanceRoutingSurchargeEnabled,
+    passed here on the command line with the same value true); the others flip the production flag (already
+    true in the ON overlay), make the polygon input required in the input verifier, or change documentation. The full pipeline was not rerun: the Java change re-validates matsim.runtime.eqasim and with it
+    the ~3 h freight extraction, while the question is the routing effect on an identical scenario.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/i430_vrb_fares_on.yml'
+  notes: 'Same MATSim config file as the ON arm of the smoke (prepare cache acc3a371, sha256
+    38b7c92f5fbafc3e7657b08bf0e8fe2f86535eb80972b0c81eef78e8b1f9d485) and the same command-line overrides
+    as its matsim.simulation.run stage (lastIteration 20, writeEventsInterval 20, writePlansInterval 5,
+    global.numberOfThreads 56, qsim.numberOfThreads 16, compressionType gzip, simwrapper true, -Xmx86G),
+    plus --config:vrbFare.longDistanceRoutingSurchargeEnabled true. Driver
+    felix:~/i430_data/on_surcharge/run_on_surcharge.sh (throwaway, not committed), outputs under
+    felix:~/i430_data/on_surcharge/simulation_output.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: 'The ON arm''s population, network, schedule and fare inputs, read unchanged from the prepare
+    cache. Every count is a sample count at sampling_rate 0.01, never expanded.'
+pipeline:
+  targets:
+  - matsim.simulation.run (direct RunSimulation, outside synpp)
+  notes: 'JAR build 08:40:36 -> 08:41:15, MATSim 08:41:16 -> 09:10:51 CEST (2026-09-25), exit 0, iterations
+    0-20. The run.log errors are the SimWrapper post-run analyses (TripAnalysis NumberFormatException,
+    PublicTransitAnalysis missing households file, CreateAvroNetwork schema) and the Guice ASM
+    line-number warning, all also present in the ON arm of the smoke.'
+classification:
+- smoke
+- ab_test
+status:
+  execution: completed
+  notes: 'Real-data evidence for the routing surcharge, which the smoke did not contain. A smoke, not a
+    validation: no observed reference is compared.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), JDK 25.0.3, Maven 3.6.3 (system /usr/bin/mvn), conda eqasim
+  (Python 3.10) for the analysis'
+validation:
+- metric: routed PT candidates containing a long-distance ride (fare outcome long_distance_flat), iterations 1-20
+  reference: 'the ON arm of vrb-zone-fares-smoke-1pct-2026-09-25 (same prepared scenario, no routing surcharge)'
+  result: '51 of 49,984 PT quotes before, 0 of 49,979 after. With the surcharge the router never returned a
+    DB Fernverkehr or Flix route for a mode choice candidate; the other outcomes moved by at most a few
+    quotes each (e.g. vrb_single_adult 17,744 -> 17,772, no_pt_leg 20,726 -> 20,731).'
+  artifact: docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/summary.json
+  notes: 'Quotes are counted per DMC trip estimate, so these are evaluated PT candidates, not chosen trips.'
+- metric: the surcharge is active and valued per trip
+  reference: 'none -- implementation check'
+  result: 'The calculator logged "long-distance routing surcharge on 17 vehicles of 5 lines; reference person
+    16025 s (267.1 min)". The reference-fallback warning (a long-distance ride evaluated without a
+    per-trip valuation) was logged 0 times. The stop finder''s count line is written every 1,000,000
+    searches and did not occur in this 1 % run, so the number of valued searches is not recorded; the
+    absent warning is indirect evidence that every evaluated long-distance ride had a per-trip value.'
+  artifact: docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/summary.json
+- metric: fallback share and final-plan PT trips
+  reference: 'the ON arm of the smoke'
+  result: 'Fallback share 0.0000 in every iteration 0-20 (as before). Final plans: 2,637 -> 2,630 PT trips,
+    0 of them with a long-distance ride in both runs.'
+  artifact: 'docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/fare_outcomes_after/'
+- metric: mode shares of the final iteration
+  reference: 'the ON arm of the smoke; a change between runs, not a comparison with observed behaviour'
+  result: 'PT 7.08 % -> 7.06 %, car 47.25 % -> 47.27 %, walk 18.61 % -> 18.62 %, car_passenger
+    12.04 % -> 12.03 %, bicycle unchanged 10.24 %. The differences are a few trips at this scale and within
+    replanning noise; no direction is read from them.'
+  artifact: 'docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/modestats_after.csv,
+    docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/modestats_on.csv'
+- metric: MATSim runtime per iteration, iterations 1-20
+  reference: 'the ON arm of the smoke (same host, same thread settings)'
+  result: 'Replanning 1.8 s -> 1.6 s mean, mobsim 68.6 s -> 70.0 s, whole iteration 74.6 s -> 75.8 s. The
+    per-search valuation in the stop finder costs no measurable replanning time.'
+  artifact: 'docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/stopwatch_after.csv,
+    docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/stopwatch_on.csv'
+features:
+- vrb_zone_fare_model
+artifacts:
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/analyse_routing_surcharge.py
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/summary.json
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/fare_outcomes_after/
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/stopwatch_after.csv
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/modestats_after.csv
+- docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/eqasim_termination_after.csv
+issues:
+- '#430'
+decisions:
+- ADR-0133
+notes: 'Server-only outputs (sha256) under felix:/home/felix/i430_data/on_surcharge/:
+  simulation_output/output_legs.csv.gz 2ba28fc83bafdc5c8ff08f2acfec4213895006bacd3682e642be5ac32a2df0cf;
+  simulation_output/eqasim_trips.csv.gz 696fcddfe671dc1cdaa532986e3fa5f43dc32d88e27c75cf5e9928ba5141ed02;
+  simulation_output/output_persons.csv.gz 28e31bd734c670e09939f25cc37f1c8901f7c3e36032d7e78a8a8b4f11c7caad;
+  simulation_output/output_plans.xml.gz 74cbde3971d0258eeefacf6b6e8fa6bcbdc5f27f8fd62b344e79c095646d2e16;
+  run.log a1883e98f5d77248a61ecbcf4907fadf832f7bc210a44f0e2c9819f016141717. The before run is the smoke''s
+  cache entry matsim.simulation.run__c1954b6fc68224b0e33ed50ae90f4990. Convergence of either run is not
+  validation.'
+source: 'python docs/runs/artifacts/vrb-zone-fares-routing-surcharge-1pct-2026-09-25/analyse_routing_surcharge.py
+  <cache_off>/matsim.simulation.run__c1954b6fc68224b0e33ed50ae90f4990.cache/simulation_output
+  ~/i430_data/on_surcharge/simulation_output
+  <cache_off>/braunschweig.matsim.simulation.prepare__acc3a371e354d84747ba4d829f3cbe8c.cache/braunschweig_1pct_i430_vrb_line_scopes.csv
+  ~/i430_data/on_surcharge/run.log summary.json, run on felix.'

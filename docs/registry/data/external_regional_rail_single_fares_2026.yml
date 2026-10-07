@@ -1,0 +1,34 @@
+dataset: external_regional_rail_single_fares_2026
+title: Niedersachsentarif and Deutschlandtarif second-class single fares by tariff distance (valid from 2025-12-14)
+inventory_id: null
+provider: Niedersachsentarif GmbH; Deutschlandtarifverbund GmbH
+vintage: price lists valid from 2025-12-14
+geography: Lower Saxony rail relations (NT); Germany (DT)
+crs: null
+roles:
+- reference_table
+- assumption_basis
+used_by:
+- matsim.simulation.prepare
+acquisition:
+  method: derived
+  source: official price-list PDFs named inside the JSON (source.url, sha256)
+  script: scripts/normalize_external_rail_single_fares.py
+  notes: Reproduction needs the two PDFs under eqasim-data/external-tariffs and the optional pdfplumber tool.
+storage:
+  expected_path: docs/data/external-regional-rail-single-fares-2026.json
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: tests/test_normalize_external_rail_single_fares.py pins the tier structure; tests/test_vrb_dated_price_inputs.py pins the extent (500 NT, 2000 DT rows).
+requirements:
+  synthesis: not_needed
+  matsim: optional
+  production: required
+licensing:
+  license: public tariff publication (facts), attribution to the two tariff authorities
+  restricted: false
+  redistribution: allowed
+limitations: Published tariff distances are not physical distances; the fare model maps ridden stop-to-stop distance with an explicit factor (ASSUMPTION, ADR-0133 D7).
+notes: Only the Niedersachsentarif adult and child bands are used by the fare model v1.

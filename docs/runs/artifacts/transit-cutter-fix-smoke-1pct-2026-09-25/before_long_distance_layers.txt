@@ -1,0 +1,6 @@
+[cleaned GTFS] long-distance trips of scoped lines: 1225
+  all service days: {'BS only': 142, 'WOB->BS': 96, 'BS->WOB': 98, 'WOB only': 199}
+  active on 20260612: {'BS only': 36, 'WOB->BS': 15, 'WOB only': 40, 'BS->WOB': 16}
+[matsim.scenario.supply.gtfs__e905d0ba9fc6cf185b3d68dfc714df1] departures: {'BS only': 36, 'WOB->BS': 15, 'BS->WOB': 16, 'WOB only': 40}
+[matsim.scenario.supply.processed__2518954ea5d379c04b10693e4d] departures: {'BS only': 36, 'WOB->BS': 15, 'WOB only': 40, 'BS->WOB': 16}
+[braunschweig.matsim.simulation.prepare__acc3a371e354d84747ba] departures: {'BS->WOB': 16}

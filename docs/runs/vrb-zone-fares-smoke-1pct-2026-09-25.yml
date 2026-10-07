@@ -1,0 +1,143 @@
+id: vrb-zone-fares-smoke-1pct-2026-09-25
+date: '2026-09-25'
+repository:
+  commit: ab2a2c90
+  branch: feature/i430-vrb-zone-fare-model
+  notes: 'Both arms ran eqasim-bs ab2a2c90 (run_provenance_20260924T171127Z.json for OFF,
+    run_provenance_20260925T040229Z.json for ON, both "pipeline_commit": "ab2a2c90") with the Java
+    build of eqasim-java-bs 9998db31d (checkout ~/eqasim-java-bs-i430, eqasim_source_path). Server
+    worktree ~/wt_i430_vrb_fares, detached at the pushed branch head; its tracked eqasim-data tables
+    come from the branch and the gitignored inputs are a cp -rsn symlink farm into
+    ~/eqasim-bs/eqasim-data/data, because the shared checkout ~/eqasim-bs was 233 commits behind
+    origin/main. A first attempt on 0e8710a5 / 7936473 was stopped deliberately after 2 h 42 min
+    inside braunschweig.popsim.stage to rerun both arms on the long-distance flat price (log
+    ~/i430_data/off_attempt1.log); 47 of its completed stages were cache hits of this run.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/i430_vrb_fares_off.yml'
+  - 'felix:~/i430_vrb_fares_on.yml'
+  notes: 'Throwaway experiment overlays based on configs/overlays/test_1pct.yml; the two arms differ
+    ONLY in vrb_zone_fares_enabled (false / true). Shared keys: working_directory
+    /home/felix/i430_data/cache_off (both arms), run [matsim.output], sampling_rate 0.01,
+    output_path /home/felix/i430_data/output_off (both arms; the driver moved each arm''s outputs to
+    off_result/ and on_result/ after its run), output_prefix braunschweig_1pct_i430_,
+    matsim_last_iteration 20, braunschweig.population.popsim.work_dir eqasim-data/popsim_work_allfeat,
+    max_cells 750, num_workers 3 (clamped to 2 by the resource budget of the 94 GB host, ADR-0126),
+    cache_share_export false, cache_share_recompute [], eqasim_source_path
+    /home/felix/eqasim-java-bs-i430. Freight on (base default). A shared output_path is required:
+    synthesis.population.spatial.primary.candidates declares output_path, so separate paths
+    devalidated 14 synthesis stages and the arms would have compared different populations
+    (found by scripts/report_stage_hash_impact.py before the ON arm started). With the shared path
+    only braunschweig.data.vrb.zone_polygons (ON), braunschweig.data.vrb.zones (OFF),
+    braunschweig.matsim.simulation.prepare, matsim.simulation.run and matsim.output differ between
+    the arms.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: 'Same synthetic population in both arms (shared synthesis cache entries): 36,849 (OFF) /
+    36,861 (ON) trips in eqasim_trips.csv.gz of the final iteration; 2,637 PT trips in the ON final
+    plans. Every count is a sample count at sampling_rate 0.01, never expanded.'
+pipeline:
+  targets:
+  - matsim.output
+  notes: 'Driver ~/i430_data/smoke_driver.sh ran OFF then ON in one working directory. OFF
+    2026-09-24 19:11:25 -> 2026-09-25 06:02:27 CEST (full synthesis: no server cache matched the
+    branch''s popsim/trips/home_cell/freight hashes, and the shared stage store and the b370 cache
+    carry no runtime-provenance metadata, so the cache_share guard recomputes them); ON
+    06:02:28 -> 06:39:22 (zone polygons, preparation, 20 MATSim iterations, output). Both exit 0 with
+    the post-run marker "[cache_share] auto-export disabled". MATSim ran iterations 0-20 in both arms.'
+classification:
+- smoke
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: 'Gate of the implementation plan (Task 12): fallback share of the last iteration < 0.05,
+    facility zone coverage plausibly high, no [vrb-fares] exception -> passed (figures below).
+    A smoke, not a validation: no observed reference is compared, and 20 iterations of a 1 % sample
+    say nothing about the calibrated equilibrium.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), conda eqasim (Python 3.10), JDK 25.0.3'
+validation:
+- metric: fare outcome shares over all PT quotes of iterations 1-20 (ON arm)
+  reference: 'none -- descriptive smoke figures; the 0.05 fallback threshold is an ASSUMPTION for
+    diagnostics (ADR-0133 D8), not an accuracy target'
+  result: '49,984 quotes; 0 fallback outcomes (fallback share 0.0000 in every iteration 0-20).
+    Shares: no_pt_leg 41.5 % (walk-only PT candidates, 0 EUR), vrb_single_adult 35.5 %,
+    vrb_flat_national 7.0 %, vrb_short_trip 5.9 %, vrb_flat_regional 2.9 %, vrb_single_child 2.9 %,
+    child_free 2.5 %, external_rail_nt 1.0 %, external_local_flat 0.5 %, external_national_flat
+    0.2 %, long_distance_flat 0.1 %. Last iteration: 1,942 quotes (vrb_single_adult 695,
+    vrb_short_trip 136, vrb_flat_national 125, no_pt_leg 776, long_distance_flat 1).
+    day_ticket_cap_applied 8,777 over iterations 1-20 (informational: counts tour-chain
+    evaluations where the cap binds, not travellers).'
+  artifact: docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/fare_outcomes/
+  notes: 'Quotes are counted per DMC trip estimate (pt stays in the estimate cache), so a share is
+    a share of evaluated PT candidates, not of chosen PT trips.'
+- metric: prepared-input coverage (ON arm)
+  reference: 'none -- guards: line scope coverage >= 0.99 and stop-facility zone coverage >= 0.10,
+    both ASSUMPTIONS as failure detectors (ADR-0133 D10)'
+  result: 'Final (cordon-cut) schedule: 7,766 of 10,224 stop facilities carry a VRB zone (75.96 %);
+    467 of 467 transit lines have a tariff scope row (100 %). Before the cut the zone tool
+    attributed 7,771 of 31,022 facilities (25.05 %), 0 boundary ties. The plan expected an order of
+    70-80 % for the final schedule; the value lies inside it.'
+  artifact: docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/vrb_fare_inputs_report_on.json
+- metric: official zone polygons and point zones 55/56 (braunschweig.data.vrb.zone_polygons)
+  reference: 'none -- implementation check against the cleaned DELFI feed'
+  result: '46 polygons (zone 38 repaired), 1 overlap sliver of 1,797.7 m2 trimmed (kept zone 15,
+    trimmed zone 20). Zone 55 = rail stop 273565 plus the forecourt bus stop 184038 of the parent
+    station "Hämelerwald Bahnhof" (spread 17.7 m); zone 56 = rail stop 547191 plus bus stop 323548
+    (67.8 m); no village stop is included. In the final schedule 3 facilities carry zone 55 and 4
+    carry zone 56.'
+  artifact: docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/zone_polygons_report_on.json
+- metric: MATSim runtime per iteration, iterations 1-20 (final-review item I6)
+  reference: 'the OFF arm of the same run (same population, same working directory)'
+  result: 'Replanning 1.8 s mean in both arms (ratio ON/OFF 1.000); mobsim 69.9 s OFF vs 68.6 s ON;
+    whole iteration 75.7 s vs 74.6 s (ratio 0.985). Keeping pt in the DMC estimate cache with the
+    day-ticket cap as a per-chain utility correction costs no measurable replanning time.'
+  artifact: 'docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/stopwatch_off.csv,
+    docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/stopwatch_on.csv'
+- metric: mode shares of the final iteration, ON vs OFF
+  reference: 'none -- a change between the arms, not a comparison with observed behaviour'
+  result: 'PT 7.03 % OFF vs 7.08 % ON (modestats.csv, all main modes incl. outside and truck);
+    7.12 % vs 7.17 % in eqasim_trips.csv.gz. The +0.05 pp difference is about 19 trips at this
+    scale; no direction can be read from one 1 % draw after 20 iterations.'
+  artifact: 'docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/modestats_off.csv,
+    docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/modestats_on.csv'
+- metric: final-plan PT trips that contain a long-distance ride (ADR-0133 D6 routing limitation)
+  reference: 'none -- size of the known limitation (Deutschlandticket holders routed onto an ICE pay
+    the flat price although a regional train is free for them)'
+  result: '0 of 2,637 PT trips in the ON final plans contain a DB Fernverkehr or Flix leg, in every
+    ticket category (deutschlandticket 0/518, single_ticket 0/497, never_pt 0/874, ...). The
+    limitation does not occur in this sample; long_distance_flat is 0.1 % of evaluated candidates.'
+  artifact: docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/summary.json
+features:
+- vrb_zone_fare_model
+artifacts:
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/analyse_smoke.py
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/summary.json
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/fare_outcomes/
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/vrb_fare_inputs_report_on.json
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/zone_polygons_report_on.json
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/stopwatch_off.csv
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/stopwatch_on.csv
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/modestats_off.csv
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/modestats_on.csv
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/eqasim_termination_off.csv
+- docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/eqasim_termination_on.csv
+issues:
+- '#430'
+- '#431'
+decisions:
+- ADR-0133
+notes: 'Server-only outputs (sha256): on_result/matsim_output/eqasim_trips.csv.gz
+  2f8cf4d18f995556b326d4e76cb67b538efd970e15a667a0db53c722f7bff83d; off_result/matsim_output/eqasim_trips.csv.gz
+  fcc20c0eeb25b8348a0659ccdb973ff44a20c7e39a0d43e1c3b9561f518c6d0c; on_result/matsim_output/output_legs.csv.gz
+  4f5c4a4ac1017f63e2a81dd6b93abbcbf9a0e849c4fc50791428568b4f7b0523; off_result/matsim_output/output_legs.csv.gz
+  74cf3af1723e054679d6d2938dab0170c6ce06c117e78c219ecdb292d20ec289; on_result/matsim_output/output_persons.csv.gz
+  e34f4ea069a2f095b6c102cf152fd52a99825259120ab0032d7191b603a9a894; prepared configs
+  on 38b7c92f5fbafc3e7657b08bf0e8fe2f86535eb80972b0c81eef78e8b1f9d485 / off
+  10364dba4bf2e3f18b03852796560077561fb2542b1940927799f524714ff43e. All under
+  felix:/home/felix/i430_data/. Convergence of either arm is not validation.'
+source: 'python docs/runs/artifacts/vrb-zone-fares-smoke-1pct-2026-09-25/analyse_smoke.py <evidence dir>
+  on the bundle fetched from felix:/home/felix/i430_data (on_result/, off_result/,
+  cache_off/braunschweig.data.vrb.zone_polygons__d45091351f5ceeddbe8598cee1f1cb79.cache/).'

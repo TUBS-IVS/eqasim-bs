@@ -31,6 +31,7 @@ stays exactly as it was.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 import os
@@ -73,6 +74,13 @@ SCALING_JSON_NAME = "commute_day_state_scaling.json"
 #: cached outputs exactly like an edit here.
 _HELPER_MODULES = (_validation_output, _gate_assignment, _json_output)
 
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.cordon.validation",
+)
+
 
 def validate(context):
     """synpp validation token: md5 over the helper modules that shape this stage's output.
@@ -84,6 +92,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"cordon_validation validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

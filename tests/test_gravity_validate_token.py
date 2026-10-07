@@ -45,7 +45,8 @@ EXPECTED_HELPER_MODULE_NAMES = (
 )
 
 # The four pre-existing package siblings the stage reaches through
-# function-level imports.
+# function-level imports. They open the deferred tuple; the rest of the stage's
+# import closure follows them and is gated in tests/test_audit_synpp_helper_hash.py.
 EXPECTED_DEFERRED_MODULE_NAMES = (
     "braunschweig.gravity.friction",
     "braunschweig.gravity.production_mass",
@@ -92,7 +93,8 @@ def test_helper_modules_tuple_holds_the_five_extracted_siblings():
 
 
 def test_deferred_names_tuple_holds_the_four_pre_existing_siblings():
-    assert model._DEFERRED_HELPER_MODULE_NAMES == EXPECTED_DEFERRED_MODULE_NAMES
+    siblings = model._DEFERRED_HELPER_MODULE_NAMES[:len(EXPECTED_DEFERRED_MODULE_NAMES)]
+    assert siblings == EXPECTED_DEFERRED_MODULE_NAMES
 
 
 def test_helper_modules_is_a_tuple_in_a_fixed_order():

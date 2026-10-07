@@ -118,7 +118,8 @@ None of these are required for `synthesis.output`.
 |---|---------|--------|-------------|---------|
 | D1 | **OSM Niedersachsen PBF** (same file as C3) | https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf | `osm/niedersachsen-latest.osm.pbf` | ODbL 1.0 |
 | D2 | **GTFS Deutschland (Delfi) or ZGB feeds** (zip) | https://www.opendata-oepnv.de/ht/de/organisation/delfi/startseite or `https://www.zgb.de` | `gtfs/<any>.zip` | DELFI / ZGB terms |
-| D3 | **VRB tariff-zone mapping** for `braunschweig.data.vrb.zones` (consumed by Java `AddTransitZoneInformation` → ÖV-fare module). Built from the public VRB website (preferred) or from a Waben polygon delivery (fallback) | https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen (HTML) — alt: VRB / LGLN polygon delivery | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` (or `vrb/waben.gpkg` → same script) | VRB terms |
+| D3 | **VRB tariff-zone mapping** for `braunschweig.data.vrb.zones` (consumed by Java `AddTransitZoneInformation` → ÖV-fare module). Built from the public VRB website (legacy name matching) or from the D4 polygon layer (preferred) | https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen (HTML) — alt: D4 polygons | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` (or D4 → same script, `--waben`) | VRB terms |
+| D4 | **VRB tariff zone polygons** (official, 46 polygons, EPSG:25832, field `Tarifzone`; zones 55/56 in Region Hannover missing) | https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0 — REST `query` export (`where=1=1`, `outFields=*`, `outSR=25832`, `f=geojson`) | `vrb/vrb_tarifzonen_rgb_25832.geojson` | **unknown** — no licence text on the service; confirmation pending (`docs/data/vrb-tariff-zone-polygons-provider-notes.md`); do not commit or redistribute |
 
 GTFS should be pre-clipped to the ZGB bounding box (see below).
 
@@ -137,13 +138,13 @@ python scripts/build_vrb_stations_json.py `
     --out eqasim-data/data/vrb/stations.json
 ```
 
-**Fallback — Waben polygon spatial join** (when VRB delivers an
-authoritative shapefile):
+**Preferred since 2026-09-24 — spatial join against the official D4 polygons**
+(download D4 first with the `curl` command in `docs/registry/data/vrb_tariff_zone_polygons.yml`):
 
 ```powershell
 python scripts/build_vrb_stations_json.py `
-    --waben eqasim-data/data/vrb/waben.gpkg `
-    --waben-zone-column WABE `
+    --waben eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson `
+    --waben-zone-column Tarifzone `
     --gtfs eqasim-data/data/gtfs/latest.zip `
     --out eqasim-data/data/vrb/stations.json
 ```

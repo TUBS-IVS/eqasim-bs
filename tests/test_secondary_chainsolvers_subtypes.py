@@ -603,7 +603,7 @@ def test_purpose_subtype_codeplan_sentinels_default_agrees_across_its_two_homes(
 
 # ---------------------------------------------------------------------------
 # Decider construction: synthetic (non-MiD-file) Wege frames via a
-# monkeypatched braunschweig.popsim.mid.load_mid_wege, mirroring the synthetic
+# monkeypatched braunschweig.popsim.mid.donor.load_mid_wege, mirroring the synthetic
 # Wege builder in tests/test_distance_distributions_subtypes.py. Never touches
 # real MiD data (local-only, not committed).
 # ---------------------------------------------------------------------------
@@ -633,8 +633,8 @@ def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15, kernwo=2, w_rb
 
 
 def _decider_context(overrides, monkeypatch, wege_df):
-    from braunschweig.popsim import mid as mid_module
-    monkeypatch.setattr(mid_module, "load_mid_wege", lambda mid_dir: wege_df)
+    from braunschweig.popsim.mid import donor as mid_donor
+    monkeypatch.setattr(mid_donor, "load_mid_wege", lambda mid_dir: wege_df)
     base = {
         "secondary_distance_min_obs": 30,
         "braunschweig.population.popsim.mid_dir": "unused_dummy_dir",

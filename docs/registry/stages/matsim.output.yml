@@ -2,7 +2,7 @@ stage: matsim.output
 title: MATSim output stage
 layer: matsim
 description: Runs the MATSim simulation chain to its output; extended with the run-named durable
-  archive (ADR-0064).
+  archive (ADR-0064); copies the VRB fare inputs when vrb_zone_fares_enabled (ADR-0133).
 lineage:
   type: extended
   upstream: null
@@ -16,6 +16,8 @@ pipelines:
 production: true
 features:
 - matsim_output_archive
+- vrb_zone_fare_model
 decisions:
 - ADR-0064
 - ADR-0071
+- ADR-0133

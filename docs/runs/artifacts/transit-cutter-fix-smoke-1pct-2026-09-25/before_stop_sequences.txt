@@ -1,0 +1,24 @@
+old rule (end = index): 0 of 13849 mapped routes differ from the given cut schedule
+fixed rule (end = index + 1): 678 of 13849 mapped routes differ from the given cut schedule
+departures kept: old rule 14800, fixed rule 14923
+old rule drops 48 routes (123 departures) entirely and removes the last inside stop from 1578 departures {'bus': 1296, 'rail': 282}
+  rail line 10908 (DB Regio AG Nord): 2 routes, 18 departures, e.g. Walkenried -> Ellrich
+  rail line 11065 (DB Fernverkehr AG): 7 routes, 15 departures, e.g. Braunschweig Hbf -> Helmstedt
+  rail line 22343 (DB Fernverkehr AG): 1 routes, 9 departures, e.g. Wolfsburg Hbf -> Braunschweig Hbf
+  rail line 638 (DB Fernverkehr AG): 4 routes, 5 departures, e.g. Wolfsburg Hbf -> Braunschweig Hbf
+  rail line 21176 (RV Start Deutschland GmbH Mitteldeutschland): 2 routes, 2 departures, e.g. Ilsenburg -> Darlingerode
+  rail line 22613 (DB Fernverkehr AG): 2 routes, 2 departures, e.g. Braunschweig Hbf -> Helmstedt
+  rail line 24799 (DB Fernverkehr AG): 1 routes, 1 departures, e.g. Wolfsburg Hbf -> Braunschweig Hbf
+PT gate stations (417, 47 inside the extent) without any rail arrival under the old rule but with arrivals under the fixed rule: 12
+  Hämelerwald: 0 instead of 38 rail arrivals
+  Hoheneggelsen: 0 instead of 27 rail arrivals
+  Harsum: 0 instead of 26 rail arrivals
+  Sehnde: 0 instead of 26 rail arrivals
+  Immensen-Arpke: 0 instead of 23 rail arrivals
+  Derneburg(Han): 0 instead of 21 rail arrivals
+  Wefensleben: 0 instead of 20 rail arrivals
+  Bad Gandersheim: 0 instead of 18 rail arrivals
+  Osterode am Harz Leege: 0 instead of 18 rail arrivals
+  Rätzlingen: 0 instead of 17 rail arrivals
+  Darlingerode: 0 instead of 13 rail arrivals
+  Bad Bodenteich: 0 instead of 12 rail arrivals

@@ -9,17 +9,20 @@ kept for parity with the MVG dump and for human inspection.
 
 Two input modes are supported:
 
-1. ``--vrb-html PATH``  (preferred; default since the VRB Waben polygon
-   shapefile is not publicly available).  Parses a saved copy of
+1. ``--vrb-html PATH``  (legacy name matching; the historical default from
+   the time the project believed no public zone geometry existed).  Parses a saved copy of
    https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen and uses
    the place-name dropdown options to build a ``place -> tariff zone``
    mapping.  Each GTFS stop is then matched against this mapping by
    normalised place name, optionally disambiguated by an in-name city
    hint (e.g. ``Alvesse (Edemissen)`` vs ``Alvesse (Vechelde)``).
 
-2. ``--waben FILE``  (legacy).  Spatial join of GTFS stops against a
-   VRB Waben polygon layer.  Kept for the day VRB releases an authorita-
-   tive shapefile.
+2. ``--waben FILE``  (preferred since 2026-09-24).  Spatial join of GTFS
+   stops against the official VRB tariff-zone polygons published by the
+   Regionalverband Grossraum Braunschweig (Data Registry record
+   ``vrb_tariff_zone_polygons``: 46 polygons, EPSG:25832, zone id in the
+   ``Tarifzone`` field). The name-matching mode inherits five wrong
+   locality entries of the VRB website; the spatial join does not.
 
 In both modes the GTFS feed (zip) supplies stop coordinates and names.
 The default path matches ``configs/fixtures/config_local_braunschweig.yml``:
@@ -44,10 +47,12 @@ HTML scrape mode (recommended)::
         --gtfs eqasim-data/data/gtfs/latest.zip `
         --out eqasim-data/data/vrb/stations.json
 
-Waben polygon mode::
+Polygon mode (official RGB layer, see the Data Registry record for the
+download command)::
 
     python scripts/build_vrb_stations_json.py `
-        --waben path/to/vrb_waben.gpkg --waben-zone-column WABE `
+        --waben eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson `
+        --waben-zone-column Tarifzone `
         --gtfs eqasim-data/data/gtfs/latest.zip `
         --out eqasim-data/data/vrb/stations.json
 """

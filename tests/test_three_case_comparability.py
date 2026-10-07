@@ -635,33 +635,13 @@ class TestTripVocabIdenticalAcrossPopsimProducers:
         missing = [c for c in CONTRACT if c not in trips.columns]
         assert not missing, f"popsim_open trips missing CONTRACT columns: {missing}"
 
-    def test_mid_trips_have_euclidean_distance(self):
-        """popsim_mid trips must carry euclidean_distance (derived from wegkm_imp)."""
-        trips = self._mid_trips()
-        assert "euclidean_distance" in trips.columns, (
-            "popsim_mid trips_stage missing euclidean_distance column"
-        )
-
-    def test_open_trips_have_euclidean_distance(self):
-        """popsim_open trips must carry euclidean_distance (passed through from ENTD)."""
-        trips = self._open_trips()
-        assert "euclidean_distance" in trips.columns, (
-            "popsim_open build_trips missing euclidean_distance column"
-        )
-
-    def test_mid_trips_have_trip_index(self):
-        """popsim_mid trips must carry trip_index (0-based cumcount per person)."""
-        trips = self._mid_trips()
-        assert "trip_index" in trips.columns, (
-            "popsim_mid trips_stage missing trip_index column"
-        )
-
-    def test_open_trips_have_trip_index(self):
-        """popsim_open trips must carry trip_index (0-based cumcount per person)."""
-        trips = self._open_trips()
-        assert "trip_index" in trips.columns, (
-            "popsim_open build_trips missing trip_index column"
-        )
+    @pytest.mark.parametrize("producer", ["mid", "open"])
+    def test_trips_carry_euclidean_distance_and_trip_index(self, producer):
+        """Both producers carry euclidean_distance (MiD: derived from wegkm_imp; ENTD:
+        passed through) and trip_index (0-based cumcount per person)."""
+        trips = self._mid_trips() if producer == "mid" else self._open_trips()
+        missing = [c for c in ("euclidean_distance", "trip_index") if c not in trips.columns]
+        assert not missing, f"popsim_{producer} trips lack {missing}"
 
     def test_mid_trip_modes_in_canonical_vocab(self):
         """popsim_mid mode values must be a subset of the canonical mode vocab."""
@@ -841,29 +821,9 @@ class TestMatsimWriterIdTypes:
       - None / np.nan                     -> java.lang.String (missing/unresolvable id)
     """
 
-    def test_native_int_is_long(self):
-        """Native Python int resolves to java.lang.Long."""
-        assert writers.long_or_string_type(12345) == "java.lang.Long"
-
     def test_numpy_int64_is_long(self):
         """numpy int64 (dtype of popsim surrogate ids) resolves to java.lang.Long."""
         assert writers.long_or_string_type(np.int64(98765)) == "java.lang.Long"
-
-    def test_numeric_string_is_long(self):
-        """Numeric string (ENTD person_id as string) resolves to java.lang.Long."""
-        assert writers.long_or_string_type("100") == "java.lang.Long"
-
-    def test_integer_zero_is_long(self):
-        """Integer 0 resolves to java.lang.Long (edge case guard)."""
-        assert writers.long_or_string_type(0) == "java.lang.Long"
-
-    def test_alphanumeric_cell_id_is_string(self):
-        """popsim_mid pre-sampling cell id 'A_1_0_1' must resolve to java.lang.String."""
-        assert writers.long_or_string_type("A_1_0_1") == "java.lang.String"
-
-    def test_none_is_string(self):
-        """None resolves to java.lang.String (cannot convert to int)."""
-        assert writers.long_or_string_type(None) == "java.lang.String"
 
     def test_popsim_mid_source_ids_are_long(self):
         """popsim_mid source_person_id / source_household_id are integer surrogates

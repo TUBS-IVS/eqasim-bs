@@ -201,7 +201,7 @@
    "data.od.weighted"
   ],
   [
-   "braunschweig.data.vrb.zones",
+   "braunschweig.data.vrb.zone_polygons",
    "matsim.simulation.prepare"
   ],
   [
@@ -366,7 +366,15 @@
   ],
   [
    "data.gtfs.cleaned",
+   "braunschweig.data.vrb.zone_polygons"
+  ],
+  [
+   "data.gtfs.cleaned",
    "matsim.scenario.supply.gtfs"
+  ],
+  [
+   "data.gtfs.cleaned",
+   "matsim.simulation.prepare"
   ],
   [
    "data.hts.entd.cleaned",
@@ -1077,7 +1085,7 @@
   "braunschweig.data.verbindungen.margins",
   "braunschweig.data.verbindungen.work_od",
   "braunschweig.data.verbindungen.zones",
-  "braunschweig.data.vrb.zones",
+  "braunschweig.data.vrb.zone_polygons",
   "braunschweig.freight.extraction",
   "braunschweig.freight.trips",
   "braunschweig.locations.work",

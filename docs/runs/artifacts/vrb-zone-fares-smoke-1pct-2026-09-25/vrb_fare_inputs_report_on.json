@@ -1,0 +1,95 @@
+{
+  "fare_input_files": [
+    "braunschweig_1pct_i430_vrb_fare_model_2026-06-20.json",
+    "braunschweig_1pct_i430_vrb_line_scopes.csv",
+    "braunschweig_1pct_i430_vrb_fare_inputs_report.json"
+  ],
+  "facility_zone_coverage": 0.759585289514867,
+  "facilities": 10224,
+  "zoned_facilities": 7766,
+  "zoned_facilities_by_zone": {
+    "10": 280,
+    "11": 148,
+    "12": 104,
+    "13": 146,
+    "14": 156,
+    "15": 148,
+    "16": 341,
+    "17": 191,
+    "20": 736,
+    "30": 187,
+    "31": 66,
+    "32": 47,
+    "33": 62,
+    "35": 143,
+    "36": 69,
+    "37": 142,
+    "38": 48,
+    "40": 996,
+    "50": 397,
+    "51": 102,
+    "52": 102,
+    "53": 192,
+    "54": 111,
+    "55": 3,
+    "56": 4,
+    "60": 592,
+    "70": 308,
+    "71": 105,
+    "72": 135,
+    "73": 168,
+    "74": 89,
+    "75": 41,
+    "76": 64,
+    "77": 22,
+    "78": 128,
+    "79": 48,
+    "80": 275,
+    "81": 59,
+    "82": 60,
+    "83": 63,
+    "84": 136,
+    "85": 93,
+    "86": 10,
+    "87": 137,
+    "88": 104,
+    "89": 9,
+    "90": 199
+  },
+  "pre_cut_zone_tool": {
+    "facilities": 31022,
+    "zoned": 7771,
+    "unzoned": 23251,
+    "boundary_ties": 0,
+    "by_mode": {
+      "bus": {
+        "facilities": 29165,
+        "zoned": 7491
+      },
+      "ferry": {
+        "facilities": 4,
+        "zoned": 0
+      },
+      "funicular": {
+        "facilities": 4,
+        "zoned": 0
+      },
+      "rail": {
+        "facilities": 912,
+        "zoned": 112
+      },
+      "subway": {
+        "facilities": 396,
+        "zoned": 0
+      },
+      "tram": {
+        "facilities": 541,
+        "zoned": 168
+      }
+    }
+  },
+  "schedule_lines": 467,
+  "lines_with_scope": 467,
+  "line_scope_coverage": 1.0,
+  "lines_without_scope": []
+}

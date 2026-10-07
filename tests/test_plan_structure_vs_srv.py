@@ -418,7 +418,9 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
 
     assert set(S._HELPER_MODULES) == {
         plan_structure, srv_plan_structure, srv_distance_targets, provenance, day_absence}
-    assert S._DEFERRED_HELPER_MODULE_NAMES == ("braunschweig.analysis.spatial",)
+    # spatial is this stage's own function-level import; the names after it are the rest of
+    # its import closure, gated in tests/test_audit_synpp_helper_hash.py.
+    assert S._DEFERRED_HELPER_MODULE_NAMES[0] == "braunschweig.analysis.spatial"
 
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0        # md5 hex digest
@@ -426,11 +428,14 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     # The token really depends on the deferred module's source, not only on the direct helpers:
     # hand-hashing every source it names must reproduce it.
     import hashlib
+    import importlib
     import inspect
     expected = hashlib.md5()
     # Order matters: validate() digests _HELPER_MODULES in tuple order, then the deferred
     # names -- so this hand-hash follows the tuple, not an alphabetical guess.
-    for module in (*S._HELPER_MODULES, spatial):
+    deferred = [importlib.import_module(name) for name in S._DEFERRED_HELPER_MODULE_NAMES]
+    assert deferred[0] is spatial
+    for module in (*S._HELPER_MODULES, *deferred):
         expected.update(inspect.getsource(module).encode("utf-8"))
     assert token == expected.hexdigest()
 

@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from .candidate_columns import VISIT_OFFER_COLUMN, VISIT_POTENTIAL_COLUMN
-from .deciders import _inverse_cdf_choice
+from .inverse_cdf import _inverse_cdf_choice
 
 
 # ---------------------------------------------------------------------------

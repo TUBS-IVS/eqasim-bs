@@ -1,0 +1,132 @@
+id: transit-cutter-fix-smoke-1pct-2026-09-25
+date: '2026-09-25'
+repository:
+  commit: ad2623e5
+  branch: feature/i430-vrb-zone-fare-model
+  notes: 'eqasim-bs ad2623e5 (server worktree ~/wt_i430_vrb_fares, detached; the VRB zone fare branch, because the
+    comparison run is its ON arm) with eqasim-java-bs 23e7c66f9 plus the two TransitScheduleCutter fixes of branch
+    fix/transit-cutter-last-inside-stop (19fe3d24f, 83312f932), cherry-picked on felix as fb570f0 and 73eff6a
+    (checkout ~/eqasim-java-bs-cutterfix, a worktree of ~/eqasim-java-bs-i430; the combination is not pushed).
+    Between the prepare JAR of the comparison run (eqasim-java-bs 9998db31d) and 23e7c66f9 only run-time routing
+    and mode choice classes changed (no scenario, cutter, freight or prepare class), and the cutter re-routes the
+    population before the vrbFare module is written, so prepare differs only by the cutter fix.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/i430_cutterfix_on.yml'
+  notes: 'Copy of the ON overlay of vrb-zone-fares-smoke-1pct-2026-09-25 (felix:~/i430_vrb_fares_on.yml) with only
+    eqasim_source_path changed to /home/felix/eqasim-java-bs-cutterfix. Same working directory
+    (/home/felix/i430_data/cache_off) and output_path as the fare smoke; the driver
+    felix:~/i430_data/cutterfix_driver.sh (throwaway, not committed) moved the outputs to
+    felix:~/i430_data/cutterfix_result/. scripts/report_stage_hash_impact.py before the start: 84 stages hit,
+    only matsim.runtime.eqasim, braunschweig.freight.extraction, braunschweig.freight.trips,
+    braunschweig.matsim.simulation.prepare, matsim.simulation.run and matsim.output recomputed.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: 'Same synthetic population as the comparison run (shared synthesis cache): 12,567 persons incl. 521
+    freight agents in output_persons.csv.gz of both runs; the re-extracted freight trips are byte-identical
+    (braunschweig.freight.trips pickles of both Java builds share one sha256); the cordon extent geometry of both
+    prepare stages is identical (symmetric difference 0 m2). Every count is a sample count at sampling_rate 0.01,
+    never expanded.'
+pipeline:
+  targets:
+  - matsim.output
+  notes: '2026-09-25 11:39:56 -> 13:32:46 CEST, exit 0 with the post-run marker "[cache_share] auto-export
+    disabled": JAR build, freight extraction 11:40 -> 12:58, prepare 12:58 -> 13:06, 20 MATSim iterations
+    13:06 -> 13:32, output. The three ERROR lines are the SimWrapper post-run analyses (PublicTransitAnalysis,
+    TripAnalysis, CreateAvroNetwork) that fail the same way in every run of the fare smoke.'
+classification:
+- smoke
+- ab_test
+status:
+  execution: completed
+  notes: 'Real-data evidence for the two TransitScheduleCutter fixes (contributor note
+    docs/codebase/notes/eqasim-transit-schedule-cutter.md). Before = the scenario cut by the old cutter, i.e. the
+    prepared scenario of the ON arm of vrb-zone-fares-smoke-1pct-2026-09-25 and its MATSim rerun with
+    eqasim-java-bs 23e7c66f9 (run vrb-zone-fares-routing-surcharge-1pct-2026-09-25); after = this run. A smoke,
+    not a validation: no observed reference is compared, and one 1 % draw after 20 iterations bounds nothing.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), JDK 25.0.3, conda eqasim (Python 3.10); the fixed cutter was
+  also applied to the same mapped schedule on Windows 11 (JDK 25.0.3) with ApplyTransitScheduleCutter.java'
+validation:
+- metric: cut stop sequences against the cutter rule (all 13,849 routes of the mapped schedule)
+  reference: 'a replay of TransitScheduleCutter.reduceStopSequence with the old end index of an outgoing crossing
+    (index) and the fixed one (index + 1) on the mapped schedule and the cordon extent'
+  result: 'Before: the pipeline cut equals the old rule for all 13,849 routes (678 differ from the fixed rule).
+    The old rule drops 48 routes (123 departures) entirely, among them every DB Fernverkehr departure Wolfsburg ->
+    Braunschweig (lines 22343, 638, 24799: 15 departures) and Braunschweig <-> Helmstedt (11065, 22613: 17) and DB Regio
+    Walkenried -> Ellrich (10908: 18), and removes the last inside stop from 1,578 departures (1,296 bus, 282
+    rail); 12 of the 47 PT cordon gate stations inside the extent get no rail arrival at all (Hämelerwald 0
+    instead of 38, Hoheneggelsen 0/27, Harsum 0/26, Sehnde 0/26, ...). After: the pipeline cut equals the fixed
+    rule for all 13,849 routes; 473 lines, 4,644 routes, 10,317 stops (before 467, 4,596, 10,224). The fixed JAR
+    applied outside the pipeline gives the same cut.'
+  artifact: 'docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_stop_sequences.txt,
+    docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_stop_sequences.txt'
+- metric: scheduled time at every kept stop, cut against mapped schedule
+  reference: 'the mapped (uncut) schedule, matsim.scenario.supply.processed, same route and departure ids'
+  result: 'Before: all 1,718 departures of routes entering the extent served their kept stops early, by up to
+    96 min (median 18 min; 14,511 departure-stop pairs off), the 13,082 departures of routes starting at their
+    original first stop were right. After: 0 of 1,745 entering and 0 of 13,178 other departures off.'
+  artifact: 'docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_timetable.txt,
+    docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_timetable.txt'
+- metric: long-distance departures between Wolfsburg Hbf and Braunschweig Hbf through the supply stages (service day
+    2026-06-12, the pt2matsim dayWithMostServices)
+  reference: 'the cleaned GTFS feed data.gtfs.cleaned (de_full_2026-06-02.zip)'
+  result: 'Cleaned GTFS, pt2matsim schedule and mapped schedule: 15 WOB -> BS, 16 BS -> WOB. Cut schedule before:
+    0 / 16; after: 15 / 16, plus 17 DB Fernverkehr departures Braunschweig <-> Helmstedt.'
+  artifact: 'docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_long_distance_layers.txt,
+    docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_long_distance_layers.txt'
+- metric: simulated PT legs (eqasim_pt.csv.gz, final iteration) on a departure whose time the cut shifted
+  reference: 'the mapped schedule time at the leg''s access stop'
+  result: 'Before: 291 of 4,635 rides (6.3 %, 258 persons; 241 rail, 50 bus) boarded a shifted departure, 3 to 76
+    min early (median 18 min). After: 0 of 4,781 rides. Every ride was found in both schedules (the check fails
+    otherwise); the 45 (before) and 34 (after) PT legs without a transit line id carry no ride (every ride field
+    empty, boarding time 0) and are counted apart.'
+  artifact: 'docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_pt_legs_on_shifted_departures.txt,
+    docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_pt_legs_on_shifted_departures.txt'
+- metric: final-iteration outcomes, before vs after
+  reference: 'the before run (vrb-zone-fares-routing-surcharge-1pct-2026-09-25); a change between runs, not a
+    comparison with observed behaviour'
+  result: 'PT share 7.06 % -> 7.31 % (modestats), walk 18.62 % -> 18.43 %, car 47.27 % unchanged. PT legs 4,680 ->
+    4,815, rail legs 656 -> 777. At the 12 gate stations that had no rail arrival: 103 -> 111 boardings and 6 ->
+    141 alightings, i.e. the return trips to these stations exist again. Long-distance candidates
+    (long_distance_flat quotes, iterations 1-20) 0 before and after, fallback share 0 in every iteration. One
+    1 % draw after 20 iterations: the size of the shifts is indicative, not an estimate.'
+  artifact: docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/compare_runs.json
+features:
+- cordon_network_ring
+artifacts:
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/check_cut_stop_sequences.py
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/check_cut_timetable.py
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/trace_long_distance_layers.py
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/check_pt_legs_on_shifted_departures.py
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/compare_runs.py
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/ApplyTransitScheduleCutter.java
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_stop_sequences.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_stop_sequences.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/fixed_java_cut_stop_sequences.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_timetable.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_timetable.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/fixed_java_cut_timetable.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_long_distance_layers.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_long_distance_layers.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_pt_legs_on_shifted_departures.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_pt_legs_on_shifted_departures.txt
+- docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/compare_runs.json
+notes: 'Server-only outputs (sha256) under felix:/home/felix/i430_data/cache_off/:
+  braunschweig.matsim.simulation.prepare__5420d38f4d43eb49b7818d7ffea0af57.cache/braunschweig_1pct_i430_transit_schedule.xml.gz
+  e2160ba90b974f32b489f8d85f7b9d803ba0f3acec22c3066f0d4379a271ee7c; the same stage''s braunschweig_1pct_i430_config.xml
+  9b1d62c4b4c824bd118352454e9bbe0e74e1b9a5bbe93112df68344c5426b451;
+  matsim.simulation.run__b8946df12d3fbdcd98e7e4e2577e6484.cache/simulation_output/eqasim_pt.csv.gz
+  dcc19955b5077dcb6851aae3b669769d08c331a6d91529575f0c801263e4df0b, eqasim_trips.csv.gz
+  034ea217ca60fe1a3ea9ea7ad484adfd45e069b50c8be1a65417e711f0dca59d, output_legs.csv.gz
+  6272bdcc3b5bb30ef2cff8b7d2b76c6eede3aab770222aca9ab772c15163a811. The mapped schedule is
+  matsim.scenario.supply.processed__2518954ea5d379c04b10693e4d0055fb.cache/schedule.xml.gz, the old cut the fare
+  smoke''s braunschweig.matsim.simulation.prepare__acc3a371e354d84747ba4d829f3cbe8c.cache. Every cordon run made
+  with the old cutter used a cut schedule with both defects. Convergence of either run is not validation.'
+source: 'Python scripts in docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/ run on felix (eqasim env)
+  and on Windows 11, each script''s usage line naming its inputs: check_cut_stop_sequences.py <cordon_extent.gpkg>
+  <mapped schedule> <cut schedule> <line scopes> <cordon_pt_gates.p>; check_cut_timetable.py <mapped> <cut>;
+  trace_long_distance_layers.py <line scopes> 20260612 <cleaned GTFS dir> <schedules...>;
+  check_pt_legs_on_shifted_departures.py <mapped> <cut> <eqasim_pt.csv.gz>; compare_runs.py
+  <before output dir> <after output dir> <station names...>.'

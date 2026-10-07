@@ -60,23 +60,7 @@ def test_control_columns_follow_name_category():
 # --- Catalog factory: person-level predicate rendering ---
 
 
-def test_attribute_kreis_controls_renders_person_predicate():
-    controls = cs.attribute_kreis_controls([_entry("work_participation")])
-    exprs = {c.name: c.expression_for("mid") for c in controls}
-    assert exprs["work_participation_yes"] == "(persons.work_participation == 1)"
-    assert exprs["work_participation_no"] == "(persons.work_participation == 0)"
-    assert all(c.seed_table == cs.SEED_TABLE_PERSONS for c in controls)
-    assert all(c.geography == cs.GEO_KREIS for c in controls)
-    # ENTD cannot express the MiD donor Wege-derived column -> dropped.
-    assert all(c.expression_for("entd") is None for c in controls)
-
-
 # --- Importance profile: tier="hard" auto-classifies into the "kreis_hard" group ---
-
-
-def test_importance_group_for_field_classifies_work_participation_as_kreis_hard():
-    assert cs.importance_group_for_field("work_participation_yes_KREIS") == "kreis_hard"
-    assert cs.importance_group_for_field("work_participation_no_KREIS") == "kreis_hard"
 
 
 def test_apply_importance_profile_sets_hard_weight_for_work_participation():
@@ -111,29 +95,10 @@ def test_toggle_key_registered_and_defaults_off():
     assert stage._KREIS_CONTROL_DEFAULT["work_participation"] == "off"
 
 
-def test_active_kreis_entries_excludes_work_participation_by_default():
-    """work_participation is registered but INACTIVE by default (Plan B, issue #368,
-    ADR-0109): work_by_employment replaces it. Explicitly turning work_participation back
-    on while work_by_employment stays on is a config contradiction (see
-    tests/test_participation_universe_controls.py)."""
-    from braunschweig.popsim import stage
-    active = stage.active_kreis_entries(_FakeContext({}), "mid")
-    names = {c.name for c in active}
-    assert "work_participation" not in names
-    # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
-    # three-group entry while pt_ticket_never_group is on (the default, issue #329).
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group4",
-        "leisure_participation", "escort_participation",
-        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
-    }
-
-
 def test_legacy_on_path_activates_work_participation():
     """The legacy ON path (Plan B, issue #368, ADR-0109). A bare "off" override on
     KEY_WORK_PARTICIPATION_CONTROL no longer discriminates -- "off" is now the default
-    (see test_active_kreis_entries_excludes_work_participation_by_default) -- so the
+    (pinned by tests/test_kreis_control_stage_wiring.py::test_active_kreis_entries_all_default_on_for_mid) -- so the
     meaningful direction to test is turning it back ON, together with its replacement
     work_by_employment explicitly off (both "on" is a config-time contradiction)."""
     from braunschweig.popsim import stage
@@ -147,11 +112,6 @@ def test_legacy_on_path_activates_work_participation():
     # The other six pre-#368 default-on entries are unaffected by these two toggles.
     assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
             "trip_class", "employment_status"} <= names
-
-
-def test_active_kreis_entries_empty_for_non_mid_source():
-    from braunschweig.popsim import stage
-    assert stage.active_kreis_entries(_FakeContext({}), "entd") == []
 
 
 def test_off_controls_csv_byte_identical_to_pre_task_default():

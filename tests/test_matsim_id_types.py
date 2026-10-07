@@ -74,22 +74,15 @@ def test_column_java_type_float_column_raises():
         writers.column_java_type(pd.Series([1.0, float("nan"), 3.0]))
 
 
-def test_column_java_type_leading_zero_string_is_string():
+@pytest.mark.parametrize("expected, first, second", [
+    pytest.param("java.lang.String", "03101", "03102", id="leading_zero_string_is_string"),
+    pytest.param("java.lang.Long", "12345", "678", id="pure_digit_string_is_long"),
+    pytest.param("java.lang.String", "ZENSUS100m_E43_1", "x", id="alnum_string_is_string"),
+])
+def test_column_java_type_of_a_string_column(expected, first, second):
     import pandas as pd
     from matsim import writers
-    assert writers.column_java_type(pd.Series(["03101", "03102"])) == "java.lang.String"
-
-
-def test_column_java_type_pure_digit_string_is_long():
-    import pandas as pd
-    from matsim import writers
-    assert writers.column_java_type(pd.Series(["12345", "678"])) == "java.lang.Long"
-
-
-def test_column_java_type_alnum_string_is_string():
-    import pandas as pd
-    from matsim import writers
-    assert writers.column_java_type(pd.Series(["ZENSUS100m_E43_1", "x"])) == "java.lang.String"
+    assert writers.column_java_type(pd.Series([first, second])) == expected
 
 
 # ---------------------------------------------------------------------------

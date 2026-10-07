@@ -1,0 +1,12 @@
+iteration,outcome,count,share
+7,child_free,98,0.04375
+7,day_ticket_cap_applied,661,0.2950892857142857
+7,external_local_flat,12,0.005357142857142857
+7,external_national_flat,6,0.0026785714285714286
+7,external_rail_nt,21,0.009375
+7,no_pt_leg,948,0.4232142857142857
+7,vrb_flat_national,112,0.05
+7,vrb_flat_regional,72,0.03214285714285714
+7,vrb_short_trip,144,0.06428571428571428
+7,vrb_single_adult,778,0.34732142857142856
+7,vrb_single_child,49,0.021875

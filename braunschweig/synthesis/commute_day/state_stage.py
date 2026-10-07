@@ -35,6 +35,7 @@ readable by its consumers without a branch of their own.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 import os
@@ -73,6 +74,33 @@ _LOG_TAG = "[commute day state]"
 # All three were module-level imports outside the token (#327 helper-hash re-audit).
 # _escort_duty owns the escort-leg definition this stage's escort protection reads (#425).
 _HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching, _escort_duty)
+
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.diary_facts",
+    "braunschweig.popsim.diary_plan_match",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.trips",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.synthesis.commute_day.donor_pool",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
+)
 
 # --------------------------------------------------------------------------- config keys
 
@@ -138,6 +166,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"state_stage validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

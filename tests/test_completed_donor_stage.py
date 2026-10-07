@@ -11,6 +11,7 @@ See docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md.
 """
 import numpy as np
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import completed_donor as cd
 from braunschweig.popsim import diary_facts, diary_plan_match
@@ -116,25 +117,17 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on, diary_plan
     return households, persons
 
 
-def test_build_completed_donor_matches_inline_with_weekend_match(tmp_path):
+@pytest.mark.parametrize("weekend_plan_match_on", [
+    pytest.param(True, id="weekend_match_on"),
+    pytest.param(False, id="weekend_match_off"),
+])
+def test_build_completed_donor_matches_the_inline_reference(tmp_path, weekend_plan_match_on):
     _write_mid_attribute_fixture(tmp_path)
     ref_hh, ref_persons = _inline_reference(
-        tmp_path, random_seed=1234, weekend_plan_match_on=True, diary_plan_match_on=True,
+        tmp_path, random_seed=1234, weekend_plan_match_on=weekend_plan_match_on, diary_plan_match_on=True,
     )
     result = cd.build_completed_donor(
-        tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=True,
-    )
-    pd.testing.assert_frame_equal(result.households, ref_hh)
-    pd.testing.assert_frame_equal(result.persons, ref_persons)
-
-
-def test_build_completed_donor_matches_inline_without_weekend_match(tmp_path):
-    _write_mid_attribute_fixture(tmp_path)
-    ref_hh, ref_persons = _inline_reference(
-        tmp_path, random_seed=1234, weekend_plan_match_on=False, diary_plan_match_on=True,
-    )
-    result = cd.build_completed_donor(
-        tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=False,
+        tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=weekend_plan_match_on,
     )
     pd.testing.assert_frame_equal(result.households, ref_hh)
     pd.testing.assert_frame_equal(result.persons, ref_persons)

@@ -1,0 +1,74 @@
+dataset: vrb_tariff_zone_polygons
+title: Official VRB tariff zone polygons (Regionalverband Grossraum Braunschweig ArcGIS)
+inventory_id: null
+provider: Regionalverband Grossraum Braunschweig (RGB), ArcGIS Enterprise REST service Verkehr/Tarifzonen
+vintage: >-
+  Portal item dated 2023-11 (created) / 2023-12 (modified) according to the discovery
+  note of 2026-09-24; the service metadata itself carries no date. Retrieved 2026-09-24.
+geography: The whole Verbandsgebiet (8 ZGB Kreise), 46 polygons tiling 5,090.4 km2; VRB zones 10..90
+crs: EPSG:25832
+roles:
+- spatial_input
+- supply_input
+used_by:
+- braunschweig.data.vrb.zone_polygons
+acquisition:
+  method: manual_download
+  source: https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0
+  script: null
+  notes: >-
+    The service is not linked from the RGB "Daten & Services" page but the REST directory is
+    public and anonymously queryable. Export with
+    curl -G ".../Verkehr/Tarifzonen/MapServer/0/query" --data-urlencode "where=1=1"
+    --data-urlencode "outFields=*" --data-urlencode "outSR=25832" --data-urlencode "f=geojson"
+    -o eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson (MapServer supports GeoJSON,
+    maxRecordCount 2000). Retrieval 2026-09-24: 3,354,544 bytes, SHA-256
+    75765a03fa9235b40e7df2f3ee29889257c3d9e8cbbb3036cbde452b9206aa4a. The pinned eqasim Python
+    (3.10) fails the TLS handshake against this host; fetch with curl or the system Python.
+storage:
+  expected_path: eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson
+  committed: false
+  local_only: true
+  notes: Not committed until the licence is confirmed (see limitations).
+verification:
+  verifier_entry: D4
+  notes: >-
+    Checked 2026-09-24 with GeoPandas in the pinned environment: 46 features (39 Polygon,
+    7 MultiPolygon), fields OBJECTID / Tarifzone (string zone id) / Code (1..46) /
+    Shape.STArea() / Shape.STLength(); 46 unique zone ids; one invalid ring (zone 38) repaired
+    by make_valid; total area 5,090.4 km2 equal to the union area; one overlap sliver of
+    1,798 m2 between zones 20 and 15; 97 neighbour pairs with a shared boundary (shortest
+    529 m, zones 35/72) plus one point contact (87/88).
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: unknown
+  restricted: false
+  redistribution: restricted
+  notes: >-
+    Neither the service nor the portal item names a licence; the geodata linked from the RGB
+    "Daten & Services" page are CC BY 4.0. Confirmation is requested before any commit or
+    redistribution (open item in docs/data/vrb-tariff-zone-polygons-provider-notes.md).
+limitations: >-
+  VRB zones 55 (Haemelerwald Bahnhof) and 56 (Dedenhausen Bahnhof) lie in Region Hannover
+  outside the Verbandsgebiet and are not in the layer; the VRB price-stage matrix has 48
+  zones = these 46 plus 55 and 56, so the two station zones must be added separately (single
+  station point zones, VRB terms 2026 section 9.2). Zone 92 does not exist in the matrix or the
+  layer; the VRB website locality list names it once (Buendheim), an error on the website side.
+  The layer is a 2023 snapshot; VRB still publishes 48 zones in 2026 and the 2026-09-24
+  cross-check below found no boundary change, but the maintenance status of the service is
+  unconfirmed.
+notes: >-
+  Supersedes the HTML-scrape place-name assignment of vrb_tariff_zones for stop and person zone
+  membership: a spatial join against these polygons replaces name matching. Cross-check
+  2026-09-24 against the name-based stop seeds of the regional fare branch (7,665 GTFS stop
+  points matched by locality name, EPSG:25832): 7,542 lie inside a polygon, 7,448 of them
+  (98.75 %) carry the same zone, 94 differ and 123 lie outside every polygon (mostly
+  Braunschweig zone-40 stops at the outer edge). 56 of the 94 differences are the five
+  website localities listed in the provider notes (Buendheim 92->90, Frellstedt 33->31,
+  Wolsdorf 50->31, Wobeck 13->33, Wunderbuettel 53->13); the rest are same-name localities
+  matched to the wrong Gemeinde. The polygons decide zone membership; the price stage of a
+  relation still comes from the VRB price-stage matrix (VRB terms 2026 section 2.2), for which
+  the polygon adjacency graph is a consistency check, not a replacement.
