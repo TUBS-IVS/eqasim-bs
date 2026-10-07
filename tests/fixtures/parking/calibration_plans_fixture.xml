@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic plans for the test of scripts/parking/calibrate_garage_decay.py (tests only; pins arithmetic, not truth).
+     Coordinates are EPSG:25832 metres. The test writes the calibration zones bs_zone_ia = box(603000, 5790000, 603200,
+     5790200) and bs_zone_ib = box(603400, 5790000, 603600, 5790200) and two garages: one at (603100, 5790400), 300 m from
+     (603100, 5790100) and 500 m from (603500, 5790100), one at (603100, 5792000), out of range of every activity.
+     Destination universe (not home, work, education; inside Ia or Ib): p01 shop and p02 leisure at Ia, p03 other and p04 shop
+     at Ib. Commuter activities: p05 work at Ia, p06 education at Ib. Excluded: p07 (a shop outside both zones), p08 (a pt
+     interaction), p09 (an unselected plan), p10 (home in Ia). -->
+<population>
+  <person id="p01">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="shop" x="603100" y="5790100" end_time="09:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p02">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="pt"/>
+      <activity type="leisure" x="603100" y="5790100" end_time="21:00:00"/>
+      <leg mode="walk"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p03">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="bike"/>
+      <activity type="other" x="603500" y="5790100" end_time="11:00:00"/>
+      <leg mode="bike"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p04">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="shop" x="603500" y="5790100" end_time="10:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p05">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="work" x="603100" y="5790100" end_time="16:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p06">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="education" x="603500" y="5790100" end_time="15:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p07">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="shop" x="604000" y="5790100" end_time="10:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p08">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="walk"/>
+      <activity type="pt interaction" x="603100" y="5790100"/>
+      <leg mode="pt"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p09">
+    <plan selected="no">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="shop" x="603100" y="5790100"/>
+    </plan>
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p10">
+    <plan selected="yes">
+      <activity type="home" x="603100" y="5790100"/>
+    </plan>
+  </person>
+</population>
