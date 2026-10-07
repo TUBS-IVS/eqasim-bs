@@ -295,7 +295,12 @@ paid-parking share per 25 m cell of the majority rule over the parking supply
 (`braunschweig/parking/parking_paid_share_2026.csv.gz`, preflight D9, optional: no stage reads it yet) ships as well;
 re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf` in
 `eqasim-data/data/braunschweig/parking/raw_osm/` and `python scripts/build_parking_zones_from_osm.py --supply-share`
-(the pipeline's own OSM input D1 is not used for it). With the
+(the pipeline's own OSM input D1 is not used for it). The garage dataset of eight ZGB towns
+(`braunschweig/parking/parking_garages_2026.geojson` with its QA table `braunschweig/parking/parking_garages_2026_qa.csv`,
+preflight D11, optional: no stage reads it yet) ships as well, and `validate_parking_zones.py` cross-checks it with the tariff
+table; re-deriving it needs the owner's regional evidence package in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed) and
+`scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record `parking_garages_2026`). With the
 flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
 `org.eqasim.braunschweig.parking`: `matsim.simulation.run` fails fast when the jar lacks it or when the run writes
 no parking outcome report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the
@@ -305,12 +310,14 @@ TU campus zones (the TU requires explicit consent to reuse its graphics, not obt
 Braunlage car parks (the town's tourism coordinates, reuse terms not verified) and the Wolfsburg zones under their own
 terms, see the data record `parking_zones_2026`; the resident districts are under
 their own terms per source (a Braunschweig base map under dl-de/by-2-0, the Goslar service with an open reuse licence not
-verified), see the data record `parking_resident_districts_2026`. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a
+verified), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
+pages (licences not verified; two OpenStreetMap-derived positions under the ODbL 1.0), see the data record
+`parking_garages_2026`. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a
 comparison quantity only) are regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
 --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,
 `parking_tariffs_2026`, `parking_coverage_register_2026`, `parking_resident_districts_2026`, `parking_paid_share_2026`,
-`srv2023_commute_parking_by_workplace_class` and `srv2023_city_center_parking`; acquisition notes: section F of the
+`parking_garages_2026`, `srv2023_commute_parking_by_workplace_class` and `srv2023_city_center_parking`; acquisition notes: section F of the
 checklist below.
 
 The exhaustive acquisition companion (with every note and edge case) is

@@ -2,8 +2,8 @@
 
 One note for the mechanism that prices car parking when `parking_zones_enabled` is on (ADR-0139, issue #436). The
 feature state lives in the feature record `parking_cost_zones`, the data in the data records `parking_zones_2026`,
-`parking_tariffs_2026`, `parking_coverage_register_2026`, `srv2023_commute_parking_by_workplace_class` and
-`parking_resident_districts_2026`.
+`parking_tariffs_2026`, `parking_coverage_register_2026`, `srv2023_commute_parking_by_workplace_class`,
+`parking_resident_districts_2026` and `parking_garages_2026`.
 
 ## Data flow
 
@@ -110,6 +110,18 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   employer-free rules and before the fee-window check. The flag switches off R2 only:
   the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
   `schema_version` 3 since.
+- The garage dataset is data of its own, not zones (spec Amendment E1): `parking_garages_2026.geojson` (points, WGS84 on
+  disk, EPSG:25832 after `braunschweig.parking.garages.load_garages`) with its QA table `parking_garages_2026_qa.csv`
+  (`braunschweig.parking.garage_qa`) is built by `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's
+  regional package, so a change is made in `regional_garage_specs.py` (which package rule plays which role) and the two
+  files are regenerated, never edited by hand. No stage reads it yet and the zone-level garage columns of the tariff table
+  stay empty (Amendment E8); garages enter the pricing only through the later garage options. A garage is priced only where
+  the published structure maps exactly to a first period, an hourly rate in started units and a day cap (no approximation:
+  `not_priced_reason` says why), the assumptions P3 to P5 are named in the row and counted at every run and by
+  `scripts/validate_parking_zones.py`, and a new garage needs a QA row (the validator refuses a dataset without its QA
+  table). A commuter product is data of the tariff table (`commuter_day_eur`, the cheapest monthly or 30-day product over
+  21 working days, ASSUMPTION P2): the QA table holds the record of every monthly product, used or not, and the validator
+  checks the table against the used product.
 - Overlaps of the release are settled by an explicit precedence in the curation (`PRECEDENCE_REGIONAL` in
   `assemble_parking_zones.py`: the campus zones first, then the BgA lots and the single paid sites, then the older
   zones), never by the order of the file. Every cut that involves a zone of the regional step is a QA row

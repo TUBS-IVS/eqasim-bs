@@ -325,6 +325,23 @@ INPUTS: List[Input] = [
         ),
         matsim_only=True,
     ),
+    # D11: the garage dataset (parking cost zones v2, spec Amendment E1): garages as points with their own tariff where one
+    # is published. Committed like D5-D8 but read by no stage yet (the distance-weighted garage options of spec Amendment E
+    # come with a later task), hence optional like D9.
+    Input(
+        name="D11 Parking garages 2026 (committed)",
+        rel_path="braunschweig/parking/parking_garages_2026.geojson",
+        source="Committed with the repository (docs/registry/data/parking_garages_2026.yml); nothing to download.",
+        notes=(
+            "No stage reads it yet. Garages of eight ZGB towns with their own tariff where the published structure maps "
+            "exactly to the garage columns, the others listed and not priced; the QA table parking_garages_2026_qa.csv "
+            "lies next to it. Licence per source (facts of public pages, licences not verified; two OpenStreetMap "
+            "positions under the ODbL 1.0, (c) OpenStreetMap contributors), see the data record parking_garages_2026. "
+            "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        optional=True,
+    ),
 ]
 
 
