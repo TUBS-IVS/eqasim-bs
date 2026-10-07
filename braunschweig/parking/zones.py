@@ -32,7 +32,13 @@ Polygons built from a municipality's published paid street sections (spec Amendm
 ``municipal_street_sections_buffered`` and, for that source only, the buffer around the sections ``section_buffer_m``
 (``MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS``). Any polygon may carry ``reconstructed_section_m2``
 (``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source reconstructs from an older
-map (spec Amendment C1); the municipal QA table is checked by ``municipal_zone_qa.validate_municipal_qa``.
+map (spec Amendment C1); the municipal QA table is checked by ``municipal_zone_qa.validate_municipal_qa``. The regional
+evidence package of 2026-10-07 (spec Amendment D, the curation step ``scripts/curation/parking_zones_2026/
+regional_zones.py``) adds two sources: ``campus_detection_zones`` (a campus zone is the union of the camera detection
+zones of its campus map; a digitisation, so no rule parameter) and ``single_site_buffered`` (a single paid car park or
+street section is a zone of its own, the area within ``site_buffer_m`` of it, ``SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS``);
+``validate_geometry_source_zone_types`` pairs each with the zone type it describes, and both are compared with their
+references in the same municipal QA table.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is
@@ -147,8 +153,19 @@ SUPPLY_MAJORITY_GEOMETRY_SOURCE = "osm_supply_majority"
 #: sections a municipality publishes for one tariff zone, split by the nearer section where the areas of two tariff
 #: zones overlap (ties to the higher tariff).
 MUNICIPAL_SECTIONS_GEOMETRY_SOURCE = "municipal_street_sections_buffered"
+#: Campus unions of v2 spec Amendment D1: the union per campus of the red camera detection zones that the campus maps of
+#: the university's parking pages draw (TU Braunschweig); the zones include buildings, the intended destination area.
+CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE = "campus_detection_zones"
+#: Single paid sites of v2 spec Amendment D3: the area within ``site_buffer_m`` of one paid car park (its polygon, or its
+#: source point where no polygon exists) or paid street section of a municipality that publishes no zone map
+#: (ASSUMPTION C-a, as for the Wolfsburg sections).
+SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE = "single_site_buffered"
 GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
-                    EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE, MUNICIPAL_SECTIONS_GEOMETRY_SOURCE)
+                    EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE, MUNICIPAL_SECTIONS_GEOMETRY_SOURCE,
+                    CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE)
+#: The zone type each of the Amendment D geometry sources describes (``validate_geometry_source_zone_types``).
+GEOMETRY_SOURCE_ZONE_TYPES = {CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
+                              SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: "street_paid"}
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
 ZONE_PROVENANCE_COLUMNS = ("geometry_source", "source_url", "source_date", "digitised_on", "digitising_note")
@@ -162,10 +179,14 @@ SUPPLY_MAJORITY_PROVENANCE_COLUMNS = ("supply_walk_m", "paid_share_threshold", "
 #: Required for ``municipal_street_sections_buffered`` polygons only: the buffer around the street sections in metres
 #: (the access walk from the destination to a paid street section, ASSUMPTION C-a of spec Amendment C2).
 MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS = ("section_buffer_m",)
+#: Required for ``single_site_buffered`` polygons only: the buffer around the paid site in metres (the access walk from
+#: the destination to the paid car park or street section, ASSUMPTION C-a of spec Amendment C2, applied by Amendment D3).
+SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS = ("site_buffer_m",)
 #: Provenance columns per rule-based source; a column is required on the sources that list it and empty elsewhere.
 RULE_PROVENANCE_COLUMNS = {EROSION_GEOMETRY_SOURCE: EROSION_PROVENANCE_COLUMNS,
                            SUPPLY_MAJORITY_GEOMETRY_SOURCE: SUPPLY_MAJORITY_PROVENANCE_COLUMNS,
-                           MUNICIPAL_SECTIONS_GEOMETRY_SOURCE: MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS}
+                           MUNICIPAL_SECTIONS_GEOMETRY_SOURCE: MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS,
+                           SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS}
 #: Optional on any polygon (empty = no reconstruction recorded): the part of its area in m2 whose boundary the digitised
 #: source reconstructs from an older map, the flag of spec Amendment C1 (Braunschweig zone 1a: the southern part cut off
 #: by the fee zone map of 2025-11-26, continued after the Amtsblatt annex of 2024-04-30). 0 means "none".
@@ -531,6 +552,7 @@ _RULE_PROVENANCE_RANGES = {
     "paid_share_threshold": ("a share in (0, 1]", lambda value: 0 < value <= 1),
     "minimum_usable_spaces": ("a number of spaces >= 0", lambda value: value >= 0),
     "section_buffer_m": ("a positive number of metres", lambda value: value > 0),
+    "site_buffer_m": ("a positive number of metres", lambda value: value > 0),
 }
 
 
@@ -602,8 +624,9 @@ def load_zone_polygons(path, *, max_repairs: Optional[int] = None) -> gpd.GeoDat
     of its source (``RULE_PROVENANCE_COLUMNS``: ``osm_fee_erosion`` a positive ``unavoidable_walk_m``,
     ``osm_supply_majority`` a positive ``supply_walk_m``, ``paid_share_threshold`` in (0, 1] and
     ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ';
-    ``municipal_street_sections_buffered`` a positive ``section_buffer_m``), which every other polygon leaves empty. The
-    optional ``reconstructed_section_m2`` lies between 0 and the polygon's area. Other properties are kept as they are.
+    ``municipal_street_sections_buffered`` a positive ``section_buffer_m``, ``single_site_buffered`` a positive
+    ``site_buffer_m``), which every other polygon leaves empty; ``campus_detection_zones`` takes none. The optional
+    ``reconstructed_section_m2`` lies between 0 and the polygon's area. Other properties are kept as they are.
     """
     path = Path(path)
     if not path.is_file():
@@ -695,6 +718,26 @@ def cross_validate(zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> None:
     if without_tariff or without_polygon:
         raise ValueError(f"parking zones and tariffs disagree: polygons without a tariff row {without_tariff}; "
                          f"tariff rows without a polygon {without_polygon}")
+
+
+def validate_geometry_source_zone_types(zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> None:
+    """The polygons of the Amendment D geometry sources have the tariff rows of the zone type the source describes.
+
+    ``campus_detection_zones`` zones are ``campus`` zones (the TU campus maps), ``single_site_buffered`` zones are
+    ``street_paid`` zones (a single paid car park or street section); a polygon of such a source whose tariff row has
+    another type, or has no row, raises ``ValueError`` naming the zones and their types
+    (``GEOMETRY_SOURCE_ZONE_TYPES``). Call it after ``cross_validate``, which pairs polygons and rows.
+    """
+    types = tariffs.set_index("zone_id")["zone_type"]
+    problems = []
+    for source, expected in GEOMETRY_SOURCE_ZONE_TYPES.items():
+        ids = sorted(zones.loc[zones["geometry_source"] == source, "zone_id"].astype(str))
+        wrong = {zone_id: types.get(zone_id) for zone_id in ids if types.get(zone_id) != expected}
+        if wrong:
+            problems.append(f"geometry_source {source} describes zone_type {expected} zones, but the tariff row of "
+                            f"zone(s) {wrong} has another type")
+    if problems:
+        raise ValueError("zone polygons and tariff rows disagree on the zone type: " + "; ".join(problems))
 
 
 def _assign_polygon_ids(points: gpd.GeoDataFrame, polygons: gpd.GeoDataFrame, *, id_column: str, output_name: str,

@@ -432,6 +432,70 @@ def test_municipal_zone_provenance_is_validated(tmp_path, buffer_m, reconstructe
             pz.load_zone_polygons(path)
 
 
+@pytest.mark.parametrize("buffer_m, other_buffer_m, message", [
+    (50.0, None, None),
+    (None, None, "site_buffer_m required for geometry_source single_site_buffered"),
+    (0.0, None, "site_buffer_m must be a positive number"),
+    (-50.0, None, "site_buffer_m must be a positive number"),
+    (50.0, 50.0, "site_buffer_m only applies to geometry_source single_site_buffered"),
+], ids=["complete", "no_buffer", "zero_buffer", "negative_buffer", "buffer_on_other_source"])
+def test_single_site_zone_provenance_is_validated(tmp_path, buffer_m, other_buffer_m, message):
+    # spec Amendment D3: a paid car park or street section that has no zone map becomes a zone of its own, the area
+    # within site_buffer_m of it (ASSUMPTION C-a); the buffer is recorded on that source's polygons only
+    zones = gpd.read_file(ZONE_FIXTURE)
+    site = zones["zone_id"] == "fx_sz"
+    zones.loc[site, "geometry_source"] = pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE
+    zones["site_buffer_m"] = [buffer_m if flag else other_buffer_m for flag in site]
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    if message is None:
+        loaded = pz.load_zone_polygons(path).set_index("zone_id")
+        assert loaded.loc["fx_sz", "geometry_source"] == "single_site_buffered"
+        assert loaded.loc["fx_sz", "site_buffer_m"] == 50.0 and loaded["site_buffer_m"].drop("fx_sz").isna().all()
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.load_zone_polygons(path)
+
+
+def test_campus_detection_zones_are_an_allowed_geometry_source_without_a_provenance_column(tmp_path):
+    # spec Amendment D1: a TU campus zone is the union of the camera detection zones of its campus map; the method is
+    # a digitisation, so it takes no rule parameter (the method, the uncertainty and the feature ids are in the note)
+    assert pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE == "campus_detection_zones"
+    assert {"campus_detection_zones", "single_site_buffered"} <= set(pz.GEOMETRY_SOURCES)
+    assert pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE not in pz.RULE_PROVENANCE_COLUMNS
+    assert pz.RULE_PROVENANCE_COLUMNS[pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE] == ("site_buffer_m",)
+    zones = gpd.read_file(ZONE_FIXTURE)
+    zones.loc[zones["zone_id"] == "fx_campus", "geometry_source"] = pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    assert pz.load_zone_polygons(path).set_index("zone_id").loc["fx_campus", "geometry_source"] == "campus_detection_zones"
+    zones.loc[zones["zone_id"] == "fx_campus", "geometry_source"] = "tu_detection_polygons"  # not a known source
+    zones.to_file(path, driver="GeoJSON")
+    with pytest.raises(ValueError, match="geometry_source not one of"):
+        pz.load_zone_polygons(path)
+
+
+@pytest.mark.parametrize("zone_id, source, message", [
+    ("fx_campus", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, None),
+    ("fx_sz", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, None),
+    ("fx_sz", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, "campus_detection_zones .* zone_type campus .*fx_sz"),
+    ("fx_campus", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_campus"),
+    ("fx_res_a", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_res_a"),
+], ids=["campus_union_on_a_campus", "site_buffer_on_a_street_zone", "campus_union_on_a_street_zone",
+        "site_buffer_on_a_campus", "site_buffer_on_a_resident_zone"])
+def test_the_new_geometry_sources_fit_the_zone_types_they_describe(zone_id, source, message):
+    # A campus detection zone is a campus; a single paid site (car park or street section) is a street_paid zone: the
+    # tariff row and the polygon must agree on what the zone is.
+    zones = pz.load_zone_polygons(ZONE_FIXTURE)
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    zones.loc[zones["zone_id"] == zone_id, "geometry_source"] = source
+    if message is None:
+        pz.validate_geometry_source_zone_types(zones, tariffs)
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.validate_geometry_source_zone_types(zones, tariffs)
+
+
 def _qa_row(**changes) -> pd.DataFrame:
     row = {"ags": "03101000", "name": "Braunschweig, Stadt", "role": "zones_from_core",
            "raw_response": "03101000_regulation_overpass_2026-09-30.json", "osm_timestamp": SNAPSHOT,

@@ -26,7 +26,10 @@ present, the release of the classified cells (``--paid-share-path``, ``parking_p
 (``--districts-path``, ``parking_resident_districts_2026.geojson``; spec Amendment C3) are part of the release and
 always required: ``braunschweig.parking.zones.load_resident_districts`` (valid as stored, never repaired: unique ids,
 no overlap) and ``validate_district_municipalities`` (every district municipality has a register status row), without
-the test-set marker. Prints counts per zone type, geometry source (with the area mix), fee-window source and
+the test-set marker. Since spec Amendment D the zone polygons of the regional evidence package of 2026-10-07 are checked
+as well: ``campus_detection_zones`` polygons must be ``campus`` zones, ``single_site_buffered`` polygons ``street_paid``
+zones with a positive ``site_buffer_m`` (``braunschweig.parking.zones.validate_geometry_source_zone_types``), and both
+need rows in the municipal QA table. Prints counts per zone type, geometry source (with the area mix), fee-window source and
 municipality, the register status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the
 districts per municipality; exits 1 on any violation, 0 otherwise.
 
@@ -231,6 +234,7 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     if markers:
         raise ValueError(f"zone polygons carry the test-set marker {pz.FIXTURE_MARKER!r}: {markers}")
     pz.cross_validate(zones, tariffs)
+    pz.validate_geometry_source_zone_types(zones, tariffs)
     register = pz.load_coverage_register(data_path / register_path)
     pz.validate_coverage_register(register, tariffs)
     status_rows = register[register["status"] != "excluded"]

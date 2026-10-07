@@ -354,6 +354,19 @@ def test_qa_table_reports_the_overlaps_and_the_goslar_cross_check(release):
         assert any(line.startswith(f"# {column}: ") for line in header), column
 
 
+def test_every_polygon_of_the_municipal_and_regional_sources_needs_rows_in_the_municipal_qa_table():
+    # spec Amendments C and D: the buffered street sections, a polygon with a reconstruction flag, the campus unions of
+    # camera detection zones and the single-site buffers are compared with their references in this table, so a
+    # release cannot hold one of them without rows
+    zones = pd.DataFrame({
+        "zone_id": ["a_sections", "b_flag", "c_campus", "d_site", "e_plain", "f_other_campus"],
+        "geometry_source": [pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, "ordinance_map", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
+                            pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "centre_approximation",
+                            "centre_approximation"],
+        "reconstructed_section_m2": [None, 1000.0, None, None, None, None]})
+    assert mq.municipal_zone_ids(zones) == ["a_sections", "b_flag", "c_campus", "d_site"]
+
+
 def _stale(qa: pd.DataFrame) -> pd.DataFrame:
     """The row wob_tarifzone_2_release_vs_v1 as an older release would have left it: a 1 % larger subject, shares
     consistent with the recorded areas, so only the comparison with the polygon can tell."""

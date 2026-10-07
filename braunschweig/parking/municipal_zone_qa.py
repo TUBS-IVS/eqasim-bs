@@ -1,15 +1,18 @@
-"""Curation QA of the municipal parking data in the zone release (parking cost zones v2, spec Amendment C, issue #436).
+"""Curation QA of the municipal parking data in the zone release (parking cost zones v2, spec Amendments C and D, issue #436).
 
 The committed table ``parking_zones_2026_municipal_qa.csv`` is written by the municipal step of the zone curation
 (``scripts/curation/parking_zones_2026/municipal_zones.py``, run through ``assemble_parking_zones.py --municipal-dir``)
-and is no input of any synpp stage. One row per comparison of a subject area with a reference area: the owner-supplied
+and, since spec Amendment D, by the regional step (``regional_zones.py``, ``--regional-dir``); it is no input of any
+synpp stage. One row per comparison of a subject area with a reference area: the owner-supplied
 Braunschweig fee zones 1a and 1b against the v1 tracings of zones Ia and Ib (C1), the Wolfsburg tariff zones against the
-v1 polygon ``wob_innenstadt`` and against their own 50 m areas (C2), and the Goslar fee polygon against the city's
-resident and facility areas (C4, a cross-check only). A row whose subject is a polygon of the release names it in
+v1 polygon ``wob_innenstadt`` and against their own 50 m areas (C2), the Goslar fee polygon against the city's
+resident and facility areas (C4, a cross-check only), and the zones of the regional evidence package of 2026-10-07
+(D1 and D3: the BgA car parks, the TU campus unions and the single paid sites against their v1 polygons, their source
+geometries and their 50 m areas, and every precedence cut). A row whose subject is a polygon of the release names it in
 ``release_zone_id``; ``validate_municipal_qa`` compares its recorded area with the polygon, so a regenerated release
-cannot keep a stale table, and requires a row for every buffered-section polygon and every polygon with a
-reconstruction flag. Areas in m2 (EPSG:25832, written to 0.1 m2), shares from 0 to 1 (6 decimals, from the unrounded
-areas), empty where a share is undefined (an empty denominator).
+cannot keep a stale table, and requires a row for every buffered-section, campus-union and single-site polygon and
+every polygon with a reconstruction flag. Areas in m2 (EPSG:25832, written to 0.1 m2), shares from 0 to 1 (6 decimals,
+from the unrounded areas), empty where a share is undefined (an empty denominator).
 """
 from __future__ import annotations
 
@@ -43,8 +46,11 @@ _AGS = re.compile(r"^\d{8}$")
 
 def municipal_zone_ids(zones: pd.DataFrame) -> list:
     """The polygons that need rows of the municipal QA table: geometry_source ``municipal_street_sections_buffered``
-    or a ``reconstructed_section_m2`` value (sorted ids)."""
-    municipal = zones["geometry_source"] == pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE
+    (spec Amendment C2), ``campus_detection_zones`` or ``single_site_buffered`` (spec Amendment D), or a
+    ``reconstructed_section_m2`` value (sorted ids)."""
+    municipal = zones["geometry_source"].isin((pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE,
+                                               pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
+                                               pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE))
     if pz.RECONSTRUCTED_SECTION_COLUMN in zones.columns:
         municipal = municipal | zones[pz.RECONSTRUCTED_SECTION_COLUMN].notna()
     return sorted(zones.loc[municipal, "zone_id"].astype(str))
@@ -78,8 +84,9 @@ def validate_municipal_qa(qa: pd.DataFrame, zones: pd.DataFrame) -> None:
     areas numbers >= 0 and the overlap at most the smaller area (up to the rounding); both shares recomputed from the
     recorded areas (empty when the denominator is 0); feature counts whole numbers with the overlapping ones at most
     all; a ``release_zone_id`` names a polygon of ``zones`` whose area (EPSG:25832) equals ``subject_area_m2`` within
-    ``RELEASE_AREA_TOLERANCE_M2``; every ``municipal_street_sections_buffered`` polygon and every polygon with a
-    ``reconstructed_section_m2`` value is the release subject of at least one row.
+    ``RELEASE_AREA_TOLERANCE_M2``; every ``municipal_street_sections_buffered``, ``campus_detection_zones`` and
+    ``single_site_buffered`` polygon and every polygon with a ``reconstructed_section_m2`` value is the release subject
+    of at least one row (``municipal_zone_ids``).
     """
     pz._check_columns(qa, MUNICIPAL_QA_COLUMNS, "municipal QA table")
     problems = []
@@ -128,7 +135,7 @@ def validate_municipal_qa(qa: pd.DataFrame, zones: pd.DataFrame) -> None:
                                 f"{areas[zone_id]:.1f} m2 (stale table: rerun the municipal step)")
     missing = sorted(set(municipal_zone_ids(zones)) - subjects)
     if missing:
-        problems.append(f"zone(s) {missing} (municipal sections or a reconstruction flag) are the release subject of no "
-                        "row")
+        problems.append(f"zone(s) {missing} (municipal sections, campus unions, single sites or a reconstruction flag) "
+                        "are the release subject of no row")
     if problems:
         raise ValueError("invalid municipal QA table:\n  " + "\n  ".join(problems))
