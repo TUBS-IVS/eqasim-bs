@@ -94,7 +94,8 @@ notes: |
   Issue #249 deliverable. Consumer: braunschweig.parking.zones_stage loads the table (workplace_class
   read as text) and braunschweig.parking.attach.draw_parking_free reads share_free_total of the
   level == class rows as P(free | workplace_class) for the parkingFree draw. The total row is
-  informational.
+  informational. scripts/parking/compare_parking_targets.py reads share_free_total of every class row and the garage
+  share of the class bs_zentrum as references of a run comparison (independent checks, not used in any calibration).
   Exclusion counts, the selection check, min_cell_n (100 unweighted car commuters per class, a
   smaller class raises instead of being pooled silently) and the SHA-256 of every raw input live
   in the file header, the single place that records them. No class was below the guard in this

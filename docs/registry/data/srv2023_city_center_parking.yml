@@ -62,7 +62,9 @@ notes: |
   and street are the CALIBRATION TARGET of the decay length of the garage options, garage_large_lot / (garage_large_lot +
   street) = 0.708 / (0.708 + 0.2537) = 0.736, read by scripts/parking/calibrate_garage_decay.py (record
   parking_garage_decay_calibration_2026); the garage share therefore no longer validates the model. paid_share_overall and
-  the other rows stay comparison quantities (parking-cost-zones design, section 6), never a model input. The file
+  the other rows stay comparison quantities (parking-cost-zones design, section 6), never a model input;
+  scripts/parking/compare_parking_targets.py reads paid_share_overall and the garage target from this file to compare
+  the arms of a model run (a comparison with a universe note per row, not a validation). The file
   header states this (the lines CITY_CENTER_USE_LINES of scripts/extract_srv_commute_parking.py); the raw SrV files are
   local-only and were not at hand when the header changed, so the header lines were edited in place and only they
   changed (the diff of the commit shows three header lines replaced by six, no data row touched); the next regeneration
