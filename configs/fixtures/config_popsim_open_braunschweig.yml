@@ -235,6 +235,8 @@ config:
   parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
   parking_tariff_snapshot_date: "2026-09-29"
   parking_workplace_free_share_shift: 0.0
+  parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
+  parking_campus_free_share: 0.2
   parking_terminal_stay_rule: until_fee_end
   parking_minimum_stay_min: 15
 
