@@ -551,3 +551,28 @@ def test_the_committed_fixture_model_lists_the_fixture_garages_and_names_their_f
     source = next(source for source in committed["sources"] if source["source_id"] == "parking_garages_fixture")
     assert source["path"] == "tests/fixtures/parking/parking_garages_fixture.geojson"
     assert source["sha256"] == te.content_sha256(FIXTURE_GARAGES)
+
+
+def test_a_zone_row_with_garage_columns_is_warned_about_when_the_garage_options_are_on_e8(table, sources, garage_frame,
+                                                                                         caplog):
+    # E8: with garage options the zone-level garage family is superseded (the production table has none). The fixture table
+    # has it on 6 of its 18 rows (the fx_*_v2 rows with a garage core); the export says so, with the count, only when the
+    # decay is above 0.
+    logger = "braunschweig.parking.tariff_export"
+    with caplog.at_level("WARNING", logger=logger):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame, garage_decay_m=0.0)
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
+    assert not [record for record in caplog.records if record.name == logger]
+    with caplog.at_level("WARNING", logger=logger):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame, garage_decay_m=400.0)
+    [message] = [record.getMessage() for record in caplog.records if record.name == logger]
+    assert "6 of 18 zone rows" in message and "superseded" in message and "E8" in message
+    for zone_id in ("fx_bs_ia_v2", "fx_bs_ib_v2", "fx_res_garage_v2"):
+        assert zone_id in message
+    # a table without zone-level garage columns (the production table) gives no warning
+    no_family = table[table["zone_id"].isin(V1_ZONE_IDS)]
+    caplog.clear()
+    with caplog.at_level("WARNING", logger=logger):
+        te.build_tariff_model(no_family, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                              garage_decay_m=400.0)
+    assert not [record for record in caplog.records if record.name == logger]

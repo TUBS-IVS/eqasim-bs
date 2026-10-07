@@ -36,6 +36,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import logging
 import math
 import re
 from dataclasses import asdict, dataclass
@@ -48,6 +49,8 @@ import pandas as pd
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking.cost import (GARAGE_MAX_DISTANCE_M, SECONDS_PER_DAY, ZONE_TYPES, GarageBand, GarageTariff,
                                        GarageTier, ZoneTariff, not_applicable_fields)
+
+log = logging.getLogger(__name__)
 
 #: 3 since the garage options of parking cost zones v2 (spec Amendment E, issue #436): the model gained ``garages``,
 #: ``garage_decay_m`` and ``garage_max_distance_m``; 2 added the optional schema-2 keys of the zone entries.
@@ -125,6 +128,13 @@ class Assumption:
 #: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact) and the resident district
 #: rule R2 of its Amendment C3 with its scope R2-a. The model JSON carries the rendered texts, so every tariff file
 #: states the assumptions it is priced under.
+#: What the pricing code adds to the dataset text of an assumption. P6: the tiers of one garage share ONE unit length, which is
+#: stricter than spec E10 (the tier parser of the dataset and ``cost.GarageTariff`` reject a garage whose tiers differ in unit).
+_GARAGE_ASSUMPTION_ADDENDUM = {
+    "P6": "; the tiers of one garage must share one unit length (stricter than spec E10: the tier parser and the pricing code "
+          "reject mixed units)",
+}
+
 _GARAGE_ASSUMPTION_WHERE_IT_BITES = {
     "P3": "Garages whose notes name ASSUMPTION P3 (a night tariff that is no per-unit rate)",
     "P4": "Garages whose published rate states no rounding (billed per started unit)",
@@ -185,7 +195,8 @@ ASSUMPTIONS_REGISTER = (
     # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P11 of the
     # dataset (their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``, the data record
     # parking_garages_2026 is their source text), P9 of the pricing code, and the choice model G1, G2 and G3.
-    *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id], _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
+    *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id] + _GARAGE_ASSUMPTION_ADDENDUM.get(assumption_id, ""),
+                 _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
                  "garage dataset rows that name it (column assumptions of parking_garages_2026)")
       for assumption_id in ("P3", "P4", "P5", "P6", "P7", "P8")),
     Assumption("P9", "a stay longer than a closed duration schedule (one that ends at 1440 min, e.g. Peine) is priced per "
@@ -613,6 +624,14 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         if zone.zone_id in zones:
             raise ValueError(f"tariff table has a duplicate zone_id {zone.zone_id!r}")
         zones[zone.zone_id] = zone_to_json(zone)
+    family = sorted(zone_id for zone_id, entry in zones.items() if entry["garage_hourly_rate_cents"] is not None)
+    if garage_decay_m > 0 and family:
+        # E8: the zone-level garage family is superseded when garage options act; production tables have none. Counted and
+        # named, so a table that still carries it is never priced under a reading nobody noticed.
+        log.warning("[parking-garages] %d of %d zone rows carry zone-level garage columns (%s) while garage_decay_m is %g: with "
+                    "garage options the zone-level garage family is superseded (spec Amendment E8) and priced by the "
+                    "garage options only; the production tariff table has none", len(family), len(zones),
+                    ", ".join(family), garage_decay_m)
     return {
         "schema_version": SCHEMA_VERSION,
         "tariff_snapshot_date": snapshot_date,

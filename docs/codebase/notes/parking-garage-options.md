@@ -22,7 +22,7 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
 | Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P11) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_max_distance_m`) |
-| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E26 and O01..O44, `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
+| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E28 and O01..O44, `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
 | Calibration of lambda | `scripts/parking/calibrate_garage_decay.py` |
 
 ## Rules maintainers must keep
@@ -33,7 +33,12 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   expectation keeps 1e-6 cents from a half cent, so `Math.exp` of Java cannot flip a rounding; a new case must satisfy it.
 - **Bands are integer arithmetic in Java.** Python calls `duration_band_price_eur` on `chargeable_s / 60`; the port uses
   the band of `seconds <= 60 * to_min` and `ceil((seconds - 60 * from_min) / (60 * unit_min))` units, which
-  `tests/test_parking_garage_options.py` proves equal for every second near the band edges.
+  `tests/test_parking_garage_options.py` proves equal for every second near the band edges (also for a band whose length
+  is no multiple of its unit). The price reached at the start of the next band counts started units, also at the band
+  end: `ceil((to_min - from_min) / unit_min)` units of the band, never the floor.
+- **One unit length per tiered garage.** The tier parser and `GarageTariff` require all tiers of a garage to share one
+  unit length (the units are counted from the arrival, P6); this is stricter than spec E10 and is stated in the P6 text of
+  the assumptions register of the model.
 - **Tiers (P6):** units are counted from the arrival (or from the end of the first period); a unit costs the tier in force
   at its start (start inclusive, end exclusive, a tier may cross midnight); a start in no tier is free; the first period
   is charged only for an arrival inside its clock window; the day cap is applied once per stay.
@@ -42,7 +47,10 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 - **E8:** with garage options the zone-level garage family of a fixture zone is superseded (production zone rows have none);
   the street option is the street or long-stay product or the zone commuter product, or unavailable.
 - **No silent fallback:** `GarageOptionCounters` reports how many stays had garages in range, how many paid 0 by E4, how
-  many were priced over the garages alone and how many repeated a closed schedule; callers log `counters.summary()`.
+  many were priced over the garages alone and how many repeated a closed schedule; callers log `counters.summary()`. The
+  Python reference prices nothing at run time, so no pipeline stage logs the counters; the Java port logs these rates
+  during the run (Task 4e). `build_tariff_model` warns, with the count and the zone ids, when a zone row still carries
+  zone-level garage columns while `garage_decay_m` is above 0 (E8: they are superseded; production rows have none).
 - **The model is schema 3.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
   `GARAGE_BAND_FIELDS`); `garage_decay_m` 0 switches the options off, and the export refuses `garage_decay_m > 0` without
   a priced garage.

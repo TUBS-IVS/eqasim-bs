@@ -136,6 +136,32 @@ def test_the_early_rules_and_a_campus_precede_the_garages():
     assert _price(campus, 36000, 39600, options) == (900, cost.PAID_CAMPUS_GUEST, 0.0)
 
 
+def _resident_zone(**overrides) -> ZoneTariff:
+    """A resident zone (disc parking, rate 0 per 60 min, all day) with a maximum stay of 120 min and NO long-stay product:
+    it is only constructible with the zone-level garage family (120 ct per started hour, cap 960 ct), which the garage
+    options supersede (E8)."""
+    fields = dict(zone_id="test_resident", zone_type="resident_zone", hourly_rate_cents=0, billing_unit_min=60,
+                  free_if_stay_at_most_min=None, first_period_min=None, first_period_cents=None, daily_cap_cents=None,
+                  max_stay_min=120, long_stay_product_cents=None, member_day_cents=None, guest_day_cents=None,
+                  fee_start_s=0, fee_end_s=86400, resident_exempt=True, garage_hourly_rate_cents=120,
+                  garage_billing_unit_min=60, garage_daily_cap_cents=960, garage_fee_start_s=0, garage_fee_end_s=86400)
+    fields.update(overrides)
+    return ZoneTariff(**fields)
+
+
+def test_garage_options_act_on_a_resident_zone_too_r_4d_2():
+    zone = _resident_zone()
+    options = [(_garage(), 300.0)]
+    # 90 min <= the maximum stay 120: disc parking at rate 0 is free, so the street option costs 0 and the stay pays 0 (E4)
+    # although a garage lies 300 m away.
+    assert _price(zone, 36000, 41400, options) == (0, cost.FREE_WITHIN_LIMIT, 0.0)
+    # 180 min > 120 without a long-stay product: the street is unavailable (the zone garage family 3 x 120 = 360 ct is
+    # superseded); the weights renormalise over the garage: 3 started hours x 200 ct = 600 ct, probability 1.
+    assert _price(zone, 36000, 46800, options) == (600, cost.PAID_EXPECTED, 1.0)
+    # a resident of the zone is exempt before any garage acts (R1)
+    assert _price(zone, 36000, 46800, options, resident_of_zone=True) == (0, cost.RESIDENT_FREE, 0.0)
+
+
 def test_the_zone_commuter_product_stays_a_street_option_product():
     # Zone commuter product 150 ct: a work stay's street option is min(street 900 (cap), commuter 150) = 150 ct.
     street = _street(commuter_day_cents=150)
@@ -360,8 +386,13 @@ def test_a_banded_garage_charges_only_the_minutes_inside_its_fee_window():
 def test_the_integer_band_arithmetic_equals_the_reference_evaluation_for_every_second_near_the_edges():
     # The Java port prices a band in integer seconds: band by seconds <= 60 x to_min, started units
     # ceil((seconds - 60 x from_min) / (60 x unit_min)). This is that arithmetic, against the reference evaluation.
-    garage = _banded(OUTLETS)
+    for text, edges in ((OUTLETS, (0, 20, 120, 180, 240, 420, 480)),
+                        # a band whose length (80 min) is not a multiple of its unit (30 min): 3 started units at its end
+                        ("0-20 free; 20-100 1.00/30; 100-145 2.00/45; 145- 3.00/60", (0, 20, 50, 100, 145, 205))):
+        _check_integer_band_arithmetic(_banded(text), edges)
 
+
+def _check_integer_band_arithmetic(garage, edges) -> None:
     def integer_price(seconds: int) -> int:
         price_at_start = 0
         for band in garage.bands:
@@ -374,10 +405,11 @@ def test_the_integer_band_arithmetic_equals_the_reference_evaluation_for_every_s
             if band.kind == "total":
                 price_at_start = band.price_cents
             elif band.kind == "increment":
-                price_at_start += band.price_cents * ((band.to_min - band.from_min) // band.unit_min)
+                # started units, also at the band end: ceil((to - from) / unit), the reference's rule
+                price_at_start += band.price_cents * -(-(band.to_min - band.from_min) // band.unit_min)
         raise AssertionError
 
-    for edge_min in (0, 20, 120, 180, 240, 420, 480):
+    for edge_min in edges:
         for delta_s in range(-130, 131):
             seconds = edge_min * 60 + delta_s
             if seconds > 0:

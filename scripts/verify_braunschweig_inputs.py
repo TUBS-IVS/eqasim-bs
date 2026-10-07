@@ -333,7 +333,8 @@ INPUTS: List[Input] = [
         rel_path="braunschweig/parking/parking_garages_2026.geojson",
         source="Committed with the repository (docs/registry/data/parking_garages_2026.yml); nothing to download.",
         notes=(
-            "Config key parking_garages_path. 35 garages of eight ZGB towns with their own tariff, every one priced: where the published "
+            "Config key parking_garages_path. 35 garages of eight ZGB towns with their own tariff, every one priced: "
+            "where the published "
             "structure maps exactly to the garage columns, to time-of-day tiers or to duration bands, otherwise under named "
             "assumptions (grace period, best secondary evidence); the QA table parking_garages_2026_qa.csv "
             "lies next to it. Licence per source (facts of public pages, licences not verified; six OpenStreetMap "
