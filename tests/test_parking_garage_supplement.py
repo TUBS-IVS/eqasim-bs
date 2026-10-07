@@ -771,6 +771,8 @@ def test_the_directory_states_the_unit_of_the_further_price_records_the_conflict
      "first price .* per 120 min differs from the brochure"),
     ({"further": "0.30 Euro / jede weitere halbe Stunde"},
      DIRECTORY_HTML.replace("jede weitere Stunde", "jede weitere halbe Stunde"), "is no price per further hour"),
+    # the second price must be for a longer stay than the first one
+    ({"second": "0.70 Euro / 1 Stunde"}, None, "second price is for 60 min, not for a stay longer"),
 ])
 def test_a_directory_quotation_that_is_not_in_the_text_or_does_not_confirm_the_brochure_stops_the_step(
         sup, tmp_path, change, html, message):
@@ -779,6 +781,18 @@ def test_a_directory_quotation_that_is_not_in_the_text_or_does_not_confirm_the_b
     spec = {**BROCHURE[0], "directory": {**GROEPERN_DIRECTORY, **change}}
     with pytest.raises(SystemExit, match=message):
         sup.brochure_rules(loaded, (spec,))
+
+
+@pytest.mark.parametrize("second_eur, status", [("1.50", "directory_variant_conflicting"), ("1.30", "directory_variant_same")])
+def test_the_encoded_price_at_the_directory_duration_counts_every_started_further_hour(sup, tmp_path, second_eur, status):
+    # three hours: 0.70 EUR for the first hour plus two further hours at 0.30 EUR = 1.30 EUR
+    html = DIRECTORY_HTML.replace("1.20 Euro / 2 Stunden", f"{second_eur} Euro / 3 Stunden")
+    path, sha256 = _write_supplement(tmp_path, directory_html=html)
+    loaded = sup.load_supplement(path, expected_sha256=sha256)
+    spec = {**BROCHURE[0], "directory": {**GROEPERN_DIRECTORY, "second": f"{second_eur} Euro / 3 Stunden"}}
+    variant = sup.brochure_rules(loaded, (spec,))["HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS"]
+    assert variant["elapsed_to_minutes"] == 180 and variant["encoded_price_eur"] == pytest.approx(1.30)
+    assert variant["status"] == status
 
 
 def test_a_brochure_specification_without_a_directory_makes_no_directory_rule(sup, supplement_package):
