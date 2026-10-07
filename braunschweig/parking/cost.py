@@ -596,7 +596,10 @@ class GarageTariff:
 
     A garage has exactly one tariff structure: the single-window form (``hourly_rate_cents`` per started
     ``billing_unit_min`` within ``[fee_start_s, fee_end_s)``), the tiered form (``tiers``, no fee window, E10) or the banded
-    form (``bands`` with the fee window, E11). ``first_period_min`` with ``first_period_cents`` (both or neither; not with
+    form (``bands`` with the fee window, E11). The tiered form may carry ONE closed free band in ``bands`` as its grace period
+    (ASSUMPTION P10 for tiers, Task 4b3: a stay not longer than the band costs 0, a longer stay is priced by the tiers from its
+    arrival); the free schedule of a car park that is free for every stay is the one open free band with the fee window.
+    ``first_period_min`` with ``first_period_cents`` (both or neither; not with
     bands) may carry the clock window ``[first_period_start_s, first_period_end_s)`` it is tied to (both or neither, only
     with a first period; ASSUMPTION P6 as amended). ``daily_cap_cents`` (None = none) limits the price of a stay once;
     ``monthly_cents`` (None = no monthly product) is the monthly product that work and education stays use per working day
@@ -689,12 +692,12 @@ def _check_garage(garage: GarageTariff) -> None:
             fail(f"{name} must be at least {minimum}, got {value}")
     core = [name for name in ("hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s")
             if getattr(garage, name) is not None]
-    if garage.tiers is not None and garage.bands is not None:
-        fail("tiers and bands exclude each other (one tariff structure per garage)")
     if garage.tiers is not None:
         if core:
             fail(f"a tiered garage leaves the single-window core empty, found {core}")
         _check_tiers(garage, fail)
+        if garage.bands is not None:
+            _check_grace_band(garage, fail)
     elif garage.bands is not None:
         rate = [name for name in ("hourly_rate_cents", "billing_unit_min") if getattr(garage, name) is not None]
         if rate:
@@ -745,6 +748,19 @@ def _check_tiers(garage: GarageTariff, fail) -> None:
     covered.sort()
     if any(later[0] < earlier[1] for earlier, later in zip(covered, covered[1:])):
         fail("tiers overlap")
+
+
+def _check_grace_band(garage: GarageTariff, fail) -> None:
+    """The bands of a tiered garage are its grace period: ONE closed free band (ASSUMPTION P10 for tiers); the tiers and a
+    duration schedule exclude each other (one tariff structure per garage), and the first band is the only free stretch, so
+    a tiered garage with a grace period has no first period."""
+    _check_bands(garage, fail)
+    bands = garage.bands
+    if len(bands) != 1 or bands[0].kind != "free" or bands[0].to_min is None:
+        fail("a tiered garage carries bands only as a grace period (one closed free band); tiers and a duration schedule "
+             f"exclude each other (one tariff structure per garage), found {len(bands)} band(s) {[b.kind for b in bands]}")
+    if garage.first_period_min is not None:
+        fail("a tiered garage with a grace period has no first period (the free band is its only duration band)")
 
 
 def _check_bands(garage: GarageTariff, fail) -> None:
@@ -819,8 +835,14 @@ def _first_period_applies(garage: GarageTariff, arrival_s: int) -> bool:
 
 def _tiered_cents(garage: GarageTariff, arrival_s: int, departure_s: int) -> int:
     """ASSUMPTION P6: units are counted from the arrival (or from the end of the first period) and each started unit costs
-    the price of the tier in force at the unit's start; a start in no tier costs nothing. The day cap applies once."""
+    the price of the tier in force at the unit's start; a start in no tier costs nothing. The day cap applies once.
+
+    A tiered garage with a grace period (one closed free band, ASSUMPTION P10 for tiers) costs 0 for a stay that is not longer
+    than the band (the elapsed stay, arrival to departure: the tiered form has no fee window); a longer stay is priced by
+    the tiers from its arrival as if there were no free period (the free minutes are not deducted)."""
     if departure_s == arrival_s:
+        return 0
+    if garage.bands is not None and departure_s - arrival_s <= garage.bands[0].to_min * SECONDS_PER_MINUTE:
         return 0
     cents, unit_start_s = 0, arrival_s
     if _first_period_applies(garage, arrival_s):
@@ -868,9 +890,9 @@ def garage_metered_cents(garage: GarageTariff, arrival_s: int, departure_s: int,
     """The metered or day price of a stay at a garage in integer cents, by the garage's tariff structure (no monthly product).
 
     Single-window form: the metering primitive of spec 3.2 rule 8 over the stay's seconds in the garage's fee window (the
-    first period only when its clock window holds the arrival); tiered form: ``_tiered_cents`` (P6, E10); banded form: the
-    duration schedule over the chargeable minutes (P8, E11, P9; P10 is encoded as bands). A stay without a chargeable
-    second costs 0. Raises ``ValueError`` for a negative time or a departure before the arrival. Pure.
+    first period only when its clock window holds the arrival); tiered form: ``_tiered_cents`` (P6, E10; with a grace period
+    P10); banded form: the duration schedule over the chargeable minutes (P8, E11, P9; P10 is encoded as bands, and a car
+    park that is free for every stay as the one open free band). A stay without a chargeable second costs 0. Raises ``ValueError`` for a negative time or a departure before the arrival. Pure.
     """
     arrival_s = _time_s("arrival_s", arrival_s)
     departure_s = _time_s("departure_s", departure_s)

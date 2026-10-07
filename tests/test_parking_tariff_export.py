@@ -154,12 +154,12 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     # of the v2 spec, lever 2, and R2 (the resident parking district rule) with its scope R2-a of its Amendment C3.
     assumptions = model["assumptions"]
     assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9]+(-[a-z])?: .+", text) for text in assumptions)
-    # P3 to P11 are the assumptions of the garage dataset and the pricing code (P9 is the closed-schedule rule of the code),
+    # P3 to P12 are the assumptions of the garage dataset and the pricing code (P9 is the closed-schedule rule of the code),
     # G1 to G3 the garage choice model and its calibration (spec Amendment E).
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
         for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "A1-b", "C1", "C2", "R1", "H1", "F1", "S1", "P1", "P2", "P3", "P4",
-                              "P5", "P6", "P7", "P8", "P9", "P10", "P11", "G1", "G2", "G3", "R2", "R2-a")]
+                              "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12", "G1", "G2", "G3", "R2", "R2-a")]
     # Amendment D5 and D6: the Wolfsburg proxy and the campus free share name their configuration key as the arm
     a1_b = next(text for text in assumptions if text.startswith("ASSUMPTION A1-b:"))
     c2 = next(text for text in assumptions if text.startswith("ASSUMPTION C2:"))
@@ -174,7 +174,7 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     assert "gs_parkplatz_klubgartenstrasse_zob" in r2_a
     # the P texts of the dataset are those of braunschweig.parking.garages.ASSUMPTIONS (one source), P9 is the code's rule
     from braunschweig.parking import garages as pg
-    for assumption_id in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11"):
+    for assumption_id in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12"):
         text = next(text for text in assumptions if text.startswith(f"ASSUMPTION {assumption_id}:"))
         assert pg.ASSUMPTIONS[assumption_id] in text
     p9 = next(text for text in assumptions if text.startswith("ASSUMPTION P9:"))
@@ -523,6 +523,25 @@ def test_an_unpriced_garage_is_listed_in_the_dataset_and_left_out_of_the_model(t
     assert len(entries) == 14 and unpriced.loc[0, "garage_id"] not in [entry["garage_id"] for entry in entries]
     with pytest.raises(ValueError, match="not priced"):
         te.garage_row_to_tariff(unpriced.iloc[0])
+
+
+def test_a_tiered_garage_with_a_grace_period_and_a_free_car_park_export_without_a_new_key(garage_frame):
+    # Task 4b3: the grace period of a tiered garage is the one closed free band next to its tiers, a car park that is free for
+    # every stay the one open free band with the formal fee window; both use the documented keys of the garage entry only
+    graced = garage_frame[garage_frame["garage_id"] == "fx_g07_tiers"].copy()
+    graced["tariff_duration_bands"] = "0-30 free"
+    [entry] = te.garage_entries(graced)
+    assert sorted(entry) == GARAGE_KEYS and entry["tiers"] and entry["hourly_rate_cents"] is None
+    assert entry["bands"] == [{"from_min": 0, "to_min": 30, "kind": "free", "price_cents": 0, "unit_min": None}]
+    free = garage_frame[garage_frame["garage_id"] == "fx_g01_core"].copy()
+    for column in ("garage_hourly_rate_eur", "garage_billing_unit_min", "monthly_eur"):
+        free[column] = None
+    free["tariff_duration_bands"] = "0- free"
+    [entry] = te.garage_entries(free)
+    assert sorted(entry) == GARAGE_KEYS and entry["hourly_rate_cents"] is None and entry["tiers"] is None
+    assert entry["bands"] == [{"from_min": 0, "to_min": None, "kind": "free", "price_cents": 0, "unit_min": None}]
+    assert (entry["fee_start_s"], entry["fee_end_s"]) == (0, 86400)
+    assert [g.to_json() for g in te.garages_from_model({"garages": [entry]})] == [entry]
 
 
 def test_the_garage_export_refuses_a_wrong_crs_a_missing_column_and_bad_parameters(table, sources, garage_frame):

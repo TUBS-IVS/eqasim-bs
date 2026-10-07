@@ -142,8 +142,11 @@ _GARAGE_ASSUMPTION_WHERE_IT_BITES = {
     "P6": "Tiered garages (tariff_tiers), stays that cross a tier boundary or a night",
     "P7": "Garages that publish several caps",
     "P8": "Banded garages (tariff_duration_bands), stays beyond the first band",
-    "P10": "Garages with a free first duration band read as a grace period, stays of the free minutes or a little longer",
+    "P10": "Garages with a free first duration band or a grace period next to their tiers, read as a grace period: stays of "
+           "the free minutes or a little longer",
     "P11": "Garages priced from secondary evidence (the garages that name ASSUMPTION P11 in their notes)",
+    "P12": "Wolfsburg car parks without any fee evidence that are free by the municipal default (the rows that name "
+           "ASSUMPTION P12 in their notes): every stay at such a car park costs 0, whatever the street costs",
 }
 
 ASSUMPTIONS_REGISTER = (
@@ -192,7 +195,7 @@ ASSUMPTIONS_REGISTER = (
                "and is offered to work and education only",
                "Work/education stays in zones with commuter_day_eur and at garages with a monthly product",
                "commuter_day_eur presence; monthly product of the garage dataset"),
-    # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P11 of the
+    # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P12 of the
     # dataset (their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``, the data record
     # parking_garages_2026 is their source text), P9 of the pricing code, and the choice model G1, G2 and G3.
     *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id] + _GARAGE_ASSUMPTION_ADDENDUM.get(assumption_id, ""),
@@ -206,7 +209,7 @@ ASSUMPTIONS_REGISTER = (
                "counters"),
     *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id], _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
                  "garage dataset rows that name it (column assumptions of parking_garages_2026)")
-      for assumption_id in ("P10", "P11")),
+      for assumption_id in ("P10", "P11", "P12")),
     Assumption("G1", "A car stay in a paid zone has the options street (weight 1) and every priced garage within the maximum "
                "distance, weight exp(-d / lambda) with d the straight-line distance in metres (a gravity-type choice by "
                "distance); the price of the stay is the probability-weighted mean of the option costs (an expected cost, no "

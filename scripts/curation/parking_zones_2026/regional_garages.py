@@ -837,11 +837,15 @@ def _encode_bands(spec: dict, rules: dict, band_rules: list) -> dict:
 
 def _grace_bands(free: dict, rate: dict, garage: str) -> list:
     """The bands of a free period read as a grace period (ASSUMPTION P10, spec E12): a free band up to the end of the free
-    period, the total of the first billing unit up to the end of that unit, and the rate per started unit counted from there.
+    period, the total of the started units that the stay has at that point, and the rate per started unit counted from there.
     A stay not longer than the free period costs 0, a longer stay is billed from the arrival (the free minutes are not
-    deducted). ``SystemExit`` for a free rule that is none, that does not start at 0 or that is not shorter than the billing
-    unit (a longer free period needs more bands), for a rate that is no increment rule, a rounding that is no started unit, an
-    amount that is no whole number of cents and a rate that states another free period than the free rule."""
+    deducted): with ``u`` the billing unit and ``g`` the free period, a free period shorter than the unit (the Forschungsflughafen
+    15 min of 60) is followed by the first unit up to ``u``; a free period that is a whole number ``k`` of units (the Klinikum
+    30 min of 30: a stay of 31 min has two started half hours from its arrival) is followed by ``k + 1`` units up to
+    ``g + u``, and the rate runs from there. ``SystemExit`` for a free rule that is none, that does not start at 0 or that is
+    neither shorter than the billing unit nor a whole number of units, for a rate that is no increment rule, a rounding that
+    is no started unit, an amount that is no whole number of cents and a rate that states another free period than the free
+    rule."""
     if free["rule_type"] not in FREE_RULE_TYPES:
         raise SystemExit(f"garage {garage}: rule {free['rule_id']} of type {free['rule_type']} is no free period "
                          f"{list(FREE_RULE_TYPES)}")
@@ -854,15 +858,21 @@ def _grace_bands(free: dict, rate: dict, garage: str) -> list:
     kind, eur, unit, _, _ = _band_values(rate, garage)
     if kind != "increment":
         raise SystemExit(f"garage {garage}: rule {rate['rule_id']} of type {rate['rule_type']} is no rate (an increment rule)")
-    if free_end >= unit:
-        raise SystemExit(f"garage {garage}: the free period of {free_end} min is not shorter than the billing unit of {unit} min "
-                         "of the rate; the grace form needs a free period inside the first unit")
+    if free_end > unit and free_end % unit != 0:
+        raise SystemExit(f"garage {garage}: the free period of {free_end} min is longer than the billing unit of {unit} min of "
+                         "the rate and not a whole number of units; the grace form needs a free period inside the first unit "
+                         "or a whole number of units")
     stated = rate.get("free_period_minutes")
     if stated is not None and int(stated) != free_end:
         raise SystemExit(f"garage {garage}: the rule {rate['rule_id']} states a free period of {stated} min but the free rule "
                          f"{free['rule_id']} ends at {free_end} min")
-    return [pg.DurationBand(0, free_end, "free", 0.0, None), pg.DurationBand(free_end, unit, "total", eur, None),
-            pg.DurationBand(unit, None, "increment", eur, unit)]
+    if free_end < unit:
+        total_end, started_units = unit, 1
+    else:
+        total_end, started_units = free_end + unit, free_end // unit + 1
+    return [pg.DurationBand(0, free_end, "free", 0.0, None),
+            pg.DurationBand(free_end, total_end, "total", round(eur * started_units, 2), None),
+            pg.DurationBand(total_end, None, "increment", eur, unit)]
 
 
 def _encode_grace(spec: dict, rules: dict) -> dict:

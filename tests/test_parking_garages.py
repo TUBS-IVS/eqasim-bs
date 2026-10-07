@@ -81,6 +81,8 @@ def _banded(**changes) -> dict:
 
 
 GRACE_BANDS = "0-15 free; 15-60 total 1.50; 60- 1.50/60"
+FREE_BANDS = "0- free"
+AUTOSTADT_TIERS = "06:00-18:00 1.00/60; 18:00-06:00 0.50/60"
 SUPPLEMENT_SHA = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa"
 FOLLOWUP_SHA = "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8"
 WOLFSBURG_LOTS_SHA = "650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0"
@@ -109,6 +111,48 @@ def _unpriced(**changes) -> dict:
             "garage_fee_end_h": None, "priced": False, "not_priced_reason": "incomplete_tariff", "assumptions": None,
             "tariff_rule_ids": "r-19;r-20;r-21", "capacity_reported": None, "capacity_scope": None,
             "notes": "1.50 EUR per started hour for hours 1 and 2, then 2.00 EUR.", "x": 604798.2, "y": 5790032.2}
+    base.update(changes)
+    return _row(**base)
+
+
+def _free(**changes) -> dict:
+    """A valid priced car park that is free for every stay (the shape of the Allerpark row, Task 4b3, spec E14): the one
+    open free band '0- free', the formal fee window 0 to 24 h, no rate, no tier, no assumption (the source states the car park
+    free)."""
+    base = {"garage_id": "wob_lot_1835028", "package_facility_id": "WOB_PARK_1835028", "name": "Parkplatz Allerpark",
+            "facility_kind": "surface_lot", "municipality": "Wolfsburg", "municipality_ags": "03103000",
+            "capacity_reported": None, "capacity_scope": None, "garage_hourly_rate_eur": None,
+            "garage_billing_unit_min": None, "garage_first_period_min": None, "garage_first_period_eur": None,
+            "garage_first_period_start_h": None, "garage_first_period_end_h": None, "garage_daily_cap_eur": None,
+            "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0, "tariff_tiers": None, "tariff_duration_bands": FREE_BANDS,
+            "assumptions": None, "tariff_rule_ids": "WOB_PARK_1835028_R01",
+            "notes": "Free of charge for every stay (the source states it); the fee window 0-24 h is formal.",
+            "x": 604_010.0, "y": 5_813_140.0}
+    base.update(changes)
+    return _row(**base)
+
+
+def _free_default(**changes) -> dict:
+    """A car park free under ASSUMPTION P12 (the municipal free default of a point without any fee evidence)."""
+    base = {"garage_id": "wob_lot_262165", "package_facility_id": "WOB_PARK_262165", "name": "Parkplatz",
+            "assumptions": "P12", "tariff_rule_ids": "WOB_PARK_262165:fee_status",
+            "notes": "Free of charge by ASSUMPTION P12: outside every published municipal tariff area."}
+    base.update(changes)
+    return _free(**base)
+
+
+def _graced_tiers(**changes) -> dict:
+    """A valid priced garage with time-of-day tiers and a grace period (the shape of the Autostadt P2 row, Task 4b3): day and
+    night tier per started 60 min, the free band 0-30 as the whole of its duration bands, ASSUMPTIONS P4, P6 and P10, the four
+    single-window columns empty."""
+    base = {"garage_id": "wob_lot_1900571", "package_facility_id": "WOB_PARK_1900571", "name": "Parkplatz Autostadt",
+            "facility_kind": "surface_lot", "municipality": "Wolfsburg", "municipality_ags": "03103000",
+            "garage_hourly_rate_eur": None, "garage_billing_unit_min": None, "garage_first_period_min": None,
+            "garage_first_period_eur": None, "garage_daily_cap_eur": None, "garage_fee_start_h": None,
+            "garage_fee_end_h": None, "tariff_tiers": AUTOSTADT_TIERS, "tariff_duration_bands": "0-30 free",
+            "assumptions": "P4;P6;P10", "tariff_rule_ids": "OP_AUTOSTADT_P2_DAY;OP_AUTOSTADT_P2_NIGHT;OP_AUTOSTADT_P2_GRACE",
+            "notes": "Day and night tier (ASSUMPTION P6), no rounding stated (ASSUMPTION P4), 30 min grace (ASSUMPTION P10).",
+            "x": 604_100.0, "y": 5_813_300.0}
     base.update(changes)
     return _row(**base)
 
@@ -149,7 +193,7 @@ def test_the_dataset_layout_is_the_documented_one():
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12"}
     assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
                                            "in force at the unit's start")
     # P6 as amended (ruling R-4b-12): the first period belongs to its clock window, the tiers run on from its end
@@ -168,6 +212,12 @@ def test_the_dataset_layout_is_the_documented_one():
     for phrase in ("best available secondary evidence", "no current operator tariff", "checked for consistency",
                    "lack of a date", "operator's missing confirmation"):
         assert phrase in pg.ASSUMPTIONS["P11"], phrase
+    # P10 also covers the grace period of a tiered garage (Task 4b3: the free band is the whole of its duration bands)
+    assert "time-of-day tiers" in pg.ASSUMPTIONS["P10"] and "ASSUMPTION P6" in pg.ASSUMPTIONS["P10"]
+    # P12 (spec E14, owner direction 2026-10-07): the municipal free default of a car park without any fee evidence
+    for phrase in ("outside every published municipal tariff area", "no operator tariff", "free of charge", "ticket machine",
+                   "no evidence of a fee is not evidence of none"):
+        assert phrase in pg.ASSUMPTIONS["P12"], phrase
     assert 0.5 < pg.UNION_WARNING_SHARE < 1.0  # a named share of the priced garages, above which the loader warns
 
 
@@ -271,7 +321,7 @@ def test_the_loader_logs_the_priced_rate_the_reasons_the_assumption_rates_and_th
     # the union rates: five of the six priced garages rest on an assumption, three of them on P4 or P5; one is tiered, one
     # banded
     assert "at least one assumption 5/6 (83.3 %)" in text and "P4 or P5 3/6 (50.0 %)" in text
-    assert "tiered 1/6; banded 1/6" in text
+    assert "tiered 1/6; banded 1/6; free 0/6; by facility kind garage 7" in text
 
 
 def test_the_loader_warns_above_the_union_threshold_and_stays_silent_at_or_below_it(tmp_path, caplog):
@@ -671,9 +721,9 @@ def test_a_banded_garage_passes_with_and_without_a_day_cap_and_with_a_stated_fee
     # one tariff structure per garage: the single rate, the first period and the tiers are all excluded
     ({"garage_hourly_rate_eur": 1.2}, "garage_hourly_rate_eur: a banded garage leaves the rate and the billing unit empty"),
     ({"garage_billing_unit_min": 60}, "garage_billing_unit_min: a banded garage leaves the rate and the billing unit empty"),
-    ({"garage_first_period_min": 60, "garage_first_period_eur": 0.6}, "a banded garage has no first period"),
+    ({"garage_first_period_min": 60, "garage_first_period_eur": 0.6}, "a garage with duration bands has no first period"),
     ({"tariff_tiers": TIERS, "assumptions": "P4;P5;P6;P8", "notes": "ASSUMPTION P4. ASSUMPTION P5. ASSUMPTION P6. ASSUMPTION P8."},
-     "tariff_duration_bands: a garage is priced in one form, the tiered and the banded form exclude each other"),
+     "tariff_duration_bands: a tiered garage carries duration bands only as a grace period"),
     # the fee window applies unchanged: both hours are set, and satisfy 0 <= start < end <= 24
     ({"garage_fee_start_h": None, "garage_fee_end_h": None}, "garage_fee_start_h: a banded garage needs its fee window"),
     ({"garage_fee_end_h": None}, "garage_fee_end_h: a banded garage needs its fee window"),
@@ -719,6 +769,87 @@ def test_a_grace_period_garage_is_a_banded_garage_with_a_free_first_band_and_ass
 def test_the_validator_rejects_assumption_p10_without_a_free_first_band(changes, message):
     with pytest.raises(ValueError, match=message):
         pg.validate_garages(_frame(_graced(**changes)))
+
+
+# --------------------------------------------------------------------------- the free schedule and the tiered grace period (spec E14)
+
+
+def test_a_free_car_park_is_the_one_open_free_band_and_needs_no_assumption_and_a_municipal_default_names_p12():
+    # '0- free' is a valid schedule of the existing grammar: no stay, however long, costs anything
+    bands = pg.parse_duration_bands(FREE_BANDS)
+    assert [(band.from_min, band.to_min, band.kind, band.eur) for band in bands] == [(0, None, "free", 0.0)]
+    assert [pg.duration_band_price_eur(bands, minutes) for minutes in (0, 1, 30, 600, 20_000)] == [0.0] * 5
+    pg.validate_garages(_frame(_free()))
+    pg.validate_garages(_frame(_free_default(), _free(), _row(), _banded(), _graced_tiers(), _unpriced()))
+    assert pg.is_free_schedule(bands) and not pg.is_free_schedule(pg.parse_duration_bands(GRACE_BANDS))
+    assert not pg.is_free_schedule(pg.parse_duration_bands("0-30 free"))  # a closed free band is a grace period, not a car park
+
+
+@pytest.mark.parametrize("changes, message", [
+    # nothing is read cumulatively and nothing follows a free schedule, so neither P8 nor P10 belongs to it
+    ({"assumptions": "P8", "notes": "ASSUMPTION P8."}, "ASSUMPTION P8 prices a stay from a duration schedule with a priced band"),
+    ({"assumptions": "P10", "notes": "ASSUMPTION P10."}, "nothing follows the free band"),
+    # P12 frees a car park: it belongs to the free schedule only
+    ({"tariff_duration_bands": "0-30 free; 30- 1.00/60", "assumptions": "P8;P12", "notes": "ASSUMPTION P8. ASSUMPTION P12."},
+     "ASSUMPTION P12 frees a car park"),
+    ({"assumptions": "P12"}, "the notes must name ASSUMPTION P12"),
+    # the banded rules still hold: the formal fee window and the empty rate
+    ({"garage_fee_start_h": None, "garage_fee_end_h": None}, "a banded garage needs its fee window"),
+    ({"garage_hourly_rate_eur": 1.0}, "a banded garage leaves the rate and the billing unit empty"),
+    ({"tariff_rule_ids": None}, "a priced garage names the package rules"),
+])
+def test_the_validator_rejects_a_broken_free_car_park(changes, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_free(**changes)))
+
+
+def test_p12_belongs_to_the_free_schedule_alone():
+    with pytest.raises(ValueError, match="ASSUMPTION P12 frees a car park"):
+        pg.validate_garages(_frame(_graced_tiers(assumptions="P4;P6;P10;P12",
+                                                 notes="ASSUMPTION P4. ASSUMPTION P6. ASSUMPTION P10. ASSUMPTION P12.")))
+    with pytest.raises(ValueError, match="ASSUMPTION P12 frees a car park"):
+        pg.validate_garages(_frame(_row(assumptions="P12", notes="ASSUMPTION P12.")))
+
+
+def test_a_tiered_garage_may_carry_one_closed_free_band_as_its_grace_period():
+    pg.validate_garages(_frame(_graced_tiers()))
+    pg.validate_garages(_frame(_graced_tiers(garage_daily_cap_eur=6.0)))
+    assert pg.is_grace_period(pg.parse_duration_bands("0-30 free"))
+    assert not pg.is_grace_period(pg.parse_duration_bands("0- free"))  # open ended: a free car park
+    assert not pg.is_grace_period(pg.parse_duration_bands("0-30 free; 30-60 total 1.00"))  # a schedule with a price
+
+
+@pytest.mark.parametrize("changes, message", [
+    # only a grace period (one closed free band) may stand next to tiers
+    ({"tariff_duration_bands": "0-30 free; 30-60 total 1.00", "assumptions": "P4;P6;P10;P8",
+      "notes": "ASSUMPTION P4. ASSUMPTION P6. ASSUMPTION P10. ASSUMPTION P8."},
+     "a tiered garage carries duration bands only as a grace period"),
+    ({"tariff_duration_bands": "0- free"}, "a tiered garage carries duration bands only as a grace period"),
+    ({"tariff_duration_bands": "0-30 total 1.00"}, "a tiered garage carries duration bands only as a grace period"),
+    # the grace period is ASSUMPTION P10, the tiers are P6, and no schedule is read cumulatively (no P8)
+    ({"assumptions": "P4;P6", "notes": "ASSUMPTION P4. ASSUMPTION P6."}, "a tiered garage with a grace period rests on ASSUMPTION P10"),
+    ({"assumptions": "P4;P6;P8;P10", "notes": "ASSUMPTION P4. ASSUMPTION P6. ASSUMPTION P8. ASSUMPTION P10."},
+     "ASSUMPTION P8 prices a stay from a duration schedule with a priced band"),
+    ({"assumptions": "P4;P10", "notes": "ASSUMPTION P4. ASSUMPTION P10."}, "a tiered garage rests on ASSUMPTION P6"),
+    # the single-window core stays empty and a banded first period is none (the first band is the grace period)
+    ({"garage_fee_start_h": 6.0, "garage_fee_end_h": 18.0}, "a tiered garage leaves the single-window core"),
+    ({"garage_first_period_min": 60, "garage_first_period_eur": 1.0}, "has no first period"),
+])
+def test_the_validator_rejects_a_broken_tiered_garage_with_a_grace_period(changes, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_graced_tiers(**changes)))
+
+
+def test_the_coverage_counts_the_banded_the_free_and_the_tiered_garages_with_a_grace_period_apart():
+    frame = _frame(_banded(garage_id="a"), _banded(garage_id="b"), _free(garage_id="c"), _free_default(garage_id="d"),
+                   _free_default(garage_id="e"), _graced_tiers(garage_id="f"), _tiered(garage_id="g"),
+                   _graced(garage_id="h"), _unpriced(garage_id="i"))
+    summary = pg.coverage(frame)
+    # banded: a priced schedule without tiers (a, b and the grace-period schedule h); free: the open free band (c, d, e);
+    # tiered: every row with tiers, the one with a grace period included (f, g)
+    assert (summary["priced_banded"], summary["priced_free"], summary["priced_tiered"]) == (3, 3, 2)
+    assert summary["priced_by_assumption"] == {"P4": 3, "P5": 3, "P6": 2, "P8": 3, "P10": 2, "P12": 2}
+    assert summary["priced_with_assumption"] == 7 and summary["priced_with_p4_or_p5"] == 4
 
 
 # --------------------------------------------------------------------------- the packages of a row (spec E12)

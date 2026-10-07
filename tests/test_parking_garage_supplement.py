@@ -1231,9 +1231,26 @@ def test_the_grace_form_is_a_free_band_the_total_of_the_first_unit_and_the_rate_
         "0-10 free; 10-30 total 0.50; 30- 0.50/30")
 
 
+@pytest.mark.parametrize("free_end, unit, amount, bands", [
+    # a free period of exactly one unit (the Klinikum: 30 min free, 0.80 EUR per started 30 min): a stay of 31 min is billed
+    # from its arrival, two started half hours = 1.60 EUR; the rate runs on from 60 min (a third unit from 61 min)
+    (30, 30, 0.8, "0-30 free; 30-60 total 1.60; 60- 0.80/30"),
+    # two units free: 61 min = 3 started units from the arrival; 120 min is the end of the third unit
+    (120, 60, 1.5, "0-120 free; 120-180 total 4.50; 180- 1.50/60"),
+])
+def test_a_free_period_that_is_a_whole_number_of_units_bills_the_started_units_of_the_stay_from_its_arrival(
+        step, free_end, unit, amount, bands):
+    encoded = step.encode_tariff(GRACE, _grace_rules(free_end=free_end, unit=unit, amount=amount))
+    assert encoded["values"]["tariff_duration_bands"] == bands and "P10" in encoded["assumptions"]
+    parsed = step.pg.parse_duration_bands(bands)
+    for minutes in range(0, 400):
+        started = -(-minutes // unit)  # started units of the stay, counted from its arrival
+        expected = 0.0 if minutes <= free_end else round(started * amount, 2)
+        assert step.pg.duration_band_price_eur(parsed, minutes) == pytest.approx(expected, abs=1e-9), minutes
+
+
 @pytest.mark.parametrize("kwargs, message", [
-    ({"free_end": 60}, "shorter than the billing unit"),
-    ({"free_end": 90}, "shorter than the billing unit"),
+    ({"free_end": 90}, "not a whole number of units"),
     ({"free_type": "increment"}, "is no free period"),
     ({"free_start": 5}, "starts at 5 min, not at 0"),
     ({"rounding": "pro_rata"}, "states the rounding 'pro_rata'"),

@@ -426,6 +426,133 @@ def test_a_garage_option_takes_the_cheaper_of_the_metered_and_the_monthly_produc
     assert cost.garage_option_cents(_garage(monthly_cents=None), *day, purpose="work") == 1600
 
 
+# ------------------------------------------------------------------- the grace period of a tiered garage (Task 4b3)
+
+AUTOSTADT = "06:00-18:00 1.00/60; 18:00-06:00 0.50/60"
+
+
+def _graced_tiers(text=AUTOSTADT, grace="0-30 free", **overrides) -> GarageTariff:
+    """The shape of the Wolfsburg Autostadt P2 row: day and night tier per started 60 min and a grace period of 30 min."""
+    return _tiered(text, bands=garage_bands_from_text(grace), **overrides)
+
+
+@pytest.mark.parametrize("arrival_s, departure_s, expected_cents", [
+    # a stay of exactly the grace period is free, one second more is billed from the arrival (the minutes are not deducted):
+    # 10:00-10:30 = 0 ct; 10:00-10:30:01 = one started 60 min unit at the day tier = 100 ct
+    (_hms(10), _hms(10, 30), 0),
+    (_hms(10), _hms(10, 30) + 1, 100),
+    (_hms(10), _hms(10, 31), 100),
+    # 10:00-11:00 is one unit (100 ct); 10:00-11:01 starts a second unit at 11:00 (day tier): 200 ct
+    (_hms(10), _hms(11), 100),
+    (_hms(10), _hms(11, 1), 200),
+    # the day/night boundary: 17:45-18:15 is a stay of 30 min, free whatever tiers it crosses
+    (_hms(17, 45), _hms(18, 15), 0),
+    # 17:45-18:16 is billed from the arrival: one unit that starts at 17:45 in the day tier = 100 ct
+    (_hms(17, 45), _hms(18, 16), 100),
+    # 17:30-19:00 = 90 min: units start 17:30 (day, 100 ct) and 18:30 (night, 50 ct) = 150 ct
+    (_hms(17, 30), _hms(19), 150),
+    # a unit that starts exactly at 18:00 takes the night tier: 17:00-19:01 = units 17:00 (100), 18:00 (50), 19:00 (50)
+    (_hms(17), _hms(19, 1), 200),
+    # a night stay 22:00-06:00 = 8 units of 50 ct = 400 ct; the unit that would start at 06:00 is not started
+    (_hms(22), 86400 + _hms(6), 400),
+    # no stay, no price
+    (_hms(10), _hms(10), 0),
+])
+def test_a_tiered_garage_with_a_grace_period_is_free_up_to_it_and_billed_from_the_arrival_beyond_it_p10(arrival_s,
+                                                                                                          departure_s,
+                                                                                                          expected_cents):
+    assert cost.garage_metered_cents(_graced_tiers(), arrival_s, departure_s) == expected_cents
+
+
+def test_the_grace_period_of_a_tiered_garage_comes_before_the_day_cap_and_never_adds_a_price():
+    capped = _graced_tiers(daily_cap_cents=600)
+    # 10:00-18:00 = 8 units x 100 ct = 800 ct, capped once at 600 ct; the grace period does not change the cap
+    assert cost.garage_metered_cents(capped, _hms(10), _hms(18)) == 600
+    assert cost.garage_metered_cents(capped, _hms(10), _hms(10, 29)) == 0
+    # without the grace band the same garage charges the first unit of a 29 min stay: the band is what makes it free
+    assert cost.garage_metered_cents(_tiered(AUTOSTADT, daily_cap_cents=600), _hms(10), _hms(10, 29)) == 100
+
+
+def test_a_tiered_garage_with_a_grace_period_is_an_option_like_any_other_and_round_trips_through_its_json():
+    garage = _graced_tiers(daily_cap_cents=600)
+    assert garage.form == "tiers"
+    entry = garage.to_json()
+    assert list(entry) == list(cost.GARAGE_FIELDS_JSON) and entry["bands"] == [
+        {"from_min": 0, "to_min": 30, "kind": "free", "price_cents": 0, "unit_min": None}]
+    assert GarageTariff.from_json(entry) == garage
+    # a work stay of 20 min at 10:00 next to the street: street 20 x 3 = 60 ct, the garage option is free (grace period),
+    # d = 0: expected = 60 / 2 = 30 ct, probability 0.5
+    counters = GarageOptionCounters()
+    cents, outcome, probability = _price(_street(), _hms(10), _hms(10, 20), [(garage, 0.0)], counters=counters)
+    assert (cents, outcome, probability) == (30, cost.PAID_EXPECTED, 0.5) and counters.option_evaluations == 1
+
+
+@pytest.mark.parametrize("overrides, message", [
+    ({"grace": "0-30 free; 30-60 total 1.00"}, "only as a grace period"),
+    ({"grace": "0- free"}, "only as a grace period"),
+    ({"grace": "0-30 total 1.00"}, "only as a grace period"),
+    ({"fee_start_s": 21600, "fee_end_s": 64800}, "leaves the single-window core empty"),
+    ({"first_period_min": 60, "first_period_cents": 100}, "no first period"),
+])
+def test_a_tiered_garage_accepts_nothing_but_a_closed_free_band_next_to_its_tiers(overrides, message):
+    grace = overrides.pop("grace", "0-30 free")
+    with pytest.raises(ValueError, match=message):
+        _graced_tiers(grace=grace, **overrides)
+
+
+# ----------------------------------------------------------------------- a car park that is free (Task 4b3, spec E14)
+
+
+def _free_garage(garage_id="g_free", **overrides) -> GarageTariff:
+    """The shape of a free Wolfsburg car park: the free schedule '0- free' with the formal fee window 0 to 24 h."""
+    return _banded("0- free", garage_id=garage_id, **overrides)
+
+
+@pytest.mark.parametrize("duration_s", [0, 1, 1800, 36000, 86400, 3 * 86400])
+def test_a_free_car_park_costs_nothing_for_every_stay_even_beyond_a_day(duration_s):
+    assert cost.garage_metered_cents(_free_garage(), 36000, 36000 + duration_s) == 0
+    assert cost.garage_option_cents(_free_garage(), 36000, 36000 + duration_s, purpose="work") == 0
+
+
+def test_a_free_option_lowers_the_expected_cost_of_a_paid_street_stay_within_the_maximum_distance():
+    # Stay 10:00-11:00: street 60 x 3 = 180 ct. A free garage at d = 300 m, lambda = 400 m: w = exp(-0.75) = 0.4723665527,
+    # P_garage = w / (1 + w) = 0.3208213008; expected = 180 / 1.4723665527 = 122.2522 -> 122 ct (below the 180 ct of the
+    # street alone).
+    street_only = _price(_street(), 36000, 39600, [])
+    assert street_only == (180, cost.PAID_METERED, 0.0)
+    cents, outcome, probability = _price(_street(), 36000, 39600, [(_free_garage(), 300.0)])
+    assert (cents, outcome) == (122, cost.PAID_EXPECTED)
+    assert probability == pytest.approx(0.3208213008, abs=1e-9)
+    detail = cost.parking_cost_with_garages_detail(_street(), 36000, 39600, purpose="shop", parking_free=False,
+                                                   resident_of_zone=False, garage_options=[(_free_garage(), 300.0)],
+                                                   decay_m=DECAY_M)
+    assert detail.expected_cents == pytest.approx(122.2522, abs=1e-4)
+    # nearer is cheaper: d = 100 m: w = exp(-0.25) = 0.7788007831, expected = 180 / 1.7788007831 = 101.1918 -> 101 ct
+    assert _price(_street(), 36000, 39600, [(_free_garage(), 100.0)])[0] == 101
+    # a free garage next to a paid one (200 ct for the started hour), both at 300 m: the free one adds weight at cost 0 and so
+    # pulls the mean down: expected = (180 + 0.4723665527 x 0 + 0.4723665527 x 200) / 1.9447331054 = 141.1368 -> 141 ct,
+    # P_garages = 0.9447331054 / 1.9447331054 = 0.4857906223 (the options are ordered by id: g_free, g_paid)
+    mixed = _price(_street(), 36000, 39600, [(_garage("g_paid"), 300.0), (_free_garage(), 300.0)])
+    assert mixed[:2] == (141, cost.PAID_EXPECTED) and mixed[2] == pytest.approx(0.4857906223, abs=1e-9)
+
+
+def test_a_free_option_alone_never_makes_a_street_free_stay_cost_anything_e4():
+    # a free threshold of 30 min: 25 chargeable min cost 0 ct on the street and nobody takes a detour (E4)
+    street = _street(free_if_stay_at_most_min=30)
+    assert _price(street, 39600, 41100, [(_free_garage(), 0.0)]) == (0, cost.FREE_WITHIN_LIMIT, 0.0)
+    # outside the street fee window (09:00-20:00) the street is free as well
+    assert _price(_street(), 25200, 28800, [(_free_garage(), 0.0)]) == (0, cost.OUTSIDE_FEE_HOURS, 0.0)
+    # the early rules precede the options: a home stay or an employer-free stay pays 0 without any garage
+    assert _price(_street(), 36000, 39600, [(_free_garage(), 0.0)], parking_free=True)[0] == 0
+
+
+def test_a_free_option_alone_prices_a_stay_whose_street_is_unavailable_at_zero():
+    zone = _street(max_stay_min=180, daily_cap_cents=None, garage_hourly_rate_cents=120, garage_billing_unit_min=60,
+                   garage_fee_start_s=0, garage_fee_end_s=86400)
+    arrival_s, departure_s = 32400, 32400 + 4 * HOUR_S
+    assert _price(zone, arrival_s, departure_s, [(_free_garage(), 900.0)]) == (0, cost.PAID_EXPECTED, 1.0)
+
+
 # --------------------------------------------------------------------------------------------- validation
 
 

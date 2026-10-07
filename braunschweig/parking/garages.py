@@ -16,8 +16,8 @@ listed and not priced with a ``not_priced_reason`` (``NOT_PRICED_REASONS``): no 
 assumption a row rests on is an id in ``assumptions`` (``ASSUMPTIONS``) that the row's notes name, so that a priced garage
 whose tariff is not stated in every detail can be told apart and counted.
 
-A garage is priced in exactly one of three forms (rulings R-4b-10b and R-4b-11), documented here because the validator
-enforces it (one tariff structure per garage):
+A garage is priced in exactly one of three forms (rulings R-4b-10b and R-4b-11) plus the free schedule, documented here
+because the validator enforces it (one tariff structure per garage):
 
 * the single-window form, the garage core of the tariff table: one hourly rate in started billing units with one fee
   window (``garage_hourly_rate_eur``, ``garage_billing_unit_min``, ``garage_fee_start_h``, ``garage_fee_end_h``);
@@ -31,6 +31,16 @@ enforces it (one tariff structure per garage):
   EMPTY, no first period and no tiers; the fee window (both hours) applies unchanged. A banded garage rests on
   ASSUMPTION P8 (the cumulative reading of the bands). :func:`duration_band_price_eur` is the reference evaluation of a
   schedule and the one the garage option pricing of ``braunschweig.parking.cost`` calls (no logic is copied).
+
+Two uses of the bands text are no schedule in that sense (Task 4b3, spec E14), and the validator tells them apart:
+
+* the FREE SCHEDULE ``"0- free"`` (:func:`is_free_schedule`): one open free band, a car park that is free for every stay (the
+  free public car parks of the Wolfsburg city layer; ASSUMPTION P12 where the car park is free only by default). It has the
+  formal fee window 0 to 24 h, rests on no assumption of the bands (neither P8 nor P10) and counts as ``priced_free``;
+* the GRACE PERIOD of a tiered garage (:func:`is_grace_period`): ``tariff_tiers`` together with one CLOSED free band, e.g.
+  ``"0-30 free"``: a stay not longer than the band costs 0 and every longer stay is priced by the tiers from its arrival
+  (ASSUMPTION P10 read for tiers: the free minutes are not deducted). The tiered garage has no fee window and no first
+  period; it rests on ASSUMPTIONS P6 and P10 and not on P8 (nothing is read cumulatively).
 
 The first period (``garage_first_period_min`` with ``garage_first_period_eur``, both or neither) and the day cap
 (``garage_daily_cap_eur``, empty = none) belong to the single-window and the tiered form and need one of them; a banded
@@ -151,11 +161,17 @@ ASSUMPTIONS = {
           "the day cap, the smaller of the schedule price and the cap",
     "P10": "a published free period at the start of a stay is a grace period: a stay not longer than it costs 0; a longer "
            "stay is billed from the arrival as if there were no free period (the free minutes are not deducted); encoded as "
-           "a free first duration band (ASSUMPTION P8) followed by the total of the first billing unit",
+           "a free first duration band followed by the price of the first billing units (ASSUMPTION P8), or, next to "
+           "time-of-day tiers (ASSUMPTION P6), as the one closed free band that precedes the tiers of every longer stay",
     "P11": "where no current operator tariff is published, the garage is priced from the best available secondary evidence "
            "for the same facility (a directory or tourism table, newest and most detailed first), checked for consistency "
            "against the garages of the same town; the source, its lack of a date and the operator's missing confirmation "
            "are named in the notes",
+    "P12": "a public car park of the Wolfsburg city layer that lies outside every published municipal tariff area and has "
+           "no operator tariff in the sources is free of charge for every stay (municipal free default): the municipal fee "
+           "ordinance levies fees where parking is permitted only with a ticket machine and the city's published layer of "
+           "those areas holds none at the point; no evidence of a fee is not evidence of none, so every such row is named "
+           "and counted; encoded as the free schedule '0- free'",
 }
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a
@@ -378,6 +394,23 @@ def parse_duration_bands(text) -> list:
     return bands
 
 
+def bands_have_price(bands) -> bool:
+    """Whether a parsed schedule has a band that costs something (a total or an increment band)."""
+    return any(band.kind != "free" for band in bands)
+
+
+def is_free_schedule(bands) -> bool:
+    """Whether a parsed schedule is the free schedule ``"0- free"``: one open-ended free band (a car park that is free for
+    every stay, spec E14)."""
+    return len(bands) == 1 and bands[0].kind == "free" and bands[0].to_min is None
+
+
+def is_grace_period(bands) -> bool:
+    """Whether a parsed schedule is the grace period of a tiered garage: one CLOSED free band (``"0-30 free"``); a stay not
+    longer than the band costs 0 and a longer stay is priced by the tiers (ASSUMPTION P10, Task 4b3)."""
+    return len(bands) == 1 and bands[0].kind == "free" and bands[0].to_min is not None
+
+
 def _band_price_cents(band: DurationBand, duration_min: float, reached_cents: int) -> int:
     """The price in whole cents of a stay of ``duration_min`` minutes inside ``band``, whose price at its start is
     ``reached_cents`` (integer cents: published amounts are whole cents, so the arithmetic is exact)."""
@@ -481,13 +514,16 @@ def load_garages(path) -> gpd.GeoDataFrame:
     priced = summary["priced"]
     log.info("[parking-garages] loaded %d garages from %s: priced %d/%d (%.1f %%), not priced %d (%s); priced rows resting "
              "on an assumption: %s; at least one assumption %d/%d (%.1f %%), P4 or P5 %d/%d (%.1f %%); tiered %d/%d; "
-             "banded %d/%d; monthly product on %d", summary["listed"], path, priced, summary["listed"],
+             "banded %d/%d; free %d/%d; by facility kind %s; monthly product on %d", summary["listed"], path, priced,
+             summary["listed"],
              100.0 * priced / max(summary["listed"], 1), summary["not_priced"],
              ", ".join(f"{reason} {count}" for reason, count in summary["not_priced_by_reason"].items()) or "none",
              ", ".join(f"{name} {count}/{priced}" for name, count in summary["priced_by_assumption"].items()) or "none",
              summary["priced_with_assumption"], priced, 100.0 * summary["priced_with_assumption"] / max(priced, 1),
              summary["priced_with_p4_or_p5"], priced, 100.0 * summary["priced_with_p4_or_p5"] / max(priced, 1),
-             summary["priced_tiered"], priced, summary["priced_banded"], priced, summary["with_monthly_product"])
+             summary["priced_tiered"], priced, summary["priced_banded"], priced, summary["priced_free"], priced,
+             ", ".join(f"{kind} {counts['listed']}" for kind, counts in summary["by_facility_kind"].items()) or "none",
+             summary["with_monthly_product"])
     for label, count in (("at least one assumption", summary["priced_with_assumption"]),
                          ("ASSUMPTION P4 or P5 (a stated rounding or stated charging times replaced by an assumption)",
                           summary["priced_with_p4_or_p5"])):
@@ -559,14 +595,19 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     R-4b-10b and R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee
     start, fee end; set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the
     four core columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the
-    billing unit empty, the fee window set completely, no first period and no tiers); the day cap and the first-period pair
+    billing unit empty, the fee window set completely, no first period and no tiers), or the grace period of a tiered garage
+    (:func:`is_grace_period`: ``tariff_tiers`` with ONE closed free band, no fee window and no first period, ASSUMPTIONS P6
+    and P10); ``tariff_duration_bands`` ``"0- free"`` is the free schedule (:func:`is_free_schedule`, a car park free for
+    every stay: no P8, no P10, P12 where it is a municipal default); the day cap and the first-period pair
     need one form, and the pair is set together; the clock window of the first period (ruling R-4b-12) is set together,
     only with a first period and satisfies 0 <= start < end <= 24; amounts are positive whole cents, minutes positive, the
     fee window satisfies 0 <= start < end <= 24, and the day cap is not below the first period. Status: ``priced`` is
     exactly "one tariff form is set"; a priced row names its ``tariff_rule_ids`` and no reason, an unpriced row carries no
     tariff value and one ``not_priced_reason`` of ``NOT_PRICED_REASONS`` and no assumption; every id of ``assumptions`` is
     one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
-    it has tiers and on ASSUMPTION P8 exactly when it has bands; ASSUMPTION P10 (a grace period) needs a free first band.
+    it has tiers and on ASSUMPTION P8 exactly when it has a schedule with a priced band and no tiers; ASSUMPTION P10 (a grace
+    period) needs a free first band that something follows (a priced band or the tiers) and a tiered garage with a grace
+    period lists it; ASSUMPTION P12 (a municipal free default) needs the free schedule.
     Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
     and neither text without the amount. Capacity: a positive whole number with its ``capacity_scope``.
     """
@@ -657,15 +698,17 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                 parse_tariff_tiers(row["tariff_tiers"])
             except ValueError as error:
                 problem("tariff_tiers", str(error))
+        bands = None
         if has_bands:
             try:
-                parse_duration_bands(row["tariff_duration_bands"])
+                bands = parse_duration_bands(row["tariff_duration_bands"])
             except ValueError as error:
                 problem("tariff_duration_bands", str(error))
-        if has_tiers and has_bands:
-            problem("tariff_duration_bands", "a garage is priced in one form, the tiered and the banded form exclude each "
+        if has_tiers and has_bands and bands is not None and not is_grace_period(bands):
+            problem("tariff_duration_bands", "a tiered garage carries duration bands only as a grace period (one closed free "
+                                             "band, ASSUMPTION P10); otherwise the tiered and the banded form exclude each "
                                              "other (one tariff structure per garage)")
-        if has_bands:
+        if has_bands and not has_tiers:
             # the fee window applies unchanged, so both hours are set; the rate and the unit belong to the single window
             single_rate = [column for column in ("garage_hourly_rate_eur", "garage_billing_unit_min")
                            if zones._is_set(row[column])]
@@ -693,8 +736,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                     f"{zones.GARAGE_FIRST_PERIOD_COLUMNS[0]} and {zones.GARAGE_FIRST_PERIOD_COLUMNS[1]} are set together "
                     "or not at all")
         if has_bands and any(pair):
-            problem(zones.GARAGE_FIRST_PERIOD_COLUMNS[0], "a banded garage has no first period (its first band is the first "
-                                                          "period; the forms exclude each other)")
+            problem(zones.GARAGE_FIRST_PERIOD_COLUMNS[0], "a garage with duration bands has no first period (its first band "
+                                                          "is the first period; the forms exclude each other)")
         # the clock window of the first period (ruling R-4b-12): both hours or neither, only with a first period, and the
         # same 0 <= start < end <= 24 rule as the fee window
         first_window = [zones._is_set(row[column]) for column in FIRST_PERIOD_WINDOW_COLUMNS]
@@ -755,22 +798,31 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             problem("assumptions", "a tiered garage rests on ASSUMPTION P6 (how a stay is priced from the tiers) and lists it")
         if priced and not has_tiers and "P6" in assumptions:
             problem("assumptions", "ASSUMPTION P6 prices a stay from tariff_tiers, but this garage has none")
-        if priced and has_bands and "P8" not in assumptions:
+        # a schedule with a priced band, read cumulatively (P8); the free schedule and the grace period of a tiered garage
+        # have none. A text that does not parse is reported above and counts as a schedule here.
+        schedule = has_bands and not has_tiers and (bands is None or bands_have_price(bands))
+        if priced and schedule and "P8" not in assumptions:
             problem("assumptions", "a banded garage rests on ASSUMPTION P8 (how a stay is priced from the bands) and lists it")
         if priced and not has_bands and "P8" in assumptions:
             problem("assumptions", "ASSUMPTION P8 prices a stay from tariff_duration_bands, but this garage has none")
+        elif priced and has_bands and not schedule and "P8" in assumptions:
+            problem("assumptions", "ASSUMPTION P8 prices a stay from a duration schedule with a priced band, but the bands of "
+                                   "this garage are the free schedule or the grace period of a tiered garage")
+        if priced and has_tiers and has_bands and bands is not None and is_grace_period(bands) and "P10" not in assumptions:
+            problem("assumptions", "a tiered garage with a grace period rests on ASSUMPTION P10 and lists it")
         if "P10" in assumptions:
-            # the grace period is the free first band: without bands, or with a first band that is not free, there is none
-            first_kind = None
-            if has_bands:
-                try:
-                    first_kind = parse_duration_bands(row["tariff_duration_bands"])[0].kind
-                except ValueError:
-                    first_kind = None  # the text is reported above
+            # the grace period is the free first band that something follows: without bands, with a first band that is not
+            # free or with a free schedule (nothing follows), there is none
+            first_kind = bands[0].kind if bands else None
             if first_kind != "free":
                 suffix = " has no duration bands" if not has_bands else "'s first band is not free"
                 problem("assumptions", "ASSUMPTION P10 reads the free first band of tariff_duration_bands as a grace period, "
                                        f"but this garage{suffix}")
+            elif bands is not None and is_free_schedule(bands):
+                problem("assumptions", "ASSUMPTION P10 reads the free first band of tariff_duration_bands as a grace period, "
+                                       "but nothing follows the free band of this garage (a car park that is free for every stay)")
+        if "P12" in assumptions and not (bands is not None and is_free_schedule(bands) and not has_tiers):
+            problem("assumptions", "ASSUMPTION P12 frees a car park: it belongs to the free schedule '0- free' only")
         # --- monthly product: no value without its source
         monthly = row["monthly_eur"]
         if zones._is_set(monthly):
@@ -796,8 +848,9 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
     the garages and the surface lots), the priced garages per assumption
     (``priced_by_assumption``, ids that no priced garage uses are absent), the union rates ``priced_with_assumption``
     (priced garages resting on at least one assumption) and ``priced_with_p4_or_p5`` (on a stated rounding or stated
-    charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``) and in the banded
-    form (``priced_banded``) and the garages with a monthly product. Plain numbers and dicts, sorted, so a caller can print
+    charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``, the tiered garages
+    with a grace period included), in the banded form (``priced_banded``: a schedule without tiers) and with the free
+    schedule (``priced_free``) and the garages with a monthly product. Plain numbers and dicts, sorted, so a caller can print
     or compare them."""
     priced = frame["priced"].astype(bool)
     reasons = frame.loc[~priced, "not_priced_reason"].fillna("").astype(str)
@@ -811,8 +864,15 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
         flags = group["priced"].astype(bool)
         kinds[str(kind)] = {"listed": int(len(group)), "priced": int(flags.sum()), "not_priced": int((~flags).sum())}
     counts = {}
-    with_assumption = with_p4_or_p5 = 0
+    with_assumption = with_p4_or_p5 = banded = free = 0
     for _, row in frame[priced].iterrows():
+        if zones._is_set(row["tariff_duration_bands"]) and not zones._is_set(row["tariff_tiers"]):
+            try:
+                is_free = is_free_schedule(parse_duration_bands(row["tariff_duration_bands"]))
+            except ValueError:  # an invalid text is reported by validate_garages; it counts as a schedule here
+                is_free = False
+            free += is_free
+            banded += not is_free
         ids = _split(row["assumptions"])
         for assumption in ids:
             counts[assumption] = counts.get(assumption, 0) + 1
@@ -824,5 +884,5 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
             "priced_by_assumption": dict(sorted(counts.items())), "priced_with_assumption": int(with_assumption),
             "priced_with_p4_or_p5": int(with_p4_or_p5),
             "priced_tiered": int(frame.loc[priced, "tariff_tiers"].map(zones._is_set).sum()),
-            "priced_banded": int(frame.loc[priced, "tariff_duration_bands"].map(zones._is_set).sum()),
+            "priced_banded": banded, "priced_free": free,
             "with_monthly_product": int(frame["monthly_eur"].notna().sum())}

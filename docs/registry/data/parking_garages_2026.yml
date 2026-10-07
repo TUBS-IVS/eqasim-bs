@@ -491,7 +491,7 @@ notes: >-
   zone_street_product 4, station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 1, no_coordinates 1,
   outside_source_list 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
   tests/test_parking_regional_garages.py. SHA-256 of the files as written by the step (LF; two runs identical):
-  parking_garages_2026.geojson 1c93bf3263745c43948fd160aec4d5d7fce8e47714f6846487ab6b2ef5756e98, parking_garages_2026_qa.csv
+  parking_garages_2026.geojson 291ff1e5ab4b0cbc9ac8e91c23cd26557c6d5f01f1dcb4c57738eb0832c4cafd, parking_garages_2026_qa.csv
   46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757.
   History: the first Task 4b run listed 32 garages, fix round 1 31 garages with 19 priced (SHA-256
   c2031fa3a4697ae3215e537133c9f1b88b84639cd26e64f73f6b8654a4421e3a and
