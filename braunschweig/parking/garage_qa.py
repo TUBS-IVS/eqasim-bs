@@ -9,7 +9,8 @@ The committed table ``parking_garages_2026_qa.csv`` is written by the curation s
 * ``monthly_product``: one per monthly or 30-day product the sources publish (spec Amendment D2, ruling R-D2-a), used (it is
   the ``monthly_eur`` of a garage or the ``commuter_day_eur`` of tariff rows) or recorded and not used, with the reason;
 * ``candidate``: one per car park of the city directories or per garage of the package that is NOT in the dataset, with the
-  reason (ruling R-4b-4: BgA lots are zones, customer-only regimes and station car parks stay out).
+  reason (ruling R-4b-4: BgA lots are zones, customer-only regimes stay out; ruling R-4b-9: the station car parks of DB
+  BahnPark stay out in every city; a car park open to long-term renters only is no garage option).
 
 ``validate_garage_qa`` compares the table with the dataset (every garage once, the same status and reason; every
 ``monthly_eur`` the amount of exactly one used product) and, when the tariff table is given, with ``commuter_day_eur``
@@ -46,6 +47,8 @@ MONTHLY_NOT_USED_REASONS = {
     "no_fixed_price": "the source gives no fixed monthly amount (a discount card with a variable amount)",
     "capacity_limited_permits": "a permit offer limited to a fixed small number of places (ruling R-D2-a)",
     "no_coordinates": "the garage has no coordinates in the package and lies in no zone, so no dataset row can carry it",
+    "garage_not_listed": "the garage of the product is no garage of the dataset (a candidate row gives the reason), so no "
+                         "dataset row can carry the product",
     "not_monthly_or_30_day": "a product of another duration (a 7-day ticket); spec Amendment D2 takes monthly and 30-day "
                              "products",
     "outdated_source": "only an older document states the amount and no current source confirms it",
@@ -54,12 +57,15 @@ MONTHLY_NOT_USED_REASONS = {
 CANDIDATE_REASONS = {
     "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role)",
     "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff",
-    "station_bahnpark": "a station car park of a private operator or DB BahnPark (ruling R-4b-4)",
+    "station_bahnpark": "a car park or garage at a railway station that is run by a private operator or as DB BahnPark "
+                        "(Contipark), in Braunschweig and Wolfsburg alike (rulings R-4b-4 and R-4b-9)",
     "customer_regime": "a hospital, shopping-centre or airport short-stay regime (ruling R-4b-4)",
     "no_coordinates": "the package gives the garage no coordinates, and no geometry is invented",
     "no_published_tariff": "the package lists the car parks without any published tariff (spec Amendment E1 lists large "
                            "public car parks with a published tariff)",
     "outside_source_list": "not in the towns and sources that spec Amendment E1 names for the dataset",
+    "dauerparker_only": "currently open to long-term renters only, a closed group: no garage option (the free or contract "
+                        "parking of such a group is covered by the free-parking share of the model)",
 }
 _RECORD_ID = re.compile(r"^[a-z0-9_]+$")
 

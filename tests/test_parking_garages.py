@@ -32,15 +32,32 @@ def _row(**changes) -> dict:
         "municipality": "Braunschweig", "municipality_ags": "03101000", "capacity_reported": 500,
         "capacity_scope": "reported_in_PULP", "garage_hourly_rate_eur": 1.2, "garage_billing_unit_min": 60,
         "garage_first_period_min": 60, "garage_first_period_eur": 0.6, "garage_daily_cap_eur": 9.6,
-        "garage_fee_start_h": 7.0, "garage_fee_end_h": 18.0, "monthly_eur": None, "monthly_source_url": None,
-        "monthly_product": None, "priced": True, "not_priced_reason": None, "assumptions": "P3",
+        "garage_fee_start_h": 7.0, "garage_fee_end_h": 18.0, "tariff_tiers": None, "monthly_eur": None,
+        "monthly_source_url": None, "monthly_product": None, "priced": True, "not_priced_reason": None, "assumptions": "P3",
         "source_url": SOURCE, "source_date": "2026-10-07", "tariff_rule_ids": "r-35;r-36;r-37",
         "geometry_method": "official_feed_point", "geometry_source_url": "https://www.braunschweig.de/apps/pulp/result/x",
-        "package_sha256": SHA, "notes": "Day family only (ASSUMPTION P3); night 18-07 h 1.00 EUR per started hour.",
+        "package_sha256": SHA, "notes": "Flat night fee not charged (ASSUMPTION P3); night 18-07 h 5.00 EUR in total.",
         "x": 603408.0, "y": 5791173.0,
     }
     row.update(changes)
     return row
+
+
+TIERS = "08:00-10:00 0.30/30; 10:00-18:00 0.60/30; 18:00-23:00 0.30/30; 23:00-08:00 0.10/30"
+
+
+def _tiered(**changes) -> dict:
+    """A valid priced garage in the tiered form (the shape of the Wolfenbuettel Rosenwall row): four time-of-day tiers
+    that cover the whole day, no single-window core, no first period, no cap, ASSUMPTION P6."""
+    base = {"garage_id": "wf_rosenwall", "package_facility_id": "WF_ROSENWALL", "name": "Parkhaus Rosenwall",
+            "municipality": "Wolfenbuettel", "municipality_ags": "03158037", "garage_hourly_rate_eur": None,
+            "garage_billing_unit_min": None, "garage_first_period_min": None, "garage_first_period_eur": None,
+            "garage_daily_cap_eur": None, "garage_fee_start_h": None, "garage_fee_end_h": None, "tariff_tiers": TIERS,
+            "assumptions": "P6", "tariff_rule_ids": "r-157;r-158;r-159;r-160",
+            "notes": "Four tiers per started 30 min (ASSUMPTION P6: the tier in force at the start of a unit).",
+            "x": 604180.0, "y": 5786250.0}
+    base.update(changes)
+    return _row(**base)
 
 
 def _unpriced(**changes) -> dict:
@@ -78,9 +95,16 @@ def test_the_dataset_layout_is_the_documented_one():
     assert pg.DATASET_COLUMNS[:6] == ("garage_id", "package_facility_id", "name", "operator", "municipality",
                                       "municipality_ags")
     assert set(pg.TARIFF_COLUMNS) <= set(pg.DATASET_COLUMNS)
+    # the tiered form (ruling R-4b-10b) is one text column right after the single-window columns
+    assert pg.TIER_COLUMNS == ("tariff_tiers",)
+    position = pg.DATASET_COLUMNS.index("tariff_tiers")
+    assert pg.DATASET_COLUMNS[position - 1] == pg.TARIFF_COLUMNS[-1] and pg.DATASET_COLUMNS[position + 1] == "monthly_eur"
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "banded_tariff", "incomplete_tariff",
                                           "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7"}
+    assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
+                                           "in force at the unit's start")
+    assert 0.5 < pg.UNION_WARNING_SHARE < 1.0  # a named share of the priced garages, above which the loader warns
 
 
 # --------------------------------------------------------------------------- loader and writer
@@ -92,13 +116,13 @@ def test_a_valid_priced_and_a_valid_unpriced_garage_pass():
 
 def test_the_writer_and_the_loader_round_trip_typed_metric_points(tmp_path):
     frame = _frame(_row(monthly_eur=48.0, monthly_source_url="https://example.org/monat", monthly_product="Dauerstellplatz"),
-                   _unpriced())
+                   _unpriced(), _tiered())
     path = tmp_path / "garages.geojson"
     pg.write_garages(frame, path, members={"license": "terms of the sources", "attribution": "operators"})
     text = path.read_text(encoding="utf-8")
     assert text.isascii() and "\r" not in text
     document = json.loads(text)
-    assert document["license"] == "terms of the sources" and len(document["features"]) == 2
+    assert document["license"] == "terms of the sources" and len(document["features"]) == 3
     first = document["features"][0]
     assert list(first["properties"]) == list(pg.DATASET_COLUMNS)  # the column order is the file order
     assert first["properties"]["operator"] is None and first["properties"]["monthly_eur"] == 48.0
@@ -109,7 +133,9 @@ def test_the_writer_and_the_loader_round_trip_typed_metric_points(tmp_path):
     assert loaded.geometry.distance(frame.geometry).max() < 0.02
     assert str(loaded["garage_billing_unit_min"].dtype) == "Int64" and str(loaded["capacity_reported"].dtype) == "Int64"
     assert loaded["garage_hourly_rate_eur"].dtype == float and loaded["priced"].dtype == bool
-    assert list(loaded["priced"]) == [True, False]
+    assert list(loaded["priced"]) == [True, False, True]
+    assert loaded.loc[2, "tariff_tiers"] == TIERS and pd.isna(loaded.loc[2, "garage_hourly_rate_eur"])
+    assert loaded.loc[0, "tariff_tiers"] is None
     assert loaded.loc[0, "operator"] is None and loaded.loc[0, "monthly_product"] == "Dauerstellplatz"
     assert pd.isna(loaded.loc[1, "garage_hourly_rate_eur"]) and pd.isna(loaded.loc[1, "garage_first_period_min"])
     assert loaded.loc[1, "not_priced_reason"] == "banded_tariff" and loaded.loc[0, "not_priced_reason"] is None
@@ -139,16 +165,102 @@ def test_the_loader_refuses_a_missing_file_missing_or_unexpected_columns_and_a_n
             pg.load_garages(tmp_path / "broken.geojson")
 
 
-def test_the_loader_logs_the_priced_rate_the_reasons_and_the_assumption_rates(tmp_path, caplog):
-    frame = _frame(_row(), _row(garage_id="bs_magni", assumptions="P5"), _row(garage_id="bs_packhof", assumptions="P4;P5"),
-                   _unpriced())
+def _assumption_notes(assumptions: str) -> str:
+    return " ".join(f"ASSUMPTION {assumption}." for assumption in assumptions.split(";"))
+
+
+def test_the_loader_logs_the_priced_rate_the_reasons_the_assumption_rates_and_the_union_rates(tmp_path, caplog):
+    frame = _frame(_row(), _row(garage_id="bs_magni", assumptions="P5", notes=_assumption_notes("P5")),
+                   _row(garage_id="bs_packhof", assumptions="P4;P5", notes=_assumption_notes("P4;P5")),
+                   _row(garage_id="bs_wallstrasse", assumptions=None, notes="Stated in full."), _tiered(), _unpriced())
     path = tmp_path / "garages.geojson"
     pg.write_garages(frame, path)
     with caplog.at_level(logging.INFO, logger=pg.log.name):
         pg.load_garages(path)
     text = " ".join(record.getMessage() for record in caplog.records)
-    assert "loaded 4 garages" in text and "priced 3/4 (75.0 %)" in text and "not priced 1 (banded_tariff 1)" in text
-    assert "P3 1/3" in text and "P4 1/3" in text and "P5 2/3" in text
+    assert "loaded 6 garages" in text and "priced 5/6 (83.3 %)" in text and "not priced 1 (banded_tariff 1)" in text
+    assert "P3 1/5" in text and "P4 1/5" in text and "P5 2/5" in text and "P6 1/5" in text
+    # the union rates: four of the five priced garages rest on an assumption, two of them on P4 or P5; one is tiered
+    assert "at least one assumption 4/5 (80.0 %)" in text and "P4 or P5 2/5 (40.0 %)" in text and "tiered 1/5" in text
+
+
+def test_the_loader_warns_above_the_union_threshold_and_stays_silent_at_or_below_it(tmp_path, caplog):
+    def warnings_of(name, rows):
+        path = tmp_path / f"{name}.geojson"
+        pg.write_garages(_frame(*rows), path)
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger=pg.log.name):
+            pg.load_garages(path)
+        return [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
+
+    def garage(number, assumptions):
+        notes = _assumption_notes(assumptions) if assumptions else "Stated in full."
+        return _row(garage_id=f"g_{number}", assumptions=assumptions, notes=notes, x=603408.0 + 50.0 * number)
+
+    assert pg.UNION_WARNING_SHARE == 0.75
+    # all four priced garages rest on an assumption and on P5: both union rates are above the threshold
+    crowded = warnings_of("crowded", [garage(number, "P5") for number in range(4)])
+    assert len(crowded) == 2 and "100.0 %" in crowded[0] and "rest on at least one assumption" in crowded[0]
+    assert "ASSUMPTION P4 or P5" in crowded[1]
+    # three of four is exactly the threshold share and does not warn: the check is "above", not "at"
+    assert warnings_of("edge", [garage(0, None)] + [garage(number, "P5") for number in range(1, 4)]) == []
+    assert warnings_of("quiet", [garage(0, None), garage(1, None), garage(2, "P3"), garage(3, "P3")]) == []
+    # P3 alone is an assumption but no replaced detail: only the first union rate is above the threshold
+    only_p3 = warnings_of("only_p3", [garage(number, "P3") for number in range(4)])
+    assert len(only_p3) == 1 and "rest on at least one assumption" in only_p3[0]
+
+
+# --------------------------------------------------------------------------- time-of-day tiers
+
+
+def test_the_tiers_of_a_text_are_parsed_to_minutes_and_formatted_back_to_the_same_text():
+    tiers = pg.parse_tariff_tiers(TIERS)
+    assert [(tier.start_min, tier.end_min, tier.unit_min, tier.eur) for tier in tiers] == [
+        (480, 600, 30, 0.30), (600, 1080, 30, 0.60), (1080, 1380, 30, 0.30), (1380, 480, 30, 0.10)]
+    assert [tier.crosses_midnight for tier in tiers] == [False, False, False, True]
+    assert tiers[3].intervals() == [(1380, 1440), (0, 480)] and tiers[0].intervals() == [(480, 600)]
+    assert pg.format_tariff_tiers(tiers) == TIERS
+    # every time of day lies in a tier here; a single tier to midnight and a whole-day tier are valid texts as well
+    assert pg.tier_coverage_minutes(tiers) == 1440
+    assert pg.parse_tariff_tiers("00:00-24:00 1.00/60")[0].end_min == 1440
+    assert pg.tier_coverage_minutes(pg.parse_tariff_tiers("00:00-06:00 0.50/60; 06:00-24:00 1.20/60")) == 1440
+    # a time of day outside every tier is free: one tier from 8 to 18 h leaves 14 of 24 hours free
+    assert pg.tier_coverage_minutes(pg.parse_tariff_tiers("08:00-18:00 1.00/60")) == 600
+
+
+@pytest.mark.parametrize("text, message", [
+    ("", "the tiers are empty"),
+    (None, "the tiers are empty"),
+    ("8:00-10:00 0.30/30", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("08:00-10:00 0.3/30", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("08:00-10:00 0.30", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("08:00-10:00 0.30/30;10:00-18:00 0.60/30", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("08:00-10:00 0.30/30; ", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("08:00-10:00 0.30/30.5", "is not 'HH:MM-HH:MM <eur>/<unit_min>'"),
+    ("25:00-26:00 0.30/30", "the start 25:00 is no clock time"),
+    ("24:00-02:00 0.30/30", "the start 24:00 is no clock time"),
+    ("08:60-10:00 0.30/30", "the start 08:60 is no clock time"),
+    ("08:00-24:30 0.30/30", "the end 24:30 is no clock time"),
+    ("08:00-10:75 0.30/30", "the end 10:75 is no clock time"),
+    ("10:00-10:00 0.30/30", "has no length"),
+    ("08:00-10:00 0.00/30", "the price must be positive"),
+    ("08:00-10:00 0.30/0", "the unit must be a positive number of minutes"),
+    ("08:00-10:00 0.30/30; 10:00-18:00 0.60/60", "different units"),
+    ("18:00-23:00 0.30/30; 08:00-10:00 0.30/30", "strictly ascending order of their start"),
+    ("08:00-10:00 0.30/30; 08:00-12:00 0.60/30", "strictly ascending order of their start"),
+    ("08:00-12:00 0.30/30; 10:00-18:00 0.60/30", "tiers overlap at 10:00"),
+    ("08:00-12:00 0.30/30; 23:00-09:00 0.10/30", "tiers overlap at 08:00"),
+    ("01:00-12:00 0.30/30; 23:00-02:00 0.10/30", "tiers overlap at 01:00"),
+])
+def test_a_malformed_overlapping_or_unordered_tier_text_is_rejected_with_the_reason(text, message):
+    with pytest.raises(ValueError, match=message):
+        pg.parse_tariff_tiers(text)
+
+
+def test_tiers_that_touch_at_midnight_or_at_a_boundary_do_not_overlap():
+    pg.parse_tariff_tiers("00:00-06:00 0.50/60; 06:00-24:00 1.20/60")
+    pg.parse_tariff_tiers("07:00-18:00 1.20/60; 18:00-07:00 1.00/60")
+    pg.parse_tariff_tiers("06:00-12:00 1.00/60; 12:00-18:00 2.00/60; 22:00-06:00 0.50/60")
 
 
 # --------------------------------------------------------------------------- validator
@@ -193,9 +305,12 @@ def test_the_loader_logs_the_priced_rate_the_reasons_and_the_assumption_rates(tm
     ({"garage_first_period_eur": None}, "garage_first_period_eur: garage_first_period_min and garage_first_period_eur"),
     ({"garage_first_period_min": None}, "garage_first_period_min: garage_first_period_min and garage_first_period_eur"),
     # priced is exactly "the core is set"
-    ({"priced": False}, "priced is False but the garage core is complete"),
+    ({"priced": False}, "priced is False but the garage tariff"),
     ({"not_priced_reason": "banded_tariff"}, "a priced garage has no reason"),
     ({"tariff_rule_ids": None}, "tariff_rule_ids: a priced garage names the package rules"),
+    # the two tariff forms exclude each other (ruling R-4b-10b)
+    ({"tariff_tiers": TIERS}, "a tiered garage leaves the single-window core"),
+    ({"assumptions": "P6", "notes": "ASSUMPTION P6."}, "ASSUMPTION P6 prices a stay from tariff_tiers, but this garage has none"),
     # assumptions are named in the notes
     ({"assumptions": "P9"}, "'P9' is not one of"),
     ({"assumptions": "P3;P3"}, "listed twice"),
@@ -224,10 +339,11 @@ def test_the_validator_rejects_a_broken_priced_garage(changes, message):
     ({"not_priced_reason": None}, "an unpriced garage states its reason"),
     ({"not_priced_reason": "too_complicated"}, "'too_complicated' is not one of"),
     ({"garage_hourly_rate_eur": 1.5}, "an unpriced garage carries no tariff value"),
+    ({"tariff_tiers": TIERS}, "an unpriced garage carries no tariff value"),
     ({"garage_daily_cap_eur": 15.0}, "a day cap or a first period needs the complete garage core"),
     ({"garage_first_period_min": 60, "garage_first_period_eur": 1.5}, "needs the complete garage core"),
     ({"garage_first_period_min": 60}, "are set together or not at all"),
-    ({"priced": True}, "priced is True but the garage core is not complete"),
+    ({"priced": True}, "priced is True but the garage tariff"),
     ({"assumptions": "P4"}, "an unpriced garage rests on no assumption"),
     ({"tariff_rule_ids": None}, None),  # the evidence of a reason is a good thing, not a requirement
 ])
@@ -237,6 +353,45 @@ def test_the_validator_rejects_a_broken_unpriced_garage(changes, message):
         return
     with pytest.raises(ValueError, match=message):
         pg.validate_garages(_frame(_unpriced(**changes)))
+
+
+def test_a_tiered_garage_passes_with_and_without_a_first_period_and_a_cap_and_a_midnight_crossing_tier():
+    pg.validate_garages(_frame(_tiered()))
+    pg.validate_garages(_frame(_tiered(garage_first_period_min=60, garage_first_period_eur=0.6, garage_daily_cap_eur=9.6)))
+    pg.validate_garages(_frame(_tiered(tariff_tiers="07:00-18:00 1.20/60; 18:00-07:00 1.00/60", assumptions="P6;P7",
+                                       notes="ASSUMPTION P6. ASSUMPTION P7.")))
+    # free times of day (outside every tier) are valid
+    pg.validate_garages(_frame(_tiered(tariff_tiers="08:00-18:00 1.00/60")))
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"tariff_tiers": "10:00-10:00 0.30/30"}, "tariff_tiers: tier '10:00-10:00 0.30/30' has no length"),
+    ({"tariff_tiers": "08:00-12:00 0.30/30; 10:00-18:00 0.60/30"}, "tariff_tiers: tiers overlap at 10:00"),
+    ({"tariff_tiers": "08:00-10:00 0.30/30; 10:00-18:00 0.60/60"}, "tariff_tiers: the tiers use different units"),
+    ({"tariff_tiers": "8-10 0.30/30"}, "tariff_tiers: tier '8-10 0.30/30' is not"),
+    # a tiered garage leaves the whole single-window core empty, a part of it is as wrong as all of it
+    ({"garage_hourly_rate_eur": 1.2}, "a tiered garage leaves the single-window core"),
+    ({"garage_fee_end_h": 18.0}, "a tiered garage leaves the single-window core"),
+    # the first period and the cap of the tiered form follow the rules of the single-window form
+    ({"garage_first_period_min": 60}, "are set together or not at all"),
+    ({"garage_first_period_min": 60, "garage_first_period_eur": 0.6, "garage_daily_cap_eur": 0.5},
+     "the day cap 0.5 is below the first period 0.6"),
+    # priced is exactly "one tariff form is set", and P6 belongs to the tiers
+    ({"priced": False}, "priced is False but the garage tariff"),
+    ({"assumptions": None}, "a tiered garage rests on ASSUMPTION P6"),
+    ({"assumptions": "P5", "notes": "ASSUMPTION P5."}, "a tiered garage rests on ASSUMPTION P6"),
+    ({"assumptions": "P6", "notes": "no assumption is named here"}, "the notes must name ASSUMPTION P6"),
+])
+def test_the_validator_rejects_a_broken_tiered_garage(changes, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_tiered(**changes)))
+
+
+def test_a_day_cap_or_a_first_period_alone_never_prices_a_garage():
+    for changes in ({"garage_daily_cap_eur": 9.6}, {"garage_first_period_min": 60, "garage_first_period_eur": 0.6}):
+        with pytest.raises(ValueError, match="needs the complete garage core or tariff_tiers"):
+            pg.validate_garages(_frame(_tiered(tariff_tiers=None, priced=False, assumptions=None,
+                                               not_priced_reason="banded_tariff", **changes)))
 
 
 def test_every_priced_core_value_may_be_set_without_the_optional_parts():
@@ -303,8 +458,25 @@ def test_the_coverage_counts_garages_reasons_towns_assumptions_and_monthly_produ
                                           "03153017": {"listed": 1, "priced": 0, "not_priced": 1}}
     assert summary["priced_by_assumption"] == {"P3": 1, "P4": 1, "P5": 2}
     assert summary["with_monthly_product"] == 1
+    assert (summary["priced_with_assumption"], summary["priced_with_p4_or_p5"], summary["priced_tiered"]) == (3, 2, 0)
     # an unpriced garage's assumption (invalid anyway) never counts as a priced row's
     assert np.isclose(sum(summary["priced_by_assumption"].values()), 4)
+
+
+def test_the_coverage_counts_the_union_rates_and_the_tiered_garages():
+    frame = _frame(
+        _row(garage_id="a", assumptions=None, notes="Stated in full."),
+        _row(garage_id="b", assumptions="P3"),
+        _row(garage_id="c", assumptions="P4;P5", notes="ASSUMPTION P4. ASSUMPTION P5."),
+        _row(garage_id="d", assumptions="P5", notes="ASSUMPTION P5."),
+        _tiered(garage_id="e"),
+        _tiered(garage_id="f", assumptions="P4;P6;P7", notes="ASSUMPTION P4. ASSUMPTION P6. ASSUMPTION P7."),
+        _unpriced(garage_id="g"))
+    summary = pg.coverage(frame)
+    assert summary["priced"] == 6 and summary["priced_tiered"] == 2
+    assert summary["priced_by_assumption"] == {"P3": 1, "P4": 2, "P5": 2, "P6": 2, "P7": 1}
+    # at least one assumption: b, c, d, e, f (a states everything); P4 or P5: c, d, f (b rests on P3, e on P6 only)
+    assert summary["priced_with_assumption"] == 5 and summary["priced_with_p4_or_p5"] == 3
 
 
 # --------------------------------------------------------------------------- QA table of the dataset and the monthly products
@@ -436,6 +608,32 @@ def test_the_qa_coverage_counts_products_and_candidates_by_reason():
     assert pq.qa_coverage(qa) == {
         "monthly_used": 2, "monthly_not_used": 1, "monthly_not_used_by_reason": {"not_the_cheapest": 1},
         "candidates": 25, "candidates_by_reason": {"no_published_tariff": 24, "station_bahnpark": 1}}
+
+
+def test_the_qa_vocabulary_excludes_the_station_car_parks_of_both_cities_and_the_lots_of_long_term_renters():
+    assert set(pq.CANDIDATE_REASONS) == {"bga_zone", "zone_street_product", "station_bahnpark", "customer_regime",
+                                         "no_coordinates", "no_published_tariff", "outside_source_list", "dauerparker_only"}
+    station = pq.CANDIDATE_REASONS["station_bahnpark"]
+    assert "Braunschweig and Wolfsburg alike" in station and "R-4b-4" in station and "R-4b-9" in station
+    assert "long-term renters only" in pq.CANDIDATE_REASONS["dauerparker_only"]
+    assert set(pq.MONTHLY_NOT_USED_REASONS) == {
+        "not_the_cheapest", "restricted_customer_group", "no_fixed_price", "capacity_limited_permits", "no_coordinates",
+        "garage_not_listed", "not_monthly_or_30_day", "outdated_source"}
+    garages, qa, tariffs = _qa_tables()
+    extra = _qa(
+        _qa_row(record_id="candidate_wf_parkpalette_karlstrasse", record_type="candidate", garage_id="",
+                municipality_ags="03158037", decision="not_listed", reason_code="dauerparker_only",
+                subject="Parkpalette Karlstrasse", evidence="stadtbetriebe-wf.de/parkhaeuser.html", note="long-term only"),
+        _qa_row(record_id="candidate_wob_hauptbahnhof", record_type="candidate", garage_id="", municipality_ags="03103000",
+                decision="not_listed", reason_code="station_bahnpark", subject="Parkdeck Hauptbahnhof",
+                evidence="facilities.json WOB_HAUPTBAHNHOF", note="DB BahnPark"),
+        _qa_row(record_id="monthly_wob_hauptbahnhof_24h", record_type="monthly_product", garage_id="",
+                municipality_ags="03103000", decision="not_used", reason_code="garage_not_listed", amount_eur="100.0",
+                subject="Parkdeck Hauptbahnhof Dauerparken", evidence="r-hbf-m1", note="the garage is a station BahnPark"))
+    pq.validate_garage_qa(pd.concat([qa, extra], ignore_index=True), garages, tariffs)
+    coverage = pq.qa_coverage(pd.concat([qa, extra], ignore_index=True))
+    assert coverage["candidates_by_reason"] == {"dauerparker_only": 1, "no_published_tariff": 24, "station_bahnpark": 2}
+    assert coverage["monthly_not_used_by_reason"] == {"garage_not_listed": 1, "not_the_cheapest": 1}
 
 
 def test_the_qa_table_loads_from_a_documented_csv(tmp_path):
