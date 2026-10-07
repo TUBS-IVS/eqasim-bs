@@ -46,6 +46,13 @@ SMALL_ZONE_ROUNDING = 5e-3
 SIMPLIFIED_BUFFER = 1e-2
 GAZETTE = "https://www.braunschweig.de/politik_verwaltung/bekanntmachungen/amtsblatt/amtsblatt_stadt_braunschweig_2022_16.pdf"
 EDIT_DATE = "2018-11-22T15:42:08.768000+00:00"
+#: The new rows whose permit flag is false (ASSUMPTION R2-a): the BgA car park and the Goslar car park at the ZOB.
+RESIDENT_PERMITS_NOT_VALID = ("bs_bga_willy_brandt_platz", "gs_parkplatz_klubgartenstrasse_zob")
+#: The v1 note of a TU campus zone as the assembly writes it: the provenance of the OSM outline, then the closing remark
+#: about the detection zones that the regional step supersedes (ruling R-4a-8).
+V1_TU_NOTE = ("TU Braunschweig {label}: OSM amenity=university way 4711 ('TU'); Overpass 2026-09-29 (OSM base "
+              "2026-09-29T05:10:00Z). The outline approximates the campus whose TU car parks are ticketed (the GB3 "
+              "Parkbereiche maps show the camera detection zones inside it); it is not the detection-zone boundary itself.")
 
 
 def _box(x0, y0, x1, y1, dx=0.0):
@@ -149,9 +156,14 @@ def _areas_layer() -> gpd.GeoDataFrame:
              ("se_parkhaus", "Parkhaus Bahnhofstra\u00dfe", _box(500, 500, 540, 540, SE_X), "free_conditional", "2"),
              ("ko_p3", "P3 Niedernhof", _box(0, 0, 40, 40, 200_000.0), "conflicting", "3"),
              ("sc_burgplatz", "Burgplatz", _box(0, 0, 40, 40, 220_000.0), "free_osm", "4")]
+    # stated maximum stays (minutes) of the five Bad Harzburg sites; the OSM tags of four of them hold the charge tag
+    stays = [360.0, 360.0, 600.0, 600.0, 600.0] + [None] * 4
+    tags = [json.dumps({s[4]: ({"charge": "0.50 EUR/30 min", "fee": "no"} if index < 4 else {"fee": "yes"})})
+            for index, s in enumerate(sites)]
     return _layer({"record_id": [s[0] for s in sites], "city": ["Bad Harzburg"] * 5 + ["Seesen"] * 2 + ["K"] + ["S"],
                    "name": [s[1] for s in sites], "fee_status": [s[3] for s in sites],
                    "osm_way_ids": [s[4] for s in sites], "osm_geometry_timestamps": ["2025-01-15T14:52:20Z"] * 9,
+                   "max_stay_minutes": stays, "osm_tags_json": tags,
                    "geometry_source": [f"https://www.openstreetmap.org/way/{s[4]}" for s in sites]},
                   [s[2] for s in sites])
 
@@ -160,7 +172,8 @@ def _street_layer() -> gpd.GeoDataFrame:
     line = MultiLineString([LineString([(X0 + SE_X, Y0), (X0 + SE_X + 60, Y0 + 30)])])
     return _layer({"record_id": ["se_am_markt"], "name": ["Am Markt - geb\u00fchrenpflichtige Stellpl\u00e4tze"],
                    "fee_status": ["paid"], "osm_way_ids": ["27957006;1192796702"],
-                   "osm_geometry_timestamps": ["2026-08-13T08:55:53Z;2026-08-13T08:55:53Z"]}, [line])
+                   "osm_geometry_timestamps": ["2026-08-13T08:55:53Z;2026-08-13T08:55:53Z"],
+                   "max_stay_ordinance_minutes": [360], "max_stay_webpage_minutes": [600]}, [line])
 
 
 def _points_layer() -> gpd.GeoDataFrame:
@@ -190,6 +203,8 @@ def _window(start, end, days):
 def _rule(rule_id, amount, unit, rounding="unspecified", window=None, times=None, elapsed=(None, None)):
     days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "public_holidays")
     return {"rule_id": rule_id, "amount_eur": amount, "billing_unit_minutes": unit, "rounding": rounding,
+            "preferred_for_current_use": rule_id != "bh_ordinary_ceiling",
+            "status": "prior_snapshot" if rule_id == "bh_ordinary_ceiling" else "published_primary",
             "charging_times": {day: (times or {}).get(day) for day in days},
             "time_window": window or {"from": None, "to": None, "days_raw": None},
             "elapsed_from_minutes": elapsed[0], "elapsed_to_minutes": elapsed[1]}
@@ -258,13 +273,18 @@ def _v1_zones(assembly) -> list:
         record("bs_bga_an_der_martinikirche", BS, _box(300, 400, 340, 420), "osm_fee_tags", "https://v1", "v1 BgA"),
         record("bs_bga_jodutenstrasse_klint", BS, _box(490, 590, 550, 640), "osm_fee_tags", "https://v1", "v1 BgA"),
         record("bs_bga_suedstrasse", BS, _box(690, 140, 760, 190), "osm_fee_tags", "https://v1", "v1 BgA"),
-        record("tu_zentralcampus", BS, _box(1200, 0, 1500, 400), "centre_approximation", "https://v1", "v1 TU"),
-        record("tu_campus_nord", BS, _box(1950, 950, 2350, 1250), "centre_approximation", "https://v1", "v1 TU"),
+        record("tu_zentralcampus", BS, _box(1200, 0, 1500, 400), "centre_approximation", "https://v1",
+               V1_TU_NOTE.format(label="Zentralcampus")),
+        record("tu_campus_nord", BS, _box(1950, 950, 2350, 1250), "centre_approximation", "https://v1",
+               V1_TU_NOTE.format(label="Campus Nord")),
         record("tu_campus_ost_beethovenstrasse", BS, _box(1950, -50, 2450, 450), "centre_approximation", "https://v1",
-               "v1 TU"),
-        record("tu_campus_ost_langer_kamp", BS, _box(2150, 450, 2450, 750), "centre_approximation", "https://v1", "v1 TU"),
-        record("tu_international_house", BS, _box(2020, 520, 2120, 580), "centre_approximation", "https://v1", "v1 TU"),
-        record("tu_forschungsflughafen", BS, _box(2950, 1950, 3350, 2150), "centre_approximation", "https://v1", "v1 TU"),
+               V1_TU_NOTE.format(label="Campus Ost Beethovenstrasse")),
+        record("tu_campus_ost_langer_kamp", BS, _box(2150, 450, 2450, 750), "centre_approximation", "https://v1",
+               V1_TU_NOTE.format(label="Campus Ost Langer Kamp")),
+        record("tu_international_house", BS, _box(2020, 520, 2120, 580), "centre_approximation", "https://v1",
+               V1_TU_NOTE.format(label="car parks at the International House")),
+        record("tu_forschungsflughafen", BS, _box(2950, 1950, 3350, 2150), "centre_approximation", "https://v1",
+               V1_TU_NOTE.format(label="Campus Forschungsflughafen")),
         record("gs_altstadt_zone1", GS, _box(0, 0, 1000, 1000, GS_X), "centre_approximation", "https://v1", "v1 Goslar"),
     ]
 
@@ -415,31 +435,87 @@ def test_new_zone_ids_follow_the_release_order(release):
 # --------------------------------------------------------------------------- D1: TU campus zones
 
 
-def test_campus_zones_are_the_union_of_the_detection_zones_of_their_campus(release):
-    zones = release["zones"]
+def _v1_release(assembly) -> dict:
+    """The v1 RELEASE polygons of the synthetic v1 zones (the v1 precedence applied, as the step derives the campus grounds)."""
+    kept, _ = assembly.apply_precedence([dict(zone) for zone in _v1_zones(assembly)], assembly.PRECEDENCE)
+    return {zone["zone_id"]: zone["geometry"] for zone in kept}
+
+
+#: zone id -> campus of the package layer (as written, with umlauts)
+CAMPUS_OF_ZONE = {"tu_zentralcampus": "Zentralcampus", "tu_campus_nord": "Campus Nord",
+                  "tu_campus_ost_beethovenstrasse": "Beethovenstraße", "tu_campus_ost_langer_kamp": "Langer Kamp",
+                  "tu_campus_volkmaroder_strasse": "Volkmaroder Straße", "tu_forschungsflughafen": "Forschungsflughafen"}
+
+
+def _detection_union(campus: str):
+    return unary_union([geometry for _, geometry, _ in CAMPUS_POLYGONS[campus]])
+
+
+def test_campus_zones_are_the_union_of_the_campus_grounds_and_the_detection_zones(assembly, release):
+    # ruling R-4a-8 (owner decision of 2026-10-07): the campus grounds of the v1 release (the destination area, where the
+    # buildings are) united with the camera detection zones of the campus map (the paid car parks)
+    zones, v1 = release["zones"], _v1_release(assembly)
     assert "tu_international_house" not in zones.index
-    # zone id -> (campus, parts of the union): in Zentralcampus the zones 01_02 and 01_03 share an edge and merge
-    ticketed = {"tu_zentralcampus": ["Zentralcampus", 2], "tu_campus_nord": ["Campus Nord", 1],
-                "tu_campus_ost_beethovenstrasse": ["Beethovenstra\u00dfe", 2], "tu_campus_ost_langer_kamp": ["Langer Kamp", 2],
-                "tu_campus_volkmaroder_strasse": ["Volkmaroder Stra\u00dfe", 1], "tu_forschungsflughafen": ["Forschungsflughafen", 2]}
-    for zone_id, (campus, parts) in ticketed.items():
-        union = unary_union([geometry for _, geometry, _ in CAMPUS_POLYGONS[campus]])
+    assert set(assembly.rz.TU_GROUNDS) == set(CAMPUS_OF_ZONE) - {"tu_campus_volkmaroder_strasse"}
+    for zone_id, campus in CAMPUS_OF_ZONE.items():
+        detection = _detection_union(campus)
+        grounds = unary_union([v1[v1_id] for v1_id in assembly.rz.TU_GROUNDS.get(zone_id, ())])
+        expected = unary_union([detection, grounds])
         zone = zones.loc[zone_id]
-        assert zone["geometry_source"] == pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, zone_id
-        assert zone.geometry.symmetric_difference(union).area < 0.01 * union.area, zone_id
-        assert len(getattr(zone.geometry, "geoms", [zone.geometry])) == parts, zone_id
+        # the zone is that union up to the 0.5 m simplification and the rounding of the file
+        assert zone.geometry.symmetric_difference(expected).area < 0.01 * expected.area, zone_id
+        assert len(getattr(zone.geometry, "geoms", [zone.geometry])) == len(getattr(expected, "geoms", [expected])), zone_id
         assert release["sha256"] in zone["digitising_note"] and "tu_kamera_detektionszonen" in zone["digitising_note"]
         assert zone["digitising_note"].startswith("TU Braunschweig, GB3 Parkbereiche campus maps") and zone["digitising_note"].isascii()
         assert "explicit consent for reuse of TU graphics not obtained; used by owner decision 2026-10-07" in zone["digitising_note"]
+        if zone_id in assembly.rz.TU_GROUNDS:
+            assert zone["geometry_source"] == pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE, zone_id
+            # the grounds carry their v1 provenance; the closing remark of the v1 note, which the detection zones
+            # supersede, is not carried over
+            assert "OSM amenity=university way 4711" in zone["digitising_note"], zone_id
+            assert "show the camera detection zones inside it" not in zone["digitising_note"], zone_id
+            assert zone.geometry.contains(grounds.representative_point()) and zone.geometry.contains(
+                detection.representative_point()), zone_id
+        else:  # Volkmaroder Strasse: no v1 outline, the detection zone alone
+            assert zone["geometry_source"] == pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
+            assert "no campus grounds" in zone["digitising_note"]
     # a campus whose map no GB3 page states as ticketed is no zone
     assert not any("bevenroder" in zone_id for zone_id in zones.index)
-    assert release["context"]["campus"].keys() == set(ticketed)
+    assert release["context"]["campus"].keys() == set(CAMPUS_OF_ZONE)
 
 
-def test_nested_campus_boundaries_use_the_outer_boundary_and_are_recorded(release):
+def test_the_provenance_says_the_outline_is_the_destination_and_the_detection_zones_the_paid_car_parks(assembly, release):
+    # the detection zones do not contain the buildings (the Forschungsflughafen zones are mostly car parks; the review of
+    # task 4a), so no zone note may claim it: the outline is the destination area, the detection zones the paid car parks
+    for zone_id in CAMPUS_OF_ZONE:
+        note = release["zones"].loc[zone_id, "digitising_note"]
+        assert "include buildings" not in note, zone_id
+        assert "paid car parks" in note and "detection zone" in note, zone_id
+        if zone_id in assembly.rz.TU_GROUNDS:
+            assert "destination area" in note and "buildings" in note, zone_id
+
+
+def test_the_campus_zones_need_the_v1_zones_as_grounds(regional, package_dir):
+    directory, sha256 = package_dir
+    package = regional.load_package(directory, expected_sha256=sha256)
+    with pytest.raises(SystemExit, match="need the v1 release polygons of .*tu_international_house"):
+        regional.campus_zones(package, {})
+
+
+def test_the_langer_kamp_zone_keeps_the_v1_provenance_of_both_its_grounds(release):
+    note = release["zones"].loc["tu_campus_ost_langer_kamp", "digitising_note"]
+    assert "tu_campus_ost_langer_kamp: TU Braunschweig Campus Ost Langer Kamp: OSM amenity=university way 4711" in note
+    assert "tu_international_house: TU Braunschweig car parks at the International House: OSM amenity=university way 4711" in note
+    assert "release polygons of the v1 zones tu_campus_ost_langer_kamp, tu_international_house" in note
+
+
+def test_nested_campus_boundaries_use_the_outer_boundary_and_are_recorded(assembly, release):
     zone = release["zones"].loc["tu_campus_ost_beethovenstrasse"]
     outer, inner, third = _box(2000, 0, 2400, 400), _box(2100, 100, 2200, 200), _box(2500, 0, 2600, 100)
-    assert zone.geometry.area == pytest.approx(outer.area + third.area, rel=SIMPLIFIED_BUFFER)  # the areas are not added
+    grounds = _v1_release(assembly)["tu_campus_ost_beethovenstrasse"]
+    # the areas of the nested outlines are not added: the union holds the grounds, the outer outline and the third zone
+    assert zone.geometry.area == pytest.approx(unary_union([grounds, outer, third]).area, rel=SIMPLIFIED_BUFFER)
+    assert zone.geometry.area < grounds.area + outer.area + inner.area + third.area - 1.0
     assert zone.geometry.contains(inner.centroid)
     assert "NESTED BOUNDARIES" in zone["digitising_note"] and "OUTER boundary is used" in zone["digitising_note"]
     assert "TU_KAM_03_01" in zone["digitising_note"] and "TU_KAM_03_02" in zone["digitising_note"]
@@ -447,19 +523,20 @@ def test_nested_campus_boundaries_use_the_outer_boundary_and_are_recorded(releas
 
 
 def test_the_international_house_is_merged_into_the_langer_kamp_campus(release):
-    # the v1 International House polygon lies mostly in the Langer Kamp detection zone 02_01, so the union replaces it
+    # the v1 International House lots are part of the campus grounds of the Langer Kamp zone now, whole (they lay
+    # mostly in the detection zone 02_01 and partly outside every detection zone)
     zone = release["zones"].loc["tu_campus_ost_langer_kamp"]
     house = _box(2020, 520, 2120, 580)
-    assert zone.geometry.intersection(house).area == pytest.approx(house.intersection(_box(2000, 500, 2100, 560)).area,
-                                                                    rel=SIMPLIFIED_BUFFER)
+    assert zone.geometry.intersection(house).area == pytest.approx(house.area, rel=SIMPLIFIED_BUFFER)
+    assert "tu_international_house" in zone["digitising_note"] or "International House" in zone["digitising_note"]
     qa = mq.load_municipal_qa(release["qa_path"]).set_index("row_id")
     row = qa.loc["tu_international_house_v1_vs_tu_campus_ost_langer_kamp"]
-    assert row["release_zone_id"] == "" and float(row["subject_share_in_reference"]) == pytest.approx(
-        house.intersection(_box(2000, 500, 2100, 560)).area / house.area, abs=1e-3)
+    assert row["release_zone_id"] == "" and float(row["subject_share_in_reference"]) == pytest.approx(1.0, abs=1e-3)
 
 
-def test_campus_zones_take_precedence_over_street_zones(release):
-    # the Zentralcampus detection zone 01_01 overlaps the v1 zone Ib by 50 m x 200 m: the campus keeps it
+def test_the_detection_zones_take_precedence_over_street_zones(release):
+    # the Zentralcampus detection zone 01_01 overlaps the v1 zone Ib by 50 m x 200 m (the v1 grounds do not: the v1
+    # precedence gave that area to Ib): the campus keeps it
     overlap = _box(1250, 100, 1300, 300)
     assert release["trims"]["bs_zone_ib"] == pytest.approx(overlap.area, abs=1.0)
     assert release["zones"].loc["bs_zone_ib"].geometry.intersection(release["zones"].loc["tu_zentralcampus"].geometry).area <= 1.0
@@ -467,6 +544,16 @@ def test_campus_zones_take_precedence_over_street_zones(release):
     cut = {(loser, winner): area for loser, winner, area in release["context"]["cuts"]}
     assert cut[("bs_zone_ib", "tu_zentralcampus")] == pytest.approx(overlap.area, abs=2.0)
     assert ("tu_zentralcampus", "bs_zone_ib") not in cut
+
+
+def test_the_v1_grounds_never_take_area_from_a_street_zone(assembly, release):
+    # the v1 outline of the Zentralcampus overlaps Ib by 100 m x 400 m in the synthetic v1 zones; the v1 precedence
+    # gave it to Ib, and the campus grounds are the v1 RELEASE polygon: only the detection zones win it back
+    v1 = _v1_release(assembly)["tu_zentralcampus"]
+    assert v1.intersection(_box(1000, 0, 1300, 1000)).area <= 1.0
+    zone = release["zones"].loc["tu_zentralcampus"].geometry
+    assert zone.intersection(_box(1200, 0, 1250, 400)).area <= 1.0   # outside the detection zone: Ib keeps it
+    assert release["zones"].loc["bs_zone_ib"].geometry.contains(_box(1210, 10, 1240, 90).centroid)
 
 
 # --------------------------------------------------------------------------- D3: single paid sites
@@ -633,6 +720,20 @@ def _row(zone_id, ags, **values):
     return row
 
 
+def _notes(zone_id, values) -> str:
+    """A note that names what the evidence requires: every assumption of the row, F1 where the window is assumed, the
+    rule the package marks as not preferred, and what the OSM charge tag of a Bad Harzburg car park says."""
+    parts = [f"ASSUMPTION {assumption}" for assumption in values["assumptions"]]
+    if values["window"] is None:
+        parts.append("ASSUMPTION F1: fee window, labelled")
+    if values["unpreferred_rule"] is not None:
+        parts.append(f"the package marks {values['unpreferred_rule']} as not preferred for current use (prior_snapshot)")
+    if zone_id.startswith("bh_"):
+        parts.append(f"the OSM tag charge='{values['osm_charge']}' corroborates it" if values["osm_charge"]
+                     else "the OSM tags hold no charge tag")
+    return "; ".join(parts)
+
+
 def _tariff_rows(evidence, f1) -> pd.DataFrame:
     """Rows that carry the evidence of the package: what the sources state, and the F1 window where they state none."""
     rows = []
@@ -643,12 +744,14 @@ def _tariff_rows(evidence, f1) -> pd.DataFrame:
         rows.append(_row(zone_id, BS if zone_id.startswith("bs_") else GS, hourly_rate_eur=values["hourly_rate_eur"],
                          billing_unit_min=values["billing_unit_min"], fee_start_h=window[0], fee_end_h=window[1],
                          fee_window_source="assumption" if values["window"] is None else "municipal_page",
-                         **extras))
+                         notes=_notes(zone_id, values),
+                         resident_permits_valid=False if zone_id in RESIDENT_PERMITS_NOT_VALID else pd.NA, **extras))
     frame = pd.DataFrame(rows, columns=list(pz.TARIFF_COLUMNS))
     for column in pz.MINUTE_COLUMNS:
         frame[column] = pd.array(frame[column].tolist(), dtype="Int64")
     for column in pz.MONEY_COLUMNS + pz.HOUR_COLUMNS:
         frame[column] = pd.to_numeric(frame[column])
+    frame["resident_permits_valid"] = frame["resident_permits_valid"].astype("boolean")
     return frame
 
 
@@ -735,6 +838,53 @@ def test_the_new_tariff_rows_must_carry_the_values_the_package_gives(regional, r
         regional.check_tariff_rows(evidence, broken)
 
 
+@pytest.mark.parametrize("zone_id, phrase, message", [
+    ("gs_parkplatz_baeringerstrasse", "ASSUMPTION D3-a", "note must name ASSUMPTION D3-a"),
+    ("gs_parkplatz_glockengiesserstrasse", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),
+    ("gs_parkplatz_klubgartenstrasse_zob", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),
+    ("bh_kurpark", "ASSUMPTION D3-b", "note must name ASSUMPTION D3-b"),
+    ("bh_burgberg", "ASSUMPTION M2", "note must name ASSUMPTION M2"),
+    ("se_am_markt", "ASSUMPTION M2", "note must name ASSUMPTION M2"),
+    ("se_am_markt", "ASSUMPTION C-a", "note must name ASSUMPTION C-a"),
+    ("br_wurmberg", "ASSUMPTION C-a", "note must name ASSUMPTION C-a"),
+    ("bs_bga_willy_brandt_platz", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),
+    ("bh_sole_therme", "bh_ordinary_ceiling", "marks the rule bh_ordinary_ceiling as not preferred for current use"),
+    ("bh_sole_therme", "not preferred for current use", "marks the rule bh_ordinary_ceiling as not preferred"),
+    ("bh_grossparkplatz", "charge='0.50 EUR/30 min'", "must quote the OSM tag charge='0.50 EUR/30 min'"),
+    ("bh_berliner_platz", "the OSM tags hold no charge tag", "nothing corroborates the ceiling here"),
+], ids=["goslar_billing_unit_unlabelled", "goslar_permit_default_unlabelled", "zob_permit_flag_unlabelled",
+        "ceiling_rate_unlabelled", "bad_harzburg_maximum_stay_unlabelled", "seesen_maximum_stay_unlabelled",
+        "buffer_unlabelled", "braunlage_buffer_unlabelled", "bga_permit_flag_unlabelled", "unpreferred_rule_not_named",
+        "unpreferred_rule_not_called_so", "osm_charge_tag_not_quoted", "missing_charge_tag_not_said"])
+def test_the_notes_must_name_the_assumptions_and_the_evidence_a_row_rests_on(regional, release, zone_id, phrase, message):
+    evidence = regional.tariff_evidence(release["package"])
+    table = _tariff_rows(evidence, regional.F1_WINDOWS)
+    broken = table.copy()
+    broken["notes"] = broken["notes"].astype(object)
+    broken.loc[broken["zone_id"] == zone_id, "notes"] = broken.loc[broken["zone_id"] == zone_id, "notes"].iloc[0].replace(
+        phrase, "x")
+    with pytest.raises(SystemExit, match=message):
+        regional.check_tariff_rows(evidence, broken)
+
+
+@pytest.mark.parametrize("zone_id, flag, message", [
+    ("gs_parkplatz_klubgartenstrasse_zob", pd.NA, "resident_permits_valid must be false"),
+    ("gs_parkplatz_klubgartenstrasse_zob", True, "resident_permits_valid must be false"),
+    ("bs_bga_willy_brandt_platz", pd.NA, "resident_permits_valid must be false"),
+    ("gs_parkplatz_baeringerstrasse", False, "resident_permits_valid must stay empty"),
+    ("bh_kurpark", True, "resident_permits_valid must stay empty"),
+], ids=["zob_flag_empty", "zob_flag_true", "bga_flag_empty", "goslar_lot_with_a_resident_district_flagged", "bad_harzburg_flagged"])
+def test_the_permit_flag_is_false_exactly_where_no_source_states_that_permits_are_valid(regional, release, zone_id, flag,
+                                                                                       message):
+    evidence = regional.tariff_evidence(release["package"])
+    table = _tariff_rows(evidence, regional.F1_WINDOWS)
+    table["resident_permits_valid"] = table["resident_permits_valid"].astype(object)
+    table.loc[table["zone_id"] == zone_id, "resident_permits_valid"] = flag
+    table["resident_permits_valid"] = table["resident_permits_valid"].astype("boolean")
+    with pytest.raises(SystemExit, match=message):
+        regional.check_tariff_rows(evidence, table)
+
+
 def test_a_missing_tariff_row_is_reported(regional, release):
     evidence = regional.tariff_evidence(release["package"])
     table = _tariff_rows(evidence, regional.F1_WINDOWS)
@@ -749,9 +899,10 @@ def test_the_release_is_valid_as_written_and_its_zones_do_not_overlap(release):
     zones = release["loaded"]
     pz.validate_zone_polygons(zones)  # pairwise overlap <= 1 m2, valid polygons
     assert set(zones["geometry_source"]) == {"ordinance_map", "campus_detection_zones", "centre_approximation",
-                                             "single_site_buffered"}
+                                             "campus_outline_and_detection_zones", "single_site_buffered"}
+    campus_sources = ("campus_detection_zones", "campus_outline_and_detection_zones")
     tariffs = pd.DataFrame({"zone_id": zones["zone_id"], "zone_type": [
-        "campus" if source == "campus_detection_zones" else "street_paid" for source in zones["geometry_source"]]})
+        "campus" if source in campus_sources else "street_paid" for source in zones["geometry_source"]]})
     pz.validate_geometry_source_zone_types(zones, tariffs)
 
 
@@ -761,6 +912,12 @@ def test_release_licence_names_the_regional_sources(release):
     for wording in ("Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22); open reuse licence not verified; "
                     "used by owner decision 2026-10-07",
                     "explicit consent for reuse of TU graphics not obtained; used by owner decision 2026-10-07",
+                    # the campus grounds of the TU zones are OSM outlines (ODbL), the detection zones TU map graphics
+                    "the geometry_source campus_outline_and_detection_zones TU campus zones: the campus grounds are "
+                    "(c) OpenStreetMap contributors, ODbL 1.0 (the OSM university outlines and the OSM car parks at the "
+                    "International House of the v1 release)",
+                    "the geometry_source campus_detection_zones zone tu_campus_volkmaroder_strasse: TU Braunschweig, GB3 "
+                    "Parkbereiche campus maps",
                     "Stadt Braunschweig, Amtsblatt 2022 Nr. 16 (annex maps of the BgA Entgeltordnung B 660); digitised "
                     "(owner-supplied package 2026-10-07); working accuracy 5 m; base map Open GeoData dl-de/by-2-0"):
         assert wording in document["license"]
@@ -816,19 +973,34 @@ def test_qa_table_compares_the_new_polygons_and_records_every_cut(release):
     assert "bs_bga_willy_brandt_platz_release_vs_v1" not in qa.index  # a new zone has no v1 polygon
     assert numbers("bs_bga_kannengiesserstrasse_v1_vs_abandoned_lot") == pytest.approx((2000.0, 1600.0, 1600.0), rel=1e-6)
     assert "pocket park" in qa.loc["bs_bga_kannengiesserstrasse_v1_vs_abandoned_lot", "note"]
-    # campus zones: against the detection zones, the v1 polygon and the yellow parking areas
-    union = unary_union([geometry for _, geometry, _ in CAMPUS_POLYGONS["Zentralcampus"]])
-    # a campus takes precedence over the street zone Ib it overlaps, so nothing is cut from it: release = union
+    # campus zones (ruling R-4a-8): the release is the union of the campus grounds (the v1 release polygon, 80,000 m2 in
+    # the synthetic Zentralcampus) and the detection zones (60,000 m2, of which 30,000 m2 lie inside the grounds); a
+    # campus takes precedence over the street zone Ib it overlaps, so nothing is cut from it
     assert numbers("tu_zentralcampus_release_vs_detection_zones") == pytest.approx(
-        (union.area, union.area, union.area), rel=SIMPLIFIED_BUFFER)
+        (110_000.0, 60_000.0, 60_000.0), rel=SIMPLIFIED_BUFFER)
     assert (qa.loc["tu_zentralcampus_release_vs_detection_zones", "reference_features"],
             qa.loc["tu_zentralcampus_release_vs_detection_zones", "reference_features_overlapping"]) == ("3", "3")
-    assert numbers("tu_zentralcampus_release_vs_v1")[2] == pytest.approx(  # the v1 centre approximation holds Z1 only
-        _box(1250, 100, 1450, 300).intersection(_box(1200, 0, 1500, 400)).area, rel=SIMPLIFIED_BUFFER)
-    # the synthetic yellow area of Campus Nord lies half outside the campus: the cross-check reports the conflict
-    assert float(qa.loc["tu_campus_nord_yellow_areas_in_release", "subject_share_in_reference"]) == pytest.approx(0.5, abs=1e-3)
-    assert float(qa.loc["tu_zentralcampus_yellow_areas_in_release", "subject_share_in_reference"]) == pytest.approx(1.0, abs=1e-4)
-    assert qa.loc["tu_campus_nord_yellow_areas_in_release", "release_zone_id"] == ""
+    assert float(qa.loc["tu_zentralcampus_release_vs_detection_zones", "reference_share_in_subject"]) == pytest.approx(
+        1.0, abs=1e-3)  # every detection zone lies in the release
+    assert numbers("tu_zentralcampus_release_vs_campus_grounds") == pytest.approx(
+        (110_000.0, 80_000.0, 80_000.0), rel=SIMPLIFIED_BUFFER)
+    assert float(qa.loc["tu_zentralcampus_release_vs_campus_grounds", "reference_share_in_subject"]) == pytest.approx(
+        1.0, abs=1e-3)  # the whole grounds lie in the release
+    assert numbers("tu_zentralcampus_detection_zones_vs_campus_grounds") == pytest.approx(
+        (60_000.0, 80_000.0, 30_000.0), rel=SIMPLIFIED_BUFFER)
+    assert qa.loc["tu_zentralcampus_release_vs_campus_grounds", "release_zone_id"] == "tu_zentralcampus"
+    assert qa.loc["tu_zentralcampus_detection_zones_vs_campus_grounds", "release_zone_id"] == ""
+    assert "tu_zentralcampus_release_vs_v1" not in qa.index and "tu_zentralcampus_yellow_areas_in_release" not in qa.index
+    # Volkmaroder Strasse has no campus grounds: no row compares it with any
+    assert "tu_campus_volkmaroder_strasse_release_vs_detection_zones" in qa.index
+    assert not any(row_id.startswith("tu_campus_volkmaroder_strasse") and "grounds" in row_id for row_id in qa.index)
+    # the synthetic yellow area of Campus Nord lies half outside its detection zones: the cross-check of the georeference
+    # (the yellow parking areas of a map should lie inside the detection zones of the same map) reports the conflict
+    assert float(qa.loc["tu_campus_nord_yellow_areas_in_detection_zones", "subject_share_in_reference"]) == pytest.approx(
+        0.5, abs=1e-3)
+    assert float(qa.loc["tu_zentralcampus_yellow_areas_in_detection_zones", "subject_share_in_reference"]) == pytest.approx(
+        1.0, abs=1e-4)
+    assert qa.loc["tu_campus_nord_yellow_areas_in_detection_zones", "release_zone_id"] == ""
     nested = qa.loc["tu_campus_ost_beethovenstrasse_nested_boundaries"]
     assert float(nested["subject_area_m2"]) == pytest.approx(10_000.0) and float(nested["subject_share_in_reference"]) == 1.0
     assert qa.loc["tu_bevenroder_strasse_detection_zone_not_zoned", "overlap_area_m2"] == "0.0"

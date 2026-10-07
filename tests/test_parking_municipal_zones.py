@@ -359,12 +359,12 @@ def test_every_polygon_of_the_municipal_and_regional_sources_needs_rows_in_the_m
     # camera detection zones and the single-site buffers are compared with their references in this table, so a
     # release cannot hold one of them without rows
     zones = pd.DataFrame({
-        "zone_id": ["a_sections", "b_flag", "c_campus", "d_site", "e_plain", "f_other_campus"],
+        "zone_id": ["a_sections", "b_flag", "c_campus", "d_site", "e_plain", "f_other_campus", "g_campus_outline"],
         "geometry_source": [pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, "ordinance_map", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
                             pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "centre_approximation",
-                            "centre_approximation"],
-        "reconstructed_section_m2": [None, 1000.0, None, None, None, None]})
-    assert mq.municipal_zone_ids(zones) == ["a_sections", "b_flag", "c_campus", "d_site"]
+                            "centre_approximation", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE],
+        "reconstructed_section_m2": [None, 1000.0, None, None, None, None, None]})
+    assert mq.municipal_zone_ids(zones) == ["a_sections", "b_flag", "c_campus", "d_site", "g_campus_outline"]
 
 
 def _stale(qa: pd.DataFrame) -> pd.DataFrame:

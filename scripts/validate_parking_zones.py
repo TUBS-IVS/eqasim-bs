@@ -27,9 +27,9 @@ present, the release of the classified cells (``--paid-share-path``, ``parking_p
 always required: ``braunschweig.parking.zones.load_resident_districts`` (valid as stored, never repaired: unique ids,
 no overlap) and ``validate_district_municipalities`` (every district municipality has a register status row), without
 the test-set marker. Since spec Amendment D the zone polygons of the regional evidence package of 2026-10-07 are checked
-as well: ``campus_detection_zones`` polygons must be ``campus`` zones, ``single_site_buffered`` polygons ``street_paid``
-zones with a positive ``site_buffer_m`` (``braunschweig.parking.zones.validate_geometry_source_zone_types``), and both
-need rows in the municipal QA table. Prints counts per zone type, geometry source (with the area mix), fee-window source and
+as well: ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` polygons must be ``campus`` zones,
+``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m``
+(``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table. Prints counts per zone type, geometry source (with the area mix), fee-window source and
 municipality, the register status counts, the QA decisions, the H1 and H2 results, the municipal QA rows and the
 districts per municipality; exits 1 on any violation, 0 otherwise.
 

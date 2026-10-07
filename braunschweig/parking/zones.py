@@ -34,10 +34,12 @@ Polygons built from a municipality's published paid street sections (spec Amendm
 (``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source reconstructs from an older
 map (spec Amendment C1); the municipal QA table is checked by ``municipal_zone_qa.validate_municipal_qa``. The regional
 evidence package of 2026-10-07 (spec Amendment D, the curation step ``scripts/curation/parking_zones_2026/
-regional_zones.py``) adds two sources: ``campus_detection_zones`` (a campus zone is the union of the camera detection
-zones of its campus map; a digitisation, so no rule parameter) and ``single_site_buffered`` (a single paid car park or
-street section is a zone of its own, the area within ``site_buffer_m`` of it, ``SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS``);
-``validate_geometry_source_zone_types`` pairs each with the zone type it describes, and both are compared with their
+regional_zones.py``) adds three sources: ``campus_outline_and_detection_zones`` (a campus zone is the union of the campus
+grounds, an OSM university outline of the v1 release, and the camera detection zones of its campus map, ruling R-4a-8;
+a digitisation, so no rule parameter), ``campus_detection_zones`` (the same without an outline of the grounds: the
+detection zones alone) and ``single_site_buffered`` (a single paid car park or street section is a zone of its own,
+the area within ``site_buffer_m`` of it, ``SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS``);
+``validate_geometry_source_zone_types`` pairs each with the zone type it describes, and all are compared with their
 references in the same municipal QA table.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
@@ -153,18 +155,25 @@ SUPPLY_MAJORITY_GEOMETRY_SOURCE = "osm_supply_majority"
 #: sections a municipality publishes for one tariff zone, split by the nearer section where the areas of two tariff
 #: zones overlap (ties to the higher tariff).
 MUNICIPAL_SECTIONS_GEOMETRY_SOURCE = "municipal_street_sections_buffered"
-#: Campus unions of v2 spec Amendment D1: the union per campus of the red camera detection zones that the campus maps of
-#: the university's parking pages draw (TU Braunschweig); the zones include buildings, the intended destination area.
+#: Campus zone of v2 spec Amendment D1 where no outline of the campus grounds exists: the union per campus of the red
+#: camera detection zones that the campus maps of the university's parking pages draw (TU Braunschweig). They mark the
+#: paid car parks, where the tickets are checked; the zone carries no outline of the buildings.
 CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE = "campus_detection_zones"
+#: Campus zone of v2 spec Amendment D1 as decided in ruling R-4a-8 (owner decision of 2026-10-07): the union of the
+#: campus grounds (an OpenStreetMap university outline of the v1 release, the destination area where the buildings are)
+#: and the camera detection zones of the campus (the paid car parks).
+CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE = "campus_outline_and_detection_zones"
 #: Single paid sites of v2 spec Amendment D3: the area within ``site_buffer_m`` of one paid car park (its polygon, or its
 #: source point where no polygon exists) or paid street section of a municipality that publishes no zone map
 #: (ASSUMPTION C-a, as for the Wolfsburg sections).
 SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE = "single_site_buffered"
 GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
                     EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE, MUNICIPAL_SECTIONS_GEOMETRY_SOURCE,
-                    CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE)
+                    CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
+                    SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE)
 #: The zone type each of the Amendment D geometry sources describes (``validate_geometry_source_zone_types``).
 GEOMETRY_SOURCE_ZONE_TYPES = {CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
+                              CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
                               SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: "street_paid"}
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
@@ -625,7 +634,8 @@ def load_zone_polygons(path, *, max_repairs: Optional[int] = None) -> gpd.GeoDat
     ``osm_supply_majority`` a positive ``supply_walk_m``, ``paid_share_threshold`` in (0, 1] and
     ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ';
     ``municipal_street_sections_buffered`` a positive ``section_buffer_m``, ``single_site_buffered`` a positive
-    ``site_buffer_m``), which every other polygon leaves empty; ``campus_detection_zones`` takes none. The optional
+    ``site_buffer_m``), which every other polygon leaves empty; ``campus_detection_zones`` and
+    ``campus_outline_and_detection_zones`` take none. The optional
     ``reconstructed_section_m2`` lies between 0 and the polygon's area. Other properties are kept as they are.
     """
     path = Path(path)
@@ -723,7 +733,8 @@ def cross_validate(zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> None:
 def validate_geometry_source_zone_types(zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> None:
     """The polygons of the Amendment D geometry sources have the tariff rows of the zone type the source describes.
 
-    ``campus_detection_zones`` zones are ``campus`` zones (the TU campus maps), ``single_site_buffered`` zones are
+    ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` zones are ``campus`` zones (the TU campus
+    maps), ``single_site_buffered`` zones are
     ``street_paid`` zones (a single paid car park or street section); a polygon of such a source whose tariff row has
     another type, or has no row, raises ``ValueError`` naming the zones and their types
     (``GEOMETRY_SOURCE_ZONE_TYPES``). Call it after ``cross_validate``, which pairs polygons and rows.

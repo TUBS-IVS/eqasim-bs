@@ -14,11 +14,16 @@ the step logs how many features it used, dropped (with the reason) and repaired 
   Amtsblatt der Stadt Braunschweig Nr. 16 of 2022; working uncertainty about 5 m) replace the OSM-derived polygons of
   the four lots that stay and add ``bs_bga_willy_brandt_platz``; ``bs_bga_kannengiesserstrasse`` is removed (a pocket
   park since April 2026, layer ``referenz_bs_aufgegeben`` keeps the historical outline as a reference).
-* D1, ``campus_zones``: one TU campus zone per campus of layer ``tu_kamera_detektionszonen``, the UNION of the red
-  camera detection zones of its campus map (they include buildings, the intended destination area). A campus joins the
-  release only where the GB3 pages state ticketing (``TU_CAMPUSES``; Bevenroder Strasse is dropped and logged); the
-  International House zone of v1 is merged into the Langer Kamp campus, whose map holds its two detection zones. Nested
-  boundaries (Beethovenstrasse) use the outer boundary, which the union of nested polygons is, and are recorded.
+* D1, ``campus_zones`` (ruling R-4a-8, owner decision of 2026-10-07): one TU campus zone per campus of layer
+  ``tu_kamera_detektionszonen``, the UNION of the campus grounds of the v1 release (an OSM amenity=university outline: the
+  destination area, where the buildings and so the activities are; the International House zone of v1, two TU car parks,
+  is merged into the Langer Kamp campus) and the red camera detection zones of its campus map (the paid car parks, where
+  the tickets are checked; the layer states they are no parking footprints, and they do not contain the buildings). The
+  grounds are the v1 RELEASE polygons, so they never take area from a street zone; the detection zones win over the street
+  zones (ruling R-4a-1). A campus joins the release only where the GB3 pages state ticketing (``TU_CAMPUSES``; Bevenroder
+  Strasse is dropped and logged). Volkmaroder Strasse has no v1 zone and no OSM university outline at the site (``TU_NO_
+  GROUNDS``): its zone is the detection zone alone. Nested boundaries (Beethovenstrasse) use the outer boundary, which the
+  union of nested polygons is, and are recorded.
 * D3, ``single_sites``: each paid car park (its polygon, or its source point where no polygon exists) or paid street
   section of Bad Harzburg, Seesen, Braunlage and Goslar (the three 1 EUR/h car parks, ruling R-D3-a) is a zone of its
   own, the area within ``SITE_BUFFER_M`` of it (ASSUMPTION C-a, as for the Wolfsburg sections; a point is a navigation
@@ -36,7 +41,6 @@ from __future__ import annotations
 
 import json
 import math
-import sys
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -47,10 +51,6 @@ from shapely.ops import unary_union
 
 import curation_common as cc
 import municipal_zones as mz
-
-# The script runs from its own directory (curation_common); the repository root holds the braunschweig package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from braunschweig.parking import zones as pz  # noqa: E402
 
 REGIONAL_DIGITISED_ON = "2026-10-07"
 PACKAGE_NAME = "Regional_Parkdaten_Belege_2026-10-07"
@@ -95,6 +95,9 @@ GOSLAR_PROVENANCE = ("Stadt Goslar, ArcGIS service Bewohnerparken (last edit 201
 OSM_SITES_PROVENANCE = ("(c) OpenStreetMap contributors, ODbL 1.0: the outlines of the Bad Harzburg car parks and the "
                         "street Am Markt in Seesen")
 BRAUNLAGE_PROVENANCE = ("Stadt Braunlage, official tourism coordinates of the car parks (source points, not outlines)")
+#: The campus grounds of the TU zones (ruling R-4a-8) are the OSM outlines of the v1 release.
+TU_GROUNDS_PROVENANCE = ("(c) OpenStreetMap contributors, ODbL 1.0 (the OSM university outlines and the OSM car parks at "
+                         "the International House of the v1 release)")
 
 # ---------------------------------------------------------------- zones of the step
 BGA_ABANDONED_ZONE = "bs_bga_kannengiesserstrasse"
@@ -120,6 +123,29 @@ TU_ZONE_IDS = tuple(zone_id for zone_id, _ in TU_CAMPUSES.values())
 #: v1 zones that the step removes, with the zone that takes over their area.
 TU_MERGED_ZONE = "tu_international_house"
 TU_MERGED_INTO = "tu_campus_ost_langer_kamp"
+#: Campus zone id -> the v1 zones whose RELEASE polygons are its campus grounds (ruling R-4a-8: the OSM amenity=university
+#: outlines of the v1 release, for Langer Kamp with the two TU car parks at the International House). Volkmaroder Strasse
+#: has none.
+TU_GROUNDS = {
+    "tu_zentralcampus": ("tu_zentralcampus",),
+    "tu_campus_nord": ("tu_campus_nord",),
+    "tu_campus_ost_beethovenstrasse": ("tu_campus_ost_beethovenstrasse",),
+    "tu_campus_ost_langer_kamp": ("tu_campus_ost_langer_kamp", TU_MERGED_ZONE),
+    "tu_forschungsflughafen": ("tu_forschungsflughafen",),
+}
+TU_GROUND_ZONE_IDS = tuple(dict.fromkeys(zone_id for zone_ids in TU_GROUNDS.values() for zone_id in zone_ids))
+#: Why a ticketed campus has no campus grounds (a finding of the curation, checked on 2026-10-07).
+TU_NO_GROUNDS = {
+    "tu_campus_volkmaroder_strasse": (
+        "the v1 release holds no zone for this site, and no OSM amenity=university outline lies there (checked on "
+        "2026-10-07: the v1 Overpass response of Braunschweig, OSM base 2026-09-29T05:10Z, holds 21 amenity=university "
+        "features, the nearest outline 1.1 km from the detection zone; the pinned Geofabrik extract "
+        "niedersachsen-260929, OSM snapshot 2026-09-29T20:22:51Z, holds 6 amenity=university multipolygons in a box of "
+        "4 km around the detection zone, the nearest one 1.1 km away), so the zone is the detection zone alone"),
+}
+#: The closing remark of the v1 note of a TU zone, which the detection zones supersede: the v1 outline is no longer the
+#: approximation of an area 'inside' which the detection zones lie, it is the campus grounds that the zone keeps.
+V1_CAMPUS_REMARK = " The outline approximates the campus whose TU car parks are ticketed"
 #: The TU GB3 page that states which campuses are ticketed (retrieved 2026-09-29).
 TU_PAGE_URL = "https://www.tu-braunschweig.de/gb3/parkraumbewirtschaftung"
 NESTED_CAMPUS = "Beethovenstrasse"
@@ -165,7 +191,6 @@ BAD_HARZBURG_PAGE_URL = "https://www.bad-harzburg.de/service/parkmoeglichkeiten"
 SEESEN_PAGE_URL = ("https://www.stadtverwaltung-seesen.de/B%C3%BCrger/Rathaus/A-Z-Dienstleistungen/Parken-in-Seesen.php"
                    "?FID=235.166.1&ModID=10")
 GOSLAR_SERVICE_URL = "https://www.meingoslar.de/service"
-GOSLAR_FEATURE_LAYER_URL = "https://services3.arcgis.com/X0EQlGp2g40JN62M/arcgis/rest/services/Bewohnerparken/FeatureServer/6"
 
 #: A zone whose outline lies in another municipality than its tariff row names, with the reason; the assembly then
 #: requires the zone to lie inside the two municipalities together (``assemble_parking_zones.
@@ -194,6 +219,10 @@ F1_WINDOWS = {
 #: city's ParkGO (sec. 1(2)); the service page states the rate per hour and no unit.
 GOSLAR_LOT_BILLING_UNIT_MIN = 30
 BGA_BILLING_UNIT_MIN = 1
+#: ASSUMPTION R2-a: the new rows whose ``resident_permits_valid`` is false, because no source states that resident permits
+#: are valid there (the logic of the separately operated BgA car parks); every other new row leaves the cell empty, the
+#: default of its zone type (valid on streets).
+RESIDENT_PERMITS_NOT_VALID = ("bs_bga_willy_brandt_platz", "gs_parkplatz_klubgartenstrasse_zob")
 
 
 # ---------------------------------------------------------------- package
@@ -271,6 +300,12 @@ def _check_attributes(layers: dict) -> None:
     if unexpected:
         raise SystemExit(f"vier_staedte_parking_areas holds record(s) {unexpected} that are neither a zone nor listed in "
                          "AREAS_NOT_ZONED with a reason")
+    for layer, columns in (("vier_staedte_parking_areas", ("max_stay_minutes", "osm_tags_json")),
+                           ("vier_staedte_street_references", ("max_stay_ordinance_minutes", "max_stay_webpage_minutes"))):
+        absent = [column for column in columns if column not in layers[layer].columns]
+        if absent:
+            raise SystemExit(f"{layer} lacks the column(s) {absent}, which the notes of the tariff rows are checked "
+                             "against (stated maximum stays, OSM charge tags)")
     street = _by_key(layers["vier_staedte_street_references"], "record_id")
     if list(street.index) != ["se_am_markt"] or street["fee_status"].iloc[0] != "paid":
         raise SystemExit(f"vier_staedte_street_references must hold the paid street se_am_markt, found {list(street.index)}")
@@ -370,17 +405,36 @@ def bga_zones(package: dict) -> dict:
 
 
 # ---------------------------------------------------------------- D1: TU campus zones
-def campus_zones(package: dict) -> dict:
-    """campus zone id -> {"geometry" (union of the detection zones of the campus), "campus", "features", "map",
-    "nested", "note"}, one per campus of ``TU_CAMPUSES``; campuses of ``TU_NOT_ZONED`` are dropped and logged (D1)."""
+def _ground_provenance(note: str) -> str:
+    """The v1 provenance of a campus outline: the v1 note up to its closing remark about the detection zones
+    (``V1_CAMPUS_REMARK``), which the detection zones of the package supersede."""
+    return note.partition(V1_CAMPUS_REMARK)[0].rstrip().rstrip(".")
+
+
+def campus_zones(package: dict, grounds: dict) -> dict:
+    """campus zone id -> {"geometry" (the union of the campus grounds and the detection zones), "grounds" (the union of
+    the v1 release polygons of the campus grounds, None for a campus without), "detection" (the union of the detection
+    zones), "campus", "features", "parts", "map", "nested", "source_url", "note"}, one per campus of ``TU_CAMPUSES``;
+    campuses of ``TU_NOT_ZONED`` are dropped and logged (D1).
+
+    ``grounds`` maps the id of every v1 zone of ``TU_GROUNDS`` to {"geometry" (its v1 RELEASE polygon, so a v1 outline
+    never takes area from a street zone), "note" (its v1 digitising note)}; a missing v1 zone raises. A campus of
+    ``TU_GROUNDS`` is the union of its grounds and its detection zones (ruling R-4a-8); a campus without grounds
+    (``TU_NO_GROUNDS``) is its detection zone alone."""
     sha = package["file"]["sha256"]
     detection = package["detection"]
+    missing = sorted(set(TU_GROUND_ZONE_IDS) - set(grounds))
+    if missing:
+        raise SystemExit(f"the campus zones need the v1 release polygons of {missing} as campus grounds")
     zones, dropped, used = {}, {}, []
     for campus, (zone_id, statement) in TU_CAMPUSES.items():
         group = detection[detection["campus_ascii"] == campus]
-        union = unary_union(list(group.geometry))
+        detection_union = unary_union(list(group.geometry))
         ids = ", ".join(sorted(group["feature_id"].astype(str)))
-        parts = len(getattr(union, "geoms", [union]))
+        ground_ids = TU_GROUNDS.get(zone_id, ())
+        ground_union = unary_union([grounds[ground_id]["geometry"] for ground_id in ground_ids]) if ground_ids else None
+        union = detection_union if ground_union is None else unary_union([ground_union, detection_union])
+        parts = len(getattr(detection_union, "geoms", [detection_union]))
         nested = ""
         if campus == NESTED_CAMPUS:
             flagged = group[group["nested_boundary_semantics"].notna()]
@@ -394,27 +448,43 @@ def campus_zones(package: dict) -> dict:
                         "say whether the inner outline excludes an area or marks a zone of its own, so the OUTER "
                         "boundary is used (spec Amendment D1) and the inner area belongs to the zone.")
         source_map = str(group["source_file"].iloc[0])
+        detection_text = (
+            f"the union of the {len(group)} red camera detection zone(s) {ids} of the campus map {source_map} (image "
+            f"SHA-256 {group['source_sha256'].iloc[0]}, GB3 page Parkbereiche, retrieved "
+            f"{str(group['source_retrieved_at'].iloc[0])[:10]}, page verified {str(group['page_verified_at'].iloc[0])[:10]}), "
+            f"layer tu_kamera_detektionszonen of the package {PACKAGE_FILE} (SHA-256 {sha}); {parts} part(s), "
+            f"{detection_union.area:.0f} m2")
+        outline_text = (
+            "The detection outlines are traced manually along the red lines in source pixels and mapped by the unchanged "
+            "affine matrix of the TU package (fit residuals 5.7-16.1 m, a consistency measure, not an accuracy; "
+            "'approximate; schematic source; deviations of several tens of metres possible'); entrance gaps are closed "
+            "straight. They are camera detection zones (layer attribute parking_footprint false), not building outlines. ")
+        if ground_union is None:
+            body = (f": the paid car parks, where the tickets are checked, alone: {detection_text}. The zone has no campus "
+                    f"grounds: {TU_NO_GROUNDS[zone_id]}. {outline_text}")
+        else:
+            provenance = " / ".join(f"{ground_id}: {_ground_provenance(grounds[ground_id]['note'])}"
+                                    for ground_id in ground_ids)
+            inside = detection_union.intersection(ground_union).area / detection_union.area
+            body = (f" (ruling R-4a-8, owner decision 2026-10-07): the union of the campus grounds and the paid car parks. "
+                    f"CAMPUS GROUNDS, the destination area, where the buildings and so the activities are "
+                    f"({ground_union.area:.0f} m2): the release polygon{'s' if len(ground_ids) > 1 else ''} of the v1 "
+                    f"zone{'s' if len(ground_ids) > 1 else ''} {', '.join(ground_ids)}, kept with the v1 provenance "
+                    f"({provenance}). PAID CAR PARKS, where the tickets are checked: {detection_text}; "
+                    f"{100.0 * inside:.1f} % of them lie inside the campus grounds. {outline_text}"
+                    f"The union is {union.area:.0f} m2 before the cuts and the simplification. ")
         zones[zone_id] = {
-            "geometry": union, "campus": campus, "features": list(group["feature_id"].astype(str)), "parts": parts,
-            "map": source_map, "nested": nested, "source_url": str(group["source_url"].iloc[0]),
-            "note": (f"{TU_PROVENANCE}. Campus '{campus}': the union of the {len(group)} red camera detection zone(s) "
-                     f"{ids} of the campus map {source_map} (image SHA-256 {group['source_sha256'].iloc[0]}, GB3 page "
-                     f"Parkbereiche, retrieved {str(group['source_retrieved_at'].iloc[0])[:10]}, page verified "
-                     f"{str(group['page_verified_at'].iloc[0])[:10]}), layer tu_kamera_detektionszonen of the package "
-                     f"{PACKAGE_FILE} (SHA-256 {sha}); {parts} part(s), {union.area:.0f} m2. The outlines are "
-                     "traced manually along the red lines in source pixels and mapped by the unchanged affine matrix "
-                     "of the TU package (fit residuals 5.7-16.1 m, a consistency measure, not an accuracy; "
-                     "'approximate; schematic source; deviations of several tens of metres possible'); entrance gaps "
-                     "are closed straight. They are detection zones, not parking footprints: they include buildings, "
-                     "which is the intended destination area. Ticketed per the GB3 page "
-                     f"{TU_PAGE_URL}: {statement}.{nested}")}
+            "geometry": union, "grounds": ground_union, "detection": detection_union, "campus": campus,
+            "features": list(group["feature_id"].astype(str)), "parts": parts, "map": source_map, "nested": nested,
+            "source_url": str(group["source_url"].iloc[0]),
+            "note": f"{TU_PROVENANCE}. Campus '{campus}'{body}Ticketed per the GB3 page {TU_PAGE_URL}: {statement}.{nested}"}
         used += list(group["feature_id"].astype(str))
     for campus, reason in TU_NOT_ZONED.items():
         group = detection[detection["campus_ascii"] == campus]
         for feature_id in group["feature_id"].astype(str):
             dropped[feature_id] = f"{campus}: {reason}"
     _log(package, "tu_kamera_detektionszonen", len(detection), used, dropped,
-         f"{len(TU_CAMPUSES)} campus unions")
+         f"{len(TU_CAMPUSES)} campus zones ({len(TU_GROUNDS)} united with their campus grounds)")
     # The yellow parking areas are no zone geometry (activities sit at buildings): no feature is used and none is dropped
     # for a defect; the layer is read as a QA cross-check of the georeference only.
     _log(package, "tu_kartenflaechen", len(package["yellow"]), [], {},
@@ -444,7 +514,7 @@ def single_sites(package: dict) -> dict:
         row = layer_frames[spec["layer"]].loc[spec["key"]]
         geometry = row.geometry
         kind = _site_kind(geometry)
-        head = (f"Single paid site (spec Amendment D3): ")
+        head = "Single paid site (spec Amendment D3): "
         if spec["layer"] == "gos_1eur_parkplatzflaechen":
             source_url = GOSLAR_SERVICE_URL
             body = (f"the car park '{_ascii(row['name'])}' ({_ascii(row['navigation_address'])}, "
@@ -568,11 +638,44 @@ def _hourly_rate(rule: dict) -> float:
     return round(amount / unit * 60.0, 6)
 
 
+def _note_evidence(package: dict, zone_id: str, rules: list) -> dict:
+    """What the note of a new row must say beyond its numbers (checked by ``check_tariff_rows``): ``assumptions`` (the
+    ids it must name: C-a for every single site, D3-a for the Goslar lots, D3-b for the Bad Harzburg ceiling, M2 where a
+    source states a maximum stay that the row does not model, R2-a where the permit flag is set or a Goslar district
+    can act), ``max_stay_stated_min`` (the stated maximum stays in minutes: the Bad Harzburg and Seesen sources),
+    ``unpreferred_rule`` (the rule the row rests on although the package marks it not preferred for current use) and
+    ``osm_charge`` (the OSM ``charge`` tag of a Bad Harzburg car park, the corroboration of the ceiling, None where it
+    has none)."""
+    assumptions = ["C-a"] if zone_id in D3_ZONE_IDS else []
+    if zone_id.startswith("gs_"):
+        assumptions.append("D3-a")
+    if zone_id.startswith("bh_"):
+        assumptions.append("D3-b")
+    stays, osm_charge = [], None
+    if zone_id.startswith("bh_"):
+        row = package["areas"].loc[zone_id]
+        stays = [int(row["max_stay_minutes"])] if pd.notna(row["max_stay_minutes"]) else []
+        charges = {str(tags["charge"]) for tags in json.loads(row["osm_tags_json"] or "{}").values() if tags.get("charge")}
+        osm_charge = "; ".join(sorted(charges)) or None
+    elif zone_id == "se_am_markt":
+        row = package["street"].loc[zone_id]
+        stays = sorted({int(row[column]) for column in ("max_stay_ordinance_minutes", "max_stay_webpage_minutes")
+                        if pd.notna(row[column])})
+    if stays:
+        assumptions.append("M2")
+    if zone_id.startswith("gs_") or zone_id in RESIDENT_PERMITS_NOT_VALID:
+        assumptions.append("R2-a")
+    unpreferred = next((rule["rule_id"] for rule in rules if not rule.get("preferred_for_current_use", True)), None)
+    return {"assumptions": assumptions, "max_stay_stated_min": stays, "unpreferred_rule": unpreferred,
+            "osm_charge": osm_charge}
+
+
 def tariff_evidence(package: dict) -> dict:
     """zone id -> the tariff values the package's tariff rules support for the new street rows, and what they leave to
     an assumption. Keys: ``hourly_rate_eur``, ``billing_unit_min``, ``fee_start_h``/``fee_end_h`` (None: the sources
     state no window, ASSUMPTION F1), ``free_if_stay_at_most_min``, ``first_period_min``, ``first_period_eur``,
-    ``daily_cap_eur`` (None where the rules state none), ``rule_ids``, ``billing_basis``.
+    ``daily_cap_eur`` (None where the rules state none), ``rule_ids``, ``billing_basis`` and the keys of
+    ``_note_evidence`` (what the note must say).
 
     BgA Willy-Brandt-Platz: the BgA rule (0.90 EUR per 30 min, minute-exact with phone parking, billing unit 1 as at the
     other BgA lots). Goslar lots: the service page's hourly rate and weekday window per lot; the billing unit is the
@@ -588,7 +691,8 @@ def tariff_evidence(package: dict) -> dict:
                          "rests on it")
     evidence["bs_bga_willy_brandt_platz"] = {
         "hourly_rate_eur": _hourly_rate(rule), "billing_unit_min": BGA_BILLING_UNIT_MIN, "window": _weekday_window(rule),
-        "rule_ids": [rule["rule_id"]], "billing_basis": "Entgeltordnung sec. 2: minute-exact with phone parking"}
+        "rule_ids": [rule["rule_id"]], "billing_basis": "Entgeltordnung sec. 2: minute-exact with phone parking",
+        **_note_evidence(package, "bs_bga_willy_brandt_platz", [rule])}
     for spec in SINGLE_SITES:
         zone_id, rules = spec["zone_id"], [_rule(package, rule_id) for rule_id in spec["rule_ids"]]
         first = rules[0]
@@ -596,22 +700,27 @@ def tariff_evidence(package: dict) -> dict:
             evidence[zone_id] = {"hourly_rate_eur": _hourly_rate(first), "billing_unit_min": GOSLAR_LOT_BILLING_UNIT_MIN,
                                  "window": _weekday_window(first), "rule_ids": [first["rule_id"]],
                                  "billing_basis": "ASSUMPTION D3-a: the ParkGO's started half hour (the service page "
-                                                  f"states {int(first['billing_unit_minutes'])} min and no rounding)"}
+                                                  f"states {int(first['billing_unit_minutes'])} min and no rounding)",
+                                 **_note_evidence(package, zone_id, rules)}
         elif zone_id.startswith("bh_"):
             evidence[zone_id] = {"hourly_rate_eur": _hourly_rate(first), "billing_unit_min": int(first["billing_unit_minutes"]),
                                  "window": None, "rule_ids": [first["rule_id"]],
-                                 "billing_basis": "ParkGO sec. 2(1): per started half hour (the ceiling)"}
+                                 "billing_basis": "ParkGO sec. 2(1): per started half hour (the ceiling)",
+                                 **_note_evidence(package, zone_id, rules)}
         elif zone_id == "se_am_markt":
             evidence[zone_id] = {"hourly_rate_eur": _hourly_rate(first), "billing_unit_min": int(first["billing_unit_minutes"]),
                                  "window": _weekday_window(first), "rule_ids": [first["rule_id"]],
-                                 "billing_basis": "ParkGO sec. 2(1): per started 10 min"}
+                                 "billing_basis": "ParkGO sec. 2(1): per started 10 min",
+                                 **_note_evidence(package, zone_id, rules)}
         elif zone_id == "br_wurmberg":
             evidence[zone_id] = {"hourly_rate_eur": _hourly_rate(first), "billing_unit_min": int(first["billing_unit_minutes"]),
                                  "window": _weekday_window(first), "rule_ids": [first["rule_id"]],
-                                 "billing_basis": "ParkGO of Braunlage: per each started interval of 30 min"}
+                                 "billing_basis": "ParkGO of Braunlage: per each started interval of 30 min",
+                                 **_note_evidence(package, zone_id, rules)}
         else:
             evidence[zone_id] = dict(_band_evidence(rules), window=_weekday_window(first),
-                                     rule_ids=[rule["rule_id"] for rule in rules])
+                                     rule_ids=[rule["rule_id"] for rule in rules],
+                                     **_note_evidence(package, zone_id, rules))
     return evidence
 
 
@@ -659,11 +768,15 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
     """The new street rows of ``tariffs`` carry the package's values: the rate, billing unit, the extra fields of the
     Hexenritt bands (empty where the rules state none), no maximum stay and no long-stay product (ruling R-4a-4), and the
     fee window the rules state with a source other than 'assumption'; where the rules state no window, the F1 window of
-    ``F1_WINDOWS`` with ``fee_window_source`` 'assumption'. Raises ``SystemExit`` listing every deviation; prints how
-    many windows are sourced and how many fall back to ASSUMPTION F1."""
+    ``F1_WINDOWS`` with ``fee_window_source`` 'assumption'. The note of a row names every assumption it rests on
+    (``tariff_evidence``: C-a, D3-a, D3-b, M2, R2-a, and F1 where it has no sourced window), says that the package marks
+    the rule it uses as not preferred where it does, and says what the OSM ``charge`` tag of a Bad Harzburg car park is
+    (the corroboration of the ceiling) or that it has none; the permit flag is false exactly on
+    ``RESIDENT_PERMITS_NOT_VALID`` (ASSUMPTION R2-a) and empty elsewhere. Raises ``SystemExit`` listing every deviation;
+    prints how many windows are sourced and how many fall back to ASSUMPTION F1."""
     f1_windows = F1_WINDOWS if f1_windows is None else f1_windows
     rows = tariffs.set_index("zone_id")
-    problems, sourced, assumed = [], [], []
+    problems, sourced, assumed, corroborated = [], [], [], []
     missing = sorted(set(evidence) - set(rows.index))
     if missing:
         problems.append(f"tariff rows missing for the zones {missing}")
@@ -686,6 +799,31 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
             if pd.notna(row[column]):
                 problems.append(f"{zone_id}: {column} must stay empty (ruling R-4a-4: stays above a stated maximum are "
                                 "priced metered; no source states a long-stay product)")
+        notes = str(row["notes"])
+        for assumption in values["assumptions"]:
+            if f"ASSUMPTION {assumption}" not in notes:
+                problems.append(f"{zone_id}: the note must name ASSUMPTION {assumption}")
+        unpreferred = values["unpreferred_rule"]
+        if unpreferred is not None and (unpreferred not in notes or "not preferred for current use" not in notes):
+            problems.append(f"{zone_id}: the package marks the rule {unpreferred} as not preferred for current use; the "
+                            "note must name the rule and say so")
+        if zone_id.startswith("bh_"):
+            if values["osm_charge"] is not None and f"charge='{values['osm_charge']}'" not in notes:
+                problems.append(f"{zone_id}: the note must quote the OSM tag charge='{values['osm_charge']}' that "
+                                "corroborates the ceiling")
+            if values["osm_charge"] is None and "no charge tag" not in notes:
+                problems.append(f"{zone_id}: the OSM tags hold no charge tag; the note must say that nothing corroborates "
+                                "the ceiling here")
+            if values["osm_charge"] is not None:
+                corroborated.append(zone_id)
+        permits = row["resident_permits_valid"]
+        if zone_id in RESIDENT_PERMITS_NOT_VALID:
+            if pd.isna(permits) or bool(permits):
+                problems.append(f"{zone_id}: resident_permits_valid must be false (ASSUMPTION R2-a: no source states that "
+                                "resident permits are valid there)")
+        elif pd.notna(permits):
+            problems.append(f"{zone_id}: resident_permits_valid must stay empty, the default of the zone type "
+                            "(ASSUMPTION R2-a)")
         if values["window"] is not None:
             sourced.append(zone_id)
             if row["fee_window_source"] == "assumption":
@@ -708,7 +846,9 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
         raise SystemExit("regional tariff rows contradict the package's tariff rules:\n  " + "\n  ".join(problems))
     total = len(sourced) + len(assumed)
     print(f"regional tariff rows agree with the package's rules: fee window sourced {len(sourced)}/{total} "
-          f"({', '.join(sourced) or 'none'}), ASSUMPTION F1 {len(assumed)}/{total} ({', '.join(assumed) or 'none'})")
+          f"({', '.join(sourced) or 'none'}), ASSUMPTION F1 {len(assumed)}/{total} ({', '.join(assumed) or 'none'}); the "
+          f"notes name their assumptions; the OSM charge tag corroborates the Bad Harzburg ceiling at "
+          f"{len(corroborated)}/{sum(1 for zone_id in evidence if zone_id.startswith('bh_'))} car parks")
 
 
 # ---------------------------------------------------------------- QA rows of the municipal QA table
@@ -741,8 +881,9 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame, municipalities: Optional[g
     apply_regional_package``) and the ``release`` as loaded from the written zone file (EPSG:25832).
 
     Per BgA zone: the release polygon against the package polygon and against the v1 polygon it replaces; the removed
-    Kannengiesserstrasse polygon against the abandoned lot; per campus zone: the release against the detection zones,
-    against the v1 centre approximation and the share of the campus map's yellow parking areas inside it, the nested
+    Kannengiesserstrasse polygon against the abandoned lot; per campus zone (ruling R-4a-8): the release against the
+    detection zones and against the campus grounds of the v1 release, the detection zones against the grounds, the
+    share of the campus map's yellow parking areas inside the detection zones (the georeference cross-check), the nested
     boundaries, the merged International House and the dropped Bevenroder detection zone; per single site: the release
     against the 50 m area of its source; every precedence cut that involves one of these zones; and the declared
     municipality exceptions against the municipality polygons (``municipalities``, indexed by AGS).
@@ -775,33 +916,41 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame, municipalities: Optional[g
                          "D1: the lot became a pocket park (opened April 2026; city project page "
                          "ris-pocket-park-kannengiesserstrasse), so the zone is removed; the v1 polygon lay on the "
                          "neighbouring kerbside stalls")))
-    # ---- TU campuses
+    # ---- TU campuses (ruling R-4a-8: the campus grounds of the v1 release united with the detection zones)
     detection, yellow = package["detection"], package["yellow"]
     for zone_id, values in context["campus"].items():
-        union = unary_union(list(detection.loc[detection["campus_ascii"] == values["campus"], "geometry"]))
-        rows.append(_row(f"{zone_id}_release_vs_detection_zones", BS_AGS, f"release polygon {zone_id}",
-                         f"the union of the {len(values['features'])} detection zone(s) of the campus map "
-                         f"{values['map']}", polygons[zone_id], [union],
-                         release_zone_id=zone_id, note=(
-                             "D1: the campus zone is the union of the detection zones, simplified 0.5 m and cut by the "
-                             "zones that take precedence (none expected); reference_features counts the detection "
-                             "zones")))
+        detection_union, ground_union = values["detection"], values["grounds"]
+        maps = f"the union of the {len(values['features'])} detection zone(s) of the campus map {values['map']}"
+        rows.append(_row(f"{zone_id}_release_vs_detection_zones", BS_AGS, f"release polygon {zone_id}", maps,
+                         polygons[zone_id], [detection_union], release_zone_id=zone_id, note=(
+                             "D1: the paid car parks lie in the campus zone, so reference_share_in_subject is 1 up to the "
+                             "0.5 m simplification, and subject_share_in_reference is the part of the campus zone that "
+                             "is detection zone" + ("" if ground_union is not None else " (no campus grounds: the zone "
+                                                    "is the detection zones alone)") + "; reference_features counts "
+                             "the detection zones")))
         rows[-1]["reference_features"] = str(len(values["features"]))
         rows[-1]["reference_features_overlapping"] = str(sum(
             1 for geometry in detection.loc[detection["campus_ascii"] == values["campus"], "geometry"]
             if polygons[zone_id].intersection(geometry).area > 0.0))
-        if zone_id in v1:
-            rows.append(_row(f"{zone_id}_release_vs_v1", BS_AGS, f"release polygon {zone_id}",
-                             f"v1 centre approximation {zone_id} (OSM campus outline, 2026-09-29)", polygons[zone_id],
-                             mz._features(v1[zone_id]), release_zone_id=zone_id, note=(
-                                 "D1: the union of the detection zones replaces the centre approximation (the share of "
-                                 "the release inside it is reference_share_in_subject's counterpart "
-                                 "subject_share_in_reference)")))
+        if ground_union is not None:
+            grounds = (f"the campus grounds: the v1 release polygon(s) of {', '.join(TU_GROUNDS[zone_id])} (OSM "
+                       "amenity=university outline, 2026-09-29)")
+            rows.append(_row(f"{zone_id}_release_vs_campus_grounds", BS_AGS, f"release polygon {zone_id}", grounds,
+                             polygons[zone_id], mz._features(ground_union), release_zone_id=zone_id, note=(
+                                 "R-4a-8: the campus grounds (the destination area, where the buildings are) lie in the "
+                                 "campus zone, so reference_share_in_subject is 1 up to the 0.5 m simplification, and "
+                                 "subject_share_in_reference is the part of the campus zone that is campus grounds")))
+            rows.append(_row(f"{zone_id}_detection_zones_vs_campus_grounds", BS_AGS, maps, grounds, detection_union,
+                             mz._features(ground_union), note=(
+                                 "R-4a-8: subject_share_in_reference is the part of the paid car parks (the detection "
+                                 "zones) that lies inside the campus grounds; the rest extends the campus zone beyond "
+                                 "the grounds")))
         group = yellow[yellow["campus_ascii"] == values["campus"]]
         if len(group):
-            rows.append(_row(f"{zone_id}_yellow_areas_in_release", BS_AGS,
+            rows.append(_row(f"{zone_id}_yellow_areas_in_detection_zones", BS_AGS,
                              f"the {len(group)} yellow parking areas of the campus map (layer tu_kartenflaechen)",
-                             f"release polygon {zone_id}", unary_union(list(group.geometry)), mz._features(polygons[zone_id]),
+                             f"the union of the {len(values['features'])} detection zone(s) of the same map",
+                             unary_union(list(group.geometry)), [detection_union],
                              note=("D1 cross-check of the georeference: the yellow parking areas of the same map should "
                                    f"lie inside the detection zones (subject_share_in_reference >= "
                                    f"{YELLOW_AREAS_CONSISTENCY:.2f}); a deviation would show a georeference conflict")))
@@ -821,11 +970,11 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame, municipalities: Optional[g
         rows.append(_row(f"{TU_MERGED_ZONE}_v1_vs_{TU_MERGED_INTO}", BS_AGS,
                          f"v1 polygon of {TU_MERGED_ZONE} (merged, removed from the release)",
                          f"release polygon {TU_MERGED_INTO}", v1[TU_MERGED_ZONE], mz._features(polygons[TU_MERGED_INTO]),
-                         note=("D1: the car parks at the International House (OSM ways 134220301 and 172658383, "
-                               "buffered 5 m) lie in the two small detection zones west of Brucknerstrasse on the Langer "
-                               "Kamp map, so the campus union replaces the v1 zone; the part of the v1 polygon outside "
-                               "every detection zone is no longer a zone (georeference uncertainty of several tens of "
-                               "metres)")))
+                         note=("D1, R-4a-8: the car parks at the International House (OSM ways 134220301 and "
+                               "172658383, buffered 5 m) are part of the campus grounds of the Langer Kamp zone (the v1 "
+                               "zone is merged into it), so subject_share_in_reference is 1 up to the 0.5 m "
+                               "simplification; the two small detection zones west of Brucknerstrasse on the Langer Kamp "
+                               "map mark them as paid car parks")))
     for campus, reason in TU_NOT_ZONED.items():
         group = detection[detection["campus_ascii"] == campus]
         tu_zones = unary_union([polygons[zone_id] for zone_id in TU_ZONE_IDS if zone_id in polygons])
@@ -876,12 +1025,14 @@ QA_INTRO_SUFFIX = (
     "Spec Amendment D (the regional evidence package of 2026-10-07, scripts/curation/parking_zones_2026/regional_zones.py "
     "via --regional-dir; owner-supplied package under raw_sources/municipal_2026-10-07/, gitignored, SHA-256 in the data "
     "record parking_zones_2026; controller rulings R-4a-1 to R-4a-7). Sources: BgA car parks: " + BGA_PROVENANCE
-    + ". TU campus maps: " + TU_PROVENANCE + ". Goslar car parks at 1 EUR/h: " + GOSLAR_PROVENANCE + ". Bad Harzburg and "
-    "Seesen: " + OSM_SITES_PROVENANCE + ". Braunlage: " + BRAUNLAGE_PROVENANCE + ". D1: every BgA zone and every TU "
-    "campus zone is compared with its package geometry and with the v1 polygon it replaces (the removed zones "
-    "bs_bga_kannengiesserstrasse and tu_international_house with theirs); the yellow parking areas of each campus map "
-    "cross-check the georeference. D3: every single-site zone is compared with the area within 50 m (ASSUMPTION C-a) of "
-    "its source. Every precedence cut that involves a zone of the step is a row <loser>_cut_by_<winner> (R-4a-1), "
+    + ". TU campus zones (ruling R-4a-8), the detection zones of the TU campus maps: " + TU_PROVENANCE + "; the campus "
+    "grounds: " + TU_GROUNDS_PROVENANCE + ". Goslar car parks at 1 EUR/h: " + GOSLAR_PROVENANCE + ". Bad Harzburg and "
+    "Seesen: " + OSM_SITES_PROVENANCE + ". Braunlage: " + BRAUNLAGE_PROVENANCE + ". D1: every BgA zone is compared with "
+    "its package geometry and with the v1 polygon it replaces (the removed zone bs_bga_kannengiesserstrasse with its "
+    "own); every TU campus zone, the union of the campus grounds (the v1 release polygons, the destination area) and the "
+    "camera detection zones (the paid car parks), is compared with both parts and the detection zones with the grounds; "
+    "the yellow parking areas of each campus map cross-check the georeference of its detection zones. D3: every "
+    "single-site zone is compared with the area within 50 m (ASSUMPTION C-a) of its source. Every precedence cut that involves a zone of the step is a row <loser>_cut_by_<winner> (R-4a-1), "
     "measured against the final polygon of the winner. The rows of a declared municipality exception compare the polygon "
     "with the municipality polygons of the pipeline.")
 #: The sentence of the municipal intro that precedes the column list; the regional paragraph goes before it.

@@ -65,26 +65,28 @@ zone file, and the step fails when a polygon of that file would need the loader'
 (``municipal_zones.check_tariff_rows``). The licence and attribution members then name the municipal sources (ruling
 R-C1). Without ``--municipal-dir`` the output is the previous release byte for byte.
 
-Parking cost zones v2, spec Amendment D (the owner's regional evidence package of 2026-10-07, issue #436, rulings
-R-4a-1 to R-4a-7; ``--regional-dir``, the step ``regional_zones.py``, which builds on ``--municipal-dir``): after the
-municipal step and before the precedence, ``apply_regional_package`` (D1) re-derives the four remaining BgA car parks
-from the package layer bs_bga_parkflaechen (geometry_source ordinance_map), adds bs_bga_willy_brandt_platz and removes
-bs_bga_kannengiesserstrasse (a pocket park since April 2026); replaces the six TU campus polygons by the union of the
-red camera detection zones of each campus (geometry_source campus_detection_zones, no provenance column; the nested
-boundaries of Beethovenstrasse are recorded and the outer one is used; the International House zone is merged into
-Langer Kamp; Bevenroder Strasse is not zoned because no GB3 page states ticketing; Volkmaroder Strasse is new); and
-adds the eleven single paid sites of D3 (Bad Harzburg, Seesen, Braunlage and the three Goslar 1 EUR/h car parks,
-geometry_source single_site_buffered, provenance ``site_buffer_m``), each the area within 50 m (ASSUMPTION C-a) of a
-polygon, a street line or a source point, split by the nearer source where two areas overlap, ties to the higher
-tariff. The precedence is ``PRECEDENCE_REGIONAL`` (campus zones first, then the BgA lots, the D3 sites and the v1
-order), ``enforce_exact_cuts`` subtracts every winner once more after the simplification (the 0.5 m simplification of
-a cut zone can move its hole ring back across the winner), ``record_regional_cuts`` stores every cut as a QA row, and
-``check_municipality_containment`` accepts the declared exceptions of ``regional_zones.CONTAINMENT_EXCEPTIONS`` (the
-Bad Harzburg Grossparkplatz straddles the boundary of the unincorporated area Harz). The package is read straight
-from its zip (SHA-256 pinned, an invalid geometry stops the step, nothing is repaired, the per-layer accounting is
-printed); ``--regional-tariffs`` checks the new tariff rows against the package's ``tariff_rules.json``; the QA table
-gets the rows of ``regional_zones.qa_rows``; the licence and attribution members name the regional sources. Without
-``--regional-dir`` the output is the previous release byte for byte.
+Parking cost zones v2, spec Amendment D (the owner's regional evidence package of 2026-10-07, issue #436, rulings R-4a-1
+to R-4a-8; ``--regional-dir``, the step ``regional_zones.py``, which builds on ``--municipal-dir``): after the municipal
+step and before the precedence, ``apply_regional_package`` (D1) re-derives the four remaining BgA car parks from the
+package layer bs_bga_parkflaechen (geometry_source ordinance_map), adds bs_bga_willy_brandt_platz and removes
+bs_bga_kannengiesserstrasse (a pocket park since April 2026); replaces the TU campus polygons by the union of the campus
+grounds (the v1 RELEASE polygons of the OSM university outlines, the destination area; the International House zone is
+merged into the Langer Kamp grounds) and the red camera detection zones of each campus (the paid car parks), ruling
+R-4a-8 (geometry_source campus_outline_and_detection_zones, no provenance column; the nested boundaries of
+Beethovenstrasse are recorded and the outer one is used; Bevenroder Strasse is not zoned because no GB3 page states
+ticketing; Volkmaroder Strasse is new, without a v1 outline: its detection zone alone, geometry_source
+campus_detection_zones); and adds the eleven single paid sites of D3 (Bad Harzburg, Seesen, Braunlage and the three
+Goslar 1 EUR/h car parks, geometry_source single_site_buffered, provenance ``site_buffer_m``), each the area within 50 m
+(ASSUMPTION C-a) of a polygon, a street line or a source point, split by the nearer source where two areas overlap, ties
+to the higher tariff. The precedence is ``PRECEDENCE_REGIONAL`` (campus zones first, then the BgA lots, the D3 sites and
+the v1 order), ``enforce_exact_cuts`` subtracts every winner once more after the simplification (the 0.5 m
+simplification of a cut zone can move its hole ring back across the winner), ``record_regional_cuts`` stores every cut
+as a QA row, and ``check_municipality_containment`` accepts the declared exceptions of
+``regional_zones.CONTAINMENT_EXCEPTIONS`` (the Bad Harzburg Grossparkplatz straddles the boundary of the unincorporated
+area Harz). The package is read straight from its zip (SHA-256 pinned, an invalid geometry stops the step, nothing is
+repaired, the per-layer accounting is printed); ``--regional-tariffs`` checks the new tariff rows against the package's
+``tariff_rules.json``; the QA table gets the rows of ``regional_zones.qa_rows``; the licence and attribution members
+name the regional sources. Without ``--regional-dir`` the output is the previous release byte for byte.
 
 Usage (from the repository root)::
 
@@ -620,13 +622,16 @@ def apply_regional_package(zones: list, package: dict) -> tuple:
     ``package``).
 
     D1: the four BgA lots that stay take the package polygons (geometry_source ordinance_map), ``bs_bga_willy_brandt_
-    platz`` is added after them and ``bs_bga_kannengiesserstrasse`` removed; the six TU campus zones become the union of
-    the detection zones of their campus (geometry_source campus_detection_zones), ``tu_campus_volkmaroder_strasse`` is
-    added after ``tu_forschungsflughafen`` and ``tu_international_house`` is merged into the Langer Kamp campus; D3: the
-    single paid sites become zones of their own (geometry_source single_site_buffered), the Goslar car parks after
-    ``gs_altstadt_zone1``, the other towns at the end. A missing v1 zone raises. Returns (zones, context for ``rz.qa_rows``:
-    the package, the v1 geometries the step replaces or removes, the new geometries, the split of the sites, the zone
-    municipalities and the declared containment exceptions).
+    platz`` is added after them and ``bs_bga_kannengiesserstrasse`` removed; the TU campus zones become the union of the
+    campus grounds, the v1 RELEASE polygons of the OSM outlines (the v1 precedence applied to copies of the records, so
+    a v1 outline never takes area from a street zone; ruling R-4a-8), and the detection zones of their campus
+    (geometry_source campus_outline_and_detection_zones), ``tu_international_house`` being merged into the Langer Kamp
+    grounds; ``tu_campus_volkmaroder_strasse``, which has no v1 outline, is added after ``tu_forschungsflughafen`` as its
+    detection zone alone (geometry_source campus_detection_zones); D3: the single paid sites become zones of their own
+    (geometry_source single_site_buffered), the Goslar car parks after ``gs_altstadt_zone1``, the other towns at the end.
+    A missing v1 zone raises. Returns (zones, context for ``rz.qa_rows``: the package, the v1 geometries the step
+    replaces or removes, the new geometries, the split of the sites, the zone municipalities and the declared
+    containment exceptions).
     """
     by_id = {zone["zone_id"]: zone for zone in zones}
     replaced = list(rz.BGA_ZONE_IDS[:-1]) + [rz.BGA_ABANDONED_ZONE, rz.TU_MERGED_ZONE] + [
@@ -635,7 +640,13 @@ def apply_regional_package(zones: list, package: dict) -> tuple:
     if missing:
         raise SystemExit(f"the regional step needs the v1 zones {missing}")
     v1 = {zone_id: by_id[zone_id]["geometry"] for zone_id in replaced}
-    bga, campus, sites = rz.bga_zones(package), rz.campus_zones(package), rz.single_sites(package)
+    # The campus grounds are the v1 RELEASE polygons (ruling R-4a-8): the v1 precedence on copies of the records, as the
+    # previous release was built, so the street zones keep what v1 gave them.
+    v1_release = {zone["zone_id"]: zone["geometry"]
+                  for zone in apply_precedence([dict(zone) for zone in zones], PRECEDENCE)[0]}
+    grounds = {zone_id: {"geometry": v1_release[zone_id], "note": by_id[zone_id]["digitising_note"]}
+               for zone_id in rz.TU_GROUND_ZONE_IDS}
+    bga, campus, sites = rz.bga_zones(package), rz.campus_zones(package, grounds), rz.single_sites(package)
     evidence = rz.tariff_evidence(package)
     ranking = sorted(sites, key=lambda zone_id: (-evidence[zone_id]["hourly_rate_eur"], zone_id))
     split = rz.split_single_sites({zone_id: site["geometry"] for zone_id, site in sites.items()}, ranking)
@@ -650,9 +661,10 @@ def apply_regional_package(zones: list, package: dict) -> tuple:
 
     def campus_record(zone_id):
         values = campus[zone_id]
-        return zone_record(zone_id, rz.BS_AGS, values["geometry"], pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
-                           values["source_url"], values["note"], source_date=rz.REGIONAL_DIGITISED_ON,
-                           digitised_on=rz.REGIONAL_DIGITISED_ON)
+        source = (pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE if values["grounds"] is None
+                  else pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE)
+        return zone_record(zone_id, rz.BS_AGS, values["geometry"], source, values["source_url"], values["note"],
+                           source_date=rz.REGIONAL_DIGITISED_ON, digitised_on=rz.REGIONAL_DIGITISED_ON)
 
     def site_record(zone_id):
         site = sites[zone_id]
@@ -788,13 +800,17 @@ ATTRIBUTION_MUNICIPAL_SUFFIX = (
 # The municipal suffix above already ends with a full stop, so this one opens with a space only.
 LICENSE_REGIONAL_SUFFIX = (
     " Polygons of the regional evidence package of 2026-10-07 (spec Amendment D), under the terms of their sources: the "
-    "bs_bga_* BgA car parks: " + rz.BGA_PROVENANCE + "; the geometry_source " + pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE
-    + " TU campus zones: " + rz.TU_PROVENANCE + "; the gs_parkplatz_* car parks: " + rz.GOSLAR_PROVENANCE + "; the bh_* "
-    "car parks and se_am_markt: " + rz.OSM_SITES_PROVENANCE + "; the br_* car parks: " + rz.BRAUNLAGE_PROVENANCE + ".")
+    "bs_bga_* BgA car parks: " + rz.BGA_PROVENANCE + "; the geometry_source "
+    + pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE + " TU campus zones: the campus grounds are "
+    + rz.TU_GROUNDS_PROVENANCE + ", united with the camera detection zones of the TU campus maps: " + rz.TU_PROVENANCE
+    + "; the geometry_source " + pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE + " zone tu_campus_volkmaroder_strasse: "
+    + rz.TU_PROVENANCE + "; the gs_parkplatz_* car parks: " + rz.GOSLAR_PROVENANCE + "; the bh_* car parks and "
+    "se_am_markt: " + rz.OSM_SITES_PROVENANCE + "; the br_* car parks: " + rz.BRAUNLAGE_PROVENANCE + ".")
 ATTRIBUTION_REGIONAL_SUFFIX = (
     " Base map of the digitised BgA car parks: Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: dl-de/by-2-0 "
-    "(https://www.govdata.de/dl-de/by-2-0); data changed (georeference of the digitised car parks). TU campus zones: "
-    + rz.TU_PROVENANCE + ". Goslar car parks: " + rz.GOSLAR_PROVENANCE + ".")
+    "(https://www.govdata.de/dl-de/by-2-0); data changed (georeference of the digitised car parks). TU campus zones, "
+    "the camera detection zones: " + rz.TU_PROVENANCE + "; their campus grounds: " + rz.TU_GROUNDS_PROVENANCE
+    + ". Goslar car parks: " + rz.GOSLAR_PROVENANCE + ".")
 
 
 # The municipal wording says the BgA car parks cut out of bs_zone_ia are OSM outlines (v1). With the regional package
