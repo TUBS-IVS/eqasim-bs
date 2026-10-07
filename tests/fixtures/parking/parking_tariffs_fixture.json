@@ -13,11 +13,443 @@
     "ASSUMPTION F1: Fee windows without an ordinance/signage source are marked 'assumption' in the table. Where it bites: Per zone. Sensitivity: documented per row.",
     "ASSUMPTION S1: Each zone has ONE regime; mixed streets are digitised as separate zones or take the dominant regime with a note. Where it bites: Per zone. Sensitivity: notes.",
     "ASSUMPTION P1: A stay pays the cheapest product the driver can use (street, garage, commuter): drivers know the local products. Where it bites: Zones with garage or commuter columns. Sensitivity: leave the garage and commuter columns empty in an arm (the v1 pricing).",
-    "ASSUMPTION P2: commuter_day_eur is the cheapest long-term product per working day (21 working days); regular work/education commuters hold it, an effective daily cost for regulars, never a day tariff. Where it bites: Work/education stays in zones with commuter_day_eur. Sensitivity: commuter_day_eur presence.",
+    "ASSUMPTION P2: commuter_day_eur is the cheapest long-term product per working day (21 working days); regular work/education commuters hold it, an effective daily cost for regulars, never a day tariff; the monthly product of a garage (monthly_cents) is divided by the same 21 working days, rounded half up to the cent, and is offered to work and education only. Where it bites: Work/education stays in zones with commuter_day_eur and at garages with a monthly product. Sensitivity: commuter_day_eur presence; monthly product of the garage dataset.",
+    "ASSUMPTION P3: a night tariff that is no per-unit rate of the preferred rules (a flat night fee, an unresolved night tier) is stated in the notes and not charged. Where it bites: Garages whose notes name ASSUMPTION P3 (a night tariff that is no per-unit rate). Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P4: a published rate per unit without a stated rounding is billed per started unit, as at every garage of the dataset that states its rounding. Where it bites: Garages whose published rate states no rounding (billed per started unit). Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P5: the fee window is 0 to 24 h where no preferred rule states charging times of the garage tariff: a ticket garage bills the stay from entry to exit, and opening hours are no charging hours. Where it bites: Garages whose published tariff states no charging times (fee window 0 to 24 h). Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P6: units are counted from arrival and each started unit costs the rate of the tier in force at the unit's start; a first period, where published, is charged once when the arrival lies inside its clock window (the whole day where the source ties it to none) and the tiers then apply per started unit from the end of the first period; an arrival outside the window pays the tiers from the arrival. Where it bites: Tiered garages (tariff_tiers), stays that cross a tier boundary or a night. Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P7: where a garage publishes several caps (a day cap, a night cap, a maximum for day and night together), the day cap column holds the day cap, or the 24-hour maximum where there is no day cap, and applies to the whole stay; the other caps are stated in the notes and not applied. Where it bites: Garages that publish several caps. Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P8: a duration schedule is read cumulatively over the elapsed duration d of the stay: a total band sets the price of the stay to its amount (an absolute price, no addition), an increment band adds its amount for every started unit counted from the band's start to the price reached at its start, a free band costs nothing; where the source states no rounding the unit is a started unit (as in P4); a published cap or 24-hour price applies as the day cap, the smaller of the schedule price and the cap. Where it bites: Banded garages (tariff_duration_bands), stays beyond the first band. Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P9: a stay longer than a closed duration schedule (one that ends at 1440 min, e.g. Peine) is priced per started 24 h: k full periods at the price of 1440 min plus the price of the remainder, every period capped by the day cap; the pricing code counts and logs how often it applies. Where it bites: Stays longer than 24 h at garages with a closed schedule that ends at 1440 min. Sensitivity: none: the rate is reported by the pricing counters.",
+    "ASSUMPTION P10: a published free period at the start of a stay is a grace period: a stay not longer than it costs 0; a longer stay is billed from the arrival as if there were no free period (the free minutes are not deducted); encoded as a free first duration band (ASSUMPTION P8) followed by the total of the first billing unit. Where it bites: Garages with a free first duration band read as a grace period, stays of the free minutes or a little longer. Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION P11: where no current operator tariff is published, the garage is priced from the best available secondary evidence for the same facility (a directory or tourism table, newest and most detailed first), checked for consistency against the garages of the same town; the source, its lack of a date and the operator's missing confirmation are named in the notes. Where it bites: Garages priced from secondary evidence (the garages that name ASSUMPTION P11 in their notes). Sensitivity: garage dataset rows that name it (column assumptions of parking_garages_2026).",
+    "ASSUMPTION G1: A car stay in a paid zone has the options street (weight 1) and every priced garage within the maximum distance, weight exp(-d / lambda) with d the straight-line distance in metres (a gravity-type choice by distance); the price of the stay is the probability-weighted mean of the option costs (an expected cost, no random draw), the price does not enter the weights and capacity or occupancy are not modelled. Where it bites: Stays in street_paid and resident_zone zones with a garage in range (never campus zones, never a stay that is free by an early rule or whose street option costs 0). Sensitivity: garage_decay_m (0 switches the garage options off; lambda is calibrated, see G3).",
+    "ASSUMPTION G2: A garage is an option of a stay when its straight-line distance to the destination (EPSG:25832) is at most 1000 m. Where it bites: Garages far from a destination carry a small weight (exp(-d / lambda)) but widen the option set; a garage just inside the limit is an option, one just outside is none. Sensitivity: garage_max_distance_m (config parking_garage_max_distance_m).",
+    "ASSUMPTION G3: The decay length lambda is calibrated, not estimated: it is set so that the mean garage probability of the non-home, non-work, non-education stays at activities inside bs_zone_ia and bs_zone_ib (all modes, destination universe, the plans of the reference scenario) equals the SrV 2023 share of garages and large lots among the Braunschweig residents who park on the street or in a garage when they drive to the city centre (srv2023_city_center_parking, rows garage_large_lot and street); the same lambda applies in every town (transfer assumption); SrV asks residents about their usual place, the model averages over destinations; the garage share is therefore a calibration target and no validation; the value of a release is recorded with its calibration table, and a model with garage_decay_m 0 has no garage options. Where it bites: Every stay with a garage option. Sensitivity: garage_decay_m.",
     "ASSUMPTION R2: Residence inside a resident parking district equals permit possession (extends R1): a stay inside the district of the person's home is free where the zone honours resident permits (R2-a); the districts are independent of the fee zones and may overlap them, and a stay outside every fee zone stays free by Z1. Where it bites: Non-home activities of residents inside their own district (data record parking_resident_districts_2026). Sensitivity: none: the district layer is a release input, not a parameter.",
-    "ASSUMPTION R2-a: Resident parking permits are valid at street and resident-zone parking unless the tariff row says otherwise (resident_permits_valid) and never on a campus; the separately operated car parks of the city (BgA) are marked not valid, because no source states that permits are valid there. Where it bites: Stays of residents inside their own district at the BgA car parks of Braunschweig and on a campus (rows with resident_permits_valid false). Sensitivity: set resident_permits_valid to true on a BgA row in an arm (a campus row rejects true)."
+    "ASSUMPTION R2-a: Resident parking permits are valid at street and resident-zone parking unless the tariff row says otherwise (resident_permits_valid) and never on a campus; the separately operated car parks of the city (BgA) and the Goslar car park Klubgartenstrasse/ZOB (gs_parkplatz_klubgartenstrasse_zob) are marked not valid, because no source states that permits are valid there. Where it bites: Stays of residents inside their own district at the BgA car parks of Braunschweig, at the ZOB car park of Goslar and on a campus (rows with resident_permits_valid false). Sensitivity: set resident_permits_valid to true on a BgA row in an arm (a campus row rejects true)."
   ],
   "currency": "EUR",
+  "garage_decay_m": 400.0,
+  "garage_max_distance_m": 1000.0,
+  "garages": [
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g01_core",
+      "hourly_rate_cents": 200,
+      "monthly_cents": 6300,
+      "tiers": null,
+      "x_m": 580300.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g02_a",
+      "hourly_rate_cents": 200,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 590300.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g02_b",
+      "hourly_rate_cents": 100,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 590000.0,
+      "y_m": 5750700.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g03_edge",
+      "hourly_rate_cents": 200,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 600600.0,
+      "y_m": 5750800.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g03_far",
+      "hourly_rate_cents": 200,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 601001.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g04_core",
+      "hourly_rate_cents": 200,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 610000.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 43200,
+      "fee_start_s": 36000,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g06_window",
+      "hourly_rate_cents": 100,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 620000.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": null,
+      "daily_cap_cents": null,
+      "fee_end_s": null,
+      "fee_start_s": null,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g07_tiers",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": [
+        {
+          "end_s": 36000,
+          "price_cents": 30,
+          "start_s": 28800,
+          "unit_min": 30
+        },
+        {
+          "end_s": 64800,
+          "price_cents": 60,
+          "start_s": 36000,
+          "unit_min": 30
+        },
+        {
+          "end_s": 82800,
+          "price_cents": 30,
+          "start_s": 64800,
+          "unit_min": 30
+        },
+        {
+          "end_s": 28800,
+          "price_cents": 10,
+          "start_s": 82800,
+          "unit_min": 30
+        }
+      ],
+      "x_m": 630000.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": 20,
+          "unit_min": null
+        },
+        {
+          "from_min": 20,
+          "kind": "total",
+          "price_cents": 100,
+          "to_min": 120,
+          "unit_min": null
+        },
+        {
+          "from_min": 120,
+          "kind": "increment",
+          "price_cents": 50,
+          "to_min": 240,
+          "unit_min": 60
+        },
+        {
+          "from_min": 240,
+          "kind": "increment",
+          "price_cents": 150,
+          "to_min": 420,
+          "unit_min": 60
+        },
+        {
+          "from_min": 420,
+          "kind": "increment",
+          "price_cents": 500,
+          "to_min": null,
+          "unit_min": 60
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": 1500,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g08_bands",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 640000.0,
+      "y_m": 5750000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": null,
+      "daily_cap_cents": 600,
+      "fee_end_s": null,
+      "fee_start_s": null,
+      "first_period_cents": 110,
+      "first_period_end_s": 86400,
+      "first_period_min": 60,
+      "first_period_start_s": 21600,
+      "garage_id": "fx_g09_fp",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": [
+        {
+          "end_s": 21600,
+          "price_cents": 50,
+          "start_s": 0,
+          "unit_min": 60
+        },
+        {
+          "end_s": 86400,
+          "price_cents": 120,
+          "start_s": 21600,
+          "unit_min": 60
+        }
+      ],
+      "x_m": 580000.0,
+      "y_m": 5760000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "free",
+          "price_cents": 0,
+          "to_min": 15,
+          "unit_min": null
+        },
+        {
+          "from_min": 15,
+          "kind": "total",
+          "price_cents": 150,
+          "to_min": 60,
+          "unit_min": null
+        },
+        {
+          "from_min": 60,
+          "kind": "increment",
+          "price_cents": 150,
+          "to_min": null,
+          "unit_min": 60
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": 1800,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g10_grace",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 590000.0,
+      "y_m": 5760000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": 60,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": 100,
+      "first_period_end_s": 36000,
+      "first_period_min": 60,
+      "first_period_start_s": 21600,
+      "garage_id": "fx_g11_core_fp",
+      "hourly_rate_cents": 200,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 600000.0,
+      "y_m": 5760000.0
+    },
+    {
+      "bands": null,
+      "billing_unit_min": null,
+      "daily_cap_cents": 100,
+      "fee_end_s": null,
+      "fee_start_s": null,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g12_tiers_gap",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": [
+        {
+          "end_s": 36000,
+          "price_cents": 30,
+          "start_s": 28800,
+          "unit_min": 30
+        }
+      ],
+      "x_m": 610000.0,
+      "y_m": 5760000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "total",
+          "price_cents": 20,
+          "to_min": 30,
+          "unit_min": null
+        },
+        {
+          "from_min": 30,
+          "kind": "total",
+          "price_cents": 80,
+          "to_min": 60,
+          "unit_min": null
+        },
+        {
+          "from_min": 60,
+          "kind": "increment",
+          "price_cents": 40,
+          "to_min": 300,
+          "unit_min": 30
+        },
+        {
+          "from_min": 300,
+          "kind": "total",
+          "price_cents": 400,
+          "to_min": 1440,
+          "unit_min": null
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": null,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g13_closed",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 620000.0,
+      "y_m": 5760000.0
+    },
+    {
+      "bands": [
+        {
+          "from_min": 0,
+          "kind": "total",
+          "price_cents": 20,
+          "to_min": 30,
+          "unit_min": null
+        },
+        {
+          "from_min": 30,
+          "kind": "total",
+          "price_cents": 80,
+          "to_min": 60,
+          "unit_min": null
+        },
+        {
+          "from_min": 60,
+          "kind": "increment",
+          "price_cents": 40,
+          "to_min": 300,
+          "unit_min": 30
+        },
+        {
+          "from_min": 300,
+          "kind": "total",
+          "price_cents": 400,
+          "to_min": 1440,
+          "unit_min": null
+        }
+      ],
+      "billing_unit_min": null,
+      "daily_cap_cents": 300,
+      "fee_end_s": 86400,
+      "fee_start_s": 0,
+      "first_period_cents": null,
+      "first_period_end_s": null,
+      "first_period_min": null,
+      "first_period_start_s": null,
+      "garage_id": "fx_g14_closed_capped",
+      "hourly_rate_cents": null,
+      "monthly_cents": null,
+      "tiers": null,
+      "x_m": 630000.0,
+      "y_m": 5760000.0
+    }
+  ],
   "resident_districts": [
     {
       "district_id": "fx_district_a",
@@ -32,7 +464,7 @@
       "municipality_ags": "03102000"
     }
   ],
-  "schema_version": 2,
+  "schema_version": 3,
   "sources": [
     {
       "path": "tests/fixtures/parking/parking_tariffs_fixture.csv",
@@ -43,6 +475,11 @@
       "path": "tests/fixtures/parking/parking_resident_districts_fixture.geojson",
       "sha256": "eb8ce1dea86699e15366fe35c81ecb3a7b1acec42832992e0b2a65336ed54e6c",
       "source_id": "parking_resident_districts_fixture"
+    },
+    {
+      "path": "tests/fixtures/parking/parking_garages_fixture.geojson",
+      "sha256": "6715425330121a3d4f0072a920b79fe92af5606dc5ee4fe36992576a93bbf52b",
+      "source_id": "parking_garages_fixture"
     }
   ],
   "tariff_snapshot_date": "2026-09-28",

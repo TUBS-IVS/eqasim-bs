@@ -50,9 +50,13 @@ Every function is pure: no file or network access and no global state.
 """
 from __future__ import annotations
 
+import functools
+import math
 import operator
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import NamedTuple, NoReturn
+
+from braunschweig.parking import garages as parking_garages
 
 SECONDS_PER_MINUTE = 60
 #: D1: every fee window repeats with this period (one average weekday).
@@ -85,10 +89,13 @@ NO_ZONE = "NO_ZONE"
 #: ``PAID_LONG_STAY`` still mean that the street product was.
 PAID_GARAGE = "PAID_GARAGE"
 PAID_COMMUTER = "PAID_COMMUTER"
-# The two v2 outcomes are appended at the END, so the declaration order of the v1 outcomes (the order of the Java
+#: Schema 3 (spec Amendment E, R-4d-5): the stay was priced as the probability-weighted mean over the street and at
+#: least one garage option, or over the garage options alone (``parking_cost_with_garages``).
+PAID_EXPECTED = "PAID_EXPECTED"
+# The v2 outcomes are appended at the END, so the declaration order of the v1 outcomes (the order of the Java
 # ParkingOutcome enum and of the outcome report) is unchanged.
 OUTCOMES = (HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT, PAID_METERED,
-            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER)
+            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER, PAID_EXPECTED)
 
 #: Schema 2 (spec amendment A6): the garage core, given completely or not at all. The garage day cap
 #: (``garage_daily_cap_cents``, None = no cap) and the first-period pair (``GARAGE_FIRST_PERIOD_FIELDS``) are optional,
@@ -526,3 +533,512 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     # commuter product (ZoneTariff rejects it), so the commuter product competes on street_paid rows only.
     return _cheapest((_street_product(tariff, chargeable_s), _garage_product(tariff, arrival_s, departure_s),
                       _commuter_product(tariff, purpose)))
+
+
+# --------------------------------------------------------------------------------------------------- garage options
+# Spec Amendment E (issue #436): garages are options of a stay next to the street, chosen by distance and priced as an
+# expected cost. The code below is the Python reference of that pricing; the Java port (Task 4e) reproduces it and is
+# pinned to it by the golden cases (``braunschweig.parking.golden_cases``, families E and O).
+
+#: Amendment E2, ASSUMPTION G2 (default; the model JSON carries the value as ``garage_max_distance_m``): a garage is
+#: an option of a stay when its straight-line distance to the destination (metres, EPSG:25832) is at most this.
+GARAGE_MAX_DISTANCE_M = 1000.0
+#: ASSUMPTION P2 (monthly product per working day): a monthly garage product is divided by this many working days.
+WORKING_DAYS_PER_MONTH = 21
+MINUTES_PER_DAY = 24 * 60
+
+GARAGE_TIER_FIELDS = ("start_s", "end_s", "unit_min", "price_cents")
+GARAGE_BAND_FIELDS = ("from_min", "to_min", "kind", "price_cents", "unit_min")
+GARAGE_BAND_KINDS = ("free", "total", "increment")
+#: Every key of one entry of the model's ``garages`` list, in the order of the documentation; the Java reader accepts
+#: exactly these. The single-window form fills ``hourly_rate_cents`` .. ``fee_end_s``, the tiered form ``tiers`` and the
+#: banded form ``bands`` together with the fee window; the keys of the other forms are null.
+GARAGE_FIELDS_JSON = ("garage_id", "x_m", "y_m", "hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s",
+                      "first_period_min", "first_period_cents", "first_period_start_s", "first_period_end_s",
+                      "daily_cap_cents", "tiers", "bands", "monthly_cents")
+
+
+@dataclass(frozen=True, kw_only=True)
+class GarageTier:
+    """One time-of-day tier of a tiered garage (spec E10): a started unit of ``unit_min`` minutes that begins at a time of
+    day in ``[start_s, end_s)`` (seconds after midnight; ``end_s`` <= ``start_s`` crosses midnight, 86,400 is midnight
+    itself) costs ``price_cents``."""
+
+    start_s: int
+    end_s: int
+    unit_min: int
+    price_cents: int
+
+    def covers(self, time_of_day_s: int) -> bool:
+        """Whether a unit that begins at ``time_of_day_s`` (seconds after midnight) lies in the tier."""
+        if self.end_s > self.start_s:
+            return self.start_s <= time_of_day_s < self.end_s
+        return time_of_day_s >= self.start_s or time_of_day_s < self.end_s
+
+
+@dataclass(frozen=True, kw_only=True)
+class GarageBand:
+    """One band of a banded garage (spec E11) over the elapsed duration d in minutes: ``from_min < d <= to_min`` (``to_min``
+    None = open-ended last band) of ``kind`` ``free``, ``total`` (the stay costs ``price_cents``) or ``increment`` (the
+    price reached at the band's start plus ``price_cents`` per started ``unit_min`` counted from the band's start, P8)."""
+
+    from_min: int
+    to_min: int | None
+    kind: str
+    price_cents: int
+    unit_min: int | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class GarageTariff:
+    """One priced garage of the tariff model (schema 3, spec Amendment E1 and E6): a point in EPSG:25832 with its tariff in
+    integer cents, minutes and seconds.
+
+    A garage has exactly one tariff structure: the single-window form (``hourly_rate_cents`` per started
+    ``billing_unit_min`` within ``[fee_start_s, fee_end_s)``), the tiered form (``tiers``, no fee window, E10) or the banded
+    form (``bands`` with the fee window, E11). ``first_period_min`` with ``first_period_cents`` (both or neither; not with
+    bands) may carry the clock window ``[first_period_start_s, first_period_end_s)`` it is tied to (both or neither, only
+    with a first period; ASSUMPTION P6 as amended). ``daily_cap_cents`` (None = none) limits the price of a stay once;
+    ``monthly_cents`` (None = no monthly product) is the monthly product that work and education stays use per working day
+    (P2). Construction validates and raises ``ValueError`` naming the garage.
+    """
+
+    garage_id: str
+    x_m: float
+    y_m: float
+    hourly_rate_cents: int | None = None
+    billing_unit_min: int | None = None
+    fee_start_s: int | None = None
+    fee_end_s: int | None = None
+    first_period_min: int | None = None
+    first_period_cents: int | None = None
+    first_period_start_s: int | None = None
+    first_period_end_s: int | None = None
+    daily_cap_cents: int | None = None
+    tiers: tuple[GarageTier, ...] | None = None
+    bands: tuple[GarageBand, ...] | None = None
+    monthly_cents: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.tiers is not None:
+            object.__setattr__(self, "tiers", tuple(self.tiers))
+        if self.bands is not None:
+            object.__setattr__(self, "bands", tuple(self.bands))
+        _check_garage(self)
+
+    @property
+    def form(self) -> str:
+        """``"tiers"``, ``"bands"`` or ``"core"`` (the single-window form)."""
+        if self.tiers is not None:
+            return "tiers"
+        return "bands" if self.bands is not None else "core"
+
+    @functools.cached_property
+    def band_objects(self) -> tuple:
+        """The bands as the ``braunschweig.parking.garages.DurationBand`` objects its reference evaluation takes."""
+        return tuple(parking_garages.DurationBand(band.from_min, band.to_min, band.kind, band.price_cents / 100.0,
+                                                  band.unit_min) for band in self.bands)
+
+    def to_json(self) -> dict:
+        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``."""
+        fields = {name: getattr(self, name) for name in GARAGE_FIELDS_JSON}
+        if self.tiers is not None:
+            fields["tiers"] = [{name: getattr(tier, name) for name in GARAGE_TIER_FIELDS} for tier in self.tiers]
+        if self.bands is not None:
+            fields["bands"] = [{name: getattr(band, name) for name in GARAGE_BAND_FIELDS} for band in self.bands]
+        return fields
+
+    @classmethod
+    def from_json(cls, entry: dict) -> "GarageTariff":
+        """The inverse of :meth:`to_json`; the entry must have exactly the keys ``GARAGE_FIELDS_JSON`` and every tier and
+        band exactly its keys, otherwise ``ValueError`` (the Java reader is as strict)."""
+        if sorted(entry) != sorted(GARAGE_FIELDS_JSON):
+            raise ValueError(f"garage entry {entry.get('garage_id')!r}: keys {sorted(entry)} differ from the documented "
+                             f"{sorted(GARAGE_FIELDS_JSON)}")
+        fields = dict(entry)
+        for name, item_class, keys in (("tiers", GarageTier, GARAGE_TIER_FIELDS), ("bands", GarageBand, GARAGE_BAND_FIELDS)):
+            if fields[name] is not None:
+                for item in fields[name]:
+                    if sorted(item) != sorted(keys):
+                        raise ValueError(f"garage entry {entry['garage_id']!r}: a {name} item has the keys {sorted(item)}, "
+                                         f"expected {sorted(keys)}")
+                fields[name] = tuple(item_class(**item) for item in fields[name])
+        return cls(**fields)
+
+
+def _check_garage(garage: GarageTariff) -> None:
+    if not isinstance(garage.garage_id, str) or not garage.garage_id.strip():
+        raise ValueError(f"garage id must be a non-empty string, got {garage.garage_id!r}")
+
+    def fail(problem: str) -> NoReturn:
+        raise ValueError(f"garage {garage.garage_id!r}: {problem}")
+
+    for name in ("x_m", "y_m"):
+        value = getattr(garage, name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            fail(f"{name} must be a finite number of metres (EPSG:25832), got {value!r}")
+    for name in ("hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s", "first_period_min",
+                 "first_period_cents", "first_period_start_s", "first_period_end_s", "daily_cap_cents", "monthly_cents"):
+        value = getattr(garage, name)
+        if value is None:
+            continue
+        if not _is_plain_int(value):
+            fail(f"{name} must be an integer or None, got {value!r}")
+        minimum = 0 if name in ("fee_start_s", "first_period_start_s") else 1
+        if value < minimum:
+            fail(f"{name} must be at least {minimum}, got {value}")
+    core = [name for name in ("hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s")
+            if getattr(garage, name) is not None]
+    if garage.tiers is not None and garage.bands is not None:
+        fail("tiers and bands exclude each other (one tariff structure per garage)")
+    if garage.tiers is not None:
+        if core:
+            fail(f"a tiered garage leaves the single-window core empty, found {core}")
+        _check_tiers(garage, fail)
+    elif garage.bands is not None:
+        rate = [name for name in ("hourly_rate_cents", "billing_unit_min") if getattr(garage, name) is not None]
+        if rate:
+            fail(f"a banded garage leaves the rate and the billing unit empty, found {rate}")
+        if garage.fee_start_s is None or garage.fee_end_s is None:
+            fail("a banded garage needs its fee window (fee_start_s and fee_end_s)")
+        if garage.first_period_min is not None:
+            fail("a banded garage has no first period (its first band is the first period)")
+        _check_bands(garage, fail)
+    elif len(core) != 4:
+        fail("a garage needs exactly one tariff structure: the complete single-window core (hourly_rate_cents, "
+             f"billing_unit_min, fee_start_s, fee_end_s; found {core}), tiers or bands")
+    if garage.fee_start_s is not None and garage.fee_end_s is not None and not (
+            garage.fee_start_s < garage.fee_end_s <= SECONDS_PER_DAY):
+        fail(f"fee window [{garage.fee_start_s}, {garage.fee_end_s}) s must satisfy 0 <= start < end <= {SECONDS_PER_DAY}")
+    if (garage.first_period_min is None) != (garage.first_period_cents is None):
+        fail("first_period_min and first_period_cents must be given together or both be empty")
+    if (garage.first_period_start_s is None) != (garage.first_period_end_s is None):
+        fail("first_period_start_s and first_period_end_s must be given together or both be empty")
+    if garage.first_period_start_s is not None:
+        if garage.first_period_min is None:
+            fail("a first-period window needs a first period")
+        if not garage.first_period_start_s < garage.first_period_end_s <= SECONDS_PER_DAY:
+            fail(f"first-period window [{garage.first_period_start_s}, {garage.first_period_end_s}) s must satisfy "
+                 f"0 <= start < end <= {SECONDS_PER_DAY}")
+    if (garage.daily_cap_cents is not None and garage.first_period_cents is not None
+            and garage.daily_cap_cents < garage.first_period_cents):
+        fail(f"daily_cap_cents {garage.daily_cap_cents} is below first_period_cents {garage.first_period_cents}")
+
+
+def _check_tiers(garage: GarageTariff, fail) -> None:
+    if not garage.tiers:
+        fail("tiers must not be empty")
+    covered = []
+    for tier in garage.tiers:
+        if not isinstance(tier, GarageTier):
+            fail(f"a tier must be a GarageTier, got {tier!r}")
+        for name in GARAGE_TIER_FIELDS:
+            value = getattr(tier, name)
+            if not _is_plain_int(value) or value < (0 if name == "start_s" else 1):
+                fail(f"tier {name} must be a positive integer (start_s: non-negative), got {value!r}")
+        if tier.start_s >= SECONDS_PER_DAY or tier.end_s > SECONDS_PER_DAY or tier.start_s == tier.end_s:
+            fail(f"tier [{tier.start_s}, {tier.end_s}) s is no time-of-day interval of positive length")
+        covered.extend([(tier.start_s, SECONDS_PER_DAY), (0, tier.end_s)] if tier.end_s <= tier.start_s
+                       else [(tier.start_s, tier.end_s)])
+    if len({tier.unit_min for tier in garage.tiers}) != 1:
+        fail("the tiers must share one unit length (the units of a stay are counted from its arrival, P6)")
+    covered.sort()
+    if any(later[0] < earlier[1] for earlier, later in zip(covered, covered[1:])):
+        fail("tiers overlap")
+
+
+def _check_bands(garage: GarageTariff, fail) -> None:
+    if not garage.bands:
+        fail("bands must not be empty")
+    previous_to = 0
+    for position, band in enumerate(garage.bands):
+        if not isinstance(band, GarageBand):
+            fail(f"a band must be a GarageBand, got {band!r}")
+        if band.kind not in GARAGE_BAND_KINDS:
+            fail(f"band kind {band.kind!r} is not one of {GARAGE_BAND_KINDS}")
+        if previous_to is None or band.from_min != previous_to:
+            fail(f"band {position} starts at {band.from_min} min but the band before ends at {previous_to}; bands are "
+                 "contiguous from 0 and only the last may be open-ended")
+        if band.to_min is not None and (not _is_plain_int(band.to_min) or band.to_min <= band.from_min):
+            fail(f"band {position} must end after it starts, got {band.from_min}-{band.to_min}")
+        if band.kind == "free" and (band.price_cents != 0 or band.unit_min is not None):
+            fail(f"band {position} is free: price_cents must be 0 and unit_min null")
+        if band.kind == "total" and (not _is_plain_int(band.price_cents) or band.price_cents < 1
+                                     or band.unit_min is not None):
+            fail(f"band {position} is a total: price_cents must be positive and unit_min null")
+        if band.kind == "increment" and (not _is_plain_int(band.price_cents) or band.price_cents < 1
+                                         or not _is_plain_int(band.unit_min) or band.unit_min < 1):
+            fail(f"band {position} is an increment: price_cents and unit_min must be positive")
+        previous_to = band.to_min
+    if garage.bands[0].from_min != 0:
+        fail("the first band must start at 0 min")
+
+
+@dataclass
+class GarageOptionCounters:
+    """Counts of the garage pricing, so that no fallback fires silently (rates are logged by the callers).
+
+    ``stays`` is every call of ``parking_cost_with_garages``; ``eligible`` the stays in a street or resident zone that
+    pass the early rules with garage options switched on; ``with_garages_in_range`` the eligible stays with at least one
+    garage within the maximum distance; ``street_free`` those whose street option costs 0 and pay 0 (E4);
+    ``street_unavailable`` those priced over the garages alone (E4); ``expected`` the stays priced as an expectation
+    (outcome ``PAID_EXPECTED``); ``option_evaluations`` the garage options priced; ``closed_schedule_repeats`` the garage
+    options whose stay was longer than a closed duration schedule and was priced by repeating it per started 24 h (P9).
+    """
+
+    stays: int = 0
+    eligible: int = 0
+    with_garages_in_range: int = 0
+    street_free: int = 0
+    street_unavailable: int = 0
+    expected: int = 0
+    option_evaluations: int = 0
+    closed_schedule_repeats: int = 0
+
+    def summary(self) -> str:
+        """One log line with the counts and rates (an empty denominator gives a plain count)."""
+        def rate(part: int, whole: int) -> str:
+            return f"{part}/{whole} ({100.0 * part / whole:.1f} %)" if whole else f"{part}/{whole}"
+        return (f"[parking-garages] stays {self.stays}; eligible {self.eligible}; garages in range "
+                f"{rate(self.with_garages_in_range, self.eligible)}; street free (E4) "
+                f"{rate(self.street_free, self.with_garages_in_range)}; street unavailable "
+                f"{rate(self.street_unavailable, self.with_garages_in_range)}; priced as expectation {self.expected}; "
+                f"garage options priced {self.option_evaluations}, closed schedule repeated (P9) "
+                f"{rate(self.closed_schedule_repeats, self.option_evaluations)}")
+
+
+def _first_period_applies(garage: GarageTariff, arrival_s: int) -> bool:
+    """ASSUMPTION P6 as amended (spec E10): a first period tied to a clock window is charged only when the arrival lies in
+    the window ``[first_period_start_s, first_period_end_s)``; without a window it is charged for every use."""
+    if garage.first_period_min is None:
+        return False
+    if garage.first_period_start_s is None:
+        return True
+    return garage.first_period_start_s <= arrival_s % SECONDS_PER_DAY < garage.first_period_end_s
+
+
+def _tiered_cents(garage: GarageTariff, arrival_s: int, departure_s: int) -> int:
+    """ASSUMPTION P6: units are counted from the arrival (or from the end of the first period) and each started unit costs
+    the price of the tier in force at the unit's start; a start in no tier costs nothing. The day cap applies once."""
+    if departure_s == arrival_s:
+        return 0
+    cents, unit_start_s = 0, arrival_s
+    if _first_period_applies(garage, arrival_s):
+        cents += garage.first_period_cents
+        unit_start_s = arrival_s + garage.first_period_min * SECONDS_PER_MINUTE
+    unit_s = garage.tiers[0].unit_min * SECONDS_PER_MINUTE
+    cap = garage.daily_cap_cents
+    while unit_start_s < departure_s:
+        time_of_day_s = unit_start_s % SECONDS_PER_DAY
+        cents += next((tier.price_cents for tier in garage.tiers if tier.covers(time_of_day_s)), 0)
+        if cap is not None and cents >= cap:
+            return cap
+        unit_start_s += unit_s
+    return cents
+
+
+def _banded_cents(garage: GarageTariff, chargeable_s: int, counters: GarageOptionCounters | None) -> int:
+    """ASSUMPTION P8 through ``braunschweig.parking.garages.duration_band_price_eur`` (the reference evaluation, called, not
+    copied) on the chargeable minutes ``chargeable_s / 60``; ASSUMPTION P9 beyond a closed schedule."""
+    if chargeable_s == 0:
+        return 0
+    cap_eur = None if garage.daily_cap_cents is None else garage.daily_cap_cents / 100.0
+
+    def price_cents(seconds: int) -> int:
+        return int(round(parking_garages.duration_band_price_eur(garage.band_objects, seconds / SECONDS_PER_MINUTE,
+                                                                 cap_eur) * 100))
+
+    last = garage.bands[-1]
+    if last.to_min is None or chargeable_s <= last.to_min * SECONDS_PER_MINUTE:
+        return price_cents(chargeable_s)
+    # ASSUMPTION P9: a stay longer than a closed schedule (Peine ends at 1440 min) is priced per started 24 h: k full
+    # periods at the price of 1440 min plus the price of the remainder, every period capped by the day cap. Counted, never
+    # a silent guess; a closed schedule that does not end at 24 h states no rule for a longer stay and raises.
+    if last.to_min != MINUTES_PER_DAY:
+        raise ValueError(f"garage {garage.garage_id!r}: the stay of {chargeable_s} s is longer than the closed schedule "
+                         f"that ends at {last.to_min} min, and P9 repeats only a schedule that ends at {MINUTES_PER_DAY} min")
+    if counters is not None:
+        counters.closed_schedule_repeats += 1
+    full_periods = (chargeable_s - 1) // SECONDS_PER_DAY
+    return full_periods * price_cents(SECONDS_PER_DAY) + price_cents(chargeable_s - full_periods * SECONDS_PER_DAY)
+
+
+def garage_metered_cents(garage: GarageTariff, arrival_s: int, departure_s: int,
+                         counters: GarageOptionCounters | None = None) -> int:
+    """The metered or day price of a stay at a garage in integer cents, by the garage's tariff structure (no monthly product).
+
+    Single-window form: the metering primitive of spec 3.2 rule 8 over the stay's seconds in the garage's fee window (the
+    first period only when its clock window holds the arrival); tiered form: ``_tiered_cents`` (P6, E10); banded form: the
+    duration schedule over the chargeable minutes (P8, E11, P9; P10 is encoded as bands). A stay without a chargeable
+    second costs 0. Raises ``ValueError`` for a negative time or a departure before the arrival. Pure.
+    """
+    arrival_s = _time_s("arrival_s", arrival_s)
+    departure_s = _time_s("departure_s", departure_s)
+    if departure_s < arrival_s:
+        raise ValueError(f"departure_s {departure_s} is before arrival_s {arrival_s}")
+    if garage.tiers is not None:
+        return _tiered_cents(garage, arrival_s, departure_s)
+    chargeable_s = chargeable_seconds(arrival_s, departure_s, garage.fee_start_s, garage.fee_end_s)
+    if garage.bands is not None:
+        return _banded_cents(garage, chargeable_s, counters)
+    applies = _first_period_applies(garage, arrival_s)
+    return _metered_cents(chargeable_s, hourly_rate_cents=garage.hourly_rate_cents,
+                          billing_unit_min=garage.billing_unit_min,
+                          first_period_min=garage.first_period_min if applies else None,
+                          first_period_cents=garage.first_period_cents if applies else None,
+                          daily_cap_cents=garage.daily_cap_cents)
+
+
+def garage_monthly_day_cents(monthly_cents: int) -> int:
+    """ASSUMPTION P2: a monthly garage product per working day, ``monthly_cents / 21`` rounded half up to the cent (integer
+    arithmetic: ``(2 * monthly_cents + 21) // 42``; the quotient of a whole number of cents by 21 is never an exact half)."""
+    return (2 * monthly_cents + WORKING_DAYS_PER_MONTH) // (2 * WORKING_DAYS_PER_MONTH)
+
+
+def garage_option_cents(garage: GarageTariff, arrival_s: int, departure_s: int, *, purpose: str,
+                        counters: GarageOptionCounters | None = None) -> int:
+    """The cost of the garage option of a stay (spec E2): the cheaper of its metered or day product and, for the commuter
+    purposes work and education only, its monthly product per working day (P2). 0 ct is a valid option. Pure."""
+    if counters is not None:
+        counters.option_evaluations += 1
+    cents = garage_metered_cents(garage, arrival_s, departure_s, counters)
+    if garage.monthly_cents is not None and purpose in COMMUTER_PURPOSES:
+        cents = min(cents, garage_monthly_day_cents(garage.monthly_cents))
+    return cents
+
+
+def garage_options_in_range(garages, x_m: float, y_m: float, max_distance_m: float = GARAGE_MAX_DISTANCE_M) -> list:
+    """The garage options of a destination (spec E2): ``(garage, distance_m)`` for every garage within ``max_distance_m``
+    (inclusive) of ``(x_m, y_m)``, ordered by ascending ``garage_id``. The distance is the straight line in EPSG:25832,
+    ``sqrt(dx * dx + dy * dy)`` (no ``hypot``, so that Java computes the same double). Raises ``ValueError`` for a
+    non-finite coordinate or a non-positive maximum distance and for a duplicate garage id. Pure."""
+    for name, value in (("x_m", x_m), ("y_m", y_m), ("max_distance_m", max_distance_m)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"{name} must be a finite number, got {value!r}")
+    if max_distance_m <= 0:
+        raise ValueError(f"max_distance_m must be positive, got {max_distance_m}")
+    ordered = sorted(garages, key=lambda garage: garage.garage_id)
+    if len({garage.garage_id for garage in ordered}) != len(ordered):
+        raise ValueError("duplicate garage_id among the garages")
+    options = []
+    for garage in ordered:
+        dx, dy = garage.x_m - x_m, garage.y_m - y_m
+        distance_m = math.sqrt(dx * dx + dy * dy)
+        if distance_m <= max_distance_m:
+            options.append((garage, distance_m))
+    return options
+
+
+class GarageStayPrice(NamedTuple):
+    """Result of ``parking_cost_with_garages_detail``: the price in cents, the outcome, the sum of the garage
+    probabilities (0.0 when no garage acted) and the expected cost before rounding (None when no expectation was formed)."""
+
+    cents: int
+    outcome: str
+    garage_probability: float
+    expected_cents: float | None
+
+
+#: The outcomes decided before any product is priced; with them, and on a campus, the garages never act.
+_EARLY_OUTCOMES = frozenset({NO_ZONE, HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS})
+
+
+def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
+                                     parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
+                                     garage_options=(), decay_m: float = 0.0,
+                                     counters: GarageOptionCounters | None = None) -> GarageStayPrice:
+    """``parking_cost_with_garages`` with the unrounded expectation; see there for the rules."""
+    cents, outcome = parking_cost_cents(tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free,
+                                        resident_of_zone=resident_of_zone, resident_of_district=resident_of_district)
+    if counters is not None:
+        counters.stays += 1
+    if isinstance(decay_m, bool) or not isinstance(decay_m, (int, float)) or not math.isfinite(decay_m) or decay_m < 0:
+        raise ValueError(f"decay_m must be a finite number of metres >= 0 (0 switches the garage options off), "
+                         f"got {decay_m!r}")
+    options = list(garage_options)
+    for option in options:
+        if not (isinstance(option, tuple) and len(option) == 2 and isinstance(option[0], GarageTariff)):
+            raise TypeError(f"a garage option is (GarageTariff, distance_m), got {option!r}")
+    options.sort(key=lambda option: option[0].garage_id)
+    for garage, distance_m in options:
+        if (isinstance(distance_m, bool) or not isinstance(distance_m, (int, float)) or not math.isfinite(distance_m)
+                or distance_m < 0):
+            raise ValueError(f"garage {garage.garage_id!r}: distance_m must be a finite number >= 0, got {distance_m!r}")
+    if len({garage.garage_id for garage, _ in options}) != len(options):
+        raise ValueError("duplicate garage_id among the garage options")
+    unchanged = GarageStayPrice(cents, outcome, 0.0, None)
+    # Early rules first (R-4d-2), then campus zones (priced as before: no garages); the garages act on street and resident
+    # zones only, with the options switched on and at least one garage in range.
+    if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS or decay_m == 0:
+        return unchanged
+    if counters is not None:
+        counters.eligible += 1
+    if not options:
+        return unchanged
+    if counters is not None:
+        counters.with_garages_in_range += 1
+    # E8: with garage options the zone-level garage family is superseded; the street option is the street or long-stay
+    # product or the zone commuter product, or unavailable (maximum stay exceeded without a long-stay product).
+    chargeable_s = chargeable_seconds(arrival_s, departure_s, tariff.fee_start_s, tariff.fee_end_s)
+    street_products = [product for product in (_street_product(tariff, chargeable_s), _commuter_product(tariff, purpose))
+                       if product is not None]
+    street = min(street_products, key=lambda product: product[0]) if street_products else None
+    if street is not None and street[0] == 0:
+        # E4: nobody pays a garage when the street is free.
+        if counters is not None:
+            counters.street_free += 1
+        return GarageStayPrice(0, street[1], 0.0, None)
+    if street is None and counters is not None:
+        counters.street_unavailable += 1
+    weights, costs = ([1.0], [street[0]]) if street is not None else ([], [])
+    for garage, distance_m in options:
+        weights.append(math.exp(-distance_m / decay_m))
+        costs.append(garage_option_cents(garage, arrival_s, departure_s, purpose=purpose, counters=counters))
+    # R-4d-4: P_i = w_i / sum(w) and the expectation are summed left to right in double precision in the order street,
+    # then the garages by ascending id; Java does the same operations in the same order.
+    total_weight = 0.0
+    for weight in weights:
+        total_weight += weight
+    expected, garage_probability = 0.0, 0.0
+    first_garage = 1 if street is not None else 0
+    for position, (weight, option_cents) in enumerate(zip(weights, costs)):
+        probability = weight / total_weight
+        expected += probability * option_cents
+        if position >= first_garage:
+            garage_probability += probability
+    if counters is not None:
+        counters.expected += 1
+    # Rounded half up to the cent once, at the end.
+    return GarageStayPrice(int(math.floor(expected + 0.5)), PAID_EXPECTED, garage_probability, expected)
+
+
+def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
+                              parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
+                              garage_options=(), decay_m: float = 0.0,
+                              counters: GarageOptionCounters | None = None) -> tuple[int, str, float]:
+    """Parking cost of one car stay with garage options (spec Amendment E): ``(cents, outcome, garage_probability)``.
+
+    ``garage_options`` are ``(GarageTariff, distance_m)`` pairs already filtered to the maximum distance (see
+    ``garage_options_in_range``); ``decay_m`` is the decay length lambda in metres (ASSUMPTION G1; 0 = garage options off).
+    The early rules, the campus zones and the street option are those of ``parking_cost_cents`` (called, not copied):
+
+    1. a stay that ``parking_cost_cents`` decides before any product (no zone, home, employer-free, resident, outside the
+       street fee window), a campus stay, ``decay_m`` 0 or no garage in range prices exactly as ``parking_cost_cents``
+       (same outcome, probability 0.0);
+    2. otherwise the options are the street (weight 1) and every garage g (weight ``exp(-d_g / decay_m)``, E3). The street
+       option costs its cheapest street-side product, the street or long-stay product or the zone commuter product (the
+       zone-level garage family is superseded, E8), or is unavailable above the maximum stay without a long-stay product;
+       a garage option costs its metered or day product, for work and education also its monthly product per working day
+       (P2), whichever is cheaper (0 ct is a valid option; tiers, bands and first periods: ``garage_metered_cents``);
+    3. a street option that costs 0 means the stay pays 0 (E4): outcome of the street product, probability 0.0; an
+       unavailable street renormalises the weights over the garages;
+    4. else ``P_i = w_i / sum(w)``, the price is ``floor(sum(P_i * cost_i) + 0.5)`` cents (rounded half up once, at the end),
+       the outcome ``PAID_EXPECTED`` and the probability the sum of the garage ``P_i``.
+
+    ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
+    ``ValueError`` for a negative or non-finite ``decay_m`` or distance and duplicate garage ids. Pure but for ``counters``.
+    """
+    detail = parking_cost_with_garages_detail(
+        tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free, resident_of_zone=resident_of_zone,
+        resident_of_district=resident_of_district, garage_options=garage_options, decay_m=decay_m, counters=counters)
+    return detail.cents, detail.outcome, detail.garage_probability

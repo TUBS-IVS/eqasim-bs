@@ -1,7 +1,7 @@
 """synpp stage ``braunschweig.parking.zones_stage``: the parking cost zone release (issue #249).
 
 Release semantics. The zone-based parking costs (design spec 2026-09-28, sections 3, 4 and 5.5) read ONE
-release of five inputs, each configured relative to ``data_path``:
+release of six inputs, each configured relative to ``data_path``:
 
 * the zone polygons (``parking_zones_path``; Data Registry ``parking_zones_2026``),
 * the tariff table (``parking_tariffs_path``; ``parking_tariffs_2026``),
@@ -9,9 +9,11 @@ release of five inputs, each configured relative to ``data_path``:
 * the SrV 2023 free-parking shares by workplace class (``parking_workplace_shares_path``;
   ``srv2023_commute_parking_by_workplace_class``),
 * the resident parking districts (``parking_resident_districts_path``; ``parking_resident_districts_2026``; parking
-  cost zones v2, spec Amendment C3), a second layer next to the fee zones.
+  cost zones v2, spec Amendment C3), a second layer next to the fee zones,
+* the parking garages (``parking_garages_path``; ``parking_garages_2026``; parking cost zones v2, spec Amendment E1):
+  points with their own tariffs, the distance-weighted garage options of a stay.
 
-The four committed parking files are curated together and the SrV table is the committed aggregate that
+The five committed parking files are curated together and the SrV table is the committed aggregate that
 gives P(free | workplace class) of the free-parking draw. They are only meaningful together: a polygon
 without its tariff row, a tariff row in a municipality the register does not mark ``zoned``, a district in a
 municipality the register does not know or a workplace class without an SrV share would each misprice stays
@@ -30,15 +32,20 @@ silently. This stage therefore loads and validates them as one unit and raises o
 6. the resident districts: valid as stored (never repaired), unique ids, no overlap
    (``braunschweig.parking.zones.load_resident_districts``), and every district municipality has a status row of
    the coverage register (``validate_district_municipalities``; a district in a municipality that is not ``zoned`` is
-   inert and logged as a WARNING).
+   inert and logged as a WARNING);
+7. the garages: loaded and validated as stored (``braunschweig.parking.garages.load_garages`` and ``validate_garages``:
+   the tariff structures, the assumptions each row names, the position inside the ZGB extent). The loader logs how many
+   garages are priced and how many rest on each assumption; an unpriced garage stays listed and is no option.
 
 Rows carrying the synthetic test-set marker ``braunschweig.parking.zones.FIXTURE_MARKER`` (the fixtures under
-``tests/fixtures/parking``) are accepted, because the tests run this stage on them, but logged as ONE WARNING
-naming the zones and the districts, so a fixture release cannot price a model run unnoticed.
+``tests/fixtures/parking``; a garage carries it as its ``geometry_method``) are accepted, because the tests run this stage
+on them, but logged as ONE WARNING naming the zones, the districts and the garages, so a fixture release cannot price a
+model run unnoticed.
 
-Output: ``{"zones", "tariffs", "workplace_shares", "coverage_register", "districts", "sources"}``.
+Output: ``{"zones", "tariffs", "workplace_shares", "coverage_register", "districts", "garages", "sources"}``.
 ``workplace_shares`` is the SrV table as read (class and total rows, ``workplace_class`` as text). ``districts`` is
-the district layer in EPSG:25832. ``sources`` lists the five inputs in the order above as ``{"source_id": <Data
+the district layer and ``garages`` the garage dataset (priced and unpriced rows), both in EPSG:25832. ``sources`` lists
+the six inputs in the order above as ``{"source_id": <Data
 Registry dataset id>, "path": <the configured path relative to data_path, POSIX>, "sha256": <LF-normalised content
 hash, tariff_export.content_sha256>}``; the preparation stage copies it into the tariff model JSON, so every prepared
 scenario names the exact release it was priced with, identically on every machine. Consumers:
@@ -58,6 +65,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pandas as pd
 
 from braunschweig.parking import attach, tariff_export
+from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import zones as parking_zones
 
 log = logging.getLogger(__name__)
@@ -70,6 +78,7 @@ KEY_TARIFFS_PATH = "parking_tariffs_path"
 KEY_COVERAGE_REGISTER_PATH = "parking_coverage_register_path"
 KEY_WORKPLACE_SHARES_PATH = "parking_workplace_shares_path"
 KEY_RESIDENT_DISTRICTS_PATH = "parking_resident_districts_path"
+KEY_GARAGES_PATH = "parking_garages_path"
 
 #: The release in the order of ``sources``: (config key, default path relative to data_path (spec 5.5),
 #: Data Registry dataset id).
@@ -82,13 +91,14 @@ RELEASE_INPUTS = (
      "srv2023_commute_parking_by_workplace_class"),
     (KEY_RESIDENT_DISTRICTS_PATH, "braunschweig/parking/parking_resident_districts_2026.geojson",
      "parking_resident_districts_2026"),
+    (KEY_GARAGES_PATH, "braunschweig/parking/parking_garages_2026.geojson", "parking_garages_2026"),
 )
 
 #: Modules whose code decides the content or the validation of the release; ``validate()`` hashes their
 #: source (synpp hashes only this module's own). ``parking_zones`` loads and validates the four parking
-#: files (the districts included), ``attach`` validates the SrV table, ``tariff_export`` converts every tariff row and
-#: hashes the inputs.
-_HELPER_MODULES = (parking_zones, attach, tariff_export)
+#: files (the districts included), ``parking_garages`` loads and validates the garage dataset, ``attach`` validates the SrV
+#: table, ``tariff_export`` converts every tariff row and hashes the inputs.
+_HELPER_MODULES = (parking_zones, parking_garages, attach, tariff_export)
 #: Reached through ``tariff_export`` rather than imported here: ``tariff_row_to_zone`` builds a
 #: ``cost.ZoneTariff``, whose construction IS the per-row validation. Hashed by dotted name, like the deferred
 #: helpers of ``braunschweig.matsim.simulation.prepare``. ``free_draw_options`` is imported by ``attach`` (the draw
@@ -191,6 +201,11 @@ def _fixture_marked_zones(zone_polygons: pd.DataFrame, tariffs: pd.DataFrame) ->
     return sorted(marked)
 
 
+def _fixture_marked_garages(garages: pd.DataFrame) -> list[str]:
+    """Garage ids whose geometry method carries the synthetic test-set marker."""
+    return sorted(garages.loc[garages["geometry_method"].isin([parking_zones.FIXTURE_MARKER]), "garage_id"])
+
+
 def _fixture_marked_districts(districts: pd.DataFrame) -> list[str]:
     """District ids whose provenance carries the synthetic test-set marker."""
     marked = set()
@@ -219,22 +234,30 @@ def execute(context):
     # Valid as stored and free of overlaps (load_resident_districts), and every municipality known to the register.
     districts = parking_zones.load_resident_districts(paths[KEY_RESIDENT_DISTRICTS_PATH])
     parking_zones.validate_district_municipalities(districts, coverage_register)
+    # Loaded in EPSG:25832 and validated as stored; the loader logs the priced share and the assumption counts. Unpriced
+    # garages stay listed (spec E1) and are left out of the tariff model by tariff_export.garage_entries.
+    garages = parking_garages.load_garages(paths[KEY_GARAGES_PATH])
+    parking_garages.validate_garages(garages)
 
     marked = _fixture_marked_zones(zone_polygons, tariffs)
     marked_districts = _fixture_marked_districts(districts)
-    if marked or marked_districts:
-        log.warning("%s the release carries the synthetic test-set marker %r in %d of %d zone(s) %s and %d of %d "
-                    "resident district(s) %s: this is TEST data (tests/fixtures/parking pins arithmetic, not truth) "
-                    "and must never price a model run", _LOG_TAG, parking_zones.FIXTURE_MARKER, len(marked),
-                    len(tariffs), marked, len(marked_districts), len(districts), marked_districts)
+    marked_garages = _fixture_marked_garages(garages)
+    if marked or marked_districts or marked_garages:
+        log.warning("%s the release carries the synthetic test-set marker %r in %d of %d zone(s) %s, %d of %d "
+                    "resident district(s) %s and %d of %d garage(s) %s: this is TEST data (tests/fixtures/parking pins "
+                    "arithmetic, not truth) and must never price a model run", _LOG_TAG, parking_zones.FIXTURE_MARKER,
+                    len(marked), len(tariffs), marked, len(marked_districts), len(districts), marked_districts,
+                    len(marked_garages), len(garages), marked_garages)
 
     sources = [{"source_id": source_id, "path": relative, "sha256": tariff_export.content_sha256(path)}
                for _, source_id, relative, path in files]
     log.info("%s zone release: %d zones (%s) in %d municipalities; coverage register %d rows (%s); free shares "
-             "for %d workplace classes; resident districts %d (%s); sources %s", _LOG_TAG, len(zone_polygons),
+             "for %d workplace classes; resident districts %d (%s); garages %d (priced %d); sources %s", _LOG_TAG,
+             len(zone_polygons),
              attach.format_value_counts(tariffs["zone_type"], by_value=True), tariffs["municipality_ags"].nunique(),
              len(coverage_register), attach.format_value_counts(coverage_register["status"], by_value=True),
              len(free_shares), len(districts), attach.format_value_counts(districts["municipality_ags"], by_value=True),
+             len(garages), int(garages["priced"].sum()),
              ", ".join(f"{source['source_id']} {source['sha256'][:12]}" for source in sources))
     return {
         "zones": zone_polygons,
@@ -242,5 +265,6 @@ def execute(context):
         "workplace_shares": workplace_shares,
         "coverage_register": coverage_register,
         "districts": districts,
+        "garages": garages,
         "sources": sources,
     }

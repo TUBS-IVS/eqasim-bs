@@ -1,5 +1,6 @@
-"""The parking tariff JSON export (schema 2, spec 5.4 plus the v2 columns of issue #436, the permit flag per zone and
-the list of resident districts of spec Amendment C3) and its committed fixture model (issue #249)."""
+"""The parking tariff JSON export (schema 3, spec 5.4 plus the v2 columns of issue #436, the permit flag per zone, the
+list of resident districts of spec Amendment C3 and the garages of spec Amendment E) and its committed fixture model
+(issue #249)."""
 from __future__ import annotations
 
 import csv
@@ -82,8 +83,8 @@ def _row(table, row_zone_id: str, /, **changes) -> dict:
     return {**row, **changes}
 
 
-def test_the_model_has_the_schema_2_header_and_the_fixture_zones(model):
-    assert model["schema_version"] == 2
+def test_the_model_has_the_schema_3_header_and_the_fixture_zones(model):
+    assert model["schema_version"] == 3
     assert model["tariff_snapshot_date"] == SNAPSHOT_DATE
     assert model["currency"] == "EUR" and model["weekday_only"] is True
     assert model["terminal_stay_rule"] == "until_fee_end"
@@ -152,11 +153,13 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     # Spec section 7 (v1) followed by P1 (the cheapest usable product) and P2 (the commuter product per working day)
     # of the v2 spec, lever 2, and R2 (the resident parking district rule) with its scope R2-a of its Amendment C3.
     assumptions = model["assumptions"]
-    assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9](-[a-z])?: .+", text) for text in assumptions)
+    assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9]+(-[a-z])?: .+", text) for text in assumptions)
+    # P3 to P11 are the assumptions of the garage dataset and the pricing code (P9 is the closed-schedule rule of the code),
+    # G1 to G3 the garage choice model and its calibration (spec Amendment E).
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
-        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "A1-b", "C1", "C2", "R1", "H1", "F1", "S1", "P1", "P2", "R2",
-                              "R2-a")]
+        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "A1-b", "C1", "C2", "R1", "H1", "F1", "S1", "P1", "P2", "P3", "P4",
+                              "P5", "P6", "P7", "P8", "P9", "P10", "P11", "G1", "G2", "G3", "R2", "R2-a")]
     # Amendment D5 and D6: the Wolfsburg proxy and the campus free share name their configuration key as the arm
     a1_b = next(text for text in assumptions if text.startswith("ASSUMPTION A1-b:"))
     c2 = next(text for text in assumptions if text.startswith("ASSUMPTION C2:"))
@@ -167,16 +170,31 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     r2_a = next(text for text in assumptions if text.startswith("ASSUMPTION R2-a:"))
     assert "every zone type" not in r2 and "R2-a" in r2
     assert "BgA" in r2_a and "campus" in r2_a and "resident_permits_valid" in r2_a
+    # Task 4a review carry-over: the ZOB car park is named, as the tariff table's R2-a statement does
+    assert "gs_parkplatz_klubgartenstrasse_zob" in r2_a
+    # the P texts of the dataset are those of braunschweig.parking.garages.ASSUMPTIONS (one source), P9 is the code's rule
+    from braunschweig.parking import garages as pg
+    for assumption_id in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11"):
+        text = next(text for text in assumptions if text.startswith(f"ASSUMPTION {assumption_id}:"))
+        assert pg.ASSUMPTIONS[assumption_id] in text
+    p9 = next(text for text in assumptions if text.startswith("ASSUMPTION P9:"))
+    assert "closed" in p9 and "1440" in p9 and "started 24 h" in p9
+    # G1 to G3: the choice model, the maximum distance and the calibration (target, universe, transfer, no validation)
+    g1, g2, g3 = (next(text for text in assumptions if text.startswith(f"ASSUMPTION G{number}:")) for number in (1, 2, 3))
+    assert "exp(-d / lambda)" in g1 and "expected cost" in g1 and "garage_decay_m" in g1
+    assert "1000 m" in g2 and "garage_max_distance_m" in g2
+    assert "bs_zone_ia" in g3 and "bs_zone_ib" in g3 and "srv2023_city_center_parking" in g3 and "no validation" in g3
+    assert "same lambda applies in every town" in g3
 
 
 def test_the_model_lists_the_resident_districts_sorted_by_id_for_the_plan_check(table, sources):
     # The Java plan check rejects a parkingDistrict or residentParkingDistrict that is not in this list; the list is an
-    # additive top-level key, so the schema version stays 2.
+    # additive top-level key.
     districts = pd.DataFrame({"district_id": ["gs_district_b", "bs_district_a", "bs_district_b"],
                               "name": ["B", "A", "B"], "municipality_ags": ["03153017", "03101000", "03101000"]})
     with_districts = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources,
                                            resident_districts=districts)
-    assert with_districts["schema_version"] == 2
+    assert with_districts["schema_version"] == 3
     assert with_districts["resident_districts"] == [
         {"district_id": "bs_district_a", "municipality_ags": "03101000"},
         {"district_id": "bs_district_b", "municipality_ags": "03101000"},
@@ -375,7 +393,7 @@ def _schema_1_csv(path: Path) -> Path:
     return path
 
 
-def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_unchanged(tmp_path, model, sources):
+def test_a_schema_1_table_loads_and_exports_as_schema_3_and_prices_the_v1_cases_unchanged(tmp_path, model, sources):
     """Review focus 1 (Python): a schema-1 CSV, without any of the nine schema-2 columns, still loads, validates and
     exports; every schema-2 field is null, every zone equals its schema-2 fixture entry (the permit flag takes the default
     of its zone type), and G01..G38, L01..L08, L01Z..L08Z and R01..R10 (the district rule R2 reads the permit flag, which
@@ -389,14 +407,14 @@ def test_a_schema_1_table_loads_and_exports_as_schema_2_and_prices_the_v1_cases_
     assert table[[*V2_COLUMNS, PERMITS_COLUMN]].isna().all().all()
     pz.validate_tariffs(table, allow_fixture_marker=True)
     schema_1_model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
-    assert schema_1_model["schema_version"] == 2
+    assert schema_1_model["schema_version"] == 3
     assert schema_1_model["zones"] == {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
     assert all(zone[field] is None for zone in schema_1_model["zones"].values() for field in V2_FIELDS)
     # A frame that lacks the schema-2 columns altogether (not read through the loader) exports the same zones.
     assert te.build_tariff_model(table.drop(columns=[*V2_COLUMNS, PERMITS_COLUMN]), snapshot_date=SNAPSHOT_DATE,
                                  sources=sources)["zones"] == schema_1_model["zones"]
     from scripts.export_parking_golden_cases import zones_from_model
-    v1_cases = [case for case in GOLDEN_CASES if case["zone_id"] in V1_ZONE_IDS]
+    v1_cases = [case for case in GOLDEN_CASES if case["zone_id"] in V1_ZONE_IDS and case["destination_x_m"] is None]
     assert len(v1_cases) == 38 + 8 + 8 + 10 and not [case for case in v1_cases if case["id"].startswith("V")]
     assert golden_case_mismatches(zones_from_model(schema_1_model), v1_cases) == []
 
@@ -434,3 +452,102 @@ def test_the_committed_fixture_model_lists_the_fixture_districts_and_names_their
     districts_file = FIXTURES / "parking_resident_districts_fixture.geojson"
     assert source["path"] == "tests/fixtures/parking/parking_resident_districts_fixture.geojson"
     assert source["sha256"] == te.content_sha256(districts_file)
+
+
+# ------------------------------------------------------------------------------------------ garages (schema 3)
+
+FIXTURE_GARAGES = FIXTURES / "parking_garages_fixture.geojson"
+GARAGE_KEYS = ["bands", "billing_unit_min", "daily_cap_cents", "fee_end_s", "fee_start_s", "first_period_cents",
+               "first_period_end_s", "first_period_min", "first_period_start_s", "garage_id", "hourly_rate_cents",
+               "monthly_cents", "tiers", "x_m", "y_m"]
+
+
+@pytest.fixture(scope="module")
+def garage_frame():
+    from braunschweig.parking import garages as pg
+    frame = pg.load_garages(FIXTURE_GARAGES)
+    pg.validate_garages(frame)
+    return frame
+
+
+def test_the_model_has_exactly_the_documented_top_level_keys_and_the_garage_parameters(model):
+    assert sorted(model) == ["assumptions", "currency", "garage_decay_m", "garage_max_distance_m", "garages",
+                             "resident_districts", "schema_version", "sources", "tariff_snapshot_date",
+                             "terminal_stay_rule", "weekday_only", "zones"]
+    # built without a garage dataset: no garages, decay 0 (the garage options off), the default maximum distance
+    assert model["garages"] == [] and model["garage_decay_m"] == 0.0 and model["garage_max_distance_m"] == 1000.0
+
+
+def test_the_garages_are_the_priced_garages_of_the_dataset_sorted_by_id_in_integer_units(table, sources, garage_frame):
+    shuffled = garage_frame.iloc[::-1].reset_index(drop=True)
+    full = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=shuffled,
+                                 garage_decay_m=400.0, garage_max_distance_m=1000.0)
+    assert full["garage_decay_m"] == 400.0 and full["garage_max_distance_m"] == 1000.0
+    ids = [entry["garage_id"] for entry in full["garages"]]
+    assert ids == sorted(ids) and len(ids) == 15
+    assert all(sorted(entry) == GARAGE_KEYS for entry in full["garages"])
+    by_id = {entry["garage_id"]: entry for entry in full["garages"]}
+    # hand-derived from the fixture rows: 2.00 EUR per started 60 min, all day (0 to 86400 s), monthly 63.00 EUR
+    assert by_id["fx_g01_core"] == {
+        "garage_id": "fx_g01_core", "x_m": 580300.0, "y_m": 5750000.0, "hourly_rate_cents": 200, "billing_unit_min": 60,
+        "fee_start_s": 0, "fee_end_s": 86400, "first_period_min": None, "first_period_cents": None,
+        "first_period_start_s": None, "first_period_end_s": None, "daily_cap_cents": None, "tiers": None, "bands": None,
+        "monthly_cents": 6300}
+    # tiers in seconds after midnight and cents, the first-period window 06:00-24:00 and the cap 6.00 EUR
+    assert by_id["fx_g09_fp"]["tiers"] == [{"start_s": 0, "end_s": 21600, "unit_min": 60, "price_cents": 50},
+                                           {"start_s": 21600, "end_s": 86400, "unit_min": 60, "price_cents": 120}]
+    assert (by_id["fx_g09_fp"]["first_period_min"], by_id["fx_g09_fp"]["first_period_cents"],
+            by_id["fx_g09_fp"]["first_period_start_s"], by_id["fx_g09_fp"]["first_period_end_s"],
+            by_id["fx_g09_fp"]["daily_cap_cents"]) == (60, 110, 21600, 86400, 600)
+    assert by_id["fx_g09_fp"]["fee_start_s"] is None and by_id["fx_g09_fp"]["hourly_rate_cents"] is None
+    # the night tier of Rosenwall crosses midnight: 23:00-08:00 is 82800 to 28800
+    assert {"start_s": 82800, "end_s": 28800, "unit_min": 30, "price_cents": 10} in by_id["fx_g07_tiers"]["tiers"]
+    assert by_id["fx_g10_grace"]["bands"] == [
+        {"from_min": 0, "to_min": 15, "kind": "free", "price_cents": 0, "unit_min": None},
+        {"from_min": 15, "to_min": 60, "kind": "total", "price_cents": 150, "unit_min": None},
+        {"from_min": 60, "to_min": None, "kind": "increment", "price_cents": 150, "unit_min": 60}]
+    assert by_id["fx_g10_grace"]["fee_start_s"] == 0 and by_id["fx_g10_grace"]["daily_cap_cents"] == 1800
+    assert by_id["fx_g06_window"]["fee_start_s"] == 36000 and by_id["fx_g06_window"]["fee_end_s"] == 43200
+    # the model reads back into the same garages (the Java reader's contract)
+    assert [g.to_json() for g in te.garages_from_model(full)] == full["garages"]
+    assert te.garages_from_model({"zones": {}}) == []   # a schema 1 or 2 model has no garages
+
+
+def test_an_unpriced_garage_is_listed_in_the_dataset_and_left_out_of_the_model(table, sources, garage_frame):
+    unpriced = garage_frame.copy()
+    unpriced.loc[0, ["priced", "not_priced_reason"]] = [False, "no_published_tariff"]
+    for column in ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_fee_start_h", "garage_fee_end_h",
+                   "monthly_eur"):
+        unpriced.loc[0, column] = None
+    entries = te.garage_entries(unpriced)
+    assert len(entries) == 14 and unpriced.loc[0, "garage_id"] not in [entry["garage_id"] for entry in entries]
+    with pytest.raises(ValueError, match="not priced"):
+        te.garage_row_to_tariff(unpriced.iloc[0])
+
+
+def test_the_garage_export_refuses_a_wrong_crs_a_missing_column_and_bad_parameters(table, sources, garage_frame):
+    with pytest.raises(ValueError, match="EPSG:25832"):
+        te.garage_entries(garage_frame.to_crs("EPSG:4326"))
+    with pytest.raises(ValueError, match="lacks the columns"):
+        te.garage_entries(garage_frame.drop(columns=["tariff_tiers"]))
+    for decay, distance, message in ((-1.0, 1000.0, "garage_decay_m"), (float("nan"), 1000.0, "garage_decay_m"),
+                                     (400.0, 0.0, "garage_max_distance_m"), (400.0, float("inf"), "garage_max_distance_m")):
+        with pytest.raises(ValueError, match=message):
+            te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garage_decay_m=decay,
+                                  garage_max_distance_m=distance)
+
+
+def test_a_garage_price_that_is_no_whole_cent_is_refused(garage_frame):
+    broken = garage_frame.copy()
+    broken.loc[0, "garage_hourly_rate_eur"] = 2.005
+    with pytest.raises(ValueError, match="whole number of cents"):
+        te.garage_entries(broken)
+
+
+def test_the_committed_fixture_model_lists_the_fixture_garages_and_names_their_file_as_a_source():
+    committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
+    assert committed["schema_version"] == 3 and committed["garage_decay_m"] == 400.0
+    assert committed["garage_max_distance_m"] == 1000.0 and len(committed["garages"]) == 15
+    source = next(source for source in committed["sources"] if source["source_id"] == "parking_garages_fixture")
+    assert source["path"] == "tests/fixtures/parking/parking_garages_fixture.geojson"
+    assert source["sha256"] == te.content_sha256(FIXTURE_GARAGES)

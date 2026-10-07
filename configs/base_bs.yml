@@ -674,6 +674,10 @@ config:
   # (ASSUMPTION R2 extends R1; R2-a, the tariff column resident_permits_valid: not on a campus and
   # not at the BgA car parks).
   parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
+  # The garage dataset (Data Registry parking_garages_2026, spec Amendment E1): its priced garages are the
+  # distance-weighted garage options of a stay in a paid zone (ASSUMPTIONS G1 and G2), loaded and validated
+  # with the rest of the release by braunschweig.parking.zones_stage.
+  parking_garages_path: braunschweig/parking/parking_garages_2026.geojson
   # Tariff state of the release (the date its tariff rows were retrieved, source_date of
   # parking_tariffs_2026.csv); names the tariff model JSON. Quoted: an unquoted YAML date is
   # rejected at configure time.
@@ -704,6 +708,17 @@ config:
   # changes the price only, never the simulated timing. 0 prices as before L1; 0 and 30 are the
   # sensitivity arms of the 25 % A/B.
   parking_minimum_stay_min: 15
+  # ASSUMPTION G2 (spec Amendment E2): a garage within this straight-line distance (metres, EPSG:25832) of
+  # the destination of a stay is an option of the stay.
+  parking_garage_max_distance_m: 1000.0
+  # ASSUMPTIONS G1 and G3 (spec Amendment E3 and E5): the decay length lambda in metres of the garage weights
+  # exp(-d / lambda), calibrated by scripts/parking/calibrate_garage_decay.py on the plans of the reference
+  # scenario (target: the garage share of srv2023_city_center_parking). 0 switches the garage options off (E6,
+  # the sensitivity arm). CALIBRATION PENDING: the reference plans were lost on 2026-10-07; the calibration runs
+  # on the server plans (Task 5 of issue #436), sets this value and commits
+  # parking_garage_decay_calibration_2026.csv. Until that table exists the value is 0 and
+  # tests/test_parking_garage_decay_config.py requires 0; once it exists the test requires the table value.
+  parking_garage_decay_m: 0.0
 
   remode_carless_car_legs: true
 

@@ -28,6 +28,7 @@ from shapely.geometry import box
 
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import prepare
+from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import zones as parking_zones
 from matsim import output
 
@@ -39,6 +40,8 @@ FIXTURE_TARIFFS_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
 FIXTURE_MODEL_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.json"
 #: The fixture resident districts (spec Amendment C3), the districts layer of the faked zones stage.
 FIXTURE_DISTRICTS_PATH = FIXTURE_DIRECTORY / "parking_resident_districts_fixture.geojson"
+#: The fixture garages (spec Amendment E1), the garage layer of the faked zones stage.
+FIXTURE_GARAGES_PATH = FIXTURE_DIRECTORY / "parking_garages_fixture.geojson"
 
 PARKING_STAGE = "braunschweig.parking.zones_stage"
 PREFIX = "bs_"
@@ -124,7 +127,8 @@ def _zones_stage_result() -> dict:
                 "sha256": hashlib.sha256(b"fixture zone polygons").hexdigest()}]
     return {"zones": zones, "tariffs": tariffs, "workplace_shares": pd.DataFrame(),
             "coverage_register": pd.DataFrame(),
-            "districts": parking_zones.load_resident_districts(FIXTURE_DISTRICTS_PATH), "sources": sources}
+            "districts": parking_zones.load_resident_districts(FIXTURE_DISTRICTS_PATH),
+            "garages": parking_garages.load_garages(FIXTURE_GARAGES_PATH), "sources": sources}
 
 
 def _prepare_context(tmp_path, monkeypatch, **values):
@@ -163,7 +167,7 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
         "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
-        "parking_minimum_stay_min": 15}
+        "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_max_distance_m": 1000.0}
 
 
 @pytest.mark.parametrize("values, message", [
@@ -177,8 +181,15 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     ({"parking_minimum_stay_min": "15"}, "parking_minimum_stay_min"),
     ({"parking_minimum_stay_min": True}, "parking_minimum_stay_min"),
     ({"parking_minimum_stay_min": 35_791_395}, "parking_minimum_stay_min"),
+    # Spec Amendment E6: the decay length is metres >= 0 (0 = garage options off), the maximum distance metres > 0
+    ({"parking_garage_decay_m": -1.0}, "garage_decay_m must be a finite number of metres >= 0.*parking_garage_decay_m"),
+    ({"parking_garage_decay_m": "400"}, "garage_decay_m must be a finite number"),
+    ({"parking_garage_decay_m": float("nan")}, "garage_decay_m must be a finite number"),
+    ({"parking_garage_max_distance_m": 0.0}, "garage_max_distance_m must be a finite number of metres > 0"),
+    ({"parking_garage_max_distance_m": True}, "garage_max_distance_m must be a finite number"),
 ], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
-        "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds"])
+        "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds", "negative_decay",
+        "text_decay", "nan_decay", "zero_maximum_distance", "boolean_maximum_distance"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
@@ -232,7 +243,33 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     assert model["resident_districts"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["resident_districts"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        2, "2026-09-29", "until_fee_end")
+        3, "2026-09-29", "until_fee_end")
+    # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum
+    # distance 1000 m (spec Amendment E6).
+    fixture_model = json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))
+    assert model["garages"] == fixture_model["garages"] and len(model["garages"]) == 15
+    assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (0.0, 1000.0)
+
+
+def test_on_execute_writes_the_configured_garage_parameters_into_the_model_and_the_report(tmp_path, monkeypatch, capsys):
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0,
+                                       parking_garage_max_distance_m=800.0)
+    prepare.execute(context)
+    model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
+    assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (400.0, 800.0)
+    report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
+    assert (report["garages_listed"], report["garages_priced"], report["garage_decay_m"],
+            report["garage_max_distance_m"]) == (15, 15, 400.0, 800.0)
+    [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
+    assert "garages priced 15 of 15 listed" in line and "garage options ON" in line
+
+
+def test_garage_options_without_a_priced_garage_fail_instead_of_pricing_nothing(tmp_path, monkeypatch):
+    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0)
+    unpriced = context.stages[PARKING_STAGE]["garages"].iloc[0:0]
+    context.stages[PARKING_STAGE]["garages"] = unpriced
+    with pytest.raises(ValueError, match="no priced garage"):
+        prepare.execute(context)
 
 
 def test_on_execute_writes_the_parking_module_and_keeps_every_other_byte_of_the_config(tmp_path, monkeypatch):
@@ -273,6 +310,7 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 18, "resident_districts": 3,
                       "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
+                      "garages_listed": 15, "garages_priced": 15, "garage_decay_m": 0.0, "garage_max_distance_m": 1000.0,
                       "sources": context.stages[PARKING_STAGE]["sources"]}
 
 

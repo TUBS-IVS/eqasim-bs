@@ -1,4 +1,4 @@
-"""Build the parking tariff model JSON (schema 2) that the Java parking cost model reads (issues #249, #436).
+"""Build the parking tariff model JSON (schema 3) that the Java parking cost model reads (issues #249, #436).
 
 The tariff table (design spec section 5.3: money in euros, fee hours as decimal hours of the weekday) is
 converted ONCE, here, into integer euro cents and integer seconds after midnight; the Java side reads only
@@ -11,6 +11,13 @@ Schema 2 (parking cost zones v2, levers 2 and 4) is additive: every zone entry c
 ``garage_daily_cap_cents``, ``garage_fee_start_s``, ``garage_fee_end_s``, ``commuter_day_cents`` and
 ``search_time_min``, null where the table leaves the column empty or does not have it. A schema-1 table therefore
 exports as schema 2 with these keys null and prices as before.
+
+Schema 3 (spec Amendment E, Task 4d) adds the top-level keys ``garages`` (the priced garages of the garage dataset as
+``braunschweig.parking.cost.GarageTariff`` entries sorted by ``garage_id``: position in EPSG:25832 metres, tariff in integer
+cents, minutes and seconds, the tiers, bands and first-period window where the garage has them, the monthly product in
+cents), ``garage_decay_m`` (the decay length lambda in metres; 0 switches the garage options off, E6) and
+``garage_max_distance_m`` (D_max, ASSUMPTION G2). A model built without a garage dataset lists no garages and carries a decay
+of 0; schema 1 and 2 files still load and price as before (the Java reader treats the three keys as absent there).
 
 Spec Amendment C3 (resident parking districts) adds two more keys without a new schema version, because they are
 additive: every zone entry carries ``resident_permits_valid``, a bool that is never null (an empty table cell resolves to
@@ -38,10 +45,13 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from braunschweig.parking.cost import SECONDS_PER_DAY, ZONE_TYPES, ZoneTariff, not_applicable_fields
+from braunschweig.parking import garages as parking_garages
+from braunschweig.parking.cost import (GARAGE_MAX_DISTANCE_M, SECONDS_PER_DAY, ZONE_TYPES, GarageBand, GarageTariff,
+                                       GarageTier, ZoneTariff, not_applicable_fields)
 
-#: 2 since parking cost zones v2 (issue #436): the zone entries gained the optional schema-2 keys.
-SCHEMA_VERSION = 2
+#: 3 since the garage options of parking cost zones v2 (spec Amendment E, issue #436): the model gained ``garages``,
+#: ``garage_decay_m`` and ``garage_max_distance_m``; 2 added the optional schema-2 keys of the zone entries.
+SCHEMA_VERSION = 3
 CURRENCY = "EUR"
 #: Assumption T1. The only rule implemented; the config key ``parking_terminal_stay_rule`` is reserved.
 TERMINAL_STAY_RULE_UNTIL_FEE_END = "until_fee_end"
@@ -49,6 +59,9 @@ SUPPORTED_TERMINAL_STAY_RULES = (TERMINAL_STAY_RULE_UNTIL_FEE_END,)
 
 SECONDS_PER_HOUR = 3600
 CENTS_PER_EURO = 100
+#: Garage positions are written in metres rounded to millimetres, so that the model is byte-stable and Java reads the same
+#: double as Python (the dataset stores WGS84 with 7 decimals, about 1 cm; the projected value is not finer than that).
+COORDINATE_DECIMALS_M = 3
 # A euro amount is a whole number of cents when euros * 100 lies this close to an integer; the slack only
 # absorbs binary floating-point noise (1.80 * 100 = 180.00000000000003), never a real sub-cent amount.
 _WHOLE_CENT_TOLERANCE = 1e-6
@@ -112,6 +125,17 @@ class Assumption:
 #: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact) and the resident district
 #: rule R2 of its Amendment C3 with its scope R2-a. The model JSON carries the rendered texts, so every tariff file
 #: states the assumptions it is priced under.
+_GARAGE_ASSUMPTION_WHERE_IT_BITES = {
+    "P3": "Garages whose notes name ASSUMPTION P3 (a night tariff that is no per-unit rate)",
+    "P4": "Garages whose published rate states no rounding (billed per started unit)",
+    "P5": "Garages whose published tariff states no charging times (fee window 0 to 24 h)",
+    "P6": "Tiered garages (tariff_tiers), stays that cross a tier boundary or a night",
+    "P7": "Garages that publish several caps",
+    "P8": "Banded garages (tariff_duration_bands), stays beyond the first band",
+    "P10": "Garages with a free first duration band read as a grace period, stays of the free minutes or a little longer",
+    "P11": "Garages priced from secondary evidence (the garages that name ASSUMPTION P11 in their notes)",
+}
+
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -153,8 +177,45 @@ ASSUMPTIONS_REGISTER = (
                "the local products", "Zones with garage or commuter columns",
                "leave the garage and commuter columns empty in an arm (the v1 pricing)"),
     Assumption("P2", "commuter_day_eur is the cheapest long-term product per working day (21 working days); regular "
-               "work/education commuters hold it, an effective daily cost for regulars, never a day tariff",
-               "Work/education stays in zones with commuter_day_eur", "commuter_day_eur presence"),
+               "work/education commuters hold it, an effective daily cost for regulars, never a day tariff; the monthly "
+               "product of a garage (monthly_cents) is divided by the same 21 working days, rounded half up to the cent, "
+               "and is offered to work and education only",
+               "Work/education stays in zones with commuter_day_eur and at garages with a monthly product",
+               "commuter_day_eur presence; monthly product of the garage dataset"),
+    # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P11 of the
+    # dataset (their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``, the data record
+    # parking_garages_2026 is their source text), P9 of the pricing code, and the choice model G1, G2 and G3.
+    *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id], _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
+                 "garage dataset rows that name it (column assumptions of parking_garages_2026)")
+      for assumption_id in ("P3", "P4", "P5", "P6", "P7", "P8")),
+    Assumption("P9", "a stay longer than a closed duration schedule (one that ends at 1440 min, e.g. Peine) is priced per "
+               "started 24 h: k full periods at the price of 1440 min plus the price of the remainder, every period capped by "
+               "the day cap; the pricing code counts and logs how often it applies", "Stays longer than 24 h at garages "
+               "with a closed schedule that ends at 1440 min", "none: the rate is reported by the pricing "
+               "counters"),
+    *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id], _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
+                 "garage dataset rows that name it (column assumptions of parking_garages_2026)")
+      for assumption_id in ("P10", "P11")),
+    Assumption("G1", "A car stay in a paid zone has the options street (weight 1) and every priced garage within the maximum "
+               "distance, weight exp(-d / lambda) with d the straight-line distance in metres (a gravity-type choice by "
+               "distance); the price of the stay is the probability-weighted mean of the option costs (an expected cost, no "
+               "random draw), the price does not enter the weights and capacity or occupancy are not modelled",
+               "Stays in street_paid and resident_zone zones with a garage in range (never campus zones, never a stay that "
+               "is free by an early rule or whose street option costs 0)",
+               "garage_decay_m (0 switches the garage options off; lambda is calibrated, see G3)"),
+    Assumption("G2", "A garage is an option of a stay when its straight-line distance to the destination (EPSG:25832) is at "
+               "most 1000 m", "Garages far from a destination carry a small weight (exp(-d / lambda)) but widen the option "
+               "set; a garage just inside the limit is an option, one just outside is none",
+               "garage_max_distance_m (config parking_garage_max_distance_m)"),
+    Assumption("G3", "The decay length lambda is calibrated, not estimated: it is set so that the mean garage probability of "
+               "the non-home, non-work, non-education stays at activities inside bs_zone_ia and bs_zone_ib (all modes, "
+               "destination universe, the plans of the reference scenario) equals the SrV 2023 share of garages and large "
+               "lots among the Braunschweig residents who park on the street or in a garage when they drive to the city "
+               "centre (srv2023_city_center_parking, rows garage_large_lot and street); the same lambda applies in every "
+               "town (transfer assumption); SrV asks residents about their usual place, the model averages over "
+               "destinations; the garage share is therefore a calibration target and no validation; the value of a release "
+               "is recorded with its calibration table, and a model with garage_decay_m 0 has no garage options",
+               "Every stay with a garage option", "garage_decay_m"),
     # Parking cost zones v2, Amendment C3: the resident parking districts, a layer of their own, and where their permits
     # are valid (ruling R-T1e-a).
     Assumption("R2", "Residence inside a resident parking district equals permit possession (extends R1): a stay "
@@ -165,9 +226,10 @@ ASSUMPTIONS_REGISTER = (
                "parking_resident_districts_2026)", "none: the district layer is a release input, not a parameter"),
     Assumption("R2-a", "Resident parking permits are valid at street and resident-zone parking unless the tariff row "
                "says otherwise (resident_permits_valid) and never on a campus; the separately operated car parks of "
-               "the city (BgA) are marked not valid, because no source states that permits are valid there",
-               "Stays of residents inside their own district at the BgA car parks of Braunschweig and on a campus "
-               "(rows with resident_permits_valid false)",
+               "the city (BgA) and the Goslar car park Klubgartenstrasse/ZOB (gs_parkplatz_klubgartenstrasse_zob) are marked "
+               "not valid, because no source states that permits are valid there",
+               "Stays of residents inside their own district at the BgA car parks of Braunschweig, at the ZOB car park of "
+               "Goslar and on a campus (rows with resident_permits_valid false)",
                "set resident_permits_valid to true on a BgA row in an arm (a campus row rejects true)"),
 )
 
@@ -334,6 +396,95 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     return ZoneTariff(**fields)
 
 
+def _tier_cents(eur: float) -> int:
+    return int(round(eur * CENTS_PER_EURO))
+
+
+def garage_tiers_from_text(text) -> tuple[GarageTier, ...]:
+    """The tiers of a ``tariff_tiers`` text of the garage dataset (``braunschweig.parking.garages.parse_tariff_tiers``, which
+    validates the text) as ``GarageTier`` objects: clock times in seconds after midnight (an end of 24:00 is 86,400),
+    prices in whole cents (the text carries two decimals, so the conversion is exact)."""
+    return tuple(GarageTier(start_s=tier.start_min * 60, end_s=tier.end_min * 60, unit_min=tier.unit_min,
+                            price_cents=_tier_cents(tier.eur)) for tier in parking_garages.parse_tariff_tiers(text))
+
+
+def garage_bands_from_text(text) -> tuple[GarageBand, ...]:
+    """The bands of a ``tariff_duration_bands`` text of the garage dataset (``parse_duration_bands``, which validates the
+    text) as ``GarageBand`` objects in whole cents; a free band has price 0 and no unit."""
+    return tuple(GarageBand(from_min=band.from_min, to_min=band.to_min, kind=band.kind,
+                            price_cents=0 if band.kind == "free" else _tier_cents(band.eur), unit_min=band.unit_min)
+                 for band in parking_garages.parse_duration_bands(text))
+
+
+def garage_row_to_tariff(row: Mapping) -> GarageTariff:
+    """Convert one row of the garage dataset (``braunschweig.parking.garages.load_garages``, a pandas Series with its
+    ``geometry``) of a PRICED garage into a ``GarageTariff``.
+
+    Euros become integer cents (a value that is not a whole number of cents raises, as for the zone rows), decimal hours
+    seconds after midnight (``int(round(h * 3600))``), the position the point's EPSG:25832 coordinates in metres rounded to
+    millimetres (``COORDINATE_DECIMALS_M``), the tier and band texts their integer forms. An empty cell is None. Raises
+    ``ValueError`` for an unpriced garage (listed, never priced: no value is approximated) and for anything
+    ``GarageTariff`` rejects.
+    """
+    garage_id = _identifier(row["garage_id"], "garage_id", "garage row")
+    where = f"garage row {garage_id!r}"
+    if not bool(row["priced"]):
+        raise ValueError(f"{where}: the garage is not priced ({row['not_priced_reason']}); an unpriced garage is no option")
+    point = row["geometry"]
+    if point is None or point.is_empty or point.geom_type != "Point":
+        raise ValueError(f"{where}: the geometry must be a point")
+    tiers, bands = row["tariff_tiers"], row["tariff_duration_bands"]
+    fields = {
+        "garage_id": garage_id,
+        "x_m": round(float(point.x), COORDINATE_DECIMALS_M), "y_m": round(float(point.y), COORDINATE_DECIMALS_M),
+        "hourly_rate_cents": _euros_to_cents(row["garage_hourly_rate_eur"], "garage_hourly_rate_eur", where),
+        "billing_unit_min": _whole_minutes(row["garage_billing_unit_min"], "garage_billing_unit_min", where),
+        "fee_start_s": _hours_to_seconds(row["garage_fee_start_h"], "garage_fee_start_h", where, required=False),
+        "fee_end_s": _hours_to_seconds(row["garage_fee_end_h"], "garage_fee_end_h", where, required=False),
+        "first_period_min": _whole_minutes(row["garage_first_period_min"], "garage_first_period_min", where),
+        "first_period_cents": _euros_to_cents(row["garage_first_period_eur"], "garage_first_period_eur", where),
+        "first_period_start_s": _hours_to_seconds(row["garage_first_period_start_h"], "garage_first_period_start_h", where,
+                                                  required=False),
+        "first_period_end_s": _hours_to_seconds(row["garage_first_period_end_h"], "garage_first_period_end_h", where,
+                                                required=False),
+        "daily_cap_cents": _euros_to_cents(row["garage_daily_cap_eur"], "garage_daily_cap_eur", where),
+        "tiers": None if _is_empty(tiers) else garage_tiers_from_text(tiers),
+        "bands": None if _is_empty(bands) else garage_bands_from_text(bands),
+        "monthly_cents": _euros_to_cents(row["monthly_eur"], "monthly_eur", where),
+    }
+    return GarageTariff(**fields)
+
+
+def garage_entries(garages) -> list[dict]:
+    """The ``garages`` list of the model: the PRICED garages of the dataset (``braunschweig.parking.garages.load_garages``,
+    EPSG:25832) as ``GarageTariff.to_json`` entries sorted by ``garage_id``. None is no garage dataset and gives an empty
+    list. Unpriced garages are left out (spec E1: listed, not priced); callers log how many. Raises ``ValueError`` for a
+    CRS other than EPSG:25832 (a metric CRS is required for the distances), a missing column or a duplicate id. Pure."""
+    if garages is None:
+        return []
+    if garages.crs is None or garages.crs.to_epsg() != 25832:
+        raise ValueError(f"the garage dataset must be in EPSG:25832 (metres), found {garages.crs}")
+    missing = [column for column in parking_garages.DATASET_COLUMNS if column not in garages.columns]
+    if missing:
+        raise ValueError(f"the garage dataset lacks the columns {missing}")
+    entries, seen = [], set()
+    for _, row in garages.iterrows():
+        if not bool(row["priced"]):
+            continue
+        garage = garage_row_to_tariff(row)
+        if garage.garage_id in seen:
+            raise ValueError(f"duplicate garage_id {garage.garage_id!r}")
+        seen.add(garage.garage_id)
+        entries.append(garage)
+    return [garage.to_json() for garage in sorted(entries, key=lambda garage: garage.garage_id)]
+
+
+def garages_from_model(model: Mapping) -> list[GarageTariff]:
+    """The model's garage entries as ``GarageTariff`` objects (inverse of ``garage_entries``); a model without the key (a
+    schema 1 or 2 file) has none."""
+    return [GarageTariff.from_json(entry) for entry in model.get("garages", [])]
+
+
 def zone_to_json(zone: ZoneTariff) -> dict:
     """The zone entry of the model JSON: every ``ZoneTariff`` field except ``zone_id``, which is its key."""
     fields = asdict(zone)
@@ -409,10 +560,23 @@ def resident_district_entries(districts: pd.DataFrame | None) -> list[dict]:
     return sorted(entries, key=lambda entry: entry["district_id"])
 
 
+def check_garage_parameters(garage_decay_m, garage_max_distance_m) -> None:
+    """Raise ``ValueError`` unless ``garage_decay_m`` is a finite number of metres >= 0 (0 switches the garage options off)
+    and ``garage_max_distance_m`` a finite number of metres > 0; a bool is no number. Shared by the export and the
+    configure-time check of ``braunschweig.matsim.simulation.prepare``."""
+    for name, value, minimum_exclusive in (("garage_decay_m", garage_decay_m, False),
+                                           ("garage_max_distance_m", garage_max_distance_m, True)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or (
+                value <= 0 if minimum_exclusive else value < 0):
+            raise ValueError(f"{name} must be a finite number of metres {'> 0' if minimum_exclusive else '>= 0'}"
+                             f"{'' if minimum_exclusive else ' (0 switches the garage options off)'}, got {value!r}")
+
+
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
                        terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END,
-                       resident_districts: pd.DataFrame | None = None) -> dict:
-    """The tariff model of spec 5.4 (schema 2) for a tariff table with the spec 5.3 columns.
+                       resident_districts: pd.DataFrame | None = None, garages=None, garage_decay_m: float = 0.0,
+                       garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M) -> dict:
+    """The tariff model of spec 5.4 (schema 3) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
@@ -420,8 +584,11 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     three (``SOURCE_KEYS``). Only the terminal-stay rule ``until_fee_end`` (T1) exists. The schema-2 columns are
     optional: a schema-1 table exports with every schema-2 key null. ``resident_districts`` is the district layer of
     the release (``resident_district_entries``): the model lists its ids for the plan check of the Java side, an empty
-    list when none is given. Raises ``ValueError`` for an empty table, a missing schema-1 column, a duplicate zone id,
-    an invalid row, invalid sources or invalid districts. The returned dict is plain JSON data: integer cents and
+    list when none is given. ``garages`` is the garage dataset of the release (``garage_entries``: the priced garages, sorted
+    by id, None = no garage dataset); ``garage_decay_m`` is the decay length lambda in metres (ASSUMPTION G1, calibrated;
+    0 = garage options off) and ``garage_max_distance_m`` the maximum distance D_max (G2, > 0). Raises ``ValueError`` for an
+    empty table, a missing schema-1 column, a duplicate zone id, an invalid row, invalid sources, invalid districts, an
+    invalid garage or an invalid garage parameter. The returned dict is plain JSON data: integer cents and
     seconds, None for "not applicable".
     """
     if terminal_stay_rule not in SUPPORTED_TERMINAL_STAY_RULES:
@@ -430,6 +597,11 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     check_snapshot_date(snapshot_date)
     checked_sources = _check_sources(sources)
     district_entries = resident_district_entries(resident_districts)
+    check_garage_parameters(garage_decay_m, garage_max_distance_m)
+    garage_list = garage_entries(garages)
+    if garage_decay_m > 0 and not garage_list:
+        raise ValueError(f"garage_decay_m is {garage_decay_m} (the garage options are on) but the release lists no priced "
+                         "garage: set garage_decay_m to 0 or give the garage dataset (parking_garages_path)")
     missing = [column for column in REQUIRED_COLUMNS if column not in tariffs.columns]
     if missing:
         raise ValueError(f"tariff table is missing the columns {missing}; spec 5.3 requires {list(REQUIRED_COLUMNS)}")
@@ -451,6 +623,9 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         "assumptions": assumption_texts(),
         "sources": checked_sources,
         "resident_districts": district_entries,
+        "garages": garage_list,
+        "garage_decay_m": float(garage_decay_m),
+        "garage_max_distance_m": float(garage_max_distance_m),
         "zones": zones,
     }
 

@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from braunschweig.parking import cost
-from braunschweig.parking.golden_cases import GOLDEN_CASES, STAY_ERROR_PATTERN, evaluate_case, golden_case_mismatches
+from braunschweig.parking.golden_cases import (GOLDEN_CASES, GOLDEN_GARAGE_OPTION_CASES, STAY_ERROR_PATTERN, evaluate_case,
+                                               golden_case_mismatches, option_case_mismatches)
 
 GOLDEN_JSON = Path(__file__).resolve().parent / "fixtures" / "parking" / "parking_golden_cases.json"
 REGENERATE_HINT = "regenerate with: python scripts/export_parking_golden_cases.py"
@@ -50,46 +51,112 @@ def fixture_zones():
     return fixture_zone_tariffs()
 
 
-def test_the_contract_holds_the_g_l_lz_v_and_r_cases_each_with_its_minimum_stay():
+@pytest.fixture(scope="module")
+def fixture_garages():
+    # The fixture garages (dataset -> tariff model -> GarageTariff), as the Java side reads them.
+    from scripts.export_parking_golden_cases import fixture_garage_tariffs
+    return fixture_garage_tariffs()
+
+
+def test_the_contract_holds_the_g_l_lz_v_r_and_e_cases_each_with_its_minimum_stay():
     # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
     # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
-    # except R10 and R11 at L = 15.
+    # except R10 and R11 at L = 15; E01..E26 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
+    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 27)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
-    # only the R cases set the district flag, and the flag is a key of every case
+    # only the R cases and E12 (R2 before the garages) set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)
     assert [case["id"] for case in GOLDEN_CASES if case["resident_of_district"]] == [
-        "R01", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11", "R12", "R13"]
+        "R01", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11", "R12", "R13", "E12"]
     assert all(case["expected_outcome"] in cost.OUTCOMES for case in GOLDEN_CASES if not case["expected_error"])
     assert [case["id"] for case in GOLDEN_CASES if case["expected_error"]] == ["G26"]
 
 
 @pytest.mark.parametrize("case", GOLDEN_CASES, ids=[case["id"] for case in GOLDEN_CASES])
-def test_golden_case(case, fixture_zones):
+def test_golden_case(case, fixture_zones, fixture_garages):
     if case["expected_error"]:
         with pytest.raises(ValueError, match="before arrival_s"):
-            evaluate_case(case, fixture_zones)
+            evaluate_case(case, fixture_zones, fixture_garages)
     else:
-        assert evaluate_case(case, fixture_zones) == (case["expected_cents"], case["expected_outcome"])
+        assert evaluate_case(case, fixture_zones, fixture_garages) == (case["expected_cents"], case["expected_outcome"])
 
 
-def test_the_committed_golden_json_is_in_sync(fixture_zones):
+@pytest.mark.parametrize("case", GOLDEN_GARAGE_OPTION_CASES, ids=[case["id"] for case in GOLDEN_GARAGE_OPTION_CASES])
+def test_golden_garage_option_case(case, fixture_garages):
+    assert option_case_mismatches(fixture_garages, [case]) == []
+
+
+def test_the_garage_option_cases_are_named_o01_to_o44_and_name_known_fixture_garages(fixture_garages):
+    assert [case["id"] for case in GOLDEN_GARAGE_OPTION_CASES] == [f"O{number:02d}" for number in range(1, 45)]
+    assert {case["garage_id"] for case in GOLDEN_GARAGE_OPTION_CASES} <= {garage.garage_id for garage in fixture_garages}
+    assert option_case_mismatches(fixture_garages, [{**GOLDEN_GARAGE_OPTION_CASES[0], "garage_id": "fx_unknown"}])
+
+
+def test_the_cases_without_a_destination_price_exactly_as_before_the_garage_options(fixture_zones):
+    # Families G, L, LZ, V and R carry no destination: their numbers must be those of the schema-2 reference
+    # parking_cost_cents, whatever garages exist and whatever the decay.
+    without_destination = [case for case in GOLDEN_CASES if case["destination_x_m"] is None]
+    assert [case["id"] for case in without_destination] == [case["id"] for case in GOLDEN_CASES if case["id"][0] != "E"]
+    assert len(without_destination) == 90
+    for case in without_destination:
+        if case["expected_error"]:
+            continue
+        zone = fixture_zones[case["zone_id"]]
+        departure_s = (cost.terminal_departure_s(case["arrival_s"], zone.fee_end_s) if case["terminal"]
+                       else case["departure_s"])
+        departure_s = cost.minimum_stay_departure_s(case["arrival_s"], departure_s, case["minimum_stay_min"] * 60)
+        assert cost.parking_cost_cents(zone, case["arrival_s"], departure_s, purpose=case["purpose"],
+                                       parking_free=case["parking_free"], resident_of_zone=case["resident_of_zone"],
+                                       resident_of_district=case["resident_of_district"]) == (
+            case["expected_cents"], case["expected_outcome"]), case["id"]
+        assert case["expected_garage_probability"] == 0.0 and case["garage_decay_m"] == 400.0
+
+
+def test_every_pinned_expectation_keeps_a_rounding_margin_and_a_mismatch_is_reported(fixture_zones, fixture_garages):
+    # E03's unrounded expectation 707.507 is the closest to a half cent (0.007 cents): Math.exp cannot flip it. A
+    # case whose hand-pinned number is wrong is reported, and so is a wrong garage probability.
+    assert golden_case_mismatches(fixture_zones, GOLDEN_CASES, fixture_garages) == []
+    e02 = next(case for case in GOLDEN_CASES if case["id"] == "E02")
+    wrong_cents = golden_case_mismatches(fixture_zones, [{**e02, "expected_cents": 187}], fixture_garages)
+    assert len(wrong_cents) == 1 and wrong_cents[0].startswith("E02: expected (187, 'PAID_EXPECTED')")
+    wrong_probability = golden_case_mismatches(fixture_zones, [{**e02, "expected_garage_probability": 0.5}], fixture_garages)
+    assert len(wrong_probability) == 1 and "garage probability" in wrong_probability[0]
+
+
+def test_the_committed_golden_json_is_in_sync(fixture_zones, fixture_garages):
     from scripts.export_parking_golden_cases import GOLDEN_SCHEMA_VERSION
 
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    # 3 since the resident district rule R2: every case carries resident_of_district (2: minimum_stay_min)
-    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 3, REGENERATE_HINT
+    # 4 since the garage options (spec Amendment E): garages, garage_max_distance_m, garage_option_cases and the four garage
+    # keys of every case (3: resident_of_district of the rule R2; 2: minimum_stay_min)
+    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 4, REGENERATE_HINT
+    assert sorted(document) == ["cases", "garage_max_distance_m", "garage_option_cases", "garages", "schema_version",
+                                "tariffs"], REGENERATE_HINT
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
+    assert document["garage_option_cases"] == [dict(case) for case in GOLDEN_GARAGE_OPTION_CASES], REGENERATE_HINT
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
     assert zones == fixture_zones, REGENERATE_HINT
-    # Re-evaluate every case of the FILE with the file's own tariffs, as the Java test does.
-    assert golden_case_mismatches(zones, document["cases"]) == []
+    garages = [cost.GarageTariff.from_json(entry) for entry in document["garages"]]
+    assert garages == fixture_garages, REGENERATE_HINT
+    assert [garage.garage_id for garage in garages] == sorted(garage.garage_id for garage in garages)
+    assert document["garage_max_distance_m"] == cost.GARAGE_MAX_DISTANCE_M == 1000.0
+    # Re-evaluate every case of the FILE with the file's own tariffs and garages, as the Java test does.
+    assert golden_case_mismatches(zones, document["cases"], garages, document["garage_max_distance_m"]) == []
+    assert option_case_mismatches(garages, document["garage_option_cases"]) == []
+
+
+def test_the_golden_cases_carry_exactly_the_documented_keys():
+    from braunschweig.parking.golden_cases import CASE_FIELDS, OPTION_CASE_FIELDS
+    assert all(list(case) == list(CASE_FIELDS) for case in GOLDEN_CASES)
+    assert all(list(case) == list(OPTION_CASE_FIELDS) for case in GOLDEN_GARAGE_OPTION_CASES)
+    assert len(CASE_FIELDS) == 17 and len(OPTION_CASE_FIELDS) == 6
 
 
 def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones):
@@ -101,12 +168,12 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
     assert problem.startswith("G26:") and "departure before arrival" in problem and "unknown zone id" in problem
 
 
-def test_outcomes_are_twelve_constants_named_as_their_values_with_the_v2_products_appended():
+def test_outcomes_are_thirteen_constants_named_as_their_values_with_the_v2_products_appended():
     # Appended at the END, so the declaration order of the ten v1 outcomes (the order of the Java ParkingOutcome
-    # enum and of the outcome report) stays as it was.
+    # enum and of the outcome report) stays as it was; PAID_EXPECTED (schema 3, the garage expectation) comes last.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
-                             "PAID_GARAGE", "PAID_COMMUTER")
+                             "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED")
     assert all(getattr(cost, outcome) == outcome for outcome in cost.OUTCOMES)
     assert cost.CAMPUS_MEMBER_PURPOSES == frozenset({"work", "education"})
     assert cost.COMMUTER_PURPOSES == frozenset({"work", "education"})

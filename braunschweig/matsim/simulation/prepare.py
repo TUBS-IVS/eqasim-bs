@@ -80,6 +80,13 @@ PARKING_DEFAULTS = {
     # ASSUMPTION L1 (ADR-0139): every priced car stay lasts at least this many minutes (the module parameter
     # minimumStayMinutes); 0 prices the stays as before L1.
     "parking_minimum_stay_min": 15,
+    # ASSUMPTION G1 (spec Amendment E3, E5, E6): the decay length lambda in metres of the garage weights exp(-d / lambda),
+    # calibrated by scripts/parking/calibrate_garage_decay.py; 0 switches the garage options off. The default is 0: a
+    # value is set only together with its calibration table (configs/base_bs.yml, parking_garage_decay_m).
+    "parking_garage_decay_m": 0.0,
+    # ASSUMPTION G2 (spec Amendment E2): the maximum straight-line distance in metres from a destination to a garage
+    # option.
+    "parking_garage_max_distance_m": 1000.0,
 }
 #: Largest parking_minimum_stay_min the Java ParkingConfigGroup accepts: the minimum in seconds must fit a Java int.
 PARKING_MINIMUM_STAY_MAXIMUM_MIN = (2 ** 31 - 1) // 60
@@ -95,8 +102,12 @@ PARKING_MODULE = "braunschweigParking"
 #: scenario of a cordon RUN trustworthy, and it costs nothing when the flag is off.
 _DEFERRED_HELPER_MODULE_NAMES = (
     # ``tariff_export`` turns every tariff row into a ``cost.ZoneTariff`` and writes its fields as the zone
-    # entry of the parking tariff model, so the dataclass decides the model's content and its validation.
+    # entry of the parking tariff model, so the dataclass decides the model's content and its validation; it
+    # converts every priced garage into a ``cost.GarageTariff`` through ``parking.garages`` (the tier and band
+    # parsers), which load ``parking.zones``.
     "braunschweig.parking.cost",
+    "braunschweig.parking.garages",
+    "braunschweig.parking.zones",
     "braunschweig.data.cordon.extent",
     "braunschweig.data.spatial.cordon",
     # The rest of this stage's import closure: modules its helpers import, whose code this
@@ -188,10 +199,13 @@ def configure(context):
             context.config(key, default)
         _check_parking_parameters(context.config("parking_tariff_snapshot_date"),
                                   context.config("parking_terminal_stay_rule"),
-                                  context.config("parking_minimum_stay_min"))
+                                  context.config("parking_minimum_stay_min"),
+                                  context.config("parking_garage_decay_m"),
+                                  context.config("parking_garage_max_distance_m"))
 
 
-def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min):
+def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
+                              garage_max_distance_m=1000.0):
     """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
@@ -200,7 +214,9 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     ``tariff_export.check_snapshot_date``, and the message names the fix that matches the mistake: quotes for a YAML
     date, the ISO format for text in another format. The minimum stay (L1) must be a whole number of minutes in
     ``[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]``, the range the Java side reads from plain digits; a bool is rejected
-    although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute.
+    although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute. The garage decay
+    length (G1; 0 = garage options off) must be a finite number of metres >= 0 and the maximum garage distance (G2) a
+    finite number of metres > 0, both numbers and no bool (``tariff_export.check_garage_parameters``).
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
@@ -210,6 +226,10 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
         raise ValueError(f"parking_minimum_stay_min must be a whole number of minutes in "
                          f"[0, {PARKING_MINIMUM_STAY_MAXIMUM_MIN}] (rule L1, ADR-0139; 0 prices the stays as before "
                          f"L1), got {minimum_stay_min!r}")
+    try:
+        tariff_export.check_garage_parameters(garage_decay_m, garage_max_distance_m)
+    except ValueError as error:
+        raise ValueError(f"{error} (config keys parking_garage_decay_m and parking_garage_max_distance_m)") from error
     example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
         tariff_export.check_snapshot_date(snapshot_date)
@@ -369,9 +389,12 @@ def _write_parking_inputs(context, config_name):
     terminal_stay_rule = context.config("parking_terminal_stay_rule")
     minimum_stay_min = context.config("parking_minimum_stay_min")
     release = context.stage("braunschweig.parking.zones_stage")
+    garage_decay_m = context.config("parking_garage_decay_m")
+    garage_max_distance_m = context.config("parking_garage_max_distance_m")
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
-                                             resident_districts=release["districts"])
+                                             resident_districts=release["districts"], garages=release["garages"],
+                                             garage_decay_m=garage_decay_m, garage_max_distance_m=garage_max_distance_m)
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
@@ -382,13 +405,18 @@ def _write_parking_inputs(context, config_name):
     report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
               "resident_districts": len(model["resident_districts"]), "zone_types": zone_types,
               "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
+              "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
+              "garage_decay_m": model["garage_decay_m"], "garage_max_distance_m": model["garage_max_distance_m"],
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
     print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
-          "%d min; tariff model %s, module %s in %s, report %s" % (
+          "%d min; garages priced %d of %d listed, decay length %s m (%s), maximum distance %s m; tariff model %s, "
+          "module %s in %s, report %s" % (
               len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
-              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, tariffs_name, PARKING_MODULE,
-              config_name, report_name))
+              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, len(model["garages"]),
+              len(release["garages"]), model["garage_decay_m"],
+              "garage options ON" if model["garage_decay_m"] > 0 else "garage options OFF",
+              model["garage_max_distance_m"], tariffs_name, PARKING_MODULE, config_name, report_name))
 
 
 def _cut_to_cordon(context):

@@ -6,19 +6,23 @@ truth. The script
 1. loads the fixture tariff table ``tests/fixtures/parking/parking_tariffs_fixture.csv`` with the production
    loader ``braunschweig.parking.zones.load_tariffs`` (the documented CSV: ``#`` comment lines, identifier
    columns kept as text), so the fixture passes through exactly the code path of the committed tariff table;
-2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 2)
+2. converts it with the production export (``braunschweig.parking.tariff_export.build_tariff_model``, schema 3)
    together with the fixture resident districts ``tests/fixtures/parking/parking_resident_districts_fixture.geojson``
    (loaded by ``braunschweig.parking.zones.load_resident_districts``; the model lists their ids as
-   ``resident_districts``) and evaluates every golden case of ``braunschweig.parking.golden_cases``
-   (``GOLDEN_CASES``: G01..G38, L01..L08, L01Z..L08Z, V01..V23, R01..R13, each priced under its own minimum stay
-   ``minimum_stay_min`` and its own resident district flag ``resident_of_district``, and under the
-   ``resident_permits_valid`` of its fixture zone) with the Python reference ``braunschweig.parking.cost``; it writes
-   nothing when a result differs from its hard-coded expectation;
+   ``resident_districts``) and the fixture garages ``tests/fixtures/parking/parking_garages_fixture.geojson`` (loaded and
+   validated by ``braunschweig.parking.garages``; the model lists the priced ones as ``garages`` with the illustrative
+   decay ``golden_cases.FIXTURE_GARAGE_DECAY_M`` and the maximum distance 1000 m) and evaluates every golden case of
+   ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38, L01..L08, L01Z..L08Z, V01..V23, R01..R13,
+   E01..E26, each priced under its own minimum stay ``minimum_stay_min``, its own resident district flag
+   ``resident_of_district``, its destination and decay, and under the ``resident_permits_valid`` of its fixture zone) and every
+   garage option case (``GOLDEN_GARAGE_OPTION_CASES``: O01..O44) with the Python reference ``braunschweig.parking.cost``;
+   it writes nothing when a result differs from its hard-coded expectation;
 3. writes two sorted-key LF JSON files into ``tests/fixtures/parking/``:
    ``parking_golden_cases.json`` (``schema_version`` ``GOLDEN_SCHEMA_VERSION``, the fixture ``tariffs`` in
-   cents, the ``cases``; read by ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and
-   ``parking_tariffs_fixture.json`` (the spec 5.4 tariff model of the fixture set; ``sources`` holds the
-   path and LF-normalised sha256 of the table and of the districts file it was built from).
+   cents, the fixture ``garages``, ``garage_max_distance_m``, the ``cases`` and the ``garage_option_cases``; read by
+   ``tests/test_parking_cost.py`` and the Java ``ParkingCostCalculatorTest``) and ``parking_tariffs_fixture.json`` (the
+   spec 5.4 tariff model of the fixture set; ``sources`` holds the path and LF-normalised sha256 of the table, of the
+   districts file and of the garages file it was built from).
 
 Re-run it after changing the fixture table, the golden cases or the export; the sync tests in
 ``tests/test_parking_cost.py`` and ``tests/test_parking_tariff_export.py`` fail until the files are current.
@@ -26,7 +30,7 @@ The recorded source of the fixture model is the fixture CSV (path and LF-normali
 that file needs a re-run too.
 
 Usage:
-    python scripts/export_parking_golden_cases.py [--tariffs-csv PATH] [--districts-geojson PATH]
+    python scripts/export_parking_golden_cases.py [--tariffs-csv PATH] [--districts-geojson PATH] [--garages-geojson PATH]
                                                   [--output-directory DIR]
 """
 from __future__ import annotations
@@ -43,27 +47,33 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from braunschweig.parking import tariff_export, zones  # noqa: E402
+from braunschweig.parking import cost, garages as parking_garages, tariff_export, zones  # noqa: E402
 from braunschweig.parking.cost import ZoneTariff  # noqa: E402
-from braunschweig.parking.golden_cases import GOLDEN_CASES, golden_case_mismatches  # noqa: E402
+from braunschweig.parking.golden_cases import (FIXTURE_GARAGE_DECAY_M, GOLDEN_CASES, GOLDEN_GARAGE_OPTION_CASES,  # noqa: E402
+                                               golden_case_mismatches, option_case_mismatches)
 
 log = logging.getLogger("export_parking_golden_cases")
 
 FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
 FIXTURE_TARIFFS_CSV = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
 FIXTURE_DISTRICTS_GEOJSON = FIXTURE_DIRECTORY / "parking_resident_districts_fixture.geojson"
+FIXTURE_GARAGES_GEOJSON = FIXTURE_DIRECTORY / "parking_garages_fixture.geojson"
 GOLDEN_CASES_FILE_NAME = "parking_golden_cases.json"
 FIXTURE_MODEL_FILE_NAME = "parking_tariffs_fixture.json"
 #: 2 since parking cost zones v2 (issue #436): every case carries ``minimum_stay_min`` and the ``tariffs`` are zone
 #: entries of tariff schema 2. A reader of version 1 would price every case without its minimum stay. 3 since the
 #: resident district rule R2 (spec Amendment C3): every case also carries ``resident_of_district``; a reader of
-#: version 2 would price every R case as a stay outside the person's district.
-GOLDEN_SCHEMA_VERSION = 3
+#: version 2 would price every R case as a stay outside the person's district. 4 since the garage options of spec
+#: Amendment E: the document carries ``garages``, ``garage_max_distance_m`` and ``garage_option_cases``, and every case
+#: carries ``destination_x_m``, ``destination_y_m``, ``garage_decay_m`` and ``expected_garage_probability``; a reader of
+#: version 3 would price every E case without its garage options.
+GOLDEN_SCHEMA_VERSION = 4
 #: Snapshot label of the fixture tariff model: the date the fixture set was defined. A test label, not a
 #: real tariff state.
 FIXTURE_SNAPSHOT_DATE = "2026-09-28"
 FIXTURE_SOURCE_ID = "parking_tariffs_fixture"
 FIXTURE_DISTRICTS_SOURCE_ID = "parking_resident_districts_fixture"
+FIXTURE_GARAGES_SOURCE_ID = "parking_garages_fixture"
 
 
 def read_fixture_tariffs_csv(path: Path) -> pd.DataFrame:
@@ -112,12 +122,36 @@ def load_fixture_districts(geojson_path=None) -> tuple:
     return districts, source
 
 
-def build_fixture_tariff_model(table: pd.DataFrame, sources: list[dict], districts_geojson_path=None) -> dict:
+def load_fixture_garages(geojson_path=None) -> tuple:
+    """The fixture garages and their provenance record (one more ``sources`` entry of the fixture model).
+
+    ``geojson_path`` defaults to ``FIXTURE_GARAGES_GEOJSON``; the file must exist (``FileNotFoundError`` otherwise). It is
+    read by the production loader and validated by the production validator, which reject an invalid dataset. The fixture
+    file is written in EPSG:25832 (legacy ``crs`` member) so that its distances are exact numbers.
+    """
+    path = Path(geojson_path) if geojson_path is not None else FIXTURE_GARAGES_GEOJSON
+    if not path.is_file():
+        raise FileNotFoundError(f"fixture garages not found: {path}")
+    frame = parking_garages.load_garages(path)
+    parking_garages.validate_garages(frame)
+    source = {"source_id": FIXTURE_GARAGES_SOURCE_ID, "path": _repository_path(path),
+              "sha256": tariff_export.content_sha256(path)}
+    log.info("fixture garages: %d garages from %s (sha256 %s)", len(frame), source["path"], source["sha256"])
+    return frame, source
+
+
+def build_fixture_tariff_model(table: pd.DataFrame, sources: list[dict], districts_geojson_path=None,
+                               garages_geojson_path=None) -> dict:
     """The spec 5.4 tariff model of the fixture set, built by the production export: the tariff table, the fixture
-    resident districts (listed as ``resident_districts``, their file one more source after ``sources``)."""
+    resident districts (listed as ``resident_districts``) and the fixture garages (listed as ``garages``, with the fixture
+    decay and the default maximum distance); their files are two more sources after ``sources``."""
     districts, districts_source = load_fixture_districts(districts_geojson_path)
+    garages, garages_source = load_fixture_garages(garages_geojson_path)
     return tariff_export.build_tariff_model(table, snapshot_date=FIXTURE_SNAPSHOT_DATE,
-                                            sources=[*sources, districts_source], resident_districts=districts)
+                                            sources=[*sources, districts_source, garages_source],
+                                            resident_districts=districts, garages=garages,
+                                            garage_decay_m=FIXTURE_GARAGE_DECAY_M,
+                                            garage_max_distance_m=cost.GARAGE_MAX_DISTANCE_M)
 
 
 def zones_from_model(model: Mapping) -> dict[str, ZoneTariff]:
@@ -131,10 +165,18 @@ def fixture_zone_tariffs() -> dict[str, ZoneTariff]:
     return zones_from_model(build_fixture_tariff_model(table, sources))
 
 
+def fixture_garage_tariffs() -> list[cost.GarageTariff]:
+    """The fixture garages as the Java side reads them: dataset -> tariff model -> ``GarageTariff``."""
+    table, sources = load_fixture_tariffs()
+    return tariff_export.garages_from_model(build_fixture_tariff_model(table, sources))
+
+
 def build_golden_document(model: Mapping) -> dict:
-    """The golden-case fixture: schema version, the fixture tariffs in cents and every golden case."""
-    return {"schema_version": GOLDEN_SCHEMA_VERSION, "tariffs": dict(model["zones"]),
-            "cases": [dict(case) for case in GOLDEN_CASES]}
+    """The golden-case fixture: schema version, the fixture tariffs and garages in cents, the maximum garage distance, every
+    golden case and every garage option case."""
+    return {"schema_version": GOLDEN_SCHEMA_VERSION, "tariffs": dict(model["zones"]), "garages": list(model["garages"]),
+            "garage_max_distance_m": model["garage_max_distance_m"], "cases": [dict(case) for case in GOLDEN_CASES],
+            "garage_option_cases": [dict(case) for case in GOLDEN_GARAGE_OPTION_CASES]}
 
 
 def main(argv=None) -> int:
@@ -143,20 +185,26 @@ def main(argv=None) -> int:
                         help=f"fixture tariff CSV (default: {_repository_path(FIXTURE_TARIFFS_CSV)})")
     parser.add_argument("--districts-geojson", type=Path, default=None,
                         help=f"fixture resident districts (default: {_repository_path(FIXTURE_DISTRICTS_GEOJSON)})")
+    parser.add_argument("--garages-geojson", type=Path, default=None,
+                        help=f"fixture garages (default: {_repository_path(FIXTURE_GARAGES_GEOJSON)})")
     parser.add_argument("--output-directory", type=Path, default=FIXTURE_DIRECTORY,
                         help=f"directory for the two JSON files (default: {_repository_path(FIXTURE_DIRECTORY)})")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
     table, sources = load_fixture_tariffs(args.tariffs_csv)
-    model = build_fixture_tariff_model(table, sources, args.districts_geojson)
-    problems = golden_case_mismatches(zones_from_model(model))
-    if problems:
-        for problem in problems:
+    model = build_fixture_tariff_model(table, sources, args.districts_geojson, args.garages_geojson)
+    garages = tariff_export.garages_from_model(model)
+    problems = golden_case_mismatches(zones_from_model(model), GOLDEN_CASES, garages, model["garage_max_distance_m"])
+    option_problems = option_case_mismatches(garages)
+    if problems or option_problems:
+        for problem in problems + option_problems:
             log.error("golden case differs from the Python reference: %s", problem)
-        log.error("%d of %d golden cases differ; nothing was written", len(problems), len(GOLDEN_CASES))
+        log.error("%d of %d golden cases and %d of %d garage option cases differ; nothing was written", len(problems),
+                  len(GOLDEN_CASES), len(option_problems), len(GOLDEN_GARAGE_OPTION_CASES))
         return 1
-    log.info("all %d golden cases reproduce with braunschweig.parking.cost", len(GOLDEN_CASES))
+    log.info("all %d golden cases and %d garage option cases reproduce with braunschweig.parking.cost", len(GOLDEN_CASES),
+             len(GOLDEN_GARAGE_OPTION_CASES))
 
     args.output_directory.mkdir(parents=True, exist_ok=True)
     for file_name, document in ((GOLDEN_CASES_FILE_NAME, build_golden_document(model)),
