@@ -89,7 +89,10 @@ the universe and its caveat per row) and a per-arm delta table. Every `count` of
 alternative that mode choice evaluated, chosen or not), not a trip or a person, so the garage share of the report is NOT
 the E5 calibration universe (all stays of all modes at destinations, no early rules); the table says so per row. The garage
 share against its target is labelled "calibration target, not validation"; the commuter garage share and the free shares
-are independent checks, the car mode shares in and out of the zones have no reference (model only).
+are independent checks, the car mode shares in and out of the zones have no reference (model only). Only the agents that
+replan in an iteration price their car alternatives, so one iteration is a small sample: `--iteration FIRST-LAST` pools an
+inclusive range (counts summed cell by cell, the calls of different iterations not independent), and the trips of
+`eqasim_trips` always belong to the final iteration.
 
 ## Known limitations
 

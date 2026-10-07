@@ -398,13 +398,49 @@ def test_the_iteration_defaults_to_the_last_one_and_a_chosen_earlier_one_is_flag
     arms = [cmp.ArmSpec("iter", run, True)]
     zones = data / "braunschweig" / "parking" / "parking_zones_2026.geojson"
     result = cmp.compare(arms, data_path=data, zones_geojson=zones)
-    assert result.provenance["arms"]["iter"]["iteration"] == 2 and result.provenance["arms"]["iter"]["last_iteration"] == 2
+    assert result.provenance["arms"]["iter"]["iterations"] == [2] and result.provenance["arms"]["iter"]["last_iteration"] == 2
     with pytest.raises(ValueError, match="no priced stay"):   # iteration 0 is written before any replanning: no priced stay
-        cmp.compare(arms, data_path=data, zones_geojson=zones, iteration=0)
+        cmp.compare(arms, data_path=data, zones_geojson=zones, iterations=[0])
     write_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv", ROWS)
+    assert not any("eqasim_trips" in message for message in caplog.messages)
     with caplog.at_level("WARNING"):
-        cmp.compare(arms, data_path=data, zones_geojson=zones, iteration=1)
+        cmp.compare(arms, data_path=data, zones_geojson=zones, iterations=[1])
     assert any("not the last iteration" in message and "eqasim_trips" in message for message in caplog.messages)
+    with pytest.raises(FileNotFoundError, match="7.parking_outcomes.csv"):
+        cmp.compare(arms, data_path=data, zones_geojson=zones, iterations=[1, 7])
+
+
+def test_a_range_of_iterations_is_pooled_cell_by_cell(cmp, data, tmp_path):
+    # iteration 1 reports the ROWS, iteration 2 the same rows with every count doubled: the pooled count of a cell is 3x
+    # its first count, the garage probability sum 3x, and every share of a ratio metric equals that of one iteration
+    run = write_run(tmp_path / "runs", "pooled", ZONES_TRIPS, [(o, z, p, 2 * c, 2 * g, 2 * r) for o, z, p, c, g, r in ROWS])
+    write_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv", ROWS)
+    zones = data / "braunschweig" / "parking" / "parking_zones_2026.geojson"
+    arms = [cmp.ArmSpec("pooled", run, True)]
+    result = cmp.compare(arms, data_path=data, zones_geojson=zones, iterations=[1, 2])
+    table = result.table
+    assert row(table, "pooled", "pricing_calls_total")["model"] == 3 * TOTAL_CALLS
+    assert row(table, "pooled", "pricing_calls_ia_ib")["model"] == 3 * 215
+    assert row(table, "pooled", "garage_share_ia_ib_other_purposes")["model"] == pytest.approx(21 / 110, abs=1e-6)
+    assert row(table, "pooled", "paid_share_ia_ib_all_purposes")["model"] == pytest.approx(120 / 215, abs=1e-6)
+    assert result.provenance["arms"]["pooled"]["iterations"] == [1, 2]
+    assert len(result.provenance["arms"]["pooled"]["outcome_reports"]) == 2
+    # the pooling function itself: shares are recomputed, a mix of versions is refused
+    first, _ = cmp.read_parking_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv")
+    second, _ = cmp.read_parking_outcomes(run / "ITERS" / "it.2" / "2.parking_outcomes.csv")
+    pooled, version = cmp.pool_outcome_reports([(first, 3), (second, 3)])
+    assert version == 3 and pooled["share"].sum() == pytest.approx(1.0) and len(pooled) == len(first)
+    assert pooled["count"].sum() == 3 * TOTAL_CALLS and pooled["garage_probability_sum"].sum() == pytest.approx(75.0)
+    with pytest.raises(ValueError, match="different versions"):
+        cmp.pool_outcome_reports([(first, 3), (second, 2)])
+
+
+def test_the_iteration_option_parses_a_number_or_an_inclusive_range(cmp):
+    import argparse
+    assert cmp.parse_iterations("7") == [7] and cmp.parse_iterations("3-6") == [3, 4, 5, 6] and cmp.parse_iterations("4-4") == [4]
+    for bad in ("", "a", "5-3", "-2", "1-2-3"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            cmp.parse_iterations(bad)
 
 
 # ------------------------------------------------------------------------------------------------------- deltas, files
@@ -472,8 +508,8 @@ def test_the_main_writes_the_tables_and_the_provenance_deterministically(cmp, da
     text = first[0].decode("ascii")
     assert "\r" not in text and all(len(line) > 0 for line in text.splitlines())
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
-    assert provenance["arms"]["zones_v2"]["outcome_report_version"] == 3 and provenance["arms"]["off"]["outcome_report"] is None
-    assert len(provenance["arms"]["zones_v2"]["outcome_report_sha256"]) == 64 and "code_state" in provenance
+    assert provenance["arms"]["zones_v2"]["outcome_report_version"] == 3 and provenance["arms"]["off"]["outcome_reports"] is None
+    assert len(provenance["arms"]["zones_v2"]["outcome_reports"][0]["sha256"]) == 64 and "code_state" in provenance
     assert set(provenance["inputs"]) >= {"srv2023_city_center_parking", "srv2023_commute_parking_by_workplace_class", "zones",
                                          "tariffs"}
     # a second run refuses to overwrite, and with --overwrite writes the same bytes

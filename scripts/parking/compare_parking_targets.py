@@ -55,11 +55,14 @@ Usage (from the repository root)::
         --arm zones_v2=<run zones>/simulation_output --arm zones_v2_no_garages=<run no garages>/simulation_output \
         --out <dir>/parking_targets_comparison_<scenario>_<date>.csv
 
-``--iteration N`` selects the iteration of the outcome reports (default: the last ``ITERS/it.N`` of each arm; eqasim_trips is
-written for the final iteration only, so another iteration is logged as a warning). The table, the per-arm delta table
-(``<out>_arm_deltas.csv``: every arm against every EARLIER arm, share metrics with a value in both) and the provenance
-(``<out>_provenance.json``: input paths and SHA-256, iterations, code state) are written; an existing file is replaced only
-with ``--overwrite``.
+``--iteration N`` selects the iteration of the outcome reports and ``--iteration FIRST-LAST`` pools an inclusive range
+(counts summed cell by cell; default: the last ``ITERS/it.N`` of each arm alone). Only the agents that replan in an
+iteration price their car alternatives (about 5 % of the agents with the eqasim default), so one iteration is a small sample
+and a range enlarges it; the calls of different iterations are not independent. eqasim_trips is written for the final
+iteration only, so a selection other than the last iteration alone is logged as a warning. The table, the per-arm delta
+table (``<out>_arm_deltas.csv``: every arm against every EARLIER arm, share metrics with a value in both) and the
+provenance (``<out>_provenance.json``: input paths and SHA-256, iterations, code state) are written; an existing file is
+replaced only with ``--overwrite``.
 """
 from __future__ import annotations
 
@@ -138,8 +141,8 @@ SHARE_UNIT, COUNT_UNIT = "share", "count"
 MODEL_ONLY = "none (model only)"
 SHARE_DECIMALS, DELTA_DECIMALS = 6, 4
 
-CALLS_NOTE = ("count of the outcome report = pricing calls (car alternatives that mode choice evaluated, chosen or not), "
-              "not trips or persons")
+CALLS_NOTE = ("count of the outcome report = pricing calls (car alternatives that mode choice evaluated, chosen or not) of "
+              "the selected iteration(s), not trips or persons")
 NO_REPORT_NOTE = "no parking outcome report for this arm (it prices no zones); the metric needs the outcomes of the Java module"
 V2_REPORT_NOTE = "the report is CSV v2 and has no garage columns (the run predates CSV v3), so no garage figure is available"
 EMPTY_UNIVERSE_NOTE = "No pricing call of this universe in this arm, so there is no model value."
@@ -546,11 +549,36 @@ def _input_record(path) -> dict:
     return {"path": Path(path).resolve().as_posix(), "sha256": calibrate.file_sha256(path)}
 
 
-def compare(arms, *, data_path, zones_geojson, iteration: "int | None" = None,
-            city_center_zone_ids=CITY_CENTER_ZONE_IDS) -> Comparison:
+def pool_outcome_reports(reports) -> tuple[pd.DataFrame, int]:
+    """Sum the outcome reports ``[(frame, version), ...]`` of several iterations cell by cell (outcome, zone id, purpose).
+
+    One report is returned unchanged. The pooled counts are pricing calls summed over the iterations: only the agents that
+    replan in an iteration price their car alternatives, so one iteration is a small sample and pooling enlarges it (the
+    calls of different iterations are not independent: the same agents can replan more than once). The share column is
+    recomputed from the pooled counts. ``ValueError`` when the reports have different versions.
+    """
+    versions = {version for _, version in reports}
+    if len(versions) != 1:
+        raise ValueError(f"the outcome reports to pool have different versions {sorted(versions)}")
+    version = versions.pop()
+    if len(reports) == 1:
+        return reports[0][0], version
+    keys = ["outcome", "zone_id", "purpose"]
+    stacked = pd.concat([frame for frame, _ in reports], ignore_index=True)
+    sums = ["count", "garage_probability_sum", "stays_with_garages_in_range"] if version == 3 else ["count"]
+    pooled = stacked.groupby(keys, sort=True, as_index=False)[sums].sum()
+    pooled["share"] = pooled["count"] / pooled["count"].sum()
+    if version == 2:
+        pooled["garage_probability_sum"] = np.nan
+        pooled["stays_with_garages_in_range"] = np.nan
+    return pooled[list(stacked.columns)], version
+
+
+def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone_ids=CITY_CENTER_ZONE_IDS) -> Comparison:
     """Compare the arms with the SrV references; returns the metric table, the per-arm delta table and the provenance.
 
-    ``iteration`` selects the outcome reports (default: the last ``ITERS/it.N`` of each arm). Raises ``ValueError`` for no
+    ``iterations`` selects the outcome reports as a sequence of iteration numbers, pooled by ``pool_outcome_reports``
+    (default: the last ``ITERS/it.N`` of each arm alone). Raises ``ValueError`` for no
     arm, a duplicate or malformed label, a report that fails ``read_parking_outcomes``, a report zone without a tariff row,
     an unusable trips file or references, and ``FileNotFoundError`` for a missing report or trips file.
     """
@@ -575,27 +603,29 @@ def compare(arms, *, data_path, zones_geojson, iteration: "int | None" = None,
         run_output = Path(arm.run_output)
         if not run_output.is_dir():
             raise FileNotFoundError(f"run output of arm {arm.label} not found: {run_output}")
-        record = {"run_output": run_output.resolve().as_posix(), "iteration": None, "last_iteration": None,
-                  "outcome_report": None, "outcome_report_version": None, "outcome_report_sha256": None}
+        record = {"run_output": run_output.resolve().as_posix(), "iterations": None, "last_iteration": None,
+                  "outcome_reports": None, "outcome_report_version": None}
         frame, version = None, None
         if arm.with_outcomes:
             last = last_iteration(run_output)
-            chosen = last if iteration is None else iteration
-            report = outcome_report_path(run_output, chosen)
-            if not report.is_file():
-                raise FileNotFoundError(f"arm {arm.label}: no parking outcome report {report}")
-            frame, version = read_parking_outcomes(report)
+            chosen = [last] if iterations is None else sorted(set(iterations))
+            reports = [outcome_report_path(run_output, number) for number in chosen]
+            for report in reports:
+                if not report.is_file():
+                    raise FileNotFoundError(f"arm {arm.label}: no parking outcome report {report}")
+            frame, version = pool_outcome_reports([read_parking_outcomes(report) for report in reports])
             unknown = sorted(set(frame.loc[frame["outcome"] != cost.NO_ZONE, "zone_id"]) - set(tariffs["zone_id"]))
             if unknown:
-                raise ValueError(f"{report}: zone id(s) {unknown} have no row in the tariff table {tariffs_path}; the run and "
-                                 "the committed release must belong together")
-            if chosen != last:
-                log.warning("[parking-compare] arm %s: iteration %d is not the last iteration (%d); eqasim_trips is written "
-                            "for the final iteration only, so the trip metrics and the outcome metrics describe different "
-                            "iterations", arm.label, chosen, last)
-            record.update(iteration=chosen, last_iteration=last, outcome_report=report.resolve().as_posix(),
-                          outcome_report_version=version, outcome_report_sha256=calibrate.file_sha256(report))
-            log.info("[parking-compare] arm %s: outcome report v%d of iteration %d, %d pricing calls in %d rows", arm.label,
+                raise ValueError(f"{reports[0].parent.parent}: zone id(s) {unknown} have no row in the tariff table "
+                                 f"{tariffs_path}; the run and the committed release must belong together")
+            if chosen != [last]:
+                log.warning("[parking-compare] arm %s: iteration(s) %s are not the last iteration (%d) alone; eqasim_trips is "
+                            "written for the final iteration only, so the trip metrics and the outcome metrics do not "
+                            "describe the same iteration", arm.label, chosen, last)
+            record.update(iterations=chosen, last_iteration=last, outcome_report_version=version,
+                          outcome_reports=[{"path": report.resolve().as_posix(), "sha256": calibrate.file_sha256(report)}
+                                           for report in reports])
+            log.info("[parking-compare] arm %s: outcome report v%d, iteration(s) %s, %d pricing calls in %d rows", arm.label,
                      version, chosen, int(frame["count"].sum()), len(frame))
         rows.extend(outcome_rows(arm.label, specs, frame, version))
         trips, trips_path = read_trips(run_output)
@@ -610,7 +640,8 @@ def compare(arms, *, data_path, zones_geojson, iteration: "int | None" = None,
     table = pd.DataFrame(rows, columns=list(TABLE_COLUMNS))
     provenance = {
         "generated_on": datetime.date.today().isoformat(), "code_state": calibrate.git_state(),
-        "script": "scripts/parking/compare_parking_targets.py", "iteration_option": iteration,
+        "script": "scripts/parking/compare_parking_targets.py",
+        "iterations_option": None if iterations is None else sorted(set(iterations)),
         "city_center_zone_ids": list(city_center_zone_ids),
         "inputs": {"srv2023_city_center_parking": _input_record(references.tables["city_center"]),
                    "srv2023_commute_parking_by_workplace_class": _input_record(references.tables["commute"]),
@@ -682,6 +713,15 @@ def write_comparison(result: Comparison, out_path, *, overwrite: bool = False) -
     return out_path, delta_path, provenance_path
 
 
+def parse_iterations(text: str) -> list[int]:
+    """``"7"`` -> [7]; ``"3-10"`` -> [3, ..., 10] (inclusive). ``argparse.ArgumentTypeError`` for anything else."""
+    match = re.fullmatch(r"(\d+)(?:-(\d+))?", text.strip())
+    if not match or (match.group(2) is not None and int(match.group(2)) < int(match.group(1))):
+        raise argparse.ArgumentTypeError(f"{text!r}: expected an iteration N or an inclusive range FIRST-LAST (FIRST <= LAST)")
+    first = int(match.group(1))
+    return [first] if match.group(2) is None else list(range(first, int(match.group(2)) + 1))
+
+
 class _ArmAction(argparse.Action):
     """Collect ``--arm`` and ``--arm-without-outcomes`` into ONE list in command-line order (the order of the deltas)."""
 
@@ -703,7 +743,8 @@ def main(argv=None) -> int:
     parser.add_argument("--data-path", type=Path, default=DEFAULT_DATA_PATH, help="data directory with the committed inputs")
     parser.add_argument("--zones-geojson", type=Path, default=None,
                         help=f"the zone release (default: <data-path>/{ZONES_RELATIVE})")
-    parser.add_argument("--iteration", type=int, default=None, help="iteration of the outcome reports (default: the last one)")
+    parser.add_argument("--iteration", type=parse_iterations, default=None, metavar="N|FIRST-LAST",
+                        help="iteration of the outcome reports, or an inclusive range that is pooled (default: the last one)")
     parser.add_argument("--out", type=Path, required=True, help="the comparison table (csv); two sibling files are written")
     parser.add_argument("--overwrite", action="store_true", help="replace existing output files")
     args = parser.parse_args(argv)
@@ -718,7 +759,7 @@ def main(argv=None) -> int:
     for label, path in required:
         if not Path(path).exists():
             raise SystemExit(f"{label} not found: {path}")
-    result = compare(args.arms, data_path=args.data_path, zones_geojson=zones_geojson, iteration=args.iteration)
+    result = compare(args.arms, data_path=args.data_path, zones_geojson=zones_geojson, iterations=args.iteration)
     for path in write_comparison(result, args.out, overwrite=args.overwrite):
         log.info("[parking-compare] wrote %s", path)
     return 0
