@@ -155,7 +155,13 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     assert assumptions and all(re.fullmatch(r"ASSUMPTION [A-Z][0-9](-[a-z])?: .+", text) for text in assumptions)
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
-        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "C1", "R1", "H1", "F1", "S1", "P1", "P2", "R2", "R2-a")]
+        for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "A1-b", "C1", "C2", "R1", "H1", "F1", "S1", "P1", "P2", "R2",
+                              "R2-a")]
+    # Amendment D5 and D6: the Wolfsburg proxy and the campus free share name their configuration key as the arm
+    a1_b = next(text for text in assumptions if text.startswith("ASSUMPTION A1-b:"))
+    c2 = next(text for text in assumptions if text.startswith("ASSUMPTION C2:"))
+    assert "03103" in a1_b and "bs_zentrum" in a1_b and "Volkswagen" in a1_b
+    assert "parking_free_share_proxy_classes" in a1_b and "parking_campus_free_share" in c2 and "owner estimate" in c2
     # R2 no longer claims every zone type: where the rule applies is R2-a, which names the BgA car parks and the campus
     r2 = next(text for text in assumptions if text.startswith("ASSUMPTION R2:"))
     r2_a = next(text for text in assumptions if text.startswith("ASSUMPTION R2-a:"))

@@ -77,6 +77,17 @@ limitations: |
   surveyed Kreise (stratified PSU sample of about 44 municipalities, srv2023_covered_municipalities).
   Wolfsburg (03103) residents are not surveyed, so the 03103 row describes in-commuters from the
   surveyed area only; in-commuters from outside the Verbandsgebiet are represented in no row.
+  Use as a proxy (ASSUMPTION A1-b, parking cost zones v2, spec Amendment D5): the free-parking draw does NOT use
+  the 03103 share (0.9475) for the paid zones of Wolfsburg. That share was measured on in-commuters only and is
+  dominated by commuters to the Volkswagen plant, which has its own free parking and lies outside every paid zone,
+  while the paid zones are the city centre with paid street parking like the Braunschweig centre. The draw takes
+  the share of the class bs_zentrum (Braunschweig Oberbezirk Zentrum, 0.7938, the only centre-specific SrV value)
+  instead, through the configuration key parking_free_share_proxy_classes ({"03103": "bs_zentrum"} in
+  configs/base_bs.yml; the empty mapping restores the class share and is the sensitivity arm). The file itself is
+  unchanged and its 03103 row stays what it is, an in-commuter measurement. Salzgitter (03102, 0.9870) and the
+  Landkreis towns keep their own class shares. The 2023 survey also predates the TU ticketing of the Parkordnung
+  2026, so it cannot supply the free share of the campus work/education persons (ASSUMPTION C2, the configuration key
+  parking_campus_free_share, an owner estimate); no row of this file is used for a campus zone.
   Read workplace_class as text: the Kreis keys carry a leading zero.
 notes: |
   Issue #249 deliverable. Consumer: braunschweig.parking.zones_stage loads the table (workplace_class

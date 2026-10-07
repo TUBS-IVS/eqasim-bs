@@ -107,7 +107,8 @@ class Assumption:
                 f"Sensitivity: {self.sensitivity}.")
 
 
-#: The assumptions register of the design spec section 7, in its order, followed by the product-minimum
+#: The assumptions register of the design spec section 7, in its order (A1-b, the Wolfsburg share proxy, and C2, the
+#: campus free share, of the v2 Amendment D5 and D6 follow the assumption they refine), followed by the product-minimum
 #: assumptions P1 and P2 of the v2 design spec (lever 2; M1 and C1 name how they interact) and the resident district
 #: rule R2 of its Amendment C3 with its scope R2-a. The model JSON carries the rendered texts, so every tariff file
 #: states the assumptions it is priced under.
@@ -123,9 +124,23 @@ ASSUMPTIONS_REGISTER = (
                "long_stay_product_eur per zone"),
     Assumption("A1", "The free share observed for current SrV car commuters applies to all workers/students "
                "of the class", "Work/education in paid zones", "parking_workplace_free_share_shift"),
+    # Parking cost zones v2, Amendment D5: the Wolfsburg class share is a proxy, set in the configuration.
+    Assumption("A1-b", "The free share of the SrV class bs_zentrum (Braunschweig Oberbezirk Zentrum) applies to the "
+               "persons of the workplace class 03103 (Wolfsburg) instead of the class share, which was measured on "
+               "in-commuters only and is dominated by commuters to the Volkswagen plant, which has its own free parking "
+               "and lies outside every paid zone, while the paid zones are the city centre with paid street parking "
+               "like the Braunschweig centre; the zones keep their county workplace class",
+               "Work/education in the paid zones of workplace class 03103",
+               "parking_free_share_proxy_classes (an empty mapping restores the class share)"),
     Assumption("C1", "Members (work/education on campus) pay the day product, or the commuter product where the zone "
                "has a cheaper one (P2); other passes are not modelled", "TU zones",
                "set member_day_eur to 0 in an arm"),
+    # Parking cost zones v2, Amendment D6: owner estimate without a source.
+    Assumption("C2", "A share of the persons who drive to a campus for work or education find a free parking place "
+               "(owner estimate, no source: the SrV 2023 was surveyed before the TU ticketing of the Parkordnung 2026), "
+               "drawn once per person like the employer-free draw (outcome EMPLOYER_FREE); the others pay the campus "
+               "products (C1); guests pay the guest product", "Work/education in campus zones",
+               "parking_campus_free_share (0.0 and 0.4 are the sensitivity arms)"),
     Assumption("R1", "Residence inside a resident zone equals permit possession",
                "Non-home activities of residents in their own zone", "none (small)"),
     Assumption("H1", "Home activities are free everywhere", "All", "none"),
