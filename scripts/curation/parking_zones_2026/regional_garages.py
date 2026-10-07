@@ -8,12 +8,19 @@ the city car-park directory of Braunschweig ``bs_plan_parkplaetze.geojson`` (ret
 ``parking_garages_2026_qa.csv`` (``braunschweig.parking.garage_qa``).
 
 The dataset lists every garage of the package's garage layers (``bs_parkhaeuser``, ``wob_parkhaeuser``,
-``region_parkhaeuser`` and the Parkhaus points of the Goslar service that have no other row) once. A garage is PRICED where
-the garage columns express its published tariff exactly (rulings R-4b-3 and R-4b-4; ``regional_garage_specs`` names which
-rule carries which column and the reason of every garage that is not priced), from the package rules that are marked
-``preferred_for_current_use``; no tariff number is typed anywhere: the values are read from the rules by the roles. The
-assumptions P3 (day family only), P4 (a rate without a stated rounding is billed per started unit) and P5 (the fee window
-is 0 to 24 h where the source states no charging times) are named in the row's ``assumptions`` and notes, and counted.
+``region_parkhaeuser`` and the Parkhaus points of the Goslar service that have no other row) once, except the garages that
+are no garage option (the station car parks of DB BahnPark, ruling R-4b-9), which are rows of the QA table with their
+reason. A garage is PRICED where the garage columns or its time-of-day tiers express its published tariff exactly (rulings
+R-4b-3, R-4b-4 and R-4b-10b; ``regional_garage_specs`` names which rule carries which part and the reason of every garage that
+is not priced). Only rules that the package marks ``preferred_for_current_use`` set a value (a rate, a tier, a first period, a
+cap, a monthly product): a specification that names another rule for such a role stops the step, with no waiver (ruling
+R-4b-8). No tariff number is typed anywhere: the values are read from the rules by the roles, with one exception: a window
+that a source states only in a page text which the package keeps as text (``window=("stated", ...)``) is typed with its
+quotation. The assumptions P3 (a night tariff that is no per-unit rate is not charged), P4 (a rate without a stated rounding is
+billed per started unit), P5 (the fee window is 0 to 24 h where no preferred rule states charging times), P6 (how a stay is
+priced from tiers) and P7 (caps that the day-cap column cannot hold are not applied) are named in the row's ``assumptions`` and
+notes and counted. Two readings that name no assumption are counted and named in the notes as well: a day cap without a
+stated day boundary is read as a maximum per stay, and a time window without stated days as Monday to Friday.
 Monthly and 30-day products are read per spec Amendment D2 (the cheapest publicly purchasable fixed-price product per
 garage is ``monthly_eur``; products for a customer group the model cannot identify, without a fixed price or limited to a
 small number of places are recorded and not used). Every candidate that is no garage of the dataset (a BgA lot, a zone car
@@ -21,7 +28,8 @@ park, a station car park, a garage without coordinates) is a row of the QA table
 
 Every layer is read as the package states it (EPSG:25832, valid geometries, nothing repaired); per layer the step prints
 the features used, the duplicates it skipped and the features no garage specification covers (which stops the step), and
-at the end the rates: priced against not priced and, among the priced, how many rest on each assumption. CRS: EPSG:25832
+at the end the rates: priced against not priced and, among the priced, how many rest on each assumption, on at least one
+assumption and on P4 or P5 (a warning above ``garages.UNION_WARNING_SHARE``). CRS: EPSG:25832
 throughout in memory (WGS84 in the file), money in EUR, windows in decimal hours of the weekday, distances in m.
 
 Usage (from the repository root)::
@@ -44,6 +52,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import geopandas as gpd
 import pandas as pd
@@ -82,8 +91,14 @@ CAP_RULE_TYPES = ("cap", "daily_cap", "daily_rate_published", "published_day_tar
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday")
 #: Day specifications of a time window that cover Monday to Friday (the model's average weekday, D1).
 WEEKDAY_SPECIFICATIONS = (None, "Mo-Su", "Mo-Sa", "Mo-Fr", "Mo-Sa_except_public_holidays", "all_days")
-#: Printed as a warning when more than this share of the priced garages rest on one of the assumptions P4 or P5.
+#: Printed as a warning when more than this share (0 to 1) of the priced garages rest on one assumption of
+#: ``garages.ASSUMPTIONS``; the union rates have their own named share, ``garages.UNION_WARNING_SHARE``.
 ASSUMPTION_WARNING_SHARE = 0.75
+#: A cap period of the package that contains this word states no day boundary (``cap_boundary_unspecified``).
+UNSPECIFIED_CAP_PERIOD_MARKER = "unspecified"
+#: The caution of the package's README on rounding, quoted in the notes of the rows that rest on ASSUMPTION P4 (ASCII; a
+#: stated hourly rate does not prove rounding up per hour).
+PACKAGE_ROUNDING_CAUTION = "Ein angegebener Stundensatz beweist noch keine Aufrundung je Stunde"
 
 LICENSE = (
     "Per source; the dataset holds facts (tariffs, capacities, names and positions of garages) from public sources, none of "
@@ -107,21 +122,30 @@ COLUMN_GLOSSARY = {
     "package_facility_id": "facility_id of the garage in the package's facilities.json (BS_None is shared by two Braunschweig "
                            "features there; this dataset joins by the feature's source id)",
     "name": "name of the garage in the package layer, ASCII transliteration",
-    "operator": "operator as the package states it, empty where it states none",
+    "operator": "operator as the package states it (feature or facility attribute) or, where the page named in source_url is "
+                "the operator's own page, that operator (the notes say which); empty where no source names one",
     "municipality": "municipality of the garage (the municipality of its zone tariff rows)",
     "municipality_ags": "8-digit AGS of the municipality",
     "capacity_reported": "spaces as the package's facility record reports them, empty where it reports none or conflicting "
                          "values; the other observations are in the notes; no capacity is a model input",
     "capacity_scope": "what capacity_reported counts, as the package states it",
     "garage_hourly_rate_eur": "EUR per hour of the garage tariff; the price of one billing unit is this rate times "
-                              "garage_billing_unit_min / 60 (garage columns of the tariff table, spec Amendment A6)",
-    "garage_billing_unit_min": "length of a started billing unit in minutes",
+                              "garage_billing_unit_min / 60 (garage columns of the tariff table, spec Amendment A6); empty "
+                              "for a garage priced by tariff_tiers",
+    "garage_billing_unit_min": "length of a started billing unit in minutes; empty for a garage priced by tariff_tiers",
     "garage_first_period_min": "length of the first period in minutes, charged once in full when any part is used; empty "
                                "without a first period (the pair with garage_first_period_eur)",
     "garage_first_period_eur": "price of the first period in EUR",
-    "garage_daily_cap_eur": "maximum charge of a stay in EUR; empty = no cap published",
-    "garage_fee_start_h": "start of the fee window in decimal hours of the weekday",
-    "garage_fee_end_h": "end of the fee window in decimal hours of the weekday (24 = midnight)",
+    "garage_daily_cap_eur": "maximum charge of a stay in EUR; empty = no cap published; of several published caps only the "
+                            "day cap (or the 24-hour maximum where there is none) is held here (ASSUMPTION P7)",
+    "garage_fee_start_h": "start of the fee window in decimal hours of the weekday; empty for a garage priced by tariff_tiers",
+    "garage_fee_end_h": "end of the fee window in decimal hours of the weekday (24 = midnight); empty for a garage priced by "
+                        "tariff_tiers",
+    "tariff_tiers": "the time-of-day tiers of a garage whose rate changes with the time of day (ruling R-4b-10b): "
+                    "'HH:MM-HH:MM <eur>/<unit_min>' per tier, joined by '; ', each tier the EUR of one started unit of "
+                    "unit_min minutes that begins in it (a tier may cross midnight); a time of day outside every tier is "
+                    "free; the four single-window columns are empty and the row rests on ASSUMPTION P6; empty for a garage "
+                    "priced by one fee window",
     "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2); "
                    "empty where the package holds none; independent of priced",
     "monthly_source_url": "source of monthly_eur",
@@ -137,8 +161,9 @@ COLUMN_GLOSSARY = {
     "geometry_method": "how the position was found, as the package states it",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE,
-    "notes": "the tariff in words, every assumption by name, what the columns do not express (other tiers, ignored rules, "
-             "conflicts) and the other capacity observations",
+    "notes": "the tariff in words, every assumption and reading by name, what the columns do not express (other tiers, "
+             "caps not applied, ignored rules, conflicts), the rules that are not preferred and not used, and the other "
+             "capacity observations",
 }
 QA_INTRO = (
     "Curation QA of the parking garage dataset and of the monthly products (parking cost zones v2, spec Amendments D2 and "
@@ -223,7 +248,8 @@ def describe_window(rule: dict) -> str:
 
 def describe_rule(rule: dict) -> str:
     """A rule of the package in words with its id, for the notes: the amount and unit (or cap, free period, total), the
-    elapsed range it covers, its cap period and its clock window. Every number is read from the rule."""
+    elapsed range it covers, its cap period and its clock window, and the mark ``[not preferred for current use]`` where the
+    package's flag is not true (derived from the flag, never written by hand). Every number is read from the rule."""
     kind = rule["rule_type"]
     amount = rule.get("amount_eur")
     unit = rule.get("billing_unit_minutes")
@@ -252,7 +278,8 @@ def describe_rule(rule: dict) -> str:
         span = f" for elapsed {int(start or 0)}-{'' if end is None else int(end)} min"
     period = f" ({rule['cap_period']})" if rule.get("cap_period") else ""
     window = describe_window(rule)
-    return f"{rule['rule_id']}: {what}{span}{period}{' ' + window if window else ''}"
+    flag = " [not preferred for current use]" if rule.get("preferred_for_current_use") is not True else ""
+    return f"{rule['rule_id']}: {what}{span}{period}{' ' + window if window else ''}{flag}"
 
 
 # ---------------------------------------------------------------- the package
@@ -274,9 +301,13 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None) -> dict
     sources = {source["source_id"]: source for source in rz.read_zip_json(path, SOURCES_MEMBER)}
     inputs = {"file": {"file": path.name, "sha256": sha256, "bytes": path.stat().st_size}, "layers": layers,
               "facilities": facilities, "rules": rules, "sources": sources,
-              "wob_lots": rz.read_zip_layer(path, WOB_LOTS_LAYER), "ledger": []}
+              "wob_lots": rz.read_zip_layer(path, WOB_LOTS_LAYER), "ledger": [],
+              "rounding_census": rounding_census(facilities, rules)}
+    census = inputs["rounding_census"]
     print(f"garage inputs verified: {path.name} ({inputs['file']['bytes']} bytes, SHA-256 {sha256}); "
-          f"{len(facilities)} facility records, {len(rules)} tariff rules")
+          f"{len(facilities)} facility records, {len(rules)} tariff rules; rounding census (the basis of ASSUMPTION P4): of "
+          f"{census['rate_rules']} preferred garage rate rules {census['stated']} state their rounding, "
+          f"{census['started_unit']} of them as started unit")
     return inputs
 
 
@@ -303,12 +334,14 @@ def _facility(inputs: dict, facility_id: str) -> dict:
 
 
 # ---------------------------------------------------------------- reading the rules by their roles
-def rule_window(rule: dict) -> Optional[tuple]:
-    """The fee window (start, end in decimal hours) of the weekday Monday to Friday that the rule states, else None.
+def rule_window(rule: dict, *, allow_midnight_crossing: bool = False) -> Optional[tuple]:
+    """The clock window (start, end in decimal hours) of the weekday Monday to Friday that the rule states, else None.
 
-    Read from ``charging_times`` (Monday to Friday must state the one same interval that does not cross midnight) or from
-    ``time_window`` (``days_raw`` one of ``WEEKDAY_SPECIFICATIONS``; an end of 00:00 is the end of the day). A window that
-    crosses midnight is a night window and raises: the garage columns hold the day family. Never a guessed window."""
+    Read from ``charging_times`` (Monday to Friday must state the one same interval) or from ``time_window`` (``days_raw``
+    one of ``WEEKDAY_SPECIFICATIONS``; an end of 00:00 is the end of the day). A window that crosses midnight is a night
+    window: it raises for the single-window form (``allow_midnight_crossing=False``: the garage columns hold one window of
+    one day) and is returned as it stands, with its end before its start, for a tier of the tiered form. Never a guessed
+    window. Whether the rule states its days is :func:`window_days_stated`."""
     times = rule.get("charging_times") or {}
     weekday = [times.get(day) for day in WEEKDAYS]
     if any(weekday):
@@ -320,9 +353,9 @@ def rule_window(rule: dict) -> Optional[tuple]:
         if len(intervals) != 1:
             raise SystemExit(f"rule {rule['rule_id']}: Monday to Friday state different charging intervals {weekday}")
         start, end, crosses = next(iter(intervals))
-        if crosses:
+        if crosses and not allow_midnight_crossing:
             raise SystemExit(f"rule {rule['rule_id']}: the charging interval {start}-{end} crosses midnight, a night window "
-                             "is no fee window of the day family")
+                             "is no fee window of the single-window form (use tiers)")
         return _hours(start), _hours(end)
     window = rule.get("time_window") or {}
     if window.get("from") and window.get("to"):
@@ -332,24 +365,29 @@ def rule_window(rule: dict) -> Optional[tuple]:
         start, end = _hours(window["from"]), _hours(window["to"])
         if end == 0.0 and start > 0.0:
             end = 24.0
-        if end <= start:
+        if end <= start and not allow_midnight_crossing:
             raise SystemExit(f"rule {rule['rule_id']}: the window {window['from']}-{window['to']} crosses midnight, a night "
-                             "window is no fee window of the day family")
+                             "window is no fee window of the single-window form (use tiers)")
         return start, end
     return None
 
 
-def night_complement(rule: dict) -> tuple:
-    """The day window that is the complement of the night window ``rule`` states (clock times that cross midnight):
-    (end of the night, start of the night). A rule without such a window raises."""
-    window = rule.get("time_window") or {}
-    if not (window.get("from") and window.get("to")):
-        raise SystemExit(f"rule {rule['rule_id']}: no clock window, so no complement")
-    start, end = _hours(window["from"]), _hours(window["to"])
-    if not start > end:
-        raise SystemExit(f"rule {rule['rule_id']}: the window {window['from']}-{window['to']} does not cross midnight, so "
-                         "it is no night window whose complement is the day")
-    return end, start
+def window_days_stated(rule: dict) -> bool:
+    """Whether the clock window of ``rule`` states the days it applies to: ``charging_times`` state them by their structure,
+    a ``time_window`` by ``days_raw``. A window without stated days is READ as Monday to Friday (the weekday of the model,
+    spec D1): a reading that is counted and named in the notes; the package itself never interprets missing weekdays as
+    Monday to Sunday."""
+    times = rule.get("charging_times") or {}
+    if any(times.get(day) for day in WEEKDAYS):
+        return True
+    return (rule.get("time_window") or {}).get("days_raw") is not None
+
+
+def cap_boundary_unspecified(rule: dict) -> bool:
+    """Whether the cap period of a cap rule states no day boundary (no period, or a period the package marks unspecified): a
+    cap read as a maximum per stay, a reading that is counted and named in the notes."""
+    period = rule.get("cap_period")
+    return period is None or UNSPECIFIED_CAP_PERIOD_MARKER in str(period)
 
 
 def cap_eur(rule: dict) -> float:
@@ -369,88 +407,181 @@ def _named_rule(rules: dict, rule_id: str, garage_id: str) -> dict:
     return rules[rule_id]
 
 
-def encode_tariff(spec: dict, rules: dict) -> dict:
-    """The garage columns of a priced specification, read from the rules by their roles, with what they rest on.
+def _value_rule(rules: dict, rule_id: str, garage_id: str, role: str) -> dict:
+    """The rule a specification names for a role that SETS A VALUE (a rate, a tier, a first period, a cap or a monthly
+    product), which must be marked ``preferred_for_current_use`` in the package: a rule that is not preferred never sets a
+    value, whatever its role and with no waiver (ruling R-4b-8). The flag means preferred evidence, not a rule that is legally
+    or arithmetically complete (the package's own caution); the roles of a specification take care of the rest."""
+    rule = _named_rule(rules, rule_id, garage_id)
+    if rule.get("preferred_for_current_use") is not True:
+        raise SystemExit(f"garage {garage_id}: the rule {rule_id} is named as the {role}, but the package does not mark it "
+                         f"preferred_for_current_use (flag {rule.get('preferred_for_current_use')!r}, status "
+                         f"{rule.get('status')!r}): a rule that is not preferred never sets a value (ruling R-4b-8)")
+    return rule
 
-    Returns {"values" (the seven tariff columns, None where empty), "assumptions" (ids of ``garages.ASSUMPTIONS``),
-    "rule_ids" (the rules the values rest on), "sentence" (the tariff in words), "rounding_stated", "window_stated"}.
-    ``SystemExit`` for anything the columns would not express exactly: a rate rule that is no rate or does not start at
-    0 min (without a first period that ends where it starts), a first period that does not begin at 0 min, a cap that is
-    not a cap, a window that crosses midnight."""
-    garage = spec["garage_id"]
-    rate = _named_rule(rules, spec["rate"], garage)
+
+def _rate_rule_values(rate: dict, garage_id: str) -> tuple:
+    """(billing unit in minutes, EUR per unit) of a rate or tier rule; ``SystemExit`` for anything else."""
     if rate["rule_type"] not in RATE_RULE_TYPES:
-        raise SystemExit(f"garage {spec['garage_id']}: rule {rate['rule_id']} of type {rate['rule_type']} is no rate rule "
+        raise SystemExit(f"garage {garage_id}: rule {rate['rule_id']} of type {rate['rule_type']} is no rate rule "
                          f"{list(RATE_RULE_TYPES)}")
     unit, amount = rate.get("billing_unit_minutes"), rate.get("amount_eur")
     if not unit or int(unit) != float(unit) or int(unit) <= 0 or amount is None or not float(amount) > 0:
-        raise SystemExit(f"garage {spec['garage_id']}: rule {rate['rule_id']} needs a positive amount and a whole billing "
-                         f"unit, found {amount!r} per {unit!r} min")
-    unit = int(unit)
-    rate_from = rate.get("elapsed_from_minutes") or 0
-    rule_ids = [rate["rule_id"]]
+        raise SystemExit(f"garage {garage_id}: rule {rate['rule_id']} needs a positive amount and a whole billing unit, found "
+                         f"{amount!r} per {unit!r} min")
+    return int(unit), float(amount)
+
+
+def encode_tariff(spec: dict, rules: dict) -> dict:
+    """The tariff columns of a priced specification, read from the rules by their roles, with what they rest on.
+
+    A specification names either ``rate`` (one rate in started units with one fee window: the single-window form) or
+    ``tiers`` (the rules of the time-of-day tiers: the tiered form, ruling R-4b-10b), and optionally a ``first`` period (the
+    single-window form also ``first_equals_rate``) and a ``cap``. Every rule that sets a value must be marked
+    ``preferred_for_current_use`` (ruling R-4b-8). The single-window form takes its window from the rate rule
+    (``window="rate"``), from a window that a source states in a page text the package keeps as text
+    (``window=("stated", start, end, quotation)``) or, with ``window=None``, has none (ASSUMPTION P5); the tiered form takes
+    the window of each tier rule, and a tier may cross midnight.
+
+    Returns {"values" (the seven tariff columns and ``tariff_tiers``, None where empty), "assumptions" (ids of
+    ``garages.ASSUMPTIONS``), "rule_ids" (the rules the values rest on), "sentence" (the tariff in words),
+    "rounding_stated", "window_stated", "tiers" (the ``garages.TariffTier`` list, empty for the single-window form),
+    "window_quotation" (the quotation of a stated window or None), "readings" (the readings the notes name: ``("cap", rule id,
+    cap period)`` for a cap whose day boundary is not stated and ``("days", rule id)`` for a window without stated days)}.
+    ``SystemExit`` for anything the columns would not express exactly: a rule that is not preferred, a rate rule that is
+    no rate or starts at a minute that no first period covers, a first period that does not begin at 0 min, a cap that is
+    not a cap, a window that crosses midnight in the single-window form, tiers that overlap or differ in their unit."""
+    garage = spec["garage_id"]
+    if bool(spec.get("tiers")) == bool(spec.get("rate")):
+        raise SystemExit(f"garage {garage}: a priced specification names exactly one of 'rate' (the single-window form) and "
+                         "'tiers' (the tiered form)")
+    tiered = bool(spec.get("tiers"))
+    if tiered and spec.get("window") is not None:
+        raise SystemExit(f"garage {garage}: a tiered specification has no window; the tiers carry the clock times")
+    if tiered and spec.get("first_equals_rate"):
+        raise SystemExit(f"garage {garage}: first_equals_rate belongs to the single-window form")
+    rate_rules = [_value_rule(rules, rule_id, garage, "tier" if tiered else "rate")
+                  for rule_id in (spec["tiers"] if tiered else (spec["rate"],))]
+    values_of_rules = [_rate_rule_values(rate, garage) for rate in rate_rules]
+    units = {unit for unit, _ in values_of_rules}
+    if len(units) != 1:
+        raise SystemExit(f"garage {garage}: the tier rules use different billing units {sorted(units)} min; the tiers of a "
+                         "garage share one unit (the units of a stay are counted from its arrival, ASSUMPTION P6)")
+    unit = units.pop()
+    amount = values_of_rules[0][1]
+    rate_starts = [int(rate.get("elapsed_from_minutes") or 0) for rate in rate_rules]
+    rule_ids = [rate["rule_id"] for rate in rate_rules]
     first_period_min = first_period_eur = None
     if spec.get("first"):
-        first = _named_rule(rules, spec["first"], garage)
+        first = _value_rule(rules, spec["first"], garage, "first period")
         if (first["rule_type"] not in FIRST_PERIOD_RULE_TYPES or (first.get("elapsed_from_minutes") or 0) != 0
                 or not first.get("elapsed_to_minutes") or first.get("amount_eur") is None):
-            raise SystemExit(f"garage {spec['garage_id']}: rule {first['rule_id']} is no first period (a total or an "
+            raise SystemExit(f"garage {garage}: rule {first['rule_id']} is no first period (a total or an "
                              "increment from 0 min to a stated end)")
-        if int(first["elapsed_to_minutes"]) != rate_from:
-            raise SystemExit(f"garage {spec['garage_id']}: the first period ends at {first['elapsed_to_minutes']} min but "
-                             f"the rate starts at {rate_from} min")
-        first_period_min, first_period_eur = int(first["elapsed_to_minutes"]), float(first["amount_eur"])
+        first_end = int(first["elapsed_to_minutes"])
+        if not tiered and rate_starts != [first_end]:
+            raise SystemExit(f"garage {garage}: the first period ends at {first_end} min but the rate starts at "
+                             f"{rate_starts[0]} min")
+        if tiered and (any(start not in (0, first_end) for start in rate_starts) or first_end not in rate_starts):
+            raise SystemExit(f"garage {garage}: the first period ends at {first_end} min but the tier rules start at "
+                             f"{sorted(set(rate_starts))} min; one tier must follow the first period directly and none may "
+                             "start elsewhere")
+        first_period_min, first_period_eur = first_end, float(first["amount_eur"])
         rule_ids.insert(0, first["rule_id"])
     elif spec.get("first_equals_rate"):
-        first = _named_rule(rules, spec["first_equals_rate"], garage)
+        first = _value_rule(rules, spec["first_equals_rate"], garage, "first unit")
         if ((first.get("elapsed_from_minutes") or 0) != 0 or first.get("elapsed_to_minutes") != unit
-                or first.get("amount_eur") is None or float(first["amount_eur"]) != float(amount) or rate_from != unit):
-            raise SystemExit(f"garage {spec['garage_id']}: rule {first['rule_id']} is not the price of one billing unit of "
-                             f"{rate['rule_id']} ({amount} EUR per {unit} min, from {unit} min): the rate alone would be a "
-                             "different tariff")
+                or first.get("amount_eur") is None or float(first["amount_eur"]) != float(amount) or rate_starts != [unit]):
+            raise SystemExit(f"garage {garage}: rule {first['rule_id']} is not the price of one billing unit of "
+                             f"{rate_rules[0]['rule_id']} ({amount} EUR per {unit} min, from {unit} min): the rate alone "
+                             "would be a different tariff")
         rule_ids.insert(0, first["rule_id"])
-    elif rate_from != 0:
-        raise SystemExit(f"garage {spec['garage_id']}: the rate {rate['rule_id']} starts at {rate_from} min and no first "
-                         "period or first-unit rule covers the start")
+    elif any(start != 0 for start in rate_starts):
+        raise SystemExit(f"garage {garage}: a rate rule starts at {max(rate_starts)} min and no first period or first-unit "
+                         "rule covers the start")
     cap = None
+    readings = []
     if spec.get("cap"):
-        cap_rule = _named_rule(rules, spec["cap"], garage)
+        cap_rule = _value_rule(rules, spec["cap"], garage, "cap")
         cap = cap_eur(cap_rule)
         rule_ids.append(cap_rule["rule_id"])
-    window_role = spec["window"]
-    if window_role == "rate":
-        window = rule_window(rate)
-        if window is None:
-            raise SystemExit(f"garage {spec['garage_id']}: the window is to come from {rate['rule_id']}, which states none; "
-                             "use window=None (ASSUMPTION P5) or name the rule that states it")
-    elif isinstance(window_role, tuple) and window_role[0] == "night_complement":
-        window = night_complement(_named_rule(rules, window_role[1], garage))
-        rule_ids.append(window_role[1])
-    elif window_role is None:
-        window = None
+        if cap_boundary_unspecified(cap_rule):
+            readings.append(("cap", cap_rule["rule_id"], cap_rule.get("cap_period")))
+    tiers, tiers_text, window, quotation = [], None, None, None
+    if tiered:
+        for rate, (_, eur) in zip(rate_rules, values_of_rules):
+            clock = rule_window(rate, allow_midnight_crossing=True)
+            if clock is None:
+                raise SystemExit(f"garage {garage}: the tier rule {rate['rule_id']} states no clock window")
+            if abs(eur * 100 - round(eur * 100)) > 1e-6:
+                raise SystemExit(f"garage {garage}: the price {eur} EUR of the tier rule {rate['rule_id']} is not a whole "
+                                 "number of cents")
+            if not window_days_stated(rate):
+                readings.append(("days", rate["rule_id"]))
+            tiers.append(pg.TariffTier(round(clock[0] * 60), round(clock[1] * 60), unit, round(eur, 2)))
+        tiers.sort(key=lambda tier: tier.start_min)
+        tiers_text = pg.format_tariff_tiers(tiers)
+        try:
+            pg.parse_tariff_tiers(tiers_text)
+        except ValueError as error:
+            raise SystemExit(f"garage {garage}: the tier rules {[rate['rule_id'] for rate in rate_rules]} make no valid "
+                             f"tiers: {error}") from None
     else:
-        raise SystemExit(f"garage {spec['garage_id']}: unknown window role {window_role!r}")
+        window_role = spec["window"]
+        if window_role == "rate":
+            window = rule_window(rate_rules[0])
+            if window is None:
+                raise SystemExit(f"garage {garage}: the window is to come from {rate_rules[0]['rule_id']}, which states "
+                                 "none; use window=None (ASSUMPTION P5) or name the page text that states it")
+            if not window_days_stated(rate_rules[0]):
+                readings.append(("days", rate_rules[0]["rule_id"]))
+        elif isinstance(window_role, tuple) and window_role[0] == "stated":
+            _, start_text, end_text, quotation = window_role
+            window = (_hours(start_text), _hours(end_text))
+            if not quotation or not 0.0 <= window[0] < window[1] <= 24.0:
+                raise SystemExit(f"garage {garage}: a stated window needs 0 <= start < end <= 24 and the quotation of the "
+                                 f"source that states it, found {window_role!r}")
+        elif window_role is None:
+            window = None
+        else:
+            raise SystemExit(f"garage {garage}: unknown window role {window_role!r}")
     assumptions = []
     if spec.get("other_tiers"):
         assumptions.append("P3")
-    rounding_stated = rate.get("rounding") == "started_unit"
+    rounding_stated = all(rate.get("rounding") == "started_unit" for rate in rate_rules)
     if not rounding_stated:
         assumptions.append("P4")
-    if window is None:
+    if not tiered and window is None:
         assumptions.append("P5")
+    if tiered:
+        assumptions.append("P6")
+    if spec.get("other_caps"):
+        assumptions.append("P7")
     start, end = window if window is not None else (0.0, 24.0)
-    values = {"garage_hourly_rate_eur": round(float(amount) / unit * 60.0, 6), "garage_billing_unit_min": unit,
+    values = {"garage_hourly_rate_eur": None if tiered else round(float(amount) / unit * 60.0, 6),
+              "garage_billing_unit_min": None if tiered else unit,
               "garage_first_period_min": first_period_min, "garage_first_period_eur": first_period_eur,
-              "garage_daily_cap_eur": cap, "garage_fee_start_h": start, "garage_fee_end_h": end}
+              "garage_daily_cap_eur": cap, "garage_fee_start_h": None if tiered else start,
+              "garage_fee_end_h": None if tiered else end, "tariff_tiers": tiers_text}
     sentence = ""
     if first_period_min is not None:
         sentence += f"{_money(first_period_eur)} for the first {first_period_min} min, then "
-    sentence += f"{_money(amount)} per started {unit} min"
+    if tiered:
+        sentence += (f"tiers per started {unit} min, the tier in force at the unit's start: "
+                     + ", ".join(f"{_clock(tier.start_min / 60)}-{_clock(tier.end_min / 60)} {_money(tier.eur)}"
+                                 for tier in tiers))
+    else:
+        sentence += f"{_money(amount)} per started {unit} min"
     if cap is not None:
         sentence += f", at most {_money(cap)} per day"
-    sentence += f", charged {_clock(start)}-{_clock(end)}"
+    if tiered:
+        if pg.tier_coverage_minutes(tiers) < pg.MINUTES_PER_DAY:
+            sentence += "; free outside the tiers"
+    else:
+        sentence += f", charged {_clock(start)}-{_clock(end)}"
     return {"values": values, "assumptions": assumptions, "rule_ids": rule_ids, "sentence": sentence,
-            "rounding_stated": rounding_stated, "window_stated": window is not None}
+            "rounding_stated": rounding_stated, "window_stated": tiered or window is not None, "tiers": tiers,
+            "window_quotation": quotation, "readings": readings}
 
 
 def _clock(hours: float) -> str:
@@ -461,14 +592,19 @@ def _clock(hours: float) -> str:
 
 # ---------------------------------------------------------------- one garage
 def _capacity(facility: dict) -> tuple:
-    """(capacity or None, scope or None, the other observations in words) of a facility record."""
+    """(capacity or None, scope or None, the other observations in words) of a facility record. A reported capacity
+    always has its scope: the record's own, or the scope of the observation that carries the same value; where neither
+    exists the scope is never guessed (``SystemExit``)."""
     capacity = facility.get("capacity")
     capacity = int(round(float(capacity))) if capacity is not None else None
     observations = facility.get("capacity_observations") or []
     scope = facility.get("capacity_scope")
     if capacity is not None and scope is None:
         scope = next((observation["scope"] for observation in observations if observation.get("value") is not None
-                      and int(round(float(observation["value"]))) == capacity), "package_registry")
+                      and int(round(float(observation["value"]))) == capacity), None)
+        if scope is None:
+            raise SystemExit(f"facility {facility.get('facility_id')}: the capacity {capacity} has no capacity_scope and no "
+                             "capacity observation with that value; the scope of a reported capacity is never guessed")
     others = [f"{observation['scope']} {int(round(float(observation['value'])))}"
               + (f" ({observation['source_url']})" if observation.get("source_url") else "")
               for observation in observations if observation.get("value") is not None
@@ -477,14 +613,15 @@ def _capacity(facility: dict) -> tuple:
 
 
 def _monthly(inputs: dict, garage_id: str) -> dict:
-    """The used monthly product of a garage and the check that it is the cheapest of its publicly purchasable products."""
+    """The used monthly product of a garage and the check that it is the cheapest of its publicly purchasable products; its
+    rule must be marked preferred (ruling R-4b-8)."""
     products = [product for product in specs.MONTHLY_PRODUCTS if product.get("garage_id") == garage_id]
     used = [product for product in products if product["decision"] == "used"]
     if not used:
         return {}
     if len(used) != 1:
         raise SystemExit(f"garage {garage_id}: {len(used)} used monthly products; the cheapest is the one")
-    rule = _rule(inputs, used[0]["rule"])
+    rule = _value_rule(inputs["rules"], used[0]["rule"], garage_id, "monthly product")
     amount = float(rule["monthly_price_eur"])
     for other in products:
         if other["decision"] == "not_used" and other.get("reason") == "not_the_cheapest":
@@ -515,36 +652,77 @@ def _source_date(rule: Optional[dict], feature: pd.Series, inputs: dict) -> str:
     raise SystemExit(f"garage {feature.get('facility_id')}: no retrieval date of its primary source")
 
 
+def rounding_census(facilities: dict, rules: dict) -> dict:
+    """The census behind ASSUMPTION P4: of the preferred rate rules of every facility that has a feature in a garage layer,
+    how many state their rounding (a value other than none or 'unspecified') and how many of those say started unit.
+    {"rate_rules", "stated", "started_unit"}."""
+    garage_facilities = {facility_id for facility_id, facility in facilities.items()
+                         if any(str(reference).split(":")[0] in GARAGE_LAYERS for reference in facility.get("geometry_refs") or [])}
+    census = {"rate_rules": 0, "stated": 0, "started_unit": 0}
+    for rule in rules.values():
+        if (rule.get("facility_id") in garage_facilities and rule.get("preferred_for_current_use") is True
+                and rule["rule_type"] in RATE_RULE_TYPES and rule.get("billing_unit_minutes")):
+            census["rate_rules"] += 1
+            rounding = rule.get("rounding")
+            if rounding not in (None, "unspecified"):
+                census["stated"] += 1
+                census["started_unit"] += rounding == "started_unit"
+    return census
+
+
+def _operator_named_by_page(operator: str, url: str, garage_id: str) -> str:
+    """``operator`` when the page at ``url`` is the operator's own page (its name is in the host of the URL), else
+    ``SystemExit``: an operator is never taken from a page that does not name it."""
+    host = re.sub(r"[^a-z0-9]", "", urlparse(url).netloc.lower())
+    name = re.sub(r"[^a-z0-9]", "", operator.lower())
+    if not name or name not in host:
+        raise SystemExit(f"garage {garage_id}: the operator {operator!r} is not the owner of the page {url}, so that page does "
+                         "not name it; the operator is taken from a page of the operator only")
+    return operator
+
+
 def build_garage(inputs: dict, spec: dict) -> dict:
-    """The dataset row (properties and ``geometry``, EPSG:25832) and the QA facts of one garage specification."""
+    """The dataset row (properties and ``geometry``, EPSG:25832), the QA facts (``_facts``) of one garage specification."""
     layer, match = spec["layer"], spec["feature"]
     feature = _feature(inputs, layer, match)
     attributes = _feature(inputs, *spec["attributes"]) if spec.get("attributes") else None
     facility = _facility(inputs, spec["facility"])
     rules = inputs["rules"]
     ags, municipality = {**specs.TOWNS, **specs.OTHER_TOWNS}[spec["town"]]
-    members = set(facility.get("tariff_rule_ids") or [])
+    members = list(facility.get("tariff_rule_ids") or [])
     priced = "reason" not in spec
     if priced:
         encoded = encode_tariff(spec, rules)
-        evidence = encoded["rule_ids"] + list(spec.get("other_tiers") or ()) + list(spec.get("ignored") or {})
+        mentioned = (encoded["rule_ids"] + list(spec.get("other_tiers") or ()) + list(spec.get("other_caps") or ())
+                     + list(spec.get("ignored") or {}))
     else:
         if spec["reason"] not in pg.NOT_PRICED_REASONS:
             raise SystemExit(f"garage {spec['garage_id']}: unknown reason {spec['reason']!r}")
         encoded = None
-        evidence = list(spec["evidence"])
-    missing = [rule_id for rule_id in evidence if rule_id not in members]
+        mentioned = list(spec["evidence"])
+    missing = [rule_id for rule_id in mentioned if rule_id not in set(members)]
     if missing:
         raise SystemExit(f"garage {spec['garage_id']}: the rules {missing} are not in the tariff rules of the package "
                          f"facility {spec['facility']}")
-    # the primary source of the tariff: the page of the rate rule, for a garage that is not priced the first rule that shows
-    # the reason (a garage without any rule has the page of its position as its source)
-    primary = rules[spec["rate"]] if priced else (rules[evidence[0]] if evidence else None)
+    # the primary source of the tariff: the page of the (first) rate or tier rule, for a garage that is not priced the first
+    # rule that shows the reason (a garage without any rule has the page of its position as its source)
+    if priced:
+        primary = rules[spec["rate"] if spec.get("rate") else spec["tiers"][0]]
+    else:
+        primary = rules[mentioned[0]] if mentioned else None
     capacity, scope, other_capacity = _capacity(facility)
     name = _ascii(str(feature[GARAGE_LAYERS[layer]]))
-    operator = None
+    position = attributes if attributes is not None and "geometry_method" in attributes.index else feature
+    method = str(position["geometry_method"]) if "geometry_method" in position.index and _is_set(
+        position["geometry_method"]) else POSITION_METHODS[layer]
+    geometry_url = str(position["geometry_source_url"])
+    source_url = str(primary["source_url"]) if primary is not None else geometry_url
+    operator, operator_note = None, None
     if "operator" in spec:  # an explicit statement of the specification (None: the package's text is no operator)
         operator = spec["operator"]
+        if operator is not None:
+            _operator_named_by_page(operator, source_url, spec["garage_id"])
+            operator_note = f"Operator {operator}, named by its own page {source_url} (the primary source)."
     else:
         for source in (feature, attributes):
             if source is not None and "operator" in source.index and _is_set(source["operator"]):
@@ -552,34 +730,68 @@ def build_garage(inputs: dict, spec: dict) -> dict:
                 break
         if operator is None and _is_set((facility.get("attributes") or {}).get("operator")):
             operator = _ascii(str(facility["attributes"]["operator"]).strip())
-    position = attributes if attributes is not None and "geometry_method" in attributes.index else feature
-    method = str(position["geometry_method"]) if "geometry_method" in position.index and _is_set(
-        position["geometry_method"]) else POSITION_METHODS[layer]
-    geometry_url = str(position["geometry_source_url"])
     point = feature.geometry
     # ---- notes
     notes = [f"Package facility {spec['facility']}, feature {layer}:{match[1]}; position: {method}."]
+    facts = {"tiered": False, "cap": False, "readings": []}
     if priced:
-        notes.append(f"Priced from the package rules {', '.join(encoded['rule_ids'])} (preferred for current use): "
-                     f"{encoded['sentence']}.")
+        flags = {rules[rule_id].get("preferred_for_current_use") for rule_id in encoded["rule_ids"]}
+        preferred = ("all marked preferred_for_current_use in the package" if flags == {True}
+                     else f"flags preferred_for_current_use {sorted(map(str, flags))}")
+        notes.append(f"Priced from the package rules {', '.join(encoded['rule_ids'])} ({preferred}): {encoded['sentence']}.")
+        if encoded["window_quotation"]:
+            notes.append(f"Charging times stated by the source: {_ascii(encoded['window_quotation'])}.")
         if "P3" in encoded["assumptions"]:
             tiers = "; ".join(describe_rule(rules[rule_id]) for rule_id in spec["other_tiers"])
-            notes.append(f"Day family only (ASSUMPTION P3); not charged by the model: {tiers}.")
+            notes.append(f"ASSUMPTION P3: a night tariff that is no per-unit rate of the preferred rules is not charged by "
+                         f"the model: {tiers}.")
         if "P4" in encoded["assumptions"]:
-            notes.append("ASSUMPTION P4: the source states no rounding of the rate, so it is billed per started unit, as at "
-                         "every garage of the dataset that states its rounding.")
+            census = inputs["rounding_census"]
+            notes.append("ASSUMPTION P4: the rounding of the rate is not stated, so it is billed per started unit. The package "
+                         f"cautions ('{PACKAGE_ROUNDING_CAUTION}'); the census of its preferred garage rate rules supports "
+                         f"the assumption: {census['stated']} of {census['rate_rules']} state their rounding, and "
+                         f"{census['started_unit']} of those {census['stated']} say started unit.")
         if "P5" in encoded["assumptions"]:
             hours = str((facility.get("attributes") or {}).get("opening_hours_text") or "").strip().rstrip(".")
-            notes.append("ASSUMPTION P5: the source states no charging times of the tariff, so the fee window is 0-24 h"
+            notes.append("ASSUMPTION P5: no preferred rule states charging times of the tariff, so the fee window is 0-24 h"
                          + (f" (opening hours, which are no charging hours: {hours})" if hours else "") + ".")
+        if "P6" in encoded["assumptions"]:
+            notes.append("ASSUMPTION P6: units are counted from arrival and each started unit costs the rate of the tier in "
+                         "force at the unit's start; a first period, where published, is charged once and applies from "
+                         "arrival at every hour; a time of day outside every tier is free.")
+            facts["tiered"] = True
+        if "P7" in encoded["assumptions"]:
+            caps = "; ".join(describe_rule(rules[rule_id]) for rule_id in spec["other_caps"])
+            notes.append(f"ASSUMPTION P7: the day cap column holds one cap and applies to the whole stay; not applied: {caps}.")
+        for reading in encoded["readings"]:
+            if reading[0] == "cap":
+                notes.append(f"Reading: the day boundary of the cap {reading[1]} is not stated (cap period {reading[2]!r}), so "
+                             "it is read as a maximum per stay.")
+        undated = [reading[1] for reading in encoded["readings"] if reading[0] == "days"]
+        if undated:
+            notes.append(f"Reading: the window of {', '.join(undated)} states no days, so it is read as Monday to Friday.")
+        facts["cap"] = encoded["values"]["garage_daily_cap_eur"] is not None
+        facts["readings"] = encoded["readings"]
         if spec.get("ignored"):
             notes.append("Not encoded: " + "; ".join(f"{describe_rule(rules[rule_id])} ({why})"
                                                        for rule_id, why in spec["ignored"].items()) + ".")
     else:
-        shown = "; ".join(describe_rule(rules[rule_id]) for rule_id in evidence)
+        shown = "; ".join(describe_rule(rules[rule_id]) for rule_id in mentioned)
         notes.append(f"Not priced ({spec['reason']}): {spec['reason_text']}." + (f" Rules: {shown}." if shown else ""))
+    unused = [rule_id for rule_id in members if rules[rule_id].get("preferred_for_current_use") is not True
+              and rule_id not in mentioned]
+    if unused:
+        notes.append(f"Not preferred for current use and not used: {', '.join(unused)}.")
     if spec.get("comment"):
         notes.append(spec["comment"])
+    if operator_note:
+        notes.append(operator_note)
+    if priced:
+        elsewhere = {rule_id: str(rules[rule_id]["source_url"]) for rule_id in encoded["rule_ids"]
+                     if str(rules[rule_id]["source_url"]) != source_url}
+        if elsewhere:
+            notes.append("Rules from another page than source_url: " + "; ".join(
+                f"{rule_id} ({url})" for rule_id, url in elsewhere.items()) + ".")
     if capacity is not None:
         notes.append(f"Capacity {capacity} ({scope})" + (f"; other observations: {'; '.join(other_capacity)}"
                                                            if other_capacity else "") + ".")
@@ -600,25 +812,27 @@ def build_garage(inputs: dict, spec: dict) -> dict:
            "capacity_scope": scope, "monthly_eur": None, "monthly_source_url": None, "monthly_product": None,
            "priced": priced, "not_priced_reason": None if priced else spec["reason"],
            "assumptions": ";".join(encoded["assumptions"]) if priced and encoded["assumptions"] else None,
-           "source_url": str(primary["source_url"]) if primary is not None else geometry_url,
-           "source_date": _source_date(primary, feature, inputs),
-           "tariff_rule_ids": ";".join(encoded["rule_ids"] if priced else evidence) or None,
+           "source_url": source_url, "source_date": _source_date(primary, feature, inputs),
+           "tariff_rule_ids": ";".join(encoded["rule_ids"] if priced else mentioned) or None,
            "geometry_method": method, "geometry_source_url": geometry_url,
            "package_sha256": inputs["file"]["sha256"], "geometry": point}
-    for column in pg.TARIFF_COLUMNS:
+    for column in pg.TARIFF_COLUMNS + pg.TIER_COLUMNS:
         row[column] = encoded["values"][column] if priced else None
     monthly = _monthly(inputs, spec["garage_id"])
     row.update({key: monthly.get(key) for key in ("monthly_eur", "monthly_source_url", "monthly_product")})
     if monthly:
         notes.append(f"Monthly product {monthly['rule_id']}: {monthly['monthly_product']}.")
     row["notes"] = _ascii(" ".join(notes))
+    row["_facts"] = facts
     return row
 
 
 def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     """The dataset: one row per garage specification, in specification order, EPSG:25832. Stops (``SystemExit``) when a
-    garage of the package's layers is covered by no specification, when two specifications use one feature or when the
-    result violates ``garages.validate_garages``. Prints the accounting per layer and the rates."""
+    garage of the package's layers is covered by no specification and no candidate decision, when a facility is both a
+    garage and a candidate, when a candidate that states 'no coordinates' has a feature in a garage layer, when two
+    specifications use one feature or when the result violates ``garages.validate_garages``. Prints the accounting per layer
+    and the rates."""
     used = {layer: [] for layer in GARAGE_LAYERS}
     rows = []
     for spec in specs.GARAGE_SPECS:
@@ -626,12 +840,25 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
         used[spec["layer"]].append(spec["feature"])
         if spec.get("attributes"):
             used[spec["attributes"][0]].append(spec["attributes"][1])
+    facts = [row.pop("_facts") for row in rows]
     ids = [spec["garage_id"] for spec in specs.GARAGE_SPECS]
     if len(set(ids)) != len(ids):
         raise SystemExit("two garage specifications share a garage_id")
-    # Every garage of the package's layers must be known: specified explicitly or a twin (the same facility id in another
-    # layer) of a specified garage. A garage nobody specified stops the step instead of being left out silently.
+    # Every garage of the package's layers must be known: specified explicitly, a twin (the same facility id in another
+    # layer) of a specified garage, or decided as a candidate that is no garage of the dataset (a station BahnPark, a lot of
+    # long-term renters: a QA row with its reason). A garage nobody decided stops the step instead of being left out
+    # silently.
     specified = {str(spec["facility"]) for spec in specs.GARAGE_SPECS}
+    decided = {candidate["facility"] for candidate in specs.PACKAGE_CANDIDATES if candidate.get("facility")}
+    if specified & decided:
+        raise SystemExit(f"facility(ies) {sorted(specified & decided)} are both a garage of the dataset and a candidate that "
+                         "is no garage")
+    layer_facilities = {str(value) for frame in inputs["layers"].values() if "facility_id" in frame.columns
+                        for value in frame["facility_id"]}
+    for candidate in specs.PACKAGE_CANDIDATES:
+        if candidate["reason"] == "no_coordinates" and candidate.get("facility") in layer_facilities:
+            raise SystemExit(f"candidate {candidate['record_id']}: the reason is no_coordinates but the facility "
+                             f"{candidate['facility']} has a feature in a garage layer")
     for layer, layer_frame in inputs["layers"].items():
         garage_features = layer_frame[layer_frame["Nutzung"] == "Parkhaus"] if layer == "gos_parking_locations" else layer_frame
         keys = {(column, str(value)) for column, value in used[layer]}
@@ -641,16 +868,18 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
                     if any(column in layer_frame.columns and str(row[column]) == value for column, value in keys)]
         twins = [index for index in garage_features.index if index not in explicit
                  and str(garage_features.loc[index, "facility_id"]) in specified]
+        candidates = [index for index in garage_features.index if index not in explicit and index not in twins
+                      and str(garage_features.loc[index, "facility_id"]) in decided]
         unknown = [str(garage_features.loc[index, "facility_id"]) for index in garage_features.index
-                   if index not in explicit and index not in twins]
+                   if index not in explicit and index not in twins and index not in candidates]
         if unknown:
-            raise SystemExit(f"layer {layer}: garage feature(s) {unknown} are covered by no garage specification; add them "
-                             "to regional_garage_specs.GARAGE_SPECS or give the reason in the candidate tables")
+            raise SystemExit(f"layer {layer}: garage feature(s) {unknown} are covered by no garage specification and no "
+                             "candidate decision; add them to regional_garage_specs.GARAGE_SPECS or PACKAGE_CANDIDATES")
         inputs["ledger"].append({"layer": layer, "features": len(layer_frame), "garages": len(garage_features),
-                                 "used": len(explicit), "twins": len(twins)})
+                                 "used": len(explicit), "twins": len(twins), "candidates": len(candidates)})
         print(f"[garages] {layer}: {len(layer_frame)} features, {len(garage_features)} garages, {len(explicit)} used, {len(twins)} "
-              "twin(s) of a garage that another layer gives (same facility id, skipped), 0 repaired (an invalid geometry "
-              "stops the step)")
+              f"twin(s) of a garage that another layer gives (same facility id, skipped), {len(candidates)} decided as "
+              "candidate(s) that are no garage of the dataset (QA rows), 0 repaired (an invalid geometry stops the step)")
     frame = gpd.GeoDataFrame(pd.DataFrame(rows).drop(columns=["geometry"]).reindex(columns=list(pg.DATASET_COLUMNS)),
                              geometry=[row["geometry"] for row in rows], crs=cc.METRIC_CRS)
     for column in pg.MINUTE_COLUMNS + pg.INTEGER_COLUMNS:
@@ -662,13 +891,15 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
         pg.validate_garages(frame)
     except ValueError as error:
         raise SystemExit(str(error)) from None
-    _print_rates(frame)
+    _print_rates(frame, facts)
     return frame
 
 
-def _print_rates(frame: gpd.GeoDataFrame) -> None:
+def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
     """The rates of the dataset: priced against not priced, and among the priced the primary method (the source states the
-    rounding and the charging times) against the assumptions P3 to P5; a high share of an assumption is a warning."""
+    rounding and the charging times) against the assumptions P3 to P7, the union rates (at least one assumption; P4 or P5)
+    and the two readings (a cap without a stated day boundary, a window without stated days); a share above its warning
+    threshold is a warning."""
     summary = pg.coverage(frame)
     priced = summary["priced"]
     print(f"[garages] {summary['listed']} garages: priced {priced} ({100.0 * priced / summary['listed']:.1f} %), not priced "
@@ -678,13 +909,26 @@ def _print_rates(frame: gpd.GeoDataFrame) -> None:
     for assumption, text in pg.ASSUMPTIONS.items():
         count = counts.get(assumption, 0)
         share = count / priced if priced else 0.0
-        warning = "; WARNING: most priced garages rest on it" if share > ASSUMPTION_WARNING_SHARE else ""
+        warning = f"; WARNING: more than {100.0 * ASSUMPTION_WARNING_SHARE:.0f} % of the priced garages rest on it" \
+            if share > ASSUMPTION_WARNING_SHARE else ""
         print(f"[garages] priced garages resting on ASSUMPTION {assumption}: {count}/{priced} ({100.0 * share:.1f} %){warning} "
               f"- {text}")
-    stated = int((frame["priced"] & ~frame["assumptions"].fillna("").str.contains("P4")).sum())
-    print(f"[garages] rounding stated by the source {stated}/{priced}, ASSUMPTION P4 {counts.get('P4', 0)}/{priced}; "
-          f"charging times stated {priced - counts.get('P5', 0)}/{priced}, ASSUMPTION P5 {counts.get('P5', 0)}/{priced}; "
-          f"monthly product on {summary['with_monthly_product']} garages")
+    for label, count in (("at least one assumption", summary["priced_with_assumption"]),
+                         ("ASSUMPTION P4 or P5", summary["priced_with_p4_or_p5"])):
+        share = count / priced if priced else 0.0
+        warning = f"; WARNING: more than {100.0 * pg.UNION_WARNING_SHARE:.0f} % of the priced garages" \
+            if share > pg.UNION_WARNING_SHARE else ""
+        print(f"[garages] priced garages resting on {label}: {count}/{priced} ({100.0 * share:.1f} %){warning}")
+    print(f"[garages] rounding stated by the source {priced - counts.get('P4', 0)}/{priced}, ASSUMPTION P4 "
+          f"{counts.get('P4', 0)}/{priced}; charging times stated {priced - counts.get('P5', 0)}/{priced}, ASSUMPTION P5 "
+          f"{counts.get('P5', 0)}/{priced}; tiered {summary['priced_tiered']}/{priced}; monthly product on "
+          f"{summary['with_monthly_product']} garages")
+    capped = [fact for fact in facts if fact["cap"]]
+    cap_readings = sum(any(reading[0] == "cap" for reading in fact["readings"]) for fact in capped)
+    window_rows = [fact for fact in facts if any(reading[0] == "days" for reading in fact["readings"])]
+    print(f"[garages] reading: a day cap whose day boundary is not stated is read as a maximum per stay: {cap_readings}/"
+          f"{len(capped)} garages with a cap; a window without stated days is read as Monday to Friday: {len(window_rows)} "
+          "garage(s)")
 
 
 def check_positions(frame: gpd.GeoDataFrame, municipalities: gpd.GeoDataFrame) -> None:
@@ -713,7 +957,7 @@ def check_positions(frame: gpd.GeoDataFrame, municipalities: gpd.GeoDataFrame) -
 # ---------------------------------------------------------------- QA rows
 def _directory_text(description: str) -> str:
     text = re.sub(r"<[^>]+>", " ", description)
-    text = re.sub(r"\s+", " ", html.unescape(text).replace("€", "EUR")).strip()
+    text = re.sub(r"\s+", " ", html.unescape(text).replace("\u20ac", "EUR")).strip()
     marker = "Tarife:" if "Tarife:" in text else "Weitere Informationen"
     return _ascii(text.split(marker, 1)[1].strip() if marker in text else text)[:240]
 
@@ -796,6 +1040,8 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list) -> list:
         subject = product.get("subject") or (f"{frame.set_index('garage_id').loc[garage_id, 'name']}: "
                                              f"{raw.get('product_name') or rule['rule_id']}")
         evidence = list(product.get("evidence") or ()) or ([rule["rule_id"]] if rule is not None else [])
+        if product.get("why"):
+            note = f"{note}; {product['why']}"
         row(record_id=product["record_id"], record_type="monthly_product",
             municipality_ags=product.get("municipality_ags") or garage_ags[garage_id], subject=subject,
             garage_id=garage_id, zone_ids=";".join(product.get("zone_ids") or ()), decision=product["decision"],
@@ -807,13 +1053,18 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list) -> list:
             subject=entry["name"], decision="not_listed", reason_code=reason, count=1,
             evidence=f"{DIRECTORY_FILE} id {entry['id']}",
             note=_ascii(f"{why}; directory text: {entry['text']}"))
-    for record_id, town, subject, facility_id, reason, why in specs.PACKAGE_CANDIDATES:
-        ags = (specs.TOWNS.get(town) or specs.OTHER_TOWNS[town])[0]
-        facility = _facility(inputs, facility_id)
-        tariff = "; ".join(describe_rule(rules[rule_id]) for rule_id in facility.get("tariff_rule_ids") or [])
-        row(record_id=record_id, record_type="candidate", municipality_ags=ags, subject=subject, decision="not_listed",
-            reason_code=reason, count=1, evidence=f"facilities.json {facility_id}",
-            note=_ascii(why + (f"; package rules: {tariff}" if tariff else "")))
+    for candidate in specs.PACKAGE_CANDIDATES:
+        ags = (specs.TOWNS.get(candidate["town"]) or specs.OTHER_TOWNS[candidate["town"]])[0]
+        facility_id, tariff, evidence = candidate.get("facility"), "", candidate.get("evidence") or ""
+        if facility_id:
+            facility = _facility(inputs, facility_id)
+            tariff = "; ".join(describe_rule(rules[rule_id]) for rule_id in facility.get("tariff_rule_ids") or [])
+            evidence = evidence or f"facilities.json {facility_id}"
+        elif not evidence:
+            raise SystemExit(f"candidate {candidate['record_id']}: a candidate without a facility record needs its evidence")
+        row(record_id=candidate["record_id"], record_type="candidate", municipality_ags=ags, subject=candidate["subject"],
+            decision="not_listed", reason_code=candidate["reason"], count=1, evidence=_ascii(evidence),
+            note=_ascii(candidate["note"] + (f"; package rules: {tariff}" if tariff else "")))
     lots = inputs["wob_lots"]
     tariffs = [rule_ids for rule_ids in lots["tariff_rule_ids"] if rule_ids and str(rule_ids) not in ("[]", "None")]
     if tariffs:

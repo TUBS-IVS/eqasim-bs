@@ -1,23 +1,43 @@
 """The curated reading of the garages of the regional evidence package of 2026-10-07 (spec Amendment E1, issue #436).
 
-Pure data for ``regional_garages.py``: for every garage of the package which of its tariff rules carries which part of
-the garage columns (the rule ROLES), what the columns do not express (other tiers, ignored rules) and why a garage is not
-priced. No tariff NUMBER is written here: the values are read from the rules of the package by the roles, so a number can
-neither drift from its source nor be typed wrongly, and the committed-data tests pin the numbers independently.
+Pure data for ``regional_garages.py``: for every garage of the package which of its tariff rules carries which part of the
+garage tariff (the rule ROLES), what the columns do not express (other tiers, caps that are not applied, ignored rules) and why
+a garage is not priced. The specifications hold rule ids and roles, never a tariff value that enters a column: the values are
+read from the rules of the package by the roles, so a number can neither drift from its source nor be typed wrongly, and the
+committed-data tests pin the numbers independently.
 
-Rules of the reading (rulings R-4b-3 and R-4b-4, assumptions P3 to P5 of ``braunschweig.parking.garages.ASSUMPTIONS``):
+What the texts of this file may contain: free texts (the ``reason_text`` of an unpriced garage, the ``comment`` of a garage,
+the notes of the candidates and of the monthly products) explain a decision to the reader and may quote published numbers;
+a quoted number never enters a column, and no code reads these texts for a value. The one value that a specification types is
+the window of ``window=("stated", start, end, quotation)``, a window that a source states in a page text which the package
+keeps only as text, written with its quotation.
 
-* A tariff is encoded only where the published structure maps exactly to the garage columns: an optional first period
-  (price for the first minutes), one rate per started billing unit and an optional day cap. A first period whose price is
-  the price of one billing unit is no first period (the rate alone is the same tariff). Anything else (a free period, a
-  rate that changes with the duration, a continuation the source does not state, contradicting sources) stays listed and
-  not priced with the reason code of ``garages.NOT_PRICED_REASONS``.
-* Where day and night (or shoulder-hour) tariffs differ, the day family is encoded and the other tiers are named in the
-  notes (``other_tiers``, ASSUMPTION P3); a customer-specific tariff (a card, a retailer validation, a permit) is never
-  encoded (``ignored``).
-* The fee window comes from the charging times of the rate rule (``window="rate"``), from the complement of a stated night
-  window (``window=("night_complement", rule_id)``) or, where the source states none, is 0 to 24 h (``window=None``,
-  ASSUMPTION P5). A rate without a stated rounding is billed per started unit (ASSUMPTION P4, found from the rule).
+Rules of the reading (rulings R-4b-3, R-4b-4, R-4b-8, R-4b-9 and R-4b-10b, assumptions P3 to P7 of
+``braunschweig.parking.garages.ASSUMPTIONS``):
+
+* A tariff is encoded only where the published structure maps exactly to the garage columns: an optional first period (price
+  for the first minutes), one rate per started billing unit with one fee window or, where the rate changes with the time of
+  day, the time-of-day tiers, and an optional day cap. A first period whose price is the price of one billing unit is no
+  first period (the rate alone is the same tariff). Anything else (a free period, a rate that changes with the duration, a
+  continuation the source does not state, contradicting sources) stays listed and not priced with the reason code of
+  ``garages.NOT_PRICED_REASONS``.
+* Only a rule that the package marks ``preferred_for_current_use`` may name a role that sets a value (``rate``, ``tiers``,
+  ``first``, ``first_equals_rate``, ``cap``, the used monthly product); a rule that is not preferred never sets a value and
+  there is no waiver (ruling R-4b-8). A rule that sets no value may be named without the flag (``other_tiers``,
+  ``other_caps``, ``ignored``, the ``evidence`` of an unpriced garage): the notes mark it as not preferred from the flag of the
+  package, and every other rule of the facility that is not preferred is listed once as not used.
+* Where the rate changes with the time of day (a morning, day, evening and night rate per started unit), the rules of the
+  tiers are named in ``tiers`` (ASSUMPTION P6, ruling R-4b-10b). ``other_tiers`` names a night tariff that is no per-unit rate of
+  the preferred rules (a flat night fee, an unresolved night tier): it is not charged (ASSUMPTION P3). ``other_caps`` names the
+  caps that the single day-cap column cannot hold (a night cap, a maximum for day and night together): they are not applied and
+  the day cap (or the 24-hour maximum where there is no day cap) applies to the whole stay (ASSUMPTION P7). A customer-specific
+  tariff (a card, a retailer validation, a permit) is never encoded (``ignored``).
+* The single-window form takes its fee window from the charging times of the rate rule (``window="rate"``), from a window
+  that a source states in a page text (``window=("stated", ...)``) or, where no preferred rule states one, is 0 to 24 h
+  (``window=None``, ASSUMPTION P5). A rate without a stated rounding is billed per started unit (ASSUMPTION P4, found from the
+  rule).
+* A garage whose operator page is its source names the operator with ``operator``; the step checks that the page is the
+  operator's own (its name is in the host of the URL).
 """
 from __future__ import annotations
 
@@ -41,16 +61,17 @@ def _bs(name: str, *numbers: int) -> tuple:
 #: One entry per garage, in the order of the dataset. Keys: ``garage_id``; ``town``; ``layer`` and ``feature`` (the
 #: layer feature that gives name and position: (column, value)); ``attributes`` (a second layer feature of the same
 #: garage, whose attributes complete the first: operator, geometry method); ``facility`` (the package facility record
-#: with the capacity and the rule list); then either the roles of a priced garage (``rate``, ``first`` or
-#: ``first_equals_rate``, ``cap``, ``window``, ``other_tiers``, ``ignored``) or ``reason`` (a code of
-#: ``garages.NOT_PRICED_REASONS``), ``reason_text`` and ``evidence`` (the rule ids that show the reason); ``comment``.
+#: with the capacity and the rule list); ``operator`` (optional: the operator whose own page is the source, or None where
+#: the package's operator text is no operator); then either the roles of a priced garage (``rate`` with ``window`` or
+#: ``tiers``; ``first`` or ``first_equals_rate``; ``cap``; ``other_tiers``, ``other_caps`` and ``ignored``) or ``reason`` (a
+#: code of ``garages.NOT_PRICED_REASONS``), ``reason_text`` and ``evidence`` (the rule ids that show the reason); ``comment``.
 GARAGE_SPECS = (
     # ------------------------------------------------------------------ Braunschweig: the PULP feed of the city
     {"garage_id": "bs_eiermarkt", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_PH004"),
-     "facility": "BS_PH004", "rate": _bs("eiermarkt", 36)[0], "first": _bs("eiermarkt", 35)[0],
-     "cap": _bs("eiermarkt", 37)[0], "window": "rate", "other_tiers": _bs("eiermarkt", 38, 39, 40),
-     "comment": "The feed text (rules -1 to -4, not preferred) states the same first hour, rate and day rate without the "
-                "times; the operator page (preferred) adds the day and night tiers."},
+     "facility": "BS_PH004", "operator": "Contipark", "tiers": _bs("eiermarkt", 36, 39), "first": _bs("eiermarkt", 35)[0],
+     "cap": _bs("eiermarkt", 37)[0], "other_caps": _bs("eiermarkt", 38, 40),
+     "comment": "The operator page gives the day tariff (first hour, hourly rate, day cap) and the night tariff with its cap "
+                "and the 24-hour maximum; the city feed states the same first hour, rate and day rate without the times."},
     {"garage_id": "bs_forschungsflughafen", "town": "bs", "layer": "bs_parkhaeuser",
      "feature": ("source_id", "4781292017fb49b091cc3066a17483fafbca28"),
      "facility": "BS_SOURCE_4781292017fb49b091cc3066a17483fafbca28", "reason": "free_period",
@@ -70,16 +91,16 @@ GARAGE_SPECS = (
      "comment": "The standard tariff of the city feed."},
     {"garage_id": "bs_magni", "town": "bs", "layer": "bs_parkhaeuser",
      "feature": ("facility_id", "BS_PH001_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT"),
-     "facility": "BS_PH001_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "rate": _bs("magni", 50)[0],
-     "first_equals_rate": _bs("magni", 49)[0], "cap": _bs("magni", 51)[0], "window": None,
+     "facility": "BS_PH001_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "operator": "Park und Tank",
+     "rate": _bs("magni", 50)[0], "first_equals_rate": _bs("magni", 49)[0], "cap": _bs("magni", 51)[0], "window": None,
      "ignored": {_bs("magni", 52)[0]: "a lost ticket, not a stay"},
-     "comment": "Operator page of Park und Tank (preferred); the feed rules -13 and -14 are the same amounts."},
+     "comment": "Operator page of Park und Tank; the city feed states the same amounts."},
     {"garage_id": "bs_packhof", "town": "bs", "layer": "bs_parkhaeuser",
      "feature": ("facility_id", "BS_PH007_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT"),
-     "facility": "BS_PH007_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "rate": _bs("packhof", 46)[0],
-     "first_equals_rate": _bs("packhof", 45)[0], "cap": _bs("packhof", 47)[0], "window": None,
+     "facility": "BS_PH007_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "operator": "Park und Tank",
+     "rate": _bs("packhof", 46)[0], "first_equals_rate": _bs("packhof", 45)[0], "cap": _bs("packhof", 47)[0], "window": None,
      "ignored": {_bs("packhof", 48)[0]: "a lost ticket, not a stay"},
-     "comment": "Operator page of Park und Tank (preferred); the feed rules -15 to -18 are the same amounts."},
+     "comment": "Operator page of Park und Tank; the city feed states the same amounts."},
     {"garage_id": "bs_ring_center", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("source_id", _BS["ring_center"]),
      "facility": "BS_None", "reason": "banded_tariff",
      "reason_text": "1.50 EUR per started hour for the first and second hour, then 2.00 EUR per started hour, day ticket "
@@ -94,19 +115,20 @@ GARAGE_SPECS = (
      "facility": "BS_PH006", "rate": _bs("schuetzenstrasse", 25)[0], "cap": _bs("schuetzenstrasse", 26)[0], "window": None,
      "comment": "The feed states a temporarily reduced capacity (barriers); the tariff is the standard tariff."},
     {"garage_id": "bs_wallstrasse", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_PH003"),
-     "facility": "BS_PH003", "rate": _bs("wallstrasse", 41)[0], "cap": _bs("wallstrasse", 42)[0], "window": "rate",
+     "facility": "BS_PH003", "operator": "Contipark", "rate": _bs("wallstrasse", 41)[0], "cap": _bs("wallstrasse", 42)[0],
+     "window": "rate",
      "ignored": {_bs("wallstrasse", 43)[0]: "the P Card tariff, a customer card of the operator",
                  _bs("wallstrasse", 44)[0]: "the day cap of the P Card tariff"},
-     "comment": "Operator page of Contipark (preferred). The city feed and the city overview state 2.80 and 2.90 EUR per "
-                "hour and 17.00 EUR (rules -27 to -30 and -57 to -60, not preferred: the package keeps the operator)."},
+     "comment": "Operator page of Contipark. The city feed and the city overview state other amounts than the operator page "
+                "(the rules of the feed that the package does not prefer are listed with their ids)."},
     {"garage_id": "bs_wilhelmstrasse", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_PH002"),
      "facility": "BS_PH002", "rate": _bs("wilhelmstrasse", 31)[0], "cap": _bs("wilhelmstrasse", 53)[0], "window": None,
      "ignored": {_bs("wilhelmstrasse", 32)[0]: "the tariff for customers of the shops and the theatre (first hour "
                                                "0.60 EUR) with a validation, a customer group the model cannot identify",
                  _bs("wilhelmstrasse", 33)[0]: "the continuation of that customer tariff",
-                 _bs("wilhelmstrasse", 34)[0]: "the feed copy of the day rate (not preferred); the city page gives it "
-                                               "again as rules -53 and -54"},
-     "comment": "The standard tariff of the city feed and the day rate of the city's car-park page."},
+                 _bs("wilhelmstrasse", 34)[0]: "the feed copy of the day rate; the city page gives it again as rules -53 "
+                                               "and -54"},
+     "comment": "The standard tariff of the city feed; the day rate comes from the city's car-park page."},
     # ------------------------------------------------------------------ Wolfsburg: the Geoviewer theme Parken of the city
     {"garage_id": "wob_suedkopf", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_SUEDKOPF"),
      "facility": "WOB_SUEDKOPF", "reason": "free_period",
@@ -114,27 +136,28 @@ GARAGE_SPECS = (
                     "are deducted from the charged duration",
      "evidence": ("WOB_SUEDKOPF_R01", "WOB_SUEDKOPF_R02"), "comment": "Shopping-centre garage Suedkopf-Center."},
     {"garage_id": "wob_rathaus", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_RATHAUS"),
-     "facility": "WOB_RATHAUS", "rate": "WOB_RATHAUS_R02", "first": "WOB_RATHAUS_R01", "cap": "WOB_RATHAUS_R03",
-     "window": "rate", "other_tiers": ("WOB_RATHAUS_R04", "WOB_RATHAUS_R05"),
-     "comment": "Aufbau-Gesellschaft Wolfsburg (Kunstmuseum / Rathaus). The day cap applies to the daytime window; the "
-                "package notes that the interaction of the day and night caps and the rounding are not defined."},
+     "facility": "WOB_RATHAUS", "tiers": ("WOB_RATHAUS_R04", "WOB_RATHAUS_R02"), "first": "WOB_RATHAUS_R01",
+     "cap": "WOB_RATHAUS_R03", "other_caps": ("WOB_RATHAUS_R05",),
+     "comment": "Aufbau-Gesellschaft Wolfsburg (Kunstmuseum / Rathaus). The day cap belongs to the daytime tariff; the package "
+                "notes that the interaction of the day and night caps and the rounding are not defined."},
     {"garage_id": "wob_poststrasse", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_POST"),
      "attributes": ("region_parkhaeuser", ("facility_id", "WOB_POST")), "facility": "WOB_POST",
-     "rate": "WOB_POST_R01_148", "cap": "WOB_POST_R02_149", "window": ("night_complement", "WOB_POST_R03_150"),
-     "other_tiers": ("WOB_POST_R03_150", "WOB_POST_R04_151"),
-     "comment": "Saba. The day is the complement of the stated night window 21:00-06:30; the 'Tagestarif' of 9.00 EUR is read "
-                "as the day maximum (its day boundary is not defined); entry only Mo-Fr 06:30-20:00, exit at any time. "
-                "The municipal page still lists 1.50 EUR per hour (the package prefers the operator)."},
+     "rate": "WOB_POST_R01_148", "cap": "WOB_POST_R02_149", "window": None, "other_tiers": ("WOB_POST_R03_150",),
+     "other_caps": ("WOB_POST_R04_151",),
+     "comment": "Saba. The night tariff is an unresolved rule (the operator states no billing unit): it sets no window and is "
+                "not charged, so the fee window is 0-24 h; the 'Tagestarif' is read as the day maximum (its day boundary is "
+                "not defined); entry only Mo-Fr 06:30-20:00, exit at any time. The municipal page lists another hourly rate "
+                "than the operator."},
     {"garage_id": "wob_congresspark", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_CONGRESS"),
      "attributes": ("region_parkhaeuser", ("facility_id", "WOB_CONGRESS")), "facility": "WOB_CONGRESS",
      "rate": "WOB_CONGRESS_R01_142", "cap": "WOB_CONGRESS_R02_143", "window": None,
      "comment": "Saba; the day maximum is not defined as a rolling 24 h (package note)."},
     {"garage_id": "wob_rothenfelder", "town": "wob", "layer": "wob_parkhaeuser",
      "feature": ("facility_id", "WOB_ROTHENFELDER"), "attributes": ("region_parkhaeuser", ("facility_id", "WOB_ROTHENFELDER")),
-     "facility": "WOB_ROTHENFELDER", "rate": "WOB_ROTHENFELDER_R01_144", "cap": "WOB_ROTHENFELDER_R04_147",
-     "window": "rate", "other_tiers": ("WOB_ROTHENFELDER_R02_145", "WOB_ROTHENFELDER_R03_146"),
-     "comment": "Saba; the 24-hour maximum caps the day family (a day-only stay of 11 h would cost 16.50 EUR); entry only "
-                "Mo-Fr 06:30-20:00 and Sa 07:00-20:00."},
+     "facility": "WOB_ROTHENFELDER", "tiers": ("WOB_ROTHENFELDER_R01_144", "WOB_ROTHENFELDER_R02_145"),
+     "cap": "WOB_ROTHENFELDER_R04_147", "other_caps": ("WOB_ROTHENFELDER_R03_146",),
+     "comment": "Saba; the 24-hour maximum is the only cap for day and night together and is held as the cap; the night cap "
+                "lies below it; entry only Mo-Fr 06:30-20:00 and Sa 07:00-20:00."},
     {"garage_id": "wob_schillerstrasse", "town": "wob", "layer": "wob_parkhaeuser",
      "feature": ("facility_id", "WOB_SCHILLER"), "facility": "WOB_SCHILLER", "reason": "banded_tariff",
      "reason_text": "1.00 EUR per hour for the first 2 h, then 1.50 EUR per hour, day maximum 15.00 EUR: the rate changes "
@@ -155,28 +178,23 @@ GARAGE_SPECS = (
                   "WOB_DESIGNEROUTLETS_R04", "WOB_DESIGNEROUTLETS_R05"),
      "comment": "Outlet-centre garage; the capacity of 1,000 is an approximate figure for all parking areas of the centre."},
     {"garage_id": "wob_phaeno", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_PHAENO"),
-     "facility": "WOB_PHAENO", "rate": "WOB_PHAENO_R02", "first": "WOB_PHAENO_R01", "cap": "WOB_PHAENO_R03",
-     "window": "rate", "other_tiers": ("WOB_PHAENO_R04", "WOB_PHAENO_R05"),
+     "facility": "WOB_PHAENO", "tiers": ("WOB_PHAENO_R04", "WOB_PHAENO_R02"), "first": "WOB_PHAENO_R01",
+     "cap": "WOB_PHAENO_R03", "other_caps": ("WOB_PHAENO_R05",),
      "comment": "Aufbau-Gesellschaft Wolfsburg (Nordkopf / phaeno); the operator's capacity 408 supersedes the municipal 400."},
-    {"garage_id": "wob_hauptbahnhof", "town": "wob", "layer": "wob_parkhaeuser",
-     "feature": ("facility_id", "WOB_HAUPTBAHNHOF"), "facility": "WOB_HAUPTBAHNHOF", "rate": "WOB_HBF_P1_R01",
-     "cap": "WOB_HBF_P1_R02", "window": None,
-     "ignored": {"WOB_HBF_P1_R03": "the day tariff of 7.00 EUR with a Pcard or a digital BahnCard (a discount at the "
-                                   "terminal), a customer group the model cannot identify"},
-     "comment": "Station deck of Contipark / DB BahnPark (listed in the city's garage layer, so kept; the BahnPark car "
-                "parks of the city directories are not, ruling R-4b-4)."},
     # ------------------------------------------------------------------ the other towns: operator pages
     {"garage_id": "wf_schulwall", "town": "wf", "layer": "region_parkhaeuser", "feature": ("facility_id", "WF_SCHULWALL"),
-     "facility": "WF_SCHULWALL", "rate": "WF_SCHULWALL_R01_152", "cap": None, "window": "rate",
-     "other_tiers": ("WF_SCHULWALL_R02_153", "WF_SCHULWALL_R03_154", "WF_SCHULWALL_R04_155", "WF_SCHULWALL_R05_156"),
-     "comment": "Stadtbetriebe Wolfenbuettel. The operator publishes no day maximum, so none is encoded. The shoulder tiers "
-                "(08-10 and 18-22 h) are daytime hours that the day family leaves out (ASSUMPTION P3); the operator's map "
-                "marker lies about 78 m north of the tourism marker."},
+     "facility": "WF_SCHULWALL",
+     "tiers": ("WF_SCHULWALL_R02_153", "WF_SCHULWALL_R01_152", "WF_SCHULWALL_R03_154", "WF_SCHULWALL_R04_155"),
+     "ignored": {"WF_SCHULWALL_R05_156": "the tariff of Sundays and public holidays from 08 to 22 h; the model's average "
+                                         "weekday, spec D1, has none"},
+     "comment": "Stadtbetriebe Wolfenbuettel (operator page, state of September 2026): morning and evening, day and night "
+                "tiers per started half hour, the night tier also on Sundays. The operator publishes no day maximum, so none "
+                "is encoded; the operator's map marker lies about 78 m north of the tourism marker."},
     {"garage_id": "wf_rosenwall", "town": "wf", "layer": "region_parkhaeuser", "feature": ("facility_id", "WF_ROSENWALL"),
-     "facility": "WF_ROSENWALL", "rate": "WF_ROSENWALL_R01_157", "cap": None, "window": "rate",
-     "other_tiers": ("WF_ROSENWALL_R02_158", "WF_ROSENWALL_R03_159", "WF_ROSENWALL_R04_160"),
-     "comment": "Stadtbetriebe Wolfenbuettel; 127 short-stay and 45 permanent spaces. The operator publishes no day maximum. "
-                "The shoulder tiers (08-10 and 18-23 h) are daytime hours that the day family leaves out (ASSUMPTION P3)."},
+     "facility": "WF_ROSENWALL",
+     "tiers": ("WF_ROSENWALL_R02_158", "WF_ROSENWALL_R01_157", "WF_ROSENWALL_R03_159", "WF_ROSENWALL_R04_160"),
+     "comment": "Stadtbetriebe Wolfenbuettel (operator page, state of September 2026); 127 short-stay and 45 permanent spaces. "
+                "The operator publishes no day maximum."},
     {"garage_id": "gf_hindenburgstrasse", "town": "gf", "layer": "region_parkhaeuser",
      "feature": ("facility_id", "GF_HINDENBURG"), "facility": "GF_HINDENBURG", "rate": "GF_HINDENBURG_R01_161",
      "cap": "GF_HINDENBURG_R02_162", "window": None,
@@ -190,11 +208,15 @@ GARAGE_SPECS = (
      "comment": "Garage of the Marktpassage. The operator publishes no billing step and no day maximum; the charging times "
                 "equal the opening hours Mo-Sa 06:00-20:00 (the rule carries them as charging times)."},
     {"garage_id": "he_edelhoefe", "town": "he", "layer": "region_parkhaeuser", "feature": ("facility_id", "HE_EDELHOEFE"),
-     "facility": "HE_EDELHOEFE", "rate": "HE_EDELHOEFE_R01_166", "cap": "HE_EDELHOEFE_R02_167", "window": None,
-     "comment": "Garage of the city of Helmstedt, tariff of the city brochure of December 2024 (preferred). The ordinance "
-                "of 2018-12-18 (retrieved 2026-09-29) states another structure: 0.50 EUR for the first 30 min, 1.00 EUR "
-                "up to 1 h, 2.00 EUR up to 2 h, 0.50 EUR per further started hour, at most 8.00 EUR, and the garage's "
-                "notice board decides; the 2018 text is the older source and is not encoded."},
+     "facility": "HE_EDELHOEFE", "rate": "HE_EDELHOEFE_R01_166", "cap": "HE_EDELHOEFE_R02_167",
+     "window": ("stated", "00:00", "24:00",
+                "the city brochure of December 2024 gives the garage the charging time 'Oeffnungszeit: 24 Stunden' in its "
+                "column of fee-liable times (gebuehrenpflichtige Zeit), and the ordinance of 2018-12-18 sec. 2(1) opens the "
+                "garage from 00.00 to 24.00"),
+     "comment": "Garage of the city of Helmstedt, tariff of the city brochure of December 2024. The ordinance of 2018-12-18 "
+                "(retrieved 2026-09-29) states another structure: 0.50 EUR for the first 30 min, 1.00 EUR up to 1 h, 2.00 "
+                "EUR up to 2 h, 0.50 EUR per further started hour, at most 8.00 EUR, and the garage's notice board decides; "
+                "the 2018 text is the older source and is not encoded."},
     {"garage_id": "pe_werderstrasse", "town": "pe", "layer": "region_parkhaeuser", "feature": ("facility_id", "PE_WERDER"),
      "facility": "PE_WERDER", "reason": "banded_tariff",
      "reason_text": "0.20 EUR for the first 30 min, 0.80 EUR in total up to 1 h, then 0.40 EUR per half hour up to 5 h, "
@@ -252,7 +274,10 @@ GARAGE_IDS = tuple(spec["garage_id"] for spec in GARAGE_SPECS)
 #: Every monthly or 30-day product the sources publish (spec Amendment D2, ruling R-D2-a). ``rule`` is the package rule (None
 #: for a product that is not in the package); ``garage_id`` or ``zone_ids`` say where a used product enters (the dataset's
 #: ``monthly_eur`` or the tariff rows' ``commuter_day_eur``); ``reason`` is a code of ``garage_qa.MONTHLY_NOT_USED_REASONS``
-#: for a product that is not used. A garage with a used product has exactly one, the cheapest.
+#: for a product that is not used; ``why`` adds a sentence to the generated note. A garage with a used product has exactly
+#: one, the cheapest. A product that is publicly purchasable is used even where it is limited by a waiting list (the
+#: Wolfsburg Dauerparker products of the Aufbau-Gesellschaft and of the City-Galerie); a permit offer for a closed group of a
+#: fixed small number of places is not (Goslar).
 MONTHLY_PRODUCTS = (
     {"record_id": "monthly_wob_rathaus_tag", "rule": "WOB_RATHAUS_MONTHLY_1", "garage_id": "wob_rathaus", "decision": "used"},
     {"record_id": "monthly_wob_rathaus_tag_nacht", "rule": "WOB_RATHAUS_MONTHLY_2", "garage_id": "wob_rathaus",
@@ -266,10 +291,16 @@ MONTHLY_PRODUCTS = (
      "decision": "not_used", "reason": "not_the_cheapest"},
     {"record_id": "monthly_wob_designer_outlets", "rule": "WOB_OUTLETS_MONTHLY_1", "garage_id": "wob_designer_outlets",
      "decision": "used"},
-    {"record_id": "monthly_wob_hauptbahnhof_24h", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_1", "garage_id": "wob_hauptbahnhof",
-     "decision": "used"},
-    {"record_id": "monthly_wob_hauptbahnhof_oepnv", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_2", "garage_id": "wob_hauptbahnhof",
-     "decision": "not_used", "reason": "restricted_customer_group"},
+    {"record_id": "monthly_wob_hauptbahnhof_24h", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_1", "garage_id": None,
+     "municipality_ags": "03103000", "subject": "Wolfsburg Parkdeck Hauptbahnhof (Contipark / DB BahnPark): Dauerparken Mo-So 24 h",
+     "decision": "not_used", "reason": "garage_not_listed",
+     "why": "the deck is a station BahnPark car park and no garage of the dataset (ruling R-4b-9, candidate "
+            "candidate_wob_hauptbahnhof)"},
+    {"record_id": "monthly_wob_hauptbahnhof_oepnv", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_2", "garage_id": None,
+     "municipality_ags": "03103000", "subject": "Wolfsburg Parkdeck Hauptbahnhof (Contipark / DB BahnPark): product for "
+                                                "public-transport customers",
+     "decision": "not_used", "reason": "restricted_customer_group",
+     "why": "the deck is a station BahnPark car park and no garage of the dataset either (ruling R-4b-9)"},
     {"record_id": "monthly_wf_rosenwall", "rule": "WF_ROSENWALL_MONTHLY_1", "garage_id": "wf_rosenwall", "decision": "used"},
     {"record_id": "monthly_wf_schulwall_comfort_25", "rule": "WF_SCHULWALL_MONTHLY_1", "garage_id": "wf_schulwall",
      "decision": "not_used", "reason": "no_fixed_price"},
@@ -322,21 +353,60 @@ MONTHLY_PRODUCTS = (
      "note": "the ordinance of 2018-12-18 (retrieved 2026-09-29) states 55.00 EUR per month; see the 5-day product"},
 )
 
-#: Why a record of the package is no garage of the dataset although it is a garage or car park: (record id, town,
-#: subject, facility id in facilities.json, reason code of ``garage_qa.CANDIDATE_REASONS``, note).
+#: Why a record of the package is no garage of the dataset although it is a garage or car park. Keys: ``record_id``,
+#: ``town``, ``subject``, ``facility`` (the facility id in facilities.json, or None where the package holds no facility
+#: record), ``reason`` (a code of ``garage_qa.CANDIDATE_REASONS``), ``note`` and, for a candidate without a facility record, the
+#: ``evidence`` (the page that states it). A facility that has a feature in a garage layer is decided here and not covered by
+#: ``GARAGE_SPECS``; a candidate with the reason no_coordinates has no such feature.
 PACKAGE_CANDIDATES = (
-    ("candidate_bs_lange_strasse_sued", "bs", "Parkhaus Lange Strasse Sued", "BS_ADDITIONAL_1", "no_coordinates",
-     "listed on the city's car-park page with a tariff but without coordinates in the package (no geometry is invented)"),
-    ("candidate_bs_steinstrasse", "bs", "Parkhaus Steinstrasse (Am Bankplatz)", "BS_ADDITIONAL_2", "no_coordinates",
-     "listed on the city's car-park page with a tariff but without coordinates in the package (no geometry is invented)"),
-    ("candidate_he_stobenstrasse", "he", "Stobenstrasse (Parkdeck)", "HE_STOBEN", "no_coordinates",
-     "a municipal parking deck of the city brochure of December 2024 with a tariff but without coordinates in the package "
-     "(no geometry is invented)"),
-    ("candidate_cl_tiefgarage_rathaus", "cl", "Clausthal-Zellerfeld, Tiefgarage Am Rathaus", "cl_rathaus", "no_coordinates",
-     "the package asks to georeference the entrance; Clausthal-Zellerfeld has no zone and no coordinates here"),
-    ("candidate_se_parkhaus", "se", "Seesen, Parkhaus Bahnhofstrasse", "se_parkhaus", "outside_source_list",
-     "a private garage, free on the upper levels and for 2 h on the lower level (fee status free_conditional): not in the "
-     "towns that spec Amendment E1 names and no tariff the columns could express"),
+    {"record_id": "candidate_bs_lange_strasse_sued", "town": "bs", "subject": "Parkhaus Lange Strasse Sued",
+     "facility": "BS_ADDITIONAL_1", "reason": "no_coordinates",
+     "note": "listed on the city's car-park page with a tariff but without coordinates in the package (no geometry is "
+             "invented)"},
+    {"record_id": "candidate_bs_steinstrasse", "town": "bs", "subject": "Parkhaus Steinstrasse (Am Bankplatz)",
+     "facility": "BS_ADDITIONAL_2", "reason": "no_coordinates",
+     "note": "listed on the city's car-park page with a tariff but without coordinates in the package (no geometry is "
+             "invented)"},
+    {"record_id": "candidate_he_stobenstrasse", "town": "he", "subject": "Stobenstrasse (Parkdeck)", "facility": "HE_STOBEN",
+     "reason": "no_coordinates",
+     "note": "a municipal parking deck of the city brochure of December 2024 with a tariff but without coordinates in the "
+             "package (no geometry is invented)"},
+    {"record_id": "candidate_he_groepern_tiefgarage", "town": "he", "subject": "Groepern (Tiefgarage), 118 spaces",
+     "facility": None, "reason": "no_coordinates",
+     "evidence": "city brochure Parken in Helmstedt of December 2024, table 'Innerhalb des Stadtringes' (he_parken.pdf in "
+                 "the package; https://www.stadt-helmstedt.de/fileadmin/user_upload/02_Kultur/pdf_Broschueren/"
+                 "Parken_in_Helmstedt.pdf)",
+     "note": "a municipal garage of the city brochure: 118 spaces, ticket, 0.70 EUR for the first hour, each further 0.30 EUR "
+             "(the unit of 'jede weitere' is not stated), no maximum stay, charging time 'Oeffnungszeit: 24 Stunden'; the "
+             "package holds neither a facility record nor coordinates for it (no geometry is invented), so the garage "
+             "cannot be listed"},
+    {"record_id": "candidate_cl_tiefgarage_rathaus", "town": "cl", "subject": "Clausthal-Zellerfeld, Tiefgarage Am Rathaus",
+     "facility": "cl_rathaus", "reason": "no_coordinates",
+     "note": "the package asks to georeference the entrance; Clausthal-Zellerfeld has no zone and no coordinates here"},
+    {"record_id": "candidate_se_parkhaus", "town": "se", "subject": "Seesen, Parkhaus Bahnhofstrasse", "facility": "se_parkhaus",
+     "reason": "outside_source_list",
+     "note": "a private garage, free on the upper levels and for 2 h on the lower level (fee status free_conditional): not in "
+             "the towns that spec Amendment E1 names and no tariff the columns could express"},
+    {"record_id": "candidate_wob_hauptbahnhof", "town": "wob",
+     "subject": "Wolfsburg Parkdeck Hauptbahnhof P1 (Contipark / DB BahnPark)", "facility": "WOB_HAUPTBAHNHOF",
+     "reason": "station_bahnpark",
+     "note": "a station deck of DB BahnPark, operated by Contipark: ruling R-4b-9 excludes the station BahnPark car parks in "
+             "both cities, like the Braunschweig station car parks of the directory, and the coverage register lists the DB "
+             "BahnPark station car parks of Wolfsburg as excluded; the package's garage layer holds the deck, so it is decided "
+             "here; its monthly products are recorded and not used"},
+    {"record_id": "candidate_wf_parkpalette_karlstrasse", "town": "wf", "subject": "Wolfenbuettel, Parkpalette Karlstrasse "
+                                                                                 "(157 spaces)",
+     "facility": None, "reason": "dauerparker_only",
+     "evidence": "https://www.stadtbetriebe-wf.de/parkhaeuser.html (overview page of the operator, retrieved 2026-09-29)",
+     "note": "the operator states that the Parkpalette is currently available to long-term parkers only (momentan nur "
+             "Dauerparkern): a closed group of long-term renters, so no garage option; owner decision 2026-10-07: their free "
+             "or contract parking is covered by the model's averaged free-parking share"},
+    {"record_id": "candidate_wf_neue_strasse", "town": "wf", "subject": "Wolfenbuettel, Parkplatzanlage Neue Strasse",
+     "facility": None, "reason": "dauerparker_only",
+     "evidence": "https://www.stadtbetriebe-wf.de/parkhaeuser.html (overview page of the operator, retrieved 2026-09-29)",
+     "note": "the operator states that the car park is currently available to long-term parkers only (momentan nur "
+             "Dauerparkern): a closed group of long-term renters, so no garage option; owner decision 2026-10-07: their free "
+             "or contract parking is covered by the model's averaged free-parking share"},
 )
 #: AGS of the towns of ``PACKAGE_CANDIDATES`` that are not in ``TOWNS``.
 OTHER_TOWNS = {"cl": ("03153018", "Clausthal-Zellerfeld"), "se": ("03153012", "Seesen")}
@@ -349,8 +419,8 @@ DIRECTORY_DECISIONS = {
     "Parkplatz Grosser Hof": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
                                                      "its zone is its tariff"),
     "Parkplatz Hauptbahnhof Nord": ("station_bahnpark", "station car park of a private operator (BahnCard discount, "
-                                                        "75 EUR per month for BahnCard holders): ruling R-4b-4"),
-    "Parkplatz Hauptbahnhof Sued": ("station_bahnpark", "station car park of a private operator: ruling R-4b-4"),
+                                                        "75 EUR per month for BahnCard holders): rulings R-4b-4 and R-4b-9"),
+    "Parkplatz Hauptbahnhof Sued": ("station_bahnpark", "station car park of a private operator: rulings R-4b-4 and R-4b-9"),
     "Parkplatz Markthalle": ("bga_zone", "BgA car park, the zone bs_bga_markthalle"),
     "Parkplatz Nimesstrasse": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
                                                       "its zone is its tariff"),

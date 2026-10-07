@@ -776,11 +776,12 @@ def test_committed_parking_data_is_valid(capsys):
             "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
             "through the dataset); search time on 0 rows (decision D4)") in out
     # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
-    assert ("garages: 32 listed, 20 priced, 12 not priced (banded_tariff 7, conflicting_sources 1, free_period 2, "
+    assert ("garages: 31 listed, 19 priced, 12 not priced (banded_tariff 7, conflicting_sources 1, free_period 2, "
             "incomplete_tariff 1, no_published_tariff 1); per municipality 03101000 10 listed 8 priced") in out
-    assert "priced garages resting on an assumption: P3 7, P4 9, P5 11 of 20; monthly product on 8 garages" in out
-    assert "QA: monthly products used 10, recorded and not used 10 (capacity_limited_permits 1" in out
-    assert "candidates that are no garage 38 (bga_zone 2" in out
+    assert ("priced garages resting on an assumption: P3 1, P4 8, P5 10, P6 6, P7 5 of 19 (at least one assumption 18, "
+            "P4 or P5 14; in the tiered form 6); monthly product on 7 garages") in out
+    assert "QA: monthly products used 9, recorded and not used 11 (capacity_limited_permits 1, garage_not_listed 1" in out
+    assert "candidates that are no garage 42 (bga_zone 2, customer_regime 1, dauerparker_only 2" in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -1319,7 +1320,7 @@ def test_validator_accepts_a_release_without_the_garage_dataset_and_says_so(tmp_
 @pytest.mark.parametrize("change, message", [
     ("dataset_without_qa", "but no garage QA table at"),
     ("qa_without_dataset", "but no garage dataset at"),
-    ("invalid_garage", "garage 'bs_eiermarkt': garage_hourly_rate_eur: must be a positive amount"),
+    ("invalid_garage", "garage 'bs_magni': garage_hourly_rate_eur: must be a positive amount"),
     ("monthly_contradicts_qa",
      "garage 'wob_rathaus': the used monthly product is '50.00' EUR but the dataset's monthly_eur is 51.0"),
     ("tariff_contradicts_qa",
@@ -1335,7 +1336,7 @@ def test_validator_checks_the_garage_dataset_against_itself_its_qa_table_and_the
     elif change == "qa_without_dataset":
         garages_file.unlink()
     elif change in ("invalid_garage", "monthly_contradicts_qa"):
-        garage_id, column, value = (("bs_eiermarkt", "garage_hourly_rate_eur", -1.2) if change == "invalid_garage"
+        garage_id, column, value = (("bs_magni", "garage_hourly_rate_eur", -1.2) if change == "invalid_garage"
                                     else ("wob_rathaus", "monthly_eur", 51.0))
         document = json.loads(garages_file.read_text(encoding="utf-8"))
         features = [feature for feature in document["features"] if feature["properties"]["garage_id"] == garage_id]
