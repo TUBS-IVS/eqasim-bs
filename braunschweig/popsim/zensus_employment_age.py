@@ -39,9 +39,14 @@ KREIS_EMPLOYED_BY_AGE_FILE = "zensus2022_employed_by_age_kreis.csv"
 #: The Regionaltabelle's age classes (``ET_ALTER_ERW__1..7``), in source order.
 KREIS_AGE_CLASSES = ("15-19", "20-29", "30-39", "40-49", "50-59", "60-67", "68+")
 
-#: Regionaltabelle class -> employment-grid group. 15-19 joins 16_29 the same way the previous
-#: reference's 10-19 band did (the grid's population denominator starts at age 16); 60-67 and 68+
-#: form 60plus.
+#: Regionaltabelle class -> employment-grid group. 60-67 and 68+ form 60plus.
+#:
+#: ASSUMPTION (ADR-0137): the whole 15-19 class joins 16_29, so employed 15-year-olds count towards
+#: the 16_29 group although the grid's population denominator starts at age 16. The Regionaltabelle
+#: publishes no single-year split below 20, so age 15 cannot be removed from a traceable source.
+#: Dropping the class would not remove these persons either: the shape is a share that rescales the
+#: census Kreis level of employed persons, so their weight would move to the older groups instead.
+#: The previous reference's 10-19 band was folded into 16_29 the same way.
 _KREIS_CLASS_TO_GROUP = {
     "15-19": "16_29", "20-29": "16_29",
     "30-39": "30_39",

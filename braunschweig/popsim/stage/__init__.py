@@ -799,8 +799,9 @@ def configure(context):
     # "optimized_2026_06_30" to apply the searched per-group weights (see control_spec).
     context.config(KEY_IMPORTANCE_PROFILE, "uniform")
     # When the employment grid control is ON, the per-cell employment targets are
-    # built from a Zensus employment-by-age SHAPE (a committed reference CSV under
-    # data_path, chosen by KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE; see
+    # built from a Zensus employment-by-age SHAPE (a reference CSV under data_path,
+    # chosen by KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE: the default Regionaltabelle extract
+    # is local-only, the previous 2000S-2001 extract is committed; see
     # braunschweig.popsim.zensus_employment_age) rescaled per
     # Kreis×sex×group to the census Erwerbstaetige Kreis level. No synpp stage
     # dependency is needed (the former GENESIS SvB stage dependency is gone). We only
@@ -1411,8 +1412,8 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
 
     Employment grid control (Task 5): inject the ten per-cell
     EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from
-    the source ``KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE`` names (ADR-0137): by default the committed
-    Zensus 2022 Regionaltabelle reference, exact per Kreis and sex for every ZGB Kreis
+    the source ``KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE`` names (ADR-0137): by default the local-only
+    Zensus 2022 Regionaltabelle reference under data_path, exact per Kreis and sex for every ZGB Kreis
     (zensus_employment_age.load_kreis_sex_age_shares); alternatively the previous Zensus
     2000S-2001 reference (load_age_shares; exact for the kreisfreie Staedte, national fallback for
     the Landkreise, one shape for both sexes). It is rescaled per Kreis x sex x group to the census

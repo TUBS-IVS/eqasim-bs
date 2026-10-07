@@ -7,7 +7,8 @@ three kreisfreie Staedte only, so the five Landkreise used a national shape. The
 Regionaltabelle "Bildung und Erwerbstaetigkeit" publishes the same quantity -- employed persons
 ("Erwerbstaetige", sample-based STP results) by age class -- for EVERY Kreis, by sex, at the same
 reference date (2022-05-15) as the census level. This script writes that table for the requested
-regions as the committed reference ``zensus2022_employed_by_age_kreis.csv``.
+regions as the local-only reference ``zensus2022_employed_by_age_kreis.csv`` (not committed, per the
+``.gitignore`` data policy; Data Registry record ``zensus2022_employed_by_age_kreis``).
 
 Source: ``Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx`` (Statistische Aemter des Bundes und der
 Laender, "Zensus 2022 - Ausgewaehlte Zensusergebnisse", Datenlizenz Deutschland - Namensnennung -

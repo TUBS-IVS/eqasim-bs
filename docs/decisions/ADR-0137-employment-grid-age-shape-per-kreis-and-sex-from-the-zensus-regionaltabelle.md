@@ -6,7 +6,8 @@
   - `main` holds up to ADR-0133.
   - `fix/parallel-memory-robustness` holds ADR-0135.
   - `chore/i434-test-suite-followup` holds ADR-0134 and ADR-0136.
-- **Issue:** none; the change was asked for directly in the session of 2026-09-28.
+- **Issue:** #440 (opened 2026-10-07 for the review of PR #438; the change itself was asked for
+  directly in the session of 2026-09-28).
 - **Supersedes / amends:** amends ADR-0016 (the employment grid control), whose age shape it replaces.
 
 ## Context
@@ -54,7 +55,11 @@ Two facts made it replaceable:
    (`zensus_employment_age.load_kreis_sex_age_shares`, default of the new key
    `braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_kreis_by_sex`).
    - 15–19 joins 20–29 in the 16–29 group, as the previous extract's 10–19 band did (the grid's
-     population denominator starts at 16).
+     population denominator starts at 16). ASSUMPTION: employed 15-year-olds therefore count
+     towards 16–29. The Regionaltabelle has no single-year split below 20, so age 15 cannot be
+     removed from a traceable source; dropping the class would only move their weight to the older
+     groups, because the shape rescales the census Kreis level of employed persons. The size of
+     this group is not quantified here.
    - 60–67 and 68+ form 60+.
    - `employment_grid.per_cell_employment_targets` accepts one shape per sex; a single shape still
      works unchanged.
