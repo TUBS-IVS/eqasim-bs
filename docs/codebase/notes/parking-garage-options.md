@@ -22,7 +22,8 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
 | Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P12) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_max_distance_m`) |
-| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E28 and O01..O44, `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
+| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E32 and O01..O69,
+`scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
 | Calibration of lambda | `scripts/parking/calibrate_garage_decay.py` |
 
 ## Rules maintainers must keep
@@ -44,8 +45,13 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   charged only for an arrival inside its clock window; the day cap is applied once per stay. A tiered garage may carry ONE
   closed free band in `bands` as its grace period (P10 for tiers, `GarageTariff` refuses any other band next to tiers): a stay
   not longer than the band (elapsed, the tiered form has no fee window) costs 0, a longer stay is priced by the tiers from its
-  arrival. The schema 3 keys do not change, but the Java reader must accept tiers and bands together (Task 4e) and no golden
-  case pins this combination yet.
+  arrival. The schema 3 keys do not change, but the Java reader must accept tiers and bands together (Task 4e):
+  `GarageTariff.form` returns "tiers" for a tiered garage with a grace band, so the port must branch on the presence of both
+  `tiers` and `bands`, never on the form name alone. Spec E14 amendment (1) narrows E11's "bands exclude tiers" to "no other
+  band may stand next to tiers". The golden contract pins the combination (`fx_g15_tier_grace`, `fx_g16_tier_grace_cap`:
+  O45..O59), the free schedule `0- free` (`fx_g17_free`: O60..O65, E29..E32) and a grace period equal to the billing unit
+  (`fx_g18_grace_total`: O66..O69); their fixture garages lie 10 km north of every earlier destination and garage, so the
+  option sets of E01..E28 and every earlier golden entry are unchanged.
 - **Free schedule:** a car park that is free for every stay is the one open free band `0- free` with the formal fee window 0
   to 24 h (`garages.is_free_schedule`); it is a banded garage like any other for `garage_metered_cents`, rests on no P8 and,
   where it is only a municipal default (the Wolfsburg points without fee evidence), on P12.

@@ -41,8 +41,13 @@ points gets exactly one class, decided from the fee status of the package and th
   (`wolfsburg_lots.check_decision`). The same 24 points must be the points of the regional layer `wob_parkplaetze`.
 - **Cost 0 is the free schedule `0- free`** (one open free band, formal fee window 0 to 24 h), never a tariff row with a
   zero rate. A free rule that states a free period or an end is the grace form, not a free car park.
-- **P12 is the weakest evidence of the dataset**: no fee evidence is not evidence of none. Every P12 row cites the field
-  decision of its fee status as its evidence and is counted by the validator and the loader.
+- **A row that goes against a package recommendation says so**: every class d row and the Autostadt and Klinikum rows quote
+  the recommendation of the package's facility review in their notes and QA note and name the owner direction "alle
+  integrieren" that overrides it (`regional_garages.lot_override_sentence`; spec E14 amendment (2)).
+- **P12 is the weakest evidence of the dataset**: no fee evidence is not evidence of none, and section 2(2) of the fee
+  ordinance defines Zone II as all other streets and places of the city area, so the published areas are not shown to be
+  exhaustive. Every P12 row cites the field decision of its fee status as its evidence and is counted by the validator
+  and the loader.
 - **Positions are the city's points** (`geoviewer_car_park_point`), no entrances; capacity and operator only where the package
   states them (capacity with its scope; the operator by a quotation in the package's copy of the operator's own page).
 - **Do not edit the two data files by hand**; regenerate them (command in the data record) and update the pinned hashes of
