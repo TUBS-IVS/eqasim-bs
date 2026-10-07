@@ -132,7 +132,9 @@ acquisition:
     (spec Amendment E8: garages enter through the dataset parking_garages_2026), and search_time_min stays empty on
     every row (decision D4). The Ia note that said the resident permits were not modelled now points to rule R2 and the
     district layer. Q3 and Q4 (fill cap and tagging completeness of lever 1) are zone-geometry rules: no tariff value rests
-    on them, they are recorded in the data record parking_zones_2026 and its QA table.
+    on them, they are recorded in the data record parking_zones_2026 and its QA table. P3 (the day family only where day and
+    night tariffs differ) and its siblings P4 and P5 are assumptions of the garage dataset, not of this table: they are named
+    in each garage's notes and in the data record parking_garages_2026.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
   committed: true
