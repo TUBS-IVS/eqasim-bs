@@ -11,11 +11,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 100 | stages: 126 | datasets: 85 | ADRs: 131 | run manifests: 54
+- Features: 101 | stages: 126 | datasets: 86 | ADRs: 132 | run manifests: 54
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -39,6 +39,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Consistent car_availability](../registry/features/consistent_car_availability.yml) | active | off | -/-/A | unvalidated |  |
 | [Driving licence (P17.1, 3-margin IPF)](../registry/features/driving_licence_enrichment.yml) | active | off | -/-/A | unvalidated |  |
 | [Economic status (Bayes hhtype×region)](../registry/features/economic_status_bayes.yml) | active | off | -/-/A | unvalidated |  |
+| [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | PARKED | off | -/-/i | unvalidated |  |
 | [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |

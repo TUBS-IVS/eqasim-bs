@@ -294,6 +294,12 @@ config:
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
   braunschweig.population.popsim.employment_grid: "on"
+  # Its age shape (ADR-0137): the Zensus 2022 Regionaltabelle's employed persons by age class,
+  # exact per Kreis AND sex for all 8 ZGB Kreise (zensus2022_employed_by_age_kreis.csv, written
+  # by scripts/extract_zensus2022_employed_by_age.py). "zensus2022_2000S_2001" restores the
+  # previous shape: exact for the 3 kreisfreie Staedte only, the national shape for the 5
+  # Landkreise, one shape for both sexes.
+  braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_kreis_by_sex
   # Ownership grid (issue #240): 9 per-1km-cell car/bike ownership shape controls
   # (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg). Shape from the
   # committed MiD B1 RS7 x haustyp conditionals; level raked per Kreis to the SAME

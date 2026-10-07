@@ -58,6 +58,7 @@ pattern donor; the BS pipeline does not yet have a German HTS replacement.
 | B10a | **MiD 2023 — extracted reference CSVs** (the numbered tables P9 / P12.1 / P13 / P17.1 / P24.1 / Tabelle 43 etc.) | **committed to the repo** (see Section F); regenerate from B10 via `scripts/extract_mid_tables.py` / the seed scripts | `braunschweig/mid/mid2023_*.csv` | aggregate reference values |
 | B11 | **BMV/BBSR RegioStaR-7 reference** (Gemeinde-level RegioStaR class) | https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx — auto-downloaded by `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` | dl-de/by-2-0 (BMV) |
 | B12 | **Zensus 2022 100 m population grid (parquet)** | `https://github.com/JsLth/z22data` (BKG GeoGitter + Statistische Ämter) — auto-downloaded by `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet`, `zensus_grid/grid_100m.parquet` | dl-de/by-2-0 (BKG / Statistische Ämter) |
+| B13 | **Zensus 2022 — employed by age × sex per Kreis** (Regionaltabelle "Bildung und Erwerbstätigkeit", sheet `CSV-ET_Alter`; employment-grid age shape, ADR-0137) | https://www.zensus2022.de (Regionaltabelle xlsx; the cleancensus repo keeps a copy under `data/raw/regionaltabellen/`) — processed by `python scripts/extract_zensus2022_employed_by_age.py` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | dl-de/by-2-0 (Statistische Ämter) |
 
 Notes:
 
