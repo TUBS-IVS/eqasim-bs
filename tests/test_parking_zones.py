@@ -737,7 +737,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
 COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
                            "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
-                           "parking_zones_2026_municipal_qa.csv", "parking_resident_districts_2026.geojson")
+                           "parking_zones_2026_municipal_qa.csv", "parking_resident_districts_2026.geojson",
+                           "parking_garages_2026.geojson", "parking_garages_2026_qa.csv")
 PARKSCHEININSELN = ("bs_parkscheininsel_marthastrasse_koernerstrasse",
                     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse")
 

@@ -24,6 +24,7 @@ from shapely.geometry import Point, box
 
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
+from braunschweig.parking import zones as pz
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -628,3 +629,205 @@ def test_two_runs_of_the_step_write_identical_bytes(step, package, tmp_path, mon
         step.write_garage_qa(tmp_path / run / "qa.csv", rows)
         written.append((tmp_path / run / "garages.geojson").read_bytes() + (tmp_path / run / "qa.csv").read_bytes())
     assert written[0] == written[1]
+
+
+# --------------------------------------------------------------------------- the committed dataset
+
+#: SHA-256 of the owner's package of 2026-10-07 that every garage cites.
+REGIONAL_PACKAGE_SHA256 = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
+GARAGES_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026.geojson"
+GARAGES_QA_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026_qa.csv"
+TARIFFS_PATH = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
+WF, GF, HE, PE, SZ = "03158037", "03151009", "03154028", "03157006", "03102000"
+
+#: The 20 priced garages as the sources state them (operator pages, the PULP feed, the Geoviewer and the package's preferred
+#: tariff rules), written by hand and not read back from the dataset: (municipality_ags, hourly rate in EUR, billing unit in
+#: minutes, first period in minutes, first period in EUR, day cap in EUR, fee window start and end in decimal hours, monthly
+#: product in EUR, reported capacity, assumptions). The assumptions: P3 the day family only where day and night tariffs differ,
+#: P4 a rate without a stated rounding is billed per started unit, P5 the fee window 0-24 h where no charging times are stated.
+PRICED_GARAGES = {
+    "bs_eiermarkt": (BS, 1.20, 60, 60, 0.60, 9.60, 7.0, 18.0, None, 500, "P3"),
+    "bs_lange_strasse_nord": (BS, 1.50, 60, None, None, 10.00, 0.0, 24.0, None, 150, "P4;P5"),
+    "bs_magni": (BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, None, "P5"),
+    "bs_packhof": (BS, 1.20, 60, None, None, 9.60, 0.0, 24.0, None, 954, "P5"),
+    "bs_schloss": (BS, 2.00, 60, None, None, 20.00, 0.0, 24.0, None, 1300, "P4;P5"),
+    "bs_schuetzenstrasse": (BS, 2.00, 60, None, None, 15.00, 0.0, 24.0, None, 167, "P4;P5"),
+    "bs_wallstrasse": (BS, 2.90, 60, None, None, 19.00, 0.0, 24.0, None, 455, None),
+    "bs_wilhelmstrasse": (BS, 1.20, 60, None, None, 8.00, 0.0, 24.0, None, 530, "P4;P5"),
+    "wob_rathaus": (WOB, 1.20, 60, 60, 1.10, 6.00, 6.0, 24.0, 50.0, 732, "P3;P4"),
+    "wob_poststrasse": (WOB, 2.00, 60, None, None, 9.00, 6.5, 21.0, None, 956, "P3"),
+    "wob_congresspark": (WOB, 1.00, 60, None, None, 6.00, 0.0, 24.0, None, 767, "P5"),
+    "wob_rothenfelder": (WOB, 1.50, 60, None, None, 12.00, 8.0, 19.0, None, 470, "P3"),
+    "wob_city_galerie": (WOB, 1.50, 60, None, None, 15.00, 0.0, 24.0, 98.0, 800, "P5"),
+    "wob_phaeno": (WOB, 1.20, 60, 60, 1.10, 7.00, 6.0, 24.0, 60.0, 408, "P3;P4"),
+    "wob_hauptbahnhof": (WOB, 1.70, 60, None, None, 9.00, 0.0, 24.0, 100.0, None, "P4;P5"),
+    "wf_schulwall": (WF, 1.20, 30, None, None, None, 10.0, 18.0, None, 189, "P3"),
+    "wf_rosenwall": (WF, 1.20, 30, None, None, None, 10.0, 18.0, 95.0, 172, "P3"),
+    "gf_hindenburgstrasse": (GF, 1.00, 60, None, None, 13.00, 0.0, 24.0, None, 280, "P5"),
+    "he_marktpassage": (HE, 0.80, 60, None, None, None, 6.0, 20.0, None, 60, "P4"),
+    "he_edelhoefe": (HE, 1.20, 30, None, None, 8.00, 0.0, 24.0, None, 17, "P4;P5"),
+}
+#: The 12 garages that are listed and not priced: (municipality_ags, reason, monthly product in EUR, reported capacity). A
+#: band structure that a first period plus one rate cannot express exactly (banded_tariff), a free first period that the
+#: columns cannot express (free_period), conflicting sources, an incomplete tariff and no published tariff stay unpriced
+#: (ruling R-4b-3: no approximation).
+UNPRICED_GARAGES = {
+    "bs_forschungsflughafen": (BS, "free_period", None, None),
+    "bs_ring_center": (BS, "banded_tariff", None, None),
+    "wob_suedkopf": (WOB, "free_period", None, None),
+    "wob_schillerstrasse": (WOB, "banded_tariff", None, None),
+    "wob_designer_outlets": (WOB, "banded_tariff", 55.0, 1000),
+    "pe_werderstrasse": (PE, "banded_tariff", 48.0, 160),
+    "pe_wallstrasse": (PE, "banded_tariff", 48.0, 190),
+    "sz_brawo_carree": (SZ, "banded_tariff", None, 570),
+    "gs_achtermann": (GS, "conflicting_sources", None, None),
+    "gs_ca": (GS, "banded_tariff", None, 250),
+    "gs_galeria": (GS, "incomplete_tariff", None, 193),
+    "gs_charley_jacob_strasse": (GS, "no_published_tariff", None, None),
+}
+TARIFF_VALUE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
+                        "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h")
+
+
+def _committed_garages() -> pd.DataFrame:
+    frame = pg.load_garages(GARAGES_PATH)
+    pg.validate_garages(frame)
+    return frame.set_index("garage_id")
+
+
+def _plain(value):
+    """A cell as a plain Python value: None for an empty cell, a number for a number."""
+    if value is None or value is pd.NA or (isinstance(value, float) and value != value):
+        return None
+    return value.item() if hasattr(value, "item") else value
+
+
+def test_the_committed_dataset_lists_exactly_the_garages_the_sources_name():
+    garages = _committed_garages()
+    assert len(garages) == 32 and len(PRICED_GARAGES) + len(UNPRICED_GARAGES) == 32
+    assert set(garages.index) == set(PRICED_GARAGES) | set(UNPRICED_GARAGES)
+    assert garages.crs == METRIC_CRS and set(garages.geom_type) == {"Point"}
+    assert list(garages.reset_index().columns[:len(pg.DATASET_COLUMNS)]) == list(pg.DATASET_COLUMNS)
+
+
+@pytest.mark.parametrize("garage_id", sorted(PRICED_GARAGES))
+def test_a_committed_priced_garage_carries_the_published_tariff(garage_id):
+    ags, rate, unit, first_min, first_eur, cap, start, end, monthly, capacity, assumptions = PRICED_GARAGES[garage_id]
+    row = _committed_garages().loc[garage_id]
+    assert row["municipality_ags"] == ags and bool(row["priced"]) and _plain(row["not_priced_reason"]) is None
+    assert (_plain(row["garage_hourly_rate_eur"]), _plain(row["garage_billing_unit_min"])) == (rate, unit)
+    assert (_plain(row["garage_first_period_min"]), _plain(row["garage_first_period_eur"])) == (first_min, first_eur)
+    assert (_plain(row["garage_daily_cap_eur"]), _plain(row["garage_fee_start_h"]), _plain(row["garage_fee_end_h"])) == (
+        cap, start, end)
+    assert (_plain(row["monthly_eur"]), _plain(row["capacity_reported"]), _plain(row["assumptions"])) == (
+        monthly, capacity, assumptions)
+    # the fee window is the garage's own: a window of 0-24 h is stated by the source (no assumption) or ASSUMPTION P5
+    if (start, end) == (0.0, 24.0):
+        assert garage_id == "bs_wallstrasse" or "P5" in assumptions.split(";")
+
+
+@pytest.mark.parametrize("garage_id", sorted(UNPRICED_GARAGES))
+def test_a_committed_unpriced_garage_states_why_and_holds_no_tariff_value(garage_id):
+    ags, reason, monthly, capacity = UNPRICED_GARAGES[garage_id]
+    row = _committed_garages().loc[garage_id]
+    assert row["municipality_ags"] == ags and not bool(row["priced"]) and row["not_priced_reason"] == reason
+    assert all(_plain(row[column]) is None for column in TARIFF_VALUE_COLUMNS)
+    assert (_plain(row["monthly_eur"]), _plain(row["capacity_reported"])) == (monthly, capacity)
+    assert _plain(row["assumptions"]) is None
+    assert f"Not priced ({reason})" in row["notes"] or reason == "no_published_tariff"
+
+
+def test_the_committed_coverage_is_the_one_the_task_reports():
+    coverage = pg.coverage(pg.load_garages(GARAGES_PATH))
+    assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (32, 20, 12)
+    assert coverage["not_priced_by_reason"] == {"banded_tariff": 7, "conflicting_sources": 1, "free_period": 2,
+                                                "incomplete_tariff": 1, "no_published_tariff": 1}
+    assert coverage["by_municipality"] == {
+        BS: {"listed": 10, "priced": 8, "not_priced": 2}, SZ: {"listed": 1, "priced": 0, "not_priced": 1},
+        WOB: {"listed": 10, "priced": 7, "not_priced": 3}, GF: {"listed": 1, "priced": 1, "not_priced": 0},
+        GS: {"listed": 4, "priced": 0, "not_priced": 4}, HE: {"listed": 2, "priced": 2, "not_priced": 0},
+        PE: {"listed": 2, "priced": 0, "not_priced": 2}, WF: {"listed": 2, "priced": 2, "not_priced": 0}}
+    # the assumption rates (fallback transparency): P3 7 of 20, P4 9 of 20, P5 11 of 20 priced garages, 8 monthly products
+    assert coverage["priced_by_assumption"] == {"P3": 7, "P4": 9, "P5": 11} and coverage["with_monthly_product"] == 8
+    counted = {key: sum(key in values[-1].split(";") for values in PRICED_GARAGES.values() if values[-1])
+               for key in ("P3", "P4", "P5")}
+    assert counted == coverage["priced_by_assumption"]
+    with_monthly = [values[8] for values in PRICED_GARAGES.values() if values[8]] + [
+        values[2] for values in UNPRICED_GARAGES.values() if values[2]]
+    assert len(with_monthly) == coverage["with_monthly_product"]
+
+
+def test_every_committed_garage_cites_the_package_and_a_source_and_every_assumption_is_named_in_its_notes():
+    garages = _committed_garages()
+    assert set(garages["package_sha256"]) == {REGIONAL_PACKAGE_SHA256}
+    assert garages["source_url"].str.startswith("https://").all() and garages["geometry_source_url"].str.startswith("https://").all()
+    assert garages["source_date"].str.fullmatch(r"\d{4}-\d{2}-\d{2}").all() and garages["geometry_method"].notna().all()
+    for garage_id, row in garages.iterrows():
+        for assumption in (_plain(row["assumptions"]) or "").split(";"):
+            if assumption:
+                assert f"ASSUMPTION {assumption}" in row["notes"], garage_id
+        if bool(row["priced"]):
+            assert _plain(row["tariff_rule_ids"]), garage_id
+            assert "preferred for current use" in row["notes"], garage_id
+        # a day family states the tariffs the model does not charge (ASSUMPTION P3)
+        if "P3" in (_plain(row["assumptions"]) or "").split(";"):
+            assert "not charged by the model" in row["notes"], garage_id
+    # the tariff of the Braunschweig garage Eiermarkt, quoted: first hour 0.60, then 1.20 per hour, 9.60 a day, 07:00-18:00
+    assert ("0.60 EUR for the first 60 min, then 1.20 EUR per started 60 min, at most 9.60 EUR per day, charged 07:00-18:00"
+            in garages.loc["bs_eiermarkt", "notes"])
+
+
+def test_the_committed_files_are_ascii_documented_and_free_of_a_tariff_on_unpriced_rows():
+    for path in (GARAGES_PATH, GARAGES_QA_PATH):
+        assert path.read_bytes().isascii(), path.name
+    document = json.loads(GARAGES_PATH.read_text(encoding="utf-8"))
+    assert document["type"] == "FeatureCollection" and len(document["features"]) == 32
+    assert "ODbL 1.0" in document["license"] and "OpenStreetMap" in document["attribution"]
+    assert set(document["documentation"]["columns"]) == set(pg.DATASET_COLUMNS)
+    for feature in document["features"]:
+        assert feature["geometry"]["type"] == "Point" and list(feature["properties"]) == list(pg.DATASET_COLUMNS)
+    header = [line for line in GARAGES_QA_PATH.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
+    for column in pq.GARAGE_QA_COLUMNS:
+        assert any(line.startswith(f"# {column}: ") for line in header), column
+
+
+def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate():
+    garages = pg.load_garages(GARAGES_PATH)
+    qa = pq.load_garage_qa(GARAGES_QA_PATH)
+    pq.validate_garage_qa(qa, garages, pz.load_tariffs(TARIFFS_PATH))
+    assert qa["record_type"].value_counts().to_dict() == {"garage": 32, "monthly_product": 20, "candidate": 15}
+    coverage = pq.qa_coverage(qa)
+    # 20 monthly or 30-day products: 10 used (eight at a garage, the zone Ib ticket and the TU member ticket), 10 recorded
+    # and not used with a reason (spec Amendment D2, ruling R-D2-a)
+    assert (coverage["monthly_used"], coverage["monthly_not_used"]) == (10, 10)
+    assert coverage["monthly_not_used_by_reason"] == {
+        "capacity_limited_permits": 1, "no_coordinates": 1, "no_fixed_price": 1, "not_monthly_or_30_day": 1,
+        "not_the_cheapest": 3, "outdated_source": 2, "restricted_customer_group": 1}
+    # the candidates that are no garage of the dataset (counts of package or directory entries, with the reason)
+    assert coverage["candidates"] == 38 and coverage["candidates_by_reason"] == {
+        "bga_zone": 2, "customer_regime": 1, "no_coordinates": 4, "no_published_tariff": 24, "outside_source_list": 1,
+        "station_bahnpark": 2, "zone_street_product": 4}
+    used = qa[(qa["record_type"] == "monthly_product") & (qa["decision"] == "used")]
+    assert sorted(used.loc[used["garage_id"] != "", "garage_id"]) == sorted(
+        [garage_id for garage_id, values in PRICED_GARAGES.items() if values[8]]
+        + [garage_id for garage_id, values in UNPRICED_GARAGES.items() if values[2]])
+    zone_products = used[used["zone_ids"] != ""]
+    assert set(";".join(zone_products["zone_ids"]).split(";")) == {
+        "bs_zone_ib", "tu_zentralcampus", "tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
+        "tu_forschungsflughafen", "tu_campus_volkmaroder_strasse"}
+
+
+def test_the_committed_files_are_reproduced_from_the_local_package(garages_step, tmp_path):
+    step = garages_step  # the real specifications, not the synthetic ones of the step fixture
+    raw_sources = COMMITTED_PARKING_DIR / "raw_sources"
+    regional, directory = raw_sources / "municipal_2026-10-07", raw_sources / "bs_plan_parkplaetze.geojson"
+    if not (regional / f"{PACKAGE}.zip").is_file() or not directory.is_file():
+        pytest.skip("the owner's package and the city car-park directory are gitignored and absent here")
+    inputs = step.load_garage_inputs(regional)
+    frame = step.build_garages(inputs)
+    rows = step.qa_rows(inputs, frame, step.load_directory(directory))
+    pg.write_garages(frame, tmp_path / "garages.geojson", members=step.dataset_members())
+    step.write_garage_qa(tmp_path / "qa.csv", rows)
+    # a checkout with core.autocrlf holds CRLF; the repository holds LF
+    assert (tmp_path / "garages.geojson").read_bytes() == GARAGES_PATH.read_bytes().replace(b"\r\n", b"\n")
+    assert (tmp_path / "qa.csv").read_bytes() == GARAGES_QA_PATH.read_bytes().replace(b"\r\n", b"\n")
