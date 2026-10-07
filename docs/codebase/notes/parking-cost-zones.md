@@ -123,8 +123,9 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 - The garage dataset is data of its own, not zones (spec Amendment E1): `parking_garages_2026.geojson` (points, WGS84
   on disk, EPSG:25832 after `braunschweig.parking.garages.load_garages`) with its QA table
   `parking_garages_2026_qa.csv` (`braunschweig.parking.garage_qa`) is built by
-  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its two optional
-  supplement packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`), so a change is made in
+  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its three optional
+  packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`, and `--wolfsburg-lots-zip`, read by
+  `wolfsburg_lots.py`, see [parking-wolfsburg-lots.md](parking-wolfsburg-lots.md)), so a change is made in
   `regional_garage_specs.py` (which package rule plays which role) and the two files are regenerated, never edited by
   hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 3) lists its
   priced garages; the zone-level garage columns of the tariff table stay empty (Amendment E8) and garages enter the

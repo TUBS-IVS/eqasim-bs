@@ -20,7 +20,7 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 | --- | --- |
 | Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `GarageOptionCounters`) |
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
-| Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P11) |
+| Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P12) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_max_distance_m`) |
 | Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` families E01..E28 and O01..O44, `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
 | Calibration of lambda | `scripts/parking/calibrate_garage_decay.py` |
@@ -40,8 +40,15 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   unit length (the units are counted from the arrival, P6); this is stricter than spec E10 and is stated in the P6 text of
   the assumptions register of the model.
 - **Tiers (P6):** units are counted from the arrival (or from the end of the first period); a unit costs the tier in force
-  at its start (start inclusive, end exclusive, a tier may cross midnight); a start in no tier is free; the first period
-  is charged only for an arrival inside its clock window; the day cap is applied once per stay.
+  at its start (start inclusive, end exclusive, a tier may cross midnight); a start in no tier is free; the first period is
+  charged only for an arrival inside its clock window; the day cap is applied once per stay. A tiered garage may carry ONE
+  closed free band in `bands` as its grace period (P10 for tiers, `GarageTariff` refuses any other band next to tiers): a stay
+  not longer than the band (elapsed, the tiered form has no fee window) costs 0, a longer stay is priced by the tiers from its
+  arrival. The schema 3 keys do not change, but the Java reader must accept tiers and bands together (Task 4e) and no golden
+  case pins this combination yet.
+- **Free schedule:** a car park that is free for every stay is the one open free band `0- free` with the formal fee window 0
+  to 24 h (`garages.is_free_schedule`); it is a banded garage like any other for `garage_metered_cents`, rests on no P8 and,
+  where it is only a municipal default (the Wolfsburg points without fee evidence), on P12.
 - **A stay longer than a closed schedule (P9)** is priced per started 24 h and counted (`closed_schedule_repeats`); a
   closed schedule that does not end at 1440 min raises instead of guessing.
 - **E8:** with garage options the zone-level garage family of a fixture zone is superseded (production zone rows have none);
@@ -70,6 +77,7 @@ SrV paid share 0.8333) are numbers and never validation. Setting the value is pa
 
 - The garage share is a calibration target, so it no longer validates the model; the universe caveat of E5 (SrV asks
   residents about their usual place, the model averages over destinations) is stated in the table header.
-- 34 of the 35 committed garages rest on at least one assumption (P4 or P5 for 30); the loader warns at every load.
+- 44 of the 48 committed rows (35 garages, 13 surface lots) rest on at least one assumption (P4 or P5 for 32; 8 are free
+  only by the municipal default P12); the loader warns at every load for the first share.
 - The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
   reference plans are lost (Task 5).

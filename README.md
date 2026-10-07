@@ -288,8 +288,9 @@ python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV comp
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
 (`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository, as do the resident
 parking districts of Braunschweig and Goslar, a second layer next to the zones
-(`braunschweig/parking/parking_resident_districts_2026.geojson`) and the garage dataset of eight ZGB towns
-(`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted garage options of a stay); all six are read by
+(`braunschweig/parking/parking_resident_districts_2026.geojson`) and the garage dataset of eight ZGB towns, garages and the
+surface car parks of the Wolfsburg city layer (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
+garage options of a stay); all six are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
 D11, and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The
 paid-parking share per 25 m cell of the majority rule over the parking supply
@@ -301,8 +302,9 @@ re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf`
 table; the config key `parking_garage_decay_m` (the decay length of the garage weights, metres) is 0 (garage options off)
 until `python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` has calibrated it on
 the server plans and committed `braunschweig/parking/parking_garage_decay_calibration_2026.csv`; re-deriving the garage
-dataset needs the owner's regional evidence package and its two supplement packages
-(`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`) in
+dataset needs the owner's regional evidence package and its three supplement packages
+(`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`,
+`Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed) and
 `scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record `parking_garages_2026`). With the
 flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
