@@ -14,17 +14,28 @@ listed and not priced with a ``not_priced_reason`` (``NOT_PRICED_REASONS``): no 
 assumption a row rests on is an id in ``assumptions`` (``ASSUMPTIONS``) that the row's notes name, so that a priced garage
 whose tariff is not stated in every detail can be told apart and counted.
 
-A garage is priced in exactly one of two forms (ruling R-4b-10b), documented here because the validator enforces it:
+A garage is priced in exactly one of three forms (rulings R-4b-10b and R-4b-11), documented here because the validator
+enforces it (one tariff structure per garage):
 
 * the single-window form, the garage core of the tariff table: one hourly rate in started billing units with one fee
   window (``garage_hourly_rate_eur``, ``garage_billing_unit_min``, ``garage_fee_start_h``, ``garage_fee_end_h``);
 * the tiered form, ``tariff_tiers``: the published time-of-day tiers of a garage whose rate changes with the time of day
   (a morning, day, evening and night rate), one text of ``HH:MM-HH:MM <eur>/<unit_min>`` tiers separated by ``"; "`` (see
   :func:`parse_tariff_tiers`), with the four single-window columns EMPTY. A time of day outside every tier is free. A
-  tiered garage rests on ASSUMPTION P6 (how a stay is priced from the tiers; implemented by the pricing code, not here).
+  tiered garage rests on ASSUMPTION P6 (how a stay is priced from the tiers; implemented by the pricing code, not here);
+* the banded form, ``tariff_duration_bands``: a published schedule over the elapsed duration of the stay, one text of
+  ``<from_min>-<to_min> <kind>`` bands separated by ``"; "`` (grammar in :func:`parse_duration_bands`; for example
+  ``"0-20 free; 20-120 total 1.00; 120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60"``), with the rate and the billing unit
+  EMPTY, no first period and no tiers; the fee window (both hours) applies unchanged. A banded garage rests on
+  ASSUMPTION P8 (the cumulative reading of the bands). :func:`duration_band_price_eur` is the reference evaluation of a
+  schedule; no pricing code or export calls it yet (the garage options are tasks 4d and 4e).
 
 The first period (``garage_first_period_min`` with ``garage_first_period_eur``, both or neither) and the day cap
-(``garage_daily_cap_eur``, empty = none) belong to either form and need one of them.
+(``garage_daily_cap_eur``, empty = none) belong to the single-window and the tiered form and need one of them; a banded
+garage has no first period (its first band is the first period) but may carry the day cap, which is the published cap or
+24-hour price. The first period may carry the clock window it is tied to (``garage_first_period_start_h``,
+``garage_first_period_end_h``, both or neither, only together with a first period; ruling R-4b-12): empty where the source
+ties the first period to no window.
 
 Every validator raises ``ValueError`` listing every violation with the garage id and the column, so a broken dataset fails
 at load time. CRS: EPSG:25832 in memory, distances in metres, clock times in minutes after midnight.
@@ -36,7 +47,7 @@ import logging
 import math
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import geopandas as gpd
 import numpy as np
@@ -57,18 +68,23 @@ IDENTITY_COLUMNS = ("garage_id", "package_facility_id", "name", "operator", "mun
 CAPACITY_COLUMNS = ("capacity_reported", "capacity_scope")
 #: The garage tariff columns of the tariff table (spec Amendment A6), in the order of the table.
 TARIFF_COLUMNS = zones.GARAGE_COLUMNS
+#: The clock window of the first period (ruling R-4b-12), in decimal hours of the weekday like the fee window: the first
+#: period is charged once when the arrival lies inside it; empty where the source ties the first period to no window.
+FIRST_PERIOD_WINDOW_COLUMNS = ("garage_first_period_start_h", "garage_first_period_end_h")
 #: The tiered form of the tariff (ruling R-4b-10b): the time-of-day tiers as one text, see :func:`parse_tariff_tiers`.
 TIER_COLUMNS = ("tariff_tiers",)
+#: The banded form of the tariff (ruling R-4b-11): the duration bands as one text, see :func:`parse_duration_bands`.
+BAND_COLUMNS = ("tariff_duration_bands",)
 MONTHLY_COLUMNS = ("monthly_eur", "monthly_source_url", "monthly_product")
 STATUS_COLUMNS = ("priced", "not_priced_reason", "assumptions")
 PROVENANCE_COLUMNS = ("source_url", "source_date", "tariff_rule_ids", "geometry_method", "geometry_source_url",
                       "package_sha256", "notes")
 #: Every property of a feature, in file order.
-DATASET_COLUMNS = (IDENTITY_COLUMNS + CAPACITY_COLUMNS + TARIFF_COLUMNS + TIER_COLUMNS + MONTHLY_COLUMNS + STATUS_COLUMNS
-                   + PROVENANCE_COLUMNS)
+DATASET_COLUMNS = (IDENTITY_COLUMNS + CAPACITY_COLUMNS + TARIFF_COLUMNS + FIRST_PERIOD_WINDOW_COLUMNS + TIER_COLUMNS
+                   + BAND_COLUMNS + MONTHLY_COLUMNS + STATUS_COLUMNS + PROVENANCE_COLUMNS)
 MONEY_COLUMNS = ("garage_hourly_rate_eur", "garage_first_period_eur", "garage_daily_cap_eur", "monthly_eur")
 MINUTE_COLUMNS = ("garage_billing_unit_min", "garage_first_period_min")
-HOUR_COLUMNS = ("garage_fee_start_h", "garage_fee_end_h")
+HOUR_COLUMNS = ("garage_fee_start_h", "garage_fee_end_h") + FIRST_PERIOD_WINDOW_COLUMNS
 INTEGER_COLUMNS = ("capacity_reported",)
 TEXT_COLUMNS = tuple(column for column in DATASET_COLUMNS
                      if column not in MONEY_COLUMNS + MINUTE_COLUMNS + HOUR_COLUMNS + INTEGER_COLUMNS + ("priced",))
@@ -84,16 +100,16 @@ NOT_PRICED_REASONS = {
     "no_published_tariff": "the sources give no tariff of the garage",
     "free_period": "the tariff has a free first period, which the garage columns cannot express (they hold no free "
                    "threshold) and whose treatment on longer stays the source does not state",
-    "banded_tariff": "the rate changes with the duration (progressive or banded), which a first period plus one rate "
-                     "cannot express exactly",
     "incomplete_tariff": "the published tariff does not state how a stay is billed beyond its first unit",
     "conflicting_sources": "the sources of the tariff contradict each other and the package does not mark one rule set as "
                            "calculation-ready",
 }
 #: The assumptions a priced row may rest on (``assumptions``); each is named as ``ASSUMPTION <id>`` in the row's notes.
 #: P3 to P5 say how a published detail that the preferred rules leave open or the columns cannot express is read; P6 is
-#: the pricing semantics of the tiered form, which the pricing code of the garage options implements (ruling R-4b-10b);
-#: P7 names the caps the single day-cap column cannot hold.
+#: the pricing semantics of the tiered form, which the pricing code of the garage options implements (ruling R-4b-10b,
+#: amended by ruling R-4b-12 for the clock window of the first period); P7 names the caps the single day-cap column cannot
+#: hold; P8 is the pricing semantics of the banded form (ruling R-4b-11). There is no reason code for a duration schedule
+#: that the columns cannot express any more: every schedule of the sources is a band text.
 ASSUMPTIONS = {
     "P3": "a night tariff that is no per-unit rate of the preferred rules (a flat night fee, an unresolved night tier) is "
           "stated in the notes and not charged",
@@ -101,11 +117,18 @@ ASSUMPTIONS = {
           "dataset that states its rounding",
     "P5": "the fee window is 0 to 24 h where no preferred rule states charging times of the garage tariff: a ticket "
           "garage bills the stay from entry to exit, and opening hours are no charging hours",
-    "P6": "units are counted from arrival and each started unit costs the rate of the tier in force at the unit's start "
-          "(a first period, where published, is charged once and applies from arrival at every hour)",
+    "P6": "units are counted from arrival and each started unit costs the rate of the tier in force at the unit's start; "
+          "a first period, where published, is charged once when the arrival lies inside its clock window (the whole day "
+          "where the source ties it to none) and the tiers then apply per started unit from the end of the first period; "
+          "an arrival outside the window pays the tiers from the arrival",
     "P7": "where a garage publishes several caps (a day cap, a night cap, a maximum for day and night together), the day "
           "cap column holds the day cap, or the 24-hour maximum where there is no day cap, and applies to the whole stay; "
           "the other caps are stated in the notes and not applied",
+    "P8": "a duration schedule is read cumulatively over the elapsed duration d of the stay: a total band sets the price of "
+          "the stay to its amount (an absolute price, no addition), an increment band adds its amount for every started "
+          "unit counted from the band's start to the price reached at its start, a free band costs nothing; where the "
+          "source states no rounding the unit is a started unit (as in P4); a published cap or 24-hour price applies as "
+          "the day cap, the smaller of the schedule price and the cap",
 }
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a
@@ -215,6 +238,157 @@ def tier_coverage_minutes(tiers) -> int:
     return sum(end - start for tier in tiers for start, end in tier.intervals())
 
 
+# --------------------------------------------------------------------------- duration bands (ruling R-4b-11)
+
+BAND_SEPARATOR = "; "
+BAND_KINDS = ("free", "total", "increment")
+_BAND_PATTERN = re.compile(r"^(\d+)-(\d*) (?:(free)|total (\d+\.\d{2})|(\d+\.\d{2})/(\d+))$")
+
+
+class DurationBand(NamedTuple):
+    """One band of a banded garage (ruling R-4b-11): it covers the elapsed durations ``from_min < d <= to_min`` (minutes;
+    ``to_min`` is None for the open-ended last band) and is of one ``kind``:
+
+    * ``free``: the stay costs 0 while d is in the band (``eur`` 0.0, no unit);
+    * ``total``: the stay costs ``eur`` EUR while d is in the band, an absolute price and no addition;
+    * ``increment``: the stay costs the price reached at the band's start plus ``eur`` EUR for every started unit of
+      ``unit_min`` minutes counted from the band's start (ASSUMPTION P8)."""
+
+    from_min: int
+    to_min: Optional[int]
+    kind: str
+    eur: float
+    unit_min: Optional[int]
+
+    @property
+    def is_open_ended(self) -> bool:
+        return self.to_min is None
+
+
+def _band_text(band: DurationBand) -> str:
+    end = "" if band.to_min is None else str(band.to_min)
+    if band.kind == "free":
+        what = "free"
+    elif band.kind == "total":
+        what = f"total {band.eur:.2f}"
+    else:
+        what = f"{band.eur:.2f}/{band.unit_min}"
+    return f"{band.from_min}-{end} {what}"
+
+
+def format_duration_bands(bands) -> str:
+    """The canonical text of ``bands`` (``<from_min>-<to_min> free``, ``... total <eur>`` or ``... <eur>/<unit_min>``, two
+    decimals, joined by ``"; "``, an empty end for the open last band); the inverse of :func:`parse_duration_bands` for a
+    valid list."""
+    return BAND_SEPARATOR.join(_band_text(band) for band in bands)
+
+
+def _eur_cents(eur: float) -> int:
+    return int(round(eur * 100))
+
+
+def parse_duration_bands(text) -> list:
+    """The bands of a ``tariff_duration_bands`` text, validated; raises ``ValueError`` naming the first problem.
+
+    Grammar (ASCII, human readable): bands are separated by ``"; "`` and written ``<from_min>-<to_min> <kind>`` with whole
+    minutes, ``<kind>`` one of ``free``, ``total <eur>`` (the stay costs this amount) or ``<eur>/<unit_min>`` (this amount
+    per started unit of ``unit_min`` minutes, counted from the band's start, added to the price reached at the band's
+    start), ``<eur>`` with two decimals; the end of the open last band is empty (``"420- 5.00/60"``). Example: ``"0-20 free;
+    20-120 total 1.00; 120-240 0.50/60; 240-420 1.50/60; 420- 5.00/60"``. Semantics: a band covers ``from < d <= to`` over the
+    elapsed duration d in minutes, so a stay of exactly ``to`` minutes still belongs to the band (ASSUMPTION P8, see
+    :func:`duration_band_price_eur`). Rules: the first band starts at 0; every band has a positive length; the bands are
+    contiguous and ascending with no gap or overlap; only the last band may be open-ended; amounts and units are positive;
+    the price never falls as the stay gets longer (a total band is not below the price reached at its start, and a free
+    band can only be the first band). One canonical text per schedule: a published cap or 24-hour price is the day cap
+    column, not a band."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("the bands are empty")
+    bands = []
+    reached_cents = 0
+    parts = text.split(BAND_SEPARATOR)
+    for position, part in enumerate(parts):
+        match = _BAND_PATTERN.match(part)
+        if match is None:
+            raise ValueError(f"band {part!r} is not '<from_min>-<to_min> free', '<from_min>-<to_min> total <eur>' or "
+                             f"'<from_min>-<to_min> <eur>/<unit_min>' (whole minutes, EUR with two decimals, the end empty "
+                             f"for the open last band), bands separated by {BAND_SEPARATOR!r}")
+        start = int(match.group(1))
+        end = int(match.group(2)) if match.group(2) else None
+        if match.group(3):
+            band = DurationBand(start, end, "free", 0.0, None)
+        elif match.group(4):
+            band = DurationBand(start, end, "total", float(match.group(4)), None)
+        else:
+            band = DurationBand(start, end, "increment", float(match.group(5)), int(match.group(6)))
+        if band.kind != "free" and not band.eur > 0:
+            raise ValueError(f"band {part!r}: the amount must be positive (a free stretch is a 'free' band)")
+        if band.kind == "increment" and band.unit_min <= 0:
+            raise ValueError(f"band {part!r}: the unit must be a positive number of minutes")
+        if band.to_min is not None and band.to_min <= band.from_min:
+            raise ValueError(f"band {part!r} has no length: it must end after it starts")
+        if band.to_min is None and position != len(parts) - 1:
+            raise ValueError(f"band {part!r}: only the last band may be open-ended")
+        if position == 0:
+            if band.from_min != 0:
+                raise ValueError(f"band {part!r}: the first band must start at 0 min")
+        elif band.from_min != bands[-1].to_min:
+            raise ValueError(f"gap or overlap: band {part!r} starts at {band.from_min} min but the band before ends at "
+                             f"{bands[-1].to_min} min")
+        if band.kind == "free" and position > 0:
+            raise ValueError(f"band {part!r}: a free band can only be the first band (the price never falls as the stay "
+                             "gets longer)")
+        if band.kind == "total" and _eur_cents(band.eur) < reached_cents:
+            raise ValueError(f"band {part!r}: the total {band.eur:.2f} is below the price {reached_cents / 100:.2f} reached "
+                             "at its start (the price never falls as the stay gets longer)")
+        bands.append(band)
+        if band.to_min is not None:
+            reached_cents = _band_price_cents(band, band.to_min, reached_cents)
+    return bands
+
+
+def _band_price_cents(band: DurationBand, duration_min: float, reached_cents: int) -> int:
+    """The price in whole cents of a stay of ``duration_min`` minutes inside ``band``, whose price at its start is
+    ``reached_cents`` (integer cents: published amounts are whole cents, so the arithmetic is exact)."""
+    if band.kind == "free":
+        return 0
+    if band.kind == "total":
+        return _eur_cents(band.eur)
+    started_units = math.ceil((duration_min - band.from_min) / band.unit_min)
+    return reached_cents + _eur_cents(band.eur) * started_units
+
+
+def duration_band_price_eur(bands, duration_min: float, daily_cap_eur: Optional[float] = None) -> float:
+    """The price in EUR of a stay of ``duration_min`` minutes under a parsed duration schedule (ASSUMPTION P8): the reference
+    evaluation that the tests use and the pricing of the garage options (task 4d) is to reproduce.
+
+    The band with ``from_min < d <= to_min`` applies (a stay of exactly ``to_min`` still belongs to the band, one minute more
+    to the next): ``free`` costs 0, ``total`` costs its amount (absolute) and ``increment`` costs the price reached at the
+    band's start plus its amount for every started unit counted from the band's start, ``ceil((d - from) / unit)`` units.
+    The price reached at a band's start is the price at its predecessor's end. ``daily_cap_eur`` (the published cap or
+    24-hour price; None = none) limits the result: the smaller of both. A stay of no length costs 0. No rounding beyond the
+    published amounts (whole cents, summed exactly). Raises ``ValueError`` for a negative duration, a non-positive cap and a
+    stay beyond a closed schedule (a schedule that ends at ``to_min`` says nothing about longer stays, so none is guessed).
+    No side effects; the day boundary of a cap and the fee window are the caller's concern."""
+    if duration_min < 0:
+        raise ValueError(f"the duration must not be negative, found {duration_min} min")
+    if daily_cap_eur is not None and not daily_cap_eur > 0:
+        raise ValueError(f"the day cap must be positive, found {daily_cap_eur}")
+    cents = 0
+    if duration_min > 0:
+        reached_cents = 0
+        for band in bands:
+            if band.to_min is None or duration_min <= band.to_min:
+                cents = _band_price_cents(band, duration_min, reached_cents)
+                break
+            reached_cents = _band_price_cents(band, band.to_min, reached_cents)
+        else:
+            raise ValueError(f"the duration {duration_min} min is beyond the last band, which ends at {bands[-1].to_min} min: "
+                             "the schedule states no price for a longer stay")
+    if daily_cap_eur is not None:
+        cents = min(cents, _eur_cents(daily_cap_eur))
+    return cents / 100.0
+
+
 # --------------------------------------------------------------------------- loader
 
 
@@ -272,13 +446,13 @@ def load_garages(path) -> gpd.GeoDataFrame:
     priced = summary["priced"]
     log.info("[parking-garages] loaded %d garages from %s: priced %d/%d (%.1f %%), not priced %d (%s); priced rows resting "
              "on an assumption: %s; at least one assumption %d/%d (%.1f %%), P4 or P5 %d/%d (%.1f %%); tiered %d/%d; "
-             "monthly product on %d", summary["listed"], path, priced, summary["listed"],
+             "banded %d/%d; monthly product on %d", summary["listed"], path, priced, summary["listed"],
              100.0 * priced / max(summary["listed"], 1), summary["not_priced"],
              ", ".join(f"{reason} {count}" for reason, count in summary["not_priced_by_reason"].items()) or "none",
              ", ".join(f"{name} {count}/{priced}" for name, count in summary["priced_by_assumption"].items()) or "none",
              summary["priced_with_assumption"], priced, 100.0 * summary["priced_with_assumption"] / max(priced, 1),
              summary["priced_with_p4_or_p5"], priced, 100.0 * summary["priced_with_p4_or_p5"] / max(priced, 1),
-             summary["priced_tiered"], priced, summary["with_monthly_product"])
+             summary["priced_tiered"], priced, summary["priced_banded"], priced, summary["with_monthly_product"])
     for label, count in (("at least one assumption", summary["priced_with_assumption"]),
                          ("ASSUMPTION P4 or P5 (a stated rounding or stated charging times replaced by an assumption)",
                           summary["priced_with_p4_or_p5"])):
@@ -345,15 +519,18 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     Dataset: not empty, EPSG:25832, exactly the columns ``DATASET_COLUMNS``, unique lower-case ASCII ``garage_id``.
     Position: a non-empty point with finite coordinates inside ``ZGB_EXTENT_25832``. Identity and provenance: the required
     text columns set, an 8-digit AGS of the ZGB counties, ``source_url`` and ``geometry_source_url`` http(s) URLs, an ISO
-    ``source_date``, a hexadecimal SHA-256 of the package, ``notes`` set. Tariff (spec Amendment A6, ruling R-4b-10b): a
-    garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee start, fee end; set
-    completely or not at all) or ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the four core
-    columns empty); the day cap and the first-period pair need one form, and the pair is set together; amounts are
-    positive whole cents, minutes positive, the fee window satisfies 0 <= start < end <= 24, and the day cap is not below
-    the first period. Status: ``priced`` is exactly "one tariff form is set"; a priced row names its ``tariff_rule_ids``
-    and no reason, an unpriced row carries no tariff value and one ``not_priced_reason`` of ``NOT_PRICED_REASONS`` and no
-    assumption; every id of ``assumptions`` is one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes,
-    and a row rests on ASSUMPTION P6 exactly when it has tiers. Monthly product: ``monthly_eur`` is a positive whole-cent
+    ``source_date``, a hexadecimal SHA-256 of the package, ``notes`` set. Tariff (spec Amendment A6, rulings R-4b-10b and
+    R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee start, fee end;
+    set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the four core
+    columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the
+    billing unit empty, the fee window set completely, no first period and no tiers); the day cap and the first-period pair
+    need one form, and the pair is set together; the clock window of the first period (ruling R-4b-12) is set together,
+    only with a first period and satisfies 0 <= start < end <= 24; amounts are positive whole cents, minutes positive, the
+    fee window satisfies 0 <= start < end <= 24, and the day cap is not below the first period. Status: ``priced`` is
+    exactly "one tariff form is set"; a priced row names its ``tariff_rule_ids`` and no reason, an unpriced row carries no
+    tariff value and one ``not_priced_reason`` of ``NOT_PRICED_REASONS`` and no assumption; every id of ``assumptions`` is
+    one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
+    it has tiers and on ASSUMPTION P8 exactly when it has bands. Monthly product: ``monthly_eur`` is a positive whole-cent
     amount with its ``monthly_source_url`` and ``monthly_product``, and neither text without the amount. Capacity: a
     positive whole number with its ``capacity_scope``.
     """
@@ -427,11 +604,32 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                                           "0 <= garage_fee_start_h < garage_fee_end_h <= 24")
         core_set = [column for column in zones.GARAGE_CORE_COLUMNS if zones._is_set(row[column])]
         has_tiers = zones._is_set(row["tariff_tiers"])
+        has_bands = zones._is_set(row["tariff_duration_bands"])
         if has_tiers:
             try:
                 parse_tariff_tiers(row["tariff_tiers"])
             except ValueError as error:
                 problem("tariff_tiers", str(error))
+        if has_bands:
+            try:
+                parse_duration_bands(row["tariff_duration_bands"])
+            except ValueError as error:
+                problem("tariff_duration_bands", str(error))
+        if has_tiers and has_bands:
+            problem("tariff_duration_bands", "a garage is priced in one form, the tiered and the banded form exclude each "
+                                             "other (one tariff structure per garage)")
+        if has_bands:
+            # the fee window applies unchanged, so both hours are set; the rate and the unit belong to the single window
+            single_rate = [column for column in ("garage_hourly_rate_eur", "garage_billing_unit_min")
+                           if zones._is_set(row[column])]
+            if single_rate:
+                problem(single_rate[0], f"a banded garage leaves the rate and the billing unit empty (the bands are the "
+                                        f"tariff; the forms exclude each other); this row sets {single_rate}")
+            for column in ("garage_fee_start_h", "garage_fee_end_h"):
+                if column not in core_set:
+                    problem(column, "a banded garage needs its fee window (both hours; 0 and 24 under ASSUMPTION P5 where "
+                                    "no preferred rule states charging times)")
+        elif has_tiers:
             if core_set:
                 problem(core_set[0], f"a tiered garage leaves the single-window core {list(zones.GARAGE_CORE_COLUMNS)} empty "
                                      f"(the two forms exclude each other); this row sets {core_set}")
@@ -440,18 +638,36 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                 if column not in core_set:
                     problem(column, f"the garage core {list(zones.GARAGE_CORE_COLUMNS)} is set completely or not at all; "
                                     f"this row sets {core_set}")
-        has_core = not has_tiers and len(core_set) == len(zones.GARAGE_CORE_COLUMNS)
-        has_tariff = has_core or has_tiers
+        has_core = not has_tiers and not has_bands and len(core_set) == len(zones.GARAGE_CORE_COLUMNS)
+        has_tariff = has_core or has_tiers or has_bands
         pair = [zones._is_set(row[column]) for column in zones.GARAGE_FIRST_PERIOD_COLUMNS]
         if pair[0] != pair[1]:
             problem(zones.GARAGE_FIRST_PERIOD_COLUMNS[1 if pair[0] else 0],
                     f"{zones.GARAGE_FIRST_PERIOD_COLUMNS[0]} and {zones.GARAGE_FIRST_PERIOD_COLUMNS[1]} are set together "
                     "or not at all")
+        if has_bands and any(pair):
+            problem(zones.GARAGE_FIRST_PERIOD_COLUMNS[0], "a banded garage has no first period (its first band is the first "
+                                                          "period; the forms exclude each other)")
+        # the clock window of the first period (ruling R-4b-12): both hours or neither, only with a first period, and the
+        # same 0 <= start < end <= 24 rule as the fee window
+        first_window = [zones._is_set(row[column]) for column in FIRST_PERIOD_WINDOW_COLUMNS]
+        if first_window[0] != first_window[1]:
+            problem(FIRST_PERIOD_WINDOW_COLUMNS[1 if first_window[0] else 0],
+                    f"{FIRST_PERIOD_WINDOW_COLUMNS[0]} and {FIRST_PERIOD_WINDOW_COLUMNS[1]} are set together or not at all")
+        elif first_window[0]:
+            first_start, first_end = row[FIRST_PERIOD_WINDOW_COLUMNS[0]], row[FIRST_PERIOD_WINDOW_COLUMNS[1]]
+            if not (0.0 <= first_start < first_end <= 24.0):
+                problem(FIRST_PERIOD_WINDOW_COLUMNS[0], f"first-period window {first_start} .. {first_end} h must satisfy "
+                                                        "0 <= garage_first_period_start_h < garage_first_period_end_h <= 24")
+            if not any(pair):
+                problem(FIRST_PERIOD_WINDOW_COLUMNS[0], "a first-period window needs a first period (both "
+                                                        "garage_first_period_min and garage_first_period_eur); it is empty "
+                                                        "where the source ties the first period to no window")
         if not has_tariff and (zones._is_set(row["garage_daily_cap_eur"]) or any(pair)):
             problem("garage_daily_cap_eur" if zones._is_set(row["garage_daily_cap_eur"]) else
                     zones.GARAGE_FIRST_PERIOD_COLUMNS[0],
-                    "a day cap or a first period needs the complete garage core or tariff_tiers; it is never priced without "
-                    "one")
+                    "a day cap or a first period needs the complete garage core, tariff_tiers or tariff_duration_bands; it "
+                    "is never priced without one")
         if (zones._is_set(row["garage_daily_cap_eur"]) and zones._is_set(row["garage_first_period_eur"])
                 and row["garage_daily_cap_eur"] < row["garage_first_period_eur"]):
             problem("garage_daily_cap_eur", f"the day cap {row['garage_daily_cap_eur']} is below the first period "
@@ -461,8 +677,9 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
         reason = row["not_priced_reason"]
         assumptions = _split(row["assumptions"])
         if bool(priced) != has_tariff:
-            problem("priced", f"priced is {bool(priced)} but the garage tariff (the complete core or tariff_tiers) is "
-                              f"{'set' if has_tariff else 'not set'}: a garage is priced exactly when one tariff form is set")
+            problem("priced", f"priced is {bool(priced)} but the garage tariff (the complete core, tariff_tiers or "
+                              f"tariff_duration_bands) is {'set' if has_tariff else 'not set'}: a garage is priced exactly "
+                              "when one tariff form is set")
         if priced:
             if zones._is_set(reason):
                 problem("not_priced_reason", "a priced garage has no reason; leave it empty")
@@ -473,7 +690,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                 problem("not_priced_reason", f"an unpriced garage states its reason, one of {sorted(NOT_PRICED_REASONS)}")
             elif reason not in NOT_PRICED_REASONS:
                 problem("not_priced_reason", f"{reason!r} is not one of {sorted(NOT_PRICED_REASONS)}")
-            tariff_values = [column for column in TARIFF_COLUMNS + TIER_COLUMNS if zones._is_set(row[column])]
+            tariff_values = [column for column in TARIFF_COLUMNS + FIRST_PERIOD_WINDOW_COLUMNS + TIER_COLUMNS + BAND_COLUMNS
+                             if zones._is_set(row[column])]
             if tariff_values:
                 problem(tariff_values[0], f"an unpriced garage carries no tariff value, found {tariff_values}")
             if assumptions:
@@ -490,6 +708,10 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             problem("assumptions", "a tiered garage rests on ASSUMPTION P6 (how a stay is priced from the tiers) and lists it")
         if priced and not has_tiers and "P6" in assumptions:
             problem("assumptions", "ASSUMPTION P6 prices a stay from tariff_tiers, but this garage has none")
+        if priced and has_bands and "P8" not in assumptions:
+            problem("assumptions", "a banded garage rests on ASSUMPTION P8 (how a stay is priced from the bands) and lists it")
+        if priced and not has_bands and "P8" in assumptions:
+            problem("assumptions", "ASSUMPTION P8 prices a stay from tariff_duration_bands, but this garage has none")
         # --- monthly product: no value without its source
         monthly = row["monthly_eur"]
         if zones._is_set(monthly):
@@ -514,8 +736,9 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
     (``by_municipality``: ags -> {listed, priced, not_priced}), the priced garages per assumption
     (``priced_by_assumption``, ids that no priced garage uses are absent), the union rates ``priced_with_assumption``
     (priced garages resting on at least one assumption) and ``priced_with_p4_or_p5`` (on a stated rounding or stated
-    charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``) and the garages
-    with a monthly product. Plain numbers and dicts, sorted, so a caller can print or compare them."""
+    charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``) and in the banded
+    form (``priced_banded``) and the garages with a monthly product. Plain numbers and dicts, sorted, so a caller can print
+    or compare them."""
     priced = frame["priced"].astype(bool)
     reasons = frame.loc[~priced, "not_priced_reason"].fillna("").astype(str)
     by_reason = {reason: int(count) for reason, count in reasons.value_counts().sort_index().items()}
@@ -536,4 +759,5 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
             "priced_by_assumption": dict(sorted(counts.items())), "priced_with_assumption": int(with_assumption),
             "priced_with_p4_or_p5": int(with_p4_or_p5),
             "priced_tiered": int(frame.loc[priced, "tariff_tiers"].map(zones._is_set).sum()),
+            "priced_banded": int(frame.loc[priced, "tariff_duration_bands"].map(zones._is_set).sum()),
             "with_monthly_product": int(frame["monthly_eur"].notna().sum())}
