@@ -50,8 +50,8 @@ Usage (from the repository root)::
 
     python scripts/curation/parking_zones_2026/regional_garages.py \
         --regional-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07 \
-        --supplement-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/Parkhaus_Ergaenzungen_2026-10-07.zip \
-        --followup-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/Parkhaus_Nachrecherche_2026-10-07.zip \
+        --supplement-zip <the regional-dir above>/Parkhaus_Ergaenzungen_2026-10-07.zip \
+        --followup-zip <the regional-dir above>/Parkhaus_Nachrecherche_2026-10-07.zip \
         --directory eqasim-data/data/braunschweig/parking/raw_sources/bs_plan_parkplaetze.geojson \
         --municipalities <main checkout>/eqasim-data/cache_bs_bpsmoke/data.spatial.municipalities__<hash>.p \
         --out eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson \
@@ -270,6 +270,12 @@ def _money(value: float) -> str:
     return f"{float(value):.2f} EUR"
 
 
+def opening_hours_text(text: str) -> str:
+    """The opening hours as the package states them, with a space where a day name runs into a clock time (the package writes
+    'Mo-Fr06:00-22:00' or 'Sundays12:00-18:30'): 'Mo-Fr 06:00-22:00'. Nothing else changes (idempotent)."""
+    return re.sub(r"(?<=[A-Za-z])(?=\d{1,2}:\d{2})", " ", text)
+
+
 WEEK_ORDER = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "public_holidays")
 DAY_ABBREVIATIONS = dict(zip(WEEK_ORDER, ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su", "PH")))
 
@@ -349,9 +355,10 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
     into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to).
 
     The regional package must exist as ``regional_zones.PACKAGE_FILE`` with exactly the pinned SHA-256 (or ``expected_sha256``,
-    for a synthetic test package), else ``SystemExit``; so must the other two zips. Returns {"file": {"file", "sha256", "bytes"}, "layers" (layer ->
-    GeoDataFrame in EPSG:25832), "facilities" (facility_id -> record), "rules" (rule_id -> rule), "sources" (source_id ->
-    record), "wob_lots" (the GeoDataFrame of the Wolfsburg car parks), "ledger" (the per-layer accounting)}."""
+    for a synthetic test package), else ``SystemExit``; so must the other two zips. Returns {"file": {"file", "sha256",
+    "bytes"}, "layers" (layer -> GeoDataFrame in EPSG:25832), "facilities" (facility_id -> record), "rules" (rule_id ->
+    rule), "sources" (source_id -> record), "wob_lots" (the GeoDataFrame of the Wolfsburg car parks), "ledger" (the per-layer
+    accounting)}."""
     path, sha256 = rz.verify_package_file(directory, expected_sha256)
     layers = {layer: rz.read_zip_layer(path, layer) for layer in GARAGE_LAYERS}
     facilities = {}
@@ -626,6 +633,10 @@ def _encode_forms(spec: dict, rules: dict) -> dict:
         return _encode_bands(spec, rules, rate_rules)
     # the rate of a day tier that states no charging times: it applies at every time of day the other tiers do not cover
     rest_rule = _value_rule(rules, spec["rest_tier"], garage, "tier") if spec.get("rest_tier") else None
+    if rest_rule is not None and _clock_window_kind(rest_rule):
+        raise SystemExit(f"garage {garage}: the rest tier rule {rest_rule['rule_id']} states {_clock_window_kind(rest_rule)} "
+                         f"({describe_window(rest_rule)}); a rest tier is a day rate without clock times that takes the rest of "
+                         "the day, so a rate with a clock window belongs in 'tiers'")
     explicit_tiers = list(rate_rules)
     if rest_rule is not None:
         rate_rules = rate_rules + [rest_rule]
@@ -744,6 +755,14 @@ def _encode_forms(spec: dict, rules: dict) -> dict:
     return {"values": values, "assumptions": assumptions, "rule_ids": rule_ids, "sentence": sentence,
             "rounding_stated": rounding_stated, "window_stated": tiered or window is not None, "tiers": tiers,
             "window_quotation": quotation, "readings": readings}
+
+
+def _clock_window_kind(rule: dict) -> Optional[str]:
+    """'charging times' or 'a time window' where the rule states a clock window, else None."""
+    if any((rule.get("charging_times") or {}).get(day) for day in WEEK_ORDER):
+        return "charging times"
+    window = rule.get("time_window") or {}
+    return "a time window" if window.get("from") or window.get("to") else None
 
 
 def _rest_tiers(garage: str, tiers: list, rest_rule: dict, eur: float, unit: int, readings: list) -> list:
@@ -1241,7 +1260,7 @@ def build_garage(inputs: dict, spec: dict) -> dict:
                          f"the assumption: {census['stated']} of {census['rate_rules']} state their rounding, and "
                          f"{census['started_unit']} of those {census['stated']} say started unit.")
         if "P5" in encoded["assumptions"]:
-            hours = str((facility.get("attributes") or {}).get("opening_hours_text") or "").strip().rstrip(".")
+            hours = opening_hours_text(str((facility.get("attributes") or {}).get("opening_hours_text") or "")).strip().rstrip(".")
             notes.append("ASSUMPTION P5: no preferred rule states charging times of the tariff, so the fee window is 0-24 h"
                          + (f" (opening hours, which are no charging hours: {hours})" if hours else "") + ".")
         if "P6" in encoded["assumptions"]:
@@ -1256,6 +1275,14 @@ def build_garage(inputs: dict, spec: dict) -> dict:
                     raise SystemExit(f"garage {spec['garage_id']}: a row that rests on ASSUMPTION {assumption} states the basis "
                                      f"of its reading in {key!r}")
                 notes.append(f"ASSUMPTION {assumption}: {pg.ASSUMPTIONS[assumption]}. Basis of the reading: {spec[key]}.")
+        if "P10" in encoded["assumptions"]:
+            if not spec.get("p10_decisions"):
+                raise SystemExit(f"garage {spec['garage_id']}: a row that rests on ASSUMPTION P10 states the field decisions of "
+                                 "its ruling in 'p10_decisions' (the ruling and {decision id: the statuses it relied on})")
+            ruling, needed = spec["p10_decisions"]
+            sup.require_decisions(inputs["supplement"]["decisions"], needed,
+                                  f"garage {spec['garage_id']}: the grace-period reading (ASSUMPTION P10) rests on the ruling "
+                                  f"{ruling}")
         if "P7" in encoded["assumptions"]:
             caps = "; ".join(describe_rule(rules[rule_id]) for rule_id in spec["other_caps"])
             notes.append(f"ASSUMPTION P7: the day cap column holds one cap and applies to the whole stay; not applied: {caps}.")

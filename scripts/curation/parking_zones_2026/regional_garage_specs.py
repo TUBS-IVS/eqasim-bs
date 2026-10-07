@@ -83,6 +83,8 @@ GARAGE_SPECS = (
      "facility": "BS_SOURCE_4781292017fb49b091cc3066a17483fafbca28", "supplement": "BS_FORSCHUNGSFLUGHAFEN",
      "followup": "BS_FORSCHUNGSFLUGHAFEN", "grace": (_bs("forschungsflughafen", 5)[0], "BS_FORSCHUNGSFLUGHAFEN_REGULAR"),
      "cap": "BS_FORSCHUNGSFLUGHAFEN_REGULAR:cap", "window": None,
+     "p10_decisions": ("R-4b2-2", {"BS_FORSCHUNGSFLUGHAFEN:free_period_deducted_after_threshold": (
+         "open_with_general_operator_indication",)}),
      "p10_basis": "the general FAQ of the parking provider that the operator's site page links "
                   "(https://www.mh-parkservice.com/faq-wissen) describes a grace period without a deduction when it is exceeded; "
                   "the FAQ is no statement of this site, and the supplement's field decision on the deduction stays open "
@@ -112,7 +114,8 @@ GARAGE_SPECS = (
                 "late payment), so it is read as a maximum per stay. The 99.00 EUR seven-day product is a separate prebooked "
                 "product, not a cap and no monthly product. The layer attribute tariff_rule_ids of this feature names the "
                 "rules of the Ring-Center (both features share the facility id BS_None in the package); the rules of its own "
-                "source id are used, and the facility is matched by the supplement's unambiguous legacy key BS_SOURCE_..., never by "
+                "source id are used, and the facility is matched by the supplement's unambiguous legacy key "
+                "BS_SOURCE_..., never by "
                 "BS_None."},
     {"garage_id": "bs_lange_strasse_nord", "town": "bs", "layer": "bs_parkhaeuser",
      "feature": ("facility_id", "BS_PH010"), "facility": "BS_PH010", "rate": _bs("lange_strasse_nord", 10)[0],
@@ -195,6 +198,7 @@ GARAGE_SPECS = (
     {"garage_id": "wob_suedkopf", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_SUEDKOPF"),
      "facility": "WOB_SUEDKOPF", "supplement": "WOB_SUEDKOPF", "followup": "WOB_SUEDKOPF",
      "grace": ("WOB_SUEDKOPF_R01", "WOB_SUEDKOPF_R02"), "cap": "SUEDKOPF_SECONDARY_CAP", "window": None,
+     "p10_decisions": ("R-4b2-3", {"WOB_SUEDKOPF:free_period_deducted_after_threshold": ("open",)}),
      "p10_basis": "no source for the Suedkopf-Center; the reading of the Forschungsflughafen (the FAQ of a parking provider, not "
                   "site-specific) is applied by analogy, as the owner decided on 2026-10-07 (spec E12); the city page does not "
                   "state whether the 30 free minutes are deducted",
@@ -227,7 +231,8 @@ GARAGE_SPECS = (
      "ignored": {"WOB_POST_R03_150": "the operator's night tariff 1.00 EUR from 21:00 to 06:30 without a billing unit (the "
                                      "package does not prefer it); replaced by the supplement rule WOB_POST_NIGHT, which adds "
                                      "the unit of 60 min from the city page"},
-     "comment": "Saba. Time-of-day tiers (ruling R-4b2-5, spec E10; no night tariff is left out of the price any more): the day tier keeps the "
+     "comment": "Saba. Time-of-day tiers (ruling R-4b2-5, spec E10; no night tariff is left out of the price any more): "
+                "the day tier keeps the "
                 "preferred day rate WOB_POST_R01_148 (2.00 EUR per started 60 min), which states no charging times and so applies "
                 "at every time of day outside the night tier (06:30-21:00); the night tier 21:00-06:30 costs 1.00 EUR per 60 "
                 "min: price and times from the operator page (sabaparking.com, which states '1 EUR' without a unit), the unit of "
@@ -320,9 +325,32 @@ GARAGE_SPECS = (
      "window": ("stated", "00:00", "24:00",
                 "the city brochure of December 2024 gives the garage 'Oeffnungszeit: 24 Stunden' in its column of fee-liable "
                 "times (gebuehrenpflichtige Zeit), which is the basis of the window"),
+     "p11_basis": "the monthly product only (the tariff itself rests on the official brochure and not on this assumption): the "
+                  "undated directory entry HE_PARKINGLIST (parkinglist.de, a secondary directory; operator Stadt Helmstedt as the "
+                  "entry states it; no source date) quotes '33.00 Euro / Monat', and the brochure of December 2024 states no "
+                  "monthly product, so the entry is the best available evidence of one for this garage; the same entry differs "
+                  "from the brochure at 2 h (1.20 EUR against 1.00 EUR), so it may be older and the monthly amount may be "
+                  "outdated (owner ruling R-4b2-9)",
+     "ignored": {"HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS": "the CONFLICTING variant of the undated directory entry HE_PARKINGLIST "
+                                                           "(operator Stadt Helmstedt): 1.20 EUR for 2 hours against the "
+                                                           "1.00 EUR that the encoded brochure tariff gives at 2 h (0.70 EUR "
+                                                           "for the first hour plus 0.30 EUR for the second); the official, "
+                                                           "dated brochure outranks the undated directory (ruling R-4b2-9)"},
+     "qa_comment": "the brochure tariff of December 2024 is encoded; the undated directory HE_PARKINGLIST states 1.20 EUR at 2 h "
+                   "against the encoded 1.00 EUR (conflicting variant, not used); its monthly product 33.00 EUR is used under "
+                   "ASSUMPTION P11",
      "comment": "Municipal underground garage of the Helmstedt brochure of December 2024 (118 spaces, ticket, no maximum stay); "
                 "the package holds no tariff rule for it, so the tariff is read from the quotations of the brochure text that "
-                "the supplement keeps (ruling R-4b2-1): '0,70 EUR / 1 Std.' and 'jede weitere 0,30 EUR'. The new key "
+                "the supplement keeps (ruling R-4b2-1): '0,70 EUR / 1 Std.' and 'jede weitere 0,30 EUR'. The brochure "
+                "(official, Stadt Helmstedt, December 2024) gives no unit for 'jede weitere'; the unit of one hour rests on the "
+                "supplement's evidence copy of the undated directory entry HE_PARKINGLIST (operator Stadt Helmstedt), which "
+                "states '0.30 Euro / jede weitere Stunde' (the step checks that its first and further prices equal the "
+                "brochure's). The same directory states 1.20 EUR for 2 hours where the encoded tariff gives 1.00 EUR: that "
+                "CONFLICTING variant is recorded and not used, because the official and dated brochure outranks an undated "
+                "directory (ruling R-4b2-9). The directory's monthly product of 33.00 EUR is the only product of the garage "
+                "and names no restricted customer group, so it is the cheapest publicly purchasable one and is used under "
+                "ASSUMPTION P11 (best available evidence, spec E13); its amount may be outdated and its terms are not "
+                "stated. The new key "
                 "HE_GROEPERN_TG_118 is never joined to HE_GROEPERN_STRASSE (18 fee-liable street spaces). The position is the "
                 "OSM-mapped entrance of the underground garage, checked against city documents and the driveway by the "
                 "supplement."},
@@ -414,7 +442,12 @@ GARAGE_SPECS = (
                   "without any operator confirmation; the garage is documented in the budget of Goslar for 2026 (product "
                   "546-01 parking management lists the barrier system of the garage, the asset plan of the GGM lists the "
                   "underground garage), which proves its existence and no tariff; the identity of the archived map point of "
-                  "2018 with this garage is not verified (owner decision of spec E13)",
+                  "2018 with this garage is not verified. Consistency check against the garages of the same town (ASSUMPTION "
+                  "P11): 1.00 EUR per hour is BELOW the 1.50 EUR per hour of Parkhaus bei C&A, GALERIA and Achtermann in "
+                  "Goslar, so the directory value does not agree with them; it is kept, because the garage is a municipal "
+                  "office garage that is public only outside the core working hours, where a lower municipal tariff is "
+                  "plausible, and no source for this garage states another price (result of the check: kept, with the "
+                  "difference named; owner decision of spec E13)",
      "ignored": {"GOS_POINT_4_UNRESOLVED": "the supplement's record: identity and current operation unverified, no tariff of "
                                            "the open-air car park nearby (2.00 EUR per hour) and none of an undated directory "
                                            "transferred there",
@@ -464,6 +497,12 @@ MONTHLY_PRODUCTS = (
      "why": "the deck is a station BahnPark car park and no garage of the dataset either (ruling R-4b-9)"},
     {"record_id": "monthly_gs_galeria_dauerstellplatz", "rule": "GS_GALERIA_MONTHLY", "garage_id": "gs_galeria",
      "decision": "used"},
+    {"record_id": "monthly_he_groepern_tiefgarage", "rule": "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY",
+     "garage_id": "he_groepern_tiefgarage", "decision": "used",
+     "why": "decision (ruling R-4b2-9): used, because it is the only monthly product of the garage and names no restricted "
+            "customer group, so it is the cheapest publicly purchasable one (spec D2); the evidence is a secondary, undated "
+            "directory entry (ASSUMPTION P11, best available evidence) that differs from the brochure at 2 h, so the amount may "
+            "be outdated"},
     {"record_id": "monthly_bs_forschungsflughafen_7_day", "rule": "BS_FORSCHUNGSFLUGHAFEN_WEEK_PREBOOKED",
      "garage_id": "bs_forschungsflughafen", "decision": "not_used", "reason": "not_monthly_or_30_day", "amount_eur": 99.0,
      "subject": "Braunschweig Parkhaus Forschungsflughafen, 7-day product (prebooked)",
@@ -603,15 +642,22 @@ BROCHURE_TARIFFS = (
     {"facility": "HE_GROEPERN_TG_118", "member": "evidence/he_coordinates/raw/stadt_helmstedt_parken.txt",
      "source_id": "HE_CITY_PARKING", "anchor": "Gr\u00f6pern (Tiefgarage)", "first": "0,70\u20ac / 1 Std.",
      "further": "jede weitere 0,30\u20ac", "window": ("\u00d6ffnungszeit:", "24 Stunden"),
-     "unit_reading": "the brochure states no unit for 'jede weitere 0,30'; it is read as the unit of the first price (one hour), "
-                     "as ruling R-4b2-1 states (0.30 EUR for each further hour)"},
+     "directory": {"member": "evidence/he_coordinates/raw/parkinglist_groepern.html", "source_id": "HE_PARKINGLIST",
+                   "operator": "Betreiber: Stadt Helmstedt", "first": "0.70 Euro / 1 Stunde",
+                   "second": "1.20 Euro / 2 Stunden", "further": "0.30 Euro / jede weitere Stunde",
+                   "monthly": "33.00 Euro / Monat", "ruling": "R-4b2-9"},
+     "unit_reading": "the brochure states no unit for 'jede weitere 0,30' (its column header is only 'Kosten'); the "
+                     "supplement's evidence copy of the undated directory entry HE_PARKINGLIST (operator Stadt Helmstedt) states "
+                     "'0.30 Euro / jede weitere Stunde' (the same amount), so the unit is one hour, which is also the unit of "
+                     "the first price (ruling R-4b2-9; ruling R-4b2-1 read it the same way)"},
 )
 
 #: Owner decisions that release a rule of the follow-up package for use (spec E13, ruling R-4b2-8, ASSUMPTION P11): the
 #: observations of the follow-up package that state a tariff. Each field decision is still OPEN in the package (the follow-up
 #: finds no current operator tariff); P11 is the owner's decision to price from the best available secondary evidence.
 FOLLOWUP_RELEASED = {
-    "ACHTERMANN_DIRECTORY_TABLE": ("R-4b2-8", {"GS_ACHTERMANN:current_operator_tariff": ("open_with_new_operator_and_tariff_lead",)}),
+    "ACHTERMANN_DIRECTORY_TABLE": (
+        "R-4b2-8", {"GS_ACHTERMANN:current_operator_tariff": ("open_with_new_operator_and_tariff_lead",)}),
     "ACHTERMANN_DIRECTORY_TABLE:cap": (
         "R-4b2-8", {"GS_ACHTERMANN:current_operator_tariff": ("open_with_new_operator_and_tariff_lead",)}),
     "CHARLEY_DIRECTORY": ("R-4b2-8", {"GOS_POINT_4:official_facility_documented_in_2026": ("resolved_official_budget_evidence",),

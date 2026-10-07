@@ -21,14 +21,19 @@ not replace complete existing records"). This module reads it the way the region
   that is not released can never set a value (ruling R-4b-8, no waiver), and a value that the package leaves open stays open.
 * ``brochure_rules`` reads the one tariff that no package rule holds (the Helmstedt underground garage Groepern) from the
   quotations of the city brochure text that the supplement keeps: the amounts and the unit are PARSED from the quoted text, and
-  the step refuses a quotation that is not in the brochure row of the garage.
+  the step refuses a quotation that is not in the brochure row of the garage. Where the specification names the supplement's
+  copy of an undated directory entry of the same garage (``directory_rules``), the directory CONFIRMS the unit of the further
+  price (the step stops where it differs from the brochure), its price at a second duration is recorded as a variant that sets
+  no value, and its monthly product is a rule released by the owner ruling (ASSUMPTION P11).
 
 CRS: EPSG:25832 throughout, money in EUR, distances in m.
 """
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import math
 import re
 import unicodedata
 import zipfile
@@ -150,9 +155,11 @@ def load_supplement(path, expected_sha256: Optional[str] = None) -> dict:
                          "package is never read")
     with zipfile.ZipFile(path) as archive:
         manifest = _manifest(archive)
-        facilities = {record["facility_id"]: record for record in _json_member(archive, manifest, FACILITY_UPDATES_MEMBER)["facilities"]}
+        facilities = {record["facility_id"]: record
+                      for record in _json_member(archive, manifest, FACILITY_UPDATES_MEMBER)["facilities"]}
         rules = {rule["rule_id"]: rule for rule in _json_member(archive, manifest, TARIFF_RULES_MEMBER)["rules"]}
-        decisions = {record["decision_id"]: record for record in _json_member(archive, manifest, FIELD_DECISIONS_MEMBER)["decisions"]}
+        decisions = {record["decision_id"]: record
+                     for record in _json_member(archive, manifest, FIELD_DECISIONS_MEMBER)["decisions"]}
         observations = _json_member(archive, manifest, OBSERVATIONS_MEMBER)
         sources = {source["source_id"]: source for source in _json_member(archive, manifest, SOURCES_MEMBER)["sources"]}
         _read_member(archive, manifest, PATCH_MEMBER)  # the GeoPackage is read by GDAL from the zip: verify its bytes first
@@ -374,6 +381,23 @@ def convert_rules(supplement: dict) -> dict:
     return rules
 
 
+def require_decisions(decisions: dict, needed: dict, subject: str) -> list:
+    """Check that every field decision of ``needed`` ({decision id: the statuses the ruling relied on}) exists in ``decisions``
+    and has one of those statuses, else ``SystemExit`` starting with ``subject`` (what rests on the ruling). Returns the
+    phrases 'field decision <id>: <status>' for the record of what released a value. A decision that the package still
+    holds in another status than the ruling found it never carries a value."""
+    parts = []
+    for decision_id, statuses in needed.items():
+        if decision_id not in decisions:
+            raise SystemExit(f"{subject}, but the supplement has no field decision {decision_id}")
+        status = decisions[decision_id]["status"]
+        if status not in statuses:
+            raise SystemExit(f"{subject}, but field decision {decision_id} has the status {status!r}, not one of "
+                             f"{list(statuses)} that the ruling relied on")
+        parts.append(f"field decision {decision_id}: {status}")
+    return parts
+
+
 def release_rules(rules: dict, decisions: dict, released: dict) -> None:
     """Mark the rules that an owner decision releases ``preferred_for_current_use`` (in place).
 
@@ -384,22 +408,13 @@ def release_rules(rules: dict, decisions: dict, released: dict) -> None:
     for rule_id, (ruling, needed) in released.items():
         if rule_id not in rules:
             raise SystemExit(f"the release of a rule names no rule {rule_id} (the supplement's rules: {sorted(rules)})")
-        parts = []
-        for decision_id, statuses in needed.items():
-            if decision_id not in decisions:
-                raise SystemExit(f"rule {rule_id} is released by the ruling {ruling}, but the supplement has no field decision "
-                                 f"{decision_id}")
-            status = decisions[decision_id]["status"]
-            if status not in statuses:
-                raise SystemExit(f"rule {rule_id} is released by the ruling {ruling}, but field decision {decision_id} has the "
-                                 f"status {status!r}, not one of {list(statuses)} that the ruling relied on")
-            parts.append(f"field decision {decision_id}: {status}")
+        parts = require_decisions(decisions, needed, f"rule {rule_id} is released by the ruling {ruling}")
         rules[rule_id]["preferred_for_current_use"] = True
         rules[rule_id]["released_by"] = f"{ruling} ({'; '.join(parts)})"
 
 
 # ---------------------------------------------------------------- the brochure tariff
-_AMOUNT = re.compile(r"(\d+),(\d{2})\s*€")
+_AMOUNT = re.compile(r"(\d+),(\d{2})\s*\u20ac")
 _UNIT = re.compile(r"/\s*(\d+)\s*(Std\.|Min\.)")
 
 
@@ -417,6 +432,83 @@ def _unit_minutes(quotation: str) -> Optional[int]:
     return int(match.group(1)) * (60 if match.group(2) == "Std." else 1)
 
 
+_DIRECTORY_PRICE = re.compile(r"(\d+\.\d{2}) Euro / (\d+) Stunden?")
+_DIRECTORY_FURTHER = re.compile(r"(\d+\.\d{2}) Euro / jede weitere Stunde")
+_DIRECTORY_MONTHLY = re.compile(r"(\d+\.\d{2}) Euro / Monat")
+
+
+def _page_text(markup: str) -> str:
+    """The visible text of an evidence page: scripts and styles dropped, tags removed, entities decoded, whitespace collapsed."""
+    markup = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", markup)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", markup))).strip()
+
+
+def _directory_quotation(text: str, member: str, quotation: str, pattern, what: str):
+    """The match of ``quotation`` against ``pattern``: the quotation must be in the directory text and be nothing but the
+    price statement of the expected form (``SystemExit`` otherwise)."""
+    if _norm(quotation) not in text:
+        raise SystemExit(f"quotation {quotation!r} is not in the directory text {member}")
+    match = pattern.fullmatch(_norm(quotation))
+    if match is None:
+        raise SystemExit(f"the quotation {quotation!r} is no price {what}")
+    return match
+
+
+def directory_rules(supplement: dict, facility: str, directory: dict, *, first_eur: float, further_eur: float,
+                    unit_minutes: int) -> dict:
+    """The rules that the supplement's copy of an undated directory entry adds to a brochure tariff ({rule id: rule}).
+
+    ``directory`` names the ``member`` (the saved page), the ``source_id``, the ``operator`` statement, the quotations
+    ``first`` and ``second`` (a price for one and for a longer number of hours), ``further`` (the price of each further hour),
+    ``monthly`` (the monthly product) and the ``ruling`` of the owner that releases the monthly product (ASSUMPTION P11).
+    Every quotation must be in the page text, in the form '<amount> Euro / <n> Stunde(n)', '<amount> Euro / jede weitere
+    Stunde' or '<amount> Euro / Monat'; the amounts and the units are PARSED from them. The directory must CONFIRM the
+    brochure (the unit of the further price rests on it): its first price and its further price must equal the brochure's
+    (``first_eur`` per ``unit_minutes``, ``further_eur`` per hour, so ``unit_minutes`` must be 60), else ``SystemExit``.
+    Rules: ``<facility>_DIRECTORY_TWO_HOURS`` (the second price as a total over the same stay length, NOT preferred: a
+    variant that sets no value, with ``encoded_price_eur`` the price of the encoded brochure tariff at that length and the
+    status ``directory_variant_conflicting`` where the two differ) and ``<facility>_DIRECTORY_MONTHLY`` (a monthly product,
+    preferred, released by the ruling; the operator statement, the lack of a date and the unverified terms are in its
+    conditions)."""
+    member = directory["member"]
+    text = _norm(_page_text(read_text(supplement, member)))
+    if _norm(directory["operator"]) not in text:
+        raise SystemExit(f"quotation {directory['operator']!r} is not in the directory text {member}")
+    first = _directory_quotation(text, member, directory["first"], _DIRECTORY_PRICE, "for a number of hours")
+    second = _directory_quotation(text, member, directory["second"], _DIRECTORY_PRICE, "for a number of hours")
+    further = _directory_quotation(text, member, directory["further"], _DIRECTORY_FURTHER, "per further hour")
+    monthly = _directory_quotation(text, member, directory["monthly"], _DIRECTORY_MONTHLY, "per month")
+    first_minutes, second_minutes = int(first.group(2)) * 60, int(second.group(2)) * 60
+    if unit_minutes != 60 or float(first.group(1)) != first_eur or first_minutes != unit_minutes:
+        raise SystemExit(f"the directory's first price {first.group(1)} EUR per {first_minutes} min differs from the brochure's "
+                         f"{first_eur:.2f} EUR per {unit_minutes} min (the directory must confirm the brochure by the hour)")
+    if float(further.group(1)) != further_eur:
+        raise SystemExit(f"the directory's further price {further.group(1)} EUR differs from the brochure's {further_eur:.2f} "
+                         "EUR per further hour; it would not confirm the unit of the brochure's 'jede weitere'")
+    if second_minutes <= first_minutes:
+        raise SystemExit(f"the directory's second price is for {second_minutes} min, not for a stay longer than the first "
+                         f"price's {first_minutes} min")
+    encoded_eur = first_eur + math.ceil((second_minutes - first_minutes) / unit_minutes) * further_eur
+    source = _source(supplement, directory["source_id"])
+    common = {"source_ids": [directory["source_id"]], "retrieved_on": str(source["retrieved_at"])[:10]}
+    second_eur = float(second.group(1))
+    conflicting = abs(second_eur - encoded_eur) > 1e-9
+    variant = _regional_rule(
+        supplement, f"{facility}_DIRECTORY_TWO_HOURS", facility, "duration_total", amount_eur=second_eur, elapsed_from_minutes=0,
+        elapsed_to_minutes=second_minutes, origin="directory",
+        status="directory_variant_conflicting" if conflicting else "directory_variant_same", **common)
+    variant["encoded_price_eur"] = round(encoded_eur, 2)
+    month = _regional_rule(
+        supplement, f"{facility}_DIRECTORY_MONTHLY", facility, "monthly_product", monthly_price_eur=float(monthly.group(1)),
+        raw_rule={"product_name": f"monthly product of the directory {directory['source_id']} ('{directory['monthly']}')"},
+        conditions=f"{directory['operator']} (the directory's statement); the directory entry is undated and the brochure "
+                   "states no monthly product; contract terms, availability and access rights are not stated",
+        origin="directory", status="directory_monthly_quoted", preferred_for_current_use=True,
+        released_by=f"ruling {directory['ruling']} (ASSUMPTION P11: the best available evidence of the same facility; "
+                    f"quotation of the supplement's copy of the directory {directory['source_id']}, SHA-256 verified)", **common)
+    return {variant["rule_id"]: variant, month["rule_id"]: month}
+
+
 def brochure_rules(supplement: dict, brochure_specs) -> dict:
     """The rules of a tariff that only a brochure text states (``{rule id: rule}``, regional schema, already preferred: the
     specification's quotations are the evidence).
@@ -424,11 +516,13 @@ def brochure_rules(supplement: dict, brochure_specs) -> dict:
     A brochure specification names the ``facility`` (a supplement facility), the text ``member`` of the supplement, the
     ``source_id`` of the brochure, the ``anchor`` (the row of the garage), the quotations ``first`` (the first price with its
     unit) and ``further`` (the price of each further unit), the parts of the ``window`` quotation and the ``unit_reading`` (the
-    reading that applies where the brochure states no unit for ``further``). The amounts and the unit are PARSED from the
-    quotations, never typed beside them. The anchor must be exactly one row of the NFKC-normalised text, every quotation must be
-    in that row (the line of the anchor with the line before and the two after it: the table's columns break across lines) and
-    the capacity of the facility must be in the anchor line, else ``SystemExit``. Rules: ``<facility>_BROCHURE_FIRST`` (a total
-    for the first unit) and ``<facility>_BROCHURE_NEXT`` (an increment per unit from the first unit's end, no stated rounding)."""
+    reading that applies where the brochure states no unit for ``further``) and, optionally, the ``directory`` that confirms
+    that unit (``directory_rules``). The amounts and the unit are PARSED from the quotations, never typed beside them. The
+    anchor must be exactly one row of the NFKC-normalised text, every quotation must be in that row (the line of the anchor
+    with the line before and the two after it: the table's columns break across lines) and the capacity of the facility must
+    be in the anchor line, else ``SystemExit``. Rules: ``<facility>_BROCHURE_FIRST`` (a total for the first unit) and
+    ``<facility>_BROCHURE_NEXT`` (an increment per unit from the first unit's end, no stated rounding); with a directory the
+    rules of ``directory_rules`` as well."""
     rules = {}
     for spec in brochure_specs:
         facility = spec["facility"]
@@ -472,6 +566,9 @@ def brochure_rules(supplement: dict, brochure_specs) -> dict:
         following.update(common)
         following["unit_reading"] = spec["unit_reading"]
         rules[first_id], rules[next_id] = base, following
+        if spec.get("directory"):
+            rules.update(directory_rules(supplement, facility, spec["directory"], first_eur=first_eur, further_eur=further_eur,
+                                         unit_minutes=unit))
     return rules
 
 
@@ -556,7 +653,8 @@ def observation_rules(followup: dict) -> dict:
         elif observation.get("price_eur") is not None and observation.get("billing_unit_minutes"):
             rules[observation_id] = _regional_rule(
                 followup, observation_id, facility, "increment", amount_eur=observation["price_eur"],
-                billing_unit_minutes=observation["billing_unit_minutes"], rounding=_rounding(observation_id, observation.get("rounding")),
+                billing_unit_minutes=observation["billing_unit_minutes"],
+                rounding=_rounding(observation_id, observation.get("rounding")),
                 capacity_reported=observation.get("capacity_reported"), **common)
         elif observation.get("daily_cap_eur") is not None:
             rules[observation_id] = _regional_rule(
@@ -595,8 +693,8 @@ def operator_from_page(supplement: dict, facility: str, operator: str, member: s
     supplement's copy of the operator's page (``member``) holds the quotation; ``SystemExit`` otherwise."""
     record = supplement["facilities"].get(facility)
     if record is None or record.get("operator") != operator:
-        raise SystemExit(f"supplement facility {facility} states the operator {None if record is None else record.get('operator')!r}, "
-                         f"not {operator!r}")
+        stated = None if record is None else record.get("operator")
+        raise SystemExit(f"supplement facility {facility} states the operator {stated!r}, not {operator!r}")
     if _norm(quotation) not in _norm(read_text(supplement, member)):
         raise SystemExit(f"the quotation {quotation!r} of the operator is not in the page {member}")
     return {"operator": operator, "url": _source(supplement, source_id)["url"], "quotation": quotation}

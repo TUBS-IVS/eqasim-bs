@@ -533,10 +533,10 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     Position: a non-empty point with finite coordinates inside ``ZGB_EXTENT_25832``. Identity and provenance: the required
     text columns set, an 8-digit AGS of the ZGB counties, ``source_url`` and ``geometry_source_url`` http(s) URLs, an ISO
     ``source_date``, one to three distinct hexadecimal SHA-256 values of the packages (the regional package, and the supplement
-    and follow-up packages where they touch the row, specs E12 and E13), ``notes`` set. Tariff (spec Amendment A6, rulings R-4b-10b and
-    R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee start, fee end;
-    set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the four core
-    columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the
+    and follow-up packages where they touch the row, specs E12 and E13), ``notes`` set. Tariff (spec Amendment A6, rulings
+    R-4b-10b and R-4b-11): a garage is priced in exactly one form, the single-window core (hourly rate, billing unit, fee
+    start, fee end; set completely or not at all), ``tariff_tiers`` (a text that :func:`parse_tariff_tiers` accepts, with the
+    four core columns empty) or ``tariff_duration_bands`` (a text that :func:`parse_duration_bands` accepts, with the rate and the
     billing unit empty, the fee window set completely, no first period and no tiers); the day cap and the first-period pair
     need one form, and the pair is set together; the clock window of the first period (ruling R-4b-12) is set together,
     only with a first period and satisfies 0 <= start < end <= 24; amounts are positive whole cents, minutes positive, the
@@ -544,9 +544,9 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     exactly "one tariff form is set"; a priced row names its ``tariff_rule_ids`` and no reason, an unpriced row carries no
     tariff value and one ``not_priced_reason`` of ``NOT_PRICED_REASONS`` and no assumption; every id of ``assumptions`` is
     one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
-    it has tiers and on ASSUMPTION P8 exactly when it has bands; ASSUMPTION P10 (a grace period) needs a free first band. Monthly product: ``monthly_eur`` is a positive whole-cent
-    amount with its ``monthly_source_url`` and ``monthly_product``, and neither text without the amount. Capacity: a
-    positive whole number with its ``capacity_scope``.
+    it has tiers and on ASSUMPTION P8 exactly when it has bands; ASSUMPTION P10 (a grace period) needs a free first band.
+    Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
+    and neither text without the amount. Capacity: a positive whole number with its ``capacity_scope``.
     """
     if frame is None or len(frame) == 0:
         raise ValueError("garage dataset: no garages")

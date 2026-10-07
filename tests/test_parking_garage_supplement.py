@@ -43,22 +43,36 @@ BROCHURE_URL = "https://www.stadt-helmstedt.de/fileadmin/user_upload/02_Kultur/p
 OPERATOR_PAGE = "https://www.parkhausambankplatz.de/"
 BROCHURE_MEMBER = "evidence/he_coordinates/raw/stadt_helmstedt_parken.txt"
 OPERATOR_MEMBER = "evidence/bs_coordinates/raw/operator_steinstrasse.html"
+DIRECTORY_MEMBER = "evidence/he_coordinates/raw/parkinglist_groepern.html"
+PARKINGLIST_URL = "https://www.parkinglist.de/parkplatz/helmstedt/tiefgarage-groepern-helmstedt-8251"
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "public_holidays")
 
 # the brochure text as the package keeps it: columns, the ligature of 'Oeffnungszeit' and the line breaks of the table
+# (ASCII source: u00d6 is O-umlaut, ufb00 the ligature ff, u20ac the euro sign, u00fc u-umlaut, u00f6 o-umlaut, u00df sharp s)
 BROCHURE_TEXT = (
     "Parkplatz            Plaetze Art der Plaetze        Kosten          Hoechstparkdauer   gebuehren-pflichtige Zeit\n"
     "\n"
-    "                                                       0,60€ / 30 Min.                           Öﬀnungszeit:\n"
+    "                                                       0,60\u20ac / 30 Min.                           "
+    "\u00d6\ufb00nungszeit:\n"
     "   Edelhoefe (Parkhaus)        17     Parkschein                             unbegrenzt\n"
-    "                                                     Tagesgebühr 8,00€                            24 Stunden\n"
+    "                                                     Tagesgeb\u00fchr 8,00\u20ac                            "
+    "24 Stunden\n"
     "\n"
-    "                                                        0,70€ / 1 Std.                           Öﬀnungszeit:\n"
-    "   Gröpern (Tiefgarage)       118    Parkschein                             unbegrenzt\n"
-    "                                                     jede weitere 0,30€                           24 Stunden\n"
+    "                                                        0,70\u20ac / 1 Std.                           "
+    "\u00d6\ufb00nungszeit:\n"
+    "   Gr\u00f6pern (Tiefgarage)       118    Parkschein                             unbegrenzt\n"
+    "                                                     jede weitere 0,30\u20ac                           "
+    "24 Stunden\n"
     "\n"
-    " Stobenstraße (Parkdeck)      64     Parkschein        0,80€ / 1 Std.       unbegrenzt      Mo.-Sa.: 7.00 - 19.00 Uhr\n")
+    " Stobenstra\u00dfe (Parkdeck)      64     Parkschein        0,80\u20ac / 1 Std.       unbegrenzt      "
+    "Mo.-Sa.: 7.00 - 19.00 Uhr\n")
 OPERATOR_HTML = "<html><body><p>Parkhaus am Bankplatz</p><p>Betreiber: AGR Parking UG</p></body></html>"
+# the evidence copy of the undated directory entry of the Groepern garage (tags between the statements, as in the real page)
+DIRECTORY_HTML = (
+    "<html><head><script>var x = 1;</script></head><body><h1>Tiefgarage Gr\u00f6pern - Helmstedt</h1>"
+    "<p>Parkgeb\u00fchren:</p><ul><li>0.70 Euro / 1 Stunde</li><li>1.20 Euro / 2 Stunden</li>"
+    "<li>0.30 Euro / jede weitere Stunde</li><li>33.00 Euro / Monat</li></ul>"
+    "<p>Betreiber: <b>Stadt Helmstedt</b></p></body></html>")
 
 
 @pytest.fixture(scope="module")
@@ -237,7 +251,9 @@ def _sources() -> list:
 
     return [source("city_parking", CITY), source("operator_steinstrasse", OPERATOR_PAGE),
             source("HE_CITY_PARKING", BROCHURE_URL, "2026-10-07T16:00:31.645995+00:00"),
-            source("airop", "https://www.struktur-foerderung.de/parken"), source("provider_faq", "https://www.mh-parkservice.com/faq"),
+            source("HE_PARKINGLIST", PARKINGLIST_URL, "2026-10-07T16:00:55.804066+00:00"),
+            source("airop", "https://www.struktur-foerderung.de/parken"),
+            source("provider_faq", "https://www.mh-parkservice.com/faq"),
             source("sued_city", "https://www.wolfsburg.de/mobilitaetverkehr/parken"),
             source("post_op", "https://www.sabaparking.com/de/parkplatze-wolfsburg/saba-parkhaus-poststrasse"),
             source("gs5", "https://locator.uberall.com/api/storefinders/x/locations/4123065", "2026-10-07"),
@@ -294,7 +310,8 @@ def _decisions() -> list:
             _decision("POST:unit", "WOB_POST", "night_billing_unit_minutes", "supported_by_municipal_source_currentness_unclear"),
             _decision("GAL:rate", "GS_GAL", "subsequent_price_eur_per_60_minutes", "resolved_operator_sources"),
             _decision("GAL:cap", "GS_GAL", "daily_cap_eur", "conflict"),
-            _decision("GAL:monthly", "GS_GAL", "monthly_eur", "published_terms_unverified")]
+            _decision("GAL:monthly", "GS_GAL", "monthly_eur", "published_terms_unverified"),
+            _decision("SUED:deduction", "WOB_SUEDKOPF", "free_period_deducted_after_threshold", "open")]
 
 
 def _observations() -> dict:
@@ -312,10 +329,10 @@ def _facility_updates() -> list:
         record.update(extra)
         return record
 
-    return [update("BS_ADDITIONAL_1", ["BS_ADDITIONAL_1"], "ADD1_ENTRANCE", name="Parkhaus Lange Straße Süd"),
+    return [update("BS_ADDITIONAL_1", ["BS_ADDITIONAL_1"], "ADD1_ENTRANCE", name="Parkhaus Lange Stra\u00dfe S\u00fcd"),
             update("BS_ADDITIONAL_2", ["BS_ADDITIONAL_2"], "ADD2_ENTRANCE", operator="AGR Parking UG"),
             update("HE_STOBEN", ["HE_STOBEN"], "STOBEN_ACCESS", capacity=64),
-            update("HE_GROEPERN_TG_118", [], "GROEPERN_ACCESS", capacity=118, name="Tiefgarage Gröpern"),
+            update("HE_GROEPERN_TG_118", [], "GROEPERN_ACCESS", capacity=118, name="Tiefgarage Gr\u00f6pern"),
             update("BS_FORSCHUNGSFLUGHAFEN", ["BS_SOURCE_AIR"], None, capacity=650),
             update("WOB_SUEDKOPF", ["WOB_SUED"], None), update("WOB_POST", ["WOB_POST"], None),
             update("GS_GAL", ["GS_GAL"], None, capacity=194), update("GS_ACH", ["GS_ACH"], None),
@@ -327,7 +344,7 @@ def _manifest(members: dict) -> str:
 
 
 def _write_supplement(directory: Path, *, drop_member=None, tamper=None, entrances_rows=None, geojson_shift_m=0.0,
-                      facility_updates=None) -> tuple:
+                      facility_updates=None, directory_html=DIRECTORY_HTML) -> tuple:
     """Write the synthetic supplement zip; returns (path, SHA-256). ``tamper`` names a member whose bytes change after the
     manifest was written; ``geojson_shift_m`` moves the GeoJSON points away from the GeoPackage points."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -345,7 +362,8 @@ def _write_supplement(directory: Path, *, drop_member=None, tamper=None, entranc
         "data/field_decisions.json": json.dumps({"decisions": _decisions()}).encode(),
         "data/tariff_observations.json": json.dumps(_observations()).encode(),
         "data/sources.json": json.dumps({"sources": _sources()}).encode(),
-        BROCHURE_MEMBER: BROCHURE_TEXT.encode("utf-8"), OPERATOR_MEMBER: OPERATOR_HTML.encode("utf-8")}
+        BROCHURE_MEMBER: BROCHURE_TEXT.encode("utf-8"), OPERATOR_MEMBER: OPERATOR_HTML.encode("utf-8"),
+        DIRECTORY_MEMBER: directory_html.encode("utf-8")}
     gpkg.unlink()
     manifest = _manifest(members)
     if drop_member:
@@ -362,8 +380,9 @@ def _write_supplement(directory: Path, *, drop_member=None, tamper=None, entranc
 
 FOLLOWUP = "Parkhaus_Nachrecherche_2026-10-07"
 #: The price points of the directory table of Achtermann (minutes, EUR), as the follow-up package states them.
-ACH_POINTS = ((60, 1.5), (120, 3.0), (180, 4.5), (210, 5.3), (240, 6.1), (270, 6.9), (300, 7.7), (330, 8.5), (360, 9.3), (390, 10.1),
-              (420, 10.9), (450, 11.7), (480, 12.5), (510, 13.3), (540, 14.1), (570, 14.9), (720, 15.0), (1440, 25.0))
+ACH_POINTS = ((60, 1.5), (120, 3.0), (180, 4.5), (210, 5.3), (240, 6.1), (270, 6.9), (300, 7.7), (330, 8.5), (360, 9.3),
+              (390, 10.1), (420, 10.9), (450, 11.7), (480, 12.5), (510, 13.3), (540, 14.1), (570, 14.9), (720, 15.0),
+              (1440, 25.0))
 ACH_BANDS = "0-180 1.50/60; 180-570 0.80/30; 570-720 total 15.00; 720- 1.00/60"
 
 
@@ -379,7 +398,8 @@ def _followup_review() -> dict:
 
     return {"research_date": "2026-10-07", "facilities": [
         facility("GS_ACH", [
-            {"observation_id": "ACH_TABLE", "source_ids": ["F05"], "price_points": [{"minutes": m, "eur": e} for m, e in ACH_POINTS],
+            {"observation_id": "ACH_TABLE", "source_ids": ["F05"],
+             "price_points": [{"minutes": m, "eur": e} for m, e in ACH_POINTS],
              "reported_further_hour_eur": 1, "effective_date": None, "accepted_as_current_operator_tariff": False},
             {"observation_id": "ACH_HOTEL", "source_ids": ["F05"], "price_eur": 15, "unit": "night"}]),
         facility("GOS_POINT_4", [
@@ -662,10 +682,14 @@ def test_a_rule_is_never_released_by_a_decision_that_is_open_or_missing(sup, sup
 
 # --------------------------------------------------------------------------- the brochure tariff with its quotations
 
+GROEPERN_DIRECTORY = {"member": DIRECTORY_MEMBER, "source_id": "HE_PARKINGLIST", "operator": "Betreiber: Stadt Helmstedt",
+                      "first": "0.70 Euro / 1 Stunde", "second": "1.20 Euro / 2 Stunden",
+                      "further": "0.30 Euro / jede weitere Stunde", "monthly": "33.00 Euro / Monat",
+                      "ruling": "R-4b2-9"}
 BROCHURE = ({"facility": "HE_GROEPERN_TG_118", "member": BROCHURE_MEMBER, "source_id": "HE_CITY_PARKING",
-             "anchor": "Gröpern (Tiefgarage)", "first": "0,70€ / 1 Std.", "further": "jede weitere 0,30€",
-             "window": ("Öffnungszeit:", "24 Stunden"),
-             "unit_reading": "the brochure states no unit for 'jede weitere'; read as the unit of the first price"},)
+             "anchor": "Gr\u00f6pern (Tiefgarage)", "first": "0,70\u20ac / 1 Std.", "further": "jede weitere 0,30\u20ac",
+             "window": ("\u00d6ffnungszeit:", "24 Stunden"), "directory": GROEPERN_DIRECTORY,
+             "unit_reading": "the brochure states no unit for 'jede weitere'; the directory HE_PARKINGLIST states the hour"},)
 
 
 def test_the_brochure_tariff_is_read_from_its_quotations_and_checked_against_the_text(sup, supplement_package):
@@ -682,10 +706,10 @@ def test_the_brochure_tariff_is_read_from_its_quotations_and_checked_against_the
 
 
 @pytest.mark.parametrize("change, message", [
-    ({"first": "0,75€ / 1 Std."}, "quotation '0,75.*1 Std.' is not in the brochure text"),
-    ({"further": "jede weitere 0,40€"}, "is not in the brochure text"),
+    ({"first": "0,75\u20ac / 1 Std."}, "quotation '0,75.*1 Std.' is not in the brochure text"),
+    ({"further": "jede weitere 0,40\u20ac"}, "is not in the brochure text"),
     ({"anchor": "Helmstedt Nirgendwo"}, "anchor 'Helmstedt Nirgendwo' is not a row"),
-    ({"window": ("Öffnungszeit:", "12 Stunden")}, "is not in the brochure text"),
+    ({"window": ("\u00d6ffnungszeit:", "12 Stunden")}, "is not in the brochure text"),
     ({"first": "0,70 Euro"}, "no amount in EUR"),
     # a row of the brochure whose lines do not carry the quotations (the Edelhoefe row holds 0,60 and 8,00)
     ({"anchor": "Edelhoefe (Parkhaus)"}, "not in the brochure row of 'Edelhoefe"),
@@ -698,7 +722,8 @@ def test_a_brochure_quotation_that_is_not_in_the_row_of_its_garage_is_refused(su
 
 def test_a_quotation_of_another_row_of_the_brochure_is_refused_even_when_the_capacity_fits(sup, supplement_package):
     loaded = sup.load_supplement(supplement_package[0], expected_sha256=supplement_package[1])
-    loaded["facilities"]["HE_GROEPERN_TG_118"]["capacity"] = 17  # the capacity of the Edelhoefe row, so only the quotations can fail
+    # the capacity of the Edelhoefe row, so only the quotations can fail
+    loaded["facilities"]["HE_GROEPERN_TG_118"]["capacity"] = 17
     with pytest.raises(SystemExit, match="is in the brochure text but not in the brochure row of 'Edelhoefe"):
         sup.brochure_rules(loaded, ({**BROCHURE[0], "anchor": "Edelhoefe (Parkhaus)"},))
 
@@ -708,6 +733,58 @@ def test_the_capacity_of_the_facility_must_be_in_the_brochure_row(sup, supplemen
     loaded["facilities"]["HE_GROEPERN_TG_118"]["capacity"] = 119
     with pytest.raises(SystemExit, match="capacity 119 is not in the brochure row"):
         sup.brochure_rules(loaded, BROCHURE)
+
+
+def test_the_directory_states_the_unit_of_the_further_price_records_the_conflicting_variant_and_the_monthly_product(
+        sup, supplement_package):
+    loaded = sup.load_supplement(supplement_package[0], expected_sha256=supplement_package[1])
+    rules = sup.brochure_rules(loaded, BROCHURE)
+    assert set(rules) == {"HE_GROEPERN_TG_118_BROCHURE_FIRST", "HE_GROEPERN_TG_118_BROCHURE_NEXT",
+                          "HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS", "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY"}
+    # the hour of "jede weitere" rests on the directory (checked against the text), not on the ruling alone
+    assert "HE_PARKINGLIST" in rules["HE_GROEPERN_TG_118_BROCHURE_NEXT"]["unit_reading"]
+    # the directory's 1.20 EUR at 2 h is a variant that conflicts with the encoded 0.70 + 0.30 = 1.00; it sets no value
+    variant = rules["HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS"]
+    assert (variant["rule_type"], variant["amount_eur"], variant["elapsed_from_minutes"], variant["elapsed_to_minutes"]) == (
+        "duration_total", 1.2, 0, 120)
+    assert variant["preferred_for_current_use"] is False and variant["status"] == "directory_variant_conflicting"
+    assert variant["encoded_price_eur"] == pytest.approx(1.0) and variant["source_url"] == PARKINGLIST_URL
+    # the monthly product 33.00 EUR (operator Stadt Helmstedt) is the one product of the garage and is released by the ruling
+    monthly = rules["HE_GROEPERN_TG_118_DIRECTORY_MONTHLY"]
+    assert (monthly["rule_type"], monthly["monthly_price_eur"], monthly["origin"]) == ("monthly_product", 33.0, "directory")
+    assert monthly["preferred_for_current_use"] is True and monthly["source_url"] == PARKINGLIST_URL
+    assert "R-4b2-9" in monthly["released_by"] and "ASSUMPTION P11" in monthly["released_by"]
+    assert "Betreiber: Stadt Helmstedt" in monthly["conditions"] and "undated" in monthly["conditions"]
+
+
+@pytest.mark.parametrize("change, html, message", [
+    ({"further": "0.40 Euro / jede weitere Stunde"}, None, "quotation .0.40 Euro / jede weitere Stunde. is not in the directory"),
+    ({"monthly": "34.00 Euro / Monat"}, None, "quotation .34.00 Euro / Monat. is not in the directory"),
+    ({"operator": "Betreiber: Anderer GmbH"}, None, "quotation .Betreiber: Anderer GmbH. is not in the directory"),
+    # a quotation that is no price statement of the expected form
+    ({"monthly": "33.00 Euro"}, None, "is no price per month"),
+    # the directory must confirm the brochure: another amount or another unit is no confirmation and stops the step
+    ({"further": "0.40 Euro / jede weitere Stunde"}, DIRECTORY_HTML.replace("0.30 Euro / jede weitere", "0.40 Euro / jede weitere"),
+     "further price 0.40 EUR differs from the brochure"),
+    ({}, DIRECTORY_HTML.replace("0.70 Euro / 1 Stunde", "0.80 Euro / 1 Stunde"), "is not in the directory"),
+    ({"first": "0.70 Euro / 2 Stunden"}, DIRECTORY_HTML.replace("0.70 Euro / 1 Stunde", "0.70 Euro / 2 Stunden"),
+     "first price .* per 120 min differs from the brochure"),
+    ({"further": "0.30 Euro / jede weitere halbe Stunde"},
+     DIRECTORY_HTML.replace("jede weitere Stunde", "jede weitere halbe Stunde"), "is no price per further hour"),
+])
+def test_a_directory_quotation_that_is_not_in_the_text_or_does_not_confirm_the_brochure_stops_the_step(
+        sup, tmp_path, change, html, message):
+    path, sha256 = _write_supplement(tmp_path, directory_html=html or DIRECTORY_HTML)
+    loaded = sup.load_supplement(path, expected_sha256=sha256)
+    spec = {**BROCHURE[0], "directory": {**GROEPERN_DIRECTORY, **change}}
+    with pytest.raises(SystemExit, match=message):
+        sup.brochure_rules(loaded, (spec,))
+
+
+def test_a_brochure_specification_without_a_directory_makes_no_directory_rule(sup, supplement_package):
+    loaded = sup.load_supplement(supplement_package[0], expected_sha256=supplement_package[1])
+    rules = sup.brochure_rules(loaded, ({k: v for k, v in BROCHURE[0].items() if k != "directory"},))
+    assert set(rules) == {"HE_GROEPERN_TG_118_BROCHURE_FIRST", "HE_GROEPERN_TG_118_BROCHURE_NEXT"}
 
 
 def test_an_operator_is_taken_only_from_a_page_that_states_it(sup, supplement_package):
@@ -748,23 +825,32 @@ def _specs() -> tuple:
          "facility": "HE_STOBEN", "rate": "stoben-fee", "window": "rate", "comment": ""},
         {"garage_id": "he_groepern", "town": "he", "supplement_point": "GROEPERN_ACCESS", "supplement": "HE_GROEPERN_TG_118",
          "facility": "HE_GROEPERN_TG_118", "first": "HE_GROEPERN_TG_118_BROCHURE_FIRST",
-         "rate": "HE_GROEPERN_TG_118_BROCHURE_NEXT", "window": ("stated", "00:00", "24:00", WINDOW_QUOTATION), "comment": ""},
+         "rate": "HE_GROEPERN_TG_118_BROCHURE_NEXT", "window": ("stated", "00:00", "24:00", WINDOW_QUOTATION),
+         "p11_basis": "the monthly product only: the undated directory entry HE_PARKINGLIST (operator Stadt Helmstedt)",
+         "ignored": {"HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS": "the CONFLICTING variant of the undated directory "
+                     "HE_PARKINGLIST: 1.20 EUR at 2 h; the official brochure is used"},
+         "qa_comment": "the directory HE_PARKINGLIST states 1.20 EUR at 2 h (conflicting variant, not used)", "comment": ""},
         {"garage_id": "bs_air", "town": "bs", "layer": "bs_parkhaeuser", "feature": ("facility_id", "BS_SOURCE_AIR"),
          "facility": "BS_SOURCE_AIR", "supplement": "BS_FORSCHUNGSFLUGHAFEN", "grace": ("air-5", "AIR_REGULAR"),
          "cap": "AIR_REGULAR:cap", "window": None, "p10_basis": P10_BASIS,
+         "p10_decisions": ("R-4b2-2", {"AIR:deduction": ("open_with_general_operator_indication",)}),
          "ignored": {"air-7": "the day ticket of the feed (a hidden template block); the visible operator block states 18.00",
                      "AIR_WEEK": "a separate product, prebooked for seven days", "FU_AIR": "the follow-up record: 18.00 "
                      "confirmed, period unspecified"}, "followup": "BS_FORSCHUNGSFLUGHAFEN", "comment": "Airport garage."},
         {"garage_id": "wob_sued", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_SUED"),
          "facility": "WOB_SUED", "supplement": "WOB_SUEDKOPF", "followup": "WOB_SUEDKOPF", "grace": ("sued-1", "sued-2"),
          "cap": "SUED_CAP", "window": None, "p10_basis": "no source; the reading of the airport by analogy",
+         "p10_decisions": ("R-4b2-3", {"SUED:deduction": ("open",)}),
          "p11_basis": "the secondary directory states a day maximum of 5.00, undated", "ignored": {"FU_SUED": "partial record"},
          "comment": "Shopping-centre garage."},
         {"garage_id": "gs_gal", "town": "gs", "layer": "region_parkhaeuser", "feature": ("facility_id", "GS_GAL"),
          "facility": "GS_GAL", "supplement": "GS_GAL", "rate": "GAL_REGULAR:stage2", "first_equals_rate": "GAL_REGULAR:stage1",
          "cap": "GAL_WVV", "window": None,
-         "followup": "GS_GAL", "ignored": {"FU_GAL": "the third provider page", "GAL_DIRECT": "the conflicting variant of the direct operator locator (8.00)",
-                     "gal-1": "the tourism page states the same first hour", "gal-2": "the tourism page states the same 24 h price"},
+         "followup": "GS_GAL",
+         "ignored": {"FU_GAL": "the third provider page",
+                     "GAL_DIRECT": "the conflicting variant of the direct operator locator (8.00)",
+                     "gal-1": "the tourism page states the same first hour",
+                     "gal-2": "the tourism page states the same 24 h price"},
          "qa_comment": "the direct locator states 8.00 (conflicting variant, not used)", "comment": "GALERIA."},
         {"garage_id": "wob_post", "town": "wob", "layer": "wob_parkhaeuser", "feature": ("facility_id", "WOB_POST"),
          "facility": "WOB_POST", "supplement": "WOB_POST", "tiers": ("POST_NIGHT",), "rest_tier": "post-1", "cap": "post-2",
@@ -784,6 +870,8 @@ def _specs() -> tuple:
 
 MONTHLY = (
     {"record_id": "monthly_gs_gal", "rule": "GAL_MONTHLY", "garage_id": "gs_gal", "decision": "used"},
+    {"record_id": "monthly_he_groepern", "rule": "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY", "garage_id": "he_groepern",
+     "decision": "used"},
     {"record_id": "monthly_bs_air_week", "rule": "AIR_WEEK", "garage_id": "bs_air", "decision": "not_used",
      "reason": "not_monthly_or_30_day", "amount_eur": 99.0, "subject": "Airport garage, seven days prebooked",
      "note": "a separate product, prebooked for seven days"},
@@ -876,7 +964,11 @@ def test_the_first_hour_the_rate_and_the_day_tariff_of_the_garages_without_coord
     groepern = rows.loc["he_groepern"]
     assert (groepern["garage_first_period_min"], groepern["garage_first_period_eur"]) == (60, 0.7)
     assert (groepern["garage_hourly_rate_eur"], groepern["garage_billing_unit_min"]) == (0.3, 60)
-    assert (groepern["garage_fee_start_h"], groepern["garage_fee_end_h"], groepern["assumptions"]) == (0.0, 24.0, "P4")
+    assert (groepern["garage_fee_start_h"], groepern["garage_fee_end_h"], groepern["assumptions"]) == (0.0, 24.0, "P4;P11")
+    assert groepern["monthly_eur"] == 33.0 and groepern["monthly_source_url"] == PARKINGLIST_URL
+    assert "Betreiber: Stadt Helmstedt" in groepern["monthly_product"]
+    for phrase in ("HE_PARKINGLIST", "CONFLICTING variant", "1.20 EUR", "ASSUMPTION P11", "the monthly product only"):
+        assert phrase in groepern["notes"], phrase
     assert groepern["source_url"] == BROCHURE_URL and groepern["source_date"] == "2026-10-07"
     assert WINDOW_QUOTATION in groepern["notes"] and "no unit for 'jede weitere'" in groepern["notes"]
 
@@ -929,7 +1021,8 @@ def test_achtermann_and_charley_jacob_are_priced_from_their_directory_observatio
             char["garage_fee_end_h"]) == (1.0, 60, 0.0, 24.0)
     assert char["assumptions"] == "P4;P5;P11" and pd.isna(char["garage_daily_cap_eur"])
     assert (char["capacity_reported"], char["capacity_scope"]) == (58, "secondary_directory_total")
-    assert char["geometry_method"] == "archived_municipal_point_2018" and char["geometry_source_url"] == "https://followup.example/H01"
+    assert char["geometry_method"] == "archived_municipal_point_2018"
+    assert char["geometry_source_url"] == "https://followup.example/H01"
     for garage in (ach, char):
         assert f"ASSUMPTION P11: {pg.ASSUMPTIONS['P11']}" in garage["notes"] and P11_BASIS in garage["notes"]
         assert "overridden by the owner (ruling R-4b2-8, spec E13)" in garage["notes"]
@@ -952,7 +1045,7 @@ def test_the_readings_of_the_supplement_are_named_and_counted(step, inputs, caps
     assert "a day rate without charging times takes the rest of the day beside a night tier: 1 garage(s)" in out
     assert "supplement package: 10 garages touched (4 at its main points), 10 priced from its rules or points" in out
     assert "follow-up package: 5 garages touched, 3 priced from its observations" in out
-    assert "priced garages resting on ASSUMPTION P10: 2/11" in out and "priced garages resting on ASSUMPTION P11: 3/11" in out
+    assert "priced garages resting on ASSUMPTION P10: 2/11" in out and "priced garages resting on ASSUMPTION P11: 4/11" in out
     assert frame["priced"].sum() == 11
 
 
@@ -987,6 +1080,25 @@ def test_an_operator_quotation_that_the_page_does_not_hold_stops_the_step(step, 
                  for spec in _specs())
     step.specs.GARAGE_SPECS = spec
     with pytest.raises(SystemExit, match="not in the page"):
+        step.build_garages(inputs)
+
+
+def test_a_grace_period_row_must_state_the_field_decisions_its_ruling_relied_on(step, inputs):
+    step.specs.GARAGE_SPECS = tuple({k: v for k, v in spec.items() if k != "p10_decisions"} if spec["garage_id"] == "wob_sued"
+                                    else spec for spec in _specs())
+    with pytest.raises(SystemExit, match="wob_sued.*p10_decisions"):
+        step.build_garages(inputs)
+
+
+@pytest.mark.parametrize("garage, decision", [("bs_air", "AIR:deduction"), ("wob_sued", "SUED:deduction")])
+def test_a_grace_period_is_read_only_while_the_package_still_holds_the_deduction_as_the_ruling_found_it(
+        step, inputs, garage, decision):
+    step.build_garages(inputs)  # the status the ruling relied on: accepted
+    inputs["supplement"]["decisions"][decision]["status"] = "resolved"
+    with pytest.raises(SystemExit, match=f"{garage}.*P10.*field decision {decision} has the status .resolved."):
+        step.build_garages(inputs)
+    del inputs["supplement"]["decisions"][decision]
+    with pytest.raises(SystemExit, match=f"{garage}.*P10.*no field decision {decision}"):
         step.build_garages(inputs)
 
 
@@ -1039,7 +1151,8 @@ def test_a_follow_up_rule_is_released_only_while_the_package_still_holds_the_dec
         step.sup.attach_followup(inputs, followup, FOLLOWUP_RELEASED)
 
 
-def test_a_followup_facility_that_the_regional_package_does_not_hold_is_refused(step, regional, supplement_package, followup_package):
+def test_a_followup_facility_that_the_regional_package_does_not_hold_is_refused(
+        step, regional, supplement_package, followup_package):
     inputs = step.load_garage_inputs(regional[0], expected_sha256=regional[1], supplement_path=supplement_package[0],
                                      expected_supplement_sha256=supplement_package[1])
     followup = step.sup.load_followup(followup_package[0], expected_sha256=followup_package[1])
@@ -1136,13 +1249,15 @@ def test_the_free_period_of_the_supplement_must_equal_the_free_rule_of_the_regio
 # --------------------------------------------------------------------------- the rest tier of a day rate
 
 
-def _tier_rules(night_start="21:00", night_end="06:30", day_unit=60, night_unit=60, preferred=True) -> dict:
+def _tier_rules(night_start="21:00", night_end="06:30", day_unit=60, night_unit=60, preferred=True, rest_times=None,
+                rest_window=None) -> dict:
     night_times = _times(night_start, night_end, days=WEEKDAYS[:7])
     for entries in night_times.values():
         if entries:
             entries[0]["crosses_midnight"] = night_end < night_start
     return {"n": _rule("n", "increment", "X", 1.0, unit=night_unit, times=night_times),
-            "d": _rule("d", "increment", "X", 2.0, unit=day_unit, rounding="started_unit", preferred=preferred)}
+            "d": _rule("d", "increment", "X", 2.0, unit=day_unit, rounding="started_unit", preferred=preferred,
+                       times=rest_times, window=rest_window)}
 
 
 def test_a_day_rate_without_charging_times_takes_the_rest_of_the_day_beside_a_night_tier(step):
@@ -1159,6 +1274,9 @@ def test_a_day_rate_without_charging_times_takes_the_rest_of_the_day_beside_a_ni
     ({"night_start": "00:00", "night_end": "24:00"}, "no time of day is left"),
     ({"day_unit": 30}, "different billing units"),
     ({"preferred": False}, "does not mark it preferred_for_current_use"),
+    # a rate that states a clock window is a tier of its own, no rest of the day: it would be priced at the wrong hours
+    ({"rest_times": _times("08:00", "18:00")}, "rest tier rule d states charging times"),
+    ({"rest_window": {"from": "08:00", "to": "18:00", "days_raw": "Mo-Fr"}}, "rest tier rule d states a time window"),
 ])
 def test_the_rest_tier_refuses_what_it_cannot_express(step, kwargs, message):
     with pytest.raises(SystemExit, match=message):
@@ -1185,6 +1303,27 @@ def test_a_cap_stated_per_calendar_day_is_a_reading_of_its_own_and_a_stated_othe
         ("cap", "u", "day_definition_unspecified")]
 
 
+@pytest.mark.parametrize("raw, expected", [
+    ("Mo-Fr06:00-22:00; Sa06:00-21:00; Su/holidays closed", "Mo-Fr 06:00-22:00; Sa 06:00-21:00; Su/holidays closed"),
+    ("Mo-Sa07:00-20:30; special shopping Sundays12:00-18:30", "Mo-Sa 07:00-20:30; special shopping Sundays 12:00-18:30"),
+    ("Mo-Sa08:00-23:00; Su10:30-23:00", "Mo-Sa 08:00-23:00; Su 10:30-23:00"),
+    # nothing else changes: spaced times, a 24/7 statement, words, dates
+    ("Mo-Fr 07:00-20:00; Sa 07:00-18:15; So/Feiertag geschlossen", "Mo-Fr 07:00-20:00; Sa 07:00-18:15; So/Feiertag geschlossen"),
+    ("24/7; 24 Stunden; Daily 07:00-23:15", "24/7; 24 Stunden; Daily 07:00-23:15"),
+    ("", ""),
+])
+def test_the_opening_hours_of_the_package_are_spaced_between_a_day_name_and_a_time(step, raw, expected):
+    assert step.opening_hours_text(raw) == expected
+    assert step.opening_hours_text(expected) == expected  # idempotent
+
+
+def test_the_p5_note_states_the_opening_hours_with_spaces(step, inputs):
+    inputs["facilities"]["BS_PLAIN"]["attributes"] = {"opening_hours_text": "Mo-Fr06:00-22:00; Sa06:00-21:00"}
+    spec = next(spec for spec in _specs() if spec["garage_id"] == "bs_plain")
+    row = step.build_garage(inputs, {**spec, "window": None})
+    assert "opening hours, which are no charging hours: Mo-Fr 06:00-22:00; Sa 06:00-21:00)" in row["notes"]
+
+
 def test_a_rate_whose_unit_the_source_does_not_state_is_a_reading(step):
     rules = {"r": _rule("r", "increment", "X", 0.3, unit=60, start=60, rounding=None),
              "f": _rule("f", "duration_total", "X", 0.7, start=0, end=60)}
@@ -1201,8 +1340,14 @@ def test_the_qa_table_records_the_decided_monthly_product_the_separate_week_prod
     frame = step.build_garages(inputs)
     directory = step.load_directory(_directory(tmp_path, step, monkeypatch))
     table = pd.DataFrame(step.qa_rows(inputs, frame, directory))
-    used = table[table["decision"] == "used"].iloc[0]
-    assert used["garage_id"] == "gs_gal" and used["amount_eur"] == "39.00" and used["evidence"] == "GAL_MONTHLY"
+    used = table[table["record_id"] == "monthly_gs_gal"].iloc[0]
+    assert used["decision"] == "used" and used["garage_id"] == "gs_gal" and used["amount_eur"] == "39.00"
+    assert used["evidence"] == "GAL_MONTHLY"
+    groepern_month = table[table["record_id"] == "monthly_he_groepern"].iloc[0]
+    assert (groepern_month["decision"], groepern_month["amount_eur"], groepern_month["garage_id"]) == (
+        "used", "33.00", "he_groepern")
+    assert groepern_month["evidence"] == "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY" and "HE_PARKINGLIST" in groepern_month["note"]
+    assert "1.20 EUR at 2 h (conflicting variant, not used)" in table[table["record_id"] == "garage_he_groepern"].iloc[0]["note"]
     week = table[table["record_id"] == "monthly_bs_air_week"].iloc[0]
     assert (week["decision"], week["reason_code"], week["amount_eur"]) == ("not_used", "not_monthly_or_30_day", "99.00")
     gal = table[table["record_id"] == "garage_gs_gal"].iloc[0]
@@ -1218,7 +1363,7 @@ def test_the_qa_table_records_the_decided_monthly_product_the_separate_week_prod
 def _directory(tmp_path, step, monkeypatch, names=("Parkplatz Markthalle", "Parkplatz Werder")) -> Path:
     features = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [10.52, 52.26]},
                  "properties": {"name": name, "id": f"id{number}", "mapsightIconId": "parkflaeche",
-                                "description": "<p>Tarife:</p><p>Parkzone 1 0,90 € / 30 Min.</p>"}}
+                                "description": "<p>Tarife:</p><p>Parkzone 1 0,90 \u20ac / 30 Min.</p>"}}
                 for number, name in enumerate(names)]
     path = tmp_path / "directory.geojson"
     path.write_text(json.dumps({"type": "FeatureCollection", "features": features}), encoding="utf-8")

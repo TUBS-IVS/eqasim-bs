@@ -681,8 +681,9 @@ def test_a_grace_period_garage_is_a_banded_garage_with_a_free_first_band_and_ass
 
 @pytest.mark.parametrize("changes, message", [
     # P10 reads a free first band: without bands, or without a free first band, there is no grace period
-    ({"tariff_duration_bands": "0-15 total 1.00; 15- 1.50/60"}, "ASSUMPTION P10 reads the free first band of "
-                                                              "tariff_duration_bands as a grace period, but this garage's first band is not free"),
+    ({"tariff_duration_bands": "0-15 total 1.00; 15- 1.50/60"},
+     "ASSUMPTION P10 reads the free first band of tariff_duration_bands as a grace period, but this garage's first band is "
+     "not free"),
     ({"tariff_duration_bands": None, "garage_hourly_rate_eur": 1.5, "garage_billing_unit_min": 60,
       "assumptions": "P8;P10"}, "ASSUMPTION P10 reads the free first band of tariff_duration_bands as a grace period"),
     ({"assumptions": "P5;P8;P10", "notes": "ASSUMPTION P5. ASSUMPTION P8."}, "the notes must name ASSUMPTION P10"),

@@ -16,6 +16,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -1154,7 +1155,7 @@ class Priced(NamedTuple):
 #: billed per started unit, P5 the fee window 0-24 h where no preferred rule states charging times, P6 the pricing of tiers
 #: (units counted from arrival, the tier in force at the unit's start; a first period inside its clock window), P7 caps other
 #: than the day cap are not applied, P8 the cumulative reading of duration bands, P10 a free period is a grace period, P11 the
-#: best available secondary evidence where no operator tariff is published.
+#: best available secondary evidence where no operator tariff is published (at Groepern: the monthly product only).
 EIERMARKT_TIERS = "07:00-18:00 1.20/60; 18:00-07:00 1.00/60"
 RATHAUS_TIERS = "00:00-06:00 0.50/60; 06:00-24:00 1.20/60"
 PEINE_BANDS = "0-30 total 0.20; 30-60 total 0.80; 60-300 0.40/30; 300-1440 total 4.00"
@@ -1204,7 +1205,7 @@ PRICED_GARAGES = {
     "he_marktpassage": Priced(HE, 0.80, 60, None, None, None, 6.0, 20.0, None, None, 60, "P4"),
     "he_edelhoefe": Priced(HE, 1.20, 30, None, None, 8.00, 0.0, 24.0, None, None, 17, "P4"),
     "he_stobenstrasse": Priced(HE, 0.80, 60, None, None, None, 7.0, 19.0, None, None, 64, "P4"),
-    "he_groepern_tiefgarage": Priced(HE, 0.30, 60, 60, 0.70, None, 0.0, 24.0, None, None, 118, "P4"),
+    "he_groepern_tiefgarage": Priced(HE, 0.30, 60, 60, 0.70, None, 0.0, 24.0, None, 33.0, 118, "P4;P11"),
     "pe_werderstrasse": Priced(PE, None, None, None, None, None, 0.0, 24.0, None, 48.0, 160, "P4;P5;P8", bands=PEINE_BANDS),
     "pe_wallstrasse": Priced(PE, None, None, None, None, None, 0.0, 24.0, None, 48.0, 190, "P4;P5;P8", bands=PEINE_BANDS),
     "sz_brawo_carree": Priced(SZ, None, None, None, None, None, 0.0, 24.0, None, None, 570, "P5;P8",
@@ -1219,6 +1220,9 @@ PRICED_GARAGES = {
 #: The garages whose window of 0-24 h is stated by the source (no assumption P5): the operator page of Contipark and the
 #: city brochures (the ordinance of 2018 states opening hours only).
 STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe", "he_groepern_tiefgarage")
+#: The garages with a value from secondary evidence (ASSUMPTION P11, spec E13 and ruling R-4b2-9): the tariff of Achtermann and
+#: Charley-Jacob-Strasse, the day maximum of the Suedkopf-Center, the monthly product of the Groepern garage.
+P11_GARAGES = ("wob_suedkopf", "gs_achtermann", "gs_charley_jacob_strasse", "he_groepern_tiefgarage")
 #: Which packages touch which rows (the SHA-256 list of ``package_sha256``): the ten garages of the supplement, five of them also
 #: of the follow-up package.
 TOUCHED_BY_SUPPLEMENT_ONLY = ("bs_lange_strasse_sued", "bs_steinstrasse", "he_stobenstrasse", "he_groepern_tiefgarage",
@@ -1283,9 +1287,9 @@ def test_a_committed_priced_garage_carries_the_published_tariff(garage_id):
         assert expected.rate is None and expected.unit is None and expected.first_min is None
         assert (expected.start, expected.end) == (0.0, 24.0)
         assert pg.format_duration_bands(pg.parse_duration_bands(expected.bands)) == expected.bands
-    # P10 is a free first band, P11 a garage priced from secondary evidence (three garages, named below)
+    # P10 is a free first band, P11 a value from secondary evidence (four garages, named below; at Groepern the monthly product)
     assert ("P10" in parts) == (garage_id in ("bs_forschungsflughafen", "wob_suedkopf"))
-    assert ("P11" in parts) == (garage_id in ("wob_suedkopf", "gs_achtermann", "gs_charley_jacob_strasse"))
+    assert ("P11" in parts) == (garage_id in P11_GARAGES)
     # the fee window is the garage's own: a window of 0-24 h is stated by the source (no assumption P5) or ASSUMPTION P5
     if (expected.start, expected.end) == (0.0, 24.0):
         assert garage_id in STATED_FULL_DAY_WINDOWS or "P5" in parts
@@ -1302,11 +1306,11 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
         GS: {"listed": 4, "priced": 4, "not_priced": 0}, HE: {"listed": 4, "priced": 4, "not_priced": 0},
         PE: {"listed": 2, "priced": 2, "not_priced": 0}, WF: {"listed": 2, "priced": 2, "not_priced": 0}}
     # the assumption rates (fallback transparency): no garage rests on P3 any more, P4 22 of 35, P5 23, P6 7, P7 5, P8 10, P10 2
-    # and P11 3; the union rates 34 of 35 on at least one assumption and 30 of 35 on P4 or P5 (both above the 75 % warning
+    # and P11 4; the union rates 34 of 35 on at least one assumption and 30 of 35 on P4 or P5 (both above the 75 % warning
     # threshold of the curation step and the loader, which is why the loader warns), 7 garages in the tiered form and 10 in the
-    # banded form, 8 monthly products at a garage
-    assert coverage["priced_by_assumption"] == {"P10": 2, "P11": 3, "P4": 22, "P5": 23, "P6": 7, "P7": 5, "P8": 10}
-    assert coverage["with_monthly_product"] == 8
+    # banded form, 9 monthly products at a garage
+    assert coverage["priced_by_assumption"] == {"P10": 2, "P11": 4, "P4": 22, "P5": 23, "P6": 7, "P7": 5, "P8": 10}
+    assert coverage["with_monthly_product"] == 9
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
             coverage["priced_banded"]) == (34, 30, 7, 10)
     assigned = [values.assumptions.split(";") if values.assumptions else [] for values in PRICED_GARAGES.values()]
@@ -1500,6 +1504,25 @@ def test_the_four_garages_without_coordinates_are_listed_at_the_main_points_of_t
     assert "Oeffnungszeit: 24 Stunden" in brochure and "no unit for 'jede weitere 0,30'" in brochure
 
 
+def test_the_groepern_notes_name_the_directory_the_conflicting_variant_and_the_decision_on_its_monthly_product():
+    row = _committed_garages().loc["he_groepern_tiefgarage"]
+    notes = row["notes"]
+    # the unit of "jede weitere" rests on the undated directory, the brochure (official, dated) is the encoded tariff
+    for phrase in ("HE_PARKINGLIST", "0.30 Euro / jede weitere Stunde", "so the unit is one hour", "CONFLICTING variant",
+                   "1.20 EUR for 2 hours against the 1.00 EUR that the encoded brochure tariff gives", "outranks the undated",
+                   "HE_GROEPERN_TG_118_DIRECTORY_TWO_HOURS", "ASSUMPTION P11", "the monthly product only", "outdated"):
+        assert phrase in notes, phrase
+    # the encoded tariff is the brochure's: 0.70 EUR for the first hour, 0.30 EUR per further started hour, so 1.00 EUR at 2 h
+    first, rate = row["garage_first_period_eur"], row["garage_hourly_rate_eur"]
+    assert (first, rate, row["garage_first_period_min"], row["garage_billing_unit_min"]) == (0.70, 0.30, 60, 60)
+    assert first + math.ceil((120 - 60) / row["garage_billing_unit_min"]) * rate == pytest.approx(1.00)
+    assert row["tariff_rule_ids"] == "HE_GROEPERN_TG_118_BROCHURE_FIRST;HE_GROEPERN_TG_118_BROCHURE_NEXT"
+    # the directory's monthly product (operator Stadt Helmstedt, undated) is used: the only product of the garage
+    assert (row["monthly_eur"], row["monthly_source_url"]) == (
+        33.0, "https://www.parkinglist.de/parkplatz/helmstedt/tiefgarage-groepern-helmstedt-8251")
+    assert "Betreiber: Stadt Helmstedt" in row["monthly_product"] and "undated" in row["monthly_product"]
+
+
 def test_charley_jacob_strasse_keeps_the_archived_municipal_point_and_names_it():
     row = _committed_garages().to_crs("EPSG:4326").loc["gs_charley_jacob_strasse"]
     # the archived municipal point of 2018 (the follow-up package states it as 10.43004320553744, 51.90652479995978)
@@ -1510,6 +1533,21 @@ def test_charley_jacob_strasse_keeps_the_archived_municipal_point_and_names_it()
                    "overridden by the owner (ruling R-4b2-8, spec E13)"):
         assert phrase in row["notes"], phrase
     assert pd.isna(row["garage_daily_cap_eur"]) and row["operator"] is None
+
+
+def test_charley_jacob_strasse_states_the_p11_consistency_check_against_the_other_goslar_garages():
+    garages = _committed_garages()
+    notes = garages.loc["gs_charley_jacob_strasse", "notes"]
+    for phrase in ("Consistency check against the garages of the same town", "BELOW the 1.50 EUR per hour of Parkhaus bei C&A, "
+                   "GALERIA and Achtermann", "municipal office garage", "a lower municipal tariff is plausible",
+                   "result of the check: kept"):
+        assert phrase in notes, phrase
+    # the figures of the statement are the committed ones: 1.00 EUR per hour here, 1.50 EUR for the first hour at the three others
+    assert garages.loc["gs_charley_jacob_strasse", "garage_hourly_rate_eur"] == 1.00
+    assert garages.loc["gs_galeria", "garage_hourly_rate_eur"] == 1.50
+    for garage in ("gs_ca", "gs_achtermann"):
+        assert _committed_price(garage, 60) == pytest.approx(1.50, abs=1e-9), garage
+    assert garages.loc["gs_charley_jacob_strasse", "municipality_ags"] == garages.loc["gs_ca", "municipality_ags"] == GS
 
 
 def test_achtermann_leaves_the_operator_empty_and_names_the_candidate_the_hotel_price_and_the_consistency_with_the_ca():
@@ -1591,6 +1629,18 @@ def test_every_committed_garage_cites_its_packages_and_a_source_and_every_assump
                "the unit's start" in garages.loc[garage, "notes"]
 
 
+def test_the_opening_hours_in_the_notes_do_not_run_a_day_name_into_a_clock_time():
+    # the opening hours of the package in the P5 note (the monthly product texts are verbatim quotes and are not touched)
+    stated = 0
+    for garage_id, notes in _committed_garages()["notes"].items():
+        for hours in re.findall(r"no charging hours: ([^)]*)\)", notes):
+            stated += 1
+            assert not re.search(r"[A-Za-z]\d{1,2}:\d{2}", hours), (garage_id, hours)
+    assert stated >= 10  # the garages without stated charging times that state opening hours
+    # the opening hours of the Suedkopf-Center, as the package writes them without a space and the notes show them
+    assert "Mo-Fr 06:00-22:00; Sa 06:00-21:00; Su/holidays closed" in _committed_garages().loc["wob_suedkopf", "notes"]
+
+
 def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff():
     for path in (GARAGES_PATH, GARAGES_QA_PATH):
         assert path.read_bytes().isascii(), path.name
@@ -1611,14 +1661,14 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     garages = pg.load_garages(GARAGES_PATH)
     qa = pq.load_garage_qa(GARAGES_QA_PATH)
     pq.validate_garage_qa(qa, garages, pz.load_tariffs(TARIFFS_PATH))
-    assert qa["record_type"].value_counts().to_dict() == {"garage": 35, "monthly_product": 22, "candidate": 15}
-    assert len(qa) == 72
+    assert qa["record_type"].value_counts().to_dict() == {"garage": 35, "monthly_product": 23, "candidate": 15}
+    assert len(qa) == 73
     coverage = pq.qa_coverage(qa)
-    # 22 monthly or 30-day products: 10 used (eight at a garage, the zone Ib ticket and the TU member ticket), 12 recorded and
+    # 23 monthly or 30-day products: 11 used (nine at a garage, the zone Ib ticket and the TU member ticket), 12 recorded and
     # not used with a reason (spec Amendment D2, ruling R-D2-a); the product of the station BahnPark is not used because that
     # garage is no garage of the dataset (garage_not_listed); the 99.00 EUR seven-day product of the Forschungsflughafen is a
     # second product of another duration (not_monthly_or_30_day)
-    assert (coverage["monthly_used"], coverage["monthly_not_used"]) == (10, 12)
+    assert (coverage["monthly_used"], coverage["monthly_not_used"]) == (11, 12)
     assert coverage["monthly_not_used_by_reason"] == {
         "capacity_limited_permits": 1, "garage_not_listed": 1, "no_coordinates": 1, "no_fixed_price": 1,
         "not_monthly_or_30_day": 2, "not_the_cheapest": 3, "outdated_source": 2, "restricted_customer_group": 1}
@@ -1645,6 +1695,13 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
         "not_used", "not_monthly_or_30_day", "99.00", "bs_forschungsflughafen")
     galeria = rows.loc["monthly_gs_galeria_dauerstellplatz"]
     assert (galeria["decision"], galeria["amount_eur"], galeria["garage_id"]) == ("used", "39.00", "gs_galeria")
+    # the monthly product of the Groepern garage (ruling R-4b2-9): used under ASSUMPTION P11, the decision and its basis stated
+    groepern = rows.loc["monthly_he_groepern_tiefgarage"]
+    assert (groepern["decision"], groepern["amount_eur"], groepern["garage_id"], groepern["evidence"]) == (
+        "used", "33.00", "he_groepern_tiefgarage", "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY")
+    for phrase in ("HE_PARKINGLIST", "Betreiber: Stadt Helmstedt", "ruling R-4b2-9", "ASSUMPTION P11", "may be outdated"):
+        assert phrase in groepern["note"], phrase
+    assert "1.20 EUR at 2 h" in rows.loc["garage_he_groepern_tiefgarage", "note"]
     assert "8.00" in rows.loc["garage_gs_galeria", "note"] and "conflicting variant" in rows.loc["garage_gs_galeria", "note"]
     used = qa[(qa["record_type"] == "monthly_product") & (qa["decision"] == "used")]
     assert sorted(used.loc[used["garage_id"] != "", "garage_id"]) == sorted(

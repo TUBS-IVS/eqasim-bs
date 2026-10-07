@@ -778,9 +778,9 @@ def test_committed_parking_data_is_valid(capsys):
     # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
     # specs E12 and E13: the supplement and follow-up packages price every listed garage (35 of 35)
     assert ("garages: 35 listed, 35 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
-    assert ("priced garages resting on an assumption: P10 2, P11 3, P4 22, P5 23, P6 7, P7 5, P8 10 of 35 (at least one "
-            "assumption 34, P4 or P5 30; in the tiered form 7, in the banded form 10); monthly product on 8 garages") in out
-    assert "QA: monthly products used 10, recorded and not used 12 (capacity_limited_permits 1, garage_not_listed 1" in out
+    assert ("priced garages resting on an assumption: P10 2, P11 4, P4 22, P5 23, P6 7, P7 5, P8 10 of 35 (at least one "
+            "assumption 34, P4 or P5 30; in the tiered form 7, in the banded form 10); monthly product on 9 garages") in out
+    assert "QA: monthly products used 11, recorded and not used 12 (capacity_limited_permits 1, garage_not_listed 1" in out
     assert "candidates that are no garage 38 (bga_zone 2, customer_regime 1, dauerparker_only 2, no_coordinates 1" in out
 
 
