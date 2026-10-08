@@ -1,6 +1,6 @@
 # ADR-0139 · 2026-09-30 · Zone-based parking costs replace the 8 km ring
 
-- **Status:** accepted pending owner review at the PR; production flag ON in the reviewed branch, the 25 % legacy-vs-zones A/B is pending
+- **Status:** accepted pending owner review at the PR; production flag ON in the reviewed branch, the 25 % legacy-vs-zones A/B is pending; superseded in part by ADR-0140 (2026-10-08): decision 3 ("Campus zones are never drawn"), the C1 limitation and the follow-up list
 - **Numbering:** ADR-0139 is the next free id. Checked on 2026-09-29 and again on 2026-09-30 across all local and
   remote branches, the worktrees and the open pull requests: `origin/main` holds up to ADR-0136; ADR-0135,
   ADR-0137 and ADR-0138 exist only on the unmerged branches `fix/parallel-memory-robustness`,
