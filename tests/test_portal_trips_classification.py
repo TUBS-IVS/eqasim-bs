@@ -81,3 +81,54 @@ def test_find_outside_stays_never_joins_runs_across_persons():
     stays = cls.find_outside_stays(trips, pd.Series([True, True, False]))
     assert stays["person_id"].tolist() == [1, 2]
     assert np.isnan(stays.loc[0, "return_trip_index"]) and stays.loc[1, "return_trip_index"] == 1.0
+
+
+def _xy(person_ids, xs, ys=None):
+    return pd.DataFrame({"x": xs, "y": ys if ys is not None else [0.0] * len(xs)},
+                        index=pd.Index(person_ids, name="person_id"))
+
+
+def test_distance_frame_reports_no_fallback_when_every_primary_leg_has_an_assigned_location():
+    trips = _trips([(1, 0, "home", "work", "car", 1.0),
+                    (1, 1, "work", "home", "car", 1.0),
+                    (2, 0, "home", "education", "pt", 1.0),
+                    (2, 1, "education", "leisure", "pt", 3000.0)])
+    frame = cls.classification_distance_frame(
+        trips, _home_xy(), {"work": _xy([1], [50000.0]), "education": _xy([2], [0.0], [30000.0])})
+    assert frame["used_reported_distance"].sum() == 0
+    assert frame["classification_distance_m"].tolist() == [50000.0, 1.0, 30000.0, 3000.0]
+
+
+def test_distance_frame_flags_a_work_leg_without_assigned_location_as_fallback():
+    trips = _trips([(1, 0, "home", "work", "car", 7000.0),
+                    (1, 1, "work", "leisure", "car", 2000.0)])
+    empty = _xy([], [])
+    frame = cls.classification_distance_frame(trips, _home_xy(), {"work": empty, "education": empty})
+    assert frame["used_reported_distance"].tolist() == [True, False]
+    assert frame["classification_distance_m"].tolist() == [7000.0, 2000.0]
+    assert cls.classification_distance_m(trips, _home_xy(), {"work": empty, "education": empty}).tolist() \
+        == [7000.0, 2000.0]
+
+
+def test_distance_frame_uses_the_assigned_education_location():
+    trips = _trips([(1, 0, "home", "education", "bike", 100.0)])
+    frame = cls.classification_distance_frame(
+        trips, _home_xy(), {"work": _xy([], []), "education": _xy([1], [3000.0], [4000.0])})
+    assert frame["classification_distance_m"].tolist() == [5000.0]
+    assert frame["used_reported_distance"].tolist() == [False]
+
+
+def test_coordinate_tables_reject_non_unique_ids():
+    persons = pd.DataFrame({"person_id": [1], "household_id": [10]})
+    homes = gpd.GeoDataFrame({"household_id": [10, 10]}, geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:25832")
+    with pytest.raises(ValueError, match="household_id.*10"):
+        cls.person_home_xy(persons, homes)
+    work = gpd.GeoDataFrame({"person_id": [5, 5]}, geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:25832")
+    with pytest.raises(ValueError, match="person_id.*5"):
+        cls.primary_xy(work, work.iloc[0:0])
+
+
+def test_find_outside_stays_rejects_flags_of_the_wrong_length():
+    trips = _trips([(1, 0, "home", "leisure", "car", 1000.0), (1, 1, "leisure", "home", "car", 1000.0)])
+    with pytest.raises(ValueError, match="is_portal"):
+        cls.find_outside_stays(trips, pd.Series([True]))
