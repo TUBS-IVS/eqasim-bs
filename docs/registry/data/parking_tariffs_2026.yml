@@ -22,7 +22,7 @@ vintage: >-
   and the TU Parkordnung (Stand 2026-06-03), both retrieved 2026-09-29; the fee windows of Helmstedt and Goslar zone 1
   (spec Amendment D1) on the Helmstedt brochure of 12/2024 and the Goslar service page, both of the owner-supplied
   package retrieved 2026-10-07 (source_date stays the retrieval date of the row's primary source).
-geography: The 37 zones of parking_zones_2026 (eleven ZGB municipalities)
+geography: The 40 zones of parking_zones_2026 (eleven ZGB municipalities)
 crs: null
 roles:
 - supply_input
@@ -141,6 +141,27 @@ acquisition:
     (the municipal free default of a Wolfsburg car park without any fee evidence outside every published tariff area) are
     assumptions of the garage dataset, not of this table: they are named in each garage's notes and in the data record
     parking_garages_2026.
+    Spec Amendment G1 (Task 4g, 2026-10-08): three rows bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west for the DB
+    BahnPark station car parks of the Braunschweig Hauptbahnhof, appended by
+    scripts/curation/parking_zones_2026/station_lots.py (which also writes their zones) and checked by its
+    check_tariff_rows against the evidence. Every number is READ, never typed, from the text of the Contipark location
+    pages in the owner's package Braunschweig_Monatstarife_2026-10-08.zip (SHA-256
+    72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81; members evidence/contipark/p1.txt, p2.txt, p3.txt):
+    the specification names the label of the line, the step reads its amount and stops when the line is missing,
+    duplicated or contradicted: P1 '1 Stunde' 2.50 EUR (billing_unit_min 60), '1 Tag' 17.00 EUR (daily_cap_eur), '1 Monat
+    fuer Stellplatzmieter' 120.00 EUR, so commuter_day_eur 5.71 (120 / 21 = 5.714); P2 and P3 '30 Minuten' 1.10 EUR
+    (hourly_rate_eur 2.20, billing_unit_min 30, the line '1 Stunde' 2.20 EUR must be twice it), '1 Tag' 11.00 EUR, monthly
+    74.00 EUR, so 3.52 (74 / 21 = 3.524). The same three amounts of each lot must stand in the DB BahnPark sheet of
+    2026-05-29 (member evidence/contipark/db_bahnpark_8000049.txt) and the monthly amount must be the cheapest publicly
+    purchasable monthly product of the package's rules (BS_DB_P1_O01, BS_DB_P2_O02, BS_DB_P3_O02), else the step stops.
+    Fee window 0-24 h (the pages state the car parks open 00:00-24:00 and a fee table without a time limit;
+    fee_window_source municipal_page is the nearest class of the vocabulary for the operator's page), no maximum stay, no
+    long-stay product, resident_permits_valid false (ASSUMPTION R2-a), workplace_class bs_outer (ASSUMPTION G-b: the
+    station lies in the SrV Unterbezirk Hauptbahnhof, as the BgA row at the forecourt; a reading of the location).
+    ASSUMPTION G-a: the amount is billed per started unit and the '1 Tag' amount is the daily maximum per stay; ASSUMPTION
+    C-a for the 50 m zone. Named and NOT modelled: the Kiss&Ride tariff of P1 (0.80 EUR for 15 min), its evening tariff
+    (18:00 to 02:00, at most 5.00 EUR on the first day), the BahnCard and Pcard discounts, the weekly (55.00 EUR) and
+    machine monthly (78.00 EUR) products of P2 and P3 and the reserved-space products (160.00, 130.00 EUR).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
   committed: true
@@ -235,6 +256,17 @@ limitations: >-
   current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
   retrieval and snapshot date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts
   ticketing that campus on that day (GB3 page), so on the snapshot date this zone charged nothing.
+  40 rows after spec Amendment G1 (2026-10-08): street_paid 33, resident_zone 1, campus 6; fee_window_source
+  municipal_page 20, ordinance 7, assumption 13; commuter_day_eur on 10 rows (bs_zone_ib, the six campus rows and the
+  three station rows); resident_permits_valid false on nine stated rows (the five bs_bga_* rows,
+  gs_parkplatz_klubgartenstrasse_zob and the three station rows), so R2 is off on 15 of the 40 zones with the six campus
+  zones. SHA-256 of the file (LF): 2b3a66e1d40cfa37b862cefc2573b4e5a05a5ac6ff8dbea169687fd7dcb18cf4 (before:
+  3e4b1ef239c62f310b6b9eb289577063d1cce3830c6ef880e2dfe8cf158ce6ca; the 37 data rows are unchanged, the header gained
+  the assumptions G-a and G-b and the bites lists of C-a, P2 and R2-a). Expected output change of Task 4g (its one
+  statement): with parking_zones_enabled, stays within 50 m of the three Braunschweig Hbf car parks are priced as paid
+  parking at their rates (before: free outside every zone, assumption Z1), and work and education stays there pay at
+  most the monthly share (571 ct at P1, 352 ct at P2 and P3); the Wolfsburg deck becomes a garage option (data record
+  parking_garages_2026). The size of the effect is not established. The earlier summary follows.
 notes: >-
   37 rows: street_paid 30, resident_zone 1, campus 6; fee_window_source municipal_page 17, ordinance 7,
   assumption 13 (validator summary after Task 4b, 2026-10-07; municipal_page 15, ordinance 7 and assumption 15 before the

@@ -101,7 +101,7 @@ as a sensitivity number (the table records the filter).
   in `regional_garage_specs.BS_MONTHLY_SPECS`, checked to be the cheapest) and the Wallstrasse price from the 'weitere Monate
   ... Brutto' line of the Contipark configurator capture; every Braunschweig garage has a status row in the QA table (no_price,
   sold_out, price_on_request, period_unconfirmed) with the package's sentence, and `BS_RECORDED_SPECS` lists the facilities that
-  are no garage of the dataset (Eves and Fichtengrund count for P13; the DB BahnPark lots and the APCOA lots never do).
+  are no garage of the dataset (Eves and Fichtengrund count for P13; the DB BahnPark lots, whose products are USED products of their zones since spec Amendment G1 (`decision` used, `zone_ids`), and the APCOA lots never do). The Wolfsburg Parkdeck Hauptbahnhof is a garage since Amendment G2 (`GARAGE_SPECS`, its monthly product 100.00 EUR is one of the five Wolfsburg values of P13).
 - ASSUMPTION P13 is computed once, by `regional_garages.apply_monthly_imputation`, with the single implementation
   `garage_qa.expected_imputed_monthly` (median in integer cents, half up) that `validate_garage_qa` checks the committed
   table against: a withdrawn or added published product makes the committed imputed values fail the validator until the

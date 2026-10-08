@@ -1,5 +1,5 @@
 dataset: parking_zones_2026
-title: Parking cost zone polygons of the ZGB (37 zones in eleven municipalities)
+title: Parking cost zone polygons of the ZGB (40 zones in eleven municipalities)
 inventory_id: null
 provider: >-
   Own digitisation (issue #249) from public sources: City of Braunschweig parking-zone overview map and
@@ -11,8 +11,9 @@ provider: >-
   Bewohnerparken; since 2026-10-07 (spec Amendment D) the owner-supplied regional evidence package: the BgA car
   parks digitised from the annex maps of the Amtsblatt 2022 Nr. 16, the red camera detection zones of the TU GB3
   campus maps (united with the v1 OSM campus outlines, ruling R-4a-8), the facility areas of the Goslar ArcGIS service
-  for three car parks, OpenStreetMap outlines in Bad
-  Harzburg and Seesen and the tourism coordinates of two Braunlage car parks
+  for three car parks, OpenStreetMap outlines in Bad Harzburg and Seesen and the tourism coordinates of two Braunlage
+  car parks; since 2026-10-08 (spec Amendment G) the OpenStreetMap outlines of the three Braunschweig Hauptbahnhof
+  station car parks with the tariff text of the Contipark pages
 vintage: >-
   Sources retrieved and zones digitised on 2026-09-29; OSM base timestamps 2026-09-29T05:10Z to 05:13Z;
   target world September 2026 (design spec decision 1). The municipal packages of spec Amendment C were supplied
@@ -20,13 +21,16 @@ vintage: >-
   Wolfsburg layer Stand 12/2024, Goslar service last edited 2018-11-22). The regional evidence package of spec
   Amendment D was supplied and assembled on 2026-10-07 (BgA annex maps of the Amtsblatt of 2022-12-29, TU campus
   maps retrieved 2026-10-02 and verified 2026-10-07, the Goslar service last edited 2018-11-22, the Bad Harzburg,
-  Seesen and Braunlage sources retrieved 2026-10-02 to 2026-10-07).
+  Seesen and Braunlage sources retrieved 2026-10-02 to 2026-10-07). The three station car parks of spec Amendment G1
+  were added on 2026-10-08 (Overpass response of 2026-10-08, OSM base 2026-10-08T07:29:54Z; Contipark pages retrieved
+  2026-10-08).
 geography: >-
   Paid-parking areas of Braunschweig (ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle
   zone 132 and its three Parkscheininseln, six TU campus areas), the three Wolfsburg tariff zones of the city's
   Handyparkzonen, Salzgitter-Lebenstedt, Peine, Goslar Altstadt zone 1 and three Goslar car parks at 1 EUR/h,
   Wolfenbuettel, Gifhorn and Helmstedt town centres, and since spec Amendment D the single paid sites of Bad
-  Harzburg (five car parks), Seesen (Am Markt) and Braunlage (two car parks)
+  Harzburg (five car parks), Seesen (Am Markt) and Braunlage (two car parks), and since spec Amendment G1 the three DB
+  BahnPark station car parks of the Braunschweig Hauptbahnhof (P1 Nord, P2 Sued, P3 West)
 crs: EPSG:25832 (stored as WGS84 GeoJSON)
 roles:
 - spatial_input
@@ -46,7 +50,10 @@ acquisition:
     https://www.braunschweig.de/politik_verwaltung/bekanntmachungen/amtsblatt/amtsblatt_stadt_braunschweig_2022_16.pdf
     (BgA annex maps), https://www.tu-braunschweig.de/gb3/parkraumbewirtschaftung (campus maps), https://www.meingoslar.de/service
     (the three Goslar car parks at 1 EUR/h), https://www.bad-harzburg.de/service/parkmoeglichkeiten,
-    https://www.braunlage.city/tourismus/hexenritt/ and the Seesen information page named in the zone's source_url
+    https://www.braunlage.city/tourismus/hexenritt/ and the Seesen information page named in the zone's source_url; spec
+    Amendment G1 (2026-10-08): https://www.contipark.de/de/parken/braunschweig/parkplatz-hauptbahnhof-nord-p1/,
+    .../parkplatz-hauptbahnhof-sued-ackerstrasse-p2/ and .../parkplatz-hauptbahnhof-west-p3-braunschweig/ (the tariff
+    text, via the owner's package) and https://overpass-api.de/api/interpreter (the outlines)
   script: scripts/build_parking_zones_from_osm.py
   notes: >-
     Hand curation, not reproducible by one command (the curation scripts named below re-create the file from
@@ -447,6 +454,41 @@ acquisition:
     (parking_zones_2026_qa.csv) and of Amendment B (parking_zones_2026_supply_share_qa.csv) stay as computed against the
     release before Amendment C: Amendment D changes none of their references except gs_altstadt_zone1, which they
     compare with the Goslar rule polygon and which has since lost the Glockengiesserstrasse car park (5,966 m2).
+    Spec Amendment G1 (Task 4g, owner decision 2026-10-08: the station car parks of DB BahnPark are public, rulings R-4b-4
+    and R-4b-9 revoked for them): the curation step scripts/curation/parking_zones_2026/station_lots.py is the LAST step
+    of the zone chain: it appends three single paid-site zones (geometry_source single_site_buffered, site_buffer_m 50) to
+    the finished release and never changes another zone (it refuses a release in which a station zone would overlap a
+    committed zone). Inputs, all under raw_sources/municipal_2026-10-08/ (gitignored) and refused unless their SHA-256 is
+    the pinned one: Braunschweig_Monatstarife_2026-10-08.zip
+    (72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81; every member read is checked against the package's
+    manifest.sha256; read: evidence/contipark/p1.txt, p2.txt, p3.txt, db_bahnpark_8000049.txt, data/tariff_rules.json,
+    facilities.json, sources.json; no package script is executed) and the Overpass response
+    osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json
+    (fe4332938fcc7e99595aff167071a040fcea01b5be5df38e259647e64a7ecc26; OSM ways 25411279 P1 Nord, 7874165 P2 Sued,
+    236421384 P3 West and 26163572 'Post', the lot of the BgA zone Willy-Brandt-Platz, a cross-check reference; OSM base
+    2026-10-08T07:29:54Z; the tags of each way are checked against the lot). The zone is the area within 50 m of the lot
+    outline (ASSUMPTION C-a), simplified 0.5 m and cut with a 0.05 m clearance like every rule-based zone, after the zones
+    that take precedence (the TU campuses, the BgA car parks, the other single sites): P1 loses 958.3 m2 to
+    bs_bga_willy_brandt_platz, which borders it (90.4 % of the digitised BgA polygon lie inside the OSM lot 'Post' and
+    95.5 % of that lot inside the BgA polygon; QA row bs_bga_willy_brandt_platz_vs_osm_post_lot); P2 and P3 are cut by
+    nothing. Areas: bs_hbf_p1_nord 29,619 m2 (outline 6,338), bs_hbf_p2_sued 43,931 m2 (outline 9,539), bs_hbf_p3_west
+    21,623 m2 (outline 2,345); the geometry rate is 3 of 3 polygons (100 %, no fallback point). The tariff values are read
+    by the label of the line the specification names ('1 Stunde' or '30 Minuten', '1 Tag', '1 Monat fuer
+    Stellplatzmieter'), never typed, and must agree to the cent with the DB BahnPark sheet of 2026-05-29 and with the
+    cheapest publicly purchasable monthly product of the package (data record parking_tariffs_2026). The QA table
+    parking_zones_2026_municipal_qa.csv gets 8 rows (82 in total): per zone the release against the 50 m area and against
+    the OSM outline, the cut of P1 by the BgA zone and the BgA-versus-Post cross-check. Licence members: the station
+    outlines are OSM-derived (ODbL 1.0; the licence and attribution members name them). Reproducibility: two independent
+    runs of the step on the release before the step give the identical zone file and QA table. SHA-256 (LF):
+    parking_zones_2026.geojson 4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490 (before:
+    0bf44df5588171bc0edd05e31f3ecdcaf1a96a3e3d14c3dd6eb76e348e975ba4; the 37 other features are unchanged text),
+    parking_zones_2026_municipal_qa.csv e79dd6f36ebd0681d73dff4f44473dbda25937ced3fc2a75df34f65def0a718e (before:
+    3b2dfc1c9e698385f321fee1a3f78c03c6df4e8525538b43b5787607a52f2595). The raw inputs of the earlier steps of the chain
+    (the OSM-derived car network output_bs and the cached municipality polygons) are not on this machine, so the whole
+    chain was not re-run from scratch for this task; the step is additive by design and reads only the finished release.
+    The municipality containment check (every polygon at least 99 % inside its municipality,
+    assemble_parking_zones.check_municipality_containment) was NOT run for the three zones for the same reason: the lots
+    are the Braunschweig main station; the check must be run when the polygons are available.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -689,8 +731,25 @@ limitations: >-
   sourced tariff: Clausthal-Zellerfeld has no zone, Seesen Unterer Bahnhofsplatz (a fee reported in 2019, the current
   tariff not confirmed) and the Seesen garage are not zoned, three more sites of an attraction page in Bad Harzburg and
   the public ticket machines of Braunlage have no geometry; Schoeningen, Koenigslutter, Wittingen, Langelsheim and
-  Schoeppenstedt have no zone (see the coverage register).
+  Schoeppenstedt have no zone (see the coverage register). Station car parks (spec Amendment G1): each of the three
+  zones is the area within 50 m of the lot, so a destination within 50 m of P1, P2 or P3 is priced as parking there
+  although the person may park elsewhere (the zones are 21,600 to 43,900 m2 around outlines of 2,300 to 9,500 m2); the
+  outlines are OSM ways, matched by name and not surveyed, no official fee boundary; the Kiss&Ride tariff and the
+  evening tariff of P1 and the BahnCard and Pcard discounts are not modelled, and free street parking west of the
+  station stays unzoned (ASSUMPTION Z1); the reported capacities differ between the sources (OSM, Contipark, DB
+  BahnPark) and none enters the zones.
 notes: >-
+  Validator summary on the committed files 2026-10-08, after spec Amendment G1: 40 zones, 40 tariff rows, 130 register
+  rows (123 municipalities); zone_type campus 6, resident_zone 1, street_paid 33; geometry_source campus_detection_zones
+  1 (0.005 km2, 0.1 % of the zone area), campus_outline_and_detection_zones 5 (0.590 km2, 7.5 %), centre_approximation 3
+  (1.432 km2, 18.3 %), municipal_street_sections_buffered 3 (1.565 km2, 20.0 %), ordinance_map 7 (2.480 km2, 31.7 %),
+  osm_fee_tags 2 (0.670 km2, 8.6 %), single_site_buffered 14 (0.340 km2, 4.4 %), street_list_buffer 5 (0.733 km2, 9.4
+  %); fee_window_source assumption 13, municipal_page 20, ordinance 7; resident permits (rule R2): valid on 25 of 40
+  zones, not valid on the nine stated rows (the five BgA rows, the three station car parks and the Goslar car park at
+  the ZOB) and the six campus zones (default); commuter product on 10 of 40 rows; per municipality 03101000 Braunschweig
+  20 zones 3.329 km2, the others as below; register status zoned 11, no_paid_parking_known 1, not_audited 111, excluded
+  7; municipal QA 82 rows (Braunschweig 52, Wolfsburg 12, Goslar 8, Bad Harzburg 6, Seesen 1, Braunlage 2, the
+  unincorporated area Harz 1); OK. The summary before spec Amendment G is the one that follows.
   Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data, 2026-10-07,
   after spec Amendment D and fix round 1 of its task): 37 zones, 37 tariff rows, 131 register rows (123 municipalities);
   zone_type campus 6, resident_zone 1, street_paid 30; geometry_source campus_detection_zones 1 (0.005 km2, 0.1 % of the

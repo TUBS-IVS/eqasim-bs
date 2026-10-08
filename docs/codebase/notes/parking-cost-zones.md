@@ -158,8 +158,8 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   conflicts at 2 h, is recorded as a variant), each with its basis in the notes. A rest tier (a day rate without
   charging times beside a night tier) refuses a rule that states charging times. The assumptions P3
   to P8, P10 and P11 are named in the row and counted at every run and by `scripts/validate_parking_zones.py` (with the union rates, which warn above
-  `garages.UNION_WARNING_SHARE`), a station car park of DB BahnPark or a lot of long-term renters is a candidate QA
-  row, not a garage, and a new garage needs a QA row (the validator refuses a dataset without its QA table). The
+  `garages.UNION_WARNING_SHARE`), a lot of long-term renters or a customer-regime car park is a candidate QA
+  row, not a garage (the DB BahnPark station car parks of Braunschweig are zones since spec Amendment G1, see [parking-station-lots.md](parking-station-lots.md), and the Wolfsburg deck is a garage), and a new garage needs a QA row (the validator refuses a dataset without its QA table). The
   package's facility BS_None is named 'Parkhaus Forschungsflughafen' although its rules are the Ring-Center's
   (checked, see the garage's notes); never join a garage to the package by a facility name. The data record
   `parking_garages_2026` holds the full rules.

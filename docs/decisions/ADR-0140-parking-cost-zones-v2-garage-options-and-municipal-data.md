@@ -178,7 +178,8 @@ run (see Status).
    municipal tariff area and without an operator tariff is free, because the municipal fee ordinance charges only inside its
    published tariff areas). Car parks inside a paid zone whose fee is the zone's municipal tariff are part of the zone's street
    product (no option); car parks reserved for a user group or free for customers only are no public option; a lot of
-   long-term renters (Wolfenbuettel) and the DB BahnPark station car parks are no option. Owner overrides of
+   long-term renters (Wolfenbuettel) are no option; the DB BahnPark station car parks are no option either, except the
+   Wolfsburg Parkdeck Hauptbahnhof, a garage since decision 11 (the Braunschweig station car parks are zones). Owner overrides of
    recommendations in the supplied packages are named in the row notes: the owner directed to price every listed garage
    (the packages recommended leaving two Goslar garages unpriced and creating no 0 EUR rule for the unknown municipal points),
    and to integrate the Autostadt and Klinikum car parks although the sources of the Autostadt contradict each other on
@@ -247,7 +248,8 @@ run (see Status).
     garage monthly products of the SAME municipality (the dataset's garages and the recorded garages that are no option, e.g.
     Eves 80.00 and Fichtengrund 129.00 EUR), rounded half up to the cent, only with at least two such products, never for a
     surface lot, never from another municipality: Braunschweig 107.48 EUR (512 ct per working day, 10 garages), Wolfsburg 57.50
-    EUR (274 ct, 5 garages); the other municipalities impute nothing (counted and logged). The package's advice against
+    EUR (274 ct, 5 garages; 60.00 EUR and 286 ct since decision 11 adds a fifth published product); the other
+    municipalities impute nothing (counted and logged). The package's advice against
     imputing from other cities is respected by the same-municipality rule; the imputation itself is the owner's choice, an
     assumption of the model and not a finding. The config key `parking_garage_monthly_imputation` (default true) lets the export
     use the imputed products; false is the sensitivity arm `zones_v2_published_monthly_only` (published products only, so that
@@ -263,6 +265,48 @@ run (see Status).
     Tarif A (Mo-Fr 06:30-21:00) is not modelled, 21 working days and the per-stay minimum stay named in P2, no capacity of
     monthly places (the sold-out garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all
     (Contipark capture of 2026-10-08), still get the imputed product), the Fichtengrund offer has an unknown end date, and the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers.
+
+11. **Station car parks of DB BahnPark are public: zones in Braunschweig, a garage option in Wolfsburg (Amendment G, owner
+    decision 2026-10-08).** The station car parks had been excluded as a "customer regime" (rulings R-4b-4 and R-4b-9); the
+    owner decided that they are public (anyone may park, BahnCard and Pcard only give a discount) and declined a follow-up
+    issue ("loes das mit den zonen und gut"), so both rulings are REVOKED for exactly four car parks:
+    - **Braunschweig Hauptbahnhof P1 Nord, P2 Sued and P3 West are single paid-site zones** (D3, as the Goslar 1 EUR/h car parks
+      and the BgA lots): `bs_hbf_p1_nord`, `bs_hbf_p2_sued`, `bs_hbf_p3_west`, each the area within 50 m of the OSM outline of the
+      lot (ASSUMPTION C-a; OSM ways 25411279, 7874165, 236421384, Overpass response of 2026-10-08, ODbL 1.0), 29,619, 43,931 and
+      21,623 m2 after the 0.5 m simplification and the cuts. P1 borders the BgA lot Willy-Brandt-Platz (the OSM lot 'Post', way
+      26163572, which is not part of P1): its zone is cut against the BgA zone, which takes precedence (958 m2 removed; no zone
+      of the release overlaps another). The tariff rows are READ, never typed, from the text of the Contipark location pages
+      of the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` (the line named by the specification: '1 Stunde' or
+      '30 Minuten', '1 Tag', '1 Monat fuer Stellplatzmieter'), corroborated to the cent by the DB BahnPark sheet of 2026-05-29 and,
+      for the monthly product, by the package's rules (the cheapest publicly purchasable one, rule D2): P1 2.50 EUR per started
+      hour, day maximum 17.00 EUR, monthly product 120.00 EUR, so `commuter_day_eur` 5.71 (571 ct); P2 and P3 1.10 EUR per started
+      30 min, day maximum 11.00 EUR, monthly product 74.00 EUR, so 3.52 (352 ct); fee window 0-24 h every day; resident permits
+      not valid (ASSUMPTION R2-a); workplace class `bs_outer` as the BgA row at the forecourt (ASSUMPTION G-b, a reading of the
+      location). ASSUMPTION G-a: the amount is billed per started unit and the published '1 Tag' amount is the daily maximum per
+      stay (the pages state neither a rounding nor the day boundary).
+    - **The Wolfsburg Parkdeck Hauptbahnhof P1 is a priced garage option** (`wob_hauptbahnhof`, inside `wob_tarifzone_1`; the
+      regional curation reads the rules `WOB_HBF_P1_R01`, `WOB_HBF_P1_R02` and `WOB_HAUPTBAHNHOF_MONTHLY_1` by id): 1.70 EUR per
+      started 60 min, the day tariff 9.00 EUR as the cap (its day definition is unspecified: read per stay), monthly product
+      100.00 EUR (Dauerparken Mo-So 24 h), so 476 ct per working day; its capacity is not reported because the sources conflict
+      (186 and 190 spaces). ASSUMPTION P13 for Wolfsburg is recomputed with this fifth published product: the median of 50.00,
+      55.00, 60.00, 98.00 and 100.00 EUR is 60.00 EUR (286 ct per working day, was 57.50 EUR and 274 ct) at the five Wolfsburg
+      garages without a published product.
+    - **Named and NOT modelled:** the Kiss&Ride tariff of P1 (0.80 EUR for 15 min), its evening tariff (18:00 to 02:00, at most
+      5.00 EUR on the first day), the BahnCard and Pcard discounts (also the Wolfsburg rule `WOB_HBF_P1_R03`, 7.00 EUR for a Pcard
+      or digital BahnCard at the terminal), the 35 EUR product for public-transport customers at Wolfsburg (a restricted group),
+      the weekly (55.00 EUR) and machine monthly (78.00 EUR) tickets of P2 and P3, the reserved-space products (160.00 and 130.00
+      EUR) and the stated maximum parking durations. Free street parking west of the station stays unzoned (ASSUMPTION Z1).
+    - **Records and mechanics.** The zones are added to the FINISHED zone release by `station_lots.py` (a step of the curation
+      chain after `assemble_parking_zones.py`; it refuses to change any other zone and any package or Overpass file whose SHA-256
+      differs from the pinned one); the garage row comes through the regional garage curation. The coverage register loses the
+      excluded row of the Braunschweig station car parks (they are zones) and narrows the Wolfsburg row to the station car parks
+      other than the deck. Schema 3, the Java reader and both golden fixtures are unchanged (zones and garages are data).
+      Expected effect, an expectation and not a result (no v2 run exists): stays within 50 m of the three lots are now priced
+      as paid parking at their rates (before: free by Z1 outside every zone), and commuters to the Hauptbahnhof pay the monthly
+      share instead of the day rate; the size is not established. Limitations: the capacities of the sources differ (P1, P2, P3:
+      OSM 148, 385, 72; Contipark 185, 379, 70; DB sheet 183, 380, 72) and no capacity enters the zones; the 50 m area is wider than the lots; the
+      municipality containment check against the pipeline's VG250 polygons was not run in this session (the cached polygons were
+      not available on the machine), the position of every lot is the Braunschweig main station.
 
 ## Consequences
 
@@ -324,7 +368,7 @@ run (see Status).
   file (schema 4; the old families are unchanged prefixes of the new ones), and each Python and Java port of a rule
   was checked against hand-derived expectations. Randomised differential runs made during review are not committed and carry
   no weight here. These are consistency and regression checks, not a validation.
-- Design: the v2 design spec of 2026-09-29 with Amendments A to F (local, gitignored under `docs/superpowers/specs/`); the
+- Design: the v2 design spec of 2026-09-29 with Amendments A to G (local, gitignored under `docs/superpowers/specs/`); the
   owner decisions quoted in this record are those recorded there.
 - Pending evidence: the server run of the three arms (OFF, LEGACY, ZONES v2 with and without garages), the calibration table
   of lambda and the comparison table; their run manifest will be linked from the feature record. A smoke is not a validation.
@@ -358,11 +402,12 @@ The ids are historical labels: the sentences state the rule, which the code and 
 - `R-4b-3`: A garage tariff is encoded only where its published structure maps exactly to the columns; nothing is
   approximated (extended by R-4b-10b and R-4b-11 for tiers and bands).
 - `R-4b-4`: Large public car parks with a published tariff enter the dataset; BgA lots (they are zones) and customer-only
-  regimes stay out and are recorded in the QA table.
+  regimes stay out and are recorded in the QA table. REVOKED for the DB BahnPark station car parks by decision 11 (Amendment G).
 - `R-4b-8`: The package flag `preferred_for_current_use` is enforced for every value role of a garage row, without waivers; a
   rule that is not released never sets a value.
 - `R-4b-9`: DB BahnPark station car parks are excluded in Braunschweig and Wolfsburg alike (QA candidates); shopping-centre
-  garages stay garages.
+  garages stay garages. REVOKED by decision 11 (Amendment G) for the Braunschweig Hauptbahnhof car parks P1 to P3 (zones) and the
+  Wolfsburg Parkdeck Hauptbahnhof P1 (garage); no other station car park is decided.
 - `R-4b-10b`: Published time-of-day tiers are encoded exactly (column `tariff_tiers`, spec E10); they are not approximated by
   a day family.
 - `R-4b-11`: Published duration schedules are encoded exactly as duration bands (column `tariff_duration_bands`, spec E11,

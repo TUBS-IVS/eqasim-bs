@@ -42,6 +42,17 @@ acquisition:
     of the owner's regional evidence package Regional_Parkdaten_Belege_2026-10-07.zip (SHA-256 in the data record
     parking_zones_2026), the sources it cites and the town pages named in the rows; the statements of coverage of that
     audit ('no confirmed paid parking found') are kept as research coverage, never as proof that parking is free.
+    Spec Amendment G (2026-10-08, owner decision: the DB BahnPark station car parks are public): the register has no
+    status that says 'modelled in part', and a municipality has exactly one non-excluded row, so the rows follow the zone
+    release: the excluded row 'Braunschweig: station car parks Hauptbahnhof Nord, Sued and West (private operators)' is
+    REMOVED because the three car parks are zones (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west) and the zoned row of
+    Braunschweig (now 20 zones) names them with what is not modelled; the excluded row 'Wolfsburg: DB BahnPark station car
+    parks' is NARROWED to the station car parks other than the Parkdeck Hauptbahnhof P1 (which is the garage option
+    wob_hauptbahnhof inside wob_tarifzone_1) and stays excluded for what the OSM objects of 2026-09-29 may list besides
+    it, which no source has itemised; the zoned row of Wolfsburg names the deck. Status counts after this change: zoned
+    11, no_paid_parking_known 1, not_audited 111, excluded 7 (130 rows). SHA-256 of the file (LF):
+    7e25d6051f85416ca3193e57c6671cd14a776d98ade181a64d22729322814af3 (before:
+    223ede2ab05384b6aa3964aa8aeadcfe2eeaf94f2e4349a841d57bb37854d0a2).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true
@@ -72,8 +83,9 @@ limitations: >-
   notes and is research coverage, not proof that parking is free (Clausthal-Zellerfeld has confirmed paid parking, but
   no site with both a geometry and a short-stay tariff). One municipality, Schoeningen, is marked no_paid_parking_known
   on the statement of the city's page about the town hall and the nearby city car parks, which does not cover every area
-  of the town. The eight excluded rows cover only the hospital, station,
-  airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight municipalities
+  of the town. The seven excluded rows (eight until spec Amendment G, 2026-10-08: the row of the Braunschweig station car parks went
+  because they are zones, and the Wolfsburg row now says that its Parkdeck Hauptbahnhof P1 is a garage option) cover
+  only the hospital, station, airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight municipalities
   zoned on 2026-09-29; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
   (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, ParkGO zone II,
   which needs no area zone because the city's phone-parking map of 2024 shows paid city parking outside the

@@ -72,6 +72,7 @@ code_paths:
 - scripts/curation/parking_zones_2026/assemble_parking_zones.py
 - scripts/curation/parking_zones_2026/regional_garages.py
 - scripts/curation/parking_zones_2026/bs_monthly_products.py
+- scripts/curation/parking_zones_2026/station_lots.py
 evidence:
   tests:
   - tests/test_parking_cost.py
@@ -93,6 +94,7 @@ evidence:
   - tests/test_parking_municipal_zones.py
   - tests/test_parking_regional_garages.py
   - tests/test_parking_bs_monthly_products.py
+  - tests/test_parking_station_lots.py
   - tests/test_parking_regional_zones.py
   - tests/test_parking_supply_share.py
   - tests/test_parking_wolfsburg_lots.py

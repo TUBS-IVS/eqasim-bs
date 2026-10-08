@@ -27,8 +27,8 @@ vintage: >-
   garage); the Braunschweig car-park directory 2026-09-29; the Goslar positions are the city's snapshot of 2018-11-22.
   Tariffs as published in October 2026, applied to the model's average weekday.
 geography: >-
-  48 rows in eight towns: 35 garages (Braunschweig 12, Wolfsburg 9, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
-  Salzgitter 1, Goslar 4) and 13 surface lots (all Wolfsburg, so Wolfsburg 22). Points, WGS84 (CRS84) on disk, EPSG:25832 in
+  49 rows in eight towns: 36 garages (Braunschweig 12, Wolfsburg 10, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
+  Salzgitter 1, Goslar 4) and 13 surface lots (all Wolfsburg, so Wolfsburg 23). Points, WGS84 (CRS84) on disk, EPSG:25832 in
   memory.
 crs: EPSG:25832 (CRS84 on disk)
 roles:
@@ -86,7 +86,7 @@ acquisition:
     nothing is repaired) and prints a ledger per layer (features, garages, used, twins skipped). Every garage feature
     must be specified in regional_garage_specs.py or be a twin (a feature whose facility id another layer gives: three
     Goslar features), otherwise the step stops. A garage of the package's layers that is no garage of the dataset must
-    be decided explicitly as a candidate (a station car park of DB BahnPark, a lot of long-term renters), a QA row
+    be decided explicitly as a candidate (a station zone, a lot of long-term renters), a QA row
     with its reason; a facility is never both. A garage specification names the package facility and the ROLE of each
     tariff rule (a rate, the tiers or the bands; a first period; the day cap; the charging window; other tiers; other
     caps; ignored rules), so no tariff number is typed: the columns are read from the rules, and the step refuses a
@@ -226,12 +226,13 @@ acquisition:
     decision on every garage), monthly_product (every product that the sources publish, used or not, with its amount;
     the used products of zone rows are the 30-day ticket of zone Ib and the TU member month ticket behind
     commuter_day_eur of the tariff table) and candidate (a package or directory entry that is no garage of the
-    dataset, with the reason: bga_zone, zone_street_product, station_bahnpark, customer_regime, no_coordinates,
-    no_published_tariff, outside_source_list, dauerparker_only; rulings R-4b-4, R-4b-9 and R-4b-10b). STATION CAR
-    PARKS (rulings R-4b-4 and R-4b-9): a station car park run by a private operator or as DB BahnPark is no garage
-    option, in Braunschweig and Wolfsburg alike; the Wolfsburg Parkdeck Hauptbahnhof P1 (Contipark / DB BahnPark) is
-    therefore the candidate candidate_wob_hauptbahnhof and its monthly products are recorded and not used
-    (garage_not_listed). SHOPPING-CENTRE GARAGES (ruling R-4b-9): Braunschweig Schloss-Arkaden and Ring Center,
+    dataset, with the reason: bga_zone, zone_street_product, station_zone, customer_regime, no_coordinates,
+    no_published_tariff, outside_source_list, dauerparker_only; rulings R-4b-4, R-4b-9 and R-4b-10b). STATION CAR PARKS (spec Amendment G, owner decision 2026-10-08, which revokes rulings R-4b-4 and R-4b-9 for them): the
+    Wolfsburg Parkdeck Hauptbahnhof P1 (Contipark / DB BahnPark) is the garage wob_hauptbahnhof (G2: 1.70 EUR per started
+    60 min, the day tariff 9.00 EUR as the cap, monthly product 100.00 EUR, all read by rule id from the regional package;
+    the rule WOB_HBF_P1_R03 for Pcard and digital BahnCard holders and the 35 EUR product for public-transport customers
+    are not used) and the two Braunschweig directory entries Parkplatz Hauptbahnhof Nord and Sued are the candidates of
+    reason station_zone (the zones bs_hbf_p1_nord and bs_hbf_p2_sued of parking_zones_2026, G1). SHOPPING-CENTRE GARAGES (ruling R-4b-9): Braunschweig Schloss-Arkaden and Ring Center,
     Wolfsburg City-Galerie and Suedkopf-Center and the Wolfsburg designer outlets stay garages. The coverage register
     (parking_coverage_register_2026.csv) lists the shopping-centre car parks and the designer outlets car park as
     'excluded' rows because of their customer or visitor regimes: that keeps them out of the ZONE layer (paid street
@@ -454,17 +455,20 @@ acquisition:
     (Magni, Packhof), price_on_request (Forschungsflughafen; its 85.00 EUR stands only in hidden page sections and is recorded
     as excluded_by_package), period_unconfirmed (Wilhelmstrasse 75.00, 79.00 and 88.00 EUR: no source states the amounts as
     monthly). The recorded facilities that are no garage of the dataset are QA rows with their cheapest product: Eves 80.00 EUR
-    and Fichtengrund 129.00 EUR (not_a_dataset_option: values of P13), the three DB BahnPark car parks P1 to P3 (station_bahnpark)
-    and the APCOA car parks S1 and S3 (surface_lot), which never count as garage products. F2, ASSUMPTION P13 (imputed monthly
+    and Fichtengrund 129.00 EUR (not_a_dataset_option: values of P13), the APCOA car parks S1 and S3 (surface_lot), which never count as garage products; the three DB BahnPark car parks P1
+    to P3 are USED products since spec Amendment G1 (120.00, 74.00 and 74.00 EUR, the commuter products of their zones
+    bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west, column zone_ids of the QA table; surface lots, no garage products
+    and no values of P13). F2, ASSUMPTION P13 (imputed monthly
     product): the new column monthly_imputed_eur holds, for every priced garage (never a surface lot) without a published
     monthly_eur, the median of the published current garage monthly products of its OWN municipality, rounded half up to the
     cent, where the municipality has at least 2 such products (the dataset's garages plus the recorded garages of the QA
     table): Braunschweig 80.00, 100.00, 114.95 and 129.00 -> 107.475 -> 107.48 EUR for the 10 Braunschweig garages without a
-    product (5.12 EUR per working day), Wolfsburg 50.00, 55.00, 60.00 and 98.00 -> 57.50 EUR for the 5 Wolfsburg garages
+    product (5.12 EUR per working day), Wolfsburg 50.00, 55.00, 60.00, 98.00 and, since spec Amendment G2, the Parkdeck Hauptbahnhof 100.00 -> 60.00 EUR
+    (57.50 EUR before Task 4g) for the 5 Wolfsburg garages
     without one; Peine has two published products and no garage left, Goslar, Helmstedt and Wolfenbuettel have one product each
     and impute nothing, Gifhorn and Salzgitter have none. The package advises against imputing monthly fees from other cities
     or historical ranges; P13 never leaves the municipality. Counts per municipality (published, imputed, none): Braunschweig
-    2, 10, 0; Wolfsburg 4, 5, 0; Peine 2, 0, 0; Goslar 1, 0, 3; Helmstedt 1, 0, 3; Wolfenbuettel 1, 0, 1; Gifhorn 0, 0, 1;
+    2, 10, 0; Wolfsburg 5, 5, 0; Peine 2, 0, 0; Goslar 1, 0, 3; Helmstedt 1, 0, 3; Wolfenbuettel 1, 0, 1; Gifhorn 0, 0, 1;
     Salzgitter 0, 0, 1 (the 13 surface lots never get a product). The tariff model export writes monthly_cents as the published
     product or, with the config key parking_garage_monthly_imputation true (the default; false is the sensitivity arm
     published monthly only), the imputed one, and lists ASSUMPTION P13 in its register exactly when an imputed product is
@@ -577,14 +581,15 @@ limitations: >-
   dataset is a coverage of what the packages document, not a census of the garages of the towns. Not listed are: the
   Clausthal-Zellerfeld garage Am Rathaus (the package knows it without coordinates; no geometry is invented); the
   Seesen garage (outside the towns of spec Amendment E1); the BgA lots (zones); the ParkGO zone 1 car parks of
-  Braunschweig; the station car parks of Braunschweig and Wolfsburg (DB BahnPark and private operators, rulings R-4b-4
-  and R-4b-9; the Wolfsburg Parkdeck Hauptbahnhof P1 and its monthly products are a candidate and QA rows); the two
+  Braunschweig; the Braunschweig Hauptbahnhof car parks of DB BahnPark (zones since spec Amendment G1: the two directory
+  entries are QA candidates of reason station_zone, the monthly products of P1 to P3 used products of their zones); the
+  two
   Wolfenbuettel lots Parkpalette Karlstrasse and Parkplatzanlage Neue Strasse, which the operator page offers 'momentan
   nur Dauerparkern' (a closed group of long-term renters; the owner's direction is that their free or contract parking
   is covered by the model's averaged free-parking share; reason dauerparker_only); and, of the Wolfsburg car parks of the
   city layer, the nine paid municipal car parks inside a zone (their fee is the street product of their zone), the
-  disabled-parking point of the Theater and the BadeLand car park (QA candidates, spec E14). Every one of the 48 listed rows
-  is priced (specs E13 and E14), but not every price is an operator statement: 7 of the 48 rows rest on a stronger
+  disabled-parking point of the Theater and the BadeLand car park (QA candidates, spec E14). Every one of the 49 listed rows is priced (specs E13, E14 and G2), but not every price is an operator statement: 7 of
+  the 49 rows rest on a stronger
   assumption than the others (ASSUMPTION P10 or P11, counted from the assumptions column of the dataset: the
   Forschungsflughafen, the Suedkopf-Center, Achtermann, Charley-Jacob-Strasse, the Groepern garage, the Autostadt P2 and the
   Klinikum visitor car parks), and 8 rows are free only by the municipal default (ASSUMPTION P12: no fee evidence outside
@@ -607,11 +612,8 @@ limitations: >-
   package of 2026-10-07, the released rules of the two supplement packages and the quotations of one brochure; they were not
   compared with any observed payment, occupancy or cash-desk data, so the dataset says what the operators and, where none
   publishes a tariff, the directories publish, not what drivers pay. Nine assumptions and five readings carry the encoding
-  and are counted per row (see the acquisition notes): P3 on none of the 48 priced rows any more (it stays defined), P4 on
-  24, P5 on 24, P6 on 8 (every tiered row), P7 on 5, P8 on 11 (every row with a priced duration schedule), P10 on 4 and P11
-  on 5, and P12 on 8; 44 of the 48 priced rows rest on at least one assumption (above the warning share of 75 %), and 32 of
-  the
-  48 on P4 or P5 (below it: the 13 surface lots rest on P4 or P5 on two rows only), which is the share of the priced rows
+  and are counted per row (see the acquisition notes): P3 on none of the 49 priced rows any more (it stays defined), P4 on 25, P5 on 25, P6 on 8 (every tiered row), P7 on 5, P8 on 11 (every row with a priced duration schedule), P10 on 4 and P11
+  on 5, and P12 on 8; 45 of the 49 priced rows rest on at least one assumption (above the warning share of 75 %), and 33 of the 49 on P4 or P5 (below it: the 13 surface lots rest on P4 or P5 on two rows only), which is the share of the priced rows
   whose rounding or charging times the sources do not state: the dataset is mostly a structure published by
   the operators plus these assumptions, and a sensitivity arm can leave a group out by the id in the assumptions column.
   The five READINGS: a day cap or a published day total whose day boundary is not stated is read as a maximum per stay (19
@@ -689,10 +691,31 @@ limitations: >-
   offers; the sensitivity
   arm parking_garage_monthly_imputation false (published products only) bounds the effect.
 notes: >-
+  Content on 2026-10-08 (Task 4g, spec Amendment G2, on top of Task 4f): the Wolfsburg Parkdeck Hauptbahnhof P1 is a
+  garage (wob_hauptbahnhof, priced from the rules WOB_HBF_P1_R01, WOB_HBF_P1_R02 and WOB_HAUPTBAHNHOF_MONTHLY_1,
+  assumptions P4 and P5, no capacity reported because the sources conflict at 186 and 190; geometry the package's
+  garage-layer point wob_parkhaeuser:10, inside wob_tarifzone_1), so the dataset has 49 rows (36 garages and 13 surface
+  lots; priced 49; not priced 0), Wolfsburg 23 and 23; assumptions among the 49 priced rows P4 25, P5 25, P6 8, P7 5, P8
+  11, P10 4, P11 5, P12 8, P13 15 (P3 0); at least one assumption 45, P4 or P5 33; tiered form 8, banded form 11, free
+  schedule 11; published monthly product on 12 garages and imputed monthly product on 15; 7 rows rest on P10 or P11;
+  ASSUMPTION P13 for Wolfsburg is recomputed with five published products (50.00, 55.00, 60.00, 98.00, 100.00 -> median
+  60.00 EUR, 286 ct per working day; was 57.50 EUR, 274 ct) at the five Wolfsburg garages without one. QA table 122
+  rows: 49 garages, 49 monthly products (used 17: twelve garage rows, the zone Ib 30-day ticket, the TU member month
+  ticket and the three Braunschweig station products; recorded and not used 32: not_the_cheapest 7, no_price 6,
+  period_unconfirmed 3, outdated_source 2, not_monthly_or_30_day 2, sold_out 2, not_a_dataset_option 2, surface_lot 2,
+  capacity_limited_permits 1, excluded_by_package 1, no_coordinates 1, no_fixed_price 1, price_on_request 1,
+  restricted_customer_group 1) and 24 candidate records (zone_street_product 13, bga_zone 2, dauerparker_only 2,
+  customer_regime 2, station_zone 2, no_coordinates 1, outside_source_list 1, user_group_only 1). SHA-256 of the files
+  as written by the step (LF; two independent runs identical, garage chain driven by a scratch driver without the
+  municipality pickle, which is absent on the machine, so the position check against the municipality polygons was
+  skipped; no geometry other than the deck's point changed): parking_garages_2026.geojson
+  602dcd9c1a1df10faba2bdf92ba1cca328899a05f2690503a9e1e5effedcff4d, parking_garages_2026_qa.csv
+  72b6a276a848ff8cfb93562d618fca884be18e7fbd18f1c6392fb1fcd0ed8193 (before Task 4g:
+  7dde8aa34a32293d4b7295664ea002bd36f22ece06c4a092cdf72b5305c1f5ac and
+  54df19b68ff0f1b809b5e4f1c0981a7c1143aa07984a2a6e5619c6cdc626aa6b). Task 4f below.
   Content on 2026-10-08 (Task 4f, spec Amendment F, on top of Task 4b3): the same 48 rows with the monthly products of
   the Braunschweig package (published products first, ASSUMPTION P13 imputed products, the column monthly_imputed_eur; see the
-  acquisition notes for the values and the counts per municipality); the numbers below are those of the dataset as it is now,
-  except where they are marked as history. Content on 2026-10-07 (Task 4b3, spec E14, on top of Task 4b2 after its fix round 1,
+  acquisition notes for the values and the counts per municipality); the numbers of the Task 4g paragraph below are those of the dataset as it is now; the numbers after it are history. Content on 2026-10-07 (Task 4b3, spec E14, on top of Task 4b2 after its fix round 1,
   specs E12 and E13): 48 rows (35
   garages and 13 surface lots; priced 48; not priced 0); by facility kind garage 35, surface_lot 13; per municipality
   03101000 Braunschweig 12 listed 12 priced, 03102000 Salzgitter 1 and 1, 03103000 Wolfsburg 22 and 22, 03151009 Gifhorn 1
