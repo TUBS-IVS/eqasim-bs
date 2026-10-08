@@ -43,6 +43,12 @@ Usage (from the repository root)::
 
     python scripts/parking/calibrate_garage_decay.py --plans <population.xml.gz> [--data-path eqasim-data/data]
         [--out eqasim-data/data/braunschweig/parking/parking_garage_decay_calibration_2026.csv] [--overwrite]
+        [--facility-kinds garage]
+
+``--facility-kinds`` (default: every kind) restricts the priced garages to the given ``facility_kind`` values of the garage
+dataset, so that lambda can be reported with and without the surface lots (ruling C1 of the Task 5a review). The RELEASE value
+is the calibration on every kind; a filtered run is a sensitivity number, written to another ``--out``, never over the release
+table. The table records the filter (header line and the rows ``garage_facility_filter_active`` and ``priced_garages_used``).
 """
 from __future__ import annotations
 
@@ -248,6 +254,27 @@ def calibrate_decay(distances_m: np.ndarray, target: float, *, max_distance_m: f
     return Calibration(decay_m, achieved, iterations, low_mean, high_mean)
 
 
+def parse_facility_kinds(text: str):
+    """``"all"`` -> None (every kind); ``"garage,surface_lot"`` -> ``("garage", "surface_lot")``."""
+    text = text.strip()
+    if text == "all":
+        return None
+    return tuple(kind.strip() for kind in text.split(",") if kind.strip())
+
+
+def validate_facility_kinds(facility_kinds):
+    """None (every kind) or a non-empty tuple of kinds of ``garages.FACILITY_KINDS``; ``ValueError`` for an unknown kind."""
+    if facility_kinds is None:
+        return None
+    kinds = tuple(facility_kinds)
+    if not kinds:
+        raise ValueError("facility_kinds must name at least one kind, or be None for every kind")
+    for kind in kinds:
+        if kind not in parking_garages.FACILITY_KINDS:
+            raise ValueError(f"unknown facility kind {kind!r}; the kinds are {sorted(parking_garages.FACILITY_KINDS)}")
+    return kinds
+
+
 def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zone_ids=CALIBRATION_ZONE_IDS) -> tuple:
     """Boolean masks over ``activities`` (columns ``purpose``, ``x``, ``y``; ``zone_id`` aligned to its index): the
     destination universe of spec E5 (inside a calibration zone, purpose not home, work or education) and the commuter
@@ -271,7 +298,8 @@ def git_state() -> str:
 
 
 def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: int, priced_garages: int, listed_garages: int,
-               target: Target, calibration: Calibration, tolerance: float, lambda_min_m: float, lambda_max_m: float,
+               facility_kinds_text: str, target: Target, calibration: Calibration, tolerance: float, lambda_min_m: float,
+               lambda_max_m: float,
                max_distance_m: float, commuter_mean: float, commuter_count: int, commuter_reference: Target,
                generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
@@ -285,7 +313,9 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         f"# Universe: the main activities of the selected plans ({persons} persons) inside {', '.join(CALIBRATION_ZONE_IDS)} "
         f"whose type is none of {', '.join(sorted(HOME_AND_COMMUTER_PURPOSES))} (all modes, destination universe): "
         f"{universe_size} activities, {with_garage} of them with at least one priced garage within {max_distance_m:g} m.",
-        f"# Garages: {priced_garages} priced of {listed_garages} listed in the dataset; straight-line distances in EPSG:25832.",
+        f"# Garages: {priced_garages} priced of {listed_garages} listed in the dataset used (facility kinds: "
+        f"{facility_kinds_text}; a filtered run is a sensitivity number, the release value uses every kind); straight-line "
+        "distances in EPSG:25832.",
         "# Quantity: the mean over the universe of sum(w) / (1 + sum(w)), w = exp(-d / lambda) of the priced garages within "
         "the maximum distance (street weight 1; no price, no early rule, no E4).",
         f"# Target: {target.numerator_name} / ({target.numerator_name} + {target.other_name}) = {target.numerator} / "
@@ -313,6 +343,9 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         ("achieved_mean_garage_probability", f"{calibration.achieved:.6f}", "share", "mean over the universe at lambda"),
         ("tolerance", f"{tolerance:g}", "share", "absolute in the mean probability"),
         ("universe_activities", str(universe_size), "count", "destination universe of spec E5"),
+        ("garage_facility_filter_active", "0" if facility_kinds_text == "all" else "1", "flag",
+         f"facility kinds used: {facility_kinds_text}"),
+        ("priced_garages_used", str(priced_garages), "count", f"priced garages of the facility kinds {facility_kinds_text}"),
         ("universe_activities_with_garage_in_range", str(with_garage), "count", "activities with a priced garage within D_max"),
         ("lambda_search_min_m", f"{lambda_min_m:g}", "m", "lower end of the bisection"),
         ("lambda_search_max_m", f"{lambda_max_m:g}", "m", "upper end of the bisection"),
@@ -346,8 +379,12 @@ def read_calibration_table(path) -> dict:
 def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
         max_distance_m: float = cost.GARAGE_MAX_DISTANCE_M, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
-        generated_on: str | None = None) -> dict:
+        facility_kinds=None, generated_on: str | None = None) -> dict:
     """Calibrate on ``plans``, write the table to ``out_path`` and return the results (a dict of the table's numbers).
+
+    ``facility_kinds`` (None = every kind) restricts the priced garages to the given ``facility_kind`` values of the garage
+    dataset (``garage``, ``surface_lot``), so that lambda can be reported with and without the surface lots; the table
+    records the filter. The RELEASE value is the calibration on every kind; a filtered run is a sensitivity number.
 
     Raises ``FileExistsError`` when ``out_path`` exists and ``overwrite`` is false (a calibrated release value is never
     replaced silently), ``ValueError`` for an empty universe or an unreachable target. Side effects: reads the inputs, logs,
@@ -365,15 +402,23 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
                          f"contain none outside home, work and education inside {', '.join(CALIBRATION_ZONE_IDS)}")
     garage_frame = parking_garages.load_garages(garages_path)
     parking_garages.validate_garages(garage_frame)
+    kinds = validate_facility_kinds(facility_kinds)
     priced = garage_frame[garage_frame["priced"].astype(bool)]
     if priced.empty:
         raise ValueError(f"{garages_path}: no priced garage to calibrate the options of")
+    if kinds is not None:
+        priced = priced[priced["facility_kind"].isin(kinds)]
+        if priced.empty:
+            raise ValueError(f"{garages_path}: no priced garage of the facility kind(s) {', '.join(kinds)} to calibrate the "
+                             "options of")
+    kinds_text = "all" if kinds is None else "+".join(kinds)
     garage_x, garage_y = priced.geometry.x.to_numpy(dtype=float), priced.geometry.y.to_numpy(dtype=float)
     distances = garage_distances_m(activities[universe], garage_x, garage_y)
     with_garage = int((distances <= max_distance_m).any(axis=1).sum())
     log.info("[garage-decay] universe %d of %d main activities (%d persons); with a priced garage within %g m: %d/%d "
-             "(%.1f %%); priced garages %d of %d", int(universe.sum()), len(activities), persons, max_distance_m, with_garage,
-             int(universe.sum()), 100.0 * with_garage / int(universe.sum()), len(priced), len(garage_frame))
+             "(%.1f %%); priced garages %d of %d (facility kinds %s)", int(universe.sum()), len(activities), persons,
+             max_distance_m, with_garage, int(universe.sum()), 100.0 * with_garage / int(universe.sum()), len(priced),
+             len(garage_frame), kinds_text)
     target = read_city_center_target(city_center_path)
     calibration = calibrate_decay(distances, target.value, max_distance_m=max_distance_m, lambda_min_m=lambda_min_m,
                                   lambda_max_m=lambda_max_m, tolerance=tolerance)
@@ -392,7 +437,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
             ("plans", plans), ("zones", zones_path), ("garages", garages_path),
             ("srv2023_city_center_parking", city_center_path), ("srv2023_commute_parking_by_workplace_class", commute_path))},
         universe_size=int(universe.sum()), persons=persons, with_garage=with_garage, priced_garages=len(priced),
-        listed_garages=len(garage_frame), target=target, calibration=calibration, tolerance=tolerance,
+        listed_garages=len(garage_frame), facility_kinds_text=kinds_text, target=target, calibration=calibration,
+        tolerance=tolerance,
         lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m, commuter_mean=commuter_mean,
         commuter_count=int(commuters.sum()), commuter_reference=commuter_reference,
         generated_on=generated_on or datetime.date.today().isoformat(),
@@ -425,13 +471,17 @@ def main(argv=None) -> int:
     parser.add_argument("--lambda-min-m", type=float, default=DEFAULT_LAMBDA_MIN_M)
     parser.add_argument("--lambda-max-m", type=float, default=DEFAULT_LAMBDA_MAX_M)
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
+    parser.add_argument("--facility-kinds", type=parse_facility_kinds, default=None, metavar="KIND[,KIND]|all",
+                        help="calibrate on the priced garages of these facility kinds only (garage, surface_lot; default all); "
+                             "a filtered run is a sensitivity number and must not be written over the release table")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     data = args.data_path
-    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE, city_center_path=data / CITY_CENTER_RELATIVE,
-        commute_path=data / COMMUTE_RELATIVE, out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite,
-        max_distance_m=args.max_distance_m, lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m,
-        tolerance=args.tolerance)
+    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE,
+        city_center_path=data / CITY_CENTER_RELATIVE, commute_path=data / COMMUTE_RELATIVE,
+        out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite, max_distance_m=args.max_distance_m,
+        lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m, tolerance=args.tolerance,
+        facility_kinds=args.facility_kinds)
     return 0
 
 

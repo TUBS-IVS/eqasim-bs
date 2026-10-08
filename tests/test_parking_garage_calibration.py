@@ -277,3 +277,55 @@ def test_the_script_does_not_hard_code_the_target(cal):
     code = re.sub(r'""".*?"""', "", code, flags=re.S)
     for number in ("0.708", "0.2537", "0.736", "0.7362", "0.464"):
         assert number not in code
+
+
+# ------------------------------------------------------------------------------------------ the facility-kind filter (C1)
+
+
+def _with_kinds(inputs, tmp_path, kinds):
+    """The synthetic garages of ``inputs`` with the given ``facility_kind`` per garage (near garage first)."""
+    frame = pg.load_garages(inputs["garages_path"]).copy()
+    frame["facility_kind"] = kinds
+    path = tmp_path / "garages_kinds.geojson"
+    pg.write_garages(gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:25832"), path)
+    return {**inputs, "garages_path": path}
+
+
+def test_the_facility_kind_filter_keeps_the_selected_kinds_and_the_table_records_it(cal, inputs, tmp_path, caplog):
+    # near garage (300 m and 500 m from the universe) is a surface lot, the far one (out of range) a garage: selecting
+    # surface lots only leaves the near garage, so lambda stays 400 m; the table records the filter and the garages used
+    mixed = _with_kinds(inputs, tmp_path, ["surface_lot", "garage"])
+    everything = cal.run(out_path=None, **mixed)
+    out = tmp_path / "surface_only.csv"
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=out, facility_kinds=("surface_lot",), **mixed)
+    assert result["decay_length_m"] == everything["decay_length_m"] and abs(result["decay_length_m"] - 400.0) <= 2.0
+    text = out.read_text(encoding="ascii")
+    assert "facility kinds: surface_lot" in text and "1 priced of 2 listed" in text
+    values = cal.read_calibration_table(out)
+    assert values["garage_facility_filter_active"] == 1 and values["priced_garages_used"] == 1
+    all_out = tmp_path / "all_kinds.csv"
+    cal.run(out_path=all_out, **mixed)
+    all_values = cal.read_calibration_table(all_out)
+    assert all_values["garage_facility_filter_active"] == 0 and all_values["priced_garages_used"] == 2
+    assert "facility kinds: all" in all_out.read_text(encoding="ascii")
+    assert any("facility kinds surface_lot" in message for message in caplog.messages)
+
+
+def test_a_facility_kind_filter_that_leaves_no_reachable_garage_or_names_an_unknown_kind_fails(cal, inputs, tmp_path):
+    mixed = _with_kinds(inputs, tmp_path, ["surface_lot", "garage"])
+    # only the far garage (out of range of every destination) remains: the target is unreachable, nothing is returned
+    with pytest.raises(ValueError, match="unreachable"):
+        cal.run(out_path=None, facility_kinds=("garage",), **mixed)
+    with pytest.raises(ValueError, match="unknown facility kind 'parkade'"):
+        cal.run(out_path=None, facility_kinds=("parkade",), **mixed)
+    # a known kind that no priced garage has
+    only_garages = _with_kinds(inputs, tmp_path, ["garage", "garage"])
+    with pytest.raises(ValueError, match="no priced garage of the facility kind"):
+        cal.run(out_path=None, facility_kinds=("surface_lot",), **only_garages)
+
+
+def test_the_command_line_parses_the_facility_kinds(cal):
+    assert cal.parse_facility_kinds("garage") == ("garage",)
+    assert cal.parse_facility_kinds("garage,surface_lot") == ("garage", "surface_lot")
+    assert cal.parse_facility_kinds("all") is None
