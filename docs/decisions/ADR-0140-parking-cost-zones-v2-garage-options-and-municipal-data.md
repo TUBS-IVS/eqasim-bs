@@ -88,9 +88,7 @@ run (see Status).
      and is dominated by commuters to the Volkswagen plant, which has its own free parking and lies outside every paid zone,
      whereas the paid zones are a city centre with paid street parking like the Braunschweig centre. Salzgitter and the
      Landkreis towns keep their own SrV shares. The Volkswagen commuters stay free by Z1 whatever the draw: the plant lies
-     outside every paid zone (a throwaway probe of the local 1 % plans against the pinned OSM extract, not committed, found no
-     work activity on a Volkswagen-named site inside a paid Wolfsburg zone; the outcome report of a server run shows the work
-     stays in the Wolfsburg zones). Configuration `parking_free_share_proxy_classes`
+     outside every paid zone (the outcome report of a server run shows the work stays in the Wolfsburg zones). Configuration `parking_free_share_proxy_classes`
      (`{"03103": "bs_zentrum"}` in `configs/base_bs.yml`); configuration overlays are deep-merged, so the empty mapping would
      leave the entry in place and the explicit null marker `{"03103": null}` is the "no proxy" sensitivity arm.
    - ASSUMPTION C2 (owner estimate, no source): a share of the persons who drive to a campus for work or education find a
@@ -251,7 +249,10 @@ run (see Status).
   resident districts are not zoned (decision 3) and that ParkGO zone II is unzoned (decision 2: it needs no area zone) and
   the Wolfsburg and Braunschweig geometries of decision 1 of ADR-0139 (decision 2); the follow-ups "rule-based zone
   geometry" (tried and rejected), "garage and commuter products" (decisions 1, 6 and 8) and "a parking-search-time arm"
-  (decision 5, stays off). The first release as a trio of inputs (ADR-0139 decision 1) is now six inputs; the stage
+  (decision 5, stays off); the follow-up "an SrV comparison loop for the zone scope" (closed in part: the comparison
+  script is built, decision 7, and not yet run); the limitation that nine `centre_approximation` zones and street hulls are
+  approximations (narrowed by decision 2: fewer approximated zones remain, see the data record `parking_zones_2026`; it
+  stands for those). The first release as a trio of inputs (ADR-0139 decision 1) is now six inputs; the stage
   `braunschweig.parking.zones_stage` loads them as one unit.
 - Follow-ups, not part of this decision: the server run with the lambda calibration and the three-arm comparison; the
   Java report of the chosen-trip paid share and of the mean parking cents per evaluated car candidate by zone (the
@@ -320,7 +321,8 @@ The ids are historical labels: the sentences state the rule, which the code and 
 - `R-4b2-0`: The garage curation reads the supplement and follow-up packages as optional inputs pinned by SHA-256 and byte-
   reproducible; a rule of such a package sets a value only where an owner decision releases it.
 - `R-4b2-1`: Four garages of the supplement package enter the dataset with the entrance points of its entrance layer as
-  positions (the entrance kind is named per row).
+  positions (the entrance kind is named per row); the Helmstedt Groepern tariff is encoded from the brochure text with its
+  quotation.
 - `R-4b2-2`: The Forschungsflughafen garage is priced from the supplement (1.50 EUR per started 60 min, free period read as a
   grace period P10, day maximum 18 EUR); the owner decision of spec E12 on the GALERIA day maximum (15 EUR, 8 EUR recorded as
   a conflicting variant) is cited under the same id.

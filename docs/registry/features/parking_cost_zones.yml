@@ -140,7 +140,8 @@ evidence:
       behavioural reference: this feature compares no model output with observed behaviour yet.
       srv2023_city_center_parking is a comparison quantity of the planned runs with a universe caveat (SrV asks
       Braunschweig residents, the model counts all car arrivals), not a validation; since v2 its garage share is
-      the CALIBRATION TARGET of the garage decay length (ADR-0140, parking_garage_decay_calibration_2026, pending)
+      the CALIBRATION TARGET of the garage decay length (ADR-0140, parking_garage_decay_calibration_2026; its state:
+      validation.note)
       and no longer a validation quantity, while its paid share and the commuter garage share of
       srv2023_commute_parking_by_workplace_class stay independent comparison quantities
       (scripts/parking/compare_parking_targets.py).
