@@ -54,6 +54,7 @@ _EMPTY_STAY_REPORT = {
     "gate_usage": {}, "n_mode_substituted": 0, "mode_substitution_reasons": {}, "n_return_mode_differs": 0,
     "n_external_point_drawn": 0, "n_external_band_miss": 0, "n_origin_proxied_by_home": 0,
     "n_reentry_clamped": 0, "n_share_out_capped": 0, "n_share_out_capped_missing_reported_distance": 0,
+    "n_outbound_share_capped": 0, "n_outbound_share_capped_missing_reported_distance": 0,
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
 }
 
@@ -236,7 +237,11 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     road_gates = _gates.gate_inside_points(gates, links, cordon_polygon)
     rail_stations = _gates.rail_exit_stations(stops, routes, cordon_polygon, crs=df_home.crs)
     gate_rows = _gates.choose_gates(origin_xy, point_xy, modes["mode"].to_numpy(), road_gates, rail_stations)
-    times = _timing.reentry_times(stays, trips, gate_rows[["x", "y"]].to_numpy(dtype=float), point_xy)
+    gate_xy = gate_rows[["x", "y"]].to_numpy(dtype=float)
+    outbound = _timing.outbound_arrivals(stays, trips, origin_xy, gate_xy)
+    times = pd.concat([_timing.reentry_times(stays, trips, gate_xy, point_xy,
+                                             outbound_arrival_time=outbound["outbound_arrival_time"].to_numpy()),
+                       outbound], axis=1)
     out, anchors = rewrite.rewrite_trips(trips, stays, gate_rows, times, modes, origin_xy, df_home.crs)
 
     has_return = stays["return_trip_index"].notna().to_numpy()
@@ -263,6 +268,8 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         "n_reentry_clamped": int(times["clamped"].sum()),
         "n_share_out_capped": int(times["share_capped"].sum()),
         "n_share_out_capped_missing_reported_distance": int((times["share_capped"].to_numpy() & reported_missing).sum()),
+        "n_outbound_share_capped": int(outbound["outbound_share_capped"].sum()),
+        "n_outbound_share_capped_missing_reported_distance": int(outbound["outbound_share_missing_distance"].sum()),
         "n_stay_persons_missing_license": int(licence.isna().sum()),
         "n_unknown_donor_mode": int(unknown_mode.sum()),
         "unknown_donor_modes": _counts(modes["outbound_mode"][unknown_mode]),
@@ -304,6 +311,13 @@ def _log_report(report, warn_share, fallback_warn_share):
     log("%s share_out capped %d/%d (%.2f%%); reported distance missing or zero for %d (%.2f%%; warn above %.0f%%)",
         _LOG_TAG, report["n_share_out_capped"], report["n_stays"], 100.0 * report["n_share_out_capped"] / n_stays,
         report["n_share_out_capped_missing_reported_distance"], 100.0 * missing_share, 100.0 * fallback_warn_share)
+    outbound_capped_share = report["n_outbound_share_capped"] / n_stays
+    outbound_missing_share = report["n_outbound_share_capped_missing_reported_distance"] / n_stays
+    log = logger.warning if outbound_capped_share > fallback_warn_share else logger.info
+    log("%s outbound share capped %d/%d (%.2f%%; warn above %.0f%%); reported distance missing or zero for %d "
+        "(%.2f%%)", _LOG_TAG, report["n_outbound_share_capped"], report["n_stays"], 100.0 * outbound_capped_share,
+        100.0 * fallback_warn_share, report["n_outbound_share_capped_missing_reported_distance"],
+        100.0 * outbound_missing_share)
     if report["n_stay_persons_missing_license"]:
         logger.warning("%s %d stay persons have no has_license value: treated as unlicensed for the car check",
                        _LOG_TAG, report["n_stay_persons_missing_license"])

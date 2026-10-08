@@ -265,6 +265,40 @@ def test_build_portal_trips_reports_the_share_out_cap_causes():
     assert out["trips"].loc[1, "departure_time"] == pytest.approx(16 * 3600.0 + 7200.0)   # share forced to 1
 
 
+def test_build_portal_trips_shortens_the_outbound_leg_to_the_inside_share_and_reports_the_counts():
+    # R32. Person 1's outbound (work) leg departs 07:00 and arrives 09:00 (7200 s) at the far workplace.
+    # Its reported distance is NaN in the fixture -> share forced to 1, arrival unchanged, counted as capped
+    # with a missing reported distance. Person 2's gate is the rail exit at home -> inside distance 0 ->
+    # share 0 -> the leg arrives at its departure 09:00 (zero duration).
+    out = stage.build_portal_trips(**_fixture())
+    assert out["trips"].loc[0, "arrival_time"] == 9 * 3600.0
+    assert out["trips"].loc[2, "arrival_time"] == 9 * 3600.0
+    assert out["report"]["n_outbound_share_capped"] == 1
+    assert out["report"]["n_outbound_share_capped_missing_reported_distance"] == 1
+    # With a reported 175 km the inside part is home (25000, 25000) -> gate_e inside end (49000, 25000) = 24 km:
+    # arrival = 07:00 + 7200 s * 24000 / 175000 = 25200 + 987.43 s.
+    fixture = _fixture()
+    fixture["trips"].loc[0, "euclidean_distance"] = 175000.0
+    out = stage.build_portal_trips(**fixture)
+    assert out["trips"].loc[0, "arrival_time"] == pytest.approx(25200.0 + 7200.0 * 24000.0 / 175000.0)
+    assert out["report"]["n_outbound_share_capped"] == 0
+    assert out["report"]["n_outbound_share_capped_missing_reported_distance"] == 0
+    # plan times stay monotonic: every leg arrives after it departs and before the next one departs
+    trips = out["trips"]
+    assert (trips["arrival_time"] >= trips["departure_time"]).all()
+    assert (trips["activity_duration"].dropna() >= 0).all()
+
+
+def test_build_portal_trips_logs_the_outbound_cap_rate(caplog):
+    with caplog.at_level(logging.INFO):
+        stage.build_portal_trips(**_fixture())
+    capped = [record for record in caplog.records if "outbound share capped" in record.getMessage()]
+    assert len(capped) == 1
+    assert "1/2 (50.00%; warn above 10%)" in capped[0].getMessage()
+    assert "missing or zero for 1 (50.00%)" in capped[0].getMessage()
+    assert capped[0].levelno == logging.WARNING        # 50 % above the 10 % warn share
+
+
 def test_build_portal_trips_warns_when_return_legs_lack_a_reported_distance_too_often(caplog):
     fixture = _fixture()
     fixture["trips"].loc[1, "euclidean_distance"] = np.nan        # 1 of 2 stays: share_out forced to 1

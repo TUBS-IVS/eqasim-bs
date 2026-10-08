@@ -1,6 +1,7 @@
 """Re-entry times from the diary and the fixed portal mode checked against the person's availability."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from braunschweig.synthesis.portal_trips import modes as m
 from braunschweig.synthesis.portal_trips import timing as t
@@ -42,6 +43,52 @@ def test_reentry_time_is_clamped_to_the_outbound_departure_and_counted():
     trips.loc[1, ["departure_time", "arrival_time"]] = [7 * 3600.0, 7.5 * 3600.0]  # inconsistent diary
     out = t.reentry_times(_stays(), trips, np.array([[45000.0, 0.0]]), np.array([[60000.0, 0.0]]))
     assert out.loc[0, "t_reentry"] == 8 * 3600.0 and out.loc[0, "clamped"]
+
+
+def test_outbound_arrival_is_the_inside_share_of_the_reported_outbound_duration():
+    # R32. Outbound leg: departs 08:00, arrives 09:30 (5400 s), reports 60 km. Origin (0, 0) -> gate (45 km, 0)
+    # is 45 km inside: share = 45 / 60 = 0.75, arrival = 08:00 + 0.75 * 5400 s = 28800 + 4050 = 32850 s.
+    out = t.outbound_arrivals(_stays(), _trips(), origin_xy=np.array([[0.0, 0.0]]), gate_xy=np.array([[45000.0, 0.0]]))
+    assert list(out.columns) == t.OUTBOUND_COLUMNS
+    assert out.loc[0, "outbound_share"] == 0.75
+    assert out.loc[0, "outbound_arrival_time"] == 32850.0
+    assert not out.loc[0, "outbound_share_capped"] and not out.loc[0, "outbound_share_missing_distance"]
+
+
+def test_outbound_share_is_capped_at_one_when_the_gate_is_farther_than_the_reported_distance():
+    # origin -> gate 70 km on a 60 km report: the leg keeps its whole diary duration (share 1), counted as capped.
+    out = t.outbound_arrivals(_stays(), _trips(), np.array([[0.0, 0.0]]), np.array([[70000.0, 0.0]]))
+    assert out.loc[0, "outbound_share"] == 1.0 and out.loc[0, "outbound_share_capped"]
+    assert not out.loc[0, "outbound_share_missing_distance"]
+    assert out.loc[0, "outbound_arrival_time"] == 9.5 * 3600.0
+
+
+@pytest.mark.parametrize("reported", [np.nan, 0.0])
+def test_outbound_share_is_one_and_counted_when_the_reported_distance_is_missing_or_zero(reported):
+    trips = _trips()
+    trips.loc[0, "euclidean_distance"] = reported
+    out = t.outbound_arrivals(_stays(), trips, np.array([[0.0, 0.0]]), np.array([[45000.0, 0.0]]))
+    assert out.loc[0, "outbound_share"] == 1.0
+    assert out.loc[0, "outbound_share_capped"] and out.loc[0, "outbound_share_missing_distance"]
+    assert out.loc[0, "outbound_arrival_time"] == 9.5 * 3600.0
+
+
+def test_outbound_arrival_raises_when_the_outbound_times_are_not_available():
+    trips = _trips()
+    trips.loc[0, "arrival_time"] = np.nan
+    with pytest.raises(ValueError, match="inconsistent"):
+        t.outbound_arrivals(_stays(), trips, np.array([[0.0, 0.0]]), np.array([[45000.0, 0.0]]))
+
+
+def test_reentry_is_clamped_up_to_the_arrival_at_the_gate_when_that_is_given():
+    # Inconsistent diary: the return leg departs 07:00, before the outbound leg even arrives at the gate (08:30).
+    # The gate activity must not end before it starts, so the clamp lower bound is the outbound arrival.
+    trips = _trips()
+    trips.loc[1, ["departure_time", "arrival_time"]] = [7 * 3600.0, 7.5 * 3600.0]
+    out = t.reentry_times(_stays(), trips, np.array([[45000.0, 0.0]]), np.array([[60000.0, 0.0]]),
+                          outbound_arrival_time=np.array([8.5 * 3600.0]))
+    assert out.loc[0, "t_reentry"] == 8.5 * 3600.0 and out.loc[0, "clamped"]
+    assert out.loc[0, "inside_return_duration"] == 0.0
 
 
 def test_reentry_without_return_leg_has_no_time():

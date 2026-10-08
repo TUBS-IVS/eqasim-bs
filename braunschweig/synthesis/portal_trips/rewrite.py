@@ -2,7 +2,8 @@
 """Rewrite the trip table around the outside stays and emit the gate anchors (eqasim-bs#442).
 
 Per stay: the legs inside the run are dropped; the outbound leg's destination becomes the
-``outside`` activity at the gate (its departure is unchanged); the return leg departs from the
+``outside`` activity at the gate (its departure is unchanged, its arrival becomes the arrival at the gate,
+``times["outbound_arrival_time"]``, ruling R32); the return leg departs from the
 gate at the diary re-entry time with the inside share of its reported duration; both legs
 carry the fixed mode and ``portal_leg`` True; their ``euclidean_distance`` becomes the inside
 part so downstream distance statistics see what is simulated: outbound origin -> gate, and for the
@@ -96,6 +97,7 @@ def rewrite_trips(trips: pd.DataFrame, stays: pd.DataFrame, gate_rows: pd.DataFr
     out.iloc[outbound_positions, out.columns.get_loc("following_purpose")] = OUTSIDE_PURPOSE
     out.iloc[outbound_positions, out.columns.get_loc("mode")] = mode
     out.iloc[outbound_positions, out.columns.get_loc("euclidean_distance")] = inside_m
+    out.iloc[outbound_positions, out.columns.get_loc("arrival_time")] = times["outbound_arrival_time"].to_numpy()
     out.iloc[outbound_positions, out.columns.get_loc(PORTAL_LEG_COLUMN)] = True
 
     with_return = return_positions >= 0
