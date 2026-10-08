@@ -659,7 +659,7 @@ def test_pre_portal_commutes_equal_the_vendored_commutes_on_a_run_without_portal
     commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
         vendored.prepare_trip_output_frame(trips), _commute_persons(), _commute_home_frame(), work, education)
     paths = OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "p_", ["gpkg"])
-    actual = gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg").sort_values("person_id").reset_index(drop=True)
+    actual = gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg", layer="p_commutes_pre_portal").sort_values("person_id").reset_index(drop=True)
     assert tmp_path / "p_commutes_pre_portal.gpkg" in paths
     assert list(actual.columns) == list(expected.columns)
     assert list(actual["person_id"]) == list(expected["person_id"]) == [1]
@@ -696,7 +696,7 @@ def test_pre_portal_education_layer_holds_the_pupils(tmp_path):
     assert list(layer["person_id"]) == [4]
     assert layer.geometry.iloc[0].length == pytest.approx(4000.0)
     # The default (first) layer stays the work commutes with the vendored schema.
-    assert list(gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg")["person_id"]) == [1]
+    assert list(gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg", layer="p_commutes_pre_portal")["person_id"]) == [1]
 
 
 def test_pre_portal_commutes_write_and_read_back_an_empty_education_layer(tmp_path):
@@ -708,7 +708,7 @@ def test_pre_portal_commutes_write_and_read_back_an_empty_education_layer(tmp_pa
     assert len(education_commutes) == 0
     OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "p_", ["gpkg"])
     path = tmp_path / "p_commutes_pre_portal.gpkg"
-    assert list(gpd.read_file(path)["person_id"]) == [1]
+    assert list(gpd.read_file(path, layer="p_commutes_pre_portal")["person_id"]) == [1]
     assert len(gpd.read_file(path, layer=PORTAL.PRE_PORTAL_EDUCATION_LAYER)) == 0
 
 
@@ -748,7 +748,7 @@ def test_output_day_on_writes_the_pre_portal_commutes_and_logs_them(monkeypatch,
     with caplog.at_level(logging.INFO):
         OUTPUT.execute(_CommuteExecuteContext(tmp_path, portal_enabled=True))
     path = tmp_path / "bs_commutes_pre_portal.gpkg"
-    written = gpd.read_file(path)
+    written = gpd.read_file(path, layer="bs_commutes_pre_portal")
     assert list(written["person_id"]) == [1]
     assert written.geometry.iloc[0].length == pytest.approx(90000.0)
     assert "bs_commutes_pre_portal.gpkg" in " ".join(record.getMessage() for record in caplog.records)
@@ -864,3 +864,81 @@ def test_commute_scope_is_zero_missing_when_the_pre_portal_commutes_are_used(cap
     assert scope["n_work_persons_pre_portal_trips"] == 1
     assert scope["n_work_persons_without_commute_row"] == 0
     assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+# ------------------------------------------------------------------ review follow-ups: layer names, CRS, missing reference
+
+
+WORK_LAYER = "bs_commutes_pre_portal"
+
+
+def _write_pre_portal_commutes_file(tmp_path, prefix="bs_"):
+    work, education = _commute_primary_locations()
+    commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
+        vendored.prepare_trip_output_frame(_commute_day_trips()), _commute_persons(), _commute_home_frame(),
+        work, education)
+    OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, prefix, ["gpkg"])
+    return tmp_path / f"{prefix}commutes_pre_portal.gpkg"
+
+
+def test_the_work_layer_of_the_pre_portal_commutes_is_named_like_the_file_stem(tmp_path):
+    path = _write_pre_portal_commutes_file(tmp_path)
+    assert PTF.pre_portal_commutes_work_layer(path) == WORK_LAYER
+    layers = [str(row[0]) for row in __import__("pyogrio").list_layers(path)]
+    assert layers == [WORK_LAYER, PORTAL.PRE_PORTAL_EDUCATION_LAYER]
+
+
+def test_reading_the_multi_layer_file_names_the_layer_and_raises_no_warning(tmp_path):
+    import warnings
+    _touch_gpkg(tmp_path, "bs_commutes.gpkg")
+    _write_pre_portal_commutes_file(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        work_lines, education_lines = RMV._read_pre_portal_commute_lines(tmp_path, "bs_")
+    assert list(work_lines["person_id"]) == [1]
+    assert list(education_lines["person_id"]) == [4]
+
+
+def test_the_pre_portal_layers_are_crs_less_like_the_vendored_commutes(tmp_path):
+    path = _write_pre_portal_commutes_file(tmp_path)
+    assert gpd.read_file(path, layer=WORK_LAYER).crs is None
+    assert gpd.read_file(path, layer=PORTAL.PRE_PORTAL_EDUCATION_LAYER).crs is None
+    vendored_commutes = _vendored_commutes(tmp_path, _commute_day_trips())
+    assert vendored_commutes.crs is None
+
+
+def _line(x0, y0, x1, y1, crs=None):
+    return gpd.GeoDataFrame({"person_id": [1]}, geometry=[__import__("shapely.geometry", fromlist=["LineString"])
+                                                         .LineString([(x0, y0), (x1, y1)])], crs=crs)
+
+
+def test_line_lengths_read_a_crs_less_file_as_the_pipeline_crs_in_metres():
+    lengths = RMV._line_lengths_km(_line(0.0, 0.0, 3000.0, 4000.0))
+    assert lengths.tolist() == pytest.approx([5.0])
+    assert RMV._line_lengths_km(_line(0.0, 0.0, 3000.0, 4000.0, crs="EPSG:25832")).tolist() == pytest.approx([5.0])
+
+
+def test_line_lengths_convert_a_file_that_carries_another_crs():
+    # 0.01 degrees of longitude at 52.3 N is about 0.68 km: a geographic file must not be read as metres.
+    lengths = RMV._line_lengths_km(_line(10.50, 52.3, 10.51, 52.3, crs="EPSG:4326"))
+    assert 0.6 < lengths.iloc[0] < 0.8
+
+
+def test_resolver_warns_that_the_trips_are_used_unchecked_when_trips_csv_is_missing(tmp_path, caplog):
+    pre = _write_trips(tmp_path, "bs_trips_pre_portal.csv", _donor_trips())
+    with caplog.at_level(logging.INFO):
+        resolved = PTF.resolve_pipeline_trips_path(tmp_path, "bs_")
+    assert resolved == pre
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "bs_trips.csv" in warnings[0].getMessage() and "staleness" in warnings[0].getMessage()
+
+
+def test_resolver_warns_that_the_commutes_are_used_unchecked_when_commutes_gpkg_is_missing(tmp_path, caplog):
+    pre = _touch_gpkg(tmp_path, "bs_commutes_pre_portal.gpkg")
+    with caplog.at_level(logging.INFO):
+        resolved = PTF.resolve_pre_portal_commutes_path(tmp_path, "bs_")
+    assert resolved == pre
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "bs_commutes.gpkg" in warnings[0].getMessage() and "staleness" in warnings[0].getMessage()

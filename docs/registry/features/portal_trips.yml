@@ -37,8 +37,9 @@ description: >-
   trips.csv. commutes.gpkg is built from the written activities and lacks the far commuters, so the stage also
   writes <prefix>commutes_pre_portal.gpkg (same schema and selection rule via synthesis.output.build_commute_frame,
   work location from the assigned primary locations, persons from the pre-portal trips; the home to education lines
-  are its layer education) and the commute and education tables of run_mid_validation read it when it exists and is
-  current (a file older than commutes.gpkg is ignored with a warning). Without it those tables fall back to the
+  are its layer education; CRS-less like commutes.gpkg, coordinates in EPSG:25832) and the commute and education
+  tables of run_mid_validation and the SimWrapper commuter tab read it when it exists and is current (a file older
+  than commutes.gpkg is ignored with a warning). Without it those tables fall back to the
   post-portal activities geopackage, cover workplaces inside the threshold only and the run warns with the
   number of work persons without a commute row.
 stages:
@@ -80,6 +81,7 @@ code_paths:
 - braunschweig/analysis/population_validation/population_source.py
 - braunschweig/analysis/run_mid_validation.py
 - braunschweig/analysis/simwrapper/behaviour.py
+- braunschweig/analysis/simwrapper/commuter_tabs.py
 - braunschweig/analysis/simwrapper/trip_demand.py
 - braunschweig/analysis/synthesis/departure_time_vs_srv.py
 - braunschweig/analysis/synthesis/plan_structure_vs_srv.py
@@ -136,7 +138,9 @@ evidence:
   - tests/test_portal_trips_stage.py
   - tests/test_portal_trips_timing_modes.py
   - tests/test_run_mid_validation.py
+  - tests/test_run_mid_validation_pre_portal_smoke.py
   - tests/test_secondary_candidates_supply_ring.py
+  - tests/test_simwrapper_commutes_pre_portal.py
   - tests/test_simwrapper_spatial.py
   - tests/test_srv_comparisons_portal_view.py
   - tests/test_student_incommuters_stage.py

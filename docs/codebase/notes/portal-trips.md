@@ -198,19 +198,32 @@ post-portal day: a far workplace is an `outside` activity there. With the pre-po
 
 While the flag is on, `output_day` also writes `<prefix>commutes_pre_portal.gpkg` (and `.geoparquet` when that
 format is on). It has the schema of `<prefix>commutes.gpkg` (`person_id`, `geometry`: a line from the home to the
-work location, same CRS) and its selection rule: each person's first `home` and first `work` activity are paired by
+work location) and its selection rule. Like the vendored file it is CRS-less (`clean_gpkg` drops the CRS metadata);
+its coordinates are in the pipeline CRS (EPSG:25832, metres), and the readers that compute distances from the lines
+say so explicitly (`run_mid_validation._line_lengths_km` reads a CRS-less file as EPSG:25832 and converts a file that
+carries another CRS). The pairing: each person's first `home` and first `work` activity are paired by
 `synthesis.output.build_commute_frame`, the function the vendored writer itself uses. The inputs differ: the
 persons qualify by the activities in the PRE-portal trips (`output_day.build_pre_portal_commutes`), the work
 location is the assigned location of `synthesis.population.spatial.primary.locations` and the home the household
 location of `synthesis.population.spatial.home.locations`; both stages are declared only while the flag is on
 (they are upstream of `trips.final`, the DAG snapshot gains two edges into `synthesis.output`). The home ->
 education lines, which the vendored writer does not export, are the second layer `education` of the same
-GeoPackage (`education_commutes_pre_portal.geoparquet` for geoparquet); the first layer is always the work layer.
+GeoPackage (`education_commutes_pre_portal.geoparquet` for geoparquet); the first layer, named like the file stem,
+is the work layer. A file with two layers must be read with an explicit layer name
+(`pipeline_trips_file.pre_portal_commutes_work_layer`), otherwise the reader library warns.
 A qualifying person without a primary location is left out and counted in a warning (it means a broken join: the
-location stage asserts every work/education activity is located). With the flag off nothing is written. Readers:
-`run_mid_validation` (`_read_pre_portal_commute_lines`, via
-`pipeline_trips_file.resolve_pre_portal_commutes_path`, with the same rule that ignores a file older than
-`<prefix>commutes.gpkg` and warns). Nothing else reads `commutes.gpkg`.
+location stage asserts every work/education activity is located). With the flag off nothing is written. Readers,
+both through `pipeline_trips_file.resolve_pre_portal_commutes_path` (the rule that ignores a file older than
+`<prefix>commutes.gpkg` and warns; when `commutes.gpkg` is missing the file is used and a warning says its age
+could not be checked):
+
+- `run_mid_validation` (`_read_pre_portal_commute_lines`): the commute and education tables.
+- `analysis/simwrapper/commuter_tabs._load_commutes`: the Pendler tab, whose "synthesis home->work assignment"
+  source would otherwise miss the far commuters; it keeps reading `*commutes.gpkg` when the pre-portal file is
+  absent or stale.
+
+Other readers of `commutes.gpkg` are one-off scripts with hard-coded paths (`scripts/analyze_calibration.py`, the
+figure scripts under `braunschweig/analysis/presentation/figs/`); they keep reading it and describe the post-portal day.
 
 ## Reading the stage's log and report (tag `[portal_trips]`)
 

@@ -38,9 +38,25 @@ def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
 
 
+def pre_portal_commutes_work_layer(path: Path | str) -> str:
+    """Layer name of the work lines in ``<prefix>commutes_pre_portal.gpkg``: the file stem, as the writer names it.
+
+    The GeoPackage also holds the layer ``education`` (``config_keys.PRE_PORTAL_EDUCATION_LAYER``), so a reader must
+    name the layer it wants instead of relying on the default.
+    """
+    return Path(path).stem
+
+
 def _is_stale(pre_portal_path: Path, current_path: Path) -> bool:
-    """True (with a warning naming both files and mtimes) when the pre-portal file is older than the current one."""
+    """True (with a warning naming both files and mtimes) when the pre-portal file is older than the current one.
+
+    When the current file does not exist the pre-portal file cannot be checked: it is then used as it is and a
+    warning says so, because a leftover of an earlier run cannot be told apart from a current file.
+    """
     if not current_path.exists():
+        LOGGER.warning(
+            "%s is used without a staleness check: %s does not exist in %s, so its age cannot be compared.",
+            pre_portal_path.name, current_path.name, pre_portal_path.parent)
         return False
     age_seconds = current_path.stat().st_mtime - pre_portal_path.stat().st_mtime
     if age_seconds <= STALE_AFTER_SECONDS:
@@ -56,8 +72,10 @@ def _is_stale(pre_portal_path: Path, current_path: Path) -> bool:
 def resolve_pre_portal_commutes_path(directory: Path | str, prefix: str) -> Path | None:
     """Path of ``<prefix>commutes_pre_portal.gpkg`` when it exists and is current, else ``None``.
 
-    The file holds the home -> work lines (layer 1) and home -> education lines (layer ``education``) built from the
-    assigned primary locations while the portal layer is on; ``<prefix>commutes.gpkg`` lacks the far commuters. The
+    The file holds the home -> work lines (layer named like the file, see ``pre_portal_commutes_work_layer``) and
+    the home -> education lines (layer ``education``) built from the assigned primary locations while the portal
+    layer is on; ``<prefix>commutes.gpkg`` lacks the far commuters. Like that file it carries no CRS (coordinates in
+    the pipeline CRS, EPSG:25832). The
     same staleness rule as for the trips applies, measured against ``<prefix>commutes.gpkg``: an older file is
     ignored with a warning naming both files and their modification times. The choice is logged.
     """

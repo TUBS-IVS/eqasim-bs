@@ -44,7 +44,8 @@ import pandas as pd
 from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
 from braunschweig.analysis.pipeline_trips_file import (
-    is_pre_portal_trips_path, resolve_pipeline_trips_path, resolve_pre_portal_commutes_path)
+    is_pre_portal_trips_path, pre_portal_commutes_work_layer, resolve_pipeline_trips_path,
+    resolve_pre_portal_commutes_path)
 from braunschweig.synthesis.portal_trips.config_keys import PRE_PORTAL_EDUCATION_LAYER
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
@@ -70,6 +71,10 @@ BANDS: list[tuple[float, float, str]] = [
 ]
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
+
+#: CRS of every coordinate the pipeline writes (metres). The vendored ``commutes.gpkg`` carries no CRS metadata, so
+#: line lengths read from it are interpreted in this CRS (see ``_line_lengths_km``).
+PIPELINE_CRS = "EPSG:25832"
 
 # eqasim main mode -> MiD P12_1 category. Deliberately NOT the same mapping as
 # braunschweig.analysis.dashboard.comparisons.MODE_LABEL (which the dashboard
@@ -335,13 +340,27 @@ def _read_pre_portal_commute_lines(output_dir: Path, prefix: str):
     path = resolve_pre_portal_commutes_path(output_dir, prefix)
     if path is None:
         return None
-    return gpd.read_file(path), gpd.read_file(path, layer=PRE_PORTAL_EDUCATION_LAYER)
+    # The GeoPackage has two layers, so both are named explicitly (the default layer is not guessed).
+    return (gpd.read_file(path, layer=pre_portal_commutes_work_layer(path)),
+            gpd.read_file(path, layer=PRE_PORTAL_EDUCATION_LAYER))
+
+
+def _line_lengths_km(lines: gpd.GeoDataFrame) -> pd.Series:
+    """Length of each line in kilometres, in the pipeline CRS (EPSG:25832, metres).
+
+    The vendored ``commutes.gpkg`` is CRS-less (``clean_gpkg`` drops the CRS metadata) and the pre-portal commutes
+    keep that schema, so a file without a CRS is read as EPSG:25832, the CRS every coordinate of the pipeline is in
+    (ASSUMPTION, the same one ``braunschweig.analysis.simwrapper.commuter_tabs`` makes for this file). A file that
+    does carry a CRS is converted to EPSG:25832 first, so the lengths are metres in either case and never degrees.
+    """
+    lines = lines.set_crs(PIPELINE_CRS) if lines.crs is None else lines.to_crs(PIPELINE_CRS)
+    return lines.geometry.length / 1000.0
 
 
 def _commute_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
     """Commute table rows from home -> work lines, with the same distance definition as ``_commute_distances``.
 
-    The Euclidean home -> work distance is the length of the line, then the project's constant detour factor is
+    The Euclidean home -> work distance is the length of the line (metres, see ``_line_lengths_km``), then the project's constant detour factor is
     applied exactly as in ``_commute_distances`` (tests/test_pre_portal_trips_output.py pins that both agree on a
     run without portal stays). Columns: ``person_id``, ``distance_km``, ``ars5``, ``kreis_name``.
     """
@@ -349,7 +368,7 @@ def _commute_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.Dat
     if commute.empty:
         return commute.assign(distance_km=[], ars5=[], kreis_name=[])
     from braunschweig.calibration.metrics import apply_detour
-    commute["distance_km"] = apply_detour((lines.geometry.length / 1000.0).to_numpy())
+    commute["distance_km"] = apply_detour(_line_lengths_km(lines).to_numpy())
     return commute.merge(persons_kreis[["person_id", "ars5", "kreis_name"]], on="person_id", how="left")
 
 
@@ -358,7 +377,7 @@ def _education_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.D
     education = pd.DataFrame({"person_id": lines["person_id"].to_numpy()})
     if education.empty:
         return education.assign(distance_km=[], regiostar7=[], age=[], level=[])
-    education["distance_km"] = (lines.geometry.length / 1000.0).to_numpy()
+    education["distance_km"] = _line_lengths_km(lines).to_numpy()
     education = education.merge(persons_kreis[["person_id", "age", "regiostar7"]], on="person_id", how="left")
     education["level"] = education["age"].map(education_level_for_age)
     return education
@@ -395,6 +414,43 @@ def _commute_table_scope(
         "is an 'outside' activity there). The tables describe workplaces inside the threshold only (eqasim-bs#442).",
         len(missing), len(work_persons))
     return scope
+
+
+def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
+    return gpd.read_file(output_dir / f"{prefix}{name}.gpkg")
+
+
+def _find_sim_trips(sim_cache: Path | None) -> pd.DataFrame | None:
+    """Load the MATSim simulation-output trips (mode + purpose), or None.
+
+    The eqasim pipeline trips.csv has no realised mode; the mode is written by
+    the MATSim mobility simulation to ``eqasim_trips.csv``.  Two layouts are
+    accepted (#354): ``--sim-cache`` may point at a directory holding
+    ``eqasim_trips.csv`` directly (e.g. the ``<output_path>/matsim_output``
+    archive written by ``matsim.output``) or at a synpp cache root containing
+    ``matsim.simulation.run__*.cache/simulation_output/``.  The lookup mirrors
+    ``braunschweig.analysis.dashboard.build_dashboard._find_sim_output`` so both
+    analysis entry points resolve the same file.  Returns None (and the modal-
+    split block is skipped) when no --sim-cache is given or the file is absent.
+    """
+    if sim_cache is None:
+        return None
+    candidates = [sim_cache / "eqasim_trips.csv"]
+    candidates += [cache_dir / "simulation_output" / "eqasim_trips.csv"
+                   for cache_dir in sim_cache.glob("matsim.simulation.run__*.cache")]
+    for trips_path in candidates:
+        if trips_path.exists():
+            LOGGER.info("Reading realised trip modes from %s", trips_path)
+            df_trips = pd.read_csv(trips_path, sep=";")
+            df_trips = drop_freight_agents(df_trips, label="mid_validation")
+            return df_trips
+    LOGGER.warning(
+        "No eqasim_trips.csv under %s (neither directly nor via "
+        "matsim.simulation.run__*.cache/simulation_output/); "
+        "modal-split block skipped.",
+        sim_cache,
+    )
+    return None
 
 
 def _save_fig(fig: plt.Figure, path: Path) -> None:
