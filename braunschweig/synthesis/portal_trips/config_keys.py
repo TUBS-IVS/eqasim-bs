@@ -14,15 +14,22 @@ DEFAULT_ENABLED = True
 #: The reporting-day trips the portal stage takes as its INPUT (before any outside stay is built). The SrV
 #: comparisons (plan structure, departure times) read this stage instead of ``synthesis.population.trips.final``
 #: while the portal layer is on, because SrV has no outside stays and the unchanged reference would otherwise be
-#: compared with a rewritten day (ruling R33).
+#: compared with a rewritten day (ADR-0141, #442).
 PRE_PORTAL_TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 
 #: The reporting-day trips after the portal rewrite (the alias of ``trips_final``).
 FINAL_TRIPS_STAGE = "synthesis.population.trips.final"
 
 
+#: File stem (after the output prefix) of the pre-portal trips table the synthesis output writes while the portal layer is
+#: on: ``<prefix>trips_pre_portal.csv`` / ``.parquet``. It carries the vendored trips column set of the donor day, the
+#: ``<prefix>trips.csv`` next to it the portal-rewritten day. File-based validators that compare the diary with a
+#: survey prefer this file when it exists (``braunschweig.analysis.pipeline_trips_file``).
+PRE_PORTAL_TRIPS_FILE_STEM = "trips_pre_portal"
+
+
 def final_view_trips_stage(portal_enabled: bool) -> str:
-    """The trips stage an SrV-comparison style consumer of the ``final`` view must read (rulings R33, R35).
+    """The trips stage an SrV-comparison style consumer of the ``final`` view must read (ADR-0141, #442).
 
     With the portal layer on, the day has far work/education/other legs replaced by outside stays; the SrV
     comparisons and the work-participation report measure the unchanged day (SrV has no outside stays, a far

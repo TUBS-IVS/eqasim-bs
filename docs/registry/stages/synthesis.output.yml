@@ -13,7 +13,13 @@ description: 'Writes the unified population/trips/locations output (CSV/parquet 
   day_absence_state from braunschweig.synthesis.day_absence.absence_stage (present for EVERY
   person, unlike commute_day_state''s worker-only coverage); composition rule and evidence are in
   the feature record general_day_absence and the note
-  docs/codebase/notes/day-absence-state.md, not repeated here.'
+  docs/codebase/notes/day-absence-state.md, not repeated here. While braunschweig.portal.enabled is true
+  (ADR-0141, issue #442) it additionally writes <prefix>trips_pre_portal.csv (and .parquet when that output format
+  is on) from braunschweig.synthesis.commute_day.trips_day_stage: the donor-purpose trips before the portal
+  rewrite, with exactly the trips column set of trips.csv (synthesis.output.prepare_trip_output_frame) and no mode,
+  because trips.csv is then the post-portal day. File-based validators that compare the diary with a survey prefer
+  it (braunschweig/analysis/pipeline_trips_file.py); with the flag off nothing is written and every output is
+  byte-identical. Details: docs/codebase/notes/portal-trips.md.'
 lineage:
   type: overridden
   upstream: synthesis.output
@@ -37,7 +43,9 @@ features:
 - commute_day_state
 - rbw_leg_convention
 - general_day_absence
+- portal_trips
 decisions:
 - ADR-0121
 - ADR-0104
 - ADR-0110
+- ADR-0141

@@ -121,6 +121,18 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
     times, work participation), not the portal rewrite, and far legs that became outside stays would show up
     as an artificial drop in work trips and a distorted plan structure; this keeps the existing SrV
     comparisons unchanged. Their provenance records `portal_layer_enabled` and the stage actually read.
+11. **The synthesis output writes the pre-portal trips next to the post-portal ones, and the file-based
+    validators prefer them.** The written `<prefix>trips.csv` is the post-portal day, so no file kept the donor
+    purposes: `trip_coherence.purpose_distribution` raised on the unmapped purpose `outside` and
+    `participation_fit` counted a far worker as not working. While `braunschweig.portal.enabled` is true,
+    `braunschweig.synthesis.commute_day.output_day` additionally writes `<prefix>trips_pre_portal.csv` (and
+    `.parquet` when that output format is on) from `braunschweig.synthesis.commute_day.trips_day_stage` with the
+    vendored trips column set, derived by the same function as `trips.csv`
+    (`synthesis.output.prepare_trip_output_frame`). No mode is merged in, because the MATSim mode-choice trip
+    indices refer to the post-portal table. `population_validation/population_source`, the trips read of
+    `run_mid_validation` and `scripts/measure_trip_coherence.py` take the pre-portal file when it exists
+    (`braunschweig.analysis.pipeline_trips_file`, which logs the choice); readers that need the realised plan keep
+    `trips.csv`. Flag off: nothing is written and every output is byte-identical.
 
 ### Rejected alternatives
 
@@ -200,12 +212,12 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
   a9ad6f261, afdb3f278) has no pull request; reviving it is a separate decision that comes with selecting
   `IsolatedOutsideTrips`. Consequence for the A/B: the modes of both portal legs stay the diary (or
   substituted) modes, as for the cutter-outside persons today.
-- **Known limitations of the validators (R36).** Validators that read the written trips CSV rather than a stage
-  count the far legs as `outside` while the flag is on: `population_validation/participation_fit.py`,
-  `population_validation/trip_coherence.py` and the commute and purpose tables of
-  `run_mid_validation`. Their work/education participation and purpose tables are expected to move in the A/B
-  and are not a portal defect; they are not changed in this feature. A follow-up issue is proposed to the
-  project owner (issue-first rule).
+- **Validators that read the written trips CSV (decision 11).** `population_validation/participation_fit.py`,
+  `population_validation/trip_coherence.py` (through `population_source`) and the trip counts of
+  `run_mid_validation` read `<prefix>trips_pre_portal.csv` while it exists, so their work/education participation
+  and purpose distributions describe the donor day. Remaining limitation: the commute and activity-purpose tables
+  of `run_mid_validation` are computed from `<prefix>activities.gpkg`, the post-portal day (a far workplace is an
+  `outside` activity), and are expected to move in the OFF/ON A/B; a pre-portal activities view is not written.
 - **Documentation.** Stage records `braunschweig.synthesis.portal_trips.{stage,anchors}` and the re-pointed alias
   `synthesis.population.trips.final` (the DAG node of the thin stage `trips_final`), a record for
   `braunschweig.synthesis.commute_day.trips_day_stage` (now a DAG node of its own, carrying the content the

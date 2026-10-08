@@ -19,6 +19,14 @@ Aliased to ``synthesis.output``. Two things distinguish it from the vendored
    ``absent_household`` / ``absent_individual`` for EVERY enriched person -- is merged in the
    same way, through the same optional-column mechanism.
 
+4. **The pre-portal trips file** (eqasim-bs#442, ADR-0141). With ``braunschweig.portal.enabled`` true the
+   ``trips.csv`` above is the day AFTER the portal rewrite (far destinations carry the purpose ``outside``, the
+   inner legs of a stay are dropped). The stage then additionally writes ``<prefix>trips_pre_portal.csv`` (and
+   ``.parquet`` when that output format is on) from ``braunschweig.synthesis.commute_day.trips_day_stage`` with
+   exactly the vendored trips column set, so file-based validators that compare the diary with a survey can read
+   the donor purposes. No mode is merged into it: the MATSim mode-choice trip indices refer to the post-portal
+   table. With the flag false nothing is written and every other output is untouched.
+
 The eqasim writer itself is NOT re-implemented: ``configure`` and ``execute`` are the vendored
 ones, run through the proxies of :mod:`braunschweig.synthesis.commute_day.day_view`.
 
@@ -32,6 +40,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import logging
+from pathlib import Path
 
 import synthesis.output as base
 
@@ -40,6 +49,7 @@ from braunschweig.synthesis.commute_day.day_view import (
     ConfigureDayViewContext,
     StageOverrideContext,
 )
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +85,15 @@ ABSENCE_STATE_COLUMN = "day_absence_state"
 #: produces the output -- synpp hashes only this thin module, so an edit to synthesis/output.py
 #: (this very task added a column to its PERSON_OPTIONAL_OUTPUT_COLUMNS) would otherwise leave
 #: a stale CSV set in the cache.
-_HELPER_MODULES = (_day_view, base)
+#: ``_portal_config_keys`` carries the flag default, the pre-portal stage name and the file stem this stage declares
+#: and writes with (eqasim-bs#442).
+_HELPER_MODULES = (_day_view, base, _portal_config_keys)
+
+#: Required columns of the pre-portal trips frame: the inputs of ``synthesis.output.prepare_trip_output_frame``.
+_PRE_PORTAL_REQUIRED_COLUMNS = (
+    "person_id", "trip_index", "departure_time", "arrival_time", "preceding_purpose", "following_purpose",
+    "is_first_trip", "is_last_trip",
+)
 
 
 def validate(context):
@@ -108,6 +126,48 @@ def configure(context):
     context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
     if context.config(KEY_DAY_ABSENCE_ENABLED):
         context.stage(ABSENCE_STAGE)
+    # eqasim-bs#442: the donor-purpose trips are written next to the post-portal ones only while the portal layer is
+    # on; with the flag off the stage is not even in this stage's DAG.
+    context.config(_portal_config_keys.KEY_ENABLED, _portal_config_keys.DEFAULT_ENABLED)
+    if context.config(_portal_config_keys.KEY_ENABLED):
+        context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE)
+
+
+def write_pre_portal_trips(pre_portal_trips, output_path, output_prefix, output_formats):
+    """Write the pre-portal trips table and return the paths written.
+
+    ``pre_portal_trips`` is the frame of ``trips_day_stage`` (the eqasim trips schema). It is reduced to the
+    vendored trips column set by ``synthesis.output.prepare_trip_output_frame`` and written as
+    ``<output_path>/<output_prefix>trips_pre_portal.csv`` when ``"csv"`` is in ``output_formats`` and as ``.parquet``
+    when ``"parquet"`` is, mirroring the vendored writer's handling of the formats. Raises ``ValueError`` naming the
+    missing columns when the frame lacks an input of the derivation. Logs every file written with its row count and
+    warns when the output formats select no file at all.
+    """
+    missing = [column for column in _PRE_PORTAL_REQUIRED_COLUMNS if column not in pre_portal_trips.columns]
+    if missing:
+        raise ValueError(
+            f"{_LOG_TAG} the pre-portal trips frame is missing the column(s) {missing} that the trips output "
+            f"derives its columns from (present: {sorted(pre_portal_trips.columns)[:20]}). Check that "
+            f"{_portal_config_keys.PRE_PORTAL_TRIPS_STAGE} still returns the eqasim trips schema.")
+    frame = base.prepare_trip_output_frame(pre_portal_trips)
+    stem = f"{output_prefix}{_portal_config_keys.PRE_PORTAL_TRIPS_FILE_STEM}"
+    written = []
+    if "csv" in output_formats:
+        path = Path(output_path) / f"{stem}.csv"
+        frame.to_csv(path, sep=";", index=None, lineterminator="\n")
+        written.append(path)
+    if "parquet" in output_formats:
+        path = Path(output_path) / f"{stem}.parquet"
+        frame.to_parquet(path)
+        written.append(path)
+    if not written:
+        logger.warning("%s %s is true but output_formats %s contains neither 'csv' nor 'parquet': no pre-portal "
+                       "trips file was written.", _LOG_TAG, _portal_config_keys.KEY_ENABLED, list(output_formats))
+    for path in written:
+        logger.info("%s wrote %s (%d rows): the donor-purpose trips before the portal rewrite, for validators "
+                    "that compare the diary with a survey; <prefix>trips.csv holds the post-portal day.",
+                    _LOG_TAG, path, len(frame))
+    return written
 
 
 def attach_commute_day_state(persons, states):
@@ -216,8 +276,15 @@ def execute(context):
         logger.info("%s %s is false -- the persons output has no day_absence_state column.",
                     _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
 
-    return base.execute(StageOverrideContext(context, {
+    result = base.execute(StageOverrideContext(context, {
         TRIPS_STAGE: day_trips,
         ACTIVITIES_STAGE: day_activities,
         ENRICHED_STAGE: persons,
     }))
+
+    # After the vendored writer, whose validate() has already required the output directory to exist.
+    if bool(context.config(_portal_config_keys.KEY_ENABLED)):
+        write_pre_portal_trips(context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE),
+                               context.config("output_path"), context.config("output_prefix"),
+                               context.config("output_formats"))
+    return result

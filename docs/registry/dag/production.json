@@ -293,6 +293,10 @@
    "braunschweig.synthesis.portal_trips.stage"
   ],
   [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "synthesis.output"
+  ],
+  [
    "braunschweig.synthesis.cordon_gates",
    "braunschweig.analysis.cordon_validation"
   ],

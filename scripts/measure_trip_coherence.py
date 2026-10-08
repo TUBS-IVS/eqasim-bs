@@ -22,6 +22,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 DATA_PATH = os.path.join(REPO, "eqasim-data", "data")
 
+from braunschweig.analysis.pipeline_trips_file import resolve_pipeline_trips_path  # noqa: E402
 from braunschweig.analysis.population_validation import trip_coherence as TC  # noqa: E402
 
 
@@ -30,6 +31,18 @@ def _detect_prefix(directory: str) -> str:
     if not matches:
         raise FileNotFoundError(f"No *persons.csv in {directory}")
     return os.path.basename(matches[0])[: -len("persons.csv")]
+
+
+def _read_trips(output_dir: str, prefix: str) -> pd.DataFrame:
+    """The trips the report scores: ``<prefix>trips_pre_portal.csv`` when it exists, else ``<prefix>trips.csv``.
+
+    The trip-coherence report compares the written diary with MiD, so it reads the donor day before the portal
+    rewrite while that file exists (eqasim-bs#442); the choice is logged.
+    """
+    path = resolve_pipeline_trips_path(output_dir, prefix)
+    if path is None:
+        raise FileNotFoundError(f"No {prefix}trips.csv (and no {prefix}trips_pre_portal.csv) in {output_dir}")
+    return pd.read_csv(path, sep=";")
 
 
 def main(argv=None) -> int:
@@ -59,7 +72,7 @@ def main(argv=None) -> int:
     prefix = _detect_prefix(ns.output_dir)
     label = ns.label or prefix.rstrip("_")
     persons = pd.read_csv(os.path.join(ns.output_dir, f"{prefix}persons.csv"), sep=";")
-    trips = pd.read_csv(os.path.join(ns.output_dir, f"{prefix}trips.csv"), sep=";")
+    trips = _read_trips(ns.output_dir, prefix)
     hh_path = os.path.join(ns.output_dir, f"{prefix}households.csv")
     if os.path.exists(hh_path) and "household_size" not in persons.columns:
         hh = pd.read_csv(hh_path, sep=";")

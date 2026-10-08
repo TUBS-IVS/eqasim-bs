@@ -26,11 +26,14 @@ description: >-
   long-distance block, and the SimWrapper behaviour sankey excludes trips touching an outside activity. The
   dashboard's cross_boundary block holds every trip with an outside purpose at either end, so it also contains
   the in-commuters' trips, not only portal stays of residents. MATSim's own modestats.csv has no purposes and
-  keeps counting portal legs under their mode, so modestats_inside cannot separate them. Known limitation: the
-  validators that read the written trips CSV (population_validation/participation_fit.py,
-  population_validation/trip_coherence.py and the commute and purpose tables of run_mid_validation) count the
-  far legs as outside while the flag is on; their work/education participation and purpose tables are expected
-  to move in the A/B and are not a portal defect (a follow-up issue is proposed, not yet opened).
+  keeps counting portal legs under their mode, so modestats_inside cannot separate them. The written trips CSV
+  is the post-portal day, so while the flag is on the synthesis output additionally writes
+  <prefix>trips_pre_portal.csv (donor purposes, vendored trips column set, no mode) from the reporting-day trips
+  stage, and the validators that read the written trips (population_validation via population_source,
+  the trip counts of run_mid_validation, scripts/measure_trip_coherence.py) prefer it when it exists
+  (braunschweig/analysis/pipeline_trips_file.py logs the choice); the dashboard's eqasim metrics and the scripts
+  that join with MATSim output keep trips.csv. Remaining limitation: the commute and activity-purpose tables of
+  run_mid_validation read the post-portal activities geopackage and are expected to move in the A/B.
 stages:
 - braunschweig.synthesis.portal_trips.stage
 - braunschweig.synthesis.portal_trips.anchors
@@ -40,6 +43,7 @@ stages:
 - synthesis.population.spatial.secondary.distance_distributions
 - matsim.scenario.population
 - matsim.scenario.facilities
+- synthesis.output
 - braunschweig.synthesis.commute_day.trips_day_stage
 - braunschweig.analysis.synthesis.plan_structure_vs_srv
 - braunschweig.analysis.synthesis.departure_time_vs_srv
@@ -65,6 +69,8 @@ detail_doc: docs/codebase/notes/portal-trips.md
 code_paths:
 - braunschweig/analysis/dashboard/README.md
 - braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/pipeline_trips_file.py
+- braunschweig/analysis/population_validation/population_source.py
 - braunschweig/analysis/run_mid_validation.py
 - braunschweig/analysis/simwrapper/behaviour.py
 - braunschweig/analysis/simwrapper/trip_demand.py
@@ -73,6 +79,7 @@ code_paths:
 - braunschweig/analysis/synthesis/work_participation_by_kreis.py
 - braunschweig/matsim/scenario/facilities.py
 - braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/commute_day/output_day.py
 - braunschweig/synthesis/locations/secondary_candidates.py
 - braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
 - braunschweig/synthesis/locations/secondary_chainsolvers/candidates.py
@@ -100,6 +107,8 @@ code_paths:
 - configs/fixtures/config_smoke_simple_ipf.yml
 - matsim/scenario/facilities.py
 - matsim/scenario/population.py
+- scripts/measure_trip_coherence.py
+- synthesis/output.py
 - synthesis/population/spatial/secondary/problems.py
 evidence:
   tests:
@@ -112,6 +121,7 @@ evidence:
   - tests/test_passive_joint_two_pass.py
   - tests/test_plan_structure_vs_srv.py
   - tests/test_population_writer_portal_gate.py
+  - tests/test_pre_portal_trips_output.py
   - tests/test_portal_trips_classification.py
   - tests/test_portal_trips_config_keys.py
   - tests/test_portal_trips_gates.py
@@ -129,6 +139,7 @@ evidence:
     test: >-
       tests/test_portal_trips_stage.py::test_configure_off_declares_only_the_flag_and_the_trips_stage;
       tests/test_portal_trips_stage.py::test_execute_off_passes_the_trips_frame_through_unchanged;
+      tests/test_pre_portal_trips_output.py::test_output_day_off_writes_nothing_new_and_leaves_trips_csv_byte_identical;
       tests/test_portal_trips_rewrite.py::test_rewrite_without_stays_returns_an_equal_frame_with_the_flag_column;
       tests/test_distance_distributions_portal_filter.py::test_no_bound_is_identical_to_the_default_call;
       tests/test_secondary_candidates_supply_ring.py::test_execute_keeps_every_external_centroid_when_the_portal_is_off;

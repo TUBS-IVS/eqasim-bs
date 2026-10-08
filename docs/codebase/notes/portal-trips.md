@@ -50,7 +50,7 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   default of the flag is true and the chain solver stages the portal anchors on the flag alone (it does not look
   at the alias), so a fixture with its own alias and the default flag would pull the portal stage, and with it
   the cordon stages it requires, into a DAG that has none (the dag extraction of `simple_ipf_open` failed this
-  way, ruling R29). All `configs/fixtures/*` configs set the flag to false; production
+  way). All `configs/fixtures/*` configs set the flag to false; production
   (`configs/base_bs.yml`) is the only config with the flag on.
 - **The gate point must lie inside the cut extent.** The cutter runs unchanged after the portal stage; a stay
   outside the extent would be cut again and the stay would be corrupted. Road gates use the inside end node of the
@@ -145,15 +145,38 @@ donor-based day, not the portal rewrite. With `braunschweig.portal.enabled` true
 provenance records `portal_layer_enabled` and the stage actually read. Any new stage that validates the donor day
 against a reference must use the same helper.
 
-### Known limitations: file-based validators (not changed in this feature, ruling R36)
+### The pre-portal trips file and the validators that read the written trips
 
-Validators that read the written trips CSV instead of staging a trips frame cannot use the helper above, and with
-the flag on they count the far legs as `outside`: `braunschweig/analysis/population_validation/participation_fit.py`,
-`braunschweig/analysis/population_validation/trip_coherence.py` and the commute and purpose tables of
-`braunschweig/analysis/run_mid_validation.py` (its MiD side is unfiltered). Their work/education participation and
-purpose tables are therefore expected to move in the OFF/ON A/B; a difference there is not a portal defect. A
-follow-up issue (read the pre-portal trips, or exclude persons with a portal stay) is proposed to the project
-owner and is not yet opened.
+The written `<prefix>trips.csv` is the day AFTER the portal rewrite: with `braunschweig.portal.enabled` true a far
+destination carries the purpose `outside` and the inner legs of a stay are gone. Validators that read that file and
+compare the diary with a travel survey would count a far worker as not working (`participation_fit`) or fail on the
+unmapped purpose (`trip_coherence.purpose_distribution`). The output stage therefore writes a second file while the
+flag is on:
+
+- `braunschweig.synthesis.commute_day.output_day` writes `<prefix>trips_pre_portal.csv` (and `.parquet` when that
+  output format is on) from `braunschweig.synthesis.commute_day.trips_day_stage` (`config_keys.PRE_PORTAL_TRIPS_STAGE`).
+  It has exactly the vendored trips column set, produced by `synthesis.output.prepare_trip_output_frame`, the
+  function the vendored writer itself uses for `trips.csv`. No mode is merged in: the MATSim mode-choice trip
+  indices refer to the post-portal table, which stays in `trips.csv`. With the flag off the stage is not declared,
+  nothing new is written and every other output is byte-identical.
+- `braunschweig.analysis.pipeline_trips_file.resolve_pipeline_trips_path` is the one place that picks the file a
+  diary validator reads: the pre-portal file when it exists, else `trips.csv`. It logs the choice and warns when the
+  pre-portal file is older than `trips.csv` (a leftover of an earlier run in the same output directory; delete it
+  after a run with the flag off).
+
+Readers of the pipeline trips file and what each takes:
+
+| Reader | File | Why |
+|---|---|---|
+| `population_validation/population_source._read_dir` (feeds `participation_fit`, `trip_coherence`, the universe participation fit and `run_population_validation`) | pre-portal when present | diary against survey |
+| `analysis/run_mid_validation` (`_read_pipeline_trips`: `n_trips`, `trips_per_person`, the trip plot) | pre-portal when present | diary against MiD |
+| `scripts/measure_trip_coherence.py` | pre-portal when present | diary against MiD |
+| `analysis/dashboard/run_metrics.metrics_eqasim` (`*_trips.csv` glob), `scripts/validate_three_cases.py`, `scripts/compare_25pct_vs_baseline.py`, `eqasim_common/analysis/grid/comparison_flow_volume.py` | `trips.csv` | realised plan, named by file; the new file does not match the `*_trips.csv` glob |
+| `scripts/validate_bs_10pct` | `trips.csv` | joins by `(person_id, trip_index)` with MATSim output and the trips geopackage, which index the post-portal table |
+
+Limitation that remains: the commute and activity-purpose tables of `run_mid_validation` are computed from the
+activities geopackage (`<prefix>activities.gpkg`), which is the post-portal day (a far workplace is an `outside`
+activity there); only its trip counts read the pre-portal file. A pre-portal activities view is not written.
 
 ## Reading the stage's log and report (tag `[portal_trips]`)
 

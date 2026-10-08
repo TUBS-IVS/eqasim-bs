@@ -76,6 +76,33 @@ def select_household_output_columns(available_columns):
     return columns
 
 
+def prepare_trip_output_frame(df_trips):
+    """Trips frame in the column set and order of the trips output file (``<prefix>trips.csv``).
+
+    Renames the chain flags, derives the preceding/following activity indices from ``trip_index`` and selects the
+    ten output columns. Pure: the input frame is not modified. Factored out of ``execute`` unchanged so that
+    ``braunschweig.synthesis.commute_day.output_day`` writes the pre-portal trips file (eqasim-bs#442) with exactly
+    the same derivation instead of a second copy of it.
+    """
+    df_trips = df_trips.rename(
+        columns = {
+            "is_first_trip": "is_first",
+            "is_last_trip": "is_last"
+        }
+    )
+
+    df_trips["preceding_activity_index"] = df_trips["trip_index"]
+    df_trips["following_activity_index"] = df_trips["trip_index"] + 1
+
+    return df_trips[[
+        "person_id", "trip_index",
+        "preceding_activity_index", "following_activity_index",
+        "departure_time", "arrival_time",
+        "preceding_purpose", "following_purpose",
+        "is_first", "is_last"
+    ]]
+
+
 def configure(context):
     context.stage("synthesis.population.enriched")
 
@@ -218,23 +245,7 @@ def execute(context):
         df_households.to_parquet("%s/%shouseholds.parquet" % (output_path, output_prefix))
 
     # Prepare trips
-    df_trips = context.stage("synthesis.population.trips").rename(
-        columns = {
-            "is_first_trip": "is_first",
-            "is_last_trip": "is_last"
-        }
-    )
-
-    df_trips["preceding_activity_index"] = df_trips["trip_index"]
-    df_trips["following_activity_index"] = df_trips["trip_index"] + 1
-
-    df_trips = df_trips[[
-        "person_id", "trip_index",
-        "preceding_activity_index", "following_activity_index",
-        "departure_time", "arrival_time",
-        "preceding_purpose", "following_purpose",
-        "is_first", "is_last"
-    ]]
+    df_trips = prepare_trip_output_frame(context.stage("synthesis.population.trips"))
 
     if context.config("mode_choice"):
         df_mode_choice = pd.read_csv(

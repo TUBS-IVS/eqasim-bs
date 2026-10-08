@@ -43,6 +43,7 @@ import pandas as pd
 
 from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
+from braunschweig.analysis.pipeline_trips_file import resolve_pipeline_trips_path
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
@@ -266,6 +267,19 @@ def _load_mid() -> dict[str, pd.DataFrame]:
 
 def _read_csv(output_dir: Path, prefix: str, name: str) -> pd.DataFrame:
     return pd.read_csv(output_dir / f"{prefix}{name}.csv", sep=";")
+
+
+def _read_pipeline_trips(output_dir: Path, prefix: str) -> pd.DataFrame:
+    """The pipeline trips the report counts: ``<prefix>trips_pre_portal.csv`` when it exists, else ``trips.csv``.
+
+    The report compares the written diary with MiD, so while the portal layer is on it reads the donor day before
+    the outside stays (eqasim-bs#442); the choice is logged by ``resolve_pipeline_trips_path``. Raises
+    ``FileNotFoundError`` naming ``<prefix>trips.csv`` when neither file exists.
+    """
+    path = resolve_pipeline_trips_path(output_dir, prefix)
+    if path is None:
+        raise FileNotFoundError(f"No {prefix}trips.csv (and no {prefix}trips_pre_portal.csv) in {output_dir}.")
+    return pd.read_csv(path, sep=";")
 
 
 def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
@@ -1063,7 +1077,7 @@ def run(args: _Args) -> dict[str, Any]:
 
     persons = _read_csv(args.output_dir, args.prefix, "persons")
     households = _read_csv(args.output_dir, args.prefix, "households")
-    trips = _read_csv(args.output_dir, args.prefix, "trips")
+    trips = _read_pipeline_trips(args.output_dir, args.prefix)
     homes = _read_gpkg(args.output_dir, args.prefix, "homes")
     activities = _read_gpkg(args.output_dir, args.prefix, "activities")
 
