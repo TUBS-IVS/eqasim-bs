@@ -41,6 +41,12 @@ RNG_OFFSET = 300000
 #: homes use, so the Java side (OutsideFilter, the new PortalTripConstraint) sees one vocabulary.
 OUTSIDE_PURPOSE = "outside"
 
+#: Boolean activity attribute the population writer sets to true on every "outside" activity it writes,
+#: so the Java PortalTripConstraint can tell a portal gate from an eqasim-cutter outside activity. Must equal
+#: the Java constant PortalTripConstraint.PORTAL_GATE_ATTRIBUTE in eqasim-java-bs (the vendored writer
+#: matsim.scenario.population repeats it as a literal; tests/test_population_writer_portal_gate.py pins both).
+PORTAL_GATE_ACTIVITY_ATTRIBUTE = "portalGate"
+
 
 def validate_settings(max_routable_distance_m: float, external_point_distance_tolerance: float,
                       mode_substitution_warn_share: float, fallback_warn_share: float) -> None:

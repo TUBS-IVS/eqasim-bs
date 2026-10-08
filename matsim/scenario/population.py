@@ -21,6 +21,14 @@ RBW_PERSON_ATTRIBUTES = (
 
 PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
 
+# eqasim-bs#442 (portal trips): the Java PortalTripConstraint (eqasim-java-bs) locks the initial
+# mode of a trip that touches an activity of type PORTAL_GATE_ACTIVITY_TYPE carrying the Boolean
+# activity attribute PORTAL_GATE_ATTRIBUTE=true. This vendored module does not import braunschweig
+# code, so the two names are literals; tests/test_population_writer_portal_gate.py pins them to
+# braunschweig.synthesis.portal_trips.config_keys (PORTAL_GATE_ACTIVITY_ATTRIBUTE, OUTSIDE_PURPOSE).
+PORTAL_GATE_ACTIVITY_TYPE = "outside"
+PORTAL_GATE_ATTRIBUTE = "portalGate"
+
 def configure(context):
     context.stage("synthesis.population.enriched")
 
@@ -138,7 +146,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                write_income_eur = False, person_fields = None,
                remode_carless_car_legs = False, id_attribute_types = None,
                rbw_omission_counter = None,
-               passenger_availability_omission_counter = None):
+               passenger_availability_omission_counter = None,
+               remode_counter = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
@@ -148,6 +157,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
+    # ``remode_counter`` is the same kind of caller-owned Counter for the car -> car_passenger
+    # re-mode shim below (keys car_legs, remoded_legs, remoded_portal_legs); eqasim-bs#442.
 
     def _id_type(column, value):
         # Java type for a census/hts id attribute. When the caller provides
@@ -320,7 +331,7 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
 
     writer.start_plan(selected = True)
 
-    for activity, trip in itertools.zip_longest(activities, trips):
+    for activity_index, (activity, trip) in enumerate(itertools.zip_longest(activities, trips)):
         start_time = activity[ACTIVITY_FIELDS.index("start_time")]
         end_time = activity[ACTIVITY_FIELDS.index("end_time")]
         location_id = activity[ACTIVITY_FIELDS.index("location_id")]
@@ -347,6 +358,14 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         else:
             activity_attributes = None
 
+        # eqasim-bs#442: mark a portal gate for the Java PortalTripConstraint. The attribute is a
+        # real java.lang.Boolean (a String "true" would not be recognised on the Java side) and is
+        # merged with the isParis attributes above. No-op for a population without "outside"
+        # activities, whose output stays byte-identical.
+        if activity[ACTIVITY_FIELDS.index("purpose")] == PORTAL_GATE_ACTIVITY_TYPE:
+            activity_attributes = dict(activity_attributes or {})
+            activity_attributes[PORTAL_GATE_ATTRIBUTE] = ("java.lang.Boolean", "true")
+
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],
             location = location,
@@ -363,9 +382,19 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             # car-owning households (carAvailability "all"/"some" but no assigned
             # car). car_availability stays enforced by the in-loop mode choice.
             # No-op unless the flag is on.
+            if remode_counter is not None and remode_carless_car_legs and mode == "car":
+                remode_counter["car_legs"] += 1
             if (remode_carless_car_legs and mode == "car"
                     and not person_has_car_vehicle):
                 mode = "car_passenger"
+                if remode_counter is not None:
+                    # eqasim-bs#442: the leg between activity i and i + 1 touches a portal gate
+                    # when either end is an "outside" activity.
+                    remode_counter["remoded_legs"] += 1
+                    ends = activities[activity_index:activity_index + 2]
+                    if any(end[ACTIVITY_FIELDS.index("purpose")] == PORTAL_GATE_ACTIVITY_TYPE
+                           for end in ends):
+                        remode_counter["remoded_portal_legs"] += 1
             writer.add_leg(
                 mode = mode,
                 departure_time = trip[TRIP_FIELDS.index("departure_time")],
@@ -403,6 +432,7 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
     # whole population instead of disappearing silently (CLAUDE.md: no silent fallbacks).
     rbw_omission_counter = collections.Counter()
     passenger_availability_omission_counter = collections.Counter()
+    remode_counter = collections.Counter()
     writes_rbw_attributes = any(
         column in df_persons.columns for column, _, _, _ in RBW_PERSON_ATTRIBUTES)
     writes_passenger_availability = "car_passenger_availability" in df_persons.columns
@@ -482,7 +512,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                id_attribute_types=id_attribute_types,
                                rbw_omission_counter=rbw_omission_counter,
                                passenger_availability_omission_counter=
-                               passenger_availability_omission_counter)
+                               passenger_availability_omission_counter,
+                               remode_counter=remode_counter)
                     progress.update()
 
             writer.end_population()
@@ -501,6 +532,17 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
         logger.info("[population] passenger availability omitted for %d/%d persons (%.2f%%) -- "
                     "persons without MiD passenger availability",
                     n_omitted, n_persons, 100.0 * n_omitted / max(n_persons, 1))
+
+    if remode_carless_car_legs:
+        # CLAUDE.md fallback transparency (eqasim-bs#442): the re-mode shim substitutes the
+        # donor's car-driver leg for persons that own no "car" vehicle. A rate near 100 % would
+        # mean the vehicle fleet does not reach the writer, not that everybody is carless.
+        n_car_legs = remode_counter["car_legs"]
+        n_remoded = remode_counter["remoded_legs"]
+        logger.info("[population] re-moded car -> car_passenger: %d/%d car legs (%.1f%%), "
+                    "of which %d portal legs (leg touching an '%s' activity)",
+                    n_remoded, n_car_legs, 100.0 * n_remoded / max(n_car_legs, 1),
+                    remode_counter["remoded_portal_legs"], PORTAL_GATE_ACTIVITY_TYPE)
 
     return "population.xml.gz"
 
