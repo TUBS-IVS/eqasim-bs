@@ -58,9 +58,17 @@ def restrict_external_to_supply_ring(df_external: gpd.GeoDataFrame, ring):
     """Keep only the external Gemeinde centroids inside the supply ring (eqasim-bs#442).
 
     Beyond the ring there is no network and no timetable, so a candidate there can only be
-    reached by a trip the router turns into a walk; such trips are portal trips instead.
-    ``ring`` is a shapely (Multi)Polygon in the CRS of ``df_external`` (the caller checks the
-    CRS). Returns ``(kept, n_dropped)``.
+    reached by a trip the router turns into a walk; such trips are portal trips instead
+    (ADR-0141). ``ring`` is a shapely (Multi)Polygon in the CRS of ``df_external`` (the caller
+    checks the CRS). Returns ``(kept, n_dropped)``.
+
+    The caller builds the ring from ``cordon_network_source_buffer_m`` (the network SOURCE clip,
+    45 km by default), which is WIDER than the MATSim scenario cut (the ``cordon_network_buffer_fraction``
+    buffer): a candidate between the cut and the ring is kept and, as before ADR-0141, still becomes
+    an outside activity of the eqasim scenario cutter. The ring only guarantees that supply data
+    (network, timetable) exists for the part of the trip up to the candidate. With the cordon off
+    (``cordon_enabled`` false) the existing ``external_candidates_cordon_warning`` applies unchanged,
+    and the portal stage itself refuses to run without the cordon.
 
     Raises:
         ValueError: when ``df_external`` is non-empty and not one centroid lies inside the ring.

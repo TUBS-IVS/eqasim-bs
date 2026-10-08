@@ -165,7 +165,7 @@ def _primary_destination_xy(trips, stays, primary, outbound_positions):
 
 
 def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
-    """Portal flags of all legs plus the primary-path coverage of the work/education legs (ruling R5)."""
+    """Portal flags of all legs plus the primary-path coverage of the work/education legs."""
     frame = _classification.classification_distance_frame(trips, home_xy, primary)
     distance = frame["classification_distance_m"]
     is_portal = _classification.portal_flags(distance, trips["following_purpose"], threshold_m)

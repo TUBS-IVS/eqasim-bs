@@ -6,6 +6,6 @@ outside stay at a cordon gate, with the donor's mode fixed on the way out and ba
 stay's end time taken from the donor's diary. Stage modules: ``stage`` (the computation, one
 dict), ``trips_final`` (the trips frame) and ``anchors`` (the gate anchors the chain solver
 treats as fixed activities). Pure helpers: ``classification``, ``gates``, ``timing``, ``modes``,
-``rewrite``. Design: docs/superpowers/specs/2026-10-08-portal-trips-design.md; decision record
-ADR (see docs/codebase/notes/portal-trips.md).
+``rewrite``. Rationale and rejected alternatives: docs/decisions/ADR-0141-portal-trips-through-the-cordon-gates.md;
+maintenance rules: docs/codebase/notes/portal-trips.md.
 """

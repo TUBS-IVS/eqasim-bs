@@ -703,10 +703,14 @@ config:
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
   cordon_network_source_buffer_m: 45000
-  # Portal trips (eqasim-bs#442): legs beyond max_routable_distance_m (straight-line metres from the
-  # trip's origin) become one outside stay at a cordon gate with the donor's mode fixed and the
-  # diary's times; the same threshold bounds the distance CDFs and the external candidates.
-  # Default 45000 = the supply ring width above, kept as a separate key on purpose.
+  # Portal trips (eqasim-bs#442, ADR-0141): a leg beyond max_routable_distance_m (straight-line
+  # metres) becomes one outside stay at a cordon gate with the donor's mode fixed and the diary's
+  # times. The distance is measured from home to the assigned location for work/education legs and
+  # is the donor's reported (straight-line) leg distance for every other purpose. The same threshold
+  # also bounds the secondary distance CDFs (braunschweig.popsim.distance_distributions) and the
+  # external Gemeinde candidates (braunschweig.synthesis.locations.secondary_candidates, which keeps
+  # only those inside the supply ring above). Default 45000 = the supply ring width above, kept as a
+  # separate key on purpose (distance from the trip's origin, not a buffer beyond the ZGB border).
   braunschweig.portal.enabled: true
   braunschweig.portal.max_routable_distance_m: 45000
   braunschweig.portal.external_point_distance_tolerance: 0.2

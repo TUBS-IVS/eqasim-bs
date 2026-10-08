@@ -1,4 +1,4 @@
-"""Trips that touch an outside activity form an additive cross-boundary category (#442, ruling R28).
+"""Trips that touch an outside activity form an additive cross-boundary category (#442).
 
 Every pre-#442 key keeps its definition (all trips after the pseudo-mode drop); the new blocks
 ``cross_boundary`` and ``in_region`` are additive.

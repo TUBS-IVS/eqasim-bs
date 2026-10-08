@@ -7,10 +7,10 @@ gate at the diary re-entry time with the inside share of its reported duration; 
 carry the fixed mode and ``portal_leg`` True; their ``euclidean_distance`` becomes the inside
 part so downstream distance statistics see what is simulated: outbound origin -> gate, and for the
 return leg gate -> the same ``origin_xy`` (the stay's origin), NOT gate -> the return leg's own
-destination proxy as the design spec words it. Only the reported ``euclidean_distance`` is affected;
-the chain solver does not use it (controller Ruling R12). The chain columns are recomputed exactly as the trip build derives them
-(``trip_index`` 0-based per person, first/last flags, ``trip_duration``,
-``activity_duration`` = next departure - arrival, NaN on the last trip).
+destination. Only the reported ``euclidean_distance`` is affected; the chain solver does not use it
+(see ADR-0141, eqasim-bs#442). The chain columns are recomputed exactly as the trip build derives
+them (``trip_index`` 0-based per person, first/last flags, ``trip_duration``, ``activity_duration`` =
+next departure - arrival, NaN on the last trip).
 """
 from __future__ import annotations
 

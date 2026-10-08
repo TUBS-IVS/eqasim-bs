@@ -43,7 +43,7 @@ def test_configure_declares_the_portal_keys_and_the_inputs():
                  "braunschweig.data.cordon_network", "braunschweig.data.external_secondary_points",
                  "data.spatial.municipalities", "matsim.scenario.supply.processed"):
         assert name in context.stages
-    # The sampled frame lacks the availability columns the mode check needs (ruling R14).
+    # The sampled frame lacks the availability columns the mode check needs.
     assert "synthesis.population.sampled" not in context.stages
 
 

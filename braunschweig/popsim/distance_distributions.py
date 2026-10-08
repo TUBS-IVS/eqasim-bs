@@ -429,8 +429,7 @@ def _drop_trips_beyond_distance(df: pd.DataFrame, max_distance_m: float) -> pd.D
 
     Logs the dropped rate per mode (denominator: that mode's trips before the filter) and a
     total, and RAISES ``ValueError`` naming every mode that loses ALL its trips and the bound --
-    the sampler would find no distribution for it and fail late with a misleading KeyError
-    (controller ruling R18).
+    the sampler would find no distribution for it and fail late with a misleading KeyError.
     Trips with a missing distance are kept here; Step 5b removes them and counts them.
     """
     if not max_distance_m > 0.0:
