@@ -581,7 +581,7 @@ def test_the_free_share_notes_name_why_the_model_share_is_lower_by_construction(
 
 #: The literal reports of the Java ``ParkingOutcomeReportListenerTest`` (eqasim-java-bs, ``braunschweig/src/test/java/org/eqasim/
 #: braunschweig/parking/``), copied line by line: the writer's own expectations are the reader's fixture, so a change of the
-#: Java format breaks this test instead of a run (L5).
+#: Java format is caught when this copy is updated together with the Java writer (L5); the copy is not read from the Java repo.
 JAVA_V3_HEADER = "outcome,zone_id,purpose,count,share,garage_probability_sum,stays_with_garages_in_range"
 JAVA_REPORTS = {
     "it3_no_garage_options": [

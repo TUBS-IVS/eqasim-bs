@@ -329,3 +329,33 @@ def test_the_command_line_parses_the_facility_kinds(cal):
     assert cal.parse_facility_kinds("garage") == ("garage",)
     assert cal.parse_facility_kinds("garage,surface_lot") == ("garage", "surface_lot")
     assert cal.parse_facility_kinds("all") is None
+
+
+# ----------------------------------------------------------------------- release-path guard of a filtered run (G1)
+
+
+def test_run_refuses_a_filtered_calibration_under_the_release_table_name(cal, inputs, tmp_path):
+    mixed = _with_kinds(inputs, tmp_path, ["surface_lot", "garage"])
+    release_name = Path(cal.TABLE_RELATIVE).name
+    with pytest.raises(ValueError, match="sensitivity number"):
+        cal.run(out_path=tmp_path / release_name, facility_kinds=("surface_lot",), **mixed)
+    assert not (tmp_path / release_name).exists()
+    # an unfiltered run may write the release name, a filtered one another name
+    cal.run(out_path=tmp_path / release_name, **mixed)
+    cal.run(out_path=tmp_path / "garage_only_sensitivity.csv", facility_kinds=("surface_lot",), **mixed)
+
+
+def test_the_command_line_refuses_a_filtered_run_without_out_or_onto_the_release_path(cal, tmp_path):
+    data = tmp_path / "data"
+    release = data / cal.TABLE_RELATIVE
+    release.parent.mkdir(parents=True)
+    base = ["--plans", str(tmp_path / "plans.xml"), "--data-path", str(data), "--facility-kinds", "surface_lot"]
+    with pytest.raises(SystemExit) as no_out:   # --out omitted: the default is the release table
+        cal.main(base)
+    assert no_out.value.code == 2
+    with pytest.raises(SystemExit) as onto_release:
+        cal.main(base + ["--out", str(release)])
+    assert onto_release.value.code == 2
+    with pytest.raises(SystemExit):   # the same path spelled differently
+        cal.main(base + ["--out", str(release.parent / ".." / release.parent.name / release.name)])
+    assert not release.exists()

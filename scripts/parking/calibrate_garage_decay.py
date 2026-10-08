@@ -298,10 +298,9 @@ def git_state() -> str:
 
 
 def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: int, priced_garages: int, listed_garages: int,
-               facility_kinds_text: str, target: Target, calibration: Calibration, tolerance: float, lambda_min_m: float,
-               lambda_max_m: float,
-               max_distance_m: float, commuter_mean: float, commuter_count: int, commuter_reference: Target,
-               generated_on: str, code_state: str) -> str:
+               facility_kinds_text: str, target: Target, calibration: Calibration, tolerance: float,
+               lambda_min_m: float, lambda_max_m: float, max_distance_m: float, commuter_mean: float, commuter_count: int,
+               commuter_reference: Target, generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
     header = [
         "# Table: parking_garage_decay_calibration_2026.csv",
@@ -391,6 +390,10 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     writes ``out_path`` (its directory must exist).
     """
     out_path = Path(out_path) if out_path is not None else None
+    filtered = validate_facility_kinds(facility_kinds) is not None
+    if filtered and out_path is not None and out_path.name == Path(TABLE_RELATIVE).name:
+        raise ValueError(f"a facility-filtered calibration is a sensitivity number and must not be written under the release "
+                         f"table's file name {out_path.name!r} ({out_path}); choose another --out")
     if out_path is not None and out_path.exists() and not overwrite:
         raise FileExistsError(f"{out_path} exists; a calibrated release value is not replaced silently (use --overwrite)")
     exposure = load_exposure_module()
@@ -475,8 +478,13 @@ def main(argv=None) -> int:
                         help="calibrate on the priced garages of these facility kinds only (garage, surface_lot; default all); "
                              "a filtered run is a sensitivity number and must not be written over the release table")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     data = args.data_path
+    if args.facility_kinds is not None:
+        # a filtered run is a sensitivity number: it must never replace the release table (the default --out)
+        if args.out is None or args.out.resolve() == (data / TABLE_RELATIVE).resolve():
+            parser.error("--facility-kinds gives a sensitivity number, not the release value: pass --out with another path "
+                         f"than the release table {data / TABLE_RELATIVE}")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE,
         city_center_path=data / CITY_CENTER_RELATIVE, commute_path=data / COMMUTE_RELATIVE,
         out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite, max_distance_m=args.max_distance_m,

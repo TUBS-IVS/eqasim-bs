@@ -62,3 +62,15 @@ def test_the_three_configs_name_the_same_garage_dataset_and_decay():
         for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_max_distance_m"):
             assert _config(name)[key] == base[key], (name, key)
     assert base["parking_garages_path"] == "braunschweig/parking/parking_garages_2026.geojson"
+
+
+def test_the_committed_release_table_is_not_a_facility_filtered_sensitivity_run():
+    # G1: a filtered run (--facility-kinds) is a sensitivity number; the release table is the calibration on every kind
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    spec = importlib.util.spec_from_file_location("calibrate_garage_decay_filter_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    values = module.read_calibration_table(TABLE)
+    assert values.get("garage_facility_filter_active", 0) == 0, f"{TABLE.name} was calibrated on a facility-kind filter"
