@@ -771,7 +771,8 @@ def test_committed_parking_data_is_valid(capsys):
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
             "bs_bga_willy_brandt_platz, bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, gs_parkplatz_klubgartenstrasse_zob) "
             "and on 6 campus zones (default)") in out
-    # Task 4b (spec Amendments D1, D2, D4, E8; 16 with the three station rows of Amendment G1): 13 assumption windows remain, the commuter product is on zone Ib and the six
+    # Task 4b (spec Amendments D1, D2, D4, E8) left 13 assumption windows, 16 with the three station rows of Amendment G1;
+    # the commuter product is on zone Ib and the six
     # campus zones, no zone row carries a garage product or a search time
     assert "fee_window_source: assumption 16, municipal_page 17, ordinance 7" in out
     assert ("tariff products (schema 2): commuter product on 10 of 40 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "

@@ -186,8 +186,8 @@ verification:
     Task 4b test_committed_commuter_products_follow_spec_amendment_d2 (the seven commuter values against the monthly
     products over 21 working days, no commuter value elsewhere, the campus day tickets kept, no garage product and no
     search time) and test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendment_d1 (the two
-    windows, no ASSUMPTION F1 in their notes, the window source counts municipal_page 17, assumption 13 and ordinance 7,
-    the 13 assumption rows by id).
+    windows, no ASSUMPTION F1 in their notes, the window source counts municipal_page 17, assumption 16 and ordinance 7,
+    the 16 assumption rows by id, incl. the three station rows of Amendment G1).
 requirements:
   synthesis: not_needed
   matsim: required
@@ -206,7 +206,9 @@ limitations: >-
   bs_bga_jodutenstrasse_klint and bs_bga_willy_brandt_platz (Mo-Sa 9-20 as at the directory-listed BgA car parks),
   the three Parkscheininseln of the Stadthalle concept (8-18 h, the concept's
   regulated daytime window; their fee hours are not published), the five Bad Harzburg car parks (8-18 h) and the two
-  Braunlage car parks (9-18 h): no current source states their charging hours (spec Amendment D3). The islands take
+  Braunlage car parks (9-18 h): no current source states their charging hours (spec Amendment D3); the three
+  Braunschweig station lots bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west (0-24 h, read from the operator's opening
+  hours, spec Amendment G1, ruling R-4g-2). The islands take
   the ParkGO zone II amounts (0.50
   EUR per 30 min, 9.00 EUR for 9-24 h), which parkraummanagement.php quotes for them. Braunschweig's ParkGO sets no
   fee hours (machine display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page).
