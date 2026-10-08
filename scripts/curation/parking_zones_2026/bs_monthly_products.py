@@ -76,11 +76,11 @@ BRAUNSCHWEIG_AGS = "03101000"
 RULE_BILLING_PERIOD = "month"
 
 _CENT = Decimal("0.01")
-_SENTENCE_BOUNDARY = re.compile(r"(?<=\.)\s+(?=[A-ZÄÖÜ0-9])")
+_SENTENCE_BOUNDARY = re.compile(r"(?<=\.)\s+(?=[A-Z\u00c4\u00d6\u00dc0-9])")
 _GERMAN_AMOUNT = r"(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})"
 _WEITERE_MONATE = re.compile(
-    r"^weitere Monate:.*?\|\s*Netto\s+" + _GERMAN_AMOUNT + r"\s*€\s*\|\s*MwSt\.\s+" + _GERMAN_AMOUNT
-    + r"\s*€\s*\|\s*Brutto\s+" + _GERMAN_AMOUNT + r"\s*€\s*$", re.MULTILINE)
+    r"^weitere Monate:.*?\|\s*Netto\s+" + _GERMAN_AMOUNT + r"\s*\u20ac\s*\|\s*MwSt\.\s+" + _GERMAN_AMOUNT
+    + r"\s*\u20ac\s*\|\s*Brutto\s+" + _GERMAN_AMOUNT + r"\s*\u20ac\s*$", re.MULTILINE)
 _HEADER = re.compile(r"^#\s*(\w+):\s*(.*)$", re.MULTILINE)
 
 
@@ -98,7 +98,7 @@ def _german_decimal(text: str) -> Decimal:
 
 def _normalised(text: str) -> str:
     """The letters and digits of ``text`` in lower case (the comparison of two product names that differ in dashes)."""
-    return re.sub(r"[^0-9a-zäöüß]", "", text.lower())
+    return re.sub(r"[^0-9a-z\u00e4\u00f6\u00fc\u00df]", "", text.lower())
 
 
 def _whole_cents(value, where: str) -> float:

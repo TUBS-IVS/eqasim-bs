@@ -2228,6 +2228,8 @@ def apply_monthly_imputation(frame: gpd.GeoDataFrame, rows: list) -> gpd.GeoData
           f"({100.0 * share:.1f} %) - the imputed monthly product (published monthly product on {coverage['with_monthly_product']} "
           f"garages, imputed on {coverage['with_monthly_imputed']})")
     print(f"[garages] monthly products: {pg.monthly_summary_text(summary)}")
+    for message in pg.monthly_imputation_warnings(summary):
+        print(f"[garages] WARNING: {message}")
     return frame
 
 

@@ -132,7 +132,7 @@ def load_fixture_garages(geojson_path=None) -> tuple:
     path = Path(geojson_path) if geojson_path is not None else FIXTURE_GARAGES_GEOJSON
     if not path.is_file():
         raise FileNotFoundError(f"fixture garages not found: {path}")
-    frame = parking_garages.load_garages(path)
+    frame = parking_garages.load_garages(path, allow_legacy_columns=True)
     parking_garages.validate_garages(frame)
     source = {"source_id": FIXTURE_GARAGES_SOURCE_ID, "path": _repository_path(path),
               "sha256": tariff_export.content_sha256(path)}

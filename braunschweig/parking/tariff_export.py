@@ -634,6 +634,8 @@ def monthly_product_text(summary: dict) -> str:
 def _log_monthly_products(garages, summary: dict, monthly_imputation: bool) -> None:
     log.info("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION "
              "P13): %s", monthly_imputation, monthly_product_text(summary))
+    for message in parking_garages.monthly_imputation_warnings(summary):
+        log.warning("[parking-garages] %s", message)
     if garages is not None and not monthly_imputation:
         available = int(garages.loc[garages["priced"].astype(bool) & (garages["facility_kind"] == "garage"),
                                     "monthly_imputed_eur"].notna().sum())

@@ -103,9 +103,15 @@ BAND_COLUMNS = ("tariff_duration_bands",)
 #: The monthly product of a garage: the published product (``monthly_eur`` with its source and description) or, where none is
 #: published, the imputed product of ASSUMPTION P13 (``monthly_imputed_eur``, spec Amendment F2); never both on one row.
 MONTHLY_COLUMNS = ("monthly_eur", "monthly_source_url", "monthly_product", "monthly_imputed_eur")
-#: A dataset file written before Amendment F lacks these columns; ``load_garages`` reads such a file with the column empty and
-#: says so in the log (the fixtures of the test suite are such files). The committed dataset carries them.
+#: A dataset file written before Amendment F lacks these columns. ``load_garages`` refuses such a file (``LegacyColumnsError``)
+#: unless the caller opts in with ``allow_legacy_columns=True`` (the test fixtures are such files); the column is then read as
+#: empty and the log says so. The committed dataset carries the columns, so the production path never opts in.
 LEGACY_OPTIONAL_COLUMNS = ("monthly_imputed_eur",)
+
+
+class LegacyColumnsError(ValueError):
+    """A dataset file lacks a column of ``LEGACY_OPTIONAL_COLUMNS`` (written before spec Amendment F) and the caller did not opt
+    in to reading it as empty."""
 STATUS_COLUMNS = ("priced", "not_priced_reason", "assumptions")
 PROVENANCE_COLUMNS = ("source_url", "source_date", "tariff_rule_ids", "geometry_method", "geometry_source_url",
                       "package_sha256", "notes")
@@ -197,6 +203,11 @@ ASSUMPTIONS = {
 #: The least number of published current garage monthly products a municipality needs before ASSUMPTION P13 imputes a monthly
 #: product for its other garages (a median of one value would copy a single price to every garage).
 MINIMUM_PUBLISHED_MONTHLY_PRODUCTS = 2
+#: Warn when more than this share (0 to 1) of the priced garages of a municipality carry an IMPUTED monthly product (ASSUMPTION
+#: P13) instead of a published one: then the commuter price of that town rests mostly on a median of other garages' products and
+#: not on the garage's own offer. A majority (the check is "above", not "at") is the named threshold; the curation step and the
+#: tariff model export both warn per municipality (fallback transparency, :func:`monthly_imputation_warnings`).
+MONTHLY_IMPUTATION_WARNING_SHARE = 0.5
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a
 #: minority of the priced garages and a user of the dataset should know. The same share is the per-assumption warning
@@ -502,14 +513,17 @@ def _text_series(values: pd.Series) -> pd.Series:
                      index=values.index, dtype=object)
 
 
-def load_garages(path) -> gpd.GeoDataFrame:
+def load_garages(path, *, allow_legacy_columns: bool = False) -> gpd.GeoDataFrame:
     """Load the garage dataset: WGS84 GeoJSON on disk, EPSG:25832 points in memory, every column typed.
 
     Types: money and hours ``float`` (NaN = not applicable), minutes and the capacity ``Int64`` (NA = not applicable),
     ``priced`` ``bool`` (a null raises), text ``object`` with ``None`` for an empty cell. The columns must be exactly
     ``DATASET_COLUMNS``. The dataset is NOT validated here; call :func:`validate_garages`. Logs the garages, how many are
     priced and how many rest on each assumption, as rates, so that a dataset in which most garages are not priced, or in
-    which most prices rest on an assumption, is visible at every load.
+    which most prices rest on an assumption, is visible at every load. A file without a column of
+    ``LEGACY_OPTIONAL_COLUMNS`` (``monthly_imputed_eur``, written before spec Amendment F) raises ``LegacyColumnsError`` that names
+    the column and the curation command, unless ``allow_legacy_columns`` is True (the fixtures of the tests, which then get the
+    column empty and a warning): a production dataset must never silently lack its imputed products.
     """
     path = Path(path)
     if not path.is_file():
@@ -518,8 +532,13 @@ def load_garages(path) -> gpd.GeoDataFrame:
     if frame.crs is None:
         raise ValueError(f"{path}: the garage file declares no CRS")
     legacy = [column for column in LEGACY_OPTIONAL_COLUMNS if column not in frame.columns]
+    if legacy and not allow_legacy_columns:
+        raise LegacyColumnsError(
+            f"{path}: the dataset lacks the column(s) {legacy} (written before spec Amendment F: imputed monthly products, "
+            "ASSUMPTION P13); regenerate it with scripts/curation/parking_zones_2026/regional_garages.py (the command is in the "
+            "data record parking_garages_2026) or, for a test fixture only, load it with allow_legacy_columns=True")
     if legacy:
-        # a file written before Amendment F: the column is explicitly empty (nothing imputed), never guessed
+        # a file written before Amendment F, opted in: the column is explicitly empty (nothing imputed), never guessed
         log.warning("[parking-garages] %s lacks the column(s) %s (a dataset written before spec Amendment F): read as empty, "
                     "so no monthly product is imputed (ASSUMPTION P13)", path, legacy)
         frame = frame.assign(**{column: None for column in legacy})
@@ -1003,3 +1022,18 @@ def monthly_summary_text(summary: dict) -> str:
     totals = {key: sum(entry[key] for entry in summary.values()) for key in ("published", "imputed", "none", "surface_lots")}
     return (f"{'; '.join(parts)}; total published {totals['published']}, imputed {totals['imputed']}, none {totals['none']} "
             f"(surface lots {totals['surface_lots']}, never imputed)")
+
+
+def monthly_imputation_warnings(summary: dict) -> list:
+    """One warning text per municipality of a :func:`monthly_summary` whose imputed share of the priced garages
+    (``imputed / (published + imputed + none)``) is above ``MONTHLY_IMPUTATION_WARNING_SHARE`` (fallback transparency: the
+    imputed product is the fallback of the published one). Empty when no municipality is above it. Pure."""
+    warnings = []
+    for ags, entry in summary.items():
+        total = entry["published"] + entry["imputed"] + entry["none"]
+        if total and entry["imputed"] / total > MONTHLY_IMPUTATION_WARNING_SHARE:
+            warnings.append(f"{entry['municipality']} ({ags}): {entry['imputed']} of {total} priced garages "
+                            f"({100.0 * entry['imputed'] / total:.1f} %, above {100.0 * MONTHLY_IMPUTATION_WARNING_SHARE:.0f} %) "
+                            f"carry an imputed monthly product (ASSUMPTION P13, median {entry['median_eur']:.2f} EUR) instead of a "
+                            f"published one; only {entry['published']} publish their own")
+    return warnings

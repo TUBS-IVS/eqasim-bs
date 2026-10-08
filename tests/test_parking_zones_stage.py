@@ -24,6 +24,7 @@ import pytest
 from shapely.geometry import Polygon, box
 
 from braunschweig.parking import attach, tariff_export, zones_stage
+from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
 
 REPO = Path(__file__).resolve().parents[1]
@@ -431,3 +432,16 @@ def test_the_committed_release_loads_through_the_stage(caplog):
                                              garages=release["garages"])
     assert model["schema_version"] == 3 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
     assert len(model["garages"]) == 48 and model["garage_decay_m"] == 0.0
+
+
+def test_a_legacy_garage_dataset_without_the_imputed_column_is_refused_unless_every_row_is_a_marked_fixture(fixture_data):
+    """Spec Amendment F: the stage never silently loads a production dataset that lacks monthly_imputed_eur. The fixture file lacks
+    it and is accepted only because every row carries the synthetic test-set marker; one unmarked row refuses the release."""
+    _release(fixture_data)   # the marked fixture release loads (and is warned about)
+    path = fixture_data / FIXTURE_PATHS["parking_garages_path"]
+    text = path.read_text(encoding="utf-8")
+    marker = f'"geometry_method": "{pz.FIXTURE_MARKER}"'
+    assert marker in text
+    path.write_text(text.replace(marker, '"geometry_method": "official_feed_point"', 1), encoding="utf-8")
+    with pytest.raises(pg.LegacyColumnsError, match="monthly_imputed_eur"):
+        _release(fixture_data)

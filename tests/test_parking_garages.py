@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -1043,24 +1044,41 @@ def test_the_median_refuses_what_is_no_published_monthly_product(values):
         pg.monthly_median_eur(values)
 
 
-def test_the_legacy_layout_without_the_imputed_column_loads_as_nothing_imputed_and_says_so(tmp_path, caplog):
+def _legacy_file(tmp_path):
     path = tmp_path / "garages.geojson"
     pg.write_garages(_frame(_row(**PUBLISHED), _row(garage_id="b")), path)
     document = json.loads(path.read_text(encoding="utf-8"))
     for feature in document["features"]:
         del feature["properties"]["monthly_imputed_eur"]
     path.write_text(json.dumps(document), encoding="utf-8")
+    return path, document
+
+
+def test_a_dataset_without_the_imputed_column_is_refused_by_default_with_the_column_and_the_command(tmp_path):
+    path, _ = _legacy_file(tmp_path)
+    with pytest.raises(pg.LegacyColumnsError) as error:
+        pg.load_garages(path)
+    message = str(error.value)
+    assert isinstance(error.value, ValueError) and "monthly_imputed_eur" in message
+    assert "regional_garages.py" in message and "allow_legacy_columns=True" in message
+    # the committed dataset carries the column, so the production path loads it with the default
+    assert "monthly_imputed_eur" in pg.load_garages(
+        Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_garages_2026.geojson")
+
+
+def test_the_legacy_layout_loads_only_on_an_explicit_opt_in_as_nothing_imputed_and_says_so(tmp_path, caplog):
+    path, document = _legacy_file(tmp_path)
     with caplog.at_level(logging.WARNING, logger=pg.log.name):
-        loaded = pg.load_garages(path)
+        loaded = pg.load_garages(path, allow_legacy_columns=True)
     assert loaded["monthly_imputed_eur"].isna().all() and loaded["monthly_imputed_eur"].dtype == float
     assert "lacks the column(s) ['monthly_imputed_eur']" in caplog.text and "no monthly product is imputed" in caplog.text
     pg.validate_garages(loaded)
-    # any other missing column is still an error
+    # the opt-in covers only the legacy column: any other missing column is still an error
     for feature in document["features"]:
         del feature["properties"]["notes"]
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(ValueError, match=r"missing \['notes'\]"):
-        pg.load_garages(path)
+        pg.load_garages(path, allow_legacy_columns=True)
 
 
 def test_the_written_file_carries_the_imputed_product_and_the_loader_reads_it_back(tmp_path):
@@ -1445,3 +1463,19 @@ def test_a_recorded_garage_that_is_no_option_states_an_amount_a_municipality_and
         qa.loc[qa["record_id"] == "monthly_bs_eves", column] = value
     with pytest.raises(ValueError, match=message):
         pq.validate_garage_qa(qa, garages)
+
+
+def test_a_municipality_with_a_majority_of_imputed_monthly_products_is_warned_about_by_name():
+    # fallback transparency: Braunschweig 3 of 4 imputed (75 %, above the named 50 %), Wolfsburg 1 of 2 (not above)
+    frame = _frame(
+        _row(garage_id="bs_published", **PUBLISHED), _imputed(garage_id="bs_i1"), _imputed(garage_id="bs_i2"),
+        _imputed(garage_id="bs_i3"),
+        _row(garage_id="wob_published", municipality="Wolfsburg", municipality_ags="03103000", **PUBLISHED),
+        _imputed(garage_id="wob_imputed", municipality="Wolfsburg", municipality_ags="03103000", monthly_imputed_eur=57.5))
+    assert pg.MONTHLY_IMPUTATION_WARNING_SHARE == 0.5
+    [message] = pg.monthly_imputation_warnings(pg.monthly_summary(frame))
+    assert message.startswith("Braunschweig (03101000): 3 of 4 priced garages (75.0 %, above 50 %) carry an imputed monthly")
+    assert "median 107.48 EUR" in message and "only 1 publish their own" in message
+    # nothing imputed (the sensitivity arm) or no majority: no warning
+    assert pg.monthly_imputation_warnings(pg.monthly_summary(frame, imputation=False)) == []
+    assert pg.monthly_imputation_warnings({}) == []

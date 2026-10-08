@@ -781,8 +781,9 @@ def test_committed_parking_data_is_valid(capsys):
     assert ("garages: 48 listed, 48 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
     assert "03103000 22 listed 22 priced" in out
     assert ("priced garages resting on an assumption: P10 4, P11 5, P12 8, P13 15, P4 24, P5 24, P6 8, P7 5, P8 11 of 48 "
-            "(at least one assumption 44, P4 or P5 32; in the tiered form 8, in the banded form 11, with the free schedule 11); by facility "
-            "kind garage 35 listed 35 priced, surface_lot 13 listed 13 priced; monthly product on 11 garages") in out
+            "(at least one assumption 44, P4 or P5 32; in the tiered form 8, in the banded form 11, with the free "
+            "schedule 11); by facility kind garage 35 listed 35 priced, surface_lot 13 listed 13 priced; "
+            "monthly product on 11 garages") in out
     assert "QA: monthly products used 13, recorded and not used 36 (capacity_limited_permits 1, excluded_by_package 1, " in out
     # spec Amendment F3: the monthly products per municipality (published, imputed under ASSUMPTION P13 with the median, none)
     assert ("garage monthly products (ASSUMPTION P13): Braunschweig (03101000) published 2, imputed 10, P13 median 107.48 EUR, "

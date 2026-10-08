@@ -465,7 +465,7 @@ GARAGE_KEYS = ["bands", "billing_unit_min", "daily_cap_cents", "fee_end_s", "fee
 @pytest.fixture(scope="module")
 def garage_frame():
     from braunschweig.parking import garages as pg
-    frame = pg.load_garages(FIXTURE_GARAGES)
+    frame = pg.load_garages(FIXTURE_GARAGES, allow_legacy_columns=True)
     pg.validate_garages(frame)
     return frame
 
@@ -691,3 +691,25 @@ def test_the_imputation_switch_must_be_a_boolean(table, sources, garage_frame):
     with pytest.raises(ValueError, match="garage_monthly_imputation must be true or false"):
         te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
                               garage_monthly_imputation="false")
+
+
+def test_the_export_warns_per_municipality_when_the_imputed_products_are_a_majority(table, sources, garage_frame, caplog):
+    logger = "braunschweig.parking.tariff_export"
+    # one imputed garage among 19: no warning; every garage without a published product imputed: a warning that names the town
+    one = _with_imputed_monthly(garage_frame, next(row["garage_id"] for _, row in garage_frame.iterrows()
+                                                    if pd.isna(row["monthly_eur"]) and row["priced"]
+                                                    and row["facility_kind"] == "garage"))
+    many = garage_frame.copy()
+    open_rows = many["monthly_eur"].isna() & many["priced"].astype(bool) & (many["facility_kind"] == "garage")
+    many.loc[open_rows, "monthly_imputed_eur"] = 107.48
+    with caplog.at_level("WARNING", logger=logger):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=one)
+        assert not [record for record in caplog.records if record.name == logger]
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=many)
+        messages = [record.getMessage() for record in caplog.records if record.name == logger]
+        assert messages and all("carry an imputed monthly product (ASSUMPTION P13" in message for message in messages)
+        caplog.clear()
+        # the sensitivity arm uses no imputed product, so it has nothing to warn about
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=many,
+                              garage_monthly_imputation=False)
+        assert not [record for record in caplog.records if record.name == logger]

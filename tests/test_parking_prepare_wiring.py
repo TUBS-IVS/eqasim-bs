@@ -128,7 +128,7 @@ def _zones_stage_result() -> dict:
     return {"zones": zones, "tariffs": tariffs, "workplace_shares": pd.DataFrame(),
             "coverage_register": pd.DataFrame(),
             "districts": parking_zones.load_resident_districts(FIXTURE_DISTRICTS_PATH),
-            "garages": parking_garages.load_garages(FIXTURE_GARAGES_PATH), "sources": sources}
+            "garages": parking_garages.load_garages(FIXTURE_GARAGES_PATH, allow_legacy_columns=True), "sources": sources}
 
 
 def _prepare_context(tmp_path, monkeypatch, **values):

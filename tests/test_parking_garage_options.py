@@ -618,7 +618,8 @@ def _committed_garage_option(garage_id: str, arrival_s: int, departure_s: int, p
     from braunschweig.parking import garages as parking_garages
     from braunschweig.parking.tariff_export import garage_row_to_tariff
 
-    path = Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_garages_2026.geojson"
+    parking_dir = Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking"
+    path = parking_dir / "parking_garages_2026.geojson"
     frame = parking_garages.load_garages(path).set_index("garage_id", drop=False)
     return cost.garage_option_cents(garage_row_to_tariff(frame.loc[garage_id], **options), arrival_s, departure_s,
                                     purpose=purpose)

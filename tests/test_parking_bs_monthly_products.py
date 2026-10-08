@@ -41,11 +41,11 @@ README = (
     "# Braunschweig: Monats- und Dauerparkertarife\n\n"
     "Recherchestand 08.10.2026.\n\n"
     "## Ergebnis\n\n"
-    "Magni: Dauerstellplätze laut Betreiber belegt, kein veröffentlichter Preis. Wallstraße: Dauerparken verlinkt, "
+    "Magni: Dauerstellpl\u00e4tze laut Betreiber belegt, kein ver\u00f6ffentlichter Preis. Wallstra\u00dfe: Dauerparken verlinkt, "
     "Preis hinter Anmeldung. Schloss, Eiermarkt: kein belastbarer aktueller Monatspreis ermittelt. Forschungsflughafen: "
     "sichtbare Betreibersektion nur Preis auf Anfrage; 85 EUR stehen in ausgeblendeten Seitenabschnitten.\n\n"
-    "Wilhelmstraße: Tarifblatt 75/79 EUR brutto, gültig ab 01.05.2025, in Anbieteranzeige vom 26.08.2026. Monatsbezug "
-    "fehlt ausdrücklich.\n")
+    "Wilhelmstra\u00dfe: Tarifblatt 75/79 EUR brutto, g\u00fcltig ab 01.05.2025, in Anbieteranzeige vom 26.08.2026. Monatsbezug "
+    "fehlt ausdr\u00fccklich.\n")
 
 CONFIGURATOR = (
     "# Evidence capture (visible page text; nothing submitted, no login)\n"
@@ -54,10 +54,10 @@ CONFIGURATOR = (
     "# facility: Parkhaus Wallstrasse, Braunschweig (dataset garage bs_wall), operator Example GmbH\n"
     "# relevant content (verbatim, umlauts kept):\n"
     "Dauerparken Mo.-So. - 24 Stunden PKW\n"
-    "Mindestvertragslaufzeit: 1 Monat Kündigungsfrist: 1 Monat zum Monatsende\n"
+    "Mindestvertragslaufzeit: 1 Monat K\u00fcndigungsfrist: 1 Monat zum Monatsende\n"
     "Monatsmiete\n"
-    "1. Monat: Stellplätze 1 54,74 € | Netto 54,74 € | MwSt. 10,40 € | Brutto 65,14 €   (pro rata)\n"
-    "weitere Monate: Stellplätze 1 96,60 € | Netto 96,60 € | MwSt. 18,35 € | Brutto 114,95 €\n")
+    "1. Monat: Stellpl\u00e4tze 1 54,74 \u20ac | Netto 54,74 \u20ac | MwSt. 10,40 \u20ac | Brutto 65,14 \u20ac   (pro rata)\n"
+    "weitere Monate: Stellpl\u00e4tze 1 96,60 \u20ac | Netto 96,60 \u20ac | MwSt. 18,35 \u20ac | Brutto 114,95 \u20ac\n")
 NO_RENTAL = (
     "# Evidence capture (page inspection; nothing submitted, no login)\n"
     "# url: https://www.example.org/tiefgarage/\n"
@@ -69,7 +69,7 @@ def _rule(offer_id, facility, code, amount, *, name=None, status="published_mont
           usable=True, period="month", monthly="same", sources=("SRC_TARIFF",), days=("MO", "TU", "WE", "TH", "FR"),
           start="06:30", end="21:00") -> dict:
     return {"offer_id": offer_id, "facility_id": facility, "offer_code": code, "amount_eur": amount,
-            "billing_period": period, "product_name": name or f"Tarif {code} – Tagesparker", "evidence_status": status,
+            "billing_period": period, "product_name": name or f"Tarif {code} \u2013 Tagesparker", "evidence_status": status,
             "model_usable_as_monthly_price": usable, "monthly_amount_eur": amount if monthly == "same" else monthly,
             "new_contract_status": contract, "source_ids": list(sources), "vat_included": True, "minimum_term_months": None,
             "access_schedule": {"weekly_windows": [{"days": list(days), "start": start, "end": end, "end_day_offset": 0}]}}
@@ -85,7 +85,7 @@ def _facility(facility_id, key, kind="garage", review="monthly_price_unknown", c
               upstream=None, name=None) -> dict:
     return {"facility_id": facility_id, "facility_key": key, "facility_type": kind, "review_status": review,
             "new_contract_status": contract, "offer_ids": list(offers), "upstream_feature_id": upstream,
-            "name": name or f"Parkhaus {key} Übung"}
+            "name": name or f"Parkhaus {key} \u00dcbung"}
 
 
 def _package_content() -> dict:
@@ -100,7 +100,7 @@ def _package_content() -> dict:
              _rule("P1_1", "F_P1", "x", 120.0, name="1 Monat"), _rule("P1_2", "F_P1", "y", 160.0, name="1 Monat fest")]
     offers = [dict(_offer(rule["offer_id"], rule["facility_id"], "published_monthly_price", rule["amount_eur"]), **{
         "monthly_amount_eur": rule["monthly_amount_eur"], "product_name": rule["product_name"]}) for rule in rules]
-    offers += [_offer("W_1", "F_WALL", "monthly_price_unknown", name="Dauerparken Mo.-So. – 24 Stunden PKW"),
+    offers += [_offer("W_1", "F_WALL", "monthly_price_unknown", name="Dauerparken Mo.-So. \u2013 24 Stunden PKW"),
                _offer("M_1", "F_SOLD", "monthly_price_unknown", contract="sold_out"),
                _offer("M_2", "F_SOLD", "not_a_monthly_product", 1.2, name="Kurzparken", period="started_hour"),
                _offer("R_1", "F_REQ", "monthly_price_unknown"),
@@ -160,15 +160,15 @@ def _write_evidence(directory: Path, configurator: str = CONFIGURATOR, no_rental
 SPECS = (
     {"garage_id": "bs_stein", "facility": "F_STEIN", "facility_key": "steinstrasse", "status": "published", "rule": "S_A"},
     {"garage_id": "bs_wall", "facility": "F_WALL", "facility_key": "braunschweig_wallstrasse", "status": "published",
-     "offer": "W_1", "quotes": (("Wallstraße", "Preis hinter Anmeldung"),)},
+     "offer": "W_1", "quotes": (("Wallstra\u00dfe", "Preis hinter Anmeldung"),)},
     {"garage_id": "bs_schloss", "facility": "F_SCHLOSS", "facility_key": "schloss", "status": "no_price",
      "quotes": (("Schloss", "kein belastbarer aktueller Monatspreis ermittelt"),), "evidence": "eiermarkt"},
     {"garage_id": "bs_magni", "facility": "F_SOLD", "facility_key": "magni", "status": "sold_out",
-     "quotes": (("Magni", "Dauerstellplätze laut Betreiber belegt"),)},
+     "quotes": (("Magni", "Dauerstellpl\u00e4tze laut Betreiber belegt"),)},
     {"garage_id": "bs_req", "facility": "F_REQ", "facility_key": "forschungsflughafen", "status": "price_on_request",
      "quotes": (("Forschungsflughafen", "Preis auf Anfrage"),), "hidden_amount": True},
     {"garage_id": "bs_period", "facility": "F_PERIOD", "facility_key": "wilhelmstrasse", "status": "period_unconfirmed",
-     "quotes": (("Wilhelmstraße", "Tarifblatt 75/79 EUR brutto"), ("Monatsbezug", "Monatsbezug fehlt ausdrücklich"))},
+     "quotes": (("Wilhelmstra\u00dfe", "Tarifblatt 75/79 EUR brutto"), ("Monatsbezug", "Monatsbezug fehlt ausdr\u00fccklich"))},
 )
 RECORDED = (
     {"record_id": "monthly_bs_eves", "facility": "F_EVES", "facility_key": "eves", "facility_type": "garage",
@@ -346,8 +346,8 @@ def test_a_different_amount_in_the_capture_is_a_different_product_price(bsm, tmp
 
 @pytest.mark.parametrize("edit, message", [
     (lambda text: text.replace("weitere Monate:", "danach:"), "0 line"),
-    (lambda text: text + "weitere Monate: Stellplätze 1 96,60 € | Netto 96,60 € | MwSt. 18,35 € | "
-                         "Brutto 114,95 €\n", "2 line"),
+    (lambda text: text + "weitere Monate: Stellpl\u00e4tze 1 96,60 \u20ac | Netto 96,60 \u20ac | MwSt. 18,35 \u20ac | "
+                         "Brutto 114,95 \u20ac\n", "2 line"),
     (lambda text: text.replace("Brutto 114,95", "Brutto 115,95"), "net 96.60 \\+ VAT 18.35 is not the gross amount 115.95"),
     (lambda text: text.replace("(dataset garage bs_wall)", "(dataset garage bs_other)"), "not of the dataset garage bs_wall"),
     (lambda text: text.replace("# url: https://stellplatz.example/produktkonfiguration?carparkId=1&productId=2\n", ""),
@@ -422,7 +422,7 @@ def test_unconfirmed_amounts_and_the_hidden_amount_are_recorded_and_not_used_wit
      "state a monthly amount, the specification says no_price"),
     # the README does not hold the sentence
     (lambda content: content.update(readme=README.replace("Preis auf Anfrage", "Preis unbekannt")), "0 sentence"),
-    (lambda content: content.update(readme=README + "\nMagni: Dauerstellplätze laut Betreiber belegt.\n"), "2 sentence"),
+    (lambda content: content.update(readme=README + "\nMagni: Dauerstellpl\u00e4tze laut Betreiber belegt.\n"), "2 sentence"),
 ], ids=["rule_exists", "review_not_unknown", "contract_not_sold_out", "sold_out_but_no_price", "period_review", "no_offer",
         "offer_priced", "sentence_missing", "sentence_twice"])
 def test_a_status_that_the_package_contradicts_stops_the_step(bsm, tmp_path, edit, message):
@@ -625,13 +625,13 @@ BS_A_SPECS = (
     {"garage_id": "bs_b", "facility": "BS_B", "facility_key": "garage_b", "status": "no_price",
      "quotes": (("Garage B", "kein belastbarer aktueller Monatspreis ermittelt"),)},
     {"garage_id": "bs_t", "facility": "BS_T", "facility_key": "garage_t", "status": "sold_out",
-     "quotes": (("Garage T", "Dauerstellplätze laut Betreiber belegt"),)},
+     "quotes": (("Garage T", "Dauerstellpl\u00e4tze laut Betreiber belegt"),)},
 )
 
 
 def _step_package(tmp_path, regional_tests, facility_a="BS_A"):
     readme = ("# Test\n\nGarage B: kein belastbarer aktueller Monatspreis ermittelt. "
-              "Garage T: Dauerstellplätze laut Betreiber belegt.\n")
+              "Garage T: Dauerstellpl\u00e4tze laut Betreiber belegt.\n")
     content = {"rules": [_rule("A_1", facility_a, "A", 55.0), _rule("A_2", facility_a, "B", 70.0)],
                "offers": [], "sources": [{"id": "SRC_TARIFF", "url": "https://op.example/tarife"}],
                "visibility": {"rejected_price_eur": 85, "reason": "hidden"}, "readme": readme,
@@ -792,3 +792,16 @@ def test_the_real_package_gives_the_recorded_products_of_spec_f2(step):
         "monthly_bs_hbf_nord_p1": ("station_bahnpark", 120.0), "monthly_bs_hbf_sued_p2": ("station_bahnpark", 74.0),
         "monthly_bs_hbf_west_p3": ("station_bahnpark", 74.0), "monthly_bs_apcoa_s1": ("surface_lot", 99.0),
         "monthly_bs_apcoa_s3": ("surface_lot", 129.0)}
+
+
+def test_the_curation_warns_when_most_garages_of_a_municipality_carry_an_imputed_product(step, capsys):
+    # Braunschweig of the spec: 10 of 12 garages imputed; here 2 of 4 are not above 50 %, so build a majority: 3 of 4
+    frame = _municipal_dataset()
+    extra = _frame({"garage_id": "bs_e", "assumptions": "P4", "notes": "ASSUMPTION P4."},
+                   {"garage_id": "bs_f", "assumptions": "P4", "notes": "ASSUMPTION P4."})
+    frame = pd.concat([frame, extra], ignore_index=True)
+    frame = gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:25832")
+    step.apply_monthly_imputation(frame, _municipal_rows())
+    out = capsys.readouterr().out
+    assert "[garages] WARNING: Braunschweig (03101000): 4 of 6 priced garages (66.7 %, above 50 %) carry an imputed monthly " in out
+    assert "WARNING: Wolfsburg" not in out and "WARNING: Peine" not in out

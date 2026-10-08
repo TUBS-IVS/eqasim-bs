@@ -180,7 +180,7 @@ def inputs(tmp_path):
     zones_path = tmp_path / "zones.geojson"
     zones.to_crs("EPSG:4326").to_file(zones_path, driver="GeoJSON")
     # two fixture garages moved next to the zones: 300 m and 500 m from the two activity locations; one out of range
-    frame = pg.load_garages(FIXTURES / "parking_garages_fixture.geojson").iloc[:2].copy()
+    frame = pg.load_garages(FIXTURES / "parking_garages_fixture.geojson", allow_legacy_columns=True).iloc[:2].copy()
     frame["geometry"] = [Point(603100.0, 5790400.0), Point(603100.0, 5792000.0)]
     garages_path = tmp_path / "garages.geojson"
     pg.write_garages(gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:25832"), garages_path)

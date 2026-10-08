@@ -239,7 +239,15 @@ def execute(context):
     parking_zones.validate_district_municipalities(districts, coverage_register)
     # Loaded in EPSG:25832 and validated as stored; the loader logs the priced share and the assumption counts. Unpriced
     # garages stay listed (spec E1) and are left out of the tariff model by tariff_export.garage_entries.
-    garages = parking_garages.load_garages(paths[KEY_GARAGES_PATH])
+    # A dataset without the imputed-product column (written before spec Amendment F) is refused, except when EVERY row carries the
+    # synthetic test-set marker (the fixtures of tests/fixtures/parking): the marked release is warned about below and never
+    # prices a model run, whereas a production dataset must carry its imputed products (load_garages names the fix).
+    try:
+        garages = parking_garages.load_garages(paths[KEY_GARAGES_PATH])
+    except parking_garages.LegacyColumnsError:
+        garages = parking_garages.load_garages(paths[KEY_GARAGES_PATH], allow_legacy_columns=True)
+        if not (garages["geometry_method"] == parking_zones.FIXTURE_MARKER).all():
+            raise
     parking_garages.validate_garages(garages)
 
     marked = _fixture_marked_zones(zone_polygons, tariffs)
