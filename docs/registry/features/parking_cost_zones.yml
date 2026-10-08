@@ -150,8 +150,9 @@ evidence:
     kind: committed
     path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
     note: >-
-      The tariffs are committed, sourced facts per zone (data records parking_tariffs_2026,
-      parking_zones_2026 and parking_coverage_register_2026) and the free shares a committed SrV 2023
+      The tariffs are committed, sourced facts per zone (data records parking_tariffs_2026 and
+      parking_coverage_register_2026; the zone polygons of parking_zones_2026 are a local restricted file, not in the
+      repository) and the free shares a committed SrV 2023
       aggregate (srv2023_commute_parking_by_workplace_class). They are model inputs, not an observed
       behavioural reference: this feature compares no model output with observed behaviour yet.
       srv2023_city_center_parking is a comparison quantity of the planned runs with a universe caveat (SrV asks

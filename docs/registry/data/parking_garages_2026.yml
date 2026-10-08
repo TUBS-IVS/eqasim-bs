@@ -354,7 +354,7 @@ acquisition:
     one. Result: 35 garages listed and 35 priced; assumptions among the 35 priced: P4 22, P5 23, P6 7, P7 5, P8 10, P10 2,
     P11 4 (P3 0; at Groepern P11 covers the monthly product only); tiered 7, banded 10; monthly product on 9 garages.
     WOLFSBURG CAR PARKS (Task 4b3, spec E14, rulings R-4b3-0 to R-4b3-4; owner direction 2026-10-07 'der Rest auch, alle
-    integrieren'). The fourth optional input (--wolfsburg-lots-zip, which needs --zones, the committed zone polygons, and
+    integrieren'). The fourth optional input (--wolfsburg-lots-zip, which needs --zones, the local zone polygons, and
     --tariffs) is the owner's review of the 24 car parks of the city layer wob_parkplaetze,
     Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256
     650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0). It is read by
@@ -415,7 +415,7 @@ acquisition:
     the pricing code prices it without a special case. (d) ASSUMPTION P12 (municipal free default, spec E14): the 8 points
     with the fee status unknown that lie outside every published tariff area (checked against the 9 matched areas of
     published_tariff_areas.geojson and the 73 areas of the complete layer that the package keeps) and outside every
-    committed zone (191 to 3,858 m) have no tariff component, no observed rule and no operator tariff: they are free rows
+    zone of the release (191 to 3,858 m) have no tariff component, no observed rule and no operator tariff: they are free rows
     under P12, the evidence being the field decision of their fee status (no evidence of a fee is not evidence of none, so
     the rows are named and counted: 8 of the 48 priced rows). P12 stays the weakest assumption of the dataset: section 2(2)
     of the fee ordinance (Parkgebuehrenordnung of 2020-07-15) defines Zone II as all other streets and places of the city
@@ -714,7 +714,7 @@ notes: >-
   as written by the step (LF; two independent runs identical, garage chain driven by a scratch driver without the
   municipality pickle, which is absent on the machine, so the position check against the municipality polygons was
   skipped; no geometry other than the deck's point changed): parking_garages_2026.geojson
-  602dcd9c1a1df10faba2bdf92ba1cca328899a05f2690503a9e1e5effedcff4d, parking_garages_2026_qa.csv
+  (history; the current pin of the dataset is in storage.notes), parking_garages_2026_qa.csv
   72b6a276a848ff8cfb93562d618fca884be18e7fbd18f1c6392fb1fcd0ed8193 (before Task 4g:
   7dde8aa34a32293d4b7295664ea002bd36f22ece06c4a092cdf72b5305c1f5ac and
   54df19b68ff0f1b809b5e4f1c0981a7c1143aa07984a2a6e5619c6cdc626aa6b). Task 4f below.

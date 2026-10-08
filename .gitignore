@@ -121,14 +121,15 @@ zensus_hh_inspect.txt
 # release tables (eqasim-data/data/braunschweig/parking/parking_*_2026.csv and the
 # paid-share cells parking_paid_share_2026.csv.gz, incl. the curation QA tables
 # parking_zones_2026_qa.csv, parking_zones_2026_supply_share_qa.csv,
-# parking_zones_2026_municipal_qa.csv and parking_garages_2026_qa.csv -- NOT its local
+# parking_zones_2026_municipal_qa.csv and parking_garages_2026_qa.csv -- NOT the local
 # raw_overpass/, raw_sources/ (incl. the owner's municipal packages) and raw_osm/ folders;
 # an explicit exception to the OSM rule below), plus the documentation markdown.
 # NOT committed (restricted source licences, issue #436, ADR-0140): the three geometry files
 # parking_zones_2026.geojson, parking_resident_districts_2026.geojson and parking_garages_2026.geojson
 # stay on disk like the other raw data (eqasim-data/* ignores them) and are available on request
 # (GitHub issue in TUBS-IVS/eqasim-bs; records in docs/registry/data/parking_*_2026.yml).
-# ODbL: the parking zone polygons are partly OSM-derived -- ODbL 1.0, share-alike, attribution "(c) OpenStreetMap contributors" (details: docs/registry/data/parking_zones_2026.yml).
+# ODbL: the parking zone polygons are partly OSM-derived (ODbL 1.0, share-alike, attribution "(c) OpenStreetMap contributors",
+# details: docs/registry/data/parking_zones_2026.yml). The polygons are not committed; this licence note applies to the local file.
 # Do NOT `git add -f` any other data file here
 # (Mikrozensus tables, NDS school/Hochschule/Kita facility tables, ALKIS/ATKIS,
 # OSM, GTFS, population/employment registers, ...) -- they stay local only.

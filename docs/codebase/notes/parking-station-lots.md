@@ -25,7 +25,7 @@ rulings R-4b-4 and R-4b-9 for exactly four car parks:
 | The shared cut of a rule-based zone and the precedence list | `scripts/curation/parking_zones_2026/assemble_parking_zones.py` (`cut_rule_zone`, `cut_against_neighbours`, `PRECEDENCE_REGIONAL`, `STATION_ZONE_IDS`) |
 | The deck, its monthly products, the two directory candidates, the three used station products | `scripts/curation/parking_zones_2026/regional_garage_specs.py` (`GARAGE_SPECS`, `MONTHLY_PRODUCTS`, `DIRECTORY_DECISIONS`, `BS_RECORDED_SPECS`) |
 | The QA vocabulary (`station_zone`) | `braunschweig/parking/garage_qa.py` (`CANDIDATE_REASONS`) |
-| Tests | `tests/test_parking_station_lots.py` (a synthetic package and the committed release), `tests/test_parking_garage_options.py` (the deck) |
+| Tests | `tests/test_parking_station_lots.py` (a synthetic package and the local release; local, restricted), `tests/test_parking_garage_options.py` (the deck) |
 
 ## Rules maintainers must keep
 

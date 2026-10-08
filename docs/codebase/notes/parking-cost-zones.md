@@ -76,7 +76,8 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 ## Adding or changing a zone
 
 1. Digitise the polygon into `parking_zones_2026.geojson` with every `ZONE_PROVENANCE_COLUMNS` field; cut it out of
-   any zone it overlaps (a paid island inside a resident zone is its own polygon). The committed file is the output of
+   any zone it overlaps (a paid island inside a resident zone is its own polygon). The file (not in git, available on
+   request) is the output of
    the one-off curation chain `scripts/curation/parking_zones_2026/assemble_parking_zones.py` (its steps
    `municipal_zones.py` for `--municipal-dir` and `regional_zones.py` for `--regional-dir`; the raw inputs are
    gitignored), so a change is made in the curation and the file regenerated, never edited by hand; the data record
@@ -96,7 +97,9 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 3. Set the municipality to `zoned` in `parking_coverage_register_2026.csv`; its workplace class must have a class row
    in `srv2023_commute_parking_by_workplace_class.csv`.
 4. Run `python scripts/validate_parking_zones.py --data-path eqasim-data/data` and `tests/test_parking_zones.py`,
-   force-add the changed files (`git add -f`), and update the validator summary and limitations in the three data
+   force-add only the changed tariff table, coverage register and QA tables (`git add -f`); the three geometry files
+   (zones, resident districts, garages) stay local and are never force-added: re-pin their LF SHA-256 in `storage.notes` of
+   their data records, send them on request, and update the validator summary and limitations in the three data
    records. To see what a release change touches, run `scripts/curation/parking_zones_2026/count_zone_exposure.py` on
    the earlier and the new zone file (activities and car arrivals of a plans file per added, removed or changed
    zone; an exposure indicator, not a validation).

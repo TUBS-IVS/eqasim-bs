@@ -380,7 +380,7 @@ acquisition:
     parking_tariffs_2026.csv (it builds on --municipal-dir), refuses a zip whose SHA-256 differs from the pinned one,
     reads eight GeoPackage layers straight from the zip (GDAL /vsizip/, no extracted copy), checks the attributes the
     provenance states and prints per layer the accounting: features, used, dropped with the reason, repaired 0 (an
-    invalid, empty or foreign-CRS geometry stops the step; nothing is repaired). Ledger of the committed release:
+    invalid, empty or foreign-CRS geometry stops the step; nothing is repaired). Ledger of the release as curated:
     bs_bga_parkflaechen 5 features, 5 used; referenz_bs_aufgegeben 1, 1 dropped (Kannengiesserstrasse, a pocket park
     since April 2026, kept as the QA reference of the removed zone); tu_kamera_detektionszonen 32, 31 used, 1 dropped
     (TU_KAM_05_01, Bevenroder Strasse: no GB3 page states ticketing); tu_kartenflaechen 82 yellow parking areas, none
@@ -479,8 +479,8 @@ acquisition:
     parking_zones_2026_municipal_qa.csv gets 8 rows (82 in total): per zone the release against the 50 m area and against
     the OSM outline, the cut of P1 by the BgA zone and the BgA-versus-Post cross-check. Licence members: the station
     outlines are OSM-derived (ODbL 1.0; the licence and attribution members name them). Reproducibility: two independent
-    runs of the step on the release before the step give the identical zone file and QA table. SHA-256 (LF):
-    parking_zones_2026.geojson 4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490 (before:
+    runs of the step on the release before the step give the identical zone file and QA table. SHA-256 (LF) as written by the step
+    (history; the current pin is in storage.notes): parking_zones_2026.geojson (before:
     0bf44df5588171bc0edd05e31f3ecdcaf1a96a3e3d14c3dd6eb76e348e975ba4; the 37 other features are unchanged text),
     parking_zones_2026_municipal_qa.csv e79dd6f36ebd0681d73dff4f44473dbda25937ced3fc2a75df34f65def0a718e (before:
     3b2dfc1c9e698385f321fee1a3f78c03c6df4e8525538b43b5787607a52f2595). The raw inputs of the earlier steps of the chain
@@ -566,7 +566,7 @@ verification:
     zones winning over it; the single-site zones; the split rule; the exact re-cut; the containment exception; the
     tariff evidence and the notes that must name their assumptions, the permit flag and the corroborating OSM tags; the
     QA rows; byte-identical re-runs; the licence wording), the exposure check by tests/test_parking_zone_exposure.py,
-    and the committed release by tests/test_parking_zones.py
+    and the local release by tests/test_parking_zones.py (skips without the restricted file)
     (test_committed_braunschweig_zones_follow_spec_amendment_d1,
     test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs,
     test_committed_register_records_the_regional_audit_of_spec_amendment_d3,
@@ -747,7 +747,7 @@ limitations: >-
   station stays unzoned (ASSUMPTION Z1); the reported capacities differ between the sources (OSM, Contipark, DB
   BahnPark) and none enters the zones.
 notes: >-
-  Validator summary on the committed files 2026-10-08, after spec Amendment G1: 40 zones, 40 tariff rows, 130 register
+  Validator summary on the local files 2026-10-08, after spec Amendment G1: 40 zones, 40 tariff rows, 130 register
   rows (123 municipalities); zone_type campus 6, resident_zone 1, street_paid 33; geometry_source campus_detection_zones
   1 (0.005 km2, 0.1 % of the zone area), campus_outline_and_detection_zones 5 (0.590 km2, 7.5 %), centre_approximation 3
   (1.432 km2, 18.3 %), municipal_street_sections_buffered 3 (1.565 km2, 20.0 %), ordinance_map 7 (2.480 km2, 31.7 %),
@@ -758,7 +758,7 @@ notes: >-
   20 zones 3.329 km2, the others as below; register status zoned 11, no_paid_parking_known 1, not_audited 111, excluded
   7; municipal QA 82 rows (Braunschweig 52, Wolfsburg 12, Goslar 8, Bad Harzburg 6, Seesen 1, Braunlage 2, the
   unincorporated area Harz 1); OK. The summary before spec Amendment G is the one that follows.
-  Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data, 2026-10-07,
+  Validator summary on the local files (scripts/validate_parking_zones.py --data-path eqasim-data/data, 2026-10-07,
   after spec Amendment D and fix round 1 of its task): 37 zones, 37 tariff rows, 131 register rows (123 municipalities);
   zone_type campus 6, resident_zone 1, street_paid 30; geometry_source campus_detection_zones 1 (0.005 km2, 0.1 % of the
   zone area), campus_outline_and_detection_zones 5 (0.590 km2, 7.6 %), centre_approximation 3 (1.432 km2, 18.6 %),

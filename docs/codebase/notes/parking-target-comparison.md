@@ -14,8 +14,8 @@ comparison, never a validation, and a stable run is convergence, not validation.
   detected by the header and the rows are keyed by outcome NAME, zone id and purpose, never by position or enum order) and
   `eqasim_trips.csv.gz` (the chosen trips of the FINAL iteration). Arms that price no zones are given with
   `--arm-without-outcomes` and have empty outcome rows with the reason.
-- Committed inputs only (no raw SrV data): the tariff table (zone type and workplace class), the zone release and the two SrV
-  tables. The references are READ from the tables; `tests/test_compare_parking_targets.py` checks that no number of the tables
+- No raw SrV data: the committed tariff table (zone type and workplace class) and the two committed SrV tables, plus the
+  zone polygons, a local restricted file that is not in the repository (data record `parking_zones_2026`). The references are READ from the tables; `tests/test_compare_parking_targets.py` checks that no number of the tables
   appears in the script.
 - Output: the metric table (`universe`, `universe_size`, `model`, `reference`, `delta_pp`, `reference_source`, `universe_note`
   per row), the per-arm delta table `<out>_arm_deltas.csv` (every arm against every earlier arm, with `n_model` and

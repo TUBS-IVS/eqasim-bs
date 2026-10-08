@@ -64,9 +64,11 @@ features:
 decisions:
 - ADR-0139
 - ADR-0140
-notes: 'Mechanism, attribute names and maintenance rules: docs/codebase/notes/parking-cost-zones.md. Unit
+notes: 'Mechanism, attribute names and maintenance rules: docs/codebase/notes/parking-cost-zones.md. Three of the six
+  inputs (zones, resident districts, garages) are local restricted files that are not in the repository (data records
+  parking_zones_2026, parking_resident_districts_2026, parking_garages_2026). Unit
   tests: tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected
-  tariff row, inconsistent register, the resident districts, cache token, and the committed release through the
-  stage), tests/test_parking_resident_districts.py (the district layer: loader, validator, assignment and the
+  tariff row, inconsistent register, the resident districts, cache token, and the local release through the
+  stage, which skips without the restricted files), tests/test_parking_resident_districts.py (the district layer: loader, validator, assignment and the
   curation step), tests/test_parking_garages.py (the garage dataset: loader, validator, assumption counts) and
   tests/test_parking_attach.py (the attach functions the release feeds).'
