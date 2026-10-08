@@ -174,7 +174,7 @@ RECORDED = (
     {"record_id": "monthly_bs_eves", "facility": "F_EVES", "facility_key": "eves", "facility_type": "garage",
      "reason": "not_a_dataset_option", "why": "a garage that the dataset does not list"},
     {"record_id": "monthly_bs_p1", "facility": "F_P1", "facility_key": "braunschweig_hbf_nord_p1",
-     "facility_type": "surface_parking", "reason": "station_bahnpark", "why": "a station car park"},
+     "facility_type": "surface_parking", "decision": "used", "zone_ids": ("bs_hbf_p1_nord",), "why": "a station zone"},
 )
 
 
@@ -449,7 +449,9 @@ def test_the_recorded_facilities_have_their_cheapest_current_product_with_the_de
     eves = rows["monthly_bs_eves"]
     assert (eves["decision"], eves["reason"], eves["amount_eur"]) == ("not_used", "not_a_dataset_option", 80.0)
     assert "other products not taken: Saisonparken Monat 170.00 EUR" in eves["note"]
-    assert rows["monthly_bs_p1"]["reason"] == "station_bahnpark" and rows["monthly_bs_p1"]["amount_eur"] == 120.0
+    station = rows["monthly_bs_p1"]
+    assert (station["decision"], station["reason"], station["zone_ids"], station["amount_eur"]) == (
+        "used", "", ("bs_hbf_p1_nord",), 120.0)
     assert "other products not taken: 1 Monat fest 160.00 EUR" in rows["monthly_bs_p1"]["note"]
 
 
@@ -493,6 +495,21 @@ def test_the_qa_rows_carry_every_product_with_the_name_of_the_garage_and_validat
     table = pd.DataFrame([{column: "" if row.get(column) is None else str(row.get(column)) for column in pq.GARAGE_QA_COLUMNS}
                           for row in rows])
     assert set(table["reason_code"]) - {""} <= set(pq.MONTHLY_NOT_USED_REASONS)
+    # spec Amendment G1: a station car park is a USED product of its zone: no reason, the zone ids in the row
+    station = by_id["monthly_bs_p1"]
+    assert (station["decision"], station["reason_code"], station["zone_ids"], station["amount_eur"]) == (
+        "used", "", "bs_hbf_p1_nord", "120.00")
+    assert by_id["monthly_bs_eves"]["zone_ids"] == "" and by_id["monthly_bs_eves"]["decision"] == "not_used"
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"zone_ids": ()}, "either used"), ({"reason": "surface_lot"}, "either used"),
+    ({"decision": "not_used", "reason": ""}, "either used"), ({"decision": "maybe"}, "either used")],
+    ids=["used_without_zone", "used_with_reason", "not_used_without_reason", "unknown_decision"])
+def test_a_recorded_product_is_either_used_by_zones_or_not_used_with_a_reason(bsm, inputs, changes, message):
+    spec = {**RECORDED[1], **changes}
+    with pytest.raises(SystemExit, match=message):
+        bsm.read_recorded_products(inputs, (spec,))
 
 
 # --------------------------------------------------------------------------- the dataset and ASSUMPTION P13
@@ -540,7 +557,7 @@ def _municipal_rows() -> list:
     return _qa_rows(("monthly_bs_a", "used", "", "100.00", "bs_a", BS), ("monthly_bs_b", "used", "", "114.95", "bs_b", BS),
                     ("monthly_bs_eves", "not_used", "not_a_dataset_option", "80.00", "", BS),
                     ("monthly_bs_fichtengrund", "not_used", "not_a_dataset_option", "129.00", "", BS),
-                    ("monthly_bs_station", "not_used", "station_bahnpark", "74.00", "", BS),
+                    ("monthly_bs_station", "used", "", "74.00", "", BS),
                     ("monthly_bs_s1", "not_used", "surface_lot", "99.00", "", BS),
                     ("monthly_wob_a", "used", "", "60.00", "wob_a", "03103000"),
                     ("monthly_pe_a", "used", "", "48.00", "pe_a", "03157006"),
@@ -789,8 +806,9 @@ def test_the_real_package_gives_the_recorded_products_of_spec_f2(step):
     rows = {row["record_id"]: row for row in step.bsm.read_recorded_products(_real_inputs(step), step.specs.BS_RECORDED_SPECS)}
     assert {key: (row["reason"], row["amount_eur"]) for key, row in rows.items()} == {
         "monthly_bs_eves": ("not_a_dataset_option", 80.0), "monthly_bs_fichtengrund": ("not_a_dataset_option", 129.0),
-        "monthly_bs_hbf_nord_p1": ("station_bahnpark", 120.0), "monthly_bs_hbf_sued_p2": ("station_bahnpark", 74.0),
-        "monthly_bs_hbf_west_p3": ("station_bahnpark", 74.0), "monthly_bs_apcoa_s1": ("surface_lot", 99.0),
+        # spec Amendment G1: the station car parks are USED, the commuter product of their zones (no reason)
+        "monthly_bs_hbf_nord_p1": ("", 120.0), "monthly_bs_hbf_sued_p2": ("", 74.0),
+        "monthly_bs_hbf_west_p3": ("", 74.0), "monthly_bs_apcoa_s1": ("surface_lot", 99.0),
         "monthly_bs_apcoa_s3": ("surface_lot", 129.0)}
 
 
@@ -805,3 +823,12 @@ def test_the_curation_warns_when_most_garages_of_a_municipality_carry_an_imputed
     out = capsys.readouterr().out
     assert "[garages] WARNING: Braunschweig (03101000): 4 of 6 priced garages (66.7 %, above 50 %) carry an imputed monthly " in out
     assert "WARNING: Wolfsburg" not in out and "WARNING: Peine" not in out
+
+
+def test_the_station_products_of_the_real_package_are_used_by_exactly_their_own_zones(step):
+    rows = {row["record_id"]: row for row in step.bsm.read_recorded_products(_real_inputs(step), step.specs.BS_RECORDED_SPECS)}
+    used = {key: (row["decision"], row["zone_ids"]) for key, row in rows.items() if row["decision"] == "used"}
+    assert used == {"monthly_bs_hbf_nord_p1": ("used", ("bs_hbf_p1_nord",)),
+                    "monthly_bs_hbf_sued_p2": ("used", ("bs_hbf_p2_sued",)),
+                    "monthly_bs_hbf_west_p3": ("used", ("bs_hbf_p3_west",))}
+    assert all(row["decision"] == "not_used" and row["zone_ids"] == () for key, row in rows.items() if key not in used)

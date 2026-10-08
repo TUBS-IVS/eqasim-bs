@@ -755,46 +755,52 @@ def test_committed_parking_data_is_valid(capsys):
     # spec Amendment D (2026-10-07): 37 zones (26 before: 11 single paid sites of Bad Harzburg, Seesen, Braunlage and
     # Goslar came in, Braunschweig stays at 17 with Willy-Brandt-Platz and Volkmaroder Strasse for Kannengiesserstrasse
     # and the International House); the register has 11 zoned municipalities and the audited Schoeningen
-    assert "[parking-validate] 37 zones, 37 tariff rows, 131 register rows (123 municipalities)" in out
-    assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8" in out
+    # spec Amendment G1 (2026-10-08): 40 zones (the three station car parks of Braunschweig Hbf came in, Braunschweig has 20)
+    # and 130 register rows (the excluded row of the Braunschweig station car parks is gone, they are zones)
+    assert "[parking-validate] 40 zones, 40 tariff rows, 130 register rows (123 municipalities)" in out
+    assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 7" in out
     # ruling R-4a-8: the five campuses with a v1 outline are the union of the outline and the detection zones, Volkmaroder
     # Strasse (no outline exists) its detection zone alone
     assert "campus_outline_and_detection_zones 5" in out and "campus_detection_zones 1," in out
-    assert "single_site_buffered 11" in out
+    assert "single_site_buffered 14" in out
     # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
     assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
-    # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows and the Goslar car park at the ZOB state
-    # it, the six campus zones take the default, the other 25 of the 37 zones honour resident permits
-    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 25 of 37 zones; not valid on 6 stated rows "
+    # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows, the three station car parks and the Goslar
+    # car park at the ZOB state it, the six campus zones take the default, the other 25 of the 40 zones honour resident permits
+    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 25 of 40 zones; not valid on 9 stated rows "
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
-            "bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob) and on 6 campus zones (default)") in out
+            "bs_bga_willy_brandt_platz, bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, gs_parkplatz_klubgartenstrasse_zob) "
+            "and on 6 campus zones (default)") in out
     # Task 4b (spec Amendments D1, D2, D4, E8): 13 assumption windows remain, the commuter product is on zone Ib and the six
     # campus zones, no zone row carries a garage product or a search time
-    assert "fee_window_source: assumption 13, municipal_page 17, ordinance 7" in out
-    assert ("tariff products (schema 2): commuter product on 7 of 37 rows (bs_zone_ib, tu_campus_nord, "
+    assert "fee_window_source: assumption 13, municipal_page 20, ordinance 7" in out
+    assert ("tariff products (schema 2): commuter product on 10 of 40 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "
+            "bs_zone_ib, tu_campus_nord, "
             "tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, "
             "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
             "through the dataset); search time on 0 rows (decision D4)") in out
     # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
-    # specs E12 to E14: the supplement, follow-up and Wolfsburg car-park packages price every listed garage (48 of 48: 35
-    # garages and the 13 surface lots of the city layer)
-    assert ("garages: 48 listed, 48 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
-    assert "03103000 22 listed 22 priced" in out
-    assert ("priced garages resting on an assumption: P10 4, P11 5, P12 8, P13 15, P4 24, P5 24, P6 8, P7 5, P8 11 of 48 "
-            "(at least one assumption 44, P4 or P5 32; in the tiered form 8, in the banded form 11, with the free "
-            "schedule 11); by facility kind garage 35 listed 35 priced, surface_lot 13 listed 13 priced; "
-            "monthly product on 11 garages") in out
-    assert "QA: monthly products used 13, recorded and not used 36 (capacity_limited_permits 1, excluded_by_package 1, " in out
+    # specs E12 to E14 and G2: the supplement, follow-up and Wolfsburg car-park packages price every listed garage (49 of 49:
+    # 36 garages, among them the Parkdeck Hauptbahnhof of Wolfsburg since Amendment G2, and the 13 surface lots of the city layer)
+    assert ("garages: 49 listed, 49 priced, 0 not priced (none); per municipality 03101000 12 listed 12 priced") in out
+    assert "03103000 23 listed 23 priced" in out
+    assert ("priced garages resting on an assumption: P10 4, P11 5, P12 8, P13 15, P4 25, P5 25, P6 8, P7 5, P8 11 of 49 "
+            "(at least one assumption 45, P4 or P5 33; in the tiered form 8, in the banded form 11, with the free "
+            "schedule 11); by facility kind garage 36 listed 36 priced, surface_lot 13 listed 13 priced; "
+            "monthly product on 12 garages") in out
+    # the three Braunschweig station products and the Wolfsburg deck product are used (G1, G2): 13 + 4 used, 36 - 4 recorded
+    assert "QA: monthly products used 17, recorded and not used 32 (capacity_limited_permits 1, excluded_by_package 1, " in out
     # spec Amendment F3: the monthly products per municipality (published, imputed under ASSUMPTION P13 with the median, none)
     assert ("garage monthly products (ASSUMPTION P13): Braunschweig (03101000) published 2, imputed 10, P13 median 107.48 EUR, "
             "none 0;") in out
-    assert "Wolfsburg (03103000) published 4, imputed 5, P13 median 57.50 EUR, none 0;" in out
+    # the Wolfsburg median is 60.00 EUR of five published products since the deck (100.00 EUR) came in (was 57.50 of four)
+    assert "Wolfsburg (03103000) published 5, imputed 5, P13 median 60.00 EUR, none 0;" in out
     assert "Goslar (03153017) published 1, imputed 0, none 3;" in out
-    assert "total published 11, imputed 15, none 9 (surface lots 13, never imputed)" in out
-    assert "medians in EUR: 03101000 107.48, 03103000 57.50, 03157006 48.00" in out
+    assert "total published 12, imputed 15, none 9 (surface lots 13, never imputed)" in out
+    assert "medians in EUR: 03101000 107.48, 03103000 60.00, 03157006 48.00" in out
     # one QA row per Wolfsburg car park instead of the aggregated row: the 38 candidates (no_published_tariff 24) became 25
-    assert ("candidates that are no garage 25 (bga_zone 2, customer_regime 2, dauerparker_only 2, no_coordinates 1, "
-            "outside_source_list 1, station_bahnpark 3, user_group_only 1, zone_street_product 13)") in out
+    assert ("candidates that are no garage 24 (bga_zone 2, customer_regime 2, dauerparker_only 2, no_coordinates 1, "
+            "outside_source_list 1, station_zone 2, user_group_only 1, zone_street_product 13)") in out
     # the consistency check of the nine paid municipal car parks inside a zone (spec E14)
     assert ("car parks inside a zone (spec E14): 9 checked, the published hourly reference of the tariff area against the "
             "street rate of the zone: 9 equal, 0 differ (none)") in out
@@ -961,7 +967,10 @@ def test_committed_bga_car_parks_state_that_resident_permits_are_not_valid():
     # the only other stated flag is the Goslar car park at the ZOB (fix round 1 of task 4a, M-1): no resident regime is
     # stated for it, so it is treated like a BgA lot
     assert tariffs.loc["gs_parkplatz_klubgartenstrasse_zob", "resident_permits_valid"] == False  # noqa: E712
-    assert tariffs.drop(index=bga + ["gs_parkplatz_klubgartenstrasse_zob"])["resident_permits_valid"].isna().all()
+    # spec Amendment G1: the three DB BahnPark station car parks state it too (no source says that permits are valid there)
+    stations = ["bs_hbf_p1_nord", "bs_hbf_p2_sued", "bs_hbf_p3_west"]
+    assert (tariffs.loc[stations, "resident_permits_valid"] == False).all()  # noqa: E712
+    assert tariffs.drop(index=bga + stations + ["gs_parkplatz_klubgartenstrasse_zob"])["resident_permits_valid"].isna().all()
 
 
 #: The six TU campus zones of spec Amendment D1 and ruling R-4a-8 (owner decision of 2026-10-07): the union of the
@@ -1041,7 +1050,8 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
     zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
     single = zones[zones["geometry_source"] == pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE]
-    assert sorted(single.index) == sorted(D3_SITES)
+    # the 11 sites of Amendment D3 and the three station car parks of Amendment G1 (their own test pins the tariff rows)
+    assert sorted(single.index) == sorted([*D3_SITES, "bs_hbf_p1_nord", "bs_hbf_p2_sued", "bs_hbf_p3_west"])
     assert (single["site_buffer_m"] == 50.0).all()  # ASSUMPTION C-a, the same distance as the Wolfsburg sections
     for zone_id, (ags, rate, unit, start, end, window_source) in D3_SITES.items():
         row = tariffs.loc[zone_id]
@@ -1089,7 +1099,9 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
 #: the sources: the 30-day ticket of Braunschweig zone Ib (ParkGO sec. 1(2), 79.00 EUR, valid for 30 consecutive calendar
 #: days) and the month ticket of the TU members (Parkordnung of 2026-06-03 sec. 6(2), 10 EUR). The Ib 7-day ticket (29 EUR)
 #: is no monthly or 30-day product and stays unused.
-COMMUTER_MONTHLY_PRODUCT_EUR = {"bs_zone_ib": 79.0, **{zone_id: 10.0 for zone_id in TU_CAMPUS_ZONES}}
+COMMUTER_MONTHLY_PRODUCT_EUR = {"bs_zone_ib": 79.0, **{zone_id: 10.0 for zone_id in TU_CAMPUS_ZONES},
+                                # spec Amendment G1: '1 Monat fuer Stellplatzmieter' of the three DB BahnPark station car parks
+                                "bs_hbf_p1_nord": 120.0, "bs_hbf_p2_sued": 74.0, "bs_hbf_p3_west": 74.0}
 #: ASSUMPTION P2: 21 working days per month.
 COMMUTER_WORKING_DAYS = 21
 #: The rows that keep the assumption-grade fee window (ASSUMPTION F1) in the release of spec Amendment D1, 13 of 37: the
@@ -1103,9 +1115,11 @@ F1_ASSUMPTION_ZONES = (
 
 def test_committed_commuter_products_follow_spec_amendment_d2():
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
-    # exactly the Braunschweig zone Ib and the six campus rows carry a commuter product, every other row none
+    # exactly the Braunschweig zone Ib, the six campus rows and the three station car parks carry a commuter product, every
+    # other row none (the station values are 120 / 21 = 5.714 and 74 / 21 = 3.524, to the cent)
     commuter = tariffs["commuter_day_eur"].dropna()
-    assert commuter.to_dict() == {"bs_zone_ib": 3.76, **{zone_id: 0.48 for zone_id in TU_CAMPUS_ZONES}}
+    assert commuter.to_dict() == {"bs_zone_ib": 3.76, **{zone_id: 0.48 for zone_id in TU_CAMPUS_ZONES},
+                                  "bs_hbf_p1_nord": 5.71, "bs_hbf_p2_sued": 3.52, "bs_hbf_p3_west": 3.52}
     # the amount is the cheapest monthly or 30-day product over 21 working days, rounded to the cent (ASSUMPTION P2)
     assert set(COMMUTER_MONTHLY_PRODUCT_EUR) == set(commuter.index)
     for zone_id, monthly_eur in COMMUTER_MONTHLY_PRODUCT_EUR.items():
@@ -1144,7 +1158,8 @@ def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendm
     # the Edelhoefe garage left the zone row: it is a garage of the dataset (spec Amendment E8), not a note on the street
     assert "0.50 EUR first 30 min" not in helmstedt["notes"] and "parking_garages_2026" in helmstedt["notes"]
     # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
-    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 17, "assumption": 13, "ordinance": 7}
+    # (the three station rows of Amendment G1 name the operator's page: municipal_page, 17 + 3)
+    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 20, "assumption": 13, "ordinance": 7}
     assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
 
 

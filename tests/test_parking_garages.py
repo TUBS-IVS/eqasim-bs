@@ -1160,7 +1160,7 @@ def _qa_tables():
             _qa_row(record_id="monthly_bs_zone_ib", record_type="monthly_product", garage_id="", zone_ids="bs_zone_ib",
                     decision="used", amount_eur="79.0", evidence="bs_zone_ib_30D", note="30-day ticket"),
             _qa_row(record_id="candidate_hauptbahnhof_nord", record_type="candidate", garage_id="", decision="not_listed",
-                    reason_code="station_bahnpark", subject="Parkplatz Hauptbahnhof Nord", evidence="directory", note="x"),
+                    reason_code="station_zone", subject="Parkplatz Hauptbahnhof Nord", evidence="directory", note="x"),
             _qa_row(record_id="candidate_wob_lots", record_type="candidate", garage_id="", municipality_ags="03103000",
                     decision="not_listed", reason_code="no_published_tariff", count="24", subject="24 car parks",
                     evidence="wob_parkplaetze", note="no tariff")]
@@ -1256,7 +1256,7 @@ def test_the_qa_coverage_counts_products_and_candidates_by_reason():
     garages, qa, _ = _qa_tables()
     assert pq.qa_coverage(qa) == {
         "monthly_used": 2, "monthly_not_used": 1, "monthly_not_used_by_reason": {"not_the_cheapest": 1},
-        "candidates": 25, "candidates_by_reason": {"no_published_tariff": 24, "station_bahnpark": 1}}
+        "candidates": 25, "candidates_by_reason": {"no_published_tariff": 24, "station_zone": 1}}
 
 
 def _zone_candidate(facility="524303", zone_id="wob_tarifzone_1", reference="2.00", **changes) -> dict:
@@ -1312,35 +1312,36 @@ def test_a_car_park_inside_a_zone_names_its_zone_and_its_reference_and_the_zone_
         pq.validate_garage_qa(qa, garages, _wolfsburg_tariffs())
 
 
-def test_the_qa_vocabulary_excludes_the_station_car_parks_of_both_cities_and_the_lots_of_long_term_renters():
-    assert set(pq.CANDIDATE_REASONS) == {"bga_zone", "zone_street_product", "station_bahnpark", "customer_regime",
+def test_the_qa_vocabulary_names_the_station_zones_and_excludes_the_lots_of_long_term_renters():
+    assert set(pq.CANDIDATE_REASONS) == {"bga_zone", "zone_street_product", "station_zone", "customer_regime",
                                          "no_coordinates", "no_published_tariff", "outside_source_list", "dauerparker_only",
                                          "user_group_only"}
     assert "reserved for a user group" in pq.CANDIDATE_REASONS["user_group_only"]
-    station = pq.CANDIDATE_REASONS["station_bahnpark"]
-    assert "Braunschweig and Wolfsburg alike" in station and "R-4b-4" in station and "R-4b-9" in station
+    station = pq.CANDIDATE_REASONS["station_zone"]
+    assert "single paid-site zone" in station and "Amendment G1" in station and "R-4b-4" in station and "R-4b-9" in station
+    assert "station_bahnpark" not in pq.CANDIDATE_REASONS and "station_bahnpark" not in pq.MONTHLY_NOT_USED_REASONS
     assert "long-term renters only" in pq.CANDIDATE_REASONS["dauerparker_only"]
     assert set(pq.MONTHLY_NOT_USED_REASONS) == {
         "not_the_cheapest", "restricted_customer_group", "no_fixed_price", "capacity_limited_permits", "no_coordinates",
         "garage_not_listed", "not_monthly_or_30_day", "outdated_source",
         # spec Amendment F1: the monthly status of the Braunschweig garages and the recorded facilities
         "sold_out", "no_price", "price_on_request", "period_unconfirmed", "excluded_by_package", "not_a_dataset_option",
-        "station_bahnpark", "surface_lot"}
+        "surface_lot"}
     assert pq.RECORDED_GARAGE_REASON == "not_a_dataset_option"
     garages, qa, tariffs = _qa_tables()
     extra = _qa(
         _qa_row(record_id="candidate_wf_parkpalette_karlstrasse", record_type="candidate", garage_id="",
                 municipality_ags="03158037", decision="not_listed", reason_code="dauerparker_only",
                 subject="Parkpalette Karlstrasse", evidence="stadtbetriebe-wf.de/parkhaeuser.html", note="long-term only"),
-        _qa_row(record_id="candidate_wob_hauptbahnhof", record_type="candidate", garage_id="", municipality_ags="03103000",
-                decision="not_listed", reason_code="station_bahnpark", subject="Parkdeck Hauptbahnhof",
-                evidence="facilities.json WOB_HAUPTBAHNHOF", note="DB BahnPark"),
+        _qa_row(record_id="candidate_bs_directory_hauptbahnhof_sued", record_type="candidate", garage_id="",
+                municipality_ags="03101000", decision="not_listed", reason_code="station_zone",
+                subject="Parkplatz Hauptbahnhof Sued", evidence="directory", note="the zone bs_hbf_p2_sued"),
         _qa_row(record_id="monthly_wob_hauptbahnhof_24h", record_type="monthly_product", garage_id="",
                 municipality_ags="03103000", decision="not_used", reason_code="garage_not_listed", amount_eur="100.0",
                 subject="Parkdeck Hauptbahnhof Dauerparken", evidence="r-hbf-m1", note="the garage is a station BahnPark"))
     pq.validate_garage_qa(pd.concat([qa, extra], ignore_index=True), garages, tariffs)
     coverage = pq.qa_coverage(pd.concat([qa, extra], ignore_index=True))
-    assert coverage["candidates_by_reason"] == {"dauerparker_only": 1, "no_published_tariff": 24, "station_bahnpark": 2}
+    assert coverage["candidates_by_reason"] == {"dauerparker_only": 1, "no_published_tariff": 24, "station_zone": 2}
     assert coverage["monthly_not_used_by_reason"] == {"garage_not_listed": 1, "not_the_cheapest": 1}
 
 
@@ -1387,7 +1388,7 @@ def _p13_tables(imputed=107.48):
         _product_row("monthly_bs_wallstrasse", "used", amount="114.95", garage_id="bs_wallstrasse"),
         _product_row("monthly_bs_eves", reason="not_a_dataset_option", amount="80.00"),
         _product_row("monthly_bs_fichtengrund", reason="not_a_dataset_option", amount="129.00"),
-        _product_row("monthly_bs_hbf_p1", reason="station_bahnpark", amount="120.00"),
+        _product_row("monthly_bs_hbf_p1", "used", amount="120.00", zone_ids="bs_hbf_p1_nord"),
         _product_row("monthly_bs_apcoa_s1", reason="surface_lot", amount="99.00"),
         _product_row("monthly_bs_wilhelmstrasse_o01", reason="period_unconfirmed", amount="75.00"),
         _product_row("monthly_bs_forschungsflughafen_hidden", reason="excluded_by_package", amount="85.00"),

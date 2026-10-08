@@ -23,7 +23,8 @@ The step reads them the way the other packages are read (``garage_supplement``, 
   are rows that are recorded and not used.
 * ``read_recorded_products`` reads the products of the facilities that are no garage of the dataset: the garages Eves and
   Fichtengrund (their current published product is the value of a municipality for ASSUMPTION P13), the three station car parks
-  of DB BahnPark and the two APCOA surface lots (recorded, never garage products).
+  of DB BahnPark (spec Amendment G1: USED, the commuter product of their zones) and the two APCOA surface lots (recorded, never
+  garage products).
 * ``qa_product_rows`` writes every product as a row of the QA table (``braunschweig.parking.garage_qa``).
 
 CRS: not applicable (no geometry is read); money in EUR.
@@ -465,7 +466,8 @@ def read_garage_products(inputs: dict, specs_rows) -> dict:
 
 def read_recorded_products(inputs: dict, recorded_specs) -> list:
     """The products of the facilities that are no garage of the dataset (``regional_garage_specs.BS_RECORDED_SPECS``): a list of
-    {"record_id", "facility", "name", "decision" "not_used", "reason", "amount_eur", "product_name", "note", "evidence"}: the
+    {"record_id", "facility", "name", "decision" ("not_used" with a "reason", or "used" with the "zone_ids" it is the commuter
+    product of, spec Amendment G1), "reason", "zone_ids", "amount_eur", "product_name", "note", "evidence"}: the
     cheapest publicly purchasable current product of each facility (a sold-out facility included, the note says so), with the
     other products of the facility named in the note. ``SystemExit`` for a facility that has no such product or whose
     package record is of another kind than the specification expects (a garage or a surface parking)."""
@@ -489,8 +491,14 @@ def read_recorded_products(inputs: dict, recorded_specs) -> list:
         note = (f"{_product_text(cheapest, amount)}; {spec['why']}"
                 + ("; the package states the product sold out for new contracts" if sold_out else "")
                 + (f"; other products not taken: {others}" if others else ""))
+        decision = spec.get("decision", "not_used")
+        if decision not in ("used", "not_used") or (decision == "used") != bool(spec.get("zone_ids")) or (
+                decision == "used") == bool(spec.get("reason")):
+            raise SystemExit(f"{spec['record_id']}: a recorded product is either used (decision 'used', the zones it is the "
+                             "commuter product of, no reason) or not used (a reason, no zones)")
         rows.append({"record_id": spec["record_id"], "facility": record["facility_id"], "name": _ascii(record["name"]),
-                     "decision": "not_used", "reason": spec["reason"], "amount_eur": amount,
+                     "decision": decision, "reason": spec.get("reason", ""), "zone_ids": tuple(spec.get("zone_ids") or ()),
+                     "amount_eur": amount,
                      "product_name": _ascii(cheapest["product_name"]), "note": _ascii(note),
                      "evidence": [PACKAGE_FILE, cheapest["offer_id"]]})
     return rows
@@ -510,7 +518,7 @@ def qa_product_rows(garage_products: dict, recorded: list, names: dict) -> list:
     for product in recorded:
         rows.append({"record_id": product["record_id"], "record_type": "monthly_product", "municipality_ags": BRAUNSCHWEIG_AGS,
                      "subject": f"{product['name']}: {product['product_name']}", "garage_id": None,
-                     "decision": product["decision"], "reason_code": product["reason"],
-                     "amount_eur": _eur_text(product["amount_eur"]), "count": 1, "evidence": ";".join(product["evidence"]),
-                     "note": product["note"]})
+                     "zone_ids": ";".join(product["zone_ids"]), "decision": product["decision"],
+                     "reason_code": product["reason"], "amount_eur": _eur_text(product["amount_eur"]), "count": 1,
+                     "evidence": ";".join(product["evidence"]), "note": product["note"]})
     return rows

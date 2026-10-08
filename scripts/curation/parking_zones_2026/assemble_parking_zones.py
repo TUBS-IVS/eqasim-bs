@@ -160,16 +160,21 @@ PRECEDENCE = ["bs_bga_markthalle", "bs_bga_kannengiesserstrasse", "bs_bga_an_der
               "bs_parkscheininsel_mentestrasse", "bs_zone_ia", "bs_zone_ib", "bs_resident_stadthalle_132",
               "tu_zentralcampus", "tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
               "tu_forschungsflughafen"]
+#: The single paid-site zones of spec Amendment G1 (the Braunschweig Hbf station car parks), added to the finished release
+#: by ``station_lots.py`` (which checks that its specification lists exactly these ids). They rank after the other single
+#: sites: the TU campuses, the BgA car parks and the D3 sites win over them, the area zones lose to them.
+STATION_ZONE_IDS = ("bs_hbf_p1_nord", "bs_hbf_p2_sued", "bs_hbf_p3_west")
 #: Precedence of the release with the regional evidence package of 2026-10-07 (spec Amendment D, ruling R-4a-1): the TU
 #: campus zones take precedence over the street zones where they overlap (TU-managed grounds), then the specific zones
 #: (the BgA car parks, the single paid sites of D3, the Parkscheininseln, the Stadthalle resident zone) are cut out of the
 #: area zones (Ia, Ib, gs_altstadt_zone1 and every zone not listed, in insertion order). Zones that are absent are skipped.
-PRECEDENCE_REGIONAL = (list(rz.TU_ZONE_IDS) + list(rz.BGA_ZONE_IDS) + list(rz.D3_ZONE_IDS)
+PRECEDENCE_REGIONAL = (list(rz.TU_ZONE_IDS) + list(rz.BGA_ZONE_IDS) + list(rz.D3_ZONE_IDS) + list(STATION_ZONE_IDS)
                        + ["bs_parkscheininsel_marthastrasse_koernerstrasse",
                           "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse",
                           "bs_zone_ia", "bs_zone_ib", "bs_resident_stadthalle_132"])
 #: The zones the regional step adds or re-derives; the zones they take area from are recorded in the QA table.
-REGIONAL_ZONE_IDS = frozenset(rz.TU_ZONE_IDS) | frozenset(rz.BGA_ZONE_IDS) | frozenset(rz.D3_ZONE_IDS)
+REGIONAL_ZONE_IDS = (frozenset(rz.TU_ZONE_IDS) | frozenset(rz.BGA_ZONE_IDS) | frozenset(rz.D3_ZONE_IDS)
+                     | frozenset(STATION_ZONE_IDS))
 MINIMUM_PART_M2 = 20.0
 SIMPLIFY_M = 0.5
 MINIMUM_INSIDE_SHARE = 0.99
@@ -415,6 +420,26 @@ def precedence_order(zones: list, precedence=PRECEDENCE) -> list:
         zone["zone_id"] for zone in zones if zone["zone_id"] not in precedence]
 
 
+def cut_against_neighbours(geometry, taken) -> tuple:
+    """The cut of a rule-based zone against the area ``taken`` by the zones before it: ``geometry`` (already simplified) minus
+    ``taken`` grown by ``EROSION_CUT_CLEARANCE_M``, so the cut stays exact after the rounding of the file. Returns (geometry,
+    overlap with ``taken`` in m2 rounded to 0.1, or None when the clearance area does not touch it). The single place of the
+    rule, used by ``apply_precedence`` and by ``station_lots``."""
+    neighbours = taken.buffer(EROSION_CUT_CLEARANCE_M)
+    if not geometry.intersects(neighbours):
+        return geometry, None
+    return geometry.difference(neighbours), round(geometry.intersection(taken).area, 1)
+
+
+def cut_rule_zone(geometry, taken, minimum_part_m2: float) -> tuple:
+    """A rule-based zone as ``apply_precedence`` treats it: simplified by ``SIMPLIFY_M``, cut against ``taken``
+    (``cut_against_neighbours``) and reduced to its parts of at least ``minimum_part_m2``. Returns (geometry, trimmed m2 or
+    None)."""
+    geometry = geometry.buffer(0).simplify(SIMPLIFY_M, preserve_topology=True).buffer(0)
+    geometry, trimmed = cut_against_neighbours(geometry, taken)
+    return cc.largest_parts(geometry.buffer(0), minimum_part_m2), trimmed
+
+
 def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
     """Every zone in ``precedence`` order (then insertion order) takes its area; later zones lose the overlap.
 
@@ -435,10 +460,9 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
         if rule_zone:
             geometry = geometry.simplify(SIMPLIFY_M, preserve_topology=True).buffer(0)
         if taken is not None and rule_zone:
-            neighbours = taken.buffer(EROSION_CUT_CLEARANCE_M)
-            if geometry.intersects(neighbours):
-                trims.append((zone_id, round(geometry.intersection(taken).area, 1)))
-                geometry = geometry.difference(neighbours)
+            geometry, trimmed = cut_against_neighbours(geometry, taken)
+            if trimmed is not None:
+                trims.append((zone_id, trimmed))
         elif taken is not None and geometry.intersects(taken):
             overlap = geometry.intersection(taken).area
             if overlap > 0.5:
@@ -813,6 +837,14 @@ ATTRIBUTION_REGIONAL_SUFFIX = (
     + ". Goslar car parks: " + rz.GOSLAR_PROVENANCE + ".")
 
 
+#: The OSM outlines of the station car parks (spec Amendment G1, ``station_lots.py``): covered by the ODbL claim of the licence
+#: member already, named for the reader like the Bad Harzburg car parks.
+STATION_OSM_PROVENANCE = ("(c) OpenStreetMap contributors, ODbL 1.0: the outlines of the Braunschweig Hauptbahnhof car parks P1 to "
+                          "P3 (Overpass API response of 2026-10-08)")
+LICENSE_STATION_SUFFIX = " The bs_hbf_* station car parks (spec Amendment G1): " + STATION_OSM_PROVENANCE + "."
+ATTRIBUTION_STATION_SUFFIX = " Braunschweig Hauptbahnhof car parks: " + STATION_OSM_PROVENANCE + "."
+
+
 # The municipal wording says the BgA car parks cut out of bs_zone_ia are OSM outlines (v1). With the regional package
 # (spec Amendment D1) they are the package's polygons, digitised from the annex maps of the Amtsblatt, so the clause
 # would claim a licence regime the cut-outs no longer fall under.
@@ -820,7 +852,7 @@ _OSM_BGA_CUTOUT_CLAUSE = "(the OSM car-park outlines of the BgA zones are cut ou
 _REGIONAL_BGA_CUTOUT_CLAUSE = "(the BgA car parks of the regional evidence package are cut out of bs_zone_ia)"
 
 
-def licence_members(sources: set, municipal: bool = False, regional: bool = False) -> tuple:
+def licence_members(sources: set, municipal: bool = False, regional: bool = False, station: bool = False) -> tuple:
     """(license, attribution) of the zone file: the wording of the newest rule-based source present (v1 otherwise),
     narrowed to the OSM-derived polygons and extended by the municipal sources when ``municipal`` (ruling R-C1) and by
     the sources of the regional evidence package when ``regional`` (spec Amendment D; needs ``municipal``), where the
@@ -842,15 +874,20 @@ def licence_members(sources: set, municipal: bool = False, regional: bool = Fals
             raise SystemExit("the municipal licence wording no longer holds the BgA cut-out clause this step replaces")
         license_text = license_text.replace(_OSM_BGA_CUTOUT_CLAUSE, _REGIONAL_BGA_CUTOUT_CLAUSE)
         license_text, attribution = license_text + LICENSE_REGIONAL_SUFFIX, attribution + ATTRIBUTION_REGIONAL_SUFFIX
+    if station:
+        if not regional:
+            raise SystemExit("the station zones are appended to a release of the regional step: pass regional=True as well")
+        license_text, attribution = license_text + LICENSE_STATION_SUFFIX, attribution + ATTRIBUTION_STATION_SUFFIX
     return license_text, attribution
 
 
-def write_zone_file(frame: gpd.GeoDataFrame, path, municipal: bool = False, regional: bool = False) -> None:
+def write_zone_file(frame: gpd.GeoDataFrame, path, municipal: bool = False, regional: bool = False,
+                    station: bool = False) -> None:
     """WGS84 GeoJSON with the licence and attribution members (``licence_members``: the v2 wording when a rule-based
     zone exists, the municipal sources when ``municipal``, the regional evidence package when ``regional``)."""
     if regional and not municipal:
         raise SystemExit("the regional evidence package builds on the municipal step: pass municipal=True as well")
-    license_text, attribution = licence_members(set(frame["geometry_source"]), municipal, regional)
+    license_text, attribution = licence_members(set(frame["geometry_source"]), municipal, regional, station)
     # RFC 7946 allows foreign members; GDAL writes them at the top level and GeoJSON readers ignore them.
     members = json.dumps({"license": license_text, "attribution": attribution})
     frame.to_crs("EPSG:4326").to_file(Path(path), driver="GeoJSON", COORDINATE_PRECISION=7,

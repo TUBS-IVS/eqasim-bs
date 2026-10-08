@@ -275,6 +275,18 @@ GARAGE_SPECS = (
      "facility": "WOB_PHAENO", "tiers": ("WOB_PHAENO_R04", "WOB_PHAENO_R02"), "first": "WOB_PHAENO_R01",
      "cap": "WOB_PHAENO_R03", "other_caps": ("WOB_PHAENO_R05",),
      "comment": "Aufbau-Gesellschaft Wolfsburg (Nordkopf / phaeno); the operator's capacity 408 supersedes the municipal 400."},
+    {"garage_id": "wob_hauptbahnhof", "town": "wob", "layer": "wob_parkhaeuser",
+     "feature": ("facility_id", "WOB_HAUPTBAHNHOF"), "facility": "WOB_HAUPTBAHNHOF", "operator": "Contipark",
+     "rate": "WOB_HBF_P1_R01", "cap": "WOB_HBF_P1_R02", "window": None,
+     "ignored": {"WOB_HBF_P1_R03": "the day tariff at the reduced price for holders of a Pcard or the digital BahnCard, "
+                                    "discounted at the on-site terminal only: a customer group the model cannot identify "
+                                    "(spec Amendment G2)"},
+     "comment": "Parkdeck Hauptbahnhof P1 (DB BahnPark, operated by Contipark), a garage OPTION since spec Amendment G2 (owner "
+                "decision 2026-10-08: the station car parks are public; rulings R-4b-4 and R-4b-9 are revoked for it). Rate per "
+                "started 60 min and the published day tariff as the cap; the cap period is 'day definition unspecified', so the "
+                "day tariff is read as a maximum per stay. The 186 (Contipark) and 190 (DB BahnPark leaflet) spaces conflict and "
+                "are not chosen: no capacity is reported. The product for public-transport customers (35 EUR) is restricted "
+                "and not used."},
     # ------------------------------------------------------------------ the other towns: operator pages
     {"garage_id": "wf_schulwall", "town": "wf", "layer": "region_parkhaeuser", "feature": ("facility_id", "WF_SCHULWALL"),
      "facility": "WF_SCHULWALL",
@@ -485,16 +497,10 @@ MONTHLY_PRODUCTS = (
      "decision": "not_used", "reason": "not_the_cheapest"},
     {"record_id": "monthly_wob_designer_outlets", "rule": "WOB_OUTLETS_MONTHLY_1", "garage_id": "wob_designer_outlets",
      "decision": "used"},
-    {"record_id": "monthly_wob_hauptbahnhof_24h", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_1", "garage_id": None,
-     "municipality_ags": "03103000", "subject": "Wolfsburg Parkdeck Hauptbahnhof (Contipark / DB BahnPark): Dauerparken Mo-So 24 h",
-     "decision": "not_used", "reason": "garage_not_listed",
-     "why": "the deck is a station BahnPark car park and no garage of the dataset (ruling R-4b-9, candidate "
-            "candidate_wob_hauptbahnhof)"},
-    {"record_id": "monthly_wob_hauptbahnhof_oepnv", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_2", "garage_id": None,
-     "municipality_ags": "03103000", "subject": "Wolfsburg Parkdeck Hauptbahnhof (Contipark / DB BahnPark): product for "
-                                                "public-transport customers",
-     "decision": "not_used", "reason": "restricted_customer_group",
-     "why": "the deck is a station BahnPark car park and no garage of the dataset either (ruling R-4b-9)"},
+    {"record_id": "monthly_wob_hauptbahnhof_24h", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_1", "garage_id": "wob_hauptbahnhof",
+     "decision": "used", "why": "Dauerparken Mo-So 24 h, the cheapest product open to every customer (spec Amendment G2)"},
+    {"record_id": "monthly_wob_hauptbahnhof_oepnv", "rule": "WOB_HAUPTBAHNHOF_MONTHLY_2", "garage_id": "wob_hauptbahnhof",
+     "decision": "not_used", "reason": "restricted_customer_group"},
     {"record_id": "monthly_gs_galeria_dauerstellplatz", "rule": "GS_GALERIA_MONTHLY", "garage_id": "gs_galeria",
      "decision": "used"},
     {"record_id": "monthly_he_groepern_tiefgarage", "rule": "HE_GROEPERN_TG_118_DIRECTORY_MONTHLY",
@@ -574,13 +580,6 @@ PACKAGE_CANDIDATES = (
      "reason": "outside_source_list",
      "note": "a private garage, free on the upper levels and for 2 h on the lower level (fee status free_conditional): not in "
              "the towns that spec Amendment E1 names and no tariff the columns could express"},
-    {"record_id": "candidate_wob_hauptbahnhof", "town": "wob",
-     "subject": "Wolfsburg Parkdeck Hauptbahnhof P1 (Contipark / DB BahnPark)", "facility": "WOB_HAUPTBAHNHOF",
-     "reason": "station_bahnpark",
-     "note": "a station deck of DB BahnPark, operated by Contipark: ruling R-4b-9 excludes the station BahnPark car parks in "
-             "both cities, like the Braunschweig station car parks of the directory, and the coverage register lists the DB "
-             "BahnPark station car parks of Wolfsburg as excluded; the package's garage layer holds the deck, so it is decided "
-             "here; its monthly products are recorded and not used"},
     {"record_id": "candidate_wf_parkpalette_karlstrasse", "town": "wf", "subject": "Wolfenbuettel, Parkpalette Karlstrasse "
                                                                                  "(157 spaces)",
      "facility": None, "reason": "dauerparker_only",
@@ -605,9 +604,12 @@ DIRECTORY_DECISIONS = {
                                                              "excluded (customer and visitor regime)"),
     "Parkplatz Grosser Hof": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
                                                      "its zone is its tariff"),
-    "Parkplatz Hauptbahnhof Nord": ("station_bahnpark", "station car park of a private operator (BahnCard discount, "
-                                                        "75 EUR per month for BahnCard holders): rulings R-4b-4 and R-4b-9"),
-    "Parkplatz Hauptbahnhof Sued": ("station_bahnpark", "station car park of a private operator: rulings R-4b-4 and R-4b-9"),
+    "Parkplatz Hauptbahnhof Nord": ("station_zone", "station car park of DB BahnPark (Contipark), public: the single paid-site "
+                                                    "zone bs_hbf_p1_nord (spec Amendment G1, which revokes rulings R-4b-4 and "
+                                                    "R-4b-9 for it)"),
+    "Parkplatz Hauptbahnhof Sued": ("station_zone", "station car park of DB BahnPark (Contipark), public: the single paid-site "
+                                                    "zone bs_hbf_p2_sued (spec Amendment G1, which revokes rulings R-4b-4 and "
+                                                    "R-4b-9 for it)"),
     "Parkplatz Markthalle": ("bga_zone", "BgA car park, the zone bs_bga_markthalle"),
     "Parkplatz Nimesstrasse": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
                                                       "its zone is its tariff"),
@@ -921,7 +923,11 @@ BS_MONTHLY_SPECS = (
 #: package's kind: garage or surface_parking), ``reason`` (a code of ``garage_qa.MONTHLY_NOT_USED_REASONS``) and ``why`` (a
 #: sentence of the note). Eves and Fichtengrund are garages that the dataset does not list (the regional package holds no tariff
 #: of them): their current published product is, with the used products of the dataset's Braunschweig garages, a value of
-#: ASSUMPTION P13; the station car parks and the two APCOA surface lots are no garage products and never count there.
+#: ASSUMPTION P13; the three station car parks (``decision`` used: the commuter product of their zone, spec Amendment G1) and
+#: the two APCOA surface lots are no garage products and never count there.
+_STATION_PRODUCT_WHY = (
+    "the commuter product of the station zone {zone_id} (spec Amendment G1): commuter_day_eur is this amount over 21 working days "
+    "(ASSUMPTION P2); a surface lot, no garage product and never a value of ASSUMPTION P13")
 BS_RECORDED_SPECS = (
     {"record_id": "monthly_bs_eves", "facility": "BS_EVES", "facility_key": "eves", "facility_type": "garage",
      "reason": "not_a_dataset_option",
@@ -934,14 +940,14 @@ BS_RECORDED_SPECS = (
             "price and a promotion context exist and that the end date of this offer is unknown, so it is not a guaranteed "
             "regular price"},
     {"record_id": "monthly_bs_hbf_nord_p1", "facility": "BS_DB_P1", "facility_key": "braunschweig_hbf_nord_p1",
-     "facility_type": "surface_parking", "reason": "station_bahnpark",
-     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+     "facility_type": "surface_parking", "decision": "used", "zone_ids": ("bs_hbf_p1_nord",),
+     "why": _STATION_PRODUCT_WHY.format(zone_id="bs_hbf_p1_nord")},
     {"record_id": "monthly_bs_hbf_sued_p2", "facility": "BS_DB_P2", "facility_key": "braunschweig_hbf_sued_p2",
-     "facility_type": "surface_parking", "reason": "station_bahnpark",
-     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+     "facility_type": "surface_parking", "decision": "used", "zone_ids": ("bs_hbf_p2_sued",),
+     "why": _STATION_PRODUCT_WHY.format(zone_id="bs_hbf_p2_sued")},
     {"record_id": "monthly_bs_hbf_west_p3", "facility": "BS_DB_P3", "facility_key": "braunschweig_hbf_west_p3",
-     "facility_type": "surface_parking", "reason": "station_bahnpark",
-     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+     "facility_type": "surface_parking", "decision": "used", "zone_ids": ("bs_hbf_p3_west",),
+     "why": _STATION_PRODUCT_WHY.format(zone_id="bs_hbf_p3_west")},
     {"record_id": "monthly_bs_apcoa_s1", "facility": "BS_APCOA_S1", "facility_key": "s1_holwedestrasse",
      "facility_type": "surface_parking", "reason": "surface_lot",
      "why": "an open APCOA car park, no garage: it is no garage of the dataset and never a value of ASSUMPTION P13"},

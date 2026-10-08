@@ -9,25 +9,24 @@ the city car-park directory of Braunschweig ``bs_plan_parkplaetze.geojson`` (ret
 
 The dataset lists every garage of the package's garage layers (``bs_parkhaeuser``, ``wob_parkhaeuser``,
 ``region_parkhaeuser`` and the Parkhaus points of the Goslar service that have no other row) once, except the garages that
-are no garage option (the station car parks of DB BahnPark, ruling R-4b-9), which are rows of the QA table with their
-reason. A garage is PRICED where the garage columns, its time-of-day tiers or its duration bands express its published
-tariff exactly (rulings R-4b-3, R-4b-4, R-4b-10b and R-4b-11; ``regional_garage_specs`` names which rule carries which part
-and the reason of every garage that is not priced). Only rules that the package marks ``preferred_for_current_use`` set a
-value (a rate, a tier, a band, a first period, a cap, a monthly product): a specification that names another rule for such a
-role stops the step, with no waiver (ruling R-4b-8). No tariff number is typed anywhere: the values are read from the rules
-by the roles, with one exception: a window that a source states only in a page text which the package keeps as text
-(``window=("stated", ...)``) is typed with its quotation. A first period carries the clock window its rule states (ruling
-R-4b-12). The assumptions P3 (a night tariff that is no per-unit rate is not charged), P4 (a rate without a stated rounding
-is billed per started unit), P5 (the fee window is 0 to 24 h where no preferred rule states charging times), P6 (how a stay
-is priced from tiers, amended by ruling R-4b-12 for the clock window of a first period), P7 (caps that the day-cap column
-cannot hold are not applied) and P8 (how a stay is priced from duration bands, ruling R-4b-11) are named in the row's
-``assumptions`` and notes and counted. Two readings that name no assumption are counted and named in the notes as well: a day
-cap without a stated day boundary is read as a maximum per stay, and a time window without stated days as Monday to
-Friday.
-Monthly and 30-day products are read per spec Amendment D2 (the cheapest publicly purchasable fixed-price product per
-garage is ``monthly_eur``; products for a customer group the model cannot identify, without a fixed price or limited to a
-small number of places are recorded and not used). Every candidate that is no garage of the dataset (a BgA lot, a zone car
-park, a station car park, a garage without coordinates) is a row of the QA table with its reason.
+are no garage option (the Braunschweig Hbf car parks of DB BahnPark are zones, spec Amendment G1), which are rows of the QA
+table with their reason. A garage is PRICED where the garage columns, its time-of-day tiers or its duration bands express its
+published tariff exactly (rulings R-4b-3, R-4b-4, R-4b-10b and R-4b-11; ``regional_garage_specs`` names which rule carries
+which part and the reason of every garage that is not priced). Only rules that the package marks
+``preferred_for_current_use`` set a value (a rate, a tier, a band, a first period, a cap, a monthly product): a specification
+that names another rule for such a role stops the step, with no waiver (ruling R-4b-8). No tariff number is typed anywhere:
+the values are read from the rules by the roles, with one exception: a window that a source states only in a page text which
+the package keeps as text (``window=("stated", ...)``) is typed with its quotation. A first period carries the clock window
+its rule states (ruling R-4b-12). The assumptions P3 (a night tariff that is no per-unit rate is not charged), P4 (a rate
+without a stated rounding is billed per started unit), P5 (the fee window is 0 to 24 h where no preferred rule states
+charging times), P6 (how a stay is priced from tiers, amended by ruling R-4b-12 for the clock window of a first period), P7
+(caps that the day-cap column cannot hold are not applied) and P8 (how a stay is priced from duration bands, ruling R-4b-11)
+are named in the row's ``assumptions`` and notes and counted. Two readings that name no assumption are counted and named in
+the notes as well: a day cap without a stated day boundary is read as a maximum per stay, and a time window without stated
+days as Monday to Friday. Monthly and 30-day products are read per spec Amendment D2 (the cheapest publicly purchasable
+fixed-price product per garage is ``monthly_eur``; products for a customer group the model cannot identify, without a fixed
+price or limited to a small number of places are recorded and not used). Every candidate that is no garage of the dataset (a
+BgA lot, a zone car park, a station car park, a garage without coordinates) is a row of the QA table with its reason.
 
 Every layer is read as the package states it (EPSG:25832, valid geometries, nothing repaired); per layer the step prints
 the features used, the duplicates it skipped and the features no garage specification covers (which stops the step), and

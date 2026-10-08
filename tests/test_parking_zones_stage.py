@@ -413,7 +413,7 @@ def test_the_committed_release_loads_through_the_stage(caplog):
         release = zones_stage.execute(context)
     # The only warning is the assumption-rate warning of the garage loader (44 of 48 priced rows rest on an assumption): by
     # design at every load, no marker, no other problem. The second rate warning (P4 or P5) is silent since the Wolfsburg
-    # surface lots (spec E14): 32 of 48 rows (66.7 %) are below the 75 % threshold.
+    # surface lots (spec E14): 33 of 49 rows (67.3 %) are below the 75 % threshold.
     warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
     assert [record.name for record in warnings] == ["braunschweig.parking.garages"]
     assert all(GARAGE_ASSUMPTION_RATE_WARNING in record.getMessage() for record in warnings)
@@ -423,15 +423,15 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert [source["path"] for source in release["sources"]] == [DEFAULT_PATHS[key] for key in PATH_KEYS]
     # Braunschweig A, B, C and Goslar A, B, C, F, G, H, J (spec Amendment C3): a second layer, not fee zones.
     assert len(release["districts"]) == 10 and set(release["districts"]["municipality_ags"]) == {"03101000", "03153017"}
-    # The committed garage dataset: 48 rows (35 garages, 13 surface lots), every one priced (specs E13 and E14), in EPSG:25832.
-    assert len(release["garages"]) == 48 and release["garages"]["priced"].all()
+    # The committed garage dataset: 49 rows (36 garages, 13 surface lots), every one priced (specs E13 and E14), in EPSG:25832.
+    assert len(release["garages"]) == 49 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64
     # The committed release exports as the schema-3 tariff model the preparation writes: with the decay 0 (the garage
-    # options off) and with a decay value, both list the 48 priced rows.
+    # options off) and with a decay value, both list the 49 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],
                                              garages=release["garages"])
     assert model["schema_version"] == 3 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
-    assert len(model["garages"]) == 48 and model["garage_decay_m"] == 0.0
+    assert len(model["garages"]) == 49 and model["garage_decay_m"] == 0.0
 
 
 def test_a_legacy_garage_dataset_without_the_imputed_column_is_refused_unless_every_row_is_a_marked_fixture(fixture_data):

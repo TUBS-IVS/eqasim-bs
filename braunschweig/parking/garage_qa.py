@@ -9,8 +9,9 @@ The committed table ``parking_garages_2026_qa.csv`` is written by the curation s
 * ``monthly_product``: one per monthly or 30-day product the sources publish (spec Amendment D2, ruling R-D2-a), used (it is
   the ``monthly_eur`` of a garage or the ``commuter_day_eur`` of tariff rows) or recorded and not used, with the reason;
 * ``candidate``: one per car park of the city directories or per garage of the package that is NOT in the dataset, with the
-  reason (ruling R-4b-4: BgA lots are zones, customer-only regimes stay out; ruling R-4b-9: the station car parks of DB
-  BahnPark stay out in every city; a car park open to long-term renters only is no garage option).
+  reason (ruling R-4b-4: BgA lots are zones, customer-only regimes stay out; spec Amendment G: the Braunschweig Hbf car
+  parks of DB BahnPark are zones and the Wolfsburg Parkdeck Hauptbahnhof a garage (rulings R-4b-4 and R-4b-9 revoked); a car
+  park open to long-term renters only is no garage option).
 
 ``validate_garage_qa`` compares the table with the dataset (every garage once, the same status and reason; every
 ``monthly_eur`` the amount of exactly one used product; a car park inside a zone, spec E14, names its zone and the published
@@ -66,8 +67,6 @@ MONTHLY_NOT_USED_REASONS = {
     "not_a_dataset_option": "the current published monthly product of a garage that is no option of the dataset (the package "
                             "lists it without a tariff the dataset encodes): recorded, never a garage option, and counted among "
                             "the published garage products of its municipality for ASSUMPTION P13",
-    "station_bahnpark": "a product of a car park at a railway station that is run as DB BahnPark (rulings R-4b-4 and R-4b-9): no "
-                        "garage of the dataset and no garage product for ASSUMPTION P13",
     "surface_lot": "a product of an open car park that is no garage: no garage of the dataset and no garage product for "
                    "ASSUMPTION P13 (surface lots never impute)",
 }
@@ -78,8 +77,8 @@ RECORDED_GARAGE_REASON = "not_a_dataset_option"
 CANDIDATE_REASONS = {
     "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role)",
     "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff",
-    "station_bahnpark": "a car park or garage at a railway station that is run by a private operator or as DB BahnPark "
-                        "(Contipark), in Braunschweig and Wolfsburg alike (rulings R-4b-4 and R-4b-9)",
+    "station_zone": "a station car park of DB BahnPark (Contipark) that is a single paid-site zone of its own (spec Amendment "
+                    "G1; the owner decision of 2026-10-08 revokes rulings R-4b-4 and R-4b-9 for the Braunschweig Hbf car parks)",
     "customer_regime": "a hospital, shopping-centre or airport short-stay regime (ruling R-4b-4)",
     "no_coordinates": "the package gives the garage no coordinates, and no geometry is invented",
     "no_published_tariff": "the package lists the car parks without any published tariff (spec Amendment E1 lists large "

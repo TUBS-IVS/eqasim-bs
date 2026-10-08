@@ -646,8 +646,26 @@ def test_a_commuter_at_a_braunschweig_garage_without_a_published_product_pays_th
     assert cost.garage_monthly_day_cents(10748) == 512
     assert _committed_garage_option("bs_magni", *eight_hours, "shop") == 960
     assert _committed_garage_option("bs_magni", *eight_hours, "work", monthly_imputation=False) == 960
-    # a Wolfsburg garage without a published product: Congresspark 1.00 EUR per started hour, 6.00 EUR cap; median 57.50 EUR
-    # / 21 = 273.8 -> 274 ct; min(600, 274) = 274 ct for work
-    assert _committed_garage_option("wob_congresspark", *eight_hours, "work") == 274
+    # a Wolfsburg garage without a published product: Congresspark 1.00 EUR per started hour, 6.00 EUR cap; the Wolfsburg median
+    # is 60.00 EUR since the Parkdeck Hauptbahnhof (100.00 EUR, spec Amendment G2) is a fifth published product (50.00, 55.00,
+    # 60.00, 98.00, 100.00): 6000 ct / 21 = 285.7 -> 286 ct; min(600, 286) = 286 ct for work
+    assert _committed_garage_option("wob_congresspark", *eight_hours, "work") == 286
+    assert cost.garage_monthly_day_cents(6000) == 286
     # Steinstrasse (published Tarif A 100.00 EUR / 21 = 476.2 -> 476 ct; metered 8 x 180 = 1440 -> cap 1800 stays 1440)
     assert _committed_garage_option("bs_steinstrasse", *eight_hours, "work") == 476
+
+
+def test_the_wolfsburg_station_deck_is_a_priced_garage_option_with_its_published_monthly_product():
+    # Parkdeck Hauptbahnhof P1 (spec Amendment G2): 1.70 EUR per started hour, the day tariff 9.00 EUR as the cap, the monthly
+    # product Dauerparken Mo-So 24 h 100.00 EUR / 21 working days = 476.2 -> 476 ct (P2). Calculated by hand: 1 h 170 ct; 8 h
+    # metered 8 x 170 = 1360 -> cap 900; work and education pay min(900, 476) = 476 ct, a shopper the metered 900 ct; 2 h metered
+    # 340 ct is cheaper than the day share for a commuter as well
+    eight_hours = (28800, 28800 + 8 * HOUR_S)
+    assert _committed_garage_option("wob_hauptbahnhof", 28800, 28800 + HOUR_S, "shop") == 170
+    assert _committed_garage_option("wob_hauptbahnhof", *eight_hours, "shop") == 900
+    assert _committed_garage_option("wob_hauptbahnhof", *eight_hours, "work") == 476
+    assert _committed_garage_option("wob_hauptbahnhof", *eight_hours, "education") == 476
+    assert _committed_garage_option("wob_hauptbahnhof", 28800, 28800 + 2 * HOUR_S, "work") == 340
+    assert cost.garage_monthly_day_cents(10000) == 476
+    # the published product comes first: switching the imputation off does not change the deck, it has its own product
+    assert _committed_garage_option("wob_hauptbahnhof", *eight_hours, "work", monthly_imputation=False) == 476
