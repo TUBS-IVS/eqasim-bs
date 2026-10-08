@@ -703,6 +703,17 @@ config:
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
   cordon_network_source_buffer_m: 45000
+  # Portal trips (eqasim-bs#442): legs beyond max_routable_distance_m (straight-line metres from the
+  # trip's origin) become one outside stay at a cordon gate with the donor's mode fixed and the
+  # diary's times; the same threshold bounds the distance CDFs and the external candidates.
+  # Default 45000 = the supply ring width above, kept as a separate key on purpose.
+  braunschweig.portal.enabled: true
+  braunschweig.portal.max_routable_distance_m: 45000
+  braunschweig.portal.external_point_distance_tolerance: 0.2
+  braunschweig.portal.mode_substitution_warn_share: 0.1
+  # WARN when more than this share of the external points miss the distance band, or of the
+  # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
+  braunschweig.portal.fallback_warn_share: 0.1
   cordon_network_buffer_fraction: 0.10
   osm_path: osm/cordon
   osm_network_path: osm/germany-latest.zgb_ring.osm.pbf
@@ -762,7 +773,7 @@ aliases:
   # the FINISHED day (secondary locations, the MATSim population, synthesis
   # output) reads these .final stages instead. With commute_day_state_enabled
   # false both are pass-throughs of the pre-assignment views.
-  synthesis.population.trips.final: braunschweig.synthesis.commute_day.trips_day_stage
+  synthesis.population.trips.final: braunschweig.synthesis.portal_trips.trips_final
   synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
   # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
   synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day
