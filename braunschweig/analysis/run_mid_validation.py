@@ -43,7 +43,7 @@ import pandas as pd
 
 from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
-from braunschweig.analysis.pipeline_trips_file import resolve_pipeline_trips_path
+from braunschweig.analysis.pipeline_trips_file import is_pre_portal_trips_path, resolve_pipeline_trips_path
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
@@ -269,17 +269,83 @@ def _read_csv(output_dir: Path, prefix: str, name: str) -> pd.DataFrame:
     return pd.read_csv(output_dir / f"{prefix}{name}.csv", sep=";")
 
 
-def _read_pipeline_trips(output_dir: Path, prefix: str) -> pd.DataFrame:
-    """The pipeline trips the report counts: ``<prefix>trips_pre_portal.csv`` when it exists, else ``trips.csv``.
+def _read_pipeline_trips(output_dir: Path, prefix: str) -> tuple[pd.DataFrame, bool]:
+    """The pipeline trips the report counts and whether they are the pre-portal trips.
 
-    The report compares the written diary with MiD, so while the portal layer is on it reads the donor day before
-    the outside stays (eqasim-bs#442); the choice is logged by ``resolve_pipeline_trips_path``. Raises
-    ``FileNotFoundError`` naming ``<prefix>trips.csv`` when neither file exists.
+    Returns ``(trips, is_pre_portal)``: ``<prefix>trips_pre_portal.csv`` when it exists and is current, else
+    ``<prefix>trips.csv``. The report compares the written diary with MiD, so while the portal layer is on it
+    reads the donor day before the outside stays (eqasim-bs#442); the choice is logged by
+    ``resolve_pipeline_trips_path``. Raises ``FileNotFoundError`` naming ``<prefix>trips.csv`` when neither file
+    exists.
     """
     path = resolve_pipeline_trips_path(output_dir, prefix)
     if path is None:
         raise FileNotFoundError(f"No {prefix}trips.csv (and no {prefix}trips_pre_portal.csv) in {output_dir}.")
-    return pd.read_csv(path, sep=";")
+    return pd.read_csv(path, sep=";"), is_pre_portal_trips_path(path)
+
+
+def _activity_purpose_counts_from_trips(trips: pd.DataFrame, person_ids) -> pd.Series:
+    """Activity counts per purpose derived from a written trips table, with the activities file's definition.
+
+    The vendored activities stage (``synthesis.population.activities``) writes one activity per trip start (the
+    ``preceding_purpose`` of every trip), one closing activity per person (the ``following_purpose`` of the last
+    trip) and a single ``home`` activity for every person without a trip; the output stage then keeps only the
+    activities of persons in ``persons.csv``. This reproduces exactly that count from the trip table, so that on a
+    run without portal stays it equals ``activities['purpose'].value_counts()`` of ``<prefix>activities.gpkg``
+    (tests/test_pre_portal_trips_output.py pins that against the vendored stage). Fed with the pre-portal trips it
+    gives the activity mix of the donor day, which the post-portal activities file cannot.
+    """
+    person_ids = pd.Index(pd.unique(pd.Series(list(person_ids))))
+    in_persons = trips[trips["person_id"].isin(person_ids)]
+    closing = in_persons.loc[in_persons["is_last"].astype(bool), "following_purpose"]
+    n_without_trip = int((~person_ids.isin(in_persons["person_id"].unique())).sum())
+    without_trip = pd.Series(["home"] * n_without_trip, dtype=object)
+    purposes = pd.concat([in_persons["preceding_purpose"].astype(object), closing.astype(object), without_trip])
+    return purposes.value_counts()
+
+
+def _activity_purpose_counts(
+    activities: gpd.GeoDataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool, person_ids
+) -> tuple[pd.Series, str]:
+    """Activity counts per purpose for ``03_activity_purposes.png`` and which source they came from.
+
+    With the pre-portal trips in use the counts are derived from them (the activities file is the post-portal day,
+    where a far workplace is an ``outside`` activity); otherwise they are those of ``<prefix>activities.gpkg``,
+    unchanged. The source is logged.
+    """
+    if trips_are_pre_portal:
+        LOGGER.info(
+            "03_activity_purposes: activity counts derived from the pre-portal trips (the written activities file "
+            "is the post-portal day and would count far workplaces as 'outside', eqasim-bs#442)")
+        return _activity_purpose_counts_from_trips(trips, person_ids), "pre_portal_trips"
+    LOGGER.info("03_activity_purposes: activity counts read from the activities geopackage")
+    return activities["purpose"].value_counts(), "activities_gpkg"
+
+
+def _commute_table_scope(commute: pd.DataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool) -> dict[str, Any]:
+    """Source and coverage of the commute tables, logged.
+
+    The commute and education distance tables need the assigned primary location of each worker, which only the
+    activities geopackage carries (no written output keeps the primary locations of the persons whose workplace the
+    portal layer replaced by an ``outside`` stay). With the pre-portal trips in use this therefore counts the
+    persons with a ``work`` trip in the donor day that have no row in the commute table, and warns: the table then
+    covers workplaces inside the portal threshold only.
+    """
+    scope: dict[str, Any] = {"source": "activities_gpkg", "n_commute_rows": int(len(commute))}
+    if not trips_are_pre_portal:
+        LOGGER.info("Commute tables: home->work distances from the activities geopackage")
+        return scope
+    work_persons = set(
+        trips.loc[(trips["following_purpose"] == "work") | (trips["preceding_purpose"] == "work"), "person_id"])
+    missing = work_persons - set(commute["person_id"])
+    scope["n_work_persons_pre_portal_trips"] = int(len(work_persons))
+    scope["n_work_persons_without_commute_row"] = int(len(missing))
+    LOGGER.warning(
+        "Commute tables: home->work distances from the activities geopackage, the post-portal day; %d of %d persons "
+        "with a work trip in the pre-portal trips have no row (their workplace lies beyond the portal threshold and "
+        "is an 'outside' activity there). The tables describe workplaces inside the threshold only (eqasim-bs#442).",
+        len(missing), len(work_persons))
+    return scope
 
 
 def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
@@ -862,11 +928,9 @@ def _plot_trips(trips: pd.DataFrame, path: Path) -> None:
     _save_fig(fig, path)
 
 
-def _plot_purposes(activities: gpd.GeoDataFrame, path: Path) -> None:
+def _plot_purposes(purpose_counts: pd.Series, path: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 3.5))
-    activities["purpose"].value_counts().plot.bar(
-        ax=ax, title="Activity purposes (count)"
-    )
+    purpose_counts.plot.bar(ax=ax, title="Activity purposes (count)")
     _save_fig(fig, path)
 
 
@@ -1077,7 +1141,7 @@ def run(args: _Args) -> dict[str, Any]:
 
     persons = _read_csv(args.output_dir, args.prefix, "persons")
     households = _read_csv(args.output_dir, args.prefix, "households")
-    trips = _read_pipeline_trips(args.output_dir, args.prefix)
+    trips, trips_are_pre_portal = _read_pipeline_trips(args.output_dir, args.prefix)
     homes = _read_gpkg(args.output_dir, args.prefix, "homes")
     activities = _read_gpkg(args.output_dir, args.prefix, "activities")
 
@@ -1107,12 +1171,15 @@ def run(args: _Args) -> dict[str, Any]:
     # --- Demographics + trips + purposes plots (no MiD reference rows). ---
     _plot_demographics(persons_kreis, households, out / "01_demographics.png")
     _plot_trips(trips, out / "02_trips.png")
-    _plot_purposes(activities, out / "03_activity_purposes.png")
+    activity_purpose_counts, activity_purpose_source = _activity_purpose_counts(
+        activities, trips, trips_are_pre_portal, persons["person_id"])
+    _plot_purposes(activity_purpose_counts, out / "03_activity_purposes.png")
     _plot_homes_map(homes, activities, kreise, out / "04_homes_map.png")
 
     # --- Commute distance vs MiD P13. ---
     LOGGER.info("Computing commute distances vs MiD P13")
     commute = _commute_distances(activities, homes_kreis, persons_kreis)
+    commute_table_scope = _commute_table_scope(commute, trips, trips_are_pre_portal)
     commute_band = _commute_band_table(commute, mid["P13"])
     commute_band.to_csv(out / "commute_bands_vs_p13.csv", index=False)
     _plot_commute_bands(commute_band, out / "05_commute_distance_p13.png")
@@ -1302,7 +1369,11 @@ def run(args: _Args) -> dict[str, Any]:
         "n_persons": int(len(persons)),
         "n_households": int(len(households)),
         "n_trips": int(len(trips)),
-        "n_activities": int(len(activities)),
+        # With the pre-portal trips in use the activity count is the one derived from them (same definition).
+        "n_activities": int(activity_purpose_counts.sum() if trips_are_pre_portal else len(activities)),
+        "trips_source": "pre_portal_trips" if trips_are_pre_portal else "trips_csv",
+        "activity_purpose_source": activity_purpose_source,
+        "commute_table_scope": commute_table_scope,
         "unassigned_homes": int(persons_kreis["ars5"].isna().sum()),
         "trips_per_person": float(round(len(trips) / max(len(persons), 1), 4)),
         "commute_mean_km_synth": dict(

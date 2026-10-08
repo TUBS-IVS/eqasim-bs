@@ -5,7 +5,7 @@ The synthesis output writes ``<prefix>trips.csv`` from ``synthesis.population.tr
 purpose ``outside`` and the inner legs of a stay are dropped. A validator that compares the written diary with a
 travel survey (purpose distribution, work/education participation, trips per person) must see the donor day instead,
 so the output stage additionally writes ``<prefix>trips_pre_portal.csv`` (``config_keys.PRE_PORTAL_TRIPS_FILE_STEM``)
-and the readers of this module's family take it when it exists.
+and the readers of this module's family take it when it exists and is current (not older than ``trips.csv``).
 
 A reader that needs the realised plan (for example one that joins the trips with MATSim output by
 ``(person_id, trip_index)``) does NOT use this module: the MATSim mode-choice trip indices refer to the
@@ -14,16 +14,27 @@ post-portal table, which stays in ``<prefix>trips.csv``.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from braunschweig.synthesis.portal_trips.config_keys import PRE_PORTAL_TRIPS_FILE_STEM
 
 LOGGER = logging.getLogger(__name__)
 
-#: A pre-portal file older than ``trips.csv`` by more than this many seconds probably stems from an earlier run in
-#: the same output directory. Both files are written by one output stage, the pre-portal one last, so a genuine pair
-#: differs by seconds at most; the slack absorbs file copies that do not preserve modification times exactly.
+#: A pre-portal file older than ``trips.csv`` by more than this many seconds is treated as left over from an earlier run
+#: in the same output directory and ignored. Both files are written by one output stage, the pre-portal one last, so a
+#: genuine pair differs by seconds at most (and never in this direction); the slack absorbs file copies that do not
+#: preserve modification times exactly.
 STALE_AFTER_SECONDS = 60.0
+
+
+def is_pre_portal_trips_path(path: Path | str) -> bool:
+    """True when ``path`` names a ``<prefix>trips_pre_portal.csv`` file (as returned by the resolver)."""
+    return Path(path).name.endswith(f"{PRE_PORTAL_TRIPS_FILE_STEM}.csv")
+
+
+def _iso_mtime(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
 
 
 def resolve_pipeline_trips_path(directory: Path | str, prefix: str) -> Path | None:
@@ -31,24 +42,28 @@ def resolve_pipeline_trips_path(directory: Path | str, prefix: str) -> Path | No
 
     Prefers ``<directory>/<prefix>trips_pre_portal.csv`` (donor purposes, written only while the portal layer is on)
     over ``<directory>/<prefix>trips.csv`` and logs which file was chosen and why. Without the pre-portal file the
-    behaviour is that of reading ``<prefix>trips.csv`` alone. A pre-portal file that is older than ``trips.csv`` is
-    still used but reported with a warning, because it may be left over from an earlier run of that directory.
+    behaviour is that of reading ``<prefix>trips.csv`` alone. A pre-portal file that is older than ``trips.csv`` by
+    more than ``STALE_AFTER_SECONDS`` is NOT used: it stems from an earlier run of the directory (for example one
+    with the portal layer on, followed by one with it off), so it would describe another population. A warning
+    names both files and their modification times and ``trips.csv`` is returned.
     """
     directory = Path(directory)
     pre_portal_path = directory / f"{prefix}{PRE_PORTAL_TRIPS_FILE_STEM}.csv"
     trips_path = directory / f"{prefix}trips.csv"
     if pre_portal_path.exists():
-        LOGGER.info(
-            "Reading the pre-portal trips %s instead of %s: with the portal layer on the latter carries the purpose "
-            "'outside' for far destinations and has the inner legs of a stay removed, which a diary validation "
-            "against a survey must not see (eqasim-bs#442).", pre_portal_path.name, trips_path.name)
         if trips_path.exists():
             age_seconds = trips_path.stat().st_mtime - pre_portal_path.stat().st_mtime
             if age_seconds > STALE_AFTER_SECONDS:
                 LOGGER.warning(
-                    "%s is older than %s by %.0f s; it may stem from an earlier run in %s. Delete it if this run "
-                    "was made with braunschweig.portal.enabled false.",
-                    pre_portal_path.name, trips_path.name, age_seconds, directory)
+                    "%s (mtime %s) is older than %s (mtime %s) by %.0f s: it stems from an earlier run in %s and "
+                    "is ignored; %s is read instead. Delete the stale file to silence this warning.",
+                    pre_portal_path.name, _iso_mtime(pre_portal_path), trips_path.name, _iso_mtime(trips_path),
+                    age_seconds, directory, trips_path.name)
+                return trips_path
+        LOGGER.info(
+            "Reading the pre-portal trips %s instead of %s: with the portal layer on the latter carries the purpose "
+            "'outside' for far destinations and has the inner legs of a stay removed, which a diary validation "
+            "against a survey must not see (eqasim-bs#442).", pre_portal_path.name, trips_path.name)
         return pre_portal_path
     if trips_path.exists():
         return trips_path

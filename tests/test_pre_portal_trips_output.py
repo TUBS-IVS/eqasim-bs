@@ -273,15 +273,36 @@ def test_resolver_returns_none_when_neither_file_exists(tmp_path):
     assert PTF.resolve_pipeline_trips_path(tmp_path, "bs_") is None
 
 
-def test_resolver_warns_when_the_pre_portal_file_is_older_than_trips_csv(tmp_path, caplog):
+def test_resolver_ignores_a_pre_portal_file_older_than_trips_csv_and_warns_with_both_mtimes(tmp_path, caplog):
     pre = _write_trips(tmp_path, "bs_trips_pre_portal.csv", _donor_trips())
-    plain = _write_trips(tmp_path, "bs_trips.csv", _donor_trips())
+    plain = _write_trips(tmp_path, "bs_trips.csv", _post_portal_trips())
     old = plain.stat().st_mtime - 3600.0
     os.utime(pre, (old, old))
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         resolved = PTF.resolve_pipeline_trips_path(tmp_path, "bs_")
-    assert resolved == pre
-    assert any("older" in record.getMessage() and record.levelno == logging.WARNING for record in caplog.records)
+    assert resolved == plain
+    warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "older" in warnings[0] and "ignored" in warnings[0]
+    assert "bs_trips_pre_portal.csv" in warnings[0] and "bs_trips.csv" in warnings[0]
+    # Both modification times are named, as ISO timestamps.
+    assert warnings[0].count("mtime") == 2
+    # The preference message is not logged for a file that was not used.
+    assert not [record for record in caplog.records if "Reading the pre-portal trips" in record.getMessage()]
+
+
+def test_resolver_keeps_a_pre_portal_file_written_a_moment_before_trips_csv(tmp_path):
+    """A copy that does not preserve times exactly must not flip the choice (slack, not an exact comparison)."""
+    pre = _write_trips(tmp_path, "bs_trips_pre_portal.csv", _donor_trips())
+    plain = _write_trips(tmp_path, "bs_trips.csv", _post_portal_trips())
+    near = plain.stat().st_mtime - 2.0
+    os.utime(pre, (near, near))
+    assert PTF.resolve_pipeline_trips_path(tmp_path, "bs_") == pre
+
+
+def test_is_pre_portal_trips_path_tells_the_two_files_apart(tmp_path):
+    assert PTF.is_pre_portal_trips_path(tmp_path / "bs_trips_pre_portal.csv")
+    assert not PTF.is_pre_portal_trips_path(tmp_path / "bs_trips.csv")
 
 
 def test_the_new_file_is_not_matched_by_the_trips_glob_of_the_dashboard(tmp_path):
@@ -332,20 +353,126 @@ def test_run_mid_validation_reads_the_pre_portal_trips_when_present(tmp_path, ca
     _write_trips(tmp_path, "bs_trips.csv", _post_portal_trips())
     _write_trips(tmp_path, "bs_trips_pre_portal.csv", _donor_trips())
     with caplog.at_level(logging.INFO):
-        trips = RMV._read_pipeline_trips(tmp_path, "bs_")
+        trips, is_pre_portal = RMV._read_pipeline_trips(tmp_path, "bs_")
+    assert is_pre_portal is True
     assert list(trips["following_purpose"]) == ["work", "home", "shop", "home"]
     assert any("bs_trips_pre_portal.csv" in record.getMessage() for record in caplog.records)
 
 
 def test_run_mid_validation_reads_trips_csv_otherwise(tmp_path):
     _write_trips(tmp_path, "bs_trips.csv", _post_portal_trips())
-    trips = RMV._read_pipeline_trips(tmp_path, "bs_")
+    trips, is_pre_portal = RMV._read_pipeline_trips(tmp_path, "bs_")
+    assert is_pre_portal is False
     assert list(trips["following_purpose"]) == ["outside", "home", "shop", "home"]
 
 
 def test_run_mid_validation_missing_trips_raises_with_both_names(tmp_path):
     with pytest.raises(FileNotFoundError, match="bs_trips.csv"):
         RMV._read_pipeline_trips(tmp_path, "bs_")
+
+
+# ------------------------------------------------------------------ run_mid_validation: activity purposes
+
+
+class _ActivitiesContext:
+    """Execute context of the vendored ``synthesis.population.activities`` stage."""
+
+    def __init__(self, trips, person_ids):
+        self._trips = trips
+        self._persons = pd.DataFrame({"person_id": person_ids})
+
+    def stage(self, name):
+        return {"synthesis.population.trips": self._trips.copy(),
+                "synthesis.population.enriched": self._persons}[name]
+
+
+def _vendored_activity_counts(trips, person_ids):
+    """The purpose counts the written activities file holds: the vendored activities stage, then value_counts."""
+    from synthesis.population import activities as vendored_activities
+    frame = vendored_activities.execute(_ActivitiesContext(trips, person_ids))
+    return {str(purpose): int(count) for purpose, count in frame["purpose"].value_counts().items()}
+
+
+def _counts(series):
+    return {str(purpose): int(count) for purpose, count in series.items()}
+
+
+PERSON_IDS = [1, 2, 3]  # person 3 has no trip: the vendored stage writes one "home" activity for them
+
+
+def test_activity_counts_from_trips_equal_the_activities_file_definition_without_portal_stays():
+    day = _donor_trips()
+    written = vendored.prepare_trip_output_frame(day)
+    derived = RMV._activity_purpose_counts_from_trips(written, PERSON_IDS)
+    assert _counts(derived) == _vendored_activity_counts(day, PERSON_IDS)
+    assert _counts(derived) == {"home": 5, "work": 1, "shop": 1}
+
+
+def test_activity_counts_from_trips_ignore_persons_that_are_not_in_the_persons_file():
+    day = _donor_trips()
+    written = vendored.prepare_trip_output_frame(day)
+    # The output stage inner-joins the activities with persons.csv, so person 2 vanishes from the file.
+    derived = RMV._activity_purpose_counts_from_trips(written, [1, 3])
+    assert _counts(derived) == {"home": 3, "work": 1}
+
+
+def test_activity_counts_from_pre_portal_trips_keep_the_work_activity_the_written_activities_lose():
+    donor = _donor_trips()
+    rewritten = _rewritten_from_the_reproduction()
+    from_post_portal_file = _vendored_activity_counts(rewritten, PERSON_IDS)
+    assert from_post_portal_file.get("outside", 0) >= 1
+    assert from_post_portal_file.get("work", 0) == 0
+    derived = RMV._activity_purpose_counts_from_trips(vendored.prepare_trip_output_frame(donor), PERSON_IDS)
+    assert _counts(derived)["work"] == 1
+    assert "outside" not in _counts(derived)
+
+
+def test_activity_purpose_table_uses_the_pre_portal_trips_and_logs_its_source(caplog):
+    activities = pd.DataFrame({"person_id": [1, 1], "purpose": ["home", "outside"]})
+    trips = vendored.prepare_trip_output_frame(_donor_trips())
+    with caplog.at_level(logging.INFO):
+        counts, source = RMV._activity_purpose_counts(activities, trips, True, PERSON_IDS)
+    assert source == "pre_portal_trips"
+    assert _counts(counts) == {"home": 5, "work": 1, "shop": 1}
+    assert any("pre-portal" in record.getMessage() and "03_activity_purposes" in record.getMessage()
+               for record in caplog.records)
+
+
+def test_activity_purpose_table_reads_the_activities_file_without_the_pre_portal_trips(caplog):
+    activities = pd.DataFrame({"person_id": [1, 1, 2], "purpose": ["home", "work", "home"]})
+    with caplog.at_level(logging.INFO):
+        counts, source = RMV._activity_purpose_counts(activities, pd.DataFrame(), False, PERSON_IDS)
+    assert source == "activities_gpkg"
+    assert _counts(counts) == {"home": 2, "work": 1}
+
+
+def test_plot_purposes_draws_a_counts_series(tmp_path):
+    RMV._plot_purposes(pd.Series({"home": 5, "work": 1}), tmp_path / "03_activity_purposes.png")
+    assert (tmp_path / "03_activity_purposes.png").stat().st_size > 0
+
+
+# ------------------------------------------------------------------ run_mid_validation: commute table scope
+
+
+def test_commute_scope_counts_the_workers_the_activities_file_lost_and_warns(caplog):
+    # Person 1 works 90 km away: a pre-portal work trip exists, but the written activities hold no work activity.
+    trips = vendored.prepare_trip_output_frame(_donor_trips())
+    commute = pd.DataFrame({"person_id": [5], "distance_km": [3.0]})
+    with caplog.at_level(logging.INFO):
+        scope = RMV._commute_table_scope(commute, trips, True)
+    assert scope["source"] == "activities_gpkg"
+    assert scope["n_work_persons_pre_portal_trips"] == 1
+    assert scope["n_commute_rows"] == 1
+    assert scope["n_work_persons_without_commute_row"] == 1
+    assert any(record.levelno == logging.WARNING and "commute" in record.getMessage().lower() for record in caplog.records)
+
+
+def test_commute_scope_without_the_pre_portal_file_only_names_the_source(caplog):
+    commute = pd.DataFrame({"person_id": [5], "distance_km": [3.0]})
+    with caplog.at_level(logging.INFO):
+        scope = RMV._commute_table_scope(commute, pd.DataFrame(), False)
+    assert scope == {"source": "activities_gpkg", "n_commute_rows": 1}
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
 
 
 # ------------------------------------------------------------------ measure_trip_coherence script

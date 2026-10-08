@@ -31,9 +31,13 @@ description: >-
   <prefix>trips_pre_portal.csv (donor purposes, vendored trips column set, no mode) from the reporting-day trips
   stage, and the validators that read the written trips (population_validation via population_source,
   the trip counts of run_mid_validation, scripts/measure_trip_coherence.py) prefer it when it exists
-  (braunschweig/analysis/pipeline_trips_file.py logs the choice); the dashboard's eqasim metrics and the scripts
-  that join with MATSim output keep trips.csv. Remaining limitation: the commute and activity-purpose tables of
-  run_mid_validation read the post-portal activities geopackage and are expected to move in the A/B.
+  (braunschweig/analysis/pipeline_trips_file.py logs the choice and ignores a pre-portal file older than
+  trips.csv with a warning); run_mid_validation also derives its activity-purpose counts from them with the
+  activities file's definition. The dashboard's eqasim metrics and the scripts that join with MATSim output keep
+  trips.csv. Remaining limitation: the commute and education distance tables of run_mid_validation read the
+  post-portal activities geopackage (no written output keeps the primary location of a worker whose workplace
+  became an outside stay), cover workplaces inside the threshold only and are expected to move in the A/B; the run
+  warns with the number of work persons without a commute row.
 stages:
 - braunschweig.synthesis.portal_trips.stage
 - braunschweig.synthesis.portal_trips.anchors

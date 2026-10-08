@@ -160,23 +160,37 @@ flag is on:
   indices refer to the post-portal table, which stays in `trips.csv`. With the flag off the stage is not declared,
   nothing new is written and every other output is byte-identical.
 - `braunschweig.analysis.pipeline_trips_file.resolve_pipeline_trips_path` is the one place that picks the file a
-  diary validator reads: the pre-portal file when it exists, else `trips.csv`. It logs the choice and warns when the
-  pre-portal file is older than `trips.csv` (a leftover of an earlier run in the same output directory; delete it
-  after a run with the flag off).
+  diary validator reads: the pre-portal file when it exists and is current, else `trips.csv`. It logs the choice. A
+  pre-portal file older than `trips.csv` (by more than 60 s) is a leftover of an earlier run in the same output
+  directory, for example a run with the flag on followed by one with it off; it is ignored, `trips.csv` is read
+  instead, and a warning names both files and their modification times. Delete the stale file to silence it.
 
 Readers of the pipeline trips file and what each takes:
 
 | Reader | File | Why |
 |---|---|---|
 | `population_validation/population_source._read_dir` (feeds `participation_fit`, `trip_coherence`, the universe participation fit and `run_population_validation`) | pre-portal when present | diary against survey |
-| `analysis/run_mid_validation` (`_read_pipeline_trips`: `n_trips`, `trips_per_person`, the trip plot) | pre-portal when present | diary against MiD |
+| `analysis/run_mid_validation` (`_read_pipeline_trips`: `n_trips`, `trips_per_person`, the trip plot; `_activity_purpose_counts`: `03_activity_purposes.png`, `n_activities`) | pre-portal when present and current | diary against MiD |
 | `scripts/measure_trip_coherence.py` | pre-portal when present | diary against MiD |
 | `analysis/dashboard/run_metrics.metrics_eqasim` (`*_trips.csv` glob), `scripts/validate_three_cases.py`, `scripts/compare_25pct_vs_baseline.py`, `eqasim_common/analysis/grid/comparison_flow_volume.py` | `trips.csv` | realised plan, named by file; the new file does not match the `*_trips.csv` glob |
 | `scripts/validate_bs_10pct` | `trips.csv` | joins by `(person_id, trip_index)` with MATSim output and the trips geopackage, which index the post-portal table |
 
-Limitation that remains: the commute and activity-purpose tables of `run_mid_validation` are computed from the
-activities geopackage (`<prefix>activities.gpkg`), which is the post-portal day (a far workplace is an `outside`
-activity there); only its trip counts read the pre-portal file. A pre-portal activities view is not written.
+Activities in `run_mid_validation`: the activities file (`<prefix>activities.gpkg`) is the
+post-portal day: a far workplace is an `outside` activity there. With the pre-portal trips in use:
+
+- The activity-purpose counts (`03_activity_purposes.png` and the report's `n_activities`) are derived from the
+  pre-portal trips with the activities file's own definition (`_activity_purpose_counts_from_trips`: the
+  preceding purpose of every trip, the following purpose of each person's last trip, one `home` activity for every
+  person without a trip, restricted to the persons of `persons.csv`). A test pins that on a run without portal
+  stays this equals the count of the vendored activities stage. `report.json` records `activity_purpose_source`.
+- The commute and education distance tables still read the activities geopackage: they need the assigned primary
+  location of each worker, and no written output keeps it for a worker whose workplace became an `outside` stay
+  (`commutes.gpkg` is built from the same activities). They therefore cover workplaces inside the portal threshold
+  only. The run logs a warning with the number of persons that have a `work` trip in the pre-portal trips but no
+  commute row, and `report.json` records it under `commute_table_scope`. This is a remaining limitation, not a
+  portal defect; closing it needs the primary locations as a written output.
+- `secondary_success.csv` (assignment success per purpose) is a statement about the written activities and keeps
+  reading the activities file, including its `outside` row.
 
 ## Reading the stage's log and report (tag `[portal_trips]`)
 
