@@ -18,3 +18,13 @@ production: true
 resolves_to:
   popsim_mid: braunschweig.matsim.scenario.facilities
   popsim_open: braunschweig.matsim.scenario.facilities
+features:
+- portal_trips
+decisions:
+- ADR-0141
+notes: >-
+  PORTAL PLACEHOLDER (ADR-0141, issue #442, feature record portal_trips): the secondary coverage check
+  (validate_secondary_coverage in braunschweig/matsim/scenario/facilities.py) excludes the
+  coordinate-only placeholder location_id -1 of the portal gate rows from the dangling-id test and logs how
+  many rows it excluded; that count should equal the chain solver's portal anchors count. A genuinely
+  dangling id still raises.

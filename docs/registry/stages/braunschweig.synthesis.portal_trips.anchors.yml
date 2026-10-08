@@ -1,0 +1,33 @@
+stage: braunschweig.synthesis.portal_trips.anchors
+title: Portal gate anchors
+layer: cordon
+description: >-
+  Thin stage that returns the anchors frame of the core stage braunschweig.synthesis.portal_trips.stage:
+  one row per outside stay with person_id, activity_index (of the outside activity in the rewritten
+  chain), gate_id, kind (road or rail), mode and the gate geometry. The secondary chain solver treats
+  "outside" as a fixed anchored purpose and resolves each gate through its activity_anchors mapping,
+  so chains split at the gate like at work or education (ADR-0141).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    No eqasim precedent; reuses the (person_id, activity_index) -> geometry anchor path that the
+    escort and passive-joint anchors of the chain solver already use.
+code:
+- braunschweig/synthesis/portal_trips/anchors.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/portal_anchors.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs: []
+features:
+- portal_trips
+decisions:
+- ADR-0141
+notes: >-
+  Staged by the chain solver only when braunschweig.portal.enabled is true; with the flag off the
+  frame is empty and the chain solver adds no anchors. The gate location rows written into the
+  chain solver's locations output carry location_id -1 (coordinate-only, no facility); see
+  docs/codebase/notes/portal-trips.md for the consistency check against the facilities coverage log.

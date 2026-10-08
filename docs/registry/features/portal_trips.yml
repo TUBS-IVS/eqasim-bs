@@ -1,0 +1,159 @@
+feature: portal_trips
+title: Portal trips (long-distance legs through the cordon gates)
+area: cordon
+description: >-
+  Trips whose destination lies beyond the supplied area (the ZGB plus the 45 km network and timetable ring)
+  become one outside stay at a cordon gate, so that they are present with a mode, a distance and a timeline
+  that fit together without nationwide supply (ADR-0141, issue #442). One threshold,
+  braunschweig.portal.max_routable_distance_m (straight-line metres, default 45000), decides: for work and
+  education legs the distance from home to the assigned location, for every other leg the donor's reported
+  distance. The portal stage rewrites the reporting-day trips behind the alias
+  synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
+  or the schedule-derived rail exit station with the smallest detour (always inside the cut extent, so the
+  scenario cutter cuts nothing), the stay ends at a time derived from the donor's diary, and the donor's
+  outbound mode is fixed for both legs after an availability check with a counted substitution order.
+  Two guard rails behind the same flag bound the secondary distance CDFs by the threshold and the external
+  Gemeinde candidates to the supply ring. The chain solver treats the gate as a fixed anchored activity.
+  The population writer marks portal gates with the activity attribute portalGate=true so that the Java
+  PortalTripConstraint (eqasim-java-bs, branch feature/i442-portal-trip-constraint) keeps the donor mode of
+  those trips in the discrete mode choice and stays a no-op without portal gates.
+  Reporting: every existing dashboard key keeps its pre-feature definition over all trips; the additive blocks
+  in_region and cross_boundary live in run_metrics.metrics_matsim, run_mid_validation gains an additive
+  long-distance block, and the SimWrapper behaviour sankey excludes trips touching an outside activity. The
+  dashboard's cross_boundary block holds every trip with an outside purpose at either end, so it also contains
+  the in-commuters' trips, not only portal stays of residents. MATSim's own modestats.csv has no purposes and
+  keeps counting portal legs under their mode, so modestats_inside cannot separate them.
+stages:
+- braunschweig.synthesis.portal_trips.stage
+- braunschweig.synthesis.portal_trips.anchors
+- synthesis.population.trips.final
+- synthesis.population.spatial.secondary.locations
+- braunschweig.synthesis.locations.secondary_candidates
+- synthesis.population.spatial.secondary.distance_distributions
+- matsim.scenario.population
+- matsim.scenario.facilities
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.portal.enabled
+  - braunschweig.portal.max_routable_distance_m
+  - braunschweig.portal.external_point_distance_tolerance
+  - braunschweig.portal.mode_substitution_warn_share
+  - braunschweig.portal.fallback_warn_share
+introduced:
+  issue: 442
+  pr: null
+  adr: ADR-0141
+detail_doc: docs/codebase/notes/portal-trips.md
+code_paths:
+- braunschweig/analysis/dashboard/README.md
+- braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/run_mid_validation.py
+- braunschweig/analysis/simwrapper/behaviour.py
+- braunschweig/analysis/simwrapper/trip_demand.py
+- braunschweig/matsim/scenario/facilities.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/locations/secondary_candidates.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/candidates.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/plans.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/portal_anchors.py
+- braunschweig/synthesis/portal_trips/__init__.py
+- braunschweig/synthesis/portal_trips/anchors.py
+- braunschweig/synthesis/portal_trips/classification.py
+- braunschweig/synthesis/portal_trips/config_keys.py
+- braunschweig/synthesis/portal_trips/gates.py
+- braunschweig/synthesis/portal_trips/modes.py
+- braunschweig/synthesis/portal_trips/rewrite.py
+- braunschweig/synthesis/portal_trips/stage.py
+- braunschweig/synthesis/portal_trips/timing.py
+- braunschweig/synthesis/portal_trips/trips_final.py
+- configs/base_bs.yml
+- matsim/scenario/population.py
+- synthesis/population/spatial/secondary/problems.py
+evidence:
+  tests:
+  - tests/test_chainsolver_portal_anchors.py
+  - tests/test_dashboard_cross_boundary.py
+  - tests/test_distance_distributions_portal_filter.py
+  - tests/test_escort_links.py
+  - tests/test_facilities_portal_placeholder.py
+  - tests/test_passive_joint_two_pass.py
+  - tests/test_population_writer_portal_gate.py
+  - tests/test_portal_trips_classification.py
+  - tests/test_portal_trips_config_keys.py
+  - tests/test_portal_trips_gates.py
+  - tests/test_portal_trips_rewrite.py
+  - tests/test_portal_trips_stage.py
+  - tests/test_portal_trips_timing_modes.py
+  - tests/test_run_mid_validation.py
+  - tests/test_secondary_candidates_supply_ring.py
+  - tests/test_simwrapper_spatial.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: >-
+      tests/test_portal_trips_stage.py::test_configure_off_declares_only_the_flag_and_the_trips_stage;
+      tests/test_portal_trips_stage.py::test_execute_off_passes_the_trips_frame_through_unchanged;
+      tests/test_portal_trips_rewrite.py::test_rewrite_without_stays_returns_an_equal_frame_with_the_flag_column;
+      tests/test_distance_distributions_portal_filter.py::test_no_bound_is_identical_to_the_default_call;
+      tests/test_secondary_candidates_supply_ring.py::test_execute_keeps_every_external_centroid_when_the_portal_is_off;
+      tests/test_chainsolver_portal_anchors.py::test_apply_portal_anchors_off_leaves_the_escort_anchors_untouched;
+      tests/test_population_writer_portal_gate.py::test_population_without_outside_activity_has_no_portal_gate_and_is_unchanged;
+      Java PortalTripConstraintTest in eqasim-java-bs (aTripBetweenInRegionActivitiesIsUnconstrained,
+      aCutterCrossingPointWithoutAnyMarkerIsUnconstrained, aCutterVirtualOutsideActivityIsUnconstrained).
+    note: >-
+      braunschweig.portal.enabled defaults true in configs/base_bs.yml. The OFF claim is pinned per component
+      (stage pass-through, anchors, distance CDFs, candidates, population writer, Java constraint), each by the
+      test named above. A whole-pipeline OFF run against the pre-feature state is part of the owed A/B and is
+      not recorded yet; a stage-level pass-through is not an end-to-end proof.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[portal_trips]'
+    note: >-
+      The portal stage logs, as rates and in its report, the work/education legs classified by the donor's
+      reported distance instead of the assigned location (primary versus fallback; raises when every leg falls
+      back), the external points drawn outside the distance band, the origins proxied by home, the capped
+      re-entry shares including those caused by a missing reported distance, the mode substitutions by reason,
+      persons without a licence value and donor modes the mode check does not know. The first four warn above
+      braunschweig.portal.fallback_warn_share, the substitutions above mode_substitution_warn_share. The
+      candidate stage logs the kept/dropped rate of the supply-ring restriction, the distance-distribution stage
+      the dropped share per mode, and the population writer the car to car_passenger re-mode rate.
+  reference:
+    kind: none
+    note: >-
+      No committed observed reference exists for the number of long-distance legs by mode and purpose in the
+      simulated population; the donor diaries' own long-distance legs, measured in the SAME A/B run, are the
+      intended comparison and are not recorded yet. The threshold default of 45000 m equals the supply ring
+      width by choice, not by derivation (ADR-0141 assumptions).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    Awaiting the 1 % OFF/ON A/B run manifest (eqasim-bs#442). The criteria to be measured: plans ending after
+    the simulated day and non-monotonic end times near zero in the input population, no long walk legs in the
+    input population, portal legs by mode and purpose of the same order of magnitude as the diaries'
+    long-distance legs in the same run, in-region SrV comparisons unchanged, an OFF path byte-identical to the
+    pre-feature state. Convergence of the mode shares is not validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Implemented and unit-tested; the OFF/ON A/B run manifest that would allow an owner verdict is owed
+    (eqasim-bs#442). The Java constraint needs its own pull request in eqasim-java-bs.
+  source: ADR-0141
+notes: >-
+  Java side (eqasim-java-bs, module braunschweig): org.eqasim.braunschweig.mode_choice.constraints.PortalTripConstraint
+  with its Factory, registered in BraunschweigModeChoiceModule and added to the discrete mode choice trip
+  constraints in RunAdaptConfig next to OutsideConstraint; branch feature/i442-portal-trip-constraint, commits
+  09889f79f, a9ad6f261, afdb3f278; unit tests in PortalTripConstraintTest. The pipeline builds the fork through
+  eqasim_source_path. The feature changes results by design when enabled: the alias switch recomputes
+  synthesis.population.trips.final and everything downstream once, and the distance CDFs and the external
+  candidates recompute too. Not in scope (tracked elsewhere): the plan feasibility check and stuck KPI (#443),
+  the freight gate connector (#444), a sampler conditioned on the reported distance class (a possible later A/B).

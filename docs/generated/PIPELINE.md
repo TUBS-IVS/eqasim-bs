@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 101 stages, 261 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 104 stages, 273 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -41,6 +41,7 @@ flowchart LR
     attributes --> validation
     attributes --> work
     behavior --> analysis
+    behavior --> cordon
     behavior --> infrastructure
     behavior --> matsim
     behavior --> secondary
@@ -48,7 +49,9 @@ flowchart LR
     behavior --> validation
     behavior --> work
     cordon --> analysis
+    cordon --> behavior
     cordon --> matsim
+    cordon --> secondary
     cordon --> validation
     cordon --> work
     education --> behavior
@@ -62,6 +65,7 @@ flowchart LR
     freight --> matsim
     home --> analysis
     home --> behavior
+    home --> cordon
     home --> education
     home --> fleet
     home --> matsim
@@ -79,6 +83,7 @@ flowchart LR
     population --> secondary
     population --> spatial
     population --> work
+    secondary --> cordon
     secondary --> education
     secondary --> infrastructure
     secondary --> matsim
@@ -159,11 +164,14 @@ flowchart LR
 | `braunschweig.popsim.completed_donor` | population | x | -- | -- |
 | `braunschweig.synthesis.commute_day.home_office_donors_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.commute_day.state_stage` | behavior | x | -- | -- |
+| `braunschweig.synthesis.commute_day.trips_day_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.cordon_gates` | cordon | x | x | -- |
 | `braunschweig.synthesis.day_absence.absence_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.incommuters` | cordon | x | x | -- |
 | `braunschweig.synthesis.locations.education_gravity` | education | x | x | -- |
 | `braunschweig.synthesis.locations.secondary_candidates` | secondary | x | -- | -- |
+| `braunschweig.synthesis.portal_trips.anchors` | cordon | x | -- | -- |
+| `braunschweig.synthesis.portal_trips.stage` | cordon | x | -- | -- |
 | `braunschweig.synthesis.student_incommuters` | cordon | x | x | -- |
 | `braunschweig.synthesis.vehicles.cars.household` | fleet | x | x | x |
 | `data.census.filtered` | population | x | x | x |
