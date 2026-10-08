@@ -54,6 +54,32 @@ def external_candidates_cordon_warning(external_on, cordon_on):
     return None
 
 
+def restrict_external_to_supply_ring(df_external: gpd.GeoDataFrame, ring):
+    """Keep only the external Gemeinde centroids inside the supply ring (eqasim-bs#442).
+
+    Beyond the ring there is no network and no timetable, so a candidate there can only be
+    reached by a trip the router turns into a walk; such trips are portal trips instead.
+    ``ring`` is a shapely (Multi)Polygon in the CRS of ``df_external`` (the caller checks the
+    CRS). Returns ``(kept, n_dropped)``.
+
+    Raises:
+        ValueError: when ``df_external`` is non-empty and not one centroid lies inside the ring.
+            The Gemeinde centroids reach well beyond the ring but never entirely, so an empty
+            result means a CRS mismatch or a broken ring, not a thin supply.
+    """
+    inside = df_external.geometry.within(ring)
+    kept = df_external[inside].copy()
+    n_dropped = int((~inside).sum())
+    if len(df_external) > 0 and len(kept) == 0:
+        raise ValueError(
+            f"restrict_external_to_supply_ring: kept 0 of {len(df_external)} external centroids "
+            f"({n_dropped} dropped) inside the supply ring; most likely the external centroids and the "
+            "ring are in different CRS, or the ring is empty or mis-built "
+            "(cordon_network_source_buffer_m, data.spatial.municipalities)."
+        )
+    return kept, n_dropped
+
+
 def append_residential_visit_candidates(candidates: gpd.GeoDataFrame,
                                         df_residential_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Append one residential-building candidate row per building for the
