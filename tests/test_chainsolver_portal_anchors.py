@@ -26,9 +26,9 @@ def test_anchors_dict_and_location_rows_follow_the_escort_anchor_shapes():
     assert anchors[(7, 2)].coords[0] == (40000.0, 0.0)
     rows = portal_anchors.location_rows(_anchors())
     assert list(rows.columns) == ["person_id", "activity_index", "location_id", "geometry"]
-    # Coordinate-only activity: -1 like the in-commuter gate home (no "portal_*" facility exists);
-    # object dtype like the resident location_id column; the gate id stays traceable in the anchors frame.
-    assert rows.loc[0, "location_id"] == -1
+    # Every gate is a real facility "portal_<gate_id>" (ruling R30; registered by the facilities stage);
+    # object dtype like the resident location_id column.
+    assert rows.loc[0, "location_id"] == "portal_gate_e"
     assert rows["location_id"].dtype == object
     assert portal_anchors.merge_anchors(None, {}) is None
     assert portal_anchors.merge_anchors({(1, 1): Point(0, 0)}, anchors) == {(1, 1): Point(0, 0), (7, 2): anchors[(7, 2)]}

@@ -6,10 +6,11 @@ gate coordinate up in the ``activity_anchors`` mapping exactly as it does for es
 passive-joint anchors. The gate rows join the locations output so the eqasim location join
 finds a geometry for every ``outside`` activity.
 
-Location rows carry ``location_id = -1``: an ``outside`` activity is coordinate-only, like the
-in-commuter gate home (``braunschweig.data.cordon.plans.build_incommuter_locations``); no
-facility exists for a gate, and the MATSim population writer uses ``location_id`` as the
-facility id. The gate id of each stay stays traceable in the anchors frame of
+Location rows carry ``location_id = "portal_<gate_id>"``: every gate is a real facility
+(ruling R30). The MATSim population writer uses ``location_id`` as the facility id and
+``braunschweig.matsim.scenario.facilities`` registers one facility per used gate at the gate
+coordinate, because eqasim core's Java ``LinkAssignment`` throws for an activity whose
+facility does not exist. The gate id of each stay is also traceable in the anchors frame of
 ``braunschweig.synthesis.portal_trips.anchors`` (``person_id, activity_index, gate_id``).
 """
 from __future__ import annotations
@@ -17,10 +18,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-LOCATION_COLUMNS = ["person_id", "activity_index", "location_id", "geometry"]
+from braunschweig.synthesis.portal_trips.config_keys import PORTAL_LOCATION_ID_PREFIX
 
-#: Placeholder facility id of a coordinate-only activity (eqasim home placeholder).
-COORDINATE_ONLY_LOCATION_ID = -1
+LOCATION_COLUMNS = ["person_id", "activity_index", "location_id", "geometry"]
 
 
 def anchors_dict(frame) -> dict:
@@ -33,7 +33,7 @@ def location_rows(frame) -> pd.DataFrame:
     if len(frame) == 0:
         return pd.DataFrame(columns=LOCATION_COLUMNS)
     location_ids = np.empty(len(frame), dtype=object)
-    location_ids[:] = COORDINATE_ONLY_LOCATION_ID
+    location_ids[:] = [PORTAL_LOCATION_ID_PREFIX + str(gate_id) for gate_id in frame["gate_id"]]
     return pd.DataFrame({"person_id": frame["person_id"].to_numpy(),
                          "activity_index": frame["activity_index"].to_numpy(),
                          "location_id": location_ids,

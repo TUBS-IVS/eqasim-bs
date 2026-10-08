@@ -32,6 +32,13 @@ Overrides matsim.scenario.facilities twice over the base behaviour:
    the student in-commuter feature was enabled). OFF -> no in-commuter
    frames -> byte-identical.
 
+3. **Portal gate facilities (eqasim-bs#442, ruling R30).** The locations of a portal stay carry
+   ``portal_<gate_id>`` (``braunschweig.synthesis.locations.secondary_chainsolvers.portal_anchors``); one
+   facility offering the activity type ``outside`` is registered per used gate at the gate coordinate, read
+   from the realised secondary locations themselves (the same rows the population writer consumes). Eqasim
+   core's Java ``LinkAssignment`` throws ``Facility ... does not exist`` for any activity without a facility.
+   No portal rows (feature off, or no stay) -> nothing is registered and the file is byte-identical.
+
 Additionally a flag-independent coverage validation compares the REALISED
 secondary location ids against the written secondary facility ids and raises
 before writing if any id would be dangling (fail-early instead of a Java
@@ -45,11 +52,9 @@ import geopandas as gpd
 import pandas as pd
 
 import matsim.scenario.facilities as base
+from braunschweig.synthesis.portal_trips.config_keys import PORTAL_LOCATION_ID_PREFIX
 
 logger = logging.getLogger(__name__)
-
-#: String forms of the eqasim placeholder location id -1 (int, float and string columns all occur).
-COORDINATE_ONLY_LOCATION_IDS = frozenset({"-1", "-1.0"})
 
 
 def configure(context):
@@ -186,7 +191,40 @@ def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True,
     return df[base.SECONDARY_FIELDS]
 
 
-def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None):
+def portal_facility_frame(df_realised):
+    """One facility row per distinct portal gate used by the realised secondary locations.
+
+    A row is a portal row when its ``location_id`` starts with ``PORTAL_LOCATION_ID_PREFIX``
+    (``portal_<gate_id>``); the facility sits at the gate coordinate of that row. Returns a GeoDataFrame
+    with ``base.PORTAL_FIELDS`` (empty when there is no portal row, i.e. feature off or no stay).
+
+    Raises
+    ------
+    RuntimeError
+        If one gate id appears at two different coordinates: a facility has exactly one coordinate, so the
+        gate set of the portal stage and the realised locations have diverged.
+    """
+    location_ids = df_realised["location_id"].astype(str)
+    is_portal = df_realised["location_id"].notna() & location_ids.str.startswith(PORTAL_LOCATION_ID_PREFIX)
+    if not bool(is_portal.any()):
+        return gpd.GeoDataFrame({"location_id": pd.Series([], dtype=object)}, geometry=gpd.GeoSeries([], crs=None),
+                                crs=None)[base.PORTAL_FIELDS]
+    portal_rows = df_realised.loc[is_portal, ["location_id", "geometry"]].copy()
+    portal_rows["location_id"] = portal_rows["location_id"].astype(str)
+    distinct = portal_rows.drop_duplicates(subset="location_id", keep="first")
+    if len(distinct) < len(portal_rows.drop_duplicates(subset=["location_id", "geometry"])):
+        coordinate_counts = (portal_rows.drop_duplicates(subset=["location_id", "geometry"])
+                             .groupby("location_id").size())
+        offending = sorted(coordinate_counts[coordinate_counts > 1].index)[:5]
+        raise RuntimeError(
+            "[braunschweig.facilities] portal gate id(s) %s occur at more than one coordinate in the realised "
+            "secondary locations; a facility has one coordinate. The portal stage's gate set and the locations "
+            "output have diverged." % offending)
+    return gpd.GeoDataFrame(distinct[base.PORTAL_FIELDS].reset_index(drop=True), geometry="geometry",
+                            crs=getattr(df_realised, "crs", None))
+
+
+def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None, portal_facility_ids=None):
     """Fail fast if a realised secondary location id has no facility row.
 
     Every secondary activity's ``location_id`` must exist in the written
@@ -197,16 +235,19 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None)
     extra_valid_ids: facility ids written OUTSIDE the secondary frame that
     realised secondary rows may legitimately reference -- the household-linked
     escort anchors reference PRIMARY education facilities (#201 Phase 2).
+
+    portal_facility_ids: ids of the portal gate facilities registered separately
+    (eqasim-bs#442); a realised ``portal_*`` id that is not among them is dangling.
     """
-    realised_strings = df_realised["location_id"].dropna().astype(str)
-    # The portal gates (eqasim-bs#442) are coordinate-only activities: their rows carry the eqasim
-    # placeholder -1 (the population writer maps it to "no facility"), which is not a facility id.
-    is_coordinate_only = realised_strings.isin(COORDINATE_ONLY_LOCATION_IDS)
-    n_coordinate_only = int(is_coordinate_only.sum())
-    realised_ids = set(realised_strings[~is_coordinate_only])
+    realised_ids = set(df_realised["location_id"].dropna().astype(str))
     written_ids = set(df_secondary["location_id"].astype(str))
     if extra_valid_ids:
         written_ids = written_ids | {str(i) for i in extra_valid_ids}
+    n_portal_facilities = 0
+    if portal_facility_ids:
+        portal_ids = {str(i) for i in portal_facility_ids}
+        n_portal_facilities = len(portal_ids)
+        written_ids = written_ids | portal_ids
     missing = realised_ids - written_ids
     if missing:
         sample = sorted(missing)[:5]
@@ -219,8 +260,8 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None)
         )
     logger.info(
         "[braunschweig.facilities] secondary coverage OK: %d realised ids, "
-        "%d facility rows, 0 dangling; %d coordinate-only rows (placeholder -1, portal gates) excluded.",
-        len(realised_ids), len(written_ids), n_coordinate_only,
+        "%d facility rows, 0 dangling; %d portal gate facilities registered.",
+        len(realised_ids), len(written_ids), n_portal_facilities,
     )
 
 
@@ -245,7 +286,10 @@ def execute(context):
     if context.config("escort_household_link"):
         education_ids = df_primary.loc[~df_primary["is_work"].astype(bool), "location_id"]
         extra_valid_ids = set(education_ids.astype(str))
-    validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=extra_valid_ids)
+    # Portal gates (eqasim-bs#442): one facility per used gate; empty (a no-op) when the portal layer is off.
+    df_portal = portal_facility_frame(df_realised)
+    validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=extra_valid_ids,
+                                portal_facility_ids=set(df_portal["location_id"]))
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
@@ -300,4 +344,5 @@ def execute(context):
             df_primary = pd.concat([df_primary, student_edu[base.PRIMARY_FIELDS]],
                                    ignore_index=True)
 
-    return base.write_facilities(output_path, df_homes, df_primary, df_secondary, context)
+    return base.write_facilities(output_path, df_homes, df_primary, df_secondary, context,
+                                 df_portal=df_portal)
