@@ -681,6 +681,25 @@ def test_execute_with_the_portal_feature_on_anchors_the_gates_and_appends_their_
     assert df_locations.crs.to_string() == "EPSG:25832"
 
 
+def test_execute_with_the_portal_feature_on_and_no_anchors_for_outside_trips_raises(
+        monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: outside activities in trips.final but an empty anchors frame means the two
+    stages are out of sync; fail with a clear ValueError instead of the splitter's KeyError."""
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve([]))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False,
+                      **{"braunschweig.portal.enabled": True})
+    trips = ctx._stages["synthesis.population.trips.final"].copy()
+    trips.loc[0, "following_purpose"] = "outside"
+    ctx._stages["synthesis.population.trips.final"] = trips
+    ctx._stages["braunschweig.synthesis.portal_trips.anchors"] = gpd.GeoDataFrame(
+        {"person_id": pd.Series(dtype="int64"), "activity_index": pd.Series(dtype="int64"),
+         "gate_id": pd.Series(dtype=object), "kind": pd.Series(dtype=object), "mode": pd.Series(dtype=object)},
+        geometry=gpd.GeoSeries([], crs="EPSG:25832"), crs="EPSG:25832")
+
+    with pytest.raises(ValueError, match="portal trips without anchors"):
+        sc.execute(ctx)
+
+
 # --- RNG call-order guard for the _solve_problem_set extraction --------------------
 # _solve_problem_set is execute()'s former solve section moved verbatim, and the evidence
 # that the move preserved the RNG stream is a ONE-OFF manual comparison of two cache

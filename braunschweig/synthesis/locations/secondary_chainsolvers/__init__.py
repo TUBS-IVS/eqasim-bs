@@ -893,6 +893,26 @@ def _apply_escort_household_link(context, df_trips):
     return df_trips, linked_location_rows, escort_activity_anchors
 
 
+def _require_anchors_for_outside_trips(portal_anchor_rows, df_trips):
+    """Fail early when trips carry ``outside`` activities but the portal anchors frame is empty.
+
+    The anchors stage and ``synthesis.population.trips.final`` are built from the same portal
+    stage, so this means they are out of sync; without the check the vendored problem splitter
+    would stop later with a bare KeyError (or ValueError) on the first ``outside`` boundary.
+    """
+    if len(portal_anchor_rows):
+        return
+    n_outside_trips = int(((df_trips["preceding_purpose"] == "outside")
+                           | (df_trips["following_purpose"] == "outside")).sum())
+    if n_outside_trips:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] portal trips without anchors: "
+            f"{n_outside_trips:,} trips touch an 'outside' activity but "
+            f"{PORTAL_ANCHORS_STAGE} returned no anchors; the anchors stage and "
+            "synthesis.population.trips.final are out of sync. Rebuild both from the same "
+            "portal stage, or disable braunschweig.portal.enabled.")
+
+
 def _apply_portal_anchors(portal_anchor_rows, escort_activity_anchors):
     """Add the portal gates (eqasim-bs#442) to the chain solver's pre-anchored activities.
 
@@ -906,8 +926,9 @@ def _apply_portal_anchors(portal_anchor_rows, escort_activity_anchors):
         return escort_activity_anchors, None
     portal_dict = portal_anchors.anchors_dict(portal_anchor_rows)
     activity_anchors = portal_anchors.merge_anchors(escort_activity_anchors, portal_dict)
-    logger.info("[braunschweig.secondary_chainsolvers] portal anchors: %d outside stays fixed at their gates",
-                len(portal_dict))
+    logger.info(
+        "[braunschweig.secondary_chainsolvers] portal anchors: %d outside stays fixed at their gates",
+        len(portal_dict))
     portal_location_rows = portal_anchors.location_rows(portal_anchor_rows) if len(portal_anchor_rows) else None
     return activity_anchors, portal_location_rows
 
@@ -1957,6 +1978,8 @@ def execute(context):
     from braunschweig.synthesis.portal_trips.config_keys import KEY_ENABLED
     portal_anchor_rows = (
         context.stage(PORTAL_ANCHORS_STAGE) if bool(context.config(KEY_ENABLED)) else None)
+    if portal_anchor_rows is not None:
+        _require_anchors_for_outside_trips(portal_anchor_rows, df_trips)
     escort_activity_anchors, portal_location_rows = _apply_portal_anchors(
         portal_anchor_rows, escort_activity_anchors)
     df_primary, crs = _prepare_primary(context)

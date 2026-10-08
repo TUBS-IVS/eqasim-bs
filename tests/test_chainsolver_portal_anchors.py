@@ -1,6 +1,7 @@
 """The gate of a portal stay splits the chain like work or education and reaches the locations output."""
 import geopandas as gpd
 import pandas as pd
+import pytest
 from shapely.geometry import Point
 
 from braunschweig.synthesis.locations import secondary_chainsolvers as sc
@@ -103,3 +104,18 @@ def test_apply_portal_anchors_off_leaves_the_escort_anchors_untouched():
     merged, rows = sc._apply_portal_anchors(None, escort)
     assert merged is escort
     assert rows is None
+
+
+def test_outside_trips_without_any_portal_anchor_raise_a_clear_error():
+    trips = pd.DataFrame({"person_id": [7, 7], "trip_index": [0, 1],
+                          "preceding_purpose": ["home", "outside"], "following_purpose": ["outside", "home"]})
+    with pytest.raises(ValueError, match="portal trips without anchors"):
+        sc._require_anchors_for_outside_trips(_anchors().iloc[0:0], trips)
+
+
+def test_outside_trips_with_anchors_and_trips_without_outside_pass():
+    trips = pd.DataFrame({"person_id": [7, 7], "trip_index": [0, 1],
+                          "preceding_purpose": ["home", "outside"], "following_purpose": ["outside", "home"]})
+    sc._require_anchors_for_outside_trips(_anchors(), trips)
+    plain = trips.assign(preceding_purpose=["home", "shop"], following_purpose=["shop", "home"])
+    sc._require_anchors_for_outside_trips(_anchors().iloc[0:0], plain)

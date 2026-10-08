@@ -48,6 +48,9 @@ import matsim.scenario.facilities as base
 
 logger = logging.getLogger(__name__)
 
+#: String forms of the eqasim placeholder location id -1 (int, float and string columns all occur).
+COORDINATE_ONLY_LOCATION_IDS = frozenset({"-1", "-1.0"})
+
 
 def configure(context):
     base.configure(context)
@@ -195,7 +198,12 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None)
     realised secondary rows may legitimately reference -- the household-linked
     escort anchors reference PRIMARY education facilities (#201 Phase 2).
     """
-    realised_ids = set(df_realised["location_id"].dropna().astype(str))
+    realised_strings = df_realised["location_id"].dropna().astype(str)
+    # The portal gates (eqasim-bs#442) are coordinate-only activities: their rows carry the eqasim
+    # placeholder -1 (the population writer maps it to "no facility"), which is not a facility id.
+    is_coordinate_only = realised_strings.isin(COORDINATE_ONLY_LOCATION_IDS)
+    n_coordinate_only = int(is_coordinate_only.sum())
+    realised_ids = set(realised_strings[~is_coordinate_only])
     written_ids = set(df_secondary["location_id"].astype(str))
     if extra_valid_ids:
         written_ids = written_ids | {str(i) for i in extra_valid_ids}
@@ -211,7 +219,8 @@ def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None)
         )
     logger.info(
         "[braunschweig.facilities] secondary coverage OK: %d realised ids, "
-        "%d facility rows, 0 dangling.", len(realised_ids), len(written_ids),
+        "%d facility rows, 0 dangling; %d coordinate-only rows (placeholder -1, portal gates) excluded.",
+        len(realised_ids), len(written_ids), n_coordinate_only,
     )
 
 
