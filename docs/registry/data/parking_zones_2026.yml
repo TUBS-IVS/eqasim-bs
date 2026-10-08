@@ -37,7 +37,7 @@ roles:
 used_by:
 - braunschweig.parking.zones_stage
 acquisition:
-  method: committed
+  method: derived
   source: >-
     https://www.braunschweig.de/leben/stadtplan_verkehr/parken-in-braunschweig/parken-in-der-innenstadt.php
     (zone map), https://www.braunschweig.de/politik_verwaltung/politik/stadtrecht/2_09_Entgeltordnung-BgA-Parkraumbewirtschaftung.pdf,
@@ -495,21 +495,26 @@ acquisition:
     regenerate the release byte for byte; the step refuses another name).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
-  committed: true
-  local_only: false
+  committed: false
+  local_only: true
   notes: >-
-    Force-added (git add -f) like the other committed reference tables, as are the curation QA tables
+    Not distributed in the repository (owner decision 2026-10-08, issue #436): the sources named under licensing are
+    not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
+    other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
+    Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
+    4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490. The curation QA tables
     parking_zones_2026_qa.csv (v2 lever 1), parking_zones_2026_supply_share_qa.csv (v2 Amendment B) and
-    parking_zones_2026_municipal_qa.csv (v2 Amendments C and D) next to it (read by scripts/validate_parking_zones.py,
-    not by any stage); eqasim-data/ is ignored by default. The owner's municipal packages stay local
-    (raw_sources/municipal_2026-10-01/, gitignored), as does the regional evidence package of spec Amendment D
-    (raw_sources/municipal_2026-10-07/, gitignored; the folder also holds the four working packages of 2026-10-02 that
-    the consolidated package freezes and supersedes, and a MANIFEST.md with their hashes, none read by the curation).
+    parking_zones_2026_municipal_qa.csv (v2 Amendments C and D) next to it stay committed (force-added like the other
+    reference tables; read by scripts/validate_parking_zones.py, not by any stage). The owner's municipal packages
+    stay local as well (raw_sources/municipal_2026-10-01/, gitignored), as does the regional evidence package of spec
+    Amendment D (raw_sources/municipal_2026-10-07/, gitignored; the folder also holds the four working packages of
+    2026-10-02 that the consolidated package freezes and supersedes, and a MANIFEST.md with their hashes, none read
+    by the curation).
 verification:
   verifier_entry: D5
   script: scripts/validate_parking_zones.py
   notes: >-
-    Listed as D5 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    Listed as D5 (matsim_only, restricted, local only) in scripts/verify_braunschweig_inputs.py; read by
     braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml since
     ADR-0139).
     braunschweig.parking.zones.load_zone_polygons reprojects to EPSG:25832, repairs invalid rings, checks
@@ -605,7 +610,7 @@ licensing:
     An osm_supply_majority polygon (spec Amendment B; none in this release: B5 failed at the share 0.5, H2 at
     the owner's 0.3) derives from the parking
     tags of the Geofabrik extract and carries the same terms (LICENSE_SUPPLY, ATTRIBUTION_SUPPLY).
-  restricted: false
+  restricted: true
   redistribution: restricted
   notes: >-
     Redistribution per source, so the release as a whole is not cleared for redistribution (redistribution
@@ -616,8 +621,8 @@ licensing:
     not verified; the TU campus zones: the TU requires explicit consent for the reuse of its graphics, which was NOT
     obtained (the detection zones are traced from the TU maps; used by owner decision 2026-10-07; the campus grounds
     are OSM, ODbL); the Goslar car parks: open reuse licence of the city's service not verified; the Braunlage car
-    parks: the terms of reuse of the town's tourism coordinates not verified. The file is committed by owner decisions 2026-10-01 and
-    2026-10-07. The QA table
+    parks: the terms of reuse of the town's tourism coordinates not verified. The file is used by owner decisions 2026-10-01 and
+    2026-10-07 and, since the decision of 2026-10-08, not distributed in the repository (see storage). The QA table
     parking_zones_2026_qa.csv holds counts and areas derived from the OSM regulation responses and carries the
     OpenStreetMap attribution (ODbL 1.0) in its header, as does the QA table parking_zones_2026_supply_share_qa.csv for
     the counts and areas derived from the Geofabrik extract; the QA table parking_zones_2026_municipal_qa.csv names

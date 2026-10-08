@@ -22,7 +22,7 @@ roles:
 used_by:
 - braunschweig.parking.zones_stage
 acquisition:
-  method: committed
+  method: derived
   source: >-
     The owner's packages Braunschweig_Parkzonen.zip and Goslar_Parkdaten.zip (SHA-256 of both in the data record
     parking_zones_2026), local and gitignored under eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/;
@@ -47,19 +47,22 @@ acquisition:
     existing file without --replace. Two runs give the same bytes.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_resident_districts_2026.geojson
-  committed: true
-  local_only: false
+  committed: false
+  local_only: true
   notes: >-
-    Force-added (git add -f) like the other files of the parking release; eqasim-data/ is ignored by default. ASCII, LF,
-    WGS84 GeoJSON with seven coordinate decimals and the licence and attribution as top-level members; one feature per
-    district with the properties district_id, district_code, municipality_ags, name, geometry_source, source_url,
-    source_date, digitised_on and digitising_note (braunschweig.parking.zones.DISTRICT_PROVENANCE_COLUMNS). The
-    owner's packages stay local.
+    Not distributed in the repository (owner decision 2026-10-08, issue #436): the sources named under licensing are
+    not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
+    other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
+    Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
+    1f346983bedef9a31f9bf54b5a084f2078b0ae4f6a6a75b47858192832022ac7. ASCII, LF, WGS84 GeoJSON with seven coordinate
+    decimals and the licence and attribution as top-level members; one feature per district with the properties
+    district_id, district_code, municipality_ags, name, geometry_source, source_url, source_date, digitised_on and
+    digitising_note (braunschweig.parking.zones.DISTRICT_PROVENANCE_COLUMNS). The owner's packages stay local.
 verification:
   verifier_entry: D10
   script: scripts/validate_parking_zones.py
   notes: >-
-    Listed as D10 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    Listed as D10 (matsim_only, restricted, local only) in scripts/verify_braunschweig_inputs.py; read by
     braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml, key
     parking_resident_districts_path). braunschweig.parking.zones.load_resident_districts reprojects to EPSG:25832 and
     checks the provenance fields and ISO dates; the layer must be valid as stored, so an invalid polygon raises and is
@@ -87,10 +90,11 @@ licensing:
     Braunschweig districts keep the attribution "Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: dl-de/by-2-0"
     with the note that the data were changed, and the package states that this licence covers the base maps of the
     georeference, not a separately verified release of the district graphics; for the Goslar districts the package states
-    that public query access is no proof of a licence and the open reuse licence is not verified. The file is committed by
-    owner decision 2026-10-01 (licensing.restricted stays false because the file is committed, as for parking_zones_2026).
+    that public query access is no proof of a licence and the open reuse licence is not verified. The layer is used by owner
+    decision 2026-10-01 and, since the decision of 2026-10-08, not distributed in the repository (see storage; licensing.restricted
+    is true because the file is not committed, as for parking_zones_2026).
   redistribution: restricted
-  restricted: false
+  restricted: true
 limitations: >-
   The districts are geographic envelopes digitised from maps or taken from a service, not surveyed boundaries and no proof
   of parking supply or permission. Braunschweig: working accuracy 30 m, a conservative working estimate of the package and no

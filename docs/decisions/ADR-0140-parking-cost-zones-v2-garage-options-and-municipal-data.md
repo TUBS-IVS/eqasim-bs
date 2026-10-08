@@ -322,6 +322,10 @@ run (see Status).
   package). The plans carry the new attributes `parkingDistrict` and `residentParkingDistrict`; the Java population check
   rejects a district id the tariff model does not list.
 - Mode-choice parameters are not recalibrated; the calibration of #23 starts with the zones on.
+- Owner decision 2026-10-08: the three geometry files (zone polygons, resident districts, garage dataset) rest on sources that
+  are not cleared for redistribution, so they are no longer committed; they stay local like the other raw data and are
+  available on request (GitHub issue in TUBS-IVS/eqasim-bs), their tests skip without them, and each data record states the
+  SHA-256 to verify a copy.
 - Limitations to state with every v2 result, additional to those of ADR-0139: the garage weights follow one lambda calibrated
   on the Braunschweig centre and transferred to every town (G3), with straight-line distances and without capacity or
   occupancy; many garage rows rest on a named assumption (P3 to P5, P9 to P12) and secondary evidence; the campus free share

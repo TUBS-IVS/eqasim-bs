@@ -476,13 +476,17 @@ acquisition:
     SHA-256 values (Braunschweig rows only).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson
-  committed: true
-  local_only: false
+  committed: false
+  local_only: true
   notes: >-
-    Force-added (git add -f) like the rest of the parking release, with the QA table parking_garages_2026_qa.csv next to
-    it (also force-added; the .gitignore comment of the committed parking release names both). GeoJSON FeatureCollection
-    with the foreign members license, attribution and documentation (the definition of every column, from
-    COLUMN_GLOSSARY of the curation step); ASCII, LF in the repository.
+    Not distributed in the repository (owner decision 2026-10-08, issue #436): the sources named under licensing are
+    not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
+    other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
+    Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
+    602dcd9c1a1df10faba2bdf92ba1cca328899a05f2690503a9e1e5effedcff4d. The QA table parking_garages_2026_qa.csv next
+    to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
+    FeatureCollection with the foreign members license, attribution and documentation (the definition of every
+    column, from COLUMN_GLOSSARY of the curation step); ASCII, LF.
 verification:
   verifier_entry: D11
   script: scripts/validate_parking_zones.py
@@ -495,7 +499,7 @@ verification:
     curation command); only a caller that opts in with allow_legacy_columns=True (the test fixtures; the zones stage only when
     every row carries the test-set marker) reads it with the column empty and a warning. The export and the curation warn per
     municipality when more than half of its priced garages carry an imputed instead of a published product.
-    Listed as D11 (matsim_only, required, committed) in scripts/verify_braunschweig_inputs.py: the sixth input of the
+    Listed as D11 (matsim_only, required, restricted, local only) in scripts/verify_braunschweig_inputs.py: the sixth input of the
     release of braunschweig.parking.zones_stage (config key parking_garages_path), which loads and validates it with
     the validator below; braunschweig.parking.tariff_export.garage_entries writes its priced garages into the tariff
     model (schema 3).
@@ -560,13 +564,14 @@ licensing:
     AGR Parking, APCOA, Contipark, Park und Tank and the city; the package states that no general licence for the
     re-publication of the original files was found and none is established here; the two Contipark captures are texts of
     public pages whose terms are not verified.
-  restricted: false
+  restricted: true
   redistribution: restricted
   notes: >-
     Redistribution per source, so the dataset as a whole is not cleared for redistribution (redistribution restricted):
     the six OpenStreetMap-derived positions keep the OpenStreetMap attribution and the ODbL share-alike terms; the other
-    sources are facts of public pages whose licences were not verified; the file is committed as specified by ruling R-4b-1
-    of Task 4b, and the Wolfsburg and Goslar sources are used by the owner decisions of 2026-10-01 and 2026-10-07 recorded in
+    sources are facts of public pages whose licences were not verified; the file was specified as a committed file by ruling R-4b-1
+    of Task 4b and is, since the decision of 2026-10-08, not distributed in the repository (see storage),
+    and the Wolfsburg and Goslar sources are used by the owner decisions of 2026-10-01 and 2026-10-07 recorded in
     the data record parking_zones_2026. The file carries the licence and the attribution as top-level members; the QA table
     names its sources in its header.
 limitations: >-

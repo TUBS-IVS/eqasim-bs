@@ -182,8 +182,9 @@ See [testing](docs/codebase/TESTING.md) for focused selection and duration repor
 > `braunschweig/kba/derived/*.csv`, `braunschweig/buildings/bosserhof_class_to_*.csv`,
 > `braunschweig/calibration/detour_circuity_params.csv`,
 > `braunschweig/lsn/lsn2022_income_tax_by_kreis.csv`,
-> `braunschweig/nds_bbs_share_by_age.csv`), the curated parking cost zone release
-> (`braunschweig/parking/parking_*_2026.*`, see *Parking cost zones* below) plus their provenance docs. **Everything else is
+> `braunschweig/nds_bbs_share_by_age.csv`), the curated parking cost zone release tables
+> (`braunschweig/parking/parking_*_2026.csv*`, see *Parking cost zones* below; its three geometry files are not
+> distributed) plus their provenance docs. **Everything else is
 > downloaded/obtained by you** and placed under `eqasim-data/data/` at the exact
 > path below. Restricted inputs are never committed and never redistributed.
 
@@ -282,21 +283,25 @@ python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverag
 python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
 
-**Parking cost zones (committed, ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
+**Parking cost zones (ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
 their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
 expected cost); the garage options stay OFF (`parking_garage_decay_m` 0) until their decay length is calibrated on the plans of
 a server run, which has not happened yet, and the parking search time is off. Decisions and rejected options: ADR-0140;
-mechanism: `docs/codebase/notes/parking-cost-zones.md`. Nothing to download: the zone polygons
-(`braunschweig/parking/parking_zones_2026.geojson`), the tariff table
+mechanism: `docs/codebase/notes/parking-cost-zones.md`. The tariff table
 (`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
-(`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository, as do the resident
-parking districts of Braunschweig and Goslar, a second layer next to the zones
-(`braunschweig/parking/parking_resident_districts_2026.geojson`) and the garage dataset of the ZGB towns, garages and the
+(`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository. Three geometry files do
+**not**: the zone polygons (`braunschweig/parking/parking_zones_2026.geojson`), the resident parking districts of
+Braunschweig and Goslar, a second layer next to the zones
+(`braunschweig/parking/parking_resident_districts_2026.geojson`), and the garage dataset of the ZGB towns, garages and the
 surface car parks of the Wolfsburg city layer (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
-garage options of a stay); all six are read by
+garage options of a stay), because their sources are not cleared for redistribution (data records
+`parking_zones_2026`, `parking_resident_districts_2026`, `parking_garages_2026`; every source stays named there). They
+are **available on request: open an issue in TUBS-IVS/eqasim-bs**; place them at the paths above (the folder is ignored
+by git, like the other raw data) and verify them against the SHA-256 that each record states. Without them the tests that
+read them skip and the pipeline stops with a message that names the file and this route. All six files are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
-D11, and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The
+D11 (D5, D10 and D11 as `[RESTRICTED]` when absent), and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The
 paid-parking share per 25 m cell of the majority rule over the parking supply
 (`braunschweig/parking/parking_paid_share_2026.csv.gz`, preflight D9, optional: no stage reads it yet) ships as well;
 re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf` in
