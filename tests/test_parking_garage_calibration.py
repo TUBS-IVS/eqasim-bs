@@ -409,3 +409,24 @@ def test_the_command_line_default_of_the_maximum_distance_is_the_config_key(cal,
     parser_help = SCRIPT.read_text(encoding="utf-8")
     assert "parking_garage_max_distance_m" in parser_help
     assert 'default=cost.GARAGE_MAX_DISTANCE_M' not in parser_help.split("def main", 1)[1]
+
+
+# ------------------------------------------- the target contains surface lots, the Braunschweig option set has none (F3)
+
+
+def test_the_table_header_names_the_option_set_and_that_the_target_contains_surface_lots(cal, inputs, tmp_path):
+    mixed = _with_kinds(inputs, tmp_path, ["surface_lot", "garage"])
+    text = cal.run(out_path=None, **mixed)["text"]
+    header = [line for line in text.splitlines() if line.startswith("#")]
+    option_line = next(line for line in header if line.startswith("# Option set:"))
+    assert "1 garage, 1 surface_lot" in option_line
+    assert "large surface lots" in option_line and "lambda up" in option_line
+    # an option set without a surface lot is called out as such (the Braunschweig dataset has no surface lot)
+    garages_only = cal.run(out_path=None, **_with_kinds(inputs, tmp_path, ["garage", "garage"]))["text"]
+    assert "2 garage, 0 surface_lot" in garages_only and "holds no surface lot" in garages_only
+
+
+def test_the_facility_kind_option_says_it_matters_only_where_surface_lots_lie_within_the_maximum_distance(cal):
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "matters only where surface lots lie within" in text.split("def main", 1)[1]
+    assert "vacuous" in text.split("def main", 1)[0]

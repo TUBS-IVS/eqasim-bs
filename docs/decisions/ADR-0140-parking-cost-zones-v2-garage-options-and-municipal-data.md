@@ -139,12 +139,23 @@ run (see Status).
    applies in every town (transfer assumption). Consequences for the role of that table: its garage share is now a
    calibration TARGET and no longer validates the model; its paid share and the commuter garage share of the class
    `bs_zentrum` (`srv2023_commute_parking_by_workplace_class`) stay independent comparison quantities, with the universe caveat
-   that the SrV asks residents about their usual place whereas the model averages over destinations. The calibration is
+   that the SrV asks residents about their usual place whereas the model averages over destinations.
+   Pre-registered expectation for the commuter comparison (written before any v2 run; an expectation, not a target):
+   the model's commuter garage share for `bs_zentrum` exceeds the SrV 0.464, because the garage weights are purpose- and
+   price-independent (G1) and no Braunschweig garage has a monthly product in the dataset, so a commuter's garage option is a
+   day rate; lambda is NOT tuned to it. The baseline arm for work and education stays is `zones_v2_no_garages` (lambda 0).
+   Limitation: E4 fires only for a stay that is free on the street as a whole, so mostly-evening stays still get the
+   garage mixture. The calibration is
    built (`scripts/parking/calibrate_garage_decay.py`) and tested on a synthetic fixture but has NOT been run: the local
    reference plans are no longer available (lost on 2026-10-07) and the plans of a server run are needed, so
    `parking_garage_decay_m` is 0 until the table `parking_garage_decay_calibration_2026.csv` exists (a test requires 0 until
-   then and the table value afterwards). A calibration on the garages alone (`--facility-kinds garage`) is reported as a
-   sensitivity number next to the release value on every kind of facility. The comparison script
+   then and the table value afterwards). Target and option set differ in kind: the target
+   `garage_large_lot / (garage_large_lot + street)` contains large surface lots, while the Braunschweig option set holds 12
+   garages and no surface lot (all 13 surface lots of the dataset are in Wolfsburg; the BgA lots are zones, R-E1), so lambda
+   is pushed up to let the garages carry the large-lot share. A calibration on the garages alone (`--facility-kinds garage`)
+   is therefore vacuous for the destination universe of the zones Ia and Ib (the same option set) and is NOT run as a
+   sensitivity; the option stays in the script for datasets where surface lots lie within D_max of the universe.
+   The comparison script
    `scripts/parking/compare_parking_targets.py` (lever 3) compares the arms of a run with the SrV tables; it is a comparison,
    never a validation, and no knob is turned on a difference without a repeat arm.
 8. **Garage tariff forms and evidence rules (Amendment E10 to E14, owner directions 2026-10-07).** A garage is priced only
@@ -183,6 +194,11 @@ run (see Status).
    of the outcome report key rows by outcome name, never by position: the Java enum starts with `NO_ZONE` while the Python
    `OUTCOMES` tuple starts with `HOME`. The Java sources (eqasim-java-bs) cite the ruling ids R-4d-2, R-4d-4,
    R-4d-5, R-4e-3 and R-T3-a, which are defined in the last section of this record.
+   The two fixtures the Java repository copies byte for byte are pinned by the SHA-256 of their LF blobs (a Windows checkout
+   holds CRLF; hash the blob): `parking_golden_cases.json` `62cb9bc3c6bae7401c8130f54dee1349afaf6f39ec6f0db7c8371777e2e9d14b`
+   and `parking_tariffs_fixture.json` `c7d30141a04ef6c1652c5451d7e3e478bba463a73668ed1cb3bb4994d4472718`.
+   `tests/test_parking_cost.py` pins the same two hashes, so a regenerated golden file without the Java copy update fails on
+   the Python side too, and the next change of a fixture updates the test pin and this record together.
 
 ## Rejected alternatives
 
@@ -242,6 +258,12 @@ run (see Status).
   carry the working accuracy of the digitised city maps and several zone sources carry no verified open licence; the
   local (1 %) plans give the TU campus and the paid zones only a small exposure; and the outcome counts are pricing calls,
   not chosen trips (the paid share the comparison reports is an upper bound of the chosen-trip share).
+- Activity zone versus parking point: the zone of a stay is the zone of the activity coordinates (point in polygon), while
+  the car parks at the end of its arrival link. One measurement of that agreement exists: on the 1 % plans of 2026-04-29
+  (lost since; uncommitted and not reproducible from the repository) the median distance between the activity and the
+  parking point was 34 m, 82 % of the zone-touching car arrivals lay in the same zone as their activity, and TU campus roads
+  were missing in the network. It is a one-off measurement on lost plans, to be re-measured on the server plans; no other
+  number from it is used anywhere.
 - Parts of ADR-0139 this record supersedes or closes (the complete list): decision 3, sentence "Campus zones are never drawn"
   (superseded by decision 4, C2); the limitation that A1 likely overstates free parking inside the paid zones, for the Wolfsburg
   zones (superseded by decision 4, A1-b; it stands for every other class); the limitation that C1 overcharges campus members

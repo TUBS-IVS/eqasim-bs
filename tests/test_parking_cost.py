@@ -653,3 +653,22 @@ def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():
     for minimum_stay_s in (900.0, True):
         with pytest.raises(TypeError, match="minimum_stay_s must be an integer"):
             cost.minimum_stay_departure_s(36000, 36000, minimum_stay_s)
+
+
+# The Java test resources hold byte copies of these two fixtures (eqasim-java-bs, braunschweig/src/test/resources/parking).
+# The hashes of the LF blobs are recorded in ADR-0140 (cross-language contract), so regenerating one fixture here without
+# copying it to the Java repository fails this test as well as the ADR record, instead of leaving the two sides apart.
+PINNED_FIXTURE_SHA256 = {
+    "parking_golden_cases.json": "62cb9bc3c6bae7401c8130f54dee1349afaf6f39ec6f0db7c8371777e2e9d14b",
+    "parking_tariffs_fixture.json": "c7d30141a04ef6c1652c5451d7e3e478bba463a73668ed1cb3bb4994d4472718",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_FIXTURE_SHA256))
+def test_the_fixtures_copied_to_the_java_repository_match_their_pinned_lf_hash(name):
+    from braunschweig.parking.tariff_export import content_sha256
+
+    actual = content_sha256(GOLDEN_JSON.parent / name)   # LF-normalised, as git stores the blob
+    assert actual == PINNED_FIXTURE_SHA256[name], (
+        f"{name} changed (sha256 {actual}): copy it byte for byte to eqasim-java-bs "
+        "braunschweig/src/test/resources/parking, then update this pin and the hashes in ADR-0140 (cross-language contract)")

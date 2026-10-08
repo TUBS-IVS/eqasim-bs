@@ -49,9 +49,13 @@ Usage (from the repository root)::
         [--facility-kinds garage]
 
 ``--facility-kinds`` (default: every kind) restricts the priced garages to the given ``facility_kind`` values of the garage
-dataset, so that lambda can be reported with and without the surface lots (ruling C1 of the Task 5a review). The RELEASE value
-is the calibration on every kind; a filtered run is a sensitivity number, written to another ``--out``, never over the release
-table. The table records the filter (header line and the rows ``garage_facility_filter_active`` and ``priced_garages_used``).
+dataset (ruling C1 of the Task 5a review). The RELEASE value is the calibration on every kind; a filtered run is a
+sensitivity number, written to another ``--out``, never over the release table. The table records the filter (header line and
+the rows ``garage_facility_filter_active`` and ``priced_garages_used``). The option matters only where surface lots lie within
+D_max of the universe: the Braunschweig option set holds 12 garages and no surface lot (all 13 surface lots of the dataset are
+in Wolfsburg), so ``--facility-kinds garage`` is vacuous for the zones Ia and Ib (it returns the release value) and is not
+part of the run plan; the target ``garage_large_lot / (garage_large_lot + street)`` contains large surface lots, which the
+garages alone must carry there, so lambda is pushed up (ADR-0140, decision 7).
 """
 from __future__ import annotations
 
@@ -322,8 +326,18 @@ def git_state() -> str:
         return "unknown (no git checkout)"
 
 
+def option_set_text(priced: pd.DataFrame) -> str:
+    """The priced options per facility kind as header text, e.g. ``12 garage, 0 surface_lot (the option set holds no surface
+    lot)``; the kinds are those of ``garages.FACILITY_KINDS``."""
+    counts = [(kind, int((priced["facility_kind"] == kind).sum())) for kind in sorted(parking_garages.FACILITY_KINDS)]
+    text = ", ".join(f"{count} {kind}" for kind, count in counts)
+    if dict(counts).get("surface_lot", 0) == 0:
+        text += " (the option set holds no surface lot)"
+    return text
+
+
 def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: int, priced_garages: int, listed_garages: int,
-               facility_kinds_text: str, target: Target, calibration: Calibration, tolerance: float,
+               facility_kinds_text: str, option_set_text: str, target: Target, calibration: Calibration, tolerance: float,
                lambda_min_m: float, lambda_max_m: float, max_distance_m: float, commuter_mean: float, commuter_count: int,
                commuter_reference: Target, generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
@@ -340,6 +354,8 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         f"# Garages: {priced_garages} priced of {listed_garages} listed in the dataset used (facility kinds: "
         f"{facility_kinds_text}; a filtered run is a sensitivity number, the release value uses every kind); straight-line "
         "distances in EPSG:25832.",
+        f"# Option set: {option_set_text}. The target's garage_large_lot share contains large surface lots; where the option set "
+        "has none, the garages carry that share alone, which pushes lambda up.",
         "# Quantity: the mean over the universe of sum(w) / (1 + sum(w)), w = exp(-d / lambda) of the priced garages within "
         "the maximum distance (street weight 1; no price, no early rule, no E4).",
         f"# Target: {target.numerator_name} / ({target.numerator_name} + {target.other_name}) = {target.numerator} / "
@@ -472,8 +488,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
             ("plans", plans), ("zones", zones_path), ("garages", garages_path),
             ("srv2023_city_center_parking", city_center_path), ("srv2023_commute_parking_by_workplace_class", commute_path))},
         universe_size=int(universe.sum()), persons=persons, with_garage=with_garage, priced_garages=len(priced),
-        listed_garages=len(garage_frame), facility_kinds_text=kinds_text, target=target, calibration=calibration,
-        tolerance=tolerance,
+        listed_garages=len(garage_frame), facility_kinds_text=kinds_text, option_set_text=option_set_text(priced), target=target,
+        calibration=calibration, tolerance=tolerance,
         lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m, commuter_mean=commuter_mean,
         commuter_count=int(commuters.sum()), commuter_reference=commuter_reference,
         generated_on=generated_on or datetime.date.today().isoformat(),
@@ -512,7 +528,9 @@ def main(argv=None) -> int:
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
     parser.add_argument("--facility-kinds", type=parse_facility_kinds, default=None, metavar="KIND[,KIND]|all",
                         help="calibrate on the priced garages of these facility kinds only (garage, surface_lot; default all); "
-                             "a filtered run is a sensitivity number and must not be written over the release table")
+                             "a filtered run is a sensitivity number and must not be written over the release table. "
+                             "It matters only where surface lots lie within D_max of the universe: the Braunschweig "
+                             "option set has none, so 'garage' is vacuous there")
     args = parser.parse_args(argv)
     data = args.data_path
     if args.facility_kinds is not None:
