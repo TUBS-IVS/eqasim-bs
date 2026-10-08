@@ -41,30 +41,15 @@ def test_absent_file_returns_none_with_log(tmp_path, capsys):
     assert "scalar education_bbs_share applies" in log
 
 
-def test_missing_column_raises(tmp_path):
-    path = _write(tmp_path, "age,bbs_pupils\n16,100\n")
-    with pytest.raises(ValueError, match="missing columns"):
-        load_bbs_share_by_age(path)
-
-
-def test_duplicate_age_raises(tmp_path):
-    path = _write(tmp_path, (
-        "age,bbs_pupils,oberstufe_pupils\n16,1,1\n16,2,2\n"))
-    with pytest.raises(ValueError, match="duplicated age"):
-        load_bbs_share_by_age(path)
-
-
-def test_zero_total_raises(tmp_path):
-    path = _write(tmp_path, (
-        "age,bbs_pupils,oberstufe_pupils\n16,0,0\n"))
-    with pytest.raises(ValueError, match="zero pupils"):
-        load_bbs_share_by_age(path)
-
-
-def test_negative_count_raises(tmp_path):
-    path = _write(tmp_path, (
-        "age,bbs_pupils,oberstufe_pupils\n16,-1,10\n"))
-    with pytest.raises(ValueError, match="negative pupil count"):
+@pytest.mark.parametrize("csv_text, message", [
+    pytest.param("age,bbs_pupils\n16,100\n", "missing columns", id="missing_column"),
+    pytest.param("age,bbs_pupils,oberstufe_pupils\n16,1,1\n16,2,2\n", "duplicated age", id="duplicate_age"),
+    pytest.param("age,bbs_pupils,oberstufe_pupils\n16,0,0\n", "zero pupils", id="zero_total"),
+    pytest.param("age,bbs_pupils,oberstufe_pupils\n16,-1,10\n", "negative pupil count", id="negative_count"),
+])
+def test_an_invalid_table_raises_naming_the_problem(tmp_path, csv_text, message):
+    path = _write(tmp_path, csv_text)
+    with pytest.raises(ValueError, match=message):
         load_bbs_share_by_age(path)
 
 

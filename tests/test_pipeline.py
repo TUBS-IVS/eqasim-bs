@@ -9,10 +9,8 @@ variable ``EQASIM_BS_RUN_PIPELINE=1``.
 Default behaviour: the tests are skipped, so the unit-test gate stays fast.
 
 This module replaced the IDF region-10/11 tests inherited from upstream
-eqasim in Phase 3.1 of the eqasim-bs refactor (plan/refactor-eqasim-bs.md).
-The IDF testdata fixture (``tests/testdata.py``) is no longer compatible
-with the post-fork DAG; it remains in the tree for reference but is
-unused.
+eqasim in Phase 3.1 of the eqasim-bs refactor (plan/refactor-eqasim-bs.md);
+the upstream IDF ``tests/testdata.py`` fixture was removed with them.
 """
 
 from __future__ import annotations

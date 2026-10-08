@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES, PT_TICKET_FLATRATE
-from braunschweig.ipf.attributed import derive_socioprofessional_class
+from braunschweig.population.socioprofessional_class import derive_socioprofessional_class
 from braunschweig.popsim import missing
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 # (employment EXTENT; see EMPLOYMENT_STATUS_BY_P_BKAT below), NOT an occupation
 # code. The former SPC_BY_P_BKAT crosswalk mis-read P_BKAT as an occupation and is
 # removed; socioprofessional_class is derived from broad activity status via
-# braunschweig.ipf.attributed.derive_socioprofessional_class (see
-# map_socioprofessional_class), which is the eqasim/IPF path and documents that no
+# braunschweig.population.socioprofessional_class.derive_socioprofessional_class (see
+# map_socioprofessional_class), the rule the eqasim/IPF path applies too; it documents that no
 # occupation data exists upstream of the HTS in this fork.
 
 # MiD P_TAET (Taetigkeit der Person): MiD official `erwerb` definition (Erwerbstätigkeit
@@ -1223,7 +1223,8 @@ def map_socioprofessional_class(persons: pd.DataFrame) -> pd.DataFrame:
     There is NO occupation variable in the standard MiD respondent table, so CS1 is
     derived from the broad activity status the synthesis DOES carry --
     ``derive_socioprofessional_class(employed, age, studies)`` from
-    ``braunschweig.ipf.attributed`` -- exactly the eqasim/IPF path, so the popsim and
+    ``braunschweig.population.socioprofessional_class`` -- the rule the eqasim/IPF path
+    applies too, so the popsim and
     IPF populations share one CS1 code space. Age is a documented coarse seniority
     proxy for the active classes (NOT measured occupation).
 

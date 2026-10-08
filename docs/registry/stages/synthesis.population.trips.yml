@@ -132,7 +132,8 @@ notes: >-
   trip build never reaches the model at all; both popsim_open fixtures set departure_time_model:
   eqasim_uniform explicitly. _HELPER_MODULES gained departure_time_model plus the four modules it
   imports at module level (calibration.reported_time_precision, calibration.srv_departure_times,
-  calibration.srv_plan_structure, popsim.attributes) because validate() hashes non-transitively;
+  calibration.srv_plan_structure, popsim.attributes) because validate() hashed non-transitively
+  then (since ADR-0136 the token covers the stage's whole import closure);
   the last four are CROSS-package, which tests/test_synpp_helper_hash_invariant.py cannot police.
   The mechanism itself -- precision rule, mapping, ladder, guards, the second call site in the
   reporting-day view -- lives once in docs/codebase/notes/departure-time-model.md.

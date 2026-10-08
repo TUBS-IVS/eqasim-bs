@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -29,29 +28,9 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.data.kba import hsn_tsn  # noqa: E402
-from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 
 DATA_PATH = str(DATA)
 GOLDEN_PATH = FIXTURES / "fleet_v1_golden.parquet"
-
-
-# --------------------------------------------------------------------------- #
-# Shared synthetic car frame
-# --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 4000, seed: int = 0) -> pd.DataFrame:
-    """Synthetic household-car frame matching the test fixture in test_fleet_sampling_de."""
-    rng = np.random.default_rng(seed)
-    statuses = list(ft.STATUS_LABELS)
-    rows = []
-    for kreis in ft.ZGB_KREISE_AGS5:
-        for _ in range(n_per_kreis):
-            rows.append({
-                "economic_status": rng.choice(statuses),
-                "kreis_ags5": kreis,
-                "gemeinde": np.nan,
-                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
-            })
-    return pd.DataFrame(rows)
 
 
 def _load_golden(name: str) -> pd.DataFrame:
@@ -61,33 +40,22 @@ def _load_golden(name: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-# --------------------------------------------------------------------------- #
-# Module-scoped fixtures (build the real sampler + v2 output once per session)
-# --------------------------------------------------------------------------- #
+# The two 32,000-car samples come from the session fixtures in conftest.py, which
+# test_fleet_sampling_de draws from as well: same frame, same seed, one draw each.
 @pytest.fixture(scope="module")
-def sampler():
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+def v2_output_with_hsn(_default_fleet_sample_once, committed_hsn_tsn_lookup):
+    """Full v2 pipeline: sample_fleet (v2) + attach_hsn_tsn on real data.
 
-
-@pytest.fixture(scope="module")
-def v2_output_with_hsn(sampler):
-    """Full v2 pipeline: sample_fleet (v2) + attach_hsn_tsn on real data."""
-    df_cars = _make_cars()
-    spec, _, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
-    try:
-        out = hsn_tsn.attach_hsn_tsn(spec, data_path=DATA_PATH, random_seed=42)
-    except FileNotFoundError:
-        pytest.skip(
-            "HSN/TSN lookup is local-only (run scripts/scrape_hsn_tsn.py); skipped when absent"
-        )
-    return out
+    The lookup is the session's build of the same data path; the fixture skips when the
+    local-only lookup table is absent."""
+    spec = _default_fleet_sample_once[0].copy()
+    return hsn_tsn.attach_hsn_tsn(spec, lookup=committed_hsn_tsn_lookup(), random_seed=42)
 
 
 # --------------------------------------------------------------------------- #
 # 1. OFF-path byte-identical regression
 # --------------------------------------------------------------------------- #
-def test_off_path_byte_identical(sampler):
+def test_off_path_byte_identical(default_fleet_sample_legacy):
     """consistency_v2=False output must match the committed golden fixture exactly.
 
     The golden was generated on this feature branch by running
@@ -111,9 +79,7 @@ def test_off_path_byte_identical(sampler):
 
     The golden is committed to tests/fixtures/fleet_v1_golden.parquet.
     """
-    df_cars = _make_cars()
-    off, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=False)
+    off, _ = default_fleet_sample_legacy
     golden = _load_golden("fleet_v1_golden.parquet")
     pd.testing.assert_frame_equal(
         off.reset_index(drop=True),
@@ -202,7 +168,7 @@ def test_v2_brand_empty_rate_zero(v2_output_with_hsn):
 def test_v2_per_kreis_bev_share_within_abs_001(v2_output_with_hsn):
     """Per-Kreis BEV share in v2 output matches FZ 27.15 within abs 0.01.
 
-    Reuses the same assertion as test_fleet_sampling_de::test_per_kreis_bev_share
+    Reuses the same assertion as test_fleet_sampling_de::test_per_kreis_electric_share_matches_fz_27_15
     but on the FULL v2 pipeline (sample_fleet + attach_hsn_tsn) so the e2e
     output is validated, not just the sampler output.
     """

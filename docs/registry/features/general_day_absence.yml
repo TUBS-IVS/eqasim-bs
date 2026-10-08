@@ -111,7 +111,7 @@ evidence:
       OFF path is the untouched-frame branch already covered by the sibling commute_day_state OFF
       tests), and the MATSim writer emits dayAbsenceState only for persons that have one, never a
       substituted value, when the absence stage is declared
-      (tests/test_commute_day_consumers.py::test_matsim_writer_emits_day_absence_state_only_for_persons_that_have_one).
+      (tests/test_commute_day_consumers.py::test_matsim_writer_emits_a_state_attribute_only_for_persons_that_have_one[day_absence]).
       configs/fixtures/config_popsim_open_braunschweig.yml sets day_absence_enabled: false
       (ruling R13 of the #370 SDD plan, correcting ruling R2''s wrong premise that no
       synthesis.population.trips.final alias existed there at all): it DOES alias

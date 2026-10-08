@@ -26,7 +26,7 @@ from typing import Optional
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 from braunschweig.popsim.attributes import INCOME_CLASS_BY_GROUP
 from braunschweig.popsim.seed import SeedColumns
-from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_BY_INCOME_CLASS
+from braunschweig.synthesis.population.enriched.economic_status import ECONOMIC_STATUS_BY_INCOME_CLASS
 
 # ---------------------------------------------------------------------------
 # Seed column mapping for ENTD (canonical column names from cleaned.py)

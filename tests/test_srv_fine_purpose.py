@@ -191,26 +191,20 @@ def test_out_of_scope_purposes_are_dropped_and_reported_as_a_rate(caplog):
     assert any("2/12" in message and "16.67%" in message for message in messages), messages
 
 
-def test_an_unmapped_v_zweck_code_raises():
-    """A fine code that is in neither COARSE_BY_FINE nor OUT_OF_SCOPE_V_ZWECK must raise rather
-    than land in a silent bucket -- the same guard idea as purpose_subtype.code_coverage_guard."""
+@pytest.mark.parametrize("bad_value, column, message", [
+    pytest.param(99, "V_ZWECK", "99", id="unmapped_v_zweck"),
+    pytest.param(2, "MITTL_WERKTAG", "MITTL_WERKTAG", id="not_average_weekday"),
+    pytest.param(0.0, "GEWICHT_W_ZENSUS", "GEWICHT_W_ZENSUS", id="non_positive_weight"),
+])
+def test_an_invalid_trip_record_raises(bad_value, column, message):
+    """Each invalid input raises rather than landing in a silent bucket: a fine code that
+    is in neither COARSE_BY_FINE nor OUT_OF_SCOPE_V_ZWECK (the same guard idea as
+    purpose_subtype.code_coverage_guard), a delivery outside the average-weekday
+    universe, and a non-positive trip weight.
+    """
     trips = _trips()
-    trips.loc[0, "V_ZWECK"] = 99
-    with pytest.raises(ValueError, match="99"):
-        F.build_fine_purpose_reference(trips)
-
-
-def test_raises_when_the_delivery_is_not_the_average_weekday_universe():
-    trips = _trips()
-    trips.loc[0, "MITTL_WERKTAG"] = 2
-    with pytest.raises(ValueError, match="MITTL_WERKTAG"):
-        F.build_fine_purpose_reference(trips)
-
-
-def test_raises_on_a_non_positive_trip_weight():
-    trips = _trips()
-    trips.loc[0, "GEWICHT_W_ZENSUS"] = 0.0
-    with pytest.raises(ValueError, match="GEWICHT_W_ZENSUS"):
+    trips.loc[0, column] = bad_value
+    with pytest.raises(ValueError, match=message):
         F.build_fine_purpose_reference(trips)
 
 

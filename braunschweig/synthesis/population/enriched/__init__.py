@@ -143,13 +143,39 @@ _HELPER_MODULES = (
 
 
 #: Hashed by dotted NAME because they are imported inside a function body rather than at
-#: module level: the three MiD distribution loaders this stage draws income and tenure from.
-#: Their tables ARE this stage's enrichment, so an edit to one changes the enriched population
-#: -- they were outside the token until the #327 helper-hash re-audit.
+#: module level: the MiD distribution loaders this stage draws income, tenure and car
+#: ownership from. Their tables ARE this stage's enrichment, so an edit to one changes the
+#: enriched population -- the first three were outside the token until the #327 helper-hash
+#: re-audit. cars_by_status is imported inside vehicle_ownership._sample_cars_income_aware;
+#: it builds the car-ownership base table and holds the raumtyp tilt the draw applies.
+#:
+#: The names after it are not imported by this package itself but by its helpers, as each
+#: comment says: this stage runs their code, so an edit there must devalidate it too. The
+#: audit follows imports that far since 2026-09-28 and gates this stage on its whole import
+#: closure (tests/test_audit_synpp_helper_hash.py, ADR-0136).
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.income_by_size",
     "braunschweig.data.mid.income_by_status",
     "braunschweig.data.mid.tenure_by_income",
+    "braunschweig.data.mid.cars_by_status",
+    # the four couplings above: the raumtyp tilt step they share.
+    "braunschweig.data.mid.raumtyp_tilt",
+    # vehicle_ownership: the Haushaltstyp classifier and rake_2d, the rake to the H7 control.
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.ipf.joint_age_size",
+    # economic_status: the census household-income table.
+    "braunschweig.data.census.household_income",
+    # base: the MiD zone table, the eqasim enrichment it extends and that module's HTS readers.
+    "braunschweig.data.mid.zones",
+    "synthesis.population.enriched",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    # base and availability: the attribute mappers, their missing-value handling and the
+    # socioprofessional class the mappers derive.
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.missing",
+    "braunschweig.population.socioprofessional_class",
 )
 
 

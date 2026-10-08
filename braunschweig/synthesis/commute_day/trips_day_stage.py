@@ -87,6 +87,18 @@ _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_prec
 #: under while leaving every module the tuple above covers untouched (#327 gate).
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.stage.config_keys",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.gravity.friction",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.missing",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.hts",
 )
 
 #: ``context.set_info`` key under which this stage reports its diagnostics (issue #378).
