@@ -154,6 +154,14 @@ def _print_garages(garages, garage_qa_table, garages_file, tariffs=None) -> None
           f"product on {coverage['with_monthly_product']} garages; QA: monthly products used {qa['monthly_used']}, recorded "
           f"and not used {qa['monthly_not_used']} ({_counts_text(qa['monthly_not_used_by_reason'])}), candidates that are no "
           f"garage {qa['candidates']} ({_counts_text(qa['candidates_by_reason'])})")
+    # spec Amendment F3: the monthly products per municipality, the same counts the tariff model export logs (published,
+    # imputed under ASSUMPTION P13 with the median, none), and the median check against the published products of the QA table
+    summary = pg.monthly_summary(garages)
+    published = {ags: len(pairs) for ags, pairs in garage_qa.published_monthly_values(garage_qa_table, garages).items()}
+    medians = {ags: f"{value:.2f}" for ags, value in garage_qa.expected_imputed_monthly(garage_qa_table, garages).items()}
+    print(f"[parking-validate] garage monthly products (ASSUMPTION P13): {pg.monthly_summary_text(summary)}; published current "
+          f"garage products per municipality in the QA table: {_counts_text(published)}; medians in EUR: "
+          f"{_counts_text(medians)}")
     if tariffs is not None:
         check = garage_qa.zone_reference_summary(garage_qa_table, tariffs)
         print(f"[parking-validate] car parks inside a zone (spec E14): {check['checked']} checked, the published hourly "

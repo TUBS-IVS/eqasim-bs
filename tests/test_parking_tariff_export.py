@@ -595,3 +595,99 @@ def test_a_zone_row_with_garage_columns_is_warned_about_when_the_garage_options_
         te.build_tariff_model(no_family, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
                               garage_decay_m=400.0)
     assert not [record for record in caplog.records if record.name == logger]
+
+
+# ------------------------------------------------------------------------------------------ monthly products (spec Amendment F)
+
+
+def _with_imputed_monthly(frame, garage_id: str, eur: float = 107.48):
+    """The fixture garage dataset with an imputed monthly product (ASSUMPTION P13) on one garage that has none."""
+    changed = frame.copy()
+    index = changed.index[changed["garage_id"] == garage_id][0]
+    assert pd.isna(changed.loc[index, "monthly_eur"]) and changed.loc[index, "facility_kind"] == "garage"
+    changed.loc[index, "monthly_imputed_eur"] = eur
+    return changed
+
+
+def _exported(frame, **options):
+    return {entry["garage_id"]: entry for entry in te.garage_entries(frame, **options)}
+
+
+def test_the_imputed_monthly_product_is_exported_as_monthly_cents_when_the_imputation_is_on(garage_frame):
+    garage_id = "fx_g02_core_cap" if "fx_g02_core_cap" in set(garage_frame["garage_id"]) else next(
+        row["garage_id"] for _, row in garage_frame.iterrows() if pd.isna(row["monthly_eur"]) and row["priced"]
+        and row["facility_kind"] == "garage")
+    frame = _with_imputed_monthly(garage_frame, garage_id)
+    assert _exported(frame)[garage_id]["monthly_cents"] == 10748
+    assert _exported(frame, monthly_imputation=True)[garage_id]["monthly_cents"] == 10748
+    # the sensitivity arm 'published only': the garage has no monthly product
+    assert _exported(frame, monthly_imputation=False)[garage_id]["monthly_cents"] is None
+    # a published product is untouched by either setting, and the key set of an entry does not change (Java contract)
+    for options in ({}, {"monthly_imputation": False}):
+        entries = _exported(frame, **options)
+        assert entries["fx_g01_core"]["monthly_cents"] == 6300
+        assert all(sorted(entry) == GARAGE_KEYS for entry in entries.values())
+    others = {key: value for key, value in _exported(garage_frame).items() if key != garage_id}
+    assert {key: value for key, value in _exported(frame).items() if key != garage_id} == others
+
+
+def test_an_imputed_product_next_to_a_published_one_or_at_a_surface_lot_is_refused_by_the_export(garage_frame):
+    both = garage_frame.copy()
+    both.loc[both["garage_id"] == "fx_g01_core", "monthly_imputed_eur"] = 50.0
+    with pytest.raises(ValueError, match="monthly_imputed_eur is set next to a published monthly_eur"):
+        te.garage_entries(both)
+    lot = _with_imputed_monthly(garage_frame, next(row["garage_id"] for _, row in garage_frame.iterrows()
+                                                    if pd.isna(row["monthly_eur"]) and row["priced"]))
+    lot["facility_kind"] = "surface_lot"
+    with pytest.raises(ValueError, match="never gets an imputed monthly product"):
+        te.garage_entries(lot)
+
+
+def test_the_model_lists_assumption_p13_exactly_when_an_imputed_product_is_used(table, sources, garage_frame, caplog):
+    garage_id = next(row["garage_id"] for _, row in garage_frame.iterrows()
+                     if pd.isna(row["monthly_eur"]) and row["priced"] and row["facility_kind"] == "garage")
+    frame = _with_imputed_monthly(garage_frame, garage_id)
+    plain = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame)
+    with caplog.at_level("INFO", logger="braunschweig.parking.tariff_export"):
+        on = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=frame)
+    off = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=frame,
+                                garage_monthly_imputation=False)
+    ids = [text.split(":")[0] for text in on["assumptions"]]
+    assert ids.index("ASSUMPTION P13") == ids.index("ASSUMPTION P12") + 1
+    assert [text for text in on["assumptions"] if "P13" not in text.split(":")[0]] == plain["assumptions"]
+    assert "median" in next(text for text in on["assumptions"] if text.startswith("ASSUMPTION P13:"))
+    # the model without an imputed product (a dataset without one, or the sensitivity arm) has the register as before
+    assert off["assumptions"] == plain["assumptions"] and "ASSUMPTION P13" not in " ".join(plain["assumptions"])
+    # same schema, same keys: the Java reader and the golden fixture see no difference
+    assert sorted(on) == sorted(plain) == sorted(off) and on["schema_version"] == plain["schema_version"] == 3
+    assert on["zones"] == plain["zones"] and [entry["garage_id"] for entry in on["garages"]] == [
+        entry["garage_id"] for entry in plain["garages"]]
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "parking_garage_monthly_imputation=True" in messages and "P13 median 107.48 EUR" in messages
+
+
+def test_the_monthly_summary_counts_published_imputed_and_none_per_municipality(garage_frame):
+    frame = _with_imputed_monthly(garage_frame, next(row["garage_id"] for _, row in garage_frame.iterrows()
+                                                     if pd.isna(row["monthly_eur"]) and row["priced"]
+                                                     and row["facility_kind"] == "garage"))
+    on, off = te.monthly_product_summary(frame, True), te.monthly_product_summary(frame, False)
+    assert sum(entry["imputed"] for entry in on.values()) == 1 and sum(entry["imputed"] for entry in off.values()) == 0
+    assert sum(entry["published"] for entry in on.values()) == sum(entry["published"] for entry in off.values()) > 0
+    assert te.monthly_product_summary(None) == {} and te.monthly_product_text({}) == "no garage dataset"
+    assert "none" in te.monthly_product_text(on)
+
+
+def test_a_fixture_dataset_without_imputed_products_gives_the_committed_golden_model(table, sources, garage_frame):
+    # the fixture file has no monthly_imputed_eur column (the loader reads it as empty), so the committed fixture model is
+    # unchanged by Amendment F: its register, its garages and its key sets
+    committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
+    assert garage_frame["monthly_imputed_eur"].isna().all()
+    assert not any("P13" in text.split(":")[0] for text in committed["assumptions"])
+    assert te.assumption_texts() == committed["assumptions"]
+    assert te.assumption_texts(monthly_imputed=True) != committed["assumptions"]
+
+
+def test_the_imputation_switch_must_be_a_boolean(table, sources, garage_frame):
+    with pytest.raises(ValueError, match="garage_monthly_imputation must be true or false"):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                              garage_monthly_imputation="false")

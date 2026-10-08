@@ -87,6 +87,10 @@ PARKING_DEFAULTS = {
     # ASSUMPTION G2 (spec Amendment E2): the maximum straight-line distance in metres from a destination to a garage
     # option.
     "parking_garage_max_distance_m": 1000.0,
+    # ASSUMPTION P13 (spec Amendment F3): a garage without a published monthly product uses the imputed product of its
+    # municipality (median of the published products, computed by the curation) as the monthly product of work and education
+    # stays; false is the sensitivity arm 'published only' (the zones_v2_published_monthly_only arm of the 25 % A/B).
+    "parking_garage_monthly_imputation": True,
 }
 #: Largest parking_minimum_stay_min the Java ParkingConfigGroup accepts: the minimum in seconds must fit a Java int.
 PARKING_MINIMUM_STAY_MAXIMUM_MIN = (2 ** 31 - 1) // 60
@@ -201,11 +205,12 @@ def configure(context):
                                   context.config("parking_terminal_stay_rule"),
                                   context.config("parking_minimum_stay_min"),
                                   context.config("parking_garage_decay_m"),
-                                  context.config("parking_garage_max_distance_m"))
+                                  context.config("parking_garage_max_distance_m"),
+                                  context.config("parking_garage_monthly_imputation"))
 
 
 def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
-                              garage_max_distance_m=1000.0):
+                              garage_max_distance_m=1000.0, garage_monthly_imputation=True):
     """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
@@ -216,7 +221,8 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     ``[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]``, the range the Java side reads from plain digits; a bool is rejected
     although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute. The garage decay
     length (G1; 0 = garage options off) must be a finite number of metres >= 0 and the maximum garage distance (G2) a
-    finite number of metres > 0, both numbers and no bool (``tariff_export.check_garage_parameters``).
+    finite number of metres > 0, both numbers and no bool (``tariff_export.check_garage_parameters``). The monthly imputation
+    switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep the imputation on.
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
@@ -230,6 +236,9 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
         tariff_export.check_garage_parameters(garage_decay_m, garage_max_distance_m)
     except ValueError as error:
         raise ValueError(f"{error} (config keys parking_garage_decay_m and parking_garage_max_distance_m)") from error
+    if not isinstance(garage_monthly_imputation, bool):
+        raise ValueError(f"parking_garage_monthly_imputation must be true or false (a YAML boolean), got "
+                         f"{garage_monthly_imputation!r}")
     example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
         tariff_export.check_snapshot_date(snapshot_date)
@@ -391,10 +400,15 @@ def _write_parking_inputs(context, config_name):
     release = context.stage("braunschweig.parking.zones_stage")
     garage_decay_m = context.config("parking_garage_decay_m")
     garage_max_distance_m = context.config("parking_garage_max_distance_m")
+    garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],
-                                             garage_decay_m=garage_decay_m, garage_max_distance_m=garage_max_distance_m)
+                                             garage_decay_m=garage_decay_m, garage_max_distance_m=garage_max_distance_m,
+                                             garage_monthly_imputation=garage_monthly_imputation)
+    monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
+    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION P13): %s"
+          % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
@@ -407,6 +421,7 @@ def _write_parking_inputs(context, config_name):
               "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
               "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
               "garage_decay_m": model["garage_decay_m"], "garage_max_distance_m": model["garage_max_distance_m"],
+              "garage_monthly_imputation": garage_monthly_imputation, "garage_monthly_products": monthly_products,
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
     print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "

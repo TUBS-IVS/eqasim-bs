@@ -59,7 +59,8 @@ def test_the_maximum_garage_distance_is_the_assumption_g2_value_in_every_config(
 def test_the_three_configs_name_the_same_garage_dataset_and_decay():
     base = _config("base")
     for name in ("popsim_mid", "popsim_open"):
-        for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_max_distance_m"):
+        for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_max_distance_m",
+                    "parking_garage_monthly_imputation"):
             assert _config(name)[key] == base[key], (name, key)
     assert base["parking_garages_path"] == "braunschweig/parking/parking_garages_2026.geojson"
 
@@ -74,3 +75,12 @@ def test_the_committed_release_table_is_not_a_facility_filtered_sensitivity_run(
     spec.loader.exec_module(module)
     values = module.read_calibration_table(TABLE)
     assert values.get("garage_facility_filter_active", 0) == 0, f"{TABLE.name} was calibrated on a facility-kind filter"
+
+
+@pytest.mark.parametrize("name", CONFIGS)
+def test_the_monthly_imputation_switch_is_on_in_every_config_and_matches_the_prepare_default(name):
+    # spec Amendment F3 (ASSUMPTION P13): a boolean, default true; false is the sensitivity arm "published only"
+    from braunschweig.matsim.simulation import prepare
+
+    value = _config(name)["parking_garage_monthly_imputation"]
+    assert value is True and prepare.PARKING_DEFAULTS["parking_garage_monthly_imputation"] is True

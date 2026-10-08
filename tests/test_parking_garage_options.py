@@ -607,3 +607,46 @@ def test_inconsistent_tiers_and_bands_are_rejected_at_construction():
            cost.GarageBand(from_min=90, to_min=None, kind="increment", price_cents=100, unit_min=60))
     with pytest.raises(ValueError, match="contiguous"):
         _banded(OUTLETS, bands=gap)
+
+
+# ---------------------------------------------------------------------------------------- spec Amendment F: committed dataset
+
+def _committed_garage_option(garage_id: str, arrival_s: int, departure_s: int, purpose: str, **options) -> int:
+    """The garage option of a stay at a garage of the committed dataset, exported as the release does (``garage_entries``)."""
+    from pathlib import Path
+
+    from braunschweig.parking import garages as parking_garages
+    from braunschweig.parking.tariff_export import garage_row_to_tariff
+
+    path = Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_garages_2026.geojson"
+    frame = parking_garages.load_garages(path).set_index("garage_id", drop=False)
+    return cost.garage_option_cents(garage_row_to_tariff(frame.loc[garage_id], **options), arrival_s, departure_s,
+                                    purpose=purpose)
+
+
+def test_a_commuter_at_the_wallstrasse_pays_the_published_monthly_product_per_working_day():
+    # Parkhaus Wallstrasse: 2.90 EUR per started hour, 19.00 EUR day cap (metered 8 h: 8 x 290 = 2320 -> cap 1900 ct); the
+    # published monthly product 114.95 EUR (configurator) / 21 working days = 547.38 -> 547 ct (P2, half up). Work and education
+    # pay min(1900, 547) = 547 ct, a shopper pays the metered 1900 ct; a 1 h stay is cheaper metered (290 ct) than the day share.
+    eight_hours = (28800, 28800 + 8 * HOUR_S)
+    assert _committed_garage_option("bs_wallstrasse", *eight_hours, "work") == 547
+    assert _committed_garage_option("bs_wallstrasse", *eight_hours, "education") == 547
+    assert _committed_garage_option("bs_wallstrasse", *eight_hours, "shop") == 1900
+    assert _committed_garage_option("bs_wallstrasse", 28800, 28800 + HOUR_S, "work") == 290
+    assert cost.garage_monthly_day_cents(11495) == 547
+
+
+def test_a_commuter_at_a_braunschweig_garage_without_a_published_product_pays_the_imputed_median_per_working_day():
+    # Parkhaus Magni (no published product, sold out): 1.20 EUR per started hour, 9.60 EUR day cap (metered 8 h 960 ct); the
+    # imputed product of ASSUMPTION P13 is the Braunschweig median 107.48 EUR (80.00, 100.00, 114.95, 129.00) -> 10748 ct / 21 =
+    # 511.8 -> 512 ct. Work: min(960, 512) = 512 ct; shop 960 ct. The sensitivity arm 'published only' prices the metered day.
+    eight_hours = (28800, 28800 + 8 * HOUR_S)
+    assert _committed_garage_option("bs_magni", *eight_hours, "work") == 512
+    assert cost.garage_monthly_day_cents(10748) == 512
+    assert _committed_garage_option("bs_magni", *eight_hours, "shop") == 960
+    assert _committed_garage_option("bs_magni", *eight_hours, "work", monthly_imputation=False) == 960
+    # a Wolfsburg garage without a published product: Congresspark 1.00 EUR per started hour, 6.00 EUR cap; median 57.50 EUR
+    # / 21 = 273.8 -> 274 ct; min(600, 274) = 274 ct for work
+    assert _committed_garage_option("wob_congresspark", *eight_hours, "work") == 274
+    # Steinstrasse (published Tarif A 100.00 EUR / 21 = 476.2 -> 476 ct; metered 8 x 180 = 1440 -> cap 1800 stays 1440)
+    assert _committed_garage_option("bs_steinstrasse", *eight_hours, "work") == 476

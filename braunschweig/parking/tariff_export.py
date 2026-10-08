@@ -19,6 +19,14 @@ cents), ``garage_decay_m`` (the decay length lambda in metres; 0 switches the ga
 ``garage_max_distance_m`` (D_max, ASSUMPTION G2). A model built without a garage dataset lists no garages and carries a decay
 of 0; schema 1 and 2 files still load and price as before (the Java reader treats the three keys as absent there).
 
+Spec Amendment F (monthly products for commuters at garages) changes no key and no schema: the ``monthly_cents`` of a garage
+entry is the published monthly product of the dataset (``monthly_eur``) or, where the garage has none and the imputation is on
+(``garage_monthly_imputation``, config key ``parking_garage_monthly_imputation``, default true; false is the sensitivity arm
+'published only'), the imputed product of ASSUMPTION P13 (``monthly_imputed_eur``); the pricing rule of work and education
+stays min(metered or day price, monthly_cents / 21) (ASSUMPTION P2). The export logs per municipality how many garages carry a
+published, an imputed or no product and the P13 median, and the model lists ASSUMPTION P13 in its register exactly when an
+imputed product is used (a model without one is byte-identical to a model of before Amendment F).
+
 Spec Amendment C3 (resident parking districts) adds two more keys without a new schema version, because they are
 additive: every zone entry carries ``resident_permits_valid``, a bool that is never null (an empty table cell resolves to
 the default of the zone type, see ``braunschweig.parking.cost.ZoneTariff``; ASSUMPTION R2-a), and the model carries the
@@ -149,6 +157,15 @@ _GARAGE_ASSUMPTION_WHERE_IT_BITES = {
            "ASSUMPTION P12 in their notes): every stay at such a car park costs 0, whatever the street costs",
 }
 
+#: ASSUMPTION P13 (spec Amendment F2): the model lists it (after P12) exactly when a garage entry uses an imputed monthly
+#: product, so the model of a release without imputation (and every fixture model) carries the register as before.
+MONTHLY_IMPUTATION_ASSUMPTION = Assumption(
+    "P13", parking_garages.ASSUMPTIONS["P13"],
+    "Garages without a published monthly product in a municipality with at least two published garage products (the garages "
+    "that name ASSUMPTION P13 in their notes): work and education stays pay min(metered or day price, imputed product / 21)",
+    "parking_garage_monthly_imputation false (published products only); garage dataset rows that name it (column assumptions "
+    "of parking_garages_2026)")
+
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -248,9 +265,14 @@ ASSUMPTIONS_REGISTER = (
 )
 
 
-def assumption_texts() -> list[str]:
-    """The register as the ``assumptions`` list of the model: ``ASSUMPTION <id>: ...`` strings."""
-    return [assumption.render() for assumption in ASSUMPTIONS_REGISTER]
+def assumption_texts(monthly_imputed: bool = False) -> list[str]:
+    """The register as the ``assumptions`` list of the model: ``ASSUMPTION <id>: ...`` strings. With ``monthly_imputed`` the
+    model uses an imputed monthly product and the register lists ASSUMPTION P13 right after P12."""
+    entries = list(ASSUMPTIONS_REGISTER)
+    if monthly_imputed:
+        position = next(index for index, entry in enumerate(entries) if entry.assumption_id == "P12") + 1
+        entries.insert(position, MONTHLY_IMPUTATION_ASSUMPTION)
+    return [assumption.render() for assumption in entries]
 
 
 def content_sha256(path) -> str:
@@ -430,9 +452,27 @@ def garage_bands_from_text(text) -> tuple[GarageBand, ...]:
                  for band in parking_garages.parse_duration_bands(text))
 
 
-def garage_row_to_tariff(row: Mapping) -> GarageTariff:
+def garage_monthly_eur(row: Mapping, where: str, *, monthly_imputation: bool = True):
+    """The monthly product of a dataset row in EUR (None = none): the published ``monthly_eur``, else, with
+    ``monthly_imputation``, the imputed ``monthly_imputed_eur`` (ASSUMPTION P13). Raises ``ValueError`` for an imputed value
+    next to a published one or at a row that is no garage (``facility_kind``): the dataset validator forbids both, and the
+    export does not rely on its caller having run it."""
+    published, imputed = row["monthly_eur"], row["monthly_imputed_eur"]
+    if not _is_empty(imputed):
+        if not _is_empty(published):
+            raise ValueError(f"{where}: monthly_imputed_eur is set next to a published monthly_eur (ASSUMPTION P13 imputes only "
+                             "where nothing is published)")
+        if row["facility_kind"] != "garage":
+            raise ValueError(f"{where}: a {row['facility_kind']} never gets an imputed monthly product (ASSUMPTION P13)")
+    if not _is_empty(published):
+        return published
+    return imputed if monthly_imputation and not _is_empty(imputed) else None
+
+
+def garage_row_to_tariff(row: Mapping, *, monthly_imputation: bool = True) -> GarageTariff:
     """Convert one row of the garage dataset (``braunschweig.parking.garages.load_garages``, a pandas Series with its
-    ``geometry``) of a PRICED garage into a ``GarageTariff``.
+    ``geometry``) of a PRICED garage into a ``GarageTariff``. ``monthly_imputation`` False leaves a garage without a published
+    monthly product without one (the sensitivity arm 'published only'; see :func:`garage_monthly_eur`).
 
     Euros become integer cents (a value that is not a whole number of cents raises, as for the zone rows), decimal hours
     seconds after midnight (``int(round(h * 3600))``), the position the point's EPSG:25832 coordinates in metres rounded to
@@ -464,15 +504,17 @@ def garage_row_to_tariff(row: Mapping) -> GarageTariff:
         "daily_cap_cents": _euros_to_cents(row["garage_daily_cap_eur"], "garage_daily_cap_eur", where),
         "tiers": None if _is_empty(tiers) else garage_tiers_from_text(tiers),
         "bands": None if _is_empty(bands) else garage_bands_from_text(bands),
-        "monthly_cents": _euros_to_cents(row["monthly_eur"], "monthly_eur", where),
+        "monthly_cents": _euros_to_cents(garage_monthly_eur(row, where, monthly_imputation=monthly_imputation),
+                                         "monthly_eur", where),
     }
     return GarageTariff(**fields)
 
 
-def garage_entries(garages) -> list[dict]:
+def garage_entries(garages, monthly_imputation: bool = True) -> list[dict]:
     """The ``garages`` list of the model: the PRICED garages of the dataset (``braunschweig.parking.garages.load_garages``,
     EPSG:25832) as ``GarageTariff.to_json`` entries sorted by ``garage_id``. None is no garage dataset and gives an empty
-    list. Unpriced garages are left out (spec E1: listed, not priced); callers log how many. Raises ``ValueError`` for a
+    list. Unpriced garages are left out (spec E1: listed, not priced); callers log how many. ``monthly_imputation`` False
+    exports the published monthly products only (spec Amendment F3). Raises ``ValueError`` for a
     CRS other than EPSG:25832 (a metric CRS is required for the distances), a missing column or a duplicate id. Pure."""
     if garages is None:
         return []
@@ -485,7 +527,7 @@ def garage_entries(garages) -> list[dict]:
     for _, row in garages.iterrows():
         if not bool(row["priced"]):
             continue
-        garage = garage_row_to_tariff(row)
+        garage = garage_row_to_tariff(row, monthly_imputation=monthly_imputation)
         if garage.garage_id in seen:
             raise ValueError(f"duplicate garage_id {garage.garage_id!r}")
         seen.add(garage.garage_id)
@@ -574,6 +616,32 @@ def resident_district_entries(districts: pd.DataFrame | None) -> list[dict]:
     return sorted(entries, key=lambda entry: entry["district_id"])
 
 
+def monthly_product_summary(garages, monthly_imputation: bool = True) -> dict:
+    """The monthly products of the garages the model exports, per municipality (``braunschweig.parking.garages.monthly_summary``:
+    published, imputed, none, the P13 median, the surface lots that never get one). None (no garage dataset) gives an empty
+    summary. Pure; ``build_tariff_model`` logs it (fallback transparency: the share of garages that carry an imputed product
+    instead of a published one is on the record of every run) and the preparation prints it."""
+    if garages is None:
+        return {}
+    return parking_garages.monthly_summary(garages, imputation=monthly_imputation)
+
+
+def monthly_product_text(summary: dict) -> str:
+    """The summary of :func:`monthly_product_summary` as one line (``braunschweig.parking.garages.monthly_summary_text``)."""
+    return parking_garages.monthly_summary_text(summary) if summary else "no garage dataset"
+
+
+def _log_monthly_products(garages, summary: dict, monthly_imputation: bool) -> None:
+    log.info("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION "
+             "P13): %s", monthly_imputation, monthly_product_text(summary))
+    if garages is not None and not monthly_imputation:
+        available = int(garages.loc[garages["priced"].astype(bool) & (garages["facility_kind"] == "garage"),
+                                    "monthly_imputed_eur"].notna().sum())
+        if available:
+            log.info("[parking-garages] parking_garage_monthly_imputation is false: %d imputed monthly product(s) (ASSUMPTION "
+                     "P13) of the dataset are not used (sensitivity arm 'published only')", available)
+
+
 def check_garage_parameters(garage_decay_m, garage_max_distance_m) -> None:
     """Raise ``ValueError`` unless ``garage_decay_m`` is a finite number of metres >= 0 (0 switches the garage options off)
     and ``garage_max_distance_m`` a finite number of metres > 0; a bool is no number. Shared by the export and the
@@ -589,7 +657,7 @@ def check_garage_parameters(garage_decay_m, garage_max_distance_m) -> None:
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
                        terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END,
                        resident_districts: pd.DataFrame | None = None, garages=None, garage_decay_m: float = 0.0,
-                       garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M) -> dict:
+                       garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M, garage_monthly_imputation: bool = True) -> dict:
     """The tariff model of spec 5.4 (schema 3) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
@@ -600,7 +668,10 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     the release (``resident_district_entries``): the model lists its ids for the plan check of the Java side, an empty
     list when none is given. ``garages`` is the garage dataset of the release (``garage_entries``: the priced garages, sorted
     by id, None = no garage dataset); ``garage_decay_m`` is the decay length lambda in metres (ASSUMPTION G1, calibrated;
-    0 = garage options off) and ``garage_max_distance_m`` the maximum distance D_max (G2, > 0). Raises ``ValueError`` for an
+    0 = garage options off) and ``garage_max_distance_m`` the maximum distance D_max (G2, > 0). ``garage_monthly_imputation``
+    (spec Amendment F3, config key ``parking_garage_monthly_imputation``) lets a garage without a published monthly product use
+    the imputed one of ASSUMPTION P13, which the model then lists in its register; the counts per municipality (published,
+    imputed, none, median) are logged. Raises ``ValueError`` for an
     empty table, a missing schema-1 column, a duplicate zone id, an invalid row, invalid sources, invalid districts, an
     invalid garage or an invalid garage parameter. The returned dict is plain JSON data: integer cents and
     seconds, None for "not applicable".
@@ -612,7 +683,12 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     checked_sources = _check_sources(sources)
     district_entries = resident_district_entries(resident_districts)
     check_garage_parameters(garage_decay_m, garage_max_distance_m)
-    garage_list = garage_entries(garages)
+    if not isinstance(garage_monthly_imputation, bool):
+        raise ValueError(f"garage_monthly_imputation must be true or false, got {garage_monthly_imputation!r}")
+    garage_list = garage_entries(garages, monthly_imputation=garage_monthly_imputation)
+    monthly_summary = monthly_product_summary(garages, garage_monthly_imputation)
+    _log_monthly_products(garages, monthly_summary, garage_monthly_imputation)
+    monthly_imputed_used = any(entry["imputed"] for entry in monthly_summary.values())
     if garage_decay_m > 0 and not garage_list:
         raise ValueError(f"garage_decay_m is {garage_decay_m} (the garage options are on) but the release lists no priced "
                          "garage: set garage_decay_m to 0 or give the garage dataset (parking_garages_path)")
@@ -642,7 +718,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         "terminal_stay_rule": terminal_stay_rule,
         # D1: the fee windows are those of an average weekday.
         "weekday_only": True,
-        "assumptions": assumption_texts(),
+        "assumptions": assumption_texts(monthly_imputed=monthly_imputed_used),
         "sources": checked_sources,
         "resident_districts": district_entries,
         "garages": garage_list,

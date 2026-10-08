@@ -719,6 +719,12 @@ config:
   # parking_garage_decay_calibration_2026.csv. Until that table exists the value is 0 and
   # tests/test_parking_garage_decay_config.py requires 0; once it exists the test requires the table value.
   parking_garage_decay_m: 0.0
+  # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
+  # imputed product of its municipality (the median of the published current garage monthly products of that
+  # municipality, computed by the curation into the garage dataset, at least two products needed) as the monthly
+  # product that work and education stays pay per working day (monthly / 21, ASSUMPTION P2). false is the
+  # sensitivity arm "published only" (zones_v2_published_monthly_only): only the published products count.
+  parking_garage_monthly_imputation: true
 
   remode_carless_car_legs: true
 

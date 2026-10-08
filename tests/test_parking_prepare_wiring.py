@@ -167,7 +167,8 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
         "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
-        "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_max_distance_m": 1000.0}
+        "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_max_distance_m": 1000.0,
+        "parking_garage_monthly_imputation": True}
 
 
 @pytest.mark.parametrize("values, message", [
@@ -187,9 +188,12 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     ({"parking_garage_decay_m": float("nan")}, "garage_decay_m must be a finite number"),
     ({"parking_garage_max_distance_m": 0.0}, "garage_max_distance_m must be a finite number of metres > 0"),
     ({"parking_garage_max_distance_m": True}, "garage_max_distance_m must be a finite number"),
+    # spec Amendment F3: the imputation switch is a YAML boolean; the text "false" is truthy and must not keep it on silently
+    ({"parking_garage_monthly_imputation": "false"}, "parking_garage_monthly_imputation must be true or false"),
+    ({"parking_garage_monthly_imputation": 0}, "parking_garage_monthly_imputation must be true or false"),
 ], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
         "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds", "negative_decay",
-        "text_decay", "nan_decay", "zero_maximum_distance", "boolean_maximum_distance"])
+        "text_decay", "nan_decay", "zero_maximum_distance", "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
@@ -311,6 +315,9 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
                       "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
                       "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_max_distance_m": 1000.0,
+                      "garage_monthly_imputation": True,
+                      "garage_monthly_products": parking_garages.monthly_summary(
+                          context.stages[PARKING_STAGE]["garages"], imputation=True),
                       "sources": context.stages[PARKING_STAGE]["sources"]}
 
 
@@ -440,3 +447,32 @@ def test_copy_parking_inputs_fails_naming_a_missing_listed_file(tmp_path, monkey
     with pytest.raises(FileNotFoundError, match=re.escape(TARIFFS_NAME)):
         output.copy_parking_inputs(config.parent, out, PREFIX)
     assert not list(out.iterdir())
+
+
+def test_the_monthly_imputation_switch_reaches_the_export_the_model_register_the_report_and_the_log(
+        tmp_path, monkeypatch, capsys):
+    """Spec Amendment F3: with an imputed product in the release the default (true) exports it and lists ASSUMPTION P13; the
+    sensitivity arm 'published only' (false) exports nothing for that garage and leaves the register as before."""
+    results = {}
+    for flag in (True, False):
+        context, config = _prepare_context(tmp_path / str(flag), monkeypatch, parking_zones_enabled=True,
+                                           parking_garage_monthly_imputation=flag)
+        garages = context.stages[PARKING_STAGE]["garages"]
+        index = garages.index[garages["monthly_eur"].isna() & garages["priced"] & (garages["facility_kind"] == "garage")][0]
+        garages.loc[index, "monthly_imputed_eur"] = 107.48
+        prepare.execute(context)
+        model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
+        report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
+        results[flag] = (model, report, garages.loc[index, "garage_id"])
+    on, off = results[True], results[False]
+    imputed = {entry["garage_id"]: entry["monthly_cents"] for entry in on[0]["garages"]}[on[2]]
+    assert imputed == 10748
+    assert {entry["garage_id"]: entry["monthly_cents"] for entry in off[0]["garages"]}[off[2]] is None
+    assert any(text.startswith("ASSUMPTION P13:") for text in on[0]["assumptions"])
+    assert not any(text.startswith("ASSUMPTION P13:") for text in off[0]["assumptions"])
+    assert on[1]["garage_monthly_imputation"] is True and off[1]["garage_monthly_imputation"] is False
+    assert sum(entry["imputed"] for entry in on[1]["garage_monthly_products"].values()) == 1
+    assert sum(entry["imputed"] for entry in off[1]["garage_monthly_products"].values()) == 0
+    out = capsys.readouterr().out
+    assert "parking_garage_monthly_imputation=True, ASSUMPTION P13" in out and "imputed 1" in out
+    assert "parking_garage_monthly_imputation=False, ASSUMPTION P13" in out

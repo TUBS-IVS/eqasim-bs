@@ -242,6 +242,7 @@ config:
   parking_minimum_stay_min: 15
   parking_garage_max_distance_m: 1000.0
   parking_garage_decay_m: 0.0
+  parking_garage_monthly_imputation: true
 
   # Household fleet routing-consistency: re-mode the initial car-driver legs of
   # carless persons (0-car households own no "car" vehicle) to car_passenger
