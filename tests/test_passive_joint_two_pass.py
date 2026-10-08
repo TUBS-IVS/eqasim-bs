@@ -664,7 +664,7 @@ def test_execute_with_the_portal_feature_off_reads_no_anchors_stage(monkeypatch,
 def test_execute_with_the_portal_feature_on_anchors_the_gates_and_appends_their_rows(
         monkeypatch, fake_chainsolvers_module):
     """eqasim-bs#442: the gates reach the solver as activity anchors and the locations output
-    as coordinate-only rows (location_id -1)."""
+    as rows whose location_id is the gate facility "portal_<gate_id>" (ruling R30)."""
     solve_calls = []
     monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
     ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False,
@@ -676,7 +676,7 @@ def test_execute_with_the_portal_feature_on_anchors_the_gates_and_appends_their_
     df_locations, _df_convergence = sc.execute(ctx)
 
     assert set(solve_calls[0]["anchors"]) == {(2, 1)}
-    assert df_locations["location_id"].tolist() == [-1]
+    assert df_locations["location_id"].tolist() == ["portal_gate_e"]
     assert df_locations["person_id"].tolist() == [2] and df_locations["activity_index"].tolist() == [1]
     assert df_locations.crs.to_string() == "EPSG:25832"
 
