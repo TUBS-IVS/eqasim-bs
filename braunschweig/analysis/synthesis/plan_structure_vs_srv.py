@@ -233,8 +233,7 @@ def configure(context):
     # eqasim-bs#442, R33: declared in every view because execute() records it in the provenance.
     portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
     if trips_view == "final":
-        context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE if portal_on else "synthesis.population.trips.final",
-                      alias="trips")
+        context.stage(_portal_config_keys.final_view_trips_stage(portal_on), alias="trips")
     elif trips_view == "pre_assignment":
         context.stage("synthesis.population.trips", alias="trips")
     else:

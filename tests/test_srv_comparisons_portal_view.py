@@ -86,3 +86,8 @@ def test_the_flag_is_declared_with_the_shared_default_in_every_view(module):
 def test_the_portal_flag_key_is_the_single_home_key(module):
     assert module.KEY_PORTAL_ENABLED == config_keys.KEY_ENABLED
     assert module.DEFAULT_PORTAL_ENABLED == config_keys.DEFAULT_ENABLED
+
+
+def test_the_shared_selection_helper_picks_the_stage_by_the_flag():
+    assert config_keys.final_view_trips_stage(True) == PRE_PORTAL_STAGE
+    assert config_keys.final_view_trips_stage(False) == FINAL_STAGE

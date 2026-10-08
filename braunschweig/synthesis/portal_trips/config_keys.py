@@ -17,6 +17,20 @@ DEFAULT_ENABLED = True
 #: compared with a rewritten day (ruling R33).
 PRE_PORTAL_TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 
+#: The reporting-day trips after the portal rewrite (the alias of ``trips_final``).
+FINAL_TRIPS_STAGE = "synthesis.population.trips.final"
+
+
+def final_view_trips_stage(portal_enabled: bool) -> str:
+    """The trips stage an SrV-comparison style consumer of the ``final`` view must read (rulings R33, R35).
+
+    With the portal layer on, the day has far work/education/other legs replaced by outside stays; the SrV
+    comparisons and the work-participation report measure the unchanged day (SrV has no outside stays, a far
+    work trip would otherwise vanish from the participation count), so they read the pre-portal trips. With the
+    layer off the two stages are the same table and ``synthesis.population.trips.final`` is read as before.
+    """
+    return PRE_PORTAL_TRIPS_STAGE if portal_enabled else FINAL_TRIPS_STAGE
+
 #: Straight-line metres. Classification threshold (reported distance of a secondary leg, or the
 #: home-to-location distance of a work/education leg), upper bound of the distance CDFs and of
 #: the external candidates. Defaults to the supply ring width (cordon_network_source_buffer_m)

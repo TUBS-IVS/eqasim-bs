@@ -85,6 +85,7 @@ from braunschweig.calibration.srv_work_participation import load_srv_work_partic
 # keyword argument is itself named general_absent_person_ids and apply_general_absence() below
 # takes a same-named parameter absent_person_ids -- importing the bare name would shadow both.
 from braunschweig.synthesis.day_absence import absence as _day_absence
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.work_participation_by_kreis")
 
@@ -101,6 +102,11 @@ KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 #: placeholder state for every worker and the check-1 table would state nothing, so it is not
 #: written at all (rather than written as a table of constants).
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
+#: The portal layer flag (eqasim-bs#442, ruling R35), re-exported from its single home. While it is on, far
+#: work trips are outside stays in ``synthesis.population.trips.final`` and would vanish from the participation
+#: count, so the stage reads the reporting-day trips BEFORE the portal rewrite instead.
+KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
+DEFAULT_PORTAL_ENABLED = _portal_config_keys.DEFAULT_ENABLED
 DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
 #: Whether the general day-absence draw (issue #370, ADR-0110) overrides check 1's
 #: per-employed-person state to 'absent' before the shares are summed (see
@@ -273,7 +279,11 @@ def configure(context):
     # statement about the day the simulation runs, so it must be measured on the finished day.
     # With commute_day_state_enabled false the alias is a pass-through of the pre-assignment
     # trips, so the Phase A numbers are reproduced unchanged.
-    context.stage("synthesis.population.trips.final")
+    # eqasim-bs#442, R35: with the portal layer on, the work trips of far workplaces are outside stays in
+    # synthesis.population.trips.final, so the pre-portal reporting-day trips are read instead (same helper
+    # as the two SrV comparisons).
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
+    context.stage(_portal_config_keys.final_view_trips_stage(portal_on))
     # Declared only when the model is on -- the same gate the other three consumers of the state
     # stage use (braunschweig.matsim.scenario.population,
     # braunschweig.synthesis.commute_day.output_day, braunschweig.analysis.cordon_validation),
@@ -1530,7 +1540,7 @@ json_safe = _json_safe
 #: :func:`write_outputs` (to keep geopandas and the VG250 access out of import time), so they
 #: are hashed by dotted NAME instead.
 _HELPER_MODULES = (_json_output, R, _srv_distance_targets, _srv_work_participation,
-                   _day_absence)
+                   _day_absence, _portal_config_keys)
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.spatial",
     "braunschweig.provenance",
@@ -1664,7 +1674,9 @@ def execute(context):
     df_home = context.stage("synthesis.population.spatial.home.locations")
     df_work, _df_education = context.stage("synthesis.population.spatial.primary.locations")
     df_persons = context.stage("synthesis.population.enriched")
-    df_trips = context.stage("synthesis.population.trips.final")
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED))
+    trips_stage = _portal_config_keys.final_view_trips_stage(portal_on)
+    df_trips = context.stage(trips_stage)
     # Read only when declared: configure() gates the state stage on the same flag, so reading it
     # unconditionally would fail on a workflow that runs with the model off.
     commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
@@ -1773,6 +1785,8 @@ def execute(context):
             "check_1_tolerance_pp": CHECK_1_TOLERANCE_PP,
             "max_states_outside_employed_share": max_states_outside_employed_share,
             "day_absence_enabled": day_absence_enabled,
+            # eqasim-bs#442, R35: with the portal layer on the trips are the pre-portal reporting day.
+            "portal_layer_enabled": portal_on,
         },
         "inputs": {
             "srv_work_participation": os.path.join(
@@ -1782,7 +1796,7 @@ def execute(context):
             "n_kreis_centroids": int(len(kreis_centroids)),
             "n_ba_flow_pairs": int(len(df_ba_flows)),
             "stages": [
-                "synthesis.population.enriched", "synthesis.population.trips.final",
+                "synthesis.population.enriched", trips_stage,
                 "braunschweig.synthesis.commute_day.state_stage",
                 "synthesis.population.spatial.home.locations",
                 "synthesis.population.spatial.primary.locations",
