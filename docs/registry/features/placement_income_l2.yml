@@ -39,7 +39,7 @@ evidence:
     log_marker: '[placement_income] reallocation: primary'
     max_expected: 0.9
     note: |
-      Logs the primary (free) slot share and warns above a 90 % no-freedom share, i.e. the case where the reallocation degenerates and the PRIMARY method is effectively not used.
+      Logs the primary (free) slot share and warns above a 90 % no-freedom share, i.e. the case where the reallocation degenerates and the PRIMARY method is effectively not used. The per-Kreis target factors come from build_kreis_income_targets, whose lookup coverage is logged separately (see the fallback_rate note in kreis_income_control.yml).
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_H4_status_by_kreis.csv

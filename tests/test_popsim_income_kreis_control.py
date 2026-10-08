@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -82,6 +84,139 @@ def test_build_kreis_income_targets_hhsize_off_uses_per_ew():
     rf = kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=False)
     # per-EW only: rf proportional to scale, mean-1
     assert rf["03103"] / rf["03102"] == pytest.approx(1.091 / 0.882)
+
+
+# --- Fallback transparency of the per-Kreis target lookups (CLAUDE.md "no silent
+# fallbacks"). build_kreis_income_targets keys three lookups by Kreis: the INKAR scale,
+# the mean household size and the household count. A Kreis missing from one of them is
+# filled with 1.0; these tests pin that the PRIMARY path is logged as such and that every
+# fill is counted, named and warned, while the returned factors stay unchanged.
+
+
+def _two_kreis_stats():
+    import pandas as pd
+    return pd.DataFrame({"ars5": ["03102", "03103"], "hh_count": [100.0, 300.0],
+                         "mean_size": [1.8, 2.1]})
+
+
+def _warnings_of(caplog):
+    import logging
+    return [r for r in caplog.records
+            if r.name == kic.logger.name and r.levelno >= logging.WARNING]
+
+
+def test_build_kreis_income_targets_logs_full_primary_coverage(caplog):
+    import logging
+    import pandas as pd
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    kic.build_kreis_income_targets(inkar, _two_kreis_stats(), ["03102", "03103"])
+    infos = [r.getMessage() for r in caplog.records
+             if r.name == kic.logger.name and r.levelno == logging.INFO]
+    assert any("INKAR scale primary 2/2" in m and "fallback 0" in m for m in infos), infos
+    assert _warnings_of(caplog) == []
+
+
+def test_build_kreis_income_targets_missing_inkar_kreis_warns_with_rate_and_name(caplog):
+    import logging
+    import pandas as pd
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    inkar = pd.DataFrame({"ars5": ["03102"], "scale": [0.882]})
+    rf = kic.build_kreis_income_targets(inkar, _two_kreis_stats(), ["03102", "03103"])
+    messages = [r.getMessage() for r in _warnings_of(caplog)]
+    assert len(messages) == 1, messages
+    assert "INKAR scale" in messages[0]
+    assert "primary 1/2 (50.0%)" in messages[0]
+    assert "fallback 1 (50.0%)" in messages[0]
+    assert "03103" in messages[0]
+    # Behaviour is unchanged: the missing Kreis still enters with scale 1.0.
+    raw = {"03102": 0.882 * 1.8, "03103": 1.0 * 2.1}
+    wmean = (raw["03102"] * 100.0 + raw["03103"] * 300.0) / 400.0
+    assert rf["03102"] == pytest.approx(raw["03102"] / wmean)
+    assert rf["03103"] == pytest.approx(raw["03103"] / wmean)
+
+
+def test_build_kreis_income_targets_all_kreise_missing_says_relativity_not_applied(caplog):
+    import logging
+    import pandas as pd
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    # Key-format mismatch (leading zero lost): every lookup misses.
+    inkar = pd.DataFrame({"ars5": ["3102", "3103"], "scale": [0.882, 1.091]})
+    kic.build_kreis_income_targets(inkar, _two_kreis_stats(), ["03102", "03103"])
+    messages = [r.getMessage() for r in _warnings_of(caplog)]
+    assert len(messages) == 1, messages
+    assert "fallback 2 (100.0%)" in messages[0]
+    assert "INKAR between-Kreis relativity is NOT applied" in messages[0]
+
+
+def test_build_kreis_income_targets_missing_kreis_stats_warn_per_lookup(caplog):
+    import logging
+    import pandas as pd
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102"], "hh_count": [100.0], "mean_size": [1.8]})
+    kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=True)
+    messages = [r.getMessage() for r in _warnings_of(caplog)]
+    assert any("mean household size" in m and "03103" in m for m in messages), messages
+    assert any("household count" in m and "03103" in m for m in messages), messages
+    assert not any("INKAR scale" in m for m in messages), messages
+
+
+def test_build_kreis_income_targets_unused_mean_size_is_not_reported(caplog):
+    import logging
+    import pandas as pd
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102"], "hh_count": [100.0], "mean_size": [1.8]})
+    kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=False)
+    messages = [r.getMessage() for r in _warnings_of(caplog)]
+    # Without the household-size correction the mean size is not read, so only the
+    # household-count fill (it still weights the normalisation) is reported.
+    assert any("household count" in m and "03103" in m for m in messages), messages
+    assert not any("mean household size" in m for m in messages), messages
+
+
+_REPO = Path(__file__).resolve().parents[1]
+_INKAR_FILE = _REPO / "eqasim-data" / "data" / "braunschweig" / "E_Haushaltseinkommen.xls"
+_needs_inkar_household_income = pytest.mark.skipif(
+    not _INKAR_FILE.exists(),
+    reason="local-only raw data absent: braunschweig/E_Haushaltseinkommen.xls",
+)
+
+
+@_needs_inkar_household_income
+def test_build_kreis_income_targets_production_keys_take_the_primary_path(caplog):
+    """Primary-path check on the REAL key producers of both sides of the join.
+
+    The placement path builds its scope from the cell ARS with derive_geo_kreis_from_ars;
+    the INKAR stage reader builds the lookup keys from the INKAR Kennziffer. For every
+    Kreis of the canonical config both must meet, including an ARS that lost its leading
+    zero in an integer column. A key-format drift on either side would turn this into a
+    100 % fallback that the returned factors alone would not reveal.
+    """
+    import logging
+    import pandas as pd
+    import yaml
+    from braunschweig.data.inkar.household_income import _load
+    from braunschweig.popsim.stage.cell_attributes import derive_geo_kreis_from_ars
+
+    base = yaml.safe_load((_REPO / "configs" / "base_bs.yml").read_text(encoding="utf-8"))
+    kreise = [str(k) for k in base["config"]["braunschweig.political_prefix"]]
+    assert len(kreise) == 8, kreise
+    inkar, _year, _de_mean = _load(str(_INKAR_FILE), "latest")
+    # Alternate string and integer cell ARS so both spellings are exercised.
+    cell_ars = pd.Series([k + "0001001" if i % 2 else int(k + "0001001")
+                          for i, k in enumerate(kreise)], dtype=object)
+    scope = sorted(derive_geo_kreis_from_ars(cell_ars).unique())
+    stats = pd.DataFrame({"ars5": kreise, "hh_count": [100.0] * len(kreise),
+                          "mean_size": [2.0] * len(kreise)})
+    caplog.set_level(logging.INFO, logger=kic.logger.name)
+    kic.build_kreis_income_targets(inkar, stats, scope)
+    assert scope == sorted(kreise)
+    assert _warnings_of(caplog) == []
+    infos = [r.getMessage() for r in caplog.records
+             if r.name == kic.logger.name and r.levelno == logging.INFO]
+    assert any("INKAR scale primary 8/8 (100.0%), fallback 0 (0.0%)" in m for m in infos), infos
 
 
 def _toy_income_tables():
