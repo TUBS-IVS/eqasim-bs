@@ -30,6 +30,7 @@ from shapely.geometry import Point, box
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
+from tests.restricted_parking_data import committed_parking_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -1129,9 +1130,15 @@ REGIONAL_PACKAGE_SHA256 = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfac
 SUPPLEMENT_PACKAGE_SHA256 = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa"
 FOLLOWUP_PACKAGE_SHA256 = "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8"
 LOTS_PACKAGE_SHA256 = "650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0"
-GARAGES_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026.geojson"
 GARAGES_QA_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026_qa.csv"
 TARIFFS_PATH = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
+
+
+def _garages_path():
+    """The garage dataset, a restricted file that is not in the repository: skips the test when it is absent."""
+    return committed_parking_path("parking_garages_2026.geojson")
+
+
 WF, GF, HE, PE, SZ = "03158037", "03151009", "03154028", "03157006", "03102000"
 
 class Priced(NamedTuple):
@@ -1288,7 +1295,7 @@ TARIFF_VALUE_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "ga
 
 
 def _committed_garages() -> pd.DataFrame:
-    frame = pg.load_garages(GARAGES_PATH)
+    frame = pg.load_garages(_garages_path())
     pg.validate_garages(frame)
     return frame.set_index("garage_id")
 
@@ -1357,7 +1364,7 @@ def test_a_committed_priced_garage_carries_the_published_tariff(garage_id):
 
 
 def test_the_committed_coverage_is_the_one_the_task_reports():
-    coverage = pg.coverage(pg.load_garages(GARAGES_PATH))
+    coverage = pg.coverage(pg.load_garages(_garages_path()))
     assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (49, 49, 0)
     assert coverage["not_priced_by_reason"] == {}
     assert coverage["by_municipality"] == {
@@ -1742,15 +1749,15 @@ def test_the_data_record_counts_the_rows_on_a_stronger_assumption_as_the_dataset
     assert "Five READINGS name no assumption id" in " ".join(record["acquisition"]["notes"].split())
     assert "The five READINGS" in limitations
     notes = " ".join(record["notes"].split())
-    for path in (GARAGES_PATH, GARAGES_QA_PATH):  # the repository holds LF; a checkout with core.autocrlf holds CRLF
+    for path in (_garages_path(), GARAGES_QA_PATH):  # the repository holds LF; a checkout with core.autocrlf holds CRLF
         digest = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         assert digest in notes, (path.name, digest)
 
 
 def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff():
-    for path in (GARAGES_PATH, GARAGES_QA_PATH):
+    for path in (_garages_path(), GARAGES_QA_PATH):
         assert path.read_bytes().isascii(), path.name
-    document = json.loads(GARAGES_PATH.read_text(encoding="utf-8"))
+    document = json.loads(_garages_path().read_text(encoding="utf-8"))
     assert document["type"] == "FeatureCollection" and len(document["features"]) == 49
     assert "ODbL 1.0" in document["license"] and "OpenStreetMap" in document["attribution"]
     assert "Parkhaus_Ergaenzungen_2026-10-07.zip" in document["attribution"] and "Parkhaus_Nachrecherche_2026-10-07.zip" in (
@@ -1766,7 +1773,7 @@ def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff
 
 
 def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate():
-    garages = pg.load_garages(GARAGES_PATH)
+    garages = pg.load_garages(_garages_path())
     qa = pq.load_garage_qa(GARAGES_QA_PATH)
     pq.validate_garage_qa(qa, garages, pz.load_tariffs(TARIFFS_PATH))
     assert qa["record_type"].value_counts().to_dict() == {"garage": 49, "monthly_product": 49, "candidate": 24}
@@ -1852,7 +1859,7 @@ def test_the_committed_files_are_reproduced_from_the_local_packages(garages_step
         pytest.skip("the owner's packages and the city car-park directory are gitignored and absent here")
     import geopandas as gpd
 
-    zones = gpd.read_file(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson").to_crs(METRIC_CRS)
+    zones = gpd.read_file(committed_parking_path("parking_zones_2026.geojson")).to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(TARIFFS_PATH)
     inputs = step.load_garage_inputs(regional, supplement_path=supplement, followup_path=followup, lots_path=lots, zones=zones,
                                      bs_monthly_path=monthly, evidence_directory=evidence)
@@ -1862,7 +1869,7 @@ def test_the_committed_files_are_reproduced_from_the_local_packages(garages_step
     pg.write_garages(frame, tmp_path / "garages.geojson", members=step.dataset_members())
     step.write_garage_qa(tmp_path / "qa.csv", rows)
     # a checkout with core.autocrlf holds CRLF; the repository holds LF
-    assert (tmp_path / "garages.geojson").read_bytes() == GARAGES_PATH.read_bytes().replace(b"\r\n", b"\n")
+    assert (tmp_path / "garages.geojson").read_bytes() == _garages_path().read_bytes().replace(b"\r\n", b"\n")
     assert (tmp_path / "qa.csv").read_bytes() == GARAGES_QA_PATH.read_bytes().replace(b"\r\n", b"\n")
 
 
@@ -1919,5 +1926,5 @@ def test_the_committed_braunschweig_garages_carry_the_published_products_read_fr
                                      "monthly_bs_apcoa_s1": ("surface_lot", "99.00"),
                                      "monthly_bs_apcoa_s3": ("surface_lot", "129.00")}.items():
         assert (qa.loc[record, "reason_code"], qa.loc[record, "amount_eur"], qa.loc[record, "garage_id"]) == (reason, amount, "")
-    assert BS_MONTHLY_PACKAGE_SHA256 in json.loads(GARAGES_PATH.read_text(encoding="utf-8"))["attribution"]
-    assert BS_MONTHLY_EVIDENCE_SUMS_SHA256 in json.loads(GARAGES_PATH.read_text(encoding="utf-8"))["attribution"]
+    assert BS_MONTHLY_PACKAGE_SHA256 in json.loads(_garages_path().read_text(encoding="utf-8"))["attribution"]
+    assert BS_MONTHLY_EVIDENCE_SUMS_SHA256 in json.loads(_garages_path().read_text(encoding="utf-8"))["attribution"]

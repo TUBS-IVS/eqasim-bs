@@ -50,6 +50,15 @@ class Input:
     alt_paths: List[str] = field(default_factory=list)
 
 
+#: The request route of the three parking files that rest on sources not cleared for redistribution (data records
+#: parking_zones_2026, parking_resident_districts_2026, parking_garages_2026; ADR-0140, issue #436).
+RESTRICTED_PARKING_SOURCE = (
+    "Not distributed in the repository (restricted source licences, data record {record}); available on request: open "
+    "an issue in TUBS-IVS/eqasim-bs. Verify a received copy against the SHA-256 in the record (storage.notes); "
+    "nothing to download."
+)
+
+
 INPUTS: List[Input] = [
     # --- A: Federal / shared datasets -------------------------------------
     Input(
@@ -244,15 +253,17 @@ INPUTS: List[Input] = [
         matsim_only=True,
         optional=False,
     ),
-    # D5-D8 and D10: the release of the zone-based parking costs (ADR-0139). Committed with the repository
-    # (force-added per the .gitignore allowlist), so there is nothing to download; required because
+    # D5-D8 and D10: the release of the zone-based parking costs (ADR-0139); required because
     # parking_zones_enabled is on in configs/base_bs.yml, and braunschweig.parking.zones_stage raises
-    # naming the config key when a file is missing. The sources are prose on purpose: --check-urls
-    # skips them, since a moved municipal page does not break a committed file.
+    # naming the config key when a file is missing. D6-D8 are committed with the repository (force-added per
+    # the .gitignore allowlist). D5, D10 and D11 are NOT (owner decision 2026-10-08, issue #436): their sources
+    # are not cleared for redistribution, so they stay local like the other raw data and are available on
+    # request (RESTRICTED_PARKING_SOURCE). The sources are prose on purpose: --check-urls skips them, since a
+    # moved municipal page does not break a local file.
     Input(
-        name="D5  Parking cost zone polygons 2026 (committed)",
+        name="D5  Parking cost zone polygons 2026 (restricted, local)",
         rel_path="braunschweig/parking/parking_zones_2026.geojson",
-        source="Committed with the repository (docs/registry/data/parking_zones_2026.yml); nothing to download.",
+        source=RESTRICTED_PARKING_SOURCE.format(record="parking_zones_2026, docs/registry/data/parking_zones_2026.yml"),
         notes=(
             "Config key parking_zones_path. OSM-derived polygons (also the OSM campus grounds of the TU zones): "
             "ODbL 1.0, (c) OpenStreetMap contributors; Braunschweig 1a/1b and the BgA car parks, the TU detection "
@@ -262,6 +273,7 @@ INPUTS: List[Input] = [
             "--data-path eqasim-data/data."
         ),
         matsim_only=True,
+        restricted=True,
     ),
     Input(
         name="D6  Parking tariffs 2026 (committed)",
@@ -308,31 +320,30 @@ INPUTS: List[Input] = [
         optional=True,
     ),
     # D10: the resident parking districts (parking cost zones v2, spec Amendment C3), the fifth input of the release
-    # of braunschweig.parking.zones_stage; committed like D5-D8 and required for the same reason, listed after the
+    # of braunschweig.parking.zones_stage; restricted like D5 and required for the same reason, listed after the
     # optional D9 because it was added after it.
     Input(
-        name="D10 Parking resident districts 2026 (committed)",
+        name="D10 Parking resident districts 2026 (restricted, local)",
         rel_path="braunschweig/parking/parking_resident_districts_2026.geojson",
-        source=(
-            "Committed with the repository (docs/registry/data/parking_resident_districts_2026.yml); "
-            "nothing to download."
-        ),
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_resident_districts_2026, docs/registry/data/parking_resident_districts_2026.yml"),
         notes=(
             "Config key parking_resident_districts_path. Resident parking districts of Braunschweig (A, B, C) and "
             "Goslar (A, B, C, F, G, H, J), a second layer next to the fee zones (rule R2). Licence per source: "
             "Braunschweig districts with an Open GeoData dl-de/by-2-0 base map, Goslar districts with the open reuse "
-            "licence not verified (committed by owner decision), see the data record parking_resident_districts_2026. "
+            "licence not verified (used by owner decision), see the data record parking_resident_districts_2026. "
             "Cross-check with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
         ),
         matsim_only=True,
+        restricted=True,
     ),
     # D11: the garage dataset (parking cost zones v2, spec Amendment E1): garages as points with their own tariff where one
     # is published, the sixth input of the release of braunschweig.parking.zones_stage (the distance-weighted garage options
-    # of spec Amendment E, Task 4d); committed like D5-D8 and required for the same reason.
+    # of spec Amendment E, Task 4d); restricted like D5 and required for the same reason.
     Input(
-        name="D11 Parking garages 2026 (committed)",
+        name="D11 Parking garages 2026 (restricted, local)",
         rel_path="braunschweig/parking/parking_garages_2026.geojson",
-        source="Committed with the repository (docs/registry/data/parking_garages_2026.yml); nothing to download.",
+        source=RESTRICTED_PARKING_SOURCE.format(record="parking_garages_2026, docs/registry/data/parking_garages_2026.yml"),
         notes=(
             "Config key parking_garages_path. 49 rows of eight ZGB towns with their own tariff, every one priced (36 "
             "garages and 13 surface lots of the Wolfsburg city layer, column facility_kind): where the published "
@@ -346,6 +357,7 @@ INPUTS: List[Input] = [
             "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
         ),
         matsim_only=True,
+        restricted=True,
     ),
 ]
 

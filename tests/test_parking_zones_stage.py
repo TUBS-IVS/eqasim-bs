@@ -26,6 +26,7 @@ from shapely.geometry import Polygon, box
 from braunschweig.parking import attach, tariff_export, zones_stage
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
+from tests.restricted_parking_data import require_restricted_parking_files
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "fixtures" / "parking"
@@ -275,6 +276,27 @@ def test_a_missing_input_raises_naming_its_config_key(fixture_data, key):
         _release(fixture_data)
 
 
+@pytest.mark.parametrize("key, record", [("parking_zones_path", "parking_zones_2026"),
+                                         ("parking_resident_districts_path", "parking_resident_districts_2026"),
+                                         ("parking_garages_path", "parking_garages_2026")])
+def test_a_missing_restricted_input_names_its_data_record_and_the_request_route(fixture_data, key, record):
+    # the three geometry files are not distributed in the repository (issue #436): the message must say where to get them
+    (fixture_data / FIXTURE_PATHS[key]).unlink()
+    with pytest.raises(FileNotFoundError) as error:
+        _release(fixture_data)
+    message = str(error.value)
+    assert key in message and f"docs/registry/data/{record}.yml" in message
+    assert "not distributed in the repository" in message and "available on request" in message
+    assert "TUBS-IVS/eqasim-bs" in message
+
+
+def test_a_missing_committed_input_is_not_reported_as_available_on_request(fixture_data):
+    (fixture_data / FIXTURE_PATHS["parking_workplace_shares_path"]).unlink()
+    with pytest.raises(FileNotFoundError) as error:
+        _release(fixture_data)
+    assert "the committed input is described in" in str(error.value) and "on request" not in str(error.value)
+
+
 def test_a_district_layer_that_overlaps_itself_raises(fixture_data):
     """Overlapping districts would put one activity in two districts; the stage refuses the release at load time
     instead of the plans writer failing on the first activity in the overlap."""
@@ -408,6 +430,7 @@ def test_validate_raises_for_a_missing_input_naming_its_config_key(fixture_data)
 def test_the_committed_release_loads_through_the_stage(caplog):
     """The primary path on real data: the committed polygons, tariffs, register and SrV shares under the
     default paths form one consistent release, and none of it carries the test-set marker."""
+    require_restricted_parking_files()      # the stage reads the three restricted files from the data root
     context = _context(COMMITTED_DATA, paths={})
     with caplog.at_level(logging.WARNING, logger=STAGE_LOGGER):
         release = zones_stage.execute(context)

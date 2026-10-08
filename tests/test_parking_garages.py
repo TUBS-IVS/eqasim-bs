@@ -20,6 +20,7 @@ from shapely.geometry import LineString, Point
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
+from tests.restricted_parking_data import committed_parking_path
 
 SHA = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
 SOURCE = "https://www.contipark.de/de/parken/braunschweig/tiefgarage-eiermarkt/"
@@ -1062,8 +1063,7 @@ def test_a_dataset_without_the_imputed_column_is_refused_by_default_with_the_col
     assert isinstance(error.value, ValueError) and "monthly_imputed_eur" in message
     assert "regional_garages.py" in message and "allow_legacy_columns=True" in message
     # the committed dataset carries the column, so the production path loads it with the default
-    assert "monthly_imputed_eur" in pg.load_garages(
-        Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_garages_2026.geojson")
+    assert "monthly_imputed_eur" in pg.load_garages(committed_parking_path("parking_garages_2026.geojson"))
 
 
 def test_the_legacy_layout_loads_only_on_an_explicit_opt_in_as_nothing_imputed_and_says_so(tmp_path, caplog):

@@ -30,6 +30,7 @@ from shapely.geometry import LineString, MultiLineString, Point, box
 from braunschweig.parking import supply_share as ss
 from braunschweig.parking import supply_share_qa as sq
 from braunschweig.parking import supply_variants as sv
+from tests.restricted_parking_data import committed_parking_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -1211,9 +1212,6 @@ def test_assembly_refuses_supply_inputs_it_cannot_trust(assembly, tmp_path, chan
 # --------------------------------------------------------------------------- the validator on the committed tables
 
 
-COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
-
-
 def test_validator_reapplies_the_h1_and_h2_gates_and_the_default_parameters(assembly, tmp_path, capsys):
     import shutil
 
@@ -1224,7 +1222,7 @@ def test_validator_reapplies_the_h1_and_h2_gates_and_the_default_parameters(asse
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
                  "parking_zones_2026_qa.csv", "parking_zones_2026_municipal_qa.csv",
                  "parking_resident_districts_2026.geojson"):
-        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+        shutil.copy(committed_parking_path(name), target / name)
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     _assemble(assembly, inputs, recall=0.689, precision=0.845)

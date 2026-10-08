@@ -29,6 +29,7 @@ from shapely.geometry import Polygon, box
 from braunschweig.parking import cost
 from braunschweig.parking import zones as pz
 from braunschweig.parking.tariff_export import tariff_row_to_zone
+from tests.restricted_parking_data import committed_parking_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -552,7 +553,7 @@ def _committed_tariffs() -> pd.DataFrame:
 
 
 def _committed_zones() -> gpd.GeoDataFrame:
-    return pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson", max_repairs=0).set_index("zone_id")
+    return pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
 
 
 def test_the_committed_release_holds_the_three_station_zones_cut_against_the_bga_zone():

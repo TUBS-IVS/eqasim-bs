@@ -31,11 +31,10 @@ import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
 from braunschweig.parking import zones as pz
+from tests.restricted_parking_data import committed_parking_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
-COMMITTED_LAYER = (REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
-                   / "parking_resident_districts_2026.geojson")
 METRIC_CRS = "EPSG:25832"
 X0, Y0 = 604_000.0, 5_789_000.0
 BS, GS = "03101000", "03153017"
@@ -430,8 +429,13 @@ def test_assign_districts_refuses_what_assign_zones_refuses():
 # --------------------------------------------------------------------------- the committed layer
 
 
+def _committed_layer():
+    """The district layer, a restricted file that is not in the repository: skips the test when it is absent."""
+    return committed_parking_path("parking_resident_districts_2026.geojson")
+
+
 def test_the_committed_layer_has_the_districts_the_owner_named_and_loads_strictly():
-    districts = pz.load_resident_districts(COMMITTED_LAYER)
+    districts = pz.load_resident_districts(_committed_layer())
     assert list(districts["district_id"]) == BS_DISTRICT_IDS + GS_DISTRICT_IDS
     assert list(districts["municipality_ags"]) == [BS] * 3 + [GS] * 7
     assert list(districts["district_code"]) == list("ABC") + list("ABCFGHJ")
@@ -439,22 +443,22 @@ def test_the_committed_layer_has_the_districts_the_owner_named_and_loads_strictl
 
 
 def test_the_committed_layer_states_its_source_per_district_and_says_where_it_changed_the_source():
-    districts = pz.load_resident_districts(COMMITTED_LAYER).set_index("district_id")
+    districts = pz.load_resident_districts(_committed_layer()).set_index("district_id")
     for district_id in BS_DISTRICT_IDS:
         assert districts.loc[district_id, "digitising_note"].startswith(BRAUNSCHWEIG_PROVENANCE)
     for district_id in GS_DISTRICT_IDS:
         assert districts.loc[district_id, "digitising_note"].startswith(GOSLAR_PROVENANCE)
     assert "Parkbereich C - Oberstadt" in districts.loc["gs_district_c", "digitising_note"]
     assert "overlap" in districts.loc["gs_district_h", "digitising_note"]
-    document = json.loads(COMMITTED_LAYER.read_text(encoding="utf-8"))
+    document = json.loads(_committed_layer().read_text(encoding="utf-8"))
     assert BRAUNSCHWEIG_PROVENANCE in document["license"] and GOSLAR_PROVENANCE in document["license"]
-    assert not [character for character in COMMITTED_LAYER.read_text(encoding="utf-8") if ord(character) > 127]
+    assert not [character for character in _committed_layer().read_text(encoding="utf-8") if ord(character) > 127]
 
 
 def test_the_committed_districts_match_the_areas_of_the_owners_packages():
     # Areas of the package layers (Braunschweig Qualitaetspruefung.json, Goslar computed_area_m2), m2; the file stores
     # WGS84 with 7 decimals, Goslar G/H lose their 6.3 m2 overlap and C gains the Oberstadt feature.
-    districts = pz.load_resident_districts(COMMITTED_LAYER).set_index("district_id").geometry.area
+    districts = pz.load_resident_districts(_committed_layer()).set_index("district_id").geometry.area
     expected = {"bs_district_a": 649733.4, "bs_district_b": 1252014.0, "bs_district_c": 658503.2,
                 "gs_district_a": 85383.479, "gs_district_b": 147233.429, "gs_district_c": 97034.782 + 7332.902,
                 "gs_district_f": 150235.082, "gs_district_g": 168088.03, "gs_district_h": 140804.513 - 6.324,

@@ -16,6 +16,7 @@ import pytest
 from braunschweig.parking import cost
 from braunschweig.parking.cost import GarageOptionCounters, GarageTariff, ZoneTariff
 from braunschweig.parking.tariff_export import garage_bands_from_text, garage_tiers_from_text
+from tests.restricted_parking_data import committed_parking_path
 
 HOUR_S = 3600
 DECAY_M = 400.0
@@ -613,13 +614,10 @@ def test_inconsistent_tiers_and_bands_are_rejected_at_construction():
 
 def _committed_garage_option(garage_id: str, arrival_s: int, departure_s: int, purpose: str, **options) -> int:
     """The garage option of a stay at a garage of the committed dataset, exported as the release does (``garage_entries``)."""
-    from pathlib import Path
-
     from braunschweig.parking import garages as parking_garages
     from braunschweig.parking.tariff_export import garage_row_to_tariff
 
-    parking_dir = Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "parking"
-    path = parking_dir / "parking_garages_2026.geojson"
+    path = committed_parking_path("parking_garages_2026.geojson")
     frame = parking_garages.load_garages(path).set_index("garage_id", drop=False)
     return cost.garage_option_cents(garage_row_to_tariff(frame.loc[garage_id], **options), arrival_s, departure_s,
                                     purpose=purpose)

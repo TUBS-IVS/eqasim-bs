@@ -95,6 +95,11 @@ RELEASE_INPUTS = (
     (KEY_GARAGES_PATH, "braunschweig/parking/parking_garages_2026.geojson", "parking_garages_2026"),
 )
 
+#: The release inputs that are NOT distributed in the repository because their sources are not cleared for
+#: redistribution (owner decision 2026-10-08, issue #436; storage.local_only in their data records). A missing one is
+#: reported with the request route instead of as a missing committed file.
+RESTRICTED_SOURCE_IDS = frozenset({"parking_zones_2026", "parking_resident_districts_2026", "parking_garages_2026"})
+
 #: Modules whose code decides the content or the validation of the release; ``validate()`` hashes their
 #: source (synpp hashes only this module's own). ``parking_zones`` loads and validates the four parking
 #: files (the districts included), ``parking_garages`` loads and validates the garage dataset, ``attach`` validates the SrV
@@ -138,9 +143,14 @@ def _release_files(context) -> list[tuple[str, str, str, Path]]:
         relative = context.config(key)
         path = data_path / relative
         if not path.is_file():
+            if source_id in RESTRICTED_SOURCE_IDS:
+                route = ("this input is not distributed in the repository (restricted source licences) and is "
+                         "available on request: open an issue in TUBS-IVS/eqasim-bs; verify a received file against "
+                         "the SHA-256 in")
+            else:
+                route = "the committed input is described in"
             raise FileNotFoundError(f"{_LOG_TAG} {key} = {relative!r} does not exist under data_path "
-                                    f"{str(data_path)!r} ({path}); the committed input is described in "
-                                    f"docs/registry/data/{source_id}.yml")
+                                    f"{str(data_path)!r} ({path}); {route} docs/registry/data/{source_id}.yml")
         files.append((key, source_id, relative, path))
     return files
 
