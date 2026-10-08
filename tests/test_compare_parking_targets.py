@@ -277,6 +277,16 @@ def test_paid_share_in_the_city_centre_zones_is_counted_over_pricing_calls(cmp, 
     assert "pricing calls" in paid["universe_note"] and "not trips" in paid["universe_note"]
     assert paid["reference_source"] == "srv2023_city_center_parking.csv row paid_share_overall"
     assert paid["unit"] == "share"
+    # M1: an upper bound of the chosen-trip paid share, said in the note
+    for needle in ("UPPER BOUND", "PAID_EXPECTED", "zero-cent", "less likely chosen", "non-chosen"):
+        assert needle in paid["universe_note"], needle
+    # M3: the size of the universe of every row (calls of the zones Ia and Ib: 215, 195, 110)
+    assert paid["universe_size"] == 215 and row(table, "zones_v2", "paid_share_ia_ib_other_purposes")["universe_size"] == 110
+    assert row(table, "zones_v2", "free_share_work_education_class_bs_zentrum")["universe_size"] == 85
+    assert row(table, "zones_v2", "car_trip_share_ending_in_ia_ib")["universe_size"] == 6
+    assert row(table, "zones_v2", "car_trip_share_all_trips")["universe_size"] == 20
+    assert math.isnan(row(table, "off", "paid_share_ia_ib_all_purposes")["universe_size"])
+    assert row(table, "off", "car_trip_share_all_trips")["universe_size"] == 20
 
 
 def test_garage_share_is_the_target_row_and_labelled_a_calibration_target(cmp, data, two_arms):
@@ -424,6 +434,13 @@ def test_a_range_of_iterations_is_pooled_cell_by_cell(cmp, data, tmp_path):
     assert row(table, "pooled", "garage_share_ia_ib_other_purposes")["model"] == pytest.approx(21 / 110, abs=1e-6)
     assert row(table, "pooled", "paid_share_ia_ib_all_purposes")["model"] == pytest.approx(120 / 215, abs=1e-6)
     assert result.provenance["arms"]["pooled"]["iterations"] == [1, 2]
+    # M2: the iteration list is in the note of every outcome row, with the pooling caveat
+    note = row(table, "pooled", "paid_share_ia_ib_all_purposes")["universe_note"]
+    assert "iterations 1-2" in note and "not independent" in note and "convergence, not validation" in note
+    assert "pre-equilibrium" in note
+    single = cmp.compare(arms, data_path=data, zones_geojson=zones, iterations=[2]).table
+    single_note = row(single, "pooled", "paid_share_ia_ib_all_purposes")["universe_note"]
+    assert "iteration 2" in single_note and "not independent" not in single_note
     assert len(result.provenance["arms"]["pooled"]["outcome_reports"]) == 2
     # the pooling function itself: shares are recomputed, a mix of versions is refused
     first, _ = cmp.read_parking_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv")
@@ -460,6 +477,9 @@ def test_the_delta_table_lists_each_arm_against_every_earlier_arm_for_share_metr
                    & (deltas["metric"] == "car_trip_share_ending_in_ia_ib")].iloc[0]
     assert found["delta_pp"] == pytest.approx(100 * (4 / 6 - 5 / 6), abs=1e-3)
     assert found["model"] == pytest.approx(4 / 6, abs=1e-6) and found["baseline_model"] == pytest.approx(5 / 6, abs=1e-6)
+    assert found["n_model"] == 6 and found["n_baseline"] == 6   # M3: the universe size of each side (trips ending in Ia, Ib)
+    assert list(deltas.columns) == ["arm", "baseline_arm", "metric", "universe", "n_model", "n_baseline", "model",
+                                    "baseline_model", "delta_pp"]
     assert set(deltas["metric"]) <= set(result.table.loc[result.table["unit"] == "share", "metric"])
     # the outcome metrics exist for the zones arm only: no delta against an arm without a value
     assert not deltas["metric"].str.startswith("paid_share").any()
@@ -502,8 +522,8 @@ def test_the_main_writes_the_tables_and_the_provenance_deterministically(cmp, da
     provenance_path = out.with_name(out.stem + "_provenance.json")
     first = (out.read_bytes(), delta_path.read_bytes())
     table = pd.read_csv(out, keep_default_na=False)
-    assert list(table.columns) == ["arm", "metric", "unit", "universe", "model", "reference", "delta_pp", "reference_source",
-                                   "universe_note"]
+    assert list(table.columns) == ["arm", "metric", "unit", "universe", "universe_size", "model", "reference", "delta_pp",
+                                   "reference_source", "universe_note"]
     assert table["arm"].drop_duplicates().tolist() == ["off", "zones_v2"]   # arm order as given, not alphabetical
     text = first[0].decode("ascii")
     assert "\r" not in text and all(len(line) > 0 for line in text.splitlines())
@@ -524,3 +544,80 @@ def test_a_missing_input_is_refused_before_anything_is_written(cmp, data, tmp_pa
     with pytest.raises(SystemExit, match="not found"):
         cmp.main(["--arm", f"a={tmp_path / 'nowhere'}", "--data-path", str(data), "--out", str(out)])
     assert not out.parent.exists() or not any(out.parent.iterdir())
+
+
+def test_a_report_without_any_garage_figure_is_flagged_on_the_garage_rows_only(cmp, data, tmp_path, caplog):
+    # L2: a v3 report whose garage columns are 0 in every row (options off, or no garage in range anywhere)
+    zero_rows = [(o, z, p, c, 0.0, 0) for o, z, p, c, _, _ in ROWS]
+    run = write_run(tmp_path / "runs", "nogarage", ZONES_TRIPS, zero_rows)
+    with caplog.at_level("WARNING"):
+        table = cmp.compare([cmp.ArmSpec("nogarage", run, True)], data_path=data,
+                            zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table
+    expected = "no garage option acted in this run (options off or no garage in range)"
+    assert expected in row(table, "nogarage", "garage_share_ia_ib_other_purposes")["universe_note"]
+    assert expected in row(table, "nogarage", "garage_share_ia_ib_work_education_all_calls")["universe_note"]
+    assert expected not in row(table, "nogarage", "paid_share_ia_ib_all_purposes")["universe_note"]
+    assert row(table, "nogarage", "garage_share_ia_ib_other_purposes")["model"] == 0.0   # a measured 0, with the flag
+    assert any("no garage option acted" in message for message in caplog.messages)
+    # the zones arm of the other tests has garage figures: no flag
+    ordinary = write_run(tmp_path / "runs", "garage", ZONES_TRIPS, ROWS)
+    table = cmp.compare([cmp.ArmSpec("garage", ordinary, True)], data_path=data,
+                        zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table
+    assert expected not in row(table, "garage", "garage_share_ia_ib_other_purposes")["universe_note"]
+
+
+def test_the_free_share_notes_name_why_the_model_share_is_lower_by_construction(cmp, data, two_arms):
+    # L4
+    table = compare_two(cmp, data, *two_arms).table
+    note = row(table, "zones_v2", "free_share_work_education_class_bs_zentrum")["universe_note"]
+    for needle in ("zero cents", "outside every zone", "free by assumption Z1", "whole Oberbezirk",
+                   "wider than the zones Ia and Ib", "negative difference is expected by construction"):
+        assert needle in note, needle
+    employer = row(table, "zones_v2", "employer_free_share_work_education_class_bs_zentrum")["universe_note"]
+    # the draw targets the class share of persons, so a negative difference is NOT expected here (it signals a broken draw)
+    assert "negative difference is expected" not in employer and "a difference near zero is the mechanism working" in employer
+    assert "whole Oberbezirk" in employer and "FIRST paid-zone" in employer
+
+
+#: The literal reports of the Java ``ParkingOutcomeReportListenerTest`` (eqasim-java-bs, ``braunschweig/src/test/java/org/eqasim/
+#: braunschweig/parking/``), copied line by line: the writer's own expectations are the reader's fixture, so a change of the
+#: Java format breaks this test instead of a run (L5).
+JAVA_V3_HEADER = "outcome,zone_id,purpose,count,share,garage_probability_sum,stays_with_garages_in_range"
+JAVA_REPORTS = {
+    "it3_no_garage_options": [
+        JAVA_V3_HEADER,
+        "NO_ZONE,,shop,2,0.250000,0.000000,0",
+        "NO_ZONE,,work,3,0.375000,0.000000,0",
+        "EMPLOYER_FREE,fx_bs_ib,work,1,0.125000,0.000000,0",
+        "PAID_METERED,fx_bs_ia,shop,1,0.125000,0.000000,0",
+        "PAID_METERED,fx_bs_ib,work,1,0.125000,0.000000,0"],
+    "it1_v2_outcomes": [
+        JAVA_V3_HEADER,
+        "PAID_CAMPUS_GUEST,fx_campus_v2,shop,1,0.250000,0.000000,0",
+        "PAID_GARAGE,fx_wob_v2,shop,2,0.500000,0.000000,0",
+        "PAID_COMMUTER,fx_bs_ib_v2,work,1,0.250000,0.000000,0"],
+    "it4_garage_options": [
+        JAVA_V3_HEADER,
+        "NO_ZONE,,work,1,0.200000,0.000000,0",
+        "FREE_WITHIN_LIMIT,fx_bs_ib,shop,1,0.200000,0.000000,1",
+        "PAID_METERED,fx_bs_ib,shop,1,0.200000,0.000000,0",
+        "PAID_EXPECTED,fx_bs_ib,shop,2,0.400000,0.750000,2"],
+    "it2_quoted_zone_id": [JAVA_V3_HEADER, 'PAID_METERED,"fx,zone",work,1,1.000000,0.000000,0'],
+}
+
+
+@pytest.mark.parametrize("name", sorted(JAVA_REPORTS))
+def test_the_reader_parses_the_literal_reports_of_the_java_listener_test(cmp, tmp_path, name):
+    lines = JAVA_REPORTS[name]
+    path = tmp_path / f"{name}.csv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
+    frame, version = cmp.read_parking_outcomes(path)
+    assert version == 3 and len(frame) == len(lines) - 1
+    assert lines[0] == ",".join(cmp.REPORT_V3_COLUMNS)   # the Java header is the reader's v3 header, in order
+    if name == "it3_no_garage_options":
+        assert frame["count"].tolist() == [2, 3, 1, 1, 1] and frame.loc[frame["outcome"] == "NO_ZONE", "zone_id"].eq("").all()
+    if name == "it4_garage_options":
+        expected = frame[frame["outcome"] == "PAID_EXPECTED"].iloc[0]
+        assert (expected["count"], expected["garage_probability_sum"], expected["stays_with_garages_in_range"]) == (2, 0.75, 2)
+    if name == "it2_quoted_zone_id":
+        assert frame["zone_id"].tolist() == ["fx,zone"]

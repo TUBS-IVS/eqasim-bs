@@ -78,21 +78,15 @@ configs, and `tests/test_parking_garage_decay_config.py` requires 0 until the ta
 The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
 checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
 time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
-on the run's own outcome report (see below). Setting the value is part of the server run of Task 5.
+on the run's own outcome report (see the next section). Setting the value is part of the server run of Task 5.
 
 ## Comparison with the SrV references
 
-`scripts/parking/compare_parking_targets.py` reads, per model arm, the outcome report `ITERS/it.N/N.parking_outcomes.csv`
-(v3, or v2 without the two garage columns; rows keyed by outcome name, zone id and purpose, never by position) and the
-run's `eqasim_trips`, and the two committed SrV tables; it writes one table of metrics (`model`, `reference`, `delta_pp`,
-the universe and its caveat per row) and a per-arm delta table. Every `count` of the report is a pricing call (a car
-alternative that mode choice evaluated, chosen or not), not a trip or a person, so the garage share of the report is NOT
-the E5 calibration universe (all stays of all modes at destinations, no early rules); the table says so per row. The garage
-share against its target is labelled "calibration target, not validation"; the commuter garage share and the free shares
-are independent checks, the car mode shares in and out of the zones have no reference (model only). Only the agents that
-replan in an iteration price their car alternatives, so one iteration is a small sample: `--iteration FIRST-LAST` pools an
-inclusive range (counts summed cell by cell, the calls of different iterations not independent), and the trips of
-`eqasim_trips` always belong to the final iteration.
+How a run's paid share, garage share and free shares are compared with the committed SrV tables
+(`scripts/parking/compare_parking_targets.py`), with the universe caveats, is in
+[parking-target-comparison.md](parking-target-comparison.md). The calibration script takes `--facility-kinds` (default every
+kind): the release value is the calibration on every kind, and a run on `garage` only reports lambda without the surface lots
+as a sensitivity number (the table records the filter).
 
 ## Known limitations
 
