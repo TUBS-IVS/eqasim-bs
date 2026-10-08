@@ -49,6 +49,11 @@ garage has no first period (its first band is the first period) but may carry th
 ``garage_first_period_end_h``, both or neither, only together with a first period; ruling R-4b-12): empty where the source
 ties the first period to no window.
 
+A garage without a published monthly product may carry an imputed one (``monthly_imputed_eur``, ASSUMPTION P13, spec Amendment
+F2): the median of the published current garage monthly products of its own municipality, computed by the curation from this
+dataset and the recorded garages of its QA table (``braunschweig.parking.garage_qa.published_monthly_values``), never for a
+surface lot and never next to a published product; :func:`monthly_summary` counts the products per municipality.
+
 Every validator raises ``ValueError`` listing every violation with the garage id and the column, so a broken dataset fails
 at load time. CRS: EPSG:25832 in memory, distances in metres, clock times in minutes after midnight.
 """
@@ -95,14 +100,20 @@ FIRST_PERIOD_WINDOW_COLUMNS = ("garage_first_period_start_h", "garage_first_peri
 TIER_COLUMNS = ("tariff_tiers",)
 #: The banded form of the tariff (ruling R-4b-11): the duration bands as one text, see :func:`parse_duration_bands`.
 BAND_COLUMNS = ("tariff_duration_bands",)
-MONTHLY_COLUMNS = ("monthly_eur", "monthly_source_url", "monthly_product")
+#: The monthly product of a garage: the published product (``monthly_eur`` with its source and description) or, where none is
+#: published, the imputed product of ASSUMPTION P13 (``monthly_imputed_eur``, spec Amendment F2); never both on one row.
+MONTHLY_COLUMNS = ("monthly_eur", "monthly_source_url", "monthly_product", "monthly_imputed_eur")
+#: A dataset file written before Amendment F lacks these columns; ``load_garages`` reads such a file with the column empty and
+#: says so in the log (the fixtures of the test suite are such files). The committed dataset carries them.
+LEGACY_OPTIONAL_COLUMNS = ("monthly_imputed_eur",)
 STATUS_COLUMNS = ("priced", "not_priced_reason", "assumptions")
 PROVENANCE_COLUMNS = ("source_url", "source_date", "tariff_rule_ids", "geometry_method", "geometry_source_url",
                       "package_sha256", "notes")
 #: Every property of a feature, in file order.
 DATASET_COLUMNS = (IDENTITY_COLUMNS + CAPACITY_COLUMNS + TARIFF_COLUMNS + FIRST_PERIOD_WINDOW_COLUMNS + TIER_COLUMNS
                    + BAND_COLUMNS + MONTHLY_COLUMNS + STATUS_COLUMNS + PROVENANCE_COLUMNS)
-MONEY_COLUMNS = ("garage_hourly_rate_eur", "garage_first_period_eur", "garage_daily_cap_eur", "monthly_eur")
+MONEY_COLUMNS = ("garage_hourly_rate_eur", "garage_first_period_eur", "garage_daily_cap_eur", "monthly_eur",
+                 "monthly_imputed_eur")
 MINUTE_COLUMNS = ("garage_billing_unit_min", "garage_first_period_min")
 HOUR_COLUMNS = ("garage_fee_start_h", "garage_fee_end_h") + FIRST_PERIOD_WINDOW_COLUMNS
 INTEGER_COLUMNS = ("capacity_reported",)
@@ -174,7 +185,18 @@ ASSUMPTIONS = {
            "and places of the city area, so the published areas are not shown to be exhaustive; no evidence of a fee is not "
            "evidence of none (the weakest assumption of the dataset), so every such row is named and counted; encoded as "
            "the free schedule '0- free'",
+    "P13": "a garage (facility_kind garage, never a surface lot) without a published monthly product gets, as "
+           "monthly_imputed_eur, the median of the published current garage monthly products of its own municipality "
+           "(the garages of the dataset and the recorded garages of that municipality that are no option of the dataset), "
+           "rounded half up to the cent, where the municipality has at least two such products; never a value of another "
+           "municipality and never a typed value; work and education stays pay min(metered or day price, product / 21 "
+           "working days) at such a garage (ASSUMPTION P2), so the imputed product is a regular commuter's price; the tariff "
+           "model export can switch the imputation off (config parking_garage_monthly_imputation, the sensitivity arm "
+           "'published only')",
 }
+#: The least number of published current garage monthly products a municipality needs before ASSUMPTION P13 imputes a monthly
+#: product for its other garages (a median of one value would copy a single price to every garage).
+MINIMUM_PUBLISHED_MONTHLY_PRODUCTS = 2
 #: Warn when more than this share of the priced garages rest on at least one assumption of ``ASSUMPTIONS``, or on P4 or P5
 #: (a stated rounding or stated charging times replaced by an assumption): then the published structure itself covers a
 #: minority of the priced garages and a user of the dataset should know. The same share is the per-assumption warning
@@ -495,6 +517,12 @@ def load_garages(path) -> gpd.GeoDataFrame:
     frame = gpd.read_file(path)
     if frame.crs is None:
         raise ValueError(f"{path}: the garage file declares no CRS")
+    legacy = [column for column in LEGACY_OPTIONAL_COLUMNS if column not in frame.columns]
+    if legacy:
+        # a file written before Amendment F: the column is explicitly empty (nothing imputed), never guessed
+        log.warning("[parking-garages] %s lacks the column(s) %s (a dataset written before spec Amendment F): read as empty, "
+                    "so no monthly product is imputed (ASSUMPTION P13)", path, legacy)
+        frame = frame.assign(**{column: None for column in legacy})
     missing = [column for column in DATASET_COLUMNS if column not in frame.columns]
     unexpected = [column for column in frame.columns if column not in DATASET_COLUMNS and column != "geometry"]
     if missing or unexpected:
@@ -520,7 +548,8 @@ def load_garages(path) -> gpd.GeoDataFrame:
     priced = summary["priced"]
     log.info("[parking-garages] loaded %d garages from %s: priced %d/%d (%.1f %%), not priced %d (%s); priced rows resting "
              "on an assumption: %s; at least one assumption %d/%d (%.1f %%), P4 or P5 %d/%d (%.1f %%); tiered %d/%d; "
-             "banded %d/%d; free %d/%d; by facility kind %s; monthly product on %d", summary["listed"], path, priced,
+             "banded %d/%d; free %d/%d; by facility kind %s; monthly product on %d, imputed monthly product (P13) on %d",
+             summary["listed"], path, priced,
              summary["listed"],
              100.0 * priced / max(summary["listed"], 1), summary["not_priced"],
              ", ".join(f"{reason} {count}" for reason, count in summary["not_priced_by_reason"].items()) or "none",
@@ -529,7 +558,7 @@ def load_garages(path) -> gpd.GeoDataFrame:
              summary["priced_with_p4_or_p5"], priced, 100.0 * summary["priced_with_p4_or_p5"] / max(priced, 1),
              summary["priced_tiered"], priced, summary["priced_banded"], priced, summary["priced_free"], priced,
              ", ".join(f"{kind} {counts['listed']}" for kind, counts in summary["by_facility_kind"].items()) or "none",
-             summary["with_monthly_product"])
+             summary["with_monthly_product"], summary["with_monthly_imputed"])
     for label, count in (("at least one assumption", summary["priced_with_assumption"]),
                          ("ASSUMPTION P4 or P5 (a stated rounding or stated charging times replaced by an assumption)",
                           summary["priced_with_p4_or_p5"])):
@@ -615,7 +644,10 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     period) needs a free first band that something follows (a priced band or the tiers) and a tiered garage with a grace
     period lists it; ASSUMPTION P12 (a municipal free default) needs the free schedule.
     Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
-    and neither text without the amount. Capacity: a positive whole number with its ``capacity_scope``.
+    and neither text without the amount. Imputed monthly product (ASSUMPTION P13, spec Amendment F2): ``monthly_imputed_eur``
+    is a positive whole-cent amount that appears only together with P13 in ``assumptions`` (and P13 only with the amount),
+    never next to a published ``monthly_eur``, never at a surface lot and never at an unpriced garage. Capacity: a positive
+    whole number with its ``capacity_scope``.
     """
     if frame is None or len(frame) == 0:
         raise ValueError("garage dataset: no garages")
@@ -829,6 +861,23 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                                        "but nothing follows the free band of this garage (a car park that is free for every stay)")
         if "P12" in assumptions and not (bands is not None and is_free_schedule(bands) and not has_tiers):
             problem("assumptions", "ASSUMPTION P12 frees a car park: it belongs to the free schedule '0- free' only")
+        # --- imputed monthly product (ASSUMPTION P13, spec Amendment F2): a value only with P13, never next to a published
+        # product, never at a surface lot, never at a garage that is not priced
+        imputed = row["monthly_imputed_eur"]
+        if zones._is_set(imputed):
+            if "P13" not in assumptions:
+                problem("monthly_imputed_eur", "an imputed monthly product rests on ASSUMPTION P13 and lists it in "
+                                               "assumptions")
+            if zones._is_set(row["monthly_eur"]):
+                problem("monthly_imputed_eur", "set next to a published monthly_eur: a published product is never replaced "
+                                               "or accompanied by an imputed one (ASSUMPTION P13)")
+            if zones._is_set(kind) and kind != "garage":
+                problem("monthly_imputed_eur", f"a {kind} never gets an imputed monthly product (ASSUMPTION P13 imputes "
+                                               "garages only)")
+            if not priced:
+                problem("monthly_imputed_eur", "an unpriced garage is no option, so it gets no imputed monthly product")
+        elif "P13" in assumptions:
+            problem("assumptions", "ASSUMPTION P13 states an imputed monthly product, but monthly_imputed_eur is empty")
         # --- monthly product: no value without its source
         monthly = row["monthly_eur"]
         if zones._is_set(monthly):
@@ -856,8 +905,9 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
     (priced garages resting on at least one assumption) and ``priced_with_p4_or_p5`` (on a stated rounding or stated
     charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``, the tiered garages
     with a grace period included), in the banded form (``priced_banded``: a schedule without tiers) and with the free
-    schedule (``priced_free``) and the garages with a monthly product. Plain numbers and dicts, sorted, so a caller can print
-    or compare them."""
+    schedule (``priced_free``) and the garages with a published monthly product (``with_monthly_product``) and with an
+    imputed one (``with_monthly_imputed``, ASSUMPTION P13). Plain numbers and dicts, sorted, so a caller can print or compare
+    them."""
     priced = frame["priced"].astype(bool)
     reasons = frame.loc[~priced, "not_priced_reason"].fillna("").astype(str)
     by_reason = {reason: int(count) for reason, count in reasons.value_counts().sort_index().items()}
@@ -891,4 +941,65 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
             "priced_with_p4_or_p5": int(with_p4_or_p5),
             "priced_tiered": int(frame.loc[priced, "tariff_tiers"].map(zones._is_set).sum()),
             "priced_banded": banded, "priced_free": free,
-            "with_monthly_product": int(frame["monthly_eur"].notna().sum())}
+            "with_monthly_product": int(frame["monthly_eur"].notna().sum()),
+            "with_monthly_imputed": int(frame["monthly_imputed_eur"].notna().sum())}
+
+
+# --------------------------------------------------------------------------- monthly products (spec Amendment F)
+
+
+def monthly_median_eur(values_eur) -> float:
+    """The median of ``values_eur`` (published monthly products in EUR, whole cents) rounded half up to the cent: the middle
+    value of an odd number, the mean of the two middle values of an even number with a half cent rounded up (ASSUMPTION P13;
+    integer cents, so no floating-point tie decides: the median of 100.00 and 114.95 is 107.475, so 107.48). Raises
+    ``ValueError`` for an empty list or a value that is no positive whole number of cents."""
+    cents = []
+    for value in values_eur:
+        number = float(value)
+        if not number > 0 or _bad_cents(number):
+            raise ValueError(f"a published monthly product must be a positive whole number of cents, found {value!r}")
+        cents.append(int(round(number * 100)))
+    if not cents:
+        raise ValueError("the median of no monthly product is undefined")
+    cents.sort()
+    middle = len(cents) // 2
+    median_cents = cents[middle] if len(cents) % 2 else (cents[middle - 1] + cents[middle] + 1) // 2
+    return median_cents / 100
+
+
+def monthly_summary(frame: pd.DataFrame, *, imputation: bool = True) -> dict:
+    """The monthly products of the garages of the dataset per municipality (spec Amendment F3): {municipality_ags:
+    {"municipality", "published" (garages with a published ``monthly_eur``), "imputed" (garages that get their imputed product,
+    ASSUMPTION P13: ``monthly_imputed_eur``, counted only with ``imputation`` True), "none" (garages without a product),
+    "median_eur"
+    (the imputed value of the municipality, None where no row of it is imputed), "surface_lots" (rows of the other facility
+    kind, which never get a product here)}}, sorted by AGS. Counts the PRICED rows of ``facility_kind`` garage (the rows the
+    tariff model lists); ``imputation`` False is the sensitivity arm 'published only'. Raises ``ValueError`` when the imputed
+    values of one municipality differ (the median is one value per municipality). Pure."""
+    summary = {}
+    for ags, group in frame.groupby("municipality_ags"):
+        garages = group[(group["facility_kind"] == "garage") & group["priced"].astype(bool)]
+        published = garages["monthly_eur"].notna()
+        imputed = garages["monthly_imputed_eur"].notna() & ~published & imputation
+        values = sorted(set(garages.loc[imputed, "monthly_imputed_eur"].astype(float)))
+        if len(values) > 1:
+            raise ValueError(f"municipality {ags}: the imputed monthly products differ {values}; ASSUMPTION P13 gives one "
+                             "median per municipality")
+        summary[str(ags)] = {"municipality": str(group["municipality"].iloc[0]), "published": int(published.sum()),
+                             "imputed": int(imputed.sum()), "none": int((~published & ~imputed).sum()),
+                             "median_eur": values[0] if values else None,
+                             "surface_lots": int((group["facility_kind"] != "garage").sum())}
+    return dict(sorted(summary.items()))
+
+
+def monthly_summary_text(summary: dict) -> str:
+    """One line for the log of the export and the validator: per municipality 'published n, imputed n (P13 median x EUR), none
+    n', then the totals (the numbers of ``monthly_summary``)."""
+    parts = []
+    for ags, entry in summary.items():
+        median = f", P13 median {entry['median_eur']:.2f} EUR" if entry["median_eur"] is not None else ""
+        parts.append(f"{entry['municipality']} ({ags}) published {entry['published']}, imputed {entry['imputed']}{median}, "
+                     f"none {entry['none']}")
+    totals = {key: sum(entry[key] for entry in summary.values()) for key in ("published", "imputed", "none", "surface_lots")}
+    return (f"{'; '.join(parts)}; total published {totals['published']}, imputed {totals['imputed']}, none {totals['none']} "
+            f"(surface lots {totals['surface_lots']}, never imputed)")

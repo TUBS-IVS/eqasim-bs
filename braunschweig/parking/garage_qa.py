@@ -54,7 +54,26 @@ MONTHLY_NOT_USED_REASONS = {
     "not_monthly_or_30_day": "a product of another duration (a 7-day ticket); spec Amendment D2 takes monthly and 30-day "
                              "products",
     "outdated_source": "only an older document states the amount and no current source confirms it",
+    # spec Amendment F1: the monthly status of the garages of the Braunschweig package of 2026-10-08 (the package's own words
+    # are in the note of the row)
+    "sold_out": "the operator states the product sold out for new contracts and publishes no price",
+    "no_price": "the sources give no current public monthly price of the garage; no value is taken from another source",
+    "price_on_request": "the operator's visible page offers a monthly product on request only, without a price",
+    "period_unconfirmed": "an amount is published but no source states that it is a monthly amount (the billing period is "
+                          "unconfirmed), so it is no monthly product",
+    "excluded_by_package": "an amount that the package itself excluded from the current model (it stands only in page sections "
+                           "that the operator's page hides)",
+    "not_a_dataset_option": "the current published monthly product of a garage that is no option of the dataset (the package "
+                            "lists it without a tariff the dataset encodes): recorded, never a garage option, and counted among "
+                            "the published garage products of its municipality for ASSUMPTION P13",
+    "station_bahnpark": "a product of a car park at a railway station that is run as DB BahnPark (rulings R-4b-4 and R-4b-9): no "
+                        "garage of the dataset and no garage product for ASSUMPTION P13",
+    "surface_lot": "a product of an open car park that is no garage: no garage of the dataset and no garage product for "
+                   "ASSUMPTION P13 (surface lots never impute)",
 }
+#: The reason of a ``not_used`` product row that is the published current monthly product of a recorded garage that is no
+#: option of the dataset: with the used products of the dataset's garages these are the values of ASSUMPTION P13.
+RECORDED_GARAGE_REASON = "not_a_dataset_option"
 #: Why a car park or garage is not in the dataset (``reason_code`` of a ``candidate`` row).
 CANDIDATE_REASONS = {
     "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role)",
@@ -138,6 +157,15 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
             problems.append(f"{prefix}: amount_eur {row['amount_eur']!r} must be a number >= 0")
         if row["record_type"] == "monthly_product" and row["decision"] == "used" and (amount is None or not amount > 0):
             problems.append(f"{prefix}: a used product states its amount_eur")
+        if row["record_type"] == "monthly_product" and row["reason_code"] == RECORDED_GARAGE_REASON:
+            if amount is None or not amount > 0:
+                problems.append(f"{prefix}: the product of a recorded garage that is no option states its amount_eur (a value of "
+                                "ASSUMPTION P13)")
+            if row["garage_id"]:
+                problems.append(f"{prefix}: a garage that is no option of the dataset has no garage_id")
+            if not row["municipality_ags"]:
+                problems.append(f"{prefix}: a recorded garage names its municipality (the values of ASSUMPTION P13 are per "
+                                "municipality)")
         for column in ("subject", "evidence", "note"):
             if not row[column]:
                 problems.append(f"{prefix}: {column} is empty")
@@ -192,6 +220,23 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
     for garage_id in sorted(dataset.index[dataset["monthly_eur"].notna()]):
         if garage_id not in set(used_by_garage["garage_id"]):
             problems.append(f"garage {garage_id!r} has a monthly_eur but no used monthly product in the QA table")
+    # --- ASSUMPTION P13: the imputed monthly products are the medians of the published products of the QA table
+    expected = expected_imputed_monthly(qa, garages)
+    for garage_id in sorted(dataset.index):
+        row = dataset.loc[garage_id]
+        if row["facility_kind"] != "garage" or not bool(row["priced"]) or not pd.isna(row["monthly_eur"]):
+            continue
+        wanted = expected.get(str(row["municipality_ags"]))
+        actual = row["monthly_imputed_eur"]
+        if wanted is None:
+            if not pd.isna(actual):
+                problems.append(f"garage {garage_id!r}: monthly_imputed_eur is {float(actual)} but the municipality "
+                                f"{row['municipality_ags']} has fewer than {pg.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS} published "
+                                "garage monthly products in the QA table (ASSUMPTION P13)")
+        elif pd.isna(actual) or abs(float(actual) - wanted) > 1e-9:
+            problems.append(f"garage {garage_id!r}: monthly_imputed_eur is {None if pd.isna(actual) else float(actual)} but the "
+                            f"median of the published garage monthly products of municipality {row['municipality_ags']} in the "
+                            f"QA table is {wanted:.2f} EUR (ASSUMPTION P13)")
     # --- the tariff table: commuter_day_eur = monthly amount / working days (ASSUMPTION P2)
     if tariffs is not None:
         commuter = tariffs.set_index("zone_id")["commuter_day_eur"]
@@ -214,6 +259,39 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
                                 "explains")
     if problems:
         raise ValueError("invalid parking garage QA table:\n  " + "\n  ".join(problems))
+
+
+def published_monthly_values(qa: pd.DataFrame, garages: pd.DataFrame) -> dict:
+    """The published current garage monthly products per municipality that ASSUMPTION P13 takes the median of (spec Amendment
+    F2): {municipality_ags: list of (EUR amount, record_id) pairs sorted by amount}, from the USED monthly products of the
+    garages of the dataset (rows of
+    ``facility_kind`` garage; a surface lot never counts) and the recorded garages that are no option of the dataset (a
+    ``not_used`` product with the reason ``RECORDED_GARAGE_REASON``). Products of zones (commuter tickets), of station car parks
+    and of surface lots are no garage products and never count; neither does a product that is not published as a monthly
+    amount. The municipality of a garage row is the dataset's."""
+    kinds = dict(zip(garages["garage_id"], garages["facility_kind"]))
+    ags_of = dict(zip(garages["garage_id"], garages["municipality_ags"].astype(str)))
+    values = {}
+    products = qa[qa["record_type"] == "monthly_product"]
+    for _, row in products.iterrows():
+        amount = _amount(row["amount_eur"])
+        if amount is None or not amount > 0:
+            continue
+        if row["decision"] == "used" and row["garage_id"] and kinds.get(row["garage_id"]) == "garage":
+            values.setdefault(ags_of[row["garage_id"]], []).append((amount, row["record_id"]))
+        elif row["decision"] == "not_used" and row["reason_code"] == RECORDED_GARAGE_REASON and not row["garage_id"]:
+            values.setdefault(row["municipality_ags"], []).append((amount, row["record_id"]))
+    return {ags: sorted(pairs) for ags, pairs in sorted(values.items())}
+
+
+def expected_imputed_monthly(qa: pd.DataFrame, garages: pd.DataFrame) -> dict:
+    """{municipality_ags: median in EUR} of ASSUMPTION P13 for every municipality with at least
+    ``garages.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS`` published garage monthly products in the QA table (``published_monthly_values``,
+    ``garages.monthly_median_eur``); a municipality with fewer imputes nothing and is absent. The single implementation the
+    curation step writes the imputed products with and ``validate_garage_qa`` checks them against."""
+    return {ags: pg.monthly_median_eur([amount for amount, _ in pairs])
+            for ags, pairs in published_monthly_values(qa, garages).items()
+            if len(pairs) >= pg.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS}
 
 
 def _is_zone_car_park(row) -> bool:

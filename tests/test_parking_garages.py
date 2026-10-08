@@ -35,7 +35,8 @@ def _row(**changes) -> dict:
         "garage_first_period_min": 60, "garage_first_period_eur": 0.6, "garage_daily_cap_eur": 9.6,
         "garage_fee_start_h": 7.0, "garage_fee_end_h": 18.0, "garage_first_period_start_h": None,
         "garage_first_period_end_h": None, "tariff_tiers": None, "tariff_duration_bands": None, "monthly_eur": None,
-        "monthly_source_url": None, "monthly_product": None, "priced": True, "not_priced_reason": None, "assumptions": "P3",
+        "monthly_source_url": None, "monthly_product": None, "monthly_imputed_eur": None, "priced": True,
+        "not_priced_reason": None, "assumptions": "P3",
         "source_url": SOURCE, "source_date": "2026-10-07", "tariff_rule_ids": "r-35;r-36;r-37",
         "geometry_method": "official_feed_point", "geometry_source_url": "https://www.braunschweig.de/apps/pulp/result/x",
         "package_sha256": SHA, "notes": "Flat night fee not charged (ASSUMPTION P3); night 18-07 h 5.00 EUR in total.",
@@ -190,10 +191,14 @@ def test_the_dataset_layout_is_the_documented_one():
     assert pg.DATASET_COLUMNS[position:position + 4] == ("garage_first_period_start_h", "garage_first_period_end_h",
                                                          "tariff_tiers", "tariff_duration_bands")
     assert pg.DATASET_COLUMNS[position + 4] == "monthly_eur"
+    # spec Amendment F2: the imputed monthly product (ASSUMPTION P13) follows the published one and is money
+    assert pg.DATASET_COLUMNS[position + 4:position + 8] == ("monthly_eur", "monthly_source_url", "monthly_product",
+                                                             "monthly_imputed_eur")
+    assert "monthly_imputed_eur" in pg.MONEY_COLUMNS and pg.LEGACY_OPTIONAL_COLUMNS == ("monthly_imputed_eur",)
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13"}
     assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
                                            "in force at the unit's start")
     # P6 as amended (ruling R-4b-12): the first period belongs to its clock window, the tiers run on from its end
@@ -973,6 +978,138 @@ def test_the_coverage_counts_the_union_rates_and_the_tiered_garages():
     assert summary["priced_with_assumption"] == 7 and summary["priced_with_p4_or_p5"] == 4
 
 
+# --------------------------------------------------------------------------- the imputed monthly product (ASSUMPTION P13)
+
+PUBLISHED = {"monthly_eur": 48.0, "monthly_source_url": "https://example.org/m", "monthly_product": "Dauerstellplatz"}
+
+
+def _imputed(**changes) -> dict:
+    """A valid priced garage with an imputed monthly product (ASSUMPTION P13 in its assumptions and its notes)."""
+    base = {"garage_id": "bs_imputed", "assumptions": "P3;P13", "monthly_imputed_eur": 107.48,
+            "notes": "Flat night fee not charged (ASSUMPTION P3). ASSUMPTION P13: the median of the published products."}
+    base.update(changes)
+    return _row(**base)
+
+
+def test_an_imputed_monthly_product_with_assumption_p13_is_a_valid_row():
+    pg.validate_garages(_frame(_imputed()))
+    assert "P13" in pg.ASSUMPTIONS and pg.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS == 2
+    for phrase in ("monthly_imputed_eur", "median", "own municipality", "never a surface lot", "at least two"):
+        assert phrase in pg.ASSUMPTIONS["P13"], phrase
+
+
+@pytest.mark.parametrize("changes, message", [
+    # a value only with P13 ...
+    ({"assumptions": "P3"}, "an imputed monthly product rests on ASSUMPTION P13"),
+    # ... and P13 only with a value
+    ({"monthly_imputed_eur": None}, "ASSUMPTION P13 states an imputed monthly product, but monthly_imputed_eur is empty"),
+    # never next to a published product
+    ({"monthly_eur": 48.0, "monthly_source_url": "https://example.org/m", "monthly_product": "x"},
+     "set next to a published monthly_eur"),
+    # never at a surface lot
+    ({"facility_kind": "surface_lot"}, "a surface_lot never gets an imputed monthly product"),
+    # money rules apply: positive whole cents
+    ({"monthly_imputed_eur": 0.0}, "monthly_imputed_eur: must be a positive amount"),
+    ({"monthly_imputed_eur": 107.485}, "monthly_imputed_eur: 107.485 EUR is not a whole number of cents"),
+    # the notes name the assumption
+    ({"notes": "Flat night fee not charged (ASSUMPTION P3)."}, "the notes must name ASSUMPTION P13"),
+], ids=["no_p13", "p13_without_value", "next_to_published", "surface_lot", "zero", "fraction_of_a_cent", "notes_silent"])
+def test_the_validator_enforces_the_rules_of_the_imputed_monthly_product(changes, message):
+    with pytest.raises(ValueError, match=message):
+        pg.validate_garages(_frame(_imputed(**changes)))
+
+
+def test_an_unpriced_garage_gets_no_imputed_monthly_product():
+    with pytest.raises(ValueError, match="an unpriced garage is no option, so it gets no imputed monthly product"):
+        pg.validate_garages(_frame(_unpriced(monthly_imputed_eur=50.0)))
+
+
+@pytest.mark.parametrize("values, expected", [
+    ([100.0], 100.0),
+    ([80.0, 100.0, 129.0], 100.0),
+    ([80.0, 100.0, 114.95, 129.0], 107.48),   # (100.00 + 114.95) / 2 = 107.475 -> half up -> 107.48 (spec F2, Braunschweig)
+    ([50.0, 55.0, 60.0, 98.0], 57.5),         # Wolfsburg of spec F2
+    ([48.0, 48.0], 48.0),
+    ([0.01, 0.02], 0.02),                     # 1.5 ct -> 2 ct, half up
+    ([129.0, 80.0, 114.95, 100.0], 107.48),   # order does not matter
+])
+def test_the_median_is_rounded_half_up_to_the_cent_in_integer_cents(values, expected):
+    assert pg.monthly_median_eur(values) == expected
+
+
+@pytest.mark.parametrize("values", [[], [0.0, 10.0], [-5.0], [10.005]], ids=["empty", "zero", "negative", "fraction"])
+def test_the_median_refuses_what_is_no_published_monthly_product(values):
+    with pytest.raises(ValueError):
+        pg.monthly_median_eur(values)
+
+
+def test_the_legacy_layout_without_the_imputed_column_loads_as_nothing_imputed_and_says_so(tmp_path, caplog):
+    path = tmp_path / "garages.geojson"
+    pg.write_garages(_frame(_row(**PUBLISHED), _row(garage_id="b")), path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for feature in document["features"]:
+        del feature["properties"]["monthly_imputed_eur"]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger=pg.log.name):
+        loaded = pg.load_garages(path)
+    assert loaded["monthly_imputed_eur"].isna().all() and loaded["monthly_imputed_eur"].dtype == float
+    assert "lacks the column(s) ['monthly_imputed_eur']" in caplog.text and "no monthly product is imputed" in caplog.text
+    pg.validate_garages(loaded)
+    # any other missing column is still an error
+    for feature in document["features"]:
+        del feature["properties"]["notes"]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"missing \['notes'\]"):
+        pg.load_garages(path)
+
+
+def test_the_written_file_carries_the_imputed_product_and_the_loader_reads_it_back(tmp_path):
+    path = tmp_path / "garages.geojson"
+    pg.write_garages(_frame(_imputed(), _row(garage_id="b")), path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert document["features"][0]["properties"]["monthly_imputed_eur"] == 107.48
+    assert document["features"][1]["properties"]["monthly_imputed_eur"] is None
+    loaded = pg.load_garages(path)
+    assert loaded.loc[0, "monthly_imputed_eur"] == 107.48 and pd.isna(loaded.loc[1, "monthly_imputed_eur"])
+    assert pg.coverage(loaded)["with_monthly_imputed"] == 1 and pg.coverage(loaded)["priced_by_assumption"]["P13"] == 1
+
+
+def _municipal_frame():
+    """Two municipalities: Braunschweig with a published product, an imputed one and one garage without any; Wolfsburg with an
+    imputed garage, a surface lot (never imputed) and an unpriced garage."""
+    return _frame(
+        _row(garage_id="bs_published", **PUBLISHED),
+        _imputed(garage_id="bs_imputed"),
+        _row(garage_id="bs_none", assumptions=None, notes="Stated in full."),
+        _imputed(garage_id="wob_imputed", municipality="Wolfsburg", municipality_ags="03103000", monthly_imputed_eur=57.5),
+        _free(garage_id="wob_lot"),
+        _unpriced(garage_id="wob_unpriced", municipality="Wolfsburg", municipality_ags="03103000"))
+
+
+def test_the_summary_counts_published_imputed_and_none_per_municipality_with_the_median():
+    summary = pg.monthly_summary(_municipal_frame())
+    assert summary == {"03101000": {"municipality": "Braunschweig", "published": 1, "imputed": 1, "none": 1,
+                                    "median_eur": 107.48, "surface_lots": 0},
+                       "03103000": {"municipality": "Wolfsburg", "published": 0, "imputed": 1, "none": 0,
+                                    "median_eur": 57.5, "surface_lots": 1}}
+    text = pg.monthly_summary_text(summary)
+    assert "Braunschweig (03101000) published 1, imputed 1, P13 median 107.48 EUR, none 1" in text
+    assert "Wolfsburg (03103000) published 0, imputed 1, P13 median 57.50 EUR, none 0" in text
+    assert "total published 1, imputed 2, none 1 (surface lots 1, never imputed)" in text
+
+
+def test_the_summary_without_imputation_counts_the_published_products_only():
+    summary = pg.monthly_summary(_municipal_frame(), imputation=False)
+    assert [(entry["published"], entry["imputed"], entry["none"], entry["median_eur"]) for entry in summary.values()] == [
+        (1, 0, 2, None), (0, 0, 1, None)]
+
+
+def test_the_summary_refuses_two_medians_in_one_municipality():
+    frame = _frame(_imputed(garage_id="a"), _imputed(garage_id="b", monthly_imputed_eur=108.0))
+    with pytest.raises(ValueError, match="one median per municipality"):
+        pg.monthly_summary(frame)
+
+
 # --------------------------------------------------------------------------- QA table of the dataset and the monthly products
 
 
@@ -1167,7 +1304,11 @@ def test_the_qa_vocabulary_excludes_the_station_car_parks_of_both_cities_and_the
     assert "long-term renters only" in pq.CANDIDATE_REASONS["dauerparker_only"]
     assert set(pq.MONTHLY_NOT_USED_REASONS) == {
         "not_the_cheapest", "restricted_customer_group", "no_fixed_price", "capacity_limited_permits", "no_coordinates",
-        "garage_not_listed", "not_monthly_or_30_day", "outdated_source"}
+        "garage_not_listed", "not_monthly_or_30_day", "outdated_source",
+        # spec Amendment F1: the monthly status of the Braunschweig garages and the recorded facilities
+        "sold_out", "no_price", "price_on_request", "period_unconfirmed", "excluded_by_package", "not_a_dataset_option",
+        "station_bahnpark", "surface_lot"}
+    assert pq.RECORDED_GARAGE_REASON == "not_a_dataset_option"
     garages, qa, tariffs = _qa_tables()
     extra = _qa(
         _qa_row(record_id="candidate_wf_parkpalette_karlstrasse", record_type="candidate", garage_id="",
@@ -1196,3 +1337,111 @@ def test_the_qa_table_loads_from_a_documented_csv(tmp_path):
     path.write_text("# QA\nrecord_id,record_type\nx,garage\n", encoding="utf-8")
     with pytest.raises(ValueError, match="columns differ from the documented layout"):
         pq.load_garage_qa(path)
+
+
+# --------------------------------------------------------------------------- ASSUMPTION P13 in the QA table (spec Amendment F2)
+
+
+def _product_row(record_id, decision="not_used", reason="", amount="", garage_id="", ags="03101000", **changes) -> dict:
+    row = _qa_row(record_id=record_id, record_type="monthly_product", garage_id=garage_id, municipality_ags=ags,
+                  decision=decision, reason_code=reason, amount_eur=amount, subject=record_id, evidence="package",
+                  note="a product")
+    row.update(changes)
+    return row
+
+
+def _p13_tables(imputed=107.48):
+    """Braunschweig as in spec F2: two published garage products (100.00 and 114.95), two recorded garages that are no option
+    (80.00 and 129.00), one imputed garage; products that never count (a station car park, a surface lot, an amount without a
+    confirmed period, a zone ticket) and a municipality with one published product (Goslar)."""
+    published = {"monthly_source_url": "https://example.org/m", "monthly_product": "Dauerparken"}
+    garages = _frame(
+        _row(garage_id="bs_steinstrasse", monthly_eur=100.0, **published),
+        _row(garage_id="bs_wallstrasse", monthly_eur=114.95, **published),
+        _imputed(garage_id="bs_magni", monthly_imputed_eur=imputed),
+        _row(garage_id="gs_galeria", municipality="Goslar", municipality_ags="03153017", monthly_eur=39.0, **published),
+        _row(garage_id="gs_ca", municipality="Goslar", municipality_ags="03153017"))
+    rows = [_qa_row(record_id=f"garage_{garage_id}", garage_id=garage_id, subject=garage_id,
+                    municipality_ags="03153017" if garage_id.startswith("gs_") else "03101000")
+            for garage_id in garages["garage_id"]]
+    rows += [
+        _product_row("monthly_bs_steinstrasse_a", "used", amount="100.00", garage_id="bs_steinstrasse"),
+        _product_row("monthly_bs_wallstrasse", "used", amount="114.95", garage_id="bs_wallstrasse"),
+        _product_row("monthly_bs_eves", reason="not_a_dataset_option", amount="80.00"),
+        _product_row("monthly_bs_fichtengrund", reason="not_a_dataset_option", amount="129.00"),
+        _product_row("monthly_bs_hbf_p1", reason="station_bahnpark", amount="120.00"),
+        _product_row("monthly_bs_apcoa_s1", reason="surface_lot", amount="99.00"),
+        _product_row("monthly_bs_wilhelmstrasse_o01", reason="period_unconfirmed", amount="75.00"),
+        _product_row("monthly_bs_forschungsflughafen_hidden", reason="excluded_by_package", amount="85.00"),
+        _product_row("monthly_bs_magni_sold_out", reason="sold_out", garage_id="bs_magni"),
+        _product_row("monthly_bs_zone_ib", "used", amount="79.00", zone_ids="bs_zone_ib"),
+        _product_row("monthly_gs_galeria", "used", amount="39.00", garage_id="gs_galeria", ags="03153017")]
+    return garages, _qa(*rows)
+
+
+def test_the_published_current_garage_products_are_the_used_products_of_the_garages_and_the_recorded_garages():
+    garages, qa = _p13_tables()
+    values = pq.published_monthly_values(qa, garages)
+    assert values == {"03101000": [(80.0, "monthly_bs_eves"), (100.0, "monthly_bs_steinstrasse_a"),
+                                   (114.95, "monthly_bs_wallstrasse"), (129.0, "monthly_bs_fichtengrund")],
+                      "03153017": [(39.0, "monthly_gs_galeria")]}
+    # a station car park, a surface lot, an unconfirmed period, a hidden amount, a sold-out product and a zone ticket never count
+    assert pq.expected_imputed_monthly(qa, garages) == {"03101000": 107.48}
+
+
+def test_a_surface_lot_with_a_used_product_is_no_garage_product():
+    garages, qa = _p13_tables()
+    garages = pd.concat([garages, _frame(_free(garage_id="wob_lot", monthly_eur=None))], ignore_index=True)
+    garages = gpd.GeoDataFrame(garages, geometry="geometry", crs="EPSG:25832")
+    extra = _qa(_product_row("monthly_wob_lot", "used", amount="40.00", garage_id="wob_lot", ags="03103000"))
+    values = pq.published_monthly_values(pd.concat([qa, extra], ignore_index=True), garages)
+    assert "03103000" not in values
+
+
+def test_the_qa_validator_accepts_the_p13_median_and_nothing_imputed_below_two_published_products():
+    garages, qa = _p13_tables()
+    pq.validate_garage_qa(qa, garages)
+
+
+@pytest.mark.parametrize("imputed, message", [
+    (107.47, r"monthly_imputed_eur is 107.47 but the median of the published garage monthly products of municipality 03101000 "
+             r"in the QA table is 107.48 EUR"),
+    (None, "is None but the median"),
+], ids=["stale_median", "missing_value"])
+def test_the_qa_validator_rejects_a_stale_or_missing_imputed_product(imputed, message):
+    garages, qa = _p13_tables(imputed=imputed)
+    if imputed is None:
+        garages["assumptions"] = "P3"
+        garages["notes"] = "Flat night fee not charged (ASSUMPTION P3)."
+    with pytest.raises(ValueError, match=message):
+        pq.validate_garage_qa(qa, garages)
+
+
+def test_the_qa_validator_rejects_an_imputed_product_in_a_municipality_with_fewer_than_two_published_products():
+    garages, qa = _p13_tables()
+    garages.loc[garages["garage_id"] == "gs_ca", ["monthly_imputed_eur", "assumptions", "notes"]] = [
+        39.0, "P3;P13", "Flat night fee not charged (ASSUMPTION P3). ASSUMPTION P13: copied."]
+    with pytest.raises(ValueError, match=r"gs_ca': monthly_imputed_eur is 39.0 but the municipality 03153017 has fewer than 2"):
+        pq.validate_garage_qa(qa, garages)
+
+
+def test_a_published_product_that_is_withdrawn_changes_the_median_the_validator_expects():
+    garages, qa = _p13_tables()
+    shorter = qa[qa["record_id"] != "monthly_bs_fichtengrund"]
+    # the median of 80.00, 100.00 and 114.95 is 100.00: the committed 107.48 is stale
+    with pytest.raises(ValueError, match="is 100.00 EUR"):
+        pq.validate_garage_qa(shorter, garages)
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"amount_eur": ""}, "states its amount_eur"),
+    ({"garage_id": "bs_steinstrasse"}, "a garage that is no option of the dataset has no garage_id"),
+    ({"municipality_ags": ""}, "a recorded garage names its municipality"),
+], ids=["no_amount", "garage_id", "no_municipality"])
+def test_a_recorded_garage_that_is_no_option_states_an_amount_a_municipality_and_no_garage_id(changes, message):
+    garages, qa = _p13_tables()
+    qa = qa.copy()
+    for column, value in changes.items():
+        qa.loc[qa["record_id"] == "monthly_bs_eves", column] = value
+    with pytest.raises(ValueError, match=message):
+        pq.validate_garage_qa(qa, garages)
