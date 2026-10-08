@@ -1,7 +1,7 @@
 # Parking garage options (distance-weighted, priced as an expected cost)
 
 Mechanism of spec Amendment E of the parking cost zones v2 design (issue #436, Task 4d). The decisions and the rejected
-alternatives live in the design spec and the ADR of the feature; this note says where the code is and which rules a
+alternatives live in ADR-0140; this note says where the code is and which rules a
 maintainer must keep. The zone-based pricing around it is in [parking-cost-zones.md](parking-cost-zones.md).
 
 ## What it does
@@ -10,7 +10,7 @@ A car stay in a `street_paid` or `resident_zone` zone that passes the early rule
 resident, outside the street fee window) has the options "street" (weight 1) and every priced garage within
 `garage_max_distance_m` (1000 m, ASSUMPTION G2) of the destination, weight `exp(-d / lambda)` (ASSUMPTION G1,
 `garage_decay_m`). The price is the probability-weighted mean of the option costs, rounded half up to the cent once
-(`braunschweig.parking.cost.parking_cost_with_garages`, the Python reference the Java port of Task 4e reproduces). A stay
+(`braunschweig.parking.cost.parking_cost_with_garages`, the Python reference the Java port reproduces). A stay
 whose street option costs 0 pays 0 (E4); an unavailable street renormalises the weights over the garages; a campus zone
 and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTED` is the LAST entry of `cost.OUTCOMES`.
 
@@ -44,8 +44,8 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   charged only for an arrival inside its clock window; the day cap is applied once per stay. A tiered garage may carry ONE
   closed free band in `bands` as its grace period (P10 for tiers, `GarageTariff` refuses any other band next to tiers): a stay
   not longer than the band (elapsed, the tiered form has no fee window) costs 0, a longer stay is priced by the tiers from its
-  arrival. The schema 3 keys do not change, but the Java reader must accept tiers and bands together (Task 4e):
-  `GarageTariff.form` returns "tiers" for a tiered garage with a grace band, so the port must branch on the presence of both
+  arrival. The schema 3 keys do not change, and the Java reader accepts tiers and bands together:
+  `GarageTariff.form` returns "tiers" for a tiered garage with a grace band, so the port branches on the presence of both
   `tiers` and `bands`, never on the form name alone. Spec E14 amendment (1) narrows E11's "bands exclude tiers" to "no other
   band may stand next to tiers". The golden contract pins the combination (`fx_g15_tier_grace`, `fx_g16_tier_grace_cap`:
   O45..O59), the free schedule `0- free` (`fx_g17_free`: O60..O65, E29..E32) and a grace period equal to the billing unit
@@ -60,8 +60,8 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   the street option is the street or long-stay product or the zone commuter product, or unavailable.
 - **No silent fallback:** `GarageOptionCounters` reports how many stays had garages in range, how many paid 0 by E4, how
   many were priced over the garages alone and how many repeated a closed schedule; callers log `counters.summary()`. The
-  Python reference prices nothing at run time, so no pipeline stage logs the counters; the Java port logs these rates
-  during the run (Task 4e). `build_tariff_model` warns, with the count and the zone ids, when a zone row still carries
+  Python reference prices nothing at run time, so no pipeline stage logs the counters; the Java listener logs these rates
+  per iteration while the garage options are on. `build_tariff_model` warns, with the count and the zone ids, when a zone row still carries
   zone-level garage columns while `garage_decay_m` is above 0 (E8: they are superseded; production rows have none).
 - **The model is schema 3.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
   `GARAGE_BAND_FIELDS`); `garage_decay_m` 0 switches the options off, and the export refuses `garage_decay_m > 0` without
@@ -78,7 +78,7 @@ configs, and `tests/test_parking_garage_decay_config.py` requires 0 until the ta
 The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
 checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
 time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
-on the run's own outcome report (see the next section). Setting the value is part of the server run of Task 5.
+on the run's own outcome report (see the next section). Setting the value is part of the server run (task 5b of issue #436).
 
 ## Comparison with the SrV references
 
@@ -95,4 +95,4 @@ as a sensitivity number (the table records the filter).
 - 44 of the 48 committed rows (35 garages, 13 surface lots) rest on at least one assumption (P4 or P5 for 32; 8 are free
   only by the municipal default P12); the loader warns at every load for the first share.
 - The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
-  reference plans are lost (Task 5).
+  reference plans are lost (task 5b of issue #436).

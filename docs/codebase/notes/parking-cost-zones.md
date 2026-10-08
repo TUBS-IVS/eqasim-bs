@@ -1,7 +1,8 @@
 # Zone-based parking costs
 
-One note for the mechanism that prices car parking when `parking_zones_enabled` is on (ADR-0139, issue #436). The
-feature state lives in the feature record `parking_cost_zones`, the data in the data records `parking_zones_2026`,
+One note for the mechanism that prices car parking when `parking_zones_enabled` is on (ADR-0139 and its v2 extension
+ADR-0140, which holds the decisions and the rejected options; issue #436). The feature state lives in the feature record
+`parking_cost_zones`, the data in the data records `parking_zones_2026`,
 `parking_tariffs_2026`, `parking_coverage_register_2026`, `srv2023_commute_parking_by_workplace_class`,
 `parking_resident_districts_2026` and `parking_garages_2026`.
 
@@ -56,10 +57,14 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    after the terminal-stay rule for a terminal stay; 0 min when the module has no `minimumStayMinutes`), prices it
    with `ParkingCostCalculator` and adds it to the driving cost; `ParkingOutcomeCounter` counts one `ParkingOutcome`
    per pricing call and the stays the minimum extended, and `ParkingOutcomeReportListener` writes
-   `ITERS/it.N/N.parking_outcomes.csv` (columns `outcome`, `count`, `share`; one row per outcome, zero counts
-   included) and one `[parking]` log line per iteration, logs the active minimum stay once at startup and, per
-   iteration, how many priced stays in a zone the minimum extended. The counts are pricing calls, one per car
-   alternative that mode choice priced, chosen or not: not distinct trips or persons.
+   `ITERS/it.N/N.parking_outcomes.csv` (CSV v3, columns `outcome`, `zone_id`, `purpose`, `count`, `share`,
+   `garage_probability_sum`, `stays_with_garages_in_range`; one row per non-zero cell of outcome, zone and purpose,
+   `zone_id` empty for `NO_ZONE`) and one `[parking]` log line per iteration, logs the active minimum stay once at
+   startup and, per iteration, how many priced stays in a zone the minimum extended. The counts are pricing calls, one
+   per car alternative that mode choice priced, chosen or not: not distinct trips or persons. With the garage options
+   on (schema 3 model with `garage_decay_m` above 0) the same call prices the expected cost over the street and the
+   garages ([parking-garage-options.md](parking-garage-options.md)); the parking search time of the car utility is a
+   separate term (`ParkingSearchTime`, factor 0.0 and no zone search time in the release: off, ADR-0140 decision 5).
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
    the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
    config enables `braunschweigParking`, `require_parking_package` refuses a jar without
@@ -135,8 +140,8 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   of the column `tariff_tiers` or the duration bands of the column `tariff_duration_bands` (grammar `0-20 free; 20-120
   total 1.00; 120-240 0.50/60; 420- 5.00/60`, ASSUMPTION P8: a total band sets the price, an increment band adds per
   started unit from the band's start, a cap or 24-hour price is the day cap; `garages.duration_band_price_eur` is the
-  pure reference evaluation that task 4d reproduces, it is wired nowhere yet and raises for a stay beyond a closed
-  schedule). A first period carries the clock window its rule states in `garage_first_period_start_h` and
+  pure reference evaluation that the garage pricing of `braunschweig.parking.cost` calls and the Java port reproduces
+  in integer arithmetic; it raises for a stay beyond a closed schedule, which the pricing prices per started 24 h, P9). A first period carries the clock window its rule states in `garage_first_period_start_h` and
   `garage_first_period_end_h` (empty where the source ties it to none; P6 as amended: charged once when the arrival
   lies inside the window, the tiers then run per started unit from its end, an arrival outside the window pays the
   tiers from the arrival). Only rules that the package marks `preferred_for_current_use` set a value: a specification
@@ -177,11 +182,12 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
   added to the model needs the reader's field list in the same change set.
 - One outcome per priced stay: a new pricing branch adds its name to `braunschweig.parking.cost.OUTCOMES` and to the
   Java `ParkingOutcome` enum, and a golden case. Never price silently; an unknown zone id raises in Python and in
-  Java.
+  Java. The two orders differ (the Java enum starts with `NO_ZONE`, the Python tuple with `HOME`): the order is no
+  contract, and every reader of the outcome report keys the rows by outcome name.
 - `braunschweig.parking.cost` is the reference; the Java `ParkingCostCalculator` must agree with it on the golden
-  cases and on the eight minimum-stay cases L01 to L08, which both sides hard-code on the fixture tariffs
-  (`tests/test_parking_cost.py`, Java `ParkingCostCalculatorTest`) instead of reading them from the golden JSON.
-  After changing the fixture table, the golden cases or the export, re-run
+  cases (schema 4), which include the eight minimum-stay cases L01 to L08 and their twins L01Z to L08Z at L = 0;
+  `tests/test_parking_cost.py` additionally pins those sixteen against the numbers of ADR-0139 decision 9,
+  independently of the generator. After changing the fixture table, the golden cases or the export, re-run
   `python scripts/export_parking_golden_cases.py` and copy `parking_golden_cases.json` and
   `parking_tariffs_fixture.json` into the Java test resources (eqasim-java-bs
   `braunschweig/src/test/resources/parking/`).
@@ -206,5 +212,6 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 
 ## Known limitations
 
-The limitations to state with every result are listed once, in ADR-0139 (Consequences). The zone inventory and
-what is known but not zoned live in the data record `parking_zones_2026` and the coverage register.
+The limitations to state with every result are listed once, in ADR-0139 (Consequences) and, for the v2 release, in
+ADR-0140 (Consequences), which also lists the parts of ADR-0139 it supersedes. The zone inventory and what is known
+but not zoned live in the data record `parking_zones_2026` and the coverage register.

@@ -282,13 +282,17 @@ python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverag
 python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
 
-**Parking cost zones (committed, ADR-0139).** Nothing to download: the zone polygons
+**Parking cost zones (committed, ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
+their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
+expected cost); the garage options stay OFF (`parking_garage_decay_m` 0) until their decay length is calibrated on the plans of
+a server run, which has not happened yet, and the parking search time is off. Decisions and rejected options: ADR-0140;
+mechanism: `docs/codebase/notes/parking-cost-zones.md`. Nothing to download: the zone polygons
 (`braunschweig/parking/parking_zones_2026.geojson`), the tariff table
 (`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
 (`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository, as do the resident
 parking districts of Braunschweig and Goslar, a second layer next to the zones
-(`braunschweig/parking/parking_resident_districts_2026.geojson`) and the garage dataset of eight ZGB towns, garages and the
+(`braunschweig/parking/parking_resident_districts_2026.geojson`) and the garage dataset of the ZGB towns, garages and the
 surface car parks of the Wolfsburg city layer (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
 garage options of a stay); all six are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
@@ -318,8 +322,8 @@ terms, see the data record `parking_zones_2026`; the resident districts are unde
 their own terms per source (a Braunschweig base map under dl-de/by-2-0, the Goslar service with an open reuse licence not
 verified), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
 pages (licences not verified; six OpenStreetMap-derived positions under the ODbL 1.0), see the data record
-`parking_garages_2026`. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a
-comparison quantity only) are regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
+`parking_garages_2026`. The two SrV parking tables (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, whose garage share is the
+calibration target of the garage decay length and whose paid share is a comparison quantity only) are regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
 --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,
 `parking_tariffs_2026`, `parking_coverage_register_2026`, `parking_resident_districts_2026`, `parking_paid_share_2026`,
