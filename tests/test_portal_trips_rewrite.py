@@ -118,3 +118,99 @@ def test_rewrite_without_stays_returns_an_equal_frame_with_the_flag_column():
                                     np.zeros((0, 2)), crs=CRS)
     pd.testing.assert_frame_equal(out.drop(columns=[rw.PORTAL_LEG_COLUMN]), trips)
     assert not out[rw.PORTAL_LEG_COLUMN].any() and len(anchors) == 0
+
+
+def _multi_person_inputs():
+    """Four persons whose stays remove [2, 1, 0, 3] legs; chain lengths are 5, 3, 4 and 5 trips."""
+    removed = [2, 1, 0, 3]
+    outbound = [1, 0, 1, 0]
+    n_trips = [5, 3, 4, 5]
+    rows = []
+    for person, count in enumerate(n_trips, start=1):
+        purposes = ["home"] + [f"p{person}_{i}" for i in range(1, count)] + ["home"]
+        for index in range(count):
+            rows.append((person, index, purposes[index], purposes[index + 1], "walk", 1000.0,
+                         index * 3600.0, index * 3600.0 + 600.0))
+    trips = rw.recompute_chain_columns(pd.DataFrame(rows, columns=[
+        "person_id", "trip_index", "preceding_purpose", "following_purpose", "mode", "euclidean_distance",
+        "departure_time", "arrival_time"]))
+    stays = pd.DataFrame({"person_id": [1, 2, 3, 4], "outbound_trip_index": outbound,
+                          "return_trip_index": [float(o + r + 1) for o, r in zip(outbound, removed)],
+                          "n_removed_legs": removed})
+    gate_rows = pd.DataFrame({"gate_id": [f"g{i}" for i in range(4)], "kind": ["road"] * 4,
+                              "x": [40000.0] * 4, "y": [0.0] * 4})
+    times = pd.DataFrame({"t_reentry": [20 * 3600.0] * 4, "share_out": [0.5] * 4,
+                          "inside_return_duration": [1800.0] * 4, "clamped": [False] * 4,
+                          "share_capped": [False] * 4, "has_return": [True] * 4})
+    modes = pd.DataFrame({"mode": ["car"] * 4, "outbound_mode": ["car"] * 4, "return_mode": ["car"] * 4,
+                          "substituted_from": [None] * 4, "substitution_reason": [None] * 4,
+                          "return_mode_differs": [False] * 4})
+    return trips, stays, gate_rows, times, modes, np.zeros((4, 2))
+
+
+def test_rewrite_offsets_with_different_numbers_of_removed_legs_per_person():
+    trips, stays, gate_rows, times, modes, origin_xy = _multi_person_inputs()
+    out, anchors = rw.rewrite_trips(trips, stays, gate_rows, times, modes, origin_xy, crs=CRS)
+    kept = {person: group for person, group in out.groupby("person_id")}
+    assert {person: len(group) for person, group in kept.items()} == {1: 3, 2: 2, 3: 4, 4: 2}
+    for person, group in kept.items():
+        assert group["trip_index"].tolist() == list(range(len(group)))
+    assert kept[1]["following_purpose"].tolist() == ["p1_1", "outside", "home"]
+    assert kept[1]["preceding_purpose"].tolist() == ["home", "p1_1", "outside"]
+    assert kept[2]["following_purpose"].tolist() == ["outside", "home"]
+    assert kept[3]["following_purpose"].tolist() == ["p3_1", "outside", "p3_3", "home"]
+    assert kept[4]["following_purpose"].tolist() == ["outside", "home"]
+    assert out[rw.PORTAL_LEG_COLUMN].groupby(out["person_id"]).sum().tolist() == [2, 2, 2, 2]
+    assert anchors["person_id"].tolist() == [1, 2, 3, 4]
+    assert anchors["activity_index"].tolist() == [2, 1, 2, 1]
+
+
+def test_rewrite_is_independent_of_the_input_row_and_stay_order():
+    trips, stays, gate_rows, times, modes, origin_xy = _multi_person_inputs()
+    expected_out, expected_anchors = rw.rewrite_trips(trips, stays, gate_rows, times, modes, origin_xy, crs=CRS)
+    order = [3, 1, 0, 2]
+    shuffled_trips = trips.sample(frac=1.0, random_state=7)
+    out, anchors = rw.rewrite_trips(
+        shuffled_trips, stays.iloc[order].reset_index(drop=True), gate_rows.iloc[order].reset_index(drop=True),
+        times.iloc[order].reset_index(drop=True), modes.iloc[order].reset_index(drop=True), origin_xy[order], crs=CRS)
+    pd.testing.assert_frame_equal(out, expected_out)
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(anchors.drop(columns="geometry")).sort_values("person_id").reset_index(drop=True),
+        pd.DataFrame(expected_anchors.drop(columns="geometry")).sort_values("person_id").reset_index(drop=True))
+
+
+def test_rewrite_rejects_a_trip_table_with_duplicate_person_and_trip_index():
+    trips = _chain()
+    with pytest.raises(ValueError, match="not unique"):
+        rw.rewrite_trips(pd.concat([trips, trips.iloc[[1]]], ignore_index=True), *_inputs(trips), crs=CRS)
+
+
+def test_rewrite_rejects_stay_legs_that_are_missing_from_the_trip_table():
+    trips = _chain()
+    stays, gate_rows, times, modes, origin_xy = _inputs(trips)
+    stays["outbound_trip_index"] = [99]
+    with pytest.raises(ValueError, match="not in the trip table"):
+        rw.rewrite_trips(trips, stays, gate_rows, times, modes, origin_xy, crs=CRS)
+
+
+def test_rewrite_rejects_per_stay_inputs_that_are_not_row_aligned():
+    trips = _chain()
+    stays, gate_rows, times, modes, origin_xy = _inputs(trips)
+    with pytest.raises(ValueError, match="row-aligned"):
+        rw.rewrite_trips(trips, stays, gate_rows, pd.concat([times, times], ignore_index=True), modes, origin_xy,
+                         crs=CRS)
+
+
+def test_rewrite_rejects_a_stay_whose_outbound_leg_is_removed_by_another_stay_of_the_person():
+    trips = _chain()
+    # stay A removes legs 1 and 2; stay B departs at leg 1, which does not survive.
+    stays = pd.DataFrame({"person_id": [1, 1], "outbound_trip_index": [0, 1], "return_trip_index": [3.0, 3.0],
+                          "n_removed_legs": [2, 1]})
+    gate_rows = pd.DataFrame({"gate_id": ["g1", "g2"], "kind": ["road", "road"], "x": [40000.0] * 2, "y": [0.0] * 2})
+    times = pd.DataFrame({"t_reentry": [17 * 3600.0] * 2, "share_out": [0.5] * 2, "inside_return_duration": [900.0] * 2,
+                          "clamped": [False] * 2, "share_capped": [False] * 2, "has_return": [True] * 2})
+    modes = pd.DataFrame({"mode": ["car"] * 2, "outbound_mode": ["car"] * 2, "return_mode": ["car"] * 2,
+                          "substituted_from": [None] * 2, "substitution_reason": [None] * 2,
+                          "return_mode_differs": [False] * 2})
+    with pytest.raises(ValueError, match="person_id=1"):
+        rw.rewrite_trips(trips, stays, gate_rows, times, modes, np.zeros((2, 2)), crs=CRS)

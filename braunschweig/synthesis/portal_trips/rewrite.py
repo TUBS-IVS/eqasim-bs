@@ -5,8 +5,10 @@ Per stay: the legs inside the run are dropped; the outbound leg's destination be
 ``outside`` activity at the gate (its departure is unchanged); the return leg departs from the
 gate at the diary re-entry time with the inside share of its reported duration; both legs
 carry the fixed mode and ``portal_leg`` True; their ``euclidean_distance`` becomes the inside
-part (origin proxy -> gate, gate -> origin proxy) so downstream distance statistics see what is
-simulated. The chain columns are recomputed exactly as the trip build derives them
+part so downstream distance statistics see what is simulated: outbound origin -> gate, and for the
+return leg gate -> the same ``origin_xy`` (the stay's origin), NOT gate -> the return leg's own
+destination proxy as the design spec words it. Only the reported ``euclidean_distance`` is affected;
+the chain solver does not use it (controller Ruling R12). The chain columns are recomputed exactly as the trip build derives them
 (``trip_index`` 0-based per person, first/last flags, ``trip_duration``,
 ``activity_duration`` = next departure - arrival, NaN on the last trip).
 """
@@ -47,7 +49,9 @@ def rewrite_trips(trips: pd.DataFrame, stays: pd.DataFrame, gate_rows: pd.DataFr
 
     ``stays``, ``gate_rows``, ``times``, ``modes`` and ``origin_xy`` are row-aligned (one row per stay);
     ``origin_xy`` is the chain anchor (metres, ``crs``) the outbound leg departs from -- the caller
-    decides and counts any proxy used for it. The input is not modified.
+    decides and counts any proxy used for it. The input is not modified. With no stays the input
+    order and index are returned unchanged, plus the ``portal_leg`` column (all False), and an empty
+    anchors frame.
     """
     out = trips.copy()
     out[PORTAL_LEG_COLUMN] = False
@@ -112,6 +116,11 @@ def rewrite_trips(trips: pd.DataFrame, stays: pd.DataFrame, gate_rows: pd.DataFr
     # The outside activity follows the outbound leg: activity_index = new trip_index + 1.
     new_index = pd.Series(out["trip_index"].to_numpy(), index=out[_ROW_ID_COLUMN].to_numpy())
     outbound_new = new_index.reindex(outbound_positions).to_numpy()
+    lost = np.isnan(outbound_new)
+    if lost.any():
+        raise ValueError("rewrite_trips: %d stay(s) have an outbound leg that does not survive the rewrite "
+                         "(removed by another stay of the same person, i.e. overlapping stays), e.g. person_id=%s."
+                         % (int(lost.sum()), person_ids[lost][0]))
     out = out.drop(columns=[_ROW_ID_COLUMN])
     anchors = gpd.GeoDataFrame({
         "person_id": person_ids,
