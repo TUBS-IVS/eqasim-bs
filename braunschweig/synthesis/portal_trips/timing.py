@@ -49,12 +49,13 @@ def reentry_times(stays: pd.DataFrame, trips: pd.DataFrame, gate_xy, point_xy) -
     share = np.where(share_capped, 1.0, share)
     duration = arrival - departure
     t_reentry = departure + share * duration
-    unresolved = has_return & ~np.isfinite(t_reentry)
+    unresolved = has_return & ~(np.isfinite(t_reentry) & np.isfinite(outbound_departure))
     if unresolved.any():
         # A return leg that is absent from the trips table or lacks departure/arrival times would
-        # otherwise surface as a NaN re-entry time that looks like a legitimate "no return" stay.
-        raise ValueError(f"[portal_trips] {int(unresolved.sum())} stays name a return trip whose departure or "
-                         f"arrival time is not available in the trips table (first person_id "
+        # otherwise surface as a NaN re-entry time that looks like a legitimate "no return" stay, and
+        # a NaN outbound departure would silently disable the clamp below.
+        raise ValueError(f"[portal_trips] {int(unresolved.sum())} stays name an outbound or return trip whose "
+                         f"departure or arrival time is not available in the trips table (first person_id "
                          f"{persons[unresolved][0]}); the stay table and the trips table are inconsistent")
     clamped = has_return & (t_reentry < outbound_departure)
     t_reentry = np.where(clamped, outbound_departure, t_reentry)

@@ -11,8 +11,12 @@ outside MODE_FALLBACKS is not checked and kept as it is.
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 MODE_FALLBACKS = {"car": ("car_passenger", "pt"), "car_passenger": ("pt",), "bicycle": ("pt",),
                   "pt": (), "walk": ()}
@@ -30,7 +34,9 @@ def mode_availability(persons: pd.DataFrame) -> pd.DataFrame:
     """Per person (index ``person_id``): bool can_car, can_bicycle, can_car_passenger, has_car.
 
     ``has_car`` is the raw car availability (without the licence) so that a failed car check can be
-    attributed to ``no_car_availability`` or ``no_driving_licence``.
+    attributed to ``no_car_availability`` or ``no_driving_licence``. When the population has no
+    ``car_passenger_availability`` column, car-passenger availability falls back to car availability
+    for ALL persons (the Java behaviour); this is logged once as a warning.
     """
     required = ["person_id", "car_availability", "has_license", "bicycle_availability"]
     missing = [column for column in required if column not in persons.columns]
@@ -42,6 +48,8 @@ def mode_availability(persons: pd.DataFrame) -> pd.DataFrame:
     if "car_passenger_availability" in persons.columns:
         can_passenger = persons["car_passenger_availability"].astype(str).isin(AVAILABLE_PASSENGER_VALUES)
     else:
+        logger.warning("[portal_trips] persons carry no car_passenger_availability column: car-passenger "
+                       "availability falls back to car availability for all %d persons", len(persons))
         can_passenger = has_car
     return pd.DataFrame({"can_car": can_car.to_numpy(), "can_bicycle": can_bicycle.to_numpy(),
                          "can_car_passenger": can_passenger.to_numpy(), "has_car": has_car.to_numpy()},
@@ -54,7 +62,8 @@ def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.Data
     ``substituted_from`` / ``substitution_reason`` are None where the donor's outbound mode is kept;
     ``return_mode`` is None for stays without a return leg; ``return_mode_differs`` is True only when
     a return leg exists and its donor mode differs from the outbound mode. Every stay person must
-    have an availability row and every outbound trip a mode (ValueError otherwise).
+    have an availability row, every outbound trip a mode and every named return trip a mode in the
+    trips table (ValueError otherwise).
     """
     mode_lookup = trips.set_index(["person_id", "trip_index"])["mode"]
     persons = stays["person_id"].to_numpy()
@@ -71,6 +80,12 @@ def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.Data
     return_index = stays["return_trip_index"].fillna(-1).astype(int).to_numpy()
     returning = mode_lookup.reindex(
         pd.MultiIndex.from_arrays([persons, return_index])).to_numpy(dtype=object)
+    missing_return = has_return & pd.isna(returning)
+    if missing_return.any():
+        first = int(np.flatnonzero(missing_return)[0])
+        raise ValueError(f"[portal_trips] {int(missing_return.sum())} stays name a return trip that is not in the "
+                         f"trips table (first: person_id {persons[first]}, return trip index "
+                         f"{return_index[first]}); the stay table and the trips table are inconsistent")
     returning = np.where(has_return, returning, None)
     avail = availability.reindex(persons)
     can_by_mode = {"car": avail["can_car"].to_numpy(dtype=bool),

@@ -57,10 +57,10 @@ def _availability(car="all", licence=True, bicycle="all", passenger="some"):
 
 def test_mode_availability_mirrors_the_java_mode_availability():
     assert _availability().loc[1].tolist() == [True, True, True, True]
-    assert _availability(car="none").loc[1, "can_car"] is np.bool_(False)
-    assert _availability(licence=False).loc[1, "can_car"] is np.bool_(False)
-    assert _availability(bicycle="none").loc[1, "can_bicycle"] is np.bool_(False)
-    assert _availability(passenger="none").loc[1, "can_car_passenger"] is np.bool_(False)
+    assert not bool(_availability(car="none").loc[1, "can_car"])
+    assert not bool(_availability(licence=False).loc[1, "can_car"])
+    assert not bool(_availability(bicycle="none").loc[1, "can_bicycle"])
+    assert not bool(_availability(passenger="none").loc[1, "can_car_passenger"])
 
 
 def test_mode_availability_without_the_passenger_column_falls_back_to_car_availability():
@@ -116,3 +116,49 @@ def test_portal_modes_raise_for_a_person_without_an_availability_row():
     availability.index = [99]
     with pytest.raises(ValueError, match="no availability row"):
         m.portal_modes(_stays(), _trips(), availability)
+
+
+def test_reentry_share_is_one_when_the_reported_distance_is_zero():
+    trips = _trips()
+    trips.loc[1, "euclidean_distance"] = 0.0
+    out = t.reentry_times(_stays(), trips, np.array([[45000.0, 0.0]]), np.array([[60000.0, 0.0]]))
+    assert out.loc[0, "share_out"] == 1.0 and out.loc[0, "share_capped"]
+
+
+def test_reentry_raises_when_the_outbound_departure_is_missing():
+    import pytest
+    trips = _trips()
+    trips.loc[0, "departure_time"] = np.nan  # would silently disable the clamp
+    with pytest.raises(ValueError, match="outbound"):
+        t.reentry_times(_stays(), trips, np.array([[45000.0, 0.0]]), np.array([[60000.0, 0.0]]))
+
+
+def test_reentry_without_return_leg_tolerates_a_missing_outbound_departure():
+    trips = _trips()
+    trips.loc[0, "departure_time"] = np.nan
+    out = t.reentry_times(_stays(return_index=np.nan), trips, np.array([[45000.0, 0.0]]), np.array([[60000.0, 0.0]]))
+    assert not out.loc[0, "has_return"]
+
+
+def test_portal_modes_raise_when_the_return_trip_is_missing_from_the_trips_table():
+    import pytest
+    with pytest.raises(ValueError, match=r"person_id 1.*return.*7"):
+        m.portal_modes(_stays(return_index=7.0), _trips(), _availability())
+
+
+def test_mode_availability_warns_once_when_the_passenger_column_is_absent(caplog):
+    import logging
+    persons = pd.DataFrame({"person_id": [1, 2], "car_availability": ["none", "some"],
+                            "has_license": [False, False], "bicycle_availability": ["all", "all"]})
+    with caplog.at_level(logging.WARNING, logger=m.logger.name):
+        m.mode_availability(persons)
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "car_passenger_availability" in warnings[0].getMessage() and "2 persons" in warnings[0].getMessage()
+
+
+def test_mode_availability_does_not_warn_when_the_passenger_column_is_present(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger=m.logger.name):
+        _availability()
+    assert not [record for record in caplog.records if record.levelno == logging.WARNING]
