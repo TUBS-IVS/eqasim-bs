@@ -165,28 +165,20 @@ class TestNoneParamsByteIdentity:
         )
         np.testing.assert_array_equal(without_params, with_none_params)
 
-    def test_grid_ev_share_none_only(self):
-        """grid_ev_share=None with a valid mean -> no-op."""
+    @pytest.mark.parametrize("grid_ev_share, gemeinde_grid_mean", [
+        pytest.param(None, 0.05, id="grid_ev_share_none"),
+        pytest.param(0.1, None, id="gemeinde_grid_mean_none"),
+    ])
+    def test_one_grid_input_alone_is_a_no_op(self, grid_ev_share, gemeinde_grid_mean):
+        """One grid input alone (the other None) leaves the pmf unchanged."""
         model = _minimal_model()
         base = _baseline_pmf(model)
         tilted = model.powertrain_probabilities(
             "kompaktklasse", "03101", None,
-            grid_ev_share=None,
-            gemeinde_grid_mean=0.05,
+            grid_ev_share=grid_ev_share,
+            gemeinde_grid_mean=gemeinde_grid_mean,
         )
         np.testing.assert_array_equal(tilted, base)
-
-    def test_gemeinde_grid_mean_none_only(self):
-        """gemeinde_grid_mean=None with a valid share -> no-op."""
-        model = _minimal_model()
-        base = _baseline_pmf(model)
-        tilted = model.powertrain_probabilities(
-            "kompaktklasse", "03101", None,
-            grid_ev_share=0.10,
-            gemeinde_grid_mean=None,
-        )
-        np.testing.assert_array_equal(tilted, base)
-
 
 # ---------------------------------------------------------------------------
 # T3: gemeinde_grid_mean == 0 -> no-op + fallback, no ZeroDivisionError.
@@ -319,50 +311,28 @@ class TestRatioClipping:
         bev_tilt_rel = tilted[bev_idx] / tilted[ref_idx]
         return float(bev_tilt_rel / bev_base_rel)
 
-    def test_clip_upper_at_5(self):
-        """grid_ev_share / mean = 100 -> factor clipped to 5.0."""
-        model = _minimal_model()
-        base = _baseline_pmf(model)
-        # 100x ratio -> should clip to 5.0
-        tilted = model.powertrain_probabilities(
-            "kompaktklasse", "03101", None,
-            grid_ev_share=1.0,
-            gemeinde_grid_mean=0.01,
-        )
-        factor = self._electric_factor(model, base, tilted)
-        assert factor == pytest.approx(5.0, rel=1e-6), (
-            f"expected clip at 5.0, got factor={factor:.6f}"
-        )
-
-    def test_clip_lower_at_0_2(self):
-        """grid_ev_share / mean = 0.01 -> factor clipped to 0.2."""
-        model = _minimal_model()
-        base = _baseline_pmf(model)
-        # 0.01 ratio -> should clip to 0.2
-        tilted = model.powertrain_probabilities(
-            "kompaktklasse", "03101", None,
-            grid_ev_share=0.001,
-            gemeinde_grid_mean=0.1,
-        )
-        factor = self._electric_factor(model, base, tilted)
-        assert factor == pytest.approx(0.2, rel=1e-6), (
-            f"expected clip at 0.2, got factor={factor:.6f}"
-        )
-
-    def test_unclipped_ratio(self):
-        """A ratio of 2.0 (within the band) must be applied exactly."""
+    @pytest.mark.parametrize("grid_ev_share, gemeinde_grid_mean, expected_factor", [
+        # grid_ev_share / mean = 100 -> factor clipped to 5.0.
+        pytest.param(1.0, 0.01, 5.0, id="clip_upper_at_5"),
+        # grid_ev_share / mean = 0.01 -> factor clipped to 0.2.
+        pytest.param(0.001, 0.1, 0.2, id="clip_lower_at_0_2"),
+        # A ratio of 2.0 (within the band) must be applied exactly.
+        pytest.param(0.10, 0.05, 2.0, id="unclipped_ratio"),
+    ])
+    def test_the_grid_ratio_is_applied_within_the_clip_band(
+            self, grid_ev_share, gemeinde_grid_mean, expected_factor):
+        """The electric factor is grid_ev_share / mean, clipped to [0.2, 5.0]."""
         model = _minimal_model()
         base = _baseline_pmf(model)
         tilted = model.powertrain_probabilities(
             "kompaktklasse", "03101", None,
-            grid_ev_share=0.10,
-            gemeinde_grid_mean=0.05,
+            grid_ev_share=grid_ev_share,
+            gemeinde_grid_mean=gemeinde_grid_mean,
         )
         factor = self._electric_factor(model, base, tilted)
-        assert factor == pytest.approx(2.0, rel=1e-6), (
-            f"expected factor=2.0, got {factor:.6f}"
+        assert factor == pytest.approx(expected_factor, rel=1e-6), (
+            f"expected factor={expected_factor}, got {factor:.6f}"
         )
-
 
 # ---------------------------------------------------------------------------
 # T7: counters incremented correctly.

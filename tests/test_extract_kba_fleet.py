@@ -188,11 +188,15 @@ def test_gemeinde_private_bev_covers_zgb_kreise():
 # --------------------------------------------------------------------------- #
 # kba_fuel_euro_nds.csv (FZ 27.4)
 # --------------------------------------------------------------------------- #
-def test_fuel_euro_nds_schema_and_shares():
-    frame = _read("kba_fuel_euro_nds.csv")
-    assert {"fuel", "euro_class", "count", "share"}.issubset(frame.columns)
+@pytest.mark.parametrize("table, first_column, second_column, count_column", [
+    pytest.param("kba_fuel_euro_nds.csv", "fuel", "euro_class", "count", id="fuel_euro_nds"),
+    pytest.param("kba_age_fuel.csv", "age_band", "fuel", "pkw_count", id="age_fuel"),
+])
+def test_per_fuel_share_tables_schema_and_shares(table, first_column, second_column, count_column):
+    frame = _read(table)
+    assert {first_column, second_column, count_column, "share"}.issubset(frame.columns)
     assert set(frame["fuel"]).issubset(set(ekf.POWERTRAIN_LABELS))
-    # Per-fuel Euro shares sum to ~1 (for fuels with a positive total).
+    # Per-fuel shares sum to ~1 (for fuels with a positive total).
     per_fuel = frame.groupby("fuel")["share"].sum()
     for fuel, total in per_fuel.items():
         assert total == pytest.approx(1.0, abs=1e-6), f"fuel {fuel} shares sum to {total}"
@@ -201,15 +205,6 @@ def test_fuel_euro_nds_schema_and_shares():
 # --------------------------------------------------------------------------- #
 # kba_age_fuel.csv (FZ 27.7)
 # --------------------------------------------------------------------------- #
-def test_age_fuel_schema_and_shares():
-    frame = _read("kba_age_fuel.csv")
-    assert {"age_band", "fuel", "pkw_count", "share"}.issubset(frame.columns)
-    assert set(frame["fuel"]).issubset(set(ekf.POWERTRAIN_LABELS))
-    per_fuel = frame.groupby("fuel")["share"].sum()
-    for fuel, total in per_fuel.items():
-        assert total == pytest.approx(1.0, abs=1e-6), f"fuel {fuel} shares sum to {total}"
-
-
 # --------------------------------------------------------------------------- #
 # kba_brand_powertrain.csv (FZ 27.11)
 # --------------------------------------------------------------------------- #

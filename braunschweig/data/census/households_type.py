@@ -19,10 +19,10 @@ Output schema::
     weight     : float persons in that cell (Insgesamt rows excluded)
 
 Note: the value is PERSONS living in a household of the given (size, type), not
-household counts. This is pinned by the committed regression test
-``tests/test_hh_size_margin.py::TestHouseholdTypeLoader.test_zgb_persons_match_zensus_reference``,
-which asserts the ZGB total lands in the ~1.135 M person range (the Zensus 2022
-ZGB population), well above the ZGB household count.
+household counts: the ZGB total lands in the ~1.135 M person range (the Zensus 2022
+ZGB population), well above the ZGB household count. A cache-gated regression test
+pinned this until 2026-09-25, when it was removed because it skipped on every
+checkout; ADR-0053 records the fact.
 """
 
 from __future__ import annotations

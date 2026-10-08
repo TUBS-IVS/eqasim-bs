@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import importlib
 import inspect
 import json
 import logging
@@ -138,6 +139,33 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 _HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
                    _metrics, _popsim_trips, _config_keys, run_provenance)
 
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.calibration.circuity",
+    "braunschweig.calibration.reported_time_precision",
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.gravity.friction",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
+)
+
 
 def validate(context):
     """synpp validation token: md5 over this stage's helper modules.
@@ -150,6 +178,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"departure_time_vs_srv validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

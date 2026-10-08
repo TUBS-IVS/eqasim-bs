@@ -68,6 +68,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
+
 MID_SUBDIR = os.path.join("braunschweig", "mid")
 
 # Canonical 10-bracket monthly net household income vocabulary, ordered
@@ -332,8 +334,4 @@ def income_bracket_probabilities(
     if region_pmf is None or national_pmf is None:
         return base.copy()
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        tilt = np.where(national_pmf > 1e-12, region_pmf / national_pmf, 1.0)
-    tilted = base * tilt
-    total = tilted.sum()
-    return (tilted / total) if total > 0 else base.copy()
+    return tilt_toward_region(base, region_pmf, national_pmf)

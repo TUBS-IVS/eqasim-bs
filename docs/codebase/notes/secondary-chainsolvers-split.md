@@ -19,6 +19,9 @@ package. `__init__.py` (1181 lines) is the synpp stage itself
 submodules define: `activity_types`, `candidate_columns`, `candidates`,
 `srv_candidates`, `distance_sampling`, `deciders`, `srv_location_types`,
 `escort`, `plans`, `fallback`, `parallel_solving`, `results`, `reporting`.
+Since ADR-0136 `inverse_cdf` holds the inverse-CDF draw that `deciders` and
+`srv_location_types` share. It left `deciders` so that `srv_location_types`, which the
+candidates stage runs, no longer imports the decider machinery.
 
 A fourteenth submodule, `pool_protection` (ADR-0135, the fork pool's memory
 protections; rules in `docs/codebase/notes/chainsolver-fork-pool-memory.md`),
@@ -40,26 +43,22 @@ recomputes the stage instead of silently reusing stale cached output. Being a
 brand-new token, the first run after this change recomputes the stage and
 everything downstream of it once; every run after that is cache-stable.
 
-**Known gap (found by the #290 audit, corrected here).** An earlier version of
-this note claimed this package "has no external siblings outside its own
-boundary, so there is no equivalent known gap". That was wrong. `_HELPER_MODULES`
-covers the 13 in-package submodules, but the stage module imports four
-first-party modules from **outside** the package that are not in the tuple and
-therefore outside the token: `braunschweig.calibration.secondary_measurement`
-and `synthesis.population.spatial.secondary.problems` (module level),
+**Gaps found later, now closed.** An earlier version of this note claimed this
+package "has no external siblings outside its own boundary, so there is no
+equivalent known gap". That was wrong: the #290 audit found four first-party
+modules from **outside** the package that the stage module imports but the token
+did not hash, `braunschweig.calibration.secondary_measurement` and
+`synthesis.population.spatial.secondary.problems` (module level),
 `braunschweig.synthesis.locations.escort_links` and `braunschweig.parallelism`
-(inside functions). Editing any of them does not devalidate this stage.
+(inside functions). All four joined the token in the #327 re-audit.
 
 The submodules in turn import further first-party modules of their own
 (`braunschweig.popsim.trips`, `braunschweig.popsim.shop_subtype`,
 `braunschweig.popsim.purpose_subtype`, `braunschweig.data.building_potential_attach`,
-`synthesis.population.spatial.secondary.{components,rda}` and others), which are
-equally outside the token. The token's boundary is one level deep by design, the
-same boundary `braunschweig/popsim/stage/`'s `validate()` docstring states for
-itself — so this gap is a property of that boundary, not of this split.
-
-See `synpp-helper-hash-audit.md` for the repo-wide picture; closing gaps of this
-kind is tracked separately because doing so devalidates additional cached output.
+`synthesis.population.spatial.secondary.{components,rda}` and others). Since ADR-0136
+they are hashed too: the token covers the stage's whole import closure, and
+`tests/test_audit_synpp_helper_hash.py` fails when the closure reaches an unhashed module.
+See `synpp-helper-hash-audit.md` for the repo-wide picture.
 
 ## Standing rules
 
@@ -71,7 +70,7 @@ kind is tracked separately because doing so devalidates additional cached output
   `enriched-split.md`), most submodule names are re-exported through
   `__init__.py` for backward compatibility, and siblings that need each
   other's names import them directly, submodule-to-submodule (e.g.
-  `srv_location_types.py` imports from `deciders.py`; `candidates.py` imports
+  `srv_location_types.py` imports from `inverse_cdf.py`; `candidates.py` imports
   from `srv_location_types.py`; `plans.py` imports from `distance_sampling.py`
   and `srv_location_types.py`) rather than through the facade. A test or patch
   aimed at a re-exported name must target the owning submodule attribute, not

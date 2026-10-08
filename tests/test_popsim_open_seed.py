@@ -78,33 +78,18 @@ class TestBuildSeedOutputColumns:
             _entd_households(), _entd_persons()
         )
 
-    def test_households_have_H_ID(self):
-        assert "H_ID" in self.hh.columns, "seed households must have H_ID"
-
-    def test_households_have_H_GEW(self):
-        assert "H_GEW" in self.hh.columns, "seed households must have H_GEW"
+    def test_households_carry_the_mid_id_and_weight_columns(self):
+        missing = [c for c in ("H_ID", "H_GEW") if c not in self.hh.columns]
+        assert not missing, f"seed households lack {missing}"
 
     def test_households_have_STAAT(self):
         assert "STAAT" in self.hh.columns, "seed households must have STAAT"
         assert (self.hh["STAAT"] == 1).all()
 
-    def test_persons_have_H_ID(self):
-        assert "H_ID" in self.p.columns, "seed persons must have H_ID"
-
-    def test_persons_have_P_ID(self):
-        assert "P_ID" in self.p.columns, "seed persons must have P_ID"
-
-    def test_persons_have_HP_ID(self):
-        assert "HP_ID" in self.p.columns, "seed persons must have HP_ID"
-
-    def test_persons_have_P_GEW(self):
-        assert "P_GEW" in self.p.columns, "seed persons must have P_GEW"
-
-    def test_persons_have_HP_ALTER(self):
-        assert "HP_ALTER" in self.p.columns, "seed persons must have HP_ALTER"
-
-    def test_persons_have_HP_SEX(self):
-        assert "HP_SEX" in self.p.columns, "seed persons must have HP_SEX"
+    def test_persons_carry_the_mid_id_weight_and_demographic_columns(self):
+        required = ("H_ID", "P_ID", "HP_ID", "P_GEW", "HP_ALTER", "HP_SEX")
+        missing = [c for c in required if c not in self.p.columns]
+        assert not missing, f"seed persons lack {missing}"
 
     def test_persons_have_STAAT(self):
         assert "STAAT" in self.p.columns, "seed persons must have STAAT"
@@ -143,26 +128,16 @@ class TestBuildSeedValues:
             f"HP_SEX values must be 1 or 2; got: {self.p.loc[invalid, 'HP_SEX'].unique()}"
         )
 
-    def test_HP_SEX_male_maps_to_1(self):
-        """ENTD sex='male' must map to HP_SEX=1."""
+    @pytest.mark.parametrize("sex, code", [("male", 1), ("female", 2)])
+    def test_HP_SEX_maps_the_entd_sex(self, sex, code):
+        """ENTD sex='male' must map to HP_SEX=1 and sex='female' to HP_SEX=2."""
         original_p = _entd_persons()
         hid_map = dict(zip(original_p["person_id"], original_p["sex"]))
         for _, row in self.p.iterrows():
             original_sex = hid_map[row["P_ID"]]
-            if original_sex == "male":
-                assert row["HP_SEX"] == 1, (
-                    f"P_ID={row['P_ID']}: sex=male must map to HP_SEX=1, got {row['HP_SEX']}"
-                )
-
-    def test_HP_SEX_female_maps_to_2(self):
-        """ENTD sex='female' must map to HP_SEX=2."""
-        original_p = _entd_persons()
-        hid_map = dict(zip(original_p["person_id"], original_p["sex"]))
-        for _, row in self.p.iterrows():
-            original_sex = hid_map[row["P_ID"]]
-            if original_sex == "female":
-                assert row["HP_SEX"] == 2, (
-                    f"P_ID={row['P_ID']}: sex=female must map to HP_SEX=2, got {row['HP_SEX']}"
+            if original_sex == sex:
+                assert row["HP_SEX"] == code, (
+                    f"P_ID={row['P_ID']}: sex={sex} must map to HP_SEX={code}, got {row['HP_SEX']}"
                 )
 
     def test_HP_ALTER_values_are_original_ages(self):
@@ -236,20 +211,11 @@ class TestBuildSeedAttributeRetention:
         src = EntdSource()
         _, self.p, _ = src.build_seed(_entd_households(), _entd_persons())
 
-    def test_employed_retained(self):
-        assert "employed" in self.p.columns
-
-    def test_studies_retained(self):
-        assert "studies" in self.p.columns
-
-    def test_has_license_retained(self):
-        assert "has_license" in self.p.columns
-
-    def test_has_pt_subscription_retained(self):
-        assert "has_pt_subscription" in self.p.columns
-
-    def test_socioprofessional_class_retained(self):
-        assert "socioprofessional_class" in self.p.columns
+    def test_entd_attribute_columns_are_retained(self):
+        required = ("employed", "studies", "has_license", "has_pt_subscription",
+                    "socioprofessional_class")
+        missing = [c for c in required if c not in self.p.columns]
+        assert not missing, f"seed persons dropped {missing}"
 
     def test_original_sex_string_retained(self):
         """The original ENTD sex string ('male'/'female') must also be present.
@@ -292,21 +258,17 @@ class TestBuildSeedCompletenessReport:
 class TestBuildSeedSexFailFast:
     """build_seed must raise ValueError immediately when sex contains unmapped values."""
 
-    def test_unmapped_sex_raises_value_error(self):
+    @pytest.mark.parametrize("value, row, message", [
+        pytest.param("unknown", 0, "unmapped", id="unknown"),
+        pytest.param("diverse", 2, "diverse", id="diverse"),
+    ])
+    def test_a_sex_value_outside_the_accepted_set_raises(self, value, row, message):
+        """An unmapped or 'diverse' sex value is not in the accepted set and must raise."""
         hh = _entd_households()
         p = _entd_persons().copy()
-        p.loc[0, "sex"] = "unknown"  # introduce an unmapped value
+        p.loc[row, "sex"] = value  # introduce an unmapped value
         src = EntdSource()
-        with pytest.raises(ValueError, match="unmapped"):
-            src.build_seed(hh, p)
-
-    def test_diverse_sex_raises(self):
-        """'diverse' is not in the accepted set."""
-        hh = _entd_households()
-        p = _entd_persons().copy()
-        p.loc[2, "sex"] = "diverse"
-        src = EntdSource()
-        with pytest.raises(ValueError, match="diverse"):
+        with pytest.raises(ValueError, match=message):
             src.build_seed(hh, p)
 
     def test_valid_seed_does_not_raise(self):
@@ -441,17 +403,11 @@ class TestBuildSeedExpandBuildPersonsIntegration:
         assert "sex" in self.persons.columns
         assert self.persons["sex"].isin(["male", "female", "unknown"]).all()
 
-    def test_persons_have_employed(self):
-        assert "employed" in self.persons.columns
-
-    def test_persons_have_has_pt_subscription(self):
-        assert "has_pt_subscription" in self.persons.columns
-
-    def test_persons_have_socioprofessional_class(self):
-        assert "socioprofessional_class" in self.persons.columns
-
-    def test_persons_have_household_income_eur(self):
-        assert "household_income_eur" in self.persons.columns
+    def test_persons_carry_the_mapped_attribute_columns(self):
+        required = ("employed", "has_pt_subscription", "socioprofessional_class",
+                    "household_income_eur")
+        missing = [c for c in required if c not in self.persons.columns]
+        assert not missing, f"built persons lack {missing}"
 
     def test_source_person_id_is_entd_p_id(self):
         """source_person_id must equal the ENTD donor P_ID (no pseudonymisation)."""

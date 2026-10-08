@@ -64,6 +64,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
 from braunschweig.data.mid.status_by_hhtype import (
     HHTYPE_CATEGORIES,
     HHTYPE_LABEL_TO_KEY,
@@ -104,6 +105,7 @@ __all__ = [
     "load_cars_by_status_hhtype",
     "load_cars_by_raumtyp",
     "cars_probabilities",
+    "apply_raumtyp_tilt",
 ]
 
 
@@ -269,15 +271,34 @@ def cars_probabilities(
         return base.copy()
 
     by_region, national = _raumtyp_cars_distribution(df_raumtyp, include_cars)
+    return apply_raumtyp_tilt(base, by_region, national, raumtyp_region)
+
+
+def apply_raumtyp_tilt(
+    base: np.ndarray,
+    by_region: dict[str, np.ndarray],
+    national: np.ndarray,
+    raumtyp_region: str | None,
+) -> np.ndarray:
+    """Tilt a base ``P(num_cars | hhtype, status)`` pmf toward one raumtyp region.
+
+    Multiplies ``base`` by ``P(num_cars | region) / P(num_cars | national)`` (factor 1
+    where the national share is zero) and renormalises. Returns an untilted copy of
+    ``base`` when ``raumtyp_region`` is ``None`` or absent from ``by_region``, or when
+    the tilted mass is zero. ``by_region`` and ``national`` are the pmfs of
+    :func:`cars_probabilities_table`. :func:`cars_probabilities` and the enrichment
+    stage's per-household car draw (``vehicle_ownership._sample_cars_income_aware``)
+    both apply it; the tilt step itself is
+    :func:`braunschweig.data.mid.raumtyp_tilt.tilt_toward_region`, shared with the
+    income and tenure couplings.
+    """
+    if raumtyp_region is None:
+        return base.copy()
     reg = by_region.get(raumtyp_region)
     if reg is None:
         return base.copy()
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        tilt = np.where(national > 1e-12, reg / national, 1.0)
-    tilted = base * tilt
-    total = tilted.sum()
-    return (tilted / total) if total > 0 else base.copy()
+    return tilt_toward_region(base, reg, national)
 
 
 def cars_probabilities_table(
@@ -292,8 +313,8 @@ def cars_probabilities_table(
     """Pre-compute the Bayes base + raumtyp tilt inputs once (vectorisation hook).
 
     Returns ``(base_map, by_region, national)`` so the per-household assignment in
-    the enrichment stage can look up ``base_map[(hhtype, status)]`` and apply
-    ``by_region[raumtyp]/national`` without re-deriving the whole base for every
+    the enrichment stage can look up ``base_map[(hhtype, status)]`` and tilt it with
+    :func:`apply_raumtyp_tilt` without re-deriving the whole base for every
     distinct combination. Mirrors the ``prob_cache`` pattern used by
     ``_derive_economic_status_from_hhtype``.
     """

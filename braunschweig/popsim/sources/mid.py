@@ -17,7 +17,7 @@ from typing import Tuple, Union
 
 import pandas as pd
 
-from braunschweig.popsim import mid as mid_mod
+from braunschweig.popsim.mid import donor as mid_donor
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.assembly import map_mid_person_attributes
 from braunschweig.popsim.passenger_availability import attach_car_passenger_diary_evidence
@@ -67,11 +67,11 @@ class MidSource:
             and ``trips`` comes from :func:`braunschweig.popsim.mid.load_mid_wege`.
         """
         data_dir = Path(data_dir)
-        households, persons = mid_mod.load_mid_attributes(
+        households, persons = mid_donor.load_mid_attributes(
             data_dir,
             include_passenger_availability=include_passenger_availability,
         )
-        trips = mid_mod.load_mid_wege(data_dir)
+        trips = mid_donor.load_mid_wege(data_dir)
         if include_passenger_availability:
             persons = attach_car_passenger_diary_evidence(persons, trips)
         logger.info(

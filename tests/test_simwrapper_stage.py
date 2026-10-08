@@ -44,8 +44,17 @@ class FakeContext:
 # Test 1 — configure without MATSim: synthesis.output registered, NOT matsim.simulation.run
 # ---------------------------------------------------------------------------
 
-def test_configure_no_matsim_registers_synthesis_output_only():
-    ctx = FakeContext({"simwrapper_include_matsim": False,
+@pytest.mark.parametrize("include_matsim", [
+    pytest.param(False, id="without_matsim"),
+    pytest.param(True, id="with_matsim"),
+])
+def test_configure_registers_synthesis_output_and_never_the_run_stage(include_matsim):
+    """simwrapper_include_matsim is a SIGNAL ('this run has MATSim outputs'),
+    not a dependency: the sim outputs are read from the <output_path>/
+    matsim_output archive, so no invocation may pull in the simulation chain
+    just to render dashboards (issue #354).
+    """
+    ctx = FakeContext({"simwrapper_include_matsim": include_matsim,
                        "simwrapper_export_enabled": True,
                        "output_path": "/tmp/out",
                        "sampling_rate": 0.25})
@@ -65,20 +74,6 @@ def test_configure_matsim_absent_in_config_registers_synthesis_output_only():
 # ---------------------------------------------------------------------------
 # Test 2 — configure with MATSim: still NO matsim.simulation.run edge (#354)
 # ---------------------------------------------------------------------------
-
-def test_configure_with_matsim_declares_no_run_stage_dependency():
-    """simwrapper_include_matsim is a SIGNAL ('this run has MATSim outputs'),
-    not a dependency: the sim outputs are read from the <output_path>/
-    matsim_output archive, so no invocation may pull in the simulation chain
-    just to render dashboards (issue #354)."""
-    ctx = FakeContext({"simwrapper_include_matsim": True,
-                       "simwrapper_export_enabled": True,
-                       "output_path": "/tmp/out",
-                       "sampling_rate": 0.25})
-    stage.configure(ctx)
-    assert "synthesis.output" in ctx.stages
-    assert "matsim.simulation.run" not in ctx.stages
-
 
 # ---------------------------------------------------------------------------
 # Test 2b — configure with cordon: student_incommuters stage registered (#140)

@@ -18,6 +18,7 @@ from typing import Any, Dict
 import numpy as np
 
 from .activity_types import ESCORT_CATEGORY_TO_ACTIVITY
+from .inverse_cdf import _inverse_cdf_choice
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +75,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     if not context.config("secondary_shop_daily_split"):
         return None
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.shop_subtype import (
         SHOP_DAILY_W_ZWD,
         SHOP_NONDAILY_W_ZWD,
@@ -103,7 +104,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     else:
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
         mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-        mid_wege = mid_module.load_mid_wege(mid_dir)
+        mid_wege = mid_donor.load_mid_wege(mid_dir)
         # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
         # execute-context read of the key declared in configure(). Applied BEFORE map_mode /
         # the time derivation / the estimation, so every downstream count is on that universe.
@@ -154,33 +155,6 @@ def _build_shop_subtype_decider(context, random_seed: int):
 # ---------------------------------------------------------------------------
 # Task 4 (issue #127): leisure / other subtype imputation deciders
 # ---------------------------------------------------------------------------
-
-def _inverse_cdf_choice(probs: Dict[str, float], group_names, draw: float) -> str:
-    """Return the name in ``group_names`` whose cumulative probability first
-    exceeds ``draw`` (standard inverse-CDF sampling): walk ``group_names`` in
-    the given fixed order while accumulating a running sum, and pick the first
-    entry whose cumulative probability exceeds ``draw``.
-
-    This is exactly the per-leg selection rule
-    ``braunschweig.popsim.purpose_subtype.impute_groups`` applies internally
-    (see that function's determinism note) -- reused here as a plain one-leg
-    helper INSTEAD OF calling ``impute_groups`` once per leg, because
-    ``impute_groups`` is designed for a single BATCHED call over many legs and
-    logs an aggregate marginal-fallback-rate message on every invocation.
-    Calling it with a length-1 batch (as the per-leg decider architecture
-    requires, mirroring ``_build_shop_subtype_decider``) would therefore emit
-    one log line per fallback leg -- log spam at population scale (millions of
-    legs). This helper performs the identical maths (one draw, a fixed-order
-    cumulative sum, first-exceeding-index selection) without that per-call
-    logging; the MODEL-level fallback rate (how many (mode, tt_band) cells got
-    their own estimate vs. the marginal) is already logged once, at
-    decider-build time, by ``estimate_group_probabilities`` itself -- so no
-    fallback-rate signal is lost, only the per-leg spam.
-    """
-    cumulative = np.cumsum([probs.get(name, 0.0) for name in group_names])
-    choice = int(np.clip(np.searchsorted(cumulative, draw, side="right"), 0, len(group_names) - 1))
-    return group_names[choice]
-
 
 def _build_leisure_subtype_decider(context, random_seed: int):
     """Build the per-leg leisure subtype decider, or return None when OFF.
@@ -244,7 +218,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
         estimate_group_probabilities,
@@ -268,7 +242,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     # fifth leisure group (issue #373, ADR-0115).
     unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = mid_donor.load_mid_wege(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); same one-argument
     # execute-context form and same imported-key rule as the two flags above. Applied BEFORE
     # map_mode / the time derivation / the coverage guard / the estimation, so the labelled
@@ -390,7 +364,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         OTHER_ERRAND_ZWECK,
         OTHER_ESCORT_ZWECK,
@@ -416,7 +390,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = mid_donor.load_mid_wege(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
     # execute-context read of the key declared in configure(). Applied BEFORE map_mode / the
     # time derivation, so BOTH composed estimation stages below (the coarse W_ZWECK split and

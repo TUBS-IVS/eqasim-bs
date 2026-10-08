@@ -454,17 +454,21 @@ def test_matsim_population_load_raw_never_reads_the_pre_assignment_frames():
     assert POP.BASE_ACTIVITIES_STAGE not in requested
 
 
-def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
-    """``commuteDayState`` is additive: absent column -> no attribute, NaN -> no attribute."""
+@pytest.mark.parametrize("state_value, state_column, attribute", [
+    pytest.param("home", "commute_day_state", "commuteDayState", id="commute_day"),
+    pytest.param("absent_household", "day_absence_state", "dayAbsenceState", id="day_absence"),
+])
+def test_matsim_writer_emits_a_state_attribute_only_for_persons_that_have_one(state_value, state_column, attribute):
+    """Each optional state attribute is additive: absent column -> no attribute, NaN -> no attribute."""
     from matsim.scenario import population as pop
 
     df_off = pd.DataFrame({field: [0] for field in pop.PERSON_FIELDS})
     assert pop.effective_person_fields(df_off) == pop.PERSON_FIELDS
 
     df_on = df_off.copy()
-    df_on["commute_day_state"] = "home"
+    df_on[state_column] = state_value
     fields_on = pop.effective_person_fields(df_on)
-    assert fields_on == pop.PERSON_FIELDS + ["commute_day_state"]
+    assert fields_on == pop.PERSON_FIELDS + [state_column]
 
     class _StubWriter:
         def __init__(self):
@@ -513,8 +517,8 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
                    employed="yes", high_income=False, is_urban_resident=False,
                    has_pt_subscription=False, has_license=True,
                    pt_subscription_type="never_pt", household_income_eur=3000.0)
-        if "commute_day_state" in fields:
-            row["commute_day_state"] = state
+        if state_column in fields:
+            row[state_column] = state
         return tuple(row[field] for field in fields)
 
     activity = {field: 0 for field in pop.ACTIVITY_FIELDS}
@@ -523,103 +527,19 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
     activity = tuple(activity[field] for field in pop.ACTIVITY_FIELDS)
 
     writer_on = _StubWriter()
-    pop.add_person(writer_on, _person(fields_on, "home"), [activity], [], [],
+    pop.add_person(writer_on, _person(fields_on, state_value), [activity], [], [],
                    person_fields=fields_on)
-    assert writer_on.attributes.get("commuteDayState") == "home"
+    assert writer_on.attributes.get(attribute) == state_value
 
     writer_nan = _StubWriter()
     pop.add_person(writer_nan, _person(fields_on, float("nan")), [activity], [], [],
                    person_fields=fields_on)
-    assert "commuteDayState" not in writer_nan.attributes
+    assert attribute not in writer_nan.attributes
 
     writer_off = _StubWriter()
     pop.add_person(writer_off, _person(pop.PERSON_FIELDS), [activity], [], [],
                    person_fields=pop.PERSON_FIELDS)
-    assert "commuteDayState" not in writer_off.attributes
-
-
-def test_matsim_writer_emits_day_absence_state_only_for_persons_that_have_one():
-    """``dayAbsenceState`` is additive: absent column -> no attribute, NaN -> no attribute."""
-    from matsim.scenario import population as pop
-
-    df_off = pd.DataFrame({field: [0] for field in pop.PERSON_FIELDS})
-    assert pop.effective_person_fields(df_off) == pop.PERSON_FIELDS
-
-    df_on = df_off.copy()
-    df_on["day_absence_state"] = "absent_household"
-    fields_on = pop.effective_person_fields(df_on)
-    assert fields_on == pop.PERSON_FIELDS + ["day_absence_state"]
-
-    class _StubWriter:
-        def __init__(self):
-            self.attributes = {}
-
-        def start_person(self, *args, **kwargs):
-            pass
-
-        def start_attributes(self):
-            pass
-
-        def end_attributes(self):
-            pass
-
-        def end_person(self, *args, **kwargs):
-            pass
-
-        def start_plan(self, *args, **kwargs):
-            pass
-
-        def end_plan(self, *args, **kwargs):
-            pass
-
-        def add_attribute(self, key, _type, value):
-            self.attributes[key] = value
-
-        def yes_no(self, value):
-            return "yes" if value else "no"
-
-        def location(self, *args, **kwargs):
-            return None
-
-        def add_activity(self, *args, **kwargs):
-            pass
-
-        def add_leg(self, *args, **kwargs):
-            pass
-
-    class _Geometry:
-        x = 0.0
-        y = 0.0
-
-    def _person(fields, state=None):
-        row = {field: 0 for field in fields}
-        row.update(person_id=1, household_id=1, household_income="2600-3000", sex="female",
-                   employed="yes", high_income=False, is_urban_resident=False,
-                   has_pt_subscription=False, has_license=True,
-                   pt_subscription_type="never_pt", household_income_eur=3000.0)
-        if "day_absence_state" in fields:
-            row["day_absence_state"] = state
-        return tuple(row[field] for field in fields)
-
-    activity = {field: 0 for field in pop.ACTIVITY_FIELDS}
-    activity.update(person_id=1, purpose="home", start_time=float("nan"),
-                    end_time=float("nan"), location_id=-1, geometry=_Geometry())
-    activity = tuple(activity[field] for field in pop.ACTIVITY_FIELDS)
-
-    writer_on = _StubWriter()
-    pop.add_person(writer_on, _person(fields_on, "absent_household"), [activity], [], [],
-                   person_fields=fields_on)
-    assert writer_on.attributes.get("dayAbsenceState") == "absent_household"
-
-    writer_nan = _StubWriter()
-    pop.add_person(writer_nan, _person(fields_on, float("nan")), [activity], [], [],
-                   person_fields=fields_on)
-    assert "dayAbsenceState" not in writer_nan.attributes
-
-    writer_off = _StubWriter()
-    pop.add_person(writer_off, _person(pop.PERSON_FIELDS), [activity], [], [],
-                   person_fields=pop.PERSON_FIELDS)
-    assert "dayAbsenceState" not in writer_off.attributes
+    assert attribute not in writer_off.attributes
 
 
 def test_overrides_hash_the_vendored_base_module():

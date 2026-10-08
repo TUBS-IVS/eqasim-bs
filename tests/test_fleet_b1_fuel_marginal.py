@@ -331,24 +331,30 @@ class TestFromDataPathFallback:
             f"got: {messages!r}"
         )
 
-    def test_euro_joint_draw_untouched(self, caplog):
-        """euro_given_powertrain, age_given_powertrain, age_euro_joint are unchanged.
+    def test_euro_joint_draw_untouched(self, request):
+        """euro_given_powertrain and age_given_powertrain are the national tables.
 
         T6a only touches the per-Kreis powertrain marginal. The euro/age
-        distributions must come from the same FZ 27.4 / FZ 27.7 path.
+        distributions must come from the same FZ 27.4 / FZ 27.7 path, so the
+        sampler's tables must equal what those builders read. The sampler is the
+        session's one, which every earlier draw has used: equality also shows that
+        drawing never writes into these tables. (Until 2026-09-28 this test built
+        two samplers and compared them with each other, which only showed that the
+        build is deterministic.)
         """
         if not (DATA / "braunschweig" / "kba" / "derived").exists():
             pytest.skip("real derived data directory absent")
-        # Build FleetSampler (which calls from_data_path internally).
-        segs = _segments()
-        sampler_a = fs.FleetSampler.from_data_path(DATA_PATH)
-        sampler_b = fs.FleetSampler.from_data_path(DATA_PATH)
-        # Both must produce identical euro_given_powertrain (deterministic build).
+        sampler = request.getfixturevalue("committed_fleet_sampler")
+        euro_fz_27_4 = fs._euro_given_powertrain(DATA_PATH)
+        age_fz_27_7 = fs._age_given_powertrain(DATA_PATH)
         for pt in POWERTRAINS:
             np.testing.assert_array_equal(
-                sampler_a.euro_given_powertrain[pt],
-                sampler_b.euro_given_powertrain[pt],
-                err_msg=f"euro_given_powertrain[{pt!r}] differs between two builds",
+                sampler.euro_given_powertrain[pt], euro_fz_27_4[pt],
+                err_msg=f"euro_given_powertrain[{pt!r}] is not the FZ 27.4 table",
+            )
+            np.testing.assert_array_equal(
+                sampler.age_given_powertrain[pt], age_fz_27_7[pt],
+                err_msg=f"age_given_powertrain[{pt!r}] is not the FZ 27.7 table",
             )
 
 

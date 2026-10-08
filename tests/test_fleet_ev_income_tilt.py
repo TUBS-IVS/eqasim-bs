@@ -36,6 +36,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pandas.testing as pdt
+import copy
+
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
@@ -80,15 +82,22 @@ def _synthetic_antrieb_df(bev_very_high: float = 0.30, bev_very_low: float = 0.0
 # --------------------------------------------------------------------------- #
 # Fixtures
 # --------------------------------------------------------------------------- #
-@pytest.fixture()
-def sampler():
-    """A real FleetSampler built from the committed local data.
+@pytest.fixture(scope="module")
+def _sampler_built(committed_fleet_sampler):
+    """The session's FleetSampler over the committed local data (tests/conftest.py).
 
     ``mid2023_antrieb_by_status.csv`` IS committed (built from the MiD 2023 B1
     Autos micro-data, see ADR-0082), so ``sampler.ev_income_tilt`` is an active
     model here -- this fixture exercises the PRIMARY path.
     """
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+    return committed_fleet_sampler
+
+
+@pytest.fixture()
+def sampler(_sampler_built):
+    """A per-test shallow copy: tests below replace ``ev_income_tilt`` on it, and
+    ``sample_fleet`` re-applies every per-call setting, so one build serves all."""
+    return copy.copy(_sampler_built)
 
 
 def _data_path_without_antrieb_csv(tmp_path: Path) -> str:
@@ -116,10 +125,12 @@ def _data_path_without_antrieb_csv(tmp_path: Path) -> str:
     return str(tmp_path)
 
 
-@pytest.fixture()
-def sampler_without_antrieb(tmp_path):
-    """A FleetSampler whose MiD powertrain-by-status table is absent."""
-    return fs.FleetSampler.from_data_path(_data_path_without_antrieb_csv(tmp_path))
+@pytest.fixture(scope="module")
+def without_antrieb(tmp_path_factory):
+    """A mirror data path without the MiD powertrain-by-status table and a
+    FleetSampler built from it, once for the two tests that only read them."""
+    data_path = _data_path_without_antrieb_csv(tmp_path_factory.mktemp("without_antrieb"))
+    return data_path, fs.FleetSampler.from_data_path(data_path)
 
 
 def _make_status_cars(kreis: str, statuses: list[str], n_per_status: int,
@@ -233,7 +244,9 @@ def test_ev_income_tilt_redistributes_within_kreis_and_preserves_aggregate(
         "and aggregate preservation"
     )
 
-    n_per_status = 6000
+    # 3000 per status: ~18 expected very_low BEVs (base ~3% x factor 0.2) and a
+    # pooled-share SE of ~0.2pp against the 2pp tolerance below.
+    n_per_status = 3000
     df_cars = _make_status_cars(kreis, ["very_high", "very_low"], n_per_status)
     df_spec, _df_types, _summary = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=7, sampler=sampler, ev_income_tilt=True,
@@ -287,14 +300,14 @@ def test_committed_antrieb_csv_is_present_and_builds_an_active_tilt(sampler):
     assert factor_low < 1.0 < factor_high, (factor_low, factor_high)
 
 
-def test_absent_csv_disables_the_tilt(sampler_without_antrieb):
+def test_absent_csv_disables_the_tilt(without_antrieb):
+    _data_path, sampler_without_antrieb = without_antrieb
     assert sampler_without_antrieb.ev_income_tilt is None
 
 
-def test_absent_csv_sample_fleet_byte_identical_regardless_of_flag(
-        sampler_without_antrieb, tmp_path):
+def test_absent_csv_sample_fleet_byte_identical_regardless_of_flag(without_antrieb):
     """With the CSV absent, ev_income_tilt=True and =False must be identical."""
-    data_path = _data_path_without_antrieb_csv(tmp_path / "run")
+    data_path, sampler_without_antrieb = without_antrieb
     df_cars = _make_status_cars(
         ft.ZGB_KREISE_AGS5[0], list(ft.STATUS_LABELS), n_per_status=50)
 
@@ -392,10 +405,9 @@ def test_flag_off_byte_identical_to_no_tilt(sampler):
     df_spec_flag_off, df_types_flag_off, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=99, sampler=sampler, ev_income_tilt=False)
 
-    # A second sampler with the tilt entirely absent (the absent-CSV case, built
-    # from a mirror without the committed table) must produce the exact same
-    # output for the same seed.
-    sampler_no_tilt = fs.FleetSampler.from_data_path(DATA_PATH)
+    # A second sampler with the tilt entirely absent (what the absent-CSV case
+    # builds) must produce the exact same output for the same seed.
+    sampler_no_tilt = copy.copy(sampler)
     sampler_no_tilt.ev_income_tilt = None
     df_spec_no_model, df_types_no_model, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=99, sampler=sampler_no_tilt, ev_income_tilt=True)
@@ -411,6 +423,14 @@ def test_flag_on_with_active_tilt_differs_from_flag_off(sampler):
     (that is the whole point of aggregate preservation, see the placement
     test above), so this checks the PER-STATUS shares instead -- those are
     exactly what the tilt is supposed to move.
+
+    The tilt MULTIPLIES a car's electric share by a per-status factor, so the check is the ratio
+    to the flag-OFF share. A shift in percentage points would scale with this Kreis's KBA bev
+    share, 5 to 6 % here, and move with every KBA update; a no-op gives a ratio of 1.0 for both
+    statuses. Measured on 2026-09-29 over seeds 0..29 at 2000 cars per status, the very_high
+    ratio was at least 1.38 (median 1.55) and the very_low ratio at most 0.66 (median 0.54), so
+    the bounds 1.2 and 0.8 sit between the no-op and the worst seed. At 1000 cars per status the
+    very_high minimum fell to 1.25, at seed 13 itself, which is why the sample stays at 2000.
     """
     df_cars = _make_status_cars(
         ft.ZGB_KREISE_AGS5[0], ["very_high", "very_low"], n_per_status=2000)
@@ -430,11 +450,11 @@ def test_flag_on_with_active_tilt_differs_from_flag_off(sampler):
     high_on, high_off = _bev_share(df_spec_on, "very_high"), _bev_share(df_spec_off, "very_high")
     low_on, low_off = _bev_share(df_spec_on, "very_low"), _bev_share(df_spec_off, "very_low")
 
-    assert high_on > high_off + 0.02, (
-        f"tilt ON should raise the very_high bev share ({high_on:.4f}) above "
-        f"the flag-OFF baseline ({high_off:.4f})"
+    assert high_on / high_off > 1.2, (
+        f"tilt ON should raise the very_high bev share ({high_on:.4f}) by more than a fifth "
+        f"over the flag-OFF baseline ({high_off:.4f})"
     )
-    assert low_on < low_off - 0.02, (
-        f"tilt ON should lower the very_low bev share ({low_on:.4f}) below "
-        f"the flag-OFF baseline ({low_off:.4f})"
+    assert low_on / low_off < 0.8, (
+        f"tilt ON should cut the very_low bev share ({low_on:.4f}) by more than a fifth "
+        f"below the flag-OFF baseline ({low_off:.4f})"
     )

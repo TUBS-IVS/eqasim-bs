@@ -376,7 +376,7 @@ def test_build_persons_spc_ignores_p_bkat():
     P_BKAT=1. The old crosswalk mapped P_BKAT=1 -> CS1 6; the correct broad-activity
     derivation for an employed 40-year-old (non-student) is CS1 4 (Intermediate).
     """
-    from braunschweig.ipf.attributed import derive_socioprofessional_class
+    from braunschweig.population.socioprofessional_class import derive_socioprofessional_class
 
     persons, _map = assembly.build_persons(
         _merged_households(), _mid_households(), _mid_persons(),

@@ -28,7 +28,9 @@ DATA_PATH = os.path.join(REPO, "eqasim-data", "data")
 
 from braunschweig.data.mid.cars_by_status import (  # noqa: E402
     CAR_COUNT_CATEGORIES,
+    apply_raumtyp_tilt,
     cars_probabilities,
+    cars_probabilities_table,
     load_cars_by_raumtyp,
     load_cars_by_status_hhtype,
 )
@@ -103,33 +105,49 @@ def test_extract_fold_is_count_aggregation(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_pmf_sums_to_one():
+    """Every (hhtype, status) cell yields a valid pmf, untilted and under every raumtyp tilt.
+
+    The full product, through the two functions the enrichment stage draws with: one
+    cars_probabilities_table build, then apply_raumtyp_tilt for every cell under every raumtyp
+    region and untilted (480 cheap calls). The inputs are checked first, so a failure names the
+    bad base cell or region distribution. A covering design that checked each cell under one
+    rotated variant only was replaced after review on #435.
+    """
     df_h = load_cars_by_status_hhtype(DATA_PATH)
     df_r = load_cars_by_raumtyp(DATA_PATH)
-    for hhtype in df_h["hhtype"].unique():
-        for status in STATUS_CATEGORIES:
-            for rk in (None, "stadtregion_metropole", "laendlich_kleinstaedtisch"):
-                p = cars_probabilities(df_h, df_r, status, hhtype, rk)
-                if p is None:
-                    continue
-                assert p.shape == (len(CAR_COUNT_CATEGORIES),)
-                assert p.sum() == pytest.approx(1.0)
-                assert (p >= 0).all()
+    base_map, by_region, national = cars_probabilities_table(df_h, df_r)
+    n_categories = len(CAR_COUNT_CATEGORIES)
+    for region, distribution in {**by_region, "national": national}.items():
+        assert distribution.shape == (n_categories,), region
+        assert distribution.sum() == pytest.approx(1.0), region
+        assert (distribution >= 0).all(), region
+    cells = [(hhtype, status) for hhtype in sorted(df_h["hhtype"].unique())
+             for status in STATUS_CATEGORIES if (hhtype, status) in base_map]
+    assert cells, "the base table holds no (hhtype, status) cell"
+    assert {"stadtregion_metropole", "laendlich_kleinstaedtisch"} <= set(by_region)
+    for hhtype, status in cells:
+        for raumtyp in [None, *sorted(by_region)]:
+            p = apply_raumtyp_tilt(base_map[(hhtype, status)], by_region, national, raumtyp)
+            assert p.shape == (n_categories,), (hhtype, status, raumtyp)
+            assert p.sum() == pytest.approx(1.0), (hhtype, status, raumtyp)
+            assert (p >= 0).all(), (hhtype, status, raumtyp)
 
 
 def test_monotonicity_mean_cars_and_zero_share():
     """Higher economic status -> higher mean number_of_cars and lower 0-car share
-    at a fixed household type (the core income-aware signal)."""
+    at a fixed household type (the core income-aware signal), read from the untilted
+    base table the enrichment stage draws from."""
     df_h = load_cars_by_status_hhtype(DATA_PATH)
     df_r = load_cars_by_raumtyp(DATA_PATH)
+    base_map, _by_region, _national = cars_probabilities_table(df_h, df_r)
     cats = np.asarray(CAR_COUNT_CATEGORIES, dtype=float)
-
     # Test on the family + couple household types, where ownership clearly scales
     # with income (single-person types are noisier on the small MiD bases).
     for hhtype in ("couple_youngest_30_59", "child_under_6"):
         means = []
         zero_shares = []
         for status in STATUS_CATEGORIES:  # very_low .. very_high
-            p = cars_probabilities(df_h, df_r, status, hhtype, None)
+            p = base_map.get((hhtype, status))
             assert p is not None
             means.append(float((cats * p).sum()))
             zero_shares.append(float(p[0]))
@@ -308,3 +326,28 @@ def test_fallback_logged_and_counted(capsys):
     # Marginal invariant still holds even with fallbacks (fallback households keep
     # an H7-consistent count, so the rake is unaffected).
     assert df.attrs["number_of_cars_income_aware_primary_count"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# synpp cache coverage of the car-ownership coupling
+# ---------------------------------------------------------------------------
+
+def test_enriched_validate_token_covers_the_cars_module(monkeypatch):
+    """An edit to braunschweig.data.mid.cars_by_status must devalidate the enriched stage.
+
+    The vehicle-ownership draw imports the table builders and the raumtyp tilt of that
+    module inside a function, so the stage hashes it by dotted name. Until 2026-09-28 it
+    was not hashed at all: a changed tilt or base table would have been served from a
+    stale cache.
+    """
+    import inspect
+
+    from braunschweig.data.mid import cars_by_status
+    from braunschweig.synthesis.population import enriched
+
+    before = enriched.validate(None)
+    getsource = inspect.getsource
+    monkeypatch.setattr(
+        inspect, "getsource",
+        lambda obj: getsource(obj) + ("\n# edited\n" if obj is cars_by_status else ""))
+    assert enriched.validate(None) != before

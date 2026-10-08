@@ -59,15 +59,16 @@ notes: >-
   leisure_activity means. Gap CLOSED (issue #373 task 1, cleanup wave, corrected in fix round 1):
   this stage now declares validate() with _HELPER_MODULES = (trips, time_imputation,
   escort_pairing, constants, the default synthesis.population.spatial.secondary.
-  distance_distributions module) and _DEFERRED_HELPER_MODULE_NAMES = (mid, mid.donor,
-  purpose_subtype, shop_subtype, stage.config_keys), so an edit to any of those helper modules --
+  distance_distributions module) and _DEFERRED_HELPER_MODULE_NAMES = (mid.donor,
+  purpose_subtype, shop_subtype, stage.config_keys, and since ADR-0136 the rest of the stage's
+  import closure), so an edit to any of those helper modules --
   not only to the six declared purpose-package config VALUES above -- devalidates the cached distance
   distributions (tests/test_synpp_helper_hash_invariant.py's ALLOWED_VIOLATIONS entry for this
-  stage was removed once the gate confirmed full own-package coverage). mid.donor is named
-  SEPARATELY from mid (fix round 1, IMPORTANT 1): the mid package __init__ only RE-EXPORTS
-  load_mid_wege, so hashing the package object alone hashes __init__.py's own text, never
-  donor.py's function body where load_mid_wege is actually defined -- the same transitive gap
-  braunschweig.popsim.completed_donor.py already closes for the identical module. constants
+  stage was removed once the gate confirmed full own-package coverage). mid.donor is hashed
+  because load_mid_wege is defined there (fix round 1, IMPORTANT 1): the mid package __init__
+  only RE-EXPORTS it, so hashing the package object alone would hash __init__.py's own text,
+  never donor.py's function body. Since ADR-0136 the stage imports the loader from mid.donor
+  directly and no longer hashes the package __init__. constants
   (ROUTED_DETOUR_FACTOR scales every distance value) and the default distance_distributions
   module (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE inputs
   hashed for the same reason; both were checked for import cycles (neither has any first-party

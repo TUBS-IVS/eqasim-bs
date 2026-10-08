@@ -278,15 +278,16 @@ DATA_PATH = str(DATA)
 
 
 @pytest.fixture(scope="module")
-def sampler_real():
-    """Build a FleetSampler from the real data path.
+def sampler_real(request):
+    """The session's FleetSampler over the real data path (tests/conftest.py); the
+    tests below only read it or wrap it.
 
     If kba_model_fuel.csv is absent (the expected worktree state),
     model_fuel will be None.
     """
     if not DATA.exists():
         pytest.skip("eqasim-data not available")
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+    return request.getfixturevalue("committed_fleet_sampler")
 
 
 def test_model_fuel_field_exists_on_sampler(sampler_real):
@@ -430,8 +431,9 @@ def test_diesel_bias_observable_for_high_diesel_model(sampler_real):
         pytest.skip("No model with petrol+diesel feasible set found; "
                     "cannot verify soft-weight bias.")
 
-    # Build a large car frame using only one Kreis for speed.
-    n = 6000
+    # One Kreis, 3000 cars: the model-restricted subset (skip guard below) stays
+    # well above 30 cars and a 95%-vs-uniform diesel contrast is unmistakable.
+    n = 3000
     kreis = ft.ZGB_KREISE_AGS5[0]
     rng = np.random.default_rng(17)
     statuses = list(ft.STATUS_LABELS)

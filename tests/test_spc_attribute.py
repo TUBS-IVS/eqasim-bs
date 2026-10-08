@@ -25,7 +25,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from braunschweig.ipf.attributed import (  # noqa: E402
+from braunschweig.population.socioprofessional_class import (  # noqa: E402
     derive_socioprofessional_class, SPC_STUDENT, SPC_RETIRED, SPC_OTHER_INACTIVE,
 )
 

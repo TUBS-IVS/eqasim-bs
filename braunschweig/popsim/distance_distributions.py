@@ -176,12 +176,33 @@ _HELPER_MODULES = (
 # and hashing trips' own source cannot see a change on the other side of that import, the
 # same one-edge-further-out reason the chainsolver stage hashes trips itself.
 _DEFERRED_HELPER_MODULE_NAMES = (
-    "braunschweig.popsim.mid",
     "braunschweig.popsim.mid.donor",
     "braunschweig.popsim.purpose_subtype",
     "braunschweig.popsim.seed",
     "braunschweig.popsim.shop_subtype",
     "braunschweig.popsim.stage.config_keys",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.csv_format",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
 )
 
 
@@ -1150,7 +1171,7 @@ def execute(context):
     synthesis.population.spatial.secondary.locations (and CustomDistanceSampler)
     can consume it without modification.
     """
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.stage.config_keys import (
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
@@ -1183,7 +1204,7 @@ def execute(context):
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
     )
-    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = mid_donor.load_mid_wege(mid_dir)
     logger.info(
         "[popsim.distance_distributions] loaded %d MiD trips", len(mid_wege)
     )
