@@ -7,8 +7,8 @@ under ``eqasim-data/`` like the other raw data and are available on request. Eve
 ``scripts/parking/calibrate_garage_decay.py``) fails with the message of ``missing_restricted_input_message``: the file, the
 data record that describes it and states the SHA-256 for verification, and the route to obtain it.
 
-This module is deliberately NOT one of the hashed helper modules of ``zones_stage`` (it holds no release logic), so editing
-its prose never invalidates the cache of the stage.
+``zones_stage`` imports this module and lists it in its hashed helper modules (the whole import closure is hashed, ADR-0136),
+so editing it recomputes that cheap stage once.
 """
 from __future__ import annotations
 

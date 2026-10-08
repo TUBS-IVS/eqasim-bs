@@ -102,7 +102,7 @@ RELEASE_INPUTS = (
 #: source (synpp hashes only this module's own). ``parking_zones`` loads and validates the four parking
 #: files (the districts included), ``parking_garages`` loads and validates the garage dataset, ``attach`` validates the SrV
 #: table, ``tariff_export`` converts every tariff row and hashes the inputs.
-_HELPER_MODULES = (parking_zones, parking_garages, attach, tariff_export)
+_HELPER_MODULES = (parking_zones, parking_garages, attach, tariff_export, restricted_inputs)
 #: Reached through ``tariff_export`` rather than imported here: ``tariff_row_to_zone`` builds a
 #: ``cost.ZoneTariff``, whose construction IS the per-row validation. Hashed by dotted name, like the deferred
 #: helpers of ``braunschweig.matsim.simulation.prepare``. ``free_draw_options`` is imported by ``attach`` (the draw
