@@ -28,6 +28,7 @@ import cycle between the facade and this module.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from braunschweig.analysis.dashboard.spatial_metrics import _load_zgb_kreise
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_od_matrix
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_per_kreis
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -185,7 +188,38 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
         et = et[et["mode"] != "outside"].copy()
         et["km"] = et["routed_distance"].astype(float) / 1000.0
 
-        # Overall distance distribution (all trips)
+        # Mode share over ALL trips (in-region + cross-boundary). This is the historical definition of
+        # ``sim_trip_mode_share_pct``; it is kept under its own key so earlier run manifests stay comparable.
+        all_share = et["mode"].value_counts(normalize=True) * 100
+        out["all_trips_mode_share_pct"] = {k: float(round(v, 2)) for k, v in all_share.items()}
+
+        # Cross-boundary trips (eqasim-bs#442): a portal stay of a resident or an in-commuter's home
+        # is an "outside" activity. Their mode is fixed upstream, so they are reported as a category
+        # of their own and leave the in-region modal split and distance KPIs below.
+        missing_purpose_columns = [c for c in ("preceding_purpose", "following_purpose") if c not in et.columns]
+        if missing_purpose_columns:
+            logger.warning(
+                "[dashboard] eqasim_trips.csv lacks %s -- cross-boundary trips cannot be identified; "
+                "all trips are reported as in-region", missing_purpose_columns)
+            touches_outside = pd.Series(False, index=et.index)
+        else:
+            touches_outside = (et["preceding_purpose"] == "outside") | (et["following_purpose"] == "outside")
+        cross = et[touches_outside]
+        out["cross_boundary"] = {
+            "n_trips": int(len(cross)),
+            "share_pct": float(round(100.0 * len(cross) / max(len(et), 1), 2)),
+            "mode_share_pct": {
+                k: float(round(v, 2)) for k, v in (cross["mode"].value_counts(normalize=True) * 100).items()
+            },
+            "mean_km": float(round(cross["km"].mean(), 2)) if len(cross) else None,
+        }
+        logger.info(
+            "[dashboard] cross-boundary trips (touch an outside activity): %d of %d (%.2f%%); "
+            "in-region KPIs use the remaining %d",
+            len(cross), len(et), out["cross_boundary"]["share_pct"], len(et) - len(cross))
+        et = et[~touches_outside].copy()
+
+        # Overall distance distribution (in-region trips)
         out["all_trip_dist_pct"] = _to_km_bands(et["km"].values)
         out["mean_trip_km"] = float(round(et["km"].mean(), 2))
         out["median_trip_km"] = float(round(et["km"].median(), 2))

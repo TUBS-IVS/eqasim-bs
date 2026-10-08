@@ -195,6 +195,66 @@ class TestModeShareTable:
         assert commute_cmp.empty
 
 
+class TestLongDistanceTripBlock:
+    """Additive cross-boundary / long-distance block for the simulated trips (#442)."""
+
+    def _trips(self) -> pd.DataFrame:
+        # Eight trips: three touch an outside activity (a resident's portal stay, both of its legs,
+        # and an in-commuter whose home is outside).
+        return pd.DataFrame(
+            {
+                "preceding_purpose": ["home", "home", "outside", "work", "home", "work", "outside", "shop"],
+                "following_purpose": ["work", "outside", "work", "outside", "shop", "home", "work", "home"],
+                "mode": ["car", "car", "pt", "car", "walk", "car", "car", "bicycle"],
+            }
+        )
+
+    def test_counts_share_mode_and_inside_purpose(self) -> None:
+        block = rmv._long_distance_trip_block(self._trips())
+        assert block["n_trips_total"] == 8
+        assert block["n_long_distance_trips"] == 4
+        assert block["share_pct"] == pytest.approx(50.0)
+        # Modes of the four long-distance trips (rows 1, 2, 3, 6): car, pt, car, car.
+        assert block["mode_share_pct"] == {"car": pytest.approx(75.0), "pt": pytest.approx(25.0)}
+        assert block["n_trips_by_mode"] == {"car": 3, "pt": 1}
+        # Inside end: row 1 -> home, row 2 -> work, row 3 -> work, row 6 -> work.
+        assert block["n_trips_by_inside_purpose"] == {"work": 3, "home": 1}
+        assert sum(block["inside_purpose_share_pct"].values()) == pytest.approx(100.0)
+
+    def test_trip_between_two_outside_activities_has_no_inside_purpose(self) -> None:
+        trips = pd.DataFrame(
+            {
+                "preceding_purpose": ["outside", "home"],
+                "following_purpose": ["outside", "work"],
+                "mode": ["car", "car"],
+            }
+        )
+        block = rmv._long_distance_trip_block(trips)
+        assert block["n_long_distance_trips"] == 1
+        assert block["n_trips_by_inside_purpose"] == {"outside": 1}
+
+    def test_run_without_outside_activity_reports_zero(self) -> None:
+        trips = pd.DataFrame(
+            {"preceding_purpose": ["home"], "following_purpose": ["work"], "mode": ["car"]}
+        )
+        block = rmv._long_distance_trip_block(trips)
+        assert block["n_long_distance_trips"] == 0
+        assert block["share_pct"] == 0.0
+        assert block["mode_share_pct"] == {}
+        assert block["n_trips_by_inside_purpose"] == {}
+
+    def test_missing_purpose_columns_yield_empty_block(self) -> None:
+        assert rmv._long_distance_trip_block(pd.DataFrame({"mode": ["car"]})) == {}
+
+    def test_existing_modal_split_tables_are_unchanged_by_outside_trips(self) -> None:
+        # The MiD side is not filtered, so the existing comparison must keep counting every real-mode trip.
+        with_outside = self._trips()
+        all_tbl, _, _ = rmv._mode_share_table(with_outside, mid_p12_1=None)
+        assert all_tbl["n_trips"].sum() == 8
+        car = all_tbl.loc[all_tbl["mode"] == "car", "n_trips"].iloc[0]
+        assert car == 5
+
+
 class TestArgParser:
     def test_requires_existing_output_dir(self, tmp_path: Path) -> None:
         with pytest.raises(SystemExit):

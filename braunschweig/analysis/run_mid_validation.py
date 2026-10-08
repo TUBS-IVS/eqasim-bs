@@ -514,6 +514,72 @@ def _mode_share_table(
 
 
 # ---------------------------------------------------------------------------
+# Cross-boundary / long-distance trips (eqasim-bs#442)
+# ---------------------------------------------------------------------------
+
+
+def _long_distance_trip_block(trips: pd.DataFrame) -> dict[str, Any]:
+    """Describe the simulated trips that touch an ``outside`` activity.
+
+    Portal stays of residents (cordon gates) and in-commuter trips (home outside
+    the scenario) carry an ``outside`` activity at one end; they form a
+    cross-boundary / long-distance category of their own (eqasim-bs#442).  The
+    block is purely additive: it reads the same ``trips`` frame as
+    :func:`_mode_share_table` but does not change any existing comparison (the
+    MiD reference side is not filtered, so those comparisons stay
+    apples-to-apples).  No reference value exists for this category, so it is
+    reported for measurement only.
+
+    The inside end of a long-distance trip is the purpose at the end that is not
+    ``outside``; a trip whose both ends are ``outside`` has no inside end and is
+    counted under the purpose ``outside``.  Trips are NOT filtered by mode: a
+    cutter leg with the pseudo-mode ``outside`` appears under that mode key.
+
+    Returns ``{}`` when ``preceding_purpose`` / ``following_purpose`` / ``mode``
+    are missing (logged), otherwise a dict with ``n_trips_total``,
+    ``n_long_distance_trips``, ``share_pct`` (of all trips), ``n_trips_by_mode``,
+    ``mode_share_pct``, ``n_trips_by_inside_purpose`` and
+    ``inside_purpose_share_pct`` (shares in percent of the long-distance trips).
+    """
+    required = ("preceding_purpose", "following_purpose", "mode")
+    missing = [column for column in required if column not in trips.columns]
+    if missing:
+        LOGGER.warning(
+            "Long-distance trip block skipped: simulated trips lack columns %s "
+            "(cross-boundary trips cannot be identified).", missing)
+        return {}
+
+    preceding_is_outside = trips["preceding_purpose"] == "outside"
+    following_is_outside = trips["following_purpose"] == "outside"
+    long_distance = trips[preceding_is_outside | following_is_outside]
+    # Inside end = the end that is not "outside"; both ends outside -> "outside".
+    inside_purpose = long_distance["following_purpose"].where(
+        long_distance["preceding_purpose"] == "outside", long_distance["preceding_purpose"]
+    )
+    n_total = int(len(trips))
+    n_long = int(len(long_distance))
+    share_pct = round(100.0 * n_long / n_total, 2) if n_total else 0.0
+    LOGGER.info(
+        "Long-distance trips (touch an outside activity): %d of %d (%.2f%%)",
+        n_long, n_total, share_pct)
+    return {
+        "n_trips_total": n_total,
+        "n_long_distance_trips": n_long,
+        "share_pct": share_pct,
+        "n_trips_by_mode": {
+            str(k): int(v) for k, v in long_distance["mode"].dropna().value_counts().items()
+        },
+        "mode_share_pct": {k: round(v, 2) for k, v in mode_share(long_distance["mode"]).items()},
+        "n_trips_by_inside_purpose": {
+            str(k): int(v) for k, v in inside_purpose.dropna().value_counts().items()
+        },
+        "inside_purpose_share_pct": {
+            k: round(v, 2) for k, v in mode_share(inside_purpose).items()
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
 # ---------------------------------------------------------------------------
 
@@ -1194,7 +1260,9 @@ def run(args: _Args) -> dict[str, Any]:
     mode_all_tbl = pd.DataFrame()
     mode_by_purpose_tbl = pd.DataFrame()
     mode_commute_cmp = pd.DataFrame()
+    long_distance_block: dict[str, Any] = {}
     if sim_trips is not None:
+        long_distance_block = _long_distance_trip_block(sim_trips)
         mode_all_tbl, mode_by_purpose_tbl, mode_commute_cmp = _mode_share_table(
             sim_trips, mid.get("P12_1")
         )
@@ -1250,6 +1318,9 @@ def run(args: _Args) -> dict[str, Any]:
             mode_commute_cmp.to_dict(orient="records")
             if not mode_commute_cmp.empty else []
         ),
+        # Cross-boundary / long-distance trips (touch an outside activity, #442);
+        # additive, measurement only (no reference). Empty without a --sim-cache.
+        "long_distance_trips": long_distance_block,
     }
 
     # --- Optional Monte-Carlo noise-band annotation (issue #126, task 4). ---
@@ -1343,6 +1414,24 @@ def run(args: _Args) -> dict[str, Any]:
                 _df_to_markdown(mode_commute_cmp),
                 "",
             ]
+    if long_distance_block:
+        md_lines += [
+            "## Cross-boundary / long-distance trips — measurement only",
+            "",
+            "_Simulated trips with an `outside` activity at one end (portal stays "
+            "of residents and in-commuter trips; eqasim-bs#442). No reference "
+            "table exists for this category. The modal-split tables above are "
+            "unchanged and still include these trips._",
+            "",
+            f"- Trips touching an outside activity: "
+            f"{long_distance_block['n_long_distance_trips']:,} of "
+            f"{long_distance_block['n_trips_total']:,} "
+            f"({long_distance_block['share_pct']} %)",
+            f"- Mode share (% of these trips): {long_distance_block['mode_share_pct']}",
+            f"- Purpose of the inside end (% of these trips): "
+            f"{long_distance_block['inside_purpose_share_pct']}",
+            "",
+        ]
     (out / "summary.md").write_text("\n".join(md_lines), encoding="utf-8")
 
     LOGGER.info("Done. Wrote %d files to %s", len(list(out.iterdir())), out)

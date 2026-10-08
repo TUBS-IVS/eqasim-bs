@@ -31,7 +31,8 @@ in a browser — no web-server needed.
 | Persons / Households / Trips | `output_bs_*/braunschweig_*_persons.csv`, `..._trips.csv` | — |
 | Beschäftigt / Führerschein / ÖV-Abo | `..._persons.csv` | MiD P9 / P17 / P24.1 |
 | Mode share (final + evolution) | `simulation_output/modestats.csv` | MiD P12_1 (work) |
-| Trip distance bands | `simulation_output/eqasim_trips.csv` | MiD P13 ZGB |
+| Trip distance bands | `simulation_output/eqasim_trips.csv` (in-region trips) | MiD P13 ZGB |
+| Cross-boundary trips (`cross_boundary`, `all_trips_mode_share_pct`) | `eqasim_trips.csv` trips with an `outside` purpose at either end (eqasim-bs#442); excluded from the in-region KPIs above | — (measurement only) |
 | Pendelweg ⌀ (km) | `eqasim_trips` `following_purpose=='work'` | MiD P13 = 20.7 km |
 | Distanz-EMD vs MiD | computed | Quality-Schwelle 0.08 |
 | Score / Distanz-Verlauf | `scorestats.csv`, `traveldistancestats.csv` | — |
