@@ -428,8 +428,9 @@ def _drop_trips_beyond_distance(df: pd.DataFrame, max_distance_m: float) -> pd.D
     """Drop trips whose ``distance`` (straight-line metres) exceeds ``max_distance_m``.
 
     Logs the dropped rate per mode (denominator: that mode's trips before the filter) and a
-    total, and warns about every mode that loses ALL its trips -- the sampler would find no
-    distribution for it, which must not pass unnoticed (CLAUDE.md "Fallback transparency").
+    total, and RAISES ``ValueError`` naming every mode that loses ALL its trips and the bound --
+    the sampler would find no distribution for it and fail late with a misleading KeyError
+    (controller ruling R18).
     Trips with a missing distance are kept here; Step 5b removes them and counts them.
     """
     if not max_distance_m > 0.0:
@@ -449,10 +450,10 @@ def _drop_trips_beyond_distance(df: pd.DataFrame, max_distance_m: float) -> pd.D
         100.0 * int(beyond.sum()) / n_before if n_before else 0.0)
     lost_modes = sorted(set(df["mode"].unique()) - set(kept["mode"].unique()))
     if lost_modes:
-        logger.warning(
-            "[popsim.distance_distributions] no trip left within %.0f m for mode(s) %s; they get "
-            "no distance distribution. Check max_distance_m and the MiD distances.",
-            max_distance_m, lost_modes)
+        raise ValueError(
+            f"[popsim.distance_distributions] no trip left within {max_distance_m:.0f} m for "
+            f"mode(s) {lost_modes}: the secondary sampler would find no distance distribution for "
+            "them and fail late. Raise max_distance_m or check the MiD distances of these modes.")
     return kept
 
 
@@ -635,7 +636,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         distribution is built (eqasim-bs#442: the sampler must not reach beyond the
         supplied area; None keeps every trip and the output byte-identical). Unit:
         metres, valid range > 0. The dropped share is logged per mode; a mode left
-        without any trip is reported as a WARNING and is absent from the result.
+        without any trip raises ``ValueError`` naming the mode(s) and the bound.
 
     Returns
     -------

@@ -43,14 +43,12 @@ def test_no_bound_is_identical_to_the_default_call():
             assert np.array_equal(left["weights"], right["weights"])
 
 
-def test_bound_below_every_distance_of_a_mode_is_reported_not_silent(caplog):
-    # The far trips are the only "bicycle" (hvm 2) trips: the bound removes the whole mode.
+def test_bound_below_every_distance_of_a_mode_raises_naming_mode_and_bound():
+    # The far trips are the only "bicycle" (hvm 2) trips: the bound removes the whole mode, which
+    # the sampler could not serve (it would fail late with a KeyError), so the stage must raise.
     wege = _wege(30, far_hvm=2)
-    with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-        result = dd.run(wege, max_distance_m=45000.0)
-    assert "bicycle" not in result
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("bicycle" in r.getMessage() and "no trip left" in r.getMessage() for r in warnings)
+    with pytest.raises(ValueError, match=r"bicycle.*45000|45000.*bicycle"):
+        dd.run(wege, max_distance_m=45000.0)
 
 
 def test_dropped_trips_are_logged_as_a_rate_per_mode(caplog):
@@ -61,7 +59,7 @@ def test_dropped_trips_are_logged_as_a_rate_per_mode(caplog):
 
 
 def test_a_bound_that_removes_every_trip_fails_loudly():
-    with pytest.raises(ValueError, match="no leg survives"):
+    with pytest.raises(ValueError, match="no trip left"):
         dd.run(_wege(0), max_distance_m=1.0)
 
 
