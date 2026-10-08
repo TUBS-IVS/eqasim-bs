@@ -865,9 +865,13 @@ def test_a_none_marker_draws_with_the_own_class_share_and_logs_that_the_proxy_is
     """R-4c-9: {"03102": None} is the config-overlay arm that restores the class share."""
     shares = _shares({"03102": 0.95, "bs_zentrum": 0.3})
     activities = _commuters(range(1, 41), "z_paid_b")
+    # The reference draw runs before the capture: its own INFO lines must not be counted, whatever log level an earlier
+    # test of the session left on the logger.
+    reference = attach.draw_parking_free(activities, _tariffs(), shares, SEED)
     with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        caplog.clear()
         marked = attach.draw_parking_free(activities, _tariffs(), shares, SEED, proxy_classes={"03102": None})
-    pd.testing.assert_frame_equal(marked, attach.draw_parking_free(activities, _tariffs(), shares, SEED))
+    pd.testing.assert_frame_equal(marked, reference)
     messages = [record.getMessage() for record in caplog.records]
     [line] = [message for message in messages if "workplace class 03102:" in message]
     assert "own class share 0.9500 (proxy disabled by config)" in line and "->" not in line
