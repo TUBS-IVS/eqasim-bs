@@ -89,12 +89,17 @@ def classification_distance_m(trips: pd.DataFrame, home_xy: pd.DataFrame, primar
     return classification_distance_frame(trips, home_xy, primary_xy)["classification_distance_m"]
 
 
+def portal_flags(distance_m: pd.Series, following_purpose: pd.Series, threshold_m: float) -> pd.Series:
+    """The one portal rule: distance strictly beyond ``threshold_m``, finite, and the leg is not a return home."""
+    is_portal = distance_m.gt(threshold_m) & distance_m.notna() & following_purpose.ne(HOME_PURPOSE)
+    return is_portal.rename("is_portal")
+
+
 def classify_portal_legs(trips: pd.DataFrame, home_xy: pd.DataFrame, primary_xy: dict,
                          threshold_m: float) -> pd.Series:
     """True for every leg whose destination lies beyond ``threshold_m``; never home, never NaN."""
     distance = classification_distance_m(trips, home_xy, primary_xy)
-    is_portal = distance.gt(threshold_m) & distance.notna() & trips["following_purpose"].ne(HOME_PURPOSE)
-    return is_portal.rename("is_portal")
+    return portal_flags(distance, trips["following_purpose"], threshold_m)
 
 
 def find_outside_stays(trips: pd.DataFrame, is_portal: pd.Series) -> pd.DataFrame:

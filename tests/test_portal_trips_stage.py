@@ -265,6 +265,42 @@ def test_build_portal_trips_reports_the_share_out_cap_causes():
     assert out["trips"].loc[1, "departure_time"] == pytest.approx(16 * 3600.0 + 7200.0)   # share forced to 1
 
 
+def test_build_portal_trips_warns_when_return_legs_lack_a_reported_distance_too_often(caplog):
+    fixture = _fixture()
+    fixture["trips"].loc[1, "euclidean_distance"] = np.nan        # 1 of 2 stays: share_out forced to 1
+    with caplog.at_level(logging.INFO):
+        stage.build_portal_trips(**fixture)
+    capped = [record for record in caplog.records if "share_out capped" in record.getMessage()]
+    assert len(capped) == 1 and capped[0].levelno == logging.WARNING
+    assert "2/2 (100.00%)" in capped[0].getMessage()               # counts with percentages of n_stays
+    assert "missing or zero for 1 (50.00%" in capped[0].getMessage()
+    caplog.clear()
+    fixture["fallback_warn_share"] = 0.9                            # above the 50 % rate: INFO only
+    with caplog.at_level(logging.INFO):
+        stage.build_portal_trips(**fixture)
+    capped = [record for record in caplog.records if "share_out capped" in record.getMessage()]
+    assert len(capped) == 1 and capped[0].levelno == logging.INFO
+
+
+def test_build_portal_trips_warns_when_the_origin_is_proxied_by_home_too_often(caplog):
+    fixture = _fixture()
+    # Person 2 now leaves a shop (a secondary activity) for the far leisure trip: home stands in for it.
+    extra = pd.DataFrame({
+        "person_id": [2], "trip_index": [0], "preceding_purpose": ["home"], "following_purpose": ["shop"],
+        "mode": ["car"], "euclidean_distance": [1000.0], "departure_time": [7 * 3600.0],
+        "arrival_time": [7.5 * 3600.0]})
+    trips = fixture["trips"].copy()
+    trips.loc[trips["person_id"] == 2, "trip_index"] += 1
+    trips.loc[(trips["person_id"] == 2) & (trips["trip_index"] == 1), "preceding_purpose"] = "shop"
+    fixture["trips"] = pd.concat([trips, extra], ignore_index=True)
+    with caplog.at_level(logging.INFO):
+        report = stage.build_portal_trips(**fixture)["report"]
+    assert report["n_origin_proxied_by_home"] == 1
+    proxied = [record for record in caplog.records if "origin proxied by home" in record.getMessage()]
+    assert len(proxied) == 1 and proxied[0].levelno == logging.WARNING
+    assert "1/2 (50.00%" in proxied[0].getMessage()
+
+
 def test_build_portal_trips_reports_missing_licences_and_unknown_donor_modes():
     fixture = _fixture()
     fixture["persons"].loc[0, "has_license"] = np.nan
@@ -291,7 +327,8 @@ def test_origin_is_the_assigned_primary_location_when_the_outbound_leg_leaves_wo
     primary = {"work": pd.DataFrame({"x": [1000.0, np.nan], "y": [2000.0, np.nan]},
                                     index=pd.Index([1, 3], name="person_id")),
                "education": pd.DataFrame({"x": [3000.0], "y": [4000.0]}, index=pd.Index([4], name="person_id"))}
-    origins, n_proxied = stage._origin_xy_for_stays(trips, stays, home_xy, primary)
+    outbound_positions = stage._trip_row_positions(trips, stays["person_id"], stays["outbound_trip_index"])
+    origins, n_proxied = stage._origin_xy_for_stays(trips, stays, home_xy, primary, outbound_positions)
     assert origins.tolist() == [[1000.0, 2000.0],    # leaves an assigned work location
                                 [0.0, 0.0],          # leaves a shop: home proxy
                                 [0.0, 0.0],          # leaves work without a finite location: home proxy

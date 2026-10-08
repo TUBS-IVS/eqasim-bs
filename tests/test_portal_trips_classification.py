@@ -34,6 +34,14 @@ def test_classification_distance_uses_the_assigned_location_for_work_and_the_rep
     assert distance.tolist() == [80000.0, 60000.0]
 
 
+def test_portal_flags_is_the_one_rule_beyond_threshold_finite_and_not_home():
+    distance = pd.Series([50000.0, 45000.0, 50000.0, np.nan, 10000.0], index=[5, 6, 7, 8, 9])
+    purpose = pd.Series(["work", "work", "home", "leisure", "leisure"], index=[5, 6, 7, 8, 9])
+    flags = cls.portal_flags(distance, purpose, 45000.0)
+    assert flags.tolist() == [True, False, False, False, False]    # strict '>', home never, NaN never
+    assert flags.dtype == bool and flags.index.tolist() == [5, 6, 7, 8, 9] and flags.name == "is_portal"
+
+
 def test_classify_portal_legs_applies_the_threshold_and_never_flags_home_or_nan():
     trips = _trips([(1, 0, "home", "leisure", "walk", 45000.0),
                     (1, 1, "leisure", "shop", "pt", 45000.1),

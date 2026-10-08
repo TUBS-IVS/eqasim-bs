@@ -115,18 +115,18 @@ def _trip_row_positions(trips, person_ids, trip_indices):
     return positions
 
 
-def _origin_xy_for_stays(trips, stays, home_xy, primary):
+def _origin_xy_for_stays(trips, stays, home_xy, primary, outbound_positions):
     """The chain anchor the outbound leg of each stay departs from, and how many had to be proxied.
 
     The origin is the ASSIGNED work/education location when the outbound leg leaves a work/education
     activity and that location exists (finite coordinates); otherwise home. ``n_proxied`` counts every
     origin that is neither home itself (the leg leaves home) nor an assigned primary location, i.e.
     every stay whose real origin (a secondary activity, or a primary activity without an assigned
-    location) is replaced by home. Returns ``(origins, n_proxied)`` with ``origins`` of shape (n, 2).
+    location) is replaced by home. ``outbound_positions`` are the row positions of the outbound legs in
+    ``trips`` (see ``_trip_row_positions``). Returns ``(origins, n_proxied)``, ``origins`` of shape (n, 2).
     """
     person_ids = stays["person_id"].to_numpy()
-    positions = _trip_row_positions(trips, person_ids, stays["outbound_trip_index"].to_numpy())
-    preceding = trips["preceding_purpose"].to_numpy()[positions]
+    preceding = trips["preceding_purpose"].to_numpy()[outbound_positions]
     origins = home_xy.reindex(person_ids)[["x", "y"]].to_numpy(dtype=float)
     at_home_or_assigned = preceding == _classification.HOME_PURPOSE
     for purpose in _classification.PRIMARY_PURPOSES:
@@ -141,7 +141,7 @@ def _origin_xy_for_stays(trips, stays, home_xy, primary):
     return origins, int((~at_home_or_assigned).sum())
 
 
-def _primary_destination_xy(trips, stays, primary):
+def _primary_destination_xy(trips, stays, primary, outbound_positions):
     """Assigned work/education coordinates of stays whose outbound leg goes to work/education.
 
     Returns ``(xy, assigned)``: ``xy`` is (n, 2) with NaN where there is no such location and ``assigned``
@@ -149,8 +149,7 @@ def _primary_destination_xy(trips, stays, primary):
     location are not flagged (they keep the externally drawn point).
     """
     person_ids = stays["person_id"].to_numpy()
-    positions = _trip_row_positions(trips, person_ids, stays["outbound_trip_index"].to_numpy())
-    following = trips["following_purpose"].to_numpy()[positions]
+    following = trips["following_purpose"].to_numpy()[outbound_positions]
     xy = np.full((len(stays), 2), np.nan)
     assigned = np.zeros(len(stays), dtype=bool)
     for purpose in _classification.PRIMARY_PURPOSES:
@@ -169,9 +168,7 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
     """Portal flags of all legs plus the primary-path coverage of the work/education legs (ruling R5)."""
     frame = _classification.classification_distance_frame(trips, home_xy, primary)
     distance = frame["classification_distance_m"]
-    # Same rule as classification.classify_portal_legs, computed from the one distance pass above.
-    is_portal = (distance.gt(threshold_m) & distance.notna()
-                 & trips["following_purpose"].ne(_classification.HOME_PURPOSE))
+    is_portal = _classification.portal_flags(distance, trips["following_purpose"], threshold_m)
     n_primary = int(trips["following_purpose"].isin(_classification.PRIMARY_PURPOSES).sum())
     n_fallback = int(frame["used_reported_distance"].sum())
     rate = n_fallback / n_primary if n_primary else 0.0
@@ -185,7 +182,7 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
                          "(person_id mismatch or empty location tables)")
     counts = {"n_primary_legs": n_primary, "n_primary_legs_assigned": n_primary - n_fallback,
               "n_primary_legs_reported_distance_fallback": n_fallback}
-    return is_portal.rename("is_portal"), distance, counts
+    return is_portal, distance, counts
 
 
 def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates, links, external_points,
@@ -219,12 +216,12 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
 
     person_ids = stays["person_id"].to_numpy()
     outbound_positions = _trip_row_positions(trips, person_ids, stays["outbound_trip_index"].to_numpy())
-    origin_xy, n_proxied = _origin_xy_for_stays(trips, stays, home_xy, primary)
+    origin_xy, n_proxied = _origin_xy_for_stays(trips, stays, home_xy, primary, outbound_positions)
     reported_m = distance_m.to_numpy()[outbound_positions]
 
     # Work/education stays point at their assigned location; every other stay (and a work/education
     # stay whose person has no assigned location) draws an external point at the reported distance.
-    point_xy, assigned = _primary_destination_xy(trips, stays, primary)
+    point_xy, assigned = _primary_destination_xy(trips, stays, primary, outbound_positions)
     band_miss = np.zeros(len(stays), dtype=bool)
     draw = ~assigned
     if draw.any():
@@ -295,11 +292,18 @@ def _log_report(report, warn_share, fallback_warn_share):
         "primary path: %d stays use the assigned work/education location", _LOG_TAG, report["n_external_band_miss"],
         report["n_external_point_drawn"], 100.0 * band_share, 100.0 * fallback_warn_share,
         report["n_stays"] - report["n_external_point_drawn"])
-    logger.info("%s origin proxied by home %d/%d; re-entry clamped %d; share_out capped %d (reported distance "
-                "missing or zero for %d of them); donor return mode differs %d", _LOG_TAG,
-                report["n_origin_proxied_by_home"], report["n_stays"], report["n_reentry_clamped"],
-                report["n_share_out_capped"], report["n_share_out_capped_missing_reported_distance"],
+    proxied_share = report["n_origin_proxied_by_home"] / n_stays
+    log = logger.warning if proxied_share > fallback_warn_share else logger.info
+    log("%s origin proxied by home %d/%d (%.2f%%; warn above %.0f%%)", _LOG_TAG, report["n_origin_proxied_by_home"],
+        report["n_stays"], 100.0 * proxied_share, 100.0 * fallback_warn_share)
+    logger.info("%s re-entry clamped %d/%d (%.2f%%); donor return mode differs %d", _LOG_TAG,
+                report["n_reentry_clamped"], report["n_stays"], 100.0 * report["n_reentry_clamped"] / n_stays,
                 report["n_return_mode_differs"])
+    missing_share = report["n_share_out_capped_missing_reported_distance"] / n_stays
+    log = logger.warning if missing_share > fallback_warn_share else logger.info
+    log("%s share_out capped %d/%d (%.2f%%); reported distance missing or zero for %d (%.2f%%; warn above %.0f%%)",
+        _LOG_TAG, report["n_share_out_capped"], report["n_stays"], 100.0 * report["n_share_out_capped"] / n_stays,
+        report["n_share_out_capped_missing_reported_distance"], 100.0 * missing_share, 100.0 * fallback_warn_share)
     if report["n_stay_persons_missing_license"]:
         logger.warning("%s %d stay persons have no has_license value: treated as unlicensed for the car check",
                        _LOG_TAG, report["n_stay_persons_missing_license"])
