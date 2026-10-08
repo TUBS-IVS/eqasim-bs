@@ -57,6 +57,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import inspect
+import logging
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -127,6 +128,7 @@ from . import (
     inverse_cdf,
     parallel_solving,
     plans,
+    portal_anchors,
     reporting,
     results,
     solver_defaults,
@@ -330,6 +332,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     parallel_solving,
     passive_joint_links,
     plans,
+    portal_anchors,
     purpose_subtype,
     reporting,
     resources,
@@ -354,6 +357,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # inspect.getsource of this file. A changed DEFAULT_ there changes what the stage
     # computed under without touching any file this token otherwise covers.
     "braunschweig.popsim.stage.config_keys",
+    # The portal-trip feature flag (eqasim-bs#442) is read in configure() and execute() through
+    # the same function-level import: KEY_ENABLED / DEFAULT_ENABLED decide whether the portal
+    # anchors enter this stage at all.
+    "braunschweig.synthesis.portal_trips.config_keys",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.calibration.targets",
@@ -411,6 +418,13 @@ def validate(context):
     return digest.hexdigest()
 
 
+#: Stage delivering the gate anchors of the portal stays (eqasim-bs#442); a dependency of this stage
+#: only while the portal feature is enabled.
+PORTAL_ANCHORS_STAGE = "braunschweig.synthesis.portal_trips.anchors"
+
+logger = logging.getLogger(__name__)
+
+
 # ---------------------------------------------------------------------------
 # synpp configure
 # ---------------------------------------------------------------------------
@@ -426,6 +440,13 @@ def configure(context):
     context.stage("synthesis.population.spatial.primary.locations")
     context.stage("synthesis.population.spatial.secondary.distance_distributions")
     context.stage("synthesis.locations.secondary")
+
+    # Portal trips (eqasim-bs#442): the gates of the outside stays are fixed anchors of the chain
+    # solver. The flag is declared with the shared key/default and the anchors stage is a
+    # dependency ONLY when the feature is on, so an off run keeps its pre-feature DAG and cache.
+    from braunschweig.synthesis.portal_trips.config_keys import DEFAULT_ENABLED, KEY_ENABLED
+    if context.config(KEY_ENABLED, DEFAULT_ENABLED):
+        context.stage(PORTAL_ANCHORS_STAGE)
 
     context.config("random_seed")
     context.config("processes")
@@ -870,6 +891,25 @@ def _apply_escort_household_link(context, df_trips):
         "-> SrV-weighted draw."
     )
     return df_trips, linked_location_rows, escort_activity_anchors
+
+
+def _apply_portal_anchors(portal_anchor_rows, escort_activity_anchors):
+    """Add the portal gates (eqasim-bs#442) to the chain solver's pre-anchored activities.
+
+    ``portal_anchor_rows`` is the anchors frame of the portal stage, or ``None`` when the feature
+    is off (behaviour unchanged). Returns ``(activity_anchors, portal_location_rows)``: the escort
+    anchors extended by the gates, and the locations-output rows of the gates (``None`` when there
+    is nothing to append). The vendored problem splitter resolves ``outside`` boundaries through
+    the same ``activity_anchors`` mapping as the escort and passive-joint anchors.
+    """
+    if portal_anchor_rows is None:
+        return escort_activity_anchors, None
+    portal_dict = portal_anchors.anchors_dict(portal_anchor_rows)
+    activity_anchors = portal_anchors.merge_anchors(escort_activity_anchors, portal_dict)
+    logger.info("[braunschweig.secondary_chainsolvers] portal anchors: %d outside stays fixed at their gates",
+                len(portal_dict))
+    portal_location_rows = portal_anchors.location_rows(portal_anchor_rows) if len(portal_anchor_rows) else None
+    return activity_anchors, portal_location_rows
 
 
 def _build_scorer_spec(context, sec_enabled):
@@ -1912,6 +1952,13 @@ def execute(context):
     df_trips, linked_location_rows, escort_activity_anchors = (
         _apply_escort_household_link(context, df_trips)
     )
+    # Portal stays (eqasim-bs#442): the gate of each outside stay is a fixed, pre-anchored activity
+    # of the chain, like an escort_linked one; off -> no anchors and no extra rows.
+    from braunschweig.synthesis.portal_trips.config_keys import KEY_ENABLED
+    portal_anchor_rows = (
+        context.stage(PORTAL_ANCHORS_STAGE) if bool(context.config(KEY_ENABLED)) else None)
+    escort_activity_anchors, portal_location_rows = _apply_portal_anchors(
+        portal_anchor_rows, escort_activity_anchors)
     df_primary, crs = _prepare_primary(context)
     shared = _build_shared_solve_state(context, crs)
 
@@ -1991,6 +2038,12 @@ def execute(context):
     if linked_location_rows is not None and len(linked_location_rows):
         df_linked = gpd.GeoDataFrame(linked_location_rows, geometry="geometry", crs=crs)
         df_locations = pd.concat([df_locations, df_linked], ignore_index=True)
+
+    # The gates of the portal stays (eqasim-bs#442) are fixed boundaries as well: coordinate-only
+    # rows (location_id -1) so the eqasim location join finds a geometry for every outside activity.
+    if portal_location_rows is not None:
+        df_portal = gpd.GeoDataFrame(portal_location_rows, geometry="geometry", crs=crs)
+        df_locations = pd.concat([df_locations, df_portal], ignore_index=True)
 
     if len(df_convergence):
         print(

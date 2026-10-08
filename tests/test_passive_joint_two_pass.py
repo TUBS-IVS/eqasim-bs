@@ -476,6 +476,8 @@ def _execute_stage_values(df_persons):
 #: Every flag OFF -- the cheapest configuration that still reaches the dispatch, and the
 #: one whose printed output the OFF path must keep byte-identical.
 _EXECUTE_CONFIG = {
+    # Portal trips (eqasim-bs#442) OFF: no portal anchors stage is read, behaviour unchanged.
+    "braunschweig.portal.enabled": False,
     "escort_household_link": False,
     "escort_distance_by_type": False,
     "escort_purpose": False,
@@ -644,6 +646,39 @@ def test_execute_with_the_flag_off_solves_once_and_reads_the_persons_frame_once(
     assert solve_calls[0]["kwargs"] == {}
     assert ctx.stage_reads.count("synthesis.population.sampled") == 1
     assert len(df_locations) == 0 and len(df_convergence) == 0
+
+
+def test_execute_with_the_portal_feature_off_reads_no_anchors_stage(monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: portal off -> the anchors stage is never read and no portal rows exist."""
+    solve_calls = []
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False)
+
+    df_locations, _df_convergence = sc.execute(ctx)
+
+    assert "braunschweig.synthesis.portal_trips.anchors" not in ctx.stage_reads
+    assert solve_calls[0]["anchors"] is None
+    assert len(df_locations) == 0
+
+
+def test_execute_with_the_portal_feature_on_anchors_the_gates_and_appends_their_rows(
+        monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: the gates reach the solver as activity anchors and the locations output
+    as coordinate-only rows (location_id -1)."""
+    solve_calls = []
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False,
+                      **{"braunschweig.portal.enabled": True})
+    ctx._stages["braunschweig.synthesis.portal_trips.anchors"] = gpd.GeoDataFrame(
+        {"person_id": [2], "activity_index": [1], "gate_id": ["gate_e"], "kind": ["road"], "mode": ["car"]},
+        geometry=[Point(40000.0, 0.0)], crs="EPSG:25832")
+
+    df_locations, _df_convergence = sc.execute(ctx)
+
+    assert set(solve_calls[0]["anchors"]) == {(2, 1)}
+    assert df_locations["location_id"].tolist() == [-1]
+    assert df_locations["person_id"].tolist() == [2] and df_locations["activity_index"].tolist() == [1]
+    assert df_locations.crs.to_string() == "EPSG:25832"
 
 
 # --- RNG call-order guard for the _solve_problem_set extraction --------------------

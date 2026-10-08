@@ -7,10 +7,11 @@ FIELDS = ["person_id", "trip_index", "preceding_purpose", "following_purpose", "
 # linked child's school, the escorted child's joint activity at the adult's placed secondary
 # location. Both purposes only ever occur when the caller injected them, which implies it
 # passed activity_anchors.
-FIXED_PURPOSES = ["home", "work", "education", "escort_linked", "passive_linked"]
+# "outside" (eqasim-bs#442): the gate of a portal stay, pre-anchored by braunschweig.synthesis.portal_trips.
+FIXED_PURPOSES = ["home", "work", "education", "escort_linked", "passive_linked", "outside"]
 #: Fixed purposes resolved through the activity_anchors mapping instead of a per-person
 #: location column.
-ANCHORED_PURPOSES = ("escort_linked", "passive_linked")
+ANCHORED_PURPOSES = ("escort_linked", "passive_linked", "outside")
 
 def find_bare_assignment_problems(df):
     problem = None
