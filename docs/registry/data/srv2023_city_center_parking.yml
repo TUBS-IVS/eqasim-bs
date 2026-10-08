@@ -45,6 +45,9 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: |
+  Roles: the rows garage_large_lot and street are the calibration target of the garage decay length (ADR-0140, record
+  parking_garage_decay_calibration_2026) and never validate the model; the role validation_reference holds only for
+  paid_share_overall and the other non-garage figures, as a comparison with the universe caveat below.
   Construct: GEWICHT_P_ZENSUS-weighted shares of the usual parking place in the city centre
   (employer lot, public street, underground/multi-storey garage or large lot, other place) among
   Braunschweig residents who drive there, plus paid_share_overall, the weighted share paying

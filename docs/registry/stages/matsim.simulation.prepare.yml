@@ -19,8 +19,9 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
   minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1) that
   switches the Java car cost model to the zone tariffs, and the inputs report
-  <prefix>parking_inputs_report.json listing the files matsim.output copies; it does not write the search-time
-  factor of the Java module (the module default 0.0, the parking search time, applies; ADR-0140); with the flag off it declares
+  <prefix>parking_inputs_report.json listing the files matsim.output copies; it has no configuration key for the
+  search-time factor of the Java module (the lever is off by owner decision D4 of ADR-0140, a key is added only with a
+  measured search time), so the module default 0.0 applies; with the flag off it declares
   no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
   (enable_urban_parking) has no preparation step (ADR-0039).
 lineage:

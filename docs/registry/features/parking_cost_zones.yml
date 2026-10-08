@@ -11,8 +11,8 @@ description: >-
   monthly price over 21 working days). Residents are exempt in their resident zone (R1) and in the resident district of
   their home where the zone honours permits (R2, R2-a). A stay in a paid street or resident zone has the street option and
   every priced garage within 1,000 m with the weight exp(-d / lambda) (G1, G2) and is priced as the probability-weighted
-  expected cost; with parking_garage_decay_m 0, the value of the canonical configuration until lambda is calibrated
-  (G3, pending), the garage options are off. Outside every zone parking is free (assumption Z1; the coverage register
+  expected cost; the options act only with parking_garage_decay_m above 0, the calibrated lambda (G3; the current value
+  and state: validation.note). Outside every zone parking is free (assumption Z1; the coverage register
   parking_coverage_register_2026 states the status of every municipality). Work and education parking is free for a
   share of persons per workplace class equal to the SrV 2023 free share among car commuters (assumption A1; the paid
   zones of Wolfsburg use the share of the class bs_zentrum, A1-b) and for a share of the persons with work or education on
@@ -156,19 +156,19 @@ validation:
     origin/main jar byte for byte, and the Python reference and the Java calculator agree on the golden cases
     and in randomised differential tests. These are consistency checks, not a validation; the one comparison
     with an observed quantity (the SrV city-centre paid share) carries a universe caveat and is recorded as a
-    comparison. That smoke ran the first release (ADR-0139): no run of the v2 release (ADR-0140) exists, neither
-    the three-arm comparison nor the calibration of lambda, so nothing of v2 is validated and no direction or size of
-    an effect on the mode shares is stated. Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
+    comparison. That smoke ran the first release (ADR-0139). STATE OF THE V2 RELEASE (ADR-0140; this is the one place that
+    states it): no run of it exists, neither the three-arm comparison nor the calibration of lambda, so nothing of v2 is
+    validated and no direction or size of an effect on the mode shares is stated; parking_garage_decay_m is 0 in the
+    canonical configuration, so the garage options are off until the calibration table exists; the parking search time is
+    off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Owner review of the v2 release (ADR-0140) and of the runs that do not exist yet: the calibration of the
-    garage decay length (parking_garage_decay_m is 0 in the canonical configuration until the calibration table
-    exists) and the three-arm comparison with the SrV references on the server. Owner review of the 25 %
-    legacy-vs-zones A/B (with the L1 arms parking_minimum_stay_min 0 and 30 next
+    Owner review of the v2 release (ADR-0140) and of the runs that do not exist yet (validation.note states which).
+    Owner review of the 25 % legacy-vs-zones A/B (with the L1 arms parking_minimum_stay_min 0 and 30 next
     to the default 15), which is still to run on the server, and of the
     production flip of parking_zones_enabled to true, which is part of the reviewed branch although the
     design had planned it for after the A/B; the owner decides the flip at PR review. The two popsim
@@ -182,8 +182,7 @@ notes: >-
   simple_ipf_open is not_used because its configurations write the plans with the plain
   matsim.scenario.population stage, which attaches no parking attribute and therefore rejects
   parking_zones_enabled at configure time (stage record matsim.scenario.population); the zones need the
-  alias to braunschweig.matsim.scenario.population. Production state of the v2 release (ADR-0140): the flag
-  parking_zones_enabled is on in configs/base_bs.yml; parking_garage_decay_m is 0 (the garage options are off) until
-  scripts/parking/calibrate_garage_decay.py has run on the plans of a server run and its table
-  parking_garage_decay_calibration_2026.csv is committed; the parking search time is off (searchTimeFactor 0.0, no
-  zone carries a search time). introduced.adr names the first decision; ADR-0140 extends it.
+  alias to braunschweig.matsim.scenario.population. The calibration of lambda is
+  scripts/parking/calibrate_garage_decay.py on the plans of a server run, whose table
+  parking_garage_decay_calibration_2026.csv is then committed; the current state is in validation.note. introduced.adr
+  names the first decision; ADR-0140 extends it.
