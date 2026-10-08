@@ -392,6 +392,7 @@ def _stage_context(tmp_path, data_path=DATA_PATH, subdir="analysis/plan_structur
             S.KEY_MAX_UNMATCHED_HOME_SHARE: S.DEFAULT_MAX_UNMATCHED_HOME_SHARE,
             S.KEY_TRIPS_VIEW: S.DEFAULT_TRIPS_VIEW,
             S.KEY_DAY_ABSENCE_ENABLED: True,
+            S.KEY_PORTAL_ENABLED: False,
         },
         cache_path=tmp_path / "cache",
     )
@@ -415,9 +416,10 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     from braunschweig.analysis import plan_structure, spatial
     from braunschweig.calibration import srv_distance_targets, srv_plan_structure
     from braunschweig.synthesis.day_absence import absence as day_absence
+    from braunschweig.synthesis.portal_trips import config_keys as portal_config_keys
 
     assert set(S._HELPER_MODULES) == {
-        plan_structure, srv_plan_structure, srv_distance_targets, provenance, day_absence}
+        plan_structure, srv_plan_structure, srv_distance_targets, provenance, day_absence, portal_config_keys}
     # spatial is this stage's own function-level import; the names after it are the rest of
     # its import closure, gated in tests/test_audit_synpp_helper_hash.py.
     assert S._DEFERRED_HELPER_MODULE_NAMES[0] == "braunschweig.analysis.spatial"
@@ -441,8 +443,12 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():
-    """Default parameters: the FINAL reporting-day view, with the day-absence stage attached."""
-    recorder = _ConfigureRecorder()
+    """Default parameters: the FINAL reporting-day view, with the day-absence stage attached.
+
+    The portal layer is switched OFF here: with it on, the final view reads the pre-portal trips
+    (tests/test_srv_comparisons_portal_view.py).
+    """
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(recorder)
 
     assert "synthesis.population.enriched" in recorder.stages
@@ -462,7 +468,7 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
 
 def test_configure_declares_the_final_view_by_default_and_the_pre_assignment_view_on_request():
     """issue #370, Task 6: ``plan_structure_trips_view`` picks the trips stage AND its alias."""
-    rec = _ConfigureRecorder()
+    rec = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(rec)
     assert "synthesis.population.trips.final" in rec.stages
     assert "synthesis.population.trips" not in rec.stages
@@ -481,7 +487,7 @@ def test_configure_declares_the_absence_stage_only_for_the_final_view_with_the_f
     ``day_absence_enabled=False`` must not pull the absence stage into the DAG for a run that
     never reads it.
     """
-    rec_default = _ConfigureRecorder()
+    rec_default = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(rec_default)
     assert S.ABSENCE_STAGE in rec_default.stages
 

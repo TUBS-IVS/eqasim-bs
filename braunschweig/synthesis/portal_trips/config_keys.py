@@ -11,6 +11,12 @@ from __future__ import annotations
 KEY_ENABLED = "braunschweig.portal.enabled"
 DEFAULT_ENABLED = True
 
+#: The reporting-day trips the portal stage takes as its INPUT (before any outside stay is built). The SrV
+#: comparisons (plan structure, departure times) read this stage instead of ``synthesis.population.trips.final``
+#: while the portal layer is on, because SrV has no outside stays and the unchanged reference would otherwise be
+#: compared with a rewritten day (ruling R33).
+PRE_PORTAL_TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
+
 #: Straight-line metres. Classification threshold (reported distance of a secondary leg, or the
 #: home-to-location distance of a work/education leg), upper bound of the distance CDFs and of
 #: the external candidates. Defaults to the supply ring width (cordon_network_source_buffer_m)

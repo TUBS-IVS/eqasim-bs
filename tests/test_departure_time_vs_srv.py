@@ -401,13 +401,16 @@ def _stage_context(tmp_path, data_path=DATA_PATH, trips=None,
             S.KEY_SUBDIR: subdir,
             S.KEY_TRIPS_VIEW: S.DEFAULT_TRIPS_VIEW,
             S.KEY_DEPARTURE_TIME_MODEL: S.DEFAULT_DEPARTURE_TIME_MODEL,
+            S.KEY_PORTAL_ENABLED: False,
         },
         cache_path=tmp_path / "cache",
     )
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():
-    recorder = _ConfigureRecorder()
+    # The portal layer is OFF here: with it on, the final view reads the pre-portal trips
+    # (tests/test_srv_comparisons_portal_view.py).
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(recorder)
 
     assert "synthesis.population.enriched" in recorder.stages
@@ -459,10 +462,11 @@ def test_validate_hashes_the_pure_module_and_the_reference_builders():
     from braunschweig.popsim import departure_time_model
     from braunschweig.popsim import trips as popsim_trips
     from braunschweig.popsim.stage import config_keys
+    from braunschweig.synthesis.portal_trips import config_keys as portal_config_keys
 
     assert set(S._HELPER_MODULES) == {departure_time, plan_structure, srv_departure_times,
                                       srv_plan_structure, departure_time_model, metrics,
-                                      popsim_trips, config_keys, provenance}
+                                      popsim_trips, config_keys, provenance, portal_config_keys}
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0
     assert token == S.validate(None)
