@@ -397,9 +397,10 @@ def test_the_tariff_rows_carry_the_evidence_and_the_named_assumptions(sl, inputs
     assert tuple(p1[column] for column in figures) == ("3.00", "60", "18.00", "6.19")
     assert tuple(p2[column] for column in figures) == ("1.80", "30", "9.50", "3.14")
     assert p1["resident_permits_valid"] == "false" and p1["workplace_class"] == "bs_outer" and p1["zone_type"] == "street_paid"
-    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "municipal_page")
+    # ruling R-4g-2: the window is read from the opening hours of an operator page, so the source is the assumption F1
+    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "assumption")
     assert p1["max_stay_min"] == "" and p1["long_stay_product_eur"] == "" and p1["source_date"] == "2026-10-08"
-    for assumption in ("ASSUMPTION C-a", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2"):
+    for assumption in ("ASSUMPTION C-a", "ASSUMPTION F1", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2"):
         assert assumption in p1["notes"], assumption
     assert "Kiss&Ride" in p1["notes"] and "evening tariff" in p1["notes"] and "NOT modelled" in p2["notes"]
     assert "Kiss&Ride" not in p2["notes"] and p1["notes"].isascii()
@@ -415,9 +416,9 @@ def _table(sl, inputs, tmp_path, edit=None) -> pd.DataFrame:
     evidence = sl.station_evidence(inputs)
     path = tmp_path / "tariffs.csv"
     header = ",".join(sl.tariff_rows(evidence, inputs)[0])
-    path.write_bytes((header + "\r\n").encode("utf-8"))
+    path.write_bytes((HEADER_BEFORE.replace("\n", "\r\n") + header + "\r\n").encode("utf-8"))
     sl.append_tariff_rows(path, sl.tariff_rows(evidence, inputs))
-    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False, comment="#")
     for column in ("hourly_rate_eur", "billing_unit_min", "daily_cap_eur", "fee_start_h", "fee_end_h", "commuter_day_eur"):
         frame[column] = pd.to_numeric(frame[column])
     for column in ("free_if_stay_at_most_min", "first_period_min", "first_period_eur", "max_stay_min", "long_stay_product_eur",
@@ -443,10 +444,13 @@ def test_a_consistent_tariff_table_passes_the_check_and_reports_it(sl, inputs, t
     (lambda frame: frame.__setitem__("resident_permits_valid", True), "must be false"),
     (lambda frame: frame.__setitem__("workplace_class", "bs_zentrum"), "workplace_class"),
     (lambda frame: frame.__setitem__("max_stay_min", 60.0), "must stay empty"),
-    (lambda frame: frame.__setitem__("fee_window_source", "assumption"), "fee_window_source"),
+    (lambda frame: frame.__setitem__("fee_window_source", "municipal_page"), "fee_window_source must be 'assumption'"),
+    (lambda frame: frame.__setitem__("notes", frame["notes"].str.replace("ASSUMPTION F1", "ASSUMPTION F9")),
+     "the note must hold 'ASSUMPTION F1'"),
     (lambda frame: frame.__setitem__("notes", "no assumption named"), "the note must hold"),
     (lambda frame: frame.drop(index=[2], inplace=True), "tariff row missing"),
-], ids=["rate", "unit", "cap", "commuter", "window", "permit", "class", "max_stay", "window_source", "notes", "missing_row"])
+], ids=["rate", "unit", "cap", "commuter", "window", "permit", "class", "max_stay", "window_source_municipal_page",
+        "no_f1_in_notes", "notes", "missing_row"])
 def test_a_tariff_table_that_contradicts_the_evidence_is_refused(sl, inputs, tmp_path, edit, message):
     with pytest.raises(SystemExit, match=message):
         sl.check_tariff_rows(sl.station_evidence(inputs), _table(sl, inputs, tmp_path, edit))
@@ -456,14 +460,16 @@ def test_the_rows_are_appended_with_the_line_ending_of_the_table_and_never_twice
     evidence = sl.station_evidence(inputs)
     path = tmp_path / "tariffs.csv"
     header = ",".join(sl.tariff_rows(evidence, inputs)[0])
-    path.write_bytes(("# a comment\r\n" + header + "\r\nold_zone," + ",".join([""] * 24) + "\r\n").encode("utf-8"))
+    old_row = "old_zone," + ",".join([""] * 24)
+    path.write_bytes((HEADER_BEFORE.replace("\n", "\r\n") + header + "\r\n" + old_row + "\r\n").encode("utf-8"))
     sl.append_tariff_rows(path, sl.tariff_rows(evidence, inputs))
     raw = path.read_bytes()
-    assert raw.count(b"\r\n") == raw.count(b"\n") == 6 and raw.isascii()
+    # the five header lines of the chain, the lines G-a and G-b, the column line, the old row and the three rows of the step
+    assert raw.count(b"\r\n") == raw.count(b"\n") == 5 + 2 + 1 + 1 + 3 and raw.isascii()
     with pytest.raises(SystemExit, match="exists already"):
         sl.append_tariff_rows(path, sl.tariff_rows(evidence, inputs))
     other = tmp_path / "other.csv"
-    other.write_bytes(("# a comment\r\n" + header + "\r\n").encode("utf-8"))
+    other.write_bytes((HEADER_BEFORE.replace("\n", "\r\n") + header + "\r\n").encode("utf-8"))
     shifted = sl.tariff_rows(evidence, inputs)
     shifted[0] = {"extra": "x", **shifted[0]}
     with pytest.raises(SystemExit, match="has the columns"):
@@ -585,12 +591,12 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
         assert (row["hourly_rate_eur"], row["billing_unit_min"], row["daily_cap_eur"], row["commuter_day_eur"]) == (
             rate, unit, day, commuter), zone_id
         assert (row["zone_type"], row["municipality_ags"], row["workplace_class"]) == ("street_paid", "03101000", "bs_outer")
-        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "municipal_page")
+        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "assumption")
         assert row["resident_permits_valid"] == False and row["resident_exempt"] == False, zone_id  # noqa: E712
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["first_period_eur"]) and pd.isna(row["long_stay_product_eur"]), zone_id
         assert row["commuter_day_eur"] == round(monthly / 21, 2) and row["notes"].isascii(), zone_id
         assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}).commuter_day_cents == cents
-        for assumption in ("C-a", "G-a", "G-b", "R2-a", "P2"):
+        for assumption in ("C-a", "F1", "G-a", "G-b", "R2-a", "P2"):
             assert f"ASSUMPTION {assumption}" in row["notes"], (zone_id, assumption)
     assert "Kiss&Ride" in tariffs.loc["bs_hbf_p1_nord", "notes"] and "evening tariff" in tariffs.loc["bs_hbf_p1_nord", "notes"]
 
@@ -628,3 +634,62 @@ def test_the_station_zones_change_neither_the_java_contract_nor_the_golden_file(
     assert tariff_export.SCHEMA_VERSION == 3
     for name, digest in pinned.PINNED_FIXTURE_SHA256.items():
         assert tariff_export.content_sha256(pinned.GOLDEN_JSON.parent / name) == digest, name
+
+
+# ---------------------------------------------------------------------------------------- the header of the tariff table
+HEADER_BEFORE = (
+    "# ASSUMPTION P2: commuter_day_eur is a product. They are not used (spec Amendment D2, ruling R-D2-a; bites: "
+    "bs_zone_ib and the six TU zones).\n"
+    "# ASSUMPTION R2-a: Permits; the five separately operated BgA car parks and the Goslar car park "
+    "Klubgartenstrasse/ZOB are marked false (bites: bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob; "
+    "the campus rows take the default).\n"
+    "# ASSUMPTION C-a: A destination within 50 m (bites: wob_tarifzone_1, bh_berliner_platz, se_am_markt, br_hexenritt, "
+    "br_wurmberg).\n"
+    "# ASSUMPTION D3-b: The ParkGO ceiling.\n"
+    "# resident_zone rows carry hourly_rate_eur 0.00.\n")
+
+
+def test_the_step_writes_the_header_lines_of_the_station_rows_idempotently(sl):
+    once = sl.station_header(HEADER_BEFORE)
+    assert once != HEADER_BEFORE and sl.station_header(once) == once
+    lines = once.splitlines()
+    # G-a and G-b come right after the line of D3-b, the bites lists name the three zones, the P2 line names the product
+    index = next(i for i, line in enumerate(lines) if line.startswith("# ASSUMPTION D3-b:"))
+    assert lines[index + 1].startswith("# ASSUMPTION G-a:") and lines[index + 2].startswith("# ASSUMPTION G-b:")
+    assert lines[index + 3].startswith("# resident_zone rows")
+    assert once.count("bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west") == 5
+    assert "the six TU zones and the three station zones" in once
+    assert "and the three DB BahnPark station car parks are marked false" in once
+    # the same header with the line ending of the table
+    assert sl.station_header(HEADER_BEFORE.replace("\n", "\r\n"), "\r\n").replace("\r\n", "\n") == once
+
+
+@pytest.mark.parametrize("anchor", [
+    "bites: bs_zone_ib and the six TU zones", "gs_parkplatz_klubgartenstrasse_zob; the campus rows",
+    "the five separately operated BgA car parks and the Goslar", "br_wurmberg).", "# ASSUMPTION D3-b:"])
+def test_a_header_without_an_anchor_line_of_the_chain_output_is_refused(sl, anchor):
+    with pytest.raises(SystemExit, match="the step needs exactly one|inserts the lines G-a and G-b"):
+        sl.station_header(HEADER_BEFORE.replace(anchor, "x"))
+
+
+def test_the_chain_output_before_the_step_plus_the_step_is_the_committed_tariff_table_byte_for_byte(sl, tmp_path):
+    import subprocess
+
+    base = "9e5cc143"      # the commit before Task 4g: the table as the zone chain wrote it
+    path = "eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv"
+    blob = subprocess.run(["git", "show", f"{base}:{path}"], cwd=REPO_ROOT, capture_output=True)
+    directory = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08"
+    if blob.returncode != 0 or not (directory / sl.PACKAGE_FILE).is_file() or not (directory / sl.OSM_FILE).is_file():
+        pytest.skip("the base commit or the gitignored station inputs are not available")
+    table = tmp_path / "parking_tariffs_2026.csv"
+    table.write_bytes(blob.stdout.replace(b"\r\n", b"\n"))
+    inputs = sl.load_station_inputs(directory / sl.PACKAGE_FILE, directory / sl.OSM_FILE)
+    sl.append_tariff_rows(table, sl.tariff_rows(sl.station_evidence(inputs), inputs))
+    committed = (COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").read_bytes().replace(b"\r\n", b"\n")
+    assert table.read_bytes() == committed
+
+
+def test_the_zone_file_written_by_the_step_must_carry_the_name_of_the_release(sl, tmp_path):
+    with pytest.raises(SystemExit, match="must be named parking_zones_2026.geojson"):
+        sl.main(["--station-dir", str(tmp_path), "--zones", str(tmp_path / "in.geojson"), "--zones-out",
+                 str(tmp_path / "out.geojson"), "--tariffs", str(tmp_path / "t.csv"), "--municipal-qa", str(tmp_path / "q.csv")])

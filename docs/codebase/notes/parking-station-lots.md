@@ -40,8 +40,11 @@ rulings R-4b-4 and R-4b-9 for exactly four car parks:
 - **The commuter product is a used product of its zone**: the QA row (`monthly_bs_hbf_*`) names the zone in `zone_ids`, and the
   validator compares `commuter_day_eur` with the amount over 21 working days; a station product is never a garage product and
   never a value of ASSUMPTION P13.
+- **The size of the zones is a limitation**: they are 4.7, 4.6 and 9.2 times the area of the lots (P1, P2, P3); the OSM fee=no street-side parking west of the station lies 86 to 390 m outside the zones; the zones take in the station forecourt (P1) and private Siemens lots (P2, mostly free through the employer draw); the destination content is small (building potentials: P1 12 buildings, P2 4, P3 5); a bare outline without the 50 m area would leave the zones inert.
 - **Not modelled and named**: the Kiss&Ride and evening tariffs of P1, the BahnCard and Pcard discounts, the weekly and machine
   monthly tickets, the reserved-space products and the stated maximum durations; free street parking west of the station
   stays unzoned.
+- **The step writes the header lines of the tariff table** (`station_header`: assumptions G-a and G-b and the bites lists), and it refuses a zone file that is not named `parking_zones_2026.geojson` (the GeoJSON `name` member follows the file name).
+- **The fee window of the station rows is an assumption** (ruling R-4g-2): it is read from the opening hours of an operator page, so `fee_window_source` is `assumption` and the note names ASSUMPTION F1.
 - **Do not edit the data files by hand**; regenerate them (commands in the data records and the download checklist) and update
   the pinned hashes of the records.

@@ -771,9 +771,9 @@ def test_committed_parking_data_is_valid(capsys):
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
             "bs_bga_willy_brandt_platz, bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, gs_parkplatz_klubgartenstrasse_zob) "
             "and on 6 campus zones (default)") in out
-    # Task 4b (spec Amendments D1, D2, D4, E8): 13 assumption windows remain, the commuter product is on zone Ib and the six
+    # Task 4b (spec Amendments D1, D2, D4, E8; 16 with the three station rows of Amendment G1): 13 assumption windows remain, the commuter product is on zone Ib and the six
     # campus zones, no zone row carries a garage product or a search time
-    assert "fee_window_source: assumption 13, municipal_page 20, ordinance 7" in out
+    assert "fee_window_source: assumption 16, municipal_page 17, ordinance 7" in out
     assert ("tariff products (schema 2): commuter product on 10 of 40 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "
             "bs_zone_ib, tu_campus_nord, "
             "tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, "
@@ -1105,10 +1105,12 @@ COMMUTER_MONTHLY_PRODUCT_EUR = {"bs_zone_ib": 79.0, **{zone_id: 10.0 for zone_id
 #: ASSUMPTION P2: 21 working days per month.
 COMMUTER_WORKING_DAYS = 21
 #: The rows that keep the assumption-grade fee window (ASSUMPTION F1) in the release of spec Amendment D1, 13 of 37: the
-#: two rows that Amendment D1 moves to a sourced window (he_innenstadt 9-16 h, gs_altstadt_zone1 10-18 h) are not among them.
+#: two rows that Amendment D1 moves to a sourced window (he_innenstadt 9-16 h, gs_altstadt_zone1 10-18 h) are not among them;
+#: the three station rows of Amendment G1 add 3 (16 of 40; ruling R-4g-2: a window read from the opening hours of an operator page).
 F1_ASSUMPTION_ZONES = (
     "bh_berliner_platz", "bh_burgberg", "bh_grossparkplatz", "bh_kurpark", "bh_sole_therme", "br_hexenritt", "br_wurmberg",
-    "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz",
+    "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz", "bs_hbf_p1_nord",
+    "bs_hbf_p2_sued", "bs_hbf_p3_west",
     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_marthastrasse_koernerstrasse",
     "bs_parkscheininsel_mentestrasse")
 
@@ -1158,8 +1160,9 @@ def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendm
     # the Edelhoefe garage left the zone row: it is a garage of the dataset (spec Amendment E8), not a note on the street
     assert "0.50 EUR first 30 min" not in helmstedt["notes"] and "parking_garages_2026" in helmstedt["notes"]
     # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
-    # (the three station rows of Amendment G1 name the operator's page: municipal_page, 17 + 3)
-    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 20, "assumption": 13, "ordinance": 7}
+    # (the three station rows of Amendment G1 read the window from the opening hours of an operator page, ruling R-4g-2:
+    # assumption 13 + 3)
+    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 17, "assumption": 16, "ordinance": 7}
     assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
 
 

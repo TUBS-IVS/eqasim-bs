@@ -154,8 +154,9 @@ acquisition:
     74.00 EUR, so 3.52 (74 / 21 = 3.524). The same three amounts of each lot must stand in the DB BahnPark sheet of
     2026-05-29 (member evidence/contipark/db_bahnpark_8000049.txt) and the monthly amount must be the cheapest publicly
     purchasable monthly product of the package's rules (BS_DB_P1_O01, BS_DB_P2_O02, BS_DB_P3_O02), else the step stops.
-    Fee window 0-24 h (the pages state the car parks open 00:00-24:00 and a fee table without a time limit;
-    fee_window_source municipal_page is the nearest class of the vocabulary for the operator's page), no maximum stay, no
+    Fee window 0-24 h (the pages state the car parks open 00:00-24:00 and a fee table without a time limit; a window read
+    from the opening hours of an operator page is no ordinance or signage statement, so fee_window_source is 'assumption'
+    and the note names ASSUMPTION F1, ruling R-4g-2, the situation of P5 at the garages), no maximum stay, no
     long-stay product, resident_permits_valid false (ASSUMPTION R2-a), workplace_class bs_outer (ASSUMPTION G-b: the
     station lies in the SrV Unterbezirk Hauptbahnhof, as the BgA row at the forecourt; a reading of the location).
     ASSUMPTION G-a: the amount is billed per started unit and the '1 Tag' amount is the daily maximum per stay; ASSUMPTION
@@ -256,13 +257,11 @@ limitations: >-
   current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
   retrieval and snapshot date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts
   ticketing that campus on that day (GB3 page), so on the snapshot date this zone charged nothing.
-  40 rows after spec Amendment G1 (2026-10-08): street_paid 33, resident_zone 1, campus 6; fee_window_source
-  municipal_page 20, ordinance 7, assumption 13; commuter_day_eur on 10 rows (bs_zone_ib, the six campus rows and the
+  40 rows after spec Amendment G1 (2026-10-08): street_paid 33, resident_zone 1, campus 6; fee_window_source municipal_page 17, ordinance 7, assumption 16; commuter_day_eur on 10 rows (bs_zone_ib, the six campus rows and the
   three station rows); resident_permits_valid false on nine stated rows (the five bs_bga_* rows,
   gs_parkplatz_klubgartenstrasse_zob and the three station rows), so R2 is off on 15 of the 40 zones with the six campus
-  zones. SHA-256 of the file (LF): 2b3a66e1d40cfa37b862cefc2573b4e5a05a5ac6ff8dbea169687fd7dcb18cf4 (before:
-  3e4b1ef239c62f310b6b9eb289577063d1cce3830c6ef880e2dfe8cf158ce6ca; the 37 data rows are unchanged, the header gained
-  the assumptions G-a and G-b and the bites lists of C-a, P2 and R2-a). Expected output change of Task 4g (its one
+  zones. SHA-256 of the file (LF): 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc (before:
+  3e4b1ef239c62f310b6b9eb289577063d1cce3830c6ef880e2dfe8cf158ce6ca; the 37 data rows are unchanged, the header gained the assumptions G-a and G-b and the bites lists of C-a, P2 and R2-a, all written by the same step: station_lots.station_header, idempotent, refusing a header whose anchor lines are missing; the table of the chain (commit 9e5cc143) plus the step is the committed file byte for byte, pinned by a test). Expected output change of Task 4g (its one
   statement): with parking_zones_enabled, stays within 50 m of the three Braunschweig Hbf car parks are priced as paid
   parking at their rates (before: free outside every zone, assumption Z1), and work and education stays there pay at
   most the monthly share (571 ct at P1, 352 ct at P2 and P3); the Wolfsburg deck becomes a garage option (data record

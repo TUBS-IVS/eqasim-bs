@@ -67,6 +67,8 @@ from braunschweig.parking import garage_qa as pq  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 
 STATION_DATE = "2026-10-08"
+#: The file name of the zone release; the GeoJSON ``name`` member follows the name of the file that is written.
+ZONES_FILE_NAME = "parking_zones_2026.geojson"
 PACKAGE_NAME, PACKAGE_FILE, PACKAGE_SHA256 = bsm.PACKAGE_NAME, bsm.PACKAGE_FILE, bsm.PACKAGE_SHA256
 #: The Overpass response with the outlines of the station lots (also in MANIFEST.md of the folder).
 OSM_FILE = "osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json"
@@ -80,9 +82,11 @@ BGA_NEIGHBOUR_ZONE = "bs_bga_willy_brandt_platz"
 #: of the Hauptbahnhof forecourt, ``bs_outer``.
 WORKPLACE_CLASS = "bs_outer"
 #: The fee window of the rows, decimal hours of the weekday: the pages state the car parks open around the clock and a fee
-#: table without a time limit (the evening tariff of P1 is not modelled).
+#: table without a time limit (the evening tariff of P1 is not modelled). Ruling R-4g-2: a window read from the opening hours of
+#: an operator page is no ordinance or signage statement (the situation of ASSUMPTION P5 at the garages), so by the rule of
+#: ASSUMPTION F1 the rows say ``assumption`` and name ASSUMPTION F1.
 FEE_WINDOW_H = (0.0, 24.0)
-FEE_WINDOW_SOURCE = "municipal_page"
+FEE_WINDOW_SOURCE = "assumption"
 #: The unit, in minutes, of the labels of the fee tables that name a billing unit (''1 Tag'' is no unit).
 LABEL_UNIT_MIN = {"30 Minuten": 30, "1 Stunde": 60}
 GERMAN_MONTH_LABEL = "1 Monat f\u00fcr Stellplatzmieter"
@@ -211,7 +215,8 @@ def read_fee_table(text: str, where: str) -> tuple:
         start = lines.index("Regul\u00e4res Parkentgelt")
         end = next(position for position in range(start, len(lines)) if lines[position].startswith("Alle Angaben ohne Gew"))
     except (ValueError, StopIteration):
-        raise SystemExit(f"{where}: no fee table between 'Regul\u00e4res Parkentgelt' and 'Alle Angaben ohne Gew\u00e4hr'") from None
+        raise SystemExit(f"{where}: no fee table between 'Regul\u00e4res Parkentgelt' and "
+                         "'Alle Angaben ohne Gew\u00e4hr'") from None
     block = lines[start + 1:end]
     if block[:2] != ["Zeiteinheit", "Preis"]:
         raise SystemExit(f"{where}: the fee table does not start with the header lines 'Zeiteinheit' and 'Preis'")
@@ -361,7 +366,7 @@ def _note(station: dict, values: dict, inputs: dict) -> str:
         f"{SHEET_MEMBER}, checked). ASSUMPTION G-a: the amount is billed per started {unit} min and the '{DAY_LABEL}' amount is "
         "the daily maximum per stay (the pages state neither a rounding nor the day boundary). Fee window 0-24 h: the page states "
         "the car park open 00:00-24:00 and a fee table without a time limit (a reading of the opening hours, no explicit fee "
-        "hours; fee_window_source municipal_page is the nearest class of the vocabulary, the source is the operator's page)."
+        "hours): ASSUMPTION F1, fee_window_source assumption (ruling R-4g-2; the operator's page is no ordinance or signage)."
         + special + other + " The stated maximum parking durations are not modelled. resident_permits_valid false: a car park of "
         "DB BahnPark; no source states that resident permits are valid there (ASSUMPTION R2-a). ASSUMPTION C-a: the zone is the "
         f"area within {rz.SITE_BUFFER_M:.0f} m of the lot outline. workplace_class {WORKPLACE_CLASS}: the Hauptbahnhof lies in the "
@@ -390,12 +395,62 @@ def tariff_rows(evidence: dict, inputs: dict) -> list:
     return rows
 
 
+#: The header lines of the tariff table that the station rows change: (the fragment of the chain output, its new wording). The
+#: bites lists name the station zones where an assumption bites on them.
+STATION_BITES = "bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west"
+HEADER_EDITS = (
+    ("are not used (spec Amendment D2, ruling R-D2-a; bites: bs_zone_ib and the six TU zones).",
+     "are not used (spec Amendment D2, ruling R-D2-a; bites: bs_zone_ib, the six TU zones and the three station zones "
+     + STATION_BITES + ", whose product is the monthly product 'Stellplatzmieter' of DB BahnPark, spec Amendment G1)."),
+    ("bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob; the campus rows take the default).",
+     "bs_bga_willy_brandt_platz, gs_parkplatz_klubgartenstrasse_zob, " + STATION_BITES + "; the campus rows take the default)."),
+    ("the five separately operated BgA car parks and the Goslar car park Klubgartenstrasse/ZOB are marked false",
+     "the five separately operated BgA car parks, the Goslar car park Klubgartenstrasse/ZOB and the three DB BahnPark station car "
+     "parks are marked false"),
+    ("bh_berliner_platz, se_am_markt, br_hexenritt, br_wurmberg).",
+     "bh_berliner_platz, se_am_markt, br_hexenritt, br_wurmberg, " + STATION_BITES + ")."),
+)
+#: The new assumption lines (inserted after the line that starts with ``HEADER_ANCHOR``).
+HEADER_ANCHOR = "# ASSUMPTION D3-b:"
+HEADER_LINES = (
+    "# ASSUMPTION G-a: The three Braunschweig Hbf station car parks (DB BahnPark, Contipark) bill the published amount per started "
+    "unit (60 min at P1, 30 min at P2 and P3) and the published '1 Tag' amount is the daily maximum per stay; the pages state "
+    "neither a rounding nor the day boundary, and the fee window is the 0-24 h opening of the car park (spec Amendment G1; bites: "
+    + STATION_BITES + ").",
+    "# ASSUMPTION G-b: The three station rows take the workplace class bs_outer of the BgA row at the Hauptbahnhof forecourt: the "
+    "station lies in the SrV Unterbezirk Hauptbahnhof; no Unterbezirk polygon is available, so the class is a reading of the "
+    "location and only sets the free-parking share of work and education stays (spec Amendment G1; bites: "
+    + STATION_BITES + ").",
+)
+
+
+def station_header(text: str, newline: str = "\n") -> str:
+    """The text of the tariff table with the header lines of the station rows (``HEADER_EDITS``, ``HEADER_LINES``): idempotent (a
+    change that is made already is skipped) and ``SystemExit`` when an anchor line of the chain output is missing, so a table
+    whose header was edited by hand or by another step is never patched blindly."""
+    for old, new in HEADER_EDITS:
+        if new in text:
+            continue
+        if text.count(old) != 1:
+            raise SystemExit(f"the header of the tariff table holds {text.count(old)} times the fragment {old!r}; the step needs "
+                             "exactly one (the chain output before the station rows)")
+        text = text.replace(old, new)
+    if HEADER_LINES[0] not in text:
+        if text.count(HEADER_ANCHOR) != 1:
+            raise SystemExit(f"the header of the tariff table holds {text.count(HEADER_ANCHOR)} lines {HEADER_ANCHOR!r}; the step "
+                             "inserts the lines G-a and G-b after exactly one")
+        start = text.index(HEADER_ANCHOR)
+        end = text.index(newline, start) + len(newline)
+        text = text[:end] + "".join(line + newline for line in HEADER_LINES) + text[end:]
+    return text
+
+
 def append_tariff_rows(path, rows: list) -> None:
-    """Append ``rows`` to the committed tariff table with its own line ending; ``SystemExit`` when a zone id exists already or the
-    row's columns differ from the table's header line."""
+    """Append ``rows`` to the committed tariff table with its own line ending and write the header lines of the station rows
+    (``station_header``); ``SystemExit`` when a zone id exists already or the row's columns differ from the table's header line."""
     raw = Path(path).read_bytes()
     newline = "\r\n" if b"\r\n" in raw else "\n"
-    text = raw.decode("utf-8")
+    text = station_header(raw.decode("utf-8"), newline)
     header = next(line for line in text.splitlines() if line.startswith("zone_id,"))
     columns = header.split(",")
     existing = {line.split(",", 1)[0] for line in text.splitlines() if line and not line.startswith("#")}
@@ -441,11 +496,12 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
             problems.append(f"{zone_id}: resident_permits_valid must be false (ASSUMPTION R2-a)")
         if row["workplace_class"] != WORKPLACE_CLASS:
             problems.append(f"{zone_id}: workplace_class {row['workplace_class']} but ASSUMPTION G-b gives {WORKPLACE_CLASS}")
-        if row["fee_window_source"] == "assumption":
-            problems.append(f"{zone_id}: fee_window_source must name the operator page, not 'assumption'")
+        if row["fee_window_source"] != FEE_WINDOW_SOURCE:
+            problems.append(f"{zone_id}: fee_window_source must be '{FEE_WINDOW_SOURCE}' (the window is read from the opening "
+                            "hours of an operator page, ASSUMPTION F1, ruling R-4g-2)")
         notes = str(row["notes"])
-        for phrase in ("ASSUMPTION C-a", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2", values["rule_id"],
-                       "NOT modelled", "BahnCard"):
+        for phrase in ("ASSUMPTION C-a", "ASSUMPTION F1", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2",
+                       values["rule_id"], "NOT modelled", "BahnCard"):
             if phrase not in notes:
                 problems.append(f"{zone_id}: the note must hold {phrase!r}")
         if values["special"] and ("Kiss&Ride" not in notes or "evening tariff" not in notes):
@@ -653,6 +709,9 @@ def main(argv=None) -> int:
                                                          "(and checked against the evidence)")
     parser.add_argument("--municipal-qa", required=True, help="parking_zones_2026_municipal_qa.csv: the station rows are appended")
     args = parser.parse_args(argv)
+    if Path(args.zones_out).name != ZONES_FILE_NAME:
+        raise SystemExit(f"--zones-out must be named {ZONES_FILE_NAME}: the 'name' member of the GeoJSON follows the file name, so "
+                         f"another name writes another file than the release (got {Path(args.zones_out).name})")
     directory = Path(args.station_dir)
     inputs = load_station_inputs(directory / PACKAGE_FILE, directory / OSM_FILE)
     built = append_zones(inputs, args.zones, args.zones_out)

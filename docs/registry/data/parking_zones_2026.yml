@@ -486,9 +486,13 @@ acquisition:
     3b2dfc1c9e698385f321fee1a3f78c03c6df4e8525538b43b5787607a52f2595). The raw inputs of the earlier steps of the chain
     (the OSM-derived car network output_bs and the cached municipality polygons) are not on this machine, so the whole
     chain was not re-run from scratch for this task; the step is additive by design and reads only the finished release.
-    The municipality containment check (every polygon at least 99 % inside its municipality,
-    assemble_parking_zones.check_municipality_containment) was NOT run for the three zones for the same reason: the lots
-    are the Braunschweig main station; the check must be run when the polygons are available.
+    The municipality containment check against the pipeline's VG250 polygons could not run (the cached polygons are not on
+    the machine), so the review used a substitute: all three zones lie 100 % inside the OSM boundary of Braunschweig
+    (relation 62531, read from the pinned Niedersachsen PBF), with a margin of 3.4 to 3.65 km to the boundary;
+    assemble_parking_zones.check_municipality_containment stays the pipeline check and runs at the next full chain run.
+    The deck point of the Wolfsburg garage lies inside wob_tarifzone_1 (checked). The command must write the zone file
+    under the name parking_zones_2026.geojson (the GeoJSON 'name' member follows the file name, so another name does not
+    regenerate the release byte for byte; the step refuses another name).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -733,8 +737,7 @@ limitations: >-
   the public ticket machines of Braunlage have no geometry; Schoeningen, Koenigslutter, Wittingen, Langelsheim and
   Schoeppenstedt have no zone (see the coverage register). Station car parks (spec Amendment G1): each of the three
   zones is the area within 50 m of the lot, so a destination within 50 m of P1, P2 or P3 is priced as parking there
-  although the person may park elsewhere (the zones are 21,600 to 43,900 m2 around outlines of 2,300 to 9,500 m2); the
-  outlines are OSM ways, matched by name and not surveyed, no official fee boundary; the Kiss&Ride tariff and the
+  although the person may park elsewhere (the zones are 21,600 to 43,900 m2 around outlines of 2,300 to 9,500 m2); the outlines are OSM ways, matched by name and not surveyed, no official fee boundary; they are 4.7, 4.6 and 9.2 times the area of the lots (P1, P2, P3); the OSM fee=no street-side parking west of the station lies 86 to 390 m outside the zones; the zones take in the station forecourt (P1) and private Siemens lots (P2, mostly free through the employer draw); the destination content is small (building potentials: P1 12 buildings, P2 4, P3 5); a bare outline without the 50 m area would leave the zones inert. the Kiss&Ride tariff and the
   evening tariff of P1 and the BahnCard and Pcard discounts are not modelled, and free street parking west of the
   station stays unzoned (ASSUMPTION Z1); the reported capacities differ between the sources (OSM, Contipark, DB
   BahnPark) and none enters the zones.
@@ -744,7 +747,7 @@ notes: >-
   1 (0.005 km2, 0.1 % of the zone area), campus_outline_and_detection_zones 5 (0.590 km2, 7.5 %), centre_approximation 3
   (1.432 km2, 18.3 %), municipal_street_sections_buffered 3 (1.565 km2, 20.0 %), ordinance_map 7 (2.480 km2, 31.7 %),
   osm_fee_tags 2 (0.670 km2, 8.6 %), single_site_buffered 14 (0.340 km2, 4.4 %), street_list_buffer 5 (0.733 km2, 9.4
-  %); fee_window_source assumption 13, municipal_page 20, ordinance 7; resident permits (rule R2): valid on 25 of 40
+  %); fee_window_source assumption 16, municipal_page 17, ordinance 7; resident permits (rule R2): valid on 25 of 40
   zones, not valid on the nine stated rows (the five BgA rows, the three station car parks and the Goslar car park at
   the ZOB) and the six campus zones (default); commuter product on 10 of 40 rows; per municipality 03101000 Braunschweig
   20 zones 3.329 km2, the others as below; register status zoned 11, no_paid_parking_known 1, not_audited 111, excluded

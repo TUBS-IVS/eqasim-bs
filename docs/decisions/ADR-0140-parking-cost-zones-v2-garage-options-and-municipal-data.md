@@ -280,7 +280,7 @@ run (see Status).
       '30 Minuten', '1 Tag', '1 Monat fuer Stellplatzmieter'), corroborated to the cent by the DB BahnPark sheet of 2026-05-29 and,
       for the monthly product, by the package's rules (the cheapest publicly purchasable one, rule D2): P1 2.50 EUR per started
       hour, day maximum 17.00 EUR, monthly product 120.00 EUR, so `commuter_day_eur` 5.71 (571 ct); P2 and P3 1.10 EUR per started
-      30 min, day maximum 11.00 EUR, monthly product 74.00 EUR, so 3.52 (352 ct); fee window 0-24 h every day; resident permits
+      30 min, day maximum 11.00 EUR, monthly product 74.00 EUR, so 3.52 (352 ct); fee window 0-24 h every day (read from the opening hours of an operator page, so fee_window_source is 'assumption' and the note names ASSUMPTION F1, ruling R-4g-2); resident permits
       not valid (ASSUMPTION R2-a); workplace class `bs_outer` as the BgA row at the forecourt (ASSUMPTION G-b, a reading of the
       location). ASSUMPTION G-a: the amount is billed per started unit and the published '1 Tag' amount is the daily maximum per
       stay (the pages state neither a rounding nor the day boundary).
@@ -304,9 +304,7 @@ run (see Status).
       Expected effect, an expectation and not a result (no v2 run exists): stays within 50 m of the three lots are now priced
       as paid parking at their rates (before: free by Z1 outside every zone), and commuters to the Hauptbahnhof pay the monthly
       share instead of the day rate; the size is not established. Limitations: the capacities of the sources differ (P1, P2, P3:
-      OSM 148, 385, 72; Contipark 185, 379, 70; DB sheet 183, 380, 72) and no capacity enters the zones; the 50 m area is wider than the lots; the
-      municipality containment check against the pipeline's VG250 polygons was not run in this session (the cached polygons were
-      not available on the machine), the position of every lot is the Braunschweig main station.
+      OSM 148, 385, 72; Contipark 185, 379, 70; DB sheet 183, 380, 72) and no capacity enters the zones; the 50 m area is wider than the lots: they are 4.7, 4.6 and 9.2 times the area of the lots (P1, P2, P3); the OSM fee=no street-side parking west of the station lies 86 to 390 m outside the zones; the zones take in the station forecourt (P1) and private Siemens lots (P2, mostly free through the employer draw); the destination content is small (building potentials: P1 12 buildings, P2 4, P3 5); a bare outline without the 50 m area would leave the zones inert. The municipality containment check against the pipeline's VG250 polygons could not run (the cached polygons are not on the machine), so the review used a substitute: all three zones lie 100 % inside the OSM boundary of Braunschweig (relation 62531, read from the pinned Niedersachsen PBF), with a margin of 3.4 to 3.65 km to the boundary; assemble_parking_zones.check_municipality_containment stays the pipeline check and runs at the next full chain run. The deck point of the Wolfsburg garage lies inside wob_tarifzone_1 (checked).
 
 ## Consequences
 
@@ -397,6 +395,7 @@ The ids are historical labels: the sentences state the rule, which the code and 
   with the production attach functions (an indicator, not a validation).
 - `R-4a-8`: A TU campus zone is the union of the camera detection zones of the campus and the campus grounds of the v1
   outline (owner decision, variant C).
+- `R-4g-2`: The fee window of the station rows, read from the opening hours of an operator page, is an assumption: `fee_window_source` is `assumption` and the note names ASSUMPTION F1 (the situation of P5 at the garages).
 - `R-4b-1`: File form of the garage dataset: Point features in CRS84 on disk with the tariff fields, monthly price, reported
   capacity, provenance and a QA table.
 - `R-4b-3`: A garage tariff is encoded only where its published structure maps exactly to the columns; nothing is

@@ -119,12 +119,11 @@ as a sensitivity number (the table records the filter).
 
 - The garage share is a calibration target, so it no longer validates the model; the universe caveat of E5 (SrV asks
   residents about their usual place, the model averages over destinations) is stated in the table header.
-- 44 of the 48 committed rows (35 garages, 13 surface lots) rest on at least one assumption (P4 or P5 for 32; 8 are free
-  only by the municipal default P12); the loader warns at every load for the first share.
+- Most committed rows rest on at least one assumption; the counts per assumption and the warning share are in the data record `parking_garages_2026` (one fact, one file), and the loader warns at every load for the first share.
 - The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
   reference plans are lost (task 5b of issue #436).
 - Monthly products (Amendment F): Tarif A of the Steinstrasse is limited to Mo-Fr 06:30-21:00 and the limit is not modelled;
-  the imputed products rest on four published products per city and no capacity of monthly places is modelled (the sold-out
+  the imputed products rest on the published products of their own municipality (counts in the data record `parking_garages_2026`) and no capacity of monthly places is modelled (the sold-out
   garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all (Contipark capture of
   2026-10-08), still carry the imputed product); the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers; the sensitivity arm `zones_v2_published_monthly_only` (imputation false) bounds the
   effect, and no v2 run exists yet, so the effect on the commuter garage share is an expectation (ADR-0140, decision 10).
