@@ -47,7 +47,8 @@ LOCATION_FIELDS = ["person_id", "home", "work", "education", "escort_linked"]
 
 def _anchor_coordinates(activity_anchors, person_id, activity_index, purpose):
     """Coordinates of a pre-anchored anchored-purpose activity (see
-    ANCHORED_PURPOSES: escort_linked, passive_linked and the portal gate "outside"). The caller that injects such trips must derive the
+    ANCHORED_PURPOSES: escort_linked, passive_linked and the portal gate
+    "outside"). The caller that injects such trips must derive the
     trip rewrite and the anchor table from the SAME assignment, so a miss is
     a bug -- fail fast."""
     try:
