@@ -32,7 +32,7 @@ from shapely.geometry import Point, box
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
-from tests.restricted_parking_data import committed_parking_path
+from tests.restricted_parking_data import parking_data_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -951,7 +951,7 @@ def _value(cell):
 @pytest.fixture(scope="module")
 def committed():
     """The committed garage dataset, loaded and validated."""
-    garages = pg.load_garages(committed_parking_path("parking_garages_2026.geojson"))
+    garages = pg.load_garages(parking_data_path("parking_garages_2026.geojson"))
     pg.validate_garages(garages)
     return garages.set_index("garage_id", drop=False)
 

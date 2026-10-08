@@ -30,7 +30,7 @@ from shapely.geometry import Point, box
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
-from tests.restricted_parking_data import committed_parking_path
+from tests.restricted_parking_data import local_package_json, parking_data_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -1136,7 +1136,7 @@ TARIFFS_PATH = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
 
 def _garages_path():
     """The garage dataset, a restricted file that is not in the repository: skips the test when it is absent."""
-    return committed_parking_path("parking_garages_2026.geojson")
+    return parking_data_path("parking_garages_2026.geojson")
 
 
 WF, GF, HE, PE, SZ = "03158037", "03151009", "03154028", "03157006", "03102000"
@@ -1559,12 +1559,19 @@ def test_no_garage_is_left_unpriced_the_reason_vocabulary_stays_and_the_forms_ar
 
 def test_the_four_garages_without_coordinates_are_listed_at_the_main_points_of_the_supplement():
     garages = _committed_garages().to_crs("EPSG:4326")
-    # entrances.geojson of the supplement (longitude, latitude): two OSM-mapped entrances in Braunschweig, the mapped entrance of
-    # the Groepern garage and the DERIVED access point of the Stobenstrasse deck (not a confirmed barrier point)
-    expected = {"bs_lange_strasse_sued": (10.518131, 52.2661908, "osm_mapped_parking_entrance", "310231874"),
-                "bs_steinstrasse": (10.5173585, 52.2611457, "osm_mapped_parking_entrance", "443311265"),
-                "he_stobenstrasse": (11.0075514, 52.2299095, "derived_access_point_on_osm_node", "3001883721"),
-                "he_groepern_tiefgarage": (11.0063757, 52.2297395, "osm_mapped_parking_entrance", "771725640")}
+    # entrances.geojson of the supplement (longitude, latitude), read from the local package at runtime (no coordinate literals
+    # of the restricted dataset in tracked files): two OSM-mapped entrances in Braunschweig, the mapped entrance of the
+    # Groepern garage and the DERIVED access point of the Stobenstrasse deck (not a confirmed barrier point)
+    entrances = local_package_json("Parkhaus_Ergaenzungen_2026-10-07.zip", "data/entrances.geojson")
+    points = {feature["properties"]["facility_id"]: feature["geometry"]["coordinates"] for feature in entrances["features"]
+              if feature["properties"]["role"] == "primary"}
+    expected = {}
+    for garage, facility, method, node in (
+            ("bs_lange_strasse_sued", "BS_ADDITIONAL_1", "osm_mapped_parking_entrance", "310231874"),
+            ("bs_steinstrasse", "BS_ADDITIONAL_2", "osm_mapped_parking_entrance", "443311265"),
+            ("he_stobenstrasse", "HE_STOBEN", "derived_access_point_on_osm_node", "3001883721"),
+            ("he_groepern_tiefgarage", "HE_GROEPERN_TG_118", "osm_mapped_parking_entrance", "771725640")):
+        expected[garage] = (round(points[facility][0], 7), round(points[facility][1], 7), method, node)
     for garage, (longitude, latitude, method, node) in expected.items():
         row = garages.loc[garage]
         assert (round(row.geometry.x, 7), round(row.geometry.y, 7)) == (longitude, latitude), garage
@@ -1604,8 +1611,10 @@ def test_the_groepern_notes_name_the_directory_the_conflicting_variant_and_the_d
 
 def test_charley_jacob_strasse_keeps_the_archived_municipal_point_and_names_it():
     row = _committed_garages().to_crs("EPSG:4326").loc["gs_charley_jacob_strasse"]
-    # the archived municipal point of 2018 (the follow-up package states it as 10.43004320553744, 51.90652479995978)
-    assert (round(row.geometry.x, 7), round(row.geometry.y, 7)) == (10.4300432, 51.9065248)
+    # the archived municipal point of 2018, as the follow-up package states it (read at runtime, not typed here)
+    archived = local_package_json("Parkhaus_Nachrecherche_2026-10-07.zip", "data/archived_charley_point.geojson")
+    longitude, latitude = archived["features"][0]["geometry"]["coordinates"]
+    assert (round(row.geometry.x, 7), round(row.geometry.y, 7)) == (round(longitude, 7), round(latitude, 7))
     assert row["geometry_method"] == "archived_municipal_point_2018"
     assert (row["capacity_reported"], row["capacity_scope"]) == (58, "secondary_directory_total")
     for phrase in ("budget of 2026", "546-01", "outside core working hours", "not modelled", "no day cap", "ASSUMPTION P11",
@@ -1748,15 +1757,25 @@ def test_the_data_record_counts_the_rows_on_a_stronger_assumption_as_the_dataset
     # the readings of the acquisition notes are the five of the limitations list
     assert "Five READINGS name no assumption id" in " ".join(record["acquisition"]["notes"].split())
     assert "The five READINGS" in limitations
+    # the SHA-256 of the dataset itself is pinned once, in storage.notes of the record (tests/test_restricted_parking_data.py)
+
+
+def test_the_committed_qa_table_is_pinned_in_the_record_ascii_and_documents_every_column():
+    import yaml
+
+    record = yaml.safe_load((REPO_ROOT / "docs" / "registry" / "data" / "parking_garages_2026.yml").read_text(encoding="utf-8"))
     notes = " ".join(record["notes"].split())
-    for path in (_garages_path(), GARAGES_QA_PATH):  # the repository holds LF; a checkout with core.autocrlf holds CRLF
-        digest = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-        assert digest in notes, (path.name, digest)
+    # the repository holds LF; a checkout with core.autocrlf holds CRLF
+    digest = hashlib.sha256(GARAGES_QA_PATH.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    assert digest in notes, (GARAGES_QA_PATH.name, digest)
+    assert GARAGES_QA_PATH.read_bytes().isascii(), GARAGES_QA_PATH.name
+    header = [line for line in GARAGES_QA_PATH.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
+    for column in pq.GARAGE_QA_COLUMNS:
+        assert any(line.startswith(f"# {column}: ") for line in header), column
 
 
-def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff():
-    for path in (_garages_path(), GARAGES_QA_PATH):
-        assert path.read_bytes().isascii(), path.name
+def test_the_local_garage_dataset_is_ascii_documented_and_every_row_carries_a_tariff():
+    assert _garages_path().read_bytes().isascii()
     document = json.loads(_garages_path().read_text(encoding="utf-8"))
     assert document["type"] == "FeatureCollection" and len(document["features"]) == 49
     assert "ODbL 1.0" in document["license"] and "OpenStreetMap" in document["attribution"]
@@ -1767,9 +1786,6 @@ def test_the_committed_files_are_ascii_documented_and_every_row_carries_a_tariff
     assert set(document["documentation"]["columns"]) == set(pg.DATASET_COLUMNS)
     for feature in document["features"]:
         assert feature["geometry"]["type"] == "Point" and list(feature["properties"]) == list(pg.DATASET_COLUMNS)
-    header = [line for line in GARAGES_QA_PATH.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
-    for column in pq.GARAGE_QA_COLUMNS:
-        assert any(line.startswith(f"# {column}: ") for line in header), column
 
 
 def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate():
@@ -1859,7 +1875,7 @@ def test_the_committed_files_are_reproduced_from_the_local_packages(garages_step
         pytest.skip("the owner's packages and the city car-park directory are gitignored and absent here")
     import geopandas as gpd
 
-    zones = gpd.read_file(committed_parking_path("parking_zones_2026.geojson")).to_crs(METRIC_CRS)
+    zones = gpd.read_file(parking_data_path("parking_zones_2026.geojson")).to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(TARIFFS_PATH)
     inputs = step.load_garage_inputs(regional, supplement_path=supplement, followup_path=followup, lots_path=lots, zones=zones,
                                      bs_monthly_path=monthly, evidence_directory=evidence)

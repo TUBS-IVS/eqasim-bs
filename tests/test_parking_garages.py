@@ -20,7 +20,7 @@ from shapely.geometry import LineString, Point
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
 from braunschweig.parking import zones as pz
-from tests.restricted_parking_data import committed_parking_path
+from tests.restricted_parking_data import parking_data_path
 
 SHA = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
 SOURCE = "https://www.contipark.de/de/parken/braunschweig/tiefgarage-eiermarkt/"
@@ -42,7 +42,7 @@ def _row(**changes) -> dict:
         "source_url": SOURCE, "source_date": "2026-10-07", "tariff_rule_ids": "r-35;r-36;r-37",
         "geometry_method": "official_feed_point", "geometry_source_url": "https://www.braunschweig.de/apps/pulp/result/x",
         "package_sha256": SHA, "notes": "Flat night fee not charged (ASSUMPTION P3); night 18-07 h 5.00 EUR in total.",
-        "x": 603408.0, "y": 5791173.0,
+        "x": 603000.0, "y": 5790000.0,
     }
     row.update(changes)
     return row
@@ -60,7 +60,7 @@ def _tiered(**changes) -> dict:
             "garage_daily_cap_eur": None, "garage_fee_start_h": None, "garage_fee_end_h": None, "tariff_tiers": TIERS,
             "assumptions": "P6", "tariff_rule_ids": "r-157;r-158;r-159;r-160",
             "notes": "Four tiers per started 30 min (ASSUMPTION P6: the tier in force at the start of a unit).",
-            "x": 604180.0, "y": 5786250.0}
+            "x": 604000.0, "y": 5786000.0}
     base.update(changes)
     return _row(**base)
 
@@ -78,7 +78,7 @@ def _banded(**changes) -> dict:
             "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0, "tariff_tiers": None, "tariff_duration_bands": BANDS,
             "assumptions": "P4;P5;P8", "tariff_rule_ids": "r-168;r-169;r-170;r-171",
             "notes": "Four duration bands (ASSUMPTION P8); no rounding stated (ASSUMPTION P4); no charging times "
-                     "(ASSUMPTION P5).", "x": 603200.0, "y": 5793100.0}
+                     "(ASSUMPTION P5).", "x": 603200.0, "y": 5792000.0}
     base.update(changes)
     return _row(**base)
 
@@ -101,7 +101,7 @@ def _graced(**changes) -> dict:
             "garage_fee_start_h": 0.0, "garage_fee_end_h": 24.0, "tariff_tiers": None, "tariff_duration_bands": GRACE_BANDS,
             "assumptions": "P5;P8;P10", "tariff_rule_ids": "r-5;r-6", "package_sha256": f"{SHA};{SUPPLEMENT_SHA}",
             "notes": "Grace period (ASSUMPTION P10); bands (ASSUMPTION P8); no charging times (ASSUMPTION P5).",
-            "x": 603200.0, "y": 5793100.0}
+            "x": 603200.0, "y": 5792000.0}
     base.update(changes)
     return _row(**base)
 
@@ -113,7 +113,7 @@ def _unpriced(**changes) -> dict:
             "garage_first_period_eur": None, "garage_daily_cap_eur": None, "garage_fee_start_h": None,
             "garage_fee_end_h": None, "priced": False, "not_priced_reason": "incomplete_tariff", "assumptions": None,
             "tariff_rule_ids": "r-19;r-20;r-21", "capacity_reported": None, "capacity_scope": None,
-            "notes": "1.50 EUR per started hour for hours 1 and 2, then 2.00 EUR.", "x": 604798.2, "y": 5790032.2}
+            "notes": "1.50 EUR per started hour for hours 1 and 2, then 2.00 EUR.", "x": 604800.0, "y": 5790100.0}
     base.update(changes)
     return _row(**base)
 
@@ -342,7 +342,7 @@ def test_the_loader_warns_above_the_union_threshold_and_stays_silent_at_or_below
 
     def garage(number, assumptions):
         notes = _assumption_notes(assumptions) if assumptions else "Stated in full."
-        return _row(garage_id=f"g_{number}", assumptions=assumptions, notes=notes, x=603408.0 + 50.0 * number)
+        return _row(garage_id=f"g_{number}", assumptions=assumptions, notes=notes, x=603000.0 + 50.0 * number)
 
     assert pg.UNION_WARNING_SHARE == 0.75
     # all four priced garages rest on an assumption and on P5: both union rates are above the threshold
@@ -572,9 +572,9 @@ def test_the_schedule_price_never_falls_as_the_stay_gets_longer(bands_text):
     ({"notes": None}, "notes: required"),
     ({"geometry_method": None}, "geometry_method: required"),
     # position
-    ({"x": 5791173.0, "y": 603408.0}, "outside the ZGB extent"),
+    ({"x": 5790000.0, "y": 603000.0}, "outside the ZGB extent"),
     ({"x": 10.5, "y": 52.3}, "outside the ZGB extent"),
-    ({"geometry": LineString([(603408.0, 5791173.0), (603420.0, 5791180.0)])}, "LineString is not a point"),
+    ({"geometry": LineString([(603000.0, 5790000.0), (603012.0, 5790007.0)])}, "LineString is not a point"),
     ({"geometry": Point()}, "empty geometry"),
     # the garage core of spec Amendment A6 is all-or-none
     ({"garage_billing_unit_min": None}, "garage_billing_unit_min: the garage core"),
@@ -1063,7 +1063,7 @@ def test_a_dataset_without_the_imputed_column_is_refused_by_default_with_the_col
     assert isinstance(error.value, ValueError) and "monthly_imputed_eur" in message
     assert "regional_garages.py" in message and "allow_legacy_columns=True" in message
     # the committed dataset carries the column, so the production path loads it with the default
-    assert "monthly_imputed_eur" in pg.load_garages(committed_parking_path("parking_garages_2026.geojson"))
+    assert "monthly_imputed_eur" in pg.load_garages(parking_data_path("parking_garages_2026.geojson"))
 
 
 def test_the_legacy_layout_loads_only_on_an_explicit_opt_in_as_nothing_imputed_and_says_so(tmp_path, caplog):

@@ -13,7 +13,9 @@ release of six inputs, each configured relative to ``data_path``:
 * the parking garages (``parking_garages_path``; ``parking_garages_2026``; parking cost zones v2, spec Amendment E1):
   points with their own tariffs, the distance-weighted garage options of a stay.
 
-The five committed parking files are curated together and the SrV table is the committed aggregate that
+The five parking files are curated together (the zone polygons, the resident districts and the garage dataset are
+local restricted files that are not in the repository, available on request; see
+``braunschweig.parking.restricted_inputs``) and the SrV table is the committed aggregate that
 gives P(free | workplace class) of the free-parking draw. They are only meaningful together: a polygon
 without its tariff row, a tariff row in a municipality the register does not mark ``zoned``, a district in a
 municipality the register does not know or a workplace class without an SrV share would each misprice stays
@@ -21,7 +23,7 @@ silently. This stage therefore loads and validates them as one unit and raises o
 
 1. polygons: loaded, reprojected to EPSG:25832 and validated for provenance, unique ids, valid polygons and pairwise
    overlap (``braunschweig.parking.zones``); strictly, ``max_repairs=0``: a polygon that would need the loader's repair
-   stops the stage, because the committed release is valid as stored;
+   stops the stage, because the release is valid as stored;
 2. tariffs: typed and validated per zone type (``validate_tariffs``, the synthetic test-set marker allowed),
    then every row converted by ``braunschweig.parking.tariff_export.tariff_row_to_zone``, the stricter
    per-row contract of the tariff model the Java cost model reads;
@@ -67,6 +69,7 @@ import pandas as pd
 
 from braunschweig.parking import attach, tariff_export
 from braunschweig.parking import garages as parking_garages
+from braunschweig.parking import restricted_inputs
 from braunschweig.parking import zones as parking_zones
 
 log = logging.getLogger(__name__)
@@ -94,11 +97,6 @@ RELEASE_INPUTS = (
      "parking_resident_districts_2026"),
     (KEY_GARAGES_PATH, "braunschweig/parking/parking_garages_2026.geojson", "parking_garages_2026"),
 )
-
-#: The release inputs that are NOT distributed in the repository because their sources are not cleared for
-#: redistribution (owner decision 2026-10-08, issue #436; storage.local_only in their data records). A missing one is
-#: reported with the request route instead of as a missing committed file.
-RESTRICTED_SOURCE_IDS = frozenset({"parking_zones_2026", "parking_resident_districts_2026", "parking_garages_2026"})
 
 #: Modules whose code decides the content or the validation of the release; ``validate()`` hashes their
 #: source (synpp hashes only this module's own). ``parking_zones`` loads and validates the four parking
@@ -143,14 +141,13 @@ def _release_files(context) -> list[tuple[str, str, str, Path]]:
         relative = context.config(key)
         path = data_path / relative
         if not path.is_file():
-            if source_id in RESTRICTED_SOURCE_IDS:
-                route = ("this input is not distributed in the repository (restricted source licences) and is "
-                         "available on request: open an issue in TUBS-IVS/eqasim-bs; verify a received file against "
-                         "the SHA-256 in")
-            else:
-                route = "the committed input is described in"
+            if source_id in restricted_inputs.RESTRICTED_RECORD_IDS:
+                # three of the six inputs are local restricted files (issue #436): name the record and the request route
+                raise FileNotFoundError(f"{_LOG_TAG} " + restricted_inputs.missing_restricted_input_message(
+                    source_id, f"{key} = {relative!r} under data_path {str(data_path)!r}", path))
             raise FileNotFoundError(f"{_LOG_TAG} {key} = {relative!r} does not exist under data_path "
-                                    f"{str(data_path)!r} ({path}); {route} docs/registry/data/{source_id}.yml")
+                                    f"{str(data_path)!r} ({path}); the committed input is described in "
+                                    f"docs/registry/data/{source_id}.yml")
         files.append((key, source_id, relative, path))
     return files
 
@@ -229,7 +226,7 @@ def execute(context):
     files = _release_files(context)
     paths = {key: path for key, _, _, path in files}
 
-    # Strict: the committed release is valid as stored, so a polygon that would need the loader's repair means the file
+    # Strict: the release is valid as stored, so a polygon that would need the loader's repair means the file
     # changed (a repair silently replaces the polygon the file states); scripts/validate_parking_zones.py is as strict.
     zone_polygons = parking_zones.load_zone_polygons(paths[KEY_ZONES_PATH], max_repairs=0)
     # load_zone_polygons validates as well; repeated so that the release contract does not rest on the

@@ -31,7 +31,7 @@ import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
 from braunschweig.parking import zones as pz
-from tests.restricted_parking_data import committed_parking_path
+from tests.restricted_parking_data import parking_data_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CURATION_DIR = REPO_ROOT / "scripts" / "curation" / "parking_zones_2026"
@@ -431,7 +431,7 @@ def test_assign_districts_refuses_what_assign_zones_refuses():
 
 def _committed_layer():
     """The district layer, a restricted file that is not in the repository: skips the test when it is absent."""
-    return committed_parking_path("parking_resident_districts_2026.geojson")
+    return parking_data_path("parking_resident_districts_2026.geojson")
 
 
 def test_the_committed_layer_has_the_districts_the_owner_named_and_loads_strictly():

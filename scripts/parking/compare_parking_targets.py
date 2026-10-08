@@ -88,7 +88,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from braunschweig.parking import attach, cost, zones as parking_zones  # noqa: E402
+from braunschweig.parking import attach, cost, restricted_inputs, zones as parking_zones  # noqa: E402
 
 
 def _load_script(path: Path, name: str):
@@ -836,12 +836,17 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     zones_geojson = args.zones_geojson or args.data_path / ZONES_RELATIVE
     required = [("run output of arm " + arm.label, arm.run_output) for arm in args.arms]
-    required += [("zone release", zones_geojson), ("tariff table", args.data_path / TARIFFS_RELATIVE),
+    required += [("tariff table", args.data_path / TARIFFS_RELATIVE),
                  ("SrV city-centre table", args.data_path / CITY_CENTER_RELATIVE),
                  ("SrV commute table", args.data_path / COMMUTE_RELATIVE)]
     for label, path in required:
         if not Path(path).exists():
             raise SystemExit(f"{label} not found: {path}")
+    # the zone polygons are a local restricted file (issue #436): name the data record and the request route
+    try:
+        restricted_inputs.require_restricted_file("parking_zones_2026", "zone polygons", zones_geojson)
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
     result = compare(args.arms, data_path=args.data_path, zones_geojson=zones_geojson, iterations=args.iteration)
     for path in write_comparison(result, args.out, overwrite=args.overwrite):
         log.info("[parking-compare] wrote %s", path)

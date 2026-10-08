@@ -16,7 +16,7 @@ import pytest
 from shapely.geometry import Point, Polygon, box
 
 from braunschweig.parking import zones as pz
-from tests.restricted_parking_data import committed_parking_path, require_restricted_parking_files
+from tests.restricted_parking_data import RESTRICTED_FILES, parking_data_path, require_restricted_parking_files
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "parking"
 TARIFF_FIXTURE = FIXTURES / "parking_tariffs_fixture.csv"
@@ -823,7 +823,7 @@ def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsy
     target = tmp_path / "braunschweig" / "parking"
     target.mkdir(parents=True)
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
-        shutil.copy(committed_parking_path(name), target / name)
+        shutil.copy(parking_data_path(name), target / name)
     # The committed QA rows stay (they are consistent with the polygons); the Wolfsburg row (QA only, no polygon
     # depends on it) is replaced by one whose recorded decision contradicts rule Q4 (60 % tagging completeness).
     committed_qa = COMMITTED_PARKING_DIR / "parking_zones_2026_qa.csv"
@@ -861,7 +861,7 @@ REGIONAL_PROVENANCE = (
 
 
 def test_committed_zones_carry_the_licence_notice():
-    document = json.loads((committed_parking_path("parking_zones_2026.geojson")).read_text(encoding="utf-8"))
+    document = json.loads((parking_data_path("parking_zones_2026.geojson")).read_text(encoding="utf-8"))
     assert "ODbL" in document["license"]
     assert "OpenStreetMap contributors" in document["attribution"]
     # spec Amendment C: the licence is stated per source; no claim that every polygon derives from OpenStreetMap
@@ -879,23 +879,31 @@ def test_committed_zones_carry_the_licence_notice():
 
 @pytest.mark.parametrize("name", COMMITTED_PARKING_FILES)
 def test_committed_parking_files_are_ascii(name):
-    text = committed_parking_path(name).read_text(encoding="utf-8")
+    text = parking_data_path(name).read_text(encoding="utf-8")
     offending = sorted({character for character in text if ord(character) > 127})
     assert not offending, f"{name} contains non-ASCII characters {offending}"
 
 
-def test_committed_texts_do_not_call_the_parkgo_annex_unpublished():
-    # The annex map ('Anlage zur ParkGO') is page 3 of the ParkGO PDF: not digitised in v1, but published.
-    paths = [committed_parking_path(name) for name in COMMITTED_PARKING_FILES]
-    paths.append(REPO_ROOT / "docs" / "registry" / "data" / "parking_zones_2026.yml")
+def _assert_texts_do_not_call_the_parkgo_annex_unpublished(paths):
     for path in paths:
         for sentence in re.split(r"[.;]\s", path.read_text(encoding="utf-8").lower()):
             if "annex" in sentence:
                 assert "not published" not in sentence, f"{path.name}: {sentence.strip()[:160]}"
 
 
+def test_committed_texts_do_not_call_the_parkgo_annex_unpublished():
+    # The annex map ('Anlage zur ParkGO') is page 3 of the ParkGO PDF: not digitised in v1, but published.
+    paths = [COMMITTED_PARKING_DIR / name for name in COMMITTED_PARKING_FILES if name not in RESTRICTED_FILES]
+    paths.append(REPO_ROOT / "docs" / "registry" / "data" / "parking_zones_2026.yml")
+    _assert_texts_do_not_call_the_parkgo_annex_unpublished(paths)
+
+
+def test_local_restricted_files_do_not_call_the_parkgo_annex_unpublished():
+    _assert_texts_do_not_call_the_parkgo_annex_unpublished([parking_data_path(name) for name in RESTRICTED_FILES])
+
+
 def test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_resident_zone():
-    zones = pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson")).set_index("zone_id")
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson")).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
     resident = zones.loc["bs_resident_stadthalle_132", "geometry"]
     for zone_id in PARKSCHEININSELN:
@@ -912,22 +920,26 @@ def test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_residen
 def test_committed_texts_do_not_claim_that_the_detection_zones_include_the_buildings():
     # ruling R-4a-8 (task 4a review): the camera detection zones mark the paid car parks; the buildings, where the
     # activities lie, are in the campus grounds that the TU zones keep from the v1 release
-    paths = [committed_parking_path("parking_zones_2026.geojson"), COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv",
-             COMMITTED_PARKING_DIR / "parking_zones_2026_municipal_qa.csv",
+    paths = [COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv", COMMITTED_PARKING_DIR / "parking_zones_2026_municipal_qa.csv",
              REPO_ROOT / "docs" / "registry" / "data" / "parking_zones_2026.yml",
              REPO_ROOT / "scripts" / "curation" / "parking_zones_2026" / "regional_zones.py"]
     for path in paths:
         assert "include buildings" not in path.read_text(encoding="utf-8"), path.name
 
 
+def test_the_local_zone_file_does_not_claim_that_the_detection_zones_include_the_buildings():
+    path = parking_data_path("parking_zones_2026.geojson")
+    assert "include buildings" not in path.read_text(encoding="utf-8"), path.name
+
+
 def test_committed_zones_carry_real_provenance_only():
     # valid as stored: the first Task 1d release held a wob_tarifzone_2 that the loader repaired at every load
-    zones = pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson"), max_repairs=0)
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0)
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
     assert set(zones["geometry_source"]) <= set(pz.GEOMETRY_SOURCES)
     assert not (tariffs["source_url"] == pz.FIXTURE_MARKER).any()
     assert tariffs["source_url"].str.startswith("https://").all()
-    districts = pz.load_resident_districts(committed_parking_path("parking_resident_districts_2026.geojson"))
+    districts = pz.load_resident_districts(parking_data_path("parking_resident_districts_2026.geojson"))
     assert set(districts["geometry_source"]) <= set(pz.DISTRICT_GEOMETRY_SOURCES)
     assert districts["source_url"].str.startswith("https://").all()
     # every assumption-grade fee window is explained in its row
@@ -939,7 +951,7 @@ def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
     # spec Amendment C2: three tariff zones of buffered street sections (ASSUMPTION C-a, 50 m) replace wob_innenstadt;
     # each row opens with the R-C1 wording, bills by ASSUMPTION C-b (ruling R-T1d-a) and invents no value the city
     # does not publish for the sections (ruling R-T1d-c: no cap, maximum stay or long-stay product)
-    zones = pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
     wolfsburg = tariffs[tariffs["municipality_ags"] == "03103000"].set_index("zone_id")
     assert sorted(wolfsburg.index) == ["wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3"]
@@ -1008,7 +1020,7 @@ D3_SITES = {
 
 
 def test_committed_braunschweig_zones_follow_spec_amendment_d1():
-    zones = pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
     # Kannengiesserstrasse is a pocket park since April 2026; the International House is part of the Langer Kamp union
     for removed in ("bs_bga_kannengiesserstrasse", "tu_international_house"):
@@ -1050,7 +1062,7 @@ def test_committed_braunschweig_zones_follow_spec_amendment_d1():
 
 
 def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
-    zones = pz.load_zone_polygons(committed_parking_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
     single = zones[zones["geometry_source"] == pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE]
     # the 11 sites of Amendment D3 and the three station car parks of Amendment G1 (their own test pins the tariff rows)
@@ -1200,7 +1212,7 @@ def test_validator_rejects_a_single_site_zone_with_a_campus_geometry_source(tmp_
     target = tmp_path / "braunschweig" / "parking"
     target.mkdir(parents=True)
     for name in COMMITTED_PARKING_FILES:
-        shutil.copy(committed_parking_path(name), target / name)
+        shutil.copy(parking_data_path(name), target / name)
     path = target / "parking_zones_2026.geojson"
     document = json.loads(path.read_text(encoding="utf-8"))
     relabelled = [feature["properties"] for feature in document["features"] if feature["properties"]["zone_id"] == "bh_kurpark"]
@@ -1220,8 +1232,9 @@ def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys,
 
     target = tmp_path / "braunschweig" / "parking"
     target.mkdir(parents=True)
-    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
-        shutil.copy(committed_parking_path(name), target / name)
+    # the contract is checked before the restricted geometry files are read, so this test needs none of them
+    for name in ("parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
     seen = []
     original = cli.tariff_export.tariff_row_to_zone
 
@@ -1249,8 +1262,8 @@ def test_validator_requires_the_municipal_qa_table_of_the_municipal_zones(tmp_pa
     target.mkdir(parents=True)
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
                  "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
-                 "parking_resident_districts_2026.geojson"):
-        shutil.copy(committed_parking_path(name), target / name)
+                 "parking_resident_districts_2026.geojson", "parking_garages_2026.geojson", "parking_garages_2026_qa.csv"):
+        shutil.copy(parking_data_path(name), target / name)
     assert main(["--data-path", str(tmp_path)]) == 1
     assert "but no municipal QA table" in capsys.readouterr().out
     shutil.copy(COMMITTED_PARKING_DIR / "parking_zones_2026_municipal_qa.csv", target / "parking_zones_2026_municipal_qa.csv")
@@ -1266,7 +1279,7 @@ def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, c
     target = tmp_path / "braunschweig" / "parking"
     target.mkdir(parents=True)
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
-        shutil.copy(committed_parking_path(name), target / name)
+        shutil.copy(parking_data_path(name), target / name)
     register = target / "parking_coverage_register_2026.csv"
     text = register.read_text(encoding="utf-8").replace("03102000,\"Salzgitter, Stadt\",zoned",
                                                         "03102000,\"Salzgitter, Stadt\",not_audited")
@@ -1276,7 +1289,7 @@ def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path, c
 
 
 @pytest.mark.parametrize("change, message", [
-    ("missing", "parking resident districts missing"),
+    ("missing", "resident parking districts does not exist"),
     ("overlap", "resident districts overlap by more than"),
     ("unknown_municipality", "03101999"),
     ("fixture_marker", "test-set marker"),
@@ -1293,7 +1306,7 @@ def test_validator_checks_the_resident_districts_against_themselves_and_the_regi
     for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
                  "parking_zones_2026_qa.csv", "parking_zones_2026_supply_share_qa.csv",
                  "parking_zones_2026_municipal_qa.csv", "parking_resident_districts_2026.geojson"):
-        shutil.copy(committed_parking_path(name), target / name)
+        shutil.copy(parking_data_path(name), target / name)
     districts_file = target / "parking_resident_districts_2026.geojson"
     if change == "missing":
         districts_file.unlink()
@@ -1323,7 +1336,7 @@ def _copy_committed_release(tmp_path, leave_out=()) -> Path:
     target.mkdir(parents=True)
     for name in COMMITTED_PARKING_FILES:
         if name not in leave_out:
-            shutil.copy(committed_parking_path(name), target / name)
+            shutil.copy(parking_data_path(name), target / name)
     return target
 
 
@@ -1343,20 +1356,40 @@ def test_validator_counts_the_zone_level_garage_and_search_time_rows_of_a_tariff
         "rows (spec Amendment E8: garages enter through the dataset); search time on 1 rows (decision D4)")
 
 
-def test_validator_accepts_a_release_without_the_garage_dataset_and_says_so(tmp_path, capsys):
-    # spec Amendment E1: no stage reads the dataset yet, so a release without it validates, visibly
+def test_validator_names_the_data_record_and_the_request_route_for_missing_restricted_files(tmp_path, capsys):
+    # Runs without the restricted files: the committed tables are validated first, then the first restricted file that is
+    # absent is named (issue #436). The release is a folder of the committed tables only.
+    import shutil
+
     from scripts.validate_parking_zones import main
 
-    _copy_committed_release(tmp_path, leave_out=("parking_garages_2026.geojson", "parking_garages_2026_qa.csv"))
-    assert main(["--data-path", str(tmp_path)]) == 0
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    assert main(["--data-path", str(tmp_path)]) == 1
     out = capsys.readouterr().out
-    assert "[parking-validate] garages: no dataset at" in out and "(no stage reads it yet)" in out
-    assert "[parking-validate] OK" in out
+    assert "[parking-validate] FAILED:" in out and "zone polygons does not exist" in out     # the first one checked
+    assert "not distributed in the repository" in out and "available on request" in out and "TUBS-IVS/eqasim-bs" in out
+    assert "docs/registry/data/parking_zones_2026.yml" in out
+
+
+@pytest.mark.parametrize("missing, label, record", [
+    ("parking_resident_districts_2026.geojson", "resident parking districts", "parking_resident_districts_2026"),
+    ("parking_garages_2026.geojson", "garage dataset", "parking_garages_2026")])
+def test_validator_names_each_missing_restricted_file_with_its_own_record(tmp_path, capsys, missing, label, record):
+    from scripts.validate_parking_zones import main
+
+    target = _copy_committed_release(tmp_path, leave_out=(missing,))
+    assert not (target / missing).exists()
+    assert main(["--data-path", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert f"{label} does not exist" in out and f"docs/registry/data/{record}.yml" in out
+    assert "available on request" in out
 
 
 @pytest.mark.parametrize("change, message", [
     ("dataset_without_qa", "but no garage QA table at"),
-    ("qa_without_dataset", "but no garage dataset at"),
     ("invalid_garage", "garage 'bs_magni': garage_hourly_rate_eur: must be a positive amount"),
     ("monthly_contradicts_qa",
      "garage 'wob_rathaus': the used monthly product is '50.00' EUR but the dataset's monthly_eur is 51.0"),
@@ -1370,8 +1403,6 @@ def test_validator_checks_the_garage_dataset_against_itself_its_qa_table_and_the
     garages_file, qa_file = target / "parking_garages_2026.geojson", target / "parking_garages_2026_qa.csv"
     if change == "dataset_without_qa":
         qa_file.unlink()
-    elif change == "qa_without_dataset":
-        garages_file.unlink()
     elif change in ("invalid_garage", "monthly_contradicts_qa"):
         garage_id, column, value = (("bs_magni", "garage_hourly_rate_eur", -1.2) if change == "invalid_garage"
                                     else ("wob_rathaus", "monthly_eur", 51.0))

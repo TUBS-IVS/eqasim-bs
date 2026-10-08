@@ -31,11 +31,14 @@ as well: ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` p
 ``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m``
 (``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table.
 The garage dataset (``--garages-path``, ``parking_garages_2026.geojson``, and its QA table ``--garages-qa-path``,
-``parking_garages_2026_qa.csv``; spec Amendment E1) is optional like the release of the classified cells, because no
-stage reads it yet: when the dataset exists, ``braunschweig.parking.garages.load_garages`` and ``validate_garages`` check
-it and ``braunschweig.parking.garage_qa.validate_garage_qa`` checks the QA table against the dataset and the tariff table
-(``commuter_day_eur`` against the used monthly products); a dataset without its QA table, or the QA table without the
-dataset, fails. Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the
+``parking_garages_2026_qa.csv``; spec Amendment E1) is read by the zones stage and therefore required, like the zone
+polygons and the districts: ``braunschweig.parking.garages.load_garages`` and ``validate_garages`` check it and
+``braunschweig.parking.garage_qa.validate_garage_qa`` checks the QA table against the dataset and the tariff table
+(``commuter_day_eur`` against the used monthly products); a dataset without its QA table fails. The three geometry files
+(zones, districts, garages) are local restricted files that are not in the repository: when one is missing the validator
+fails naming the data record and the request route (``braunschweig.parking.restricted_inputs``), after the committed
+tables were checked. Prints counts per zone type, geometry source (with the area mix), fee-window source and
+municipality, the
 schema-2 products of the tariff table, the register status counts, the QA decisions, the H1 and H2 results, the municipal
 QA rows, the districts per municipality and the garage dataset (listed, priced, not priced by reason, the assumption
 rates, the monthly products); exits 1 on any violation, 0 otherwise.
@@ -57,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.parking import garage_qa  # noqa: E402
 from braunschweig.parking import garages as pg  # noqa: E402
 from braunschweig.parking import municipal_zone_qa  # noqa: E402
+from braunschweig.parking import restricted_inputs  # noqa: E402
 from braunschweig.parking import supply_share  # noqa: E402
 from braunschweig.parking import supply_share_qa  # noqa: E402
 from braunschweig.parking import tariff_export  # noqa: E402
@@ -136,9 +140,6 @@ def _print_garages(garages, garage_qa_table, garages_file, tariffs=None) -> None
     products (fallback transparency: the share of the garages that rest on an assumption is on the record); and, with the
     tariff table, the consistency check of the Wolfsburg car parks inside a zone (spec E14): the published hourly reference of
     their tariff area against the street rate of their zone, a difference named and never an error."""
-    if garages is None:
-        print(f"[parking-validate] garages: no dataset at {garages_file} (no stage reads it yet)")
-        return
     coverage = pg.coverage(garages)
     qa = garage_qa.qa_coverage(garage_qa_table)
     towns = {ags: f"{values['listed']} listed {values['priced']} priced"
@@ -297,7 +298,11 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
     check_tariff_model_rows(tariffs)
-    # the committed polygons must be valid as stored: a polygon the loader has to repair is not the polygon the file states
+    # The three geometry files are local restricted files (issue #436): each one is checked where it is first needed and
+    # names the data record and the request route instead of failing inside a loader; the committed tables above are
+    # checked first, so that a public checkout still gets their findings.
+    restricted_inputs.require_restricted_file("parking_zones_2026", "zone polygons", data_path / zones_path)
+    # the polygons must be valid as stored: a polygon the loader has to repair is not the polygon the file states
     zones = pz.load_zone_polygons(data_path / zones_path, max_repairs=0)
     markers = sorted(zones.loc[zones["geometry_source"] == pz.FIXTURE_MARKER, "zone_id"])
     if markers:
@@ -342,24 +347,23 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
                          f"{municipal_file}")
     # The resident districts (spec Amendment C3) are valid as stored and free of overlaps, whatever the loader of the
     # pipeline would accept; they never carry the test-set marker and every municipality has a register status row.
+    restricted_inputs.require_restricted_file("parking_resident_districts_2026", "resident parking districts",
+                                              data_path / districts_path)
     districts = pz.load_resident_districts(data_path / districts_path)
     district_markers = sorted(districts.loc[districts["geometry_source"] == pz.FIXTURE_MARKER, "district_id"])
     if district_markers:
         raise ValueError(f"resident districts carry the test-set marker {pz.FIXTURE_MARKER!r}: {district_markers}")
     pz.validate_district_municipalities(districts, register)
-    # The garage dataset (spec Amendment E1) is optional: no stage reads it yet. When it exists it must load, validate and
-    # agree with its QA table and with the tariff table; one file without the other is a broken release.
+    # The garage dataset (spec Amendment E1) is read by the zones stage since Task 4d, so it is required (checked above): it
+    # must load, validate and agree with its QA table and with the tariff table.
     garages_file, garages_qa_file = data_path / garages_path, data_path / garages_qa_path
-    garages = garage_qa_table = None
-    if garages_file.is_file():
-        garages = pg.load_garages(garages_file)
-        pg.validate_garages(garages)
-        if not garages_qa_file.is_file():
-            raise ValueError(f"garage dataset {garages_file} but no garage QA table at {garages_qa_file}")
-        garage_qa_table = garage_qa.load_garage_qa(garages_qa_file)
-        garage_qa.validate_garage_qa(garage_qa_table, garages, tariffs)
-    elif garages_qa_file.is_file():
-        raise ValueError(f"garage QA table {garages_qa_file} but no garage dataset at {garages_file}")
+    restricted_inputs.require_restricted_file("parking_garages_2026", "garage dataset", garages_file)
+    garages = pg.load_garages(garages_file)
+    pg.validate_garages(garages)
+    if not garages_qa_file.is_file():
+        raise ValueError(f"garage dataset {garages_file} but no garage QA table at {garages_qa_file}")
+    garage_qa_table = garage_qa.load_garage_qa(garages_qa_file)
+    garage_qa.validate_garage_qa(garage_qa_table, garages, tariffs)
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6

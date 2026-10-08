@@ -8,9 +8,11 @@ that reads them, with one explicit reason, instead of failing; tests on syntheti
 
 All tests reach the files through this module (one place, no copy per test file):
 
-* ``committed_parking_path(name)``: path of a file of the parking folder; skips when ``name`` is restricted and absent.
+* ``parking_data_path(name)``: path of a file of the parking folder; skips when ``name`` is restricted and absent.
 * ``require_restricted_parking_files()``: skips unless all three files are present (for tests that hand the whole data
   root to a stage or a script, which then reads the files itself).
+* ``local_package_json(package_file, member_suffix)``: a JSON member of a local owner package, for tests that compare
+  real positions (no coordinate literals of the restricted dataset in tracked files); skips when the package is absent.
 * ``lf_sha256(path)``: SHA-256 of the LF-normalised content, the form of the pin that each data record states
   (docs/registry/data/parking_*_2026.yml, storage.notes) so that a recipient can verify the files; the record owns
   the value, tests/test_restricted_parking_data.py compares it with the working file.
@@ -48,7 +50,7 @@ def _restricted_dir() -> Path:
     return Path(override) if override else PARKING_DIR
 
 
-def committed_parking_path(name: str) -> Path:
+def parking_data_path(name: str) -> Path:
     """Path of ``name`` in the parking folder; a restricted file that is absent skips the calling test."""
     if name in RESTRICTED_FILES:
         path = _restricted_dir() / name
@@ -58,7 +60,27 @@ def committed_parking_path(name: str) -> Path:
     return PARKING_DIR / name
 
 
+def local_package_json(package_file: str, member_suffix: str, folder: str = "municipal_2026-10-07"):
+    """One JSON member of an owner package under ``raw_sources/<folder>/`` (local, gitignored, never in the repository).
+
+    Tests that check real positions of the restricted garage dataset read the expected values from the package at runtime
+    instead of carrying coordinate literals in tracked files; the test skips when the package is absent.
+    """
+    import json
+    import zipfile
+
+    path = PARKING_DIR / "raw_sources" / folder / package_file
+    if not path.is_file():
+        pytest.skip(f"the owner's package {package_file} (local raw source of the restricted parking data) is not available; "
+                    "available on request (GitHub issue in TUBS-IVS/eqasim-bs)")
+    with zipfile.ZipFile(path) as archive:
+        members = [name for name in archive.namelist() if name.endswith(member_suffix)]
+        if len(members) != 1:
+            raise AssertionError(f"{package_file}: expected exactly one member ending in {member_suffix!r}, found {members}")
+        return json.loads(archive.read(members[0]).decode("utf-8"))
+
+
 def require_restricted_parking_files() -> None:
     """Skip the calling test unless all three restricted files are present."""
     for name in RESTRICTED_FILES:
-        committed_parking_path(name)
+        parking_data_path(name)

@@ -78,7 +78,7 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from braunschweig.parking import cost, garages as parking_garages  # noqa: E402
+from braunschweig.parking import cost, garages as parking_garages, restricted_inputs  # noqa: E402
 
 log = logging.getLogger("calibrate_garage_decay")
 
@@ -429,11 +429,16 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     dataset (``garage``, ``surface_lot``), so that lambda can be reported with and without the surface lots; the table
     records the filter. The RELEASE value is the calibration on every kind; a filtered run is a sensitivity number.
 
-    Raises ``FileExistsError`` when ``out_path`` exists and ``overwrite`` is false (a calibrated release value is never
-    replaced silently), ``ValueError`` for an empty universe or an unreachable target. Side effects: reads the inputs, logs,
+    Raises ``FileNotFoundError`` (naming the data record and the request route) when the zone polygons or the garage dataset,
+    both local restricted files, are absent, ``FileExistsError`` when ``out_path`` exists and ``overwrite`` is false
+    (a calibrated release value is never replaced silently), ``ValueError`` for an empty universe or an unreachable
+    target. Side effects: reads the inputs, logs,
     writes ``out_path`` (its directory must exist).
     """
     out_path = Path(out_path) if out_path is not None else None
+    # the zone polygons and the garage dataset are local restricted files (issue #436): name the record and the request route
+    restricted_inputs.require_restricted_file("parking_zones_2026", "zone polygons", zones_path)
+    restricted_inputs.require_restricted_file("parking_garages_2026", "garage dataset", garages_path)
     if max_distance_m is None:
         max_distance_m = read_configured_max_distance_m(config_path)
         log.info("[garage-decay] maximum garage distance %g m from %s of %s", max_distance_m, MAX_DISTANCE_CONFIG_KEY,

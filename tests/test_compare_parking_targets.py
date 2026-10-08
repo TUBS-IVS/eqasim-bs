@@ -511,6 +511,20 @@ def test_a_trips_file_with_a_missing_column_or_nothing_inside_a_zone_fails(cmp, 
         cmp.compare([cmp.ArmSpec("none", tmp_path, False)], data_path=data, zones_geojson=zones_geojson)
 
 
+def test_the_main_names_the_data_record_and_the_request_route_when_the_zone_polygons_are_absent(cmp, data, tmp_path):
+    # the zone polygons are a local restricted file that is not in the repository (issue #436)
+    off = write_run(tmp_path / "runs", "off", OFF_TRIPS)
+    (data / "braunschweig" / "parking" / "parking_zones_2026.geojson").unlink()
+    argv = ["--arm-without-outcomes", f"off={off}", "--data-path", str(data), "--out", str(tmp_path / "out" / "x.csv")]
+    with pytest.raises(SystemExit) as error:
+        cmp.main(argv)
+    message = str(error.value)
+    assert "zone polygons does not exist" in message and "docs/registry/data/parking_zones_2026.yml" in message
+    assert "not distributed in the repository" in message and "available on request" in message
+    assert "TUBS-IVS/eqasim-bs" in message
+    assert not (tmp_path / "out").exists()
+
+
 def test_the_main_writes_the_tables_and_the_provenance_deterministically(cmp, data, tmp_path):
     off = write_run(tmp_path / "runs", "off", OFF_TRIPS)
     zones = write_run(tmp_path / "runs", "zones", ZONES_TRIPS, ROWS)

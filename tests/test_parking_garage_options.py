@@ -16,7 +16,7 @@ import pytest
 from braunschweig.parking import cost
 from braunschweig.parking.cost import GarageOptionCounters, GarageTariff, ZoneTariff
 from braunschweig.parking.tariff_export import garage_bands_from_text, garage_tiers_from_text
-from tests.restricted_parking_data import committed_parking_path
+from tests.restricted_parking_data import parking_data_path
 
 HOUR_S = 3600
 DECAY_M = 400.0
@@ -617,7 +617,7 @@ def _committed_garage_option(garage_id: str, arrival_s: int, departure_s: int, p
     from braunschweig.parking import garages as parking_garages
     from braunschweig.parking.tariff_export import garage_row_to_tariff
 
-    path = committed_parking_path("parking_garages_2026.geojson")
+    path = parking_data_path("parking_garages_2026.geojson")
     frame = parking_garages.load_garages(path).set_index("garage_id", drop=False)
     return cost.garage_option_cents(garage_row_to_tariff(frame.loc[garage_id], **options), arrival_s, departure_s,
                                     purpose=purpose)
