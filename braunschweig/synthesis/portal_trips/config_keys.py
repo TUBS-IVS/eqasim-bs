@@ -1,0 +1,48 @@
+"""Config keys and declared defaults of the portal-trip layer (eqasim-bs#442).
+
+The ONE home for the key names and defaults every reader declares them with: the portal stage,
+``braunschweig.popsim.distance_distributions`` (CDF bound) and
+``braunschweig.synthesis.locations.secondary_candidates`` (external centroids bounded to the
+supply ring). Production values live in configs/base_bs.yml.
+"""
+from __future__ import annotations
+
+#: Whole feature incl. both guard rails; False is byte-identical to the pre-feature pipeline.
+KEY_ENABLED = "braunschweig.portal.enabled"
+DEFAULT_ENABLED = True
+
+#: Straight-line metres. Classification threshold (reported distance of a secondary leg, or the
+#: home-to-location distance of a work/education leg), upper bound of the distance CDFs and of
+#: the external candidates. Defaults to the supply ring width (cordon_network_source_buffer_m)
+#: but is a separate key: distance from the trip's origin, not a buffer beyond the ZGB border.
+KEY_MAX_ROUTABLE_DISTANCE_M = "braunschweig.portal.max_routable_distance_m"
+DEFAULT_MAX_ROUTABLE_DISTANCE_M = 45000.0
+
+#: Relative band around the reported distance within which the external point is drawn.
+KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE = "braunschweig.portal.external_point_distance_tolerance"
+DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE = 0.2
+
+#: WARN when the share of outside stays whose mode had to be substituted exceeds this.
+KEY_MODE_SUBSTITUTION_WARN_SHARE = "braunschweig.portal.mode_substitution_warn_share"
+DEFAULT_MODE_SUBSTITUTION_WARN_SHARE = 0.1
+
+#: Added to random_seed for the external-point draw; disjoint from the in-commuter (100000)
+#: and student in-commuter (200000) offsets so the streams never overlap.
+RNG_OFFSET = 300000
+
+#: The activity type of an outside stay -- the same type the eqasim cutter and the in-commuter
+#: homes use, so the Java side (OutsideFilter, the new PortalTripConstraint) sees one vocabulary.
+OUTSIDE_PURPOSE = "outside"
+
+
+def validate_settings(max_routable_distance_m: float, external_point_distance_tolerance: float,
+                      mode_substitution_warn_share: float) -> None:
+    """Raise ``ValueError`` naming the key when a setting is outside its valid range."""
+    if not max_routable_distance_m > 0.0:
+        raise ValueError(f"{KEY_MAX_ROUTABLE_DISTANCE_M} must be > 0 m, got {max_routable_distance_m!r}")
+    if not 0.0 < external_point_distance_tolerance < 1.0:
+        raise ValueError(f"{KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE} must lie in (0, 1), "
+                         f"got {external_point_distance_tolerance!r}")
+    if not 0.0 < mode_substitution_warn_share <= 1.0:
+        raise ValueError(f"{KEY_MODE_SUBSTITUTION_WARN_SHARE} must lie in (0, 1], "
+                         f"got {mode_substitution_warn_share!r}")
