@@ -30,51 +30,76 @@ GATE_COLUMNS = ["gate_id", "kind", "x", "y"]
 
 
 def gate_inside_points(gates, links, cordon_polygon) -> gpd.GeoDataFrame:
-    """One point per road gate: the endpoint of the gate's link that lies inside the extent."""
+    """One point per road gate: the endpoint of the gate's link that lies inside the extent.
+
+    ``cordon_polygon`` may be a Polygon or MultiPolygon (holes allowed). Every gate whose link is
+    missing from the network or has no endpoint inside the extent is collected and reported in ONE
+    ValueError, so a broken gate table is diagnosed in a single run.
+    """
     link_geometry = links.set_index("link_id")["geometry"]
-    rows, points = [], []
+    rows, points, offending, both_inside = [], [], [], 0
     for gate in gates.itertuples(index=False):
         line = link_geometry.get(gate.link_id)
         if line is None:
-            raise ValueError(f"[portal_trips] gate {gate.gate_id}: link {gate.link_id} is not in the cordon network")
+            offending.append(f"{gate.gate_id} (link {gate.link_id} is not in the cordon network)")
+            continue
         candidates = [Point(line.coords[0]), Point(line.coords[-1])]
         inside = [point for point in candidates if cordon_polygon.contains(point)]
         if not inside:
-            raise ValueError(f"[portal_trips] gate {gate.gate_id}: no endpoint of link {gate.link_id} "
-                             "lies inside the cordon extent; the stay would be cut again")
-        # Both endpoints inside (a short link entirely inside): take the one deeper in the extent.
-        chosen = max(inside, key=lambda point: cordon_polygon.exterior.distance(point))
+            offending.append(f"{gate.gate_id} (no endpoint of link {gate.link_id} lies inside the extent)")
+            continue
+        if len(inside) == 2:
+            # Both endpoints inside (a short link entirely inside): take the one deeper in the extent,
+            # measured to the whole boundary (shell and holes, every part of a MultiPolygon).
+            both_inside += 1
+            chosen = max(inside, key=lambda point: cordon_polygon.boundary.distance(point))
+        else:
+            chosen = inside[0]
         rows.append((gate.gate_id, gate.link_id, gate.road_class, float(gate.capacity)))
         points.append(chosen)
+    if offending:
+        raise ValueError(f"[portal_trips] {len(offending)} of {len(gates)} road gates cannot be placed inside "
+                         "the cordon extent (the stay would be cut again): " + "; ".join(offending))
+    logger.info("[portal_trips.gates] gates with both link endpoints inside: %d/%d", both_inside, len(gates))
     frame = pd.DataFrame(rows, columns=["gate_id", "link_id", "road_class", "capacity"])
     return gpd.GeoDataFrame(frame, geometry=points, crs=gates.crs)
 
 
-def rail_exit_stations(stops: dict, routes: list, cordon_polygon,
-                       rail_like_modes=RAIL_LIKE_MODES) -> gpd.GeoDataFrame:
-    """Inside stops of rail routes that are adjacent, in route order, to a stop outside the extent."""
+def rail_exit_stations(stops: dict, routes: list, cordon_polygon, rail_like_modes=RAIL_LIKE_MODES,
+                       crs="EPSG:25832") -> gpd.GeoDataFrame:
+    """Inside stops of rail routes that are adjacent, in route order, to a stop outside the extent.
+
+    ``crs`` is the CRS of the schedule coordinates in ``stops`` (the Braunschweig pipeline writes
+    its transit schedule in EPSG:25832); it is attached to the result unchanged.
+    """
     inside_cache = {}
 
-    def is_inside(stop_id):
+    def is_inside(stop_id, route_index, mode):
         if stop_id not in inside_cache:
+            if stop_id not in stops:
+                raise ValueError(f"[portal_trips] rail exit stations: stop '{stop_id}' of route #{route_index} "
+                                 f"(mode '{mode}') is not in the transit stops")
             x, y = stops[stop_id]
             inside_cache[stop_id] = cordon_polygon.contains(Point(x, y))
         return inside_cache[stop_id]
 
-    exits = []
-    for mode, sequence in routes:
+    exits, exit_set, routes_scanned = [], set(), 0
+    for route_index, (mode, sequence) in enumerate(routes):
         if mode is None or str(mode).strip().lower() not in rail_like_modes:
             continue
-        flags = [is_inside(stop_id) for stop_id in sequence]
+        routes_scanned += 1
+        flags = [is_inside(stop_id, route_index, mode) for stop_id in sequence]
         for position, stop_id in enumerate(sequence):
             if not flags[position]:
                 continue
             before = position > 0 and not flags[position - 1]
             after = position + 1 < len(sequence) and not flags[position + 1]
-            if (before or after) and stop_id not in exits:
+            if (before or after) and stop_id not in exit_set:
+                exit_set.add(stop_id)
                 exits.append(stop_id)
+    logger.info("[portal_trips.gates] %d rail routes scanned, %d exit stations found", routes_scanned, len(exits))
     frame = pd.DataFrame({"stop_id": exits})
-    return gpd.GeoDataFrame(frame, geometry=[Point(*stops[s]) for s in exits], crs="EPSG:25832")
+    return gpd.GeoDataFrame(frame, geometry=[Point(*stops[s]) for s in exits], crs=crs)
 
 
 def draw_external_points(reported_m, origin_xy, external_points, tolerance, rng):
@@ -85,6 +110,18 @@ def draw_external_points(reported_m, origin_xy, external_points, tolerance, rng)
     """
     reported_m = np.asarray(reported_m, dtype=float)
     origin_xy = np.asarray(origin_xy, dtype=float)
+    invalid = ~np.isfinite(reported_m) | (reported_m <= 0.0)
+    if invalid.any():
+        raise ValueError(f"[portal_trips] {int(invalid.sum())} stays have a reported distance that is not finite "
+                         f"and > 0 (first at stay index {int(np.flatnonzero(invalid)[0])}); the external point "
+                         "cannot be drawn")
+    if not (np.isfinite(tolerance) and 0.0 < tolerance < 1.0):
+        raise ValueError(f"[portal_trips] tolerance must lie in the open interval (0, 1), got {tolerance}")
+    if not np.isfinite(origin_xy).all():
+        raise ValueError("[portal_trips] origin coordinates contain non-finite values; "
+                         "the external point cannot be drawn")
+    if len(external_points) == 0:
+        raise ValueError("[portal_trips] no external points to draw from")
     ext_xy = np.column_stack([external_points.geometry.x.to_numpy(), external_points.geometry.y.to_numpy()])
     ewz = external_points["ewz"].astype(float).to_numpy()
     communes = external_points["commune_id"].astype(str).to_numpy()
@@ -97,6 +134,9 @@ def draw_external_points(reported_m, origin_xy, external_points, tolerance, rng)
         in_band = np.abs(distance - reported_m[i]) <= tolerance * reported_m[i]
         if in_band.any():
             weights = ewz[in_band]
+            if not weights.sum() > 0.0:
+                raise ValueError(f"[portal_trips] stay index {i}: the external points in the distance band have "
+                                 "a population weight sum of 0; give the external points a positive population")
             index = np.flatnonzero(in_band)[rng.choice(int(in_band.sum()), p=weights / weights.sum())]
         else:
             index = int(np.argmin(np.abs(distance - reported_m[i])))
@@ -120,6 +160,11 @@ def choose_gates(origin_xy, point_xy, modes, road_gates, rail_stations) -> pd.Da
     origin_xy = np.asarray(origin_xy, dtype=float)
     point_xy = np.asarray(point_xy, dtype=float)
     modes = np.asarray(modes, dtype=object)
+    if not np.isfinite(origin_xy).all():
+        raise ValueError("[portal_trips] origin coordinates contain non-finite values; no gate can be chosen")
+    if not np.isfinite(point_xy).all():
+        raise ValueError("[portal_trips] external point coordinates contain non-finite values; "
+                         "no gate can be chosen")
     is_rail = modes == "pt"
     out = pd.DataFrame(index=range(len(modes)), columns=GATE_COLUMNS)
     if is_rail.any():
