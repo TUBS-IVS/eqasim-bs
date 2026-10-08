@@ -314,7 +314,7 @@ Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.z
 `contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and
 `--contipark-evidence-dir`), and `scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record
-`parking_garages_2026`). Work and education stays at a garage pay its monthly product per working day; a garage without a
+`parking_garages_2026`). Work and education stays at a garage pay the lower of the metered price and its monthly product per working day (monthly / 21); a garage without a
 published one gets the median of the published products of its own municipality (ASSUMPTION P13, column
 `monthly_imputed_eur`), and the config key `parking_garage_monthly_imputation` (default true; false prices published
 products only) switches that off. With the

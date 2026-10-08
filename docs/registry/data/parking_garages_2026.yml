@@ -487,7 +487,10 @@ verification:
     only with the value), never next to a published monthly_eur, never at a surface lot or an unpriced garage; the QA
     validator recomputes the medians from the QA table (garage_qa.expected_imputed_monthly) so that a stale table fails; the
     script prints one line with the published, imputed and none counts per municipality and the medians. A dataset file
-    without the column (a fixture written before Amendment F) loads with the column empty and a warning.
+    without the column (written before Amendment F) is refused by load_garages (LegacyColumnsError, naming the column and the
+    curation command); only a caller that opts in with allow_legacy_columns=True (the test fixtures; the zones stage only when
+    every row carries the test-set marker) reads it with the column empty and a warning. The export and the curation warn per
+    municipality when more than half of its priced garages carry an imputed instead of a published product.
     Listed as D11 (matsim_only, required, committed) in scripts/verify_braunschweig_inputs.py: the sixth input of the
     release of braunschweig.parking.zones_stage (config key parking_garages_path), which loads and validates it with
     the validator below; braunschweig.parking.tariff_export.garage_entries writes its priced garages into the tariff
@@ -678,8 +681,8 @@ limitations: >-
   further months of one public configurator capture (first month pro rata); the Fichtengrund price of 129.00 EUR has an
   unknown end date of its offer (the package cautions that 150.00 EUR was published before) and is nevertheless a value of
   ASSUMPTION P13; the imputed products are medians of only four published products per city and carry the spread of those
-  products (Braunschweig 80.00 to 129.00 EUR); no capacity of monthly places is modelled (a sold-out garage still gets the
-  imputed product), so the commuter garage share is an upper estimate of what the published offers allow; the sensitivity
+  products (Braunschweig 80.00 to 129.00 EUR); no capacity of monthly places is modelled (the sold-out garages Magni and Packhof, and the Eiermarkt, whose operator
+  offers no monthly product at all (Contipark capture of 2026-10-08), still get the imputed product); the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers, so the commuter garage share is an upper estimate of what the published offers allow; the sensitivity
   arm parking_garage_monthly_imputation false (published products only) bounds the effect.
 notes: >-
   Content on 2026-10-08 (Task 4f, spec Amendment F, on top of Task 4b3): the same 48 rows with the monthly products of

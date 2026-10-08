@@ -254,13 +254,15 @@ run (see Status).
     only Steinstrasse and the Wallstrasse and the Wolfsburg garages with a product price a commuter below the day rate).
     Schema 3, the Java reader and both golden fixtures are unchanged: the model lists ASSUMPTION P13 in its register only when
     an imputed product is used. Expected effect, stated as an expectation and not as a result (no v2 run exists): the garage
-    weights do not depend on price (E3), so the garage share of a stay does not change; the expected cost of a work or
-    education stay with a garage option in range falls, which can raise the car's utility for commuters into the centre and
-    with it the car share of that group and the commuter garage share relative to the street; the size is not established, and
+    weights do not depend on price (E3), so the garage probability of a stay is unchanged by construction; commuter garage
+    stays can change only through more or fewer car-commuter stays (the expected cost of a work or education stay with a
+    garage option in range falls, which can raise the car's utility for commuters into the centre and so the number of their
+    car stays); the size is not established, and
     the comparison with the SrV commuter quantities (`srv2023_commute_parking_by_workplace_class`, not a calibration target)
     belongs to the run manifest of the server arms, including the published-only arm. Limitations kept: the access window of
     Tarif A (Mo-Fr 06:30-21:00) is not modelled, 21 working days and the per-stay minimum stay named in P2, no capacity of
-    monthly places (a sold-out garage still gets the imputed product), the Fichtengrund offer has an unknown end date.
+    monthly places (the sold-out garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all
+    (Contipark capture of 2026-10-08), still get the imputed product), the Fichtengrund offer has an unknown end date, and the Braunschweig P13 median mixes a Mo-Fr 06:30-21:00 product (Steinstrasse Tarif A, 100.00 EUR) with 24/7 products (Wallstrasse, Eves, Fichtengrund), so the imputed product prices a regular's access window that not every garage offers.
 
 ## Consequences
 
