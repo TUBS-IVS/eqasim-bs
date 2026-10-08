@@ -675,22 +675,29 @@ config:
   # Worker processes for the parallel solve. OPERATIONAL, and one of the three
   # CLAMPED keys: auto = min(core budget, (memory budget - live driver RSS) /
   # worker_memory_gb below), applied at stage start against this process's OWN live
-  # RSS (ADR-0126 amendment; the pool is forked from it). On the run server the
-  # bound drops below the 62-worker core budget from roughly 33 GB of driver RSS
-  # upwards; what the driver actually weighs at that moment has not been measured
-  # yet, so the stage logs the ceiling it used on every run.
+  # RSS (ADR-0126 amendment; the pool is forked from it). The 100 % production run
+  # measured 36.4-37.6 GB of driver RSS at that point (the stage's own "[resources]"
+  # line, docs/runs/chainsolver-pool-memory-2026-09-28.yml), so on the 94.28 GB run
+  # server the MEMORY term decides the worker count, not the 62 cores.
   braunschweig.chainsolvers.processes: 0
-  # Measured MAXIMUM private per-worker memory footprint (ADR-0126 amendment),
-  # traceable to docs/runs/chainsolver-worker-private-memory-2026-09-17.yml (seven
-  # deduplicated 100% ZGB-8 executions on the felix server). OPERATIONAL, volatile:
-  # sizes the pool above, never the partition, so it has no influence on any result.
-  braunschweig.chainsolvers.worker_memory_gb: 0.86
+  # Measured MAXIMUM private per-worker memory footprint in GB (= GiB, the unit of
+  # braunschweig.resources), ADR-0135: 1.088 in the 100 % production run of 2026-09-28
+  # (16 workers; docs/runs/chainsolver-pool-memory-2026-09-28.yml), rounded up. It
+  # replaces 0.86 (docs/runs/chainsolver-worker-private-memory-2026-09-17.yml), measured
+  # next to smaller drivers: most of a worker's growth is driver pages it copies, so the
+  # figure grows with the driver. Sized with 0.86, 56 workers exhausted the box and the
+  # kernel killed the driver. The code
+  # default in braunschweig.resources stays 0.86 on purpose: editing that module
+  # re-runs PopulationSim (ADR-0135). OPERATIONAL, volatile: sizes the pool above,
+  # never the partition, so it has no influence on any result.
+  braunschweig.chainsolvers.worker_memory_gb: 1.09
   # Executor generations for the shard set before the stage gives up (ADR-0097).
   # A worker killed outright -- on 2026-08-20 the kernel OOM killer took one of 62
   # while a second heavy run competed for memory -- used to make the stage wait
   # forever; it now fails loudly and only the LOST shards are retried, so the cost
   # is ~7 min instead of 7.6 h of completed work. 1 disables the retry. Retried
-  # shards keep their slice and seed, so the result stays bit-identical.
+  # shards keep their slice and seed, so the result stays bit-identical. Each retry
+  # runs with half the workers of the attempt before it (ADR-0135).
   braunschweig.chainsolvers.shard_attempts: 3
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---

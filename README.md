@@ -499,7 +499,8 @@ general day-absence draw and how it composes with the commute-day state.
 - `<working_directory>/monitoring/` — this run's own resource time series
   (`resource_series_<timestamp>.jsonl`, one sample every 30 s) plus the
   `.summary.md` / `.summary.json` written when the run ends: peak per-worker RSS,
-  per-stage wall/CPU split, disk high-water mark, kernel OOM/segfault counts
+  per-stage wall/CPU split, the private memory of every worker pool (ADR-0135),
+  disk high-water mark, kernel OOM/segfault counts
   (ADR-0100). Produced for every run, including one that fails; the markdown block
   is meant to be pasted into the run manifest. `monitoring_enabled: false` switches
   it off.

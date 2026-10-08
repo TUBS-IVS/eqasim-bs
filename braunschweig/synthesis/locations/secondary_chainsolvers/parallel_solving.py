@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import multiprocessing as mp
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -30,6 +31,7 @@ import pandas as pd
 
 from braunschweig import parallelism
 
+from . import pool_protection
 from .candidates import build_scorer
 from .solver_defaults import DEFAULT_CHAIN_SOLVER
 
@@ -126,7 +128,7 @@ def _derive_shard_seed(base_seed: int, shard_index: int) -> int:
     return int(np.random.SeedSequence([int(base_seed), int(shard_index)]).generate_state(1)[0])
 
 
-def _init_chain_worker(locations_df, solver, scorer_spec=None) -> None:
+def _init_chain_worker(locations_df, solver, scorer_spec=None, pool_parent_pid=None) -> None:
     # Pin BLAS/OpenMP to one thread FIRST (issue #122): with up to ~62 workers
     # each opening an ncores-sized BLAS pool, the box oversubscribes to
     # n_workers x ncores threads -- the exact failure class that segfaulted the
@@ -134,6 +136,13 @@ def _init_chain_worker(locations_df, solver, scorer_spec=None) -> None:
     # Under fork the parent's BLAS is already initialised, so the helper also
     # applies a threadpoolctl runtime limit, not just the env variables.
     parallelism.limit_worker_blas_threads()
+    # Only a POOL worker gets the driver's pid (_solve_chains_parallel passes it). The serial
+    # path calls this initializer inside the driver itself, where raising the OOM score would
+    # make the driver the kernel's first victim and a parent watch would end the driver
+    # together with its shell -- the protection turned upside down (see pool_protection).
+    if pool_parent_pid is not None:
+        pool_protection.prefer_oom_kill_of_current_process()
+        pool_protection.exit_when_parent_dies(pool_parent_pid)
     global _WORKER_LOCATIONS_DF, _WORKER_SOLVER, _WORKER_SCORER_SPEC
     _WORKER_LOCATIONS_DF = locations_df
     _WORKER_SOLVER = solver
@@ -229,6 +238,20 @@ def _solve_person_shard(task):
 #: succeeds once the competitor is gone.
 DEFAULT_SHARD_ATTEMPTS = 3
 
+#: Divisor of the worker count from one executor generation to the next after a generation lost
+#: workers. A lost worker is almost always an OOM kill -- the kernel takes a pool worker first
+#: (``pool_protection.WORKER_OOM_SCORE_ADJ``) -- and fewer workers need proportionally less
+#: memory, so halving reaches a pool that fits within few generations. Operational only: the
+#: shards and their seeds are unchanged, so the result stays bit-identical.
+RETRY_WORKER_DIVISOR = 2
+
+
+def _retry_worker_count(max_workers):
+    """Worker count for the generation after one that lost workers; ``None`` stays ``None``."""
+    if max_workers is None:
+        return None
+    return max(1, int(max_workers) // RETRY_WORKER_DIVISOR)
+
 
 def _run_shards_with_recovery(tasks, executor_kwargs, progress,
                               executor_factory=ProcessPoolExecutor,
@@ -259,6 +282,12 @@ def _run_shards_with_recovery(tasks, executor_kwargs, progress,
     shards that had not started; all of them are simply resubmitted. Only
     ``BrokenProcessPool`` is recovered from -- an exception raised INSIDE a shard
     is a real defect and propagates unchanged, so a retry loop can never mask it.
+
+    Every retry generation runs with ``max_workers`` divided by
+    :data:`RETRY_WORKER_DIVISOR` (never below one): a lost worker is almost always
+    an OOM kill, and a retry at the same size would meet the same memory limit.
+    All generations fork from a frozen driver heap
+    (``pool_protection.frozen_heap_for_fork``), released when this returns or raises.
     """
     # Injectable only so a test can drive the real executor with a trivial,
     # picklable task; production always solves shards.
@@ -267,41 +296,64 @@ def _run_shards_with_recovery(tasks, executor_kwargs, progress,
     results_by_index: Dict[int, pd.DataFrame] = {}
     failed_problem_idx: List[int] = []
     pending = list(tasks)
+    generation_kwargs = dict(executor_kwargs)
 
-    for attempt in range(1, max_attempts + 1):
-        lost = []
-
-        with executor_factory(**executor_kwargs) as executor:
-            futures = {executor.submit(worker_function, task): task
-                       for task in pending}
-
-            for future in as_completed(futures):
-                try:
-                    shard_index, res_df, shard_failed = future.result()
-                except BrokenProcessPool:
-                    lost.append(futures[future])
-                    continue
-
-                results_by_index[shard_index] = res_df
-                failed_problem_idx.extend(shard_failed)
-                progress(len(results_by_index), len(tasks))
-
-        if not lost:
-            return results_by_index, failed_problem_idx
-
-        lost_indices = sorted(task[0] for task in lost)
-        # Make the recovery observable: a silently retried shard would hide the
-        # memory pressure that caused it (project rule on fallback transparency).
+    with pool_protection.frozen_heap_for_fork() as frozen_objects:
         print(
-            f"[braunschweig.secondary_chainsolvers] WARNING! attempt {attempt}/"
-            f"{max_attempts}: {len(lost)} shard worker(s) died (shards "
-            f"{lost_indices}); {len(results_by_index)}/{len(tasks)} shards are "
-            "already done and are NOT recomputed. The usual cause is memory "
-            "pressure from a concurrent run (issue #344); retrying the lost "
-            "shards in a fresh executor.",
+            f"[braunschweig.secondary_chainsolvers] {frozen_objects:,} garbage-collected "
+            "driver objects frozen before the workers are forked, so no garbage collection "
+            "turns the pages the workers share with the driver into private copies "
+            "(released after the pool).",
             flush=True,
         )
-        pending = lost
+        for attempt in range(1, max_attempts + 1):
+            lost = []
+
+            with executor_factory(**generation_kwargs) as executor:
+                futures = {executor.submit(worker_function, task): task
+                           for task in pending}
+
+                for future in as_completed(futures):
+                    try:
+                        shard_index, res_df, shard_failed = future.result()
+                    except BrokenProcessPool:
+                        lost.append(futures[future])
+                        continue
+
+                    results_by_index[shard_index] = res_df
+                    failed_problem_idx.extend(shard_failed)
+                    progress(len(results_by_index), len(tasks))
+
+            if not lost:
+                return results_by_index, failed_problem_idx
+
+            lost_indices = sorted(task[0] for task in lost)
+            if attempt < max_attempts:
+                current_workers = generation_kwargs.get("max_workers")
+                next_workers = _retry_worker_count(current_workers)
+                if next_workers is None:
+                    next_step = "retrying the lost shards in a fresh executor."
+                else:
+                    generation_kwargs["max_workers"] = next_workers
+                    next_step = (
+                        "retrying the lost shards in a fresh executor with "
+                        + (f"{next_workers} instead of {current_workers} workers."
+                           if next_workers < current_workers
+                           else f"{next_workers} worker(s) again."))
+            else:
+                next_step = "no attempt is left."
+            # Make the recovery observable: a silently retried shard would hide the
+            # memory pressure that caused it (project rule on fallback transparency).
+            print(
+                f"[braunschweig.secondary_chainsolvers] WARNING! attempt {attempt}/"
+                f"{max_attempts}: {len(lost)} shard worker(s) died (shards "
+                f"{lost_indices}); {len(results_by_index)}/{len(tasks)} shards are "
+                "already done and are NOT recomputed. The usual cause is memory "
+                "exhaustion -- the kernel OOM killer takes a pool worker first -- from "
+                f"this pool or a concurrent run (issue #344); {next_step}",
+                flush=True,
+            )
+            pending = lost
 
     raise RuntimeError(
         "secondary_chainsolvers: shard worker(s) died in every one of "
@@ -363,19 +415,39 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
             flush=True,
         )
 
+    # Shards define the partition; workers only decide how many processes chew
+    # through it. Sizing the pool from len(tasks) would ignore the configured
+    # (auto-scaled when the sentinel is used) worker count entirely.
+    max_workers = max(1, min(n_workers, len(tasks)))
+    oom_protection = (
+        f"raises its OOM score to {pool_protection.WORKER_OOM_SCORE_ADJ}, so the kernel "
+        "takes a worker before the driver"
+        if pool_protection.oom_score_adjustment_supported()
+        else "can NOT raise its OOM score on this platform (no "
+             f"{pool_protection.OOM_SCORE_ADJ_PATH}), so the kernel may take the driver first")
+    orphan_protection = (
+        "exits when the driver is gone (checked every "
+        f"{pool_protection.PARENT_WATCH_INTERVAL_SECONDS:g} s)"
+        if pool_protection.parent_death_watch_supported()
+        else "can NOT watch the driver on this platform")
+    print(
+        f"[braunschweig.secondary_chainsolvers] worker pool: {max_workers} worker(s) for "
+        f"{len(tasks)} shard(s); each worker {oom_protection}, and {orphan_protection}.",
+        flush=True,
+    )
+
     results_by_index, failed_problem_idx = _run_shards_with_recovery(
         tasks,
         executor_kwargs=dict(
-            # Shards define the partition; workers only decide how many processes
-            # chew through it. Sizing the pool from len(tasks) would ignore the
-            # configured (auto-scaled when the sentinel is used) worker count entirely.
-            max_workers=max(1, min(n_workers, len(tasks))),
+            max_workers=max_workers,
             # Platform default (fork on Linux), i.e. the same start method the
             # previous multiprocessing.Pool used -- workers inherit the parent's
             # pages copy-on-write instead of re-importing the world.
             mp_context=mp.get_context(),
             initializer=_init_chain_worker,
-            initargs=(locations_df, solver, scorer_spec),
+            # The driver's own pid last: it marks the initializer's caller as a POOL
+            # worker and lets each worker tell when it has become an orphan.
+            initargs=(locations_df, solver, scorer_spec, os.getpid()),
         ),
         progress=report_progress,
         max_attempts=shard_attempts,
