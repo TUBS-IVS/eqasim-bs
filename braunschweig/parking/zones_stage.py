@@ -19,8 +19,9 @@ without its tariff row, a tariff row in a municipality the register does not mar
 municipality the register does not know or a workplace class without an SrV share would each misprice stays
 silently. This stage therefore loads and validates them as one unit and raises on any inconsistency:
 
-1. polygons: loaded, reprojected to EPSG:25832, invalid rings repaired (counted and logged), validated for
-   provenance, unique ids, valid polygons and pairwise overlap (``braunschweig.parking.zones``);
+1. polygons: loaded, reprojected to EPSG:25832 and validated for provenance, unique ids, valid polygons and pairwise
+   overlap (``braunschweig.parking.zones``); strictly, ``max_repairs=0``: a polygon that would need the loader's repair
+   stops the stage, because the committed release is valid as stored;
 2. tariffs: typed and validated per zone type (``validate_tariffs``, the synthetic test-set marker allowed),
    then every row converted by ``braunschweig.parking.tariff_export.tariff_row_to_zone``, the stricter
    per-row contract of the tariff model the Java cost model reads;
@@ -218,7 +219,9 @@ def execute(context):
     files = _release_files(context)
     paths = {key: path for key, _, _, path in files}
 
-    zone_polygons = parking_zones.load_zone_polygons(paths[KEY_ZONES_PATH])
+    # Strict: the committed release is valid as stored, so a polygon that would need the loader's repair means the file
+    # changed (a repair silently replaces the polygon the file states); scripts/validate_parking_zones.py is as strict.
+    zone_polygons = parking_zones.load_zone_polygons(paths[KEY_ZONES_PATH], max_repairs=0)
     # load_zone_polygons validates as well; repeated so that the release contract does not rest on the
     # loader's internals.
     parking_zones.validate_zone_polygons(zone_polygons)

@@ -21,7 +21,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import box
+from shapely.geometry import Polygon, box
 
 from braunschweig.parking import attach, tariff_export, zones_stage
 from braunschweig.parking import zones as pz
@@ -300,6 +300,18 @@ def test_a_district_in_a_municipality_the_register_does_not_know_raises(fixture_
     _write_lines(fixture_data / FIXTURE_PATHS["parking_coverage_register_path"],
                  [line for line in REGISTER_LINES if not line.startswith("03153017,")])
     with pytest.raises(ValueError, match="03153017"):
+        _release(fixture_data)
+
+
+def test_a_zone_polygon_that_needs_a_repair_stops_the_stage(fixture_data):
+    """The release is loaded strictly (max_repairs=0, like scripts/validate_parking_zones.py): a self-intersecting ring
+    would be repaired silently into a different polygon, so the stage refuses it and names the zone and the reason."""
+    path = fixture_data / FIXTURE_PATHS["parking_zones_path"]
+    frame = gpd.read_file(path).to_crs("EPSG:25832")
+    x0, y0, x1, y1 = frame.geometry.iloc[0].bounds
+    frame.loc[0, "geometry"] = Polygon([(x0, y0), (x1, y1), (x1, y0), (x0, y1)])  # a bow tie
+    frame.to_crs("EPSG:4326").to_file(path, driver="GeoJSON")
+    with pytest.raises(ValueError, match="1 invalid polygon\\(s\\) would need a repair, at most 0 allowed"):
         _release(fixture_data)
 
 
