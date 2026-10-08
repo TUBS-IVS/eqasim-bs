@@ -68,7 +68,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
    the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
    config enables `braunschweigParking`, `require_parking_package` refuses a jar without
-   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` before MATSim starts, and `require_parking_outcomes`
+   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` or without `.../parking/GarageOptionModel.class` (the pipeline always writes tariff model schema 3) before MATSim starts, and `require_parking_outcomes`
    refuses a run whose last iteration (the highest `ITERS/it.N`; the eqasim termination criterion can end a run
    before `lastIteration`) wrote no `N.parking_outcomes.csv`; one `[parking] run check:` INFO line reports that both
    passed. With the module absent or disabled neither check runs.

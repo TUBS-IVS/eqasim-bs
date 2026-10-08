@@ -10,7 +10,8 @@ calls the three functions below at the point of use:
 1. :func:`parking_module_enabled`, the trigger: the PREPARED config (the file the run is started with) carries the
    module, enabled. No pipeline config key is involved; with the module absent or disabled the stage calls
    nothing else, so the OFF path runs MATSim exactly as before.
-2. :func:`require_parking_package`, before the run: the jar contains the class of the Java ``ParkingConfigGroup``.
+2. :func:`require_parking_package`, before the run: the jar contains the classes of the Java ``ParkingConfigGroup`` and
+   ``GarageOptionModel`` (the schema-3 tariff model the pipeline always writes).
 3. :func:`require_parking_outcomes`, after the run: the last iteration that ran wrote the outcome report of the
    Java ``ParkingOutcomeReportListener``, which the parking module writes at the end of EVERY iteration, so its
    absence proves that the module did not price parking.
@@ -36,6 +37,12 @@ log = logging.getLogger(__name__)
 PARKING_MODULE = "braunschweigParking"
 #: Jar entry of ``org.eqasim.braunschweig.parking.ParkingConfigGroup``: present exactly when the jar has the package.
 PARKING_CONFIG_GROUP_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingConfigGroup.class"
+#: Jar entry of ``org.eqasim.braunschweig.parking.GarageOptionModel`` (the garage options, tariff model schema 3). The
+#: Python pipeline always writes schema 3 (``tariff_export.build_tariff_model``), so a jar that has the package but
+#: predates the garage options would still fail at startup; the check names it before the run instead.
+GARAGE_OPTION_MODEL_CLASS_ENTRY = "org/eqasim/braunschweig/parking/GarageOptionModel.class"
+#: The classes a jar must contain for the run: the parking package and its schema-3 garage option model.
+REQUIRED_PARKING_CLASS_ENTRIES = (PARKING_CONFIG_GROUP_CLASS_ENTRY, GARAGE_OPTION_MODEL_CLASS_ENTRY)
 #: File name of the per-iteration outcome report (Java ``ParkingOutcomeReportListener.FILE_NAME``); MATSim writes it
 #: as ``ITERS/it.N/N.parking_outcomes.csv`` (no run id is set: the run stage expects ``output_events.xml.gz``).
 OUTCOME_REPORT_FILE_NAME = "parking_outcomes.csv"
@@ -67,27 +74,30 @@ def parking_module_enabled(config_path) -> bool:
 
 
 def require_parking_package(jar_path) -> None:
-    """Raise unless the jar at ``jar_path`` contains the class of the Java ``ParkingConfigGroup``.
+    """Raise unless the jar at ``jar_path`` contains the classes of the Java ``ParkingConfigGroup`` and
+    ``GarageOptionModel`` (``REQUIRED_PARKING_CLASS_ENTRIES``).
 
     Called before the run when :func:`parking_module_enabled` is true. Raises ``FileNotFoundError`` for a missing
-    jar and ``RuntimeError`` for a file that is not a zip archive or a jar without the parking package, naming the
-    jar, the missing class, the config module and the fix. Reads only the jar's central directory.
+    jar and ``RuntimeError`` for a file that is not a zip archive or a jar without one of the classes, naming the
+    jar, every missing class, the config module and the fix. Reads only the jar's central directory.
     """
     path = Path(jar_path)
     if not path.is_file():
         raise FileNotFoundError(f"[parking] the jar to check for the parking package does not exist: {path}")
     try:
         with zipfile.ZipFile(path) as jar:
-            has_parking_package = PARKING_CONFIG_GROUP_CLASS_ENTRY in jar.namelist()
+            entries = set(jar.namelist())
     except zipfile.BadZipFile as error:
         raise RuntimeError(f"[parking] cannot read the jar {path} as a zip archive: {error}") from error
-    if not has_parking_package:
+    missing = [entry for entry in REQUIRED_PARKING_CLASS_ENTRIES if entry not in entries]
+    if missing:
         raise RuntimeError(
             f"[parking] the prepared config enables the MATSim config module {PARKING_MODULE}, but the jar {path} "
-            f"does not contain {PARKING_CONFIG_GROUP_CLASS_ENTRY}: without the package org.eqasim.braunschweig.parking "
-            "MATSim reads the module as an untyped config group and the run would price no parking at all. Check "
-            "out an eqasim-java-bs revision that contains the parking package in the tree eqasim_source_path points "
-            "to (the jar is rebuilt from it on the next run), or supply a jar built from such a revision as "
+            f"does not contain {', '.join(missing)}: without the package org.eqasim.braunschweig.parking "
+            "MATSim reads the module as an untyped config group and the run would price no parking at all, and "
+            "without GarageOptionModel the jar predates the garage options (tariff model schema 3, which the pipeline "
+            "always writes). Check out an eqasim-java-bs revision that contains both in the tree eqasim_source_path "
+            "points to (the jar is rebuilt from it on the next run), or supply a jar built from such a revision as "
             "eqasim_path.")
 
 

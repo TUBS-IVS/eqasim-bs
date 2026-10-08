@@ -31,6 +31,9 @@ CONFIG_NAME = f"{PREFIX}config.xml"
 JAR_RELATIVE_PATH = "eqasim-java/braunschweig/target/braunschweig-2.3.1.jar"
 #: Written out here independently of the implementation: the class the Java ParkingConfigGroup compiles to.
 PARKING_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingConfigGroup.class"
+#: The class of the schema-3 garage option model: the Python pipeline always writes schema 3, so a jar without it cannot
+#: read the tariff model (written out independently of the implementation).
+GARAGE_MODEL_CLASS_ENTRY = "org/eqasim/braunschweig/parking/GarageOptionModel.class"
 #: Another class of the braunschweig module, present in every jar the pipeline builds.
 OTHER_CLASS_ENTRY = "org/eqasim/braunschweig/RunSimulation.class"
 RUN_SIMULATION = "org.eqasim.braunschweig.RunSimulation"
@@ -121,7 +124,8 @@ def test_an_enabled_value_the_java_group_refuses_raises_naming_it(tmp_path, valu
 
 
 def test_a_jar_with_the_parking_config_group_passes(tmp_path):
-    runtime_checks.require_parking_package(_jar(tmp_path / "branch.jar", OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY))
+    runtime_checks.require_parking_package(
+        _jar(tmp_path / "branch.jar", OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY, GARAGE_MODEL_CLASS_ENTRY))
 
 
 def test_a_jar_without_the_parking_package_raises_naming_the_jar_the_class_the_module_and_the_fix(tmp_path):
@@ -131,6 +135,18 @@ def test_a_jar_without_the_parking_package_raises_naming_the_jar_the_class_the_m
     message = str(error.value)
     for part in (str(jar), PARKING_CLASS_ENTRY, "braunschweigParking", "eqasim-java-bs", "eqasim_source_path"):
         assert part in message, (part, message)
+
+
+def test_a_jar_with_the_config_group_but_without_the_garage_option_model_raises_naming_the_class(tmp_path):
+    # The Python pipeline always writes the schema-3 tariff model, which a jar from before the garage options cannot
+    # read: the old parking package alone must not pass the check.
+    jar = _jar(tmp_path / "before_garages.jar", OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY)
+    with pytest.raises(RuntimeError) as error:
+        runtime_checks.require_parking_package(jar)
+    message = str(error.value)
+    for part in (str(jar), GARAGE_MODEL_CLASS_ENTRY, "braunschweigParking", "eqasim_source_path"):
+        assert part in message, (part, message)
+    assert PARKING_CLASS_ENTRY not in message  # that class is present: only the missing entry is named
 
 
 def test_a_missing_jar_raises_naming_the_path(tmp_path):
@@ -298,7 +314,7 @@ def test_off_calls_no_parking_check_and_runs_matsim_exactly_as_before(tmp_path, 
 
 def test_on_checks_the_jar_the_stage_runs_and_the_last_iteration_that_ran(tmp_path, monkeypatch, caplog):
     context = _run_context(tmp_path, ENABLED_MODULE)
-    _jar(Path(_jar_path(context)), OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY)
+    _jar(Path(_jar_path(context)), OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY, GARAGE_MODEL_CLASS_ENTRY)
     checked = _record_jar_checks(monkeypatch)
     # Configured for 10 iterations; the eqasim mode-share termination criterion stopped the run after iteration 3.
     calls = _fake_java(monkeypatch, range(4), with_report=True)
@@ -323,7 +339,7 @@ def test_on_with_a_jar_without_the_parking_package_fails_before_matsim_starts(tm
 
 def test_on_without_an_outcome_report_fails_after_the_run(tmp_path, monkeypatch):
     context = _run_context(tmp_path, ENABLED_MODULE)
-    _jar(Path(_jar_path(context)), OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY)
+    _jar(Path(_jar_path(context)), OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY, GARAGE_MODEL_CLASS_ENTRY)
     calls = _fake_java(monkeypatch, range(11), with_report=False)
     with pytest.raises(RuntimeError, match="10.parking_outcomes.csv"):
         run_stage.execute(context)
