@@ -218,6 +218,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
     "braunschweig.popsim.sources.base",
     "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.unused_mid_wege_columns",
     "braunschweig.popsim.weekend_plan_match",
     "braunschweig.population.methods",
     "braunschweig.population.socioprofessional_class",

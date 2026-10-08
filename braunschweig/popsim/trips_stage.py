@@ -27,6 +27,11 @@ uniform draw by the survey's own reporting precision, and "srv_mapped" additiona
 the first departure onto the committed SrV first-departure distribution of the person's
 (purpose x harmonised group) cell. In every model the whole chain moves by ONE offset, so trip
 and activity durations are untouched.
+
+Since ADR-0138, execute() drops the MiD Wege columns no first-party code reads
+(braunschweig.popsim.unused_mid_wege_columns) from the donor Wege before the trip build, so this
+stage's output no longer carries them. run() itself still passes through every column it is
+given.
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import plan_validation as _plan_validation
+from braunschweig.popsim import unused_mid_wege_columns as _unused_mid_wege_columns
 from braunschweig import constants as _constants
 from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
@@ -131,6 +137,10 @@ _HELPER_MODULES = (
     _srv_departure_times,
     _srv_plan_structure,
     _attributes,
+    # unused_mid_wege_columns decides which MiD Wege columns execute() drops before the trip
+    # build (ADR-0138), i.e. which extras this stage's output carries; a change to the list must
+    # rebuild the cached trip table.
+    _unused_mid_wege_columns,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -1034,8 +1044,18 @@ def execute(context):
         )
     else:
         # popsim_mid (default): reads MiD CSV files directly; households and
-        # persons tables are not needed here (trips only).
+        # persons tables are not needed here (trips only), so they are released now
+        # instead of being held through the whole trip build.
         _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
+        del _donor_households, _donor_persons
+        # ADR-0138: drop the MiD Wege columns no first-party code reads HERE, before the
+        # persons x Wege join inside the trip build copies every Wege column once per synthetic
+        # trip. Rebinding donor_trips also releases the full-width frame, which a drop inside
+        # run() could not: this function would still hold it for the whole build. No result can
+        # change, because none of the dropped columns is read anywhere
+        # (tests/test_unused_mid_wege_columns.py scans the repository for readers).
+        donor_trips = _unused_mid_wege_columns.drop_unused_mid_wege_columns(
+            donor_trips, log_tag="[trips_stage]")
 
     # Declared in configure(); ExecuteContext.config() takes the key alone.
     from braunschweig.popsim.stage.config_keys import (
