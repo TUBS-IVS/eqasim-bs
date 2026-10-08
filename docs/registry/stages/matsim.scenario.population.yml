@@ -26,7 +26,14 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   independent of the zones; all from the release of braunschweig.parking.zones_stage), so add_person writes
   the activity attributes parkingZone, parkingFree and parkingDistrict and the person attributes
   residentParkingZone and residentParkingDistrict (each only where set, never as the text nan); the
-  coverage line also logs the own-district stays of rule R2; combining the flag with the legacy ring
+  coverage line also logs the own-district stays of rule R2; the free-parking draw takes two options, validated
+  at configure time by braunschweig.parking.free_draw_options and again in the draw: parking_free_share_proxy_classes
+  (ASSUMPTION A1-b: an explicit mapping workplace class -> SrV class whose share replaces the own share of the class, the
+  explicit null entry restores it because configuration overlays are deep-merged) and parking_campus_free_share
+  (ASSUMPTION C2: the share of the persons with work or education on a campus who find a free place, never shifted
+  by parking_workplace_free_share_shift); their code defaults are off, their production values live in
+  configs/base_bs.yml and equal in the two popsim fixture configurations, and the draw logs both under [parking]; both
+  options act only when the flag is on; combining the flag with the legacy ring
   enable_urban_parking is rejected in configure, and with the flag off no parking column is attached
   (byte-identical plans). The plain writer, which the simple_ipf_open configurations run without the
   alias, attaches no parking column, so its own configure declares parking_zones_enabled and rejects it
@@ -63,3 +70,4 @@ decisions:
 - ADR-0029
 - ADR-0110
 - ADR-0139
+- ADR-0140

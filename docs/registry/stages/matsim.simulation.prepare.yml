@@ -13,11 +13,14 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   resident_permits_valid of every zone and the ids of the release's resident parking districts as resident_districts,
   both additive to schema 2, spec Amendment C3; schema 3, spec Amendment E, adds the priced garages of the release as
   garages and the parameters garage_decay_m (config parking_garage_decay_m, 0 = garage options off, the value until the
-  calibration of Task 5 exists) and garage_max_distance_m (parking_garage_max_distance_m, 1000)), the MATSim
+  calibration of Task 5 exists) and garage_max_distance_m (parking_garage_max_distance_m, 1000); the garages come
+  from the release of braunschweig.parking.zones_stage, whose key parking_garages_path names the dataset, and a decay
+  above 0 without a priced garage is rejected), the MATSim
   config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
   minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1) that
   switches the Java car cost model to the zone tariffs, and the inputs report
-  <prefix>parking_inputs_report.json listing the files matsim.output copies; with the flag off it declares
+  <prefix>parking_inputs_report.json listing the files matsim.output copies; it does not write the search-time
+  factor of the Java module (the module default 0.0, the parking search time, applies; ADR-0140); with the flag off it declares
   no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
   (enable_urban_parking) has no preparation step (ADR-0039).
 lineage:
@@ -50,3 +53,4 @@ decisions:
 - ADR-0039
 - ADR-0133
 - ADR-0139
+- ADR-0140

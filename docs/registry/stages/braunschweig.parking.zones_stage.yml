@@ -32,7 +32,8 @@ description: 'Loads the six inputs of the zone-based parking costs (issue #249; 
 lineage:
   type: braunschweig_new
   upstream: null
-  notes: New for the zone-based parking costs (ADR-0139), the successor of the 8 km ring of
+  notes: New for the zone-based parking costs (ADR-0139; its inputs grew from three to six in the v2 release,
+    ADR-0140), the successor of the 8 km ring of
     enable_urban_parking (legacy isParis attributes, no data stage). Declared by
     braunschweig.matsim.scenario.population (zone, resident-zone and free-parking attributes through
     braunschweig.parking.attach) and braunschweig.matsim.simulation.prepare (tariff model JSON) only when
@@ -62,8 +63,10 @@ features:
 - parking_cost_zones
 decisions:
 - ADR-0139
+- ADR-0140
 notes: 'Mechanism, attribute names and maintenance rules: docs/codebase/notes/parking-cost-zones.md. Unit
   tests: tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected
   tariff row, inconsistent register, the resident districts, cache token, and the committed release through the
   stage), tests/test_parking_resident_districts.py (the district layer: loader, validator, assignment and the
-  curation step) and tests/test_parking_attach.py (the attach functions the release feeds).'
+  curation step), tests/test_parking_garages.py (the garage dataset: loader, validator, assumption counts) and
+  tests/test_parking_attach.py (the attach functions the release feeds).'
