@@ -359,3 +359,53 @@ def test_the_command_line_refuses_a_filtered_run_without_out_or_onto_the_release
     with pytest.raises(SystemExit):   # the same path spelled differently
         cal.main(base + ["--out", str(release.parent / ".." / release.parent.name / release.name)])
     assert not release.exists()
+
+
+# ----------------------------------------------- the maximum garage distance comes from the config, not the code (M6)
+
+
+def _config_with_distance(tmp_path, text):
+    path = tmp_path / "config.yml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_the_configured_maximum_distance_is_read_from_the_base_config(cal):
+    assert cal.read_configured_max_distance_m() == 1000.0   # configs/base_bs.yml parking_garage_max_distance_m
+
+
+def test_the_configured_maximum_distance_is_the_value_of_the_config_file_not_the_code_constant(cal, tmp_path):
+    config = _config_with_distance(tmp_path, "config:\n  parking_garage_max_distance_m: 750.0\n")
+    assert cal.read_configured_max_distance_m(config) == 750.0
+
+
+@pytest.mark.parametrize("text", [
+    "config:\n  parking_zones_enabled: true\n",                        # key missing
+    "config:\n  parking_garage_max_distance_m: 0\n",                   # not positive
+    "config:\n  parking_garage_max_distance_m: yes\n",                 # a boolean is no distance
+    "config:\n  parking_garage_max_distance_m: far\n",                 # not a number
+    "stages: []\n",                                                    # no config section
+], ids=["missing", "zero", "boolean", "text", "no-config-section"])
+def test_an_unusable_configured_maximum_distance_fails_naming_the_key(cal, tmp_path, text):
+    with pytest.raises(ValueError, match="parking_garage_max_distance_m"):
+        cal.read_configured_max_distance_m(_config_with_distance(tmp_path, text))
+
+
+def test_run_takes_the_maximum_distance_of_the_config_by_default_and_records_it(cal, inputs, tmp_path):
+    # 750 m is another value than the code constant (1000 m); the garage 300 m and 500 m away stays in range
+    config = _config_with_distance(tmp_path, "config:\n  parking_garage_max_distance_m: 750.0\n")
+    result = cal.run(out_path=None, config_path=config, generated_on="2026-10-07", **inputs)
+    assert "garage_max_distance_m,750,m,ASSUMPTION G2" in result["text"]
+    assert "within 750 m" in result["text"]
+    explicit = cal.run(out_path=None, config_path=config, max_distance_m=900.0, generated_on="2026-10-07", **inputs)
+    assert "garage_max_distance_m,900,m,ASSUMPTION G2" in explicit["text"]   # an explicit value still wins
+
+
+def test_the_command_line_default_of_the_maximum_distance_is_the_config_key(cal, monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(cal, "run", lambda **options: captured.update(options))
+    cal.main(["--plans", str(tmp_path / "plans.xml"), "--data-path", str(tmp_path / "data")])
+    assert captured["max_distance_m"] is None   # run() resolves it from the config key; no code constant is the default
+    parser_help = SCRIPT.read_text(encoding="utf-8")
+    assert "parking_garage_max_distance_m" in parser_help
+    assert 'default=cost.GARAGE_MAX_DISTANCE_M' not in parser_help.split("def main", 1)[1]

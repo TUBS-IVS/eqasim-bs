@@ -19,6 +19,9 @@ Definitions (the committed calibration table records them, so that its number ca
   they drive to the city centre (employer lots and other places leave the denominator because the model handles them by
   the employer-free draw), READ from the committed table, never typed here. Universe caveat: SrV asks residents about their
   usual place, the model averages over the destinations of all persons of the plans.
+* D_max: the config key ``parking_garage_max_distance_m`` of ``configs/base_bs.yml`` (``--config``; ASSUMPTION G2), read and
+  never defaulted from a code constant: the script fails when the key is missing. ``--max-distance-m`` overrides it (a
+  sensitivity; the table records the value used).
 * Search: bisection on lambda in ``[--lambda-min-m, --lambda-max-m]`` (default 10 to 5000 m), which stops when the mean
   garage probability is within ``--tolerance`` (default 0.0005) of the target; the mean probability rises with lambda, so
   the search fails (``ValueError``) when the target lies outside the range at its two ends. The reported lambda is rounded
@@ -65,6 +68,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
@@ -80,6 +84,10 @@ GARAGES_RELATIVE = "braunschweig/parking/parking_garages_2026.geojson"
 CITY_CENTER_RELATIVE = "braunschweig/srv/srv2023_city_center_parking.csv"
 COMMUTE_RELATIVE = "braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv"
 TABLE_RELATIVE = "braunschweig/parking/parking_garage_decay_calibration_2026.csv"
+DEFAULT_CONFIG_PATH = REPO / "configs" / "base_bs.yml"
+#: The pipeline config key of ASSUMPTION G2 (the maximum straight-line distance of a garage option, metres): the single
+#: source of D_max of the calibration, so that the calibrated lambda and the run use the same distance.
+MAX_DISTANCE_CONFIG_KEY = "parking_garage_max_distance_m"
 EXPOSURE_SCRIPT = REPO / "scripts" / "curation" / "parking_zones_2026" / "count_zone_exposure.py"
 
 #: Spec E5: the calibration zones, the two fee zones of the Braunschweig city centre.
@@ -117,6 +125,23 @@ class Calibration(NamedTuple):
     iterations: int
     low_end_mean: float
     high_end_mean: float
+
+
+def read_configured_max_distance_m(config_path=DEFAULT_CONFIG_PATH) -> float:
+    """D_max (ASSUMPTION G2, metres) as configured: the key ``parking_garage_max_distance_m`` of the ``config`` section of
+    ``config_path`` (default ``configs/base_bs.yml``). Raises ``ValueError`` naming the key when it is missing or no
+    positive number; there is no fallback to a code constant, because a lambda calibrated for another distance than the run
+    uses would be silently inconsistent. Reads the file."""
+    path = Path(config_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"pipeline config missing: {path} (it carries {MAX_DISTANCE_CONFIG_KEY})")
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    section = document.get("config") if isinstance(document, dict) else None
+    value = section.get(MAX_DISTANCE_CONFIG_KEY) if isinstance(section, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{path}: config key {MAX_DISTANCE_CONFIG_KEY} must be a positive number of metres, got {value!r}"
+                         + ("" if section is not None else " (the file has no 'config' section)"))
+    return float(value)
 
 
 def file_sha256(path) -> str:
@@ -376,10 +401,13 @@ def read_calibration_table(path) -> dict:
 
 
 def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
-        max_distance_m: float = cost.GARAGE_MAX_DISTANCE_M, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
+        max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
         facility_kinds=None, generated_on: str | None = None) -> dict:
     """Calibrate on ``plans``, write the table to ``out_path`` and return the results (a dict of the table's numbers).
+
+    ``max_distance_m`` (D_max, metres) defaults to the config key ``parking_garage_max_distance_m`` of ``config_path``
+    (``read_configured_max_distance_m``; fails when missing); an explicit value is a sensitivity and is recorded in the table.
 
     ``facility_kinds`` (None = every kind) restricts the priced garages to the given ``facility_kind`` values of the garage
     dataset (``garage``, ``surface_lot``), so that lambda can be reported with and without the surface lots; the table
@@ -390,6 +418,10 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     writes ``out_path`` (its directory must exist).
     """
     out_path = Path(out_path) if out_path is not None else None
+    if max_distance_m is None:
+        max_distance_m = read_configured_max_distance_m(config_path)
+        log.info("[garage-decay] maximum garage distance %g m from %s of %s", max_distance_m, MAX_DISTANCE_CONFIG_KEY,
+                 path_label(config_path))
     filtered = validate_facility_kinds(facility_kinds) is not None
     if filtered and out_path is not None and out_path.name == Path(TABLE_RELATIVE).name:
         raise ValueError(f"a facility-filtered calibration is a sensitivity number and must not be written under the release "
@@ -470,7 +502,11 @@ def main(argv=None) -> int:
     parser.add_argument("--out", type=Path, default=None,
                         help=f"the calibration table to write (default: <data-path>/{TABLE_RELATIVE})")
     parser.add_argument("--overwrite", action="store_true", help="replace an existing calibration table")
-    parser.add_argument("--max-distance-m", type=float, default=cost.GARAGE_MAX_DISTANCE_M)
+    parser.add_argument("--max-distance-m", type=float, default=None,
+                        help=f"D_max in metres (default: the config key {MAX_DISTANCE_CONFIG_KEY} of --config; an explicit "
+                             "value is a sensitivity and is recorded in the table)")
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH,
+                        help="pipeline config holding the key of D_max (default: configs/base_bs.yml)")
     parser.add_argument("--lambda-min-m", type=float, default=DEFAULT_LAMBDA_MIN_M)
     parser.add_argument("--lambda-max-m", type=float, default=DEFAULT_LAMBDA_MAX_M)
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
@@ -488,7 +524,7 @@ def main(argv=None) -> int:
     run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE,
         city_center_path=data / CITY_CENTER_RELATIVE, commute_path=data / COMMUTE_RELATIVE,
         out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite, max_distance_m=args.max_distance_m,
-        lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m, tolerance=args.tolerance,
+        config_path=args.config, lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m, tolerance=args.tolerance,
         facility_kinds=args.facility_kinds)
     return 0
 
