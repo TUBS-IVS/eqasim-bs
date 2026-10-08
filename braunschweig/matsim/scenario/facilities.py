@@ -32,7 +32,7 @@ Overrides matsim.scenario.facilities twice over the base behaviour:
    the student in-commuter feature was enabled). OFF -> no in-commuter
    frames -> byte-identical.
 
-3. **Portal gate facilities (eqasim-bs#442, ruling R30).** The locations of a portal stay carry
+3. **Portal gate facilities (eqasim-bs#442, ADR-0141).** The locations of a portal stay carry
    ``portal_<gate_id>`` (``braunschweig.synthesis.locations.secondary_chainsolvers.portal_anchors``); one
    facility offering the activity type ``outside`` is registered per used gate at the gate coordinate, read
    from the realised secondary locations themselves (the same rows the population writer consumes). Eqasim

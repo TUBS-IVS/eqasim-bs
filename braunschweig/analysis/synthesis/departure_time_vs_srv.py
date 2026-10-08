@@ -87,7 +87,7 @@ DEFAULT_SUBDIR = "analysis/departure_time_vs_srv"
 #: be produced for different views in one run.
 KEY_TRIPS_VIEW = "departure_time_trips_view"
 DEFAULT_TRIPS_VIEW = "final"
-#: The portal layer flag (eqasim-bs#442, R33), re-exported from its single home. While it is on, the
+#: The portal layer flag (eqasim-bs#442, ADR-0141), re-exported from its single home. While it is on, the
 #: ``"final"`` view reads the PRE-portal reporting-day trips: SrV has no ``outside`` stays, so the unchanged
 #: reference must not be compared with the portal-rewritten day.
 KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
@@ -143,7 +143,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: module-level imports that sat outside the token until the #327 gate was re-run against a
 #: ``main`` that had meanwhile given this stage a ``validate()``.
 #: ``_portal_config_keys`` owns the portal flag key, its default and the pre-portal stage name that
-#: decide which trips the "final" view reads (eqasim-bs#442, R33).
+#: decide which trips the "final" view reads (eqasim-bs#442, ADR-0141).
 _HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
                    _metrics, _popsim_trips, _config_keys, run_provenance, _portal_config_keys)
 
@@ -205,7 +205,7 @@ def configure(context):
     # The trips view is aliased to the LOCAL name "trips" so execute() need not branch on the
     # view again, exactly as plan_structure_vs_srv does.
     trips_view = context.config(KEY_TRIPS_VIEW, DEFAULT_TRIPS_VIEW)
-    # eqasim-bs#442, R33: declared in every view because execute() records it in the provenance.
+    # eqasim-bs#442, ADR-0141: declared in every view because execute() records it in the provenance.
     portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
     if trips_view == "final":
         context.stage(_portal_config_keys.final_view_trips_stage(portal_on), alias="trips")
@@ -566,7 +566,7 @@ def execute(context):
         "pipeline_commit": run_provenance.git_commit(_REPO_ROOT),
         "parameters": {
             "trips_view": trips_view,
-            # eqasim-bs#442, R33: with the portal layer on, the "final" view is the pre-portal day.
+            # eqasim-bs#442, ADR-0141: with the portal layer on, the "final" view is the pre-portal day.
             "portal_layer_enabled": portal_on,
             KEY_DEPARTURE_TIME_MODEL: model_name,
             "output_subdir": subdir,

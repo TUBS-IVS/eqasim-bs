@@ -102,7 +102,7 @@ KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 #: placeholder state for every worker and the check-1 table would state nothing, so it is not
 #: written at all (rather than written as a table of constants).
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
-#: The portal layer flag (eqasim-bs#442, ruling R35), re-exported from its single home. While it is on, far
+#: The portal layer flag (eqasim-bs#442, ADR-0141), re-exported from its single home. While it is on, far
 #: work trips are outside stays in ``synthesis.population.trips.final`` and would vanish from the participation
 #: count, so the stage reads the reporting-day trips BEFORE the portal rewrite instead.
 KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
@@ -279,7 +279,7 @@ def configure(context):
     # statement about the day the simulation runs, so it must be measured on the finished day.
     # With commute_day_state_enabled false the alias is a pass-through of the pre-assignment
     # trips, so the Phase A numbers are reproduced unchanged.
-    # eqasim-bs#442, R35: with the portal layer on, the work trips of far workplaces are outside stays in
+    # eqasim-bs#442, ADR-0141: with the portal layer on, the work trips of far workplaces are outside stays in
     # synthesis.population.trips.final, so the pre-portal reporting-day trips are read instead (same helper
     # as the two SrV comparisons).
     portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
@@ -1785,7 +1785,7 @@ def execute(context):
             "check_1_tolerance_pp": CHECK_1_TOLERANCE_PP,
             "max_states_outside_employed_share": max_states_outside_employed_share,
             "day_absence_enabled": day_absence_enabled,
-            # eqasim-bs#442, R35: with the portal layer on the trips are the pre-portal reporting day.
+            # eqasim-bs#442, ADR-0141: with the portal layer on the trips are the pre-portal reporting day.
             "portal_layer_enabled": portal_on,
         },
         "inputs": {
