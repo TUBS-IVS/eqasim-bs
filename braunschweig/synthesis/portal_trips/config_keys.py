@@ -26,6 +26,13 @@ DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE = 0.2
 KEY_MODE_SUBSTITUTION_WARN_SHARE = "braunschweig.portal.mode_substitution_warn_share"
 DEFAULT_MODE_SUBSTITUTION_WARN_SHARE = 0.1
 
+#: WARN when the share of stays that took a FALLBACK instead of the primary method exceeds this:
+#: the external point drawn outside the distance band, and the work/education legs classified by
+#: the donor's reported distance instead of the assigned location. A high rate means the primary
+#: method (the band search, the assigned-location join) is broken, not merely rare.
+KEY_FALLBACK_WARN_SHARE = "braunschweig.portal.fallback_warn_share"
+DEFAULT_FALLBACK_WARN_SHARE = 0.1
+
 #: Added to random_seed for the external-point draw; disjoint from the in-commuter (100000)
 #: and student in-commuter (200000) offsets so the streams never overlap.
 RNG_OFFSET = 300000
@@ -36,7 +43,7 @@ OUTSIDE_PURPOSE = "outside"
 
 
 def validate_settings(max_routable_distance_m: float, external_point_distance_tolerance: float,
-                      mode_substitution_warn_share: float) -> None:
+                      mode_substitution_warn_share: float, fallback_warn_share: float) -> None:
     """Raise ``ValueError`` naming the key when a setting is outside its valid range."""
     if not max_routable_distance_m > 0.0:
         raise ValueError(f"{KEY_MAX_ROUTABLE_DISTANCE_M} must be > 0 m, got {max_routable_distance_m!r}")
@@ -46,3 +53,5 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
     if not 0.0 < mode_substitution_warn_share <= 1.0:
         raise ValueError(f"{KEY_MODE_SUBSTITUTION_WARN_SHARE} must lie in (0, 1], "
                          f"got {mode_substitution_warn_share!r}")
+    if not 0.0 < fallback_warn_share <= 1.0:
+        raise ValueError(f"{KEY_FALLBACK_WARN_SHARE} must lie in (0, 1], got {fallback_warn_share!r}")
