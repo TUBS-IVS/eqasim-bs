@@ -1,5 +1,6 @@
 """The portal stages: declared keys, the OFF pass-through, the execute() wiring and the end-to-end chain
 through the pure entry point ``build_portal_trips`` (eqasim-bs#442)."""
+import json
 import logging
 import os
 
@@ -379,6 +380,8 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
     fixture = _fixture()
     schedule_dir = tmp_path / "supply"
     schedule_dir.mkdir()
+    report_dir = tmp_path / "stage_cache"
+    report_dir.mkdir()
     seen = {}
 
     def fake_read_transit_stops_routes(path):
@@ -397,7 +400,7 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         "braunschweig.synthesis.cordon_gates": {"gates": fixture["gates"], "assignment": None},
         "braunschweig.data.cordon_network": fixture["links"],
         "braunschweig.data.external_secondary_points": fixture["external_points"],
-        "data.spatial.municipalities": object(),
+        "data.spatial.municipalities": gpd.GeoDataFrame({"name": ["muni"]}, geometry=[Point(0.0, 0.0)], crs=CRS),
         "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz"},
     }
     values = {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000, keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2,
@@ -411,7 +414,9 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         def stage(self, name):
             return stages[name]
 
-        def path(self, name):
+        def path(self, name=None):
+            if name is None:
+                return str(report_dir)
             assert name == "matsim.scenario.supply.processed"
             return str(schedule_dir)
 
@@ -419,3 +424,74 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
     assert seen["schedule_path"] == os.path.join(str(schedule_dir), "schedule.xml.gz")
     assert out["report"]["enabled"] is True and out["report"]["n_stays"] == 2
     assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]
+    # R34: the report is persisted in the stage directory for the A/B manifest.
+    with open(report_dir / "portal_trips_report.json", encoding="utf-8") as handle:
+        assert json.load(handle) == out["report"]
+
+
+def _execute_context_with_municipality_crs(tmp_path, monkeypatch, municipality_crs):
+    """A stub execute context whose municipalities carry ``municipality_crs`` (all other frames EPSG:25832)."""
+    fixture = _fixture()
+    calls = []
+    monkeypatch.setattr("braunschweig.data.cordon.network.read_transit_stops_routes",
+                        lambda path: calls.append("read_transit_stops_routes") or (fixture["stops"], fixture["routes"]))
+    monkeypatch.setattr("braunschweig.data.spatial.cordon.buffer_m_from_fraction",
+                        lambda df, fraction: calls.append("buffer") or 123.0)
+    monkeypatch.setattr("braunschweig.data.spatial.cordon.build_cordon_polygon",
+                        lambda df, buffer_m: calls.append("build_cordon_polygon") or fixture["cordon_polygon"])
+    stages = {
+        stage.TRIPS_STAGE: fixture["trips"], "synthesis.population.enriched": fixture["persons"],
+        "synthesis.population.spatial.home.locations": fixture["df_home"],
+        "synthesis.population.spatial.primary.locations": (fixture["df_work"], fixture["df_education"]),
+        "braunschweig.synthesis.cordon_gates": {"gates": fixture["gates"], "assignment": None},
+        "braunschweig.data.cordon_network": fixture["links"],
+        "braunschweig.data.external_secondary_points": fixture["external_points"],
+        "data.spatial.municipalities": gpd.GeoDataFrame({"name": ["muni"]}, geometry=[Point(0.0, 0.0)],
+                                                        crs=municipality_crs),
+        "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz"},
+    }
+    values = {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
+              keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2, keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1,
+              keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1}
+
+    class _Context:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            return stages[name]
+
+        def path(self, name=None):
+            return str(tmp_path)
+
+    return _Context(), calls
+
+
+def test_execute_rejects_municipalities_in_another_crs_before_any_spatial_step(tmp_path, monkeypatch):
+    context, calls = _execute_context_with_municipality_crs(tmp_path, monkeypatch, "EPSG:4326")
+    with pytest.raises(ValueError, match=r"municipalities.*EPSG:4326.*EPSG:25832|EPSG:25832.*municipalities.*EPSG:4326"):
+        stage.execute(context)
+    assert calls == []                                    # the cordon polygon was never built
+    assert not (tmp_path / "portal_trips_report.json").exists()
+
+
+@pytest.mark.parametrize("frame_name", ["gates", "links", "external_points", "df_home"])
+def test_build_portal_trips_rejects_a_frame_in_another_crs(frame_name):
+    fixture = _fixture()
+    fixture[frame_name] = fixture[frame_name].to_crs("EPSG:4326")
+    with pytest.raises(ValueError) as error:
+        stage.build_portal_trips(**fixture)
+    message = str(error.value)
+    assert frame_name in message and "EPSG:4326" in message and "EPSG:25832" in message
+
+
+def test_build_portal_trips_rejects_a_frame_without_a_crs():
+    fixture = _fixture()
+    fixture["links"] = fixture["links"].set_crs(None, allow_override=True)
+    with pytest.raises(ValueError, match="links.*None"):
+        stage.build_portal_trips(**fixture)
+
+
+def test_assert_consistent_crs_accepts_equal_crs_given_in_different_spellings():
+    frames = {"a": gpd.GeoDataFrame(geometry=[], crs="EPSG:25832"), "b": gpd.GeoDataFrame(geometry=[], crs=25832)}
+    stage.assert_consistent_crs(frames)

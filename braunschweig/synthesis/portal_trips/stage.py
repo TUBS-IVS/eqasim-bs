@@ -17,6 +17,7 @@ import copy
 import hashlib
 import importlib
 import inspect
+import json
 import logging
 import os
 
@@ -38,6 +39,7 @@ from braunschweig.synthesis.portal_trips.config_keys import (
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[portal_trips]"
+REPORT_FILE_NAME = "portal_trips_report.json"
 TRIPS_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
 PERSONS_STAGE = "synthesis.population.enriched"
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode",
@@ -98,6 +100,33 @@ def configure(context):
     context.stage("braunschweig.data.external_secondary_points")
     context.stage("data.spatial.municipalities")
     context.stage("matsim.scenario.supply.processed")
+
+
+def assert_consistent_crs(frames: dict) -> None:
+    """Raise ``ValueError`` naming every frame and its CRS unless all frames share one CRS.
+
+    ``frames`` maps a display name to an object with a ``crs`` attribute (a GeoDataFrame). The gates, the links,
+    the external points, the homes and the municipalities (from which the cordon polygon is built) are combined
+    by coordinates, so a frame in another CRS, or without one, would shift every distance silently.
+    """
+    crs_by_name = {name: frame.crs for name, frame in frames.items()}
+    reference = next(iter(crs_by_name.values()))
+    if reference is not None and all(crs == reference for crs in crs_by_name.values()):
+        return
+    described = ", ".join(f"{name}={'None' if crs is None else crs.to_string()}"
+                          for name, crs in crs_by_name.items())
+    raise ValueError(f"{_LOG_TAG} the spatial inputs are not in one CRS ({described}); the portal stage combines "
+                     "them by metric coordinates. Reproject them to the CRS of the home locations, or set the "
+                     "missing CRS, before the portal stage.")
+
+
+def _json_default(value):
+    """JSON encoder hook for numpy scalars and arrays in the report."""
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    raise TypeError(f"{type(value).__name__} is not JSON serialisable")
 
 
 def _trip_row_positions(trips, person_ids, trip_indices):
@@ -198,6 +227,7 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     missing = [column for column in REQUIRED_TRIP_COLUMNS if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} trips frame lacks {missing}")
+    assert_consistent_crs({"df_home": df_home, "gates": gates, "links": links, "external_points": external_points})
     trips = rewrite.recompute_chain_columns(trips)
     home_xy = _classification.person_home_xy(persons, df_home)
     primary = _classification.primary_xy(df_work, df_education)
@@ -340,21 +370,31 @@ def execute(context):
     from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
 
     df_muni = context.stage("data.spatial.municipalities")
+    # Before the first spatial step (the cordon polygon is built from the municipalities).
+    df_home = context.stage("synthesis.population.spatial.home.locations")
+    gates = context.stage("braunschweig.synthesis.cordon_gates")["gates"]
+    links = context.stage("braunschweig.data.cordon_network")
+    external_points = context.stage("braunschweig.data.external_secondary_points")
+    assert_consistent_crs({"municipalities": df_muni, "df_home": df_home, "gates": gates, "links": links,
+                           "external_points": external_points})
     cordon_polygon = build_cordon_polygon(
         df_muni, buffer_m_from_fraction(df_muni, float(context.config("cordon_network_buffer_fraction"))))
     supply = context.stage("matsim.scenario.supply.processed")
     schedule_path = os.path.join(context.path("matsim.scenario.supply.processed"), supply["schedule_path"])
     stops, routes = read_transit_stops_routes(schedule_path)
     df_work, df_education = context.stage("synthesis.population.spatial.primary.locations")
-    gates = context.stage("braunschweig.synthesis.cordon_gates")["gates"]
     out = build_portal_trips(
-        trips=trips, persons=context.stage(PERSONS_STAGE),
-        df_home=context.stage("synthesis.population.spatial.home.locations"), df_work=df_work,
-        df_education=df_education, gates=gates, links=context.stage("braunschweig.data.cordon_network"),
-        external_points=context.stage("braunschweig.data.external_secondary_points"), stops=stops, routes=routes,
-        cordon_polygon=cordon_polygon, threshold_m=float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M)),
+        trips=trips, persons=context.stage(PERSONS_STAGE), df_home=df_home, df_work=df_work,
+        df_education=df_education, gates=gates, links=links, external_points=external_points, stops=stops,
+        routes=routes, cordon_polygon=cordon_polygon,
+        threshold_m=float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M)),
         tolerance=float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
         warn_share=float(context.config(KEY_MODE_SUBSTITUTION_WARN_SHARE)),
         fallback_warn_share=float(context.config(KEY_FALLBACK_WARN_SHARE)), seed=int(context.config("random_seed")))
     out["report"]["enabled"] = True
+    # The report is also a file in the stage directory so the A/B run manifest can cite it without the log.
+    report_path = os.path.join(context.path(), REPORT_FILE_NAME)
+    with open(report_path, "w", encoding="utf-8") as handle:
+        json.dump(out["report"], handle, indent=2, default=_json_default)
+    logger.info("%s report written to %s", _LOG_TAG, report_path)
     return out
