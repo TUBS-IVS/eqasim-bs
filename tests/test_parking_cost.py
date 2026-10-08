@@ -192,8 +192,9 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
 
 
 def test_outcomes_are_thirteen_constants_named_as_their_values_with_the_v2_products_appended():
-    # Appended at the END, so the declaration order of the ten v1 outcomes (the order of the Java ParkingOutcome
-    # enum and of the outcome report) stays as it was; PAID_EXPECTED (schema 3, the garage expectation) comes last.
+    # Appended at the END, so the position of the ten v1 outcomes in this tuple stays as it was; PAID_EXPECTED (schema 3,
+    # the garage expectation) comes last. The Java ParkingOutcome enum has another order (NO_ZONE first), so the tuple
+    # order is no contract with Java: consumers of the outcome report key the rows by outcome name.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
                              "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED")

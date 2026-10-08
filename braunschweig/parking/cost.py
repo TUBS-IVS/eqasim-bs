@@ -92,8 +92,9 @@ PAID_COMMUTER = "PAID_COMMUTER"
 #: Schema 3 (spec Amendment E, R-4d-5): the stay was priced as the probability-weighted mean over the street and at
 #: least one garage option, or over the garage options alone (``parking_cost_with_garages``).
 PAID_EXPECTED = "PAID_EXPECTED"
-# The v2 outcomes are appended at the END, so the declaration order of the v1 outcomes (the order of the Java
-# ParkingOutcome enum and of the outcome report) is unchanged.
+# The v2 outcomes are appended at the END of this tuple, which keeps the position of every v1 outcome here. The Java
+# ParkingOutcome enum has another order (NO_ZONE comes first there, HOME here), so the order of this tuple is not a
+# contract: consumers of the outcome report key the rows by outcome NAME, never by position.
 OUTCOMES = (HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT, PAID_METERED,
             PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER, PAID_EXPECTED)
 
