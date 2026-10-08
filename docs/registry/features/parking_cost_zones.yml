@@ -86,6 +86,16 @@ evidence:
   - tests/test_parking_garage_decay_config.py
   - tests/test_parking_free_draw_options.py
   - tests/test_parking_resident_districts.py
+  - tests/test_parking_garage_supplement.py
+  - tests/test_parking_municipal_zones.py
+  - tests/test_parking_regional_garages.py
+  - tests/test_parking_regional_zones.py
+  - tests/test_parking_supply_share.py
+  - tests/test_parking_wolfsburg_lots.py
+  - tests/test_parking_zone_assembly.py
+  - tests/test_parking_zone_exposure.py
+  - tests/test_parking_zone_geometry.py
+  - tests/test_verify_braunschweig_inputs.py
   - tests/test_compare_parking_targets.py
   - tests/test_configs_composed.py
   - tests/test_popsim_config_parity.py

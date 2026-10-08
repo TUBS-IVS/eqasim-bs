@@ -113,8 +113,11 @@ limitations: >-
 notes: >-
   Content on 2026-10-01: 10 districts, Braunschweig 3 (A 649,733 m2, B 1,252,014 m2, C 658,503 m2 in the package; the
   file differs by the WGS84 rounding) and Goslar 7 (A, B, C, F, G, H, J; C includes the Oberstadt feature, H is 6.32 m2
-  smaller than in the package). Curation check, not a validation (assignment of the activities of the local 1 % scenario
-  of 2026-04-29, 47,362 activities of 11,472 persons, with the production functions of braunschweig.parking.attach):
+  smaller than in the package). The exposure counts that follow are an INDICATOR from an uncommitted probe, not a
+  validation and not reproducible from the repository: they were measured on the local 1 % plans of 2026-04-29, which
+  are lost, and the output of the probe is not committed; they are to be re-measured on the server plans
+  (assignment of the activities of the local 1 % scenario of 2026-04-29, 47,362 activities of 11,472 persons, with
+  the production functions of braunschweig.parking.attach):
   937 activities (2.0 %) lie in a district, 809 of them also in a fee zone (797 with the zone release of 2026-10-01,
   809 with that of 2026-10-07); 247 persons (2.2 %) live in a district; 20 of
   the 21,082 non-home activities (0.09 %) lie in the district of the person's home, 1 of them reached by car in the plan of
