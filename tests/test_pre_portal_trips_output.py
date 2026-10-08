@@ -158,6 +158,13 @@ class _ExecuteContext:
             "synthesis.population.activities.final": pd.DataFrame({"person_id": [1]}),
             "synthesis.population.enriched": pd.DataFrame({"person_id": [1, 2]}),
         }
+        if portal_enabled:
+            # The pre-portal commutes read the primary and home locations and the persons' households.
+            extra = {"synthesis.population.spatial.primary.locations": _commute_primary_locations(),
+                     "synthesis.population.spatial.home.locations": _commute_home_frame()}
+            self._stages.update(extra)
+            self._stages["synthesis.population.enriched"] = _commute_persons()
+            self.declared_stages.update(extra)
         self._config = {
             OUTPUT.KEY_ENABLED: False, OUTPUT.KEY_DAY_ABSENCE_ENABLED: False, PORTAL.KEY_ENABLED: portal_enabled,
             "output_path": str(tmp_path), "output_prefix": prefix, "output_formats": list(output_formats),
@@ -536,3 +543,324 @@ def test_realised_participation_counts_the_far_worker_on_the_pre_portal_file_onl
     assert work_rate(donor) == (0.5, 1.0)
     # Silent on the rewritten table: the far worker counts as not working.
     assert work_rate(rewritten) == (0.0, 1.0)
+
+
+# ====================================================================================================================
+# Pre-portal commutes (eqasim-bs#442): <prefix>commutes_pre_portal.gpkg and the readers that prefer it
+# ====================================================================================================================
+
+CRS = "EPSG:25832"
+COMMUTE_PERSON_IDS = [1, 2, 3, 4]
+HOME_XY = {10: (0.0, 0.0), 11: (1000.0, 0.0), 12: (2000.0, 0.0), 13: (3000.0, 0.0)}
+FAR_WORK_XY = (90000.0, 0.0)
+SCHOOL_XY = (3000.0, 4000.0)
+
+
+def _commute_persons() -> pd.DataFrame:
+    """The enriched persons frame; person 3 has no trip, person 4 is a pupil."""
+    return pd.DataFrame({
+        "person_id": COMMUTE_PERSON_IDS, "household_id": [10, 11, 12, 13],
+        "age": [40, 30, 50, 12], "employed": [True, True, False, False], "sex": ["male", "female", "male", "female"],
+        "socioprofessional_class": [1, 1, 1, 1], "has_license": [True, True, True, False],
+        "has_pt_subscription": [False] * 4, "pt_subscription_type": ["none"] * 4, "census_person_id": [1, 2, 3, 4],
+        "hts_id": [1, 2, 3, 4], "is_urban_resident": [True] * 4,
+        "household_income": [1.0] * 4, "car_availability": ["all"] * 4, "bicycle_availability": ["all"] * 4,
+        "number_of_cars": [1] * 4, "number_of_bicycles": [1] * 4, "high_income": [False] * 4,
+        "household_size": [1] * 4, "census_household_id": [1, 2, 3, 4],
+    })
+
+
+def _commute_day_trips() -> pd.DataFrame:
+    """Donor day: person 1 commutes 90 km, person 2 shops, person 3 stays home, person 4 goes to school."""
+    rows = []
+    for person, first, second in ((1, "work", "home"), (2, "shop", "home"), (4, "education", "home")):
+        for index, (preceding, following) in enumerate((("home", first), (first, second))):
+            rows.append({"person_id": person, "trip_index": index, "preceding_purpose": preceding,
+                         "following_purpose": following, "mode": "car", "euclidean_distance": 1000.0,
+                         "departure_time": (7 + 9 * index) * 3600.0, "arrival_time": (8 + 9 * index) * 3600.0,
+                         "is_first_trip": index == 0, "is_last_trip": index == 1})
+    return pd.DataFrame(rows)
+
+
+def _commute_home_frame() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame({"household_id": list(HOME_XY)}, geometry=[Point(xy) for xy in HOME_XY.values()],
+                            crs=CRS)
+
+
+def _commute_primary_locations():
+    work = gpd.GeoDataFrame({"person_id": [1], "location_id": ["w1"]}, geometry=[Point(FAR_WORK_XY)], crs=CRS)
+    education = gpd.GeoDataFrame({"person_id": [4], "location_id": ["e4"]}, geometry=[Point(SCHOOL_XY)], crs=CRS)
+    return work, education
+
+
+def _located_activities(activities: pd.DataFrame) -> gpd.GeoDataFrame:
+    """The vendored location join, by hand: home -> household home, work/education -> primary location."""
+    household = _commute_persons().set_index("person_id")["household_id"]
+    work, education = _commute_primary_locations()
+    work_xy = {row.person_id: (row.geometry.x, row.geometry.y) for row in work.itertuples()}
+    education_xy = {row.person_id: (row.geometry.x, row.geometry.y) for row in education.itertuples()}
+    points = []
+    for row in activities.itertuples():
+        if row.purpose == "home":
+            points.append(Point(HOME_XY[household[row.person_id]]))
+        elif row.purpose == "work":
+            points.append(Point(work_xy[row.person_id]))
+        elif row.purpose == "education":
+            points.append(Point(education_xy[row.person_id]))
+        else:
+            points.append(Point(500.0, 500.0))
+    return gpd.GeoDataFrame(activities[["person_id", "activity_index"]].copy(), geometry=points, crs=CRS)
+
+
+class _VendoredOutputContext:
+    def __init__(self, tmp_path, trips, prefix):
+        from synthesis.population import activities as vendored_activities
+        activities = vendored_activities.execute(_ActivitiesContext(trips, COMMUTE_PERSON_IDS))
+        self._stages = {
+            "synthesis.population.enriched": _commute_persons(),
+            "synthesis.population.activities": activities,
+            "synthesis.population.trips": trips.copy(),
+            "synthesis.population.spatial.locations": _located_activities(activities),
+            "synthesis.vehicles.vehicles": (pd.DataFrame({"type_id": []}), pd.DataFrame({"vehicle_id": []})),
+        }
+        self._config = {"output_path": str(tmp_path), "output_prefix": prefix, "output_formats": ["gpkg"],
+                        "mode_choice": False}
+
+    def stage(self, name):
+        return self._stages[name]
+
+    def config(self, name):
+        return self._config[name]
+
+
+def _vendored_commutes(tmp_path, trips, prefix="v_") -> gpd.GeoDataFrame:
+    """``<prefix>commutes.gpkg`` as the vendored writer produces it for ``trips``."""
+    vendored.execute(_VendoredOutputContext(tmp_path, trips, prefix))
+    return gpd.read_file(tmp_path / f"{prefix}commutes.gpkg")
+
+
+def test_build_commute_frame_keeps_the_legacy_selection():
+    from shapely.geometry import LineString
+    purposes = ["home", "work", "home", "home", "shop"]
+    activities = _located_activities(pd.DataFrame({
+        "person_id": [1, 1, 1, 2, 2], "activity_index": [0, 1, 2, 0, 1], "purpose": purposes}))
+    activities["purpose"] = purposes
+    frame = vendored.build_commute_frame(activities)
+    assert list(frame.columns) == ["person_id", "geometry"]
+    assert list(frame["person_id"]) == [1]  # person 2 has no work activity
+    assert len(vendored.build_commute_frame(activities, "education")) == 0
+    assert frame.geometry.iloc[0].geom_type == LineString([(0, 0), (1, 1)]).geom_type
+
+
+def test_pre_portal_commutes_equal_the_vendored_commutes_on_a_run_without_portal_stays(tmp_path):
+    trips = _commute_day_trips()
+    expected = _vendored_commutes(tmp_path, trips).sort_values("person_id").reset_index(drop=True)
+    work, education = _commute_primary_locations()
+    commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
+        vendored.prepare_trip_output_frame(trips), _commute_persons(), _commute_home_frame(), work, education)
+    paths = OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "p_", ["gpkg"])
+    actual = gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg").sort_values("person_id").reset_index(drop=True)
+    assert tmp_path / "p_commutes_pre_portal.gpkg" in paths
+    assert list(actual.columns) == list(expected.columns)
+    assert list(actual["person_id"]) == list(expected["person_id"]) == [1]
+    assert actual.crs == expected.crs
+    assert all(a.equals_exact(b, 1e-9) for a, b in zip(actual.geometry, expected.geometry))
+
+
+def test_pre_portal_commutes_keep_the_far_worker_the_vendored_commutes_lose():
+    work, education = _commute_primary_locations()
+    donor = vendored.prepare_trip_output_frame(_commute_day_trips())
+    commutes, _ = OUTPUT.build_pre_portal_commutes(donor, _commute_persons(), _commute_home_frame(), work, education)
+    assert list(commutes["person_id"]) == [1]
+    assert commutes.geometry.iloc[0].length == pytest.approx(90000.0)
+
+    # The post-portal day: person 1's work activity became an outside stay, so the vendored writer has no work row.
+    rewritten = _commute_day_trips()
+    rewritten.loc[(rewritten["person_id"] == 1) & (rewritten["trip_index"] == 0), "following_purpose"] = "outside"
+    rewritten.loc[(rewritten["person_id"] == 1) & (rewritten["trip_index"] == 1), "preceding_purpose"] = "outside"
+    from synthesis.population import activities as vendored_activities
+    activities = vendored_activities.execute(_ActivitiesContext(rewritten, COMMUTE_PERSON_IDS))
+    located = _located_activities(activities)
+    located["purpose"] = activities["purpose"].to_numpy()
+    assert "outside" in set(located["purpose"])
+    assert 1 not in set(vendored.build_commute_frame(located)["person_id"])
+
+
+def test_pre_portal_education_layer_holds_the_pupils(tmp_path):
+    work, education = _commute_primary_locations()
+    donor = vendored.prepare_trip_output_frame(_commute_day_trips())
+    commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
+        donor, _commute_persons(), _commute_home_frame(), work, education)
+    OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "p_", ["gpkg"])
+    layer = gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg", layer=PORTAL.PRE_PORTAL_EDUCATION_LAYER)
+    assert list(layer["person_id"]) == [4]
+    assert layer.geometry.iloc[0].length == pytest.approx(4000.0)
+    # The default (first) layer stays the work commutes with the vendored schema.
+    assert list(gpd.read_file(tmp_path / "p_commutes_pre_portal.gpkg")["person_id"]) == [1]
+
+
+def test_pre_portal_commutes_write_and_read_back_an_empty_education_layer(tmp_path):
+    work, education = _commute_primary_locations()
+    trips = vendored.prepare_trip_output_frame(_commute_day_trips())
+    trips = trips[trips["person_id"] != 4]
+    commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
+        trips, _commute_persons(), _commute_home_frame(), work, education)
+    assert len(education_commutes) == 0
+    OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "p_", ["gpkg"])
+    path = tmp_path / "p_commutes_pre_portal.gpkg"
+    assert list(gpd.read_file(path)["person_id"]) == [1]
+    assert len(gpd.read_file(path, layer=PORTAL.PRE_PORTAL_EDUCATION_LAYER)) == 0
+
+
+def test_pre_portal_commutes_skip_a_person_without_a_primary_location_and_say_so(caplog):
+    work, education = _commute_primary_locations()
+    work = work.iloc[0:0]
+    donor = vendored.prepare_trip_output_frame(_commute_day_trips())
+    with caplog.at_level(logging.WARNING):
+        commutes, _ = OUTPUT.build_pre_portal_commutes(
+            donor, _commute_persons(), _commute_home_frame(), work, education)
+    assert len(commutes) == 0
+    assert any("no primary location" in record.getMessage() for record in caplog.records)
+
+
+class _CommuteExecuteContext(_ExecuteContext):
+    """The execute context of the trips test with the donor day of the commute fixture."""
+
+    def __init__(self, tmp_path, portal_enabled, output_formats=("csv", "gpkg"), prefix="bs_"):
+        super().__init__(tmp_path, portal_enabled, output_formats, prefix)
+        self._stages[PRE_PORTAL_STAGE] = _commute_day_trips()
+        self._stages[DAY_TRIPS_STAGE] = _commute_day_trips()
+
+
+def test_output_day_on_stages_the_primary_and_home_locations_only_with_the_flag():
+    on = _ConfigureRecorder(config={"mode_choice": False, PORTAL.KEY_ENABLED: True})
+    OUTPUT.configure(on)
+    assert "synthesis.population.spatial.primary.locations" in on.stages
+    assert "synthesis.population.spatial.home.locations" in on.stages
+    off = _ConfigureRecorder(config={"mode_choice": False, PORTAL.KEY_ENABLED: False})
+    OUTPUT.configure(off)
+    assert "synthesis.population.spatial.primary.locations" not in off.stages
+    assert "synthesis.population.spatial.home.locations" not in off.stages
+
+
+def test_output_day_on_writes_the_pre_portal_commutes_and_logs_them(monkeypatch, tmp_path, caplog):
+    _stub_vendored_writer(monkeypatch, tmp_path)
+    with caplog.at_level(logging.INFO):
+        OUTPUT.execute(_CommuteExecuteContext(tmp_path, portal_enabled=True))
+    path = tmp_path / "bs_commutes_pre_portal.gpkg"
+    written = gpd.read_file(path)
+    assert list(written["person_id"]) == [1]
+    assert written.geometry.iloc[0].length == pytest.approx(90000.0)
+    assert "bs_commutes_pre_portal.gpkg" in " ".join(record.getMessage() for record in caplog.records)
+
+
+def test_output_day_off_writes_no_commutes_file(monkeypatch, tmp_path):
+    _stub_vendored_writer(monkeypatch, tmp_path)
+    OUTPUT.execute(_CommuteExecuteContext(tmp_path, portal_enabled=False))
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["bs_trips.csv"]
+
+
+def test_output_day_writes_no_commutes_file_without_a_spatial_output_format(monkeypatch, tmp_path, caplog):
+    _stub_vendored_writer(monkeypatch, tmp_path)
+    with caplog.at_level(logging.WARNING):
+        OUTPUT.execute(_CommuteExecuteContext(tmp_path, portal_enabled=True, output_formats=("csv",)))
+    assert not list(tmp_path.glob("*commutes_pre_portal*"))
+    assert any("commutes" in record.getMessage() for record in caplog.records)
+
+
+# ------------------------------------------------------------------ resolver for the commutes file
+
+
+def _touch_gpkg(directory: Path, name: str) -> Path:
+    path = directory / name
+    path.write_bytes(b"gpkg")
+    return path
+
+
+def test_commutes_resolver_prefers_the_current_pre_portal_file_and_logs_it(tmp_path, caplog):
+    _touch_gpkg(tmp_path, "bs_commutes.gpkg")
+    pre = _touch_gpkg(tmp_path, "bs_commutes_pre_portal.gpkg")
+    with caplog.at_level(logging.INFO):
+        resolved = PTF.resolve_pre_portal_commutes_path(tmp_path, "bs_")
+    assert resolved == pre
+    assert any("bs_commutes_pre_portal.gpkg" in record.getMessage() for record in caplog.records)
+
+
+def test_commutes_resolver_ignores_a_stale_pre_portal_file_and_warns(tmp_path, caplog):
+    pre = _touch_gpkg(tmp_path, "bs_commutes_pre_portal.gpkg")
+    plain = _touch_gpkg(tmp_path, "bs_commutes.gpkg")
+    old = plain.stat().st_mtime - 3600.0
+    os.utime(pre, (old, old))
+    with caplog.at_level(logging.WARNING):
+        assert PTF.resolve_pre_portal_commutes_path(tmp_path, "bs_") is None
+    assert any("older" in record.getMessage() and "ignored" in record.getMessage() for record in caplog.records)
+
+
+def test_commutes_resolver_returns_none_without_the_file(tmp_path):
+    _touch_gpkg(tmp_path, "bs_commutes.gpkg")
+    assert PTF.resolve_pre_portal_commutes_path(tmp_path, "bs_") is None
+
+
+# ------------------------------------------------------------------ run_mid_validation commute tables
+
+
+def _persons_kreis() -> pd.DataFrame:
+    return pd.DataFrame({"person_id": COMMUTE_PERSON_IDS, "ars5": ["03101"] * 4, "kreis_name": ["BS"] * 4,
+                         "age": [40, 30, 50, 12], "regiostar7": [71] * 4})
+
+
+def test_commute_distances_from_lines_equal_the_activities_derivation_on_a_run_without_portal_stays():
+    trips = _commute_day_trips()
+    from synthesis.population import activities as vendored_activities
+    activities = vendored_activities.execute(_ActivitiesContext(trips, COMMUTE_PERSON_IDS))
+    located = _located_activities(activities)
+    located["purpose"] = activities["purpose"].to_numpy()
+    located["household_id"] = located["person_id"].map(_commute_persons().set_index("person_id")["household_id"])
+    from_activities = RMV._commute_distances(located, _commute_home_frame(), _persons_kreis())
+
+    work, education = _commute_primary_locations()
+    lines, _ = OUTPUT.build_pre_portal_commutes(
+        vendored.prepare_trip_output_frame(trips), _commute_persons(), _commute_home_frame(), work, education)
+    from_lines = RMV._commute_distances_from_lines(lines, _persons_kreis())
+
+    assert list(from_lines["person_id"]) == list(from_activities["person_id"])
+    assert from_lines["distance_km"].to_numpy() == pytest.approx(from_activities["distance_km"].to_numpy())
+    assert list(from_lines["ars5"]) == list(from_activities["ars5"])
+
+
+def test_education_distances_from_lines_carry_age_and_level():
+    work, education = _commute_primary_locations()
+    _commutes, education_lines = OUTPUT.build_pre_portal_commutes(
+        vendored.prepare_trip_output_frame(_commute_day_trips()), _commute_persons(), _commute_home_frame(),
+        work, education)
+    table = RMV._education_distances_from_lines(education_lines, _persons_kreis())
+    assert list(table["person_id"]) == [4]
+    assert table["distance_km"].iloc[0] == pytest.approx(4.0)
+    assert {"age", "regiostar7", "level"} <= set(table.columns)
+
+
+def test_read_commute_lines_prefers_the_pre_portal_file_and_returns_both_layers(tmp_path):
+    work, education = _commute_primary_locations()
+    commutes, education_commutes = OUTPUT.build_pre_portal_commutes(
+        vendored.prepare_trip_output_frame(_commute_day_trips()), _commute_persons(), _commute_home_frame(),
+        work, education)
+    _touch_gpkg(tmp_path, "bs_commutes.gpkg")
+    OUTPUT.write_pre_portal_commutes(commutes, education_commutes, tmp_path, "bs_", ["gpkg"])
+    work_lines, education_lines = RMV._read_pre_portal_commute_lines(tmp_path, "bs_")
+    assert list(work_lines["person_id"]) == [1]
+    assert list(education_lines["person_id"]) == [4]
+
+
+def test_read_commute_lines_is_none_without_the_pre_portal_file(tmp_path):
+    assert RMV._read_pre_portal_commute_lines(tmp_path, "bs_") is None
+
+
+def test_commute_scope_is_zero_missing_when_the_pre_portal_commutes_are_used(caplog):
+    trips = vendored.prepare_trip_output_frame(_commute_day_trips())
+    commute = pd.DataFrame({"person_id": [1], "distance_km": [117.0]})
+    with caplog.at_level(logging.INFO):
+        scope = RMV._commute_table_scope(commute, trips, True, "pre_portal_commutes")
+    assert scope["source"] == "pre_portal_commutes"
+    assert scope["n_work_persons_pre_portal_trips"] == 1
+    assert scope["n_work_persons_without_commute_row"] == 0
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]

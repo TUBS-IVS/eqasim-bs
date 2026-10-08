@@ -134,8 +134,13 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
     (`braunschweig.analysis.pipeline_trips_file`, which logs the choice and ignores, with a warning naming both
     modification times, a pre-portal file older than `trips.csv`, i.e. a leftover of an earlier run); readers that
     need the realised plan keep `trips.csv`. `run_mid_validation` also derives its activity-purpose counts from the
-    pre-portal trips with the activities file's definition. Flag off: nothing is written and every output is
-    byte-identical.
+    pre-portal trips with the activities file's definition. Because `commutes.gpkg` (built by the vendored writer
+    from the written activities) lacks the far commuters, the stage also writes
+    `<prefix>commutes_pre_portal.gpkg` while the flag is on: the same home -> work lines with the vendored
+    selection (`synthesis.output.build_commute_frame`), for the persons whose pre-portal trips contain a work
+    activity, the work location taken from `synthesis.population.spatial.primary.locations`; the home -> education
+    lines are its layer `education`. The commute and education tables of `run_mid_validation` read it when it
+    exists and is current. Flag off: nothing is written and every output is byte-identical.
 
 ### Rejected alternatives
 
@@ -218,11 +223,11 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - **Validators that read the written trips CSV (decision 11).** `population_validation/participation_fit.py`,
   `population_validation/trip_coherence.py` (through `population_source`) and the trip counts of
   `run_mid_validation` read `<prefix>trips_pre_portal.csv` while it exists, so their work/education participation
-  and purpose distributions describe the donor day, as do its activity-purpose counts. Remaining limitation: the
-  commute and education distance tables of `run_mid_validation` need the assigned primary location and are computed
-  from `<prefix>activities.gpkg`, the post-portal day (a far workplace is an `outside` activity; no written output
-  keeps the primary location of such a worker). They cover workplaces inside the portal threshold only and are
-  expected to move in the OFF/ON A/B; the run warns with the number of work persons without a commute row.
+  and purpose distributions describe the donor day, as do its activity-purpose counts and, through
+  `<prefix>commutes_pre_portal.gpkg`, its commute and education distance tables. Without that file (an output
+  directory written before it existed, or a run that did not write a spatial format) those two tables fall back to
+  `<prefix>activities.gpkg`, the post-portal day, cover workplaces inside the portal threshold only and the run
+  warns with the number of work persons without a commute row.
 - **Documentation.** Stage records `braunschweig.synthesis.portal_trips.{stage,anchors}` and the re-pointed alias
   `synthesis.population.trips.final` (the DAG node of the thin stage `trips_final`), a record for
   `braunschweig.synthesis.commute_day.trips_day_stage` (now a DAG node of its own, carrying the content the

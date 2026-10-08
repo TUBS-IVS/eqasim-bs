@@ -17,7 +17,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from braunschweig.synthesis.portal_trips.config_keys import PRE_PORTAL_TRIPS_FILE_STEM
+from braunschweig.synthesis.portal_trips.config_keys import (
+    PRE_PORTAL_COMMUTES_FILE_STEM, PRE_PORTAL_TRIPS_FILE_STEM)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +38,41 @@ def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
 
 
+def _is_stale(pre_portal_path: Path, current_path: Path) -> bool:
+    """True (with a warning naming both files and mtimes) when the pre-portal file is older than the current one."""
+    if not current_path.exists():
+        return False
+    age_seconds = current_path.stat().st_mtime - pre_portal_path.stat().st_mtime
+    if age_seconds <= STALE_AFTER_SECONDS:
+        return False
+    LOGGER.warning(
+        "%s (mtime %s) is older than %s (mtime %s) by %.0f s: it stems from an earlier run in %s and is ignored; "
+        "%s is read instead. Delete the stale file to silence this warning.",
+        pre_portal_path.name, _iso_mtime(pre_portal_path), current_path.name, _iso_mtime(current_path), age_seconds,
+        pre_portal_path.parent, current_path.name)
+    return True
+
+
+def resolve_pre_portal_commutes_path(directory: Path | str, prefix: str) -> Path | None:
+    """Path of ``<prefix>commutes_pre_portal.gpkg`` when it exists and is current, else ``None``.
+
+    The file holds the home -> work lines (layer 1) and home -> education lines (layer ``education``) built from the
+    assigned primary locations while the portal layer is on; ``<prefix>commutes.gpkg`` lacks the far commuters. The
+    same staleness rule as for the trips applies, measured against ``<prefix>commutes.gpkg``: an older file is
+    ignored with a warning naming both files and their modification times. The choice is logged.
+    """
+    directory = Path(directory)
+    pre_portal_path = directory / f"{prefix}{PRE_PORTAL_COMMUTES_FILE_STEM}.gpkg"
+    if not pre_portal_path.exists():
+        return None
+    if _is_stale(pre_portal_path, directory / f"{prefix}commutes.gpkg"):
+        return None
+    LOGGER.info(
+        "Reading the pre-portal commutes %s instead of %s: the latter is built from the written activities, where "
+        "a far workplace is an 'outside' activity (eqasim-bs#442).", pre_portal_path.name, f"{prefix}commutes.gpkg")
+    return pre_portal_path
+
+
 def resolve_pipeline_trips_path(directory: Path | str, prefix: str) -> Path | None:
     """Path of the trips CSV a diary validator should read, or ``None`` when neither file exists.
 
@@ -51,15 +87,8 @@ def resolve_pipeline_trips_path(directory: Path | str, prefix: str) -> Path | No
     pre_portal_path = directory / f"{prefix}{PRE_PORTAL_TRIPS_FILE_STEM}.csv"
     trips_path = directory / f"{prefix}trips.csv"
     if pre_portal_path.exists():
-        if trips_path.exists():
-            age_seconds = trips_path.stat().st_mtime - pre_portal_path.stat().st_mtime
-            if age_seconds > STALE_AFTER_SECONDS:
-                LOGGER.warning(
-                    "%s (mtime %s) is older than %s (mtime %s) by %.0f s: it stems from an earlier run in %s and "
-                    "is ignored; %s is read instead. Delete the stale file to silence this warning.",
-                    pre_portal_path.name, _iso_mtime(pre_portal_path), trips_path.name, _iso_mtime(trips_path),
-                    age_seconds, directory, trips_path.name)
-                return trips_path
+        if _is_stale(pre_portal_path, trips_path):
+            return trips_path
         LOGGER.info(
             "Reading the pre-portal trips %s instead of %s: with the portal layer on the latter carries the purpose "
             "'outside' for far destinations and has the inner legs of a stay removed, which a diary validation "

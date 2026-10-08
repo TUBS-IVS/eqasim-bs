@@ -19,7 +19,10 @@ description: 'Writes the unified population/trips/locations output (CSV/parquet 
   rewrite, with exactly the trips column set of trips.csv (synthesis.output.prepare_trip_output_frame) and no mode,
   because trips.csv is then the post-portal day. File-based validators that compare the diary with a survey prefer
   it (braunschweig/analysis/pipeline_trips_file.py); with the flag off nothing is written and every output is
-  byte-identical. Details: docs/codebase/notes/portal-trips.md.'
+  byte-identical. With the same flag it also writes <prefix>commutes_pre_portal.gpkg: the home to work lines of
+  commutes.gpkg (same schema, selection by synthesis.output.build_commute_frame) rebuilt from the assigned primary
+  locations for the persons whose pre-portal trips contain a work activity, plus the layer education, because
+  commutes.gpkg itself lacks the far commuters. Details: docs/codebase/notes/portal-trips.md.'
 lineage:
   type: overridden
   upstream: synthesis.output

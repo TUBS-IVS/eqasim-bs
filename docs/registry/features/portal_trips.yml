@@ -34,10 +34,13 @@ description: >-
   (braunschweig/analysis/pipeline_trips_file.py logs the choice and ignores a pre-portal file older than
   trips.csv with a warning); run_mid_validation also derives its activity-purpose counts from them with the
   activities file's definition. The dashboard's eqasim metrics and the scripts that join with MATSim output keep
-  trips.csv. Remaining limitation: the commute and education distance tables of run_mid_validation read the
-  post-portal activities geopackage (no written output keeps the primary location of a worker whose workplace
-  became an outside stay), cover workplaces inside the threshold only and are expected to move in the A/B; the run
-  warns with the number of work persons without a commute row.
+  trips.csv. commutes.gpkg is built from the written activities and lacks the far commuters, so the stage also
+  writes <prefix>commutes_pre_portal.gpkg (same schema and selection rule via synthesis.output.build_commute_frame,
+  work location from the assigned primary locations, persons from the pre-portal trips; the home to education lines
+  are its layer education) and the commute and education tables of run_mid_validation read it when it exists and is
+  current (a file older than commutes.gpkg is ignored with a warning). Without it those tables fall back to the
+  post-portal activities geopackage, cover workplaces inside the threshold only and the run warns with the
+  number of work persons without a commute row.
 stages:
 - braunschweig.synthesis.portal_trips.stage
 - braunschweig.synthesis.portal_trips.anchors

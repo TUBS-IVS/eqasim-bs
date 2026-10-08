@@ -183,14 +183,34 @@ post-portal day: a far workplace is an `outside` activity there. With the pre-po
   preceding purpose of every trip, the following purpose of each person's last trip, one `home` activity for every
   person without a trip, restricted to the persons of `persons.csv`). A test pins that on a run without portal
   stays this equals the count of the vendored activities stage. `report.json` records `activity_purpose_source`.
-- The commute and education distance tables still read the activities geopackage: they need the assigned primary
-  location of each worker, and no written output keeps it for a worker whose workplace became an `outside` stay
-  (`commutes.gpkg` is built from the same activities). They therefore cover workplaces inside the portal threshold
-  only. The run logs a warning with the number of persons that have a `work` trip in the pre-portal trips but no
-  commute row, and `report.json` records it under `commute_table_scope`. This is a remaining limitation, not a
-  portal defect; closing it needs the primary locations as a written output.
+- The commute and education distance tables need the assigned primary location of each worker. The vendored
+  `<prefix>commutes.gpkg` is built from the written activities, so a far commuter (workplace = `outside` stay) is
+  missing from it, and `activities.gpkg` has no work location for them either. The output stage therefore also
+  writes the pre-portal commutes (next section), and the tables read that file when it exists and is current.
+  Without it they fall back to the activities file and cover workplaces inside the portal threshold only; the run
+  then warns with the number of persons that have a `work` trip in the pre-portal trips but no commute row.
+  `report.json` records `commute_table_scope` (`source`: `pre_portal_commutes` or `activities_gpkg`, and the
+  missing count, which is 0 for the pre-portal commutes).
 - `secondary_success.csv` (assignment success per purpose) is a statement about the written activities and keeps
   reading the activities file, including its `outside` row.
+
+### The pre-portal commutes file
+
+While the flag is on, `output_day` also writes `<prefix>commutes_pre_portal.gpkg` (and `.geoparquet` when that
+format is on). It has the schema of `<prefix>commutes.gpkg` (`person_id`, `geometry`: a line from the home to the
+work location, same CRS) and its selection rule: each person's first `home` and first `work` activity are paired by
+`synthesis.output.build_commute_frame`, the function the vendored writer itself uses. The inputs differ: the
+persons qualify by the activities in the PRE-portal trips (`output_day.build_pre_portal_commutes`), the work
+location is the assigned location of `synthesis.population.spatial.primary.locations` and the home the household
+location of `synthesis.population.spatial.home.locations`; both stages are declared only while the flag is on
+(they are upstream of `trips.final`, the DAG snapshot gains two edges into `synthesis.output`). The home ->
+education lines, which the vendored writer does not export, are the second layer `education` of the same
+GeoPackage (`education_commutes_pre_portal.geoparquet` for geoparquet); the first layer is always the work layer.
+A qualifying person without a primary location is left out and counted in a warning (it means a broken join: the
+location stage asserts every work/education activity is located). With the flag off nothing is written. Readers:
+`run_mid_validation` (`_read_pre_portal_commute_lines`, via
+`pipeline_trips_file.resolve_pre_portal_commutes_path`, with the same rule that ignores a file older than
+`<prefix>commutes.gpkg` and warns). Nothing else reads `commutes.gpkg`.
 
 ## Reading the stage's log and report (tag `[portal_trips]`)
 

@@ -27,6 +27,16 @@ FINAL_TRIPS_STAGE = "synthesis.population.trips.final"
 #: survey prefer this file when it exists (``braunschweig.analysis.pipeline_trips_file``).
 PRE_PORTAL_TRIPS_FILE_STEM = "trips_pre_portal"
 
+#: File stem of the pre-portal home -> work commute lines (``<prefix>commutes_pre_portal.gpkg`` / ``.geoparquet``),
+#: written next to ``<prefix>commutes.gpkg`` while the portal layer is on. ``<prefix>commutes.gpkg`` is built from the
+#: written activities, where a far workplace is an ``outside`` activity, so its far commuters are missing; this file
+#: is built from the assigned primary locations and the pre-portal trips and has the same schema (``person_id``,
+#: ``geometry``). The home -> education lines are the layer ``PRE_PORTAL_EDUCATION_LAYER`` of the same GeoPackage
+#: (and the file ``education_commutes_pre_portal.geoparquet``); the first layer of the GeoPackage is the work layer.
+PRE_PORTAL_COMMUTES_FILE_STEM = "commutes_pre_portal"
+PRE_PORTAL_EDUCATION_LAYER = "education"
+PRE_PORTAL_EDUCATION_FILE_STEM = "education_commutes_pre_portal"
+
 
 def final_view_trips_stage(portal_enabled: bool) -> str:
     """The trips stage an SrV-comparison style consumer of the ``final`` view must read (ADR-0141, #442).

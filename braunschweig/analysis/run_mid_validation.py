@@ -43,7 +43,9 @@ import pandas as pd
 
 from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
-from braunschweig.analysis.pipeline_trips_file import is_pre_portal_trips_path, resolve_pipeline_trips_path
+from braunschweig.analysis.pipeline_trips_file import (
+    is_pre_portal_trips_path, resolve_pipeline_trips_path, resolve_pre_portal_commutes_path)
+from braunschweig.synthesis.portal_trips.config_keys import PRE_PORTAL_EDUCATION_LAYER
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
@@ -322,67 +324,77 @@ def _activity_purpose_counts(
     return activities["purpose"].value_counts(), "activities_gpkg"
 
 
-def _commute_table_scope(commute: pd.DataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool) -> dict[str, Any]:
+def _read_pre_portal_commute_lines(output_dir: Path, prefix: str):
+    """``(work_lines, education_lines)`` of ``<prefix>commutes_pre_portal.gpkg``, or ``None`` when it is absent/stale.
+
+    The file (written by the output stage while the portal layer is on) holds the home -> work lines as its first
+    layer and the home -> education lines as the layer ``education``, both built from the assigned primary
+    locations, so they include the workers whose workplace the portal layer turned into an ``outside`` stay. The
+    resolver ignores a file older than ``<prefix>commutes.gpkg`` and logs the choice.
+    """
+    path = resolve_pre_portal_commutes_path(output_dir, prefix)
+    if path is None:
+        return None
+    return gpd.read_file(path), gpd.read_file(path, layer=PRE_PORTAL_EDUCATION_LAYER)
+
+
+def _commute_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
+    """Commute table rows from home -> work lines, with the same distance definition as ``_commute_distances``.
+
+    The Euclidean home -> work distance is the length of the line, then the project's constant detour factor is
+    applied exactly as in ``_commute_distances`` (tests/test_pre_portal_trips_output.py pins that both agree on a
+    run without portal stays). Columns: ``person_id``, ``distance_km``, ``ars5``, ``kreis_name``.
+    """
+    commute = pd.DataFrame({"person_id": lines["person_id"].to_numpy()})
+    if commute.empty:
+        return commute.assign(distance_km=[], ars5=[], kreis_name=[])
+    from braunschweig.calibration.metrics import apply_detour
+    commute["distance_km"] = apply_detour((lines.geometry.length / 1000.0).to_numpy())
+    return commute.merge(persons_kreis[["person_id", "ars5", "kreis_name"]], on="person_id", how="left")
+
+
+def _education_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
+    """Education table rows from home -> education lines, as ``_education_distances`` (straight-line km)."""
+    education = pd.DataFrame({"person_id": lines["person_id"].to_numpy()})
+    if education.empty:
+        return education.assign(distance_km=[], regiostar7=[], age=[], level=[])
+    education["distance_km"] = (lines.geometry.length / 1000.0).to_numpy()
+    education = education.merge(persons_kreis[["person_id", "age", "regiostar7"]], on="person_id", how="left")
+    education["level"] = education["age"].map(education_level_for_age)
+    return education
+
+
+def _commute_table_scope(
+    commute: pd.DataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool, commute_source: str = "activities_gpkg"
+) -> dict[str, Any]:
     """Source and coverage of the commute tables, logged.
 
-    The commute and education distance tables need the assigned primary location of each worker, which only the
-    activities geopackage carries (no written output keeps the primary locations of the persons whose workplace the
-    portal layer replaced by an ``outside`` stay). With the pre-portal trips in use this therefore counts the
-    persons with a ``work`` trip in the donor day that have no row in the commute table, and warns: the table then
-    covers workplaces inside the portal threshold only.
+    ``commute_source`` is ``"pre_portal_commutes"`` when the lines come from ``<prefix>commutes_pre_portal.gpkg``
+    (built from the assigned primary locations, so far commuters are included) and ``"activities_gpkg"`` when they
+    come from the written activities, where the workplace of a far commuter is an ``outside`` activity. With the
+    pre-portal trips in use the persons with a ``work`` trip but no commute row are counted: zero is expected for the
+    pre-portal commutes, and a positive count on the activities source is the warned-about scope limit.
     """
-    scope: dict[str, Any] = {"source": "activities_gpkg", "n_commute_rows": int(len(commute))}
+    scope: dict[str, Any] = {"source": commute_source, "n_commute_rows": int(len(commute))}
     if not trips_are_pre_portal:
-        LOGGER.info("Commute tables: home->work distances from the activities geopackage")
+        LOGGER.info("Commute tables: home->work distances from %s", commute_source)
         return scope
     work_persons = set(
         trips.loc[(trips["following_purpose"] == "work") | (trips["preceding_purpose"] == "work"), "person_id"])
     missing = work_persons - set(commute["person_id"])
     scope["n_work_persons_pre_portal_trips"] = int(len(work_persons))
     scope["n_work_persons_without_commute_row"] = int(len(missing))
+    if commute_source == "pre_portal_commutes":
+        log = LOGGER.info if not missing else LOGGER.warning
+        log("Commute tables: home->work distances from the pre-portal commutes; %d of %d persons with a work trip in "
+            "the pre-portal trips have no row.", len(missing), len(work_persons))
+        return scope
     LOGGER.warning(
         "Commute tables: home->work distances from the activities geopackage, the post-portal day; %d of %d persons "
         "with a work trip in the pre-portal trips have no row (their workplace lies beyond the portal threshold and "
         "is an 'outside' activity there). The tables describe workplaces inside the threshold only (eqasim-bs#442).",
         len(missing), len(work_persons))
     return scope
-
-
-def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
-    return gpd.read_file(output_dir / f"{prefix}{name}.gpkg")
-
-
-def _find_sim_trips(sim_cache: Path | None) -> pd.DataFrame | None:
-    """Load the MATSim simulation-output trips (mode + purpose), or None.
-
-    The eqasim pipeline trips.csv has no realised mode; the mode is written by
-    the MATSim mobility simulation to ``eqasim_trips.csv``.  Two layouts are
-    accepted (#354): ``--sim-cache`` may point at a directory holding
-    ``eqasim_trips.csv`` directly (e.g. the ``<output_path>/matsim_output``
-    archive written by ``matsim.output``) or at a synpp cache root containing
-    ``matsim.simulation.run__*.cache/simulation_output/``.  The lookup mirrors
-    ``braunschweig.analysis.dashboard.build_dashboard._find_sim_output`` so both
-    analysis entry points resolve the same file.  Returns None (and the modal-
-    split block is skipped) when no --sim-cache is given or the file is absent.
-    """
-    if sim_cache is None:
-        return None
-    candidates = [sim_cache / "eqasim_trips.csv"]
-    candidates += [cache_dir / "simulation_output" / "eqasim_trips.csv"
-                   for cache_dir in sim_cache.glob("matsim.simulation.run__*.cache")]
-    for trips_path in candidates:
-        if trips_path.exists():
-            LOGGER.info("Reading realised trip modes from %s", trips_path)
-            df_trips = pd.read_csv(trips_path, sep=";")
-            df_trips = drop_freight_agents(df_trips, label="mid_validation")
-            return df_trips
-    LOGGER.warning(
-        "No eqasim_trips.csv under %s (neither directly nor via "
-        "matsim.simulation.run__*.cache/simulation_output/); "
-        "modal-split block skipped.",
-        sim_cache,
-    )
-    return None
 
 
 def _save_fig(fig: plt.Figure, path: Path) -> None:
@@ -1178,8 +1190,17 @@ def run(args: _Args) -> dict[str, Any]:
 
     # --- Commute distance vs MiD P13. ---
     LOGGER.info("Computing commute distances vs MiD P13")
-    commute = _commute_distances(activities, homes_kreis, persons_kreis)
-    commute_table_scope = _commute_table_scope(commute, trips, trips_are_pre_portal)
+    # While the portal layer is on, the commute lines come from the pre-portal commutes file (assigned primary
+    # locations, far commuters included) when it exists; the activities file lacks the workers whose workplace is
+    # an 'outside' stay.
+    pre_portal_commute_lines = _read_pre_portal_commute_lines(args.output_dir, args.prefix)
+    if pre_portal_commute_lines is not None:
+        commute = _commute_distances_from_lines(pre_portal_commute_lines[0], persons_kreis)
+        commute_source = "pre_portal_commutes"
+    else:
+        commute = _commute_distances(activities, homes_kreis, persons_kreis)
+        commute_source = "activities_gpkg"
+    commute_table_scope = _commute_table_scope(commute, trips, trips_are_pre_portal, commute_source)
     commute_band = _commute_band_table(commute, mid["P13"])
     commute_band.to_csv(out / "commute_bands_vs_p13.csv", index=False)
     _plot_commute_bands(commute_band, out / "05_commute_distance_p13.png")
@@ -1206,7 +1227,12 @@ def run(args: _Args) -> dict[str, Any]:
     LOGGER.info("Computing education-trip distances vs MiD Tabelle 43")
     t43_raw = _load_t43()
     if t43_raw is not None:
-        education = _education_distances(activities, homes_kreis, persons_kreis)
+        if pre_portal_commute_lines is not None:
+            education = _education_distances_from_lines(pre_portal_commute_lines[1], persons_kreis)
+            LOGGER.info("Education tables: home->education distances from the pre-portal commutes")
+        else:
+            education = _education_distances(activities, homes_kreis, persons_kreis)
+            LOGGER.info("Education tables: home->education distances from the activities geopackage")
         # Use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3) so the
         # validation report is byte-identical to the pre-Tier-3 legacy.
         # The distance-dependent circuity curve is opt-in only (mode="curve").

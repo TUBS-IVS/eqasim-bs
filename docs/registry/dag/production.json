@@ -950,6 +950,10 @@
   ],
   [
    "synthesis.population.spatial.home.locations",
+   "synthesis.output"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
    "synthesis.population.spatial.locations"
   ],
   [
@@ -1019,6 +1023,10 @@
   [
    "synthesis.population.spatial.primary.locations",
    "matsim.scenario.facilities"
+  ],
+  [
+   "synthesis.population.spatial.primary.locations",
+   "synthesis.output"
   ],
   [
    "synthesis.population.spatial.primary.locations",
