@@ -88,6 +88,29 @@ How a run's paid share, garage share and free shares are compared with the commi
 kind): the release value is the calibration on every kind, and a run on `garage` only reports lambda without the surface lots
 as a sensitivity number (the table records the filter).
 
+## Monthly products at garages (spec Amendment F, Task 4f)
+
+- Work and education stays pay `min(metered or day price, monthly_cents / 21)` at a garage (P2); the export writes
+  `monthly_cents` as the published `monthly_eur` or, with the config key `parking_garage_monthly_imputation` true (the
+  default, declared in the `PARKING_DEFAULTS` of `matsim.simulation.prepare`, in `configs/base_bs.yml` and in both popsim
+  fixtures), the imputed `monthly_imputed_eur`. Nothing in `braunschweig.parking.cost` and nothing in Java changed: no schema,
+  key set or golden fixture; ASSUMPTION P13 is listed in the model's register only when an imputed product is used
+  (`tariff_export.assumption_texts(monthly_imputed=True)`), which keeps the committed fixture model byte-identical.
+- The values are read, never typed: `scripts/curation/parking_zones_2026/bs_monthly_products.py` reads the cheapest
+  current product of a Braunschweig garage from the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` (rule named
+  in `regional_garage_specs.BS_MONTHLY_SPECS`, checked to be the cheapest) and the Wallstrasse price from the 'weitere Monate
+  ... Brutto' line of the Contipark configurator capture; every Braunschweig garage has a status row in the QA table (no_price,
+  sold_out, price_on_request, period_unconfirmed) with the package's sentence, and `BS_RECORDED_SPECS` lists the facilities that
+  are no garage of the dataset (Eves and Fichtengrund count for P13; the DB BahnPark lots and the APCOA lots never do).
+- ASSUMPTION P13 is computed once, by `regional_garages.apply_monthly_imputation`, with the single implementation
+  `garage_qa.expected_imputed_monthly` (median in integer cents, half up) that `validate_garage_qa` checks the committed
+  table against: a withdrawn or added published product makes the committed imputed values fail the validator until the
+  curation is rerun. Imputation is per municipality, needs at least `garages.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS` (2) products
+  and never touches a surface lot or a garage with a published product. `garages.monthly_summary` is the one count that the
+  export log, the preparation report and `scripts/validate_parking_zones.py` print (published, imputed, none, median).
+- A dataset file without the column `monthly_imputed_eur` still loads (the test fixtures): the column is empty and the loader
+  warns; the committed dataset always has it.
+
 ## Known limitations
 
 - The garage share is a calibration target, so it no longer validates the model; the universe caveat of E5 (SrV asks
@@ -96,3 +119,7 @@ as a sensitivity number (the table records the filter).
   only by the municipal default P12); the loader warns at every load for the first share.
 - The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
   reference plans are lost (task 5b of issue #436).
+- Monthly products (Amendment F): Tarif A of the Steinstrasse is limited to Mo-Fr 06:30-21:00 and the limit is not modelled;
+  the imputed products rest on four published products per city and no capacity of monthly places is modelled (a sold-out
+  garage still carries the imputed product); the sensitivity arm `zones_v2_published_monthly_only` (imputation false) bounds the
+  effect, and no v2 run exists yet, so the effect on the commuter garage share is an expectation (ADR-0140, decision 10).

@@ -309,8 +309,15 @@ the server plans and committed `braunschweig/parking/parking_garage_decay_calibr
 dataset needs the owner's regional evidence package and its three supplement packages
 (`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`,
 `Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`) in
-`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed) and
-`scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record `parking_garages_2026`). With the
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed), for the monthly products of the
+Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
+`contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and
+`--contipark-evidence-dir`), and `scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record
+`parking_garages_2026`). Work and education stays at a garage pay its monthly product per working day; a garage without a
+published one gets the median of the published products of its own municipality (ASSUMPTION P13, column
+`monthly_imputed_eur`), and the config key `parking_garage_monthly_imputation` (default true; false prices published
+products only) switches that off. With the
 flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
 `org.eqasim.braunschweig.parking`: `matsim.simulation.run` fails fast when the jar lacks it or when the run writes
 no parking outcome report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the

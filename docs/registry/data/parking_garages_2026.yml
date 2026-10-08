@@ -53,7 +53,16 @@ acquisition:
     147 members; read: data/parking_lots.gpkg layer parking_lots and data/parking_lots.geojson, data/facility_review.json,
     data/tariff_rules.json, data/field_decisions.json, data/sources.json, data/summary.json, data/point_area_matches.json,
     data/published_tariff_areas.geojson, evidence/input/daten/geojson/wob_handyparkflaechen.geojson and the evidence texts
-    of the operators; the Wolfsburg package is the fourth optional input of the step)
+    of the operators; the Wolfsburg package is the fourth optional input of the step) and, for the monthly products of the
+    Braunschweig garages (spec Amendment F1, Task 4f), Braunschweig_Monatstarife_2026-10-08.zip (SHA-256
+    72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81; 90 files, manifest.sha256 of 89 entries verified; read:
+    README.md, data/tariff_rules.json, data/tariff_observations.json, data/facilities.json, data/sources.json and
+    evidence/apcoa/visibility_evidence.json; the fifth optional input, --bs-monthly-zip; the package scripts are never
+    executed) with the evidence directory raw_sources/municipal_2026-10-08/contipark_configurator_2026-10-08/ (SHA256SUMS
+    SHA-256 2617d497bddfaadced2ff433cd4b675122570a58ca7b6b2b49c27b0514a76ceb; wallstrasse_configurator.txt, the public
+    Contipark product configurator of the Parkhaus Wallstrasse, and eiermarkt_no_rental_product.txt, the Contipark location
+    page of the Tiefgarage Eiermarkt, both captured by the controller on the owner's instruction on 2026-10-08, nothing
+    submitted and no login; the sixth optional input, --contipark-evidence-dir)
   script: scripts/curation/parking_zones_2026/regional_garages.py
   notes: >-
     One-off curation, never a pipeline stage: python scripts/curation/parking_zones_2026/regional_garages.py
@@ -68,7 +77,11 @@ acquisition:
     eqasim-data/data/braunschweig/parking/parking_garages_2026_qa.csv --tariffs
     eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv --wolfsburg-lots-zip
     eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip
-    --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson. The step checks the package and the directory
+    --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson --bs-monthly-zip
+    eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/Braunschweig_Monatstarife_2026-10-08.zip
+    --contipark-evidence-dir
+    eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/contipark_configurator_2026-10-08. The step
+    checks the package and the directory
     against their pinned SHA-256 before it reads them, reads the layers from the zip (EPSG:25832, valid, non-empty;
     nothing is repaired) and prints a ledger per layer (features, garages, used, twins skipped). Every garage feature
     must be specified in regional_garage_specs.py or be a twin (a feature whose facility id another layer gives: three
@@ -430,6 +443,33 @@ acquisition:
     24, P5 24, P6 8, P7 5, P8 11, P10 4, P11 5, P12 8 (P3 0); at least one assumption 44, P4 or P5 32; tiered 8, banded 11,
     free schedule 11; monthly product on 9 garages; QA table 96 rows (48 garages, 23 monthly products, 25 candidate
     records).
+    Task 4f (spec Amendment F, owner request 2026-10-08: commuters at a garage pay its monthly product). F1, published
+    products first: a garage's monthly_eur is the cheapest publicly purchasable current product read from the Braunschweig
+    package and never typed: Parkhaus Steinstrasse Tarif A 100.00 EUR per month (Mo-Fr 06:30-21:00, VAT included; B 105.01, D
+    110.00, C 130.00 and S 150.00 are recorded and not used, not_the_cheapest; the access window is not modelled) from
+    tariff_rules.json, Parkhaus Wallstrasse 114.95 EUR gross per further month from the line 'weitere Monate ... Brutto' of
+    the configurator capture (net 96.60 + VAT 18.35; the first month is pro rata; the step stops when it cannot read exactly
+    one such amount whose net and VAT add up to it). Every Braunschweig garage has a monthly status row in the QA table with
+    the package wording: no_price (Eiermarkt, Lange Strasse Nord and Sued, Ring-Center, Schloss, Schuetzenstrasse), sold_out
+    (Magni, Packhof), price_on_request (Forschungsflughafen; its 85.00 EUR stands only in hidden page sections and is recorded
+    as excluded_by_package), period_unconfirmed (Wilhelmstrasse 75.00, 79.00 and 88.00 EUR: no source states the amounts as
+    monthly). The recorded facilities that are no garage of the dataset are QA rows with their cheapest product: Eves 80.00 EUR
+    and Fichtengrund 129.00 EUR (not_a_dataset_option: values of P13), the three DB BahnPark car parks P1 to P3 (station_bahnpark)
+    and the APCOA car parks S1 and S3 (surface_lot), which never count as garage products. F2, ASSUMPTION P13 (imputed monthly
+    product): the new column monthly_imputed_eur holds, for every priced garage (never a surface lot) without a published
+    monthly_eur, the median of the published current garage monthly products of its OWN municipality, rounded half up to the
+    cent, where the municipality has at least 2 such products (the dataset's garages plus the recorded garages of the QA
+    table): Braunschweig 80.00, 100.00, 114.95 and 129.00 -> 107.475 -> 107.48 EUR for the 10 Braunschweig garages without a
+    product (5.12 EUR per working day), Wolfsburg 50.00, 55.00, 60.00 and 98.00 -> 57.50 EUR for the 5 Wolfsburg garages
+    without one; Peine has two published products and no garage left, Goslar, Helmstedt and Wolfenbuettel have one product each
+    and impute nothing, Gifhorn and Salzgitter have none. The package advises against imputing monthly fees from other cities
+    or historical ranges; P13 never leaves the municipality. Counts per municipality (published, imputed, none): Braunschweig
+    2, 10, 0; Wolfsburg 4, 5, 0; Peine 2, 0, 0; Goslar 1, 0, 3; Helmstedt 1, 0, 3; Wolfenbuettel 1, 0, 1; Gifhorn 0, 0, 1;
+    Salzgitter 0, 0, 1 (the 13 surface lots never get a product). The tariff model export writes monthly_cents as the published
+    product or, with the config key parking_garage_monthly_imputation true (the default; false is the sensitivity arm
+    published monthly only), the imputed one, and lists ASSUMPTION P13 in its register exactly when an imputed product is
+    used; no schema, key set or golden fixture changes. The dataset rows cite the monthly package as the last of their package
+    SHA-256 values (Braunschweig rows only).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garages_2026.geojson
   committed: true
@@ -443,6 +483,11 @@ verification:
   verifier_entry: D11
   script: scripts/validate_parking_zones.py
   notes: >-
+    Task 4f (spec Amendment F): the validator accepts monthly_imputed_eur only together with P13 in assumptions (and P13
+    only with the value), never next to a published monthly_eur, never at a surface lot or an unpriced garage; the QA
+    validator recomputes the medians from the QA table (garage_qa.expected_imputed_monthly) so that a stale table fails; the
+    script prints one line with the published, imputed and none counts per municipality and the medians. A dataset file
+    without the column (a fixture written before Amendment F) loads with the column empty and a warning.
     Listed as D11 (matsim_only, required, committed) in scripts/verify_braunschweig_inputs.py: the sixth input of the
     release of braunschweig.parking.zones_stage (config key parking_garages_path), which loads and validates it with
     the validator below; braunschweig.parking.tariff_export.garage_entries writes its priced garages into the tariff
@@ -472,7 +517,7 @@ verification:
     pins the curation step on a synthetic package and the committed files from a hand-written table of the sources (35
     priced garages and the 13 surface lots with their tier and band strings, the published anchors of the band schedules and
     their edges, the identity check of the Ring-Center, the coverage numbers, the notes rules, the QA counts) and,
-    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_wolfsburg_lots.py
+    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_bs_monthly_products.py pins the Braunschweig monthly reader and ASSUMPTION P13 on a synthetic package (and reads the real package where it exists); tests/test_parking_wolfsburg_lots.py
     pins the Wolfsburg package reader on a synthetic package (verification, the classes from the fee status and the
     position, the owner decision against the data, the conversion and release of the components, the operator quotation, the
     rows, the QA rows and the zone check) and the committed lot rows with the Autostadt and Klinikum tariffs at their edges
@@ -504,6 +549,10 @@ licensing:
     of the Wolfsburg Marketing GmbH and the Theater Wolfsburg; the package states that a separate licence for the re-use of
     the municipal and operator geodata was not confirmed, and none is established here; its OpenStreetMap extracts only
     check positions (ODbL 1.0, (c) OpenStreetMap contributors) and no position of the 13 surface lots is taken from them.
+    The Braunschweig monthly package (spec Amendment F1) holds facts (monthly prices of operators) from the pages of
+    AGR Parking, APCOA, Contipark, Park und Tank and the city; the package states that no general licence for the
+    re-publication of the original files was found and none is established here; the two Contipark captures are texts of
+    public pages whose terms are not verified.
   restricted: false
   redistribution: restricted
   notes: >-
@@ -623,24 +672,40 @@ limitations: >-
   of the source names one (Braunschweig Forschungsflughafen, Lange Strasse Nord and Sued, Ring Center, Schloss-Arkaden,
   Schuetzenstrasse and Wilhelmstrasse, Helmstedt Stobenstrasse and Groepern, Wolfsburg Schillerstrasse, the Goslar garages
   and the 11 Wolfsburg surface lots other than the Autostadt and the Klinikum).
+  Monthly products (spec Amendment F): the access window of the Steinstrasse Tarif A (Mo-Fr 06:30-21:00) is not modelled, so
+  a work stay outside it still uses the product; the division by 21 working days and the minimum taken per stay (no
+  subscription ownership) are the named limitations of ASSUMPTION P2; the Wallstrasse price is the gross amount of the
+  further months of one public configurator capture (first month pro rata); the Fichtengrund price of 129.00 EUR has an
+  unknown end date of its offer (the package cautions that 150.00 EUR was published before) and is nevertheless a value of
+  ASSUMPTION P13; the imputed products are medians of only four published products per city and carry the spread of those
+  products (Braunschweig 80.00 to 129.00 EUR); no capacity of monthly places is modelled (a sold-out garage still gets the
+  imputed product), so the commuter garage share is an upper estimate of what the published offers allow; the sensitivity
+  arm parking_garage_monthly_imputation false (published products only) bounds the effect.
 notes: >-
-  Content on 2026-10-07 (Task 4b3, spec E14, on top of Task 4b2 after its fix round 1, specs E12 and E13): 48 rows (35
+  Content on 2026-10-08 (Task 4f, spec Amendment F, on top of Task 4b3): the same 48 rows with the monthly products of
+  the Braunschweig package (published products first, ASSUMPTION P13 imputed products, the column monthly_imputed_eur; see the
+  acquisition notes for the values and the counts per municipality); the numbers below are those of the dataset as it is now,
+  except where they are marked as history. Content on 2026-10-07 (Task 4b3, spec E14, on top of Task 4b2 after its fix round 1,
+  specs E12 and E13): 48 rows (35
   garages and 13 surface lots; priced 48; not priced 0); by facility kind garage 35, surface_lot 13; per municipality
   03101000 Braunschweig 12 listed 12 priced, 03102000 Salzgitter 1 and 1, 03103000 Wolfsburg 22 and 22, 03151009 Gifhorn 1
   and 1, 03153017 Goslar 4 and 4, 03154028 Helmstedt 4 and 4, 03157006 Peine 2 and 2, 03158037 Wolfenbuettel 2 and 2;
-  assumptions among the 48 priced rows P4 24, P5 24, P6 8, P7 5, P8 11, P10 4, P11 5, P12 8 (P3 0); at least one assumption
-  44, P4 or P5 32; tiered form 8, banded form 11, free schedule 11; first period with a clock window 3 (Eiermarkt, Rathaus,
-  Phaeno); monthly
-  product on 9 garages; 7 rows rest on P10 or P11. QA table 96 rows: 48 garages, 23 monthly products (used 11: nine
-  garage rows, the zone Ib 30-day
-  ticket and the TU member month ticket; recorded and not used 12: not_the_cheapest 3, outdated_source 2,
-  not_monthly_or_30_day 2, capacity_limited_permits 1, garage_not_listed 1, no_coordinates 1, no_fixed_price 1,
-  restricted_customer_group 1) and 25 candidate records for 25 package or directory entries (zone_street_product 13,
+  assumptions among the 48 priced rows P4 24, P5 24, P6 8, P7 5, P8 11, P10 4, P11 5, P12 8, P13 15 (P3 0); at least one
+  assumption 44, P4 or P5 32 (P13 changes no union rate); tiered form 8, banded form 11, free schedule 11; first period with a
+  clock window 3 (Eiermarkt, Rathaus, Phaeno); published monthly product on 11 garages and imputed monthly product on 15; 7
+  rows rest on P10 or P11. QA table 122 rows: 48 garages, 49 monthly products (used 13: eleven garage rows, the zone Ib
+  30-day ticket and the TU member month ticket; recorded and not used 36: not_the_cheapest 7, no_price 6, period_unconfirmed 3,
+  station_bahnpark 3, outdated_source 2, not_monthly_or_30_day 2, sold_out 2, not_a_dataset_option 2, surface_lot 2,
+  capacity_limited_permits 1, excluded_by_package 1, garage_not_listed 1, no_coordinates 1, no_fixed_price 1,
+  price_on_request 1, restricted_customer_group 1) and 25 candidate records for 25 package or directory entries (zone_street_product 13,
   station_bahnpark 3, bga_zone 2, dauerparker_only 2, customer_regime 2, no_coordinates 1, outside_source_list 1,
   user_group_only 1). The same numbers are printed by scripts/validate_parking_zones.py and pinned by
   tests/test_parking_regional_garages.py. SHA-256 of the files as written by the step (LF; two runs identical):
-  parking_garages_2026.geojson 6b2138da2c7946b2e42f617028898dc61944d75044db098e3577cecab74ab349, parking_garages_2026_qa.csv
-  404c8b8d474e3de747a5d13f29f71174eecd216532e208ba6bc53bb7bde73190. History: Task 4b3 adds the 13 surface lots of the
+  parking_garages_2026.geojson 7dde8aa34a32293d4b7295664ea002bd36f22ece06c4a092cdf72b5305c1f5ac, parking_garages_2026_qa.csv
+  54df19b68ff0f1b809b5e4f1c0981a7c1143aa07984a2a6e5619c6cdc626aa6b. History: Task 4f added the column monthly_imputed_eur, the
+  two published Braunschweig products, the 15 imputed products and 26 QA rows (the files before: SHA-256
+  6b2138da2c7946b2e42f617028898dc61944d75044db098e3577cecab74ab349 and
+  404c8b8d474e3de747a5d13f29f71174eecd216532e208ba6bc53bb7bde73190; no geometry changed); Task 4b3 adds the 13 surface lots of the
   Wolfsburg city layer, the column facility_kind, the free schedule and the grace period of a tiered garage; before it the
   dataset had 35 garages (SHA-256 03ca4df651ef882a2192e1b9d3288934c3208c4573e13d77c05c98c9d9ef62d7 and
   46479c4af9071b7d4280530b16539bdf63d82686d76b2b03e98584f8760e0757). The first Task 4b run listed 32 garages, fix round 1 31

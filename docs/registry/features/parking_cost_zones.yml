@@ -8,7 +8,9 @@ description: >-
   long-stay product, TU campus member and guest day products, commuter products per working day), the resident
   parking districts (parking_resident_districts_2026) and the garage dataset (parking_garages_2026). A stay pays the
   cheapest product the driver can use (assumption P1); a work or education stay may use the commuter product (P2,
-  monthly price over 21 working days). Residents are exempt in their resident zone (R1) and in the resident district of
+  monthly price over 21 working days), at a garage its monthly product (published, else the median of the published
+  products of the same municipality under assumption P13; config parking_garage_monthly_imputation, default true, false is
+  the sensitivity arm published products only; ADR-0140 decision 10). Residents are exempt in their resident zone (R1) and in the resident district of
   their home where the zone honours permits (R2, R2-a). A stay in a paid street or resident zone has the street option and
   every priced garage within 1,000 m with the weight exp(-d / lambda) (G1, G2) and is priced as the probability-weighted
   expected cost; the options act only with parking_garage_decay_m above 0, the calibrated lambda (G3; the current value
@@ -69,6 +71,7 @@ code_paths:
 - scripts/parking/compare_parking_targets.py
 - scripts/curation/parking_zones_2026/assemble_parking_zones.py
 - scripts/curation/parking_zones_2026/regional_garages.py
+- scripts/curation/parking_zones_2026/bs_monthly_products.py
 evidence:
   tests:
   - tests/test_parking_cost.py
@@ -89,6 +92,7 @@ evidence:
   - tests/test_parking_garage_supplement.py
   - tests/test_parking_municipal_zones.py
   - tests/test_parking_regional_garages.py
+  - tests/test_parking_bs_monthly_products.py
   - tests/test_parking_regional_zones.py
   - tests/test_parking_supply_share.py
   - tests/test_parking_wolfsburg_lots.py

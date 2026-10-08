@@ -121,7 +121,10 @@ acquisition:
     rounded to the cent. The 7-day ticket of zone Ib (29.00 EUR) is no monthly or 30-day product and stays unused. Every
     monthly or 30-day product that the sources publish, used or not and with the reason, is a record of the QA table
     parking_garages_2026_qa.csv (data record parking_garages_2026); its validator checks commuter_day_eur against the
-    used product. The fee window of he_innenstadt is 9-16 h (the city brochure 'Parken in Helmstedt' of 12/2024,
+    used product. Spec Amendment F (Task 4f) changes no row of this table: the monthly products of the GARAGES (the published
+    Braunschweig Steinstrasse and Wallstrasse products and the imputed products of ASSUMPTION P13) are columns of the garage
+    dataset and never a commuter_day_eur of a zone row; the commuter price at a garage is min(metered, monthly / 21) of the
+    garage option (ADR-0140 decision 10). The fee window of he_innenstadt is 9-16 h (the city brochure 'Parken in Helmstedt' of 12/2024,
     retrieved 2026-10-07: Mo-Fr 09:00-16:00 at 10 of its 11 places at 0.60 EUR per started half hour, Mo-Fr 09:00-18:00
     at the Wallplatz; the package's daten/helmstedt_gebuehrenzeiten.json, source id he_parken, calls it many charged
     city spaces with per-place exceptions) and that of gs_altstadt_zone1 10-18 h (the Goslar service page

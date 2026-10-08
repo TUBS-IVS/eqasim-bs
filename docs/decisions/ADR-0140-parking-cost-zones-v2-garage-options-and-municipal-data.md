@@ -234,6 +234,33 @@ run (see Status).
   reproducible; the legitimate route is the city or a data licence, which is an owner action.
 - **Keeping the own class share of Wolfsburg for its paid zones:** that share was measured on in-commuters, dominated by the
   Volkswagen plant, and would make nearly every work stay in the centre free (A1-b).
+10. **Monthly products for commuters at garages (Amendment F, owner request 2026-10-08).** The final review of the branch
+    found that work and education stays at a Braunschweig garage would pay the day rate, about three times today's cost,
+    because no Braunschweig garage carried a monthly product. The owner supplied a research package
+    (`Braunschweig_Monatstarife_2026-10-08.zip`) and approved a lookup of the public Contipark configurator; commuters pay
+    the monthly product, which was already the pricing rule (P2: `min(metered or day price, monthly / 21)` for work and
+    education), so the change is in the data and in one switch, not in the pricing code. Published products come first (F1):
+    the cheapest publicly purchasable current product of a garage, read from the package and the capture and never typed
+    (Steinstrasse Tarif A 100.00 EUR, Wallstrasse 114.95 EUR gross, i.e. 476 ct and 547 ct per working day; every other
+    Braunschweig garage has a status row in the QA table: no price, sold out, price on request, billing period unconfirmed).
+    ASSUMPTION P13 (F2) imputes a monthly product for a garage without a published one: the median of the published current
+    garage monthly products of the SAME municipality (the dataset's garages and the recorded garages that are no option, e.g.
+    Eves 80.00 and Fichtengrund 129.00 EUR), rounded half up to the cent, only with at least two such products, never for a
+    surface lot, never from another municipality: Braunschweig 107.48 EUR (512 ct per working day, 10 garages), Wolfsburg 57.50
+    EUR (274 ct, 5 garages); the other municipalities impute nothing (counted and logged). The package's advice against
+    imputing from other cities is respected by the same-municipality rule; the imputation itself is the owner's choice, an
+    assumption of the model and not a finding. The config key `parking_garage_monthly_imputation` (default true) lets the export
+    use the imputed products; false is the sensitivity arm `zones_v2_published_monthly_only` (published products only, so that
+    only Steinstrasse and the Wallstrasse and the Wolfsburg garages with a product price a commuter below the day rate).
+    Schema 3, the Java reader and both golden fixtures are unchanged: the model lists ASSUMPTION P13 in its register only when
+    an imputed product is used. Expected effect, stated as an expectation and not as a result (no v2 run exists): the garage
+    weights do not depend on price (E3), so the garage share of a stay does not change; the expected cost of a work or
+    education stay with a garage option in range falls, which can raise the car's utility for commuters into the centre and
+    with it the car share of that group and the commuter garage share relative to the street; the size is not established, and
+    the comparison with the SrV commuter quantities (`srv2023_commute_parking_by_workplace_class`, not a calibration target)
+    belongs to the run manifest of the server arms, including the published-only arm. Limitations kept: the access window of
+    Tarif A (Mo-Fr 06:30-21:00) is not modelled, 21 working days and the per-stay minimum stay named in P2, no capacity of
+    monthly places (a sold-out garage still gets the imputed product), the Fichtengrund offer has an unknown end date.
 
 ## Consequences
 
@@ -295,7 +322,7 @@ run (see Status).
   file (schema 4; the old families are unchanged prefixes of the new ones), and each Python and Java port of a rule
   was checked against hand-derived expectations. Randomised differential runs made during review are not committed and carry
   no weight here. These are consistency and regression checks, not a validation.
-- Design: the v2 design spec of 2026-09-29 with Amendments A to E (local, gitignored under `docs/superpowers/specs/`); the
+- Design: the v2 design spec of 2026-09-29 with Amendments A to F (local, gitignored under `docs/superpowers/specs/`); the
   owner decisions quoted in this record are those recorded there.
 - Pending evidence: the server run of the three arms (OFF, LEGACY, ZONES v2 with and without garages), the calibration table
   of lambda and the comparison table; their run manifest will be linked from the feature record. A smoke is not a validation.
