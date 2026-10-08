@@ -119,6 +119,30 @@ def metrics_eqasim(output_dir: Path, sample_rate: float | None) -> dict[str, Any
 # ---------------------------------------------------------------------------
 
 
+def _mode_share_pct(trips: pd.DataFrame) -> dict[str, float]:
+    """Mode share in percent (2 decimals) over ``trips``; empty dict for no trips."""
+    share = trips["mode"].value_counts(normalize=True) * 100
+    return {k: float(round(v, 2)) for k, v in share.items()}
+
+
+def _commute_block(trips: pd.DataFrame) -> dict[str, Any] | None:
+    """Commute KPIs of the trips whose destination purpose is ``work`` (needs a ``km`` column).
+
+    Returns ``None`` when ``trips`` holds no work trip.
+    """
+    com = trips[trips["following_purpose"] == "work"]
+    if not len(com):
+        return None
+    return {
+        "n_trips": int(len(com)),
+        "mean_km": float(round(com["km"].mean(), 2)),
+        "median_km": float(round(com["km"].median(), 2)),
+        "p95_km": float(round(com["km"].quantile(0.95), 2)),
+        "dist_pct": _to_km_bands(com["km"].values),
+        "mode_share_pct": _mode_share_pct(com),
+    }
+
+
 def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     out: dict[str, Any] = {"available": False}
     if sim_output is None or not sim_output.exists():
@@ -188,38 +212,38 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
         et = et[et["mode"] != "outside"].copy()
         et["km"] = et["routed_distance"].astype(float) / 1000.0
 
-        # Mode share over ALL trips (in-region + cross-boundary). This is the historical definition of
-        # ``sim_trip_mode_share_pct``; it is kept under its own key so earlier run manifests stay comparable.
-        all_share = et["mode"].value_counts(normalize=True) * 100
-        out["all_trips_mode_share_pct"] = {k: float(round(v, 2)) for k, v in all_share.items()}
-
         # Cross-boundary trips (eqasim-bs#442): a portal stay of a resident or an in-commuter's home
-        # is an "outside" activity. Their mode is fixed upstream, so they are reported as a category
-        # of their own and leave the in-region modal split and distance KPIs below.
+        # is an "outside" activity. They are reported as an ADDITIVE category (``cross_boundary``) next
+        # to an ``in_region`` view; every pre-#442 key below keeps its definition (all trips after the
+        # pseudo-mode drop above), so the MiD comparisons built on ``commute`` do not change.
         missing_purpose_columns = [c for c in ("preceding_purpose", "following_purpose") if c not in et.columns]
         if missing_purpose_columns:
             logger.warning(
-                "[dashboard] eqasim_trips.csv lacks %s -- cross-boundary trips cannot be identified; "
-                "all trips are reported as in-region", missing_purpose_columns)
-            touches_outside = pd.Series(False, index=et.index)
+                "[dashboard] eqasim_trips.csv lacks %s -- cross_boundary and in_region blocks skipped "
+                "(cross-boundary trips cannot be identified)", missing_purpose_columns)
         else:
             touches_outside = (et["preceding_purpose"] == "outside") | (et["following_purpose"] == "outside")
-        cross = et[touches_outside]
-        out["cross_boundary"] = {
-            "n_trips": int(len(cross)),
-            "share_pct": float(round(100.0 * len(cross) / max(len(et), 1), 2)),
-            "mode_share_pct": {
-                k: float(round(v, 2)) for k, v in (cross["mode"].value_counts(normalize=True) * 100).items()
-            },
-            "mean_km": float(round(cross["km"].mean(), 2)) if len(cross) else None,
-        }
-        logger.info(
-            "[dashboard] cross-boundary trips (touch an outside activity): %d of %d (%.2f%%); "
-            "in-region KPIs use the remaining %d",
-            len(cross), len(et), out["cross_boundary"]["share_pct"], len(et) - len(cross))
-        et = et[~touches_outside].copy()
+            cross = et[touches_outside]
+            inside = et[~touches_outside]
+            out["cross_boundary"] = {
+                "n_trips": int(len(cross)),
+                "share_pct": float(round(100.0 * len(cross) / max(len(et), 1), 2)),
+                "mode_share_pct": _mode_share_pct(cross),
+                "mean_km": float(round(cross["km"].mean(), 2)) if len(cross) else None,
+            }
+            out["in_region"] = {
+                "n_trips": int(len(inside)),
+                "mode_share_pct": _mode_share_pct(inside),
+                "mean_trip_km": float(round(inside["km"].mean(), 2)) if len(inside) else None,
+                "median_trip_km": float(round(inside["km"].median(), 2)) if len(inside) else None,
+                "commute": _commute_block(inside),
+            }
+            logger.info(
+                "[dashboard] cross-boundary trips (touch an outside activity): %d of %d (%.2f%%); "
+                "in_region block uses the remaining %d",
+                len(cross), len(et), out["cross_boundary"]["share_pct"], len(inside))
 
-        # Overall distance distribution (in-region trips)
+        # Overall distance distribution (all trips)
         out["all_trip_dist_pct"] = _to_km_bands(et["km"].values)
         out["mean_trip_km"] = float(round(et["km"].mean(), 2))
         out["median_trip_km"] = float(round(et["km"].median(), 2))
@@ -238,19 +262,9 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
             out["dist_pct_by_mode"][mode] = _to_km_bands(sub["km"].values)
 
         # Commute = trips with destination = work
-        com = et[et["following_purpose"] == "work"]
-        if len(com):
-            out["commute"] = {
-                "n_trips": int(len(com)),
-                "mean_km": float(round(com["km"].mean(), 2)),
-                "median_km": float(round(com["km"].median(), 2)),
-                "p95_km": float(round(com["km"].quantile(0.95), 2)),
-                "dist_pct": _to_km_bands(com["km"].values),
-                "mode_share_pct": {
-                    k: float(round(v, 2))
-                    for k, v in (com["mode"].value_counts(normalize=True) * 100).items()
-                },
-            }
+        commute = _commute_block(et)
+        if commute is not None:
+            out["commute"] = commute
 
         # Per-purpose mean km
         out["mean_km_by_purpose"] = {

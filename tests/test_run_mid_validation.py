@@ -221,6 +221,28 @@ class TestLongDistanceTripBlock:
         assert block["n_trips_by_inside_purpose"] == {"work": 3, "home": 1}
         assert sum(block["inside_purpose_share_pct"].values()) == pytest.approx(100.0)
 
+    def test_pseudo_mode_legs_are_dropped_first_like_the_modal_split_tables(self, caplog) -> None:
+        # A cutter leg with the pseudo-mode "outside" is not a real trip of the in-region analysis: it must
+        # not enter n_trips_total (denominator of the neighbouring tables) nor the long-distance counts.
+        trips = pd.concat(
+            [
+                self._trips(),
+                pd.DataFrame(
+                    {"preceding_purpose": ["outside"], "following_purpose": ["outside"], "mode": ["outside"]}
+                ),
+            ],
+            ignore_index=True,
+        )
+        with caplog.at_level("INFO"):
+            block = rmv._long_distance_trip_block(trips)
+        assert block["n_trips_total"] == 8
+        assert block["n_long_distance_trips"] == 4
+        assert "outside" not in block["n_trips_by_mode"]
+        assert "outside" not in block["n_trips_by_inside_purpose"]
+        all_tbl, _, _ = rmv._mode_share_table(trips, mid_p12_1=None)
+        assert block["n_trips_total"] == all_tbl["n_trips"].sum()
+        assert any("pseudo-mode" in r.getMessage() and "1" in r.getMessage() for r in caplog.records)
+
     def test_trip_between_two_outside_activities_has_no_inside_purpose(self) -> None:
         trips = pd.DataFrame(
             {

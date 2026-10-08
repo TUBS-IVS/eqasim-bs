@@ -532,8 +532,10 @@ def _long_distance_trip_block(trips: pd.DataFrame) -> dict[str, Any]:
 
     The inside end of a long-distance trip is the purpose at the end that is not
     ``outside``; a trip whose both ends are ``outside`` has no inside end and is
-    counted under the purpose ``outside``.  Trips are NOT filtered by mode: a
-    cutter leg with the pseudo-mode ``outside`` appears under that mode key.
+    counted under the purpose ``outside``.  Cutter legs with the pseudo-mode
+    ``outside`` are dropped first (as :func:`_mode_share_table` does, and the
+    dropped count is logged), so ``n_trips_total`` equals the denominator of the
+    neighbouring modal-split tables.
 
     Returns ``{}`` when ``preceding_purpose`` / ``following_purpose`` / ``mode``
     are missing (logged), otherwise a dict with ``n_trips_total``,
@@ -549,6 +551,11 @@ def _long_distance_trip_block(trips: pd.DataFrame) -> dict[str, Any]:
             "(cross-boundary trips cannot be identified).", missing)
         return {}
 
+    n_pseudo_mode = int((trips["mode"] == "outside").sum())
+    trips = trips[trips["mode"] != "outside"]
+    LOGGER.info(
+        "Long-distance trip block: dropped %d cutter legs with pseudo-mode 'outside' "
+        "(same filter as the modal-split tables)", n_pseudo_mode)
     preceding_is_outside = trips["preceding_purpose"] == "outside"
     following_is_outside = trips["following_purpose"] == "outside"
     long_distance = trips[preceding_is_outside | following_is_outside]
@@ -1419,9 +1426,11 @@ def run(args: _Args) -> dict[str, Any]:
             "## Cross-boundary / long-distance trips — measurement only",
             "",
             "_Simulated trips with an `outside` activity at one end (portal stays "
-            "of residents and in-commuter trips; eqasim-bs#442). No reference "
-            "table exists for this category. The modal-split tables above are "
-            "unchanged and still include these trips._",
+            "of residents and in-commuter trips; eqasim-bs#442), counted over the "
+            "same trips as the modal-split tables (cutter legs with the pseudo-mode "
+            "`outside` are dropped). No reference table exists for this category. "
+            "The modal-split tables above are unchanged and still include these "
+            "trips._",
             "",
             f"- Trips touching an outside activity: "
             f"{long_distance_block['n_long_distance_trips']:,} of "
