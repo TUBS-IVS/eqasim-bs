@@ -45,6 +45,8 @@ notes: >-
   chains, absence, departure-time model, their guards and fallback rates) is the record of
   braunschweig.synthesis.commute_day.trips_day_stage; the portal rewrite (classification, gates, times, modes,
   anchors) is the record of braunschweig.synthesis.portal_trips.stage, with
-  docs/codebase/notes/portal-trips.md for maintenance rules. Consumers keep reading this alias; none changed
-  when the portal layer was added. Cache consequence of the re-pointing (ADR-0141): this stage and everything
+  docs/codebase/notes/portal-trips.md for maintenance rules. Consumers of the finished day keep reading this alias; none
+  changed when the portal layer was added, except that the SrV plan-structure and departure-time comparisons
+  and the work-participation report read braunschweig.synthesis.commute_day.trips_day_stage (the pre-portal
+  frame) instead while braunschweig.portal.enabled is true, because they validate the donor-based day. Cache consequence of the re-pointing (ADR-0141): this stage and everything
   downstream recompute once, even with braunschweig.portal.enabled false, because the alias target changed.

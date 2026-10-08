@@ -283,8 +283,8 @@ notes: >-
   secondary_chainsolvers/portal_anchors.py). outside is a fixed, anchored purpose of the vendored
   problem splitter (FIXED_PURPOSES and ANCHORED_PURPOSES in
   synthesis/population/spatial/secondary/problems.py), so chains split at the gate like at work or
-  education. The gate location rows carry location_id -1 (coordinate-only) and are appended to the
-  locations output; the stage logs 'portal anchors: N outside stays fixed at their gates' and raises when
+  education. The gate location rows carry location_id portal_<gate_id> (a real facility registered by
+  matsim.scenario.facilities) and are appended to the locations output; the stage logs 'portal anchors: N outside stays fixed at their gates' and raises when
   trips touch an outside activity but the anchors frame is empty. Its external candidates are bounded to
   the supply ring by braunschweig.synthesis.locations.secondary_candidates (ADR-0027 amended). With the
   flag off no anchors are staged or added.

@@ -278,6 +278,18 @@
   ],
   [
    "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.departure_time_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
    "braunschweig.synthesis.portal_trips.stage"
   ],
   [
@@ -1051,18 +1063,6 @@
   [
    "synthesis.population.trips",
    "synthesis.population.spatial.primary.candidates"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.departure_time_vs_srv"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
    "synthesis.population.trips.final",

@@ -1,7 +1,6 @@
 # ADR-0141 · 2026-10-08 · Portal trips: long-distance trips leave and re-enter the supplied area through the cordon gates
 
-- **Status:** active (implemented on `feature/i442-portal-trips`; behaviour effect NOT yet validated, the
-  1 % OFF/ON A/B run manifest is still owed, see Consequences)
+- **Status:** active (implemented; behaviour effect NOT yet validated, the 1 % OFF/ON A/B run manifest is owed)
 - **Numbering:** ADR-0141 is the next free id. Checked on 2026-10-08 across all local and remote
   branches and the two open pull requests (#438, #441): the highest record anywhere is ADR-0140
   (parking cost zones v2, on a branch that is not yet merged).
@@ -48,8 +47,9 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    activity at the gate, the legs inside the stay are removed, the return leg starts at the gate. This is
    the same shape the in-commuters already have, so the cutter finds nothing to cut. The new stage
    `braunschweig.synthesis.portal_trips.stage` (with the thin stages `...trips_final`, aliased as
-   `synthesis.population.trips.final`, and `...anchors`) rewrites the trip table once; no consumer of
-   `trips.final` changes.
+   `synthesis.population.trips.final`, and `...anchors`) rewrites the trip table once; the consumers of the
+   finished day keep reading the alias. Three analyses that validate the pre-portal day read the pre-portal
+   stage instead (decision 10).
 3. **Gate choice by minimum detour.** The external point only fixes direction and outside distance. For work
    and education it is the assigned location; otherwise one external Gemeinde point is drawn with
    population weights among those within `reported x (1 +- tolerance)` of the leg's origin anchor
@@ -62,22 +62,35 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    the in-commuters' entry stations). Reason: every gate must lie inside the cut extent, otherwise the
    cutter would cut the stay again; schedule-derived exit stations are inside the extent by construction.
 4. **Times come from the donor diary, no speed assumption (D4).** The outbound departure is unchanged. The
+   outbound leg arrives at the gate at `departure + duration x min(1, inside / reported)` (`inside` is the
+   straight line origin to gate, `reported` the outbound leg's own `euclidean_distance`; counted when the share
+   is capped, including a missing or zero reported distance). Reason: the chain solver samples the distance of
+   the preceding secondary leg from `travel_time = arrival - departure`, so the diary's arrival at the far
+   destination would inflate it; MATSim ignores planned arrivals, so only the synthesis is affected. The
    stay ends at `t_reentry = return.departure + share_out x (return.arrival - return.departure)` with
    `share_out = min(1, |point - gate| / return.euclidean_distance)`; a missing or zero reported distance gives
-   `share_out = 1` (counted), a re-entry before the outbound departure is clamped (counted). The return leg
-   departs at `t_reentry` and arrives after the remaining `(1 - share_out)` share of its reported duration.
+   `share_out = 1` (counted), a re-entry before the arrival at the gate (or, with inconsistent diaries, before
+   the outbound departure) is clamped (counted). The return leg departs at `t_reentry` and arrives after the
+   remaining `(1 - share_out)` share of its reported duration.
 5. **Same gate and same mode out and back (D5).** The donor's OUTBOUND mode is used for both portal legs,
    checked against the synthetic person (car needs car availability and a licence, bicycle needs bicycle
    availability, car passenger needs passenger availability). Substitution order: car to car passenger to pt,
-   car passenger to pt, bicycle to pt. Walk is kept (the diaries contain no long walk). No vehicle is left at
+   car passenger to pt, bicycle to pt. Walk is kept (the diaries contain no long walk, measured in #442). No vehicle is left at
    a gate and the discrete mode choice's `VehicleContinuity` holds. A differing donor return mode is counted.
-6. **The mode is fixed in the Java discrete mode choice by a trip constraint keyed on a marker (D6).**
-   `org.eqasim.braunschweig.mode_choice.constraints.PortalTripConstraint` (eqasim-java-bs branch
-   `feature/i442-portal-trip-constraint`) keeps the initial mode of a trip that touches an `outside` activity
-   carrying the Boolean activity attribute `portalGate=true`. The Python population writer
-   (`matsim/scenario/population.py`) sets that attribute on every `outside` activity it writes; the cutter's
-   own outside activities (crossing points, virtual activities) never carry it and stay unconstrained, and
-   with the portal off no activity carries it, so the constraint is a no-op.
+6. **The portal modes need no Java change (the spec's decision D6, a Java trip constraint, was superseded
+   during implementation).** The production discrete mode choice runs `ModelType.Tour` with the
+   `ActivityBased` tour finder on the activity types `[home, outside]` and the `OutsideFilter` (eqasim core
+   `GenerateConfig`; the Braunschweig `RunAdaptConfig` never selects `IsolatedOutsideTrips`; checked in the
+   code during the final review of #442). A gate is an `outside` activity, so it bounds tours, and the tours
+   that touch it are removed from the choice by `OutsideFilter`: both tours adjacent to a stay keep their
+   diary (or substituted) modes, exactly as the cutter-outside persons do today. The planned
+   `PortalTripConstraint` (eqasim-java-bs branch `feature/i442-portal-trip-constraint`) would therefore never
+   fire; it is NOT part of this feature, and the branch is parked without a pull request. Selecting
+   `IsolatedOutsideTrips` for the mode choice would need that constraint and is a separate decision. The
+   Python population writer (`matsim/scenario/population.py`) still sets the Boolean activity attribute
+   `portalGate=true` on every `outside` activity it writes; with the portal off no activity carries it. It is
+   an identification marker only (analyses can tell a portal gate from the outside activities of the cutter);
+   no code of the production configuration reads it.
 7. **Two guard rails restore eqasim's "stay inside the region" invariant behind the same flag.**
    `braunschweig.popsim.distance_distributions` builds the CDFs from donor trips within the threshold only
    (and raises when a mode loses every trip); `braunschweig.synthesis.locations.secondary_candidates` keeps
@@ -88,13 +101,26 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    outside activities exactly as before this ADR.
 8. **The chain solver treats the gate as a fixed anchor.** `outside` joins `FIXED_PURPOSES` and
    `ANCHORED_PURPOSES` of the vendored problem splitter, each gate is handed over through the existing
-   `activity_anchors` path, and chains split at the gate like at work or education. Gate location rows carry
-   `location_id = -1` (coordinate-only, like the in-commuter gate home); the facilities coverage check
-   excludes the placeholder explicitly and logs the count.
+   `activity_anchors` path, and chains split at the gate like at work or education. Every gate is a real
+   facility: the location rows carry `location_id = "portal_<gate_id>"` and
+   `braunschweig/matsim/scenario/facilities.py` registers one facility per used gate at the gate coordinate
+   (the vendored `matsim/scenario/facilities.py` writer got an optional `df_portal` parameter; none or empty
+   writes nothing, so the OFF file is unchanged). Reason: eqasim core's Java `LinkAssignment` throws for any
+   activity whose facility does not exist (the in-commuters' gate homes are the facilities
+   `home_<household_id>`); the facilities coverage check accepts the registered `portal_*` ids and still
+   raises on any other dangling id.
 9. **Analyses report the cross-boundary trips as a category of their own, additively.** Every pre-existing
    dashboard key keeps its definition over all trips; `run_metrics.metrics_matsim` gains the additive
    `in_region` and `cross_boundary` blocks, `run_mid_validation` an additive long-distance block, and the
    SimWrapper behaviour sankey excludes trips touching an `outside` activity.
+10. **The SrV comparisons and the work-participation report read the pre-portal trips while the flag is on.**
+    `plan_structure_vs_srv` and `departure_time_vs_srv` (view `final`) and `work_participation_by_kreis` read
+    `braunschweig.synthesis.commute_day.trips_day_stage` instead of `synthesis.population.trips.final` when
+    `braunschweig.portal.enabled` is true (helper `config_keys.final_view_trips_stage`; the OFF path and the
+    `pre_assignment` view are unchanged). Reason: they validate the donor-based day (plan structure, departure
+    times, work participation), not the portal rewrite, and far legs that became outside stays would show up
+    as an artificial drop in work trips and a distorted plan structure; this keeps the existing SrV
+    comparisons unchanged. Their provenance records `portal_layer_enabled` and the stage actually read.
 
 ### Rejected alternatives
 
@@ -107,10 +133,13 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - **Nationwide supply** (network and timetable) so that nothing needs a portal.
 - **Mode speeds for the outside part** of the trip instead of the diary's own times.
 - **The donor's return mode** for the return leg (counted when it differs, not used).
-- **A leg attribute plus writer extension** to mark the fixed mode; the activity-type-based Java constraint
-  needs no per-leg data. An earlier variant keyed on the bare `outside` type alone was dropped because the
-  cutter creates `outside` activities of its own on every cut plan; the explicit `portalGate` marker makes
-  the constraint a true no-op without portal gates.
+- **A per-leg attribute plus writer extension** to mark the fixed mode; an activity marker identifies the
+  portal gates without per-leg data. An earlier Java constraint variant keyed on the bare `outside` type
+  alone was dropped because the cutter creates `outside` activities of its own on every cut plan; the
+  explicit `portalGate` activity marker replaced it, and the whole constraint was then superseded (decision 6).
+- **A Java `PortalTripConstraint` in the discrete mode choice** (the spec's D6). Superseded during
+  implementation: under the production configuration `OutsideFilter` already freezes every tour that
+  touches an `outside` activity, so the constraint would never fire (decision 6).
 - **Conditioning the distance sampler on the reported distance class.** Kept as a possible later A/B, not
   part of this change.
 
@@ -145,26 +174,38 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - **OFF path.** `braunschweig.portal.enabled: false` returns the input trip frame unchanged, an empty
   anchors frame, no anchors in the chain solver, unbounded CDFs, unbounded candidates and a population file
   without the marker; the pinning tests are listed in the feature record.
-- **Fail-early behaviour.** The stage raises at configure without the cordon and on an invalid setting, at
-  execute when every work/education leg falls back to the reported distance (a broken join), when the stay
-  and trip tables disagree, and when an `outside` activity reaches the chain solver without an anchor. The
-  work/education-fallback raise can also fire on a tiny run without assigned primary locations; that is a
-  property of the input, not of the model.
+- **Fail-early behaviour.** The stage raises at configure without the cordon and on an invalid setting; at
+  execute when the spatial inputs (municipalities, home locations, gates, links, external points) are not in
+  one CRS (`assert_consistent_crs`, before the first spatial step), when every work/education leg falls back
+  to the reported distance (a broken join), when a road gate link has no endpoint inside the cut extent, and
+  when the stay and trip tables disagree (for example an outbound leg without times). The chain solver
+  (`_require_anchors_for_outside_trips`) raises only when the anchors frame is empty and trips touch an
+  `outside` activity (the anchors stage and the trips are out of sync); any other outside activity without an
+  anchor stops later in the vendored problem splitter. The work/education-fallback raise can also fire on a
+  tiny run without assigned primary locations; that is a property of the input, not of the model.
 - **Fallbacks are observable.** The stage logs, as rates and in its report, the reported-distance fallback
-  of work/education legs, the external-point band misses, the origins proxied by home, the capped
-  re-entry shares (including those caused by a missing reported distance), the mode substitutions by reason,
+  of work/education legs, the external-point band misses, the origins proxied by home, the capped re-entry and
+  outbound shares (including those caused by a missing reported distance), the mode substitutions by reason,
   stay persons without a licence value and donor modes the mode check does not know; the rate keys warn above
   `braunschweig.portal.fallback_warn_share` (default 0.1) and `braunschweig.portal.mode_substitution_warn_share`.
-  The population writer additionally logs the car to car-passenger re-mode rate, now counted.
+  The report is also written as `portal_trips_report.json` in the stage's cache directory, so the A/B run
+  manifest can cite it without the log. The population writer additionally logs the car to car-passenger
+  re-mode rate, now counted.
 - **Reporting limits.** MATSim's own `modestats.csv` has no purposes and keeps counting portal legs under their
   mode, so `modestats_inside` cannot separate them. The dashboard's `cross_boundary` block holds every trip
   with an `outside` activity at either end, which includes the in-commuters' trips, not only portal stays of
   residents.
-- **Java.** `PortalTripConstraint` lives in the eqasim-java-bs fork (commits 09889f79f, a9ad6f261,
-  afdb3f278 on `feature/i442-portal-trip-constraint`); the pipeline builds it through `eqasim_source_path`
-  and the fork needs its own pull request. The constraint is registered in
-  `BraunschweigModeChoiceModule` and added to the discrete mode choice's trip constraints next to
-  `OutsideConstraint` in `RunAdaptConfig`.
+- **Java.** No Java change is part of this feature (decision 6). The parked branch
+  `feature/i442-portal-trip-constraint` of the eqasim-java-bs fork (`PortalTripConstraint`, commits 09889f79f,
+  a9ad6f261, afdb3f278) has no pull request; reviving it is a separate decision that comes with selecting
+  `IsolatedOutsideTrips`. Consequence for the A/B: the modes of both portal legs stay the diary (or
+  substituted) modes, as for the cutter-outside persons today.
+- **Known limitations of the validators (R36).** Validators that read the written trips CSV rather than a stage
+  count the far legs as `outside` while the flag is on: `population_validation/participation_fit.py`,
+  `population_validation/trip_coherence.py` and the commute and purpose tables of
+  `run_mid_validation`. Their work/education participation and purpose tables are expected to move in the A/B
+  and are not a portal defect; they are not changed in this feature. A follow-up issue is proposed to the
+  project owner (issue-first rule).
 - **Documentation.** Stage records `braunschweig.synthesis.portal_trips.{stage,anchors}` and the re-pointed alias
   `synthesis.population.trips.final` (the DAG node of the thin stage `trips_final`), a record for
   `braunschweig.synthesis.commute_day.trips_day_stage` (now a DAG node of its own, carrying the content the
@@ -177,6 +218,7 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - Issue TUBS-IVS/eqasim-bs#442; branch `feature/i442-portal-trips`.
 - Tests: `tests/test_portal_trips_*.py`, `tests/test_chainsolver_portal_anchors.py`,
   `tests/test_distance_distributions_portal_filter.py`, `tests/test_secondary_candidates_supply_ring.py`,
-  `tests/test_population_writer_portal_gate.py`, `tests/test_facilities_portal_placeholder.py`,
-  `tests/test_dashboard_cross_boundary.py`; Java `PortalTripConstraintTest` in eqasim-java-bs.
+  `tests/test_population_writer_portal_gate.py`, `tests/test_facilities_portal_gates.py`,
+  `tests/test_srv_comparisons_portal_view.py`, `tests/test_work_participation_by_kreis.py`,
+  `tests/test_dashboard_cross_boundary.py`. No Java evidence: the Java constraint is parked (decision 6).
 - Contributor note `docs/codebase/notes/portal-trips.md`; feature record `docs/registry/features/portal_trips.yml`.

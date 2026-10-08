@@ -23,8 +23,12 @@ features:
 decisions:
 - ADR-0141
 notes: >-
-  PORTAL PLACEHOLDER (ADR-0141, issue #442, feature record portal_trips): the secondary coverage check
-  (validate_secondary_coverage in braunschweig/matsim/scenario/facilities.py) excludes the
-  coordinate-only placeholder location_id -1 of the portal gate rows from the dangling-id test and logs how
-  many rows it excluded; that count should equal the chain solver's portal anchors count. A genuinely
-  dangling id still raises.
+  PORTAL GATE FACILITIES (ADR-0141, issue #442, feature record portal_trips): every portal gate is a real
+  facility. The realised secondary locations carry location_id portal_<gate_id> for the outside activities;
+  portal_facility_frame in braunschweig/matsim/scenario/facilities.py takes one row per distinct gate (at the
+  gate coordinate; one gate id at two coordinates raises) and execute passes it to the vendored writer
+  matsim/scenario/facilities.py through its optional df_portal parameter, which writes one facility with the
+  single activity option outside per row (none or empty writes nothing, so the file without portal rows is
+  byte-identical). validate_secondary_coverage accepts exactly these registered ids and logs how many portal
+  gate facilities were registered; any other dangling id, a portal_* id that was not registered included,
+  raises. Reason: eqasim core's Java LinkAssignment throws for an activity whose facility does not exist.

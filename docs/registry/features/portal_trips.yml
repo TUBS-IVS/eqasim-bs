@@ -11,18 +11,26 @@ description: >-
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
   or the schedule-derived rail exit station with the smallest detour (always inside the cut extent, so the
   scenario cutter cuts nothing), the stay ends at a time derived from the donor's diary, and the donor's
-  outbound mode is fixed for both legs after an availability check with a counted substitution order.
+  outbound mode is fixed for both legs after an availability check with a counted substitution order. The
+  outbound leg arrives at the gate after the inside share of its reported duration (counted when capped).
   Two guard rails behind the same flag bound the secondary distance CDFs by the threshold and the external
-  Gemeinde candidates to the supply ring. The chain solver treats the gate as a fixed anchored activity.
-  The population writer marks portal gates with the activity attribute portalGate=true so that the Java
-  PortalTripConstraint (eqasim-java-bs, branch feature/i442-portal-trip-constraint) keeps the donor mode of
-  those trips in the discrete mode choice and stays a no-op without portal gates.
+  Gemeinde candidates to the supply ring. The chain solver treats the gate as a fixed anchored activity;
+  every gate is a real facility (location id portal_<gate_id>, registered by the facilities stage). No Java
+  change is part of the feature: the production discrete mode choice already freezes every tour that touches
+  an outside activity (OutsideFilter), so both tours adjacent to a stay keep their diary or substituted modes,
+  as for the cutter-outside persons today. The population writer marks portal gates with the activity
+  attribute portalGate=true as an identification marker for analyses only. The SrV plan-structure and
+  departure-time comparisons and the work-participation report read the pre-portal trips while the flag is on.
   Reporting: every existing dashboard key keeps its pre-feature definition over all trips; the additive blocks
   in_region and cross_boundary live in run_metrics.metrics_matsim, run_mid_validation gains an additive
   long-distance block, and the SimWrapper behaviour sankey excludes trips touching an outside activity. The
   dashboard's cross_boundary block holds every trip with an outside purpose at either end, so it also contains
   the in-commuters' trips, not only portal stays of residents. MATSim's own modestats.csv has no purposes and
-  keeps counting portal legs under their mode, so modestats_inside cannot separate them.
+  keeps counting portal legs under their mode, so modestats_inside cannot separate them. Known limitation: the
+  validators that read the written trips CSV (population_validation/participation_fit.py,
+  population_validation/trip_coherence.py and the commute and purpose tables of run_mid_validation) count the
+  far legs as outside while the flag is on; their work/education participation and purpose tables are expected
+  to move in the A/B and are not a portal defect (a follow-up issue is proposed, not yet opened).
 stages:
 - braunschweig.synthesis.portal_trips.stage
 - braunschweig.synthesis.portal_trips.anchors
@@ -32,6 +40,10 @@ stages:
 - synthesis.population.spatial.secondary.distance_distributions
 - matsim.scenario.population
 - matsim.scenario.facilities
+- braunschweig.synthesis.commute_day.trips_day_stage
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
+- braunschweig.analysis.synthesis.departure_time_vs_srv
+- braunschweig.analysis.synthesis.work_participation_by_kreis
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -56,6 +68,9 @@ code_paths:
 - braunschweig/analysis/run_mid_validation.py
 - braunschweig/analysis/simwrapper/behaviour.py
 - braunschweig/analysis/simwrapper/trip_demand.py
+- braunschweig/analysis/synthesis/departure_time_vs_srv.py
+- braunschweig/analysis/synthesis/plan_structure_vs_srv.py
+- braunschweig/analysis/synthesis/work_participation_by_kreis.py
 - braunschweig/matsim/scenario/facilities.py
 - braunschweig/popsim/distance_distributions.py
 - braunschweig/synthesis/locations/secondary_candidates.py
@@ -74,16 +89,28 @@ code_paths:
 - braunschweig/synthesis/portal_trips/timing.py
 - braunschweig/synthesis/portal_trips/trips_final.py
 - configs/base_bs.yml
+- configs/fixtures/config_dryrun_braunschweig.yml
+- configs/fixtures/config_local_braunschweig.yml
+- configs/fixtures/config_local_braunschweig_10pct.yml
+- configs/fixtures/config_local_braunschweig_25pct.yml
+- configs/fixtures/config_popsim_mid_braunschweig.yml
+- configs/fixtures/config_popsim_open_braunschweig.yml
+- configs/fixtures/config_smoke_popsim_mid_mini.yml
+- configs/fixtures/config_smoke_popsim_open_mini.yml
+- configs/fixtures/config_smoke_simple_ipf.yml
+- matsim/scenario/facilities.py
 - matsim/scenario/population.py
 - synthesis/population/spatial/secondary/problems.py
 evidence:
   tests:
   - tests/test_chainsolver_portal_anchors.py
   - tests/test_dashboard_cross_boundary.py
+  - tests/test_departure_time_vs_srv.py
   - tests/test_distance_distributions_portal_filter.py
   - tests/test_escort_links.py
-  - tests/test_facilities_portal_placeholder.py
+  - tests/test_facilities_portal_gates.py
   - tests/test_passive_joint_two_pass.py
+  - tests/test_plan_structure_vs_srv.py
   - tests/test_population_writer_portal_gate.py
   - tests/test_portal_trips_classification.py
   - tests/test_portal_trips_config_keys.py
@@ -94,6 +121,9 @@ evidence:
   - tests/test_run_mid_validation.py
   - tests/test_secondary_candidates_supply_ring.py
   - tests/test_simwrapper_spatial.py
+  - tests/test_srv_comparisons_portal_view.py
+  - tests/test_student_incommuters_stage.py
+  - tests/test_work_participation_by_kreis.py
   off_path_byte_identical:
     claimed: 'true'
     test: >-
@@ -104,12 +134,11 @@ evidence:
       tests/test_secondary_candidates_supply_ring.py::test_execute_keeps_every_external_centroid_when_the_portal_is_off;
       tests/test_chainsolver_portal_anchors.py::test_apply_portal_anchors_off_leaves_the_escort_anchors_untouched;
       tests/test_population_writer_portal_gate.py::test_population_without_outside_activity_has_no_portal_gate_and_is_unchanged;
-      Java PortalTripConstraintTest in eqasim-java-bs (aTripBetweenInRegionActivitiesIsUnconstrained,
-      aCutterCrossingPointWithoutAnyMarkerIsUnconstrained, aCutterVirtualOutsideActivityIsUnconstrained).
+      tests/test_facilities_portal_gates.py::test_without_portal_stays_no_portal_facility_is_written_and_the_file_is_unchanged.
     note: >-
       braunschweig.portal.enabled defaults true in configs/base_bs.yml. The OFF claim is pinned per component
-      (stage pass-through, anchors, distance CDFs, candidates, population writer, Java constraint), each by the
-      test named above. A whole-pipeline OFF run against the pre-feature state is part of the owed A/B and is
+      (stage pass-through, anchors, distance CDFs, candidates, population writer, facilities writer), each by
+      the test named above. A whole-pipeline OFF run against the pre-feature state is part of the owed A/B and is
       not recorded yet; a stage-level pass-through is not an end-to-end proof.
   fallback_rate:
     instrumented: true
@@ -118,9 +147,11 @@ evidence:
       The portal stage logs, as rates and in its report, the work/education legs classified by the donor's
       reported distance instead of the assigned location (primary versus fallback; raises when every leg falls
       back), the external points drawn outside the distance band, the origins proxied by home, the capped
-      re-entry shares including those caused by a missing reported distance, the mode substitutions by reason,
-      persons without a licence value and donor modes the mode check does not know. The first four warn above
-      braunschweig.portal.fallback_warn_share, the substitutions above mode_substitution_warn_share. The
+      re-entry and outbound shares including those caused by a missing reported distance, the mode
+      substitutions by reason, persons without a licence value and donor modes the mode check does not know. The
+      first four and the outbound share warn above braunschweig.portal.fallback_warn_share, the substitutions
+      above mode_substitution_warn_share. The report is also written as portal_trips_report.json in the stage's
+      cache directory. The
       candidate stage logs the kept/dropped rate of the supply-ring restriction, the distance-distribution stage
       the dropped share per mode, and the population writer the car to car_passenger re-mode rate.
   reference:
@@ -146,14 +177,16 @@ assessment:
   date: null
   pending_reason: >-
     Implemented and unit-tested; the OFF/ON A/B run manifest that would allow an owner verdict is owed
-    (eqasim-bs#442). The Java constraint needs its own pull request in eqasim-java-bs.
+    (eqasim-bs#442).
   source: ADR-0141
 notes: >-
-  Java side (eqasim-java-bs, module braunschweig): org.eqasim.braunschweig.mode_choice.constraints.PortalTripConstraint
-  with its Factory, registered in BraunschweigModeChoiceModule and added to the discrete mode choice trip
-  constraints in RunAdaptConfig next to OutsideConstraint; branch feature/i442-portal-trip-constraint, commits
-  09889f79f, a9ad6f261, afdb3f278; unit tests in PortalTripConstraintTest. The pipeline builds the fork through
-  eqasim_source_path. The feature changes results by design when enabled: the alias switch recomputes
+  No Java change is part of this feature (ADR-0141, decision 6): the Java PortalTripConstraint of the
+  eqasim-java-bs branch feature/i442-portal-trip-constraint (commits 09889f79f, a9ad6f261, afdb3f278) is PARKED
+  without a pull request because OutsideFilter already freezes the tours at a gate; selecting
+  IsolatedOutsideTrips would need it and is a separate decision. The feature changes results by design when
+  enabled: the alias switch recomputes
   synthesis.population.trips.final and everything downstream once, and the distance CDFs and the external
   candidates recompute too. Not in scope (tracked elsewhere): the plan feasibility check and stuck KPI (#443),
   the freight gate connector (#444), a sampler conditioned on the reported distance class (a possible later A/B).
+  Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
+  trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).

@@ -10,7 +10,8 @@ description: 'Reporting-day view of the population''s day (ADR-0104, issue #244)
   with the location assignment. Everything that needs the FINISHED day reads this view through
   the alias synthesis.population.trips.final (since ADR-0141 the portal layer is stacked on this
   stage there): the secondary chainsolvers, synthesis.population.activities.final,
-  synthesis.output, the MATSim population and the two commute analyses. With
+  synthesis.output, the MATSim population and the two commute analyses (with braunschweig.portal.enabled true the SrV
+  comparisons and the work-participation report read this stage directly instead, ADR-0141). With
   commute_day_state_enabled false the stage returns the pre-assignment frame itself, so the
   view is a pure pass-through.'
 lineage:
@@ -35,11 +36,13 @@ features:
 - commute_day_state
 - general_day_absence
 - departure_time_model
+- portal_trips
 decisions:
 - ADR-0104
 - ADR-0110
 - ADR-0114
 - ADR-0128
+- ADR-0141
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain

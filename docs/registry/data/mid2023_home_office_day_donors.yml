@@ -8,7 +8,7 @@ roles:
 - donor
 used_by:
 - braunschweig.synthesis.commute_day.state_stage
-- synthesis.population.trips.final
+- braunschweig.synthesis.commute_day.trips_day_stage
 acquisition:
   method: derived
   source: |
@@ -80,7 +80,7 @@ notes: |
   the keep-probability ratio and for the Phase A thin-cell finding): this record is the donor
   pool's own RUN-TIME, per-donor rows (attributes + full trip chains), rebuilt fresh on every
   pipeline execution and consumed directly by braunschweig.synthesis.commute_day.state_stage (for
-  matching) and synthesis.population.trips.final (for the replacement day itself). With
+  matching) and braunschweig.synthesis.commute_day.trips_day_stage (for the replacement day itself). With
   commute_day_state_enabled false, home_office_donors_stage reads nothing at all and returns two
   EMPTY frames with the ON-path columns (see its stage record), so no consumer of this dataset
   reads the raw MiD delivery on the OFF path either.

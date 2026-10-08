@@ -2062,8 +2062,8 @@ def execute(context):
         df_linked = gpd.GeoDataFrame(linked_location_rows, geometry="geometry", crs=crs)
         df_locations = pd.concat([df_locations, df_linked], ignore_index=True)
 
-    # The gates of the portal stays (eqasim-bs#442) are fixed boundaries as well: coordinate-only
-    # rows (location_id "portal_<gate_id>", a facility registered by the facilities stage) so the eqasim
+    # The gates of the portal stays (eqasim-bs#442) are fixed boundaries as well: one row per stay
+    # (location_id "portal_<gate_id>", a facility registered by the facilities stage) so the eqasim
     # location join finds a geometry and a facility for every outside activity.
     if portal_location_rows is not None:
         df_portal = gpd.GeoDataFrame(portal_location_rows, geometry="geometry", crs=crs)

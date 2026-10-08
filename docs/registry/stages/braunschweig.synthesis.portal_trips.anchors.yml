@@ -27,7 +27,9 @@ features:
 decisions:
 - ADR-0141
 notes: >-
-  Staged by the chain solver only when braunschweig.portal.enabled is true; with the flag off the
-  frame is empty and the chain solver adds no anchors. The gate location rows written into the
-  chain solver's locations output carry location_id -1 (coordinate-only, no facility); see
-  docs/codebase/notes/portal-trips.md for the consistency check against the facilities coverage log.
+  Staged by the chain solver only when braunschweig.portal.enabled is true: with the flag off the
+  chain solver does not stage it and adds no anchors (the core stage itself returns an empty anchors
+  frame when run with the flag off). The gate location rows written into the chain solver's
+  locations output carry location_id portal_<gate_id> (a real facility, registered per used gate by
+  braunschweig.matsim.scenario.facilities); see docs/codebase/notes/portal-trips.md for the
+  invariant and the consistency check against the facilities log.

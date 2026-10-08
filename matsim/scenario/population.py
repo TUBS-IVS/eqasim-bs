@@ -21,11 +21,12 @@ RBW_PERSON_ATTRIBUTES = (
 
 PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
 
-# eqasim-bs#442 (portal trips): the Java PortalTripConstraint (eqasim-java-bs) locks the initial
-# mode of a trip that touches an activity of type PORTAL_GATE_ACTIVITY_TYPE carrying the Boolean
-# activity attribute PORTAL_GATE_ATTRIBUTE=true. This vendored module does not import braunschweig
-# code, so the two names are literals; tests/test_population_writer_portal_gate.py pins them to
-# braunschweig.synthesis.portal_trips.config_keys (PORTAL_GATE_ACTIVITY_ATTRIBUTE, OUTSIDE_PURPOSE).
+# eqasim-bs#442 (portal trips): an activity of type PORTAL_GATE_ACTIVITY_TYPE gets the Boolean activity
+# attribute PORTAL_GATE_ATTRIBUTE=true, an identification marker that tells a portal gate from an outside
+# activity of the eqasim cutter (no Java code of the production configuration reads it, ADR-0141). This
+# vendored module does not import braunschweig code, so the two names are literals;
+# tests/test_population_writer_portal_gate.py pins them to braunschweig.synthesis.portal_trips.config_keys
+# (PORTAL_GATE_ACTIVITY_ATTRIBUTE, OUTSIDE_PURPOSE).
 PORTAL_GATE_ACTIVITY_TYPE = "outside"
 PORTAL_GATE_ATTRIBUTE = "portalGate"
 
@@ -358,8 +359,8 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         else:
             activity_attributes = None
 
-        # eqasim-bs#442: mark a portal gate for the Java PortalTripConstraint. The attribute is a
-        # real java.lang.Boolean (a String "true" would not be recognised on the Java side) and is
+        # eqasim-bs#442: mark a portal gate (identification marker, see PORTAL_GATE_ATTRIBUTE). The attribute
+        # is a real java.lang.Boolean (a String "true" would not be recognised on the Java side) and is
         # merged with the isParis attributes above. No-op for a population without "outside"
         # activities, whose output stays byte-identical.
         if activity[ACTIVITY_FIELDS.index("purpose")] == PORTAL_GATE_ACTIVITY_TYPE:
