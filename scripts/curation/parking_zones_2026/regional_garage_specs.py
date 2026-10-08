@@ -878,3 +878,74 @@ LOT_RELEASED = {
         "WOB_PARK_1900551_R01:free_minutes_policy": ("documented_component",),
         "WOB_PARK_1900551:fee_status": ("reviewed_evidence",)}),
 }
+
+
+# ---------------------------------------------------------------- Braunschweig monthly products (spec Amendment F1)
+#: The monthly status of every Braunschweig garage of the dataset, read from the owner's package
+#: ``Braunschweig_Monatstarife_2026-10-08.zip`` and the Contipark evidence directory (``bs_monthly_products``). Keys:
+#: ``garage_id``; ``facility`` and ``facility_key`` (the package facility record, checked against the garage by id); ``status``
+#: (published, sold_out, no_price, price_on_request or period_unconfirmed; the step checks it against the package's records); for
+#: a published product ``rule`` (WHICH rule of the package to read, which must be the cheapest of its facility) or ``offer`` (the
+#: package offer whose price comes from the configurator capture); for the others ``quotes`` ((token, phrase) pairs: each names
+#: the one sentence of the package README that states the status); ``evidence`` (a capture of the evidence directory that adds
+#: to it) and ``hidden_amount`` (the package's visibility evidence records an amount in hidden page sections). No amount is typed
+#: here: the amounts are read from the package and the capture.
+BS_MONTHLY_SPECS = (
+    {"garage_id": "bs_eiermarkt", "facility": "BS_PH004", "facility_key": "braunschweig_eiermarkt", "status": "no_price",
+     "quotes": (("Eiermarkt", "kein belastbarer aktueller Monatspreis ermittelt"),), "evidence": "eiermarkt"},
+    {"garage_id": "bs_forschungsflughafen", "facility": "BS_FORSCHUNGSFLUGHAFEN", "facility_key": "forschungsflughafen",
+     "status": "price_on_request", "quotes": (("Forschungsflughafen", "Preis auf Anfrage"),), "hidden_amount": True},
+    {"garage_id": "bs_lange_strasse_nord", "facility": "BS_PH010", "facility_key": "lange_nord", "status": "no_price",
+     "quotes": (("Lange Straße Nord/Süd", "kein belastbarer aktueller Monatspreis ermittelt"),)},
+    {"garage_id": "bs_lange_strasse_sued", "facility": "BS_ADDITIONAL_1", "facility_key": "lange_sued", "status": "no_price",
+     "quotes": (("Lange Straße Nord/Süd", "kein belastbarer aktueller Monatspreis ermittelt"),)},
+    {"garage_id": "bs_magni", "facility": "BS_PH001_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "facility_key": "magni",
+     "status": "sold_out", "quotes": (("Magni", "Dauerstellplätze laut Betreiber belegt"),)},
+    {"garage_id": "bs_packhof", "facility": "BS_PH007_DYNAMISCH_AUSLAUSTUNGSDATEN_DEAKTIVIERT", "facility_key": "packhof",
+     "status": "sold_out", "quotes": (("Packhof", "Dauerstellplätze laut Betreiber belegt"),)},
+    {"garage_id": "bs_ring_center", "facility": "BS_RING_CENTER", "facility_key": "ring_center", "status": "no_price",
+     "quotes": (("Ring-Center", "kein belastbarer aktueller Monatspreis ermittelt"),)},
+    {"garage_id": "bs_schloss", "facility": "BS_PH011", "facility_key": "schloss", "status": "no_price",
+     "quotes": (("Schloss", "kein belastbarer aktueller Monatspreis ermittelt"),)},
+    {"garage_id": "bs_schuetzenstrasse", "facility": "BS_PH006", "facility_key": "schuetzenstrasse", "status": "no_price",
+     "quotes": (("Schützenstraße", "kein belastbarer aktueller Monatspreis ermittelt"),)},
+    {"garage_id": "bs_steinstrasse", "facility": "BS_ADDITIONAL_2", "facility_key": "steinstrasse", "status": "published",
+     "rule": "BS_ADDITIONAL_2_O01"},
+    {"garage_id": "bs_wallstrasse", "facility": "BS_PH003", "facility_key": "braunschweig_wallstrasse", "status": "published",
+     "offer": "BS_PH003_O01", "quotes": (("Wallstraße", "Preis hinter Anmeldung"),)},
+    {"garage_id": "bs_wilhelmstrasse", "facility": "BS_PH002", "facility_key": "wilhelmstrasse", "status": "period_unconfirmed",
+     "quotes": (("Wilhelmstraße", "Tarifblatt 75/79/88 EUR brutto"), ("Monatsbezug", "Monatsbezug fehlt ausdrücklich"))},
+)
+#: The facilities of the Braunschweig package that are no garage of the dataset, each recorded with its cheapest current product
+#: (rows of the QA table, never a dataset row): ``record_id``, ``facility`` and ``facility_key``, ``facility_type`` (the
+#: package's kind: garage or surface_parking), ``reason`` (a code of ``garage_qa.MONTHLY_NOT_USED_REASONS``) and ``why`` (a
+#: sentence of the note). Eves and Fichtengrund are garages that the dataset does not list (the regional package holds no tariff
+#: of them): their current published product is, with the used products of the dataset's Braunschweig garages, a value of
+#: ASSUMPTION P13; the station car parks and the two APCOA surface lots are no garage products and never count there.
+BS_RECORDED_SPECS = (
+    {"record_id": "monthly_bs_eves", "facility": "BS_EVES", "facility_key": "eves", "facility_type": "garage",
+     "reason": "not_a_dataset_option",
+     "why": "a garage open to long-term parkers only that the dataset does not list (no garage tariff in the regional package): "
+            "no option, and its published product counts among the Braunschweig garage products of ASSUMPTION P13"},
+    {"record_id": "monthly_bs_fichtengrund", "facility": "BS_FICHTENGRUND", "facility_key": "fichtengrund",
+     "facility_type": "garage", "reason": "not_a_dataset_option",
+     "why": "a garage that the dataset does not list (no garage tariff in the regional package): no option, and its published "
+            "product counts among the Braunschweig garage products of ASSUMPTION P13; the package cautions that an earlier "
+            "price and a promotion context exist and that the end date of this offer is unknown, so it is not a guaranteed "
+            "regular price"},
+    {"record_id": "monthly_bs_hbf_nord_p1", "facility": "BS_DB_P1", "facility_key": "braunschweig_hbf_nord_p1",
+     "facility_type": "surface_parking", "reason": "station_bahnpark",
+     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+    {"record_id": "monthly_bs_hbf_sued_p2", "facility": "BS_DB_P2", "facility_key": "braunschweig_hbf_sued_p2",
+     "facility_type": "surface_parking", "reason": "station_bahnpark",
+     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+    {"record_id": "monthly_bs_hbf_west_p3", "facility": "BS_DB_P3", "facility_key": "braunschweig_hbf_west_p3",
+     "facility_type": "surface_parking", "reason": "station_bahnpark",
+     "why": "a station car park of DB BahnPark (Contipark), no garage of the dataset (rulings R-4b-4 and R-4b-9)"},
+    {"record_id": "monthly_bs_apcoa_s1", "facility": "BS_APCOA_S1", "facility_key": "s1_holwedestrasse",
+     "facility_type": "surface_parking", "reason": "surface_lot",
+     "why": "an open APCOA car park, no garage: it is no garage of the dataset and never a value of ASSUMPTION P13"},
+    {"record_id": "monthly_bs_apcoa_s3", "facility": "BS_APCOA_S3", "facility_key": "s3_celler_strasse",
+     "facility_type": "surface_parking", "reason": "surface_lot",
+     "why": "an open APCOA car park, no garage: it is no garage of the dataset and never a value of ASSUMPTION P13"},
+)

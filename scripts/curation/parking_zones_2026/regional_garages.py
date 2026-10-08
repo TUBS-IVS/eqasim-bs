@@ -68,7 +68,11 @@ Usage (from the repository root)::
         --qa-out eqasim-data/data/braunschweig/parking/parking_garages_2026_qa.csv \
         [--tariffs eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv] \
         [--wolfsburg-lots-zip <the regional-dir above>/Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip \
-         --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson]
+         --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson] \
+        [--bs-monthly-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/\
+Braunschweig_Monatstarife_2026-10-08.zip \
+         --contipark-evidence-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/\
+contipark_configurator_2026-10-08]
 """
 from __future__ import annotations
 
@@ -86,6 +90,7 @@ import geopandas as gpd
 import pandas as pd
 
 import curation_common as cc
+import bs_monthly_products as bsm
 import garage_supplement as sup
 import municipal_zones as mz
 import regional_garage_specs as specs
@@ -158,7 +163,10 @@ LICENSE = (
     "are those of the Stadt Wolfsburg Geoviewer theme Parken, the tariff facts are those of the operators' pages and the "
     "municipal ordinance; the package states that no separate licence for the re-use of the municipal and operator data was "
     "confirmed, and its OpenStreetMap extracts, which only check positions, are under the ODbL 1.0, (c) OpenStreetMap "
-    "contributors)")
+    "contributors); the Braunschweig monthly package of 2026-10-08 (operator pages and the city page of the garages, "
+    "evidence copies that the package keeps; it states no general licence for the re-publication of the original files) and the "
+    "two captures of the public Contipark pages (a configurator text and a location page, retrieved 2026-10-08 on the owner's "
+    "instruction; the terms of the pages are not verified)")
 ATTRIBUTION = (
     "Tariffs and capacities after the garage operators and the cities of Braunschweig, Wolfsburg, Wolfenbuettel, Gifhorn, "
     "Helmstedt, Peine, Salzgitter and Goslar (source_url per feature); positions after the city feeds, the operators' map "
@@ -166,9 +174,12 @@ ATTRIBUTION = (
     "from OpenStreetMap (Peine Werderstrasse, Salzgitter BRAWO Carree, and the four main points of the supplement package). "
     "Packages: " + rz.PACKAGE_FILE + " (SHA-256 " + rz.PACKAGE_SHA256 + "), supplement package " + sup.SUPPLEMENT_FILE
     + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + "), follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 "
-    + sup.FOLLOWUP_SHA256 + ") and Wolfsburg car-park package " + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256
+    + sup.FOLLOWUP_SHA256 + "), Wolfsburg car-park package " + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256
     + "; the points of the Stadt Wolfsburg Geoviewer theme Parken, the tariffs of the Autostadt GmbH and the Klinikum Wolfsburg "
-    "after their own pages, the free car parks after the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg).")
+    "after their own pages, the free car parks after the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg) and "
+    "Braunschweig monthly package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + "; the monthly products of the "
+    "Braunschweig garages after the operators' pages, with the Contipark configurator capture of the evidence directory "
+    + bsm.EVIDENCE_DIRECTORY_NAME + ", SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + ").")
 
 #: The definition of every column of the dataset (the foreign member ``documentation`` of the file and the data record).
 COLUMN_GLOSSARY = {
@@ -226,10 +237,20 @@ COLUMN_GLOSSARY = {
                              "('0-30 free') next to tariff_tiers is the grace period of a tiered garage (ASSUMPTION P10: a "
                              "stay not longer than the band costs 0, a longer stay is priced by the tiers from its arrival); "
                              "empty for a garage priced by one fee window or by tiers alone",
-    "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2); "
-                   "empty where the package holds none; independent of priced",
+    "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2; for "
+                   "the Braunschweig garages spec Amendment F1: read from the monthly package of 2026-10-08 and the Contipark "
+                   "configurator capture, the cheapest current product); empty where the sources hold none (the notes of a "
+                   "Braunschweig garage give its monthly status: sold_out, no_price, price_on_request, period_unconfirmed); "
+                   "independent of priced",
     "monthly_source_url": "source of monthly_eur",
     "monthly_product": "name, minimum contract and conditions of the monthly product",
+    "monthly_imputed_eur": "ASSUMPTION P13 (spec Amendment F2): for a priced garage (facility_kind garage, never a surface lot) "
+                           "WITHOUT a published monthly_eur, the median in EUR of the published current garage monthly products of "
+                           "its own municipality (the dataset's garages and the recorded garages of the QA table that are no "
+                           "option), rounded half up to the cent, in a municipality with at least two such products; empty "
+                           "everywhere else and never next to a monthly_eur; written by the curation step, checked against the "
+                           "QA table by garage_qa.validate_garage_qa; the tariff model export uses it as the monthly product "
+                           "unless the config key parking_garage_monthly_imputation is false",
     "priced": "true exactly when the garage columns express the published tariff (the garage core is set)",
     "not_priced_reason": "why a garage is listed and not priced: one of " + ", ".join(sorted(pg.NOT_PRICED_REASONS)),
     "assumptions": "';'-separated ids of the assumptions the priced row rests on: " + "; ".join(
@@ -245,7 +266,9 @@ COLUMN_GLOSSARY = {
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
                       "Wolfsburg car-park package " + wl.LOTS_FILE + " (spec E14) touches (a position, a tariff value or a "
                       "finding of it) lists that package's SHA-256 as well, in the order regional, supplement, follow-up, "
-                      "Wolfsburg car-park package, joined by ';'",
+                      "Wolfsburg car-park package, joined by ';'; "
+                      "a Braunschweig row cites the monthly package " + bsm.PACKAGE_FILE + " (spec Amendment F1; its monthly "
+                      "status or product is read from it) as its last hash, so a row has at most four",
     "notes": "the tariff in words, every assumption and reading by name, what the columns do not express (other tiers, "
              "caps not applied, ignored rules, conflicts), the rules that are not preferred and not used, and the other "
              "capacity observations",
@@ -258,9 +281,15 @@ QA_INTRO = (
     "follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 " + sup.FOLLOWUP_SHA256 + "), the Wolfsburg car-park package "
     + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256 + ") and the car-park directory of "
     "Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
-    + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "). One row per garage of the dataset (record_type garage), per "
+    + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "), and, for the monthly products of the Braunschweig garages "
+    "(spec Amendment F1), the owner's package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + ") with the Contipark "
+    "captures of " + bsm.EVIDENCE_DIRECTORY_NAME + " (SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + "). One row per "
+    "garage of the dataset (record_type garage), per "
     "monthly or 30-day product the sources publish (monthly_product: used, or recorded and not used with a reason, ruling "
-    "R-D2-a) and per car park or garage that is not in the dataset (candidate: ruling R-4b-4). "
+    "R-D2-a; every Braunschweig garage has at least one row with its monthly status, and the published current monthly products "
+    "of the garages that are no option of the dataset are the reason not_a_dataset_option: with the used products of the "
+    "dataset's garages they are the values of ASSUMPTION P13, whose medians parking_garages_2026.geojson holds in "
+    "monthly_imputed_eur) and per car park or garage that is not in the dataset (candidate: ruling R-4b-4). "
     "braunschweig.parking.garage_qa.validate_garage_qa compares the table with parking_garages_2026.geojson and with "
     "parking_tariffs_2026.csv (commuter_day_eur is the amount of a used zone product over 21 working days, ASSUMPTION P2). "
     "Money in EUR. ASCII. Columns:")
@@ -383,13 +412,18 @@ def describe_rule(rule: dict) -> str:
 def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplement_path=None,
                         expected_supplement_sha256: Optional[str] = None, followup_path=None,
                         expected_followup_sha256: Optional[str] = None, lots_path=None,
-                        expected_lots_sha256: Optional[str] = None, zones=None) -> dict:
+                        expected_lots_sha256: Optional[str] = None, zones=None, bs_monthly_path=None,
+                        evidence_directory=None, expected_bs_monthly_sha256: Optional[str] = None,
+                        expected_evidence_sums_sha256: Optional[str] = None) -> dict:
     """The verified garage layers, facility records, tariff rules and sources of the owner's package in ``directory``, and, where
     given, the supplement package (``supplement_path``, spec E12) and the follow-up package (``followup_path``, spec E13) merged
     into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to) and the
     Wolfsburg car-park package (``lots_path``, spec E14, ``wolfsburg_lots``: its 24 points are classified by their fee status and
     their position in the committed zone polygons ``zones``, a GeoDataFrame in EPSG:25832 with ``zone_id``; the components that
-    the lot decisions use join the rules).
+    the lot decisions use join the rules), and the Braunschweig monthly package (``bs_monthly_path``, the zip, and its Contipark
+    evidence directory ``evidence_directory``, spec Amendment F1, ``bs_monthly_products``: the monthly status of every
+    Braunschweig garage and the products of the recorded facilities, read into ``inputs["bs_monthly_products"]`` and
+    ``inputs["bs_recorded"]``).
 
     The regional package must exist as ``regional_zones.PACKAGE_FILE`` with exactly the pinned SHA-256 (or ``expected_sha256``,
     for a synthetic test package), else ``SystemExit``; so must the other two zips. Returns {"file": {"file", "sha256",
@@ -427,6 +461,14 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
                              "(--zones parking_zones_2026.geojson)")
         wl.attach(inputs, wl.load_lots(lots_path, expected_lots_sha256), specs.LOT_RULE_IDS, specs.LOT_RELEASED)
         decide_lots(inputs, zones)
+    if (bs_monthly_path is None) != (evidence_directory is None):
+        raise SystemExit("the Braunschweig monthly package (--bs-monthly-zip) and its evidence directory "
+                         "(--contipark-evidence-dir) belong together: pass both or neither")
+    if bs_monthly_path is not None:
+        inputs["bs_monthly"] = bsm.load_monthly_inputs(bs_monthly_path, evidence_directory, expected_bs_monthly_sha256,
+                                                       expected_evidence_sums_sha256)
+        inputs["bs_monthly_products"] = bsm.read_garage_products(inputs["bs_monthly"], specs.BS_MONTHLY_SPECS)
+        inputs["bs_recorded"] = bsm.read_recorded_products(inputs["bs_monthly"], specs.BS_RECORDED_SPECS)
     return inputs
 
 
@@ -1232,7 +1274,23 @@ def _package_hashes(inputs: dict, spec: dict) -> str:
         hashes.append(inputs["supplement"]["file"]["sha256"])
     if spec.get("followup"):
         hashes.append(inputs["followup"]["file"]["sha256"])
+    if spec["garage_id"] in inputs.get("bs_monthly_products", {}):
+        hashes.append(inputs["bs_monthly"]["file"]["sha256"])
     return ";".join(hashes)
+
+
+def _check_monthly_identity(inputs: dict, spec: dict, found: dict) -> None:
+    """The package facility of a monthly status must be the facility of the garage specification: the garage's regional or
+    supplement facility id, or the upstream feature id of its layer feature (the Forschungsflughafen and the Ring-Center have
+    new ids in the monthly package), never a match by name."""
+    record = inputs["bs_monthly"]["facilities"][found["facility"]]
+    known = {str(spec["facility"]), str(spec.get("supplement"))}
+    feature = spec.get("feature")
+    upstream = feature[1] if feature and feature[0] == "source_id" else None
+    if record["facility_id"] not in known and (upstream is None or record.get("upstream_feature_id") != upstream):
+        raise SystemExit(f"garage {spec['garage_id']}: the monthly package facility {record['facility_id']} (upstream feature "
+                         f"{record.get('upstream_feature_id')}) is not the facility {spec['facility']} of the garage "
+                         "specification; a monthly status is matched by id, never by name")
 
 
 def _released_phrase(rules: dict, rule_ids: list) -> str:
@@ -1484,8 +1542,16 @@ def build_garage(inputs: dict, spec: dict) -> dict:
     for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
         row[column] = encoded["values"][column] if priced else None
     monthly = _monthly(inputs, spec["garage_id"])
+    found = inputs.get("bs_monthly_products", {}).get(spec["garage_id"])
+    if found is not None:
+        _check_monthly_identity(inputs, spec, found)
+        if monthly and found["monthly"]:
+            raise SystemExit(f"garage {spec['garage_id']}: a monthly product from the regional package and one from the "
+                             "Braunschweig monthly package; the cheapest publicly purchasable one is the one (spec D2)")
+        monthly = monthly or found["monthly"] or {}
+        notes.append(found["note"])
     row.update({key: monthly.get(key) for key in ("monthly_eur", "monthly_source_url", "monthly_product")})
-    if monthly:
+    if monthly and found is None:
         notes.append(f"Monthly product {monthly['rule_id']}: {monthly['monthly_product']}.")
     row["notes"] = _ascii(" ".join(notes))
     row["_facts"] = facts
@@ -1743,6 +1809,16 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     if specs.LOT_SPECS and "lots" not in inputs:
         raise SystemExit("the lot decisions of regional_garage_specs rest on the Wolfsburg car-park package: pass it as "
                          f"--wolfsburg-lots-zip ({wl.LOTS_FILE}) with --zones")
+    if (specs.BS_MONTHLY_SPECS or specs.BS_RECORDED_SPECS) and "bs_monthly_products" not in inputs:
+        raise SystemExit("the monthly specifications rest on the Braunschweig monthly package: pass it as --bs-monthly-zip "
+                         f"({bsm.PACKAGE_FILE}) with --contipark-evidence-dir ({bsm.EVIDENCE_DIRECTORY_NAME})")
+    if specs.BS_MONTHLY_SPECS:
+        braunschweig = {spec["garage_id"] for spec in specs.GARAGE_SPECS if spec["town"] == "bs"}
+        named = {spec["garage_id"] for spec in specs.BS_MONTHLY_SPECS}
+        if named != braunschweig:
+            raise SystemExit(f"the monthly specifications name {sorted(named)}, but the Braunschweig garages are "
+                             f"{sorted(braunschweig)}: every Braunschweig garage has exactly one monthly status (spec F1); "
+                             f"missing {sorted(braunschweig - named)}, unknown {sorted(named - braunschweig)}")
     used = {layer: [] for layer in GARAGE_LAYERS}
     rows = []
     for spec in specs.GARAGE_SPECS:
@@ -1820,6 +1896,8 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
                                                    summary["not_priced_by_reason"].items()) + ")")
     counts = summary["priced_by_assumption"]
     for assumption, text in pg.ASSUMPTIONS.items():
+        if assumption == "P13":
+            continue  # imputed after the QA rows exist: apply_monthly_imputation reports it
         count = counts.get(assumption, 0)
         share = count / priced if priced else 0.0
         warning = f"; WARNING: more than {100.0 * ASSUMPTION_WARNING_SHARE:.0f} % of the priced garages rest on it" \
@@ -2035,6 +2113,12 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
             garage_id=garage_id, zone_ids=";".join(product.get("zone_ids") or ()), decision=product["decision"],
             reason_code=product.get("reason", ""), amount_eur=None if amount is None else f"{float(amount):.2f}", count=1,
             evidence=";".join(evidence), note=_ascii(note))
+    if "bs_monthly_products" in inputs:
+        # spec Amendment F1: one row per product the Braunschweig monthly package and its evidence record, among them the status
+        # of every Braunschweig garage and the recorded garages that are no option (the values of ASSUMPTION P13)
+        names = dict(zip(frame["garage_id"], frame["name"]))
+        for fields in bsm.qa_product_rows(inputs["bs_monthly_products"], inputs["bs_recorded"], names):
+            row(**fields)
     for entry in directory:
         reason, why = specs.DIRECTORY_DECISIONS[entry["name"]]
         row(record_id=f"candidate_bs_directory_{_slug(entry['name'])}", record_type="candidate", municipality_ags="03101000",
@@ -2088,6 +2172,63 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         note=_ascii("the layer lists car parks (among them the Autostadt, the Volkswagen Arena, the hospital and the "
                     "cinema car parks) without any tariff rule or capacity in the package"))
     return rows
+
+
+def apply_monthly_imputation(frame: gpd.GeoDataFrame, rows: list) -> gpd.GeoDataFrame:
+    """ASSUMPTION P13 (spec Amendment F2): the imputed monthly product of every priced garage (``facility_kind`` garage, never a
+    surface lot) without a published ``monthly_eur``, the median of the published current garage monthly products of its own
+    municipality that the QA ``rows`` hold (``garage_qa.published_monthly_values``: the used products of the dataset's garages and
+    the recorded garages that are no option), where the municipality has at least ``garages.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS``
+    of them. Never a value of another municipality and never a typed one. Sets ``monthly_imputed_eur``, adds P13 to the
+    ``assumptions`` of the row and names the assumption, the median and its values in its notes; prints (log) per municipality the
+    published, imputed and unpriced counts and the municipalities that impute nothing, with the reason. Returns a new frame; the
+    result is validated by ``garages.validate_garages`` and, against the QA table, by ``garage_qa.validate_garage_qa``."""
+    qa = pd.DataFrame(rows, columns=list(pq.GARAGE_QA_COLUMNS))
+    values = pq.published_monthly_values(qa, frame)
+    medians = pq.expected_imputed_monthly(qa, frame)
+    frame = frame.copy()
+    skipped_unpriced = []
+    for index, garage in frame.iterrows():
+        if garage["facility_kind"] != "garage" or pd.notna(garage["monthly_eur"]):
+            continue
+        ags = str(garage["municipality_ags"])
+        if ags not in medians:
+            continue
+        if not bool(garage["priced"]):
+            skipped_unpriced.append(garage["garage_id"])
+            continue
+        median = medians[ags]
+        listed = ", ".join(f"{amount:.2f} EUR ({record_id})" for amount, record_id in values[ags])
+        sentence = (f"ASSUMPTION P13: no published monthly product of this garage; monthly_imputed_eur {median:.2f} EUR is the "
+                    f"median (rounded half up to the cent) of the {len(values[ags])} published current garage monthly products "
+                    f"of {garage['municipality']}: {listed}; never a value of another municipality; work and education stays "
+                    f"pay min(metered or day price, {median:.2f} EUR / 21 working days) here (ASSUMPTION P2).")
+        identifiers = sorted(set(pg._split(garage["assumptions"])) | {"P13"}, key=lambda identifier: int(identifier[1:]))
+        frame.loc[index, "monthly_imputed_eur"] = median
+        frame.loc[index, "assumptions"] = ";".join(identifiers)
+        frame.loc[index, "notes"] = _ascii(f"{garage['notes']} {sentence}")
+    summary = pg.monthly_summary(frame)
+    for ags, entry in summary.items():
+        count = len(values.get(ags, []))
+        if ags in medians:
+            print(f"[garages] P13 {entry['municipality']} ({ags}): median {medians[ags]:.2f} EUR of {count} published current "
+                  f"garage monthly products {[amount for amount, _ in values[ags]]}; published {entry['published']}, imputed "
+                  f"{entry['imputed']}, none {entry['none']}")
+        else:
+            print(f"[garages] P13 {entry['municipality']} ({ags}): {count} published current garage monthly product(s), fewer "
+                  f"than {pg.MINIMUM_PUBLISHED_MONTHLY_PRODUCTS}: nothing imputed; published {entry['published']}, imputed 0, "
+                  f"none {entry['none']}")
+    if skipped_unpriced:
+        print(f"[garages] P13: {len(skipped_unpriced)} unpriced garage(s) {skipped_unpriced} get no imputed product (an "
+              "unpriced garage is no option)")
+    coverage = pg.coverage(frame)
+    priced = coverage["priced"]
+    share = coverage["priced_by_assumption"].get("P13", 0) / priced if priced else 0.0
+    print(f"[garages] priced garages resting on ASSUMPTION P13: {coverage['priced_by_assumption'].get('P13', 0)}/{priced} "
+          f"({100.0 * share:.1f} %) - the imputed monthly product (published monthly product on {coverage['with_monthly_product']} "
+          f"garages, imputed on {coverage['with_monthly_imputed']})")
+    print(f"[garages] monthly products: {pg.monthly_summary_text(summary)}")
+    return frame
 
 
 def write_garage_qa(path, rows: list) -> None:
@@ -2145,13 +2286,21 @@ def main(argv=None) -> int:
                                                      "--tariffs; required where the lot decisions rest on it)")
     parser.add_argument("--zones", help="parking_zones_2026.geojson: the committed zone polygons (EPSG:25832), which classify "
                                         "the points of the Wolfsburg car-park package")
+    parser.add_argument("--bs-monthly-zip", help="the owner's Braunschweig monthly package "
+                                                 "Braunschweig_Monatstarife_2026-10-08.zip "
+                                                 "(spec Amendment F1; needs --contipark-evidence-dir; required where the monthly "
+                                                 "specifications rest on it)")
+    parser.add_argument("--contipark-evidence-dir", help="the evidence directory contipark_configurator_2026-10-08 with the two "
+                                                         "Contipark captures and their SHA256SUMS (spec Amendment F1; needs "
+                                                         "--bs-monthly-zip)")
     args = parser.parse_args(argv)
     zones = None
     if args.zones:
         zones = gpd.read_file(args.zones).to_crs(cc.METRIC_CRS)
     tariffs = pz.load_tariffs(args.tariffs) if args.tariffs else None
     inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip,
-                                lots_path=args.wolfsburg_lots_zip, zones=zones)
+                                lots_path=args.wolfsburg_lots_zip, zones=zones, bs_monthly_path=args.bs_monthly_zip,
+                                evidence_directory=args.contipark_evidence_dir)
     frame = build_garages(inputs)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
@@ -2159,6 +2308,11 @@ def main(argv=None) -> int:
     municipalities["ags"] = ars.str[:5] + ars.str[-3:]
     check_positions(frame, municipalities.set_index("ags").to_crs(cc.METRIC_CRS))
     rows = qa_rows(inputs, frame, load_directory(args.directory), tariffs)
+    frame = apply_monthly_imputation(frame, rows)
+    try:
+        pg.validate_garages(frame)
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
     pg.write_garages(frame, args.out, members=dataset_members())
     write_garage_qa(args.qa_out, rows)
     # the written files are the release: read them back through the loaders of the pipeline side and validate

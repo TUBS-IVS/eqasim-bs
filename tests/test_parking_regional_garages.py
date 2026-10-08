@@ -280,6 +280,9 @@ def step(garages_step, monkeypatch):
     # a step without lot decisions: the layer wob_parkplaetze stays one aggregated candidate row (the Wolfsburg car-park package
     # of spec E14 has its own tests in test_parking_wolfsburg_lots.py)
     monkeypatch.setattr(garages_step.specs, "LOT_SPECS", ())
+    # no Braunschweig monthly package (spec Amendment F1; it has its own tests in test_parking_bs_monthly_products.py)
+    monkeypatch.setattr(garages_step.specs, "BS_MONTHLY_SPECS", ())
+    monkeypatch.setattr(garages_step.specs, "BS_RECORDED_SPECS", ())
     return garages_step
 
 
@@ -1152,6 +1155,7 @@ class Priced(NamedTuple):
     assumptions: object
     first_window: object = None
     bands: object = None
+    imputed: object = None   # the imputed monthly product in EUR (ASSUMPTION P13, spec Amendment F2)
 
 
 #: The 35 priced garages as the sources state them (operator pages, the PULP feed, the Geoviewer, the package's preferred
@@ -1223,6 +1227,25 @@ PRICED_GARAGES = {
     "gs_galeria": Priced(GS, 1.50, 60, None, None, 15.00, 0.0, 24.0, None, 39.0, 193, "P4;P5"),
     "gs_charley_jacob_strasse": Priced(GS, 1.00, 60, None, None, None, 0.0, 24.0, None, None, 58, "P4;P5;P11"),
 }
+
+# Spec Amendment F1 and F2, written from the amendment and the owner's package of 2026-10-08, not read back from the dataset:
+# the published monthly products of the Braunschweig garages (Parkhaus Steinstrasse Tarif A 100.00 EUR, Parkhaus Wallstrasse
+# 114.95 EUR gross) and the imputed ones (ASSUMPTION P13): the median of the published current garage monthly products of the
+# SAME municipality: Braunschweig 80.00 (Eves), 100.00, 114.95 and 129.00 (Fichtengrund) -> 107.475 -> 107.48 EUR, Wolfsburg
+# 50.00, 55.00, 60.00 and 98.00 -> 57.50 EUR. Only the garages without a published product get one; no other municipality has
+# two published products with a garage left without one (Peine: both publish; Goslar, Helmstedt, Wolfenbuettel: one product).
+PUBLISHED_BS_MONTHLY = {"bs_steinstrasse": 100.0, "bs_wallstrasse": 114.95}
+IMPUTED_MONTHLY = {**{garage: 107.48 for garage in (
+    "bs_eiermarkt", "bs_forschungsflughafen", "bs_lange_strasse_nord", "bs_lange_strasse_sued", "bs_magni", "bs_packhof",
+    "bs_ring_center", "bs_schloss", "bs_schuetzenstrasse", "bs_wilhelmstrasse")},
+                   **{garage: 57.5 for garage in ("wob_suedkopf", "wob_poststrasse", "wob_congresspark", "wob_rothenfelder",
+                                                  "wob_schillerstrasse")}}
+PRICED_GARAGES = {garage: values._replace(
+    monthly=PUBLISHED_BS_MONTHLY.get(garage, values.monthly), imputed=IMPUTED_MONTHLY.get(garage),
+    assumptions=";".join(part for part in (values.assumptions, "P13" if garage in IMPUTED_MONTHLY else None) if part) or None)
+    for garage, values in PRICED_GARAGES.items()}
+BS_MONTHLY_PACKAGE_SHA256 = "72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81"
+BS_MONTHLY_EVIDENCE_SUMS_SHA256 = "2617d497bddfaadced2ff433cd4b675122570a58ca7b6b2b49c27b0514a76ceb"
 #: The garages whose window of 0-24 h is stated by the source (no assumption P5): the operator page of Contipark and the
 #: city brochures (the ordinance of 2018 states opening hours only).
 STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe", "he_groepern_tiefgarage")
@@ -1300,6 +1323,10 @@ def test_a_committed_priced_garage_carries_the_published_tariff(garage_id):
     assert (_plain(row["tariff_tiers"]), _plain(row["tariff_duration_bands"]), _plain(row["monthly_eur"]),
             _plain(row["capacity_reported"]), _plain(row["assumptions"])) == (
         expected.tiers, expected.bands, expected.monthly, expected.capacity, expected.assumptions)
+    # spec Amendment F2: an imputed product only where nothing is published, with P13 in the assumptions and in the notes
+    assert _plain(row["monthly_imputed_eur"]) == expected.imputed
+    assert (expected.imputed is not None) == ("P13" in (expected.assumptions or "").split(";"))
+    assert expected.imputed is None or expected.monthly is None
     parts = expected.assumptions.split(";") if expected.assumptions else []
     # one tariff structure per garage; a first period belongs with its clock window only where its rule states one
     assert expected.tiers is None or expected.bands is None
@@ -1338,14 +1365,17 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     # P11 5 and P12 8 (the municipal free default); the union rates 44 of 48 on at least one assumption and 32 of 48 on P4 or P5
     # (both above the 75 % warning threshold of the curation step and the loader for the first), 8 rows in the tiered form, 11 in
     # the banded form and 11 with the free schedule, 9 monthly products at a garage
-    assert coverage["priced_by_assumption"] == {"P10": 4, "P11": 5, "P12": 8, "P4": 24, "P5": 24, "P6": 8, "P7": 5, "P8": 11}
-    assert coverage["with_monthly_product"] == 9
+    assert coverage["priced_by_assumption"] == {"P10": 4, "P11": 5, "P12": 8, "P13": 15, "P4": 24, "P5": 24, "P6": 8, "P7": 5,
+                                                "P8": 11}
+    # spec Amendment F: 11 published monthly products at a garage (the nine of Amendment D2 and the Braunschweig Steinstrasse and
+    # Wallstrasse), 15 garages with an imputed one (10 in Braunschweig, 5 in Wolfsburg; P13 changes no union rate)
+    assert (coverage["with_monthly_product"], coverage["with_monthly_imputed"]) == (11, 15)
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
             coverage["priced_banded"], coverage["priced_free"]) == (44, 32, 8, 11, 11)
     pins = {**PRICED_GARAGES, **PRICED_LOTS}
     assigned = [values.assumptions.split(";") if values.assumptions else [] for values in pins.values()]
     counted = {key: sum(key in parts for parts in assigned)
-               for key in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12")}
+               for key in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13")}
     assert {key: count for key, count in counted.items() if count} == coverage["priced_by_assumption"]
     assert counted["P3"] == 0
     assert sum(bool(parts) for parts in assigned) == coverage["priced_with_assumption"]
@@ -1620,6 +1650,14 @@ def test_the_forschungsflughafen_notes_name_the_visible_block_the_hidden_templat
 
 def test_every_committed_garage_cites_its_packages_and_a_source_and_every_assumption_is_named_in_its_notes():
     garages = _committed_garages()
+    # spec Amendment F1: every Braunschweig garage cites the monthly package as its LAST hash (its monthly status is read from
+    # it); no other row does. The other assertions are about the hashes before it.
+    braunschweig = garages["municipality_ags"] == BS
+    assert braunschweig.sum() == 12
+    assert garages.loc[braunschweig, "package_sha256"].str.endswith(";" + BS_MONTHLY_PACKAGE_SHA256).all()
+    assert not garages.loc[~braunschweig, "package_sha256"].str.contains(BS_MONTHLY_PACKAGE_SHA256).any()
+    garages = garages.copy()
+    garages.loc[braunschweig, "package_sha256"] = garages.loc[braunschweig, "package_sha256"].str[:-65]
     regional = REGIONAL_PACKAGE_SHA256
     both, three = f"{regional};{SUPPLEMENT_PACKAGE_SHA256}", f"{regional};{SUPPLEMENT_PACKAGE_SHA256};{FOLLOWUP_PACKAGE_SHA256}"
     lots = f"{regional};{LOTS_PACKAGE_SHA256}"  # a surface lot cites the regional package (its layer is checked) and its own
@@ -1724,17 +1762,24 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     garages = pg.load_garages(GARAGES_PATH)
     qa = pq.load_garage_qa(GARAGES_QA_PATH)
     pq.validate_garage_qa(qa, garages, pz.load_tariffs(TARIFFS_PATH))
-    assert qa["record_type"].value_counts().to_dict() == {"garage": 48, "monthly_product": 23, "candidate": 25}
-    assert len(qa) == 96
+    assert qa["record_type"].value_counts().to_dict() == {"garage": 48, "monthly_product": 49, "candidate": 25}
+    assert len(qa) == 122
     coverage = pq.qa_coverage(qa)
     # 23 monthly or 30-day products: 11 used (nine at a garage, the zone Ib ticket and the TU member ticket), 12 recorded and
     # not used with a reason (spec Amendment D2, ruling R-D2-a); the product of the station BahnPark is not used because that
     # garage is no garage of the dataset (garage_not_listed); the 99.00 EUR seven-day product of the Forschungsflughafen is a
     # second product of another duration (not_monthly_or_30_day)
-    assert (coverage["monthly_used"], coverage["monthly_not_used"]) == (11, 12)
+    # spec Amendment F1 adds 26 products of the Braunschweig package: two used (Steinstrasse Tarif A and Wallstrasse) and 24
+    # recorded and not used: the four dearer Steinstrasse tariffs, the status of the ten garages without a published product
+    # (six without a price, two sold out, the price on request and the hidden amount of the Forschungsflughafen, the three
+    # Wilhelmstrasse amounts without a confirmed period are counted below), the two recorded garages that are no option
+    # (Eves, Fichtengrund: the values of ASSUMPTION P13), the three DB BahnPark car parks and the two APCOA surface lots
+    assert (coverage["monthly_used"], coverage["monthly_not_used"]) == (13, 36)
     assert coverage["monthly_not_used_by_reason"] == {
-        "capacity_limited_permits": 1, "garage_not_listed": 1, "no_coordinates": 1, "no_fixed_price": 1,
-        "not_monthly_or_30_day": 2, "not_the_cheapest": 3, "outdated_source": 2, "restricted_customer_group": 1}
+        "capacity_limited_permits": 1, "excluded_by_package": 1, "garage_not_listed": 1, "no_coordinates": 1,
+        "no_fixed_price": 1, "no_price": 6, "not_a_dataset_option": 2, "not_monthly_or_30_day": 2, "not_the_cheapest": 7,
+        "outdated_source": 2, "period_unconfirmed": 3, "price_on_request": 1, "restricted_customer_group": 1, "sold_out": 2,
+        "station_bahnpark": 3, "surface_lot": 2}
     # the candidates that are no garage of the dataset (counts of package or directory entries, with the reason): the four
     # garages without coordinates are garages now, only the Clausthal-Zellerfeld garage has none
     # (spec E14: the aggregated row of the 24 Wolfsburg car parks is replaced by one row per point: 13 garage rows, nine candidates
@@ -1784,17 +1829,79 @@ def test_the_committed_files_are_reproduced_from_the_local_packages(garages_step
     supplement = regional / step.sup.SUPPLEMENT_FILE
     followup = regional / step.sup.FOLLOWUP_FILE
     lots = regional / step.wl.LOTS_FILE
-    if not all(path.is_file() for path in (regional / f"{PACKAGE}.zip", directory, supplement, followup, lots)):
+    monthly_directory = raw_sources / "municipal_2026-10-08"
+    monthly, evidence = monthly_directory / step.bsm.PACKAGE_FILE, monthly_directory / step.bsm.EVIDENCE_DIRECTORY_NAME
+    if not all(path.is_file() for path in (regional / f"{PACKAGE}.zip", directory, supplement, followup, lots, monthly)) \
+            or not evidence.is_dir():
         pytest.skip("the owner's packages and the city car-park directory are gitignored and absent here")
     import geopandas as gpd
 
     zones = gpd.read_file(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson").to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(TARIFFS_PATH)
-    inputs = step.load_garage_inputs(regional, supplement_path=supplement, followup_path=followup, lots_path=lots, zones=zones)
+    inputs = step.load_garage_inputs(regional, supplement_path=supplement, followup_path=followup, lots_path=lots, zones=zones,
+                                     bs_monthly_path=monthly, evidence_directory=evidence)
     frame = step.build_garages(inputs)
     rows = step.qa_rows(inputs, frame, step.load_directory(directory), tariffs)
+    frame = step.apply_monthly_imputation(frame, rows)
     pg.write_garages(frame, tmp_path / "garages.geojson", members=step.dataset_members())
     step.write_garage_qa(tmp_path / "qa.csv", rows)
     # a checkout with core.autocrlf holds CRLF; the repository holds LF
     assert (tmp_path / "garages.geojson").read_bytes() == GARAGES_PATH.read_bytes().replace(b"\r\n", b"\n")
     assert (tmp_path / "qa.csv").read_bytes() == GARAGES_QA_PATH.read_bytes().replace(b"\r\n", b"\n")
+
+
+def test_the_committed_imputed_monthly_products_are_the_medians_of_spec_f2_and_never_cross_a_municipality():
+    garages = _committed_garages()
+    qa = pq.load_garage_qa(GARAGES_QA_PATH)
+    # the published current garage products of a municipality (spec F2) as the QA table holds them, from the amounts of the sources
+    values = {ags: [amount for amount, _ in pairs] for ags, pairs in pq.published_monthly_values(qa, garages.reset_index()).items()}
+    assert values[BS] == [80.0, 100.0, 114.95, 129.0]          # Eves, Steinstrasse, Wallstrasse, Fichtengrund
+    assert values[WOB] == [50.0, 55.0, 60.0, 98.0]             # Rathaus, Designer Outlets, phaeno, City-Galerie
+    assert values[PE] == [48.0, 48.0] and all(len(values[ags]) == 1 for ags in (WF, HE, GS))
+    assert GF not in values and SZ not in values
+    imputed = garages[garages["monthly_imputed_eur"].notna()]
+    assert dict(imputed.groupby("municipality_ags")["monthly_imputed_eur"].agg(lambda column: sorted(set(column)))) == {
+        BS: [107.48], WOB: [57.5]}
+    assert (imputed["municipality_ags"] == BS).sum() == 10 and (imputed["municipality_ags"] == WOB).sum() == 5
+    # the five Wolfsburg garages are garages, never a surface lot; a published product never carries an imputed one
+    assert (imputed["facility_kind"] == "garage").all() and imputed["monthly_eur"].isna().all()
+    assert not garages.loc[garages["facility_kind"] == "surface_lot", "monthly_imputed_eur"].notna().any()
+    # the per-municipality summary the export and the validator print (published / imputed / none)
+    summary = pg.monthly_summary(garages)
+    assert {ags: (entry["published"], entry["imputed"], entry["none"]) for ags, entry in summary.items()} == {
+        BS: (2, 10, 0), SZ: (0, 0, 1), WOB: (4, 5, 0), GF: (0, 0, 1), GS: (1, 0, 3), HE: (1, 0, 3), PE: (2, 0, 0),
+        WF: (1, 0, 1)}
+    assert summary[BS]["median_eur"] == 107.48 and summary[WOB]["median_eur"] == 57.5
+
+
+def test_the_committed_braunschweig_garages_carry_the_published_products_read_from_the_package_with_their_sources():
+    garages = _committed_garages()
+    steinstrasse, wallstrasse = garages.loc["bs_steinstrasse"], garages.loc["bs_wallstrasse"]
+    assert (steinstrasse["monthly_eur"], wallstrasse["monthly_eur"]) == (100.0, 114.95)
+    assert steinstrasse["monthly_source_url"].startswith("https://") and "Tarif A" in steinstrasse["monthly_product"]
+    assert wallstrasse["monthly_source_url"].startswith("https://stellplatz.mein-contipark.de/produktkonfiguration")
+    assert "114.95 EUR gross per further month" in wallstrasse["monthly_product"]
+    qa = pq.load_garage_qa(GARAGES_QA_PATH).set_index("record_id")
+    # every Braunschweig garage has a monthly status row; the statuses of spec F1 (the package's own wording is in the note)
+    status = {"bs_eiermarkt": "no_price", "bs_forschungsflughafen": "price_on_request", "bs_lange_strasse_nord": "no_price",
+              "bs_lange_strasse_sued": "no_price", "bs_magni": "sold_out", "bs_packhof": "sold_out", "bs_ring_center": "no_price",
+              "bs_schloss": "no_price", "bs_schuetzenstrasse": "no_price"}
+    for garage, reason in status.items():
+        row = qa.loc[f"monthly_{garage}_{reason}"]
+        assert (row["decision"], row["reason_code"], row["garage_id"], row["amount_eur"]) == ("not_used", reason, garage, "")
+    wilhelm = qa[(qa["garage_id"] == "bs_wilhelmstrasse") & (qa["record_type"] == "monthly_product")]
+    assert sorted(wilhelm["amount_eur"]) == ["75.00", "79.00", "88.00"] and set(wilhelm["reason_code"]) == {"period_unconfirmed"}
+    hidden = qa.loc["monthly_bs_forschungsflughafen_hidden"]
+    assert (hidden["reason_code"], hidden["amount_eur"]) == ("excluded_by_package", "85.00")
+    assert "Preis auf Anfrage" in qa.loc["monthly_bs_forschungsflughafen_price_on_request", "note"]
+    # the garages that are no option of the dataset and the surface lots (recorded, never garage options)
+    for record, (reason, amount) in {"monthly_bs_eves": ("not_a_dataset_option", "80.00"),
+                                     "monthly_bs_fichtengrund": ("not_a_dataset_option", "129.00"),
+                                     "monthly_bs_hbf_nord_p1": ("station_bahnpark", "120.00"),
+                                     "monthly_bs_hbf_sued_p2": ("station_bahnpark", "74.00"),
+                                     "monthly_bs_hbf_west_p3": ("station_bahnpark", "74.00"),
+                                     "monthly_bs_apcoa_s1": ("surface_lot", "99.00"),
+                                     "monthly_bs_apcoa_s3": ("surface_lot", "129.00")}.items():
+        assert (qa.loc[record, "reason_code"], qa.loc[record, "amount_eur"], qa.loc[record, "garage_id"]) == (reason, amount, "")
+    assert BS_MONTHLY_PACKAGE_SHA256 in json.loads(GARAGES_PATH.read_text(encoding="utf-8"))["attribution"]
+    assert BS_MONTHLY_EVIDENCE_SUMS_SHA256 in json.loads(GARAGES_PATH.read_text(encoding="utf-8"))["attribution"]

@@ -561,6 +561,8 @@ def step(garages_step, regional_tests, monkeypatch):
     monkeypatch.setattr(specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
     monkeypatch.setattr(specs, "DIRECTORY_DECISIONS", regional_tests.DIRECTORY)
     monkeypatch.setattr(specs, "LOT_SPECS", LOT_SPECS)
+    monkeypatch.setattr(specs, "BS_MONTHLY_SPECS", ())  # the Braunschweig monthly package has its own tests
+    monkeypatch.setattr(specs, "BS_RECORDED_SPECS", ())
     monkeypatch.setattr(specs, "LOT_RULE_IDS", RULE_IDS)
     monkeypatch.setattr(specs, "LOT_RELEASED", RELEASED)
     return garages_step
