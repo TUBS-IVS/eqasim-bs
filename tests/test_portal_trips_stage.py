@@ -181,6 +181,70 @@ def test_build_portal_trips_classifies_the_work_leg_by_the_assigned_location_not
     assert report["n_origin_proxied_by_home"] == 0             # both outbound legs leave home
 
 
+def _bound_fixture():
+    """The base fixture plus persons 3 and 4 whose far leisure legs the diary's displacement bound judges.
+
+    Person 3: home -> leisure (reported 60 km) -> home (reported 5 km): the bound is 0 + 5 km, the leg is no
+    portal leg any more. Person 4: the way home has no reported distance (the synthetic closure): no bound,
+    the reported 60 km stays and the leg is a portal leg. Person 2 (120 km out, 120 km back): the bound
+    (120 km) is not smaller than the reported distance, nothing changes.
+    """
+    fixture = _fixture()
+    fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
+        "person_id": [3, 4], "household_id": [30, 40], "car_availability": ["all", "all"],
+        "has_license": [True, True], "bicycle_availability": ["all", "all"],
+        "car_passenger_availability": ["some", "some"]})], ignore_index=True)
+    fixture["df_home"] = gpd.GeoDataFrame({"household_id": [10, 20, 30, 40]},
+                                          geometry=[Point(25000.0, 25000.0)] * 4, crs=CRS)
+    extra = pd.DataFrame({
+        "person_id": [3, 3, 4, 4], "trip_index": [0, 1, 0, 1],
+        "preceding_purpose": ["home", "leisure", "home", "leisure"],
+        "following_purpose": ["leisure", "home", "leisure", "home"], "mode": ["car"] * 4,
+        "euclidean_distance": [60000.0, 5000.0, 60000.0, np.nan],
+        "departure_time": [9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 18 * 3600.0],
+        "arrival_time": [10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 19 * 3600.0]})
+    fixture["trips"] = pd.concat([fixture["trips"], extra], ignore_index=True)
+    return fixture
+
+
+def test_build_portal_trips_reports_the_displacement_bound_and_keeps_the_primary_path(caplog):
+    with caplog.at_level(logging.INFO):
+        out = stage.build_portal_trips(**_bound_fixture())
+    report = out["report"]
+    # Non-primary legs that can be bounded: the leisure legs of persons 2, 3 and 4 (person 1's legs are the
+    # work leg, assigned location, and the way home).
+    assert report["n_nonprimary_legs"] == 3
+    assert report["n_nonprimary_legs_bounded"] == 1                  # person 3 only
+    assert report["n_portal_legs_lost_through_bound"] == 1           # person 3: reported 60 km > 45 km, bounded 5 km
+    assert report["n_nonprimary_legs_without_bound"] == 1            # person 4: NaN way home
+    # Portal legs: person 1 (work, assigned 175 km), person 2 (120 km), person 4 (60 km, unbounded) - not person 3.
+    assert report["n_portal_legs"] == 3 and report["n_stays"] == 3
+    assert out["trips"].loc[out["trips"]["person_id"] == 3, "following_purpose"].tolist() == ["leisure", "home"]
+    records = [record for record in caplog.records if "displacement bound" in record.getMessage()]
+    assert len(records) == 1 and records[0].levelno == logging.INFO
+    message = records[0].getMessage()
+    assert "bounded 1/3 (33.3%)" in message and "lose portal status through the bound 1" in message
+    assert "without a usable bound 1/3 (33.3%" in message
+
+
+def test_build_portal_trips_draws_the_external_point_at_the_bounded_distance():
+    fixture = _fixture()
+    # One person: a leisure leg reported at 120 km whose way home is 80 km (bound 80 km). The only external
+    # commune lies 80 km east of the home, i.e. inside the 80 km band but outside the 120 km band: the point
+    # is drawn in band only if the BOUNDED distance drives the draw.
+    fixture["trips"] = pd.DataFrame({
+        "person_id": [1, 1], "trip_index": [0, 1], "preceding_purpose": ["home", "leisure"],
+        "following_purpose": ["leisure", "home"], "mode": ["car", "car"],
+        "euclidean_distance": [120000.0, 80000.0], "departure_time": [9 * 3600.0, 18 * 3600.0],
+        "arrival_time": [11 * 3600.0, 20 * 3600.0]})
+    fixture["df_work"] = gpd.GeoDataFrame({"person_id": [], "location_id": []}, geometry=[], crs=CRS)
+    fixture["external_points"] = gpd.GeoDataFrame({"commune_id": ["EXT3"], "ewz": [100.0]},
+                                                  geometry=[Point(105000.0, 25000.0)], crs=CRS)
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert report["n_stays"] == 1 and report["n_nonprimary_legs_bounded"] == 1
+    assert report["n_external_point_drawn"] == 1 and report["n_external_band_miss"] == 0
+
+
 def test_build_portal_trips_leaves_near_trips_untouched():
     fixture = _fixture()
     fixture["trips"]["euclidean_distance"] = [np.nan, np.nan, 10000.0, 10000.0]

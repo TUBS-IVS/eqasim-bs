@@ -3,7 +3,8 @@
 Pure pandas; no synpp. A leg is a portal leg when its distance exceeds the threshold: for work
 and education legs the straight-line distance from the person's home to the ASSIGNED location
 (the location already exists, the sampler never sees these legs), for every other leg the
-donor's reported straight-line distance (``euclidean_distance``, from MiD ``wegkm_imp``). A
+donor's reported distance (``euclidean_distance``, from MiD ``wegkm_imp``, a ROUTE length) capped
+by the displacement upper bound of the donor's own diary (``displacement_bound_m``, ADR-0141). A
 return home is never a portal leg, and a NaN distance (the synthetic home closure) is never
 one either. Consecutive portal destinations form ONE outside stay, the semantics of the eqasim
 cutter's ``MergeOutsideActivities``: the leg into the run is the outbound leg, the first leg
@@ -55,16 +56,78 @@ def primary_xy(df_work: pd.DataFrame, df_education: pd.DataFrame) -> dict:
     return {"work": _xy_by_person(df_work), "education": _xy_by_person(df_education)}
 
 
-def classification_distance_frame(trips: pd.DataFrame, home_xy: pd.DataFrame, primary_xy: dict) -> pd.DataFrame:
-    """Metres that decide the classification of each leg, plus a flag for the reported-distance fallback.
+def _grouped_exclusive_sum(values: np.ndarray, group_start: np.ndarray) -> np.ndarray:
+    """Sum of ``values`` strictly before each element, restarting at every True in ``group_start``."""
+    group_id = np.cumsum(group_start)
+    inclusive = pd.Series(values).groupby(group_id).cumsum().to_numpy()
+    return inclusive - values
 
-    Columns (aligned to ``trips.index``): ``classification_distance_m`` (float, metres) and
-    ``used_reported_distance`` (bool). The flag is True ONLY for work and education legs whose
-    home-to-assigned-location distance is NaN (no assigned location or no home coordinate), so
-    the donor's reported distance was used instead. The caller logs the rate; a high rate means
-    the assigned-location join is broken.
+
+def displacement_bound_m(trips: pd.DataFrame) -> np.ndarray:
+    """Upper bound of the straight-line displacement of each leg's destination from the donor's diary.
+
+    By the triangle inequality the displacement of a leg's destination from home is at most the way out
+    (reported distances of the legs from the last home departure up to the leg's origin, 0 when the leg
+    starts at home) plus the way back (reported distances of the legs from the leg's destination to the
+    next home arrival, inclusive of that home-bound leg). The bound needs BOTH sides: a side is unknown when
+    one of its legs has no finite reported distance (e.g. the synthetic home closure) or when the chain does
+    not start at home before the leg / does not reach home after it; the result is then NaN (no silent
+    guess). Home-bound legs get NaN (they are never portal legs).
+
+    The reported distances are route lengths, so the bound is conservative: it over-estimates the
+    displacement. Sums never cross a home arrival or a person. Vectorised (per-tour cumulative sums);
+    precondition: ``trips`` is sorted by ``person_id, trip_index``, as for ``find_outside_stays``.
+    Returns a float array aligned to the rows of ``trips``.
+    """
+    if len(trips) == 0:
+        return np.zeros(0, dtype=float)
+    reported = trips["euclidean_distance"].astype(float).to_numpy()
+    unknown_leg = np.isnan(reported).astype(float)
+    filled = np.where(np.isnan(reported), 0.0, reported)
+    persons = trips["person_id"].to_numpy()
+    leaves_home = trips["preceding_purpose"].to_numpy() == HOME_PURPOSE
+    arrives_home = trips["following_purpose"].to_numpy() == HOME_PURPOSE
+
+    # Way out: a tour begins at every home departure; the first leg of a person and the leg after a home
+    # arrival begin one too, which is a complete tour only when that leg itself leaves home (a chain that
+    # does not start at home has an unknown way out). pandas cumsum skips NaN, so unknown legs are summed
+    # separately as a count instead of being propagated as NaN.
+    tour_start = leaves_home | np.r_[True, persons[1:] != persons[:-1]] | np.r_[False, arrives_home[:-1]]
+    started_at_home = pd.Series(leaves_home).groupby(np.cumsum(tour_start)).transform("first").to_numpy()
+    way_out = _grouped_exclusive_sum(filled, tour_start)
+    way_out_known = started_at_home & (_grouped_exclusive_sum(unknown_leg, tour_start) == 0)
+
+    # Way back: the same on the reversed chain, where a tour begins at every home arrival, at the last leg of
+    # a person and at a leg followed by a home departure (the chain then did not reach home).
+    tour_end = (arrives_home | np.r_[persons[:-1] != persons[1:], True] | np.r_[leaves_home[1:], False])[::-1]
+    ended_at_home = pd.Series(arrives_home[::-1]).groupby(np.cumsum(tour_end)).transform("first").to_numpy()
+    way_back = _grouped_exclusive_sum(filled[::-1], tour_end)[::-1]
+    way_back_known = (ended_at_home & (_grouped_exclusive_sum(unknown_leg[::-1], tour_end) == 0))[::-1]
+
+    return np.where(way_out_known & way_back_known & ~arrives_home, way_out + way_back, np.nan)
+
+
+def classification_distance_frame(trips: pd.DataFrame, home_xy: pd.DataFrame, primary_xy: dict) -> pd.DataFrame:
+    """Metres that decide the classification of each leg, plus the fallback and displacement-bound diagnostics.
+
+    Columns (aligned to ``trips.index``):
+
+    - ``classification_distance_m`` (float, metres): the ONE distance used for the portal rule and for the
+      external point draw. Work/education legs: home to the assigned location. Every other leg:
+      ``min(reported distance, displacement_bound_m)``, or the reported distance when no bound is known.
+    - ``used_reported_distance`` (bool): True ONLY for work and education legs whose
+      home-to-assigned-location distance is NaN (no assigned location or no home coordinate), so the
+      donor's reported distance was used instead. The caller logs the rate; a high rate means the
+      assigned-location join is broken.
+    - ``displacement_bound_m`` (float, metres): the diary's displacement upper bound (see
+      ``displacement_bound_m``) for non-primary, non-home-bound legs; NaN elsewhere and where a side of the
+      bound is unknown.
+    - ``bound_applied`` (bool): the bound was finite and smaller than the finite reported distance.
+    - ``bound_unknown`` (bool): a non-primary, non-home-bound leg without a usable bound (its reported
+      distance stays). The caller logs the rate.
     """
     distance = trips["euclidean_distance"].astype(float).to_numpy().copy()
+    reported = distance.copy()
     used_reported = np.zeros(len(trips), dtype=bool)
     purposes = trips["following_purpose"].to_numpy()
     person_ids = trips["person_id"].to_numpy()
@@ -80,8 +143,15 @@ def classification_distance_frame(trips: pd.DataFrame, home_xy: pd.DataFrame, pr
         missing = np.isnan(assigned)
         distance[mask] = np.where(missing, distance[mask], assigned)
         used_reported[mask] = missing
-    return pd.DataFrame({"classification_distance_m": distance, "used_reported_distance": used_reported},
-                        index=trips.index)
+    # The bound applies to the legs the sampler drew: not work/education (assigned location), not the return
+    # home. A NaN reported distance stays NaN (never portal): there is nothing to tighten.
+    non_primary = ~np.isin(purposes, PRIMARY_PURPOSES) & (purposes != HOME_PURPOSE)
+    bound = np.where(non_primary, displacement_bound_m(trips), np.nan)
+    tighter = non_primary & np.isfinite(bound) & np.isfinite(reported) & (bound < reported)
+    distance[tighter] = bound[tighter]
+    return pd.DataFrame({"classification_distance_m": distance, "used_reported_distance": used_reported,
+                         "displacement_bound_m": bound, "bound_applied": tighter,
+                         "bound_unknown": non_primary & np.isnan(bound)}, index=trips.index)
 
 
 def classification_distance_m(trips: pd.DataFrame, home_xy: pd.DataFrame, primary_xy: dict) -> pd.Series:

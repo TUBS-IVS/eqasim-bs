@@ -140,3 +140,203 @@ def test_find_outside_stays_rejects_flags_of_the_wrong_length():
     trips = _trips([(1, 0, "home", "leisure", "car", 1000.0), (1, 1, "leisure", "home", "car", 1000.0)])
     with pytest.raises(ValueError, match="is_portal"):
         cls.find_outside_stays(trips, pd.Series([True]))
+
+
+# --- Displacement upper bound for non-primary legs (ADR-0141, #442) ---------------------------------------------
+# The donor's reported leg distance is a ROUTE length. For a non-primary leg the diary itself bounds the
+# straight-line displacement of the destination: way out (last home departure up to the leg's origin) plus way
+# back (the leg's destination up to the next home arrival), by the triangle inequality. The classification
+# distance is min(reported, bound); a bound needs BOTH sides known, otherwise the reported distance stays.
+
+_NO_PRIMARY = {"work": _xy([], []), "education": _xy([], [])}
+_THRESHOLD_M = 45000.0
+
+
+def _bound_frame(rows):
+    trips = _trips(rows)
+    return trips, cls.classification_distance_frame(trips, _home_xy(), _NO_PRIMARY)
+
+
+def _flags(trips):
+    return cls.classify_portal_legs(trips, _home_xy(), _NO_PRIMARY, _THRESHOLD_M).tolist()
+
+
+def test_displacement_bound_round_trip_with_a_short_way_home_is_not_portal():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "home", "car", 5000.0)])
+    assert frame["displacement_bound_m"].iloc[0] == 5000.0              # 0 (starts at home) + 5 km way back
+    assert frame["classification_distance_m"].tolist() == [5000.0, 5000.0]
+    assert frame["bound_applied"].tolist() == [True, False]
+    assert frame["bound_unknown"].tolist() == [False, False]
+    assert _flags(trips) == [False, False]
+
+
+def test_displacement_bound_keeps_a_consistent_far_trip_portal():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "home", "car", 60000.0)])
+    assert frame["classification_distance_m"].tolist() == [60000.0, 60000.0]   # bound 60 km is not smaller
+    assert frame["bound_applied"].tolist() == [False, False]
+    assert _flags(trips) == [True, False]
+
+
+def test_displacement_bound_is_unknown_when_the_way_back_is_the_nan_home_closure():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "home", "car", np.nan)])
+    assert np.isnan(frame["displacement_bound_m"].iloc[0])
+    assert frame["classification_distance_m"].iloc[0] == 60000.0         # no silent guess
+    assert frame["bound_applied"].tolist() == [False, False]
+    assert frame["bound_unknown"].tolist() == [True, False]              # the home-bound leg is not counted
+    assert _flags(trips) == [True, False]
+
+
+def test_displacement_bound_adds_the_way_out_through_a_secondary_activity():
+    trips, frame = _bound_frame([(1, 0, "home", "shop", "car", 10000.0),
+                                 (1, 1, "shop", "leisure", "car", 60000.0),
+                                 (1, 2, "leisure", "home", "car", 55000.0)])
+    # shop -> leisure: way out 10 km + way back 55 km = 65 km; min(60, 65) = 60 km -> unchanged, portal.
+    assert frame["displacement_bound_m"].iloc[1] == 65000.0
+    assert frame["classification_distance_m"].tolist() == [10000.0, 60000.0, 55000.0]
+    assert frame["bound_applied"].tolist() == [False, False, False]
+    assert _flags(trips) == [False, True, False]
+
+
+def test_displacement_bound_shrinks_a_long_second_leg_of_a_short_tour():
+    trips, frame = _bound_frame([(1, 0, "home", "shop", "car", 10000.0),
+                                 (1, 1, "shop", "leisure", "car", 60000.0),
+                                 (1, 2, "leisure", "home", "car", 12000.0)])
+    # shop -> leisure: 10 + 12 = 22 km < 60 km reported -> bounded, not portal.
+    assert frame["classification_distance_m"].tolist()[1] == 22000.0
+    assert frame["bound_applied"].tolist() == [False, True, False]      # leg 0: 0 + 72 km is not below 10 km
+    assert _flags(trips) == [False, False, False]
+
+
+def test_displacement_bound_sums_never_cross_a_home_arrival_or_a_person():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 90000.0),
+                                 (1, 1, "leisure", "home", "car", 2000.0),
+                                 (1, 2, "home", "other", "car", 80000.0),
+                                 (1, 3, "other", "home", "car", 70000.0),
+                                 (2, 0, "home", "leisure", "car", 50000.0),
+                                 (2, 1, "leisure", "home", "car", 1000.0)])
+    # Each tour sees only its own way back: 2 km, 70 km (not 72 km), and 1 km for the next person.
+    assert frame["classification_distance_m"].tolist() == [2000.0, 2000.0, 70000.0, 70000.0, 1000.0, 1000.0]
+    assert frame["bound_applied"].tolist() == [True, False, True, False, True, False]
+    assert _flags(trips) == [False, False, True, False, False, False]
+
+
+def test_displacement_bound_does_not_change_a_work_leg_assigned_distance():
+    trips = _trips([(1, 0, "home", "work", "car", 5000.0),
+                    (1, 1, "work", "home", "car", 5000.0)])
+    frame = cls.classification_distance_frame(trips, _home_xy(), {"work": _xy([1], [80000.0]),
+                                                                 "education": _xy([], [])})
+    assert frame["classification_distance_m"].tolist() == [80000.0, 5000.0]     # not cut to the 5 km way home
+    assert frame["bound_applied"].tolist() == [False, False]
+    assert frame["bound_unknown"].tolist() == [False, False]                    # primary legs are not counted
+    assert np.isnan(frame["displacement_bound_m"].iloc[0])
+
+
+def test_displacement_bound_through_a_work_activity_uses_the_reported_distance_of_the_work_leg():
+    trips, frame = _bound_frame([(1, 0, "home", "work", "car", 20000.0),
+                                 (1, 1, "work", "leisure", "car", 70000.0),
+                                 (1, 2, "leisure", "home", "car", 25000.0)])
+    # work -> leisure: way out = the reported 20 km home -> work leg, way back = 25 km -> bound 45 km.
+    assert frame["displacement_bound_m"].iloc[1] == 45000.0
+    assert frame["classification_distance_m"].iloc[1] == 45000.0
+    assert bool(frame["bound_applied"].iloc[1])
+
+
+def test_displacement_bound_needs_both_sides_a_chain_not_starting_at_home_is_unbounded():
+    # The first tour starts at a non-home activity: the way out of its legs is unknown, so they stay unbounded
+    # although the way back is known; the second (complete) tour is bounded normally.
+    trips, frame = _bound_frame([(1, 0, "other", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "home", "car", 3000.0),
+                                 (1, 2, "home", "shop", "car", 60000.0),
+                                 (1, 3, "shop", "home", "car", 4000.0)])
+    assert np.isnan(frame["displacement_bound_m"].iloc[0])
+    assert frame["classification_distance_m"].tolist() == [60000.0, 3000.0, 4000.0, 4000.0]
+    assert frame["bound_applied"].tolist() == [False, False, True, False]
+    assert frame["bound_unknown"].tolist() == [True, False, False, False]
+    assert _flags(trips) == [True, False, False, False]
+
+
+def test_displacement_bound_needs_the_way_back_a_chain_not_reaching_home_is_unbounded():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "shop", "car", 3000.0)])
+    assert frame["classification_distance_m"].tolist() == [60000.0, 3000.0]
+    assert frame["bound_applied"].tolist() == [False, False]
+    assert frame["bound_unknown"].tolist() == [True, True]
+
+
+def test_displacement_bound_unknown_way_out_leg_blocks_the_bound():
+    trips, frame = _bound_frame([(1, 0, "home", "shop", "car", np.nan),
+                                 (1, 1, "shop", "leisure", "car", 60000.0),
+                                 (1, 2, "leisure", "home", "car", 3000.0)])
+    # Leg 0 has a known bound (0 + 63 km) but no reported distance of its own, so it stays NaN and never portal;
+    # leg 1 has an unknown way out (the NaN leg), leg 2 is the home-bound leg.
+    assert frame["bound_unknown"].tolist() == [False, True, False]
+    assert frame["bound_applied"].tolist() == [False, False, False]
+    assert np.isnan(frame["classification_distance_m"].iloc[0])
+    assert frame["classification_distance_m"].iloc[1] == 60000.0
+
+
+def test_displacement_bound_column_set_and_dtypes():
+    trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
+                                 (1, 1, "leisure", "home", "car", 5000.0)])
+    assert list(frame.columns) == ["classification_distance_m", "used_reported_distance",
+                                   "displacement_bound_m", "bound_applied", "bound_unknown"]
+    assert frame["bound_applied"].dtype == bool and frame["bound_unknown"].dtype == bool
+    assert frame.index.equals(trips.index)
+
+
+def _reference_displacement_bound_m(trips):
+    """Straightforward per-leg walk of the bound definition (slow; the oracle for the vectorised version)."""
+    bounds = np.full(len(trips), np.nan)
+    for _, group in trips.groupby("person_id", sort=False):
+        rows = group.index.to_numpy()
+        leaves = (group["preceding_purpose"] == "home").to_numpy()
+        arrives = (group["following_purpose"] == "home").to_numpy()
+        distance = group["euclidean_distance"].to_numpy(dtype=float)
+        n = len(rows)
+        for i in range(n):
+            if arrives[i]:
+                continue
+            known, way_out, j = True, 0.0, i
+            while not leaves[j]:
+                if j == 0 or arrives[j - 1]:
+                    known = False
+                    break
+                j -= 1
+                way_out += distance[j]
+            way_back, k = 0.0, i
+            while known and not arrives[k]:
+                if k + 1 >= n or leaves[k + 1]:
+                    known = False
+                    break
+                k += 1
+                way_back += distance[k]
+            if known and np.isfinite(way_out + way_back):
+                bounds[rows[i]] = way_out + way_back
+    return bounds
+
+
+def test_displacement_bound_matches_the_per_leg_reference_on_random_chains():
+    rng = np.random.default_rng(20261009)
+    purposes = ["home", "work", "education", "shop", "leisure", "other"]
+    rows = []
+    for person_id in range(1, 301):
+        n_legs = int(rng.integers(1, 9))
+        # Mostly well-formed home tours with random breaks (missing home, NaN distances) to hit every branch.
+        previous = "home" if rng.random() < 0.85 else str(rng.choice(purposes[1:]))
+        for trip_index in range(n_legs):
+            following = str(rng.choice(purposes, p=[0.3, 0.1, 0.05, 0.2, 0.2, 0.15]))
+            distance = np.nan if rng.random() < 0.1 else float(rng.integers(1, 90) * 1000)
+            rows.append((person_id, trip_index, previous, following, "car", distance))
+            previous = following if rng.random() < 0.93 else str(rng.choice(purposes))
+    trips = _trips(rows)
+    expected = _reference_displacement_bound_m(trips)
+    actual = cls.displacement_bound_m(trips)
+    assert np.isfinite(expected).sum() > 100 and np.isnan(expected).sum() > 100    # both branches are exercised
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_displacement_bound_of_an_empty_table_is_empty():
+    assert cls.displacement_bound_m(_trips([]).astype({"euclidean_distance": float})).shape == (0,)

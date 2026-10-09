@@ -210,8 +210,25 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
         raise ValueError(f"{_LOG_TAG} all {n_primary} work/education legs were classified by the reported-distance "
                          "fallback; the join of the assigned primary locations to the trips is broken "
                          "(person_id mismatch or empty location tables)")
+    # Displacement bound of the non-primary legs (ADR-0141): the diary's own way out + way back caps the
+    # reported route length. Information rates, not a failure signal: a missing bound only keeps the
+    # reported distance (a chain without a home start/end, or a leg without a reported distance).
+    non_primary_home_excluded = ~trips["following_purpose"].isin(
+        (*_classification.PRIMARY_PURPOSES, _classification.HOME_PURPOSE)).to_numpy()
+    n_non_primary = int(non_primary_home_excluded.sum())
+    n_bounded = int(frame["bound_applied"].sum())
+    n_unbounded = int(frame["bound_unknown"].sum())
+    reported_portal = _classification.portal_flags(trips["euclidean_distance"].astype(float),
+                                                   trips["following_purpose"], threshold_m)
+    n_lost = int((frame["bound_applied"] & reported_portal & ~is_portal).sum())
+    logger.info("%s displacement bound (non-primary legs, %d): bounded %d/%d (%.1f%%), lose portal status through the "
+                "bound %d, without a usable bound %d/%d (%.1f%%; those keep the reported distance)", _LOG_TAG, n_non_primary,
+                n_bounded, n_non_primary, 100.0 * n_bounded / max(n_non_primary, 1), n_lost, n_unbounded,
+                n_non_primary, 100.0 * n_unbounded / max(n_non_primary, 1))
     counts = {"n_primary_legs": n_primary, "n_primary_legs_assigned": n_primary - n_fallback,
-              "n_primary_legs_reported_distance_fallback": n_fallback}
+              "n_primary_legs_reported_distance_fallback": n_fallback,
+              "n_nonprimary_legs": n_non_primary, "n_nonprimary_legs_bounded": n_bounded,
+              "n_portal_legs_lost_through_bound": n_lost, "n_nonprimary_legs_without_bound": n_unbounded}
     return is_portal, distance, counts
 
 
@@ -248,7 +265,9 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     person_ids = stays["person_id"].to_numpy()
     outbound_positions = _trip_row_positions(trips, person_ids, stays["outbound_trip_index"].to_numpy())
     origin_xy, n_proxied = _origin_xy_for_stays(trips, stays, home_xy, primary, outbound_positions)
-    reported_m = distance_m.to_numpy()[outbound_positions]
+    # One source of truth: the classification distance (assigned location for work/education, the reported
+    # distance capped by the diary's displacement bound otherwise) also decides where the point is drawn.
+    classification_m = distance_m.to_numpy()[outbound_positions]
 
     # Work/education stays point at their assigned location; every other stay (and a work/education
     # stay whose person has no assigned location) draws an external point at the reported distance.
@@ -258,7 +277,7 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     if draw.any():
         rng = np.random.default_rng(int(seed) + RNG_OFFSET)
         drawn_xy, _, drawn_band_miss = _gates.draw_external_points(
-            reported_m[draw], origin_xy[draw], external_points, tolerance, rng)
+            classification_m[draw], origin_xy[draw], external_points, tolerance, rng)
         point_xy[draw] = drawn_xy
         band_miss[draw] = drawn_band_miss
 
