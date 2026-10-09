@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 101 | stages: 129 | datasets: 85 | ADRs: 132 | run manifests: 54
+- Features: 101 | stages: 129 | datasets: 85 | ADRs: 132 | run manifests: 55
 
 ## Population synthesis
 
@@ -147,7 +147,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
 | [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
-| [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
+| [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Freight

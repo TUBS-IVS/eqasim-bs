@@ -160,8 +160,9 @@ evidence:
     note: >-
       braunschweig.portal.enabled defaults true in configs/base_bs.yml. The OFF claim is pinned per component
       (stage pass-through, anchors, distance CDFs, candidates, population writer, facilities writer), each by
-      the test named above. A whole-pipeline OFF run against the pre-feature state is part of the owed A/B and is
-      not recorded yet; a stage-level pass-through is not an end-to-end proof.
+      the test named above. The 1 % A/B run portal-trips-ab-1pct-2026-10-09 ran the flag OFF at the same commit as
+      the ON arm, not the pre-feature state, and compared no bytes: a whole-pipeline OFF run against the pre-feature
+      state is still not recorded, and a stage-level pass-through is not an end-to-end proof.
   fallback_rate:
     instrumented: true
     log_marker: '[portal_trips]'
@@ -181,25 +182,32 @@ evidence:
     note: >-
       No committed observed reference exists for the number of long-distance legs by mode and purpose in the
       simulated population; the donor diaries' own long-distance legs, measured in the SAME A/B run, are the
-      intended comparison and are not recorded yet. The threshold default of 45000 m equals the supply ring
+      intended comparison and are not recorded yet (run portal-trips-ab-1pct-2026-10-09 compared the arms with
+      each other only). The threshold default of 45000 m equals the supply ring
       width by choice, not by derivation (ADR-0141 assumptions).
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - portal-trips-ab-1pct-2026-10-09
   metric: null
   note: >-
-    Awaiting the 1 % OFF/ON A/B run manifest (eqasim-bs#442). The criteria to be measured: plans ending after
-    the simulated day and non-monotonic end times near zero in the input population, no long walk legs in the
-    input population, portal legs by mode and purpose of the same order of magnitude as the diaries'
-    long-distance legs in the same run, in-region SrV comparisons unchanged, an OFF path byte-identical to the
-    pre-feature state. Convergence of the mode shares is not validation.
+    Smoke and A/B direction only (run portal-trips-ab-1pct-2026-10-09: 1 % sample, 0 MATSim iterations, flag OFF
+    versus ON at the same commit, no observed reference compared, so not a validation). Measured OFF -> ON: stuck
+    agents 662 -> 469 (trucks unchanged, #444), plans ending after 30:00 229 -> 68, non-monotonic end times
+    136 -> 42, simulated walk trips above 20 km 172 -> 134; in-region mode shares moved by at most 0.12 percentage
+    points in one draw. The criteria "near zero" for plans after the simulated day and "no long walk legs" are
+    NOT met (68 and 134 remain, other causes, #443). Not yet measured: portal legs by mode and purpose against the
+    donor diaries' long-distance legs in the same run, the SrV in-region comparisons, an OFF path byte-identical to
+    the pre-feature state, and any run with MATSim iterations. Open finding: the planned return time is zero for
+    440 of 617 stays (share_out capped). Convergence of the mode shares is not validation.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Implemented and unit-tested; the OFF/ON A/B run manifest that would allow an owner verdict is owed
-    (eqasim-bs#442).
+    Implemented, unit-tested and smoked at 1 % with an OFF/ON A/B (run portal-trips-ab-1pct-2026-10-09,
+    0 iterations, no observed reference); an owner verdict on the open findings (share_out cap, remaining long
+    walk trips and late plan ends) is owed (eqasim-bs#442).
   source: ADR-0141
 notes: >-
   No Java change is part of this feature (ADR-0141, decision 6): the Java PortalTripConstraint of the
