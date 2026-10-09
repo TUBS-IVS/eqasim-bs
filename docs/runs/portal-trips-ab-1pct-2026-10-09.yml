@@ -138,9 +138,17 @@ validation:
   artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/portal_trips_report.json'
   notes: >-
     Not a defect of the run but an open question: whether a zero planned return duration is acceptable (MATSim
-    ignores planned arrivals, but the chain solver sees travel_time 0 for the next secondary leg). The probe script
-    behind the 299 / 141 split was a scratch script and is not committed; the 141 and the 440 are in the report.
-    Root cause and fix: see ADR-0141 (timing); the fix is not re-measured in this run.
+    ignores planned arrivals, but the chain solver sees travel_time 0 for the next secondary leg). The cause split
+    comes from share_cap_probe2.py and its output (artifacts); the 141 and the 440 are in the report.
+    Root cause and fix: see ADR-0141 (timing). Partial verification re-run of the ON arm on 2026-10-09 at
+    commit e47fc268 in the same working directory (logs run_20261009T114045.log and run_20261009T115557.log on
+    felix): the portal stage reported return share degenerate 0/617, median share outside 0.58, outbound
+    degenerate 0/617, re-entry clamped 0/617 (same 617 stays). The first attempt then stopped in the output
+    stage on a CRS comparison through a set (pyproj hashes EPSG:25832 with and without the datum ensemble
+    differently; fixed in e47fc268); the second wrote both pre-portal files and was killed by the kernel OOM
+    killer at 61 GB anonymous RSS inside braunschweig.analysis.analysis_suite while another session's run used
+    the server. Preparation and MATSim were not re-run after the fix, so the A/B figures above stay those of
+    aa2726e5.
 features:
 - portal_trips
 artifacts:
