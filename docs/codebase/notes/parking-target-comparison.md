@@ -30,8 +30,11 @@ comparison, never a validation, and a stable run is convergence, not validation.
   cents per call need a Java report extension (proposed as issues, not built).
 - The expected garage share of a universe is `sum(garage_probability_sum) / sum(count)` over the selected rows (early outcomes
   count with probability 0). It is NOT the E5 calibration universe (all stays of all modes at destinations, no early rules);
-  its row is labelled "calibration target, not validation". The commuter garage share of `bs_zentrum` is the calibration target of the commuter decay (spec Amendment H2, labelled
-  so in its rows); the Wolfsburg commuter garage share (row `03103`, the zones `wob_tarifzone_1` to `wob_tarifzone_3`, rows
+  its row is labelled "calibration target, not validation". The PAID-only commuter garage share of `bs_zentrum` is the calibration target of the commuter decay (spec
+  Amendment H2 with ruling R-4h-1, labelled so in its rows; the reference is the paid-only share because the model's commuter
+  universe holds payers, so the like-for-like model rows are `garage_share_*_work_education_paid_calls`, the garage share among
+  the PAID_* calls, while the rows that keep free calls in the denominator are for orientation); the paid-only Wolfsburg
+  commuter garage share (row `03103`, the zones `wob_tarifzone_1` to `wob_tarifzone_3`, rows
   `garage_share_wolfsburg_work_education_*`, H3b) and the free shares per workplace class are independent checks. A v3 report whose garage columns are 0 in every row flags the garage rows ("no garage option acted").
 - Only the agents that replan in an iteration price their alternatives, so one iteration is a small sample. `--iteration
   FIRST-LAST` pools an inclusive range (counts summed cell by cell); the notes name the iterations. Pooling does not change the

@@ -140,7 +140,7 @@ run (see Status).
    calibration TARGET and no longer validates the model; its paid share stays an independent comparison quantity, and so did
    the commuter garage share of the class `bs_zentrum` (`srv2023_commute_parking_by_workplace_class`) until decision 12
    (Amendment H, 2026-10-09), which makes that share the calibration TARGET of a second decay length for commuter stays and
-   the Wolfsburg row `03103` the independent check; the universe caveat applies to both: the SrV asks residents about their
+   the Wolfsburg row `03103` the independent check (both in their paid-only form, decision 12); the universe caveat applies to both: the SrV asks residents about their
    usual place whereas the model averages over destinations.
    Pre-registered expectation for the commuter comparison (written before any v2 run; an expectation, not a target; the
    miss it predicted is what decision 12 answers):
@@ -324,12 +324,14 @@ run (see Status).
 
 12. **A separate decay length for commuter stays (Amendment H, owner decision 2026-10-09: "1 bitte umsetzen").** Reason: with the
     one decay length calibrated on the city-centre visitors (decision 7, lambda 396.19 m) the model's commuter garage share for
-    `bs_zentrum` was 0.7142 against the SrV 0.4636, the miss that decision 7 had pre-registered. The SrV parking questions
+    `bs_zentrum` was 0.7142 against the SrV 0.4636 (a free-inclusive reference, see the revision below), the miss that decision
+    7 had pre-registered. The SrV parking questions
     support exactly two groups: the usual place at work or education per workplace class (`V_*_PARKENAPL`, the table
     `srv2023_commute_parking_by_workplace_class`) and the usual place in the Braunschweig city centre
     (`V_BRAU_PARKENCITY`, `srv2023_city_center_parking`); they are person-level questions with no parking place per trip and no
     purpose split of the city-centre question, so a finer split of the weights by purpose is not supported by the data and is
-    not made. The owner decided on two decay lengths, the commuter one calibrated on `bs_zentrum`, Wolfsburg as an independent check.
+    not made. The owner decided on two decay lengths, the commuter one calibrated on `bs_zentrum`, Wolfsburg as an independent check
+    (both in the paid-only form after the revision below).
     - **Mechanism (ASSUMPTION G1-c).** The garage weights `exp(-d / decay)` use `garage_decay_commute_m` (lambda_c; config
       `parking_garage_decay_commute_m`) for a stay whose purpose is work or education (`cost.COMMUTER_PURPOSES`) and
       `garage_decay_m` (lambda) for every other purpose; one helper, `cost.garage_decay_m_for_purpose`, decides, and the commuter
@@ -342,41 +344,62 @@ run (see Status).
       unchanged in content and price; E33 to E38 pin the two decays with a work, a shopping and an education stay at the same
       destination and the off switches). The Java reader and calculator follow in a separate task (Task 4i); until then the Python
       export writes a model the existing Java reader refuses (exact key sets).
-    - **Calibration of lambda_c (H2), the result of 2026-10-09 (a calibration, no validation).** The same script and the same
-      plans as decision 7 (SHA-256 `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`, 12,567 persons). Universe:
-      the work and education main activities inside `bs_zone_ia` and `bs_zone_ib` that do NOT carry `parkingFree`: 54 of the
-      245 work and education activities there (191 carry `parkingFree`, so they leave the denominator; the SrV share is among the
-      commuters who park on the street or in a garage), all 54 with a priced garage within 1,000 m. Target: 0.1923 / (0.1923 +
-      0.2225) = 0.463597, READ by the script from the row `bs_zentrum`. Result: lambda_c = 191.52 m, achieved mean 0.463645 after
-      12 halvings (the mean is 0.0000 at 10 m and 0.8861 at 5,000 m). lambda is unchanged (396.19 m, 340 activities, target
-      0.736196, achieved 0.736279; the calibrated table now also lists the search ends and the counts of both universes). Both
-      values are in the committed table `parking_garage_decay_calibration_2026.csv`; the config keys `parking_garage_decay_m` and
-      `parking_garage_decay_commute_m` of `configs/base_bs.yml` and the two popsim fixtures equal its rows `decay_length_m` and
-      `decay_commute_length_m` (a test requires both equalities).
+    - **Calibration of lambda_c (H2, revised by ruling R-4h-1), the result of 2026-10-09 (a calibration, no validation).** The
+      same script and the same plans as decision 7 (SHA-256 `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`,
+      12,567 persons). Universe: the work and education main activities inside `bs_zone_ia` and `bs_zone_ib` that do NOT carry
+      `parkingFree`: 54 of the 245 work and education activities there (191 carry `parkingFree`: the free-parking draw frees
+      them, so the universe holds the payers only), all 54 with a priced garage within 1,000 m. Target: the PAID-only share
+      `share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)` of the row `bs_zentrum` = 0.0965 /
+      (0.0965 + 0.0456) = 0.679099, READ by the script from the committed SrV table (which gained the per-place payment columns,
+      see the revision bullet). Result: lambda_c = 359.64 m, achieved mean 0.678955 after 12 halvings (the mean is 0.0000 at
+      10 m and 0.8861 at 5,000 m). lambda is unchanged (396.19 m, 340 activities, target 0.736196, achieved 0.736279). Both
+      values are in the committed table `parking_garage_decay_calibration_2026.csv` (code state d459675e, clean tree); the
+      config keys `parking_garage_decay_m` and `parking_garage_decay_commute_m` of `configs/base_bs.yml` and the two popsim
+      fixtures equal its rows `decay_length_m` and `decay_commute_length_m` (a test requires both equalities). The city-centre
+      target of lambda stays free-inclusive (`garage_large_lot / (garage_large_lot + street)`): its model universe, the
+      destination universe of E5, applies no early rule, so it has no payers-only form and the question of ruling R-4h-1 does not
+      arise there; that this asymmetry is acceptable is an assumption, not a finding.
+    - **Revision of the target (ruling R-4h-1, review of Task 4h, 2026-10-09); the first H2 value is superseded.** The first
+      version of H2 calibrated lambda_c on the free-inclusive share 0.1923 / (0.1923 + 0.2225) = 0.463597 and gave lambda_c =
+      191.52 m (achieved 0.463645) and a Wolfsburg check of 0.348737 against 0.638740 (18 activities); that value was committed in
+      the commit 160a4dc8 of the branch and is SUPERSEDED, not used by any config. Why it was wrong: the SrV denominator
+      `share_garage_large_lot + share_street` contains the commuters who park FREE on the street or in a garage, whereas the
+      model's universe (work and education activities without `parkingFree`) contains only payers, because the free-parking
+      draw removes everyone who parks free (`share_free_total` of the class). Like-for-like is the paid-only share of the
+      payment follow-up per place (`V_*_PARKENAPL<k>_ENTGELT`); a free-inclusive model quantity does not exist, so the
+      free-inclusive reference was the wrong comparison, not a reference that a better model could meet. The commute table was
+      re-extracted from the same raw files (identical SHA-256) and gained the eight per-place payment columns
+      `share_<place>_<paid|free>`; its existing columns are unchanged in meaning and value (data record
+      `srv2023_commute_parking_by_workplace_class`). The paid cells are small: bs_zentrum paid garage 29 and paid street 13
+      respondents, 03103 22 and 5 (unweighted counts on the raw delivery), so the targets carry a wide sampling uncertainty that
+      is not quantified; no bootstrap was computed.
     - **Targets and checks after this decision.** Calibration targets (no validation): the SrV garage share of the city centre,
-      0.736196 (lambda), and the SrV commuter garage share of `bs_zentrum`, 0.463597 (lambda_c); the garage shares of a
-      run that the comparison script reports for these two universes are therefore not independent. Independent checks that
+      0.736196 (lambda), and the PAID-only SrV commuter garage share of `bs_zentrum`, 0.679099 (lambda_c); the garage shares of
+      a run that the comparison script reports for these two universes are therefore not independent. Independent checks that
       remain, numbers and no validation: the paid share 0.8333 of `srv2023_city_center_parking` (computed on the outcomes of a
-      run, not by the calibration), and the Wolfsburg commuter garage share (H3b): the row `03103` gives 0.1075 / (0.1075 +
-      0.0608) = 0.638740 (READ from the table); the model value at lambda_c over the work and education activities without
-      `parkingFree` inside `wob_tarifzone_1` to `wob_tarifzone_3` is 0.348737 over 18 activities (15 with a priced garage within
-      1,000 m), 0.290 below the reference. That is a miss of the check; the universe is small (a 1 % sample), the SrV row covers
-      the Kreis while the zones are three tariff areas, lambda_c is transferred from Braunschweig (the transfer assumption of
-      G3 now also covers lambda_c), and the cause is not established; the number is stated and no decay is tuned to it. The
-      free-parking draw of Wolfsburg uses the share of `bs_zentrum` as a proxy (A1-b), which is not a reason offered for the
-      miss, only a fact that Wolfsburg is not independent of `bs_zentrum` in the draw.
-    - **Limits.** The commuter calibration rests on 54 activities of a 1 % sample, so lambda_c is a coarse estimate and its
-      sampling uncertainty is not quantified; the SrV share is about residents' usual place, the model averages over
-      destinations (universe caveat); the effect on a run's commuter garage share is not established (no v2 run exists, and
-      the comparison script now labels the `bs_zentrum` rows as the target of lambda_c).
+      run, not by the calibration), and the Wolfsburg commuter garage share (H3b) in its paid-only form: the row `03103` gives
+      0.0225 / (0.0225 + 0.0080) = 0.737705 (READ from the table); the model value at lambda_c over the work and education
+      activities without `parkingFree` inside `wob_tarifzone_1` to `wob_tarifzone_3` is 0.553517 over 18 activities (15 with a
+      priced garage within 1,000 m), 0.184 below the reference. This check carries no pre-registered bound, so it is stated as
+      a number and is neither a pass nor a fail; the universe is small (a 1 % sample), the SrV row covers the Kreis while the
+      zones are three tariff areas, lambda_c is transferred from Braunschweig (the transfer assumption of G3 now also covers
+      lambda_c), and the cause of the difference is not established. No decay is tuned to it. The free-parking draw of Wolfsburg
+      uses the share of `bs_zentrum` as a proxy (A1-b), a fact that Wolfsburg is not independent of `bs_zentrum` in the draw, not
+      a reason offered for the difference. In a run the like-for-like model quantity is the garage share among the PAID_*
+      pricing calls of the work and education stays (rows `garage_share_*_work_education_paid_calls` of the comparison script);
+      the rows that keep free calls in the denominator are shown for orientation only.
+    - **Limits.** The commuter calibration rests on 54 activities of a 1 % sample and on paid cells of 29 and 13 respondents, so
+      lambda_c is a coarse estimate and its sampling uncertainty is not quantified; the SrV share is about residents' usual
+      place, the model averages over destinations (universe caveat); the effect on a run's commuter garage share is not
+      established (no v2 run exists, and the comparison script labels the `bs_zentrum` rows as the target of lambda_c).
 
 ## Consequences
 
 - Scientific results change when the flag is on. Against ADR-0139 the prices change through the zone geometry (Wolfsburg
   zones, Braunschweig 1a/1b, TU campus unions, the single paid sites), the product minimum (cheaper long stays through
   commuter products), the resident districts, the Wolfsburg and campus free-parking shares and the BgA corrections. The
-  garage options change prices through the calibrated decay lengths (lambda 396.19 m, decision 7, and lambda_c 191.52 m for
-  work and education stays, decision 12): with `parking_garage_decay_m` 396.19 and `parking_garage_decay_commute_m` 191.52,
+  garage options change prices through the calibrated decay lengths (lambda 396.19 m, decision 7, and lambda_c 359.64 m for
+  work and education stays, decision 12): with `parking_garage_decay_m` 396.19 and `parking_garage_decay_commute_m` 359.64,
   the state of this record, they are on. How much the mode shares move is not established: no v2 run exists,
   so no direction or size is stated here.
   The expected output change of each data update is stated once in its data record.

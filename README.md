@@ -341,8 +341,8 @@ verified), see the data record `parking_resident_districts_2026`; the garage dat
 pages (licences not verified; six OpenStreetMap-derived positions under the ODbL 1.0), see the data record
 `parking_garages_2026`. The two SrV parking tables (the shares above and
 `braunschweig/srv/srv2023_city_center_parking.csv`, whose garage share is the calibration target of the garage decay
-length and whose paid share is a comparison quantity only; the row `bs_zentrum` of the commute table is the calibration
-target of the commuter decay length) are regenerated with
+length and whose paid share is a comparison quantity only; the paid-only garage share of the row `bs_zentrum` of the commute table, columns
+`share_garage_large_lot_paid` and `share_street_paid`, is the calibration target of the commuter decay length) are regenerated with
 `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
 --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,

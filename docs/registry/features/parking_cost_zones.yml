@@ -161,8 +161,8 @@ evidence:
       the CALIBRATION TARGET of the garage decay length (ADR-0140, parking_garage_decay_calibration_2026; its state:
       validation.note)
       and no longer a validation quantity, while its paid share stays an independent comparison quantity; in
-      srv2023_commute_parking_by_workplace_class the row bs_zentrum is the calibration target of the commuter decay
-      length (ADR-0140 decision 12) and the row 03103 (Wolfsburg) the independent check
+      srv2023_commute_parking_by_workplace_class the paid-only garage share of the row bs_zentrum is the calibration
+      target of the commuter decay length (ADR-0140 decision 12) and that of the row 03103 (Wolfsburg) the independent check
       (scripts/parking/compare_parking_targets.py).
 validation:
   state: unvalidated
@@ -180,10 +180,11 @@ validation:
     states it): no MATSim run of it exists, neither the three-arm comparison nor any other, so nothing of v2 is
     validated and no direction or size of an effect on the mode shares is stated; the garage options are ON in the
     canonical configuration with the two calibrated decay lengths parking_garage_decay_m (396.19 m, visitor purposes) and
-    parking_garage_decay_commute_m (191.52 m, work and education; the table parking_garage_decay_calibration_2026,
-    calibrated 2026-10-09 on the plans of the 1 % server run of 2026-10-08; calibrations to SrV shares, no validation; the
-    independent Wolfsburg commuter check is 0.3487 over 18 activities against the SrV row 03103 share 0.6387, a miss that is
-    stated, not explained: ADR-0140 decision 12; the earlier miss of the commuter share at the single decay length was the
+    parking_garage_decay_commute_m (359.64 m, work and education; the table parking_garage_decay_calibration_2026,
+    calibrated 2026-10-09 on the plans of the 1 % server run of 2026-10-08; calibrations to SrV shares, the commuter one to
+    the paid-only share of bs_zentrum, 0.679, like-for-like with a universe of payers; no validation; the independent
+    paid-only Wolfsburg commuter check is 0.5535 over 18 activities against the SrV row 03103 paid share 0.7377, a number
+    without a pre-registered bound whose difference is not explained: ADR-0140 decision 12; the earlier miss of the commuter share at the single decay length was the
     pre-registered one of decision 7); the Java side of the commuter decay (schema 4) is pending (Task 4i); the parking search time is
     off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.

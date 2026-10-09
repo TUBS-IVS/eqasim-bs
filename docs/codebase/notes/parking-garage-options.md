@@ -83,11 +83,13 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 are release values with their calibration table `parking_garage_decay_calibration_2026.csv`, written by
 `scripts/parking/calibrate_garage_decay.py` on the plans of the reference scenario. Targets, all READ from the committed SrV
 tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of `srv2023_city_center_parking`
-(E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the commuter garage share of
-the row `bs_zentrum` of `srv2023_commute_parking_by_workplace_class` (H2, the work and education activities in Ia and Ib that
-do NOT carry `parkingFree`: the SrV share is among the commuters who park on the street or in a garage, and the plans reader
-`count_zone_exposure.read_main_activities` provides the attribute as the column `parking_free`). Both are CALIBRATION TARGETS
-and no validation. The independent check the table reports (H3b) is the Wolfsburg commuter garage share: the mean garage
+(E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the PAID-only commuter
+garage share `share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)` of the row `bs_zentrum` of
+`srv2023_commute_parking_by_workplace_class` (H2 as revised by ruling R-4h-1: the work and education activities in Ia and Ib
+that do NOT carry `parkingFree` are the payers only, because the free-parking draw frees everyone who parks free, so the
+reference must be the paid-only share; the free-inclusive share has free parkers in its denominator and is not used; the plans
+reader `count_zone_exposure.read_main_activities` provides the attribute as the column `parking_free`). Both are CALIBRATION TARGETS
+and no validation. The independent check the table reports (H3b) is the paid-only Wolfsburg commuter garage share: the mean garage
 probability at lambda_c of the work and education activities without `parkingFree` in `wob_tarifzone_1` to `wob_tarifzone_3`
 against the row `03103`, a number with its universe size and never validation. The script is tested on a synthetic fixture
 (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 % server run of
