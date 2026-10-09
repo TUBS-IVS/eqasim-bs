@@ -29,11 +29,11 @@ storage:
   local_only: false
   notes: >-
     Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
-    69ff1ab3c42752a9b7d571fc2634f0b29ec04994785291aede451391bf4b5b22. Long format quantity,value,unit,note under a '#'
-    header; read by calibrate_garage_decay.read_calibration_table.
-    Produced by the unmodified script at the code state named in its header (commit 8b2e2565, clean tree); three runs on the
-    same inputs (the release path and two scratch folders) gave byte-identical files, so the generation date in the header is
-    the only run-dependent content and falls on the same day.
+    a47adbaf07a7ab51e2c2c9594f09a7d970de2d316bde84fd5ebed7fa3c363b06. Long format quantity,value,unit,note under a '#'
+    header; read by calibrate_garage_decay.read_calibration_table. Produced by the unmodified script on a clean tree at the
+    code state named in its header (commit 26a56cca); the header names the plans by a repo-relative path. Repeated runs on
+    the same inputs and the same clean code state gave byte-identical files, so the generation date in the header and the
+    code-state line are the only run-dependent content.
 verification:
   verifier_entry: null
   notes: |
