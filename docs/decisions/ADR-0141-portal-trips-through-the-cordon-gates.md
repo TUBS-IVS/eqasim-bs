@@ -40,8 +40,23 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    straight-line distance exceeds `braunschweig.portal.max_routable_distance_m` (default 45,000 m, a separate
    key from the ring width `cordon_network_source_buffer_m` although it starts at the same value). For
    work and education legs the distance is home to the ASSIGNED location (that location exists before the
-   secondary sampler runs); for every other purpose it is the donor's reported distance. A return home is
-   never a portal leg and a missing distance (the synthetic home closure) is never one either.
+   secondary sampler runs); for every other purpose it is the donor's reported distance capped by the
+   displacement upper bound of the donor's own diary (amended 2026-10-09, approved by the user): the
+   classification distance is `min(reported leg distance, way out before + way back)`, where the way out is
+   the sum of the reported distances of the legs from the person's last home departure up to the leg's
+   origin (0 when the leg starts at home) and the way back is the sum from the leg's destination to the next
+   home arrival, inclusive of that home-bound leg. By the triangle inequality this bounds the straight-line
+   displacement of the destination. Why: the reported value (MiD `wegkm_imp` / 1.3) is a route length of the
+   donor's trip, not the displacement of its destination; in the 1 % smoke 35 of the 114 drawn (non-work/
+   education) stays with a known way home had a reported way home below 45 km, so the diary itself places the
+   destination inside the threshold (typically leisure round trips; the `H-C drawn` line of
+   `docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/share_cap_probe2_output.txt`). A side whose sum is
+   unknown (a leg without a finite reported distance, e.g. the synthetic home closure, or a chain that does not
+   start at home before the leg / does not reach home after it) gives no bound; the reported distance then
+   stays (no silent guess), and both sides are needed. Work/education legs keep the assigned-location
+   distance; a return home is never a portal leg and a missing distance (the synthetic home closure) is never
+   one either. The bounded distance is the classification distance everywhere it is used, including the
+   external point draw below.
 2. **Portal trips are built before the cut, in cut form, at a gate (D3).** Consecutive portal destinations
    form one outside stay (the `MergeOutsideActivities` semantics); the outbound leg ends at an `outside`
    activity at the gate, the legs inside the stay are removed, the return leg starts at the gate. This is
@@ -52,7 +67,7 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    stage instead (decision 10).
 3. **Gate choice by minimum detour.** The external point only fixes direction and outside distance. For work
    and education it is the assigned location; otherwise one external Gemeinde point is drawn with
-   population weights among those within `reported x (1 +- tolerance)` of the leg's origin anchor
+   population weights among those within `classification distance x (1 +- tolerance)` of the leg's origin anchor
    (`braunschweig.portal.external_point_distance_tolerance`, default 0.2), the nearest point when the band
    is empty (counted as a band miss). The gate minimises `|origin - gate| + |gate - point|`; motorway gates
    are not preferred by rule. Car, car passenger, bicycle and walk use road gates (the inside end node of
@@ -175,6 +190,9 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
   `share_cap_probe2_output.txt`, artifacts of the run manifest; the capped counts are in the manifest and its
   report artifact). The fix is not
   re-measured in a run (eqasim-bs#442).
+- **Classifying non-primary legs by the reported distance alone (the first implementation of D2).** Replaced
+  by the displacement bound above: the reported distance is a route length, and 35 of the 114 drawn stays with a
+  known way home were inconsistent with it (the diary places the destination within the threshold).
 - **Conditioning the distance sampler on the reported distance class.** Kept as a possible later A/B, not
   part of this change.
 
@@ -187,6 +205,9 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
   distances of the synthetic geometry (origin, gate, point; the return leg uses the stay's origin as proxy).
 - ASSUMPTION: the detour rule for gate choice does not prefer motorways.
 - ASSUMPTION: a fixed 45 km threshold ignores the home's position inside the region (D2).
+- ASSUMPTION: MiD reported distances are route lengths (not displacements), so the diary's displacement bound
+  (way out + way back, sums of reported distances) is conservative: it over-estimates the displacement. Cost
+  if wrong (inconsistent diaries): some genuine far legs with a short reported way home become in-region legs.
 - ASSUMPTION: the return leg's reported inside distance is gate to the stay's origin, not gate to the
   return leg's own destination; reporting only, the chain solver ignores donor distances.
 - The threshold's default equals the ring width by choice, not by derivation.

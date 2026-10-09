@@ -7,7 +7,8 @@ description: >-
   that fit together without nationwide supply (ADR-0141, issue #442). One threshold,
   braunschweig.portal.max_routable_distance_m (straight-line metres, default 45000), decides: for work and
   education legs the distance from home to the assigned location, for every other leg the donor's reported
-  distance. The portal stage rewrites the reporting-day trips behind the alias
+  distance capped by the displacement upper bound of the donor's own diary (way out before plus way back, the
+  reported distance is a route length). The portal stage rewrites the reporting-day trips behind the alias
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
   or the schedule-derived rail exit station with the smallest detour (always inside the cut extent, so the
   scenario cutter cuts nothing), the stay ends at a time derived from the donor's diary, and the donor's
