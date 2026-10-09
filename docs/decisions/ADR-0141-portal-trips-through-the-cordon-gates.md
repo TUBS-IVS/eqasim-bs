@@ -76,7 +76,7 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    `travel_time = arrival - departure`, so the diary's arrival at the far destination would inflate it; MATSim
    ignores planned arrivals, so only the synthesis is affected. The donor's reported distance describes the
    donor's own trip, not the synthetic geometry: for a work/education stay the point is the ASSIGNED location
-   (median 66 km from home in the 1 % smoke) while the donor reported a different trip (median 13.8 km; both from the scratch probe named under the rejected alternative), and
+   (median 66 km from home in the 1 % smoke) while the donor reported a different trip (median 13.8 km; both from the probe named under the rejected alternative), and
    synthetic home-closure legs have no reported distance at all.
 5. **Same gate and same mode out and back (D5).** The donor's OUTBOUND mode is used for both portal legs,
    checked against the synthetic person (car needs car availability and a licence, bicycle needs bicycle
@@ -171,8 +171,9 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
   numerator (synthetic geometry) and the denominator (a different, donor-reported trip) describe different
   geometries, so 440 of 617 return shares (71 %) and 183 of 617 outbound shares were capped at 1, which gives a
   planned inside return duration of zero. The geometric split above gave a median `share_out` of 0.60 (p10 0.19,
-  p90 0.88) on the same stays, with no zero inside duration, in a probe on the cached smoke inputs (a scratch
-  probe, not committed; the capped counts are in the run manifest and its report artifact). The fix is not
+  p90 0.88) on the same stays, with no zero inside duration, in a probe on the cached smoke inputs (`share_cap_probe2.py` and its output
+  `share_cap_probe2_output.txt`, artifacts of the run manifest; the capped counts are in the manifest and its
+  report artifact). The fix is not
   re-measured in a run (eqasim-bs#442).
 - **Conditioning the distance sampler on the reported distance class.** Kept as a possible later A/B, not
   part of this change.
