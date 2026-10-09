@@ -1,10 +1,12 @@
 dataset: parking_garage_decay_calibration_2026
-title: Calibrated decay length of the garage options and its provenance (committed table, NOT YET PRODUCED)
+title: Calibrated decay length of the garage options and its provenance (committed table)
 inventory_id: null
 provider: >-
   Own calibration (issue #436, parking cost zones v2, spec Amendment E5, Task 4d) with scripts/parking/calibrate_garage_decay.py
   on the plans of the reference scenario, against the SrV 2023 city-centre parking shares (srv2023_city_center_parking)
-vintage: not produced yet; the table is written by the server run of Task 5 of issue #436
+vintage: >-
+  generated 2026-10-09 (the header of the table states the date) on the plans of the 1 % reference run of 2026-10-08
+  (server run, parking zones on, garage options off, no MATSim run)
 geography: The Braunschweig city centre (the fee zones bs_zone_ia and bs_zone_ib) for the calibration; the value applies in every ZGB town (transfer assumption G3)
 crs: EPSG:25832 (distances in metres)
 roles:
@@ -23,12 +25,14 @@ acquisition:
   script: scripts/parking/calibrate_garage_decay.py
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garage_decay_calibration_2026.csv
-  committed: false
+  committed: true
   local_only: false
   notes: >-
-    The file does not exist yet (the local reference plans were lost on 2026-10-07 and the calibration runs on the server
-    plans of Task 5); it is force-added (git add -f) when it is produced. Long format quantity,value,unit,note under a '#'
-    header; read by calibrate_garage_decay.read_calibration_table.
+    Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
+    69ff1ab3c42752a9b7d571fc2634f0b29ec04994785291aede451391bf4b5b22. Long format quantity,value,unit,note under a '#' header; read by calibrate_garage_decay.read_calibration_table.
+    Produced by the unmodified script at the code state named in its header (commit 8b2e2565, clean tree); three runs on the
+    same inputs (the release path and two scratch folders) gave byte-identical files, so the generation date in the header is
+    the only run-dependent content and falls on the same day.
 verification:
   verifier_entry: null
   notes: |
@@ -54,8 +58,21 @@ limitations: |
   garage share 0.464 of the class bs_zentrum. The table checks no paid share (ruling R-5-4: the zone-level paid share was
   blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run is compared with the SrV by
   scripts/parking/compare_parking_targets.py. One lambda for every town is a transfer assumption (G3). The value depends on
-  the plans file it was calibrated on: another scenario gives another lambda.
+  the plans file it was calibrated on: another scenario gives another lambda. The destination universe is 340 activities
+  (the main activities of a 1 % sample inside bs_zone_ia and bs_zone_ib, 12,567 persons), so lambda is a coarse estimate
+  and its sampling uncertainty is not quantified. The script logs the mean garage probability at the two ends of its
+  search (0.0055 at 10 m, 0.8911 at 5,000 m, in the table header), so the mean rises monotonically with lambda over that
+  range; no local sensitivity around the result is stated. The commuter check (0.7142 over 245 activities against the
+  SrV 0.4636) is the pre-registered expected miss of ADR-0140 decision 7, a number and not a validation.
 notes: |
-  Record of the table that Task 5 produces; until then parking_garage_decay_m is 0 in configs/base_bs.yml and the two popsim
-  fixture configs (the garage options are off, spec E6). Task 4d built the script and tested it on a synthetic fixture only
-  (tests/fixtures/parking/calibration_plans_fixture.xml); it did not run it on real plans and no lambda was invented.
+  Result: lambda = 396.19 m (decay_length_m of the table; target 0.736196 read from srv2023_city_center_parking, achieved
+  mean 0.736279, 340 of 340 universe activities with a priced garage within 1,000 m, all 49 priced options of the dataset).
+  parking_garage_decay_m of configs/base_bs.yml and the two popsim fixture configs equals it (a test requires the equality),
+  so the garage options are ON in the canonical configuration. The calibration is no validation (ADR-0140 decision 7).
+  Plans provenance: the plans file braunschweig_1pct_parking_v2_plans_population.xml.gz (SHA-256 a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc) is the output of
+  the server run of 2026-10-08 14:45 to 2026-10-09 03:36 (exit 0, server log logs/run_20261008_144516.log on felix) with the
+  overlay ~/parking_v2_plans.yml on the server: configs/base_bs.yml plus the test_1pct scale block, run_matsim false,
+  parking_zones_enabled true, enable_urban_parking false, parking_garage_decay_m 0 (plans without a garage option, as the
+  calibration needs). The plans stay in the gitignored output folder of the main checkout; the run manifest of the v2 runs
+  (Task 5b-3) will reference this plans run. Task 4d built the script and tested it on a synthetic fixture
+  (tests/fixtures/parking/calibration_plans_fixture.xml).

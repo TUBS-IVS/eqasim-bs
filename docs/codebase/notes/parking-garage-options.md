@@ -71,15 +71,16 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 
 `garage_decay_m` is a release value with its calibration table `parking_garage_decay_calibration_2026.csv`, written by
 `scripts/parking/calibrate_garage_decay.py` on the plans of the reference scenario (target: the SrV garage share
-`0.708 / (0.708 + 0.2537)`, READ from `srv2023_city_center_parking`, never typed). The script is built and tested on a
-synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`). The reference plans were lost on 2026-10-07, so
-the calibration has NOT been run: `parking_garage_decay_m` is 0 in `configs/base_bs.yml` and the two popsim fixture
-configs, and `tests/test_parking_garage_decay_config.py` requires 0 until the table exists and the table value once it does.
+`0.708 / (0.708 + 0.2537)`, READ from `srv2023_city_center_parking`, never typed). The script is tested on a
+synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 %
+server run of 2026-10-08: the table is committed and `parking_garage_decay_m` equals its `decay_length_m` in
+`configs/base_bs.yml` and the two popsim fixture configs (`tests/test_parking_garage_decay_config.py` requires the
+equality; the result, universe and provenance are in ADR-0140 decision 7 and the data record
+`parking_garage_decay_calibration_2026`).
 The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
 checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
 time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
-on the run's own outcome report (see the next section). Setting the value is part of the server run (task 5b of issue #436).
-
+on the run's own outcome report (see the next section). 
 ## Comparison with the SrV references
 
 How a run's paid share, garage share and free shares are compared with the committed SrV tables

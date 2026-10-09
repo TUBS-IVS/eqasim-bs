@@ -1,8 +1,8 @@
 # ADR-0140 · 2026-10-08 · Parking cost zones v2: product minimum, garage options, municipal zone data, resident districts, search time off
 
 - **Status:** accepted pending owner review at the PR; production flag ON in the reviewed branch. At the time of writing
-  (2026-10-08) no model run of v2 exists, the calibration of the garage decay length (decision 7) is pending and the garage
-  options are therefore off; the current state is held by the feature record `parking_cost_zones`, not by this record.
+  (2026-10-08) no model run of v2 exists; the garage decay length was calibrated on 2026-10-09 (decision 7, result)
+  and the garage options are on; the current state is held by the feature record `parking_cost_zones`, not by this record.
 - **Numbering:** ADR-0140 is the next free id. Checked on 2026-10-08 across all local and remote branches and the open pull
   requests: `origin/main` holds up to ADR-0136; ADR-0135, ADR-0137 and ADR-0138 exist only on the unmerged branches
   `fix/parallel-memory-robustness`, `feature/employment-grid-kreis-age-shape` and `chore/narrow-mid-trip-table` and stay
@@ -127,7 +127,7 @@ run (see Status).
      cases but unreachable with the production tariffs: every production zone row with a maximum stay carries a long-stay
      product.
    - Tariff model schema 3 adds the priced garages, `garage_decay_m` and `garage_max_distance_m`; schema 1 and 2 files still load
-     and price as before; `garage_decay_m` 0 (the value until the calibration exists) switches the options off; the
+     and price as before; `garage_decay_m` 0 (the pre-calibration value and the sensitivity arm) switches the options off; the
      export refuses a decay above 0 without a priced garage. Java computes the distances from the activity coordinates
      (no new plan attribute). The outcome report (CSV v3: `outcome,zone_id,purpose,count,share,garage_probability_sum,
      stays_with_garages_in_range`) shows the expected garage share per zone and purpose; its counts are pricing calls.
@@ -145,11 +145,21 @@ run (see Status).
    price-independent (G1) and no Braunschweig garage has a monthly product in the dataset, so a commuter's garage option is a
    day rate; lambda is NOT tuned to it. The baseline arm for work and education stays is `zones_v2_no_garages` (lambda 0).
    Limitation: E4 fires only for a stay that is free on the street as a whole, so mostly-evening stays still get the
-   garage mixture. The calibration is
-   built (`scripts/parking/calibrate_garage_decay.py`) and tested on a synthetic fixture but has NOT been run: the local
-   reference plans are no longer available (lost on 2026-10-07) and the plans of a server run are needed, so
-   `parking_garage_decay_m` is 0 until the table `parking_garage_decay_calibration_2026.csv` exists (a test requires 0 until
-   then and the table value afterwards). Target and option set differ in kind: the target
+   garage mixture.
+   RESULT (calibration run 2026-10-09, issue #436 Task 5b; a calibration, no validation): on the plans of the 1 % reference
+   run of 2026-10-08 (`parking_zones_enabled` true, garage options off, no MATSim run; plans SHA-256
+   `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`, 12,567 persons) the script found lambda = 396.19 m
+   (the committed table `parking_garage_decay_calibration_2026.csv`, which records every input hash, the search and the
+   code state; `parking_garage_decay_m` of `configs/base_bs.yml` and the two popsim fixtures equals it, a test requires the
+   equality). Universe: 340 destination activities of the 50,747 main activities, all with a priced garage within 1,000 m
+   (340/340); target 0.736196, achieved mean 0.736279 after 12 halvings; the mean probability is 0.0055 at lambda 10 m and
+   0.8911 at 5,000 m (the ends of the search). The universe is small (a 1 % sample), so lambda is a coarse estimate and its
+   sampling uncertainty is not quantified. The pre-registered commuter comparison came out as the expected MISS: the model's
+   commuter garage share for `bs_zentrum` is 0.7142 over 245 work and education activities against the SrV 0.4636 (a number
+   and the expectation above, not a target; lambda was not tuned to it). The option set of the release value is all 49
+   priced options (36 garages, 13 surface lots, none of the latter within reach of the zones Ia and Ib; see below). The
+   garage options are ON in the canonical configuration with this lambda; no v2 MATSim run exists yet and v2 stays
+   unvalidated. Target and option set differ in kind: the target
    `garage_large_lot / (garage_large_lot + street)` contains large surface lots, while the Braunschweig option set holds 12
    garages and no surface lot (all 13 surface lots of the dataset are in Wolfsburg; the BgA lots are zones, R-E1), so lambda
    is pushed up to let the garages carry the large-lot share. A calibration on the garages alone (`--facility-kinds garage`)
@@ -311,8 +321,9 @@ run (see Status).
 - Scientific results change when the flag is on. Against ADR-0139 the prices change through the zone geometry (Wolfsburg
   zones, Braunschweig 1a/1b, TU campus unions, the single paid sites), the product minimum (cheaper long stays through
   commuter products), the resident districts, the Wolfsburg and campus free-parking shares and the BgA corrections. The
-  garage options change prices only after lambda is calibrated: with `parking_garage_decay_m` 0, the state of this record,
-  they are off. How much the mode shares move is not established: no v2 run exists, so no direction or size is stated here.
+  garage options change prices through the calibrated lambda (396.19 m, decision 7): with `parking_garage_decay_m`
+  396.19, the state of this record, they are on. How much the mode shares move is not established: no v2 run exists,
+  so no direction or size is stated here.
   The expected output change of each data update is stated once in its data record.
 - v2 is unvalidated. A future run records its comparison with the SrV references in a run manifest (a comparison with a
   universe caveat; convergence of a run is not validation); the SrV garage share is a calibration target and counts as no

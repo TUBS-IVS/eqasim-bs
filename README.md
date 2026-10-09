@@ -285,8 +285,8 @@ python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV comp
 
 **Parking cost zones (ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
 their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
-expected cost); the garage options stay OFF (`parking_garage_decay_m` 0) until their decay length is calibrated on the plans of
-a server run, which has not happened yet, and the parking search time is off. Decisions and rejected options: ADR-0140;
+expected cost); the garage options are ON with the calibrated decay length `parking_garage_decay_m` (calibrated on the plans of a
+server run, no validation; 0 switches them off) and the parking search time is off. Decisions and rejected options: ADR-0140;
 mechanism: `docs/codebase/notes/parking-cost-zones.md`. The tariff table
 (`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
@@ -308,9 +308,10 @@ re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf`
 `eqasim-data/data/braunschweig/parking/raw_osm/` and `python scripts/build_parking_zones_from_osm.py --supply-share`
 (the pipeline's own OSM input D1 is not used for it). The garage dataset ships with its QA table
 `braunschweig/parking/parking_garages_2026_qa.csv`, and `validate_parking_zones.py` cross-checks it with the tariff
-table; the config key `parking_garage_decay_m` (the decay length of the garage weights, metres) is 0 (garage options off)
-until `python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` has calibrated it on
-the server plans and committed `braunschweig/parking/parking_garage_decay_calibration_2026.csv`; re-deriving the garage
+table; the config key `parking_garage_decay_m` (the decay length of the garage weights, metres) equals the `decay_length_m` of
+`braunschweig/parking/parking_garage_decay_calibration_2026.csv` (committed; a test requires the equality), which
+`python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` writes (0 = garage
+options off); re-deriving the garage
 dataset needs the owner's regional evidence package and its three supplement packages
 (`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`,
 `Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`) in

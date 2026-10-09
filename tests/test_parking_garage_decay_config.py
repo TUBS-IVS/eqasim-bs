@@ -2,10 +2,11 @@
 
 ``parking_garage_decay_m`` is a release value, not a free run parameter: it equals the ``decay_length_m`` of the committed
 calibration table ``parking_garage_decay_calibration_2026.csv`` (written by ``scripts/parking/calibrate_garage_decay.py``).
-The table does NOT exist yet: the reference plans of the calibration were lost on 2026-10-07 and the calibration runs on the
-server plans of Task 5 of issue #436. While the table is absent the value must be 0 (the garage options are off, E6); once
-it is committed the value must equal it, and the first of these two tests that fits the repository state decides. Writing the
-table without setting the config value, or setting a value without the table, fails here.
+The table is committed (the calibration of the 1 % reference plans of 2026-10-08, issue #436) and the value equals
+it. The 0 branch below remains for a checkout without the table: the value must
+then be 0 (the garage options are off, E6); with the table the value must equal it, and the first of these two tests
+that fits the repository state decides. Writing the table without setting the config value, or setting a value without
+the table, fails here.
 """
 from __future__ import annotations
 

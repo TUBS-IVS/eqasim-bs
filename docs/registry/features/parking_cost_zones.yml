@@ -175,9 +175,12 @@ validation:
     and in randomised differential tests. These are consistency checks, not a validation; the one comparison
     with an observed quantity (the SrV city-centre paid share) carries a universe caveat and is recorded as a
     comparison. That smoke ran the first release (ADR-0139). STATE OF THE V2 RELEASE (ADR-0140; this is the one place that
-    states it): no run of it exists, neither the three-arm comparison nor the calibration of lambda, so nothing of v2 is
-    validated and no direction or size of an effect on the mode shares is stated; parking_garage_decay_m is 0 in the
-    canonical configuration, so the garage options are off until the calibration table exists; the parking search time is
+    states it): no MATSim run of it exists, neither the three-arm comparison nor any other, so nothing of v2 is
+    validated and no direction or size of an effect on the mode shares is stated; the garage options are ON in the
+    canonical configuration with the calibrated decay length parking_garage_decay_m (the table
+    parking_garage_decay_calibration_2026, calibrated 2026-10-09 on the plans of the 1 % server run of 2026-10-08;
+    a calibration to an SrV share, no validation; the commuter check missed the SrV reference as ADR-0140 decision 7
+    pre-registered); the parking search time is
     off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:

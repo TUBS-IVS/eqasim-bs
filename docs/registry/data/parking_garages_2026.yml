@@ -577,9 +577,10 @@ licensing:
 limitations: >-
   The zone-level garage columns of the tariff table stay empty (spec Amendment E8). The zone release stage loads the
   dataset and the tariff model lists its priced garages (schema 3), but a garage becomes an option of a stay only with a
-  decay length greater than 0 (config parking_garage_decay_m, spec E6); the decay length is 0 until it is calibrated on
-  the server plans (Task 5 of issue #436: the local reference plans were lost on 2026-10-07), so the model prices no
-  garage option and the simulated prices are those of the zone tariffs. The distance-weighted garage options of spec
+  decay length greater than 0 (config parking_garage_decay_m, spec E6); the decay length is the calibrated lambda of
+  the data record parking_garage_decay_calibration_2026 (calibrated 2026-10-09 on the plans of the 1 % server run of
+  2026-10-08), so the model prices the garage options of a stay in a paid zone as an expected cost; with a decay length
+  of 0 (the sensitivity arm) it prices none and the prices are those of the zone tariffs. The distance-weighted garage options of spec
   Amendment E, the pricing of the tiers (ASSUMPTION P6, with the clock window of the first period), of the duration bands
   (ASSUMPTION P8, with P9 beyond a closed schedule) and of the grace period (ASSUMPTION P10, encoded as bands) are the
   reference implementation braunschweig.parking.cost.parking_cost_with_garages (Task 4d); the Java port is Task 4e. The

@@ -712,13 +712,12 @@ config:
   # the destination of a stay is an option of the stay.
   parking_garage_max_distance_m: 1000.0
   # ASSUMPTIONS G1 and G3 (spec Amendment E3 and E5): the decay length lambda in metres of the garage weights
-  # exp(-d / lambda), calibrated by scripts/parking/calibrate_garage_decay.py on the plans of the reference
-  # scenario (target: the garage share of srv2023_city_center_parking). 0 switches the garage options off (E6,
-  # the sensitivity arm). CALIBRATION PENDING: the reference plans were lost on 2026-10-07; the calibration runs
-  # on the server plans (Task 5 of issue #436), sets this value and commits
-  # parking_garage_decay_calibration_2026.csv. Until that table exists the value is 0 and
-  # tests/test_parking_garage_decay_config.py requires 0; once it exists the test requires the table value.
-  parking_garage_decay_m: 0.0
+  # exp(-d / lambda). A release value, CALIBRATED (not estimated) by scripts/parking/calibrate_garage_decay.py on the
+  # plans of the 1 % reference run of 2026-10-08 (plans SHA-256 a052270838a198c4...; target: the garage share of
+  # srv2023_city_center_parking) and committed as parking_garage_decay_calibration_2026.csv, whose decay_length_m
+  # this value equals (tests/test_parking_garage_decay_config.py requires the equality). A calibration is no
+  # validation. 0 switches the garage options off (E6, the sensitivity arm).
+  parking_garage_decay_m: 396.19
   # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
   # imputed product of its municipality (the median of the published current garage monthly products of that
   # municipality, computed by the curation into the garage dataset, at least two products needed) as the monthly
