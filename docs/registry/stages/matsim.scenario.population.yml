@@ -42,9 +42,20 @@ features:
 - rbw_leg_convention
 - urban_parking
 - general_day_absence
+- portal_trips
 decisions:
 - ADR-0121
 - ADR-0104
 - ADR-0022
 - ADR-0029
 - ADR-0110
+- ADR-0141
+notes: >-
+  PORTAL GATE MARKER (ADR-0141, issue #442, feature record portal_trips): the vendored writer
+  matsim/scenario/population.py sets the Boolean (java.lang.Boolean) activity attribute portalGate=true on
+  every activity written with the purpose outside, which only portal stays carry. It is an identification
+  marker (it tells a portal gate from the outside activities of the cutter, for analyses); no Java code of
+  the production configuration reads it, because the discrete mode choice already freezes the tours that
+  touch an outside activity (ADR-0141, decision 6). Without outside activities the
+  output is byte-identical. The writer also logs the car to car_passenger re-mode rate (the carless
+  re-mode shim, now counted, with the share of portal legs among the re-moded legs).

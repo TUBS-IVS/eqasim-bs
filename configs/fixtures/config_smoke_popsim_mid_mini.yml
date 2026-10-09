@@ -26,6 +26,11 @@ config:
   # -- drawing states without replacing the day would write a commuteDayState attribute that
   # contradicts the plan it is attached to.
   commute_day_state_enabled: false
+  # Portal trips (eqasim-bs#442, ADR-0141): OFF for this fixture. The portal layer rewrites
+  # synthesis.population.trips.final, which the fixtures alias to the bare pre-assignment trips,
+  # and it needs the cordon; with the default (true) the chain solver would pull the portal stage
+  # into this DAG.
+  braunschweig.portal.enabled: false
   processes: 8
 
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)

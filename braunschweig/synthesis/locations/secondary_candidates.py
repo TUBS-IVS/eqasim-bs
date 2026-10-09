@@ -28,6 +28,9 @@ from __future__ import annotations
 import hashlib
 import importlib
 import inspect
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 #: Modules hashed by dotted NAME because this stage imports them inside a function body.
@@ -48,6 +51,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.locations.secondary_chainsolvers.inverse_cdf",
     "braunschweig.synthesis.locations.secondary_chainsolvers.srv_location_types",
     "braunschweig.synthesis.locations.secondary_other_potential",
+    # Guard rail 2 of the portal-trip feature (eqasim-bs#442): the flag key and the supply-ring
+    # polygon builder this stage runs when the external centroids are bounded to the ring.
+    "braunschweig.synthesis.portal_trips.config_keys",
+    "braunschweig.data.spatial.cordon",
 )
 
 
@@ -88,6 +95,13 @@ def configure(context):
 
         if context.config("secondary_external_candidates", True):
             context.stage("braunschweig.data.external_secondary_points")
+            # Guard rail 2 (eqasim-bs#442): with the portal layer on, external centroids
+            # outside the supply ring are dropped; the ring is built from the municipalities
+            # and the same buffer the cordon network source uses (default as incommuters).
+            from braunschweig.synthesis.portal_trips.config_keys import DEFAULT_ENABLED, KEY_ENABLED
+            if context.config(KEY_ENABLED, DEFAULT_ENABLED):
+                context.config("cordon_network_source_buffer_m", 45000.0)
+                context.stage("data.spatial.municipalities")
         # Only for the external-candidates-without-cordon warning.
         context.config("cordon_enabled", False)
 
@@ -148,6 +162,7 @@ def execute(context):
         append_residential_visit_candidates,
         build_secondary_candidates,
         external_candidates_cordon_warning,
+        restrict_external_to_supply_ring,
     )
 
     df_secondary = context.stage("synthesis.locations.secondary")
@@ -193,6 +208,28 @@ def execute(context):
     external_on = context.config("secondary_external_candidates")
     df_external = (context.stage("braunschweig.data.external_secondary_points")
                    if external_on else None)
+    if df_external is not None and len(df_external):
+        from braunschweig.synthesis.portal_trips.config_keys import KEY_ENABLED
+        if context.config(KEY_ENABLED):
+            # Guard rail 2 (eqasim-bs#442): beyond the supply ring there is no network or
+            # timetable, so a centroid there is only reachable as a portal trip.
+            from braunschweig.data.spatial.cordon import build_cordon_polygon
+            municipalities = context.stage("data.spatial.municipalities")
+            if df_external.crs != municipalities.crs:
+                raise ValueError(
+                    "[braunschweig.secondary_candidates] the external centroids are in CRS "
+                    f"{df_external.crs} but data.spatial.municipalities is in CRS "
+                    f"{municipalities.crs}; the supply-ring test would be meaningless. Reproject "
+                    "braunschweig.data.external_secondary_points into the municipalities' CRS."
+                )
+            ring = build_cordon_polygon(
+                municipalities, float(context.config("cordon_network_source_buffer_m")))
+            n_before = len(df_external)
+            df_external, n_dropped = restrict_external_to_supply_ring(df_external, ring)
+            logger.info(
+                "[braunschweig.secondary_candidates] external centroids inside the supply ring: "
+                "%d/%d kept (%.1f%%), %d dropped (portal trips cover the rest, eqasim-bs#442)",
+                len(df_external), n_before, 100.0 * len(df_external) / n_before, n_dropped)
     warning = external_candidates_cordon_warning(
         external_on, context.config("cordon_enabled"))
     if warning:

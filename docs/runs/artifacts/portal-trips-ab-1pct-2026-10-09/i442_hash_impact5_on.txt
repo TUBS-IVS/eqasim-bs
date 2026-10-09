@@ -1,0 +1,131 @@
+# stage hashes for configs/base_bs.yml + eqasim-data/i442_1pct_on.yml [deterministic]
+stage                                                                  hash          n_cfg cache variants_present
+braunschweig.analysis.analysis_suite                                   486e52112581    293 MISS                 0
+braunschweig.analysis.cordon_validation                                1a2cd94e079d    211 MISS                 0
+braunschweig.analysis.simwrapper_export                                4fe5d6332419    287 MISS                 0
+braunschweig.analysis.verbindungen_validation                          f62b52fa3bc7    170 MISS                 0
+braunschweig.data.alkis                                                c1c30a53e689      2 HIT                  1
+braunschweig.data.bbsr.regiostar                                       b53dadbacbf2      3 HIT                  1
+braunschweig.data.bosserhof_location_category                          5bb008300317      2 HIT                  1
+braunschweig.data.bosserhof_purpose                                    4d5f594e4954      1 HIT                  1
+braunschweig.data.building_potentials                                  2c19dac33dfb      5 HIT                  1
+braunschweig.data.buildings                                            baf9a18b2c20      5 HIT                  3
+braunschweig.data.census.employees                                     edf3db6d87eb      5 HIT                  3
+braunschweig.data.census.employment                                    daa879fdfb1e      5 HIT                  3
+braunschweig.data.census.pendler                                       ba229329bf17      4 HIT                  1
+braunschweig.data.cordon_gemeinden                                     368060e74a93      4 HIT                  1
+braunschweig.data.cordon_network                                       2518954ea5d3     25 HIT                  3
+braunschweig.data.cordon_pt_gates                                      7cc1e8d3b975     27 HIT                  4
+braunschweig.data.external_secondary_points                            c04db1943ae1      4 HIT                  1
+braunschweig.data.external_workplaces                                  d8b53a38d650      7 HIT                  1
+braunschweig.data.freight.german_wide                                  e950b72cc047      3 HIT                  1
+braunschweig.data.hts.mid_donor                                        8ae54c4fad3b      3 HIT                  1
+braunschweig.data.inkar.household_income                               b3c4c993ddc4      4 HIT                  1
+braunschweig.data.landuse                                              fc97173cea7f      2 HIT                  1
+braunschweig.data.locations                                            52dd727dc783      7 HIT                  3
+braunschweig.data.osm                                                  ed1151793fc1      2 HIT                  1
+braunschweig.data.schools.facilities                                   580da761229f      2 HIT                  1
+braunschweig.data.schools.kita_facilities                              c76a2fdccdca     10 HIT                  4
+braunschweig.data.schools.university_facilities                        deeccc1639a2     10 HIT                  4
+braunschweig.data.verbindungen.margins                                 e42f2df17163      6 MISS                 0
+braunschweig.data.verbindungen.work_od                                 e42f2df17163      6 HIT                  1
+braunschweig.data.verbindungen.zones                                   e42f2df17163      6 HIT                  1
+braunschweig.data.vrb.zone_polygons                                    d45091351f5c     17 HIT                  1
+braunschweig.freight.extraction                                        8e87a15edd28     21 HIT                  4
+braunschweig.freight.trips                                             8e87a15edd28     21 HIT                  4
+braunschweig.gravity.model                                             9366ff87dd43     96 HIT                  1
+braunschweig.locations.secondary                                       52dd727dc783      7 HIT                  3
+braunschweig.locations.synthesis.replacement_education_gravity         f62b52fa3bc7    170 MISS                 1
+braunschweig.locations.work                                            1a0249bd0d48     10 HIT                  6
+braunschweig.matsim.scenario.facilities                                c92cf5ac7b6f    274 MISS                 1
+braunschweig.matsim.scenario.households                                11ea7cf10a72    208 MISS                 1
+braunschweig.matsim.scenario.population                                26e7f30591e0    290 MISS                 1
+braunschweig.matsim.scenario.vehicles                                  da5c5cfd8618    221 MISS                 1
+braunschweig.matsim.simulation.prepare                                 3e8173091cd1    323 MISS                 1
+braunschweig.popsim.commute_distance                                   59c1a7fda52c     83 HIT                  1
+braunschweig.popsim.completed_donor                                    0341b40d42ff     12 HIT                  3
+braunschweig.popsim.distance_distributions                             9741273ebd5e     20 MISS                 6
+braunschweig.popsim.enriched_adapter                                   5cbb06ada00e     73 HIT                  1
+braunschweig.popsim.stage                                              3b30b8e0a8a9     71 HIT                 19
+braunschweig.popsim.trips_stage                                        59c1a7fda52c     83 HIT                  1
+braunschweig.synthesis.commute_day.activities_day_stage                2da37f70ded9    211 MISS                 1
+braunschweig.synthesis.commute_day.home_office_donors_stage            48c3d738a298     17 HIT                  1
+braunschweig.synthesis.commute_day.output_day                          33c4310f784f    280 MISS                 1
+braunschweig.synthesis.commute_day.spatial_locations_day               479830db0420    262 MISS                 1
+braunschweig.synthesis.commute_day.state_stage                         a95868ae0dd1    175 MISS                 1
+braunschweig.synthesis.commute_day.trips_day_stage                     0387a13a08b5    180 MISS                 1
+braunschweig.synthesis.cordon_gates                                    66d69eb5a8cf     32 HIT                  3
+braunschweig.synthesis.day_absence.absence_stage                       65c065641ee5     88 HIT                  1
+braunschweig.synthesis.incommuters                                     ef75ffe08339    117 HIT                  1
+braunschweig.synthesis.locations.education_gravity                     f5f2673a6fd3    169 MISS                 1
+braunschweig.synthesis.locations.home_cell                             2a308a08a015     78 HIT                  1
+braunschweig.synthesis.locations.secondary_candidates                  3cda09410613     29 MISS                 1
+braunschweig.synthesis.locations.secondary_chainsolvers                479830db0420    262 MISS                 1
+braunschweig.synthesis.portal_trips.anchors                            2da37f70ded9    211 MISS                 0
+braunschweig.synthesis.portal_trips.stage                              2da37f70ded9    211 MISS                 0
+braunschweig.synthesis.portal_trips.trips_final                        2da37f70ded9    211 MISS                 0
+braunschweig.synthesis.spatial.home_zones                              5cbb06ada00e     73 HIT                  1
+braunschweig.synthesis.student_incommuters                             76e05f6dbb16    201 MISS                 1
+braunschweig.synthesis.vehicles.cars.household                         7d0c7dc7e27a     91 HIT                  1
+data.gtfs.cleaned                                                      1d43af8cb416     10 HIT                  3
+data.hts.entd.cleaned                                                  dbe8ad3b1a93      1 HIT                  1
+data.hts.entd.raw                                                      dbe8ad3b1a93      1 HIT                  1
+data.osm.cleaned                                                       a2200b694690     12 HIT                  3
+data.osm.osmosis                                                       061e3a907c27      3 HIT                  1
+data.spatial.departments                                               c04db1943ae1      4 HIT                  1
+data.spatial.municipalities                                            c04db1943ae1      4 HIT                  2
+documentation.meta_output                                              288f1815ec4f      6 MISS                 1
+eqasim_common.data.osm.chunked                                         3a187d0bdff4      7 HIT                  3
+eqasim_common.data.osm.locations                                       3a187d0bdff4      7 HIT                  2
+eqasim_common.data.osm.osmconvert                                      be5c115868fe      1 HIT                  1
+eqasim_common.data.population.raw                                      c04db1943ae1      4 HIT                  1
+eqasim_common.data.spatial.iris                                        c04db1943ae1      4 HIT                  2
+eqasim_common.gravity.distance_matrix                                  c04db1943ae1      4 HIT                  2
+eqasim_common.locations.education                                      3a187d0bdff4      7 HIT                  2
+eqasim_common.spatial.codes                                            c04db1943ae1      4 HIT                  2
+eqasim_common.spatial.entd_codes                                       dbe8ad3b1a93      1 HIT                  1
+matsim.output                                                          11d045399f88    333 MISS                 1
+matsim.runtime.eqasim                                                  1c974c0f10b3     12 HIT                  1
+matsim.runtime.git                                                     ad41c38f3c0e      1 HIT                  1
+matsim.runtime.java                                                    f381c66d72cb      2 HIT                  1
+matsim.runtime.maven                                                   7d703597c548      3 HIT                  1
+matsim.runtime.pt2matsim                                               63258fbf8a6b      8 HIT                  1
+matsim.scenario.supply.gtfs                                            e905d0ba9fc6     19 HIT                  3
+matsim.scenario.supply.osm                                             e5a6270e322d     19 HIT                  2
+matsim.scenario.supply.processed                                       2518954ea5d3     25 HIT                  3
+matsim.simulation.run                                                  7a9f36f418f0    329 MISS                 0
+synthesis.population.activities                                        59c1a7fda52c     83 HIT                  1
+synthesis.population.sampled                                           5cbb06ada00e     73 HIT                  1
+synthesis.population.spatial.primary.candidates                        8f75f917fed2    115 MISS                 1
+synthesis.vehicles.passengers.default                                  5cbb06ada00e     73 HIT                  1
+synthesis.vehicles.vehicles                                            8240bf931a3b     92 HIT                  1
+
+# 99 stages, 71 cache hits, 28 misses
+#   MISS braunschweig.analysis.analysis_suite
+#   MISS braunschweig.analysis.cordon_validation
+#   MISS braunschweig.analysis.simwrapper_export
+#   MISS braunschweig.analysis.verbindungen_validation
+#   MISS braunschweig.data.verbindungen.margins
+#   MISS braunschweig.locations.synthesis.replacement_education_gravity
+#   MISS braunschweig.matsim.scenario.facilities
+#   MISS braunschweig.matsim.scenario.households
+#   MISS braunschweig.matsim.scenario.population
+#   MISS braunschweig.matsim.scenario.vehicles
+#   MISS braunschweig.matsim.simulation.prepare
+#   MISS braunschweig.popsim.distance_distributions
+#   MISS braunschweig.synthesis.commute_day.activities_day_stage
+#   MISS braunschweig.synthesis.commute_day.output_day
+#   MISS braunschweig.synthesis.commute_day.spatial_locations_day
+#   MISS braunschweig.synthesis.commute_day.state_stage
+#   MISS braunschweig.synthesis.commute_day.trips_day_stage
+#   MISS braunschweig.synthesis.locations.education_gravity
+#   MISS braunschweig.synthesis.locations.secondary_candidates
+#   MISS braunschweig.synthesis.locations.secondary_chainsolvers
+#   MISS braunschweig.synthesis.portal_trips.anchors
+#   MISS braunschweig.synthesis.portal_trips.stage
+#   MISS braunschweig.synthesis.portal_trips.trips_final
+#   MISS braunschweig.synthesis.student_incommuters
+#   MISS documentation.meta_output
+#   MISS matsim.output
+#   MISS matsim.simulation.run
+#   MISS synthesis.population.spatial.primary.candidates

@@ -434,7 +434,7 @@ def test_injection_with_mocked_geodata_facilities_and_vehicles_wiring(monkeypatc
     written = {}
     monkeypatch.setattr(
         fac_mod.base, "write_facilities",
-        lambda output_path, homes, primary, secondary, context: written.update(
+        lambda output_path, homes, primary, secondary, context, df_portal=None: written.update(
             homes=homes, primary=primary) or "facilities.xml.gz")
     fac_mod.execute(fac_ctx)
 
@@ -533,7 +533,7 @@ def test_facilities_and_vehicles_off_path_registers_nothing_for_students(monkeyp
     written = {}
     monkeypatch.setattr(
         fac_mod.base, "write_facilities",
-        lambda output_path, homes, primary, secondary, context: written.update(
+        lambda output_path, homes, primary, secondary, context, df_portal=None: written.update(
             homes=homes, primary=primary) or "facilities.xml.gz")
     fac_mod.execute(fac_ctx)
     assert len(written["homes"]) == 0

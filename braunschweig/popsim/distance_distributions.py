@@ -181,6 +181,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.seed",
     "braunschweig.popsim.shop_subtype",
     "braunschweig.popsim.stage.config_keys",
+    "braunschweig.synthesis.portal_trips.config_keys",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.data.mid.reference_tables",
@@ -423,6 +424,38 @@ def _build_leisure_unspecified_layer(df: pd.DataFrame) -> dict | None:
     return _build_mode_distributions(unspecified_df)
 
 
+def _drop_trips_beyond_distance(df: pd.DataFrame, max_distance_m: float) -> pd.DataFrame:
+    """Drop trips whose ``distance`` (straight-line metres) exceeds ``max_distance_m``.
+
+    Logs the dropped rate per mode (denominator: that mode's trips before the filter) and a
+    total, and RAISES ``ValueError`` naming every mode that loses ALL its trips and the bound --
+    the sampler would find no distribution for it and fail late with a misleading KeyError.
+    Trips with a missing distance are kept here; Step 5b removes them and counts them.
+    """
+    if not max_distance_m > 0.0:
+        raise ValueError(
+            f"[popsim.distance_distributions] max_distance_m must be > 0 m, got {max_distance_m!r}.")
+    beyond = df["distance"] > max_distance_m
+    kept = df[~beyond].copy()
+    for mode, n_mode in df["mode"].value_counts().sort_index().items():
+        n_dropped = int((beyond & (df["mode"] == mode)).sum())
+        logger.info(
+            "[popsim.distance_distributions] trips beyond %.0f m dropped: %d/%d (%.2f%%) [%s]",
+            max_distance_m, n_dropped, n_mode, 100.0 * n_dropped / n_mode, mode)
+    n_before = len(df)
+    logger.info(
+        "[popsim.distance_distributions] trips beyond %.0f m dropped in total: %d/%d (%.2f%%) "
+        "(eqasim-bs#442)", max_distance_m, int(beyond.sum()), n_before,
+        100.0 * int(beyond.sum()) / n_before if n_before else 0.0)
+    lost_modes = sorted(set(df["mode"].unique()) - set(kept["mode"].unique()))
+    if lost_modes:
+        raise ValueError(
+            f"[popsim.distance_distributions] no trip left within {max_distance_m:.0f} m for "
+            f"mode(s) {lost_modes}: the secondary sampler would find no distance distribution for "
+            "them and fail late. Raise max_distance_m or check the MiD distances of these modes.")
+    return kept
+
+
 def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         shop_daily_split: bool = False,
         leisure_subtype_split: bool = False,
@@ -439,7 +472,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         codeplan_sentinels: bool = False,
         leisure_unspecified_subtype: bool = False,
         weekday_legs_only: bool = False,
-        exclude_no_answer_purpose: bool = False) -> dict:
+        exclude_no_answer_purpose: bool = False,
+        max_distance_m: float | None = None) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -595,6 +629,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         ``braunschweig.synthesis.locations.secondary_chainsolvers`` declares too
         so the deciders' ESTIMATION universe and these layers' donor universe
         cannot diverge.
+
+    max_distance_m:
+        Drop trips whose straight-line distance exceeds this many metres BEFORE any
+        distribution is built (eqasim-bs#442: the sampler must not reach beyond the
+        supplied area; None keeps every trip and the output byte-identical). Unit:
+        metres, valid range > 0. The dropped share is logged per mode; a mode left
+        without any trip raises ``ValueError`` naming the mode(s) and the bound.
 
     Returns
     -------
@@ -796,6 +837,15 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     # attached (ADR-0117). It cannot fire on the 2026-09 delivery, which carries none.
     df["distance"] = _diary_facts.validate_trip_length_km(
         df["wegkm_imp"], log_tag="[popsim.distance_distributions]") * 1000.0 / DETOUR_FACTOR
+
+    # --- Step 4b: bound the pools by the portal threshold (eqasim-bs#442). ------
+    # The secondary-location sampler draws a distance from these CDFs and then looks for a
+    # location at that distance; a donor trip beyond the routable threshold would send the
+    # draw outside the supplied area. Dropped here, BEFORE any layer is built, so the
+    # aggregate, per-purpose and every subtype layer share one bounded universe. The chain
+    # was derived in Step 2, so removing a leg changes no other leg's preceding_purpose.
+    if max_distance_m is not None:
+        df = _drop_trips_beyond_distance(df, float(max_distance_m))
 
     # --- Step 5: select columns needed and filter primary-only trips. ------
     # Keep W_ZWD when present: needed by Task 5 (shop daily split) and
@@ -1161,6 +1211,14 @@ def configure(context):
     # applies to every layer this stage builds, the aggregate one included.
     context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
                    DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
+    # Portal-trip guard rail 1 (eqasim-bs#442): bound the distance CDFs by the portal threshold
+    # so the secondary sampler never draws a distance beyond the supplied area. Shared key and
+    # default constants (config_keys is the one home); inert when the feature is disabled.
+    from braunschweig.synthesis.portal_trips.config_keys import (
+        DEFAULT_ENABLED as PORTAL_DEFAULT_ENABLED, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
+        KEY_ENABLED as PORTAL_KEY_ENABLED, KEY_MAX_ROUTABLE_DISTANCE_M)
+    context.config(PORTAL_KEY_ENABLED, PORTAL_DEFAULT_ENABLED)
+    context.config(KEY_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MAX_ROUTABLE_DISTANCE_M)
 
 
 def execute(context):
@@ -1180,6 +1238,8 @@ def execute(context):
         KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
+    from braunschweig.synthesis.portal_trips.config_keys import (
+        KEY_ENABLED as PORTAL_KEY_ENABLED, KEY_MAX_ROUTABLE_DISTANCE_M)
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     by_purpose = context.config("secondary_distance_by_purpose")
@@ -1200,6 +1260,9 @@ def execute(context):
     # One-argument execute-context read (the key and its default are declared in configure()).
     weekday_legs_only = bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY))
     exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
+    # Straight-line metres; None (feature disabled) keeps every donor trip.
+    max_distance_m = (float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M))
+                      if context.config(PORTAL_KEY_ENABLED) else None)
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -1226,4 +1289,5 @@ def execute(context):
         leisure_unspecified_subtype=leisure_unspecified_subtype,
         weekday_legs_only=weekday_legs_only,
         exclude_no_answer_purpose=exclude_no_answer_purpose,
+        max_distance_m=max_distance_m,
     )

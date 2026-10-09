@@ -9,6 +9,8 @@ lineage:
   notes: null
 code:
 - braunschweig/synthesis/locations/secondary_candidates.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/candidates.py
+- braunschweig/synthesis/portal_trips/config_keys.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -16,3 +18,17 @@ pipelines:
 production: true
 features:
 - building_potentials_secondary
+- portal_trips
+decisions:
+- ADR-0027
+- ADR-0141
+notes: >-
+  PORTAL GUARD RAIL (ADR-0141, issue #442, feature record portal_trips): with braunschweig.portal.enabled
+  true and secondary_external_candidates on, the external Gemeinde centroids are restricted to the supply
+  ring (restrict_external_to_supply_ring in secondary_chainsolvers/candidates.py) before the candidate set
+  is built. The ring is the cordon polygon buffered by cordon_network_source_buffer_m (the network SOURCE
+  clip, 45 km), wider than the MATSim scenario cut; candidates between the cut and the ring still become
+  cutter outside activities as before. Beyond the ring long-distance trips are portal trips. The stage
+  logs kept/dropped as a rate and raises when a non-empty input keeps nothing (CRS mismatch or broken
+  ring) or when the external points and the municipalities are in different CRS. With the flag off every
+  centroid is kept. The flag, the ring buffer and the municipalities stage are declared in configure.

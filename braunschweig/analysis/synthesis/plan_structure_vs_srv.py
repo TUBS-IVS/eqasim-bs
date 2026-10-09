@@ -40,6 +40,12 @@ Reporting-day view and the general day-absence draw (issue #370)
   actually simulates (commute-day replacement and the general day-absence removal already
   applied, per their own flags). This is the default because a plan-structure comparison
   should describe the day that is run, not an intermediate one.
+  EXCEPTION (eqasim-bs#442, ADR-0141): with ``braunschweig.portal.enabled`` true the ``"final"`` view
+  reads the reporting-day trips BEFORE the portal rewrite
+  (:data:`braunschweig.synthesis.portal_trips.config_keys.PRE_PORTAL_TRIPS_STAGE`). SrV has no
+  ``outside`` stays, and the portal rewrite replaces a donor's far legs by two legs to a gate, which
+  would shift trip counts, purposes and departure profiles against the unchanged reference.
+  ``provenance.json`` records ``portal_layer_enabled``.
 * ``"pre_assignment"`` -- the pre-assignment view ``synthesis.population.trips``, for a
   comparison that predates ADR-0104 / issue #370 or that deliberately wants the day BEFORE any
   reporting-day replacement.
@@ -106,6 +112,7 @@ from braunschweig.calibration import srv_distance_targets as T
 from braunschweig.calibration import srv_plan_structure as SRV
 from braunschweig.synthesis.day_absence import absence as _day_absence
 from braunschweig.synthesis.day_absence.absence import absent_person_ids
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.plan_structure_vs_srv")
 
@@ -118,6 +125,10 @@ KEY_MAX_UNMATCHED_HOME_SHARE = "plan_structure_max_unmatched_home_share"
 #: view (default) or the pre-assignment one. See the module docstring section "Reporting-day
 #: view and the general day-absence draw".
 KEY_TRIPS_VIEW = "plan_structure_trips_view"
+#: The portal layer flag (eqasim-bs#442, ADR-0141), re-exported from its single home. While it is on, the
+#: ``"final"`` view reads the PRE-portal reporting-day trips (see the module docstring).
+KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
+DEFAULT_PORTAL_ENABLED = _portal_config_keys.DEFAULT_ENABLED
 DEFAULT_TRIPS_VIEW = "final"
 #: Whether the general day-absence draw's away-from-home persons are marked on the model side.
 #: Same key and default as every other consumer of :data:`ABSENCE_STAGE`
@@ -168,7 +179,9 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: the :data:`ABSENCE_STAGE` dependency already invalidates this stage's synpp cache when the
 #: absence stage's OWN output changes, but hashing the pure helper here too costs nothing and
 #: keeps "over-hash rather than under-hash" uniform across every direct import in this file.
-_HELPER_MODULES = (P, SRV, T, run_provenance, _day_absence)
+#: ``_portal_config_keys`` owns the portal flag key, its default and the pre-portal stage name that
+#: decide which trips the "final" view reads (eqasim-bs#442, ADR-0141).
+_HELPER_MODULES = (P, SRV, T, run_provenance, _day_absence, _portal_config_keys)
 #: Imported inside validate() rather than at module level, exactly as execute() does: a
 #: top-level import of braunschweig.analysis.spatial pulls geopandas and the VG250 access into
 #: every import of this stage. Its ``assign_geographies`` decides EVERY person's home Kreis and
@@ -217,8 +230,10 @@ def configure(context):
     # stage is declared (and later read) ONLY when both it and the flag are on -- a run using the
     # pre-assignment view, or with the flag off, must not pull the absence stage into its DAG.
     trips_view = context.config(KEY_TRIPS_VIEW, DEFAULT_TRIPS_VIEW)
+    # eqasim-bs#442, ADR-0141: declared in every view because execute() records it in the provenance.
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
     if trips_view == "final":
-        context.stage("synthesis.population.trips.final", alias="trips")
+        context.stage(_portal_config_keys.final_view_trips_stage(portal_on), alias="trips")
     elif trips_view == "pre_assignment":
         context.stage("synthesis.population.trips", alias="trips")
     else:
@@ -458,6 +473,7 @@ def execute(context):
     sampling_rate = float(context.config("sampling_rate"))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     trips_view = context.config(KEY_TRIPS_VIEW)
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED))
     absence_on = bool(context.config(KEY_DAY_ABSENCE_ENABLED))
     # The absence draw is actually consulted only for the "final" (reporting-day) view AND with
     # the flag on -- the same condition configure() used to decide whether to declare
@@ -582,6 +598,8 @@ def execute(context):
             # general day-absence draw's away-from-home persons were marked on it.
             "trips_view": trips_view,
             "day_absence_enabled": absence_on,
+            # eqasim-bs#442, ADR-0141: with the portal layer on, the "final" view is the pre-portal day.
+            "portal_layer_enabled": portal_on,
         },
         "inputs": {
             "reference_path": reference_path(data_path),

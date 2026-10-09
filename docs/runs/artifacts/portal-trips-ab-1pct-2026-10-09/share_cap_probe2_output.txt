@@ -1,0 +1,26 @@
+stays rebuilt: 617 | core report stays: 617
+
+stays: 617 | with return: 617
+missing/zero reported return distance: 141 | their return purpose: {'home': 141}
+primary stays: 340 | capped (outside gate->assigned > reported return): 196
+  primary: assigned home->location km  median 66.2 | donor reported return km median 13.8 | ratio assigned/reported median 6.99 p90 137.31
+  primary: donor reported return < 45 km: 214 of 316
+drawn stays: 277 | certainly capped (lower bound): 79
+  drawn: reported_out/reported_ret median 6.67 | home->gate km median 38.1
+by kind (capped primary): {'road': 161, 'rail': 35}
+origin purposes of stays: {'home': 480, 'leisure': 48, 'escort': 29, 'work': 27, 'other': 20, 'shop': 10, 'education': 3}
+
+H-B drawn stays with a reported return distance: 160
+  return leg reported km median 11.0; return leg purpose {'leisure': 75, 'home': 67, 'shop': 12, 'escort': 3, 'education': 2, 'other': 1}
+  leg AFTER the return leg is > 45 km: 18 | its purpose: {'home': 17, 'escort': 1}
+  of the certainly capped drawn stays, next leg > 45 km: 9 of 79
+H-B primary: leg after return > 45 km: 4 of 316 | return purpose: {'home': 244, 'shop': 26, 'leisure': 25, 'escort': 11, 'other': 8, 'education': 2}
+H-A primary: donor outbound reported km median 24.1; outbound reported > 45 km: 124 of 316
+H-C drawn: stays with a finite way home 114; way home < 45 km (destination provably within the threshold by the diary): 35; median way home km 61.6; median outbound km 75.1
+H-C primary: stays with a finite way home 309; way home < 45 km (destination provably within the threshold by the diary): 198; median way home km 18.3; median outbound km 24.8
+H-C capped drawn (certain) that are diary-inconsistent: 25 of 79
+H-C purposes of inconsistent drawn stays: {'leisure': 27, 'other': 4, 'escort': 2, 'shop': 2}
+
+Phase 3 geometric split: share_out_geo quantiles {'count': 617.0, 'mean': 0.554, 'std': 0.263, 'min': 0.0, '10%': 0.191, '50%': 0.597, '90%': 0.88, 'max': 0.996}
+  stays with share_out_geo >= 0.999 (zero inside duration): 0 of 617
+  current rule capped (from the report): 440 of 617

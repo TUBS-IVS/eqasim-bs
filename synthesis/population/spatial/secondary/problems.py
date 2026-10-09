@@ -6,11 +6,12 @@ FIELDS = ["person_id", "trip_index", "preceding_purpose", "following_purpose", "
 # pre-anchored by the Braunschweig chainsolver stage -- the adult's escort activity at the
 # linked child's school, the escorted child's joint activity at the adult's placed secondary
 # location. Both purposes only ever occur when the caller injected them, which implies it
-# passed activity_anchors.
-FIXED_PURPOSES = ["home", "work", "education", "escort_linked", "passive_linked"]
+# passed activity_anchors. "outside" (eqasim-bs#442) is the third such purpose: the gate of a
+# portal stay, anchored by braunschweig.synthesis.portal_trips on both sides of the stay.
+FIXED_PURPOSES = ["home", "work", "education", "escort_linked", "passive_linked", "outside"]
 #: Fixed purposes resolved through the activity_anchors mapping instead of a per-person
 #: location column.
-ANCHORED_PURPOSES = ("escort_linked", "passive_linked")
+ANCHORED_PURPOSES = ("escort_linked", "passive_linked", "outside")
 
 def find_bare_assignment_problems(df):
     problem = None
@@ -46,7 +47,8 @@ LOCATION_FIELDS = ["person_id", "home", "work", "education", "escort_linked"]
 
 def _anchor_coordinates(activity_anchors, person_id, activity_index, purpose):
     """Coordinates of a pre-anchored anchored-purpose activity (see
-    ANCHORED_PURPOSES). The caller that injects such trips must derive the
+    ANCHORED_PURPOSES: escort_linked, passive_linked and the portal gate
+    "outside"). The caller that injects such trips must derive the
     trip rewrite and the anchor table from the SAME assignment, so a miss is
     a bug -- fail fast."""
     try:
@@ -70,7 +72,7 @@ def find_assignment_problems(df, df_locations, activity_anchors = None):
         activity_anchors (eqasim-bs #201 multi-child fix, extended by eqasim-bs
         #385): optional mapping {(person_id, activity_index): shapely Point}
         consulted for the ANCHORED_PURPOSES boundary purposes ("escort_linked",
-        "passive_linked") INSTEAD of a per-person location column, so
+        "passive_linked", and the portal gate "outside" of eqasim-bs#442) INSTEAD of a per-person location column, so
         consecutive escort or passive-escort activities can anchor at
         different locations. Origin activity index = trip_index of the
         problem's first trip; destination = trip_index + number of trips.
@@ -80,7 +82,7 @@ def find_assignment_problems(df, df_locations, activity_anchors = None):
     # without the "escort_linked" column (eqasim-bs #201 Phase 2) and must keep
     # today's behaviour exactly. Since the multi-child fix, the Braunschweig
     # chainsolver resolves ANCHORED_PURPOSES boundaries ("escort_linked",
-    # "passive_linked") via the activity_anchors table instead of a per-person
+    # "passive_linked", "outside") via the activity_anchors table instead of a per-person
     # column; the column path below remains for callers that attach one. A
     # boundary purpose can only be an anchored purpose when the caller injected
     # that trip, which implies it passed anchors (or the column), so the

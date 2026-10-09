@@ -52,9 +52,11 @@ inputs:
 features:
 - commute_day_state_measurement
 - general_day_absence
+- portal_trips
 decisions:
 - ADR-0104
 - ADR-0110
+- ADR-0141
 notes: 'Writes six files (seven with the reporting-day state model on, see the check-1
   paragraph at the end) under <output_path>/<cds_output_subdir>/ (default
   analysis/commute_day_state_phase_a): work_participation_by_kreis.csv (code, n_employed,
@@ -174,4 +176,12 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   commute_day_state_enabled is instead covered in this stage''s own test file,
   tests/test_work_participation_by_kreis.py::test_configure_skips_the_absence_stage_when_day_absence_is_disabled,
   ::test_configure_skips_the_absence_stage_when_the_commute_day_state_model_is_off,
-  ::test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_when_day_absence_is_disabled.'
+  ::test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_when_day_absence_is_disabled.
+
+  PORTAL LAYER (ADR-0141, issue #442): with braunschweig.portal.enabled true the trips read are the
+  PRE-PORTAL frame (braunschweig.synthesis.commute_day.trips_day_stage, chosen by
+  braunschweig.synthesis.portal_trips.config_keys.final_view_trips_stage) instead of
+  synthesis.population.trips.final: far work trips become outside stays under the portal layer and would
+  show up as an artificial drop in work participation, and this report validates work participation, not the
+  portal rewrite. With the flag off nothing changes. provenance.json records portal_layer_enabled and the
+  stage actually read. Evidence: tests/test_work_participation_by_kreis.py.'

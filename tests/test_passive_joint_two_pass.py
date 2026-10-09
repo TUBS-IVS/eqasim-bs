@@ -476,6 +476,8 @@ def _execute_stage_values(df_persons):
 #: Every flag OFF -- the cheapest configuration that still reaches the dispatch, and the
 #: one whose printed output the OFF path must keep byte-identical.
 _EXECUTE_CONFIG = {
+    # Portal trips (eqasim-bs#442) OFF: no portal anchors stage is read, behaviour unchanged.
+    "braunschweig.portal.enabled": False,
     "escort_household_link": False,
     "escort_distance_by_type": False,
     "escort_purpose": False,
@@ -644,6 +646,58 @@ def test_execute_with_the_flag_off_solves_once_and_reads_the_persons_frame_once(
     assert solve_calls[0]["kwargs"] == {}
     assert ctx.stage_reads.count("synthesis.population.sampled") == 1
     assert len(df_locations) == 0 and len(df_convergence) == 0
+
+
+def test_execute_with_the_portal_feature_off_reads_no_anchors_stage(monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: portal off -> the anchors stage is never read and no portal rows exist."""
+    solve_calls = []
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False)
+
+    df_locations, _df_convergence = sc.execute(ctx)
+
+    assert "braunschweig.synthesis.portal_trips.anchors" not in ctx.stage_reads
+    assert solve_calls[0]["anchors"] is None
+    assert len(df_locations) == 0
+
+
+def test_execute_with_the_portal_feature_on_anchors_the_gates_and_appends_their_rows(
+        monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: the gates reach the solver as activity anchors and the locations output
+    as rows whose location_id is the gate facility "portal_<gate_id>" (ruling R30)."""
+    solve_calls = []
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False,
+                      **{"braunschweig.portal.enabled": True})
+    ctx._stages["braunschweig.synthesis.portal_trips.anchors"] = gpd.GeoDataFrame(
+        {"person_id": [2], "activity_index": [1], "gate_id": ["gate_e"], "kind": ["road"], "mode": ["car"]},
+        geometry=[Point(40000.0, 0.0)], crs="EPSG:25832")
+
+    df_locations, _df_convergence = sc.execute(ctx)
+
+    assert set(solve_calls[0]["anchors"]) == {(2, 1)}
+    assert df_locations["location_id"].tolist() == ["portal_gate_e"]
+    assert df_locations["person_id"].tolist() == [2] and df_locations["activity_index"].tolist() == [1]
+    assert df_locations.crs.to_string() == "EPSG:25832"
+
+
+def test_execute_with_the_portal_feature_on_and_no_anchors_for_outside_trips_raises(
+        monkeypatch, fake_chainsolvers_module):
+    """eqasim-bs#442: outside activities in trips.final but an empty anchors frame means the two
+    stages are out of sync; fail with a clear ValueError instead of the splitter's KeyError."""
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve([]))
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(), escort_passive_joint_location=False,
+                      **{"braunschweig.portal.enabled": True})
+    trips = ctx._stages["synthesis.population.trips.final"].copy()
+    trips.loc[0, "following_purpose"] = "outside"
+    ctx._stages["synthesis.population.trips.final"] = trips
+    ctx._stages["braunschweig.synthesis.portal_trips.anchors"] = gpd.GeoDataFrame(
+        {"person_id": pd.Series(dtype="int64"), "activity_index": pd.Series(dtype="int64"),
+         "gate_id": pd.Series(dtype=object), "kind": pd.Series(dtype=object), "mode": pd.Series(dtype=object)},
+        geometry=gpd.GeoSeries([], crs="EPSG:25832"), crs="EPSG:25832")
+
+    with pytest.raises(ValueError, match="portal trips without anchors"):
+        sc.execute(ctx)
 
 
 # --- RNG call-order guard for the _solve_problem_set extraction --------------------
