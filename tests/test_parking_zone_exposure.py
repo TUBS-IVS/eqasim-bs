@@ -121,7 +121,8 @@ def test_the_plans_parser_reads_the_parking_free_attribute_of_the_activity_and_n
         stream.write(
             '<population><person id="a"><plan selected="yes">'
             '<activity type="home" x="1" y="2"/>'
-            '<leg mode="car"><attributes><attribute name="parkingFree" class="java.lang.Boolean">true</attribute></attributes></leg>'
+            '<leg mode="car"><attributes>'
+            '<attribute name="parkingFree" class="java.lang.Boolean">true</attribute></attributes></leg>'
             '<activity type="work" x="3" y="4"><attributes>'
             '<attribute name="parkingZone" class="java.lang.String">z</attribute>'
             '<attribute name="parkingFree" class="java.lang.Boolean">true</attribute></attributes></activity>'

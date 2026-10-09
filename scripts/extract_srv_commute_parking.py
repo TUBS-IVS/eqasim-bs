@@ -191,6 +191,13 @@ def _commute_header(table: pd.DataFrame, universe: pd.DataFrame, report: dict, p
         "#   the zero-padded 8-digit V_ZIEL_AGS; Braunschweig (03101) is split by V_ZIEL_OBERBEZIRK:",
         "#   1 -> bs_zentrum, 2-3 -> bs_innenbereich, 4-6 -> bs_outer (SrV2023_Teilraumkodierung);",
         "#   every other ZGB Kreis is its own class. Read workplace_class as text (leading zero).",
+        "# Payment per place (ruling R-4h-1): share_<place>_<paid|free> for the four places is the weighted",
+        "#   fraction of the whole universe of the row that reports the place and its payment, so the eight",
+        "#   columns sum to 1 and share_<place>_paid + share_<place>_free = share_<place>. The PAID-ONLY garage",
+        "#   share share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid) is the",
+        "#   like-for-like quantity of a model universe without free parkers (the parking-cost-zones commuter",
+        "#   decay is calibrated on it); share_garage_large_lot / (share_garage_large_lot + share_street)",
+        "#   keeps the free parkers in its denominator and is not like-for-like with such a universe.",
         "# Rows: level=class, one per workplace class; level=total (workplace_class=total) pools exactly",
         "#   the class rows, so the class n_unweighted sum to the total n_unweighted.",
         *_wrapped(f"Exclusions from the universe (each respondent once, in this order): {exclusions}. "
@@ -208,7 +215,8 @@ def _commute_header(table: pd.DataFrame, universe: pd.DataFrame, report: dict, p
         f"# {A1_SENTENCE}",
         f"# Shares are weighted fractions in [0, 1], rounded to {SHARE_DECIMALS} decimals (n_eff to "
         f"{N_EFF_DECIMALS}); per row the",
-        "#   four place shares and the two payment shares each sum to 1 before rounding.",
+        "#   four place shares, the two payment shares and the eight per-place payment shares each sum to 1",
+        "#   before rounding.",
     ]
     return lines
 

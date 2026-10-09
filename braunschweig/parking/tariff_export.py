@@ -692,7 +692,8 @@ def check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_
 
 
 def garage_decays_from_model(model: Mapping) -> tuple[float, float]:
-    """``(garage_decay_m, garage_decay_commute_m)`` of a tariff model of any schema (the Python reference of the Java reader).
+    """``(garage_decay_m, garage_decay_commute_m)`` of a tariff model of any schema: a Python stand-in for the Java reader
+    (``ParkingTariffs``), which implements the same rule independently; no pipeline stage calls it, the tests pin the rule.
     A schema-3 model (or older) has no commuter decay and ``garage_decay_m`` governs every purpose, as schema 3 always did;
     a model of schema 4 or later without ``garage_decay_commute_m`` is invalid (``ValueError``); a model without any garage
     parameter (schema 1 or 2) has the options off (0, 0)."""

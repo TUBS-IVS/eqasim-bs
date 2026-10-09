@@ -139,10 +139,15 @@ PAID_SHARE_OVERALL = "paid_share_overall"
 
 COMMUTE_TABLE_FILE = "srv2023_commute_parking_by_workplace_class.csv"
 CITY_CENTER_TABLE_FILE = "srv2023_city_center_parking.csv"
+#: Per-place payment shares (ruling R-4h-1): ``share_<place>_<payment>`` is the weighted fraction of the WHOLE universe of the row
+#: that reports the place and its payment, so the eight columns sum to 1 and ``share_<place>_paid + share_<place>_free ==
+#: share_<place>``. They give the like-for-like (paid-only) garage and street shares the commuter decay is calibrated on.
+PLACE_PAYMENT_COLUMNS = tuple(f"share_{place}_{payment}" for place in DRIVER_PARKING_TYPES for payment in ("paid", "free"))
 COMMUTE_TABLE_COLUMNS = (
     "workplace_class", "level", "n_unweighted", "n_eff",
     "share_employer_lot", "share_street", "share_garage_large_lot", "share_other",
     "share_paid_total", "share_free_total",
+    *PLACE_PAYMENT_COLUMNS,
 )
 CITY_CENTER_TABLE_COLUMNS = ("parking_type", "share", "n_unweighted")
 
@@ -476,7 +481,8 @@ def parking_shares(group: pd.DataFrame) -> dict:
 
     Returns ``n_unweighted``, ``n_eff`` (Kish) and the ``share_*`` fractions in [0, 1] of
     :data:`COMMUTE_TABLE_COLUMNS`. The four place shares and the two payment shares each sum to 1
-    for a universe built by :func:`commute_parking_universe`.
+    for a universe built by :func:`commute_parking_universe`, and so do the eight per-place payment
+    shares (:data:`PLACE_PAYMENT_COLUMNS`, ruling R-4h-1).
     """
     weight = group["weight"].astype(float)
     total_weight = float(weight.sum())
@@ -488,6 +494,10 @@ def parking_shares(group: pd.DataFrame) -> dict:
         shares[f"share_{parking_type}"] = float(weight[group["parking_type"] == parking_type].sum()) / total_weight
     shares["share_paid_total"] = float(weight[group["payment"] == "paid"].sum()) / total_weight
     shares["share_free_total"] = float(weight[group["payment"] == "free"].sum()) / total_weight
+    for parking_type in DRIVER_PARKING_TYPES:
+        for payment in PAYMENTS:
+            selected = (group["parking_type"] == parking_type) & (group["payment"] == payment)
+            shares[f"share_{parking_type}_{payment}"] = float(weight[selected].sum()) / total_weight
     return shares
 
 

@@ -119,10 +119,13 @@ def data(tmp_path):
         "# synthetic\nparking_type,share,n_unweighted\nemployer_lot,0.02,5\nstreet,0.3,5\ngarage_large_lot,0.6,5\n"
         "other,0.08,5\npaid_share_overall,0.8,5\n", encoding="utf-8")
     lines = ["# synthetic", "workplace_class,level,n_unweighted,n_eff,share_employer_lot,share_street,share_garage_large_lot,"
-             "share_other,share_paid_total,share_free_total"]
+             "share_other,share_paid_total,share_free_total,share_garage_large_lot_paid,share_garage_large_lot_free,"
+             "share_street_paid,share_street_free"]
     for name, (free, street, garage) in COMMUTE_CLASSES.items():
-        lines.append(f"{name},class,200,100.0,0.3,{street},{garage},0.1,{1 - free},{free}")
-    lines.append("total,total,1200,600.0,0.3,0.3,0.1,0.1,0.1,0.9")
+        # the paid part of a place: half of the garage share and a quarter of the street share (ruling R-4h-1, paid-only)
+        lines.append(f"{name},class,200,100.0,0.3,{street},{garage},0.1,{1 - free},{free},{garage / 2},{garage / 2},"
+                     f"{street / 4},{street * 3 / 4}")
+    lines.append("total,total,1200,600.0,0.3,0.3,0.1,0.1,0.1,0.9,0.05,0.05,0.075,0.225")
     (srv / "srv2023_commute_parking_by_workplace_class.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
     parking = root / "braunschweig" / "parking"
     parking.mkdir()
@@ -211,9 +214,11 @@ def test_the_references_are_read_from_the_srv_tables(cmp, data):
     references = cmp.read_references(data)
     assert references.paid_share == 0.8
     assert references.garage_target.value == pytest.approx(0.6 / 0.9, abs=1e-12)   # garage 0.6 / (0.6 + street 0.3)
-    assert references.commuter_garage.value == pytest.approx(0.2 / 0.4, abs=1e-12)  # class bs_zentrum 0.2 / (0.2 + 0.2)
-    # spec H3b: the row 03103 (Wolfsburg), garage 0.1 / (0.1 + street 0.3)
-    assert references.commuter_garage_wolfsburg.value == pytest.approx(0.1 / 0.4, abs=1e-12)
+    # class bs_zentrum, PAID-only (ruling R-4h-1): paid garage 0.2 / 2 = 0.1, paid street 0.2 / 4 = 0.05 -> 0.1 / 0.15
+    assert references.commuter_garage.value == pytest.approx(0.1 / 0.15, abs=1e-12)
+    assert references.commuter_garage.numerator_name == "share_garage_large_lot_paid"
+    # spec H3b: the row 03103 (Wolfsburg), paid garage 0.1 / 2 = 0.05, paid street 0.3 / 4 = 0.075
+    assert references.commuter_garage_wolfsburg.value == pytest.approx(0.05 / 0.125, abs=1e-12)
     assert references.free_share_by_class["03102"] == 0.9 and references.free_share_by_class["bs_zentrum"] == 0.5
     assert "total" not in references.free_share_by_class.index
     # change the table, the reference follows: nothing is typed in the script
@@ -315,7 +320,13 @@ def test_the_bs_zentrum_commuter_garage_share_is_a_calibration_target_since_amen
     everything = row(table, "zones_v2", "garage_share_ia_ib_work_education_all_calls")
     without = row(table, "zones_v2", "garage_share_ia_ib_work_education_without_employer_free")
     assert everything["model"] == pytest.approx(4 / 85, abs=1e-6) and without["model"] == pytest.approx(4 / 45, abs=1e-6)
-    assert without["reference"] == pytest.approx(0.5, abs=1e-12)   # class bs_zentrum: garage 0.2 / (garage 0.2 + street 0.2)
+    assert without["reference"] == pytest.approx(0.1 / 0.15, abs=1e-12)   # class bs_zentrum: paid garage 0.1, paid street 0.05
+    # the paid-calls row is the like-for-like universe of the paid-only reference: Ia work PAID_EXPECTED 20 (probability 4.0) and
+    # PAID_COMMUTER 10, Ib education PAID_LONG_STAY 10 -> 40 calls, 4.0 / 40
+    paid = row(table, "zones_v2", "garage_share_ia_ib_work_education_paid_calls")
+    assert paid["model"] == pytest.approx(4.0 / 40, abs=1e-6) and paid["universe_size"] == 40
+    assert paid["reference"] == pytest.approx(0.1 / 0.15, abs=1e-12) and "PAID_* calls only" in paid["universe_note"]
+    assert "PAYING street and garage users" in paid["universe_note"] and "free parkers" in paid["universe_note"]
     note = without["universe_note"]
     # the row is the calibration target of lambda_c (H2) and no check any more; it is not the calibration universe
     assert "calibration target, not validation" in note and "lambda_c" in note and "NOT the calibration universe" in note
@@ -326,11 +337,13 @@ def test_the_bs_zentrum_commuter_garage_share_is_a_calibration_target_since_amen
 
 def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, data, tmp_path):
     # Work and education calls in wob_tarifzone_1..3: PAID_EXPECTED work 20 calls (probability sum 6.0) in zone 1, EMPLOYER_FREE
-    # work 10 in zone 2, PAID_METERED education 10 in zone 3 -> 40 calls, 6.0 / 40 = 0.15; without the 10 employer-free calls
-    # 6.0 / 30 = 0.2. A shop call in zone 1 (probability 5.0) is no commuter call; a work call in zone 4 (not Wolfsburg) neither.
+    # work 10 in zone 2, PAID_METERED education 10 and FREE_WITHIN_LIMIT work 10 in zone 3 -> 50 calls, 6.0 / 50 = 0.12; without
+    # the 10 employer-free calls 6.0 / 40 = 0.15; among the PAID_* calls only (the payers) 6.0 / 30 = 0.2. A shop call in zone 1
+    # (probability 5.0) is no commuter call; a work call in zone 4 (not Wolfsburg) neither.
     rows = [*ROWS, ("PAID_EXPECTED", "wob_tarifzone_1", "work", 20, 6.0, 20),
             ("EMPLOYER_FREE", "wob_tarifzone_2", "work", 10, 0.0, 0),
             ("PAID_METERED", "wob_tarifzone_3", "education", 10, 0.0, 0),
+            ("FREE_WITHIN_LIMIT", "wob_tarifzone_3", "work", 10, 0.0, 0),
             ("PAID_EXPECTED", "wob_tarifzone_1", "shop", 10, 5.0, 10),
             ("PAID_EXPECTED", "wob_tarifzone_4", "work", 10, 9.0, 10)]
     # the run and the committed release must belong together: the zones of the report need a tariff row (copies of fx_sz)
@@ -344,11 +357,14 @@ def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, d
                         zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table
     everything = row(table, "wob", "garage_share_wolfsburg_work_education_all_calls")
     without = row(table, "wob", "garage_share_wolfsburg_work_education_without_employer_free")
-    assert everything["model"] == pytest.approx(6.0 / 40, abs=1e-6) and everything["universe_size"] == 40
-    assert without["model"] == pytest.approx(6.0 / 30, abs=1e-6) and without["universe_size"] == 30
-    assert without["reference"] == pytest.approx(0.25, abs=1e-12)   # row 03103: garage 0.1 / (garage 0.1 + street 0.3)
-    assert without["delta_pp"] == pytest.approx(100 * (6.0 / 30 - 0.25), abs=1e-3)
-    for entry in (everything, without):
+    paid = row(table, "wob", "garage_share_wolfsburg_work_education_paid_calls")
+    assert everything["model"] == pytest.approx(6.0 / 50, abs=1e-6) and everything["universe_size"] == 50
+    assert without["model"] == pytest.approx(6.0 / 40, abs=1e-6) and without["universe_size"] == 40
+    assert paid["model"] == pytest.approx(6.0 / 30, abs=1e-6) and paid["universe_size"] == 30
+    reference = 0.05 / 0.125   # row 03103: paid garage 0.1 / 2 = 0.05, paid street 0.3 / 4 = 0.075
+    assert without["reference"] == pytest.approx(reference, abs=1e-12) == pytest.approx(paid["reference"], abs=1e-12)
+    assert paid["delta_pp"] == pytest.approx(100 * (6.0 / 30 - reference), abs=1e-3)
+    for entry in (everything, without, paid):
         assert "independent check" in entry["universe_note"] and "not used in the calibration" in entry["universe_note"]
         note = entry["universe_note"]
         assert "03103" in note and "lambda_c" in note and "no validation" in note

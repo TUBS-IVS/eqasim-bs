@@ -30,12 +30,14 @@ Definitions (the committed calibration table records them, so that its number ca
   the search fails (``ValueError``) when the target lies outside the range at its two ends. The reported lambda is rounded
   to 0.01 m and its achieved mean recomputed.
 * Commuter universe (H2): the main activities of type work or education (``cost.COMMUTER_PURPOSES``) inside the same
-  calibration zones that do NOT carry the activity attribute ``parkingFree`` (employer lots and free parking leave the
-  denominator: the SrV share is among the commuters who park on the street or in a garage, and the model treats the
-  parkingFree users by its early rule; the activities that carry it are counted and named). Commuter target:
-  ``share_garage_large_lot / (share_garage_large_lot + share_street)`` of the row ``bs_zentrum`` of
-  ``srv2023_commute_parking_by_workplace_class``, READ from the table, never typed. The same bisection gives lambda_c; the
-  mean garage probability of the commuter universe equals the target at lambda_c. The bs_zentrum share is therefore a
+  calibration zones that do NOT carry the activity attribute ``parkingFree``. The free-parking draw frees everyone whose
+  payment is free (``share_free_total`` of the class), so the universe holds the PAYERS only; the activities that carry
+  parkingFree are counted and named. Like-for-like commuter target (ruling R-4h-1, revision of H2): the PAID-only share
+  ``share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)`` of the row ``bs_zentrum`` of
+  ``srv2023_commute_parking_by_workplace_class``, READ from the table, never typed. (The free-inclusive share
+  ``share_garage_large_lot / (share_garage_large_lot + share_street)`` has the free street and garage parkers in its
+  denominator, which the model's universe does not contain, and is not used.) The same bisection gives lambda_c; the
+  mean garage probability of the commuter universe equals the target at lambda_c. The bs_zentrum paid share is therefore a
   calibration target and no longer checks the model.
 * Independent check (H3b) on the SAME plans, reported as a number and never as validation: the mean garage probability with
   lambda_c of the work and education activities without parkingFree inside the Wolfsburg zones ``WOLFSBURG_ZONE_IDS``
@@ -118,6 +120,8 @@ HOME_AND_COMMUTER_PURPOSES = frozenset({cost.HOME_PURPOSE, *cost.COMMUTER_PURPOS
 GARAGE_ROW, STREET_ROW, PAID_ROW = "garage_large_lot", "street", "paid_share_overall"
 #: Spec H2: the workplace class whose commuter garage share is the CALIBRATION TARGET of lambda_c (row of the SrV table).
 COMMUTER_CLASS = "bs_zentrum"
+#: The per-place payment columns of the commute table the commuter shares are read from (ruling R-4h-1, paid-only).
+GARAGE_PAID_COLUMN, STREET_PAID_COLUMN = "share_garage_large_lot_paid", "share_street_paid"
 #: Spec H3b: the Wolfsburg zones (the tariff areas of the municipal fee ordinance) and the table row of Wolfsburg, whose
 #: commuter garage share is the independent CHECK (a number, no validation).
 WOLFSBURG_ZONE_IDS = ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
@@ -215,17 +219,23 @@ def read_paid_share_reference(path) -> float:
 
 
 def read_commuter_reference(path, workplace_class: str = COMMUTER_CLASS) -> Target:
-    """The commuter garage share of a row of ``srv2023_commute_parking_by_workplace_class`` among street and garage users:
-    ``share_garage_large_lot / (share_garage_large_lot + share_street)`` of the class row ``workplace_class`` (default
-    ``COMMUTER_CLASS`` = bs_zentrum, the calibration target of H2; ``WOLFSBURG_CLASS`` is the check of H3b). Raises
-    ``ValueError`` when the class row is missing or duplicated or a share is no number in (0, 1]."""
+    """The PAID-only commuter garage share of a row of ``srv2023_commute_parking_by_workplace_class`` among the paying street
+    and garage users (ruling R-4h-1): ``share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)`` of
+    the class row ``workplace_class`` (default ``COMMUTER_CLASS`` = bs_zentrum, the calibration target of H2;
+    ``WOLFSBURG_CLASS`` is the check of H3b). Raises ``ValueError`` when the class row is missing or duplicated, when the
+    table lacks the per-place payment columns (written before the revision: re-extract it) or when a share is no number in
+    (0, 1]."""
     table = read_srv_table(path)
     rows = table[(table["workplace_class"] == workplace_class) & (table["level"] == "class")]
     if len(rows) != 1:
         raise ValueError(f"{path}: expected exactly one class row {workplace_class!r}, found {len(rows)}")
-    garage = _positive_share(float(rows["share_garage_large_lot"].iloc[0]), f"{path} {workplace_class} share_garage_large_lot")
-    street = _positive_share(float(rows["share_street"].iloc[0]), f"{path} {workplace_class} share_street")
-    return Target(garage / (garage + street), "share_garage_large_lot", garage, "share_street", street, Path(path).name)
+    missing = [column for column in (GARAGE_PAID_COLUMN, STREET_PAID_COLUMN) if column not in rows.columns]
+    if missing:
+        raise ValueError(f"{path}: the per-place payment column(s) {missing} are missing; the table was written before the "
+                         "revision of spec H2 (ruling R-4h-1): regenerate it with scripts/extract_srv_commute_parking.py")
+    garage = _positive_share(float(rows[GARAGE_PAID_COLUMN].iloc[0]), f"{path} {workplace_class} {GARAGE_PAID_COLUMN}")
+    street = _positive_share(float(rows[STREET_PAID_COLUMN].iloc[0]), f"{path} {workplace_class} {STREET_PAID_COLUMN}")
+    return Target(garage / (garage + street), GARAGE_PAID_COLUMN, garage, STREET_PAID_COLUMN, street, Path(path).name)
 
 
 def load_exposure_module():
@@ -410,13 +420,15 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         f"probability, {calibration.iterations} halvings; the mean is {calibration.high_end_mean:.4f} at the upper end and "
         f"{calibration.low_end_mean:.4f} at the lower end. The decays are rounded to {LAMBDA_DECIMALS} decimals.",
         f"# Commuter universe: the {commuter_count} work and education activities inside {zone_text} that do not carry "
-        f"parkingFree ({commuter_excluded_free} more carry parkingFree and are left out: employer lots and free parking leave "
-        f"the denominator), {commuter_with_garage} of them with at least one priced garage within {max_distance_m:g} m.",
+        f"parkingFree ({commuter_excluded_free} more carry parkingFree and are left out: the free-parking draw frees them, so "
+        f"the universe holds the payers only), {commuter_with_garage} of them with at least one priced garage within "
+        f"{max_distance_m:g} m.",
         f"# Target of lambda_c: {commuter_target.numerator_name} / ({commuter_target.numerator_name} + "
         f"{commuter_target.other_name}) = {commuter_target.numerator} / ({commuter_target.numerator} + {commuter_target.other}) "
-        f"= {commuter_target.value:.6f} of class {COMMUTER_CLASS} of {commuter_target.table} (street and garage users among "
-        "the commuters of the Oberbezirk Zentrum, wider than the zones Ia and Ib). A calibration target, no validation; the "
-        "same universe caveat applies.",
+        f"= {commuter_target.value:.6f} of class {COMMUTER_CLASS} of {commuter_target.table} (the PAYING street and garage "
+        "users among the commuters of the Oberbezirk Zentrum, wider than the zones Ia and Ib: like-for-like with a universe "
+        "of payers, ruling R-4h-1; the free-inclusive share would put free parkers into the denominator). A calibration "
+        "target, no validation; the same universe caveat applies.",
         f"# Search for lambda_c: the same bisection, {commuter_calibration.iterations} halvings; the mean is "
         f"{commuter_calibration.high_end_mean:.4f} at the upper end and {commuter_calibration.low_end_mean:.4f} at the lower end.",
         "# The same decays apply in every town (transfer assumption). The config values parking_garage_decay_m and "
@@ -428,7 +440,7 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         f"inside {', '.join(WOLFSBURG_ZONE_IDS)} ({wolfsburg_with_garage} with a priced garage within {max_distance_m:g} m) "
         f"against {wolfsburg_reference.value:.4f} = {wolfsburg_reference.numerator_name} / "
         f"({wolfsburg_reference.numerator_name} + {wolfsburg_reference.other_name}) of class {WOLFSBURG_CLASS} of "
-        f"{wolfsburg_reference.table}, which the calibration does not use.",
+        f"{wolfsburg_reference.table} (paying street and garage users), which the calibration does not use.",
         "# The paid share of a run is compared with the SrV by scripts/parking/compare_parking_targets.py on the outcomes "
         "the model priced (time-aware); no paid share is checked here (ruling R-5-4).",
     ]

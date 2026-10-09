@@ -185,6 +185,15 @@ def test_table_shares_sum_to_one_and_small_cells_raise():
     assert abs(row[["share_employer_lot", "share_street", "share_garage_large_lot", "share_other"]].sum() - 1) < 1e-9
     assert abs(row["share_paid_total"] + row["share_free_total"] - 1) < 1e-9
     assert row["share_free_total"] == pytest.approx(100 / 120)
+    # per-place payment shares (ruling R-4h-1): fractions of the whole universe like the place shares: employer lots 90 free,
+    # street 10 paid and 10 free, garages 10 paid, no 'other' respondent
+    assert row["share_employer_lot_free"] == pytest.approx(90 / 120) and row["share_employer_lot_paid"] == 0
+    assert row["share_street_paid"] == pytest.approx(10 / 120) and row["share_street_free"] == pytest.approx(10 / 120)
+    assert row["share_garage_large_lot_paid"] == pytest.approx(10 / 120) and row["share_garage_large_lot_free"] == 0
+    assert row["share_other_paid"] == 0 and row["share_other_free"] == 0
+    assert abs(row[list(sp.PLACE_PAYMENT_COLUMNS)].sum() - 1) < 1e-9
+    for place in sp.DRIVER_PARKING_TYPES:   # each place splits exactly into its paid and its free part
+        assert abs(row[f"share_{place}_paid"] + row[f"share_{place}_free"] - row[f"share_{place}"]) < 1e-9
     with pytest.raises(ValueError, match="bs_zentrum"):
         sp.build_commute_parking_table(universe.head(50), min_cell_n=100)
 
@@ -202,7 +211,9 @@ def test_total_row_pools_exactly_the_zgb_class_rows():
     table = sp.build_commute_parking_table(universe, min_cell_n=100)
     assert list(table.columns) == [
         "workplace_class", "level", "n_unweighted", "n_eff", "share_employer_lot", "share_street",
-        "share_garage_large_lot", "share_other", "share_paid_total", "share_free_total"]
+        "share_garage_large_lot", "share_other", "share_paid_total", "share_free_total",
+        "share_employer_lot_paid", "share_employer_lot_free", "share_street_paid", "share_street_free",
+        "share_garage_large_lot_paid", "share_garage_large_lot_free", "share_other_paid", "share_other_free"]
     assert table["workplace_class"].tolist() == ["bs_zentrum", "03102", "total"]
     assert table["level"].tolist() == ["class", "class", "total"]
     total = table.set_index("workplace_class").loc["total"]
@@ -292,6 +303,15 @@ def test_extractor_writes_both_tables_with_the_provenance_header(tmp_path):
     assert commute["workplace_class"].tolist() == ["bs_zentrum", "bs_outer", "03103", "total"]
     assert commute.set_index("workplace_class").loc["total", "share_free_total"] == pytest.approx(
         2.5 / 4.5, abs=1e-4)
+    # the per-place payment columns (ruling R-4h-1) and their header: bs_outer is person 2 (street, paid), 03103 is person 3
+    # (garage, free); the existing columns keep their meaning
+    by_class = commute.set_index("workplace_class")
+    assert by_class.loc["bs_outer", "share_street_paid"] == 1.0 and by_class.loc["bs_outer", "share_street_free"] == 0.0
+    assert by_class.loc["03103", "share_garage_large_lot_free"] == 1.0
+    assert by_class.loc["03103", "share_garage_large_lot_paid"] == 0.0
+    assert by_class.loc["bs_zentrum", "share_employer_lot_free"] == 1.0
+    assert any("share_garage_large_lot_paid" in line and "share_street_paid" in line for line in header)
+    assert any("like-for-like" in line for line in header)
 
     city_text = (out / sp.CITY_CENTER_TABLE_FILE).read_text(encoding="utf-8")
     # spec Amendment E5: the header states the calibration use of the garage share
@@ -348,6 +368,25 @@ def test_committed_commute_table_has_one_row_per_workplace_class_and_a_pooled_to
     assert table["share_free_total"].between(0, 1).all()
     assert (table[PLACE_SHARE_COLUMNS].sum(axis=1) - 1).abs().max() < ROUNDING_TOLERANCE
     assert (table["share_paid_total"] + table["share_free_total"] - 1).abs().max() < ROUNDING_TOLERANCE
+    # per-place payment columns (ruling R-4h-1): the eight shares sum to 1, each place splits into its paid and free part, and
+    # the paid ones add up to share_paid_total (rounding to four decimals allows a few units of the last place)
+    assert (table[list(sp.PLACE_PAYMENT_COLUMNS)].sum(axis=1) - 1).abs().max() < 4 * ROUNDING_TOLERANCE
+    for place in sp.DRIVER_PARKING_TYPES:
+        split = table[f"share_{place}_paid"] + table[f"share_{place}_free"] - table[f"share_{place}"]
+        assert split.abs().max() < 2 * ROUNDING_TOLERANCE, place
+    paid_places = sum(table[f"share_{place}_paid"] for place in sp.DRIVER_PARKING_TYPES)
+    assert (paid_places - table["share_paid_total"]).abs().max() < 4 * ROUNDING_TOLERANCE
+
+
+def test_committed_commute_table_pins_the_paid_garage_and_street_shares_the_calibration_reads():
+    """A data fact of the re-extraction of 2026-10-09 (ruling R-4h-1), pinned because the commuter decay length is calibrated
+    on it: paid garage / paid street shares of bs_zentrum (0.0965 and 0.0456, 29 and 13 unweighted respondents) and of
+    Wolfsburg 03103 (0.0225 and 0.0080, 22 and 5), as the controller's diagnostic on the raw delivery gave them."""
+    table = _committed_table(sp.COMMUTE_TABLE_FILE).set_index("workplace_class")
+    assert table.loc[sp.BS_ZENTRUM, "share_garage_large_lot_paid"] == pytest.approx(0.0965, abs=1e-4)
+    assert table.loc[sp.BS_ZENTRUM, "share_street_paid"] == pytest.approx(0.0456, abs=1e-4)
+    assert table.loc["03103", "share_garage_large_lot_paid"] == pytest.approx(0.0225, abs=1e-4)
+    assert table.loc["03103", "share_street_paid"] == pytest.approx(0.0080, abs=1e-4)
 
 
 def test_committed_commute_table_shows_the_centre_as_the_least_free_braunschweig_class():

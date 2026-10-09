@@ -203,7 +203,8 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
 ], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
         "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds", "negative_decay",
         "text_decay", "nan_decay", "negative_commute_decay", "text_commute_decay", "nan_commute_decay",
-        "boolean_commute_decay", "commute_decay_missing_while_the_options_are_on", "zero_maximum_distance", "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
+        "boolean_commute_decay", "commute_decay_missing_while_the_options_are_on", "zero_maximum_distance",
+        "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,

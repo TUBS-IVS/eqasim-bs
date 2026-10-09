@@ -59,18 +59,32 @@ def test_the_commuter_and_paid_references_are_read_from_the_committed_tables(cal
     # the paid reference is no longer used by the calibration; the comparison script reads it through this reader
     commute = COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv"
     commuters = cal.read_commuter_reference(commute)
-    # class bs_zentrum (the target of H2): street 0.2225, garage or large lot 0.1923: 0.1923 / 0.4148 = 0.46359
+    # class bs_zentrum (the target of H2, ruling R-4h-1: the PAID-only shares, like-for-like with a universe of payers): paid
+    # street 0.0456, paid garage or large lot 0.0965: 0.0965 / 0.1421 = 0.67910 (the free-inclusive 0.1923 / 0.4148 = 0.4636
+    # is not used: free parkers are in its denominator)
     assert cal.COMMUTER_CLASS == "bs_zentrum"
-    assert (commuters.numerator, commuters.other) == (0.1923, 0.2225)
-    assert commuters.value == pytest.approx(0.464, abs=5e-4)
+    assert (commuters.numerator_name, commuters.other_name) == ("share_garage_large_lot_paid", "share_street_paid")
+    assert (commuters.numerator, commuters.other) == (0.0965, 0.0456)
+    assert commuters.value == pytest.approx(0.0965 / (0.0965 + 0.0456), abs=1e-12)
     assert cal.read_commuter_reference(commute, cal.COMMUTER_CLASS) == commuters
-    # row 03103 (Wolfsburg, the check of H3b): street 0.0608, garage or large lot 0.1075: 0.1075 / 0.1683 = 0.63874
+    # row 03103 (Wolfsburg, the check of H3b): paid street 0.0080, paid garage or large lot 0.0225: 0.0225 / 0.0305 = 0.73770
     assert cal.WOLFSBURG_CLASS == "03103"
     wolfsburg = cal.read_commuter_reference(commute, cal.WOLFSBURG_CLASS)
-    assert (wolfsburg.numerator, wolfsburg.other) == (0.1075, 0.0608)
-    assert wolfsburg.value == pytest.approx(0.1075 / (0.1075 + 0.0608), abs=1e-12)
+    assert (wolfsburg.numerator, wolfsburg.other) == (0.0225, 0.0080)
+    assert wolfsburg.value == pytest.approx(0.0225 / (0.0225 + 0.0080), abs=1e-12)
     with pytest.raises(ValueError, match="expected exactly one class row 'no_such_class'"):
         cal.read_commuter_reference(commute, "no_such_class")
+
+
+def test_a_commute_table_without_the_payment_per_place_columns_is_refused_with_the_remedy(cal, tmp_path):
+    # a table written before the revision of H2 (ruling R-4h-1) has no paid-only shares: it must not fall back to the
+    # free-inclusive share
+    path = tmp_path / "old_commute.csv"
+    path.write_text("# old\nworkplace_class,level,n_unweighted,n_eff,share_employer_lot,share_street,share_garage_large_lot,"
+                    "share_other,share_paid_total,share_free_total\nbs_zentrum,class,221,104.4,0.571,0.2225,0.1923,0.0141,"
+                    "0.2062,0.7938\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="share_garage_large_lot_paid.*extract_srv_commute_parking.py"):
+        cal.read_commuter_reference(path)
     assert cal.read_paid_share_reference(COMMITTED / "srv" / "srv2023_city_center_parking.csv") == 0.8333
 
 
@@ -225,7 +239,15 @@ def inputs(tmp_path):
     # target 0.2718 / (0.2718 + 0.7282) = 0.2718; the mean at lambda 400 m is 0.27176 (derived in the test below)
     city_center.write_text("# synthetic\nparking_type,share,n_unweighted\nemployer_lot,0.01,1\nstreet,0.7282,1\n"
                            "garage_large_lot,0.2718,1\nother,0.01,1\npaid_share_overall,0.8,1\n", encoding="utf-8")
-    commute = COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv"
+    # synthetic commute table: bs_zentrum paid garage 0.04 / (0.04 + paid street 0.06) = 0.4 (the target of lambda_c), 03103 paid
+    # 0.06 / (0.06 + 0.04) = 0.6 (the check); the free-inclusive columns are a decoy (0.5 / 0.6 = 0.833 must not be read)
+    commute = tmp_path / "srv2023_commute_parking_by_workplace_class.csv"
+    commute.write_text(
+        "# synthetic\nworkplace_class,level,n_unweighted,n_eff,share_employer_lot,share_street,share_garage_large_lot,share_other,"
+        "share_paid_total,share_free_total,share_garage_large_lot_paid,share_garage_large_lot_free,share_street_paid,"
+        "share_street_free\n"
+        "bs_zentrum,class,221,104.4,0.1,0.1,0.5,0.0,0.1,0.9,0.04,0.46,0.06,0.04\n"
+        "03103,class,691,162.7,0.1,0.1,0.5,0.0,0.1,0.9,0.06,0.44,0.04,0.06\n", encoding="utf-8")
     return {"plans": plans, "zones_path": zones_path, "garages_path": garages_path,
             "city_center_path": city_center, "commute_path": commute}
 
@@ -244,22 +266,23 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
     assert abs(result["decay_length_m"] - 400.0) <= 2.0
     assert abs(result["achieved"] - 0.2718) <= 0.0005
     # H2: the commuter decay on the same plans: p05 work at 300 m and p06 education at 500 m without parkingFree (p14 carries it
-    # and is excluded), target 0.1923 / (0.1923 + 0.2225) = 0.46359 READ from the bs_zentrum row; the mean at lambda_c equals it
+    # and is excluded), target 0.04 / (0.04 + 0.06) = 0.4 READ from the paid columns of the bs_zentrum row; the mean at
+    # lambda_c equals it
     at_lambda_c = result["decay_commute_length_m"]
     assert result["commuter_universe_activities"] == 2 and result["commuter_activities_excluded_parking_free"] == 1
-    assert result["commuter_target"] == pytest.approx(0.1923 / (0.1923 + 0.2225), abs=1e-12)
+    assert result["commuter_target"] == pytest.approx(0.4, abs=1e-12)
     mean_at_lambda_c = (_probability(300.0, at_lambda_c) + _probability(500.0, at_lambda_c)) / 2
     assert mean_at_lambda_c == pytest.approx(result["commuter_target"], abs=0.0005)
-    # the garages are stored as WGS84 with 7 decimals (about 1 cm), which moves the distances by about 1e-7 in the mean
-    assert result["commuter_achieved"] == pytest.approx(mean_at_lambda_c, abs=1e-6)
+    # the garages are stored as WGS84 with 7 decimals (about 1 cm), which moves the distances by about 1e-6 in the mean
+    assert result["commuter_achieved"] == pytest.approx(mean_at_lambda_c, abs=1e-5)
     assert at_lambda_c == round(at_lambda_c, 2) and at_lambda_c != result["decay_length_m"]
     # the Wolfsburg check (H3b) with lambda_c: p11 work at 761.58 m and p12 education at 743.30 m from the near garage
-    # (p13 carries parkingFree and is excluded); a number and no validation, reference 0.1075 / (0.1075 + 0.0608) = 0.63874
+    # (p13 carries parkingFree and is excluded); a number and no validation, reference 0.06 / (0.06 + 0.04) = 0.6
     assert result["wolfsburg_activities"] == 2 and result["wolfsburg_with_garage_in_range"] == 2
     assert result["wolfsburg_mean"] == pytest.approx(
         (_probability(math.sqrt(700.0 ** 2 + 300.0 ** 2), at_lambda_c)
          + _probability(math.sqrt(700.0 ** 2 + 250.0 ** 2), at_lambda_c)) / 2, abs=1e-6)
-    assert result["wolfsburg_reference"] == pytest.approx(0.1075 / (0.1075 + 0.0608), abs=1e-12)
+    assert result["wolfsburg_reference"] == pytest.approx(0.6, abs=1e-12)
     assert "commuter_mean" not in result   # the bs_zentrum share is a target now, not a check
     assert "street_paid_share" not in result and "paid_reference" not in result   # R-5-4: dropped, see the comparison script
     # the table: ASCII, provenance header, the rows, readable by the reader that the config test uses
@@ -271,7 +294,8 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
                    "garage_large_lot / (garage_large_lot + street) = 0.2718 / (0.2718 + 0.7282)", "no validation",
                    "Commuter universe: the 2 work and education activities", "without parkingFree",
                    "1 more carry parkingFree and are left out",
-                   "share_garage_large_lot / (share_garage_large_lot + share_street) = 0.1923 / (0.1923 + 0.2225)",
+                   "share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid) = 0.04 / (0.04 + 0.06)",
+                   "the payers only", "like-for-like",
                    "class bs_zentrum", "Independent check", "class 03103", "wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",
                    "2 work and education activities", "calibration target"):
         assert needle in text, needle
@@ -284,9 +308,9 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
     assert values["decay_commute_length_m"] == result["decay_commute_length_m"]
     assert values["commuter_universe_activities"] == 2 and values["commuter_activities_excluded_parking_free"] == 1
     assert values["target_garage_probability"] == pytest.approx(0.2718, abs=1e-6)
-    assert values["target_commuter_garage_probability"] == pytest.approx(0.46359, abs=1e-5)
+    assert values["target_commuter_garage_probability"] == pytest.approx(0.4, abs=1e-5)
     assert values["check_wolfsburg_commuter_activities"] == 2
-    assert values["check_wolfsburg_commuter_reference_share"] == pytest.approx(0.63874, abs=1e-5)
+    assert values["check_wolfsburg_commuter_reference_share"] == pytest.approx(0.6, abs=1e-5)
     assert not [name for name in values if name.startswith("check_commuter")]   # the bs_zentrum share is a target now
     assert any("with a priced garage within 1000 m: 4/4" in message for message in caplog.messages)
     assert any("commuter universe 2" in message and "excluded as parkingFree 1" in message for message in caplog.messages)
@@ -372,6 +396,7 @@ def test_the_script_does_not_hard_code_the_target(cal):
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     code = re.sub(r'""".*?"""', "", code, flags=re.S)
     for number in ("0.708", "0.2537", "0.736", "0.7362", "0.464", "0.4636", "0.1923", "0.2225", "0.1075", "0.0608", "0.639",
+                   "0.0965", "0.0456", "0.0225", "0.0080", "0.679", "0.738",
                    "0.6387"):
         assert number not in code
 
