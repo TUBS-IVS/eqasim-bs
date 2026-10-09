@@ -12,8 +12,9 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   from the release of braunschweig.parking.zones_stage, carrying the release's source hashes, the permit flag
   resident_permits_valid of every zone and the ids of the release's resident parking districts as resident_districts,
   both additive to schema 2, spec Amendment C3; schema 3, spec Amendment E, adds the priced garages of the release as
-  garages and the parameters garage_decay_m (config parking_garage_decay_m, 0 = garage options off, the pre-calibration value
-  and the sensitivity arm; the canonical value is the calibrated lambda of parking_garage_decay_calibration_2026) and garage_max_distance_m (parking_garage_max_distance_m, 1000); the config key
+  garages and the parameters garage_decay_m (config parking_garage_decay_m, 0 = garage options off, the pre-calibration
+  value and the sensitivity arm; the canonical value is the calibrated lambda, see the data record
+  parking_garage_decay_calibration_2026) and garage_max_distance_m (parking_garage_max_distance_m, 1000); the config key
   parking_garage_monthly_imputation (spec Amendment F3, default true) lets a garage without a published monthly product use
   the imputed one of assumption P13 as monthly_cents (false means published products only) and the model then lists P13 in its
   assumptions register, the counts per municipality are logged and written to the inputs report; the garages come

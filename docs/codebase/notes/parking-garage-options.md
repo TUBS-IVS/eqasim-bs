@@ -80,7 +80,8 @@ equality; the result, universe and provenance are in ADR-0140 decision 7 and the
 The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
 checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
 time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
-on the run's own outcome report (see the next section). 
+on the run's own outcome report (see the next section).
+
 ## Comparison with the SrV references
 
 How a run's paid share, garage share and free shares are compared with the committed SrV tables

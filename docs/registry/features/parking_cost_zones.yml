@@ -205,5 +205,5 @@ notes: >-
   parking_zones_enabled at configure time (stage record matsim.scenario.population); the zones need the
   alias to braunschweig.matsim.scenario.population. The calibration of lambda is
   scripts/parking/calibrate_garage_decay.py on the plans of a server run, whose table
-  parking_garage_decay_calibration_2026.csv is then committed; the current state is in validation.note. introduced.adr
+  parking_garage_decay_calibration_2026.csv is committed; the current state is in validation.note. introduced.adr
   names the first decision; ADR-0140 extends it.

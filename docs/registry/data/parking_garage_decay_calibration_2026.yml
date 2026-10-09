@@ -29,7 +29,8 @@ storage:
   local_only: false
   notes: >-
     Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
-    69ff1ab3c42752a9b7d571fc2634f0b29ec04994785291aede451391bf4b5b22. Long format quantity,value,unit,note under a '#' header; read by calibrate_garage_decay.read_calibration_table.
+    69ff1ab3c42752a9b7d571fc2634f0b29ec04994785291aede451391bf4b5b22. Long format quantity,value,unit,note under a '#'
+    header; read by calibrate_garage_decay.read_calibration_table.
     Produced by the unmodified script at the code state named in its header (commit 8b2e2565, clean tree); three runs on the
     same inputs (the release path and two scratch folders) gave byte-identical files, so the generation date in the header is
     the only run-dependent content and falls on the same day.
@@ -45,7 +46,12 @@ requirements:
   matsim: not_needed
   production: optional
 licensing:
-  license: own derived aggregate of committed tables and the plans of the reference scenario; no microdata
+  license: >-
+    own derived scalar aggregate: the table holds lambda, counts and SHA-256 hashes only, no microdata and no
+    geometry. Its inputs include the two restricted local-only files parking_zones_2026 and parking_garages_2026
+    (see their data records) besides the committed SrV tables and the plans of the reference scenario.
+    Redistribution of this aggregate is allowed (owner decision 2026-10-08: only the three geometry files stay out
+    of the repository).
   restricted: false
   redistribution: allowed
 limitations: |
@@ -69,9 +75,10 @@ notes: |
   mean 0.736279, 340 of 340 universe activities with a priced garage within 1,000 m, all 49 priced options of the dataset).
   parking_garage_decay_m of configs/base_bs.yml and the two popsim fixture configs equals it (a test requires the equality),
   so the garage options are ON in the canonical configuration. The calibration is no validation (ADR-0140 decision 7).
-  Plans provenance: the plans file braunschweig_1pct_parking_v2_plans_population.xml.gz (SHA-256 a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc) is the output of
-  the server run of 2026-10-08 14:45 to 2026-10-09 03:36 (exit 0, server log logs/run_20261008_144516.log on felix) with the
-  overlay ~/parking_v2_plans.yml on the server: configs/base_bs.yml plus the test_1pct scale block, run_matsim false,
+  Plans provenance: the plans file braunschweig_1pct_parking_v2_plans_population.xml.gz (SHA-256
+  a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc) is the output of the server run of 2026-10-08 14:45
+  to 2026-10-09 03:36 (exit 0, server log logs/run_20261008_144516.log on felix) with the overlay ~/parking_v2_plans.yml
+  on the server: configs/base_bs.yml plus the test_1pct scale block, run_matsim false,
   parking_zones_enabled true, enable_urban_parking false, parking_garage_decay_m 0 (plans without a garage option, as the
   calibration needs). The plans stay in the gitignored output folder of the main checkout; the run manifest of the v2 runs
   (Task 5b-3) will reference this plans run. Task 4d built the script and tested it on a synthetic fixture
