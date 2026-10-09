@@ -191,18 +191,19 @@ def _bound_fixture():
     """
     fixture = _fixture()
     fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
-        "person_id": [3, 4], "household_id": [30, 40], "car_availability": ["all", "all"],
-        "has_license": [True, True], "bicycle_availability": ["all", "all"],
-        "car_passenger_availability": ["some", "some"]})], ignore_index=True)
-    fixture["df_home"] = gpd.GeoDataFrame({"household_id": [10, 20, 30, 40]},
-                                          geometry=[Point(25000.0, 25000.0)] * 4, crs=CRS)
+        "person_id": [3, 4, 5], "household_id": [30, 40, 50], "car_availability": ["all"] * 3,
+        "has_license": [True] * 3, "bicycle_availability": ["all"] * 3,
+        "car_passenger_availability": ["some"] * 3})], ignore_index=True)
+    fixture["df_home"] = gpd.GeoDataFrame({"household_id": [10, 20, 30, 40, 50]},
+                                          geometry=[Point(25000.0, 25000.0)] * 5, crs=CRS)
+    # Person 5: a short shop trip whose own reported distance is missing (a bound exists, nothing to tighten).
     extra = pd.DataFrame({
-        "person_id": [3, 3, 4, 4], "trip_index": [0, 1, 0, 1],
-        "preceding_purpose": ["home", "leisure", "home", "leisure"],
-        "following_purpose": ["leisure", "home", "leisure", "home"], "mode": ["car"] * 4,
-        "euclidean_distance": [60000.0, 5000.0, 60000.0, np.nan],
-        "departure_time": [9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 18 * 3600.0],
-        "arrival_time": [10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 19 * 3600.0]})
+        "person_id": [3, 3, 4, 4, 5, 5], "trip_index": [0, 1, 0, 1, 0, 1],
+        "preceding_purpose": ["home", "leisure", "home", "leisure", "home", "shop"],
+        "following_purpose": ["leisure", "home", "leisure", "home", "shop", "home"], "mode": ["car"] * 6,
+        "euclidean_distance": [60000.0, 5000.0, 60000.0, np.nan, np.nan, 3000.0],
+        "departure_time": [9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 18 * 3600.0, 9 * 3600.0, 12 * 3600.0],
+        "arrival_time": [10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 19 * 3600.0, 10 * 3600.0, 13 * 3600.0]})
     fixture["trips"] = pd.concat([fixture["trips"], extra], ignore_index=True)
     return fixture
 
@@ -213,18 +214,21 @@ def test_build_portal_trips_reports_the_displacement_bound_and_keeps_the_primary
     report = out["report"]
     # Non-primary legs that can be bounded: the leisure legs of persons 2, 3 and 4 (person 1's legs are the
     # work leg, assigned location, and the way home).
-    assert report["n_nonprimary_legs"] == 3
+    # (plus person 5's shop leg: own distance missing).
+    assert report["n_nonprimary_legs"] == 4
     assert report["n_nonprimary_legs_bounded"] == 1                  # person 3 only
     assert report["n_portal_legs_lost_through_bound"] == 1           # person 3: reported 60 km > 45 km, bounded 5 km
-    assert report["n_nonprimary_legs_without_bound"] == 1            # person 4: NaN way home
+    assert report["n_nonprimary_legs_without_bound"] == 1            # person 4: NaN way home (own distance known)
+    assert report["n_nonprimary_legs_without_reported_distance"] == 1   # person 5: neither bounded nor unbounded
     # Portal legs: person 1 (work, assigned 175 km), person 2 (120 km), person 4 (60 km, unbounded) - not person 3.
     assert report["n_portal_legs"] == 3 and report["n_stays"] == 3
     assert out["trips"].loc[out["trips"]["person_id"] == 3, "following_purpose"].tolist() == ["leisure", "home"]
     records = [record for record in caplog.records if "displacement bound" in record.getMessage()]
     assert len(records) == 1 and records[0].levelno == logging.INFO
     message = records[0].getMessage()
-    assert "bounded 1/3 (33.3%)" in message and "lose portal status through the bound 1" in message
-    assert "without a usable bound 1/3 (33.3%" in message
+    assert "bounded 1/4 (25.0%)" in message and "lose portal status through the bound 1" in message
+    assert "without a usable bound 1/4 (25.0%" in message
+    assert "without a reported distance 1/4 (25.0%" in message
 
 
 def test_build_portal_trips_draws_the_external_point_at_the_bounded_distance():

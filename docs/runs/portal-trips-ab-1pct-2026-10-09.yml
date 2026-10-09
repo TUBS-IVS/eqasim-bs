@@ -148,7 +148,14 @@ validation:
     differently; fixed in e47fc268); the second wrote both pre-portal files and was killed by the kernel OOM
     killer at 61 GB anonymous RSS inside braunschweig.analysis.analysis_suite while another session's run used
     the server. Preparation and MATSim were not re-run after the fix, so the A/B figures above stay those of
-    aa2726e5.
+    aa2726e5. Further partial re-run on 2026-10-09 (portal stage alone, 1 % sample, same working directory,
+    log run_20261009T125650.log on felix) at commit 33a6ae59 with the diary-consistency cap on the
+    classification distance of non-primary legs (ADR-0141): non-primary legs 13,387; bounded 672 (5.0 %); legs
+    that lose portal status through the cap 33; without a usable bound 3,177 (23.7 %, they keep the reported
+    distance); 699 portal legs -> 584 stays for 571/9,563 persons (5.97 %; the ON arm at aa2726e5 had 617 stays,
+    603 persons, 6.31 %); drawn stays 244 (was 277), primary stays 340 (unchanged); return share degenerate
+    0/584, median share outside 0.59. Preparation and MATSim were not re-run, so the A/B figures above stay
+    those of aa2726e5.
 features:
 - portal_trips
 artifacts:

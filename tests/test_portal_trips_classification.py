@@ -143,10 +143,11 @@ def test_find_outside_stays_rejects_flags_of_the_wrong_length():
 
 
 # --- Displacement upper bound for non-primary legs (ADR-0141, #442) ---------------------------------------------
-# The donor's reported leg distance is a ROUTE length. For a non-primary leg the diary itself bounds the
-# straight-line displacement of the destination: way out (last home departure up to the leg's origin) plus way
-# back (the leg's destination up to the next home arrival), by the triangle inequality. The classification
-# distance is min(reported, bound); a bound needs BOTH sides known, otherwise the reported distance stays.
+# The donor's reported leg distance is a straight-line ESTIMATE (route length / detour factor 1.3). For a
+# non-primary leg the diary offers a second estimate of the destination's distance from home: way out (last
+# home departure up to the leg's origin) plus way back (the leg's destination up to the next home arrival). A leg
+# whose own estimate exceeds it is inconsistent at estimate level; the classification distance takes the smaller
+# estimate, min(reported, bound). A bound needs BOTH sides known, otherwise the reported distance stays.
 
 _NO_PRIMARY = {"work": _xy([], []), "education": _xy([], [])}
 _THRESHOLD_M = 45000.0
@@ -282,8 +283,10 @@ def test_displacement_bound_column_set_and_dtypes():
     trips, frame = _bound_frame([(1, 0, "home", "leisure", "car", 60000.0),
                                  (1, 1, "leisure", "home", "car", 5000.0)])
     assert list(frame.columns) == ["classification_distance_m", "used_reported_distance",
-                                   "displacement_bound_m", "bound_applied", "bound_unknown"]
-    assert frame["bound_applied"].dtype == bool and frame["bound_unknown"].dtype == bool
+                                   "displacement_bound_m", "bound_applied", "bound_unknown",
+                                   "non_primary", "reported_distance_missing"]
+    for column in ("bound_applied", "bound_unknown", "non_primary", "reported_distance_missing"):
+        assert frame[column].dtype == bool
     assert frame.index.equals(trips.index)
 
 
@@ -328,15 +331,44 @@ def test_displacement_bound_matches_the_per_leg_reference_on_random_chains():
         previous = "home" if rng.random() < 0.85 else str(rng.choice(purposes[1:]))
         for trip_index in range(n_legs):
             following = str(rng.choice(purposes, p=[0.3, 0.1, 0.05, 0.2, 0.2, 0.15]))
-            distance = np.nan if rng.random() < 0.1 else float(rng.integers(1, 90) * 1000)
+            distance = np.nan if rng.random() < 0.1 else float(rng.uniform(100.0, 90000.0))   # non-integer metres
             rows.append((person_id, trip_index, previous, following, "car", distance))
             previous = following if rng.random() < 0.93 else str(rng.choice(purposes))
     trips = _trips(rows)
     expected = _reference_displacement_bound_m(trips)
     actual = cls.displacement_bound_m(trips)
     assert np.isfinite(expected).sum() > 100 and np.isnan(expected).sum() > 100    # both branches are exercised
-    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(np.isnan(actual), np.isnan(expected))             # identical NaN pattern
+    finite = np.isfinite(expected)
+    np.testing.assert_allclose(actual[finite], expected[finite], rtol=1e-9, atol=1e-6)
 
 
 def test_displacement_bound_of_an_empty_table_is_empty():
     assert cls.displacement_bound_m(_trips([]).astype({"euclidean_distance": float})).shape == (0,)
+
+
+def test_displacement_bound_marks_the_non_primary_legs_and_the_legs_without_own_distance():
+    trips, frame = _bound_frame([(1, 0, "home", "shop", "car", np.nan),
+                                 (1, 1, "shop", "home", "car", 3000.0),
+                                 (1, 2, "home", "work", "car", 7000.0),
+                                 (1, 3, "work", "home", "car", 7000.0)])
+    # non-primary = neither work/education nor the way home; a NaN own distance is a separate diagnostic.
+    assert frame["non_primary"].tolist() == [True, False, False, False]
+    assert frame["reported_distance_missing"].tolist() == [True, False, False, False]
+    # Leg 0 has a known bound (0 + 3 km) but no own distance to tighten: neither applied nor unknown.
+    assert frame["displacement_bound_m"].iloc[0] == 3000.0
+    assert frame["bound_applied"].tolist() == [False, False, False, False]
+    assert frame["bound_unknown"].tolist() == [False, False, False, False]
+    assert np.isnan(frame["classification_distance_m"].iloc[0])
+
+
+def test_displacement_bound_rejects_trips_not_sorted_by_person_and_trip_index():
+    unsorted_persons = _trips([(2, 0, "home", "leisure", "car", 1000.0), (2, 1, "leisure", "home", "car", 1000.0),
+                               (1, 0, "home", "leisure", "car", 1000.0), (1, 1, "leisure", "home", "car", 1000.0)])
+    unsorted_persons = pd.concat([unsorted_persons.iloc[2:], unsorted_persons.iloc[:2]], ignore_index=True)
+    with pytest.raises(ValueError, match="sorted by person_id, trip_index"):
+        cls.displacement_bound_m(unsorted_persons)
+    unsorted_legs = _trips([(1, 0, "home", "leisure", "car", 1000.0), (1, 1, "leisure", "home", "car", 1000.0)])
+    unsorted_legs = unsorted_legs.iloc[::-1].reset_index(drop=True)
+    with pytest.raises(ValueError, match="sorted by person_id, trip_index"):
+        cls.classification_distance_frame(unsorted_legs, _home_xy(), _NO_PRIMARY)

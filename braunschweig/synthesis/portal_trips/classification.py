@@ -3,8 +3,9 @@
 Pure pandas; no synpp. A leg is a portal leg when its distance exceeds the threshold: for work
 and education legs the straight-line distance from the person's home to the ASSIGNED location
 (the location already exists, the sampler never sees these legs), for every other leg the
-donor's reported distance (``euclidean_distance``, from MiD ``wegkm_imp``, a ROUTE length) capped
-by the displacement upper bound of the donor's own diary (``displacement_bound_m``, ADR-0141). A
+donor's reported distance (``euclidean_distance``, the MiD route length ``wegkm_imp`` divided by the
+detour factor 1.3, i.e. a straight-line ESTIMATE) capped by the diary's own estimate of the destination's
+distance from home (``displacement_bound_m``, ADR-0141). A
 return home is never a portal leg, and a NaN distance (the synthetic home closure) is never
 one either. Consecutive portal destinations form ONE outside stay, the semantics of the eqasim
 cutter's ``MergeOutsideActivities``: the leg into the run is the outbound leg, the first leg
@@ -63,24 +64,37 @@ def _grouped_exclusive_sum(values: np.ndarray, group_start: np.ndarray) -> np.nd
     return inclusive - values
 
 
-def displacement_bound_m(trips: pd.DataFrame) -> np.ndarray:
-    """Upper bound of the straight-line displacement of each leg's destination from the donor's diary.
+def _require_sorted(trips: pd.DataFrame) -> None:
+    """Fail early: the tour sums are only meaningful on rows sorted by ``person_id, trip_index``."""
+    persons = trips["person_id"].to_numpy()
+    trip_index = trips["trip_index"].to_numpy()
+    same_person = persons[1:] == persons[:-1]
+    if (persons[1:] < persons[:-1]).any() or (same_person & (trip_index[1:] < trip_index[:-1])).any():
+        raise ValueError("[portal_trips] the trips must be sorted by person_id, trip_index (the displacement bound "
+                         "sums consecutive legs of one person); sort the trips table before classification")
 
-    By the triangle inequality the displacement of a leg's destination from home is at most the way out
-    (reported distances of the legs from the last home departure up to the leg's origin, 0 when the leg
-    starts at home) plus the way back (reported distances of the legs from the leg's destination to the
-    next home arrival, inclusive of that home-bound leg). The bound needs BOTH sides: a side is unknown when
+
+def displacement_bound_m(trips: pd.DataFrame) -> np.ndarray:
+    """The diary's own estimate of how far each leg's destination lies from home (a consistency cap).
+
+    The sum of the reported distances of the way out (the legs from the last home departure up to the
+    leg's origin, 0 when the leg starts at home) and the way back (the legs from the leg's destination to
+    the next home arrival, inclusive of that home-bound leg). A leg whose own reported distance exceeds this
+    sum is inconsistent with the rest of its diary at estimate level; the classification takes the smaller
+    estimate. The bound needs BOTH sides: a side is unknown when
     one of its legs has no finite reported distance (e.g. the synthetic home closure) or when the chain does
     not start at home before the leg / does not reach home after it; the result is then NaN (no silent
     guess). Home-bound legs get NaN (they are never portal legs).
 
-    The reported distances are route lengths, so the bound is conservative: it over-estimates the
-    displacement. Sums never cross a home arrival or a person. Vectorised (per-tour cumulative sums);
-    precondition: ``trips`` is sorted by ``person_id, trip_index``, as for ``find_outside_stays``.
-    Returns a float array aligned to the rows of ``trips``.
+    The reported distances are straight-line ESTIMATES (route length / 1.3), not true distances, so the
+    triangle inequality holds only up to the per-leg detour error: the cap is strict only if every leg's
+    real detour is at least 1.3, and errs in both directions otherwise. Sums never cross a home arrival or a
+    person. Vectorised (per-tour cumulative sums); ``trips`` must be sorted by ``person_id, trip_index``
+    (checked, ``ValueError`` otherwise). Returns a float array aligned to the rows of ``trips``.
     """
     if len(trips) == 0:
         return np.zeros(0, dtype=float)
+    _require_sorted(trips)
     reported = trips["euclidean_distance"].astype(float).to_numpy()
     unknown_leg = np.isnan(reported).astype(float)
     filled = np.where(np.isnan(reported), 0.0, reported)
@@ -125,6 +139,9 @@ def classification_distance_frame(trips: pd.DataFrame, home_xy: pd.DataFrame, pr
     - ``bound_applied`` (bool): the bound was finite and smaller than the finite reported distance.
     - ``bound_unknown`` (bool): a non-primary, non-home-bound leg without a usable bound (its reported
       distance stays). The caller logs the rate.
+    - ``non_primary`` (bool): the legs the bound applies to (neither work/education nor the way home).
+    - ``reported_distance_missing`` (bool): a non-primary leg whose OWN reported distance is NaN (nothing to
+      tighten: it is neither bounded nor counted as unbounded by the stage; it is never a portal leg).
     """
     distance = trips["euclidean_distance"].astype(float).to_numpy().copy()
     reported = distance.copy()
@@ -151,7 +168,8 @@ def classification_distance_frame(trips: pd.DataFrame, home_xy: pd.DataFrame, pr
     distance[tighter] = bound[tighter]
     return pd.DataFrame({"classification_distance_m": distance, "used_reported_distance": used_reported,
                          "displacement_bound_m": bound, "bound_applied": tighter,
-                         "bound_unknown": non_primary & np.isnan(bound)}, index=trips.index)
+                         "bound_unknown": non_primary & np.isnan(bound), "non_primary": non_primary,
+                         "reported_distance_missing": non_primary & np.isnan(reported)}, index=trips.index)
 
 
 def classification_distance_m(trips: pd.DataFrame, home_xy: pd.DataFrame, primary_xy: dict) -> pd.Series:

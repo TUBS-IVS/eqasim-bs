@@ -210,25 +210,28 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
         raise ValueError(f"{_LOG_TAG} all {n_primary} work/education legs were classified by the reported-distance "
                          "fallback; the join of the assigned primary locations to the trips is broken "
                          "(person_id mismatch or empty location tables)")
-    # Displacement bound of the non-primary legs (ADR-0141): the diary's own way out + way back caps the
-    # reported route length. Information rates, not a failure signal: a missing bound only keeps the
-    # reported distance (a chain without a home start/end, or a leg without a reported distance).
-    non_primary_home_excluded = ~trips["following_purpose"].isin(
-        (*_classification.PRIMARY_PURPOSES, _classification.HOME_PURPOSE)).to_numpy()
-    n_non_primary = int(non_primary_home_excluded.sum())
+    # Displacement bound of the non-primary legs (ADR-0141): the diary's own estimate (way out + way back)
+    # caps the reported distance. Information rates, not a failure signal: a missing bound only keeps the
+    # reported distance (a chain without a home start/end, or a leg in the sums without a reported distance).
+    # Legs whose OWN reported distance is missing are counted separately: nothing to tighten, never portal.
+    n_non_primary = int(frame["non_primary"].sum())
     n_bounded = int(frame["bound_applied"].sum())
-    n_unbounded = int(frame["bound_unknown"].sum())
+    n_missing_own = int(frame["reported_distance_missing"].sum())
+    n_unbounded = int((frame["bound_unknown"] & ~frame["reported_distance_missing"]).sum())
     reported_portal = _classification.portal_flags(trips["euclidean_distance"].astype(float),
                                                    trips["following_purpose"], threshold_m)
     n_lost = int((frame["bound_applied"] & reported_portal & ~is_portal).sum())
     logger.info("%s displacement bound (non-primary legs, %d): bounded %d/%d (%.1f%%), lose portal status through the "
-                "bound %d, without a usable bound %d/%d (%.1f%%; those keep the reported distance)", _LOG_TAG, n_non_primary,
-                n_bounded, n_non_primary, 100.0 * n_bounded / max(n_non_primary, 1), n_lost, n_unbounded,
-                n_non_primary, 100.0 * n_unbounded / max(n_non_primary, 1))
+                "bound %d, without a usable bound %d/%d (%.1f%%; those keep the reported distance), without a "
+                "reported distance %d/%d (%.1f%%; never portal)", _LOG_TAG, n_non_primary, n_bounded, n_non_primary,
+                100.0 * n_bounded / max(n_non_primary, 1), n_lost, n_unbounded, n_non_primary,
+                100.0 * n_unbounded / max(n_non_primary, 1), n_missing_own, n_non_primary,
+                100.0 * n_missing_own / max(n_non_primary, 1))
     counts = {"n_primary_legs": n_primary, "n_primary_legs_assigned": n_primary - n_fallback,
               "n_primary_legs_reported_distance_fallback": n_fallback,
               "n_nonprimary_legs": n_non_primary, "n_nonprimary_legs_bounded": n_bounded,
-              "n_portal_legs_lost_through_bound": n_lost, "n_nonprimary_legs_without_bound": n_unbounded}
+              "n_portal_legs_lost_through_bound": n_lost, "n_nonprimary_legs_without_bound": n_unbounded,
+              "n_nonprimary_legs_without_reported_distance": n_missing_own}
     return is_portal, distance, counts
 
 

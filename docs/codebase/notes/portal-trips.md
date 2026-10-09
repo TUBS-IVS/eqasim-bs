@@ -29,11 +29,13 @@ read by three consumers and bounds three things:
 
 1. the portal stage: a leg is a portal leg when its distance exceeds it. The distance is home to the ASSIGNED
    location for work and education legs. For every other purpose it is the donor's reported
-   `euclidean_distance` (a route length) capped by the displacement upper bound of the donor's own diary:
-   `min(reported, way out before + way back)`, the sums of the reported distances from the last home departure
-   up to the leg's origin and from the leg's destination to the next home arrival (see
-   `classification.displacement_bound_m`; ADR-0141). Both sides must be known, otherwise the reported distance
-   stays. The same bounded distance drives the external point draw (one source of truth:
+   `euclidean_distance` (a straight-line ESTIMATE: MiD route length / 1.3) capped by the diary's own estimate
+   of the destination's distance from home: `min(reported, way out before + way back)`, the sums of the reported
+   distances from the last home departure up to the leg's origin and from the leg's destination to the next home
+   arrival (see `classification.displacement_bound_m`; ADR-0141). A leg estimated longer than the rest of its
+   own diary allows is inconsistent at estimate level (typical leisure round trips); this is a consistency cap,
+   not a proven upper bound (per-leg detours differ from 1.3). Both sides must be known, otherwise the
+   reported distance stays; the trips must be sorted by `person_id, trip_index` (checked). The same bounded distance drives the external point draw (one source of truth:
    `classification_distance_frame`). A return home or a missing distance is never a portal leg;
 2. `braunschweig.popsim.distance_distributions`: the CDFs are built from donor trips within it (guard rail
    one: the sampler cannot draw beyond the supplied area);
@@ -243,7 +245,7 @@ primary method is broken" warns above `braunschweig.portal.fallback_warn_share`.
 | Log line (abridged) | What it tells you |
 |---|---|
 | `primary legs assigned a/b ..., reported-distance fallback c` | Work/education legs classified by the assigned location (primary) versus the donor's reported distance (fallback, legitimate for persons without an assigned location). Raises when EVERY work/education leg falls back: the join of the primary locations is broken. It can also fire on a tiny run without primary locations. |
-| `displacement bound (non-primary legs, n): bounded a/n, lose portal status through the bound b, without a usable bound c/n` | Non-primary legs (not work/education, not the way home) whose reported distance was cut by the diary's bound; of those, the legs that would have been portal by the reported distance alone but are not any more; legs whose bound is unknown (a leg without a reported distance such as the synthetic home closure, or a chain that does not start/end at home), which keep the reported distance. Information rates (INFO). A high unbounded rate means few diaries chain cleanly from and to home. The counts are in the report as `n_nonprimary_legs`, `n_nonprimary_legs_bounded`, `n_portal_legs_lost_through_bound`, `n_nonprimary_legs_without_bound`. |
+| `displacement bound (non-primary legs, n): bounded a/n, lose portal status through the bound b, without a usable bound c/n, without a reported distance d/n` | Non-primary legs (not work/education, not the way home) whose reported distance was cut by the diary's bound; of those, the legs that would have been portal by the reported distance alone but are not any more; legs whose bound is unknown (a leg in the sums without a reported distance such as the synthetic home closure, or a chain that does not start/end at home), which keep the reported distance; and legs whose OWN reported distance is missing (nothing to tighten, never portal; neither bounded nor unbounded). Information rates (INFO). A high unbounded rate means few diaries chain cleanly from and to home. The counts are in the report as `n_nonprimary_legs`, `n_nonprimary_legs_bounded`, `n_portal_legs_lost_through_bound`, `n_nonprimary_legs_without_bound`, `n_nonprimary_legs_without_reported_distance`. |
 | `N portal legs -> M outside stays for p/q persons` | Size of the effect; also removed inner legs, stays without return, stays by kind (road/rail) and mode. |
 | `gate usage (top 10 ...)` | A single gate taking most stays points to a wrong gate set or a degenerate detour rule. |
 | `external point drawn outside the distance band` | Band-miss rate of the external point draw (the nearest point is used). High = tolerance too tight or the external point set too sparse around the reported distances. |
