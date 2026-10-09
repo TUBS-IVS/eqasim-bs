@@ -178,6 +178,8 @@ notes: >-
   Server-only data: output_persons / output_plans of the two arms and the portal stage cache directory.
 source: >-
   The figures come from the run notes of the controller session (felix:~/wt-i442/logs/run_20261009T085020.log for the
-  ON arm), the committed i442_metrics_{on,off}.json (output of
+  ON arm, felix:~/wt-i442/logs/run_20261009T093812.log for the OFF arm), the committed i442_metrics_{on,off}.json (output of
   smoke_metrics_i442.py run against each arm, argument order <output_dir> <prefix> <cache_dir> <arm>), and
-  portal_trips_report.json (stage report copied from the stage cache directory of the ON arm).
+  portal_trips_report.json (stage report copied from the stage cache directory of the ON arm). The share_out split (141 closure legs without a reported
+  distance) comes from share_cap_probe.py (committed artifact), run against the ON arm's cached
+  trips_day_stage and portal stage pickles.
