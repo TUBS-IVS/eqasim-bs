@@ -942,3 +942,33 @@ def test_resolver_warns_that_the_commutes_are_used_unchecked_when_commutes_gpkg_
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert "bs_commutes.gpkg" in warnings[0].getMessage() and "staleness" in warnings[0].getMessage()
+
+
+def test_pre_portal_commutes_accept_equal_crs_spelled_with_and_without_the_datum_ensemble():
+    """EPSG:25832 from a code carries the datum ENSEMBLE, the same CRS read from a WKT1 file does not.
+
+    pyproj treats them as equal (``==``) but hashes them differently, so a set-based check counted two CRSs and
+    the 1 % smoke of 2026-10-09 aborted in the output stage when the education frame came from a cached pickle.
+    """
+    from pyproj import CRS
+    ensemble = CRS.from_epsg(25832)
+    plain = CRS.from_wkt(ensemble.to_wkt("WKT1_GDAL"))
+    assert ensemble == plain and len({ensemble, plain}) == 2  # the trap this test pins
+    work, education = _commute_primary_locations()
+    home = _commute_home_frame().set_crs(ensemble, allow_override=True)
+    work = work.set_crs(ensemble, allow_override=True)
+    education = education.set_crs(plain, allow_override=True)
+    donor = vendored.prepare_trip_output_frame(_commute_day_trips())
+    commutes, _ = OUTPUT.build_pre_portal_commutes(donor, _commute_persons(), home, work, education)
+    assert list(commutes["person_id"]) == [1]
+
+
+def test_pre_portal_commutes_still_reject_a_different_crs():
+    from pyproj import CRS
+    work, education = _commute_primary_locations()
+    home = _commute_home_frame().set_crs(CRS.from_epsg(25832), allow_override=True)
+    work = work.set_crs(CRS.from_epsg(25832), allow_override=True)
+    education = education.set_crs(CRS.from_epsg(4326), allow_override=True)
+    donor = vendored.prepare_trip_output_frame(_commute_day_trips())
+    with pytest.raises(ValueError, match="one CRS"):
+        OUTPUT.build_pre_portal_commutes(donor, _commute_persons(), home, work, education)

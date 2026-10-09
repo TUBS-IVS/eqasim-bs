@@ -172,7 +172,10 @@ def build_pre_portal_commutes(pre_portal_trips, persons, df_home, df_work, df_ed
     count above zero means a broken join. All frames must share one CRS.
     """
     crs_by_name = {"home": df_home.crs, "work": df_work.crs, "education": df_education.crs}
-    if None in crs_by_name.values() or len(set(crs_by_name.values())) != 1:
+    # Compare with ``==``, never through a set: pyproj hashes EPSG:25832 with and without its datum ensemble
+    # differently although the two compare equal (a cached pickle may carry either spelling).
+    reference = crs_by_name["home"]
+    if reference is None or not all(crs is not None and crs == reference for crs in crs_by_name.values()):
         raise ValueError(f"{_LOG_TAG} the pre-portal commutes need the home, work and education locations in one "
                          f"CRS, got {crs_by_name}")
     person_ids = set(persons["person_id"])
