@@ -12,9 +12,10 @@ description: >-
   products of the same municipality under assumption P13; config parking_garage_monthly_imputation, default true, false is
   the sensitivity arm published products only; ADR-0140 decision 10). Residents are exempt in their resident zone (R1) and in the resident district of
   their home where the zone honours permits (R2, R2-a). A stay in a paid street or resident zone has the street option and
-  every priced garage within 1,000 m with the weight exp(-d / lambda) (G1, G2) and is priced as the probability-weighted
-  expected cost; the options act only with parking_garage_decay_m above 0, the calibrated lambda (G3; the current value
-  and state: validation.note). Outside every zone parking is free (assumption Z1; the coverage register
+  every priced garage within 1,000 m with the weight exp(-d / lambda) (G1, G2; lambda_c for work and education, G1-c) and
+  is priced as the probability-weighted expected cost; the options act only with the decay of the stay's purpose above 0:
+  parking_garage_decay_m for the visitor purposes, parking_garage_decay_commute_m for work and education, both calibrated
+  (G3; the current values and state: validation.note). Outside every zone parking is free (assumption Z1; the coverage register
   parking_coverage_register_2026 states the status of every municipality). Work and education parking is free for a
   share of persons per workplace class equal to the SrV 2023 free share among car commuters (assumption A1; the paid
   zones of Wolfsburg use the share of the class bs_zentrum, A1-b) and for a share of the persons with work or education on
@@ -159,8 +160,9 @@ evidence:
       Braunschweig residents, the model counts all car arrivals), not a validation; since v2 its garage share is
       the CALIBRATION TARGET of the garage decay length (ADR-0140, parking_garage_decay_calibration_2026; its state:
       validation.note)
-      and no longer a validation quantity, while its paid share and the commuter garage share of
-      srv2023_commute_parking_by_workplace_class stay independent comparison quantities
+      and no longer a validation quantity, while its paid share stays an independent comparison quantity; in
+      srv2023_commute_parking_by_workplace_class the row bs_zentrum is the calibration target of the commuter decay
+      length (ADR-0140 decision 12) and the row 03103 (Wolfsburg) the independent check
       (scripts/parking/compare_parking_targets.py).
 validation:
   state: unvalidated
@@ -177,10 +179,12 @@ validation:
     comparison. That smoke ran the first release (ADR-0139). STATE OF THE V2 RELEASE (ADR-0140; this is the one place that
     states it): no MATSim run of it exists, neither the three-arm comparison nor any other, so nothing of v2 is
     validated and no direction or size of an effect on the mode shares is stated; the garage options are ON in the
-    canonical configuration with the calibrated decay length parking_garage_decay_m (the table
-    parking_garage_decay_calibration_2026, calibrated 2026-10-09 on the plans of the 1 % server run of 2026-10-08;
-    a calibration to an SrV share, no validation; the commuter check missed the SrV reference as ADR-0140 decision 7
-    pre-registered); the parking search time is
+    canonical configuration with the two calibrated decay lengths parking_garage_decay_m (396.19 m, visitor purposes) and
+    parking_garage_decay_commute_m (191.52 m, work and education; the table parking_garage_decay_calibration_2026,
+    calibrated 2026-10-09 on the plans of the 1 % server run of 2026-10-08; calibrations to SrV shares, no validation; the
+    independent Wolfsburg commuter check is 0.3487 over 18 activities against the SrV row 03103 share 0.6387, a miss that is
+    stated, not explained: ADR-0140 decision 12; the earlier miss of the commuter share at the single decay length was the
+    pre-registered one of decision 7); the Java side of the commuter decay (schema 4) is pending (Task 4i); the parking search time is
     off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:
@@ -198,7 +202,7 @@ assessment:
   note: >-
     Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.parking, branch
     feature/i436-parking-cost-zones-v2, which extends feature/i249-parking-cost-zones) with its own unit tests;
-    the golden cases are shared through tests/fixtures/parking/parking_golden_cases.json (schema_version 4).
+    the golden cases are shared through tests/fixtures/parking/parking_golden_cases.json (schema_version 5).
 notes: >-
   simple_ipf_open is not_used because its configurations write the plans with the plain
   matsim.scenario.population stage, which attaches no parking attribute and therefore rejects

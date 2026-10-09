@@ -62,7 +62,8 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
    `zone_id` empty for `NO_ZONE`) and one `[parking]` log line per iteration, logs the active minimum stay once at
    startup and, per iteration, how many priced stays in a zone the minimum extended. The counts are pricing calls, one
    per car alternative that mode choice priced, chosen or not: not distinct trips or persons. With the garage options
-   on (schema 3 model with `garage_decay_m` above 0) the same call prices the expected cost over the street and the
+   on (schema 4 model with `garage_decay_m` or `garage_decay_commute_m` above 0, the decay of the stay's purpose
+   governs) the same call prices the expected cost over the street and the
    garages ([parking-garage-options.md](parking-garage-options.md)); the parking search time of the car utility is a
    separate term (`ParkingSearchTime`, factor 0.0 and no zone search time in the release: off, ADR-0140 decision 5).
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
@@ -178,7 +179,8 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 - A zone that lies outside its own municipality of the pipeline's polygons fails the containment check of the
   assembly unless it is declared in `regional_zones.CONTAINMENT_EXCEPTIONS` with its reason; the declared exception
   still has to lie in its own and the declared municipality together.
-- The tariff model JSON is schema 3 since the garage options (Amendment E added `garages`, `garage_decay_m` and
+- The tariff model JSON is schema 4 since the commuter decay (Amendment H added `garage_decay_commute_m`; schema 3
+  since the garage options: Amendment E added `garages`, `garage_decay_m` and
   `garage_max_distance_m`; Amendment C3 had added the per-zone bool
   `resident_permits_valid`, never null, and the top-level list `resident_districts` without a new version), and the Java `ParkingTariffs`
   reader requires the exact key sets of the document and of every zone entry (`DOCUMENT_FIELDS`, `ZONE_FIELDS`): a key

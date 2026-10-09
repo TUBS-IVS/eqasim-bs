@@ -137,10 +137,13 @@ run (see Status).
    equals the SrV share of garages and large lots among the Braunschweig residents who park on the street or in a garage when
    they drive to the city centre (`srv2023_city_center_parking`; the script reads the value from the table). The same lambda
    applies in every town (transfer assumption). Consequences for the role of that table: its garage share is now a
-   calibration TARGET and no longer validates the model; its paid share and the commuter garage share of the class
-   `bs_zentrum` (`srv2023_commute_parking_by_workplace_class`) stay independent comparison quantities, with the universe caveat
-   that the SrV asks residents about their usual place whereas the model averages over destinations.
-   Pre-registered expectation for the commuter comparison (written before any v2 run; an expectation, not a target):
+   calibration TARGET and no longer validates the model; its paid share stays an independent comparison quantity, and so did
+   the commuter garage share of the class `bs_zentrum` (`srv2023_commute_parking_by_workplace_class`) until decision 12
+   (Amendment H, 2026-10-09), which makes that share the calibration TARGET of a second decay length for commuter stays and
+   the Wolfsburg row `03103` the independent check; the universe caveat applies to both: the SrV asks residents about their
+   usual place whereas the model averages over destinations.
+   Pre-registered expectation for the commuter comparison (written before any v2 run; an expectation, not a target; the
+   miss it predicted is what decision 12 answers):
    the model's commuter garage share for `bs_zentrum` exceeds the SrV 0.464, because the garage weights are purpose- and
    price-independent (G1) and no Braunschweig garage has a monthly product in the dataset, so a commuter's garage option is a
    day rate; lambda is NOT tuned to it. The baseline arm for work and education stays is `zones_v2_no_garages` (lambda 0).
@@ -156,7 +159,8 @@ run (see Status).
    0.8911 at 5,000 m (the ends of the search). The universe is small (a 1 % sample), so lambda is a coarse estimate and its
    sampling uncertainty is not quantified. The pre-registered commuter comparison came out as the expected MISS: the model's
    commuter garage share for `bs_zentrum` is 0.7142 over 245 work and education activities against the SrV 0.4636 (a number
-   and the expectation above, not a target; lambda was not tuned to it). The option set of the release value is all 49
+   and the expectation above, not a target; lambda was not tuned to it; this number belongs to the one-decay state and is
+   superseded by decision 12, where the commuters get their own decay length). The option set of the release value is all 49
    priced options (36 garages, 13 surface lots, none of the latter within reach of the zones Ia and Ib; see below). The
    garage options are ON in the canonical configuration with this lambda; no v2 MATSim run exists yet and v2 stays
    unvalidated. Target and option set differ in kind: the target
@@ -196,8 +200,8 @@ run (see Status).
    access and the sub-facility identity of the Klinikum is unconfirmed (named in the row notes, not resolved; the Klinikum
    rests on P11). The data record `parking_garages_2026` holds the rules and the row counts per assumption.
 9. **Cross-language contract.** The Python reference `braunschweig.parking.cost` and the Java `ParkingCostCalculator` agree
-   through one shared golden file (`tests/fixtures/parking/parking_golden_cases.json`, schema_version 4, copied into the Java
-   test resources): money in integer euro cents and times in integer seconds in the tariff model; the weights use `exp`
+   through one shared golden file (`tests/fixtures/parking/parking_golden_cases.json`, schema_version 5 since decision 12,
+   copied into the Java test resources): money in integer euro cents and times in integer seconds in the tariff model; the weights use `exp`
    (`StrictMath.exp` in Java, so the result does not depend on the platform); options are ordered street first and then the
    garages by ascending `garage_id`, the expectation is summed left to right in double precision and the distance is
    `sqrt(dx*dx + dy*dy)`; the price is rounded half up to the cent once, at the end; the golden generator asserts that every
@@ -206,8 +210,10 @@ run (see Status).
    `OUTCOMES` tuple starts with `HOME`. The Java sources (eqasim-java-bs) cite the ruling ids R-4d-2, R-4d-4,
    R-4d-5, R-4e-3 and R-T3-a, which are defined in the last section of this record.
    The two fixtures the Java repository copies byte for byte are pinned by the SHA-256 of their LF blobs (a Windows checkout
-   holds CRLF; hash the blob): `parking_golden_cases.json` `62cb9bc3c6bae7401c8130f54dee1349afaf6f39ec6f0db7c8371777e2e9d14b`
-   and `parking_tariffs_fixture.json` `c7d30141a04ef6c1652c5451d7e3e478bba463a73668ed1cb3bb4994d4472718`.
+   holds CRLF; hash the blob): `parking_golden_cases.json` `342bc4bcb5593e3601584ad2bfcc6c68db2b866867d97621a75200e41fae3b06`
+   and `parking_tariffs_fixture.json` `9f7298bafe0d5f7feb6f2825ee07887e680134163a0ce63599d7fe18fd82f283` (the state of
+   decision 12; before it, with one decay length for every purpose, they were `62cb9bc3c6bae7401c8130f54dee1349afaf6f39ec6f0db7c8371777e2e9d14b`
+   and `c7d30141a04ef6c1652c5451d7e3e478bba463a73668ed1cb3bb4994d4472718`).
    `tests/test_parking_cost.py` pins the same two hashes, so a regenerated golden file without the Java copy update fails on
    the Python side too, and the next change of a fixture updates the test pin and this record together.
 
@@ -316,20 +322,70 @@ run (see Status).
       share instead of the day rate; the size is not established. Limitations: the capacities of the sources differ (P1, P2, P3:
       OSM 148, 385, 72; Contipark 185, 379, 70; DB sheet 183, 380, 72) and no capacity enters the zones; the 50 m area is wider than the lots: they are 4.7, 4.6 and 9.2 times the area of the lots (P1, P2, P3); the OSM fee=no street-side parking west of the station lies 86 to 390 m outside the zones; the zones take in the station forecourt (P1) and private Siemens lots (P2, mostly free through the employer draw); the destination content is small (building potentials: P1 12 buildings, P2 4, P3 5); a bare outline without the 50 m area would leave the zones inert. The municipality containment check against the pipeline's VG250 polygons could not run (the cached polygons are not on the machine), so the review used a substitute: all three zones lie 100 % inside the OSM boundary of Braunschweig (relation 62531, read from the pinned Niedersachsen PBF), with a margin of 3.4 to 3.65 km to the boundary; assemble_parking_zones.check_municipality_containment stays the pipeline check and runs at the next full chain run. The deck point of the Wolfsburg garage lies inside wob_tarifzone_1 (checked).
 
+12. **A separate decay length for commuter stays (Amendment H, owner decision 2026-10-09: "1 bitte umsetzen").** Reason: with the
+    one decay length calibrated on the city-centre visitors (decision 7, lambda 396.19 m) the model's commuter garage share for
+    `bs_zentrum` was 0.7142 against the SrV 0.4636, the miss that decision 7 had pre-registered. The SrV parking questions
+    support exactly two groups: the usual place at work or education per workplace class (`V_*_PARKENAPL`, the table
+    `srv2023_commute_parking_by_workplace_class`) and the usual place in the Braunschweig city centre
+    (`V_BRAU_PARKENCITY`, `srv2023_city_center_parking`); they are person-level questions with no parking place per trip and no
+    purpose split of the city-centre question, so a finer split of the weights by purpose is not supported by the data and is
+    not made. The owner decided on two decay lengths, the commuter one calibrated on `bs_zentrum`, Wolfsburg as an independent check.
+    - **Mechanism (ASSUMPTION G1-c).** The garage weights `exp(-d / decay)` use `garage_decay_commute_m` (lambda_c; config
+      `parking_garage_decay_commute_m`) for a stay whose purpose is work or education (`cost.COMMUTER_PURPOSES`) and
+      `garage_decay_m` (lambda) for every other purpose; one helper, `cost.garage_decay_m_for_purpose`, decides, and the commuter
+      decay is never defaulted to lambda (required keyword in the pricing, `None` accepted by the export and the preparation only
+      while lambda is 0). 0 switches the garage options off for the purposes the decay governs. Everything else of E2 to E4 is
+      unchanged (street weight 1, D_max, expected cost, E4, renormalisation). The tariff model is schema 4 (schema 3 plus the
+      top-level key `garage_decay_commute_m`; a schema-3 file has no commuter decay and every purpose uses `garage_decay_m`, as
+      schema 3 always did: `tariff_export.garage_decays_from_model`, tested) and the golden file schema 5 (every case carries
+      `garage_decay_commute_m`; every case before E33 carries the commuter decay equal to the decay, so all earlier cases are
+      unchanged in content and price; E33 to E38 pin the two decays with a work, a shopping and an education stay at the same
+      destination and the off switches). The Java reader and calculator follow in a separate task (Task 4i); until then the Python
+      export writes a model the existing Java reader refuses (exact key sets).
+    - **Calibration of lambda_c (H2), the result of 2026-10-09 (a calibration, no validation).** The same script and the same
+      plans as decision 7 (SHA-256 `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`, 12,567 persons). Universe:
+      the work and education main activities inside `bs_zone_ia` and `bs_zone_ib` that do NOT carry `parkingFree`: 54 of the
+      245 work and education activities there (191 carry `parkingFree`, so they leave the denominator; the SrV share is among the
+      commuters who park on the street or in a garage), all 54 with a priced garage within 1,000 m. Target: 0.1923 / (0.1923 +
+      0.2225) = 0.463597, READ by the script from the row `bs_zentrum`. Result: lambda_c = 191.52 m, achieved mean 0.463645 after
+      12 halvings (the mean is 0.0000 at 10 m and 0.8861 at 5,000 m). lambda is unchanged (396.19 m, 340 activities, target
+      0.736196, achieved 0.736279; the calibrated table now also lists the search ends and the counts of both universes). Both
+      values are in the committed table `parking_garage_decay_calibration_2026.csv`; the config keys `parking_garage_decay_m` and
+      `parking_garage_decay_commute_m` of `configs/base_bs.yml` and the two popsim fixtures equal its rows `decay_length_m` and
+      `decay_commute_length_m` (a test requires both equalities).
+    - **Targets and checks after this decision.** Calibration targets (no validation): the SrV garage share of the city centre,
+      0.736196 (lambda), and the SrV commuter garage share of `bs_zentrum`, 0.463597 (lambda_c); the garage shares of a
+      run that the comparison script reports for these two universes are therefore not independent. Independent checks that
+      remain, numbers and no validation: the paid share 0.8333 of `srv2023_city_center_parking` (computed on the outcomes of a
+      run, not by the calibration), and the Wolfsburg commuter garage share (H3b): the row `03103` gives 0.1075 / (0.1075 +
+      0.0608) = 0.638740 (READ from the table); the model value at lambda_c over the work and education activities without
+      `parkingFree` inside `wob_tarifzone_1` to `wob_tarifzone_3` is 0.348737 over 18 activities (15 with a priced garage within
+      1,000 m), 0.290 below the reference. That is a miss of the check; the universe is small (a 1 % sample), the SrV row covers
+      the Kreis while the zones are three tariff areas, lambda_c is transferred from Braunschweig (the transfer assumption of
+      G3 now also covers lambda_c), and the cause is not established; the number is stated and no decay is tuned to it. The
+      free-parking draw of Wolfsburg uses the share of `bs_zentrum` as a proxy (A1-b), which is not a reason offered for the
+      miss, only a fact that Wolfsburg is not independent of `bs_zentrum` in the draw.
+    - **Limits.** The commuter calibration rests on 54 activities of a 1 % sample, so lambda_c is a coarse estimate and its
+      sampling uncertainty is not quantified; the SrV share is about residents' usual place, the model averages over
+      destinations (universe caveat); the effect on a run's commuter garage share is not established (no v2 run exists, and
+      the comparison script now labels the `bs_zentrum` rows as the target of lambda_c).
+
 ## Consequences
 
 - Scientific results change when the flag is on. Against ADR-0139 the prices change through the zone geometry (Wolfsburg
   zones, Braunschweig 1a/1b, TU campus unions, the single paid sites), the product minimum (cheaper long stays through
   commuter products), the resident districts, the Wolfsburg and campus free-parking shares and the BgA corrections. The
-  garage options change prices through the calibrated lambda (396.19 m, decision 7): with `parking_garage_decay_m`
-  396.19, the state of this record, they are on. How much the mode shares move is not established: no v2 run exists,
+  garage options change prices through the calibrated decay lengths (lambda 396.19 m, decision 7, and lambda_c 191.52 m for
+  work and education stays, decision 12): with `parking_garage_decay_m` 396.19 and `parking_garage_decay_commute_m` 191.52,
+  the state of this record, they are on. How much the mode shares move is not established: no v2 run exists,
   so no direction or size is stated here.
   The expected output change of each data update is stated once in its data record.
 - v2 is unvalidated. A future run records its comparison with the SrV references in a run manifest (a comparison with a
   universe caveat; convergence of a run is not validation); the SrV garage share is a calibration target and counts as no
   validation of the garage options.
-- The Java reader accepts the tariff model schemas 1, 2 and 3; the Python export writes schema 3 whenever the zones are on, so
-  the Java package of the same branch must be in the jar before any run (the existing run checks of ADR-0139 enforce the
+- The Java reader accepts the tariff model schemas 1, 2 and 3; the Python export writes schema 4 since decision 12 whenever
+  the zones are on, which the existing Java reader refuses until Task 4i adds the key, so the Java package of the same branch
+  must be in the jar before any run (the existing run checks of ADR-0139 enforce the
   package). The plans carry the new attributes `parkingDistrict` and `residentParkingDistrict`; the Java population check
   rejects a district id the tariff model does not list.
 - Mode-choice parameters are not recalibrated; the calibration of #23 starts with the zones on.
@@ -337,8 +393,9 @@ run (see Status).
   are not cleared for redistribution, so they are no longer committed; they stay local like the other raw data and are
   available on request (GitHub issue in TUBS-IVS/eqasim-bs), their tests skip without them, and each data record states the
   SHA-256 to verify a copy.
-- Limitations to state with every v2 result, additional to those of ADR-0139: the garage weights follow one lambda calibrated
-  on the Braunschweig centre and transferred to every town (G3), with straight-line distances and without capacity or
+- Limitations to state with every v2 result, additional to those of ADR-0139: the garage weights follow two decay lengths
+  (lambda for every purpose but work and education, calibrated on the city-centre visitors; lambda_c for work and
+  education, calibrated on the `bs_zentrum` commuters, G1-c) transferred to every town (G3), with straight-line distances and without capacity or
   occupancy; many garage rows rest on a named assumption (P3 to P5, P9 to P12) and secondary evidence; the campus free share
   is an owner estimate; Wolfsburg street stays have neither a daily cap nor a maximum stay; the Braunschweig zone edges
   carry the working accuracy of the digitised city maps and several zone sources carry no verified open licence; the
@@ -378,7 +435,7 @@ run (see Status).
   feature record; the Java unit tests of eqasim-java-bs `org.eqasim.braunschweig.parking` (branch
   `feature/i436-parking-cost-zones-v2`, local at the time of writing).
 - Consistency of the two implementations: the Python reference and the Java calculator agree on every case of the golden
-  file (schema 4; the old families are unchanged prefixes of the new ones), and each Python and Java port of a rule
+  file (schema 5; the old families are unchanged prefixes of the new ones), and each Python and Java port of a rule
   was checked against hand-derived expectations. Randomised differential runs made during review are not committed and carry
   no weight here. These are consistency and regression checks, not a validation.
 - Design: the v2 design spec of 2026-09-29 with Amendments A to G (local, gitignored under `docs/superpowers/specs/`); the

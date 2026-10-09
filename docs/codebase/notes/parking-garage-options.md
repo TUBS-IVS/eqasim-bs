@@ -9,7 +9,8 @@ maintainer must keep. The zone-based pricing around it is in [parking-cost-zones
 A car stay in a `street_paid` or `resident_zone` zone that passes the early rules (no zone, home, `parkingFree`,
 resident, outside the street fee window) has the options "street" (weight 1) and every priced garage within
 `garage_max_distance_m` (1000 m, ASSUMPTION G2) of the destination, weight `exp(-d / lambda)` (ASSUMPTION G1,
-`garage_decay_m`). The price is the probability-weighted mean of the option costs, rounded half up to the cent once
+`garage_decay_m`; lambda_c, `garage_decay_commute_m`, ASSUMPTION G1-c, for a stay whose purpose is work or education: the
+helper `cost.garage_decay_m_for_purpose` is the single place that picks the decay of a stay). The price is the probability-weighted mean of the option costs, rounded half up to the cent once
 (`braunschweig.parking.cost.parking_cost_with_garages`, the Python reference the Java port reproduces). A stay
 whose street option costs 0 pays 0 (E4); an unavailable street renormalises the weights over the garages; a campus zone
 and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTED` is the LAST entry of `cost.OUTCOMES`.
@@ -18,12 +19,12 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
 
 | Concern | Place |
 | --- | --- |
-| Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `GarageOptionCounters`) |
+| Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `garage_decay_m_for_purpose`, `GarageOptionCounters`) |
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
-| Dataset to model entries, schema 3, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `ASSUMPTIONS_REGISTER` G1 to G3 and P3 to P12) |
-| Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_max_distance_m`) |
-| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E32, O01..O69), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 4) |
-| Calibration of lambda | `scripts/parking/calibrate_garage_decay.py` |
+| Dataset to model entries, schema 4, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `garage_decays_from_model`, `ASSUMPTIONS_REGISTER` G1 to G3, G1-c and P3 to P12) |
+| Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_decay_commute_m`, `parking_garage_max_distance_m`) |
+| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E38, O01..O69), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 5) |
+| Calibration of lambda and lambda_c | `scripts/parking/calibrate_garage_decay.py` |
 
 ## Rules maintainers must keep
 
@@ -63,24 +64,40 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   Python reference prices nothing at run time, so no pipeline stage logs the counters; the Java listener logs these rates
   per iteration while the garage options are on. `build_tariff_model` warns, with the count and the zone ids, when a zone row still carries
   zone-level garage columns while `garage_decay_m` is above 0 (E8: they are superseded; production rows have none).
-- **The model is schema 3.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
-  `GARAGE_BAND_FIELDS`); `garage_decay_m` 0 switches the options off, and the export refuses `garage_decay_m > 0` without
-  a priced garage.
+- **The model is schema 4.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
+  `GARAGE_BAND_FIELDS`); `garage_decay_m` 0 switches the options off for the purposes it governs, `garage_decay_commute_m`
+  (schema 4, spec Amendment H) for work and education, and the export refuses either decay above 0 without a priced garage.
+- **Two decay lengths, one helper (ASSUMPTION G1-c).** `cost.garage_decay_m_for_purpose` returns lambda_c for the purposes
+  of `cost.COMMUTER_PURPOSES` and lambda for every other purpose; the pricing, the golden cases and the Java port take the
+  decay of a stay from this rule only. The commuter decay is never defaulted to lambda: `parking_cost_with_garages` requires
+  it (keyword), `build_tariff_model` and the preparation accept `None` only while lambda is 0 and refuse it otherwise. A
+  schema-3 model has no commuter decay and every purpose uses `garage_decay_m` (`tariff_export.garage_decays_from_model`;
+  the Java reader does the same). The golden file is schema 5: every case carries `garage_decay_commute_m`, equal to
+  `garage_decay_m` in every case before E33 (so those cases keep their content and price), and E33 to E38 pin the two
+  decays (lambda 400 m, lambda_c 250 m of the fixture model, `FIXTURE_GARAGE_DECAY_COMMUTE_M`) with a work, a shopping and
+  an education stay at the same destination and the two off switches.
 
 ## Calibration and its state
 
-`garage_decay_m` is a release value with its calibration table `parking_garage_decay_calibration_2026.csv`, written by
-`scripts/parking/calibrate_garage_decay.py` on the plans of the reference scenario (target: the SrV garage share
-`0.708 / (0.708 + 0.2537)`, READ from `srv2023_city_center_parking`, never typed). The script is tested on a
-synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 %
-server run of 2026-10-08: the table is committed and `parking_garage_decay_m` equals its `decay_length_m` in
-`configs/base_bs.yml` and the two popsim fixture configs (`tests/test_parking_garage_decay_config.py` requires the
-equality; the result, universe and provenance are in ADR-0140 decision 7 and the data record
-`parking_garage_decay_calibration_2026`).
-The independent check the table reports (commuter garage share against 0.464) is a number and never validation. The table
-checks no paid share (the zone-level one was blind to the fee window and read 1.0 in Ia and Ib, ruling R-5-4): a run's
-time-aware paid share, garage share and free shares are compared with the SrV by `scripts/parking/compare_parking_targets.py`
-on the run's own outcome report (see the next section).
+`garage_decay_m` (lambda, every purpose but work and education) and `garage_decay_commute_m` (lambda_c, work and education)
+are release values with their calibration table `parking_garage_decay_calibration_2026.csv`, written by
+`scripts/parking/calibrate_garage_decay.py` on the plans of the reference scenario. Targets, all READ from the committed SrV
+tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of `srv2023_city_center_parking`
+(E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the commuter garage share of
+the row `bs_zentrum` of `srv2023_commute_parking_by_workplace_class` (H2, the work and education activities in Ia and Ib that
+do NOT carry `parkingFree`: the SrV share is among the commuters who park on the street or in a garage, and the plans reader
+`count_zone_exposure.read_main_activities` provides the attribute as the column `parking_free`). Both are CALIBRATION TARGETS
+and no validation. The independent check the table reports (H3b) is the Wolfsburg commuter garage share: the mean garage
+probability at lambda_c of the work and education activities without `parkingFree` in `wob_tarifzone_1` to `wob_tarifzone_3`
+against the row `03103`, a number with its universe size and never validation. The script is tested on a synthetic fixture
+(`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 % server run of
+2026-10-08: the table is committed and the two config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
+`configs/base_bs.yml` and the two popsim fixture configs (`tests/test_parking_garage_decay_config.py` requires both
+equalities; the results, universes and provenance are in ADR-0140 decisions 7 and 12 and the data record
+`parking_garage_decay_calibration_2026`). The table checks no paid share (the zone-level one was blind to the fee window and
+read 1.0 in Ia and Ib, ruling R-5-4): a run's time-aware paid share, garage share and free shares are compared with the SrV
+by `scripts/parking/compare_parking_targets.py` on the run's own outcome report (see the next section). The reader of the
+table refuses a table without `decay_commute_length_m` (written before Amendment H).
 
 ## Comparison with the SrV references
 
@@ -119,8 +136,10 @@ as a sensitivity number (the table records the filter).
 
 ## Known limitations
 
-- The garage share is a calibration target, so it no longer validates the model; the universe caveat of E5 (SrV asks
-  residents about their usual place, the model averages over destinations) is stated in the table header.
+- The garage shares of the city centre and of `bs_zentrum` are calibration targets, so they no longer validate the model;
+  the universe caveat of E5 and H2 (SrV asks residents about their usual place, the model averages over destinations) is
+  stated in the table header. The commuter decay rests on a small universe (54 activities of a 1 % sample), and the
+  independent Wolfsburg check misses the SrV row (ADR-0140 decision 12; the cause is not established).
 - Most committed rows rest on at least one assumption; the counts per assumption and the warning share are in the data record `parking_garages_2026` (one fact, one file), and the loader warns at every load for the first share.
 - The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
   reference plans are lost (task 5b of issue #436).

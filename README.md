@@ -285,8 +285,9 @@ python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV comp
 
 **Parking cost zones (ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
 their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
-expected cost); the garage options are ON with the calibrated decay length `parking_garage_decay_m` (calibrated on the plans of a
-server run, no validation; 0 switches them off) and the parking search time is off. Decisions and rejected options: ADR-0140;
+expected cost); the garage options are ON with the calibrated decay lengths `parking_garage_decay_m` (every purpose but work and
+education) and `parking_garage_decay_commute_m` (work and education) (calibrated on the plans of a server run, no
+validation; 0 switches them off for their purposes) and the parking search time is off. Decisions and rejected options: ADR-0140;
 mechanism: `docs/codebase/notes/parking-cost-zones.md`. The tariff table
 (`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
@@ -308,8 +309,9 @@ re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf`
 `eqasim-data/data/braunschweig/parking/raw_osm/` and `python scripts/build_parking_zones_from_osm.py --supply-share`
 (the pipeline's own OSM input D1 is not used for it). The garage dataset ships with its QA table
 `braunschweig/parking/parking_garages_2026_qa.csv`, and `validate_parking_zones.py` cross-checks it with the tariff
-table; the config key `parking_garage_decay_m` (the decay length of the garage weights, metres) equals the `decay_length_m` of
-`braunschweig/parking/parking_garage_decay_calibration_2026.csv` (committed; a test requires the equality), which
+table; the config keys `parking_garage_decay_m` and `parking_garage_decay_commute_m` (the decay lengths of the garage weights,
+metres) equal the `decay_length_m` and the `decay_commute_length_m` of
+`braunschweig/parking/parking_garage_decay_calibration_2026.csv` (committed; a test requires both equalities), which
 `python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` writes (0 = garage
 options off); re-deriving the garage
 dataset needs the owner's regional evidence package and its three supplement packages
@@ -339,7 +341,8 @@ verified), see the data record `parking_resident_districts_2026`; the garage dat
 pages (licences not verified; six OpenStreetMap-derived positions under the ODbL 1.0), see the data record
 `parking_garages_2026`. The two SrV parking tables (the shares above and
 `braunschweig/srv/srv2023_city_center_parking.csv`, whose garage share is the calibration target of the garage decay
-length and whose paid share is a comparison quantity only) are regenerated with
+length and whose paid share is a comparison quantity only; the row `bs_zentrum` of the commute table is the calibration
+target of the commuter decay length) are regenerated with
 `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
 --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
 (restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,

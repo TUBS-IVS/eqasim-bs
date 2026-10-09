@@ -718,6 +718,15 @@ config:
   # this value equals (tests/test_parking_garage_decay_config.py requires the equality). A calibration is no
   # validation. 0 switches the garage options off (E6, the sensitivity arm).
   parking_garage_decay_m: 396.19
+  # ASSUMPTION G1-c (spec Amendment H): the decay length lambda_c in metres of the garage weights of work and
+  # education stays (lambda above governs every other purpose). A release value, CALIBRATED (not estimated) by the same
+  # script on the same plans (SHA-256 a052270838a198c4...): the work and education activities in the zones Ia and Ib
+  # without parkingFree, target the commuter garage share of the SrV class bs_zentrum (srv2023_commute_parking_by_
+  # workplace_class), committed as decay_commute_length_m of parking_garage_decay_calibration_2026.csv, which this value
+  # equals (tests/test_parking_garage_decay_config.py). The bs_zentrum share is a calibration target; the independent
+  # check is the Wolfsburg commuter share of that table, a number and no validation. 0 switches the garage options off
+  # for work and education only (sensitivity arm); there is no default to lambda.
+  parking_garage_decay_commute_m: 191.52
   # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
   # imputed product of its municipality (the median of the published current garage monthly products of that
   # municipality, computed by the curation into the garage dataset, at least two products needed) as the monthly
