@@ -61,17 +61,23 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
    which a rail route continues to a stop outside it), NOT `braunschweig.data.cordon_pt_gates` (which are
    the in-commuters' entry stations). Reason: every gate must lie inside the cut extent, otherwise the
    cutter would cut the stay again; schedule-derived exit stations are inside the extent by construction.
-4. **Times come from the donor diary, no speed assumption (D4).** The outbound departure is unchanged. The
-   outbound leg arrives at the gate at `departure + duration x min(1, inside / reported)` (`inside` is the
-   straight line origin to gate, `reported` the outbound leg's own `euclidean_distance`; counted when the share
-   is capped, including a missing or zero reported distance). Reason: the chain solver samples the distance of
-   the preceding secondary leg from `travel_time = arrival - departure`, so the diary's arrival at the far
-   destination would inflate it; MATSim ignores planned arrivals, so only the synthesis is affected. The
-   stay ends at `t_reentry = return.departure + share_out x (return.arrival - return.departure)` with
-   `share_out = min(1, |point - gate| / return.euclidean_distance)`; a missing or zero reported distance gives
-   `share_out = 1` (counted), a re-entry before the arrival at the gate (or, with inconsistent diaries, before
-   the outbound departure) is clamped (counted). The return leg departs at `t_reentry` and arrives after the
-   remaining `(1 - share_out)` share of its reported duration.
+4. **Times split the donor diary's own durations by the synthetic geometry, no speed assumption (D4).** The
+   outbound departure is unchanged. The outbound leg arrives at the gate at
+   `departure + share_in x (arrival - departure)` with
+   `share_in = |origin - gate| / (|origin - gate| + |gate - point|)`. The stay ends at
+   `t_reentry = return.departure + share_out x (return.arrival - return.departure)` with
+   `share_out = |gate - point| / (|gate - point| + |gate - return_proxy|)`, where `return_proxy` is the stay's
+   origin (the same proxy that fixes the return leg's reported inside distance, see the assumptions). The
+   return leg departs at `t_reentry` and arrives after the remaining `(1 - share_out)` share of its duration.
+   Both shares lie in [0, 1] by construction and no reported (donor) distance enters the timing. A zero
+   denominator (every distance involved is zero) gives the share 0.5 and is counted as degenerate; a re-entry
+   before the arrival at the gate (or, with inconsistent diaries, before the outbound departure) is clamped
+   (counted). Reason: the chain solver samples the distance of the preceding secondary leg from
+   `travel_time = arrival - departure`, so the diary's arrival at the far destination would inflate it; MATSim
+   ignores planned arrivals, so only the synthesis is affected. The donor's reported distance describes the
+   donor's own trip, not the synthetic geometry: for a work/education stay the point is the ASSIGNED location
+   (median 66 km from home in the 1 % smoke) while the donor reported a different trip (median 13.8 km; both from the scratch probe named under the rejected alternative), and
+   synthetic home-closure legs have no reported distance at all.
 5. **Same gate and same mode out and back (D5).** The donor's OUTBOUND mode is used for both portal legs,
    checked against the synthetic person (car needs car availability and a licence, bicycle needs bicycle
    availability, car passenger needs passenger availability). Substitution order: car to car passenger to pt,
@@ -160,6 +166,14 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - **A Java `PortalTripConstraint` in the discrete mode choice** (the spec's D6). Superseded during
   implementation: under the production configuration `OutsideFilter` already freezes every tour that
   touches an `outside` activity, so the constraint would never fire (decision 6).
+- **Splitting the diary durations by `distance in the synthetic geometry / donor reported distance`, capped at 1
+  (the first implementation of D4).** Rejected after the 1 % smoke (run `portal-trips-ab-1pct-2026-10-09`): the
+  numerator (synthetic geometry) and the denominator (a different, donor-reported trip) describe different
+  geometries, so 440 of 617 return shares (71 %) and 183 of 617 outbound shares were capped at 1, which gives a
+  planned inside return duration of zero. The geometric split above gave a median `share_out` of 0.60 (p10 0.19,
+  p90 0.88) on the same stays, with no zero inside duration, in a probe on the cached smoke inputs (a scratch
+  probe, not committed; the capped counts are in the run manifest and its report artifact). The fix is not
+  re-measured in a run (eqasim-bs#442).
 - **Conditioning the distance sampler on the reported distance class.** Kept as a possible later A/B, not
   part of this change.
 
@@ -168,7 +182,8 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
 - ASSUMPTION: the direction of a long-distance secondary trip is a population-weighted distance proxy (the
   same assumption as ADR-0027; there is no secondary OD survey).
 - ASSUMPTION: exit and re-entry use the same gate, and the same mode is used out and back.
-- ASSUMPTION: the outside share of the reported duration scales with the straight-line distance share.
+- ASSUMPTION: the outside share of the diary duration of a leg scales with the share of the straight-line
+  distances of the synthetic geometry (origin, gate, point; the return leg uses the stay's origin as proxy).
 - ASSUMPTION: the detour rule for gate choice does not prefer motorways.
 - ASSUMPTION: a fixed 45 km threshold ignores the home's position inside the region (D2).
 - ASSUMPTION: the return leg's reported inside distance is gate to the stay's origin, not gate to the
@@ -204,8 +219,9 @@ Behind the flag `braunschweig.portal.enabled` (default on, `configs/base_bs.yml`
   anchor stops later in the vendored problem splitter. The work/education-fallback raise can also fire on a
   tiny run without assigned primary locations; that is a property of the input, not of the model.
 - **Fallbacks are observable.** The stage logs, as rates and in its report, the reported-distance fallback
-  of work/education legs, the external-point band misses, the origins proxied by home, the capped re-entry and
-  outbound shares (including those caused by a missing reported distance), the mode substitutions by reason,
+  of work/education legs, the external-point band misses, the origins proxied by home, the degenerate re-entry and
+  outbound shares (all distances zero, share 0.5; the median return share is logged for orientation), the mode
+  substitutions by reason,
   stay persons without a licence value and donor modes the mode check does not know; the rate keys warn above
   `braunschweig.portal.fallback_warn_share` (default 0.1) and `braunschweig.portal.mode_substitution_warn_share`.
   The report is also written as `portal_trips_report.json` in the stage's cache directory, so the A/B run

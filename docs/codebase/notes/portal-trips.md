@@ -82,14 +82,17 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   population writer sets no marker. The tests that pin it are listed in the feature record.
 - **Reported `euclidean_distance` of the two portal legs is the inside part only** (origin to gate, gate to the
   stay's origin). The chain solver ignores donor distances; only reporting sees them.
-- **The outbound leg arrives at the gate after the inside share of its reported duration**
-  (`timing.outbound_arrivals`: `departure + duration x min(1, inside / reported)`, counted when capped). The chain
+- **The diary durations are split at the gate by the synthetic geometry** (ADR-0141, decision 4; no reported
+  donor distance enters). The outbound leg arrives at the gate after
+  `share_in = |origin - gate| / (|origin - gate| + |gate - point|)` of its duration
+  (`timing.outbound_arrivals`); the return leg re-enters after
+  `share_out = |gate - point| / (|gate - point| + |gate - origin|)` (`timing.reentry_times`, the stay's origin is the
+  return proxy). A zero denominator gives share 0.5 and is counted as degenerate. The chain
   solver samples the distance of the preceding secondary leg from `arrival - departure`; keeping the diary's
   arrival at the far destination would inflate that distance. MATSim ignores planned arrivals, so only the
   synthesis is affected. The re-entry clamp lower bound is the arrival at the gate, so the gate activity never
-  ends before it starts. Known unmeasured case: a rail gate that coincides with the origin proxy gives an inside
-  distance of 0 and thus a zero-duration outbound leg; look at the outbound-capped rate and the outbound duration
-  distribution in the first smoke run.
+  ends before it starts. A rail gate that coincides with the origin proxy gives an inside distance of 0 and thus a
+  zero-duration outbound leg (share 0), which is legitimate, not degenerate.
 - **The spatial inputs of the stage are in one CRS.** `assert_consistent_crs` (municipalities, home locations,
   gates, links, external points) raises before the first spatial step and in the pure entry point
   `build_portal_trips`; the cordon polygon carries no CRS and is covered through the municipalities.
@@ -240,8 +243,8 @@ primary method is broken" warns above `braunschweig.portal.fallback_warn_share`.
 | `external point drawn outside the distance band` | Band-miss rate of the external point draw (the nearest point is used). High = tolerance too tight or the external point set too sparse around the reported distances. |
 | `origin proxied by home` | Stays whose real origin (a secondary activity, or a primary activity without a location) was replaced by home for the gate choice. |
 | `re-entry clamped` / `donor return mode differs` | Defensive clamp (should be 0 with consistent diaries) and the count of stays whose return mode differs from the outbound mode. |
-| `share_out capped ...; reported distance missing or zero for K` | Stays whose outside share of the return leg was forced to 1; K is the part caused by a missing or zero reported return distance. |
-| `outbound share capped ...; reported distance missing or zero for K` | The same for the outbound leg's inside share (arrival at the gate); warns above `fallback_warn_share`. |
+| `return share degenerate ... median share outside X` | Stays with a return leg whose gate-to-point and gate-to-origin distances are both zero (share 0.5); warns above `fallback_warn_share`. X is the median share of the return leg that lies outside, for orientation. |
+| `outbound share degenerate ...` | The same for the outbound leg (origin-to-gate and gate-to-point both zero); warns above `fallback_warn_share`. |
 | `stay persons have no has_license value` | Persons treated as unlicensed in the car check. |
 | `donor outbound mode the mode check does not know` | Modes outside the substitution table; kept unchecked. |
 | `mode substituted for a/b stays` | Mode substitutions by reason; warns above `mode_substitution_warn_share`. |

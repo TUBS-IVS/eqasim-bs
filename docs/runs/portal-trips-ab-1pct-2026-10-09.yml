@@ -140,6 +140,7 @@ validation:
     Not a defect of the run but an open question: whether a zero planned return duration is acceptable (MATSim
     ignores planned arrivals, but the chain solver sees travel_time 0 for the next secondary leg). The probe script
     behind the 299 / 141 split was a scratch script and is not committed; the 141 and the 440 are in the report.
+    Root cause and fix: see ADR-0141 (timing); the fix is not re-measured in this run.
 features:
 - portal_trips
 artifacts:

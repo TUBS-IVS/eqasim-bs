@@ -12,7 +12,7 @@ description: >-
   or the schedule-derived rail exit station with the smallest detour (always inside the cut extent, so the
   scenario cutter cuts nothing), the stay ends at a time derived from the donor's diary, and the donor's
   outbound mode is fixed for both legs after an availability check with a counted substitution order. The
-  outbound leg arrives at the gate after the inside share of its reported duration (counted when capped).
+  outbound leg arrives at the gate after the geometric inside share of its diary duration (ADR-0141).
   Two guard rails behind the same flag bound the secondary distance CDFs by the threshold and the external
   Gemeinde candidates to the supply ring. The chain solver treats the gate as a fixed anchored activity;
   every gate is a real facility (location id portal_<gate_id>, registered by the facilities stage). No Java
@@ -169,8 +169,8 @@ evidence:
     note: >-
       The portal stage logs, as rates and in its report, the work/education legs classified by the donor's
       reported distance instead of the assigned location (primary versus fallback; raises when every leg falls
-      back), the external points drawn outside the distance band, the origins proxied by home, the capped
-      re-entry and outbound shares including those caused by a missing reported distance, the mode
+      back), the external points drawn outside the distance band, the origins proxied by home, the degenerate
+      re-entry and outbound shares (all distances zero), the mode
       substitutions by reason, persons without a licence value and donor modes the mode check does not know. The
       first four and the outbound share warn above braunschweig.portal.fallback_warn_share, the substitutions
       above mode_substitution_warn_share. The report is also written as portal_trips_report.json in the stage's
@@ -198,8 +198,9 @@ validation:
     points in one draw. The criteria "near zero" for plans after the simulated day and "no long walk legs" are
     NOT met (68 and 134 remain, other causes, #443). Not yet measured: portal legs by mode and purpose against the
     donor diaries' long-distance legs in the same run, the SrV in-region comparisons, an OFF path byte-identical to
-    the pre-feature state, and any run with MATSim iterations. Open finding: the planned return time is zero for
-    440 of 617 stays (share_out capped). Convergence of the mode shares is not validation.
+    the pre-feature state, and any run with MATSim iterations. Open finding at the smoke: the planned return time was zero for
+    440 of 617 stays (the share_out cap of the first timing rule); the timing was then changed to a geometric split
+    (ADR-0141, decision 4) and that fix is not re-measured in a run. Convergence of the mode shares is not validation.
 assessment:
   status: pending
   by: null

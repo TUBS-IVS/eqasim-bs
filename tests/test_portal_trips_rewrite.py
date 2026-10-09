@@ -31,7 +31,7 @@ def _inputs(trips):
     # origin (0, 0) -> gate (40 km, 0) is 40 km inside, so share = 40/90 = 4/9 and
     # arrival = 09:00 + 4/9 * 5400 s = 32400 + 2400 = 34800 s (09:40).
     times = pd.DataFrame({"t_reentry": [17 * 3600.0 + 1800.0], "share_out": [0.5], "inside_return_duration": [2700.0],
-                          "clamped": [False], "share_capped": [False], "has_return": [True],
+                          "clamped": [False], "share_degenerate": [False], "has_return": [True],
                           "outbound_arrival_time": [34800.0]})
     modes = pd.DataFrame({"mode": ["car"], "outbound_mode": ["car"], "return_mode": ["car"],
                           "substituted_from": [None], "substitution_reason": [None], "return_mode_differs": [False]})
@@ -88,7 +88,7 @@ def test_rewrite_handles_a_stay_without_return():
     stays = pd.DataFrame({"person_id": [1], "outbound_trip_index": [1], "return_trip_index": [np.nan], "n_removed_legs": [0]})
     gate_rows = pd.DataFrame({"gate_id": ["gate_e"], "kind": ["road"], "x": [40000.0], "y": [0.0]})
     times = pd.DataFrame({"t_reentry": [np.nan], "share_out": [np.nan], "inside_return_duration": [np.nan],
-                          "clamped": [False], "share_capped": [False], "has_return": [False],
+                          "clamped": [False], "share_degenerate": [False], "has_return": [False],
                           "outbound_arrival_time": [34800.0]})
     modes = pd.DataFrame({"mode": ["car"], "outbound_mode": ["car"], "return_mode": [None],
                           "substituted_from": [None], "substitution_reason": [None], "return_mode_differs": [False]})
@@ -112,7 +112,7 @@ def test_rewrite_two_stays_in_one_chain():
     # = 56057.142857 s (distances in km, durations 1 h each).
     times = pd.DataFrame({"t_reentry": [12.5 * 3600.0, 20.5 * 3600.0], "share_out": [0.5, 0.5],
                           "inside_return_duration": [1800.0, 1800.0], "clamped": [False, False],
-                          "share_capped": [False, False], "has_return": [True, True],
+                          "share_degenerate": [False, False], "has_return": [True, True],
                           "outbound_arrival_time": [26800.0, 54000.0 + 3600.0 * 40.0 / 70.0]})
     modes = pd.DataFrame({"mode": ["car", "car"], "outbound_mode": ["car", "car"], "return_mode": ["car", "car"],
                           "substituted_from": [None, None], "substitution_reason": [None, None],
@@ -130,7 +130,7 @@ def test_rewrite_without_stays_returns_an_equal_frame_with_the_flag_column():
     trips = _chain()
     out, anchors = rw.rewrite_trips(trips, pd.DataFrame(columns=["person_id", "outbound_trip_index", "return_trip_index", "n_removed_legs"]),
                                     pd.DataFrame(columns=["gate_id", "kind", "x", "y"]),
-                                    pd.DataFrame(columns=["t_reentry", "share_out", "inside_return_duration", "clamped", "share_capped", "has_return",
+                                    pd.DataFrame(columns=["t_reentry", "share_out", "inside_return_duration", "clamped", "share_degenerate", "has_return",
                                                           "outbound_arrival_time"]),
                                     pd.DataFrame(columns=["mode", "outbound_mode", "return_mode", "substituted_from", "substitution_reason", "return_mode_differs"]),
                                     np.zeros((0, 2)), crs=CRS)
@@ -161,7 +161,7 @@ def _multi_person_inputs():
     outbound_arrival = [(outbound_index * 3600.0) + 300.0 for outbound_index in outbound]
     times = pd.DataFrame({"t_reentry": [20 * 3600.0] * 4, "share_out": [0.5] * 4,
                           "inside_return_duration": [1800.0] * 4, "clamped": [False] * 4,
-                          "share_capped": [False] * 4, "has_return": [True] * 4,
+                          "share_degenerate": [False] * 4, "has_return": [True] * 4,
                           "outbound_arrival_time": outbound_arrival})
     modes = pd.DataFrame({"mode": ["car"] * 4, "outbound_mode": ["car"] * 4, "return_mode": ["car"] * 4,
                           "substituted_from": [None] * 4, "substitution_reason": [None] * 4,
@@ -229,7 +229,7 @@ def test_rewrite_rejects_a_stay_whose_outbound_leg_is_removed_by_another_stay_of
                           "n_removed_legs": [2, 1]})
     gate_rows = pd.DataFrame({"gate_id": ["g1", "g2"], "kind": ["road", "road"], "x": [40000.0] * 2, "y": [0.0] * 2})
     times = pd.DataFrame({"t_reentry": [17 * 3600.0] * 2, "share_out": [0.5] * 2, "inside_return_duration": [900.0] * 2,
-                          "clamped": [False] * 2, "share_capped": [False] * 2, "has_return": [True] * 2,
+                          "clamped": [False] * 2, "share_degenerate": [False] * 2, "has_return": [True] * 2,
                           "outbound_arrival_time": [9.5 * 3600.0] * 2})
     modes = pd.DataFrame({"mode": ["car"] * 2, "outbound_mode": ["car"] * 2, "return_mode": ["car"] * 2,
                           "substituted_from": [None] * 2, "substitution_reason": [None] * 2,

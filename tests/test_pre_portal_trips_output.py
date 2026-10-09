@@ -504,7 +504,7 @@ def _rewritten_from_the_reproduction() -> pd.DataFrame:
     gate_rows = pd.DataFrame({"gate_id": ["gate_e"], "kind": ["road"], "x": [40000.0], "y": [0.0]})
     times = pd.DataFrame({"outbound_arrival_time": [7.5 * 3600.0], "t_reentry": [16.5 * 3600.0],
                           "share_out": [0.5], "inside_return_duration": [1800.0], "clamped": [False],
-                          "share_capped": [False], "has_return": [True]})
+                          "share_degenerate": [False], "has_return": [True]})
     modes = pd.DataFrame({"mode": ["car"], "outbound_mode": ["car"], "return_mode": ["car"],
                           "substituted_from": [None], "substitution_reason": [None],
                           "return_mode_differs": [False]})

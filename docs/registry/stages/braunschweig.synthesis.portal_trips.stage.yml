@@ -8,7 +8,7 @@ description: >-
   chooses an external point and a gate (road gate or schedule-derived rail exit station, both
   inside the cut extent), derives the re-entry time from the donor's diary, fixes the donor's
   outbound mode for both portal legs against the synthetic person, times the outbound arrival at
-  the gate (departure + duration x min(1, inside / reported distance)) and the re-entry, and rewrites
+  the gate (the diary duration split by the synthetic geometry, no reported distance) and the re-entry, and rewrites
   the trip table and the anchors frame. Returns one dict {trips, anchors, report}; the two thin stages
   trips_final and anchors hand one frame each to their consumers. With
   braunschweig.portal.enabled false the trips frame is the input frame itself and the anchors
@@ -54,8 +54,7 @@ notes: >-
   Fallback transparency: the stage logs, tagged [portal_trips] and in its report, the share of
   work/education legs classified by the reported distance instead of the assigned location
   (raises when ALL fall back), the external-point band misses, the origins proxied by home, the
-  re-entry clamps, the capped re-entry and outbound shares (and how many are caused by a missing
-  reported distance), the mode substitutions by reason, persons without a licence value and donor
+  re-entry clamps, the degenerate re-entry and outbound shares (all distances zero), the mode substitutions by reason, persons without a licence value and donor
   modes the mode check does not know; rates above the configured warn shares log at WARNING.
   The stage asserts that municipalities, home locations, gates, links and external points share one
   CRS (ValueError otherwise, before the first spatial step). With the flag on it also writes its report
