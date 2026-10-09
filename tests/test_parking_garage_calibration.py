@@ -1,9 +1,10 @@
-"""The calibration of the garage decay length (``scripts/parking/calibrate_garage_decay.py``, spec Amendment E5).
+"""The calibration of the garage decay lengths (``scripts/parking/calibrate_garage_decay.py``, spec Amendments E5 and H2).
 
 Built and tested on a synthetic universe only: the reference plans of the earlier exposure checks were lost on 2026-10-07
 and the real calibration runs on the server plans of Task 5 of issue #436. Covered: the target is READ from the committed
 SrV table (0.708 / (0.708 + 0.2537) = 0.7362), the mean garage probability, the bisection (a known solution, an unreachable
-target, the maximum distance), the destination universe of E5, the independent checks, the written table with its
+target, the maximum distance), the destination universe of E5, the commuter universe of H2 (work and education without
+parkingFree) with the commuter target READ from the bs_zentrum row, the Wolfsburg check of H3b, the written table with its
 provenance and its reader, and the refusal to replace a table silently. Every expected number is derived in its comment.
 """
 from __future__ import annotations
@@ -56,10 +57,20 @@ def test_the_target_is_read_from_the_committed_city_center_table_and_is_0_736(ca
 
 def test_the_commuter_and_paid_references_are_read_from_the_committed_tables(cal):
     # the paid reference is no longer used by the calibration; the comparison script reads it through this reader
-    commuters = cal.read_commuter_reference(COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv")
-    # class bs_zentrum: street 0.2225, garage or large lot 0.1923: 0.1923 / 0.4148 = 0.46359
+    commute = COMMITTED / "srv" / "srv2023_commute_parking_by_workplace_class.csv"
+    commuters = cal.read_commuter_reference(commute)
+    # class bs_zentrum (the target of H2): street 0.2225, garage or large lot 0.1923: 0.1923 / 0.4148 = 0.46359
+    assert cal.COMMUTER_CLASS == "bs_zentrum"
     assert (commuters.numerator, commuters.other) == (0.1923, 0.2225)
     assert commuters.value == pytest.approx(0.464, abs=5e-4)
+    assert cal.read_commuter_reference(commute, cal.COMMUTER_CLASS) == commuters
+    # row 03103 (Wolfsburg, the check of H3b): street 0.0608, garage or large lot 0.1075: 0.1075 / 0.1683 = 0.63874
+    assert cal.WOLFSBURG_CLASS == "03103"
+    wolfsburg = cal.read_commuter_reference(commute, cal.WOLFSBURG_CLASS)
+    assert (wolfsburg.numerator, wolfsburg.other) == (0.1075, 0.0608)
+    assert wolfsburg.value == pytest.approx(0.1075 / (0.1075 + 0.0608), abs=1e-12)
+    with pytest.raises(ValueError, match="expected exactly one class row 'no_such_class'"):
+        cal.read_commuter_reference(commute, "no_such_class")
     assert cal.read_paid_share_reference(COMMITTED / "srv" / "srv2023_city_center_parking.csv") == 0.8333
 
 
@@ -150,12 +161,37 @@ def test_the_search_range_and_target_are_validated(cal):
 
 def test_the_destination_universe_leaves_out_home_work_education_and_everything_outside_the_zones(cal):
     activities = pd.DataFrame({"purpose": ["shop", "leisure", "other", "home", "work", "education", "shop", "work"],
-                               "x": 0.0, "y": 0.0})
+                               "x": 0.0, "y": 0.0, "parking_free": False})
     zone_id = pd.Series(["bs_zone_ia", "bs_zone_ib", "bs_zone_ia", "bs_zone_ia", "bs_zone_ia", "bs_zone_ib", np.nan,
                          "other_zone"])
-    universe, commuters = cal.universe_masks(activities, zone_id)
-    assert universe.tolist() == [True, True, True, False, False, False, False, False]
-    assert commuters.tolist() == [False, False, False, False, True, True, False, False]
+    masks = cal.universe_masks(activities, zone_id)
+    assert masks.universe.tolist() == [True, True, True, False, False, False, False, False]
+    assert masks.commuters.tolist() == [False, False, False, False, True, True, False, False]
+    assert not masks.wolfsburg_commuters.any()
+
+
+def test_the_commuter_universe_of_h2_leaves_out_parking_free_activities_and_the_wolfsburg_check_has_its_own_zones(cal):
+    # work and education inside Ia and Ib WITHOUT parkingFree (H2): the employer-lot and free-parking users leave the
+    # denominator because the SrV share is among those who park on the street or in a garage; parkingFree does not change
+    # the E5 universe (it has no work and education); the Wolfsburg check (H3b) is work and education without parkingFree
+    # inside wob_tarifzone_1..3
+    activities = pd.DataFrame({
+        "purpose": ["work", "work", "education", "education", "shop", "work", "education", "work", "work", "home"],
+        "parking_free": [False, True, False, True, True, False, False, True, False, False], "x": 0.0, "y": 0.0})
+    zone_id = pd.Series(["bs_zone_ia", "bs_zone_ia", "bs_zone_ib", "bs_zone_ib", "bs_zone_ia", "wob_tarifzone_1",
+                         "wob_tarifzone_3", "wob_tarifzone_2", "wob_tarifzone_4", "wob_tarifzone_1"])
+    masks = cal.universe_masks(activities, zone_id)
+    assert cal.WOLFSBURG_ZONE_IDS == ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
+    assert masks.commuters.tolist() == [True, False, True, False, False, False, False, False, False, False]
+    assert masks.universe.tolist() == [False, False, False, False, True, False, False, False, False, False]
+    assert masks.wolfsburg_commuters.tolist() == [False, False, False, False, False, True, True, False, False, False]
+    assert masks.commuters_with_parking_free == 2   # the two parkingFree work/education activities inside Ia and Ib
+
+
+def test_a_frame_without_the_parking_free_column_is_refused_instead_of_assuming_nobody_is_free(cal):
+    activities = pd.DataFrame({"purpose": ["work"], "x": 0.0, "y": 0.0})
+    with pytest.raises(ValueError, match="parking_free"):
+        cal.universe_masks(activities, pd.Series(["bs_zone_ia"]))
 
 
 def test_the_zone_level_paid_share_check_is_gone_the_time_aware_one_is_the_comparison_scripts(cal):
@@ -173,10 +209,11 @@ def inputs(tmp_path):
     """The synthetic universe of tests/fixtures/parking/calibration_plans_fixture.xml: zones, garages, SrV tables."""
     plans = FIXTURES / "calibration_plans_fixture.xml"
     zones = gpd.GeoDataFrame(
-        {"zone_id": ["bs_zone_ia", "bs_zone_ib"], "geometry_source": "centre_approximation",
+        {"zone_id": ["bs_zone_ia", "bs_zone_ib", "wob_tarifzone_1"], "geometry_source": "centre_approximation",
          "source_url": "https://example.org/zones", "source_date": "2026-10-07", "digitised_on": "2026-10-07",
          "digitising_note": "synthetic zone of the calibration test"},
-        crs="EPSG:25832", geometry=[box(603000, 5790000, 603200, 5790200), box(603400, 5790000, 603600, 5790200)])
+        crs="EPSG:25832", geometry=[box(603000, 5790000, 603200, 5790200), box(603400, 5790000, 603600, 5790200),
+                                    box(603700, 5790000, 603900, 5790200)])
     zones_path = tmp_path / "zones.geojson"
     zones.to_crs("EPSG:4326").to_file(zones_path, driver="GeoJSON")
     # two fixture garages moved next to the zones: 300 m and 500 m from the two activity locations; one out of range
@@ -206,25 +243,54 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
     assert result["target"] == pytest.approx(0.2718, abs=1e-12)
     assert abs(result["decay_length_m"] - 400.0) <= 2.0
     assert abs(result["achieved"] - 0.2718) <= 0.0005
-    # the independent checks on the same plans: p05 work at 300 m and p06 education at 500 m
-    at_lambda = result["decay_length_m"]
-    assert result["commuter_mean"] == pytest.approx((_probability(300.0, at_lambda) + _probability(500.0, at_lambda)) / 2,
-                                                    abs=1e-5)
-    assert result["commuter_reference"] == pytest.approx(0.464, abs=5e-4)
+    # H2: the commuter decay on the same plans: p05 work at 300 m and p06 education at 500 m without parkingFree (p14 carries it
+    # and is excluded), target 0.1923 / (0.1923 + 0.2225) = 0.46359 READ from the bs_zentrum row; the mean at lambda_c equals it
+    at_lambda_c = result["decay_commute_length_m"]
+    assert result["commuter_universe_activities"] == 2 and result["commuter_activities_excluded_parking_free"] == 1
+    assert result["commuter_target"] == pytest.approx(0.1923 / (0.1923 + 0.2225), abs=1e-12)
+    mean_at_lambda_c = (_probability(300.0, at_lambda_c) + _probability(500.0, at_lambda_c)) / 2
+    assert mean_at_lambda_c == pytest.approx(result["commuter_target"], abs=0.0005)
+    # the garages are stored as WGS84 with 7 decimals (about 1 cm), which moves the distances by about 1e-7 in the mean
+    assert result["commuter_achieved"] == pytest.approx(mean_at_lambda_c, abs=1e-6)
+    assert at_lambda_c == round(at_lambda_c, 2) and at_lambda_c != result["decay_length_m"]
+    # the Wolfsburg check (H3b) with lambda_c: p11 work at 761.58 m and p12 education at 743.30 m from the near garage
+    # (p13 carries parkingFree and is excluded); a number and no validation, reference 0.1075 / (0.1075 + 0.0608) = 0.63874
+    assert result["wolfsburg_activities"] == 2 and result["wolfsburg_with_garage_in_range"] == 2
+    assert result["wolfsburg_mean"] == pytest.approx(
+        (_probability(math.sqrt(700.0 ** 2 + 300.0 ** 2), at_lambda_c)
+         + _probability(math.sqrt(700.0 ** 2 + 250.0 ** 2), at_lambda_c)) / 2, abs=1e-6)
+    assert result["wolfsburg_reference"] == pytest.approx(0.1075 / (0.1075 + 0.0608), abs=1e-12)
+    assert "commuter_mean" not in result   # the bs_zentrum share is a target now, not a check
     assert "street_paid_share" not in result and "paid_reference" not in result   # R-5-4: dropped, see the comparison script
     # the table: ASCII, provenance header, the rows, readable by the reader that the config test uses
     text = out.read_bytes().decode("ascii")
     assert text == result["text"] and "\r" not in text
     assert "paid_share" not in text and "tariffs" not in text and "compare_parking_targets.py" in text
-    for needle in ("calibrate_garage_decay.py on 2026-10-07", "sha256=", "ASSUMPTIONS G1 to G3", "Universe caveat",
+    for needle in ("calibrate_garage_decay.py on 2026-10-07", "sha256=", "ASSUMPTIONS G1 to G3 and G1-c", "Universe caveat",
                    "bs_zone_ia, bs_zone_ib", "4 activities, 4 of them with at least one priced garage",
-                   "garage_large_lot / (garage_large_lot + street) = 0.2718 / (0.2718 + 0.7282)", "no validation"):
+                   "garage_large_lot / (garage_large_lot + street) = 0.2718 / (0.2718 + 0.7282)", "no validation",
+                   "Commuter universe: the 2 work and education activities", "without parkingFree",
+                   "1 more carry parkingFree and are left out",
+                   "share_garage_large_lot / (share_garage_large_lot + share_street) = 0.1923 / (0.1923 + 0.2225)",
+                   "class bs_zentrum", "Independent check", "class 03103", "wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",
+                   "2 work and education activities", "calibration target"):
         assert needle in text, needle
     assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 5   # plans, zones, garages and the two SrV tables
+    # the two release values are named in the header with the config keys and the test that requires their equality
+    assert "parking_garage_decay_m" in text and "parking_garage_decay_commute_m" in text
+    assert "decay_commute_length_m" in text
     values = cal.read_calibration_table(out)
     assert values["decay_length_m"] == result["decay_length_m"] and values["universe_activities"] == 4
+    assert values["decay_commute_length_m"] == result["decay_commute_length_m"]
+    assert values["commuter_universe_activities"] == 2 and values["commuter_activities_excluded_parking_free"] == 1
     assert values["target_garage_probability"] == pytest.approx(0.2718, abs=1e-6)
+    assert values["target_commuter_garage_probability"] == pytest.approx(0.46359, abs=1e-5)
+    assert values["check_wolfsburg_commuter_activities"] == 2
+    assert values["check_wolfsburg_commuter_reference_share"] == pytest.approx(0.63874, abs=1e-5)
+    assert not [name for name in values if name.startswith("check_commuter")]   # the bs_zentrum share is a target now
     assert any("with a priced garage within 1000 m: 4/4" in message for message in caplog.messages)
+    assert any("commuter universe 2" in message and "excluded as parkingFree 1" in message for message in caplog.messages)
+    assert any("Wolfsburg check" in message and "no validation" in message for message in caplog.messages)
 
 
 def test_an_existing_table_is_not_replaced_without_overwrite(cal, inputs, tmp_path):
@@ -243,6 +309,29 @@ def test_a_target_the_synthetic_garages_cannot_reach_fails_and_writes_nothing(ca
     out = tmp_path / "table.csv"
     with pytest.raises(ValueError, match="unreachable"):
         cal.run(out_path=out, **inputs)
+    assert not out.exists()
+
+
+def test_a_commuter_universe_without_activities_or_a_wolfsburg_check_without_activities_fails_and_writes_nothing(
+        cal, inputs, tmp_path):
+    # only free commuters in Ia/Ib: the H2 universe is empty (every commuter leaves the denominator)
+    plans = tmp_path / "free_commuters.xml"
+    plans.write_text(
+        '<population><person id="a"><plan selected="yes"><activity type="home" x="590000" y="5780000"/><leg mode="car"/>'
+        '<activity type="shop" x="603100" y="5790100"/><leg mode="car"/>'
+        '<activity type="work" x="603100" y="5790100"><attributes><attribute name="parkingFree" '
+        'class="java.lang.Boolean">true</attribute></attributes></activity></plan></person></population>', encoding="utf-8")
+    out = tmp_path / "table.csv"
+    with pytest.raises(ValueError, match="commuter universe is empty"):
+        cal.run(**{**inputs, "plans": plans}, out_path=out)
+    assert not out.exists()
+    # a commuter in Ia but nobody in the Wolfsburg zones: the check has no universe, which is refused, not skipped
+    plans.write_text(
+        '<population><person id="a"><plan selected="yes"><activity type="home" x="590000" y="5780000"/><leg mode="car"/>'
+        '<activity type="shop" x="603100" y="5790100"/><leg mode="car"/>'
+        '<activity type="work" x="603100" y="5790100"/></plan></person></population>', encoding="utf-8")
+    with pytest.raises(ValueError, match="Wolfsburg check has no universe"):
+        cal.run(**{**inputs, "plans": plans}, out_path=out)
     assert not out.exists()
 
 
@@ -265,6 +354,13 @@ def test_the_calibration_table_reader_refuses_a_malformed_table(cal, tmp_path):
     path.write_text("quantity,value,unit,note\ntolerance,0.0005,share,x\n", encoding="utf-8")
     with pytest.raises(ValueError, match="decay_length_m"):
         cal.read_calibration_table(path)
+    # a table written before spec Amendment H has no commuter decay: refused with the name of the missing row
+    path.write_text("quantity,value,unit,note\ndecay_length_m,300,m,x\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="decay_commute_length_m"):
+        cal.read_calibration_table(path)
+    path.write_text("quantity,value,unit,note\ndecay_length_m,300,m,x\ndecay_commute_length_m,0,m,x\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="decay_commute_length_m"):
+        cal.read_calibration_table(path)
     path.write_text("quantity,value,unit,note\ndecay_length_m,300,m,x\ndecay_length_m,301,m,x\n", encoding="utf-8")
     with pytest.raises(ValueError, match="duplicate"):
         cal.read_calibration_table(path)
@@ -275,7 +371,8 @@ def test_the_script_does_not_hard_code_the_target(cal):
     text = SCRIPT.read_text(encoding="utf-8")
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     code = re.sub(r'""".*?"""', "", code, flags=re.S)
-    for number in ("0.708", "0.2537", "0.736", "0.7362", "0.464"):
+    for number in ("0.708", "0.2537", "0.736", "0.7362", "0.464", "0.4636", "0.1923", "0.2225", "0.1075", "0.0608", "0.639",
+                   "0.6387"):
         assert number not in code
 
 

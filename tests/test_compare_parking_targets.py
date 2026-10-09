@@ -212,6 +212,8 @@ def test_the_references_are_read_from_the_srv_tables(cmp, data):
     assert references.paid_share == 0.8
     assert references.garage_target.value == pytest.approx(0.6 / 0.9, abs=1e-12)   # garage 0.6 / (0.6 + street 0.3)
     assert references.commuter_garage.value == pytest.approx(0.2 / 0.4, abs=1e-12)  # class bs_zentrum 0.2 / (0.2 + 0.2)
+    # spec H3b: the row 03103 (Wolfsburg), garage 0.1 / (0.1 + street 0.3)
+    assert references.commuter_garage_wolfsburg.value == pytest.approx(0.1 / 0.4, abs=1e-12)
     assert references.free_share_by_class["03102"] == 0.9 and references.free_share_by_class["bs_zentrum"] == 0.5
     assert "total" not in references.free_share_by_class.index
     # change the table, the reference follows: nothing is typed in the script
@@ -224,6 +226,8 @@ def test_the_committed_tables_give_the_references_of_the_calibration_script(cmp)
     references = cmp.read_references(COMMITTED)
     assert 0.0 < references.paid_share < 1.0 and 0.0 < references.garage_target.value < 1.0
     assert references.commuter_garage.table == "srv2023_commute_parking_by_workplace_class.csv"
+    assert references.commuter_garage_wolfsburg.table == references.commuter_garage.table
+    assert references.commuter_garage_wolfsburg.value != references.commuter_garage.value
     assert {"bs_zentrum", "03103"} <= set(references.free_share_by_class.index)
     assert references.free_share_by_class.index.is_unique
 
@@ -304,7 +308,7 @@ def test_garage_share_is_the_target_row_and_labelled_a_calibration_target(cmp, d
     assert math.isnan(row(table, "zones_v2", "paid_expected_share_ia_ib_other_purposes")["reference"])   # no reference: model only
 
 
-def test_commuter_garage_share_is_an_independent_check(cmp, data, two_arms):
+def test_the_bs_zentrum_commuter_garage_share_is_a_calibration_target_since_amendment_h(cmp, data, two_arms):
     table = compare_two(cmp, data, *two_arms).table
     # work and education in Ia and Ib: Ia work 30 + 20 + 10 + 5 = 65, Ib education 10 + 10 = 20 -> 85 calls, garage probability 4;
     # the employer-free calls (30 + 10 = 40) leave the second denominator: 45
@@ -312,8 +316,49 @@ def test_commuter_garage_share_is_an_independent_check(cmp, data, two_arms):
     without = row(table, "zones_v2", "garage_share_ia_ib_work_education_without_employer_free")
     assert everything["model"] == pytest.approx(4 / 85, abs=1e-6) and without["model"] == pytest.approx(4 / 45, abs=1e-6)
     assert without["reference"] == pytest.approx(0.5, abs=1e-12)   # class bs_zentrum: garage 0.2 / (garage 0.2 + street 0.2)
-    assert "independent check" in without["universe_note"] and "not used in the calibration" in without["universe_note"]
-    assert "street and garage users" in without["universe_note"]
+    note = without["universe_note"]
+    # the row is the calibration target of lambda_c (H2) and no check any more; it is not the calibration universe
+    assert "calibration target, not validation" in note and "lambda_c" in note and "NOT the calibration universe" in note
+    assert "independent check" not in note and "not used in the calibration" not in note
+    assert "street and garage users" in note and "work and education" in note
+    assert "calibration target" in everything["universe_note"]
+
+
+def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, data, tmp_path):
+    # Work and education calls in wob_tarifzone_1..3: PAID_EXPECTED work 20 calls (probability sum 6.0) in zone 1, EMPLOYER_FREE
+    # work 10 in zone 2, PAID_METERED education 10 in zone 3 -> 40 calls, 6.0 / 40 = 0.15; without the 10 employer-free calls
+    # 6.0 / 30 = 0.2. A shop call in zone 1 (probability 5.0) is no commuter call; a work call in zone 4 (not Wolfsburg) neither.
+    rows = [*ROWS, ("PAID_EXPECTED", "wob_tarifzone_1", "work", 20, 6.0, 20),
+            ("EMPLOYER_FREE", "wob_tarifzone_2", "work", 10, 0.0, 0),
+            ("PAID_METERED", "wob_tarifzone_3", "education", 10, 0.0, 0),
+            ("PAID_EXPECTED", "wob_tarifzone_1", "shop", 10, 5.0, 10),
+            ("PAID_EXPECTED", "wob_tarifzone_4", "work", 10, 9.0, 10)]
+    # the run and the committed release must belong together: the zones of the report need a tariff row (copies of fx_sz)
+    tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
+    lines = tariffs_path.read_text(encoding="utf-8").splitlines()
+    template = next(line for line in lines if line.startswith("fx_sz,"))
+    copies = [template.replace("fx_sz,", f"wob_tarifzone_{number},", 1) for number in (1, 2, 3, 4)]
+    tariffs_path.write_text("\n".join(lines + copies) + "\n", encoding="utf-8")
+    run = write_run(tmp_path / "runs", "wob", ZONES_TRIPS, rows)
+    table = cmp.compare([cmp.ArmSpec("wob", run, True)], data_path=data,
+                        zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table
+    everything = row(table, "wob", "garage_share_wolfsburg_work_education_all_calls")
+    without = row(table, "wob", "garage_share_wolfsburg_work_education_without_employer_free")
+    assert everything["model"] == pytest.approx(6.0 / 40, abs=1e-6) and everything["universe_size"] == 40
+    assert without["model"] == pytest.approx(6.0 / 30, abs=1e-6) and without["universe_size"] == 30
+    assert without["reference"] == pytest.approx(0.25, abs=1e-12)   # row 03103: garage 0.1 / (garage 0.1 + street 0.3)
+    assert without["delta_pp"] == pytest.approx(100 * (6.0 / 30 - 0.25), abs=1e-3)
+    for entry in (everything, without):
+        assert "independent check" in entry["universe_note"] and "not used in the calibration" in entry["universe_note"]
+        note = entry["universe_note"]
+        assert "03103" in note and "lambda_c" in note and "no validation" in note
+    assert "calibration target" not in without["universe_note"].replace("not used in the calibration", "")
+    # a report without a Wolfsburg call gives an empty row with the reason, not a silent zero
+    other = write_run(tmp_path / "runs", "nowob", ZONES_TRIPS, ROWS)
+    empty = row(cmp.compare([cmp.ArmSpec("nowob", other, True)], data_path=data,
+                            zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table,
+                "nowob", "garage_share_wolfsburg_work_education_without_employer_free")
+    assert math.isnan(empty["model"]) and "No pricing call of this universe" in empty["universe_note"]
 
 
 def test_free_shares_per_workplace_class_use_the_zones_of_the_class(cmp, data, two_arms):
@@ -570,6 +615,7 @@ def test_a_report_without_any_garage_figure_is_flagged_on_the_garage_rows_only(c
     expected = "no garage option acted in this run (options off or no garage in range)"
     assert expected in row(table, "nogarage", "garage_share_ia_ib_other_purposes")["universe_note"]
     assert expected in row(table, "nogarage", "garage_share_ia_ib_work_education_all_calls")["universe_note"]
+    assert expected in row(table, "nogarage", "garage_share_wolfsburg_work_education_all_calls")["universe_note"]
     assert expected not in row(table, "nogarage", "paid_share_ia_ib_all_purposes")["universe_note"]
     assert row(table, "nogarage", "garage_share_ia_ib_other_purposes")["model"] == 0.0   # a measured 0, with the flag
     assert any("no garage option acted" in message for message in caplog.messages)

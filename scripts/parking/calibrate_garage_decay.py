@@ -1,9 +1,12 @@
-"""Calibrate the decay length of the garage options on a plans file (parking cost zones v2, spec Amendment E5, issue #436).
+"""Calibrate the decay lengths of the garage options on a plans file (parking cost zones v2, spec Amendments E5 and H2, #436).
 
 A curation and analysis aid, never a pipeline stage. The garage options of a car stay in a paid zone have the weights
 street 1 and garage g ``exp(-d_g / lambda)`` (ASSUMPTION G1, straight-line distance ``d_g`` in metres in EPSG:25832, only
 garages within the maximum distance D_max, ASSUMPTION G2). The decay length lambda is CALIBRATED, not estimated (ASSUMPTION
-G3): it is set so that the mean garage probability of the destination universe equals the SrV 2023 target.
+G3): it is set so that the mean garage probability of the destination universe equals the SrV 2023 target. Since spec
+Amendment H1 there are TWO decay lengths on the same plans: lambda for every purpose but work and education (E5, the city
+centre visitors) and lambda_c for work and education (ASSUMPTION G1-c, H2, the commuters); the garage weights of a stay use
+the one its purpose selects (``braunschweig.parking.cost.garage_decay_m_for_purpose``).
 
 Definitions (the committed calibration table records them, so that its number can be read without this file):
 
@@ -26,19 +29,30 @@ Definitions (the committed calibration table records them, so that its number ca
   garage probability is within ``--tolerance`` (default 0.0005) of the target; the mean probability rises with lambda, so
   the search fails (``ValueError``) when the target lies outside the range at its two ends. The reported lambda is rounded
   to 0.01 m and its achieved mean recomputed.
-* Independent check on the SAME plans, reported as a number and never as validation: the mean garage probability of the
-  work and education activities in the calibration zones against ``share(garage_large_lot) / (share(garage_large_lot) +
-  share(street))`` of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class`` (0.464 in the committed
-  table); the reference is a quantity of residents, the model averages over destinations. The paid share is NOT checked
-  here (ruling R-5-4, issue #436): a zone-level check, blind to the fee window, the free threshold and the maximum stay,
-  read 1.0 in the zones Ia and Ib and said nothing. The time-aware paid share is computed on the outcomes of a model run
-  by ``scripts/parking/compare_parking_targets.py``.
+* Commuter universe (H2): the main activities of type work or education (``cost.COMMUTER_PURPOSES``) inside the same
+  calibration zones that do NOT carry the activity attribute ``parkingFree`` (employer lots and free parking leave the
+  denominator: the SrV share is among the commuters who park on the street or in a garage, and the model treats the
+  parkingFree users by its early rule; the activities that carry it are counted and named). Commuter target:
+  ``share_garage_large_lot / (share_garage_large_lot + share_street)`` of the row ``bs_zentrum`` of
+  ``srv2023_commute_parking_by_workplace_class``, READ from the table, never typed. The same bisection gives lambda_c; the
+  mean garage probability of the commuter universe equals the target at lambda_c. The bs_zentrum share is therefore a
+  calibration target and no longer checks the model.
+* Independent check (H3b) on the SAME plans, reported as a number and never as validation: the mean garage probability with
+  lambda_c of the work and education activities without parkingFree inside the Wolfsburg zones ``WOLFSBURG_ZONE_IDS``
+  against the same share of the row ``03103`` of the same table. The universe is small at 1 % of the population and its
+  size is stated; the reference is a quantity of residents, the model averages over destinations. The paid share is NOT
+  checked here (ruling R-5-4, issue #436): a zone-level check, blind to the fee window, the free threshold and the maximum
+  stay, read 1.0 in the zones Ia and Ib and said nothing. The time-aware paid share is computed on the outcomes of a model
+  run by ``scripts/parking/compare_parking_targets.py``.
 
-Fallback transparency: the log and the table report how many universe stays have a garage within D_max (the share whose
-probability can be positive at all); a target that the garages cannot reach fails instead of returning the end of the range.
+Fallback transparency: the log and the table report how many stays of each universe have a garage within D_max (the share
+whose probability can be positive at all); a target that the garages cannot reach fails instead of returning the end of the
+range, and an empty commuter or Wolfsburg universe fails instead of skipping its row.
 
 Output: the committed table ``parking_garage_decay_calibration_2026.csv`` (long format ``quantity,value,unit,note`` under a
-header that names the inputs with their SHA-256, the universe, the target derivation and the code state). The script
+header that names the inputs with their SHA-256, both universes, both target derivations and the code state; the rows
+``decay_length_m`` and ``decay_commute_length_m`` are the release values of the config keys ``parking_garage_decay_m`` and
+``parking_garage_decay_commute_m``). The script
 refuses to replace an existing table unless ``--overwrite`` is given. Run it on the plans of the reference scenario only
 (the server run of Task 5 of issue #436); a plans file of another scenario gives another lambda.
 
@@ -97,12 +111,17 @@ EXPOSURE_SCRIPT = REPO / "scripts" / "curation" / "parking_zones_2026" / "count_
 #: Spec E5: the calibration zones, the two fee zones of the Braunschweig city centre.
 CALIBRATION_ZONE_IDS = ("bs_zone_ia", "bs_zone_ib")
 #: Spec E5: the destination universe leaves out these activity types; work and education are the commuter purposes of the
-#: independent check (cost.COMMUTER_PURPOSES).
+#: commuter universe of H2 (cost.COMMUTER_PURPOSES).
 HOME_AND_COMMUTER_PURPOSES = frozenset({cost.HOME_PURPOSE, *cost.COMMUTER_PURPOSES})
 #: The rows of the SrV tables the targets are read from (PAID_ROW is read by ``read_paid_share_reference`` for the
 #: comparison script; the calibration itself does not use it).
 GARAGE_ROW, STREET_ROW, PAID_ROW = "garage_large_lot", "street", "paid_share_overall"
+#: Spec H2: the workplace class whose commuter garage share is the CALIBRATION TARGET of lambda_c (row of the SrV table).
 COMMUTER_CLASS = "bs_zentrum"
+#: Spec H3b: the Wolfsburg zones (the tariff areas of the municipal fee ordinance) and the table row of Wolfsburg, whose
+#: commuter garage share is the independent CHECK (a number, no validation).
+WOLFSBURG_ZONE_IDS = ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
+WOLFSBURG_CLASS = "03103"
 DEFAULT_LAMBDA_MIN_M, DEFAULT_LAMBDA_MAX_M = 10.0, 5000.0
 DEFAULT_TOLERANCE = 0.0005
 #: The bisection halves an interval of at most 5000 m: 80 halvings are far below any tolerance, so reaching this bound
@@ -195,16 +214,17 @@ def read_paid_share_reference(path) -> float:
     return _positive_share(float(rows.iloc[0]), f"{path} row {PAID_ROW}")
 
 
-def read_commuter_reference(path) -> Target:
-    """The commuter garage share of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class`` among street
-    and garage users: ``share_garage_large_lot / (share_garage_large_lot + share_street)`` (spec E5, not used in the
-    calibration)."""
+def read_commuter_reference(path, workplace_class: str = COMMUTER_CLASS) -> Target:
+    """The commuter garage share of a row of ``srv2023_commute_parking_by_workplace_class`` among street and garage users:
+    ``share_garage_large_lot / (share_garage_large_lot + share_street)`` of the class row ``workplace_class`` (default
+    ``COMMUTER_CLASS`` = bs_zentrum, the calibration target of H2; ``WOLFSBURG_CLASS`` is the check of H3b). Raises
+    ``ValueError`` when the class row is missing or duplicated or a share is no number in (0, 1]."""
     table = read_srv_table(path)
-    rows = table[(table["workplace_class"] == COMMUTER_CLASS) & (table["level"] == "class")]
+    rows = table[(table["workplace_class"] == workplace_class) & (table["level"] == "class")]
     if len(rows) != 1:
-        raise ValueError(f"{path}: expected exactly one class row {COMMUTER_CLASS!r}, found {len(rows)}")
-    garage = _positive_share(float(rows["share_garage_large_lot"].iloc[0]), f"{path} share_garage_large_lot")
-    street = _positive_share(float(rows["share_street"].iloc[0]), f"{path} share_street")
+        raise ValueError(f"{path}: expected exactly one class row {workplace_class!r}, found {len(rows)}")
+    garage = _positive_share(float(rows["share_garage_large_lot"].iloc[0]), f"{path} {workplace_class} share_garage_large_lot")
+    street = _positive_share(float(rows["share_street"].iloc[0]), f"{path} {workplace_class} share_street")
     return Target(garage / (garage + street), "share_garage_large_lot", garage, "share_street", street, Path(path).name)
 
 
@@ -304,15 +324,36 @@ def validate_facility_kinds(facility_kinds):
     return kinds
 
 
-def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zone_ids=CALIBRATION_ZONE_IDS) -> tuple:
-    """Boolean masks over ``activities`` (columns ``purpose``, ``x``, ``y``; ``zone_id`` aligned to its index): the
-    destination universe of spec E5 (inside a calibration zone, purpose not home, work or education) and the commuter
-    activities of the independent check (inside a calibration zone, purpose work or education)."""
+class UniverseMasks(NamedTuple):
+    """Boolean masks over the activities (see ``universe_masks``) and the number of excluded parkingFree commuters."""
+
+    universe: np.ndarray
+    commuters: np.ndarray
+    wolfsburg_commuters: np.ndarray
+    commuters_with_parking_free: int
+
+
+def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zone_ids=CALIBRATION_ZONE_IDS,
+                   wolfsburg_zone_ids=WOLFSBURG_ZONE_IDS) -> UniverseMasks:
+    """Boolean masks over ``activities`` (columns ``purpose``, ``x``, ``y``, ``parking_free``; ``zone_id`` aligned to its
+    index): the destination universe of spec E5 (inside a calibration zone, purpose not home, work or education; parkingFree
+    does not change it), the commuter universe of H2 (inside a calibration zone, purpose work or education, NOT parkingFree)
+    and the Wolfsburg check universe of H3b (inside a Wolfsburg zone, purpose work or education, NOT parkingFree), plus the
+    number of work and education activities inside the calibration zones that carry parkingFree and are left out of the
+    commuter universe. Raises ``ValueError`` when ``parking_free`` is missing: a frame that does not say who parks free must
+    not be read as nobody does."""
+    if "parking_free" not in activities.columns:
+        raise ValueError("the activities lack the column parking_free: the commuter universe of H2 leaves out the activities "
+                         "that carry parkingFree and cannot be selected without it (use the plans reader of "
+                         "count_zone_exposure.py)")
     inside = zone_id.isin(list(calibration_zone_ids)).to_numpy()
+    in_wolfsburg = zone_id.isin(list(wolfsburg_zone_ids)).to_numpy()
     purpose = activities["purpose"].astype(str)
+    is_commuter = purpose.isin(cost.COMMUTER_PURPOSES).to_numpy()
+    is_free = activities["parking_free"].to_numpy(dtype=bool)
     universe = inside & ~purpose.isin(HOME_AND_COMMUTER_PURPOSES).to_numpy()
-    commuters = inside & purpose.isin(cost.COMMUTER_PURPOSES).to_numpy()
-    return universe, commuters
+    commuters = inside & is_commuter & ~is_free
+    return UniverseMasks(universe, commuters, in_wolfsburg & is_commuter & ~is_free, int((inside & is_commuter & is_free).sum()))
 
 
 def git_state() -> str:
@@ -338,17 +379,20 @@ def option_set_text(priced: pd.DataFrame) -> str:
 
 def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: int, priced_garages: int, listed_garages: int,
                facility_kinds_text: str, option_set_text: str, target: Target, calibration: Calibration, tolerance: float,
-               lambda_min_m: float, lambda_max_m: float, max_distance_m: float, commuter_mean: float, commuter_count: int,
-               commuter_reference: Target, generated_on: str, code_state: str) -> str:
+               lambda_min_m: float, lambda_max_m: float, max_distance_m: float, commuter_count: int,
+               commuter_with_garage: int, commuter_excluded_free: int, commuter_target: Target,
+               commuter_calibration: Calibration, wolfsburg_mean: float, wolfsburg_count: int, wolfsburg_with_garage: int,
+               wolfsburg_reference: Target, generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
+    zone_text = ", ".join(CALIBRATION_ZONE_IDS)
     header = [
         "# Table: parking_garage_decay_calibration_2026.csv",
-        "# Calibration of the decay length lambda of the garage options (parking cost zones v2, spec Amendment E5, ASSUMPTIONS "
-        "G1 to G3, issue #436).",
+        "# Calibration of the decay lengths lambda (visitors) and lambda_c (commuters) of the garage options (parking cost "
+        "zones v2, spec Amendments E5 and H2, ASSUMPTIONS G1 to G3 and G1-c, issue #436).",
         f"# Generated by scripts/parking/calibrate_garage_decay.py on {generated_on}; code state {code_state}.",
         "# Inputs (SHA-256; text files with LF line endings, .gz files as stored):",
         *[f"#   {name}: {path} sha256={digest}" for name, (path, digest) in inputs.items()],
-        f"# Universe: the main activities of the selected plans ({persons} persons) inside {', '.join(CALIBRATION_ZONE_IDS)} "
+        f"# Universe of lambda: the main activities of the selected plans ({persons} persons) inside {zone_text} "
         f"whose type is none of {', '.join(sorted(HOME_AND_COMMUTER_PURPOSES))} (all modes, destination universe): "
         f"{universe_size} activities, {with_garage} of them with at least one priced garage within {max_distance_m:g} m.",
         f"# Garages: {priced_garages} priced of {listed_garages} listed in the dataset used (facility kinds: "
@@ -356,42 +400,71 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
         "distances in EPSG:25832.",
         f"# Option set: {option_set_text}. The target's garage_large_lot share contains large surface lots; where the option set "
         "has none, the garages carry that share alone, which pushes lambda up.",
-        "# Quantity: the mean over the universe of sum(w) / (1 + sum(w)), w = exp(-d / lambda) of the priced garages within "
+        "# Quantity: the mean over a universe of sum(w) / (1 + sum(w)), w = exp(-d / decay) of the priced garages within "
         "the maximum distance (street weight 1; no price, no early rule, no E4).",
-        f"# Target: {target.numerator_name} / ({target.numerator_name} + {target.other_name}) = {target.numerator} / "
+        f"# Target of lambda: {target.numerator_name} / ({target.numerator_name} + {target.other_name}) = {target.numerator} / "
         f"({target.numerator} + {target.other}) = {target.value:.6f} of {target.table} (Braunschweig residents who park on the "
         "street or in a garage or large lot when they drive to the city centre). A calibration target, no validation. "
         "Universe caveat: SrV asks residents about their usual place, the model averages over destinations.",
-        f"# Search: bisection on lambda in [{lambda_min_m:g}, {lambda_max_m:g}] m to a tolerance of {tolerance:g} in the mean "
+        f"# Search for lambda: bisection in [{lambda_min_m:g}, {lambda_max_m:g}] m to a tolerance of {tolerance:g} in the mean "
         f"probability, {calibration.iterations} halvings; the mean is {calibration.high_end_mean:.4f} at the upper end and "
-        f"{calibration.low_end_mean:.4f} at the lower end. lambda is rounded to {LAMBDA_DECIMALS} decimals.",
-        "# The same lambda applies in every town (transfer assumption). The config value parking_garage_decay_m of "
-        "configs/base_bs.yml equals decay_length_m below (tests/test_parking_garage_decay_config.py).",
-        "# Independent check, computed on the same plans, a number only and no validation (the reference is a "
-        "quantity of residents, the model averages over destinations):",
-        f"#   commuters: mean garage probability of the {commuter_count} work and education activities inside "
-        f"{', '.join(CALIBRATION_ZONE_IDS)} against {commuter_reference.value:.4f} = {commuter_reference.numerator_name} / "
-        f"({commuter_reference.numerator_name} + {commuter_reference.other_name}) of the class {COMMUTER_CLASS} of "
-        f"{commuter_reference.table}, which the calibration does not use.",
+        f"{calibration.low_end_mean:.4f} at the lower end. The decays are rounded to {LAMBDA_DECIMALS} decimals.",
+        f"# Commuter universe: the {commuter_count} work and education activities inside {zone_text} that do not carry "
+        f"parkingFree ({commuter_excluded_free} more carry parkingFree and are left out: employer lots and free parking leave "
+        f"the denominator), {commuter_with_garage} of them with at least one priced garage within {max_distance_m:g} m.",
+        f"# Target of lambda_c: {commuter_target.numerator_name} / ({commuter_target.numerator_name} + "
+        f"{commuter_target.other_name}) = {commuter_target.numerator} / ({commuter_target.numerator} + {commuter_target.other}) "
+        f"= {commuter_target.value:.6f} of class {COMMUTER_CLASS} of {commuter_target.table} (street and garage users among "
+        "the commuters of the Oberbezirk Zentrum, wider than the zones Ia and Ib). A calibration target, no validation; the "
+        "same universe caveat applies.",
+        f"# Search for lambda_c: the same bisection, {commuter_calibration.iterations} halvings; the mean is "
+        f"{commuter_calibration.high_end_mean:.4f} at the upper end and {commuter_calibration.low_end_mean:.4f} at the lower end.",
+        "# The same decays apply in every town (transfer assumption). The config values parking_garage_decay_m and "
+        "parking_garage_decay_commute_m of configs/base_bs.yml equal decay_length_m and decay_commute_length_m below "
+        "(tests/test_parking_garage_decay_config.py).",
+        "# Independent check (H3b), computed on the same plans with lambda_c, a number only and no validation (the reference is "
+        "a quantity of residents, the model averages over destinations, and the universe is small at 1 % of the population):",
+        f"#   Wolfsburg: mean garage probability of the {wolfsburg_count} work and education activities without parkingFree "
+        f"inside {', '.join(WOLFSBURG_ZONE_IDS)} ({wolfsburg_with_garage} with a priced garage within {max_distance_m:g} m) "
+        f"against {wolfsburg_reference.value:.4f} = {wolfsburg_reference.numerator_name} / "
+        f"({wolfsburg_reference.numerator_name} + {wolfsburg_reference.other_name}) of class {WOLFSBURG_CLASS} of "
+        f"{wolfsburg_reference.table}, which the calibration does not use.",
         "# The paid share of a run is compared with the SrV by scripts/parking/compare_parking_targets.py on the outcomes "
         "the model priced (time-aware); no paid share is checked here (ruling R-5-4).",
     ]
     rows = [
         ("decay_length_m", f"{calibration.decay_m:.{LAMBDA_DECIMALS}f}", "m", "calibrated lambda of the garage weights"),
+        ("decay_commute_length_m", f"{commuter_calibration.decay_m:.{LAMBDA_DECIMALS}f}", "m",
+         "calibrated lambda_c of the garage weights of work and education (ASSUMPTION G1-c)"),
         ("garage_max_distance_m", f"{max_distance_m:g}", "m", "ASSUMPTION G2"),
         ("target_garage_probability", f"{target.value:.6f}", "share", f"{target.table}"),
         ("achieved_mean_garage_probability", f"{calibration.achieved:.6f}", "share", "mean over the universe at lambda"),
+        ("target_commuter_garage_probability", f"{commuter_target.value:.6f}", "share",
+         f"{commuter_target.table} class {COMMUTER_CLASS}"),
+        ("achieved_mean_commuter_garage_probability", f"{commuter_calibration.achieved:.6f}", "share",
+         "mean over the commuter universe at lambda_c"),
         ("tolerance", f"{tolerance:g}", "share", "absolute in the mean probability"),
         ("universe_activities", str(universe_size), "count", "destination universe of spec E5"),
+        ("commuter_universe_activities", str(commuter_count), "count",
+         "work and education activities in the zones without parkingFree (spec H2)"),
+        ("commuter_activities_excluded_parking_free", str(commuter_excluded_free), "count",
+         "work and education activities in the zones that carry parkingFree"),
         ("garage_facility_filter_active", "0" if facility_kinds_text == "all" else "1", "flag",
          f"facility kinds used: {facility_kinds_text}"),
         ("priced_garages_used", str(priced_garages), "count", f"priced garages of the facility kinds {facility_kinds_text}"),
         ("universe_activities_with_garage_in_range", str(with_garage), "count", "activities with a priced garage within D_max"),
+        ("commuter_universe_activities_with_garage_in_range", str(commuter_with_garage), "count",
+         "commuter activities with a priced garage within D_max"),
         ("lambda_search_min_m", f"{lambda_min_m:g}", "m", "lower end of the bisection"),
         ("lambda_search_max_m", f"{lambda_max_m:g}", "m", "upper end of the bisection"),
-        ("check_commuter_mean_garage_probability", f"{commuter_mean:.6f}", "share", "independent check and no validation"),
-        ("check_commuter_reference_share", f"{commuter_reference.value:.6f}", "share", f"{commuter_reference.table}"),
-        ("check_commuter_activities", str(commuter_count), "count", "work and education activities in the zones"),
+        ("check_wolfsburg_commuter_mean_garage_probability", f"{wolfsburg_mean:.6f}", "share",
+         "independent check at lambda_c and no validation"),
+        ("check_wolfsburg_commuter_reference_share", f"{wolfsburg_reference.value:.6f}", "share",
+         f"{wolfsburg_reference.table} class {WOLFSBURG_CLASS}"),
+        ("check_wolfsburg_commuter_activities", str(wolfsburg_count), "count",
+         "work and education activities without parkingFree in the Wolfsburg zones"),
+        ("check_wolfsburg_commuter_activities_with_garage_in_range", str(wolfsburg_with_garage), "count",
+         "Wolfsburg check activities with a priced garage within D_max"),
     ]
     if any("," in field for row in rows for field in row):
         raise ValueError("a table field contains a comma")   # the long format has no quoting
@@ -400,8 +473,9 @@ def table_text(*, inputs: dict, universe_size: int, persons: int, with_garage: i
 
 
 def read_calibration_table(path) -> dict:
-    """The rows of a calibration table as ``{quantity: float}`` (``#`` lines skipped); ``decay_length_m`` must be present
-    and positive. Raises ``FileNotFoundError`` for a missing file and ``ValueError`` for a malformed table."""
+    """The rows of a calibration table as ``{quantity: float}`` (``#`` lines skipped); ``decay_length_m`` and
+    ``decay_commute_length_m`` must be present and positive. Raises ``FileNotFoundError`` for a missing file and
+    ``ValueError`` for a malformed table, also for a table written before spec Amendment H (no commuter decay)."""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"calibration table missing: {path}")
@@ -413,6 +487,9 @@ def read_calibration_table(path) -> dict:
     values = {row.quantity: float(row.value) for row in table.itertuples()}
     if not values.get("decay_length_m", 0) > 0:
         raise ValueError(f"{path}: decay_length_m is missing or not positive")
+    if not values.get("decay_commute_length_m", 0) > 0:
+        raise ValueError(f"{path}: decay_commute_length_m is missing or not positive (a table written before spec Amendment H "
+                         "has no commuter decay: regenerate it with scripts/parking/calibrate_garage_decay.py)")
     return values
 
 
@@ -420,7 +497,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
         facility_kinds=None, generated_on: str | None = None) -> dict:
-    """Calibrate on ``plans``, write the table to ``out_path`` and return the results (a dict of the table's numbers).
+    """Calibrate lambda (E5) and lambda_c (H2) on ``plans``, write the table to ``out_path`` and return the results (a dict
+    of the table's numbers, including the Wolfsburg check of H3b).
 
     ``max_distance_m`` (D_max, metres) defaults to the config key ``parking_garage_max_distance_m`` of ``config_path``
     (``read_configured_max_distance_m``; fails when missing); an explicit value is a sensitivity and is recorded in the table.
@@ -431,8 +509,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
 
     Raises ``FileNotFoundError`` (naming the data record and the request route) when the zone polygons or the garage dataset,
     both local restricted files, are absent, ``FileExistsError`` when ``out_path`` exists and ``overwrite`` is false
-    (a calibrated release value is never replaced silently), ``ValueError`` for an empty universe or an unreachable
-    target. Side effects: reads the inputs, logs,
+    (a calibrated release value is never replaced silently), ``ValueError`` for an empty universe (destination, commuter
+    or Wolfsburg check) or an unreachable target. Side effects: reads the inputs, logs,
     writes ``out_path`` (its directory must exist).
     """
     out_path = Path(out_path) if out_path is not None else None
@@ -452,10 +530,19 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     exposure = load_exposure_module()
     activities, persons = exposure.read_main_activities(plans)
     zone_id = exposure.zone_per_activity(activities, zones_path)
-    universe, commuters = universe_masks(activities, zone_id)
+    masks = universe_masks(activities, zone_id)
+    universe = masks.universe
     if not universe.any():
         raise ValueError(f"no destination of the universe: the {len(activities)} main activities of the {persons} persons "
                          f"contain none outside home, work and education inside {', '.join(CALIBRATION_ZONE_IDS)}")
+    if not masks.commuters.any():
+        raise ValueError(f"the commuter universe is empty: none of the {len(activities)} main activities of the {persons} "
+                         f"persons is a work or education activity without parkingFree inside {', '.join(CALIBRATION_ZONE_IDS)} "
+                         f"({masks.commuters_with_parking_free} carry parkingFree); lambda_c (spec H2) cannot be calibrated")
+    if not masks.wolfsburg_commuters.any():
+        raise ValueError(f"the Wolfsburg check has no universe: none of the {len(activities)} main activities of the {persons} "
+                         "persons is a work or education activity without parkingFree inside "
+                         f"{', '.join(WOLFSBURG_ZONE_IDS)} (spec H3b); a check that cannot be computed is not skipped")
     garage_frame = parking_garages.load_garages(garages_path)
     parking_garages.validate_garages(garage_frame)
     kinds = validate_facility_kinds(facility_kinds)
@@ -480,14 +567,28 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
                                   lambda_max_m=lambda_max_m, tolerance=tolerance)
     log.info("[garage-decay] target %.6f (%s); lambda %.2f m, mean %.6f after %d halvings", target.value, target.table,
              calibration.decay_m, calibration.achieved, calibration.iterations)
-    commuter_reference = read_commuter_reference(commute_path)
-    if commuters.any():
-        commuter_distances = garage_distances_m(activities[commuters], garage_x, garage_y)
-        commuter_mean = mean_garage_probability(commuter_distances, calibration.decay_m, max_distance_m)
-    else:
-        raise ValueError("no work or education activity inside the calibration zones: the commuter check has no universe")
-    log.info("[garage-decay] independent check (a number, no validation): commuter garage probability %.4f over %d "
-             "activities vs reference %.4f", commuter_mean, int(commuters.sum()), commuter_reference.value)
+    commuter_target = read_commuter_reference(commute_path, COMMUTER_CLASS)
+    commuter_distances = garage_distances_m(activities[masks.commuters], garage_x, garage_y)
+    commuter_count = int(masks.commuters.sum())
+    commuter_with_garage = int((commuter_distances <= max_distance_m).any(axis=1).sum())
+    log.info("[garage-decay] commuter universe %d work and education activities without parkingFree inside %s (excluded as "
+             "parkingFree %d); with a priced garage within %g m: %d/%d (%.1f %%)", commuter_count,
+             ", ".join(CALIBRATION_ZONE_IDS), masks.commuters_with_parking_free, max_distance_m, commuter_with_garage,
+             commuter_count, 100.0 * commuter_with_garage / commuter_count)
+    commuter_calibration = calibrate_decay(commuter_distances, commuter_target.value, max_distance_m=max_distance_m,
+                                           lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, tolerance=tolerance)
+    log.info("[garage-decay] commuter target %.6f (%s class %s); lambda_c %.2f m, mean %.6f after %d halvings",
+             commuter_target.value, commuter_target.table, COMMUTER_CLASS, commuter_calibration.decay_m,
+             commuter_calibration.achieved, commuter_calibration.iterations)
+    wolfsburg_reference = read_commuter_reference(commute_path, WOLFSBURG_CLASS)
+    wolfsburg_distances = garage_distances_m(activities[masks.wolfsburg_commuters], garage_x, garage_y)
+    wolfsburg_count = int(masks.wolfsburg_commuters.sum())
+    wolfsburg_with_garage = int((wolfsburg_distances <= max_distance_m).any(axis=1).sum())
+    wolfsburg_mean = mean_garage_probability(wolfsburg_distances, commuter_calibration.decay_m, max_distance_m)
+    log.info("[garage-decay] Wolfsburg check (a number, no validation): garage probability %.4f at lambda_c over %d work and "
+             "education activities without parkingFree inside %s (%d with a priced garage within %g m) vs reference %.4f "
+             "(class %s)", wolfsburg_mean, wolfsburg_count, ", ".join(WOLFSBURG_ZONE_IDS), wolfsburg_with_garage,
+             max_distance_m, wolfsburg_reference.value, WOLFSBURG_CLASS)
     text = table_text(
         inputs={name: (path_label(path), file_sha256(path)) for name, path in (
             ("plans", plans), ("zones", zones_path), ("garages", garages_path),
@@ -495,16 +596,23 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         universe_size=int(universe.sum()), persons=persons, with_garage=with_garage, priced_garages=len(priced),
         listed_garages=len(garage_frame), facility_kinds_text=kinds_text, option_set_text=option_set_text(priced), target=target,
         calibration=calibration, tolerance=tolerance,
-        lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m, commuter_mean=commuter_mean,
-        commuter_count=int(commuters.sum()), commuter_reference=commuter_reference,
+        lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m, commuter_count=commuter_count,
+        commuter_with_garage=commuter_with_garage, commuter_excluded_free=masks.commuters_with_parking_free,
+        commuter_target=commuter_target, commuter_calibration=commuter_calibration, wolfsburg_mean=wolfsburg_mean,
+        wolfsburg_count=wolfsburg_count, wolfsburg_with_garage=wolfsburg_with_garage, wolfsburg_reference=wolfsburg_reference,
         generated_on=generated_on or datetime.date.today().isoformat(),
         code_state=git_state())
     if out_path is not None:
         out_path.write_bytes(text.encode("ascii"))
         log.info("[garage-decay] wrote %s", out_path)
-    return {"decay_length_m": calibration.decay_m, "target": target.value, "achieved": calibration.achieved,
-            "universe_activities": int(universe.sum()), "with_garage_in_range": with_garage,
-            "commuter_mean": commuter_mean, "commuter_reference": commuter_reference.value, "text": text}
+    return {"decay_length_m": calibration.decay_m, "decay_commute_length_m": commuter_calibration.decay_m,
+            "target": target.value, "achieved": calibration.achieved, "commuter_target": commuter_target.value,
+            "commuter_achieved": commuter_calibration.achieved, "universe_activities": int(universe.sum()),
+            "with_garage_in_range": with_garage, "commuter_universe_activities": commuter_count,
+            "commuter_with_garage_in_range": commuter_with_garage,
+            "commuter_activities_excluded_parking_free": masks.commuters_with_parking_free,
+            "wolfsburg_activities": wolfsburg_count, "wolfsburg_with_garage_in_range": wolfsburg_with_garage,
+            "wolfsburg_mean": wolfsburg_mean, "wolfsburg_reference": wolfsburg_reference.value, "text": text}
 
 
 def path_label(path) -> str:

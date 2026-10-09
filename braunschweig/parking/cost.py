@@ -967,18 +967,35 @@ class GarageStayPrice(NamedTuple):
 _EARLY_OUTCOMES = frozenset({NO_ZONE, HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS})
 
 
+def garage_decay_m_for_purpose(purpose: str, *, decay_m: float, decay_commute_m: float) -> float:
+    """The decay length of the garage weights that governs a stay (ASSUMPTION G1-c, spec Amendment H1): ``decay_commute_m``
+    (lambda_c) for a purpose in ``COMMUTER_PURPOSES`` (work, education), ``decay_m`` (lambda) for every other purpose. The
+    single place that decides it: the pricing, the golden cases and the calibration read the purpose split from here. The
+    commuter decay is never defaulted to the visitor decay; both arguments are required. Pure, no validation (see
+    ``check_decay_lengths``)."""
+    return decay_commute_m if purpose in COMMUTER_PURPOSES else decay_m
+
+
+def check_decay_lengths(*, decay_m, decay_commute_m) -> None:
+    """Raise ``ValueError`` naming the argument unless ``decay_m`` and ``decay_commute_m`` are finite numbers of metres >= 0
+    (0 switches the garage options off for the purposes the decay governs); a bool or a text is no number."""
+    for name, value in (("decay_m", decay_m), ("decay_commute_m", decay_commute_m)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be a finite number of metres >= 0 (0 switches the garage options off), "
+                             f"got {value!r}")
+
+
 def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                                      parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
-                                     garage_options=(), decay_m: float = 0.0,
+                                     garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
                                      counters: GarageOptionCounters | None = None) -> GarageStayPrice:
     """``parking_cost_with_garages`` with the unrounded expectation; see there for the rules."""
     cents, outcome = parking_cost_cents(tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free,
                                         resident_of_zone=resident_of_zone, resident_of_district=resident_of_district)
     if counters is not None:
         counters.stays += 1
-    if isinstance(decay_m, bool) or not isinstance(decay_m, (int, float)) or not math.isfinite(decay_m) or decay_m < 0:
-        raise ValueError(f"decay_m must be a finite number of metres >= 0 (0 switches the garage options off), "
-                         f"got {decay_m!r}")
+    check_decay_lengths(decay_m=decay_m, decay_commute_m=decay_commute_m)
+    decay_of_stay_m = garage_decay_m_for_purpose(purpose, decay_m=decay_m, decay_commute_m=decay_commute_m)
     options = list(garage_options)
     for option in options:
         if not (isinstance(option, tuple) and len(option) == 2 and isinstance(option[0], GarageTariff)):
@@ -993,7 +1010,7 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
     unchanged = GarageStayPrice(cents, outcome, 0.0, None)
     # Early rules first (R-4d-2), then campus zones (priced as before: no garages); the garages act on street and resident
     # zones only, with the options switched on and at least one garage in range.
-    if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS or decay_m == 0:
+    if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS or decay_of_stay_m == 0:
         return unchanged
     if counters is not None:
         counters.eligible += 1
@@ -1016,7 +1033,7 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
         counters.street_unavailable += 1
     weights, costs = ([1.0], [street[0]]) if street is not None else ([], [])
     for garage, distance_m in options:
-        weights.append(math.exp(-distance_m / decay_m))
+        weights.append(math.exp(-distance_m / decay_of_stay_m))
         costs.append(garage_option_cents(garage, arrival_s, departure_s, purpose=purpose, counters=counters))
     # R-4d-4: P_i = w_i / sum(w) and the expectation are summed left to right in double precision in the order street,
     # then the garages by ascending id; Java does the same operations in the same order.
@@ -1038,20 +1055,23 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
 
 def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                               parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
-                              garage_options=(), decay_m: float = 0.0,
+                              garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
                               counters: GarageOptionCounters | None = None) -> tuple[int, str, float]:
     """Parking cost of one car stay with garage options (spec Amendment E): ``(cents, outcome, garage_probability)``.
 
     ``garage_options`` are ``(GarageTariff, distance_m)`` pairs already filtered to the maximum distance (see
-    ``garage_options_in_range``); ``decay_m`` is the decay length lambda in metres (ASSUMPTION G1; 0 = garage options off).
+    ``garage_options_in_range``); ``decay_m`` is the decay length lambda in metres (ASSUMPTION G1; 0 = garage options off)
+    of every purpose but work and education, whose stays use ``decay_commute_m`` (lambda_c, ASSUMPTION G1-c, spec Amendment
+    H1; required, never defaulted to lambda; ``garage_decay_m_for_purpose`` decides which one governs a stay).
     The early rules, the campus zones and the street option are those of ``parking_cost_cents`` (called, not copied):
 
     1. a stay that ``parking_cost_cents`` decides before any product (no zone, home, employer-free, resident, outside the
-       street fee window), a campus stay, ``decay_m`` 0 or no garage in range prices exactly as ``parking_cost_cents``
-       (same outcome, probability 0.0);
-    2. otherwise the options are the street (weight 1) and every garage g (weight ``exp(-d_g / decay_m)``, E3). The street
-       option costs its cheapest street-side product, the street or long-stay product or the zone commuter product (the
-       zone-level garage family is superseded, E8), or is unavailable above the maximum stay without a long-stay product;
+       street fee window), a campus stay, a decay of 0 for the purpose or no garage in range prices exactly as
+       ``parking_cost_cents`` (same outcome, probability 0.0);
+    2. otherwise the options are the street (weight 1) and every garage g (weight ``exp(-d_g / lambda)`` with the decay of
+       the purpose, E3). The street option costs its cheapest street-side product, the street or long-stay product or the
+       zone commuter product (the zone-level garage family is superseded, E8), or is unavailable above the maximum stay
+       without a long-stay product;
        a garage option costs its metered or day product, for work and education also its monthly product per working day
        (P2), whichever is cheaper (0 ct is a valid option; tiers, bands and first periods: ``garage_metered_cents``);
     3. a street option that costs 0 means the stay pays 0 (E4): outcome of the street product, probability 0.0; an
@@ -1060,9 +1080,11 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
        the outcome ``PAID_EXPECTED`` and the probability the sum of the garage ``P_i``.
 
     ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
-    ``ValueError`` for a negative or non-finite ``decay_m`` or distance and duplicate garage ids. Pure but for ``counters``.
+    ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m`` or distance and duplicate garage ids. Pure
+    but for ``counters``.
     """
     detail = parking_cost_with_garages_detail(
         tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free, resident_of_zone=resident_of_zone,
-        resident_of_district=resident_of_district, garage_options=garage_options, decay_m=decay_m, counters=counters)
+        resident_of_district=resident_of_district, garage_options=garage_options, decay_m=decay_m,
+        decay_commute_m=decay_commute_m, counters=counters)
     return detail.cents, detail.outcome, detail.garage_probability

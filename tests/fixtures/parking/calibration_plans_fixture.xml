@@ -5,7 +5,12 @@
      (603100, 5790100) and 500 m from (603500, 5790100), one at (603100, 5792000), out of range of every activity.
      Destination universe (not home, work, education; inside Ia or Ib): p01 shop and p02 leisure at Ia, p03 other and p04 shop
      at Ib. Commuter activities: p05 work at Ia, p06 education at Ib. Excluded: p07 (a shop outside both zones), p08 (a pt
-     interaction), p09 (an unselected plan), p10 (home in Ia). -->
+     interaction), p09 (an unselected plan), p10 (home in Ia).
+     Spec Amendment H (commuter decay): the commuter universe of the calibration leaves out the activities that carry
+     parkingFree. p14 is a work activity at Ia with parkingFree (excluded from the commuter universe, which stays p05 and p06).
+     The test also writes the zone wob_tarifzone_1 = box(603700, 5790000, 603900, 5790200), 761.6 m and 743.3 m from the
+     near garage: p11 work and p12 education there form the Wolfsburg check universe; p13 is a work activity there with
+     parkingFree (excluded). -->
 <population>
   <person id="p01">
     <plan selected="yes">
@@ -92,6 +97,50 @@
   <person id="p10">
     <plan selected="yes">
       <activity type="home" x="603100" y="5790100"/>
+    </plan>
+  </person>
+  <person id="p11">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="work" x="603800" y="5790100" end_time="16:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p12">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="education" x="603800" y="5790150" end_time="15:00:00"/>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p13">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="work" x="603800" y="5790100" end_time="16:00:00">
+        <attributes>
+          <attribute name="parkingFree" class="java.lang.Boolean">true</attribute>
+        </attributes>
+      </activity>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
+    </plan>
+  </person>
+  <person id="p14">
+    <plan selected="yes">
+      <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
+      <leg mode="car"/>
+      <activity type="work" x="603100" y="5790100" end_time="16:00:00">
+        <attributes>
+          <attribute name="parkingFree" class="java.lang.Boolean">true</attribute>
+        </attributes>
+      </activity>
+      <leg mode="car"/>
+      <activity type="home" x="590000" y="5780000"/>
     </plan>
   </person>
 </population>

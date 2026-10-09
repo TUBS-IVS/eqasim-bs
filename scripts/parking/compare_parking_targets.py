@@ -39,8 +39,11 @@ Metrics (``universe`` identifiers are in the table; Ia and Ib are the two city-c
       the share priced as an expectation (PAID_EXPECTED).
     * ``garage_share_ia_ib_work_education_*``: expected garage share of the work and education calls in Ia and Ib, with and
       without the EMPLOYER_FREE calls in the denominator. Reference: ``share_garage_large_lot / (share_garage_large_lot +
-      share_street)`` of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class``: an independent check,
-      not used in the calibration.
+      share_street)`` of the class ``bs_zentrum`` of ``srv2023_commute_parking_by_workplace_class``: since spec Amendment H2
+      the CALIBRATION TARGET of the commuter decay length lambda_c (labelled so, not validation), no longer a check.
+    * ``garage_share_wolfsburg_work_education_*``: the same quantity for the work and education calls in the Wolfsburg zones
+      ``wob_tarifzone_1..3``, with and without the EMPLOYER_FREE calls. Reference: the same share of the row ``03103``: the
+      INDEPENDENT CHECK of spec H3b (not used in the calibration), a number and no validation; the universe is small at 1 %.
     * ``free_share_work_education_class_<class>`` and ``employer_free_share_work_education_class_<class>``: the share of the
       work and education calls in the street and resident zones of a workplace class that carry a no-charge outcome
       (EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT) and the share that is EMPLOYER_FREE alone (the
@@ -114,6 +117,8 @@ COMMUTE_RELATIVE = calibrate.COMMUTE_RELATIVE
 
 #: Spec E5: the two city-centre zones of Braunschweig, shared with the calibration.
 CITY_CENTER_ZONE_IDS = calibrate.CALIBRATION_ZONE_IDS
+#: Spec H3b: the Wolfsburg zones of the independent check, shared with the calibration.
+WOLFSBURG_ZONE_IDS = calibrate.WOLFSBURG_ZONE_IDS
 CAR_MODE = "car"
 COMMUTER_PURPOSES = tuple(sorted(cost.COMMUTER_PURPOSES))
 HOME_PURPOSE = cost.HOME_PURPOSE
@@ -287,6 +292,7 @@ class References(NamedTuple):
     paid_share: float
     garage_target: calibrate.Target
     commuter_garage: calibrate.Target
+    commuter_garage_wolfsburg: calibrate.Target
     free_share_by_class: pd.Series
     tables: dict
 
@@ -298,7 +304,8 @@ def read_references(data_path) -> References:
     return References(
         paid_share=calibrate.read_paid_share_reference(city_center),
         garage_target=calibrate.read_city_center_target(city_center),
-        commuter_garage=calibrate.read_commuter_reference(commute),
+        commuter_garage=calibrate.read_commuter_reference(commute, calibrate.COMMUTER_CLASS),
+        commuter_garage_wolfsburg=calibrate.read_commuter_reference(commute, calibrate.WOLFSBURG_CLASS),
         free_share_by_class=attach.free_share_by_class(calibrate.read_srv_table(commute)),
         tables={"city_center": city_center, "commute": commute})
 
@@ -408,15 +415,24 @@ def _paid_specs(references: References) -> list[MetricSpec]:
 
 def _garage_specs(references: References) -> list[MetricSpec]:
     target, commuter = references.garage_target, references.commuter_garage
+    wolfsburg = references.commuter_garage_wolfsburg
     target_source = (f"{target.table} rows {target.numerator_name} / ({target.numerator_name} + {target.other_name})")
     commuter_source = (f"{commuter.table} class {calibrate.COMMUTER_CLASS}: {commuter.numerator_name} / "
                        f"({commuter.numerator_name} + {commuter.other_name})")
+    wolfsburg_source = (f"{wolfsburg.table} class {calibrate.WOLFSBURG_CLASS}: {wolfsburg.numerator_name} / "
+                        f"({wolfsburg.numerator_name} + {wolfsburg.other_name})")
 
     def other_purposes(frame, city_ids=CITY_CENTER_ZONE_IDS):
         return (frame["zone_id"].isin(city_ids) & ~frame["purpose"].isin({HOME_PURPOSE, *COMMUTER_PURPOSES})).to_numpy()
 
     def commuters(frame, city_ids=CITY_CENTER_ZONE_IDS):
         return (frame["zone_id"].isin(city_ids) & frame["purpose"].isin(COMMUTER_PURPOSES)).to_numpy()
+
+    def wolfsburg_commuters(frame):
+        return (frame["zone_id"].isin(WOLFSBURG_ZONE_IDS) & frame["purpose"].isin(COMMUTER_PURPOSES)).to_numpy()
+
+    def without_employer_free(frame, mask):
+        return mask & (frame["outcome"] != cost.EMPLOYER_FREE).to_numpy()
 
     garage_note = (
         "calibration target, not validation: lambda is set so that the mean garage probability of the E5 destination universe "
@@ -425,10 +441,20 @@ def _garage_specs(references: References) -> list[MetricSpec]:
         "(outside fee hours, free within limit, resident, employer free) and stays with a free street (E4) stay in the "
         f"denominator with garage probability 0. {RESIDENT_CAVEAT}")
     commuter_note = (
-        "independent check, not used in the calibration. Reference: garage / (garage + street) of the SrV class bs_zentrum "
-        "(Oberbezirk Zentrum, wider than the zones Ia and Ib) among street and garage users only (employer lots and other "
-        f"places excluded). Model: work and education calls in Ia and Ib; {CALLS_NOTE}; garage share = sum of garage probability "
-        "over calls.")
+        "calibration target, not validation (spec Amendment H2): lambda_c, the decay length of the garage weights of work and "
+        "education stays, is set so that the mean garage probability of the commuter universe of the calibration (work and "
+        "education activities without parkingFree in Ia and Ib, all modes, no early rules) equals this share. This row is NOT "
+        "the calibration universe. Reference: garage / (garage + street) of the SrV class bs_zentrum (Oberbezirk Zentrum, "
+        "wider than the zones Ia and Ib) among street and garage users only (employer lots and other places excluded). Model: "
+        f"work and education calls in Ia and Ib; {CALLS_NOTE}; garage share = sum of garage probability over calls. "
+        f"{RESIDENT_CAVEAT}")
+    wolfsburg_note = (
+        "independent check, not used in the calibration (spec Amendment H3b), a number and no validation: the same quantity for "
+        f"the Wolfsburg zones {', '.join(WOLFSBURG_ZONE_IDS)} with the commuter decay length lambda_c calibrated on bs_zentrum. "
+        "Reference: garage / (garage + street) of the SrV row 03103 (Wolfsburg) among street and garage users only (employer "
+        f"lots and other places excluded). Model: work and education calls in the Wolfsburg zones; {CALLS_NOTE}; garage share = "
+        "sum of garage probability over calls; the universe is small at 1 % of the population (see universe_size). "
+        f"{RESIDENT_CAVEAT}")
     return [
         MetricSpec("garage_share_ia_ib_other_purposes", SHARE_UNIT, "pricing_calls_ia_ib_other_purposes", target.value,
                    target_source, garage_note, True, lambda frame: expected_garage_share(frame, other_purposes(frame)),
@@ -453,9 +479,19 @@ def _garage_specs(references: References) -> list[MetricSpec]:
                    "pricing_calls_ia_ib_work_education_without_employer_free", commuter.value, commuter_source,
                    commuter_note + " This row removes the EMPLOYER_FREE calls (the employer-lot users) from the denominator, the "
                    "closer universe to the street and garage users of the reference.", True,
-                   lambda frame: expected_garage_share(
-                       frame, commuters(frame) & (frame["outcome"] != cost.EMPLOYER_FREE).to_numpy()),
-                   lambda frame: _calls(frame, commuters(frame) & (frame["outcome"] != cost.EMPLOYER_FREE).to_numpy())),
+                   lambda frame: expected_garage_share(frame, without_employer_free(frame, commuters(frame))),
+                   lambda frame: _calls(frame, without_employer_free(frame, commuters(frame)))),
+        MetricSpec("garage_share_wolfsburg_work_education_all_calls", SHARE_UNIT, "pricing_calls_wolfsburg_work_education",
+                   wolfsburg.value, wolfsburg_source,
+                   wolfsburg_note + " This row keeps the EMPLOYER_FREE calls in the denominator.", True,
+                   lambda frame: expected_garage_share(frame, wolfsburg_commuters(frame)),
+                   lambda frame: _calls(frame, wolfsburg_commuters(frame))),
+        MetricSpec("garage_share_wolfsburg_work_education_without_employer_free", SHARE_UNIT,
+                   "pricing_calls_wolfsburg_work_education_without_employer_free", wolfsburg.value, wolfsburg_source,
+                   wolfsburg_note + " This row removes the EMPLOYER_FREE calls (the employer-lot users) from the denominator, the "
+                   "closer universe to the street and garage users of the reference.", True,
+                   lambda frame: expected_garage_share(frame, without_employer_free(frame, wolfsburg_commuters(frame))),
+                   lambda frame: _calls(frame, without_employer_free(frame, wolfsburg_commuters(frame)))),
     ]
 
 

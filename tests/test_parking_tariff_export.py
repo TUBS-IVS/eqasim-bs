@@ -83,8 +83,8 @@ def _row(table, row_zone_id: str, /, **changes) -> dict:
     return {**row, **changes}
 
 
-def test_the_model_has_the_schema_3_header_and_the_fixture_zones(model):
-    assert model["schema_version"] == 3
+def test_the_model_has_the_schema_4_header_and_the_fixture_zones(model):
+    assert model["schema_version"] == 4
     assert model["tariff_snapshot_date"] == SNAPSHOT_DATE
     assert model["currency"] == "EUR" and model["weekday_only"] is True
     assert model["terminal_stay_rule"] == "until_fee_end"
@@ -159,7 +159,7 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     assert [text.split(":")[0] for text in assumptions] == [
         f"ASSUMPTION {assumption_id}"
         for assumption_id in ("Z1", "D1", "T1", "M1", "A1", "A1-b", "C1", "C2", "R1", "H1", "F1", "S1", "P1", "P2", "P3", "P4",
-                              "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12", "G1", "G2", "G3", "R2", "R2-a")]
+                              "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12", "G1", "G1-c", "G2", "G3", "R2", "R2-a")]
     # Amendment D5 and D6: the Wolfsburg proxy and the campus free share name their configuration key as the arm
     a1_b = next(text for text in assumptions if text.startswith("ASSUMPTION A1-b:"))
     c2 = next(text for text in assumptions if text.startswith("ASSUMPTION C2:"))
@@ -185,6 +185,12 @@ def test_the_assumptions_render_the_register_of_spec_section_7_the_product_minim
     assert "1000 m" in g2 and "garage_max_distance_m" in g2
     assert "bs_zone_ia" in g3 and "bs_zone_ib" in g3 and "srv2023_city_center_parking" in g3 and "no validation" in g3
     assert "same lambda applies in every town" in g3
+    # Amendment H1: the commuter stays have a decay length of their own, calibrated on bs_zentrum, checked on Wolfsburg
+    g1_c = next(text for text in assumptions if text.startswith("ASSUMPTION G1-c:"))
+    assert "garage_decay_commute_m" in g1_c and "work" in g1_c and "education" in g1_c and "bs_zentrum" in g1_c
+    assert "srv2023_commute_parking_by_workplace_class" in g1_c and "03103" in g1_c and "no validation" in g1_c
+    assert "parking_garage_decay_commute_m" in g1_c
+    assert "work and education" in g1 and "G1-c" in g1
 
 
 def test_the_model_lists_the_resident_districts_sorted_by_id_for_the_plan_check(table, sources):
@@ -194,7 +200,7 @@ def test_the_model_lists_the_resident_districts_sorted_by_id_for_the_plan_check(
                               "name": ["B", "A", "B"], "municipality_ags": ["03153017", "03101000", "03101000"]})
     with_districts = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources,
                                            resident_districts=districts)
-    assert with_districts["schema_version"] == 3
+    assert with_districts["schema_version"] == 4
     assert with_districts["resident_districts"] == [
         {"district_id": "bs_district_a", "municipality_ags": "03101000"},
         {"district_id": "bs_district_b", "municipality_ags": "03101000"},
@@ -407,7 +413,7 @@ def test_a_schema_1_table_loads_and_exports_as_schema_3_and_prices_the_v1_cases_
     assert table[[*V2_COLUMNS, PERMITS_COLUMN]].isna().all().all()
     pz.validate_tariffs(table, allow_fixture_marker=True)
     schema_1_model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
-    assert schema_1_model["schema_version"] == 3
+    assert schema_1_model["schema_version"] == 4
     assert schema_1_model["zones"] == {zone_id: model["zones"][zone_id] for zone_id in V1_ZONE_IDS}
     assert all(zone[field] is None for zone in schema_1_model["zones"].values() for field in V2_FIELDS)
     # A frame that lacks the schema-2 columns altogether (not read through the loader) exports the same zones.
@@ -471,18 +477,20 @@ def garage_frame():
 
 
 def test_the_model_has_exactly_the_documented_top_level_keys_and_the_garage_parameters(model):
-    assert sorted(model) == ["assumptions", "currency", "garage_decay_m", "garage_max_distance_m", "garages",
-                             "resident_districts", "schema_version", "sources", "tariff_snapshot_date",
+    assert sorted(model) == ["assumptions", "currency", "garage_decay_commute_m", "garage_decay_m", "garage_max_distance_m",
+                             "garages", "resident_districts", "schema_version", "sources", "tariff_snapshot_date",
                              "terminal_stay_rule", "weekday_only", "zones"]
-    # built without a garage dataset: no garages, decay 0 (the garage options off), the default maximum distance
+    # built without a garage dataset: no garages, both decays 0 (the garage options off), the default maximum distance
     assert model["garages"] == [] and model["garage_decay_m"] == 0.0 and model["garage_max_distance_m"] == 1000.0
+    assert model["garage_decay_commute_m"] == 0.0
 
 
 def test_the_garages_are_the_priced_garages_of_the_dataset_sorted_by_id_in_integer_units(table, sources, garage_frame):
     shuffled = garage_frame.iloc[::-1].reset_index(drop=True)
     full = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=shuffled,
-                                 garage_decay_m=400.0, garage_max_distance_m=1000.0)
+                                 garage_decay_m=400.0, garage_decay_commute_m=250.0, garage_max_distance_m=1000.0)
     assert full["garage_decay_m"] == 400.0 and full["garage_max_distance_m"] == 1000.0
+    assert full["garage_decay_commute_m"] == 250.0
     ids = [entry["garage_id"] for entry in full["garages"]]
     assert ids == sorted(ids) and len(ids) == 19
     assert all(sorted(entry) == GARAGE_KEYS for entry in full["garages"])
@@ -556,6 +564,42 @@ def test_the_garage_export_refuses_a_wrong_crs_a_missing_column_and_bad_paramete
                                   garage_max_distance_m=distance)
 
 
+def test_the_commuter_decay_is_validated_like_the_visitor_decay_and_never_defaults_to_it(table, sources, garage_frame):
+    for decay_commute, message in ((-1.0, "garage_decay_commute_m"), (float("nan"), "garage_decay_commute_m"),
+                                   (float("inf"), "garage_decay_commute_m"), (True, "garage_decay_commute_m"),
+                                   ("250", "garage_decay_commute_m")):
+        with pytest.raises(ValueError, match=message):
+            te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                                  garage_decay_m=400.0, garage_decay_commute_m=decay_commute)
+    # the garage options are on for the visitors but the commuter decay was not given: no silent default to lambda
+    with pytest.raises(ValueError, match="garage_decay_commute_m is not given"):
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                              garage_decay_m=400.0)
+    # each decay above 0 needs a priced garage
+    for options in ({"garage_decay_m": 400.0, "garage_decay_commute_m": 0.0},
+                    {"garage_decay_m": 0.0, "garage_decay_commute_m": 250.0},
+                    {"garage_decay_m": 400.0, "garage_decay_commute_m": 250.0}):
+        with pytest.raises(ValueError, match="lists no priced garage"):
+            te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, **options)
+    # 0 for either decay is valid with garages: it switches the options off for the purposes that decay governs
+    for decay, decay_commute in ((400.0, 0.0), (0.0, 250.0), (0.0, 0.0)):
+        model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                                      garage_decay_m=decay, garage_decay_commute_m=decay_commute)
+        assert (model["garage_decay_m"], model["garage_decay_commute_m"]) == (decay, decay_commute)
+
+
+def test_a_schema_3_model_without_the_commuter_decay_prices_every_purpose_with_the_one_decay(table, sources, garage_frame):
+    # H4: a schema-3 file has no garage_decay_commute_m; the Python reader of the model derives the pair as the Java reader
+    # does: the visitor decay for every purpose, as schema 3 always did
+    model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
+                                  garage_decay_m=400.0, garage_decay_commute_m=250.0)
+    assert te.garage_decays_from_model(model) == (400.0, 250.0)
+    schema_3 = {key: value for key, value in model.items() if key != "garage_decay_commute_m"} | {"schema_version": 3}
+    assert te.garage_decays_from_model(schema_3) == (400.0, 400.0)
+    with pytest.raises(ValueError, match="has no garage_decay_commute_m"):
+        te.garage_decays_from_model({**schema_3, "schema_version": 4})
+
+
 def test_a_garage_price_that_is_no_whole_cent_is_refused(garage_frame):
     broken = garage_frame.copy()
     broken.loc[0, "garage_hourly_rate_eur"] = 2.005
@@ -565,7 +609,7 @@ def test_a_garage_price_that_is_no_whole_cent_is_refused(garage_frame):
 
 def test_the_committed_fixture_model_lists_the_fixture_garages_and_names_their_file_as_a_source():
     committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
-    assert committed["schema_version"] == 3 and committed["garage_decay_m"] == 400.0
+    assert committed["schema_version"] == 4 and committed["garage_decay_m"] == 400.0
     assert committed["garage_max_distance_m"] == 1000.0 and len(committed["garages"]) == 19
     source = next(source for source in committed["sources"] if source["source_id"] == "parking_garages_fixture")
     assert source["path"] == "tests/fixtures/parking/parking_garages_fixture.geojson"
@@ -583,7 +627,8 @@ def test_a_zone_row_with_garage_columns_is_warned_about_when_the_garage_options_
         te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources)
     assert not [record for record in caplog.records if record.name == logger]
     with caplog.at_level("WARNING", logger=logger):
-        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame, garage_decay_m=400.0)
+        te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame, garage_decay_m=400.0,
+                              garage_decay_commute_m=250.0)
     [message] = [record.getMessage() for record in caplog.records if record.name == logger]
     assert "6 of 18 zone rows" in message and "superseded" in message and "E8" in message
     for zone_id in ("fx_bs_ia_v2", "fx_bs_ib_v2", "fx_res_garage_v2"):
@@ -593,7 +638,7 @@ def test_a_zone_row_with_garage_columns_is_warned_about_when_the_garage_options_
     caplog.clear()
     with caplog.at_level("WARNING", logger=logger):
         te.build_tariff_model(no_family, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame,
-                              garage_decay_m=400.0)
+                              garage_decay_m=400.0, garage_decay_commute_m=250.0)
     assert not [record for record in caplog.records if record.name == logger]
 
 
@@ -659,7 +704,7 @@ def test_the_model_lists_assumption_p13_exactly_when_an_imputed_product_is_used(
     # the model without an imputed product (a dataset without one, or the sensitivity arm) has the register as before
     assert off["assumptions"] == plain["assumptions"] and "ASSUMPTION P13" not in " ".join(plain["assumptions"])
     # same schema, same keys: the Java reader and the golden fixture see no difference
-    assert sorted(on) == sorted(plain) == sorted(off) and on["schema_version"] == plain["schema_version"] == 3
+    assert sorted(on) == sorted(plain) == sorted(off) and on["schema_version"] == plain["schema_version"] == 4
     assert on["zones"] == plain["zones"] and [entry["garage_id"] for entry in on["garages"]] == [
         entry["garage_id"] for entry in plain["garages"]]
     messages = " ".join(record.getMessage() for record in caplog.records)

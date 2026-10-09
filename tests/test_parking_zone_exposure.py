@@ -112,6 +112,28 @@ def test_the_plans_parser_keeps_main_activities_of_the_selected_plan_only(exposu
     assert activities.loc[1, ["x", "y"]].tolist() == [X0 + 10, Y0 + 10]
 
 
+def test_the_plans_parser_reads_the_parking_free_attribute_of_the_activity_and_nothing_else(exposure, tmp_path):
+    # Spec Amendment H2: the calibration of the commuter decay leaves the activities that carry parkingFree out of its
+    # universe. The attribute is written only where true; an activity without it is not free, a parkingFree-like attribute of
+    # a leg or of another name does not count, and a value other than true does not either.
+    path = tmp_path / "free.xml.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        stream.write(
+            '<population><person id="a"><plan selected="yes">'
+            '<activity type="home" x="1" y="2"/>'
+            '<leg mode="car"><attributes><attribute name="parkingFree" class="java.lang.Boolean">true</attribute></attributes></leg>'
+            '<activity type="work" x="3" y="4"><attributes>'
+            '<attribute name="parkingZone" class="java.lang.String">z</attribute>'
+            '<attribute name="parkingFree" class="java.lang.Boolean">true</attribute></attributes></activity>'
+            '<leg mode="car"/><activity type="work" x="5" y="6"><attributes>'
+            '<attribute name="parkingFree" class="java.lang.Boolean">false</attribute></attributes></activity>'
+            '<leg mode="car"/><activity type="education" x="7" y="8"/></plan></person></population>')
+    activities, _ = exposure.read_main_activities(path)
+    assert list(activities["purpose"]) == ["home", "work", "work", "education"]
+    assert list(activities["parking_free"]) == [False, True, False, False]
+    assert activities["parking_free"].dtype == bool
+
+
 def test_the_parser_refuses_a_plans_file_without_a_selected_plan(exposure, tmp_path):
     path = tmp_path / "empty.xml.gz"
     with gzip.open(path, "wt", encoding="utf-8") as stream:

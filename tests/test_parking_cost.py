@@ -64,13 +64,14 @@ def test_the_contract_holds_the_g_l_lz_v_r_and_e_cases_each_with_its_minimum_sta
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
     # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
     # except R10 and R11 at L = 15; E01..E32 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15
-    # (E29..E32 the free options of E14: a free garage lowers the expected cost, never raises a street-free stay).
+    # (E29..E32 the free options of E14: a free garage lowers the expected cost, never raises a street-free stay);
+    # E33..E38 pin the separate commuter decay length of spec Amendment H (work and education against every other purpose).
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
-    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 33)]
+    expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 39)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     # only the R cases and E12 (R2 before the garages) set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)
@@ -122,6 +123,37 @@ def test_the_e14_fixture_garages_leave_every_earlier_garage_option_set_unchanged
             assert in_range == {"fx_g17_free"}, case["id"]
 
 
+def test_the_cases_of_amendment_h_pin_a_work_a_shopping_and_an_education_stay_with_two_decay_lengths(fixture_zones,
+                                                                                                    fixture_garages):
+    # Every case before E33 carries ONE decay for every purpose (the commuter decay equals the visitor decay, as before
+    # Amendment H), so their pricing is unchanged; E33..E38 carry the decays of the fixture model (lambda 400 m, lambda_c
+    # 250 m) or a switched-off one. The hand derivations are in the comments of braunschweig.parking.golden_cases.
+    by_id = {case["id"]: case for case in GOLDEN_CASES}
+    older = [case for case in GOLDEN_CASES if case["id"] < "E33" or case["id"][0] != "E"]
+    assert len(older) == len(GOLDEN_CASES) - 6
+    assert all(case["garage_decay_commute_m"] == case["garage_decay_m"] for case in older)
+    from braunschweig.parking.golden_cases import FIXTURE_GARAGE_DECAY_COMMUTE_M, FIXTURE_GARAGE_DECAY_M
+    assert (FIXTURE_GARAGE_DECAY_M, FIXTURE_GARAGE_DECAY_COMMUTE_M) == (400.0, 250.0)
+    pinned = {  # id: (purpose, decay, commute decay, cents, outcome, garage probability)
+        "E33": ("work", 400.0, 250.0, 761, "PAID_EXPECTED", 0.2314752165),
+        "E34": ("shop", 400.0, 250.0, 1125, "PAID_EXPECTED", 0.3208213008),
+        "E35": ("education", 400.0, 250.0, 185, "PAID_EXPECTED", 0.2314752165),
+        "E36": ("work", 400.0, 0.0, 900, "PAID_METERED", 0.0),
+        "E37": ("work", 0.0, 250.0, 761, "PAID_EXPECTED", 0.2314752165),
+        "E38": ("shop", 0.0, 250.0, 900, "PAID_METERED", 0.0)}
+    for case_id, (purpose, decay, commute, cents, outcome, probability) in pinned.items():
+        case = by_id[case_id]
+        assert (case["purpose"], case["garage_decay_m"], case["garage_decay_commute_m"]) == (purpose, decay, commute)
+        assert (case["expected_cents"], case["expected_outcome"]) == (cents, outcome), case_id
+        assert case["expected_garage_probability"] == pytest.approx(probability, abs=1e-9), case_id
+    # the work stay and the shopping stay of E33 and E34 have the same destination and the same times (E04 is E34 with one decay)
+    for key in ("zone_id", "arrival_s", "departure_s", "destination_x_m", "destination_y_m"):
+        assert by_id["E33"][key] == by_id["E34"][key] == by_id["E04"][key]
+    # without the commuter decay the work stay would be priced by lambda: E03 (708 ct, probability 0.3208) is the same work
+    # stay with one decay of 400 m, and E33 differs from it only by the commuter decay
+    assert (by_id["E03"]["expected_cents"], by_id["E33"]["expected_cents"]) == (708, 761)
+
+
 def test_the_cases_without_a_destination_price_exactly_as_before_the_garage_options(fixture_zones):
     # Families G, L, LZ, V and R carry no destination: their numbers must be those of the schema-2 reference
     # parking_cost_cents, whatever garages exist and whatever the decay.
@@ -140,6 +172,7 @@ def test_the_cases_without_a_destination_price_exactly_as_before_the_garage_opti
                                        resident_of_district=case["resident_of_district"]) == (
             case["expected_cents"], case["expected_outcome"]), case["id"]
         assert case["expected_garage_probability"] == 0.0 and case["garage_decay_m"] == 400.0
+        assert case["garage_decay_commute_m"] == 400.0
 
 
 def test_every_pinned_expectation_keeps_a_rounding_margin_and_a_mismatch_is_reported(fixture_zones, fixture_garages):
@@ -157,9 +190,10 @@ def test_the_committed_golden_json_is_in_sync(fixture_zones, fixture_garages):
     from scripts.export_parking_golden_cases import GOLDEN_SCHEMA_VERSION
 
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    # 4 since the garage options (spec Amendment E): garages, garage_max_distance_m, garage_option_cases and the four garage
-    # keys of every case (3: resident_of_district of the rule R2; 2: minimum_stay_min)
-    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 4, REGENERATE_HINT
+    # 5 since the separate commuter decay (spec Amendment H): garage_decay_commute_m of every case; 4 since the garage
+    # options (spec Amendment E): garages, garage_max_distance_m, garage_option_cases and the four garage keys of every case
+    # (3: resident_of_district of the rule R2; 2: minimum_stay_min)
+    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 5, REGENERATE_HINT
     assert sorted(document) == ["cases", "garage_max_distance_m", "garage_option_cases", "garages", "schema_version",
                                 "tariffs"], REGENERATE_HINT
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
@@ -179,7 +213,7 @@ def test_the_golden_cases_carry_exactly_the_documented_keys():
     from braunschweig.parking.golden_cases import CASE_FIELDS, OPTION_CASE_FIELDS
     assert all(list(case) == list(CASE_FIELDS) for case in GOLDEN_CASES)
     assert all(list(case) == list(OPTION_CASE_FIELDS) for case in GOLDEN_GARAGE_OPTION_CASES)
-    assert len(CASE_FIELDS) == 17 and len(OPTION_CASE_FIELDS) == 6
+    assert len(CASE_FIELDS) == 18 and len(OPTION_CASE_FIELDS) == 6
 
 
 def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones):
@@ -659,8 +693,8 @@ def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():
 # The hashes of the LF blobs are recorded in ADR-0140 (cross-language contract), so regenerating one fixture here without
 # copying it to the Java repository fails this test as well as the ADR record, instead of leaving the two sides apart.
 PINNED_FIXTURE_SHA256 = {
-    "parking_golden_cases.json": "62cb9bc3c6bae7401c8130f54dee1349afaf6f39ec6f0db7c8371777e2e9d14b",
-    "parking_tariffs_fixture.json": "c7d30141a04ef6c1652c5451d7e3e478bba463a73668ed1cb3bb4994d4472718",
+    "parking_golden_cases.json": "342bc4bcb5593e3601584ad2bfcc6c68db2b866867d97621a75200e41fae3b06",
+    "parking_tariffs_fixture.json": "9f7298bafe0d5f7feb6f2825ee07887e680134163a0ce63599d7fe18fd82f283",
 }
 
 

@@ -10,7 +10,7 @@ for the Java ``ParkingCostCalculatorTest``.
 Fields of a case (they are the keys of the JSON cases, too):
 
 - ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``, ``R01`` .. ``R13``,
-  ``E01`` .. ``E32``.
+  ``E01`` .. ``E38``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -32,15 +32,20 @@ Fields of a case (they are the keys of the JSON cases, too):
   Amendment E). None for every case of the families G, L, LZ, V and R: a case without a destination has no garage
   option, so it prices exactly as before schema 3. The garage options of a destination are the fixture garages within
   ``garage_max_distance_m`` of the golden document (``cost.garage_options_in_range``).
-- ``garage_decay_m``: the decay length lambda in metres of the stay (ASSUMPTION G1; 0 switches the garage options off,
-  spec E6). ``FIXTURE_GARAGE_DECAY_M`` in every case but E16, an illustrative value of the fixture, no calibration.
+- ``garage_decay_m``: the decay length lambda in metres of the stays whose purpose is none of ``cost.COMMUTER_PURPOSES``
+  (ASSUMPTION G1; 0 switches the garage options off for them, spec E6). ``FIXTURE_GARAGE_DECAY_M`` in every case but E16
+  and the cases E37 and E38, an illustrative value of the fixture, no calibration.
+- ``garage_decay_commute_m`` (schema 5, spec Amendment H): the decay length lambda_c in metres of the stays whose purpose is
+  work or education (ASSUMPTION G1-c; 0 switches their garage options off). It equals ``garage_decay_m`` in every case
+  before E33 (one decay for every purpose, exactly as before Amendment H, so those cases are unchanged in content and
+  price) and ``FIXTURE_GARAGE_DECAY_COMMUTE_M``, a different illustrative value of the fixture, in E33..E38 (E36: 0).
 - ``expected_cents`` (integer euro cents) and ``expected_outcome`` (a ``cost.OUTCOMES`` name); both None
   when ``expected_error`` is true, i.e. the stay is invalid -- its departure lies before its arrival -- and
   the calculation must raise the ``ValueError`` of the stay check (``STAY_ERROR_PATTERN``), not any other.
 - ``expected_garage_probability``: the sum of the garage probabilities of the stay (0.0 when no garage acted), a number
   hard-coded to ten decimals and compared with an absolute tolerance of ``PROBABILITY_TOLERANCE``; None for an error case.
 
-The six families:
+The families:
 
 - G01..G38 (L = 0, the pricing before rule L1, on the v1 rows of the fixture set). G01..G26 are the cases of the
   implementation plan. G27..G38 pin what those leave open:
@@ -91,6 +96,10 @@ The six families:
   Every expected number is hand-derived in the comment above its row and its
   unrounded expectation keeps at least ``ROUNDING_MARGIN_CENTS`` from a half cent (the generator asserts it), so that
   ``Math.exp`` of Java cannot flip a rounding.
+- E33..E38 (schema 5, spec Amendment H1): the two decay lengths. A work stay and a shopping stay at the SAME destination
+  and times (E33, E34; E04 is the shopping stay with one decay), an education stay (E35), the commuter decay 0 that
+  switches the garages off for work but not for shopping (E36) and the visitor decay 0 that switches them off for
+  shopping but not for work (E37, E38).
 - O01..O44 (``GOLDEN_GARAGE_OPTION_CASES``, the key ``garage_option_cases`` of the JSON): the price of ONE garage option
   without any mixture, pinning the three tariff structures (spec E10, E11, E12 and the amendments P6, P8, P9, P10) exactly:
   single window with a first period tied to a clock window, tiers (a stay across tier boundaries, a night stay, a unit that
@@ -114,13 +123,18 @@ from braunschweig.parking import cost
 
 CASE_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "resident_of_zone",
                "resident_of_district", "terminal", "minimum_stay_min", "destination_x_m", "destination_y_m",
-               "garage_decay_m", "expected_cents", "expected_outcome", "expected_garage_probability", "expected_error")
+               "garage_decay_m", "garage_decay_commute_m", "expected_cents", "expected_outcome",
+               "expected_garage_probability", "expected_error")
 #: The keys of a garage option case (``GOLDEN_GARAGE_OPTION_CASES``).
 OPTION_CASE_FIELDS = ("id", "garage_id", "arrival_s", "departure_s", "purpose", "expected_cents")
 
 #: The decay length lambda of the fixture garages, metres: an illustrative value of the fixture, no calibration (the
 #: calibrated value of a release is a config value, ``parking_garage_decay_m``).
 FIXTURE_GARAGE_DECAY_M = 400.0
+#: The decay length lambda_c of the fixture model for the commuter purposes work and education, metres: an illustrative value
+#: that differs from ``FIXTURE_GARAGE_DECAY_M`` so that a port that mixes the two up fails; no calibration (the calibrated
+#: value of a release is a config value, ``parking_garage_decay_commute_m``).
+FIXTURE_GARAGE_DECAY_COMMUTE_M = 250.0
 #: Absolute tolerance of the compared garage probabilities (the pinned numbers carry ten decimals).
 PROBABILITY_TOLERANCE = 1e-9
 #: The unrounded expectation of a pinned case keeps at least this distance (in cents) from a half cent, so that a different
@@ -140,7 +154,8 @@ _MINIMUM_STAY_MIN = 15
 # The rows of the G and V tables carry the CASE_FIELDS except minimum_stay_min, which the table fixes for all its
 # rows, resident_of_district, which is false in all of them (the R rows below set it), and the garage fields of schema 4
 # (no destination, the fixture decay, probability 0.0 -- None for an error case).
-_GARAGE_FIELDS = ("destination_x_m", "destination_y_m", "garage_decay_m", "expected_garage_probability")
+_GARAGE_FIELDS = ("destination_x_m", "destination_y_m", "garage_decay_m", "garage_decay_commute_m",
+                  "expected_garage_probability")
 _ROW_FIELDS = tuple(field for field in CASE_FIELDS
                     if field not in ("minimum_stay_min", "resident_of_district", *_GARAGE_FIELDS))
 
@@ -373,9 +388,10 @@ _R_CASE_ROWS = (
 
 
 def _without_garages(values: dict) -> dict:
-    """The garage fields of a case that has no destination: no coordinates, the fixture decay (without a destination no garage
-    can act) and the garage probability 0.0 (None for an error case, which prices nothing)."""
+    """The garage fields of a case that has no destination: no coordinates, the fixture decay for every purpose (without a
+    destination no garage can act) and the garage probability 0.0 (None for an error case, which prices nothing)."""
     return dict(values, destination_x_m=None, destination_y_m=None, garage_decay_m=FIXTURE_GARAGE_DECAY_M,
+                garage_decay_commute_m=FIXTURE_GARAGE_DECAY_M,
                 expected_garage_probability=None if values["expected_error"] else 0.0)
 
 
@@ -529,6 +545,40 @@ _E_CASE_ROWS = (
     ("E32", "fx_bs_ia_v2", 32400, 46800, "shop", False, False, False, False, 0, *_D11, 400.0, 0, "PAID_EXPECTED", 1.0),
 )
 
+# Spec Amendment H1 (schema 5): the two decay lengths of the fixture model, lambda = 400 m for every purpose but work and
+# education and lambda_c = 250 m for them. One row per case: (id, zone_id, arrival_s, departure_s, purpose, parking_free,
+# resident_of_zone, resident_of_district, terminal, minimum_stay_min, destination_x_m, destination_y_m, garage_decay_m,
+# garage_decay_commute_m, expected_cents, expected_outcome, expected_garage_probability). All at D1 (580000, 5750000) in
+# fx_bs_ib: street 180 ct/h in 1-min units, cap 900, 09:00-20:00; the only garage in range is fx_g01_core 300 m east (200 ct per
+# started hour, all day, monthly product 6300 ct = 300 ct per working day). w(300 m) is exp(-0.75) = 0.4723665527 at
+# lambda = 400 m and exp(-1.2) = 0.3011942119 at lambda_c = 250 m. Times of day on day 0: 28800 = 08:00, 36000 = 10:00,
+# 39600 = 11:00, 57600 = 16:00.
+_H_CASE_ROWS = (
+    # work 08:00-16:00 at lambda_c = 250 m: street 09:00-16:00 = 420 chargeable min x 3 = 1260 -> cap 900; garage 8 started
+    # hours = 1600, its monthly product 300 ct is cheaper (P2): option 300 ct. (900 + 0.3011942119 x 300) / 1.3011942119 =
+    # 990.3582636 / 1.3011942119 = 761.115 -> 761; P_garage = 0.3011942119 / 1.3011942119 = 0.2314752165. With one decay of
+    # 400 m the same stay is E03 (708 ct, P 0.3208213008): the commuter decay lowers the garage weight.
+    ("E33", "fx_bs_ib", 28800, 57600, "work", False, False, False, False, 0, *_D1, 400.0, 250.0, 761, "PAID_EXPECTED",
+     0.2314752165),
+    # the same destination and times for shopping at lambda = 400 m: the stay is E04, the commuter decay does not act:
+    # no monthly product, garage 1600 ct: (900 + 0.4723665527 x 1600) / 1.4723665527 = 1124.575 -> 1125; P 0.3208213008.
+    ("E34", "fx_bs_ib", 28800, 57600, "shop", False, False, False, False, 0, *_D1, 400.0, 250.0, 1125, "PAID_EXPECTED",
+     0.3208213008),
+    # education 10:00-11:00 (education is a commuter purpose) at lambda_c = 250 m: street 60 x 3 = 180 ct, garage one started
+    # hour = 200 ct (below its monthly 300 ct): (180 + 0.3011942119 x 200) / 1.3011942119 = 240.2388424 / 1.3011942119 =
+    # 184.630 -> 185; P_garage = 0.2314752165.
+    ("E35", "fx_bs_ib", 36000, 39600, "education", False, False, False, False, 0, *_D1, 400.0, 250.0, 185, "PAID_EXPECTED",
+     0.2314752165),
+    # the commuter decay 0 switches the garage options off for work (lambda_c = 0), whatever lambda is: the street price of
+    # the stay of E33 alone, 900 ct (capped) PAID_METERED, probability 0.
+    ("E36", "fx_bs_ib", 28800, 57600, "work", False, False, False, False, 0, *_D1, 400.0, 0.0, 900, "PAID_METERED", 0.0),
+    # the visitor decay 0 does not switch the work stay off: lambda_c = 250 m governs it, the result of E33.
+    ("E37", "fx_bs_ib", 28800, 57600, "work", False, False, False, False, 0, *_D1, 0.0, 250.0, 761, "PAID_EXPECTED",
+     0.2314752165),
+    # the visitor decay 0 switches the garage options off for shopping, whatever lambda_c is: the street price 900 ct.
+    ("E38", "fx_bs_ib", 28800, 57600, "shop", False, False, False, False, 0, *_D1, 0.0, 250.0, 900, "PAID_METERED", 0.0),
+)
+
 # Garage option cases (the price of ONE garage option, no mixture): (id, garage_id, arrival_s, departure_s, purpose,
 # expected_cents). 600 = 10 min; times of day: 19800 = 05:30, 21600 = 06:00, 28800 = 08:00, 34200 = 09:30, 36000 = 10:00,
 # 37800 = 10:30, 38700 = 10:45, 39600 = 11:00, 43200 = 12:00, 46800 = 13:00, 54000 = 15:00, 59400 = 16:30, 63000 = 17:30,
@@ -667,11 +717,20 @@ _O_CASE_ROWS = (
 _E_ROW_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "resident_of_zone",
                  "resident_of_district", "terminal", "minimum_stay_min", "destination_x_m", "destination_y_m",
                  "garage_decay_m", "expected_cents", "expected_outcome", "expected_garage_probability")
+_H_ROW_FIELDS = (*_E_ROW_FIELDS[:13], "garage_decay_commute_m", *_E_ROW_FIELDS[13:])
 
 
 def _garage_case(row: Sequence) -> dict:
-    """One E case (``_E_CASE_ROWS``): the stay, its destination, the decay and the expectation."""
+    """One E case of ``_E_CASE_ROWS`` (E01..E32): the stay, its destination, the decay and the expectation; the commuter decay
+    equals the decay (one decay for every purpose, as before spec Amendment H)."""
     values = dict(zip(_E_ROW_FIELDS, row), expected_error=False)
+    values["garage_decay_commute_m"] = values["garage_decay_m"]
+    return {field: values[field] for field in CASE_FIELDS}
+
+
+def _commuter_decay_case(row: Sequence) -> dict:
+    """One E case of ``_H_CASE_ROWS`` (E33..E38): like ``_garage_case`` with its own commuter decay in the row."""
+    values = dict(zip(_H_ROW_FIELDS, row), expected_error=False)
     return {field: values[field] for field in CASE_FIELDS}
 
 
@@ -690,6 +749,7 @@ GOLDEN_CASES: tuple[dict, ...] = (
     + tuple(_case(row, _MINIMUM_STAY_MIN) for row in _V_CASE_ROWS)
     + tuple(_district_case(row) for row in _R_CASE_ROWS)
     + tuple(_garage_case(row) for row in _E_CASE_ROWS)
+    + tuple(_commuter_decay_case(row) for row in _H_CASE_ROWS)
 )
 
 GOLDEN_GARAGE_OPTION_CASES: tuple[dict, ...] = tuple(
@@ -725,7 +785,7 @@ def evaluate_case_detail(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneT
     return cost.parking_cost_with_garages_detail(
         tariff, arrival_s, priced_departure_s, purpose=case["purpose"], parking_free=case["parking_free"],
         resident_of_zone=case["resident_of_zone"], resident_of_district=case["resident_of_district"],
-        garage_options=options, decay_m=case["garage_decay_m"])
+        garage_options=options, decay_m=case["garage_decay_m"], decay_commute_m=case["garage_decay_commute_m"])
 
 
 def evaluate_case(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff], garages: Sequence = (),

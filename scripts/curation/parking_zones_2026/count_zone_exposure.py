@@ -13,6 +13,8 @@ Definitions (the numbers in the data record ``parking_zones_2026`` follow them):
 * Its zone is the ``parking_zone`` that the production function ``braunschweig.parking.attach.attach_parking_zones``
   assigns on the polygons read by ``braunschweig.parking.zones.load_zone_polygons`` (NaN outside every zone, where
   parking is free by assumption Z1).
+* It is parking free (``parking_free``) when the activity carries the attribute ``parkingFree`` with the value ``true``
+  (the free-parking draw of ``attach.draw_parking_free`` writes it only where true; no attribute means not free).
 * It is a car arrival when the trip that ends at it (the legs since the previous main activity) holds a leg of mode
   ``car``; a ``car_passenger`` leg does not park. The first activity of a plan has no inbound trip.
 * A zone is added, removed or changed between two releases when it exists in one file only or when the two polygons
@@ -48,6 +50,8 @@ from braunschweig.parking import zones as pz  # noqa: E402
 #: Activity types the router inserts at stops and access points; they are no destinations.
 INTERACTION_SUFFIX = " interaction"
 CAR_MODE = "car"
+#: The activity attribute of the free-parking draw (``braunschweig.parking.attach``).
+PARKING_FREE_ATTRIBUTE = "parkingFree"
 #: Label of "no zone" in the transition table (parking is free there by assumption Z1).
 NO_ZONE = "none"
 #: Two polygons of one zone id differ when their symmetric difference exceeds this area (the overlap tolerance of the
@@ -56,14 +60,23 @@ CHANGE_TOLERANCE_M2 = pz.OVERLAP_TOLERANCE_M2
 EXPOSURE_COLUMNS = ["release", "zone_id", "purpose", "activities", "car_arrivals"]
 
 
+def _carries_parking_free(activity: ElementTree.Element) -> bool:
+    """Whether the activity element has the attribute ``parkingFree`` with the value ``true`` (its own attributes only)."""
+    attributes = activity.find("attributes")
+    if attributes is None:
+        return False
+    return any(attribute.get("name") == PARKING_FREE_ATTRIBUTE and (attribute.text or "").strip().lower() == "true"
+               for attribute in attributes.findall("attribute"))
+
+
 def read_main_activities(path) -> tuple:
     """(frame, persons) of the main activities of the selected plans in a MATSim plans file (``.xml`` or ``.xml.gz``).
 
     The frame has ``person_id``, ``activity_index``, ``purpose`` (the activity type), ``x`` and ``y`` (metres, as in the
-    file) and ``car_arrival`` (see the module docstring), one row per main activity in file order; ``persons`` counts
-    every person of the file. The file is streamed, so the 1 % population needs little memory. Raises ``ValueError``
-    for an activity without coordinates (the check needs a location, never a default) and when no person has a main
-    activity in a selected plan.
+    file), ``car_arrival`` and ``parking_free`` (see the module docstring), one row per main activity in file order;
+    ``persons`` counts every person of the file. The file is streamed, so the 1 % population needs little memory. Raises
+    ``ValueError`` for an activity without coordinates (the check needs a location, never a default) and when no person has a
+    main activity in a selected plan.
     """
     path = Path(path)
     opener = gzip.open if path.suffix == ".gz" else open
@@ -88,7 +101,7 @@ def read_main_activities(path) -> tuple:
                                      f"{person_id} has no x/y attribute; the exposure check needs the location")
                 rows.append({"person_id": person_id, "activity_index": activity_index, "purpose": element.get("type"),
                              "x": float(element.get("x")), "y": float(element.get("y")),
-                             "car_arrival": CAR_MODE in trip_modes})
+                             "car_arrival": CAR_MODE in trip_modes, "parking_free": _carries_parking_free(element)})
                 activity_index += 1
                 trip_modes = []
             elif tag == "plan":

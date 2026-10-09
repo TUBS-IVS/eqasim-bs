@@ -1,7 +1,8 @@
-"""The garage decay length of the configs against its calibration table (spec Amendment E5 and E6, issue #436).
+"""The garage decay lengths of the configs against their calibration table (spec Amendments E5, E6 and H, issue #436).
 
-``parking_garage_decay_m`` is a release value, not a free run parameter: it equals the ``decay_length_m`` of the committed
-calibration table ``parking_garage_decay_calibration_2026.csv`` (written by ``scripts/parking/calibrate_garage_decay.py``).
+``parking_garage_decay_m`` and ``parking_garage_decay_commute_m`` are release values, not free run parameters: they equal the
+``decay_length_m`` and the ``decay_commute_length_m`` of the committed calibration table
+``parking_garage_decay_calibration_2026.csv`` (written by ``scripts/parking/calibrate_garage_decay.py``).
 The table is committed (the calibration of the 1 % reference plans of 2026-10-08, issue #436) and the value equals
 it. The 0 branch below remains for a checkout without the table: the value must
 then be 0 (the garage options are off, E6); with the table the value must equal it, and the first of these two tests
@@ -31,25 +32,31 @@ def _config(name: str) -> dict:
     return yaml.safe_load(CONFIGS[name].read_text(encoding="utf-8"))["config"]
 
 
-def _table_decay_m() -> float:
+#: config key -> row of the calibration table (spec Amendment H: one table, both release values)
+DECAY_KEYS = {"parking_garage_decay_m": "decay_length_m", "parking_garage_decay_commute_m": "decay_commute_length_m"}
+
+
+def _table_value(row: str) -> float:
     spec = importlib.util.spec_from_file_location("calibrate_garage_decay_config_test", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module.read_calibration_table(TABLE)["decay_length_m"]
+    return module.read_calibration_table(TABLE)[row]
 
 
+@pytest.mark.parametrize("key, row", DECAY_KEYS.items(), ids=list(DECAY_KEYS))
 @pytest.mark.parametrize("name", CONFIGS)
-def test_the_decay_length_equals_the_calibration_table_or_is_zero_while_the_table_is_pending(name):
-    value = _config(name)["parking_garage_decay_m"]
+def test_the_decay_lengths_equal_the_calibration_table_or_are_zero_while_the_table_is_pending(name, key, row):
+    value = _config(name)[key]
     assert isinstance(value, (int, float)) and not isinstance(value, bool)
     if TABLE.is_file():
         # the calibration exists: the config carries exactly its result (a release value with its calibration record)
-        assert value == _table_decay_m(), f"{name}: parking_garage_decay_m must equal decay_length_m of {TABLE.name}"
+        assert value == _table_value(row), f"{name}: {key} must equal {row} of {TABLE.name}"
     else:
         # CALIBRATION PENDING: no table, so no calibrated value; 0 switches the garage options off (spec E6)
-        assert value == 0, (f"{name}: {TABLE.name} does not exist, so parking_garage_decay_m must be 0 (garage options "
+        assert value == 0, (f"{name}: {TABLE.name} does not exist, so {key} must be 0 (garage options "
                             "off); a value needs its calibration table")
+
 
 
 @pytest.mark.parametrize("name", CONFIGS)
@@ -60,7 +67,8 @@ def test_the_maximum_garage_distance_is_the_assumption_g2_value_in_every_config(
 def test_the_three_configs_name_the_same_garage_dataset_and_decay():
     base = _config("base")
     for name in ("popsim_mid", "popsim_open"):
-        for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_max_distance_m",
+        for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_decay_commute_m",
+                    "parking_garage_max_distance_m",
                     "parking_garage_monthly_imputation"):
             assert _config(name)[key] == base[key], (name, key)
     assert base["parking_garages_path"] == "braunschweig/parking/parking_garages_2026.geojson"

@@ -40,10 +40,12 @@ def _garage(garage_id="g1", **overrides) -> GarageTariff:
     return GarageTariff(**fields)
 
 
-def _price(tariff, arrival_s, departure_s, options, *, purpose="shop", decay_m=DECAY_M, **flags):
+def _price(tariff, arrival_s, departure_s, options, *, purpose="shop", decay_m=DECAY_M, decay_commute_m=None, **flags):
+    """The price with one decay length for every purpose unless ``decay_commute_m`` is given (spec Amendment H1)."""
     flags = {"parking_free": False, "resident_of_zone": False, **flags}
     return cost.parking_cost_with_garages(tariff, arrival_s, departure_s, purpose=purpose, garage_options=options,
-                                          decay_m=decay_m, **flags)
+                                          decay_m=decay_m, decay_commute_m=decay_m if decay_commute_m is None
+                                          else decay_commute_m, **flags)
 
 
 def test_the_outcome_is_appended_at_the_end_so_the_declaration_order_stays():
@@ -74,7 +76,7 @@ def test_one_garage_prices_the_probability_weighted_mean_of_the_street_and_the_g
     assert probability == pytest.approx(0.3208213008, abs=1e-9)
     detail = cost.parking_cost_with_garages_detail(_street(), 36000, 39600, purpose="shop", parking_free=False,
                                                    resident_of_zone=False, garage_options=[(_garage(), 300.0)],
-                                                   decay_m=DECAY_M)
+                                                   decay_m=DECAY_M, decay_commute_m=DECAY_M)
     assert detail.expected_cents == pytest.approx(186.416426, abs=1e-6)
 
 
@@ -198,7 +200,7 @@ def test_the_expectation_is_rounded_half_up_once_at_the_end():
     # 31 min: street 31 x 3 = 93 ct, garage 200 ct, d = 0: (93 + 200) / 2 = 146.5 exactly -> 147 (banker's rounding: 146).
     detail = cost.parking_cost_with_garages_detail(_street(), 36000, 36000 + 31 * 60, purpose="shop", parking_free=False,
                                                    resident_of_zone=False, garage_options=[(_garage(), 0.0)],
-                                                   decay_m=DECAY_M)
+                                                   decay_m=DECAY_M, decay_commute_m=DECAY_M)
     assert detail.expected_cents == 146.5 and detail.cents == 147
 
 
@@ -222,6 +224,63 @@ def test_the_garage_options_of_a_destination_are_the_garages_within_the_maximum_
 def test_an_invalid_decay_is_refused(decay_m, message):
     with pytest.raises(ValueError, match=message):
         _price(_street(), 36000, 39600, [(_garage(), 0.0)], decay_m=decay_m)
+
+
+# --------------------------------------------------------------------------------- two decay lengths (Amendment H1)
+
+
+def test_the_decay_helper_returns_the_commuter_decay_for_work_and_education_and_the_visitor_decay_otherwise():
+    assert cost.COMMUTER_PURPOSES == frozenset({"work", "education"})
+    for purpose in ("work", "education"):
+        assert cost.garage_decay_m_for_purpose(purpose, decay_m=400.0, decay_commute_m=250.0) == 250.0
+    for purpose in ("shop", "leisure", "other", "home", "visit"):
+        assert cost.garage_decay_m_for_purpose(purpose, decay_m=400.0, decay_commute_m=250.0) == 400.0
+
+
+def test_a_work_and_a_shopping_stay_at_the_same_destination_use_their_own_decay_length():
+    # Stay 10:00-11:00 at d = 300 m from one garage (200 ct per started hour): street 180 ct, garage 200 ct (the monthly
+    # product 6300 / 21 = 300 ct per working day is dearer, so a work stay pays the same 200 ct at the garage).
+    # shopping, lambda = 400 m: w = exp(-0.75) = 0.4723665527, expected = (180 + 0.4723665527 x 200) / 1.4723665527 =
+    # 186.416426 -> 186 ct, P_garage = 0.3208213008;
+    # work, lambda_c = 250 m: w = exp(-1.2) = 0.3011942119, expected = (180 + 0.3011942119 x 200) / 1.3011942119 =
+    # 184.629504 -> 185 ct, P_garage = 0.3011942119 / 1.3011942119 = 0.2314752165.
+    options = [(_garage(), 300.0)]
+    shop = _price(_street(), 36000, 39600, options, purpose="shop", decay_m=400.0, decay_commute_m=250.0)
+    work = _price(_street(), 36000, 39600, options, purpose="work", decay_m=400.0, decay_commute_m=250.0)
+    education = _price(_street(), 36000, 39600, options, purpose="education", decay_m=400.0, decay_commute_m=250.0)
+    assert shop[:2] == (186, cost.PAID_EXPECTED) and shop[2] == pytest.approx(0.3208213008, abs=1e-9)
+    assert work[:2] == (185, cost.PAID_EXPECTED) and work[2] == pytest.approx(0.2314752165, abs=1e-9)
+    assert education == work
+    # the unrounded expectation of the work stay: the commuter decay acts, not the visitor decay
+    detail = cost.parking_cost_with_garages_detail(_street(), 36000, 39600, purpose="work", parking_free=False,
+                                                   resident_of_zone=False, garage_options=options, decay_m=400.0,
+                                                   decay_commute_m=250.0)
+    assert detail.expected_cents == pytest.approx(184.629504, abs=1e-6)
+
+
+def test_a_commuter_decay_of_zero_switches_the_garages_off_for_work_and_education_only():
+    options = [(_garage(), 300.0)]
+    work = _price(_street(), 36000, 39600, options, purpose="work", decay_m=400.0, decay_commute_m=0.0)
+    shop = _price(_street(), 36000, 39600, options, purpose="shop", decay_m=400.0, decay_commute_m=0.0)
+    assert work == (180, cost.PAID_METERED, 0.0)
+    assert shop[:2] == (186, cost.PAID_EXPECTED)
+
+
+def test_a_visitor_decay_of_zero_switches_the_garages_off_for_the_visitor_purposes_only():
+    options = [(_garage(), 300.0)]
+    shop = _price(_street(), 36000, 39600, options, purpose="shop", decay_m=0.0, decay_commute_m=250.0)
+    work = _price(_street(), 36000, 39600, options, purpose="work", decay_m=0.0, decay_commute_m=250.0)
+    assert shop == (180, cost.PAID_METERED, 0.0)
+    assert work[:2] == (185, cost.PAID_EXPECTED)
+
+
+def test_the_commuter_decay_is_required_and_validated_like_the_visitor_decay():
+    with pytest.raises(TypeError, match="decay_commute_m"):
+        cost.parking_cost_with_garages(_street(), 36000, 39600, purpose="work", parking_free=False,
+                                       resident_of_zone=False, garage_options=[(_garage(), 0.0)], decay_m=DECAY_M)
+    for bad in (-1.0, float("nan"), float("inf"), True, "250"):
+        with pytest.raises(ValueError, match="decay_commute_m"):
+            _price(_street(), 36000, 39600, [(_garage(), 0.0)], purpose="shop", decay_commute_m=bad)
 
 
 def test_invalid_garage_options_are_refused():
@@ -526,7 +585,7 @@ def test_a_free_option_lowers_the_expected_cost_of_a_paid_street_stay_within_the
     assert probability == pytest.approx(0.3208213008, abs=1e-9)
     detail = cost.parking_cost_with_garages_detail(_street(), 36000, 39600, purpose="shop", parking_free=False,
                                                    resident_of_zone=False, garage_options=[(_free_garage(), 300.0)],
-                                                   decay_m=DECAY_M)
+                                                   decay_m=DECAY_M, decay_commute_m=DECAY_M)
     assert detail.expected_cents == pytest.approx(122.2522, abs=1e-4)
     # nearer is cheaper: d = 100 m: w = exp(-0.25) = 0.7788007831, expected = 180 / 1.7788007831 = 101.1918 -> 101 ct
     assert _price(_street(), 36000, 39600, [(_free_garage(), 100.0)])[0] == 101

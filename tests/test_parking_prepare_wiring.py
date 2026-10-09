@@ -167,7 +167,8 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
         "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
-        "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_max_distance_m": 1000.0,
+        "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": None,
+        "parking_garage_max_distance_m": 1000.0,
         "parking_garage_monthly_imputation": True}
 
 
@@ -186,6 +187,14 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     ({"parking_garage_decay_m": -1.0}, "garage_decay_m must be a finite number of metres >= 0.*parking_garage_decay_m"),
     ({"parking_garage_decay_m": "400"}, "garage_decay_m must be a finite number"),
     ({"parking_garage_decay_m": float("nan")}, "garage_decay_m must be a finite number"),
+    # spec Amendment H1: the commuter decay is metres >= 0, a number and no bool; it is required (never defaulted to lambda)
+    # whenever the garage options are on
+    ({"parking_garage_decay_commute_m": -1.0}, "garage_decay_commute_m must be a finite number of metres >= 0.*"
+                                              "parking_garage_decay_commute_m"),
+    ({"parking_garage_decay_commute_m": "250"}, "garage_decay_commute_m must be a finite number"),
+    ({"parking_garage_decay_commute_m": float("nan")}, "garage_decay_commute_m must be a finite number"),
+    ({"parking_garage_decay_commute_m": True}, "garage_decay_commute_m must be a finite number"),
+    ({"parking_garage_decay_m": 400.0}, "garage_decay_commute_m is not given.*parking_garage_decay_commute_m"),
     ({"parking_garage_max_distance_m": 0.0}, "garage_max_distance_m must be a finite number of metres > 0"),
     ({"parking_garage_max_distance_m": True}, "garage_max_distance_m must be a finite number"),
     # spec Amendment F3: the imputation switch is a YAML boolean; the text "false" is truthy and must not keep it on silently
@@ -193,7 +202,8 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     ({"parking_garage_monthly_imputation": 0}, "parking_garage_monthly_imputation must be true or false"),
 ], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
         "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds", "negative_decay",
-        "text_decay", "nan_decay", "zero_maximum_distance", "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
+        "text_decay", "nan_decay", "negative_commute_decay", "text_commute_decay", "nan_commute_decay",
+        "boolean_commute_decay", "commute_decay_missing_while_the_options_are_on", "zero_maximum_distance", "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
@@ -247,29 +257,43 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     assert model["resident_districts"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["resident_districts"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        3, "2026-09-29", "until_fee_end")
+        4, "2026-09-29", "until_fee_end")
     # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum
     # distance 1000 m (spec Amendment E6).
     fixture_model = json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))
     assert model["garages"] == fixture_model["garages"] and len(model["garages"]) == 19
-    assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (0.0, 1000.0)
+    assert (model["garage_decay_m"], model["garage_decay_commute_m"], model["garage_max_distance_m"]) == (0.0, 0.0, 1000.0)
 
 
 def test_on_execute_writes_the_configured_garage_parameters_into_the_model_and_the_report(tmp_path, monkeypatch, capsys):
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0,
-                                       parking_garage_max_distance_m=800.0)
+                                       parking_garage_decay_commute_m=250.0, parking_garage_max_distance_m=800.0)
     prepare.execute(context)
     model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
-    assert (model["garage_decay_m"], model["garage_max_distance_m"]) == (400.0, 800.0)
+    assert (model["garage_decay_m"], model["garage_decay_commute_m"], model["garage_max_distance_m"]) == (
+        400.0, 250.0, 800.0)
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert (report["garages_listed"], report["garages_priced"], report["garage_decay_m"],
-            report["garage_max_distance_m"]) == (19, 19, 400.0, 800.0)
+            report["garage_decay_commute_m"], report["garage_max_distance_m"]) == (19, 19, 400.0, 250.0, 800.0)
     [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
     assert "garages priced 19 of 19 listed" in line and "garage options ON" in line
+    assert "commuter decay length 250 m" in line
+
+
+def test_a_commuter_decay_of_zero_is_written_and_named_in_the_log_line(tmp_path, monkeypatch, capsys):
+    # 0 switches the garage options off for work and education only (ASSUMPTION G1-c); it is explicit in model and log
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0,
+                                       parking_garage_decay_commute_m=0.0)
+    prepare.execute(context)
+    model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
+    assert (model["garage_decay_m"], model["garage_decay_commute_m"]) == (400.0, 0.0)
+    [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
+    assert "commuter decay length 0 m (commuter garage options OFF)" in line
 
 
 def test_garage_options_without_a_priced_garage_fail_instead_of_pricing_nothing(tmp_path, monkeypatch):
-    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0)
+    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, parking_garage_decay_m=400.0,
+                                  parking_garage_decay_commute_m=250.0)
     unpriced = context.stages[PARKING_STAGE]["garages"].iloc[0:0]
     context.stages[PARKING_STAGE]["garages"] = unpriced
     with pytest.raises(ValueError, match="no priced garage"):
@@ -314,7 +338,8 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 18, "resident_districts": 3,
                       "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
-                      "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_max_distance_m": 1000.0,
+                      "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_decay_commute_m": 0.0,
+                      "garage_max_distance_m": 1000.0,
                       "garage_monthly_imputation": True,
                       "garage_monthly_products": parking_garages.monthly_summary(
                           context.stages[PARKING_STAGE]["garages"], imputation=True),

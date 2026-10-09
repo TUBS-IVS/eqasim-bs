@@ -218,7 +218,8 @@ def test_sources_satisfy_the_tariff_model_contract_of_the_preparation(fixture_da
     """braunschweig.matsim.simulation.prepare hands exactly these entries to build_tariff_model."""
     release = _release(fixture_data)
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28",
-                                             sources=release["sources"], garages=release["garages"], garage_decay_m=400.0)
+                                             sources=release["sources"], garages=release["garages"], garage_decay_m=400.0,
+                                             garage_decay_commute_m=250.0)
     assert model["sources"] == release["sources"]
     assert sorted(model["zones"]) == sorted(FIXTURE_ZONE_IDS)
     assert len(model["garages"]) == FIXTURE_GARAGE_COUNT and model["garage_decay_m"] == 400.0
@@ -449,11 +450,11 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     # The committed garage dataset: 49 rows (36 garages, 13 surface lots), every one priced (specs E13 and E14), in EPSG:25832.
     assert len(release["garages"]) == 49 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64
-    # The committed release exports as the schema-3 tariff model the preparation writes: with the decay 0 (the garage
+    # The committed release exports as the schema-4 tariff model the preparation writes: with the decay 0 (the garage
     # options off) and with a decay value, both list the 49 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],
                                              garages=release["garages"])
-    assert model["schema_version"] == 3 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
+    assert model["schema_version"] == 4 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
     assert len(model["garages"]) == 49 and model["garage_decay_m"] == 0.0
 
 

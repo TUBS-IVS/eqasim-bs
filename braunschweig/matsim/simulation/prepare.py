@@ -84,6 +84,13 @@ PARKING_DEFAULTS = {
     # calibrated by scripts/parking/calibrate_garage_decay.py; 0 switches the garage options off. The default is 0: a
     # value is set only together with its calibration table (configs/base_bs.yml, parking_garage_decay_m).
     "parking_garage_decay_m": 0.0,
+    # ASSUMPTION G1-c (spec Amendment H1): the decay length lambda_c in metres of the garage weights of work and education
+    # stays, calibrated by the same script on the SrV commuter share of the class bs_zentrum (configs/base_bs.yml,
+    # parking_garage_decay_commute_m). None = not given: allowed only while parking_garage_decay_m is 0 (the garage options
+    # are off altogether, the model then carries 0); it is never defaulted to lambda or to 0 while the garage options are on,
+    # so the preparation fails when a run sets parking_garage_decay_m and forgets this key. 0 switches the garage options off
+    # for work and education only.
+    "parking_garage_decay_commute_m": None,
     # ASSUMPTION G2 (spec Amendment E2): the maximum straight-line distance in metres from a destination to a garage
     # option.
     "parking_garage_max_distance_m": 1000.0,
@@ -206,11 +213,12 @@ def configure(context):
                                   context.config("parking_minimum_stay_min"),
                                   context.config("parking_garage_decay_m"),
                                   context.config("parking_garage_max_distance_m"),
-                                  context.config("parking_garage_monthly_imputation"))
+                                  context.config("parking_garage_monthly_imputation"),
+                                  context.config("parking_garage_decay_commute_m"))
 
 
 def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
-                              garage_max_distance_m=1000.0, garage_monthly_imputation=True):
+                              garage_max_distance_m=1000.0, garage_monthly_imputation=True, garage_decay_commute_m=None):
     """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
@@ -220,9 +228,11 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     date, the ISO format for text in another format. The minimum stay (L1) must be a whole number of minutes in
     ``[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]``, the range the Java side reads from plain digits; a bool is rejected
     although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute. The garage decay
-    length (G1; 0 = garage options off) must be a finite number of metres >= 0 and the maximum garage distance (G2) a
-    finite number of metres > 0, both numbers and no bool (``tariff_export.check_garage_parameters``). The monthly imputation
-    switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep the imputation on.
+    length (G1; 0 = garage options off) and the commuter decay length (G1-c; 0 = their garage options off) must be finite
+    numbers of metres >= 0 and the maximum garage distance (G2) a finite number of metres > 0, all numbers and no bool
+    (``tariff_export.check_garage_parameters``); the commuter decay is required as soon as the decay length is above 0. The
+    monthly imputation switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep
+    the imputation on.
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
@@ -233,9 +243,10 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
                          f"[0, {PARKING_MINIMUM_STAY_MAXIMUM_MIN}] (rule L1, ADR-0139; 0 prices the stays as before "
                          f"L1), got {minimum_stay_min!r}")
     try:
-        tariff_export.check_garage_parameters(garage_decay_m, garage_max_distance_m)
+        tariff_export.check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_commute_m)
     except ValueError as error:
-        raise ValueError(f"{error} (config keys parking_garage_decay_m and parking_garage_max_distance_m)") from error
+        raise ValueError(f"{error} (config keys parking_garage_decay_m, parking_garage_decay_commute_m and "
+                         "parking_garage_max_distance_m)") from error
     if not isinstance(garage_monthly_imputation, bool):
         raise ValueError(f"parking_garage_monthly_imputation must be true or false (a YAML boolean), got "
                          f"{garage_monthly_imputation!r}")
@@ -399,12 +410,14 @@ def _write_parking_inputs(context, config_name):
     minimum_stay_min = context.config("parking_minimum_stay_min")
     release = context.stage("braunschweig.parking.zones_stage")
     garage_decay_m = context.config("parking_garage_decay_m")
+    garage_decay_commute_m = context.config("parking_garage_decay_commute_m")
     garage_max_distance_m = context.config("parking_garage_max_distance_m")
     garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],
-                                             garage_decay_m=garage_decay_m, garage_max_distance_m=garage_max_distance_m,
+                                             garage_decay_m=garage_decay_m, garage_decay_commute_m=garage_decay_commute_m,
+                                             garage_max_distance_m=garage_max_distance_m,
                                              garage_monthly_imputation=garage_monthly_imputation)
     monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
     print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION P13): %s"
@@ -420,17 +433,21 @@ def _write_parking_inputs(context, config_name):
               "resident_districts": len(model["resident_districts"]), "zone_types": zone_types,
               "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
               "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
-              "garage_decay_m": model["garage_decay_m"], "garage_max_distance_m": model["garage_max_distance_m"],
+              "garage_decay_m": model["garage_decay_m"], "garage_decay_commute_m": model["garage_decay_commute_m"],
+              "garage_max_distance_m": model["garage_max_distance_m"],
               "garage_monthly_imputation": garage_monthly_imputation, "garage_monthly_products": monthly_products,
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
     print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
-          "%d min; garages priced %d of %d listed, decay length %s m (%s), maximum distance %s m; tariff model %s, "
+          "%d min; garages priced %d of %d listed, decay length %s m (%s), commuter decay length %s m (%s), maximum "
+          "distance %s m; tariff model %s, "
           "module %s in %s, report %s" % (
               len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
               len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, len(model["garages"]),
               len(release["garages"]), model["garage_decay_m"],
               "garage options ON" if model["garage_decay_m"] > 0 else "garage options OFF",
+              "%g" % model["garage_decay_commute_m"],
+              "commuter garage options ON" if model["garage_decay_commute_m"] > 0 else "commuter garage options OFF",
               model["garage_max_distance_m"], tariffs_name, PARKING_MODULE, config_name, report_name))
 
 

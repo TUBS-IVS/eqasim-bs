@@ -1,4 +1,4 @@
-"""Build the parking tariff model JSON (schema 3) that the Java parking cost model reads (issues #249, #436).
+"""Build the parking tariff model JSON (schema 4) that the Java parking cost model reads (issues #249, #436).
 
 The tariff table (design spec section 5.3: money in euros, fee hours as decimal hours of the weekday) is
 converted ONCE, here, into integer euro cents and integer seconds after midnight; the Java side reads only
@@ -18,6 +18,12 @@ cents, minutes and seconds, the tiers, bands and first-period window where the g
 cents), ``garage_decay_m`` (the decay length lambda in metres; 0 switches the garage options off, E6) and
 ``garage_max_distance_m`` (D_max, ASSUMPTION G2). A model built without a garage dataset lists no garages and carries a decay
 of 0; schema 1 and 2 files still load and price as before (the Java reader treats the three keys as absent there).
+
+Schema 4 (spec Amendment H, Task 4h) adds the top-level key ``garage_decay_commute_m`` (the decay length lambda_c in metres of
+the stays with a commuter purpose, work and education; ASSUMPTION G1-c; 0 switches the garage options off for those purposes).
+``garage_decay_m`` then governs every other purpose. Schema 1 to 3 files still load and price as before: a schema-3 file has
+no commuter decay and the reader uses ``garage_decay_m`` for every purpose there, as schema 3 always did
+(``garage_decays_from_model``).
 
 Spec Amendment F (monthly products for commuters at garages) changes no key and no schema: the ``monthly_cents`` of a garage
 entry is the published monthly product of the dataset (``monthly_eur``) or, where the garage has none and the imputation is on
@@ -60,9 +66,12 @@ from braunschweig.parking.cost import (GARAGE_MAX_DISTANCE_M, SECONDS_PER_DAY, Z
 
 log = logging.getLogger(__name__)
 
-#: 3 since the garage options of parking cost zones v2 (spec Amendment E, issue #436): the model gained ``garages``,
-#: ``garage_decay_m`` and ``garage_max_distance_m``; 2 added the optional schema-2 keys of the zone entries.
-SCHEMA_VERSION = 3
+#: 4 since the separate commuter decay length (spec Amendment H, issue #436): the model gained ``garage_decay_commute_m``;
+#: 3 added ``garages``, ``garage_decay_m`` and ``garage_max_distance_m`` (spec Amendment E); 2 added the optional schema-2 keys
+#: of the zone entries.
+SCHEMA_VERSION = 4
+#: The first schema version whose model carries ``garage_decay_commute_m``.
+COMMUTER_DECAY_SCHEMA_VERSION = 4
 CURRENCY = "EUR"
 #: Assumption T1. The only rule implemented; the config key ``parking_terminal_stay_rule`` is reserved.
 TERMINAL_STAY_RULE_UNTIL_FEE_END = "until_fee_end"
@@ -230,10 +239,25 @@ ASSUMPTIONS_REGISTER = (
     Assumption("G1", "A car stay in a paid zone has the options street (weight 1) and every priced garage within the maximum "
                "distance, weight exp(-d / lambda) with d the straight-line distance in metres (a gravity-type choice by "
                "distance); the price of the stay is the probability-weighted mean of the option costs (an expected cost, no "
-               "random draw), the price does not enter the weights and capacity or occupancy are not modelled",
+               "random draw), the price does not enter the weights and capacity or occupancy are not modelled; lambda is "
+               "garage_decay_m for every purpose but work and education, whose stays use lambda_c (G1-c)",
                "Stays in street_paid and resident_zone zones with a garage in range (never campus zones, never a stay that "
                "is free by an early rule or whose street option costs 0)",
                "garage_decay_m (0 switches the garage options off; lambda is calibrated, see G3)"),
+    Assumption("G1-c", "The decay length of the garage weights of a stay with a commuter purpose (work, education) is lambda_c "
+               "(garage_decay_commute_m), separate from the lambda of every other purpose: the SrV parking questions support "
+               "exactly two groups (the usual place at work or education per workplace class, and the usual place in the "
+               "Braunschweig city centre), so one decay length for both is calibrated on the city-centre visitors and "
+               "overstates the commuter garage share. lambda_c is calibrated, not estimated, on the work and education "
+               "activities inside bs_zone_ia and bs_zone_ib that do not carry parkingFree, to the SrV commuter garage share "
+               "garage_large_lot / (garage_large_lot + street) of the workplace class bs_zentrum "
+               "(srv2023_commute_parking_by_workplace_class), a calibration target and no validation; the independent check "
+               "is the same share for the Wolfsburg row 03103 over the work and education activities without parkingFree in "
+               "the Wolfsburg zones, a number and no validation; 0 switches the garage options off for work and education; "
+               "there is no default to lambda",
+               "Stays with the purposes work and education that have a garage option (never campus zones, never a stay that "
+               "is free by an early rule or whose street option costs 0)",
+               "garage_decay_commute_m (config parking_garage_decay_commute_m; 0 switches the commuter garage options off)"),
     Assumption("G2", "A garage is an option of a stay when its straight-line distance to the destination (EPSG:25832) is at "
                "most 1000 m", "Garages far from a destination carry a small weight (exp(-d / lambda)) but widen the option "
                "set; a garage just inside the limit is an option, one just outside is none",
@@ -245,7 +269,8 @@ ASSUMPTIONS_REGISTER = (
                "centre (srv2023_city_center_parking, rows garage_large_lot and street); the same lambda applies in every "
                "town (transfer assumption); SrV asks residents about their usual place, the model averages over "
                "destinations; the garage share is therefore a calibration target and no validation; the value of a release "
-               "is recorded with its calibration table, and a model with garage_decay_m 0 has no garage options",
+               "is recorded with its calibration table, and a model with garage_decay_m 0 has no garage options for the "
+               "purposes it governs; the commuter decay is calibrated separately (G1-c)",
                "Every stay with a garage option", "garage_decay_m"),
     # Parking cost zones v2, Amendment C3: the resident parking districts, a layer of their own, and where their permits
     # are valid (ruling R-T1e-a).
@@ -644,23 +669,49 @@ def _log_monthly_products(garages, summary: dict, monthly_imputation: bool) -> N
                      "P13) of the dataset are not used (sensitivity arm 'published only')", available)
 
 
-def check_garage_parameters(garage_decay_m, garage_max_distance_m) -> None:
-    """Raise ``ValueError`` unless ``garage_decay_m`` is a finite number of metres >= 0 (0 switches the garage options off)
-    and ``garage_max_distance_m`` a finite number of metres > 0; a bool is no number. Shared by the export and the
-    configure-time check of ``braunschweig.matsim.simulation.prepare``."""
+def check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_commute_m=None) -> None:
+    """Raise ``ValueError`` unless ``garage_decay_m`` is a finite number of metres >= 0 (0 switches the garage options off
+    for the purposes it governs), ``garage_max_distance_m`` a finite number of metres > 0 and ``garage_decay_commute_m`` (the
+    decay of work and education, ASSUMPTION G1-c) a finite number of metres >= 0; a bool is no number. A positive
+    ``garage_decay_m`` requires ``garage_decay_commute_m`` to be given: the commuter decay is never defaulted to lambda
+    (None is accepted only while ``garage_decay_m`` is 0, i.e. the garage options are off altogether). Shared by the export and
+    the configure-time check of ``braunschweig.matsim.simulation.prepare``."""
     for name, value, minimum_exclusive in (("garage_decay_m", garage_decay_m, False),
-                                           ("garage_max_distance_m", garage_max_distance_m, True)):
+                                           ("garage_max_distance_m", garage_max_distance_m, True),
+                                           ("garage_decay_commute_m", garage_decay_commute_m, False)):
+        if name == "garage_decay_commute_m" and value is None:
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or (
                 value <= 0 if minimum_exclusive else value < 0):
             raise ValueError(f"{name} must be a finite number of metres {'> 0' if minimum_exclusive else '>= 0'}"
                              f"{'' if minimum_exclusive else ' (0 switches the garage options off)'}, got {value!r}")
+    if garage_decay_commute_m is None and garage_decay_m > 0:
+        raise ValueError(f"garage_decay_commute_m is not given while garage_decay_m is {garage_decay_m}: the decay length of "
+                         "work and education stays (ASSUMPTION G1-c) is never defaulted to garage_decay_m; set it "
+                         "(0 switches the garage options off for work and education)")
+
+
+def garage_decays_from_model(model: Mapping) -> tuple[float, float]:
+    """``(garage_decay_m, garage_decay_commute_m)`` of a tariff model of any schema (the Python reference of the Java reader).
+    A schema-3 model (or older) has no commuter decay and ``garage_decay_m`` governs every purpose, as schema 3 always did;
+    a model of schema 4 or later without ``garage_decay_commute_m`` is invalid (``ValueError``); a model without any garage
+    parameter (schema 1 or 2) has the options off (0, 0)."""
+    version = model["schema_version"]
+    decay_m = float(model.get("garage_decay_m", 0.0))
+    if version < COMMUTER_DECAY_SCHEMA_VERSION:
+        return decay_m, decay_m
+    if "garage_decay_commute_m" not in model:
+        raise ValueError(f"tariff model of schema {version} has no garage_decay_commute_m: it is required from schema "
+                         f"{COMMUTER_DECAY_SCHEMA_VERSION} on and is never defaulted to garage_decay_m")
+    return decay_m, float(model["garage_decay_commute_m"])
 
 
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
                        terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END,
                        resident_districts: pd.DataFrame | None = None, garages=None, garage_decay_m: float = 0.0,
-                       garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M, garage_monthly_imputation: bool = True) -> dict:
-    """The tariff model of spec 5.4 (schema 3) for a tariff table with the spec 5.3 columns.
+                       garage_decay_commute_m: float | None = None, garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M,
+                       garage_monthly_imputation: bool = True) -> dict:
+    """The tariff model of spec 5.4 (schema 4) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
@@ -670,7 +721,10 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     the release (``resident_district_entries``): the model lists its ids for the plan check of the Java side, an empty
     list when none is given. ``garages`` is the garage dataset of the release (``garage_entries``: the priced garages, sorted
     by id, None = no garage dataset); ``garage_decay_m`` is the decay length lambda in metres (ASSUMPTION G1, calibrated;
-    0 = garage options off) and ``garage_max_distance_m`` the maximum distance D_max (G2, > 0). ``garage_monthly_imputation``
+    0 = garage options off) of every purpose but work and education; ``garage_decay_commute_m`` is the decay length lambda_c
+    in metres of their stays (ASSUMPTION G1-c, spec Amendment H1; 0 = their garage options off), required whenever
+    ``garage_decay_m`` is above 0 (never defaulted to lambda), 0 when both are off; ``garage_max_distance_m`` is the maximum
+    distance D_max (G2, > 0). ``garage_monthly_imputation``
     (spec Amendment F3, config key ``parking_garage_monthly_imputation``) lets a garage without a published monthly product use
     the imputed one of ASSUMPTION P13, which the model then lists in its register; the counts per municipality (published,
     imputed, none, median) are logged. Raises ``ValueError`` for an
@@ -684,16 +738,19 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     check_snapshot_date(snapshot_date)
     checked_sources = _check_sources(sources)
     district_entries = resident_district_entries(resident_districts)
-    check_garage_parameters(garage_decay_m, garage_max_distance_m)
+    check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_commute_m)
+    if garage_decay_commute_m is None:
+        garage_decay_commute_m = 0.0   # both decays are off (checked above): the explicit value of the model
     if not isinstance(garage_monthly_imputation, bool):
         raise ValueError(f"garage_monthly_imputation must be true or false, got {garage_monthly_imputation!r}")
     garage_list = garage_entries(garages, monthly_imputation=garage_monthly_imputation)
     monthly_summary = monthly_product_summary(garages, garage_monthly_imputation)
     _log_monthly_products(garages, monthly_summary, garage_monthly_imputation)
     monthly_imputed_used = any(entry["imputed"] for entry in monthly_summary.values())
-    if garage_decay_m > 0 and not garage_list:
-        raise ValueError(f"garage_decay_m is {garage_decay_m} (the garage options are on) but the release lists no priced "
-                         "garage: set garage_decay_m to 0 or give the garage dataset (parking_garages_path)")
+    if (garage_decay_m > 0 or garage_decay_commute_m > 0) and not garage_list:
+        raise ValueError(f"garage_decay_m is {garage_decay_m} and garage_decay_commute_m {garage_decay_commute_m} (the garage "
+                         "options are on) but the release lists no priced garage: set both to 0 or give the garage dataset "
+                         "(parking_garages_path)")
     missing = [column for column in REQUIRED_COLUMNS if column not in tariffs.columns]
     if missing:
         raise ValueError(f"tariff table is missing the columns {missing}; spec 5.3 requires {list(REQUIRED_COLUMNS)}")
@@ -706,13 +763,13 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
             raise ValueError(f"tariff table has a duplicate zone_id {zone.zone_id!r}")
         zones[zone.zone_id] = zone_to_json(zone)
     family = sorted(zone_id for zone_id, entry in zones.items() if entry["garage_hourly_rate_cents"] is not None)
-    if garage_decay_m > 0 and family:
+    if (garage_decay_m > 0 or garage_decay_commute_m > 0) and family:
         # E8: the zone-level garage family is superseded when garage options act; production tables have none. Counted and
         # named, so a table that still carries it is never priced under a reading nobody noticed.
-        log.warning("[parking-garages] %d of %d zone rows carry zone-level garage columns (%s) while garage_decay_m is %g: with "
-                    "garage options the zone-level garage family is superseded (spec Amendment E8) and priced by the "
-                    "garage options only; the production tariff table has none", len(family), len(zones),
-                    ", ".join(family), garage_decay_m)
+        log.warning("[parking-garages] %d of %d zone rows carry zone-level garage columns (%s) while garage_decay_m is %g and "
+                    "garage_decay_commute_m %g: with garage options the zone-level garage family is superseded (spec "
+                    "Amendment E8) and priced by the garage options only; the production tariff table has none", len(family),
+                    len(zones), ", ".join(family), garage_decay_m, garage_decay_commute_m)
     return {
         "schema_version": SCHEMA_VERSION,
         "tariff_snapshot_date": snapshot_date,
@@ -725,6 +782,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         "resident_districts": district_entries,
         "garages": garage_list,
         "garage_decay_m": float(garage_decay_m),
+        "garage_decay_commute_m": float(garage_decay_commute_m),
         "garage_max_distance_m": float(garage_max_distance_m),
         "zones": zones,
     }

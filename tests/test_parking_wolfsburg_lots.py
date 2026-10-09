@@ -1139,10 +1139,10 @@ def test_a_committed_free_option_lowers_the_expected_cost_of_a_paid_street_stay_
     # P_garage = w / (1 + w) = 0.2227001388, expected = 180 / 1.2865047969 = 139.91 -> 140 ct (the street alone: 180 ct)
     street = _street_zone()
     assert cost.parking_cost_with_garages(street, _hms(10), _hms(11), purpose="shop", parking_free=False,
-                                          resident_of_zone=False)[0] == 180
+                                          resident_of_zone=False, decay_commute_m=400.0)[0] == 180
     cents, outcome, probability = cost.parking_cost_with_garages(
         street, _hms(10), _hms(11), purpose="shop", parking_free=False, resident_of_zone=False, garage_options=options,
-        decay_m=400.0)
+        decay_m=400.0, decay_commute_m=400.0)
     assert (cents, outcome) == (140, cost.PAID_EXPECTED) and probability == pytest.approx(0.2227001388, abs=1e-9)
 
 
@@ -1153,12 +1153,13 @@ def test_a_committed_free_option_alone_never_makes_a_street_free_stay_cost_anyth
     # before the street fee window (09:00-20:00) and after it the street is free: nobody pays a garage, a free one adds nothing
     for arrival_s, departure_s in ((_hms(7), _hms(8)), (_hms(21), _hms(22))):
         assert cost.parking_cost_with_garages(street, arrival_s, departure_s, purpose="shop", parking_free=False,
-                                              resident_of_zone=False, garage_options=options, decay_m=400.0) == (
+                                              resident_of_zone=False, garage_options=options, decay_m=400.0,
+                                              decay_commute_m=400.0) == (
             0, cost.OUTSIDE_FEE_HOURS, 0.0)
     # a priced option beside the free ones never changes a free street either (the Autostadt would cost 100 ct)
     paid = options + [(_tariff(committed, "wob_lot_1900571"), 0.0)]
     assert cost.parking_cost_with_garages(street, _hms(7), _hms(8), purpose="shop", parking_free=False, resident_of_zone=False,
-                                          garage_options=paid, decay_m=400.0)[0] == 0
+                                          garage_options=paid, decay_m=400.0, decay_commute_m=400.0)[0] == 0
 
 
 def test_the_committed_qa_table_has_one_row_per_wolfsburg_point_and_the_zone_check_is_nine_of_nine(committed, committed_qa):
