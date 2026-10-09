@@ -355,10 +355,25 @@ run (see Status).
       10 m and 0.8861 at 5,000 m). lambda is unchanged (396.19 m, 340 activities, target 0.736196, achieved 0.736279). Both
       values are in the committed table `parking_garage_decay_calibration_2026.csv` (code state d459675e, clean tree); the
       config keys `parking_garage_decay_m` and `parking_garage_decay_commute_m` of `configs/base_bs.yml` and the two popsim
-      fixtures equal its rows `decay_length_m` and `decay_commute_length_m` (a test requires both equalities). The city-centre
-      target of lambda stays free-inclusive (`garage_large_lot / (garage_large_lot + street)`): its model universe, the
-      destination universe of E5, applies no early rule, so it has no payers-only form and the question of ruling R-4h-1 does not
-      arise there; that this asymmetry is acceptable is an assumption, not a finding.
+      fixtures equal its rows `decay_length_m` and `decay_commute_length_m` (a test requires both equalities). Payer composition of the target:
+      the bs_zentrum payers (share_paid_total 0.2062 of the commuters of the class) are 46.8 % paid garage or large lot (0.0965),
+      22.1 % paid street (0.0456), 28.1 % paid employer or institution lot (0.0580) and 3.0 % paid other place (0.0061). The
+      target is the share among the street and garage payers only, 0.0965 / (0.0965 + 0.0456) = 0.679; the alternative, the
+      paid garage share over ALL payers, would be 0.0965 / 0.2062 = 0.468. The conditional share is used because the model
+      has no employer-lot and no other-place option: its payers choose between the street and the garages only (the
+      employer-lot users are handled by the free-parking draw and the early rules, which are outside the garage choice), so a
+      denominator with the 31 % of payers at employer lots and other places would ask the garage weights to reproduce a share
+      of a choice set that the model does not have. That choice is an assumption; lambda_c under the alternative target was not
+      computed and its sensitivity is not stated.
+      Why lambda keeps the free-inclusive city-centre target (`garage_large_lot / (garage_large_lot + street)` = 0.736): the
+      destination universe of E5 applies no early rule and no free draw, so the free parkers of the SrV denominator have
+      counterparts in the model universe (every destination counts, none is removed as free); this is the reason the question
+      of ruling R-4h-1 does not arise there in the same form. It is NOT like-for-like in other respects: the universe is all
+      modes and all non-commuting purposes at destinations in Ia and Ib, the SrV question is about car drivers who drive to the
+      city centre, and no mechanism ties the share of free parking that the rule-free universe implicitly contains to the SrV
+      free share of 0.167 (1 - paid_share_overall 0.8333). So the
+      free-inclusive target of lambda is a documented assumption with a known remaining mismatch, not a finding that it is
+      like-for-like.
     - **Revision of the target (ruling R-4h-1, review of Task 4h, 2026-10-09); the first H2 value is superseded.** The first
       version of H2 calibrated lambda_c on the free-inclusive share 0.1923 / (0.1923 + 0.2225) = 0.463597 and gave lambda_c =
       191.52 m (achieved 0.463645) and a Wolfsburg check of 0.348737 against 0.638740 (18 activities); that value was committed in

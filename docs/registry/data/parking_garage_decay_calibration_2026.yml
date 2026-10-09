@@ -68,8 +68,15 @@ limitations: |
   (0.0965 + 0.0456) = 0.6791 of the class bs_zentrum (ruling R-4h-1: the universe is the work and education activities in the
   same two zones that do not carry parkingFree, i.e. the payers: 54 activities; 191 more carry parkingFree and are left out, 245
   in total; the free-inclusive share 0.1923 / (0.1923 + 0.2225) = 0.4636 has free parkers in its denominator and is not used).
-  The paid cells are small (29 paid garage and 13 paid street respondents in bs_zentrum), so the target carries a wide
-  sampling uncertainty that is not quantified. SrV asks residents about their usual place, the model averages over the
+  The payers of bs_zentrum (share_paid_total 0.2062) are 46.8 % paid garage or large lot, 22.1 % paid street, 28.1 % paid
+  employer lot and 3.0 % paid other place; the target is conditional on the street and garage payers (0.0965 / (0.0965 +
+  0.0456)), because the model has no employer-lot or other-place option; the paid garage share over all payers would be
+  0.0965 / 0.2062 = 0.468 (an alternative that is not used and whose effect on lambda_c was not computed). The paid cells are
+  small (29 paid garage and 13 paid street respondents in bs_zentrum), so the target carries a wide sampling uncertainty that
+  is not quantified. lambda keeps the free-inclusive city-centre target: its universe (E5) has no early rule and no free draw,
+  so the free parkers of the SrV denominator have counterparts there; it remains not like-for-like in other respects (all modes
+  and purposes at destinations against car drivers to the city centre; no mechanism ties the rule-free share to the SrV free
+  share 0.167). SrV asks residents about their usual place, the model averages over the
   destinations of all persons of the plans (universe caveat, spec E5 and H2), and the bs_zentrum class covers the whole
   Oberbezirk Zentrum, wider than the two zones. The garage probability is the choice share of the options (weights exp(-d /
   decay), street 1, garages within 1000 m), without price, early rules or E4. Independent check on the same plans (H3b): the
@@ -88,48 +95,6 @@ limitations: |
   was committed once (160a4dc8) and is not used. The earlier commuter number (0.7142 over 245 activities at the single lambda,
   the pre-registered expected miss of ADR-0140 decision 7) belongs to the one-decay state of the table of 2026-10-09 (commit
   26a56cca) and is superseded as well.
-notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: no stage reads the table, the config value
-    parking_garage_decay_m and parking_garage_decay_commute_m carry its result. tests/test_parking_garage_decay_config.py
-    requires parking_garage_decay_m to equal decay_length_m and parking_garage_decay_commute_m to equal decay_commute_length_m
-    of the table once it exists, and both to be 0 while it does not; tests/test_parking_garage_calibration.py
-    pins the script on a synthetic universe (a known lambda, an unreachable target, the universe of E5, the table).
-requirements:
-  synthesis: not_needed
-  matsim: not_needed
-  production: optional
-licensing:
-  license: >-
-    own derived scalar aggregate: the table holds lambda, counts and SHA-256 hashes only, no microdata and no
-    geometry. Its inputs include the two restricted local-only files parking_zones_2026 and parking_garages_2026
-    (see their data records) besides the committed SrV tables and the plans of the reference scenario.
-    Redistribution of this aggregate is allowed (owner decision 2026-10-08: only the three geometry files stay out
-    of the repository).
-  restricted: false
-  redistribution: allowed
-limitations: |
-  Calibration, not validation: the table reports the check below as a number and never as agreement. Two targets: lambda
-  against the SrV share 0.708 / (0.708 + 0.2537) = 0.736 of garages and large lots among the Braunschweig residents who park
-  on the street or in a garage when they drive to the city centre (all stays of the universe of 340 activities outside home,
-  work and education in bs_zone_ia and bs_zone_ib), and lambda_c against the SrV commuter garage share 0.1923 / (0.1923 +
-  0.2225) = 0.4636 of the class bs_zentrum (the work and education activities in the same two zones that do not carry
-  parkingFree: 54 activities; 191 more carry parkingFree and leave the denominator, 245 in total). SrV asks residents about
-  their usual place, the model averages over the destinations of all persons of the plans (universe caveat, spec E5 and H2),
-  and the bs_zentrum class covers the whole Oberbezirk Zentrum, wider than the two zones. The garage probability is the choice
-  share of the options (weights exp(-d / decay), street 1, garages within 1000 m), without price, early rules or E4.
-  Independent check on the same plans (H3b): the mean garage probability at lambda_c of the 18 work and education activities
-  without parkingFree inside wob_tarifzone_1..3 (15 of them with a priced garage within 1000 m) is 0.3487 against the SrV
-  row 03103 share 0.1075 / (0.1075 + 0.0608) = 0.6387, 0.290 below; a number and no validation, the universe is small and the
-  cause of the difference is not established (ADR-0140 decision 12). The table checks no paid share (ruling R-5-4: the
-  zone-level paid share was blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run is
-  compared with the SrV by scripts/parking/compare_parking_targets.py. The same two decay lengths for every town are a transfer
-  assumption (G3). The values depend on the plans file they were calibrated on: another scenario gives other values. Both
-  universes are 1 % samples (12,567 persons), so lambda and especially lambda_c (54 activities) are coarse estimates and their
-  sampling uncertainty is not quantified. The script logs the mean garage probability at the two ends of both searches
-  (lambda: 0.0055 at 10 m, 0.8911 at 5,000 m; lambda_c: 0.0000 at 10 m, 0.8861 at 5,000 m, in the table header), so the mean
-  rises monotonically with the decay over that range; no local sensitivity around the results is stated. The earlier
-  commuter number (0.7142 over 245 activities at the single lambda, the pre-registered expected miss of ADR-0140 decision 7)
-  belongs to the one-decay state of the table of 2026-10-09 (commit 26a56cca) and is superseded by it.
 notes: |
   Result: lambda = 396.19 m (decay_length_m; target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736279,
   340 of 340 universe activities with a priced garage within 1,000 m, all 49 priced options of the dataset) and lambda_c =
