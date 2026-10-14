@@ -25,6 +25,7 @@ import hashlib
 import importlib
 import inspect
 import json
+import logging
 import math
 import shutil
 import os.path
@@ -37,6 +38,8 @@ import matsim.simulation.prepare as delegate
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules
 from braunschweig.parking import tariff_export
+
+log = logging.getLogger(__name__)
 
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
@@ -108,9 +111,10 @@ PARKING_DEFAULTS = {
     # utility per EUR, written into the tariff model as option_price_beta_u_per_eur. The default is the MAGNITUDE of the car
     # cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998 (eqasim-java-bs): one money
     # coefficient for the choice between parking options, without the income or distance elasticity of the person's whole
-    # utility (no local evidence identifies a separate parking price coefficient). The Java startup check of Task A7 refuses
-    # a tariff model whose value differs from the mode choice by more than 1e-9, 0 included (ruling R-A-17): 0 gives the
-    # price-independent weights of v2 in the Python reference and its calibration sensitivity, not in a MATSim run.
+    # utility (no local evidence identifies a separate parking price coefficient). The Java startup check
+    # ParkingOptionPriceBetaCheck refuses a tariff model whose value differs from the mode choice by more than 1e-9, 0
+    # included (ADR-0142 decision 2): 0 gives the price-independent weights of v2 in the Python reference and its calibration
+    # sensitivity, not in a MATSim run.
     "parking_option_price_beta_u_per_eur": 0.310998,
 }
 #: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
@@ -424,6 +428,24 @@ def _write_vrb_fare_inputs(context, config_name):
                            "field of the polygon layer" % (100 * facility_coverage, 100 * minimum))
 
 
+def _warn_if_decay_lengths_predate_the_price_term(garage_decay_m, garage_decay_commute_m, option_price_beta_u_per_eur):
+    """Warn when garage options with a price term use decay lengths that were fitted without one (ADR-0142 decision 2).
+
+    The committed decay lengths (``parking_garage_decay_m``, ``parking_garage_decay_commute_m``) were calibrated on
+    price-free weights (beta 0); the calibration record states no beta yet. With ``parking_option_price_beta_u_per_eur`` > 0
+    and a decay length > 0 the realised garage shares therefore differ from the calibrated ones. The warning is unconditional
+    on purpose (the simplest honest form): it disappears only when the calibration record states the beta it was fitted with
+    and this check compares the two. Never raises.
+    """
+    if option_price_beta_u_per_eur > 0 and (garage_decay_m > 0 or (garage_decay_commute_m or 0) > 0):
+        log.warning("[parking-garages] the garage decay lengths were fitted on price-free weights (beta 0) but the run uses "
+                    "parking_option_price_beta_u_per_eur %g, so the garage shares they reproduce differ from the calibrated "
+                    "ones: stale until the recalibration of Part B (ADR-0142 decision 2). Decay lengths: "
+                    "parking_garage_decay_m %g m, parking_garage_decay_commute_m %s m.",
+                    option_price_beta_u_per_eur, garage_decay_m,
+                    "%g" % garage_decay_commute_m if garage_decay_commute_m is not None else "not given")
+
+
 def _write_parking_inputs(context, config_name):
     """Tariff model, braunschweigParking config module and an inputs report for the zone-based parking costs.
 
@@ -449,6 +471,7 @@ def _write_parking_inputs(context, config_name):
     garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
     cost_factor = float(context.config("parking_cost_utility_factor"))
     option_price_beta_u_per_eur = float(context.config("parking_option_price_beta_u_per_eur"))
+    _warn_if_decay_lengths_predate_the_price_term(garage_decay_m, garage_decay_commute_m, option_price_beta_u_per_eur)
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],

@@ -304,7 +304,7 @@ def test_on_execute_writes_the_configured_garage_parameters_into_the_model_and_t
 @pytest.mark.parametrize("beta", [0.0, 0.5, 2.0], ids=["v2_weights", "half", "double"])
 def test_the_option_price_coefficient_is_written_into_the_model_the_report_and_the_log_line(
         tmp_path, monkeypatch, capsys, beta):
-    # Spec v3 A2 (ASSUMPTION G1-d, ruling R-A-7): the config key parking_option_price_beta_u_per_eur is the money coefficient
+    # Spec v3 A2 (ASSUMPTION G1-d, ADR-0142 decision 2): the config key parking_option_price_beta_u_per_eur is the money coefficient
     # of the option weights; it travels in the TARIFF MODEL (not as a module parameter: it is part of the tariff
     # state the Java reader checks against betaCost_u_MU) and is recorded in the inputs report and the log line.
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True,
@@ -321,10 +321,44 @@ def test_the_option_price_coefficient_is_written_into_the_model_the_report_and_t
 
 def test_the_option_price_coefficient_default_is_the_magnitude_of_the_mode_choice_cost_coefficient(tmp_path, monkeypatch):
     # 0.310998 = |BraunschweigModeParameters.betaCost_u_MU| (eqasim-java-bs): ASSUMPTION G1-d, no income or distance term. The
-    # Java startup check of Task A7 refuses a tariff model whose value differs by more than 1e-9.
+    # Java startup check ParkingOptionPriceBetaCheck refuses a tariff model whose value differs by more than 1e-9.
     assert prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     assert context.declared_config["parking_option_price_beta_u_per_eur"] == 0.310998
+
+
+STALE_DECAY_WARNING = "decay lengths were fitted on price-free weights"
+
+
+@pytest.mark.parametrize("values", [
+    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57},
+    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 0.0},
+    {"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 261.57}],
+    ids=["both", "only_the_general_decay", "only_the_commuter_decay"])
+def test_a_decay_length_with_a_price_term_warns_that_the_calibration_is_price_free(tmp_path, monkeypatch, caplog, values):
+    # ADR-0142 decision 2: the committed decay lengths were fitted WITHOUT the price term (beta 0); with beta > 0 they are
+    # stale until the recalibration of Part B. The preparation says so in the log, never silently.
+    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, **values)
+    with caplog.at_level("WARNING", logger=prepare.log.name):
+        prepare.execute(context)
+    [record] = [record for record in caplog.records if STALE_DECAY_WARNING in record.getMessage()]
+    assert record.levelname == "WARNING"
+    message = record.getMessage()
+    assert "parking_option_price_beta_u_per_eur 0.310998" in message
+    assert "recalibration of Part B (ADR-0142 decision 2)" in message
+
+
+@pytest.mark.parametrize("values", [
+    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57,
+     "parking_option_price_beta_u_per_eur": 0.0},
+    {},
+    {"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 0.0}],
+    ids=["beta_zero", "default_decays_zero", "options_off"])
+def test_no_stale_decay_warning_without_a_price_term_or_without_garage_options(tmp_path, monkeypatch, caplog, values):
+    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, **values)
+    with caplog.at_level("WARNING", logger=prepare.log.name):
+        prepare.execute(context)
+    assert not [record for record in caplog.records if STALE_DECAY_WARNING in record.getMessage()]
 
 
 def test_a_commuter_decay_of_zero_is_written_and_named_in_the_log_line(tmp_path, monkeypatch, capsys):

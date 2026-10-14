@@ -225,8 +225,8 @@ def test_the_outcome_names_are_the_python_reference_names(cmp):
 
 
 def test_no_feasible_option_is_classified_as_paid_because_the_model_prices_it_at_the_street_metered_cents(cmp):
-    # Spec v3 A1 / R-A-8: a stay without any feasible option is priced as the street at its metered price, so it counts as a
-    # paid call (like PAID_EXPECTED and the PAID_* calls that cost 0 ct, which keep the paid share an UPPER BOUND).
+    # Spec v3 A1 (ADR-0142 decision 1): a stay without any feasible option is priced as the street at its metered price, so it
+    # counts as a paid call (like PAID_EXPECTED and the PAID_* calls that cost 0 ct, which keep the paid share an UPPER BOUND).
     from braunschweig.parking import cost
     assert cost.NO_FEASIBLE_OPTION in cmp.PAID_OUTCOMES
     assert cost.NO_FEASIBLE_OPTION not in (*cmp.FREE_OUTCOMES, *cmp.OTHER_OUTCOMES)
@@ -785,13 +785,14 @@ def test_the_reader_parses_the_literal_reports_of_the_java_listener_test(cmp, tm
 
 
 def test_ev_exempt_is_classified_as_a_free_outcome_because_the_street_costs_nothing_by_the_ordinance(cmp):
-    # Spec v3 A5 / R-A-9: an EV-exempt stay pays 0 by its own rule (like RESIDENT_FREE), so it belongs to the free outcomes.
+    # Spec v3 A5 (ADR-0142 decision 5): an EV-exempt stay pays 0 by its own rule (like RESIDENT_FREE), so it belongs to the
+    # free outcomes.
     from braunschweig.parking import cost
     assert cost.EV_EXEMPT in cmp.FREE_OUTCOMES
     assert cost.EV_EXEMPT not in (*cmp.PAID_OUTCOMES, *cmp.OTHER_OUTCOMES)
 
 
-# ------------------------------------------------------------------------------- outcome report v4 (spec v3 A4, Task A8)
+# ------------------------------------------------------------------------------- outcome report v4 (spec v3 A4)
 
 #: The six v4 columns of the rows that matter below: the garage probability sum of a row splits into the part on PAID garage
 #: options and the part on FREE ones (sum = ``garage_probability_sum``), ``cost`` is the unscaled expected cost in cents

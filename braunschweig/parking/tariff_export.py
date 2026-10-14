@@ -36,12 +36,12 @@ the same kind of change: the model lists ASSUMPTION P14 (an imputed lot tariff) 
 schema 5 the register lists EVERY dataset assumption (P3 to P8, P10, P11) only when a priced garage row names it, like P13 and
 P14, and never the withdrawn ASSUMPTION P12 (garages.WITHDRAWN_ASSUMPTIONS states the withdrawal in the dataset documentation).
 
-Schema 5 (spec v3 A1, A2 and A5, issue #436, Task A6) adds three things, all of them keys of the Java reader of Task A7:
+Schema 5 (spec v3 A1, A2 and A5, issue #436) adds three things, all of them keys of the Java reader (ParkingTariffs):
 
 * the top-level key ``option_price_beta_u_per_eur`` (the money coefficient of the option weights exp(-d / lambda - beta * c /
   100) in utility per EUR, ASSUMPTION G1-d; a finite float >= 0, 0 = the price-independent weights of v2; config key
   ``parking_option_price_beta_u_per_eur``, the magnitude of the car cost coefficient ``betaCost_u_MU`` of the mode choice; a model
-  of schema 4 has no such key and its weights carry no price, ``option_price_beta_from_model``);
+  of schema 4 has no such key and its weights carry no price: the Java reader pins that rule);
 * the key ``max_stay_min`` of every garage entry (int >= 1 or null = no maximum, ASSUMPTION M3): read from a ``max_stay_min``
   column of the garage dataset where the dataset carries one (the dataset has it since spec v3 B, ruling R-B-2; a legacy
   fixture layout has none) and null otherwise;
@@ -90,8 +90,6 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 5
 #: The first schema version whose model carries ``garage_decay_commute_m``.
 COMMUTER_DECAY_SCHEMA_VERSION = 4
-#: The first schema version whose model carries ``option_price_beta_u_per_eur``.
-PRICE_WEIGHT_SCHEMA_VERSION = 5
 CURRENCY = "EUR"
 #: Assumption T1. The only rule implemented; the config key ``parking_terminal_stay_rule`` is reserved.
 TERMINAL_STAY_RULE_UNTIL_FEE_END = "until_fee_end"
@@ -862,19 +860,6 @@ def garage_decays_from_model(model: Mapping) -> tuple[float, float]:
         raise ValueError(f"tariff model of schema {version} has no garage_decay_commute_m: it is required from schema "
                          f"{COMMUTER_DECAY_SCHEMA_VERSION} on and is never defaulted to garage_decay_m")
     return decay_m, float(model["garage_decay_commute_m"])
-
-
-def option_price_beta_from_model(model: Mapping) -> float:
-    """``option_price_beta_u_per_eur`` of a tariff model of any schema: a Python stand-in for the Java reader (``ParkingTariffs``),
-    which implements the same rule independently; no pipeline stage calls it, the tests pin the rule. A model of schema 4 or
-    older has no such key and its option weights carry no price (0.0, as before schema 5); a model of schema 5 or later without
-    the key is invalid (``ValueError``), never defaulted."""
-    if model["schema_version"] < PRICE_WEIGHT_SCHEMA_VERSION:
-        return 0.0
-    if "option_price_beta_u_per_eur" not in model:
-        raise ValueError(f"tariff model of schema {model['schema_version']} has no option_price_beta_u_per_eur: it is required "
-                         f"from schema {PRICE_WEIGHT_SCHEMA_VERSION} on and is never defaulted")
-    return float(model["option_price_beta_u_per_eur"])
 
 
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],

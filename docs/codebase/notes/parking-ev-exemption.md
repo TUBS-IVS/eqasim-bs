@@ -85,5 +85,6 @@ is in `_ev_exempt_street` and in its Java counterpart and is pinned by the golde
 - A rule with a validity date before the snapshot date is exported as no exemption: a run with an older snapshot date prices
   differently from one with a newer one.
 - An exempt stay is free as a whole: the street option costs 0, so E4 applies and the garage and lot options carry no weight
-  (the stay is counted in the street-free counter, ruling R-A-12, until the report's `ev_exempt_count`). A stay above
+  (the Python counters count it as street-free, ADR-0142 decision 5; the Java outcome report v4 counts it in
+  `ev_exempt_count`). A stay above
   `ev_free_minutes` prices over the street and the options like everybody's.

@@ -287,7 +287,8 @@ python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV comp
 their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
 expected cost); the garage options are ON with the calibrated decay lengths `parking_garage_decay_m` (every purpose but work and
 education) and `parking_garage_decay_commute_m` (work and education) (calibrated on the plans of a server run, no
-validation; 0 switches them off for their purposes) and the parking search time is off. Version 3 (ADR-0142) adds three
+validation; 0 switches them off for their purposes; fitted without the price term (beta 0), stale until the recalibration of
+Part B, ADR-0142 decision 2) and the parking search time is off. Version 3 (ADR-0142) adds three
 config keys, all set in `configs/base_bs.yml` and only read when the flag is on:
 `parking_option_price_beta_u_per_eur` (utility per EUR, a finite number >= 0, default 0.310998, the magnitude of the car cost
 coefficient of the mode choice; the weight of a parking option falls with its own price; a release value, not a free

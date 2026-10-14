@@ -996,7 +996,7 @@ def test_the_ev_column_converts_into_the_tariff_field_and_a_campus_row_names_the
         te.tariff_row_to_zone(campus, snapshot_date=None)
 
 
-# ------------------------------------------------------------- schema 5: option_price_beta_u_per_eur (spec v3 A2, R-A-7)
+# ------------------------------------------------------------- schema 5: option_price_beta_u_per_eur (spec v3 A2)
 
 
 def test_the_model_carries_the_option_price_coefficient_as_a_float(table, sources):
@@ -1015,25 +1015,14 @@ def test_a_bad_option_price_coefficient_is_refused_by_name(table, sources, bad):
         te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, option_price_beta_u_per_eur=bad)
 
 
-def test_the_python_stand_in_reader_of_the_coefficient_follows_the_schema_rule(table, sources):
-    # a schema-4 model has no coefficient and its weights carry no price (0.0, as schema 4 always did); from schema 5 on the key
-    # is required and never defaulted
-    model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, option_price_beta_u_per_eur=0.310998)
-    assert te.option_price_beta_from_model(model) == 0.310998
-    schema_4 = {key: value for key, value in model.items() if key != "option_price_beta_u_per_eur"} | {"schema_version": 4}
-    assert te.option_price_beta_from_model(schema_4) == 0.0
-    with pytest.raises(ValueError, match="has no option_price_beta_u_per_eur"):
-        te.option_price_beta_from_model({**schema_4, "schema_version": 5})
-
-
 def test_the_committed_fixture_model_carries_the_option_price_coefficient_of_the_mode_choice_cost():
     # 0.310998 is the magnitude of BraunschweigModeParameters.betaCost_u_MU (-0.310998, eqasim-java-bs); the Java startup check
-    # of Task A7 refuses a tariff model whose value differs by more than 1e-9
+    # (ParkingOptionPriceBetaCheck) refuses a tariff model whose value differs by more than 1e-9
     committed = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
     assert committed["option_price_beta_u_per_eur"] == 0.310998
 
 
-# --------------------------------------------------------------- schema 5: garage max_stay_min (spec v3 A1, R-A-5)
+# --------------------------------------------------------------- schema 5: garage max_stay_min (spec v3 A1)
 
 
 def test_schema_5_writes_the_garage_maximum_stay_and_refuses_schema_4_readers_silently_dropping_it(garage_frame):
