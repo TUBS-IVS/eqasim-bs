@@ -112,8 +112,9 @@ PARKING_DEFAULTS = {
     # cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998 (eqasim-java-bs): one money
     # coefficient for the choice between parking options, without the income or distance elasticity of the person's whole
     # utility (no local evidence identifies a separate parking price coefficient). The Java startup check
-    # ParkingOptionPriceBetaCheck refuses a tariff model whose value differs from the mode choice by more than 1e-9, 0 included (ADR-0142 decision 2): 0 gives the
-    # price-independent weights of v2 in the Python reference and its calibration sensitivity, not in a MATSim run.
+    # ParkingOptionPriceBetaCheck refuses a tariff model whose value differs from the mode choice by more than 1e-9, 0
+    # included (ADR-0142 decision 2): 0 gives the price-independent weights of v2 in the Python reference and its calibration
+    # sensitivity, not in a MATSim run.
     "parking_option_price_beta_u_per_eur": 0.310998,
 }
 #: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
