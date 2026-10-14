@@ -92,11 +92,16 @@ PAID_COMMUTER = "PAID_COMMUTER"
 #: Schema 3 (spec Amendment E, R-4d-5): the stay was priced as the probability-weighted mean over the street and at
 #: least one garage option, or over the garage options alone (``parking_cost_with_garages``).
 PAID_EXPECTED = "PAID_EXPECTED"
+#: Spec v3 A1 (ASSUMPTION M3): the stay exceeds the maximum stay of the street and of every garage option within reach, so
+#: no option can serve it; it is priced as the street at its metered price (the maximum ignored, so that the cost stays
+#: finite) and counted under this name, because it is the signal that the option set is incomplete, never a silent fallback.
+NO_FEASIBLE_OPTION = "NO_FEASIBLE_OPTION"
 # The v2 outcomes are appended at the END of this tuple, which keeps the position of every v1 outcome here. The Java
 # ParkingOutcome enum has another order (NO_ZONE comes first there, HOME here), so the order of this tuple is not a
 # contract: consumers of the outcome report key the rows by outcome NAME, never by position.
 OUTCOMES = (HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT, PAID_METERED,
-            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER, PAID_EXPECTED)
+            PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER, PAID_EXPECTED,
+            NO_FEASIBLE_OPTION)
 
 #: Schema 2 (spec amendment A6): the garage core, given completely or not at all. The garage day cap
 #: (``garage_daily_cap_cents``, None = no cap) and the first-period pair (``GARAGE_FIRST_PERIOD_FIELDS``) are optional,
@@ -434,6 +439,19 @@ def _street_product(tariff: ZoneTariff, chargeable_s: int) -> tuple[int, str] | 
     return cents, (FREE_WITHIN_LIMIT if cents == 0 else PAID_METERED)
 
 
+def street_feasible(tariff: ZoneTariff, chargeable_s: int) -> bool:
+    """Whether the street can serve a stay of ``chargeable_s`` chargeable seconds in the STREET fee window (spec v3 A1,
+    ASSUMPTION M3): True without a maximum stay, within it (chargeable minutes, seconds rounded up, as the long-stay rule
+    M1 compares them) and, above it, where the zone sells a long-stay product. False means the street is no option of the
+    stay. It is exactly the condition under which ``_street_product`` returns a product: a stay within the free threshold
+    is served first, as there. Pure."""
+    chargeable_min = _ceil_div(_time_s("chargeable_s", chargeable_s), SECONDS_PER_MINUTE)
+    if tariff.free_if_stay_at_most_min is not None and chargeable_min <= tariff.free_if_stay_at_most_min:
+        return True
+    return (tariff.max_stay_min is None or chargeable_min <= tariff.max_stay_min
+            or tariff.long_stay_product_cents is not None)
+
+
 def _garage_product(tariff: ZoneTariff, arrival_s: int, departure_s: int) -> tuple[int, str] | None:
     """The garage product (v2 lever 2), or None without a garage core.
 
@@ -604,7 +622,9 @@ class GarageTariff:
     bands) may carry the clock window ``[first_period_start_s, first_period_end_s)`` it is tied to (both or neither, only
     with a first period; ASSUMPTION P6 as amended). ``daily_cap_cents`` (None = none) limits the price of a stay once;
     ``monthly_cents`` (None = no monthly product) is the monthly product that work and education stays use per working day
-    (P2). Construction validates and raises ``ValueError`` naming the garage.
+    (P2). ``max_stay_min`` (None = no maximum) is the longest ELAPSED stay in minutes the garage or lot admits (spec v3 A1,
+    ASSUMPTION M3); a longer stay leaves it out of the option set (``option_feasible``). Construction validates and raises
+    ``ValueError`` naming the garage.
     """
 
     garage_id: str
@@ -622,6 +642,7 @@ class GarageTariff:
     tiers: tuple[GarageTier, ...] | None = None
     bands: tuple[GarageBand, ...] | None = None
     monthly_cents: int | None = None
+    max_stay_min: int | None = None
 
     def __post_init__(self) -> None:
         if self.tiers is not None:
@@ -644,7 +665,14 @@ class GarageTariff:
                                                   band.unit_min) for band in self.bands)
 
     def to_json(self) -> dict:
-        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``."""
+        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``.
+
+        The schema-4 entry has no ``max_stay_min`` key (it joins the model with schema 5, spec v3 A1, together with the
+        regenerated fixtures and the Java reader), so a garage that carries a maximum stay is refused here instead of
+        being written without it: a dropped maximum would silently make the Java side price the garage as unlimited."""
+        if self.max_stay_min is not None:
+            raise ValueError(f"garage {self.garage_id!r}: max_stay_min {self.max_stay_min} cannot be exported yet: the "
+                             "tariff model schema 4 has no such key (schema 5 adds it)")
         fields = {name: getattr(self, name) for name in GARAGE_FIELDS_JSON}
         if self.tiers is not None:
             fields["tiers"] = [{name: getattr(tier, name) for name in GARAGE_TIER_FIELDS} for tier in self.tiers]
@@ -682,7 +710,8 @@ def _check_garage(garage: GarageTariff) -> None:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             fail(f"{name} must be a finite number of metres (EPSG:25832), got {value!r}")
     for name in ("hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s", "first_period_min",
-                 "first_period_cents", "first_period_start_s", "first_period_end_s", "daily_cap_cents", "monthly_cents"):
+                 "first_period_cents", "first_period_start_s", "first_period_end_s", "daily_cap_cents", "monthly_cents",
+                 "max_stay_min"):
         value = getattr(garage, name)
         if value is None:
             continue
@@ -800,7 +829,10 @@ class GarageOptionCounters:
     garage within the maximum distance; ``street_free`` those whose street option costs 0 and pay 0 (E4);
     ``street_unavailable`` those priced over the garages alone (E4); ``expected`` the stays priced as an expectation
     (outcome ``PAID_EXPECTED``); ``option_evaluations`` the garage options priced; ``closed_schedule_repeats`` the garage
-    options whose stay was longer than a closed duration schedule and was priced by repeating it per started 24 h (P9).
+    options whose stay was longer than a closed duration schedule and was priced by repeating it per started 24 h (P9);
+    ``options_infeasible`` the garage options of an eligible stay left out because the elapsed stay exceeds their maximum
+    stay (spec v3 A1); ``no_feasible_option`` the stays without any feasible option (outcome ``NO_FEASIBLE_OPTION``, priced
+    as the street), the signal that the option set is incomplete.
     """
 
     stays: int = 0
@@ -811,6 +843,8 @@ class GarageOptionCounters:
     expected: int = 0
     option_evaluations: int = 0
     closed_schedule_repeats: int = 0
+    options_infeasible: int = 0
+    no_feasible_option: int = 0
 
     def summary(self) -> str:
         """One log line with the counts and rates (an empty denominator gives a plain count)."""
@@ -821,7 +855,9 @@ class GarageOptionCounters:
                 f"{rate(self.street_free, self.with_garages_in_range)}; street unavailable "
                 f"{rate(self.street_unavailable, self.with_garages_in_range)}; priced as expectation {self.expected}; "
                 f"garage options priced {self.option_evaluations}, closed schedule repeated (P9) "
-                f"{rate(self.closed_schedule_repeats, self.option_evaluations)}")
+                f"{rate(self.closed_schedule_repeats, self.option_evaluations)}; garage options over their maximum stay "
+                f"{rate(self.options_infeasible, self.options_infeasible + self.option_evaluations)}; no feasible option "
+                f"(NO_FEASIBLE_OPTION) {rate(self.no_feasible_option, self.with_garages_in_range)}")
 
 
 def _first_period_applies(garage: GarageTariff, arrival_s: int) -> bool:
@@ -919,6 +955,15 @@ def garage_monthly_day_cents(monthly_cents: int) -> int:
     return (2 * monthly_cents + WORKING_DAYS_PER_MONTH) // (2 * WORKING_DAYS_PER_MONTH)
 
 
+def option_feasible(garage: GarageTariff, duration_s: int) -> bool:
+    """Whether the garage or lot admits a stay of ``duration_s`` ELAPSED seconds (spec v3 A1, ASSUMPTION M3): True without
+    a maximum stay, else when the elapsed stay rounded up to whole minutes is at most ``max_stay_min``. The elapsed stay
+    is compared, not the chargeable minutes inside a fee window, because the car stands in the garage for all of it (the
+    duration bands price the elapsed time as well). Pure."""
+    elapsed_min = _ceil_div(_time_s("duration_s", duration_s), SECONDS_PER_MINUTE)
+    return garage.max_stay_min is None or elapsed_min <= garage.max_stay_min
+
+
 def garage_option_cents(garage: GarageTariff, arrival_s: int, departure_s: int, *, purpose: str,
                         counters: GarageOptionCounters | None = None) -> int:
     """The cost of the garage option of a stay (spec E2): the cheaper of its metered or day product and, for the commuter
@@ -955,12 +1000,20 @@ def garage_options_in_range(garages, x_m: float, y_m: float, max_distance_m: flo
 
 class GarageStayPrice(NamedTuple):
     """Result of ``parking_cost_with_garages_detail``: the price in cents, the outcome, the sum of the garage
-    probabilities (0.0 when no garage acted) and the expected cost before rounding (None when no expectation was formed)."""
+    probabilities (0.0 when no garage acted) and the expected cost before rounding (None when no expectation was formed).
+
+    Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the street product or the
+    zone commuter product could serve it (False only where the maximum stay removed both; a stay decided before the
+    options act, by an early rule or on a campus, reports True); ``feasible_option_ids`` are the ids of the garage options
+    that admit the stay (ascending, empty when none acted). The price weighting of the options (Task A2) reads both.
+    """
 
     cents: int
     outcome: str
     garage_probability: float
     expected_cents: float | None
+    street_feasible: bool = True
+    feasible_option_ids: tuple[str, ...] = ()
 
 
 #: The outcomes decided before any product is priced; with them, and on a campus, the garages never act.
@@ -1007,32 +1060,52 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
             raise ValueError(f"garage {garage.garage_id!r}: distance_m must be a finite number >= 0, got {distance_m!r}")
     if len({garage.garage_id for garage, _ in options}) != len(options):
         raise ValueError("duplicate garage_id among the garage options")
-    unchanged = GarageStayPrice(cents, outcome, 0.0, None)
     # Early rules first (R-4d-2), then campus zones (priced as before: no garages); the garages act on street and resident
     # zones only, with the options switched on and at least one garage in range.
     if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS or decay_of_stay_m == 0:
-        return unchanged
+        return GarageStayPrice(cents, outcome, 0.0, None)
     if counters is not None:
         counters.eligible += 1
-    if not options:
-        return unchanged
-    if counters is not None:
-        counters.with_garages_in_range += 1
     # E8: with garage options the zone-level garage family is superseded; the street option is the street or long-stay
     # product or the zone commuter product, or unavailable (maximum stay exceeded without a long-stay product).
     chargeable_s = chargeable_seconds(arrival_s, departure_s, tariff.fee_start_s, tariff.fee_end_s)
     street_products = [product for product in (_street_product(tariff, chargeable_s), _commuter_product(tariff, purpose))
                        if product is not None]
     street = min(street_products, key=lambda product: product[0]) if street_products else None
+    if not options:
+        return GarageStayPrice(cents, outcome, 0.0, None, street is not None, ())
+    if counters is not None:
+        counters.with_garages_in_range += 1
+    # Spec v3 A1 (M3): a garage whose maximum stay the ELAPSED stay exceeds is no option; it is dropped before the weights
+    # are formed, so that no probability mass goes to an option that cannot serve the stay.
+    feasible = [(garage, distance_m) for garage, distance_m in options
+                if option_feasible(garage, departure_s - arrival_s)]
+    feasible_ids = tuple(garage.garage_id for garage, _ in feasible)
+    if counters is not None:
+        counters.options_infeasible += len(options) - len(feasible)
     if street is not None and street[0] == 0:
         # E4: nobody pays a garage when the street is free.
         if counters is not None:
             counters.street_free += 1
-        return GarageStayPrice(0, street[1], 0.0, None)
+        return GarageStayPrice(0, street[1], 0.0, None, True, feasible_ids)
     if street is None and counters is not None:
         counters.street_unavailable += 1
+    if not feasible:
+        if street is None:
+            # No option can serve the stay (M3): priced as the street at its metered price for the duration, the maximum
+            # ignored, so that the cost stays finite; the outcome and the counter name the case.
+            if counters is not None:
+                counters.no_feasible_option += 1
+            metered_cents = _metered_cents(chargeable_s, hourly_rate_cents=tariff.hourly_rate_cents,
+                                           billing_unit_min=tariff.billing_unit_min,
+                                           first_period_min=tariff.first_period_min,
+                                           first_period_cents=tariff.first_period_cents,
+                                           daily_cap_cents=tariff.daily_cap_cents)
+            return GarageStayPrice(metered_cents, NO_FEASIBLE_OPTION, 0.0, None, False, ())
+        # The street is the only option left: it is not an expectation over a mixture, so it keeps its own outcome.
+        return GarageStayPrice(street[0], street[1], 0.0, None, True, ())
     weights, costs = ([1.0], [street[0]]) if street is not None else ([], [])
-    for garage, distance_m in options:
+    for garage, distance_m in feasible:
         weights.append(math.exp(-distance_m / decay_of_stay_m))
         costs.append(garage_option_cents(garage, arrival_s, departure_s, purpose=purpose, counters=counters))
     # R-4d-4: P_i = w_i / sum(w) and the expectation are summed left to right in double precision in the order street,
@@ -1050,7 +1123,8 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
     if counters is not None:
         counters.expected += 1
     # Rounded half up to the cent once, at the end.
-    return GarageStayPrice(int(math.floor(expected + 0.5)), PAID_EXPECTED, garage_probability, expected)
+    return GarageStayPrice(int(math.floor(expected + 0.5)), PAID_EXPECTED, garage_probability, expected, street is not None,
+                           feasible_ids)
 
 
 def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
@@ -1076,6 +1150,11 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
        (P2), whichever is cheaper (0 ct is a valid option; tiers, bands and first periods: ``garage_metered_cents``);
     3. a street option that costs 0 means the stay pays 0 (E4): outcome of the street product, probability 0.0; an
        unavailable street renormalises the weights over the garages;
+    3a. spec v3 A1 (M3), before the weights: a garage whose ``max_stay_min`` the elapsed stay (``departure_s - arrival_s``,
+       rounded up to minutes) exceeds is no option (``option_feasible``); the street is no option above its maximum stay
+       without a long-stay product (``street_feasible``). The stay is then priced over the remaining options only. With the
+       street alone left it prices as the street (its own outcome, probability 0.0); with NO option left it is priced as
+       the street at its metered price, the maximum ignored, with outcome ``NO_FEASIBLE_OPTION`` (probability 0.0);
     4. else ``P_i = w_i / sum(w)``, the price is ``floor(sum(P_i * cost_i) + 0.5)`` cents (rounded half up once, at the end),
        the outcome ``PAID_EXPECTED`` and the probability the sum of the garage ``P_i``.
 

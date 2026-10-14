@@ -225,13 +225,13 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
     assert problem.startswith("G26:") and "departure before arrival" in problem and "unknown zone id" in problem
 
 
-def test_outcomes_are_thirteen_constants_named_as_their_values_with_the_v2_products_appended():
+def test_outcomes_are_fourteen_constants_named_as_their_values_with_the_v2_products_appended():
     # Appended at the END, so the position of the ten v1 outcomes in this tuple stays as it was; PAID_EXPECTED (schema 3,
-    # the garage expectation) comes last. The Java ParkingOutcome enum has another order (NO_ZONE first), so the tuple
+    # the garage expectation) follows them and NO_FEASIBLE_OPTION (spec v3 A1) comes last. The Java ParkingOutcome enum has another order (NO_ZONE first), so the tuple
     # order is no contract with Java: consumers of the outcome report key the rows by outcome name.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
-                             "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED")
+                             "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED", "NO_FEASIBLE_OPTION")
     assert all(getattr(cost, outcome) == outcome for outcome in cost.OUTCOMES)
     assert cost.CAMPUS_MEMBER_PURPOSES == frozenset({"work", "education"})
     assert cost.COMMUTER_PURPOSES == frozenset({"work", "education"})
@@ -706,3 +706,158 @@ def test_the_fixtures_copied_to_the_java_repository_match_their_pinned_lf_hash(n
     assert actual == PINNED_FIXTURE_SHA256[name], (
         f"{name} changed (sha256 {actual}): copy it byte for byte to eqasim-java-bs "
         "braunschweig/src/test/resources/parking, then update this pin and the hashes in ADR-0140 (cross-language contract)")
+
+
+# --------------------------------------------------------------------- maximum-stay feasibility (spec A1, issue #436)
+# A zone with a maximum stay and no long-stay product needs its zone-level garage family to be a valid ZoneTariff (the
+# rule of _check_tariff); with garage OPTIONS that family is superseded (E8), so these tests price over the options.
+_MAX_STAY_ZONE = {"max_stay_min": 180, **_GARAGE}
+_DECAY_M = 400.0
+
+
+def _option_garage(garage_id="g1", **overrides) -> cost.GarageTariff:
+    """A single-window garage: 200 ct per started hour, all day, no cap, no monthly product."""
+    fields = {"garage_id": garage_id, "x_m": 0.0, "y_m": 0.0, "hourly_rate_cents": 200, "billing_unit_min": 60,
+              "fee_start_s": 0, "fee_end_s": 86400, **overrides}
+    return cost.GarageTariff(**fields)
+
+
+def _detail(zone, minutes, options, *, purpose="shop", counters=None, **flags):
+    flags = {"parking_free": False, "resident_of_zone": False, **flags}
+    return cost.parking_cost_with_garages_detail(zone, 32400, 32400 + minutes * 60, purpose=purpose,
+                                                 garage_options=options, decay_m=_DECAY_M, decay_commute_m=_DECAY_M,
+                                                 counters=counters, **flags)
+
+
+def test_the_no_feasible_option_outcome_is_appended_after_paid_expected():
+    assert cost.NO_FEASIBLE_OPTION == "NO_FEASIBLE_OPTION"
+    assert cost.OUTCOMES[-1] == cost.NO_FEASIBLE_OPTION and cost.OUTCOMES[-2] == cost.PAID_EXPECTED
+    assert len(cost.OUTCOMES) == len(set(cost.OUTCOMES)) == 14
+
+
+def test_street_is_infeasible_above_the_maximum_stay_without_a_product():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    assert cost.street_feasible(zone, 180 * 60) is True
+    assert cost.street_feasible(zone, 180 * 60 + 1) is False      # 181 started minutes: chargeable minutes round up
+    assert cost.street_feasible(zone, 200 * 60) is False
+    # with the 9.00 EUR long-stay product the stay buys it, as before (M1)
+    with_product = _tariff(max_stay_min=180, long_stay_product_cents=900)
+    assert cost.street_feasible(with_product, 200 * 60) is True
+    assert cost.parking_cost_cents(with_product, 32400, 32400 + 200 * 60, **_SHOP) == (900, cost.PAID_LONG_STAY)
+    # no maximum: always feasible
+    assert cost.street_feasible(_tariff(), 600 * 60) is True
+
+
+def test_a_garage_with_a_maximum_stay_leaves_the_option_set():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    short_stay_only = _option_garage("g_short", max_stay_min=120)
+    unlimited = _option_garage("g_open")
+    assert cost.option_feasible(short_stay_only, 120 * 60) is True
+    assert cost.option_feasible(short_stay_only, 120 * 60 + 1) is False    # the ELAPSED stay rounds up to 121 min
+    assert cost.option_feasible(unlimited, 10 ** 6) is True
+    detail = _detail(zone, 150, [(short_stay_only, 100.0), (unlimited, 100.0)])
+    assert detail.feasible_option_ids == ("g_open",) and detail.street_feasible is True
+    # 150 min: the street meters 450 ct; the only garage priced is g_open (3 started hours = 600 ct), so the weights are
+    # the street's 1 and g_open's exp(-100 / 400)
+    weight = math.exp(-100 / _DECAY_M)
+    assert detail.expected_cents == pytest.approx((450 + weight * 600) / (1 + weight), abs=1e-9)
+    # a stay within the garage maximum keeps both garages
+    assert _detail(zone, 100, [(short_stay_only, 100.0), (unlimited, 100.0)]).feasible_option_ids == ("g_open", "g_short")
+
+
+def test_the_garage_maximum_compares_the_elapsed_stay_not_the_chargeable_minutes():
+    # The garage fee window ends at 10:00: a stay 09:00-13:00 has 60 chargeable minutes but 240 elapsed minutes; the
+    # garage maximum of 180 min is exceeded by the elapsed stay.
+    garage = _option_garage(fee_end_s=36000, max_stay_min=180)
+    assert cost.option_feasible(garage, 240 * 60) is False
+    assert cost.option_feasible(garage, 180 * 60) is True
+
+
+def test_a_stay_with_no_feasible_option_is_priced_as_the_street_and_named():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    garage = _option_garage("g_short", max_stay_min=60)
+    counters = cost.GarageOptionCounters()
+    detail = _detail(zone, 300, [(garage, 100.0)], counters=counters)
+    # 300 chargeable min x 180 ct/h = 900 ct: the street's metered price, the maximum ignored
+    assert (detail.cents, detail.outcome) == (900, cost.NO_FEASIBLE_OPTION)
+    assert detail.feasible_option_ids == () and detail.street_feasible is False
+    assert detail.garage_probability == 0.0 and detail.expected_cents is None
+    assert counters.no_feasible_option == 1 and counters.street_unavailable == 1 and counters.options_infeasible == 1
+    assert "(NO_FEASIBLE_OPTION) 1/1 (100.0 %)" in counters.summary()
+    assert cost.parking_cost_with_garages(zone, 32400, 32400 + 300 * 60, purpose="shop", parking_free=False,
+                                          resident_of_zone=False, garage_options=[(garage, 100.0)], decay_m=_DECAY_M,
+                                          decay_commute_m=_DECAY_M) == (900, cost.NO_FEASIBLE_OPTION, 0.0)
+
+
+def test_an_infeasible_street_with_a_feasible_garage_is_priced_over_the_garage_alone():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    detail = _detail(zone, 300, [(_option_garage("g_short", max_stay_min=60), 100.0), (_option_garage("g_open"), 700.0)])
+    assert detail.street_feasible is False and detail.feasible_option_ids == ("g_open",)
+    # 300 min = 5 started hours = 1000 ct, the only option
+    assert (detail.cents, detail.outcome, detail.garage_probability) == (1000, cost.PAID_EXPECTED, 1.0)
+
+
+def test_a_street_alone_after_the_garages_leave_the_set_prices_as_the_street():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    detail = _detail(zone, 150, [(_option_garage("g_short", max_stay_min=60), 100.0)])
+    assert (detail.cents, detail.outcome, detail.garage_probability) == (450, cost.PAID_METERED, 0.0)
+    assert detail.street_feasible is True and detail.feasible_option_ids == ()
+
+
+def test_feasibility_precedes_the_mixture_but_follows_the_early_rules():
+    zone = _tariff(**_MAX_STAY_ZONE)
+    options = [(_option_garage("g_short", max_stay_min=60), 100.0)]
+    # 300 min exceed the zone and the garage maximum; every early rule still decides first and prices 0 as without it
+    for flags, outcome in (({"purpose": "home"}, cost.HOME), ({"parking_free": True}, cost.EMPLOYER_FREE),
+                           ({"resident_of_district": True}, cost.RESIDENT_FREE)):
+        detail = _detail(zone, 300, options, **flags)
+        assert (detail.cents, detail.outcome) == (0, outcome)
+    # outside the street fee window (21:00-23:00) nothing is chargeable
+    outside = cost.parking_cost_with_garages_detail(zone, 75600, 75600 + 7200, purpose="shop", parking_free=False,
+                                                    resident_of_zone=False, garage_options=options, decay_m=_DECAY_M,
+                                                    decay_commute_m=_DECAY_M)
+    assert (outside.cents, outside.outcome) == (0, cost.OUTSIDE_FEE_HOURS)
+    # a campus stay is priced as before whatever the garage maximum is
+    assert _detail(_tariff("campus"), 300, options).outcome == cost.PAID_CAMPUS_GUEST
+    # no zone: free
+    assert cost.parking_cost_with_garages_detail(None, 32400, 50400, purpose="shop", parking_free=False,
+                                                 resident_of_zone=False, garage_options=options, decay_m=_DECAY_M,
+                                                 decay_commute_m=_DECAY_M).outcome == cost.NO_ZONE
+
+
+def test_a_free_street_still_pays_nothing_whatever_the_garage_maximum_e4():
+    zone = _tariff(free_if_stay_at_most_min=30)
+    detail = _detail(zone, 25, [(_option_garage(max_stay_min=10), 0.0)])
+    assert (detail.cents, detail.outcome) == (0, cost.FREE_WITHIN_LIMIT)
+
+
+def test_a_model_with_no_maximum_stay_prices_as_before_and_lists_every_garage():
+    # the numbers of the two-garage case of test_parking_garage_options: street 180 ct, garages 200 ct (300 m) and 100 ct
+    # (700 m) at lambda 400 m give 177 ct
+    zone = _tariff()
+    options = [(_option_garage("g_b"), 300.0), (_option_garage("g_a", hourly_rate_cents=100), 700.0)]
+    detail = _detail(zone, 60, options)
+    assert (detail.cents, detail.outcome) == (177, cost.PAID_EXPECTED)
+    assert detail.street_feasible is True and detail.feasible_option_ids == ("g_a", "g_b")
+
+
+def test_a_garage_maximum_stay_is_never_dropped_silently_by_the_schema_4_export():
+    assert "max_stay_min" not in cost.GARAGE_FIELDS_JSON
+    assert list(_option_garage().to_json()) == list(cost.GARAGE_FIELDS_JSON)
+    with pytest.raises(ValueError, match="max_stay_min 120 cannot be exported"):
+        _option_garage("g_short", max_stay_min=120).to_json()
+
+
+def test_a_garage_maximum_stay_is_validated():
+    for bad in (0, -5, 1.5, True):
+        with pytest.raises(ValueError, match="max_stay_min"):
+            _option_garage(max_stay_min=bad)
+
+
+def test_street_feasible_is_exactly_the_condition_under_which_the_street_product_exists():
+    zones = (_tariff(**_MAX_STAY_ZONE), _tariff(max_stay_min=180, long_stay_product_cents=900), _tariff(),
+             _tariff(free_if_stay_at_most_min=30, **_MAX_STAY_ZONE))
+    for zone in zones:
+        for chargeable_min in (1, 30, 31, 179, 180, 181, 600):
+            chargeable_s = chargeable_min * 60
+            assert cost.street_feasible(zone, chargeable_s) == (cost._street_product(zone, chargeable_s) is not None)

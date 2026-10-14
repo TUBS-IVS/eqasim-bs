@@ -49,11 +49,11 @@ def _price(tariff, arrival_s, departure_s, options, *, purpose="shop", decay_m=D
 
 
 def test_the_outcome_is_appended_at_the_end_so_the_declaration_order_stays():
-    assert cost.OUTCOMES[-1] == "PAID_EXPECTED" == cost.PAID_EXPECTED
+    assert cost.OUTCOMES[-2:] == ("PAID_EXPECTED", "NO_FEASIBLE_OPTION") and cost.OUTCOMES[-2] == cost.PAID_EXPECTED
     assert cost.OUTCOMES[:12] == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                                   "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
                                   "PAID_GARAGE", "PAID_COMMUTER")
-    assert len(cost.OUTCOMES) == 13
+    assert len(cost.OUTCOMES) == 14
 
 
 # ----------------------------------------------------------------------------------------------- the expectation
