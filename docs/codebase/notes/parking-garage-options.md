@@ -97,9 +97,9 @@ against the row `03103`, a number with its universe size and never validation. T
 2026-10-08 and again, on the 25 % reference plans and the enlarged option set, on 2026-10-14 (the table is committed and the two
 config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
 `configs/base_bs.yml` and the two popsim fixture configs; `tests/test_parking_garage_decay_config.py` requires both
-equalities and that the table belongs to the garage dataset pinned in the data record `parking_garages_2026`; the results,
-universes and provenance are in ADR-0140 decision 14 and the data record `parking_garage_decay_calibration_2026`). The table
-checks no paid share (the zone-level one was blind to the fee window and
+equalities and that the header pins of the garage dataset, the zone file and the two SrV tables are the pins of their data
+records and the committed files; the results, universes and provenance are in ADR-0140 decision 14 and the data record
+`parking_garage_decay_calibration_2026`). The table checks no paid share (the zone-level one was blind to the fee window and
 read 1.0 in Ia and Ib, ruling R-5-4): a run's time-aware paid share, garage share and free shares are compared with the SrV
 by `scripts/parking/compare_parking_targets.py` on the run's own outcome report (see the next section). The reader of the
 table refuses a table without `decay_commute_length_m` (written before Amendment H).
@@ -110,7 +110,8 @@ The measure of each target has the universe of its SrV quantity (spec Amendment 
 parker in SrV terms and leaves numerator and denominator: `sum(w_paid) / (1 + sum(w_paid))`, derived in the script
 documentation). The table header and rows name the measure of each target and the free options within D_max per universe (by id,
 with the activities reached), and the freight agents of the plans (ids `freight_*`, no residents) are excluded. A universe that
-the options barely reach (fewer than half of its activities with an option of its measure within D_max) is warned about.
+the options barely reach (fewer than the share of `--minimum-reach-share-warning`, default one half, of its activities have an
+option of its measure within D_max; a log-only plausibility threshold and no scientific parameter) is warned about.
 `--sensitivity-garages LABEL=PATH` runs the same calibration on another garage dataset (the lot thresholds 30 and 100) and
 writes the two decay lengths as header lines, labelled sensitivity and never a release value; the search stops at the first
 bisection midpoint within the tolerance, so differences of that order between option sets are not resolved. The table belongs

@@ -41,8 +41,8 @@ comparison, never a validation, and a stable run is convergence, not validation.
   check count paid options only (spec Amendment I6). The model side of those six rows is labelled
   `FREE_OPTIONS_INCLUDED_LABEL` ("all off-street options; free options included") and their note states that the calibration
   is exact and the run comparison is not where free options lie within the maximum distance (the calibration table states how
-  many do, per universe). The visitor row is payment-inclusive on both sides. A paid/free split would need a Java report
-  extension (not built).
+  many do, per universe). The visitor row is payment-inclusive on both sides. A paid/free split of the report is planned
+  (plan item 6, outcome CSV v4 of the owner's next plan), not yet built; no issue.
 - Only the agents that replan in an iteration price their alternatives, so one iteration is a small sample. `--iteration
   FIRST-LAST` pools an inclusive range (counts summed cell by cell); the notes name the iterations. Pooling does not change the
   pre-equilibrium status of early iterations, pooled calls are not independent, stable shares are convergence, not validation.
