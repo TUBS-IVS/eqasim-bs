@@ -1075,10 +1075,12 @@ def test_the_table_header_and_rows_say_which_measure_each_target_uses_and_count_
     text = out.read_bytes().decode("ascii")
     header = [line for line in text.splitlines() if line.startswith("#")]
     measures = next(line for line in header if line.startswith("# Measures"))
-    for needle in ("spec Amendment I6", "lambda: payment-inclusive", "counts EVERY off-street option", "sum(w) / (1 + sum(w))",
-                   "lambda_c and the Wolfsburg check: PAID-only", "sum(w_paid) / (1 + sum(w_paid))",
-                   "free option", "free schedule", "cost 0 at every stay duration", "free parker",
-                   "leaves numerator and denominator", "(1 + W) cancels", "never a name or a rate"):
+    for needle in ("spec Amendment I6", "lambda: payment-inclusive", "counts EVERY off-street option",
+                   "sum(w) / (w_street + sum(w))", "sum(w) / (1 + sum(w))",
+                   "lambda_c and the Wolfsburg check: PAID-only", "sum(w_paid) / (w_street + sum(w_paid))",
+                   "sum(w_paid) / (1 + sum(w_paid))", "free option", "free schedule", "cost 0 at every stay duration",
+                   "free parker", "leaves numerator and denominator", "the factor W cancels",
+                   "W_paid / (W_paid + w_street)", "never a name or a rate"):
         assert needle in measures, needle
     assert "I6" in header[1]
     # every target line names its measure
