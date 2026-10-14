@@ -859,17 +859,24 @@ def assign_zones(points: gpd.GeoDataFrame, zones: gpd.GeoDataFrame) -> pd.Series
 
 
 #: How a district polygon came to be (spec Amendment C3): digitised from the municipality's published district map
-#: (Braunschweig), or taken as published from the municipality's feature service (Goslar).
+#: (Braunschweig), or taken as published from the municipality's feature service (Goslar). Spec v3 B3 adds the districts
+#: built from the official street list of a town (Wolfsburg, Peine): the streets of the list matched to OSM and buffered
+#: by 25 m (ASSUMPTION R3; the value names the buffer, so a district built with another buffer is not accepted), and
+#: the districts whose map boundary follows named streets (Helmstedt, Wolfenbuettel), constructed from the OSM
+#: geometry of those streets.
 DIGITISED_MAP_GEOMETRY_SOURCE = "digitised_published_map"
 FEATURE_SERVICE_GEOMETRY_SOURCE = "municipal_feature_service"
-DISTRICT_GEOMETRY_SOURCES = (DIGITISED_MAP_GEOMETRY_SOURCE, FEATURE_SERVICE_GEOMETRY_SOURCE)
+STREET_LIST_BUFFER_GEOMETRY_SOURCE = "street_list_buffer_25m"
+MAP_STREETS_GEOMETRY_SOURCE = "map_named_streets_osm"
+DISTRICT_GEOMETRY_SOURCES = (DIGITISED_MAP_GEOMETRY_SOURCE, FEATURE_SERVICE_GEOMETRY_SOURCE,
+                             STREET_LIST_BUFFER_GEOMETRY_SOURCE, MAP_STREETS_GEOMETRY_SOURCE)
 #: The properties of every district feature, in this order. ``district_id`` is unique across the layer (the curation
 #: prefixes it per town, e.g. ``bs_district_a``), ``district_code`` is the municipality's own label (A, B, C, ...),
 #: ``municipality_ags`` the 8-digit AGS. ``source_date`` is the ISO date the source was retrieved or supplied and
 #: ``digitised_on`` the ISO date the geometry was digitised (Braunschweig) or exported from the service (Goslar).
 DISTRICT_PROVENANCE_COLUMNS = ("district_id", "district_code", "municipality_ags", "name", "geometry_source",
                                "source_url", "source_date", "digitised_on", "digitising_note")
-_DISTRICT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]+$")
+_DISTRICT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _ISO_DATE_COLUMNS = ("source_date", "digitised_on")
 
 
@@ -972,7 +979,7 @@ def validate_resident_districts(districts: gpd.GeoDataFrame, *,
         elif not _ZONE_ID_PATTERN.match(district_id):
             problems.append(f"{district_id}: district_id uses other than lower-case ASCII letters, digits and '_'")
         if not isinstance(code, str) or not _DISTRICT_CODE_PATTERN.match(code):
-            problems.append(f"{district_id}: district_code {code!r} must be a non-empty label of letters and digits")
+            problems.append(f"{district_id}: district_code {code!r} must be a non-empty label of letters, digits and underscores")
         if not _AGS_PATTERN.match(str(ags)):
             problems.append(f"{district_id}: municipality_ags {ags!r} is not an 8-digit AGS")
         elif str(ags)[:5] not in ZGB_COUNTY_KEYS:

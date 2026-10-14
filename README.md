@@ -301,7 +301,7 @@ Decisions and rejected options: ADR-0140 and ADR-0142; mechanism: `docs/codebase
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
 (`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository. Three geometry files do
 **not**: the zone polygons (`braunschweig/parking/parking_zones_2026.geojson`), the resident parking districts of
-Braunschweig and Goslar, a second layer next to the zones
+Braunschweig, Goslar, Wolfsburg, Peine, Helmstedt and Wolfenbuettel (29 districts), a second layer next to the zones
 (`braunschweig/parking/parking_resident_districts_2026.geojson`), and the garage dataset of the ZGB towns, garages and the
 large surface lots of the eight towns (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
 garage options of a stay), because their sources are not cleared for redistribution (data records
@@ -352,7 +352,8 @@ TU campus zones (the TU requires explicit consent to reuse its graphics, not obt
 Braunlage car parks (the town's tourism coordinates, reuse terms not verified) and the Wolfsburg zones under their own
 terms, see the data record `parking_zones_2026`; the resident districts are under
 their own terms per source (a Braunschweig base map under dl-de/by-2-0, the Goslar service with an open reuse licence not
-verified), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
+verified, the Wolfsburg, Peine, Helmstedt and Wolfenbuettel districts built from the cities' street lists and maps and
+OpenStreetMap street geometry under the ODbL 1.0), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
 pages (licences not verified; six OpenStreetMap-derived garage positions and the lot positions inside OpenStreetMap parking
 areas under the ODbL 1.0), see the data record
 `parking_garages_2026`. The two SrV parking tables (the shares above and

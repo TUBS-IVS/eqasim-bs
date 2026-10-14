@@ -278,6 +278,87 @@ def test_the_written_file_loads_strictly_is_ascii_and_is_deterministic(curation,
             area, rel=FILE_ROUNDING, abs=FILE_ROUNDING_ABSOLUTE_M2)
 
 
+# --------------------------------------------------------------------------- curation: the districts of spec v3 B3
+
+WOB, PE, HE, WF = "03103000", "03157006", "03154028", "03158037"
+
+
+def _street_districts():
+    """Districts of four more towns as the builders of spec v3 B3 return them (synthetic, far from Braunschweig)."""
+    rows = [("wob_district_b", "B", WOB, pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE, 2), ("wob_district_a", "A", WOB,
+                                                                                       pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE, 1),
+            ("he_district_he_ring", "HE_RING", HE, pz.MAP_STREETS_GEOMETRY_SOURCE, 0),
+            ("pe_district_a", "A", PE, pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE, 0),
+            ("wf_district_wf_centre", "WF_CENTRE", WF, pz.MAP_STREETS_GEOMETRY_SOURCE, 0)]
+    frame = gpd.GeoDataFrame(
+        [{"district_id": district_id, "district_code": code, "municipality_ags": ags, "name": f"Town {code}",
+          "geometry_source": source, "source_url": "https://example.org/list", "source_date": "2026-10-14",
+          "digitised_on": "2026-10-14", "digitising_note": "synthetic street district",
+          "source_rows": json.dumps([{"row": 1, "resolution": "range"}]), "mixed_zone_rows": mixed}
+         for district_id, code, ags, source, mixed in rows],
+        geometry=[_box(0, 0, 100, 100, 20_000.0 + 500.0 * index) for index in range(len(rows))], crs=METRIC_CRS)
+    return frame
+
+
+def test_the_street_districts_are_added_sorted_by_municipality_and_code(curation, built):
+    _, directory, sha256 = built
+    inputs = curation.load_district_packages(directory, expected_sha256=sha256)
+    frame = curation.build_districts(inputs, _street_districts())
+    assert list(frame["district_id"]) == (BS_DISTRICT_IDS + ["wob_district_a", "wob_district_b"] + GS_DISTRICT_IDS
+                                          + ["he_district_he_ring", "pe_district_a", "wf_district_wf_centre"])
+    assert list(frame.columns) == list(pz.DISTRICT_PROVENANCE_COLUMNS) + ["source_rows", "mixed_zone_rows", "geometry"]
+    assert pd.isna(frame.set_index("district_id").loc["bs_district_a", "source_rows"])
+    assert frame.set_index("district_id").loc["wob_district_b", "mixed_zone_rows"] == 2
+    pz.validate_resident_districts(frame)
+
+
+def test_the_layer_without_street_districts_is_the_first_release_unchanged(curation, built):
+    _, directory, sha256 = built
+    frame = curation.build_districts(curation.load_district_packages(directory, expected_sha256=sha256))
+    assert list(frame.columns) == list(pz.DISTRICT_PROVENANCE_COLUMNS) + ["geometry"]
+    assert list(frame["district_id"]) == BS_DISTRICT_IDS + GS_DISTRICT_IDS
+
+
+def test_the_file_with_street_districts_names_the_four_regimes_loads_strictly_and_is_ascii(curation, built, tmp_path):
+    _, directory, sha256 = built
+    frame = curation.build_districts(curation.load_district_packages(directory, expected_sha256=sha256),
+                                     _street_districts())
+    path = tmp_path / "districts.geojson"
+    curation.write_district_file(frame, path)
+    text = path.read_text(encoding="utf-8")
+    assert not [character for character in text if ord(character) > 127]
+    document = json.loads(text)
+    assert BRAUNSCHWEIG_PROVENANCE in document["license"] and GOSLAR_PROVENANCE in document["license"]
+    assert "four regimes" in document["license"] and "ODbL" in document["license"] and "ASSUMPTION R3" in document["license"]
+    assert "OpenStreetMap" in document["attribution"] and "dl-de/by-2-0" in document["attribution"]
+    loaded = pz.load_resident_districts(path).set_index("district_id")
+    assert loaded.loc["wob_district_b", "mixed_zone_rows"] == 2
+    assert json.loads(loaded.loc["he_district_he_ring", "source_rows"])[0]["resolution"] == "range"
+    assert pd.isna(loaded.loc["bs_district_a", "source_rows"]) and pd.isna(loaded.loc["bs_district_a", "mixed_zone_rows"])
+
+
+def test_the_research_package_and_the_osm_extract_belong_together(curation, tmp_path):
+    with pytest.raises(SystemExit, match="belong together"):
+        curation.main(["--municipal-dir", str(tmp_path), "--research-package", str(tmp_path / "package.zip")])
+    with pytest.raises(SystemExit, match="belong together"):
+        curation.main(["--municipal-dir", str(tmp_path), "--osm-extract", str(tmp_path / "extract.osm.pbf")])
+
+
+def test_a_district_code_with_an_underscore_is_valid_and_other_characters_are_not():
+    frame = _layer([{"district_id": "he_district_he_ring", "district_code": "HE_RING", "municipality_ags": "03154028"}],
+                   [box(0, 0, 100, 100)])
+    pz.validate_resident_districts(frame)
+    frame.loc[0, "district_code"] = "HE-RING"
+    with pytest.raises(ValueError, match="letters, digits and underscores"):
+        pz.validate_resident_districts(frame)
+
+
+def test_the_district_geometry_sources_name_the_street_list_buffer_and_the_map_streets():
+    assert pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE == "street_list_buffer_25m"
+    assert pz.MAP_STREETS_GEOMETRY_SOURCE == "map_named_streets_osm"
+    assert {pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE, pz.MAP_STREETS_GEOMETRY_SOURCE} <= set(pz.DISTRICT_GEOMETRY_SOURCES)
+
+
 # --------------------------------------------------------------------------- the loader and validator
 
 DISTRICT_TEMPLATE = {"district_code": "A", "municipality_ags": BS, "name": "Bewohnerparkbezirk A",
@@ -434,11 +515,21 @@ def _committed_layer():
     return parking_data_path("parking_resident_districts_2026.geojson")
 
 
+WOB_CODES = ["A", "B", "C", "D", "E", "F", "FA", "G", "K", "VO"]
+WOB_DISTRICT_IDS = [f"wob_district_{code.lower()}" for code in WOB_CODES]
+PE_DISTRICT_IDS = [f"pe_district_{code.lower()}" for code in "ABCDEFG"]
+STREET_DISTRICT_IDS = WOB_DISTRICT_IDS + PE_DISTRICT_IDS + ["he_district_he_ring", "wf_district_wf_centre"]
+#: Rows of the official lists (spec v3 B3): Wolfsburg 67 rows with one street each; Peine 29 rows with 31 streets.
+WOB_STREET_ENTRIES, PE_STREET_ENTRIES = 67, 31
+
+
 def test_the_committed_layer_has_the_districts_the_owner_named_and_loads_strictly():
     districts = pz.load_resident_districts(_committed_layer())
-    assert list(districts["district_id"]) == BS_DISTRICT_IDS + GS_DISTRICT_IDS
-    assert list(districts["municipality_ags"]) == [BS] * 3 + [GS] * 7
-    assert list(districts["district_code"]) == list("ABC") + list("ABCFGHJ")
+    assert list(districts["district_id"]) == (BS_DISTRICT_IDS + WOB_DISTRICT_IDS + GS_DISTRICT_IDS
+                                              + ["he_district_he_ring"] + PE_DISTRICT_IDS + ["wf_district_wf_centre"])
+    assert list(districts["municipality_ags"]) == ([BS] * 3 + [WOB] * 10 + [GS] * 7 + [HE] + [PE] * 7 + [WF])
+    assert list(districts["district_code"]) == (list("ABC") + WOB_CODES + list("ABCFGHJ") + ["HE_RING"] + list("ABCDEFG")
+                                                + ["WF_CENTRE"])
     assert districts.geometry.is_valid.all() and (districts.geometry.area > 0).all()
 
 
@@ -452,7 +543,34 @@ def test_the_committed_layer_states_its_source_per_district_and_says_where_it_ch
     assert "overlap" in districts.loc["gs_district_h", "digitising_note"]
     document = json.loads(_committed_layer().read_text(encoding="utf-8"))
     assert BRAUNSCHWEIG_PROVENANCE in document["license"] and GOSLAR_PROVENANCE in document["license"]
+    assert "four regimes" in document["license"] and "OpenStreetMap" in document["attribution"]
     assert not [character for character in _committed_layer().read_text(encoding="utf-8") if ord(character) > 127]
+
+
+def test_the_committed_street_districts_state_their_method_and_the_primary_path_was_taken():
+    districts = pz.load_resident_districts(_committed_layer()).set_index("district_id")
+    for district_id in WOB_DISTRICT_IDS + PE_DISTRICT_IDS:
+        row = districts.loc[district_id]
+        assert row["geometry_source"] == pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE
+        assert "ASSUMPTION R3" in row["digitising_note"] and "street list" in row["digitising_note"]
+    for district_id in ("he_district_he_ring", "wf_district_wf_centre"):
+        assert districts.loc[district_id, "geometry_source"] == pz.MAP_STREETS_GEOMETRY_SOURCE
+    assert "polygonised" in districts.loc["he_district_he_ring", "digitising_note"]
+    assert "schematic" in districts.loc["wf_district_wf_centre", "digitising_note"]
+    entries = {town: [entry for district_id in ids for entry in json.loads(districts.loc[district_id, "source_rows"])]
+               for town, ids in (("wob", WOB_DISTRICT_IDS), ("pe", PE_DISTRICT_IDS))}
+    # Every street entry of the lists is in some district (nothing dropped), and the primary path was taken: the
+    # house-number ranges were resolved from OSM, never replaced by the whole street (range_not_resolved), and only the
+    # one square without a street way (Otto-Wels-Platz) needed the boundary of a named area.
+    assert len(entries["wob"]) == WOB_STREET_ENTRIES and len(entries["pe"]) == PE_STREET_ENTRIES
+    for town_entries in entries.values():
+        assert not [entry for entry in town_entries if entry["resolution"] == "range_not_resolved"]
+        assert [entry["raw"] for entry in town_entries if entry["street_source"] == "area_boundary"] in (
+            [], ["Otto-Wels-Platz"])
+        assert sum(entry["resolution"] == "range" for entry in town_entries) >= 9
+    assert sum(entry["resolution"] == "range" for entry in entries["wob"]) == 29
+    assert sum(entry["street_source"] == "area_boundary" for entry in entries["wob"]) == 1
+    assert districts.loc[WOB_DISTRICT_IDS, "mixed_zone_rows"].sum() == 48
 
 
 def test_the_committed_districts_match_the_areas_of_the_owners_packages():

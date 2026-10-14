@@ -328,10 +328,12 @@ INPUTS: List[Input] = [
         source=RESTRICTED_PARKING_SOURCE.format(
             record="parking_resident_districts_2026, docs/registry/data/parking_resident_districts_2026.yml"),
         notes=(
-            "Config key parking_resident_districts_path. Resident parking districts of Braunschweig (A, B, C) and "
-            "Goslar (A, B, C, F, G, H, J), a second layer next to the fee zones (rule R2). Licence per source: "
+            "Config key parking_resident_districts_path. Resident parking districts of Braunschweig (A, B, C), "
+            "Goslar (A, B, C, F, G, H, J), Wolfsburg (A-G, K, VO, FA), Peine (A-G), Helmstedt (HE_RING) and "
+            "Wolfenbuettel (WF_CENTRE), a second layer next to the fee zones (rule R2). Licence per source: "
             "Braunschweig districts with an Open GeoData dl-de/by-2-0 base map, Goslar districts with the open reuse "
-            "licence not verified (used by owner decision), see the data record parking_resident_districts_2026. "
+            "licence not verified (used by owner decision), the four towns of spec v3 B3 from city lists and maps with "
+            "OpenStreetMap street geometry (ODbL 1.0), see the data record parking_resident_districts_2026. "
             "Cross-check with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
         ),
         matsim_only=True,

@@ -445,8 +445,11 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert set(release["zones"]["zone_id"]) == set(release["tariffs"]["zone_id"])
     assert set(attach.free_share_by_class(release["workplace_shares"]).index) == set(pz.WORKPLACE_CLASSES)
     assert [source["path"] for source in release["sources"]] == [DEFAULT_PATHS[key] for key in PATH_KEYS]
-    # Braunschweig A, B, C and Goslar A, B, C, F, G, H, J (spec Amendment C3): a second layer, not fee zones.
-    assert len(release["districts"]) == 10 and set(release["districts"]["municipality_ags"]) == {"03101000", "03153017"}
+    # Braunschweig A, B, C and Goslar A, B, C, F, G, H, J (spec Amendment C3) and, since spec v3 B3, Wolfsburg (10), Peine (7),
+    # Helmstedt (1) and Wolfenbuettel (1): a second layer, not fee zones.
+    assert len(release["districts"]) == 29
+    assert set(release["districts"]["municipality_ags"]) == {"03101000", "03103000", "03153017", "03154028", "03157006",
+                                                            "03158037"}
     # The committed garage dataset: 91 rows (36 garages, 55 surface lots), every one priced (specs E13, E14 and I), in EPSG:25832.
     assert len(release["garages"]) == 91 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64

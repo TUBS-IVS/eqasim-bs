@@ -63,6 +63,16 @@ acquisition:
     status counts unchanged (zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8, 131 rows). SHA-256 of the file (LF):
     c4edfa0390730281430d2e2a50fcbf9a109a1170eba5e12cfc0b68827f7e403e (before:
     8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c).
+    Spec v3 B3 (2026-10-14): the rows of Salzgitter and Gifhorn state their resident-parking finding, and no resident district
+    is built for either town. Salzgitter: resident permits exist for the inner-city areas of Lebenstedt and Salzgitter-Bad
+    (30.70 EUR per year) but the city publishes no street list and no area map, and its official GIS holds no resident layer
+    (bounded finding, evidence/resident_maps/findings.json of Parkdaten_Restluecken_2026-10-14.zip, SHA-256
+    80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c). Gifhorn: the minutes of 2025-06-02, 2025-06-30 and
+    2025-09-29 state that no new resident permits are issued and existing ones are not renewed (expiry after one year at most,
+    by 2026-06-02 at the latest as a conditional inference; the exact end date and the last permit stock are unknown). The
+    districts of Wolfsburg, Peine, Helmstedt and Wolfenbuettel are in parking_resident_districts_2026 (their municipalities
+    are zoned here). Status counts unchanged (zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8, 131 rows).
+    SHA-256 of the file (LF): bcca0a0fe84e27b815ccbcc112c06ec16c87c35b20c6fbbc8308f046edc0c44f (before: c4edfa0390730281430d2e2a50fcbf9a109a1170eba5e12cfc0b68827f7e403e).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true

@@ -860,8 +860,12 @@ def test_committed_parking_data_is_valid(capsys):
     # Strasse (no outline exists) its detection zone alone
     assert "campus_outline_and_detection_zones 5" in out and "campus_detection_zones 1," in out
     assert "single_site_buffered 14" in out
-    # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
-    assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
+    # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones; spec v3 B3
+    # (2026-10-14): Wolfsburg A-G, K, VO, FA (10), Peine A-G (7), Helmstedt HE_RING and Wolfenbuettel WF_CENTRE: 29 in 6 towns
+    assert "resident districts: 29 districts in 6 municipalities" in out
+    for expected in ("03101000 3 districts", "03103000 10 districts", "03153017 7 districts", "03154028 1 districts",
+                     "03157006 7 districts", "03158037 1 districts"):
+        assert expected in out
     # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows, the three station car parks and the Goslar
     # car park at the ZOB state it, the six campus zones take the default, the other 40 of the 55 zones honour resident permits
     assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 40 of 55 zones; not valid on 9 stated rows "
