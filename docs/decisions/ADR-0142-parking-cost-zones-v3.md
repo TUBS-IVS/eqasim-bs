@@ -95,7 +95,7 @@ shared golden file.
      term, on the price-independent weights, so with beta > 0 the garage shares they reproduced differed. They were
      recalibrated with the price term (beta 0.310998, fixed during the calibration) on 2026-10-14 in Part B (B5), with every
      stay priced and weighted by the production code (feasibility of decision 1, price term of this decision), on the final
-     option set; see the calibration record `parking_garage_decay_calibration_2026` for the values, the superseded v2 values,
+     option set, the commuter measure and the Wolfsburg check conditional on the paying stays (ruling R-B-16); see the calibration record `parking_garage_decay_calibration_2026` for the values, the superseded v2 values,
      the sensitivities (large-lot thresholds 30 and 100, beta 0) and the limitations. The preparation warns when a run's
      coefficient differs from the one the committed lengths were calibrated with (`matsim.simulation.prepare`, the constant
      `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`, pinned to the table by a test).

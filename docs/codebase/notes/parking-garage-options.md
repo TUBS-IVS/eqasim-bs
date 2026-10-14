@@ -120,11 +120,13 @@ are release values with their calibration table `parking_garage_decay_calibratio
 every stay of its universes through the production pricing: `cost.parking_cost_with_garages_detail` with the tariff row of the
 zone, the activity times of the plans (arrival `start_time`, departure `end_time`, rule T1 for a missing end, minimum stay L1)
 and the weights `cost.option_weight` at the config's option price coefficient; the share of a stay is read from the detail
-object (`garage_probability`, or `W_paid / (W_paid + w_street)` for the paid-only measure). A stay without any feasible option
+object (`garage_probability`, or `W_paid / (W_paid + w_street)` for the paid-only measure). The commuter measure and the Wolfsburg check are payer-conditional (ruling R-B-16: a stay the pricing prices at 0 ct leaves
+numerator and denominator, counted per universe), the visitor measure keeps every stay. A stay without any feasible option
 (NO FEASIBLE OPTION) counts an off-street share of 0, is counted and logged as a rate per universe, and a stay whose street is
 infeasible but that has a feasible option is forced off-street (share 1). The beta of the table is pinned by tests to
 `PARKING_DEFAULTS`, every config and the module constant `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`; `--beta` and
-`--sensitivity-beta` give the beta sensitivities (0 is the v2 form). The values, the old values, the sensitivities and the
+`--sensitivity-beta` give the beta sensitivities (0 is the v2 form), `--sensitivity-visitors-in-window` the in-window visitor
+lambda and `--commuter-target-respondents` with `--sensitivity-commuter-target-se` lambda_c at shifted targets. The values, the old values, the sensitivities and the
 limitations (no `parkingEvExempt` in the reference plans, the arrival is the activity start) are in the data record. Targets, all READ from the committed SrV
 tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of `srv2023_city_center_parking`
 (E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the PAID-only commuter

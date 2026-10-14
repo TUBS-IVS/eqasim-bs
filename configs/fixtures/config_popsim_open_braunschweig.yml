@@ -243,7 +243,7 @@ config:
   parking_minimum_stay_min: 15
   parking_garage_max_distance_m: 1000.0
   parking_garage_decay_m: 575.27
-  parking_garage_decay_commute_m: 112.33
+  parking_garage_decay_commute_m: 69.69
   parking_garage_monthly_imputation: true
   parking_cost_utility_factor: 1.0
   parking_option_price_beta_u_per_eur: 0.310998

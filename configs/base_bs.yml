@@ -741,9 +741,11 @@ config:
   # table, a number and no validation. 0 switches the garage options off for work and education only (sensitivity arm);
   # there is no default to lambda.
   # Recalibrated with the price term (beta 0.310998) on 2026-10-14, see the calibration record
-  # parking_garage_decay_calibration_2026 (superseded v2 value 261.57 m, fitted without the price term). In zone Ia every
-  # commuter stay above its maximum stay is forced off-street (spec v3 A1), so the value rests on the street payers of Ib.
-  parking_garage_decay_commute_m: 112.33
+  # parking_garage_decay_calibration_2026 (superseded v2 value 261.57 m, fitted without the price term). The measure is
+  # payer-conditional (ruling R-B-16: a stay priced at 0 ct leaves numerator and denominator). In zone Ia every commuter stay
+  # above its maximum stay is forced off-street (spec v3 A1), so the value rests on the Ib commuters and is an ORDER OF
+  # MAGNITUDE only (target uncertainty and floor in the record); its transfer to towns with a feasible street is unsupported.
+  parking_garage_decay_commute_m: 69.69
   # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
   # imputed product of its municipality (the median of the published current garage monthly products of that
   # municipality, computed by the curation into the garage dataset, at least two products needed) as the monthly
