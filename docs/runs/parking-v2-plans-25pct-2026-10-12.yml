@@ -1,0 +1,101 @@
+id: parking-v2-plans-25pct-2026-10-12
+date: '2026-10-12'
+repository:
+  commit: 6e120332e654cfe34bb2ab6f41a260238ce39254
+  branch: feature/i436-parking-cost-zones-v2
+  notes: 'eqasim-bs integration branch of #436 (parking cost zones v2) on the server felix. Java: eqasim-java-bs
+    feature/i436-parking-cost-zones-v2 at 0bda7137f (the felix checkout since 2026-10-09; tariff schema 4, two decay
+    lengths); the shaded jar was built by the stage matsim.runtime.eqasim from that checkout and is the output
+    braunschweig_25pct_parking_v2_plans_run.jar (SHA-256 9173c64ad4a1b5a9f8b8a02ce345980ba2141f0fbaa3d48f39521567a4573285).
+    The provenance line of the log records eqasim_java_commit=unknown because eqasim_source_path is resolved relative to
+    the merged config, which the launcher writes under eqasim-data/; the commit above is the one the checkout held.
+    A first attempt in the working directory cache_bs_25pct_parking_v2 (11:01-11:03) was stopped by the controller after
+    the shared-cache prime had copied 112 entries without one pipeline.json record, so synpp devalidated all 91 stages
+    (PopSim included); the run recorded here used a full copy (cp -a) of the 1 % working directory
+    cache_bs_1pct_allfeat_popsim as cache_bs_25pct_parking_v2b, which kept the sampling-independent stages valid.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - '~/parking_v2_plans25.yml on felix, composed by ~/launch_parking_arm.sh (braunschweig.config_compose); its content
+    is the artifact parking_v2_plans25_resolved.yml (SHA-256 b004df9c37367bb8, 358 lines)'
+  config: eqasim-data/parking_v2_plans25_resolved.yml (felix)
+  notes: 'Overlay keys: working_directory eqasim-data/cache_bs_25pct_parking_v2b; run synthesis.output + matsim.output;
+    sampling_rate 0.25; output_path eqasim-data/output_bs_25pct_parking_v2_plans; output_prefix
+    braunschweig_25pct_parking_v2_plans_; matsim_last_iteration 0; run_matsim false;
+    braunschweig.population.popsim.work_dir eqasim-data/popsim_work_allfeat, max_cells 750, num_workers 3;
+    cache_share_export false; parking_zones_enabled true; enable_urban_parking false; parking_garage_decay_m 0.0 and
+    parking_garage_decay_commute_m 0.0 (the garage options are applied by the pricing, never by the plans writer, so the
+    plans do not depend on the option set or the decay lengths; verified in code by Task 4k). Everything else is the
+    base config at the commit above (random_seed 1234, parking_workplace_free_share_shift 0.0, campus free share 0.2,
+    proxy class 03103 -> bs_zentrum, minimum stay 15 min, terminal stay rule until_fee_end).'
+sampling:
+  rate: 25 %
+  scope: 'ZGB-8 full pipeline population with cordon in-commuters: 300,855 persons and 14,103 freight agents in the plans
+    (314,958 person elements), 1,271,044 main activities of the persons and freight agents as the calibration reader
+    counts them'
+  notes: 'Counts are sample counts, never expanded. The population is the reference of the garage-option decay
+    calibration (data record parking_garage_decay_calibration_2026; ADR-0140 decision 14).'
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  notes: '33 stages were recomputed, 58 came from the copied working directory (among them braunschweig.popsim.stage
+    3b30b8e0 of the 1 % run of 2026-10-09, sampling-independent, and braunschweig.popsim.completed_donor,
+    distance_distributions). Recomputed because they depend on the sampling rate or on the rebuilt jar: matsim.runtime.eqasim
+    (jar rebuild, the Java source changed with the parking package), braunschweig.freight.extraction (11:05-12:17, the
+    long step) and freight.trips, synthesis.population.sampled, popsim.enriched_adapter, popsim.trips_stage,
+    popsim.commute_distance, synthesis.locations.home_cell, spatial.home_zones, day_absence.absence_stage,
+    population.activities, vehicles.cars.household, vehicles.vehicles, spatial.primary.candidates, locations.education_gravity,
+    incommuters, replacement_education_gravity, commute_day (state, trips_day, activities_day, spatial_locations_day,
+    output_day), student_incommuters, locations.secondary_chainsolvers, matsim.scenario (households, vehicles, facilities,
+    population), braunschweig.parking.zones_stage, matsim.simulation.prepare, documentation.meta_output, matsim.output.
+    Parking attach (log): 61,645 of 1,271,044 points lie in a parking zone (4.8 %; top zones bs_zone_ia 18,539,
+    wob_tarifzone_1 5,372, bs_zone_ib 4,703, gs_altstadt_zone1 4,219, sz_lebenstedt 3,548); free-parking draw: 13,584 of
+    300,855 persons (4.5 %) have a work or education activity in a street zone and entered the draw (RandomState
+    random_seed 1234 + 7371, shift +0.000); campus draw 5,740 persons, 1,128 park free (realised 0.1965 against
+    campus_free_share 0.2000); resident districts: 28,597 of 1,198,296 non-home activities (2.4 %) inside a district,
+    5,316 persons (1.8 %) with a resident district. Prepared parking inputs: 40 zones (campus 6, resident_zone 1,
+    street_paid 33), 10 resident districts, 49 garages priced 49 of 49 (the option set of commit 6e120332; the plans are
+    independent of it), tariff model schema 4 with both decays 0.'
+classification:
+- calibration
+status:
+  execution: completed
+  notes: '2026-10-12 11:04:34 to 13:35:00 CEST on felix, exit 0; wall 9,025 s, CPU 49,038 s, 292 recorder samples at
+    the default interval, 0 stalls, 0 OOM kills, minimum available memory 45.5 GB of 94 GB (during the freight
+    extraction). Not a MATSim simulation: matsim_last_iteration 0 and run_matsim false, so no mode choice ran and nothing
+    here is a model result; the run produced the plans that the calibration script reads.'
+environment: 'felix (Ubuntu, 64 cores, about 94 GB visible; processes pinned to 32 of the 62 budgeted cores), conda env
+  eqasim (Python 3.10.10), JDK 25.0.3+9, MATSim 2026.0-2026w12 and eqasim 2.3.1 as pinned by eqasim-java-bs'
+validation:
+- metric: parking attribute coverage of the plans (attach-step counts of the pipeline log)
+  reference: 'none -- descriptive; the counts are the log lines of braunschweig.parking.attach quoted under pipeline.notes'
+  result: 'Recorded for traceability of the calibration universes, not compared with any observed quantity: 4.8 % of the
+    main activities lie in a zone; the calibration universes drawn from these plans (Task 4k) hold 8,226 destination
+    activities in Ia/Ib and 1,327 work/education activities without parkingFree in Ia/Ib; 5,235 work/education activities
+    in Ia/Ib carry parkingFree and leave the commuter universe.'
+  artifact: docs/runs/artifacts/parking-v2-plans-25pct-2026-10-12/run_log_excerpt.txt
+  notes: 'No zone-attribute consistency check is committed for these plans; a scratch scan of Task 4k (every parkingZone
+    attribute equals the zone recomputed from the polygons) is NOT recorded as evidence by the probe-number rule.'
+features:
+- parking_cost_zones
+issues:
+- '#436'
+decisions:
+- ADR-0140
+artifacts:
+- docs/runs/artifacts/parking-v2-plans-25pct-2026-10-12/parking_v2_plans25_resolved.yml
+- docs/runs/artifacts/parking-v2-plans-25pct-2026-10-12/run_log_excerpt.txt
+- docs/runs/artifacts/parking-v2-plans-25pct-2026-10-12/resource_summary.json
+source: 'controller transcription of logs/run_20261012_110434.log on felix (provenance, stage and parking lines in the
+  artifact run_log_excerpt.txt), the resource recorder summary resource_series_20261012T110434.summary.json and
+  sha256sum over the outputs on felix (2026-10-14); the overlay and the launch script are the ones of
+  .superpowers/sdd/2026-09-29-parking-cost-zones-v2/task-5-run-plan.md'
+notes: 'Outputs are local-only on felix (eqasim-data/output_bs_25pct_parking_v2_plans, about 1.0 GB; per-person data of a
+  synthetic population) and the population was copied to the controller workstation:
+  braunschweig_25pct_parking_v2_plans_population.xml.gz, 238,263,887 bytes, SHA-256
+  43607798e1cbe9d7c7223776516db4f1750a241dc5e2d602246f350aac0a595a (the hash the calibration
+  table and its data record pin); braunschweig_25pct_parking_v2_plans_parking_tariffs_2026-09-29.json SHA-256
+  fb2ec317429953d70d9ec34c9df0a763cf1257092f6b457b0c2998304410cbd8; braunschweig_25pct_parking_v2_plans_config.xml SHA-256
+  8e86380e3d2d35003022255865d06aea60a8af7a26773e372875a298da428f58. A scratch calibration of 2026-10-12 on these plans with
+  the 49-row option set of 6e120332 (412.03 / 320.66 m) was never committed and is not evidence (ADR-0140 decision 14).'
