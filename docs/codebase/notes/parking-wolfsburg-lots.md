@@ -1,5 +1,12 @@
 # The Wolfsburg car parks of the garage dataset
 
+> **Superseded for the rows of the dataset (spec Amendment I, Task 4j, 2026-10-14).** The release dataset no longer reads this
+> package: its 13 surface lots were replaced by the sites of the large-lot research package under its size and access policy
+> (ASSUMPTION P12 withdrawn; the Autostadt, the Klinikum and the Volkswagen Arena are QA rows; the Allerpark and the
+> Theaterparkplatz are rows of the research package). See [parking-large-lots.md](parking-large-lots.md) and ADR-0140 decision 13.
+> `--wolfsburg-lots-zip` and `--large-lots-zip` cannot be combined. The reader below, its classes and its tests remain; the table
+> and the rules describe that reading of the 24 points, not the current dataset.
+
 Mechanism of spec Amendment E14 of the parking cost zones v2 design (issue #436, Task 4b3): how the 24 car parks of the
 Wolfsburg city layer enter `parking_garages_2026`. The decisions and the rejected alternatives live in the design spec, the
 ADR of the feature and the data record `parking_garages_2026` (counts, assumptions, licences); this note says where the code

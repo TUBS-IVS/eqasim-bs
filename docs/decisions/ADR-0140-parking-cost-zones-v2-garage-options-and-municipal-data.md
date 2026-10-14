@@ -10,6 +10,9 @@
 - **Issue:** #436
 - **Extends:** ADR-0139. **Supersedes in part:** ADR-0139; the complete list of the superseded and closed parts is the
   Consequences bullet "Parts of ADR-0139 this record supersedes or closes".
+- **Updated 2026-10-14 (Task 4j):** decision 13 (large surface lots as off-street options, spec Amendment I) revises ruling R-E1
+  for surface lots, withdraws ASSUMPTION P12 and adds ASSUMPTIONS L50 and P14; the option set is 91 rows (36 garages, 55 surface
+  lots) and the decay lengths of decisions 7 and 12 are those of the superseded 49-row set until Task 4k recalibrates them.
 
 ## Context
 
@@ -408,6 +411,122 @@ run (see Status).
       place, the model averages over destinations (universe caveat); the effect on a run's commuter garage share is not
       established (no v2 run exists, and the comparison script labels the `bs_zentrum` rows as the target of lambda_c).
 
+13. **Large surface lots are off-street options under a size and access policy (Amendment I, owner decisions 2026-10-13, Task 4j).**
+    Reason: the SrV answer that the garage options are calibrated against is ONE category, "Tiefgarage/Parkhaus/Grossparkplatz"
+    (`V_BRAU_PARKENAPL` code 3, `V_BRAU_PARKENCITY` code 2). The option set held the garages and the 13 Wolfsburg city-layer car
+    parks, which were selected by a thematic map and not by size, and ruling R-E1 kept every car park that charges its zone's
+    street product out of the options, so the model's off-street mass was not like-for-like with the SrV category. The owner
+    decided on 2026-10-13 ("A ist ebenfalls entschieden", "P12 streichen, Belege einzeln", "die anderen beiden nehmen wir den avg
+    oder median wo sie liegen", threshold 50 with 30 and 100 as sensitivities, all eight towns).
+    - **Input and reading.** The owner's research package `Grossparkplaetze_ZGB8_2026-10-12.zip` (data state 2026-10-13,
+      SHA-256 `d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4`, 308 files: 152 reviewed records of the eight
+      towns, 198 tariff components, 238 sources) is read by `scripts/curation/parking_zones_2026/large_lots.py` the way the
+      earlier packages are read: the pinned hash, the members against the package's own `MANIFEST.json` (the member sets must be
+      equal and every member must have its recorded SHA-256), nothing extracted, its scripts never run, the points of
+      `researched_locations.geojson` cross-checked to 1 cm against its GeoPackage layer. Its fields are read as its README states
+      them: the capacity for the threshold is `capacity_selected_for_threshold` (reported before OSM before the area estimate),
+      a missing capacity is unknown and never 0, one capacity per site, components are evidence and no alternatives.
+    - **I1, ruling R-E1 revised for surface lots.** A general-public off-street surface car park is an off-street option
+      (`facility_kind` surface_lot) whether or not its tariff equals the street product of its zone; roadside parking stays the
+      street. A lot whose documented tariff is its zone's street product carries that product from `parking_tariffs_2026.csv`
+      (rate per started unit, fee window, daily cap) as its own schedule, and the documented component of the package is compared
+      with the table row (rate and, where the package structures its weekdays, the fee window): a difference is named in the notes
+      and the QA note and never resolved silently, the zone tariff is never changed by a lot. 10 rows carry such a product (nine
+      by the decision, the Buergerpark by P14); `garage_qa.zone_product_lot_check` keeps the dataset row equal to the table row,
+      so a stale table or dataset fails the validator. Owner decision A: the station lots (Hbf P1, P2, P3) and the BgA car park
+      Markthalle stay zones AND are surface-lot rows with exactly the product of their own zone; an activity inside such a polygon
+      keeps the zone price (the option has the same price, no special case).
+    - **I2, ASSUMPTION L50 (size and access policy).** A surface lot is an option iff its access class is one the package's own
+      shortlist rule counts as general public (public, public with a customer discount, mixed public and customers; an owner
+      decision on documented evidence is the only other way), it is open, a single surface lot, no alias and no unconfirmed
+      candidate, and its capacity for the threshold is at least 50. `large_lots.decide` recomputes the package's three
+      shortlist flags (30, 50, 100) and the load stops when they differ, so a changed package cannot make the policy silently
+      disagree with the shortlist. The policy applies to every surface-lot row, the 13 earlier Wolfsburg rows included; a record
+      that fails it is ONE QA candidate row with its reason (`lot_access_not_public`, `lot_below_threshold`,
+      `lot_capacity_unknown`, `lot_not_open`, `lot_not_surface_lot`, `lot_alias`, `lot_unconfirmed_candidate`,
+      `lot_mixed_tariff_unseparated`, `lot_tariff_not_expressible`, `lot_tariff_unknown`, `lot_no_position`,
+      `lot_free_evidence_missing`, defined in `garage_qa.CANDIDATE_REASONS`). Customer, employer, event, permit-only and
+      monthly-only regimes are no unconditional options; a site is one row with one key (`lot_` and the package facility key);
+      its geometry components and aliases (the Theater accessible-parking point, Stadtbad/Piratenspielplatz) never become second
+      rows. 30 and 100 are sensitivities of the calibration: `--lot-threshold` writes them only to paths that are not the release
+      names, and their datasets are Task 4k's inputs, never the release.
+    - **I3, tariffs by role.** The owner decision per site (`regional_garage_specs.LARGE_LOT_SPECS`) names the role of each
+      general-use component (a rate with its window and cap, a free band, a duration schedule, the street product of the zone);
+      the existing encoder reads the values from the components, so no tariff number is typed. Decisions that needed a reading:
+      the free short stay of Helmstedt and Salzgitter (the Broetchentaste, a free ticket of up to 30 min) is a grace band
+      under ASSUMPTION P10, never a free day, which at a half-hour rate means 31 min cost two started units from the arrival (the
+      package states that no additive free time is proven); the three Peine products (rate per started half hour, 4 h half-day
+      ticket, day ticket) are encoded as the cheapest product for a stay (ASSUMPTION P1 and spec E2): bands 0-150 min at the rate,
+      150-240 min the half-day ticket, then the day ticket, pinned for every stay of 1 to 480 min against the published products;
+      the Wolfenbuettel Lessingtheater (0.25 EUR for the first 15 min, 0.05 EUR per started 3 min to 2 h = 2.00 EUR, day ticket
+      2.00 EUR) is three bands that meet exactly at 120 min; a day ticket is the daily cap; a Mo-Sa window is read on Monday to
+      Friday (D1). A lot with a customer discount (BadeLand, Okeraue, Buergerpark) carries the general tariff of non-guests; the
+      guest regime is not modelled. The mixed paid and free Peine sites (Friedrich-Ebert-Platz, Schuetzenplatz Sued) have no
+      verified subarea geometry: QA rows, no blanket tariff, and the cheapest subarea product is never taken for the whole site.
+      A component the grammar cannot express stops the row with a named error (`lot_tariff_not_expressible`, counted and warned,
+      never approximated); none occurs at 30, 50 or 100 (a test pins zero failures). Restrictions that are no tariff component
+      (a maximum stay, a Saturday window, the maximum stay and long-stay product of the Zone Ia product) are not carried by the
+      garage columns: they are named per row in the notes and counted in the run log (21 of the 55 rows at 50).
+    - **I4, ASSUMPTION P14 (imputed lot tariff).** A public lot of at least 50 spaces whose general tariff is unknown
+      (`braunschweig_buergerpark`, `sz_buechereivorplatz`) takes the MEDIAN product of the paid lots with a tariff of their own
+      in the SAME ZONE when at least two exist there, else of its municipality, else is a QA row. The product is the median lot's
+      complete schedule, ordered by the price of a 60 min stay; with an even number the two middle lots must have identical
+      schedules, else the step stops (no mean of two prices is invented); a free lot is no donor. Result: the Buergerpark takes
+      the product of `bs_zone_ia` (1.80 EUR per hour per started minute, 09-20 h, the same as the 0.90 EUR per 30 min that the
+      package documents for the two donors, Wendenstrasse/Werder and Grosser Hof), the Buechereivorplatz the municipal tariff of
+      Lebenstedt of the Konrad-Adenauer-Strasse lot and the Rathausvorplatz (30 min free, 0.70 EUR for the first hour, 0.10 EUR
+      per 6 min, 10-18 h). Every such row names P14, its donors and the median; the curation logs primary against imputed
+      counts (2 of 55) and warns above 25 %. The bather discount of the Buergerpark is a customer condition and not modelled.
+    - **I5, ASSUMPTION P12 withdrawn; free status per site only.** The blanket municipal free default of the 8 Wolfsburg points
+      is withdrawn (the id stays in `garages.ASSUMPTIONS` and is listed in `garages.WITHDRAWN_ASSUMPTIONS`, whose statement the dataset
+      documentation and the curation log put in front of its rule text; the tariff model register keeps the rule text, because the
+      text is part of the fixture model whose hash is pinned for the Java copies; no row rests on it). Free status is taken only where a
+      source states it with its date and scope. The owner's three sites (Allersee Suedufer WOB_PARK_720902, Freibad Fallersleben
+      WOB_PARK_1703940, VW-Bad WOB_PARK_327697) are free rows only on an archived evidence page that holds the quotation
+      (`wob_free_lots_evidence/MANIFEST.md`, read by `large_lots.load_free_evidence`); on 2026-10-14 NO page is archived: the VfB
+      Fallersleben page states "Sie koennen neben dem Freibad oder gegenueber von der Schule auf den kostenlosen Parkplaetzen
+      parken" (read, HTTP 200, not stored: a download of a file needs the owner's confirmation), the WMG page of the Allersee
+      Suedufer and the WMG flyer of 2024 for the VW-Bad were not found, so all three are QA rows `lot_free_evidence_missing`. The
+      five others are QA rows with the owner's reasons: Schloss (only wedding guests evidenced), Dunantplatz (OSM access=customers, an
+      8-year-old press note), Reislinger Markt (the owner states a reported capacity of 48; the package states none, only an
+      area estimate of 60 and unknown access, so the figure 48 is not traceable in the package and the record stays out on its
+      access), 262165 (no evidence, about 17 spaces) and 1703946 (no fee or access evidence). The Autostadt (access conflict), the
+      Klinikum (customers only) and the Volkswagen Arena (event regime) fail the access class of the package and are QA rows too;
+      the Allerpark and the Theaterparkplatz are rows of the package (free by an explicit statement of their source).
+    - **Result at 50 spaces.** 91 rows: 36 garages (unchanged) and 55 surface lots (Braunschweig 11, Wolfsburg 7, Wolfenbuettel 7,
+      Gifhorn 3, Helmstedt 5, Peine 4, Salzgitter 9, Goslar 9), of which 29 are free by an explicit source statement, 9 carry the
+      street product of their zone, 15 are priced from their own components and 2 are imputed (P14). Of the 13 earlier Wolfsburg
+      rows 2 remain (Allerpark, Theaterparkplatz, now the package record of the same site) and 11 are QA rows; 5 Wolfsburg rows are
+      new (Hoffmann-von-Fallersleben-Strasse, BadeLand, CongressPark, Cinemaxx, Amtsgericht: the last three were class-a QA
+      candidates under R-E1, the BadeLand a customer-regime candidate under E14 (e), which the package class
+      public_with_customer_discount reverses). 97 package records and the Theater's accessible-parking point are QA rows (48
+      access not public, 23 below 50, 9 unconfirmed, 6 no single lot, 5 without a capacity incl. the two ParkGO directory entries,
+      3 free-evidence missing, 2 mixed, 2 closed, 2 aliases). At 30 spaces 67 and at 100 spaces 38 lots are options. The other
+      BgA car parks pass the same policy and fail it (Suedstrasse 26, Jodutenstrasse/Klint 20, Willy-Brandt-Platz 38 spaces; the
+      Martinikirche without a capacity); the Hbf lots and the Markthalle are rows (decision A).
+    - **Rejected alternatives.** (a) The blanket municipal free default P12 for every point without a fee evidence: it assigned
+      cost 0 where no source says free and was withdrawn on the owner's decision; free status now needs a named source per site.
+      (b) A city-wide median product for a lot without a stated tariff: a tariff from another zone or town would be a different
+      product; the median is taken in the lot's own zone first, then its municipality, and fewer than two donors leave the lot out.
+      (c) Approximating a tariff the grammar cannot express (a customer-validated maximum, a vehicle-group exemption, a product
+      that needs a purchase): the row stops and is reported, a grammar or Java extension is a separate task. (d) Counting every
+      geometry component or alias of a site as an alternative, or giving each component the whole-site capacity: one site is one
+      row and a capacity counts once. (e) Filtering by `capacity_reported` alone: it drops sites whose size is an OSM value or an
+      area estimate in the package's own selection order (Fuellekuhle). (f) A blanket tariff for a mixed paid and free site from
+      its cheapest subarea product. (g) Reading the Broetchentaste as a free day or as a deduction of the free minutes from a
+      longer stay (the package states that no additive free time is proven, so the grace reading of P10 is the one consistent
+      with its text).
+    - **Limits.** Option weights ignore capacity: a 50-space lot pulls as much as a 1,300-space garage at the same distance
+      (E3; capacity and occupancy are not modelled). 29 of the 55 lots are free, so the expected cost of a stay in a paid zone
+      near one falls (E3 and E4 unchanged). Capacities are of mixed quality: at 50 spaces 33 of the 55 options have a reported
+      capacity (some of them historical surveys of 2013/2014 or 2021), 5 an OSM tag, 16 an area estimate (`floor(area / 25 m2)`,
+      two of them sums of components) and 1 a derived value (Wolfenbuettel Bahnhof: 334 less 130 hotel spaces); only a reported
+      capacity fills the dataset column. The point of a lot is a research point inside the parking area, no entrance. The calibrated decay lengths of decisions 7 and 12 (396.19 m and 359.64 m) were
+      calibrated on the 49-row option set; their recalibration on the 91-row set with the paid-only reading for the commuter
+      target (spec I6, Task 4k) is NOT part of this decision, so until it is run the configured decay lengths belong to the
+      superseded option set and no run is a valid comparison with the SrV shares. Nothing in this decision is a validation: the
+      lot tariffs were not compared with any observed payment or occupancy data.
+
 ## Consequences
 
 - Scientific results change when the flag is on. Against ADR-0139 the prices change through the zone geometry (Wolfsburg
@@ -469,14 +588,14 @@ run (see Status).
   `parking_resident_districts_2026`, `parking_garages_2026`, `parking_garage_decay_calibration_2026`,
   `parking_paid_share_2026`, `srv2023_commute_parking_by_workplace_class` and
   `srv2023_city_center_parking`; contributor notes `docs/codebase/notes/parking-cost-zones.md`,
-  `parking-garage-options.md`, `parking-wolfsburg-lots.md` and `parking-target-comparison.md`; the Python tests listed in the
+  `parking-garage-options.md`, `parking-large-lots.md`, `parking-wolfsburg-lots.md` and `parking-target-comparison.md`; the Python tests listed in the
   feature record; the Java unit tests of eqasim-java-bs `org.eqasim.braunschweig.parking` (branch
   `feature/i436-parking-cost-zones-v2`, local at the time of writing).
 - Consistency of the two implementations: the Python reference and the Java calculator agree on every case of the golden
   file (schema 5; the old families are unchanged prefixes of the new ones), and each Python and Java port of a rule
   was checked against hand-derived expectations. Randomised differential runs made during review are not committed and carry
   no weight here. These are consistency and regression checks, not a validation.
-- Design: the v2 design spec of 2026-09-29 with Amendments A to G (local, gitignored under `docs/superpowers/specs/`); the
+- Design: the v2 design spec of 2026-09-29 with Amendments A to I (local, gitignored under `docs/superpowers/specs/`); the
   owner decisions quoted in this record are those recorded there.
 - Pending evidence: the server run of the three arms (OFF, LEGACY, ZONES v2 with and without garages), the calibration table
   of lambda and the comparison table; their run manifest will be linked from the feature record. A smoke is not a validation.
@@ -572,7 +691,9 @@ The ids are historical labels: the sentences state the rule, which the code and 
 - `R-D2-a`: The commuter product excludes products for customer groups the model cannot identify and capacity-limited permit
   offers; the TU member month ticket is the commuter product of the campus rows.
 - `R-D3-a`: The three Goslar car parks at 1 EUR per hour fall under D3 and become single-site zones.
-- `R-E1`: The BgA car parks stay zones and are not garage options (no double role).
+- `R-E1`: The BgA car parks stay zones and are not garage options (no double role). Revised for surface lots by spec Amendment I1
+  (decision 13): a public surface lot is an option whatever its tariff is, so the BgA lot Markthalle and the Braunschweig Hbf
+  lots are zones AND options (owner decision A); the BgA zones themselves are unchanged.
 - `R-T1-e`: In the lever-1 supply inventory a street side mapped as "separate" carries no information about the street
   itself; the separately mapped parking area decides by its own class.
 - `R-T1-f`: Lever-1 pieces in Braunschweig are assigned whole to the annex zone they overlap most (tariff choice), never

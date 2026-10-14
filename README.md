@@ -295,7 +295,7 @@ mechanism: `docs/codebase/notes/parking-cost-zones.md`. The tariff table
 **not**: the zone polygons (`braunschweig/parking/parking_zones_2026.geojson`), the resident parking districts of
 Braunschweig and Goslar, a second layer next to the zones
 (`braunschweig/parking/parking_resident_districts_2026.geojson`), and the garage dataset of the ZGB towns, garages and the
-surface car parks of the Wolfsburg city layer (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
+large surface lots of the eight towns (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
 garage options of a stay), because their sources are not cleared for redistribution (data records
 `parking_zones_2026`, `parking_resident_districts_2026`, `parking_garages_2026`; every source stays named there). They
 are **available on request: open an issue in TUBS-IVS/eqasim-bs**; place them at the paths above (the folder is ignored
@@ -314,10 +314,13 @@ metres) equal the `decay_length_m` and the `decay_commute_length_m` of
 `braunschweig/parking/parking_garage_decay_calibration_2026.csv` (committed; a test requires both equalities), which
 `python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` writes (0 = garage
 options off); re-deriving the garage
-dataset needs the owner's regional evidence package and its three supplement packages
-(`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`,
-`Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`) in
-`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed), for the monthly products of the
+dataset needs the owner's regional evidence package and its two supplement packages
+(`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed), for the surface lots the
+owner's research package `Grossparkplaetze_ZGB8_2026-10-12.zip` and the folder `wob_free_lots_evidence/` (its `MANIFEST.md`
+and the archived evidence pages of the free Wolfsburg car parks) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/` (not distributed; `--large-lots-zip`,
+`--lot-threshold` with the default 50 spaces and `--wob-free-evidence-dir`), for the monthly products of the
 Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
 `contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and
@@ -338,7 +341,8 @@ Braunlage car parks (the town's tourism coordinates, reuse terms not verified) a
 terms, see the data record `parking_zones_2026`; the resident districts are under
 their own terms per source (a Braunschweig base map under dl-de/by-2-0, the Goslar service with an open reuse licence not
 verified), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
-pages (licences not verified; six OpenStreetMap-derived positions under the ODbL 1.0), see the data record
+pages (licences not verified; six OpenStreetMap-derived garage positions and the lot positions inside OpenStreetMap parking
+areas under the ODbL 1.0), see the data record
 `parking_garages_2026`. The two SrV parking tables (the shares above and
 `braunschweig/srv/srv2023_city_center_parking.csv`, whose garage share is the calibration target of the garage decay
 length and whose paid share is a comparison quantity only; the paid-only garage share of the row `bs_zentrum` of the commute table, columns
