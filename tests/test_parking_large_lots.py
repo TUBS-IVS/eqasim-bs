@@ -1522,7 +1522,7 @@ def test_the_zone_products_of_decision_a_equal_the_table_rows_of_their_zones_and
     pairs = {"lot_braunschweig_hbf_nord": "bs_hbf_p1_nord", "lot_braunschweig_hbf_sued": "bs_hbf_p2_sued",
              "lot_braunschweig_hbf_west": "bs_hbf_p3_west", "lot_braunschweig_markthalle": "bs_bga_markthalle",
              "lot_braunschweig_wendenstrasse_werder": "bs_zone_ia", "lot_braunschweig_grosser_hof": "bs_zone_ia",
-             "lot_wob_park_1638410": "wob_tarifzone_2", "lot_wob_park_1769502": "wob_tarifzone_1",
+             "lot_wob_park_1638410": "wob_tarifzone_2", "lot_wob_park_1769502": "wob_area_680",
              "lot_wob_park_1835014": "wob_tarifzone_2", "lot_gs_baeringer": "gs_parkplatz_baeringerstrasse",
              "lot_gs_klubgarten": "gs_parkplatz_klubgartenstrasse_zob"}
     for garage_id, zone in pairs.items():
@@ -2310,3 +2310,23 @@ def test_the_committed_qa_header_names_the_inputs_of_the_run_that_wrote_it(ll):
     assert "wob_free_lots_evidence" in header and "parking_tariffs_2026.csv:<zone_id>" in header
     assert "Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip" not in header
     assert all(reason in header for reason in pq.CANDIDATE_REASONS if reason.startswith("lot_"))
+
+
+def test_a_component_maximum_stay_equal_to_the_maximum_stay_of_the_row_is_not_listed_as_not_modelled(garages_step):
+    # spec v3 B2: Cinemaxx lies in the Wolfsburg area zone wob_area_680 (maximum 60 min, no long-stay product), so the row carries
+    # that maximum as max_stay_min; the 60 min of its own component are the same restriction, modelled, and the note must not
+    # call them "not modelled" while another stay of a component (120 min here) still is
+    package = {"rules": {"R1": {"max_stay_minutes": 60, "billing_period": "hour"},
+                         "R2": {"max_stay_minutes": 120, "billing_period": "hour"}}}
+    sentences, restricted = garages_step._lot_limitations(package, ["R1", "R2"], {}, row_max_stay_min=60)
+    not_modelled = next(sentence for sentence in sentences if sentence.startswith("Not modelled"))
+    assert restricted and "maximum stay 120 min (R2)" in not_modelled and "maximum stay 60 min" not in not_modelled
+    assert any("maximum stay 60 min (R1)" in sentence and "max_stay_min of this row" in sentence
+               and "modelled" in sentence and not sentence.startswith("Not modelled") for sentence in sentences)
+    # without a maximum stay on the row, or with another one, the component stays "not modelled", as before
+    for row_max_stay_min in (None, 90):
+        sentences, restricted = garages_step._lot_limitations(package, ["R1", "R2"], {}, row_max_stay_min=row_max_stay_min)
+        assert restricted and len(sentences) == 1
+        assert "maximum stay 60 min (R1); maximum stay 120 min (R2)" in sentences[0]
+    only, restricted = garages_step._lot_limitations(package, ["R1"], {}, row_max_stay_min=60)
+    assert restricted and len(only) == 1 and not only[0].startswith("Not modelled")

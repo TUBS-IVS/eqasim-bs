@@ -136,6 +136,7 @@ from braunschweig.parking import zone_geometry as zg  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 import municipal_zones as mz  # noqa: E402  (the curation directory, like curation_common)
 import regional_zones as rz  # noqa: E402
+import wolfsburg_area_zones as waz  # noqa: E402
 
 DIGITISED_ON = "2026-09-29"
 LICENSE = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, or a georeference "
@@ -565,7 +566,61 @@ def piece_assignment_text(pieces: list, minimum_island_m2: float) -> str:
     return "; ".join(clauses)
 
 
-def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
+#: The window of the v1 Wolfsburg centre polygon (EPSG:25832; Mittellandkanal/railway to Siemensstrasse).
+WOLFSBURG_V1_WINDOW = (620900, 5808820, 622250, 5810290)
+
+
+def wolfsburg_v1_geometry(response: dict) -> tuple:
+    """(v1 polygon of wob_innenstadt, its paid objects) from the Overpass ``response`` of Wolfsburg: the on-street ways and
+    the car parks with fee evidence in ``WOLFSBURG_V1_WINDOW``, buffered, closed by 120 m, parts below 5000 m2 dropped. The
+    one place of the rule, used by ``main`` and by ``wolfsburg_area_zones`` (which compares the release with it)."""
+    window = box(*WOLFSBURG_V1_WINDOW)
+    paid = cc.paid_objects(response, window)
+    buffered = [g.buffer(STREET_BUFFER_M if kind == "street" else PARKING_BUFFER_M) for _, kind, g, _ in paid]
+    return cc.largest_parts(cc.closed_union(buffered, 120.0).intersection(window), 5000.0), paid
+
+
+def wolfsburg_zone_records(inputs: dict, *, carve: bool = True) -> dict:
+    """The Wolfsburg zone records of spec Amendment C2 and spec v3 B2 from the verified package ``inputs``.
+
+    The tariff zones (``mz.wolfsburg_tariff_zones``), and with ``carve`` the areas with a recorded maximum stay carved
+    out of them as zones of their own (``waz.carve_area_zones``, ruling R-B-12): the parents lose exactly the area zones.
+    ``carve=False`` keeps the three tariff zones whole (the state before spec v3 B2; used to check that a finished release
+    still holds exactly what this step derives). Returns {"wolfsburg" (``mz.wolfsburg_tariff_zones``), "areas"
+    (``waz.carve_area_zones``; no area zone without ``carve``), "area_zones", "tariff_zones" (``zone_record`` lists,
+    area zones first: the precedence is insertion order, so they keep their cells and the parents take the cut
+    clearance)}."""
+    wolfsburg = mz.wolfsburg_tariff_zones(inputs, simplify_m=SIMPLIFY_M, clearance_m=EROSION_CUT_CLEARANCE_M,
+                                          opening_m=MUNICIPAL_OPENING_M, minimum_part_m2=MINIMUM_PART_M2)
+    mz.print_tariff_evidence(wolfsburg["evidence"])
+    if carve:
+        expected_areas, expected_recorded = inputs["wolfsburg_area_counts"]
+        areas = waz.carve_area_zones(wolfsburg["split"]["zones"], inputs["wob_sections"], wolfsburg["ranking"],
+                                     expected_areas=expected_areas, expected_recorded=expected_recorded)
+    else:
+        areas = {"areas": [], "parents": dict(wolfsburg["split"]["zones"]), "samples": 0}
+    sha256 = inputs["files"]["Wolfsburg_Parkdaten"]["sha256"]
+    area_zones = [zone_record(area["zone_id"], mz.WOB_AGS, area["geometry"], pz.MUNICIPAL_AREA_GEOMETRY_SOURCE,
+                              wolfsburg["source_url"],
+                              waz.area_note(area, simplify_m=SIMPLIFY_M, clearance_m=EROSION_CUT_CLEARANCE_M,
+                                            opening_m=MUNICIPAL_OPENING_M, minimum_part_m2=MINIMUM_PART_M2, sha256=sha256),
+                              source_date=mz.MUNICIPAL_DIGITISED_ON, digitised_on=mz.MUNICIPAL_DIGITISED_ON,
+                              section_buffer_m=mz.SECTION_BUFFER_M)
+                  for area in areas["areas"]]
+    tariff_zones = [zone_record(wolfsburg["zone_ids"][key], mz.WOB_AGS, areas["parents"][key],
+                                pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, wolfsburg["source_url"], wolfsburg["notes"][key],
+                                source_date=mz.MUNICIPAL_DIGITISED_ON, digitised_on=mz.MUNICIPAL_DIGITISED_ON,
+                                section_buffer_m=mz.SECTION_BUFFER_M)
+                    for key in wolfsburg["ranking"]]
+    split = wolfsburg["split"]
+    print("Wolfsburg nearest-section split: " + "; ".join(
+        f"{wolfsburg['zone_ids'][key]} {split['zones'][key].area:.0f} m2 (50 m area {split['buffers'][key].area:.0f} "
+        f"m2, contested {split['contested'][key].area:.0f} m2)" for key in wolfsburg["ranking"])
+        + f"; {split['samples']} boundary samples")
+    return {"wolfsburg": wolfsburg, "areas": areas, "area_zones": area_zones, "tariff_zones": tariff_zones}
+
+
+def apply_municipal_packages(zones: list, inputs: dict, *, carve_areas: bool = True) -> tuple:
     """Spec Amendment C on the v1 zone records, before the precedence (``mz.load_packages`` gives ``inputs``).
 
     C1: bs_zone_ia and bs_zone_ib take the geometry of the package zones 1a and 1b with their provenance (geometry_source
@@ -573,7 +628,9 @@ def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
     at its position, by one buffered-section zone per Wolfsburg tariff zone in tariff order, so the precedence gives a
     shared edge to the higher tariff. A missing v1 zone (Ia, Ib, wob_innenstadt, the Goslar polygon) raises. Returns
     (zones, context for ``finish_municipal_zones`` and ``mz.qa_rows``: the v1 geometries before the cuts, the package
-    values, the split).
+    values, the split). Spec v3 B2: the Wolfsburg areas with a recorded maximum stay become zones of their own, carved
+    out of the tariff zones (``wolfsburg_zone_records``); ``carve_areas=False`` gives the state before that spec, which
+    the finishing step ``wolfsburg_area_release.py`` re-derives to check a finished release.
     """
     by_id = {zone["zone_id"]: zone for zone in zones}
     needed = list(mz.BRAUNSCHWEIG_FEE_ZONES.values()) + [mz.WOLFSBURG_V1_ZONE, mz.GOSLAR_ZONE]
@@ -587,23 +644,12 @@ def apply_municipal_packages(zones: list, inputs: dict) -> tuple:
         zone.update(zone_record(zone_id, zone["_ags"], values["geometry"], "ordinance_map", mz.BRAUNSCHWEIG_FEE_MAP_URL,
                                 values["note"], source_date=mz.MUNICIPAL_DIGITISED_ON,
                                 digitised_on=mz.MUNICIPAL_DIGITISED_ON))
-    wolfsburg = mz.wolfsburg_tariff_zones(inputs, simplify_m=SIMPLIFY_M, clearance_m=EROSION_CUT_CLEARANCE_M,
-                                          opening_m=MUNICIPAL_OPENING_M, minimum_part_m2=MINIMUM_PART_M2)
-    mz.print_tariff_evidence(wolfsburg["evidence"])
-    tariff_zones = [zone_record(wolfsburg["zone_ids"][key], mz.WOB_AGS, wolfsburg["split"]["zones"][key],
-                                pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, wolfsburg["source_url"], wolfsburg["notes"][key],
-                                source_date=mz.MUNICIPAL_DIGITISED_ON, digitised_on=mz.MUNICIPAL_DIGITISED_ON,
-                                section_buffer_m=mz.SECTION_BUFFER_M)
-                    for key in wolfsburg["ranking"]]
+    built = wolfsburg_zone_records(inputs, carve=carve_areas)
+    wolfsburg, areas = built["wolfsburg"], built["areas"]
     position = [zone["zone_id"] for zone in zones].index(mz.WOLFSBURG_V1_ZONE)
-    zones = zones[:position] + tariff_zones + zones[position + 1:]
-    split = wolfsburg["split"]
-    print("Wolfsburg nearest-section split: " + "; ".join(
-        f"{wolfsburg['zone_ids'][key]} {split['zones'][key].area:.0f} m2 (50 m area {split['buffers'][key].area:.0f} "
-        f"m2, contested {split['contested'][key].area:.0f} m2)" for key in wolfsburg["ranking"])
-        + f"; {split['samples']} boundary samples")
+    zones = zones[:position] + built["area_zones"] + built["tariff_zones"] + zones[position + 1:]
     context = {"inputs": inputs, "v1": v1, "braunschweig": braunschweig, "wolfsburg": wolfsburg,
-               "simplify_m": SIMPLIFY_M, "clearance_m": EROSION_CUT_CLEARANCE_M}
+               "wolfsburg_areas": areas, "simplify_m": SIMPLIFY_M, "clearance_m": EROSION_CUT_CLEARANCE_M}
     return zones, context
 
 
@@ -614,16 +660,15 @@ def open_thin_features(geometry, opening_m: float):
     return opened.intersection(geometry).buffer(0)
 
 
-def finish_municipal_zones(zones: list, context: dict) -> None:
-    """After the precedence: the buffered Wolfsburg zones opened by ``MUNICIPAL_OPENING_M`` (parts below their minimum
-    part size dropped again), the area each loses logged; the flag ``reconstructed_section_m2`` of bs_zone_ia and
-    bs_zone_ib (the area of the final polygon inside the package's reconstructed section, 0 where there is none)."""
-    southern = mz.reconstructed_section(context["inputs"])
+def finish_wolfsburg_zones(zones: list, wolfsburg: dict, areas: dict) -> None:
+    """The Wolfsburg tariff zones and their area zones (spec v3 B2) among ``zones`` after the precedence, opened by
+    ``MUNICIPAL_OPENING_M`` (parts below their minimum part size dropped again); the area each loses is logged.
+    ``wolfsburg`` and ``areas`` are the entries of ``wolfsburg_zone_records``."""
     by_id = {zone["zone_id"]: zone for zone in zones}
-    wolfsburg = context["wolfsburg"]
-    for key in wolfsburg["ranking"]:
-        zone_id = wolfsburg["zone_ids"][key]
-        zone, split = by_id[zone_id], wolfsburg["split"]["zones"][key]
+    opened_zones = [(wolfsburg["zone_ids"][key], areas["parents"][key]) for key in wolfsburg["ranking"]]
+    opened_zones += [(area["zone_id"], area["geometry"]) for area in areas["areas"]]
+    for zone_id, split in opened_zones:
+        zone = by_id[zone_id]
         cut = zone["geometry"]
         opened = cc.largest_parts(open_thin_features(cut, MUNICIPAL_OPENING_M), zone["_minimum_part_m2"])
         if opened.is_empty:
@@ -634,6 +679,16 @@ def finish_municipal_zones(zones: list, context: dict) -> None:
               f"{opened.area:.1f} m2 after the opening by {MUNICIPAL_OPENING_M:g} m ({opened.area - cut.area:+.3f} m2, "
               f"{len(getattr(cut, 'geoms', [cut]))} -> {len(getattr(opened, 'geoms', [opened]))} parts); "
               f"{len(slivers)} split part(s) below {MINIMUM_PART_M2:g} m2 ({sum(p.area for p in slivers):.1f} m2)")
+
+
+def finish_municipal_zones(zones: list, context: dict) -> None:
+    """After the precedence: the buffered Wolfsburg zones and their area zones (spec v3 B2) opened by
+    ``MUNICIPAL_OPENING_M`` (parts below their minimum part size dropped again), the area each loses logged; the flag
+    ``reconstructed_section_m2`` of bs_zone_ia and bs_zone_ib (the area of the final polygon inside the package's
+    reconstructed section, 0 where there is none)."""
+    southern = mz.reconstructed_section(context["inputs"])
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    finish_wolfsburg_zones(zones, context["wolfsburg"], context["wolfsburg_areas"])
     for zone_id in context["braunschweig"]:
         by_id[zone_id][pz.RECONSTRUCTED_SECTION_COLUMN] = round(float(by_id[zone_id]["geometry"].intersection(
             southern).area), 1)
@@ -814,7 +869,8 @@ _OSM_CLAIM = "ODbL-1.0: every polygon is derived from OpenStreetMap data"
 LICENSE_MUNICIPAL_SUFFIX = (
     ". Polygons from municipal sources (spec Amendment C), under the terms of their sources: bs_zone_ia and bs_zone_ib "
     "(the OSM car-park outlines of the BgA zones are cut out of bs_zone_ia): " + mz.BRAUNSCHWEIG_PROVENANCE + "; the "
-    "geometry_source " + pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE + " zones: " + mz.WOLFSBURG_PROVENANCE + ".")
+    "geometry_source " + pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE + " and " + pz.MUNICIPAL_AREA_GEOMETRY_SOURCE + " zones: "
+    + mz.WOLFSBURG_PROVENANCE + ".")
 ATTRIBUTION_MUNICIPAL_SUFFIX = (
     " Base map of the digitised zones 1a and 1b: Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: "
     "dl-de/by-2-0 (https://www.govdata.de/dl-de/by-2-0); data changed (georeference of the digitised zones). "
@@ -1913,10 +1969,8 @@ def main(argv=None) -> int:
             "detection zones inside it); it is not the detection-zone boundary itself.")
 
     # ---------------------------------------------------------------- Wolfsburg Innenstadt (OSM fee tags)
-    wob_window = box(620900, 5808820, 622250, 5810290)
-    wob = cc.paid_objects(responses["03103000"], wob_window)
-    buffered = [g.buffer(STREET_BUFFER_M if kind == "street" else PARKING_BUFFER_M) for _, kind, g, _ in wob]
-    add("wob_innenstadt", "03103000", cc.largest_parts(cc.closed_union(buffered, 120.0).intersection(wob_window), 5000.0),
+    wob_geometry, wob = wolfsburg_v1_geometry(responses["03103000"])
+    add("wob_innenstadt", "03103000", wob_geometry,
         "osm_fee_tags", "https://www.wolfsburg.de/mobilitaetverkehr/parken",
         f"OSM fee evidence in the Wolfsburg city centre (the Parkleitsystem areas Norden, Mitte and Sueden of "
         f"wolfsburg.de): {len(wob)} objects (ticket/fee on-street ways buffered 15 m, fee=yes car parks buffered 5 m) "
@@ -2060,13 +2114,15 @@ def main(argv=None) -> int:
         # measured in the written file, as the validator measures it; a polygon the loader would have to repair after
         # the rounding of the file makes the step fail (max_repairs=0)
         loaded = pz.load_zone_polygons(out, max_repairs=0)
-        rows, intro = mz.qa_rows(municipal, loaded), mz.QA_INTRO
+        rows, intro = mz.qa_rows(municipal, loaded) + waz.qa_rows(municipal, loaded), mz.QA_INTRO
         if regional is not None:
             rows += rz.qa_rows(regional, loaded, municipalities)
             intro = rz.qa_intro(mz.QA_INTRO)
         mz.write_qa_table(args.municipal_qa_out, rows, intro)
         if args.municipal_tariffs:
-            mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], pz.load_tariffs(args.municipal_tariffs))
+            tariffs = pz.load_tariffs(args.municipal_tariffs)
+            mz.check_tariff_rows(municipal["wolfsburg"]["evidence"], tariffs)
+            waz.check_area_tariff_rows(municipal["wolfsburg_areas"]["areas"], tariffs)
         if args.regional_tariffs:
             rz.check_tariff_rows(regional["evidence"], pz.load_tariffs(args.regional_tariffs))
     if args.erosion_dir:

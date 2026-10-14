@@ -73,8 +73,12 @@ BS_FEE_ATTRIBUTES = {"zone_type": "fee", "source_date": "2025-11-26; southern co
 STRIP_1, STRIP_2 = _box(0, 0, 300, 10, WOB_X), _box(0, 70, 300, 80, WOB_X)
 #: Overlapping sections of tariff zones 1 and 2: the overlap and the points above it go to the higher tariff.
 TIE_1, TIE_2 = _box(1000, 500, 1100, 510, WOB_X), _box(1050, 500, 1150, 510, WOB_X)
-#: A lone section of tariff zone 3: nothing competes with its 50 m area.
+#: Tariff zone 3: a lone section with a recorded maximum stay (spec v3 B2: an area zone of its own, nothing of another tariff
+#: zone competes with its 50 m area) and a section without a maximum 90 m north of it (stays in the parent tariff zone 3).
 LONE_3 = _box(5000, 0, 5100, 10, WOB_X)
+REST_3 = _box(5000, 100, 5100, 110, WOB_X)
+#: The synthetic Wolfsburg layer: six areas, one of them with a recorded maximum (the pinned layer: 73 and 15).
+AREA_COUNTS = (6, 1)
 
 
 def _wob_section(geometry, fee_zone, name, *, window="07:00-18:00, Sa 07:00-14:00", maximum=None, short=False):
@@ -82,7 +86,8 @@ def _wob_section(geometry, fee_zone, name, *, window="07:00-18:00, Sa 07:00-14:0
     rate = {1: 2.0, 2: 1.2, 3: 1.0}[fee_zone]
     return {"name": name, "max_duration_raw": "NULL" if maximum is None else f"{maximum // 60}h{maximum % 60:02d}m",
             "owner": "Stadt Wolfsburg", "paid_hours_raw": window, "fee_zone_raw": str(fee_zone), "price_raw": price,
-            "short_stay_raw": "Ja" if short else "Nein", "source_id": name, "source_layer": "digitalisierung_handyparkzonen_a",
+            "short_stay_raw": "Ja" if short else "Nein", "source_id": name.lower().replace(" ", ""),
+            "source_layer": "digitalisierung_handyparkzonen_a",
             "source_url": "https://geoviewer.stadt.wolfsburg.de/default/ows/projects/gpt/parken",
             "retrieved_at_utc": "2026-10-01T06:27:59.395836+00:00", "hourly_rate_eur": rate,
             "max_duration_minutes": float("nan") if maximum is None else float(maximum), "fee_zone": fee_zone,
@@ -119,7 +124,8 @@ def packages(tmp_path_factory):
     _write_package(directory, "Braunschweig_Parkzonen", {"parking_fee_zones": fee, "reconstructed_section": reconstructed})
     sections = [_wob_section(STRIP_1, 1, "Strip 1"), _wob_section(STRIP_2, 2, "Strip 2"),
                 _wob_section(TIE_1, 1, "Tie 1"), _wob_section(TIE_2, 2, "Tie 2"),
-                _wob_section(LONE_3, 3, "Lone 3", window="09:00-18:00", maximum=120, short=True)]
+                _wob_section(LONE_3, 3, "Lone 3", window="09:00-18:00", maximum=120, short=True),
+                _wob_section(REST_3, 3, "Rest 3", window="09:00-18:00")]
     _write_package(directory, "Wolfsburg_Parkdaten",
                    {"mobile_parking_areas": gpd.GeoDataFrame(sections, geometry="geometry", crs=METRIC_CRS)})
     edit = "2018-11-22T15:42:08.753000+00:00"
@@ -159,14 +165,14 @@ def _v1_zones(assembly) -> list:
 def release(assembly, packages, tmp_path_factory):
     """The municipal step on the synthetic packages, through the v1 precedence, written and loaded as the release."""
     directory, expected = packages
-    inputs = assembly.mz.load_packages(directory, expected_sha256=expected)
+    inputs = assembly.mz.load_packages(directory, expected_sha256=expected, expected_area_counts=AREA_COUNTS)
     zones, context = assembly.apply_municipal_packages(_v1_zones(assembly), inputs)
     zones, trims = assembly.apply_precedence(zones)
     assembly.finish_municipal_zones(zones, context)
     out = tmp_path_factory.mktemp("release")
     assembly.write_zone_file(assembly.zone_frame(zones), out / "zones.geojson", municipal=True)
     loaded = pz.load_zone_polygons(out / "zones.geojson", max_repairs=0)  # valid as written, no polygon repaired
-    rows = assembly.mz.qa_rows(context, loaded)
+    rows = assembly.mz.qa_rows(context, loaded) + assembly.waz.qa_rows(context, loaded)
     assembly.mz.write_qa_table(out / "municipal_qa.csv", rows)
     return {"zones": loaded.set_index("zone_id"), "trims": dict(trims), "qa_path": out / "municipal_qa.csv",
             "zone_path": out / "zones.geojson", "loaded": loaded}
@@ -225,9 +231,19 @@ def test_wolfsburg_tariff_zones_replace_wob_innenstadt_split_by_the_nearer_secti
     assert one.geometry.contains(_point(1075, 505, WOB_X)) and one.geometry.contains(_point(1075, 530, WOB_X))
     assert two.geometry.contains(_point(1125, 505, WOB_X)) and two.geometry.contains(_point(1125, 530, WOB_X))
     assert not two.geometry.contains(_point(1075, 505, WOB_X))
-    # Nothing competes with the lone zone-3 section: its zone is its 50 m area.
-    assert three.geometry.area == pytest.approx(100 * 10 + 2 * 110 * 50 + math.pi * 50 ** 2, rel=SIMPLIFIED_BUFFER)
-    assert three.geometry.symmetric_difference(LONE_3.buffer(50.0)).area < 0.01 * LONE_3.buffer(50.0).area
+    # Spec v3 B2: the zone-3 section with a recorded maximum stay is an area zone of its own, the part of the 50 m area of
+    # tariff zone 3 nearer to it than to the other zone-3 section (the bisector y = 55); the parent keeps the rest.
+    area = zones.loc["wob_area_lone3"]
+    assert area["geometry_source"] == pz.MUNICIPAL_AREA_GEOMETRY_SOURCE and area["section_buffer_m"] == 50.0
+    assert area.geometry.contains(_point(50, 5, WOB_X + 5000)) and area.geometry.contains(_point(50, 54, WOB_X + 5000))
+    assert not area.geometry.contains(_point(50, 56, WOB_X + 5000)) and three.geometry.contains(_point(50, 56, WOB_X + 5000))
+    assert three.geometry.contains(_point(50, 105, WOB_X + 5000)) and not three.geometry.contains(_point(50, 5, WOB_X + 5000))
+    parent_area = unary_union([LONE_3.buffer(50.0), REST_3.buffer(50.0)])
+    assert area.geometry.area + three.geometry.area == pytest.approx(parent_area.area, rel=SIMPLIFIED_BUFFER)
+    assert area.geometry.intersection(three.geometry).area < 1.0
+    assert area.geometry.difference(LONE_3.buffer(50.0)).area < 1.0
+    assert area["digitising_note"].startswith("Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024)")
+    assert "recorded maximum stay of 120 min" in area["digitising_note"] and "R-B-12" in area["digitising_note"]
     assert release["zone_path"].read_text(encoding="utf-8").isascii()
 
 
@@ -346,8 +362,17 @@ def test_qa_table_reports_the_overlaps_and_the_goslar_cross_check(release):
     assert release["zones"].loc["gs_altstadt_zone1"].geometry.area == pytest.approx(1_000_000.0, rel=FILE_ROUNDING)
     # Wolfsburg: each tariff zone against v1 and the share of its 50 m area it keeps after the split
     assert qa.loc["wob_tarifzone_1_release_vs_v1", "release_zone_id"] == "wob_tarifzone_1"
+    # tariff zone 3 keeps about half of its 50 m area: the other half is the area zone of the section with a maximum stay
     kept = float(qa.loc["wob_tarifzone_3_release_vs_50m_area", "reference_share_in_subject"])
-    assert kept == pytest.approx(1.0, abs=SIMPLIFIED_BUFFER)
+    assert kept == pytest.approx(0.5, abs=SIMPLIFIED_BUFFER)
+    # spec v3 B2: two rows per area zone, against its street section and against the 50 m area of its parent
+    assert qa.loc["wob_area_lone3_release_vs_street_section", "release_zone_id"] == "wob_area_lone3"
+    assert float(qa.loc["wob_area_lone3_release_vs_street_section", "reference_share_in_subject"]) == pytest.approx(
+        1.0, abs=SIMPLIFIED_BUFFER)
+    assert float(qa.loc["wob_area_lone3_release_vs_parent_50m_area", "subject_share_in_reference"]) == pytest.approx(
+        1.0, abs=SIMPLIFIED_BUFFER)
+    assert float(qa.loc["wob_area_lone3_release_vs_parent_50m_area", "reference_share_in_subject"]) == pytest.approx(
+        0.5, abs=SIMPLIFIED_BUFFER)
     # The header defines every column.
     header = [line for line in release["qa_path"].read_text(encoding="utf-8").splitlines() if line.startswith("#")]
     for column in mq.MUNICIPAL_QA_COLUMNS:
@@ -359,12 +384,14 @@ def test_every_polygon_of_the_municipal_and_regional_sources_needs_rows_in_the_m
     # camera detection zones and the single-site buffers are compared with their references in this table, so a
     # release cannot hold one of them without rows
     zones = pd.DataFrame({
-        "zone_id": ["a_sections", "b_flag", "c_campus", "d_site", "e_plain", "f_other_campus", "g_campus_outline"],
+        "zone_id": ["a_sections", "b_flag", "c_campus", "d_site", "e_plain", "f_other_campus", "g_campus_outline",
+                    "h_area"],
         "geometry_source": [pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, "ordinance_map", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
                             pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "centre_approximation",
-                            "centre_approximation", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE],
-        "reconstructed_section_m2": [None, 1000.0, None, None, None, None, None]})
-    assert mq.municipal_zone_ids(zones) == ["a_sections", "b_flag", "c_campus", "d_site", "g_campus_outline"]
+                            "centre_approximation", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
+                            pz.MUNICIPAL_AREA_GEOMETRY_SOURCE],
+        "reconstructed_section_m2": [None, 1000.0, None, None, None, None, None, None]})
+    assert mq.municipal_zone_ids(zones) == ["a_sections", "b_flag", "c_campus", "d_site", "g_campus_outline", "h_area"]
 
 
 def _stale(qa: pd.DataFrame) -> pd.DataFrame:
@@ -485,3 +512,124 @@ def test_wolfsburg_tariff_evidence_is_uniform_or_dominant_or_left_empty(assembly
                             ({"daily_cap_eur": [6.0, float("nan"), float("nan")]}, "must stay empty")):
         with pytest.raises(SystemExit, match=message):
             mz.check_tariff_rows(evidence, tariffs.assign(**change))
+
+
+# --------------------------------------------------------------------------- spec v3 B2: the finishing step on a finished release
+
+
+@pytest.fixture(scope="module")
+def release_module():
+    """``wolfsburg_area_release`` (the finishing step; it imports the assembly from the curation directory)."""
+    sys.path.insert(0, str(CURATION_DIR))
+    try:
+        spec = importlib.util.spec_from_file_location("wolfsburg_area_release_under_test",
+                                                      CURATION_DIR / "wolfsburg_area_release.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(CURATION_DIR))
+    return module
+
+
+def _v1_wolfsburg(assembly):
+    return next(zone["geometry"] for zone in _v1_zones(assembly) if zone["zone_id"] == "wob_innenstadt")
+
+
+@pytest.fixture(scope="module")
+def before_b2(assembly, packages, tmp_path_factory):
+    """The release and QA table as the chain wrote them before spec v3 B2 (the three tariff zones whole), and the inputs."""
+    directory, expected = packages
+    inputs = assembly.mz.load_packages(directory, expected_sha256=expected, expected_area_counts=AREA_COUNTS)
+    zones, context = assembly.apply_municipal_packages(_v1_zones(assembly), inputs, carve_areas=False)
+    zones, _ = assembly.apply_precedence(zones)
+    assembly.finish_municipal_zones(zones, context)
+    out = tmp_path_factory.mktemp("before_b2")
+    zones_path = out / "parking_zones_2026.geojson"
+    assembly.write_zone_file(assembly.zone_frame(zones), zones_path, municipal=True)
+    loaded = pz.load_zone_polygons(zones_path, max_repairs=0)
+    qa_path = out / "municipal_qa.csv"
+    assembly.mz.write_qa_table(qa_path, assembly.mz.qa_rows(context, loaded))
+    assert not any(zone_id.startswith("wob_area_") for zone_id in loaded["zone_id"])
+    return {"inputs": inputs, "zones_path": zones_path, "qa_path": qa_path, "loaded": loaded, "out": out}
+
+
+@pytest.fixture(scope="module")
+def finished(release_module, before_b2, tmp_path_factory):
+    out = tmp_path_factory.mktemp("after_b2")
+    zones_path = out / "parking_zones_2026.geojson"
+    result = release_module.carve_release(before_b2["inputs"], before_b2["zones_path"], zones_path, regional=False,
+                                          station=False)
+    qa_path = out / "municipal_qa.csv"
+    qa_path.write_bytes(before_b2["qa_path"].read_bytes())
+    return {"result": result, "zones_path": zones_path, "qa_path": qa_path}
+
+
+def test_the_finishing_step_gives_the_release_the_chain_gives(release, before_b2, finished):
+    chain, after = release["loaded"].set_index("zone_id"), finished["result"]["release"].set_index("zone_id")
+    assert list(after.index) == list(chain.index), "the same zones in the same order as the chain with the carving"
+    for zone_id in chain.index:
+        assert after.loc[zone_id, "geometry"].symmetric_difference(chain.loc[zone_id, "geometry"]).area < 0.01, zone_id
+        for column in pz.ZONE_PROVENANCE_COLUMNS + ("section_buffer_m",):
+            assert str(after.loc[zone_id, column]) == str(chain.loc[zone_id, column]), (zone_id, column)
+    # every zone outside Wolfsburg is carried over unchanged, polygon and properties
+    before = before_b2["loaded"].set_index("zone_id")
+    for zone_id in before.index:
+        if zone_id.startswith("wob_"):
+            continue
+        assert after.loc[zone_id, "geometry"].equals(before.loc[zone_id, "geometry"]), zone_id
+        assert str(after.loc[zone_id, "digitising_note"]) == str(before.loc[zone_id, "digitising_note"]), zone_id
+    assert list(after.index).count("wob_area_lone3") == 1 and "wob_area_lone3" not in before.index
+
+
+def test_the_finishing_step_updates_the_qa_table_like_the_chain_writes_it(release, release_module, before_b2, finished,
+                                                                         assembly):
+    rows = release_module.update_qa_table(finished["qa_path"], finished["result"]["context"],
+                                          finished["result"]["release"], _v1_wolfsburg(assembly))
+    chain = mq.load_municipal_qa(release["qa_path"])
+    after = mq.load_municipal_qa(finished["qa_path"])
+    pd.testing.assert_frame_equal(after, chain)
+    assert [row["row_id"] for row in rows if "wob_area_" in row["row_id"]] == [
+        "wob_area_lone3_release_vs_street_section", "wob_area_lone3_release_vs_parent_50m_area"]
+    mq.validate_municipal_qa(after, finished["result"]["release"])
+    with pytest.raises(SystemExit, match="exist already"):
+        release_module.update_qa_table(finished["qa_path"], finished["result"]["context"],
+                                       finished["result"]["release"], _v1_wolfsburg(assembly))
+
+
+def test_the_finishing_step_refuses_a_release_that_has_the_area_zones_already(release_module, before_b2, finished,
+                                                                              tmp_path):
+    with pytest.raises(SystemExit, match="already"):
+        release_module.carve_release(before_b2["inputs"], finished["zones_path"], tmp_path / "parking_zones_2026.geojson",
+                                     regional=False, station=False)
+
+
+def test_the_finishing_step_refuses_a_release_whose_tariff_zone_is_not_what_the_package_gives(release_module, before_b2,
+                                                                                              tmp_path):
+    zones = gpd.read_file(before_b2["zones_path"]).to_crs(METRIC_CRS)
+    for column in ("source_date", "digitised_on"):
+        zones[column] = zones[column].astype(str).str[:10]
+    row = zones["zone_id"] == "wob_tarifzone_3"
+    zones.loc[row, "geometry"] = zones.loc[row, "geometry"].buffer(-5.0)
+    path = tmp_path / "parking_zones_2026.geojson"
+    zones.to_crs("EPSG:4326").to_file(path, driver="GeoJSON", COORDINATE_PRECISION=7)
+    with pytest.raises(SystemExit, match="wob_tarifzone_3.*package"):
+        release_module.carve_release(before_b2["inputs"], path, tmp_path / "out" / "parking_zones_2026.geojson",
+                                     regional=False, station=False)
+
+
+def test_the_finishing_step_refuses_a_zone_that_the_chain_precedence_would_cut(release_module, assembly, before_b2,
+                                                                               tmp_path):
+    # a committed zone that takes precedence over the Wolfsburg zones and lies within the cut clearance of one: the finishing
+    # step cannot reproduce the chain without re-running it
+    zones = gpd.read_file(before_b2["zones_path"]).to_crs(METRIC_CRS)
+    for column in ("source_date", "digitised_on"):
+        zones[column] = zones[column].astype(str).str[:10]
+    intruder = zones[zones["zone_id"] == "bs_bga_markthalle"].copy()
+    intruder["geometry"] = [_box(5000, 0, 5100, 10, WOB_X)]
+    zones = pd.concat([zones, intruder.assign(zone_id="gs_intruder")], ignore_index=True)
+    path = tmp_path / "parking_zones_2026.geojson"
+    gpd.GeoDataFrame(zones, geometry="geometry", crs=METRIC_CRS).to_crs("EPSG:4326").to_file(
+        path, driver="GeoJSON", COORDINATE_PRECISION=7)
+    with pytest.raises(SystemExit, match="gs_intruder"):
+        release_module.carve_release(before_b2["inputs"], path, tmp_path / "out" / "parking_zones_2026.geojson",
+                                     regional=False, station=False)

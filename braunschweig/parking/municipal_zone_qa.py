@@ -46,9 +46,10 @@ _AGS = re.compile(r"^\d{8}$")
 
 def municipal_zone_ids(zones: pd.DataFrame) -> list:
     """The polygons that need rows of the municipal QA table: geometry_source ``municipal_street_sections_buffered``
-    (spec Amendment C2), ``campus_detection_zones``, ``campus_outline_and_detection_zones`` or
-    ``single_site_buffered`` (spec Amendment D), or a ``reconstructed_section_m2`` value (sorted ids)."""
-    municipal = zones["geometry_source"].isin((pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE,
+    (spec Amendment C2), ``municipal_mobile_parking_area`` (spec v3 B2), ``campus_detection_zones``,
+    ``campus_outline_and_detection_zones`` or ``single_site_buffered`` (spec Amendment D), or a ``reconstructed_section_m2``
+    value (sorted ids)."""
+    municipal = zones["geometry_source"].isin((pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE, pz.MUNICIPAL_AREA_GEOMETRY_SOURCE,
                                                pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
                                                pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
                                                pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE))
@@ -85,8 +86,8 @@ def validate_municipal_qa(qa: pd.DataFrame, zones: pd.DataFrame) -> None:
     areas numbers >= 0 and the overlap at most the smaller area (up to the rounding); both shares recomputed from the
     recorded areas (empty when the denominator is 0); feature counts whole numbers with the overlapping ones at most
     all; a ``release_zone_id`` names a polygon of ``zones`` whose area (EPSG:25832) equals ``subject_area_m2`` within
-    ``RELEASE_AREA_TOLERANCE_M2``; every ``municipal_street_sections_buffered``, ``campus_detection_zones``,
-    ``campus_outline_and_detection_zones`` and ``single_site_buffered`` polygon and every polygon with a
+    ``RELEASE_AREA_TOLERANCE_M2``; every ``municipal_street_sections_buffered``, ``municipal_mobile_parking_area``,
+    ``campus_detection_zones``, ``campus_outline_and_detection_zones`` and ``single_site_buffered`` polygon and every polygon with a
     ``reconstructed_section_m2`` value is the release subject of at least one row (``municipal_zone_ids``).
     """
     pz._check_columns(qa, MUNICIPAL_QA_COLUMNS, "municipal QA table")

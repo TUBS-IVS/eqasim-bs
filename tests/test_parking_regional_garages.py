@@ -1489,18 +1489,22 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
         assert garage_id.startswith("lot_braunschweig_hbf_") or "P5" in parts
 
 
-def test_exactly_the_three_lots_of_zone_ia_carry_a_maximum_stay_and_it_is_the_zones_ruling_r_b_2():
+def test_exactly_the_lots_of_zones_with_a_maximum_stay_carry_it_ruling_r_b_2():
     # spec v3 B1 dropped the long-stay product of Ia; ruling R-B-2: a lot that takes the product of a zone with a maximum stay
-    # and no
-    # long-stay product carries the maximum as its own (column max_stay_min, 180 min); Buergerpark takes it with its P14 product
+    # and no long-stay product carries the maximum as its own (column max_stay_min): the three lots of zone Ia (180 min;
+    # Buergerpark takes it with its P14 product) and, since spec v3 B2, the Wolfsburg lot Cinemaxx, which lies in the area zone
+    # wob_area_680 (60 min)
     garages = _committed_garages()
     assert str(garages["max_stay_min"].dtype) == "Int64"
     carrying = sorted(garages.index[garages["max_stay_min"].notna()])
-    assert carrying == ["lot_braunschweig_buergerpark", "lot_braunschweig_grosser_hof", "lot_braunschweig_wendenstrasse_werder"]
-    assert (garages.loc[carrying, "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN).all()
+    ia_lots = ["lot_braunschweig_buergerpark", "lot_braunschweig_grosser_hof", "lot_braunschweig_wendenstrasse_werder"]
+    assert carrying == ia_lots + ["lot_wob_park_1769502"]
+    assert (garages.loc[ia_lots, "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN).all()
     tariffs = pz.load_tariffs(TARIFFS_PATH).set_index("zone_id")
     assert tariffs.loc["bs_zone_ia", "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN
     assert pd.isna(tariffs.loc["bs_zone_ia", "long_stay_product_eur"])
+    assert garages.loc["lot_wob_park_1769502", "max_stay_min"] == tariffs.loc["wob_area_680", "max_stay_min"] == 60
+    assert "wob_area_680" in garages.loc["lot_wob_park_1769502", "tariff_rule_ids"]
     for garage_id in carrying:
         row = garages.loc[garage_id]
         assert _plain(row["tariff_duration_bands"]) is None

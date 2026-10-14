@@ -551,8 +551,8 @@ acquisition:
     eqasim-data/output_parking_lot_threshold_sensitivity/: at 30 spaces 103 rows (36 garages, 67 lots; three more sites
     without a position are lot_no_position, none is invented) and at 100 spaces 74 rows (36 garages, 38 lots); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    0a65c5c2588f00f18649c60b6e1492faa004f18ea57cb2553d84c343a2fc0b27, parking_garages_2026_qa_lot_threshold_30.csv
-    fca655ebbde165e03376dcf7987142c614c6927458b651339ba9b8c9b44e6bb9, parking_garages_2026_lot_threshold_100.geojson
+    3ad8bfb276fa4438de3f065d81507644eb388e534a5354fedc4da20729692ea5, parking_garages_2026_qa_lot_threshold_30.csv
+    1512ad1120a32284f5abf41390d5e3c161674853de02289a3c3fbdcc585a6e98, parking_garages_2026_lot_threshold_100.geojson
     d826a089362e3ffaa30001bf1725f2e7e383309593e914be07c89d28cf4e22e5 and parking_garages_2026_qa_lot_threshold_100.csv
     161d5ed1618823eea0d129d41ac43fc18327211057bf8e163288ec7499ca3df9 (the files regenerated in the fix round of Task 4j; the
     hashes of the first run are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
@@ -708,7 +708,7 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    19cdc72aede9bfbc61ed94fdf5db520aec451174461ca6ae5ff9f705734d64a4 (the earlier pins are in the history of the field notes:
+    aa6fcd454d324c811c3e6846b052b41e023d6a73d430400d9f984d31cee72b1e (the earlier pins are in the history of the field notes:
     storage.notes holds exactly one, the test of the calibration table reads it). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
@@ -1126,3 +1126,28 @@ notes: >-
   3fb89fbbf04328837e3eeee3fa5258a543a2424ff03db7b619e7f38719957e39,
   before spec v3 B: 724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81), the QA table is unchanged and the two
   sensitivity datasets carry the same sentence (their pins above are the current ones).
+  Spec v3 B2 (Task B2, issue #436, 2026-10-14): the Wolfsburg area zones (data record parking_zones_2026) change the zone of two
+  surface lots: Parkplatz Cinemaxx (lot_wob_park_1769502, in the release at 50 spaces) lies in wob_area_680 (maximum 60 min)
+  instead of wob_tarifzone_1, and Hoffmannstrasse Dreieckparkplatz / Hoffmannstrasse 12 (lot_wob_park_1245204, capacity below 50, so
+  only in the 30-space sensitivity dataset) in wob_area_736 (maximum 120 min) instead of wob_tarifzone_3. The specification of a
+  lot names the zone whose street product it takes (regional_garage_specs.LARGE_LOT_SPECS zone_product: wob_area_680 and
+  wob_area_736; the generator refuses a lot whose point does not lie in that zone of the committed polygons). Both zones have a
+  maximum stay and no long-stay product, so by ruling R-B-2 the row carries the zone's maximum stay as max_stay_min (60 and 120);
+  tariff_rule_ids name the area row; the note names the zone and states the elapsed-stay rule of ruling R-B-11; and the generator
+  no longer lists a component maximum stay that equals the row's max_stay_min as 'not modelled' (regional_garages.
+  _lot_limitations: the note says it is modelled). The rate, billing unit, fee window and price of both lots are unchanged (the
+  area row copies its parent), so only the feasibility of a stay above the maximum changes: the lot leaves the option set
+  (ASSUMPTION M3). No other row changed and no geometry changed (the dataset diff is exactly these rows). Regenerated with the
+  release command above, also with --lot-threshold 30 and 100 (two runs of the whole set identical). RESULT: 91 rows as before;
+  SHA-256 (LF): parking_garages_2026.geojson aa6fcd454d324c811c3e6846b052b41e023d6a73d430400d9f984d31cee72b1e (before
+  19cdc72aede9bfbc61ed94fdf5db520aec451174461ca6ae5ff9f705734d64a4), parking_garages_2026_qa.csv
+  c14f1baee143d45ea7ff39cd7e69e0144d5a1ed6b84e45ebc023096e7465e73d (before
+  0abc282397d2c5ce52f5e444a7fef8fe36c0699ae888f4558e924eaa5253ced2); the
+  sensitivity dataset at 30 spaces (103 rows) is 3ad8bfb276fa4438de3f065d81507644eb388e534a5354fedc4da20729692ea5 (before
+  0a65c5c2588f00f18649c60b6e1492faa004f18ea57cb2553d84c343a2fc0b27) with its QA table
+  1512ad1120a32284f5abf41390d5e3c161674853de02289a3c3fbdcc585a6e98 (before
+  fca655ebbde165e03376dcf7987142c614c6927458b651339ba9b8c9b44e6bb9); the
+  sensitivity dataset at 100 spaces and its QA table are unchanged (neither lot is an option at 100 spaces). The report-only pass
+  keeps its counts (22 lots inside a zone at 50 spaces, 13 equal, 9 differing). The calibration table
+  parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931... and stays stale until Task B5
+  (ruling R-B-8).

@@ -839,10 +839,10 @@ LARGE_LOT_SPECS = {
                                             "get 50 % off the fee, a customer condition that is not modelled)"},
     # ---- Wolfsburg
     "WOB_PARK_1638410": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1638410__1"},
-    "WOB_PARK_1769502": {"zone_product": "wob_tarifzone_1", "check": "WOB_PARK_1769502__1"},
+    "WOB_PARK_1769502": {"zone_product": "wob_area_680", "check": "WOB_PARK_1769502__1"},
     "WOB_PARK_1835014": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1835014__1"},
     "WOB_PARK_720901": {"zone_product": "wob_tarifzone_1", "check": "WOB_PARK_720901__1"},
-    "WOB_PARK_1245204": {"zone_product": "wob_tarifzone_3", "check": "WOB_PARK_1245204__1",
+    "WOB_PARK_1245204": {"zone_product": "wob_area_736", "check": "WOB_PARK_1245204__1",
                          "ignored": {"WOB_PARK_1245204__2": "a short-stay product of at most 30 min that the package says is "
                                                             "not to be added as a discount to every longer stay"}},
     "WOB_PARK_1114127": {"rate": "WOB_PARK_1114127__1", "window": None,

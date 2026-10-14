@@ -566,7 +566,7 @@ def _committed_zones() -> gpd.GeoDataFrame:
 
 def test_the_committed_release_holds_the_three_station_zones_cut_against_the_bga_zone():
     zones = _committed_zones()
-    assert len(zones) == 40
+    assert len(zones) == 55     # 40 zones of the release before spec v3 B2 plus the 15 Wolfsburg area zones
     station = zones.loc[["bs_hbf_p1_nord", "bs_hbf_p2_sued", "bs_hbf_p3_west"]]
     assert set(station["geometry_source"]) == {"single_site_buffered"} and set(station["site_buffer_m"]) == {50.0}
     # the 50 m areas of the OSM outlines (6,338, 9,539 and 2,345 m2 outline: 30,695, 44,052 and 21,692 m2 buffer), simplified and

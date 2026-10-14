@@ -23,7 +23,7 @@ vintage: >-
   and the TU Parkordnung (Stand 2026-06-03), both retrieved 2026-09-29; the fee windows of Helmstedt and Goslar zone 1
   (spec Amendment D1) on the Helmstedt brochure of 12/2024 and the Goslar service page, both of the owner-supplied
   package retrieved 2026-10-07 (source_date stays the retrieval date of the row's primary source).
-geography: The 40 zones of parking_zones_2026 (eleven ZGB municipalities)
+geography: The 55 zones of parking_zones_2026 (eleven ZGB municipalities)
 crs: null
 roles:
 - supply_input
@@ -366,3 +366,29 @@ notes: >-
   Amendment I1 is equal again. Tariff state of the release (ruling R-B-7): parking_tariff_snapshot_date is 2026-10-14 in
   PARKING_DEFAULTS, configs/base_bs.yml and both popsim fixtures, so every EV exemption of the table (the earliest ends
   2026-12-31) is exported.
+  Spec v3 B2 (Task B2, issue #436, 2026-10-14): +15 rows, one per Wolfsburg area zone wob_area_<source_id> (55 rows now:
+  street_paid 48, resident_zone 1, campus 6; fee_window_source municipal_page 37, operator_page 3, ordinance 7, assumption 8).
+  Each row copies the values of its parent row (wob_tarifzone_1 for 668 and 680, wob_tarifzone_3 for 723 to 732 and 734 to 736:
+  municipality_ags, zone_type, workplace_class, hourly_rate_eur, billing_unit_min, fee_start_h, fee_end_h, fee_window_source,
+  resident_exempt, source_url, source_date, valid_from; every product and EV column empty like the parent) and has its OWN
+  max_stay_min from the layer field max_duration_minutes (30, 60 and thirteen times 120; source id: the layer
+  mobile_parking_areas of the owner's package Wolfsburg_Parkdaten.zip, SHA-256
+  73407d5b23ed2517547a0e648b6a91357772f4d9af1e4d1bc3b3efda4a3cad71,
+  and the source_id of the area). The note of a row names the parent, ASSUMPTION W-max, ASSUMPTION M3, the layer field
+  max_duration_raw, the raw paid-hours text of the area (field Kostenpflichtige Parkzeit) compared with the parent window and the
+  Kurzzeitparken flag (not modelled); the comparison found no difference for any of the 15 areas (the zone-1 areas state
+  '07:00-18:00, Sa 07:00-14:00', the zone-3 areas '09:00-18:00', so the parent windows 7-18 h and 9-18 h hold; a difference would
+  be named 'DIFFERS' in the note and the window left at the parent value: fee windows and maximum stays are separate columns,
+  nothing is inferred from the other). The three tariff rows are unchanged. Header: the bites lists of ASSUMPTION M3 and W-max
+  name the 15 zones. Written by scripts/curation/parking_zones_2026/wolfsburg_area_release.py (wolfsburg_area_zones.
+  area_tariff_rows and write_area_rows; check_area_tariff_rows compares the committed rows with the layer on every chain run
+  with --municipal-tariffs). Expected output change of Task B2 (its one statement; no run exists and the size is not
+  established): a stay of more than 30, 60 or 120 min in the respective area zone has no street option any more (priced over
+  the garage and lot options within reach, else NO_FEASIBLE_OPTION, ASSUMPTION M3); the price of a stay within the maximum is
+  unchanged; the Wolfsburg stays in the 58 areas without a recorded maximum are unchanged (ASSUMPTION W-max). The zone geometries
+  changed: parking_zones_2026.geojson SHA-256 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504 (before
+  4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490). History of the file (LF SHA-256) after Task B1:
+  8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f before Task B2; now: SHA-256 of the file (LF):
+  7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82 (before:
+  8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f). The record's hash is pinned
+  against the committed file by a test.

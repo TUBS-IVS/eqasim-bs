@@ -105,8 +105,9 @@ def _same(left, right) -> bool:
 
 
 def test_every_row_outside_the_listed_corrections_equals_the_base_table(tariffs):
+    # the 15 Wolfsburg area rows of spec v3 B2 are new rows, not corrections of a base row (their own test pins them)
     base = _base_rows()
-    assert set(base) == set(tariffs.index)
+    assert set(base) == set(tariffs.index[~tariffs.index.str.startswith("wob_area_")])
     moved = []
     for zone_id, row in base.items():
         if zone_id in EXPECTED_CHANGES:

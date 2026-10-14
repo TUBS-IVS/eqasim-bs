@@ -1660,14 +1660,16 @@ def _position_source(package: dict, record: dict) -> tuple:
     return None, "none"
 
 
-def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple:
+def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict, row_max_stay_min=None) -> tuple:
     """(sentences, restricted) of what a lot row does not carry: the maximum stay and the weekend window of a used component (the
     column max_stay_min is set only on a lot that takes the street product of a zone, ruling R-B-2, and the model's weekday is
     Monday to Friday, spec D1) and the components that
     set no value, with their reason. ``restricted`` is True where the row has a maximum stay or a weekend window (the count of the
     run log reads this fact, never the text of the notes). Restrictions, not tariff components: they never stop a row, they are
     listed and counted. The 30 min of a free short stay (the Broetchentaste) is the length of the free band and no maximum stay of
-    the lot."""
+    the lot. A component maximum stay equal to ``row_max_stay_min`` (the maximum stay the row carries from the zone it takes the
+    street product of, spec v3 B2: Cinemaxx in the area zone wob_area_680) is the same restriction and IS modelled: its sentence
+    says so and it is not listed as not modelled."""
     stays, weekends = {}, {}
     for rule_id in used_rule_ids:
         raw = package["rules"].get(rule_id)
@@ -1679,9 +1681,14 @@ def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple
         if isinstance(schedule, dict) and any(set(window["days"]) & {"SA", "SU"}
                                               for window in schedule.get("weekly_windows") or []):
             weekends.setdefault(str(schedule.get("raw")), []).append(rule_id)
+    modelled = stays.pop(int(row_max_stay_min), None) if row_max_stay_min is not None else None
     texts = [f"maximum stay {minutes} min ({', '.join(ids)})" for minutes, ids in sorted(stays.items())]
     texts += [f"the Saturday window of '{raw}' ({', '.join(ids)})" for raw, ids in sorted(weekends.items())]
     sentences = []
+    if modelled:
+        sentences.append(f"The maximum stay {int(row_max_stay_min)} min ({', '.join(modelled)}) of the component equals the "
+                         "max_stay_min of this row, which the row takes from the zone it carries the street product of, so it "
+                         "is modelled.")
     if texts:
         sentences.append("Not modelled (a maximum stay of the lot's own components is not read into max_stay_min, which only a lot "
                          "that takes the street product of its zone carries, ruling R-B-2; the model's day is an average "
@@ -1689,7 +1696,7 @@ def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple
     for rule_id, why in ignored.items():
         raw = package["rules"][rule_id]
         sentences.append(f"Not used: {rule_id} ({raw.get('billing_period')}, {raw.get('amount_eur')} EUR): {why}.")
-    return sentences, bool(texts)
+    return sentences, bool(texts) or bool(modelled)
 
 
 def _encode_or_not_expressible(spec: dict, rules: dict) -> dict:
@@ -1856,7 +1863,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
         notes.append(comment[:1].upper() + comment[1:] + ("" if comment.endswith(".") else "."))
     if lot.get("zone_carried"):
         notes.append(lot["zone_carried"])
-    limitations, restricted = _lot_limitations(package, lot["used"], spec.get("ignored") or {})
+    limitations, restricted = _lot_limitations(package, lot["used"], spec.get("ignored") or {}, lot.get("max_stay_min"))
     notes.extend(_lot_ascii(sentence) for sentence in limitations)
     if record.get("access_notes"):
         notes.append("Access (package): " + _lot_ascii(record["access_notes"]).rstrip(".") + ".")

@@ -1,5 +1,5 @@
 dataset: parking_zones_2026
-title: Parking cost zone polygons of the ZGB (40 zones in eleven municipalities)
+title: Parking cost zone polygons of the ZGB (55 zones in eleven municipalities)
 inventory_id: null
 provider: >-
   Own digitisation (issue #249) from public sources: City of Braunschweig parking-zone overview map and
@@ -27,7 +27,8 @@ vintage: >-
 geography: >-
   Paid-parking areas of Braunschweig (ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle
   zone 132 and its three Parkscheininseln, six TU campus areas), the three Wolfsburg tariff zones of the city's
-  Handyparkzonen, Salzgitter-Lebenstedt, Peine, Goslar Altstadt zone 1 and three Goslar car parks at 1 EUR/h,
+  Handyparkzonen and, since spec v3 B2, the 15 area zones with a recorded maximum stay carved out of them,
+  Salzgitter-Lebenstedt, Peine, Goslar Altstadt zone 1 and three Goslar car parks at 1 EUR/h,
   Wolfenbuettel, Gifhorn and Helmstedt town centres, and since spec Amendment D the single paid sites of Bad
   Harzburg (five car parks), Seesen (Am Markt) and Braunlage (two car parks), and since spec Amendment G1 the three DB
   BahnPark station car parks of the Braunschweig Hauptbahnhof (P1 Nord, P2 Sued, P3 West)
@@ -502,7 +503,9 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490. The curation QA tables
+    7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504 (the earlier pins are in the history of the field notes:
+    storage.notes holds exactly one, the test of
+    the calibration table reads it). The curation QA tables
     parking_zones_2026_qa.csv (v2 lever 1), parking_zones_2026_supply_share_qa.csv (v2 Amendment B) and
     parking_zones_2026_municipal_qa.csv (v2 Amendments C and D) next to it stay committed (force-added like the other
     reference tables; read by scripts/validate_parking_zones.py, not by any stage). The owner's municipal packages
@@ -850,3 +853,57 @@ notes: >-
   Spec v3 B1 (Task B1, issue #436, 2026-10-14): the zone polygons are unchanged (SHA-256 of the file above, 4008d609...); the
   tariff rows of the zones changed and are recorded in the data record parking_tariffs_2026 (cells and source ids by
   pointer), the excluded Peine Echternplatz lot in parking_coverage_register_2026.
+  Spec v3 B2 (Task B2, issue #436, 2026-10-14; ruling R-B-12): the 15 mobile-parking areas of the Wolfsburg layer with a
+  recorded maximum stay become zones of their own, wob_area_<source_id> (geometry_source municipal_mobile_parking_area,
+  provenance section_buffer_m 50), carved out of their parent tariff zone. The layer mobile_parking_areas of the owner's package
+  Wolfsburg_Parkdaten.zip (SHA-256 73407d5b23ed2517547a0e648b6a91357772f4d9af1e4d1bc3b3efda4a3cad71, read from the zip, never
+  extracted) holds 73 areas: 15 with a recorded maximum stay (max_duration_minutes; two in tariff zone 1: 668 Porschestr. Nord
+  30 min and 680 Willy-Brandt-Platz (westl. TRYP) 60 min, thirteen in tariff zone 3: 723 to 732 and 734 to 736, 120 min each) and
+  58 without; the step stops on any other count and lists the recorded ones. The 58 areas without a recorded maximum are NOT
+  carved out: they share the rule of their tariff zone (ASSUMPTION W-max, owner decision 2026-10-14: no recorded maximum reads
+  as 'long parking allowed'; the layer says nothing about their parking duration, which is no evidence of unlimited parking, so
+  W-max is an assumption and not a finding). The area zone is the part of the 50 m access area of the parent tariff zone
+  (ASSUMPTION C-a, after the split between the tariff zones) that is nearer to the street section of that area than to any
+  other section of the parent: the generalised Voronoi split of municipal_zones.split_by_nearest_section (boundary samples
+  every 1 m on a 1e-6 m grid; where two sections overlap, the area wins), not the raw section polygon, because street sections
+  are thin, activity points lie beside them and would almost never fall inside, so the maximum stay would never act. The
+  parent loses exactly the area zones, so no two zones overlap (the validator check passes: pairwise overlap at most the
+  tolerance). The zones take the same simplification (0.5 m), cut clearance (0.05 m), opening (0.05 m) and sliver rule (20 m2)
+  as every rule-based Wolfsburg zone. RESULT (areas in m2 as written by the step, before the rounding of the file): the 15 area
+  zones 187,690 m2 in total (668 10,965; 680 3,933; 723 9,166; 724 13,170; 725 29,371; 726 7,918; 727 9,098; 728 18,371; 729
+  11,400; 730 7,913; 731 10,511; 732 34,104; 734 5,875; 735 8,480; 736 7,415); wob_tarifzone_1 638,518 -> 623,585 m2 (the
+  polygon after the precedence and the opening), wob_tarifzone_2 unchanged (660,710), wob_tarifzone_3 265,302 -> 92,467 m2
+  (13 of its 17 sections are areas with a recorded maximum). The Wolfsburg zones are now 18 (1.564 km2); the geometry-source
+  mix of the validator is municipal_mobile_parking_area 15 zones 0.188 km2 (2.4 %) and municipal_street_sections_buffered 3
+  zones 1.377 km2 (17.6 %, 1.565 km2 before). The extent of an area zone is a modelling assumption (C-a and the nearer-section
+  rule), not a measured catchment, and no reference exists against which it was validated.
+  How the file was regenerated: the full chain (assemble_parking_zones.py) needs the pipeline's car network and the
+  municipality polygons (--network, --municipalities), which are not on this machine (as in Task 4g), so the step
+  scripts/curation/parking_zones_2026/wolfsburg_area_release.py applies the SAME derivation to the FINISHED release
+  (assemble_parking_zones.wolfsburg_zone_records, the chain's precedence and opening; assemble_parking_zones.py itself now calls
+  the same functions, so a full chain run with --municipal-dir gives the same zones, and a test on synthetic packages pins the
+  equality of the two routes). Before it carves, it re-derives the three tariff zones from the pinned package WITHOUT the
+  carving and requires them to equal the committed polygons (symmetric difference at most 0.01 m2 after the rounding of the file;
+  on the real data the geometry text of the three zones is identical to the committed one) and checks that no committed zone
+  of another municipality lies within the cut clearance of a Wolfsburg zone; the 37 other zones are carried over unchanged
+  (read back and compared). Command: python scripts/curation/parking_zones_2026/wolfsburg_area_release.py --package-dir
+  eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01 --raw-overpass
+  eqasim-data/data/braunschweig/parking/raw_overpass --zones <the release before this step> --zones-out
+  <data directory>/braunschweig/parking/parking_zones_2026.geojson --tariffs
+  eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv --municipal-qa
+  eqasim-data/data/braunschweig/parking/parking_zones_2026_municipal_qa.csv (the file must be named
+  parking_zones_2026.geojson, like the station step). The zone release is regenerated locally and never committed (R-B-10:
+  nothing is installed into the main checkout before the Part B integration). SHA-256 (LF) of the zone file as written:
+  parking_zones_2026.geojson 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504 (before:
+  4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490; the licence and attribution members name the new source).
+  The
+  municipal QA table has 112 rows (82 before: two per area zone, against its street section and against the 50 m area of its
+  parent, and the 12 rows of the three tariff zones rewritten against the new polygons; the header paragraph names B2),
+  SHA-256 (LF) ca4c6b23a427c8132b36e230ff8c6607b6d6cacea30e231962228b09c66d8573 (before:
+  e79dd6f36ebd0681d73dff4f44473dbda25937ced3fc2a75df34f65def0a718e). The tariff rows of the 15 zones (15 rows, the values of
+  the parent row and the own
+  maximum stay) are in the data record parking_tariffs_2026; the coverage register note of Wolfsburg names them. Two
+  surface lots of the garage dataset lie in area zones now (data record parking_garages_2026): Parkplatz Cinemaxx in
+  wob_area_680 and Hoffmannstrasse Dreieckparkplatz in wob_area_736. The raw paid-hours text of each area equals the window of
+  its parent in all 15 cases (no DIFFERS note). Validator summary on the local files (scripts/validate_parking_zones.py
+  --data-path eqasim-data/data, 2026-10-14): 55 zones, 55 tariff rows, 131 register rows (123 municipalities), OK.

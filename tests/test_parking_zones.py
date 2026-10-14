@@ -480,6 +480,33 @@ def test_municipal_zone_provenance_is_validated(tmp_path, buffer_m, reconstructe
 
 @pytest.mark.parametrize("buffer_m, other_buffer_m, message", [
     (50.0, None, None),
+    (None, None, "section_buffer_m required for geometry_source municipal_mobile_parking_area"),
+    (0.0, None, "section_buffer_m must be a positive number"),
+    (50.0, 50.0, "section_buffer_m only applies to geometry_source municipal_street_sections_buffered, "
+                 "municipal_mobile_parking_area"),
+], ids=["complete", "no_buffer", "zero_buffer", "buffer_on_other_source"])
+def test_municipal_area_zone_provenance_is_validated(tmp_path, buffer_m, other_buffer_m, message):
+    # spec v3 B2: a Wolfsburg area zone is carved out of the 50 m access area of its tariff zone (ASSUMPTION C-a), so it
+    # records that buffer like the tariff zones, and no other source does
+    zones = gpd.read_file(ZONE_FIXTURE)
+    area = zones["zone_id"] == "fx_wob"
+    zones.loc[area, "geometry_source"] = pz.MUNICIPAL_AREA_GEOMETRY_SOURCE
+    zones["section_buffer_m"] = [buffer_m if flag else other_buffer_m for flag in area]
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    assert pz.MUNICIPAL_AREA_GEOMETRY_SOURCE == "municipal_mobile_parking_area"
+    assert pz.MUNICIPAL_AREA_GEOMETRY_SOURCE in pz.GEOMETRY_SOURCES
+    if message is None:
+        loaded = pz.load_zone_polygons(path).set_index("zone_id")
+        assert loaded.loc["fx_wob", "geometry_source"] == "municipal_mobile_parking_area"
+        assert loaded.loc["fx_wob", "section_buffer_m"] == 50.0
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.load_zone_polygons(path)
+
+
+@pytest.mark.parametrize("buffer_m, other_buffer_m, message", [
+    (50.0, None, None),
     (None, None, "site_buffer_m required for geometry_source single_site_buffered"),
     (0.0, None, "site_buffer_m must be a positive number"),
     (-50.0, None, "site_buffer_m must be a positive number"),
@@ -534,11 +561,13 @@ def test_campus_sources_are_allowed_geometry_sources_without_a_provenance_column
     ("fx_sz", pz.CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, "campus_detection_zones .* zone_type campus .*fx_sz"),
     ("fx_sz", pz.CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
      "campus_outline_and_detection_zones .* zone_type campus .*fx_sz"),
+    ("fx_sz", pz.MUNICIPAL_AREA_GEOMETRY_SOURCE, None),
+    ("fx_campus", pz.MUNICIPAL_AREA_GEOMETRY_SOURCE, "municipal_mobile_parking_area .* zone_type street_paid .*fx_campus"),
     ("fx_campus", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_campus"),
     ("fx_res_a", pz.SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE, "single_site_buffered .* zone_type street_paid .*fx_res_a"),
 ], ids=["campus_union_on_a_campus", "campus_outline_union_on_a_campus", "site_buffer_on_a_street_zone",
-        "campus_union_on_a_street_zone", "campus_outline_union_on_a_street_zone", "site_buffer_on_a_campus",
-        "site_buffer_on_a_resident_zone"])
+        "campus_union_on_a_street_zone", "campus_outline_union_on_a_street_zone", "area_zone_on_a_street_zone",
+        "area_zone_on_a_campus", "site_buffer_on_a_campus", "site_buffer_on_a_resident_zone"])
 def test_the_new_geometry_sources_fit_the_zone_types_they_describe(zone_id, source, message):
     # A campus zone (detection zones, or campus grounds united with them) is a campus; a single paid site (car park or
     # street section) is a street_paid zone: the tariff row and the polygon must agree on what the zone is.
@@ -805,7 +834,10 @@ def test_committed_parking_data_is_valid(capsys):
     # spec Amendment G1 (2026-10-08): 40 zones (the three station car parks of Braunschweig Hbf came in, Braunschweig has 20)
     # and 131 register rows (the excluded row of the Braunschweig station car parks is gone, they are zones; spec v3 B1 added the
     # excluded Peine Echternplatz row)
-    assert "[parking-validate] 40 zones, 40 tariff rows, 131 register rows (123 municipalities)" in out
+    # spec v3 B2 (2026-10-14): 55 zones (the 15 Wolfsburg mobile-parking areas with a recorded maximum stay came in as zones of
+    # their own, carved out of the three tariff zones; Wolfsburg has 18)
+    assert "[parking-validate] 55 zones, 55 tariff rows, 131 register rows (123 municipalities)" in out
+    assert "municipal_mobile_parking_area 15" in out
     assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8" in out
     # ruling R-4a-8: the five campuses with a v1 outline are the union of the outline and the detection zones, Volkmaroder
     # Strasse (no outline exists) its detection zone alone
@@ -814,16 +846,16 @@ def test_committed_parking_data_is_valid(capsys):
     # spec Amendment C3: Braunschweig A, B, C and Goslar A, B, C, F, G, H, J, a second layer next to the fee zones
     assert "resident districts: 10 districts" in out and "03101000 3 districts" in out and "03153017 7 districts" in out
     # ASSUMPTION R2-a: where rule R2 is off is on the record: the five BgA rows, the three station car parks and the Goslar
-    # car park at the ZOB state it, the six campus zones take the default, the other 25 of the 40 zones honour resident permits
-    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 25 of 40 zones; not valid on 9 stated rows "
+    # car park at the ZOB state it, the six campus zones take the default, the other 40 of the 55 zones honour resident permits
+    assert ("resident permits (rule R2, ASSUMPTION R2-a): valid on 40 of 55 zones; not valid on 9 stated rows "
             "(bs_bga_an_der_martinikirche, bs_bga_jodutenstrasse_klint, bs_bga_markthalle, bs_bga_suedstrasse, "
             "bs_bga_willy_brandt_platz, bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, gs_parkplatz_klubgartenstrasse_zob) "
             "and on 6 campus zones (default)") in out
     # Task 4b (spec Amendments D1, D2, D4, E8) left 13 assumption windows, 16 with the three station rows of Amendment G1;
     # the commuter product is on zone Ib and the six
     # campus zones, no zone row carries a garage product or a search time
-    assert "fee_window_source: assumption 8, municipal_page 22, operator_page 3, ordinance 7" in out
-    assert ("tariff products (schema 2): commuter product on 10 of 40 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "
+    assert "fee_window_source: assumption 8, municipal_page 37, operator_page 3, ordinance 7" in out
+    assert ("tariff products (schema 2): commuter product on 10 of 55 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "
             "bs_zone_ib, tu_campus_nord, "
             "tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, "
             "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
@@ -1010,7 +1042,8 @@ def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
     # does not publish for the sections (ruling R-T1d-c: no cap, maximum stay or long-stay product)
     zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
-    wolfsburg = tariffs[tariffs["municipality_ags"] == "03103000"].set_index("zone_id")
+    wolfsburg = tariffs[(tariffs["municipality_ags"] == "03103000")
+                        & ~tariffs["zone_id"].str.startswith("wob_area_")].set_index("zone_id")
     assert sorted(wolfsburg.index) == ["wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3"]
     assert "wob_innenstadt" not in zones.index
     assert (zones.loc[wolfsburg.index, "geometry_source"] == pz.MUNICIPAL_SECTIONS_GEOMETRY_SOURCE).all()
@@ -1020,6 +1053,48 @@ def test_committed_wolfsburg_zones_are_the_three_sourced_tariff_zones():
     unpublished = ["free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur", "max_stay_min",
                    "long_stay_product_eur"]
     assert wolfsburg[unpublished].isna().all().all()
+
+
+#: The 15 Wolfsburg mobile-parking areas with a recorded maximum stay (spec v3 B2; layer mobile_parking_areas of the owner's
+#: package Wolfsburg_Parkdaten.zip, source_id -> (tariff zone, maximum stay in minutes)): Porschestr. Nord and Willy-Brandt-Platz
+#: (westl. TRYP) in tariff zone 1, thirteen areas around Hoffmannstrasse, Westerstrasse, Marktstrasse, Kampstrasse and Gropertor
+#: in tariff zone 3.
+WOLFSBURG_AREA_ZONES = {"668": (1, 30), "680": (1, 60), "723": (3, 120), "724": (3, 120), "725": (3, 120), "726": (3, 120),
+                        "727": (3, 120), "728": (3, 120), "729": (3, 120), "730": (3, 120), "731": (3, 120), "732": (3, 120),
+                        "734": (3, 120), "735": (3, 120), "736": (3, 120)}
+
+
+def test_committed_wolfsburg_area_zones_are_the_fifteen_areas_with_a_recorded_maximum_stay():
+    # spec v3 B2: each area is carved out of its parent tariff zone (same tariff values, its own maximum stay), the parents lose
+    # exactly the area zones, so no zone overlaps another; the 58 areas without a recorded maximum stay in their parent
+    # (ASSUMPTION W-max)
+    zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
+    ids = {f"wob_area_{source_id}": values for source_id, values in WOLFSBURG_AREA_ZONES.items()}
+    assert sorted(zone_id for zone_id in zones.index if zone_id.startswith("wob_area_")) == sorted(ids)
+    assert sorted(zone_id for zone_id in tariffs.index if zone_id.startswith("wob_area_")) == sorted(ids)
+    assert (zones.loc[list(ids), "geometry_source"] == pz.MUNICIPAL_AREA_GEOMETRY_SOURCE).all()
+    assert (zones.loc[list(ids), "section_buffer_m"] == 50.0).all()
+    for zone_id, (key, maximum) in ids.items():
+        row, parent = tariffs.loc[zone_id], tariffs.loc[f"wob_tarifzone_{key}"]
+        assert row["max_stay_min"] == maximum and pd.isna(parent["max_stay_min"]), zone_id
+        for column in ("hourly_rate_eur", "billing_unit_min", "fee_start_h", "fee_end_h", "fee_window_source", "zone_type",
+                       "workplace_class", "municipality_ags", "resident_exempt", "source_date", "valid_from", "source_url"):
+            assert row[column] == parent[column], (zone_id, column)
+        for column in ("free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur",
+                       "long_stay_product_eur", "commuter_day_eur", "ev_free_minutes", "ev_rule_valid_until"):
+            assert pd.isna(row[column]), (zone_id, column)
+        assert f"wob_tarifzone_{key}" in row["notes"] and "ASSUMPTION W-max" in row["notes"] and "ASSUMPTION M3" in row["notes"]
+        assert zones.loc[zone_id, "digitising_note"].startswith(WOLFSBURG_PROVENANCE) and row["notes"].isascii()
+        assert not zones.loc[zone_id, "geometry"].is_empty
+    # no zone overlaps another beyond the tolerance of the validator, the area zones included
+    wolfsburg = zones.loc[[zone_id for zone_id in zones.index if zone_id.startswith("wob_")], "geometry"]
+    assert len(wolfsburg) == 18
+    for position, (first, geometry) in enumerate(wolfsburg.items()):
+        for second, other in list(wolfsburg.items())[position + 1:]:
+            assert geometry.intersection(other).area <= pz.OVERLAP_TOLERANCE_M2, (first, second)
+    # the maximum stays of the layer in minutes: one 30, one 60 and thirteen 120 (a count pinned on the owner's package)
+    assert sorted(tariffs.loc[list(ids), "max_stay_min"]) == [30, 60] + [120] * 13
 
 
 def test_committed_bga_car_parks_state_that_resident_permits_are_not_valid():
@@ -1246,8 +1321,9 @@ def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendm
     # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
     # (the three station rows of Amendment G1 read the window from the opening hours of an operator page, ruling R-4g-2:
     # assumption 13 + 3)
+    # (spec v3 B2: the 15 Wolfsburg area rows copy the municipal_page window of their tariff zone: 22 + 15)
     assert tariffs["fee_window_source"].value_counts().to_dict() == {
-        "municipal_page": 22, "assumption": 8, "ordinance": 7, "operator_page": 3}
+        "municipal_page": 37, "assumption": 8, "ordinance": 7, "operator_page": 3}
     assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
 
 

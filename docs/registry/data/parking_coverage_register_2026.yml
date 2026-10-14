@@ -58,6 +58,11 @@ acquisition:
     pe_echtern of the package Parkdaten_Nachrecherche_2026-10-14.zip; it is not part of the Peine zone II row. Status counts:
     zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131 rows). SHA-256 of the file (LF): 8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c
     (before: 7e25d6051f85416ca3193e57c6671cd14a776d98ade181a64d22729322814af3).
+    Spec v3 B2 (2026-10-14): the zoned row of Wolfsburg names the 15 area zones wob_area_<id> (the mobile-parking areas with a
+    recorded maximum stay, carved out of tariff zones 1 and 3; data record parking_zones_2026) next to the three tariff zones;
+    status counts unchanged (zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8, 131 rows). SHA-256 of the file (LF):
+    c4edfa0390730281430d2e2a50fcbf9a109a1170eba5e12cfc0b68827f7e403e (before:
+    8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true

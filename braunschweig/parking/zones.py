@@ -31,9 +31,12 @@ for that source only, the walk distance, the share threshold, the minimum supply
 Polygons built from a municipality's published paid street sections (spec Amendment C2, the curation step
 ``scripts/curation/parking_zones_2026/municipal_zones.py``) carry ``geometry_source``
 ``municipal_street_sections_buffered`` and, for that source only, the buffer around the sections ``section_buffer_m``
-(``MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS``). Any polygon may carry ``reconstructed_section_m2``
-(``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source reconstructs from an older
-map (spec Amendment C1); the municipal QA table is checked by ``municipal_zone_qa.validate_municipal_qa``. The regional
+(``MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS``); the Wolfsburg area zones with a recorded maximum stay (spec v3 B2,
+``scripts/curation/parking_zones_2026/wolfsburg_area_zones.py``) are carved out of those polygons, carry
+``geometry_source`` ``municipal_mobile_parking_area`` and the same ``section_buffer_m``. Any polygon may carry
+``reconstructed_section_m2`` (``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source
+reconstructs from an older map (spec Amendment C1); the municipal QA table is checked by
+``municipal_zone_qa.validate_municipal_qa``. The regional
 evidence package of 2026-10-07 (spec Amendment D, the curation step ``scripts/curation/parking_zones_2026/
 regional_zones.py``) adds three sources: ``campus_outline_and_detection_zones`` (a campus zone is the union of the campus
 grounds, an OSM university outline of the v1 release, and the camera detection zones of its campus map, ruling R-4a-8;
@@ -167,6 +170,10 @@ SUPPLY_MAJORITY_GEOMETRY_SOURCE = "osm_supply_majority"
 #: sections a municipality publishes for one tariff zone, split by the nearer section where the areas of two tariff
 #: zones overlap (ties to the higher tariff).
 MUNICIPAL_SECTIONS_GEOMETRY_SOURCE = "municipal_street_sections_buffered"
+#: Wolfsburg area zone (v3 spec B2): the part of the 50 m access area of a tariff zone (ASSUMPTION C-a) that is nearer to
+#: the street section of one mobile-parking area with a recorded maximum stay than to any other section of that tariff
+#: zone; the parent tariff zone loses exactly that part. It records the same ``section_buffer_m`` as its parent.
+MUNICIPAL_AREA_GEOMETRY_SOURCE = "municipal_mobile_parking_area"
 #: Campus zone of v2 spec Amendment D1 where no outline of the campus grounds exists: the union per campus of the red
 #: camera detection zones that the campus maps of the university's parking pages draw (TU Braunschweig). They mark the
 #: paid car parks, where the tickets are checked; the zone carries no outline of the buildings.
@@ -181,12 +188,13 @@ CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE = "campus_outline_and_detecti
 SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE = "single_site_buffered"
 GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
                     EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE, MUNICIPAL_SECTIONS_GEOMETRY_SOURCE,
-                    CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE, CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE,
-                    SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE)
+                    MUNICIPAL_AREA_GEOMETRY_SOURCE, CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE,
+                    CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE, SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE)
 #: The zone type each of the Amendment D geometry sources describes (``validate_geometry_source_zone_types``).
 GEOMETRY_SOURCE_ZONE_TYPES = {CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
                               CAMPUS_OUTLINE_AND_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
-                              SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: "street_paid"}
+                              SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: "street_paid",
+                              MUNICIPAL_AREA_GEOMETRY_SOURCE: "street_paid"}
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
 #: Literal text a street_paid zone with a maximum stay and a commuter product must carry in its ``notes`` (spec v3 A6).
@@ -199,8 +207,9 @@ EROSION_PROVENANCE_COLUMNS = ("unavoidable_walk_m", "osm_timestamp")
 #: share in (0, 1]), the minimum usable supply of a classified cell in spaces and the OSM snapshot of the extract.
 SUPPLY_MAJORITY_PROVENANCE_COLUMNS = ("supply_walk_m", "paid_share_threshold", "minimum_usable_spaces",
                                       "osm_timestamp")
-#: Required for ``municipal_street_sections_buffered`` polygons only: the buffer around the street sections in metres
-#: (the access walk from the destination to a paid street section, ASSUMPTION C-a of spec Amendment C2).
+#: Required for ``municipal_street_sections_buffered`` and ``municipal_mobile_parking_area`` polygons only: the buffer
+#: around the street sections in metres (the access walk from the destination to a paid street section, ASSUMPTION C-a of
+#: spec Amendment C2).
 MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS = ("section_buffer_m",)
 #: Required for ``single_site_buffered`` polygons only: the buffer around the paid site in metres (the access walk from
 #: the destination to the paid car park or street section, ASSUMPTION C-a of spec Amendment C2, applied by Amendment D3).
@@ -209,6 +218,7 @@ SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS = ("site_buffer_m",)
 RULE_PROVENANCE_COLUMNS = {EROSION_GEOMETRY_SOURCE: EROSION_PROVENANCE_COLUMNS,
                            SUPPLY_MAJORITY_GEOMETRY_SOURCE: SUPPLY_MAJORITY_PROVENANCE_COLUMNS,
                            MUNICIPAL_SECTIONS_GEOMETRY_SOURCE: MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS,
+                           MUNICIPAL_AREA_GEOMETRY_SOURCE: MUNICIPAL_SECTIONS_PROVENANCE_COLUMNS,
                            SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS}
 #: Optional on any polygon (empty = no reconstruction recorded): the part of its area in m2 whose boundary the digitised
 #: source reconstructs from an older map, the flag of spec Amendment C1 (Braunschweig zone 1a: the southern part cut off
@@ -679,8 +689,8 @@ def load_zone_polygons(path, *, max_repairs: Optional[int] = None) -> gpd.GeoDat
     of its source (``RULE_PROVENANCE_COLUMNS``: ``osm_fee_erosion`` a positive ``unavoidable_walk_m``,
     ``osm_supply_majority`` a positive ``supply_walk_m``, ``paid_share_threshold`` in (0, 1] and
     ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ';
-    ``municipal_street_sections_buffered`` a positive ``section_buffer_m``, ``single_site_buffered`` a positive
-    ``site_buffer_m``), which every other polygon leaves empty; ``campus_detection_zones`` and
+    ``municipal_street_sections_buffered`` and ``municipal_mobile_parking_area`` a positive ``section_buffer_m``,
+    ``single_site_buffered`` a positive ``site_buffer_m``), which every other polygon leaves empty; ``campus_detection_zones`` and
     ``campus_outline_and_detection_zones`` take none. The optional
     ``reconstructed_section_m2`` lies between 0 and the polygon's area. Other properties are kept as they are.
     """
@@ -780,8 +790,8 @@ def validate_geometry_source_zone_types(zones: gpd.GeoDataFrame, tariffs: pd.Dat
     """The polygons of the Amendment D geometry sources have the tariff rows of the zone type the source describes.
 
     ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` zones are ``campus`` zones (the TU campus
-    maps), ``single_site_buffered`` zones are
-    ``street_paid`` zones (a single paid car park or street section); a polygon of such a source whose tariff row has
+    maps), ``single_site_buffered`` zones (a single paid car park or street section) and ``municipal_mobile_parking_area``
+    zones (a Wolfsburg area with a recorded maximum stay) are ``street_paid`` zones; a polygon of such a source whose tariff row has
     another type, or has no row, raises ``ValueError`` naming the zones and their types
     (``GEOMETRY_SOURCE_ZONE_TYPES``). Call it after ``cross_validate``, which pairs polygons and rows.
     """

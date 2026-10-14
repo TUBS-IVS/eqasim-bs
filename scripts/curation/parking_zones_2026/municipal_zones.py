@@ -80,6 +80,12 @@ BRAUNSCHWEIG_FEE_ZONES = {"1a": "bs_zone_ia", "1b": "bs_zone_ib"}
 WOLFSBURG_V1_ZONE = "wob_innenstadt"
 GOSLAR_ZONE = "gs_altstadt_zone1"
 WOLFSBURG_ZONE_ID = "wob_tarifzone_{}"
+#: Prefix of the Wolfsburg area zones (spec v3 B2, ``wolfsburg_area_zones.py``): tariff rows that are not tariff zones.
+WOLFSBURG_AREA_ZONE_ID_PREFIX = "wob_area_"
+#: What the pinned layer mobile_parking_areas holds: (areas, areas with a recorded maximum stay) = (73, 15); the area zones
+#: of spec v3 B2 are carved only for the latter, and any other count stops the step (``load_packages`` takes other counts
+#: for synthetic test packages).
+WOLFSBURG_AREA_COUNTS = (73, 15)
 #: ASSUMPTION C-a (spec Amendment C2): a destination within this distance of a paid street section parks on it, m.
 SECTION_BUFFER_M = 50.0
 #: Spacing of the boundary samples behind the nearest-section split, m (the split line lies within half of it).
@@ -167,13 +173,14 @@ def _check_attributes(layers: dict) -> None:
                              f"{GOSLAR_LAST_EDIT}")
 
 
-def load_packages(directory, expected_sha256: Optional[dict] = None) -> dict:
+def load_packages(directory, expected_sha256: Optional[dict] = None,
+                  expected_area_counts: Optional[tuple] = None) -> dict:
     """The verified layers of the owner's packages in ``directory`` (EPSG:25832).
 
     Every package of ``PACKAGE_SHA256`` (or of ``expected_sha256``, the same names, for synthetic test packages) must
     exist as ``<name>.zip`` with exactly that SHA-256, else ``SystemExit``: a changed package is never read. Returns
     {"files": name -> {"file", "sha256", "bytes"}, "bs_fee_zones", "bs_reconstructed", "wob_sections", "gs_resident",
-    "gs_facilities"}.
+    "gs_facilities", "wolfsburg_area_counts" (``expected_area_counts`` or ``WOLFSBURG_AREA_COUNTS``)}.
     """
     expected = dict(PACKAGE_SHA256 if expected_sha256 is None else expected_sha256)
     if set(expected) != set(PACKAGE_SHA256):
@@ -198,7 +205,9 @@ def load_packages(directory, expected_sha256: Optional[dict] = None) -> dict:
             "bs_reconstructed": layers[("Braunschweig_Parkzonen", "reconstructed_section")],
             "wob_sections": layers[("Wolfsburg_Parkdaten", "mobile_parking_areas")],
             "gs_resident": layers[("Goslar_Parkdaten", "resident_parking_zones")],
-            "gs_facilities": layers[("Goslar_Parkdaten", "parking_facility_areas")]}
+            "gs_facilities": layers[("Goslar_Parkdaten", "parking_facility_areas")],
+            "wolfsburg_area_counts": tuple(WOLFSBURG_AREA_COUNTS if expected_area_counts is None
+                                           else expected_area_counts)}
 
 
 # ---------------------------------------------------------------- C1: Braunschweig fee zones
@@ -322,12 +331,13 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
     """The Wolfsburg rows of ``tariffs`` are exactly the tariff zones of ``evidence`` and carry the layer's hourly rate,
     weekday window and maximum stay (empty where the layer states none uniformly), the billing unit of ASSUMPTION C-b
     (``WOLFSBURG_BILLING_UNIT_MIN``) and nothing in the columns no source fills (``WOLFSBURG_EMPTY_COLUMNS``); else
-    ``SystemExit``."""
+    ``SystemExit``. The ``wob_area_`` rows (spec v3 B2) are not tariff zones: ``wolfsburg_area_zones.
+    check_area_tariff_rows`` checks them."""
     rows = tariffs.set_index("zone_id")
     problems = []
     expected = {WOLFSBURG_ZONE_ID.format(key): key for key in evidence}
     present = {str(zone_id) for zone_id, ags in zip(tariffs["zone_id"], tariffs["municipality_ags"])
-               if str(ags) == WOB_AGS}
+               if str(ags) == WOB_AGS and not str(zone_id).startswith(WOLFSBURG_AREA_ZONE_ID_PREFIX)}
     if present != set(expected):
         problems.append(f"Wolfsburg tariff rows {sorted(present)}, expected the tariff zones {sorted(expected)}")
     for zone_id, key in sorted(expected.items()):
@@ -518,7 +528,12 @@ QA_INTRO = (
     "builds before this step (the tracings of the city's overview map), compared before the precedence cuts, which "
     "both include the BgA car parks. C2: the tariff zones wob_tarifzone_<n> replace wob_innenstadt; each is the area "
     f"within {SECTION_BUFFER_M:.0f} m (ASSUMPTION C-a) of the street sections of tariff zone <n>, split by the nearer "
-    "section where the areas of two tariff zones overlap (ties to the higher tariff). C4: gs_altstadt_zone1 stays. "
+    "section where the areas of two tariff zones overlap (ties to the higher tariff). B2 (spec v3, "
+"scripts/curation/parking_zones_2026/wolfsburg_area_zones.py): the Wolfsburg mobile-parking areas with a recorded "
+"maximum stay become the zones wob_area_<id>, each the part of the 50 m area of its tariff zone that is nearer to the "
+"street section of that area than to any other section of the tariff zone; the tariff zone loses exactly them, "
+"and each area zone is compared with its street section and with the 50 m area of its tariff zone. "
+"C4: gs_altstadt_zone1 stays. "
     "Release polygons are measured in the written zone file (scripts/validate_parking_zones.py compares them, "
     "braunschweig.parking.municipal_zone_qa.validate_municipal_qa). Units m2 (EPSG:25832, 0.1 m2), shares 0 to 1 "
     "(6 decimals, from the unrounded areas), empty = undefined. Columns:"
@@ -566,13 +581,47 @@ def _features(geometry) -> list:
     return [] if geometry is None or geometry.is_empty else [geometry]
 
 
+def wolfsburg_qa_rows(context: dict, polygons: dict) -> list:
+    """The four rows per Wolfsburg tariff zone of the municipal QA table (C2): the release polygon against the v1 polygon
+    it replaces, the street sections against v1, the release polygon against its 50 m area and against the contested part
+    of it. ``polygons``: release zone id -> polygon (EPSG:25832); ``context``: the municipal context (keys ``v1``,
+    ``wolfsburg`` and ``simplify_m``/``clearance_m``), as ``qa_rows`` takes it."""
+    wob = context["wolfsburg"]
+    v1_wob, split = context["v1"][WOLFSBURG_V1_ZONE], wob["split"]
+    rows = []
+    for key in wob["ranking"]:
+        zone_id, count = wob["zone_ids"][key], wob["evidence"][key]["sections"]
+        rows.append(_row(f"{zone_id}_release_vs_v1", WOB_AGS, f"release polygon {zone_id}",
+                         "v1 wob_innenstadt (OSM fee evidence in the centre window, 2026-09-29)", polygons[zone_id],
+                         _features(v1_wob), release_zone_id=zone_id,
+                         note="C2: the tariff zone against the v1 polygon it replaces"))
+        rows.append(_row(f"{zone_id}_sections_vs_v1", WOB_AGS,
+                         f"the {count} street sections of tariff zone {key} (layer mobile_parking_areas)",
+                         "v1 wob_innenstadt", wob["sections"][key], _features(v1_wob), note=(
+                             "C2: the street sections themselves; the release adds their 50 m area (ASSUMPTION C-a)")))
+        rows.append(_row(f"{zone_id}_release_vs_50m_area", WOB_AGS, f"release polygon {zone_id}",
+                         f"the area within {SECTION_BUFFER_M:.0f} m of the street sections of tariff zone {key}",
+                         polygons[zone_id], _features(split["buffers"][key]), release_zone_id=zone_id, note=(
+                             "C2: reference_share_in_subject is the share of its 50 m area the tariff zone keeps after "
+                             f"the nearest-section split, the Wolfsburg area zones carved out of it (spec v3 B2), the "
+                             f"{context['simplify_m']:g} m simplification and the "
+                             f"{100.0 * context['clearance_m']:g} cm cut clearance")))
+        rows.append(_row(f"{zone_id}_release_vs_contested_area", WOB_AGS, f"release polygon {zone_id}",
+                         f"the part of the 50 m area of tariff zone {key} that the 50 m area of another tariff zone "
+                         "covers as well", polygons[zone_id], _features(split["contested"][key]),
+                         release_zone_id=zone_id, note=(
+                             "C2: the part of the contested area the nearer street sections give to this tariff zone"
+                             if split["competitors"][key] else "C2: no other tariff zone's area overlaps this one")))
+    return rows
+
+
 def qa_rows(context: dict, release: gpd.GeoDataFrame) -> list:
     """The rows of the municipal QA table from the step's ``context`` (``assemble_parking_zones.
     apply_municipal_packages``) and the ``release`` as loaded from the written zone file (EPSG:25832)."""
     if release.crs is None or release.crs.to_epsg() != 25832:
         raise SystemExit(f"the release must be measured in EPSG:25832, found {release.crs}")
     polygons = dict(zip(release["zone_id"].astype(str), release.geometry))
-    inputs, v1, bs, wob = context["inputs"], context["v1"], context["braunschweig"], context["wolfsburg"]
+    inputs, v1, bs = context["inputs"], context["v1"], context["braunschweig"]
     rows = []
     package = "package zone {code} (layer parking_fee_zones of Braunschweig_Parkzonen.gpkg)"
     for zone_id, values in bs.items():
@@ -595,29 +644,7 @@ def qa_rows(context: dict, release: gpd.GeoDataFrame) -> list:
                          polygons[zone_id], _features(values["geometry"]), release_zone_id=zone_id, note=(
                              "C1: the difference is the zones cut out by the v1 precedence (the BgA car parks) and the "
                              f"{context['simplify_m']:g} m simplification")))
-    v1_wob, split = v1[WOLFSBURG_V1_ZONE], wob["split"]
-    for key in wob["ranking"]:
-        zone_id, count = wob["zone_ids"][key], wob["evidence"][key]["sections"]
-        rows.append(_row(f"{zone_id}_release_vs_v1", WOB_AGS, f"release polygon {zone_id}",
-                         "v1 wob_innenstadt (OSM fee evidence in the centre window, 2026-09-29)", polygons[zone_id],
-                         _features(v1_wob), release_zone_id=zone_id,
-                         note="C2: the tariff zone against the v1 polygon it replaces"))
-        rows.append(_row(f"{zone_id}_sections_vs_v1", WOB_AGS,
-                         f"the {count} street sections of tariff zone {key} (layer mobile_parking_areas)",
-                         "v1 wob_innenstadt", wob["sections"][key], _features(v1_wob), note=(
-                             "C2: the street sections themselves; the release adds their 50 m area (ASSUMPTION C-a)")))
-        rows.append(_row(f"{zone_id}_release_vs_50m_area", WOB_AGS, f"release polygon {zone_id}",
-                         f"the area within {SECTION_BUFFER_M:.0f} m of the street sections of tariff zone {key}",
-                         polygons[zone_id], _features(split["buffers"][key]), release_zone_id=zone_id, note=(
-                             "C2: reference_share_in_subject is the share of its 50 m area the tariff zone keeps after "
-                             f"the nearest-section split, the {context['simplify_m']:g} m simplification and the "
-                             f"{100.0 * context['clearance_m']:g} cm cut clearance")))
-        rows.append(_row(f"{zone_id}_release_vs_contested_area", WOB_AGS, f"release polygon {zone_id}",
-                         f"the part of the 50 m area of tariff zone {key} that the 50 m area of another tariff zone "
-                         "covers as well", polygons[zone_id], _features(split["contested"][key]),
-                         release_zone_id=zone_id, note=(
-                             "C2: the part of the contested area the nearer street sections give to this tariff zone"
-                             if split["competitors"][key] else "C2: no other tariff zone's area overlaps this one")))
+    rows += wolfsburg_qa_rows(context, polygons)
     goslar = polygons[GOSLAR_ZONE]
     resident = inputs["gs_resident"]
     per_area = []
