@@ -57,19 +57,23 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
    after the terminal-stay rule for a terminal stay; 0 min when the module has no `minimumStayMinutes`), prices it
    with `ParkingCostCalculator` and adds it to the driving cost; `ParkingOutcomeCounter` counts one `ParkingOutcome`
    per pricing call and the stays the minimum extended, and `ParkingOutcomeReportListener` writes
-   `ITERS/it.N/N.parking_outcomes.csv` (CSV v3, columns `outcome`, `zone_id`, `purpose`, `count`, `share`,
-   `garage_probability_sum`, `stays_with_garages_in_range`; one row per non-zero cell of outcome, zone and purpose,
-   `zone_id` empty for `NO_ZONE`) and one `[parking]` log line per iteration, logs the active minimum stay once at
-   startup and, per iteration, how many priced stays in a zone the minimum extended. The counts are pricing calls, one
-   per car alternative that mode choice priced, chosen or not: not distinct trips or persons. With the garage options
-   on (schema 4 model with `garage_decay_m` or `garage_decay_commute_m` above 0, the decay of the stay's purpose
-   governs) the same call prices the expected cost over the street and the
-   garages ([parking-garage-options.md](parking-garage-options.md)); the parking search time of the car utility is a
-   separate term (`ParkingSearchTime`, factor 0.0 and no zone search time in the release: off, ADR-0140 decision 5).
+   `ITERS/it.N/N.parking_outcomes.csv` (CSV v4, columns `outcome`, `zone_id`, `purpose`, `count`, `share`,
+   `garage_probability_sum`, `stays_with_garages_in_range`, `garage_probability_sum_paid`, `garage_probability_sum_free`,
+   `street_infeasible_count`, `no_feasible_option_count`, `expected_cost_cents_sum`, `ev_exempt_count`; one row per
+   non-zero cell of outcome, zone and purpose, `zone_id` empty for `NO_ZONE`) and one `[parking]` log line per
+   iteration, logs the active minimum stay once at startup and, per iteration, how many priced stays in a zone the minimum
+   extended. The counts are pricing calls, one per car alternative that mode choice priced, chosen or not: not distinct
+   trips or persons. With the garage options on (schema 5 model with `garage_decay_m` or `garage_decay_commute_m` above 0,
+   the decay of the stay's purpose governs) the same call prices the expected cost over the street and the garages
+   ([parking-garage-options.md](parking-garage-options.md)); the parking search time of the car utility is a separate term
+   (`ParkingSearchTime`, factor 0.0 and no zone search time in the release: off, ADR-0140 decision 5).
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
    the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
    config enables `braunschweigParking`, `require_parking_package` refuses a jar without
-   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` or without `.../parking/GarageOptionModel.class` (the pipeline always writes tariff model schema 4) before MATSim starts, and `require_parking_outcomes`
+   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` or without `.../parking/GarageOptionModel.class` or without
+   `.../parking/ParkingOptionPriceBetaCheck.class` (the marker of a v3 jar: a jar without it predates the v3 mechanics, so
+   it has no price coefficient check and possibly no schema-5 reading, outcome report v4 or cost factor; the pipeline
+   always writes tariff model schema 5) before MATSim starts, and `require_parking_outcomes`
    refuses a run whose last iteration (the highest `ITERS/it.N`; the eqasim termination criterion can end a run
    before `lastIteration`) wrote no `N.parking_outcomes.csv`; one `[parking] run check:` INFO line reports that both
    passed. With the module absent or disabled neither check runs.
@@ -129,7 +133,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   car parks and at the Goslar car park at the ZOB, `gs_parkplatz_klubgartenstrasse_zob`), after the home and
   employer-free rules and before the fee-window check. The flag switches off R2 only:
   the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
-  `schema_version` 5 now (the tariff fixture and the export are schema 4).
+  `schema_version` 6 now (the tariff fixture and the export are schema 5).
 - The garage dataset is data of its own, not zones (spec Amendment E1): `parking_garages_2026.geojson` (points, WGS84
   on disk, EPSG:25832 after `braunschweig.parking.garages.load_garages`) with its QA table
   `parking_garages_2026_qa.csv` (`braunschweig.parking.garage_qa`) is built by
@@ -138,7 +142,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   `--large-lots-zip`, read by `large_lots.py`; the mechanism is in [parking-large-lots.md](parking-large-lots.md), the removed
   reader of the earlier Wolfsburg package in [parking-wolfsburg-lots.md](parking-wolfsburg-lots.md)), so a change is made in
   `regional_garage_specs.py` (which package rule plays which role) and the two files are regenerated, never edited by
-  hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 4) lists its
+  hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 5) lists its
   priced garages; the zone-level garage columns of the tariff table stay empty (Amendment E8) and garages enter the
   pricing only through the distance-weighted garage options ([parking-garage-options.md](parking-garage-options.md)). A garage is priced only where the published structure maps
   exactly to ONE of three exclusive forms (one tariff structure per garage; no approximation, `not_priced_reason` says
@@ -181,7 +185,9 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 - A zone that lies outside its own municipality of the pipeline's polygons fails the containment check of the
   assembly unless it is declared in `regional_zones.CONTAINMENT_EXCEPTIONS` with its reason; the declared exception
   still has to lie in its own and the declared municipality together.
-- The tariff model JSON is schema 4 since the commuter decay (Amendment H added `garage_decay_commute_m`; schema 3
+- The tariff model JSON is schema 5 since the v3 mechanics (spec v3 A1, A2, A5 added `option_price_beta_u_per_eur`, the
+  garage entry field `max_stay_min` and the zone entry field `ev_free_minutes`; schema 4 added the commuter decay,
+  Amendment H, `garage_decay_commute_m`; schema 3
   since the garage options: Amendment E added `garages`, `garage_decay_m` and
   `garage_max_distance_m`; Amendment C3 had added the per-zone bool
   `resident_permits_valid`, never null, and the top-level list `resident_districts` without a new version), and the Java `ParkingTariffs`
@@ -192,7 +198,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   Java. The two orders differ (the Java enum starts with `NO_ZONE`, the Python tuple with `HOME`): the order is no
   contract, and every reader of the outcome report keys the rows by outcome name.
 - `braunschweig.parking.cost` is the reference; the Java `ParkingCostCalculator` must agree with it on the golden
-  cases (`schema_version` 5), which include the eight minimum-stay cases L01 to L08 and their twins L01Z to L08Z at L = 0;
+  cases (`schema_version` 6), which include the eight minimum-stay cases L01 to L08 and their twins L01Z to L08Z at L = 0;
   `tests/test_parking_cost.py` additionally pins those sixteen against the numbers of ADR-0139 decision 9,
   independently of the generator. After changing the fixture table, the golden cases or the export, re-run
   `python scripts/export_parking_golden_cases.py` and copy `parking_golden_cases.json` and

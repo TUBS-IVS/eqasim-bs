@@ -397,6 +397,18 @@ def test_the_default_cost_factor_leaves_the_module_as_v2_wrote_it(tmp_path, monk
     assert "parking_cost_utility_factor" in context.declared_config
 
 
+def test_the_cost_factor_is_inert_when_the_zones_are_off(tmp_path, monkeypatch):
+    # The factor scales the PARKING cost; without zones there is no parking input, no module and no costFactor, whatever
+    # value a config carries, and the key is not even declared (so it cannot change a stage hash of an OFF run).
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=False,
+                                       parking_cost_utility_factor=2.0)
+    before = config.read_bytes()
+    assert "parking_cost_utility_factor" not in context.declared_config
+    assert prepare.execute(context) == CONFIG_NAME
+    assert config.read_bytes() == before and b"costFactor" not in before
+    assert not [path.name for path in config.parent.iterdir() if "parking" in path.name]
+
+
 @pytest.mark.parametrize("value", [-1, -0.5, float("nan"), float("inf"), 10.5, "1.0", True, None],
                          ids=["negative_int", "negative", "nan", "infinite", "above_the_java_range", "text", "boolean",
                               "none"])

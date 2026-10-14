@@ -633,7 +633,8 @@ run (see Status).
       off-street options; they are labelled "all off-street options; free options included" and state that the calibration is
       exact and the run comparison is not where free options lie within D_max. Neither the Java report nor the outcome CSV
       changed; a paid/free split of the report is planned (plan item 6, outcome CSV v4 of the owner's next plan), not yet built;
-      no issue.
+      no issue. Pointer (2026-10-14): outcome report v4 built it, so the two `*_paid_calls` rows are paid-only ratios from v4 on
+      (ADR-0142 decision 4); the text above is the state of the report v3.
     - **Rejected alternatives.** (a) The all-options measure for lambda_c: free options would stand in the numerator of a quantity
       of payers, and the SrV denominator has no free parker. (b) The free-inclusive commuter target: rejected by decision 12. (c)
       Tuning a decay to the Wolfsburg check. (d) Regenerating the plans for the new option set: not needed, see above.

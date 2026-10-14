@@ -10,8 +10,9 @@ comparison, never a validation, and a stable run is convergence, not validation.
 ## What it reads and writes
 
 - Per arm: the output directory of the MATSim run (`<output_path>/matsim_output`): the outcome report
-  `ITERS/it.N/N.parking_outcomes.csv` of the Java module (CSV v3, or v2 without the two garage columns; the version is
-  detected by the header and the rows are keyed by outcome NAME, zone id and purpose, never by position or enum order) and
+  `ITERS/it.N/N.parking_outcomes.csv` of the Java module (CSV v4 of spec v3 A4, whose first seven columns are the v3 report
+  and the first five the v2 report; older reports are still read, with the old labels; the version is detected by the
+  header and the rows are keyed by outcome NAME, zone id and purpose, never by position or enum order) and
   `eqasim_trips.csv.gz` (the chosen trips of the FINAL iteration). Arms that price no zones are given with
   `--arm-without-outcomes` and have empty outcome rows with the reason.
 - No raw SrV data: the committed tariff table (zone type and workplace class) and the two committed SrV tables, plus the
@@ -26,23 +27,34 @@ comparison, never a validation, and a stable run is convergence, not validation.
 - `count` of the report is the number of PRICING CALLS (car alternatives that mode choice evaluated, chosen or not), not trips or
   persons. Shares of the report are shares of evaluated alternatives; chosen trips are used only for the car mode shares.
 - The paid share counts every PAID_* call as paid and is therefore an upper bound of the chosen-trip paid share (PAID_EXPECTED
-  and zero-cent PAID_* calls count as paid; paying alternatives are less likely chosen). A chosen-trip paid share and the mean
-  cents per call need a Java report extension (proposed as issues, not built).
-- The expected garage share of a universe is `sum(garage_probability_sum) / sum(count)` over the selected rows (early outcomes
-  count with probability 0). It is NOT the E5 calibration universe (all stays of all modes at destinations, no early rules);
-  its row is labelled "calibration target, not validation". The PAID-only commuter garage share of `bs_zentrum` is the calibration target of the commuter decay (spec
-  Amendment H2 with ruling R-4h-1, labelled so in its rows; the reference is the paid-only share because the model's commuter
-  universe holds payers, so the like-for-like model rows are `garage_share_*_work_education_paid_calls`, the garage share among
-  the PAID_* calls, while the rows that keep free calls in the denominator are for orientation); the paid-only Wolfsburg
-  commuter garage share (row `03103`, the zones `wob_tarifzone_1` to `wob_tarifzone_3`, rows
-  `garage_share_wolfsburg_work_education_*`, H3b) and the free shares per workplace class are independent checks. A v3 report whose garage columns are 0 in every row flags the garage rows ("no garage option acted").
-- The commuter and Wolfsburg garage rows (`garage_share_*_work_education_*`) count ALL off-street options: the outcome report
-  has one `garage_probability_sum` over all options and no paid/free split, while the calibration of lambda_c and the Wolfsburg
-  check count paid options only (spec Amendment I6). The model side of those six rows is labelled
-  `FREE_OPTIONS_INCLUDED_LABEL` ("all off-street options; free options included") and their note states that the calibration
-  is exact and the run comparison is not where free options lie within the maximum distance (the calibration table states how
-  many do, per universe). The visitor row is payment-inclusive on both sides. A paid/free split of the report is planned
-  (plan item 6, outcome CSV v4 of the owner's next plan), not yet built; no issue.
+  and zero-cent PAID_* calls count as paid; paying alternatives are less likely chosen). A chosen-trip paid share needs a
+  Java report extension (proposed as an issue, not built). The mean expected cost per pricing call exists from CSV v4 on
+  (`mean_expected_cost_cents_<group>_<purpose>`, UNSCALED by the parking cost factor, model only), as do
+  `ev_exempt_share_<group>` and `street_infeasible_share_<group>_work_education`; they are empty with the reason for an older
+  report.
+- The expected garage share of a universe is `sum(garage_probability_sum) / sum(count)` over the selected rows (early
+  outcomes count with probability 0). It is NOT the E5 calibration universe (all stays of all modes at destinations, no
+  early rules); its row is labelled "calibration target, not validation". The PAID-only commuter garage share of
+  `bs_zentrum` is the calibration target of the commuter decay (spec Amendment H2 with ruling R-4h-1, labelled so in its
+  rows; the reference is the paid-only share because the model's commuter universe holds payers, so the like-for-like model
+  rows are `garage_share_*_work_education_paid_calls`, the garage share among the PAID_* calls, while the rows that keep
+  free calls in the denominator are for orientation); the paid-only Wolfsburg commuter garage share (row `03103`, the zones
+  `wob_tarifzone_1` to `wob_tarifzone_3`, rows `garage_share_wolfsburg_work_education_*`, H3b) and the free shares per
+  workplace class are independent checks. A v3 or v4 report whose garage columns are 0 in every row flags the garage rows
+  ("no garage option acted").
+- The commuter and Wolfsburg garage rows (`garage_share_*_work_education_*`): a report of CSV v3 or older has one
+  `garage_probability_sum` over all options and no paid/free split, while the calibration of lambda_c and the Wolfsburg
+  check count paid options only (spec Amendment I6), so all six rows count ALL off-street options, are labelled
+  `FREE_OPTIONS_INCLUDED_LABEL` ("all off-street options; free options included") and state that the calibration is exact
+  and the run comparison is not where free options lie within the maximum distance. From CSV v4 on the two `*_paid_calls`
+  rows are a pooled paid-only ratio (`paid_only_garage_share`: `sum(garage_probability_sum_paid) / (calls -
+  sum(garage_probability_sum_free))` over the PAID_* calls, label `PAID_ONLY_LABEL`), not an exact image of the calibration:
+  `calibrate_garage_decay.py` averages per-stay shares, this row pools the probabilities over the stays, and the two are
+  equal only when no free option is in range of any stay of the universe. A universe whose calls all lie on free options
+  (denominator at or below `GARAGE_SPLIT_TOLERANCE`) has no paying user: the row is empty with that reason
+  (`NO_PAYING_USER_NOTE`), not with the empty-universe reason. The other four rows keep free calls in the denominator and
+  stay orientation rows with the old label. The delta of the two `*_paid_calls` rows between a v4 arm and an older one is
+  not computed (`VERSION_DEPENDENT_METRICS`, warning). The visitor row is payment-inclusive on both sides in every version.
 - Only the agents that replan in an iteration price their alternatives, so one iteration is a small sample. `--iteration
   FIRST-LAST` pools an inclusive range (counts summed cell by cell); the notes name the iterations. Pooling does not change the
   pre-equilibrium status of early iterations, pooled calls are not independent, stable shares are convergence, not validation.
@@ -50,8 +62,10 @@ comparison, never a validation, and a stable run is convergence, not validation.
   is turned on a difference in the low single-digit percentage points without a repeat arm.
 - Every outcome of `braunschweig.parking.cost.OUTCOMES` is classified once as paid, free or other in the script
   (`PAID_OUTCOMES`, `FREE_OUTCOMES`, `OTHER_OUTCOMES`); a new pricing branch fails the import until it is classified.
-- The reader is pinned against the literal reports of the Java `ParkingOutcomeReportListenerTest`
-  (`JAVA_REPORTS` in the test); change the Java writer and that fixture together.
+- The reader is pinned against the literal reports of the Java `ParkingOutcomeReportListenerTest` (`JAVA_V4_REPORTS` for
+  the current v4 writer, `JAVA_REPORTS` for the earlier v3 writer, in the test); change the Java writer and that fixture
+  together. The two outcome counts of a v4 row (`no_feasible_option_count`, `ev_exempt_count`) repeat the row's `count` on
+  their own outcome row and are 0 elsewhere: the reader checks that, and a sum over rows is the stay count.
 
 ## Known limitations
 

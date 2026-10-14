@@ -109,7 +109,8 @@ PARKING_DEFAULTS = {
     # cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998 (eqasim-java-bs): one money
     # coefficient for the choice between parking options, without the income or distance elasticity of the person's whole
     # utility (no local evidence identifies a separate parking price coefficient). The Java startup check of Task A7 refuses
-    # a tariff model whose value differs from the mode choice by more than 1e-9; 0 gives the price-independent weights of v2.
+    # a tariff model whose value differs from the mode choice by more than 1e-9, 0 included (ruling R-A-17): 0 gives the
+    # price-independent weights of v2 in the Python reference and its calibration sensitivity, not in a MATSim run.
     "parking_option_price_beta_u_per_eur": 0.310998,
 }
 #: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
@@ -456,8 +457,8 @@ def _write_parking_inputs(context, config_name):
                                              garage_monthly_imputation=garage_monthly_imputation,
                                              option_price_beta_u_per_eur=option_price_beta_u_per_eur)
     monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
-    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION P13): %s"
-          % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
+    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, "
+          "ASSUMPTION P13): %s" % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)

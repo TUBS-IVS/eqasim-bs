@@ -315,6 +315,15 @@ notes: >-
   Forschungsflughafen 18, Volkmaroder Strasse 0, zone Ib 15), 24 lie in Helmstedt (17 of them home arrivals, free by H1) and
   78 in Goslar zone 1 (60 of them home arrivals). An exposure indicator of an older model state on a 1 % sample, not a
   validation and no run of the cost model.
+  Columns of the v3 mechanics (ADR-0142, Part A of issue 436; Part B fills them, see the spec v3 B1 and B2 paragraphs
+  below): the table layout gained the optional columns ev_free_minutes (whole minutes >= 1; the longest chargeable stay of
+  an electric car that parks free on the street, empty = no exemption) and ev_rule_valid_until (ISO date, the last day of the
+  ordinance's rule, empty = open-ended; only together with ev_free_minutes); both exist on street_paid rows only; the loader
+  reads an absent optional column as empty. max_stay_min is an existing column; since v3 a street_paid row may state it
+  without a long-stay product (a stay above it then has no street option, ASSUMPTION M3), and a row with a maximum stay and
+  a commuter_day_eur must name the unlimited-stay product in its notes with the literal text 'unlimited-stay product:' (any
+  zone type). The tariff model JSON built from the table is schema 5 (zone entry field ev_free_minutes, written only while
+  ev_rule_valid_until is not before the snapshot date).
   Spec v3 B1 (Task B1, issue #436, 2026-10-14). Evidence: the owner research packages Parkdaten_Nachrecherche_2026-10-14.zip
   (SHA-256 5a81c0b94da2a078540be2c58299bf246a269733ff69598e9a35b1faa4fad3bb; data/root_findings.json and research/
   street_sz_pe_gf.json, street_wf_harz.json, wob_residents_street.json) and Parkdaten_Restluecken_2026-10-14.zip (SHA-256

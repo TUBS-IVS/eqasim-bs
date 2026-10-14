@@ -283,12 +283,20 @@ python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverag
 python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
 
-**Parking cost zones (ADR-0139 and ADR-0140).** Car parking is priced per stay from the parking zones and
+**Parking cost zones (ADR-0139, ADR-0140 and ADR-0142).** Car parking is priced per stay from the parking zones and
 their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
 expected cost); the garage options are ON with the calibrated decay lengths `parking_garage_decay_m` (every purpose but work and
 education) and `parking_garage_decay_commute_m` (work and education) (calibrated on the plans of a server run, no
-validation; 0 switches them off for their purposes) and the parking search time is off. Decisions and rejected options: ADR-0140;
-mechanism: `docs/codebase/notes/parking-cost-zones.md`. The tariff table
+validation; 0 switches them off for their purposes) and the parking search time is off. Version 3 (ADR-0142) adds three
+config keys, all set in `configs/base_bs.yml` and only read when the flag is on:
+`parking_option_price_beta_u_per_eur` (utility per EUR, a finite number >= 0, default 0.310998, the magnitude of the car cost
+coefficient of the mode choice; the weight of a parking option falls with its own price; a release value, not a free
+parameter: the Java startup check refuses a tariff model whose value differs from the mode choice, so change it only together
+with the mode parameter), `parking_cost_utility_factor` (dimensionless multiplier of the parking cost in the car utility, a
+finite number in [0, 10], default 1.0 = the model; a sensitivity, never calibrated) and `parking_ev_exemption_enabled`
+(boolean, default true; false writes no exemption flag and leaves electric cars paying where a zone states an exemption).
+Decisions and rejected options: ADR-0140 and ADR-0142; mechanism: `docs/codebase/notes/parking-cost-zones.md`,
+`parking-garage-options.md` and `parking-ev-exemption.md` in the same folder. The tariff table
 (`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
 (`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository. Three geometry files do
@@ -334,8 +342,10 @@ published one gets the median of the published products of its own municipality 
 `monthly_imputed_eur`), and the config key `parking_garage_monthly_imputation` (default true; false prices published
 products only) switches that off. With the
 flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
-`org.eqasim.braunschweig.parking`: `matsim.simulation.run` fails fast when the jar lacks it or when the run writes
-no parking outcome report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the
+`org.eqasim.braunschweig.parking`, and the jar must be a v3 build (it contains the class
+`org.eqasim.braunschweig.parking.ParkingOptionPriceBetaCheck`; the tariff model is schema 5, which an older jar refuses):
+`matsim.simulation.run` fails fast when the jar lacks the package or that class or when the run writes no parking outcome
+report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the
 attribution "(c) OpenStreetMap contributors" and the share-alike terms when you redistribute them; this includes the
 OSM campus grounds that the TU campus zones keep), Braunschweig 1a/1b and the BgA car parks, the detection zones of the
 TU campus zones (the TU requires explicit consent to reuse its graphics, not obtained), the Goslar car parks, the

@@ -193,6 +193,23 @@ def test_a_commuter_product_next_to_a_maximum_stay_needs_its_unlimited_stay_evid
     pz.validate_tariffs(tariffs)
 
 
+def test_the_commuter_evidence_rule_covers_a_campus_zone_too():
+    # Spec v3 A6 says "a zone with a maximum stay and a commuter product" (any zone type); the Task A5 brief named only
+    # street_paid. The rule is pinned for every type: a campus row that carries both is refused by the commuter rule
+    # (not only by the generic ban of max_stay_min on campus rows), and the marker in its notes does not rescue it
+    # because the maximum stay itself stays forbidden there.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    row = tariffs["zone_id"] == "fx_campus_v2"
+    assert tariffs.loc[row, "commuter_day_eur"].iloc[0] == 1.90 and pd.isna(tariffs.loc[row, "max_stay_min"].iloc[0])
+    changed = tariffs.copy()
+    changed.loc[row, "max_stay_min"] = 180
+    with pytest.raises(ValueError, match=r"zone 'fx_campus_v2': commuter_day_eur: .*unlimited-stay product:"):
+        pz.validate_tariffs(changed)
+    changed.loc[row, "notes"] = "unlimited-stay product: member month ticket (source: campus page)"
+    with pytest.raises(ValueError, match=r"zone 'fx_campus_v2': max_stay_min: not applicable to zone_type 'campus'"):
+        pz.validate_tariffs(changed)
+
+
 def test_hash_inside_a_field_is_not_a_comment(tmp_path):
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     tariffs.loc[0, "source_url"] = "https://www.braunschweig.de/plan/#parken"

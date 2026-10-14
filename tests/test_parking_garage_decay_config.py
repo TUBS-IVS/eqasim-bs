@@ -258,3 +258,14 @@ def test_the_option_price_coefficient_is_the_mode_choice_magnitude_in_every_conf
     value = _config(name)["parking_option_price_beta_u_per_eur"]
     assert value == prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998
     assert isinstance(value, float)
+
+
+@pytest.mark.parametrize("name", CONFIGS)
+def test_the_cost_factor_is_the_model_value_in_every_config_and_matches_the_prepare_default(name):
+    # spec v3 A3 (ASSUMPTION CF): 1.0 is the model and reproduces v2 bit for bit; every config carries the key explicitly
+    # (the value is declared, never absent), so a sensitivity arm that edits one config cannot leave the others behind.
+    from braunschweig.matsim.simulation import prepare
+
+    value = _config(name)["parking_cost_utility_factor"]
+    assert value == prepare.PARKING_DEFAULTS["parking_cost_utility_factor"] == prepare.PARKING_COST_FACTOR_DEFAULT == 1.0
+    assert isinstance(value, float)

@@ -29,6 +29,8 @@ COMMITTED = REPO / "eqasim-data" / "data"
 SCRIPT = REPO / "scripts" / "parking" / "compare_parking_targets.py"
 
 V3_HEADER = "outcome,zone_id,purpose,count,share,garage_probability_sum,stays_with_garages_in_range"
+V4_HEADER = (V3_HEADER + ",garage_probability_sum_paid,garage_probability_sum_free,street_infeasible_count,"
+             "no_feasible_option_count,expected_cost_cents_sum,ev_exempt_count")
 V2_HEADER = "outcome,zone_id,purpose,count,share"
 
 #: The synthetic report (outcome, zone, purpose, count, garage probability sum, stays with garages in range). The numbers
@@ -69,20 +71,35 @@ def cmp():
     return module
 
 
-def write_outcomes(path: Path, rows, *, version: int = 3, reverse: bool = False) -> Path:
-    """Write an outcome report; ``reverse`` lists the rows in another order (rows are keyed by name, never by position)."""
+def write_outcomes(path: Path, rows, *, version: int = 3, reverse: bool = False, extras=None) -> Path:
+    """Write an outcome report; ``reverse`` lists the rows in another order (rows are keyed by name, never by position).
+
+    ``extras`` (version 4 only) maps (outcome, zone id, purpose) to the six v4 columns of that row as a dict with the keys
+    ``paid``, ``free``, ``infeasible``, ``cost`` (the expected cost cents sum); the two outcome counts follow from the
+    outcome name as the Java listener writes them. A row without an entry has no free garage probability (paid = the whole
+    garage probability sum), no infeasible street and cost 0.
+    """
     rows = list(reversed(rows)) if reverse else list(rows)
+    extras = extras or {}
     total = sum(row[3] for row in rows)
-    lines = [V3_HEADER if version == 3 else V2_HEADER]
+    lines = [{2: V2_HEADER, 3: V3_HEADER, 4: V4_HEADER}[version]]
     for outcome, zone_id, purpose, count, probability_sum, in_range in rows:
         line = f"{outcome},{zone_id},{purpose},{count},{count / total:.6f}"
-        lines.append(line + (f",{probability_sum:.6f},{in_range}" if version == 3 else ""))
+        if version >= 3:
+            line += f",{probability_sum:.6f},{in_range}"
+        if version == 4:
+            extra = extras.get((outcome, zone_id, purpose), {})
+            paid = extra.get("paid", probability_sum - extra.get("free", 0.0))
+            line += (f",{paid:.6f},{extra.get('free', 0.0):.6f},{extra.get('infeasible', 0)},"
+                     f"{count if outcome == 'NO_FEASIBLE_OPTION' else 0},{extra.get('cost', 0.0):.6f},"
+                     f"{count if outcome == 'EV_EXEMPT' else 0}")
+        lines.append(line)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
-def write_run(root: Path, name: str, trips, rows=None, *, version: int = 3) -> Path:
+def write_run(root: Path, name: str, trips, rows=None, *, version: int = 3, extras=None) -> Path:
     """A run output directory: ``eqasim_trips.csv.gz`` and, for ``rows``, the reports of iterations 0 (no priced stay) and 2."""
     run = root / name
     run.mkdir(parents=True)
@@ -93,7 +110,7 @@ def write_run(root: Path, name: str, trips, rows=None, *, version: int = 3) -> P
         frame.to_csv(stream, sep=";", index=False)
     if rows is not None:
         write_outcomes(run / "ITERS" / "it.0" / "0.parking_outcomes.csv", [], version=version)
-        write_outcomes(run / "ITERS" / "it.2" / "2.parking_outcomes.csv", rows, version=version)
+        write_outcomes(run / "ITERS" / "it.2" / "2.parking_outcomes.csv", rows, version=version, extras=extras)
     return run
 
 
@@ -749,3 +766,316 @@ def test_ev_exempt_is_classified_as_a_free_outcome_because_the_street_costs_noth
     from braunschweig.parking import cost
     assert cost.EV_EXEMPT in cmp.FREE_OUTCOMES
     assert cost.EV_EXEMPT not in (*cmp.PAID_OUTCOMES, *cmp.OTHER_OUTCOMES)
+
+
+# ------------------------------------------------------------------------------- outcome report v4 (spec v3 A4, Task A8)
+
+#: The six v4 columns of the rows that matter below: the garage probability sum of a row splits into the part on PAID garage
+#: options and the part on FREE ones (sum = ``garage_probability_sum``), ``cost`` is the unscaled expected cost in cents
+#: summed over the stays of the row, ``infeasible`` the stays whose street side was no option.
+V4_EXTRAS = {
+    ("PAID_EXPECTED", "bs_zone_ia", "shop"): {"paid": 9.0, "free": 3.0, "cost": 8000.0},        # 12.0 = 9.0 + 3.0
+    ("PAID_METERED", "bs_zone_ia", "shop"): {"cost": 2500.0},
+    ("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 3.0, "free": 1.0, "infeasible": 5, "cost": 3000.0},   # 4.0 = 3.0 + 1.0
+    ("PAID_COMMUTER", "bs_zone_ia", "work"): {"cost": 800.0},
+    ("PAID_EXPECTED", "bs_zone_ib", "other"): {"cost": 6000.0},
+    ("PAID_LONG_STAY", "bs_zone_ib", "education"): {"infeasible": 4, "cost": 1200.0},
+}
+#: Rows that only a v3 mechanics run writes: stays priced EV_EXEMPT (free by the ordinance) and NO_FEASIBLE_OPTION (priced as
+#: the street at its metered cents, so 900 cents each).
+V4_MECHANICS_ROWS = [
+    ("EV_EXEMPT", "bs_zone_ia", "shop", 6, 0.0, 0),
+    ("EV_EXEMPT", "bs_zone_ib", "work", 4, 0.0, 0),
+    ("NO_FEASIBLE_OPTION", "bs_zone_ib", "work", 2, 0.0, 0),
+]
+V4_MECHANICS_EXTRAS = {**V4_EXTRAS, ("NO_FEASIBLE_OPTION", "bs_zone_ib", "work"): {"infeasible": 2, "cost": 1800.0}}
+ROWS_V4 = ROWS + V4_MECHANICS_ROWS
+GEOJSON = Path("braunschweig") / "parking" / "parking_zones_2026.geojson"
+WOLFSBURG_ROWS = [("PAID_EXPECTED", "wob_tarifzone_1", "work", 20, 6.0, 20),
+                  ("EMPLOYER_FREE", "wob_tarifzone_2", "work", 10, 0.0, 0),
+                  ("PAID_METERED", "wob_tarifzone_3", "education", 10, 0.0, 0)]
+
+
+def compare_v4(cmp, data, tmp_path, name="v4", rows=ROWS_V4, extras=V4_MECHANICS_EXTRAS, version=4):
+    run = write_run(tmp_path / "runs", name, ZONES_TRIPS, rows, version=version, extras=extras)
+    return cmp.compare([cmp.ArmSpec(name, run, True)], data_path=data, zones_geojson=data / GEOJSON)
+
+
+def test_a_v4_report_is_read_by_column_name_and_keeps_the_v3_columns_in_front(cmp, tmp_path):
+    assert cmp.REPORT_V4_COLUMNS[:len(cmp.REPORT_V3_COLUMNS)] == cmp.REPORT_V3_COLUMNS   # v3 readers read the first seven
+    assert ",".join(cmp.REPORT_V4_COLUMNS) == V4_HEADER   # the Java header, in order
+    frame, version = cmp.read_parking_outcomes(
+        write_outcomes(tmp_path / "v4.csv", ROWS_V4, version=4, extras=V4_MECHANICS_EXTRAS))
+    backward, _ = cmp.read_parking_outcomes(write_outcomes(tmp_path / "v4b.csv", ROWS_V4, version=4, reverse=True,
+                                                           extras=V4_MECHANICS_EXTRAS))
+    assert version == 4 and len(frame) == len(ROWS_V4)
+    assert frame["garage_probability_sum_paid"].sum() == pytest.approx(25.0 - 4.0)
+    assert frame["garage_probability_sum_free"].sum() == pytest.approx(4.0)
+    assert frame["street_infeasible_count"].sum() == 11 and frame["expected_cost_cents_sum"].sum() == pytest.approx(23300.0)
+    assert frame["no_feasible_option_count"].sum() == 2 and frame["ev_exempt_count"].sum() == 10
+    # the two outcome counts repeat the count of their own outcome row and are 0 elsewhere: a sum over rows is the number of
+    # stays, it is never multiplied by count
+    assert (frame.loc[frame["outcome"] != "EV_EXEMPT", "ev_exempt_count"] == 0).all()
+    assert frame.loc[frame["outcome"] == "EV_EXEMPT", "ev_exempt_count"].tolist() == [6, 4]
+    key = ["outcome", "zone_id", "purpose"]
+    pd.testing.assert_frame_equal(frame.sort_values(key).reset_index(drop=True), backward.sort_values(key).reset_index(drop=True))
+
+
+def test_the_v3_and_v2_readers_carry_no_v4_figures_as_numbers(cmp, tmp_path):
+    for version in (2, 3):
+        frame, found = cmp.read_parking_outcomes(write_outcomes(tmp_path / f"v{version}.csv", ROWS, version=version))
+        assert found == version
+        for column in cmp.REPORT_V4_COLUMNS[len(cmp.REPORT_V3_COLUMNS):]:
+            assert column in frame.columns and frame[column].isna().all(), (version, column)
+
+
+def test_the_v4_report_reader_is_strict(cmp, tmp_path):
+    def write(line):
+        path = tmp_path / "bad.csv"
+        path.write_text(V4_HEADER + "\n" + line + "\n", encoding="utf-8")
+        return path
+
+    good = "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,1.000000,2,0,500.000000,0"
+    cmp.read_parking_outcomes(write(good))
+    bad = {
+        "must equal garage_probability_sum":
+            "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,2.000000,2,0,500.000000,0",
+        "garage_probability_sum_paid and garage_probability_sum_free":
+            "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,-0.000001,4.000001,2,0,500.0,0",
+        "street_infeasible_count": "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,1.000000,11,0,500.0,0",
+        "no_feasible_option_count": "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,1.000000,2,3,500.0,0",
+        "ev_exempt_count": "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,1.000000,2,0,500.0,10",
+        "expected_cost_cents_sum": "PAID_EXPECTED,bs_zone_ia,shop,10,1.000000,4.000000,10,3.000000,1.000000,2,0,-1.0,0",
+    }
+    for needle, line in bad.items():
+        with pytest.raises(ValueError, match=needle):
+            cmp.read_parking_outcomes(write(line))
+    # the outcome count of its own outcome row equals the row's count, and a non-numeric cell is refused, not read as 0
+    with pytest.raises(ValueError, match="no_feasible_option_count"):
+        cmp.read_parking_outcomes(write("NO_FEASIBLE_OPTION,bs_zone_ia,shop,10,1.000000,0.000000,0,0.000000,0.000000,10,7,"
+                                        "900.0,0"))
+    with pytest.raises(ValueError, match="ev_exempt_count"):
+        cmp.read_parking_outcomes(write("EV_EXEMPT,bs_zone_ia,shop,10,1.000000,0.000000,0,0.000000,0.000000,0,0,0.0,9"))
+    with pytest.raises(ValueError, match="expected_cost_cents_sum"):
+        cmp.read_parking_outcomes(write(good.replace("500.000000", "n/a")))
+
+
+def test_a_v4_report_with_a_removed_column_is_refused_as_an_unknown_header(cmp, tmp_path):
+    path = tmp_path / "short.csv"
+    path.write_text(V4_HEADER.rsplit(",", 1)[0] + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="header"):
+        cmp.read_parking_outcomes(path)
+
+
+def test_the_paid_only_commuter_share_is_the_pooled_ratio_of_the_v4_paid_probability(cmp, data, tmp_path):
+    table = compare_v4(cmp, data, tmp_path).table
+    # PAID_* work and education calls in Ia and Ib: Ia work PAID_EXPECTED 20 (paid 3.0, free 1.0), PAID_COMMUTER 10, Ib education
+    # PAID_LONG_STAY 10 and Ib work NO_FEASIBLE_OPTION 2 -> 42 calls. Paid-only share = sum(paid) / sum(paid options + street)
+    # and, per stay, paid + street = 1 - free, so it is 3.0 / (42 - 1.0).
+    paid = row(table, "v4", "garage_share_ia_ib_work_education_paid_calls")
+    assert paid["model"] == pytest.approx(3.0 / 41, abs=1e-6) and paid["universe_size"] == 42
+    assert paid["reference"] == pytest.approx(0.1 / 0.15, abs=1e-12)
+    assert cmp.PAID_ONLY_LABEL in paid["universe_note"] and cmp.FREE_OPTIONS_INCLUDED_LABEL not in paid["universe_note"]
+    assert "garage_probability_sum_paid" in paid["universe_note"]
+    # the row is a pooled ratio, no exact image of the calibration, which averages per-stay shares: say so, say when they agree
+    for needle in ("pooled paid-only ratio", "calibrate_garage_decay.py averages per-stay shares",
+                   "equal only when no free option is in range of any stay"):
+        assert needle in paid["universe_note"], needle
+    assert "exact" not in paid["universe_note"].lower().replace("exactly", "")
+    # the same stays in a v3 report: the all-options share with the free options in, 4.0 / 42, labelled as before
+    old = compare_v4(cmp, data, tmp_path, name="v3", extras=None, version=3).table
+    legacy = row(old, "v3", "garage_share_ia_ib_work_education_paid_calls")
+    assert legacy["model"] == pytest.approx(4.0 / 42, abs=1e-6)
+    assert cmp.FREE_OPTIONS_INCLUDED_LABEL in legacy["universe_note"] and cmp.PAID_ONLY_LABEL not in legacy["universe_note"]
+    assert "no paid/free split" in legacy["universe_note"]
+
+
+def test_the_wolfsburg_paid_only_share_is_a_pooled_ratio_too_and_the_orientation_rows_keep_their_label(cmp, data, tmp_path):
+    extras = {**V4_MECHANICS_EXTRAS, ("PAID_EXPECTED", "wob_tarifzone_1", "work"): {"paid": 4.0, "free": 2.0}}
+    tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
+    lines = tariffs_path.read_text(encoding="utf-8").splitlines()
+    template = next(line for line in lines if line.startswith("fx_sz,"))
+    tariffs_path.write_text("\n".join(lines + [template.replace("fx_sz,", f"wob_tarifzone_{n},", 1) for n in (1, 2, 3)]) + "\n",
+                            encoding="utf-8")
+    table = compare_v4(cmp, data, tmp_path, rows=[*ROWS_V4, *WOLFSBURG_ROWS], extras=extras).table
+    # PAID_* calls in Wolfsburg: PAID_EXPECTED 20 (paid 4.0, free 2.0) + PAID_METERED 10 = 30 calls: 4.0 / (30 - 2.0)
+    paid = row(table, "v4", "garage_share_wolfsburg_work_education_paid_calls")
+    assert paid["model"] == pytest.approx(4.0 / 28, abs=1e-6) and paid["universe_size"] == 30
+    assert cmp.PAID_ONLY_LABEL in paid["universe_note"] and "independent check" in paid["universe_note"]
+    # the rows that keep the free calls in the denominator are orientation rows: all off-street options, free included
+    for name in ("garage_share_ia_ib_work_education_all_calls", "garage_share_ia_ib_work_education_without_employer_free",
+                 "garage_share_wolfsburg_work_education_all_calls", "garage_share_wolfsburg_work_education_without_employer_free"):
+        note = row(table, "v4", name)["universe_note"]
+        assert cmp.FREE_OPTIONS_INCLUDED_LABEL in note and cmp.PAID_ONLY_LABEL not in note, name
+    # the visitor row is payment-inclusive on both sides in every version
+    assert row(table, "v4", "garage_share_ia_ib_other_purposes")["model"] == pytest.approx(21 / 116, abs=1e-6)
+
+
+def test_a_paid_only_universe_without_a_paying_user_is_undefined_with_its_own_reason(cmp, data, tmp_path, caplog):
+    # 20 PAID_EXPECTED work calls in Ia whose whole garage probability lies on free options: calls exist, the denominator
+    # calls - sum(free) is 0, so there is no paying user and the share is undefined, which is not an empty universe.
+    rows = [("PAID_EXPECTED", "bs_zone_ia", "work", 20, 20.0, 20), ("NO_ZONE", "", "shop", 5, 0.0, 0)]
+    name = "garage_share_ia_ib_work_education_paid_calls"
+    with caplog.at_level("WARNING"):
+        table = compare_v4(cmp, data, tmp_path, rows=rows,
+                           extras={("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.0, "free": 20.0}}).table
+    entry = row(table, "v4", name)
+    assert math.isnan(entry["model"]) and entry["universe_size"] == 20
+    assert cmp.NO_PAYING_USER_NOTE == "no paying user: every call's probability lies on free options"
+    assert cmp.NO_PAYING_USER_NOTE in entry["universe_note"] and "No pricing call" not in entry["universe_note"]
+    assert any(cmp.NO_PAYING_USER_NOTE in message and name in message for message in caplog.messages)
+    assert not any("no pricing call in the universe of " + name in message for message in caplog.messages)
+    # the rounding case: the free part is 1e-6 below the call count, the denominator is the difference of two rounded sums and
+    # not above the tolerance, so it is noise and not a share
+    rounded = compare_v4(cmp, data, tmp_path, name="rounded", rows=rows, extras={
+        ("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.000001, "free": 19.999999}}).table
+    near = row(rounded, "rounded", name)
+    assert math.isnan(near["model"]) and cmp.NO_PAYING_USER_NOTE in near["universe_note"]
+    # just above the tolerance the share is defined again: paid 0.01 over a denominator of 0.01
+    above = compare_v4(cmp, data, tmp_path, name="above", rows=rows, extras={
+        ("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.01, "free": 19.99}}).table
+    assert row(above, "above", name)["model"] == pytest.approx(1.0)
+    assert cmp.NO_PAYING_USER_NOTE not in row(above, "above", name)["universe_note"]
+    # a universe without any call keeps the empty-universe reason
+    empty = row(table, "v4", "garage_share_wolfsburg_work_education_paid_calls")
+    assert "No pricing call of this universe" in empty["universe_note"] and cmp.NO_PAYING_USER_NOTE not in empty["universe_note"]
+    # an older report has no paid/free split and never takes this reason
+    old = compare_v4(cmp, data, tmp_path, name="v3", rows=rows, extras=None, version=3).table
+    assert cmp.NO_PAYING_USER_NOTE not in row(old, "v3", name)["universe_note"]
+
+
+def test_the_paid_only_share_of_an_empty_universe_is_a_row_without_a_value(cmp, data, tmp_path):
+    table = compare_v4(cmp, data, tmp_path).table
+    empty = row(table, "v4", "garage_share_wolfsburg_work_education_paid_calls")
+    assert math.isnan(empty["model"]) and "No pricing call of this universe" in empty["universe_note"]
+    assert cmp.PAID_ONLY_LABEL in empty["universe_note"]
+
+
+def test_the_v4_rows_report_mean_expected_cost_ev_share_and_infeasible_street_share(cmp, data, tmp_path):
+    table = compare_v4(cmp, data, tmp_path).table
+    # other purposes in Ia and Ib: 70 + 10 + 30 calls of the ROWS and the 6 EV_EXEMPT shop calls = 116 calls with the cost sums
+    # 8000 + 2500 + 6000 = 16500 ct; work and education in Ia and Ib: 85 + 4 EV_EXEMPT + 2 NO_FEASIBLE_OPTION = 91 calls with
+    # 3000 + 800 + 1200 + 1800 = 6800 ct.
+    other = row(table, "v4", "mean_expected_cost_cents_ia_ib_other_purposes")
+    assert other["model"] == pytest.approx(16500 / 116, abs=1e-6) and other["universe_size"] == 116
+    assert other["unit"] == "cents_per_call" and math.isnan(other["reference"]) and math.isnan(other["delta_pp"])
+    commuter = row(table, "v4", "mean_expected_cost_cents_ia_ib_work_education")
+    assert commuter["model"] == pytest.approx(6800 / 91, abs=1e-6) and commuter["universe_size"] == 91
+    for needle in ("UNSCALED", "cost factor", "pricing calls", "descriptive", "model only"):
+        assert needle in other["universe_note"], needle
+    # EV share: EV_EXEMPT calls over all calls of the group, all purposes: Ia and Ib hold 215 + 12 = 227 calls, 10 EV_EXEMPT
+    ev = row(table, "v4", "ev_exempt_share_ia_ib")
+    assert ev["model"] == pytest.approx(10 / 227, abs=1e-6) and ev["universe_size"] == 227
+    assert ev["unit"] == "share" and math.isnan(ev["reference"]) and "EV_EXEMPT" in ev["universe_note"]
+    # street infeasible share among the work and education calls: 5 (Ia work) + 4 (Ib education) + 2 (Ib work) = 11 of 91
+    infeasible = row(table, "v4", "street_infeasible_share_ia_ib_work_education")
+    assert infeasible["model"] == pytest.approx(11 / 91, abs=1e-6) and infeasible["universe_size"] == 91
+    assert "maximum stay" in infeasible["universe_note"]
+    # the group of every zone of the report: each call with a zone id (Ia, Ib, fx_sz, the campus zone), NO_ZONE left out
+    everything = row(table, "v4", "ev_exempt_share_all_zones")
+    assert everything["universe_size"] == TOTAL_CALLS + 12 - 150 and everything["model"] == pytest.approx(10 / (TOTAL_CALLS - 138))
+    # a group without a call is an empty row with the reason, never a zero
+    wolfsburg = row(table, "v4", "mean_expected_cost_cents_wolfsburg_work_education")
+    assert math.isnan(wolfsburg["model"]) and "No pricing call of this universe" in wolfsburg["universe_note"]
+
+
+def test_the_v4_rows_exist_for_every_arm_and_are_empty_with_the_reason_without_a_v4_report(cmp, data, tmp_path):
+    runs = tmp_path / "runs"
+    arms = [cmp.ArmSpec("off", write_run(runs, "off", OFF_TRIPS), False),
+            cmp.ArmSpec("old_v3", write_run(runs, "old_v3", ZONES_TRIPS, ROWS, version=3), True),
+            cmp.ArmSpec("old_v2", write_run(runs, "old_v2", ZONES_TRIPS, ROWS, version=2), True),
+            cmp.ArmSpec("new_v4", write_run(runs, "new_v4", ZONES_TRIPS, ROWS_V4, version=4, extras=V4_MECHANICS_EXTRAS), True)]
+    result = cmp.compare(arms, data_path=data, zones_geojson=data / GEOJSON)
+    table = result.table
+    per_arm = table.groupby("arm")["metric"].apply(tuple)
+    assert per_arm["off"] == per_arm["old_v3"] == per_arm["old_v2"] == per_arm["new_v4"]   # rectangular
+    new_metrics = [metric for metric in per_arm["off"]
+                   if metric.startswith(("mean_expected_cost_cents_", "ev_exempt_share_", "street_infeasible_share_"))]
+    assert len(new_metrics) == 12   # three zone groups; cost for two purposes, the EV share, the infeasible street share
+    for arm, needle in (("old_v3", "CSV v3"), ("old_v2", "CSV v2"), ("off", "no parking outcome report")):
+        for metric in new_metrics:
+            entry = row(table, arm, metric)
+            assert math.isnan(entry["model"]) and needle in entry["universe_note"], (arm, metric)
+    assert all(not math.isnan(row(table, "new_v4", metric)["model"]) for metric in
+               ("mean_expected_cost_cents_ia_ib_other_purposes", "ev_exempt_share_ia_ib"))
+    assert result.provenance["arms"]["new_v4"]["outcome_report_version"] == 4
+
+
+def test_the_paid_only_delta_is_dropped_between_arms_of_different_report_versions_and_kept_between_equal_ones(
+        cmp, data, tmp_path, caplog):
+    runs = tmp_path / "runs"
+    first = write_run(runs, "a", ZONES_TRIPS, ROWS_V4, version=4, extras=V4_MECHANICS_EXTRAS)
+    second = write_run(runs, "b", ZONES_TRIPS, ROWS_V4, version=4, extras=V4_MECHANICS_EXTRAS)
+    third = write_run(runs, "c", ZONES_TRIPS, ROWS_V4, version=3)
+    metric = "garage_share_ia_ib_work_education_paid_calls"
+    with caplog.at_level("WARNING"):
+        result = cmp.compare([cmp.ArmSpec("a", first, True), cmp.ArmSpec("b", second, True), cmp.ArmSpec("c", third, True)],
+                             data_path=data, zones_geojson=data / GEOJSON)
+    found = result.deltas[result.deltas["metric"] == metric]
+    assert list(zip(found["arm"], found["baseline_arm"])) == [("b", "a")]   # c (v3) has another measure than a and b (v4)
+    assert any("different report versions" in message and metric in message for message in caplog.messages)
+    # every other share metric still has its delta against the v3 arm
+    other = result.deltas[(result.deltas["arm"] == "c") & (result.deltas["metric"] == "paid_share_ia_ib_all_purposes")]
+    assert len(other) == 2
+
+
+def test_v4_reports_are_pooled_cell_by_cell_including_the_v4_columns(cmp, data, tmp_path):
+    doubled = {key: {name: 2 * value for name, value in extra.items()} for key, extra in V4_MECHANICS_EXTRAS.items()}
+    run = write_run(tmp_path / "runs", "pooled4", ZONES_TRIPS, [(o, z, p, 2 * c, 2 * g, 2 * r) for o, z, p, c, g, r in ROWS_V4],
+                    version=4, extras=doubled)
+    write_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv", ROWS_V4, version=4, extras=V4_MECHANICS_EXTRAS)
+    first, _ = cmp.read_parking_outcomes(run / "ITERS" / "it.1" / "1.parking_outcomes.csv")
+    second, _ = cmp.read_parking_outcomes(run / "ITERS" / "it.2" / "2.parking_outcomes.csv")
+    pooled, version = cmp.pool_outcome_reports([(first, 4), (second, 4)])
+    assert version == 4 and len(pooled) == len(first) and pooled["share"].sum() == pytest.approx(1.0)
+    assert pooled["garage_probability_sum_paid"].sum() == pytest.approx(3 * 21.0)
+    assert pooled["expected_cost_cents_sum"].sum() == pytest.approx(3 * 23300.0)
+    assert pooled["street_infeasible_count"].sum() == 33 and pooled["ev_exempt_count"].sum() == 30
+    assert pooled["no_feasible_option_count"].sum() == 6
+    table = cmp.compare([cmp.ArmSpec("pooled4", run, True)], data_path=data, zones_geojson=data / GEOJSON,
+                        iterations=[1, 2]).table
+    assert row(table, "pooled4", "garage_share_ia_ib_work_education_paid_calls")["model"] == pytest.approx(3.0 / 41, abs=1e-6)
+    assert row(table, "pooled4", "street_infeasible_share_ia_ib_work_education")["model"] == pytest.approx(11 / 91, abs=1e-6)
+    with pytest.raises(ValueError, match="different versions"):
+        cmp.pool_outcome_reports([(first, 4), (second, 3)])
+
+
+def test_the_script_documentation_names_the_v4_report_and_the_paid_only_label(cmp):
+    documentation = " ".join(cmp.__doc__.split())
+    assert "CSV v4" in documentation and cmp.PAID_ONLY_LABEL in documentation
+    assert cmp.FREE_OPTIONS_INCLUDED_LABEL in documentation   # the v3 limitation stays documented for old reports
+
+
+#: The literal reports of the CURRENT Java ``ParkingOutcomeReportListenerTest`` (CSV v4), copied line by line like the v3
+#: ones above: the writer's expectations are the reader's fixture; the copy is not read from the Java repository.
+JAVA_V4_REPORTS = {
+    "it3_no_garage_options": [
+        V4_HEADER,
+        "NO_ZONE,,shop,2,0.250000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "NO_ZONE,,work,3,0.375000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "EMPLOYER_FREE,fx_bs_ib,work,1,0.125000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "PAID_METERED,fx_bs_ia,shop,1,0.125000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "PAID_METERED,fx_bs_ib,work,1,0.125000,0.000000,0,0.000000,0.000000,0,0,0.000000,0"],
+    "it4_garage_options": [
+        V4_HEADER,
+        "NO_ZONE,,work,1,0.200000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "FREE_WITHIN_LIMIT,fx_bs_ib,shop,1,0.200000,0.000000,1,0.000000,0.000000,0,0,0.000000,0",
+        "PAID_METERED,fx_bs_ib,shop,1,0.200000,0.000000,0,0.000000,0.000000,0,0,0.000000,0",
+        "PAID_EXPECTED,fx_bs_ib,shop,2,0.400000,0.750000,2,0.750000,0.000000,0,0,0.000000,0"],
+    "it2_quoted_zone_id": [
+        V4_HEADER, 'PAID_METERED,"fx,zone",work,1,1.000000,0.000000,0,0.000000,0.000000,0,0,0.000000,0'],
+}
+
+
+@pytest.mark.parametrize("name", sorted(JAVA_V4_REPORTS))
+def test_the_reader_parses_the_literal_v4_reports_of_the_java_listener_test(cmp, tmp_path, name):
+    lines = JAVA_V4_REPORTS[name]
+    path = tmp_path / f"{name}.csv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
+    frame, version = cmp.read_parking_outcomes(path)
+    assert version == 4 and len(frame) == len(lines) - 1
+    assert lines[0] == ",".join(cmp.REPORT_V4_COLUMNS)
+    if name == "it4_garage_options":
+        expected = frame[frame["outcome"] == "PAID_EXPECTED"].iloc[0]
+        assert (expected["garage_probability_sum"], expected["garage_probability_sum_paid"],
+                expected["garage_probability_sum_free"]) == (0.75, 0.75, 0.0)

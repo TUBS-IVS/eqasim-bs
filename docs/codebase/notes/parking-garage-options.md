@@ -7,23 +7,26 @@ maintainer must keep. The zone-based pricing around it is in [parking-cost-zones
 ## What it does
 
 A car stay in a `street_paid` or `resident_zone` zone that passes the early rules (no zone, home, `parkingFree`,
-resident, outside the street fee window) has the options "street" (weight 1) and every priced garage within
-`garage_max_distance_m` (1000 m, ASSUMPTION G2) of the destination, weight `exp(-d / lambda)` (ASSUMPTION G1,
-`garage_decay_m`; lambda_c, `garage_decay_commute_m`, ASSUMPTION G1-c, for a stay whose purpose is work or education: the
-helper `cost.garage_decay_m_for_purpose` is the single place that picks the decay of a stay). The price is the probability-weighted mean of the option costs, rounded half up to the cent once
-(`braunschweig.parking.cost.parking_cost_with_garages`, the Python reference the Java port reproduces). A stay
-whose street option costs 0 pays 0 (E4); an unavailable street renormalises the weights over the garages; a campus zone
-and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTED` is the LAST entry of `cost.OUTCOMES`.
+resident, outside the street fee window) has the options "street" and every priced garage within
+`garage_max_distance_m` (1000 m, ASSUMPTION G2) of the destination that the duration of the stay allows, with the weight
+`exp(-d / lambda - beta * c / 100)` (ASSUMPTION G1, `garage_decay_m`; lambda_c, `garage_decay_commute_m`, ASSUMPTION G1-c, for
+a stay whose purpose is work or education: the helper `cost.garage_decay_m_for_purpose` is the single place that picks the
+decay of a stay; d is 0 for the street, c the cost in cents of the option for this stay, beta the price coefficient of
+ASSUMPTION G1-d, see "Feasibility and the price term" below). The price is the probability-weighted mean of the option costs,
+rounded half up to the cent once (`braunschweig.parking.cost.parking_cost_with_garages`, the Python reference the Java port
+reproduces). A stay whose street option costs 0 pays 0 (E4); an infeasible street renormalises the weights over the garages; a
+campus zone and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTED` is the LAST entry of
+`cost.OUTCOMES` (since v3 followed by `NO_FEASIBLE_OPTION` and `EV_EXEMPT`).
 
 ## Where things are
 
 | Concern | Place |
 | --- | --- |
-| Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `garage_decay_m_for_purpose`, `GarageOptionCounters`) |
+| Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `parking_cost_with_garages_detail`, `option_weight`, `street_feasible`, `garage_decay_m_for_purpose`, `GarageOptionCounters`) |
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
-| Dataset to model entries, schema 4, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `garage_decays_from_model`, `ASSUMPTIONS_REGISTER` G1 to G3, G1-c and P3 to P12) |
+| Dataset to model entries, schema 5, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `garage_decays_from_model`, `ASSUMPTIONS_REGISTER` present only where a priced row names them: P3 to P8, P10, P11, P13, P14; always present: P9, G1 to G3 (with G1-c, G1-d) and M3; E1 and E2 only with an EV exemption in the model; P12 is withdrawn and never listed) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_decay_commute_m`, `parking_garage_max_distance_m`) |
-| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E38, O01..O69), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 5) |
+| Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E38, O01..O69 and the v3 families F, P and X), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 6) |
 | Calibration of lambda and lambda_c | `scripts/parking/calibrate_garage_decay.py` |
 
 ## Rules maintainers must keep
@@ -65,18 +68,44 @@ and every early-rule stay price exactly as before. The new outcome `PAID_EXPECTE
   Python reference prices nothing at run time, so no pipeline stage logs the counters; the Java listener logs these rates
   per iteration while the garage options are on. `build_tariff_model` warns, with the count and the zone ids, when a zone row still carries
   zone-level garage columns while `garage_decay_m` is above 0 (E8: they are superseded; production rows have none).
-- **The model is schema 4.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
+- **The model is schema 5.** Every key set is exact (`cost.GARAGE_FIELDS_JSON`, `GARAGE_TIER_FIELDS`,
   `GARAGE_BAND_FIELDS`); `garage_decay_m` 0 switches the options off for the purposes it governs, `garage_decay_commute_m`
-  (schema 4, spec Amendment H) for work and education, and the export refuses either decay above 0 without a priced garage.
+  (schema 4, spec Amendment H) for work and education, and the export refuses either decay above 0 without a priced garage;
+  schema 5 adds `option_price_beta_u_per_eur` and the garage field `max_stay_min` (spec v3 A1, A2).
 - **Two decay lengths, one helper (ASSUMPTION G1-c).** `cost.garage_decay_m_for_purpose` returns lambda_c for the purposes
   of `cost.COMMUTER_PURPOSES` and lambda for every other purpose; the pricing, the golden cases and the Java port take the
   decay of a stay from this rule only. The commuter decay is never defaulted to lambda: `parking_cost_with_garages` requires
   it (keyword), `build_tariff_model` and the preparation accept `None` only while lambda is 0 and refuse it otherwise. A
   schema-3 model has no commuter decay and every purpose uses `garage_decay_m` (`tariff_export.garage_decays_from_model`;
-  the Java reader does the same). The golden file is schema 5: every case carries `garage_decay_commute_m`, equal to
+  the Java reader does the same). Since schema 5 of the golden file every case carries `garage_decay_commute_m`, equal to
   `garage_decay_m` in every case before E33 (so those cases keep their content and price), and E33 to E38 pin the two
   decays (lambda 400 m, lambda_c 250 m of the fixture model, `FIXTURE_GARAGE_DECAY_COMMUTE_M`) with a work, a shopping and
   an education stay at the same destination and the two off switches.
+
+## Feasibility and the price term (spec v3 A1 and A2, ADR-0142)
+
+- **Feasible options.** A stay whose chargeable duration (street fee window, seconds rounded up to minutes) exceeds the
+  maximum stay of its zone has no street option unless the zone has a long-stay product (ASSUMPTION M3; the detail flag
+  `GarageStayPrice.street_feasible`, which counts street OR zone commuter product, not the free function `street_feasible`,
+  decides the street weight). A garage or lot whose own `max_stay_min` is below the duration leaves the set too. A stay with no
+  feasible option is priced as the street at its metered cents, the maximum ignored, and named `NO_FEASIBLE_OPTION`; the
+  Python counters `street_unavailable` (a street-infeasible stay), `options_infeasible` and `no_feasible_option` of
+  `cost.GarageOptionCounters` and the Java report columns `street_infeasible_count` and `no_feasible_option_count` make the
+  case visible. An error is never raised for it; the arm check of Part C flags a high rate.
+- **Price term.** `cost.option_weight` is `exp(-distance_m / decay_m - beta_u_per_eur * cost_cents / 100)` with the exponent
+  evaluated as `(-d / lambda) - ((beta * c) / 100)` in this order (Java: `StrictMath.exp`; the order is a contract like the
+  summation order of the expectation). beta is the config key `parking_option_price_beta_u_per_eur` (0.310998, the magnitude of
+  `betaCost_u_MU`), written into the model as `option_price_beta_u_per_eur`; the Java class `ParkingOptionPriceBetaCheck`
+  refuses a run whose model value differs from the mode choice by more than 1e-9, also 0 in a schema-5 model (ruling R-A-17).
+  The Python reference accepts beta 0 (finite and >= 0 is validated) and then reproduces the v2 weights bit for bit; the v2
+  golden cases are pinned that way. beta is no free parameter: it is not calibrated (one share cannot identify it together
+  with lambda).
+- **All weights underflow.** `parking_cost_with_garages_detail` raises a named `ValueError` when the weights sum to 0 (the Java
+  calculator refuses the same stay) instead of a bare division error.
+- **The decay lengths and the price term.** lambda and lambda_c of `configs/base_bs.yml` were fitted on the price-free weights
+  and `scripts/parking/calibrate_garage_decay.py` still fits on them (it knows neither the feasibility rule nor the price), so
+  with beta > 0 the lengths no longer reproduce the calibrated shares until Part B (B5) recalibrates with beta fixed and with
+  the same feasible set and price as the pricing (spec A1, B5).
 
 ## Calibration and its state
 
@@ -121,8 +150,8 @@ to the garage dataset named in its header exactly: any change of the option set 
 
 How a run's paid share, garage share and free shares are compared with the committed SrV tables
 (`scripts/parking/compare_parking_targets.py`), with the universe caveats, is in
-[parking-target-comparison.md](parking-target-comparison.md); its commuter and Wolfsburg rows count all off-street options,
-free ones included, because the outcome report has no paid/free split (labelled, spec I6). The calibration script takes
+[parking-target-comparison.md](parking-target-comparison.md); which of its commuter and Wolfsburg rows are paid-only depends on
+the version of the outcome report (v4 splits the paid and the free probability, ADR-0142). The calibration script takes
 `--facility-kinds` (default every kind): the release value is the calibration on every kind, and a run on `garage` only reports
 lambda without the surface lots as a sensitivity number (the table records the filter).
 

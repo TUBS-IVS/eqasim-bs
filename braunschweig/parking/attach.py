@@ -620,7 +620,9 @@ def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: 
     without a car vehicle, with only ``car_passenger`` vehicles, or with only non-electric cars is not exempt.
 
     SEVERAL CARS (limitation, not silently resolved): a person can own several car vehicles (the household fleet
-    assigns surplus cars round-robin to the licensed adults) and the plans do not tie a leg to one vehicle: the
+    gives the cars beyond the number of licensed adults round-robin to the licensed adults, and all cars of a
+    household without a licensed adult to its oldest adult: ``_assign_owners`` and ``_fallback_owners`` of
+    ``braunschweig.synthesis.vehicles.cars.household``) and the plans do not tie a leg to one vehicle: the
     MATSim ``vehicles`` person attribute maps the mode ``car`` to a single id, and routing resolves the car by mode.
     The rule here is therefore "ANY owned car vehicle is a BEV/PHEV", which can over-assign the exemption to a
     person who drives a non-electric car of a mixed pair; the number of such mixed owners is logged. Cars are
@@ -628,7 +630,11 @@ def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: 
     their own owns only a placeholder routing car (``type_id`` ``default_car``, no powertrain) and is not exempt.
 
     Fallback transparency: every car owner is counted as BEV/PHEV (exempt), other known powertrain, or placeholder
-    car without powertrain (``type_id`` ``default_car``: no fleet identity, by design, never exempt). A fleet car
+    car without powertrain (``type_id`` ``default_car``: no fleet identity, by design, never exempt). The headline
+    rate is per car owner INCLUDING the placeholder-only owners (the persons without a car of their own of the
+    household fleet); the basis log line therefore also states the share of fleet-car owners (an owner of at least one
+    car that is no placeholder), the rate of every category among all car owners and the BEV/PHEV rate among the
+    fleet-car owners, so the reader can tell a fleet effect from a placeholder effect. A fleet car
     without a powertrain (or a vehicles frame with no ``powertrain`` column at all, e.g. the legacy fleet of
     ``fleet_model_enabled: false``) cannot be classified: it is never exempt, and it is warned about, because the
     exemption would silently be missing. A result without a single exempt person although powertrains are known is
@@ -690,15 +696,21 @@ def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: 
     n_other_known = int(((per_owner["known"] > 0) & (per_owner["electric"] == 0)).sum())
     n_placeholder_only = int(((per_owner["known"] == 0) & (per_owner["placeholder"] == per_owner["cars"])).sum())
     n_unclassified = n_owners - n_exempt - n_other_known - n_placeholder_only
+    n_fleet_owners = int((per_owner["cars"] > per_owner["placeholder"]).sum())
     n_several = int((per_owner["cars"] > 1).sum())
     n_mixed = int(((per_owner["cars"] > 1) & (per_owner["electric"] > 0)
                    & (per_owner["electric"] < per_owner["cars"])).sum())
-    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it",
+    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it "
+             "(incl. placeholder-car owners)",
              _LOG_TAG, n_exempt, n_owners, _rate(n_exempt, n_owners))
-    log.info("%s EV exemption basis (ASSUMPTION E1): BEV/PHEV %d, other known powertrain %d, placeholder car without "
-             "powertrain %d, car without powertrain %d; several cars %d, of them mixed electric/non-electric %d "
-             "(exempt: any owned car is a BEV/PHEV); powertrains of the car vehicles: %s", _LOG_TAG, n_exempt,
-             n_other_known, n_placeholder_only, n_unclassified, n_several, n_mixed,
+    log.info("%s EV exemption basis (ASSUMPTION E1): fleet-car owners %d of %d (%.1f %%), the others own only the "
+             "placeholder routing car; of the %d car owners: BEV/PHEV %d (%.1f %% of car owners, %.1f %% of "
+             "fleet-car owners), other known powertrain %d (%.1f %%), placeholder car without powertrain %d (%.1f %%), "
+             "car without powertrain %d (%.1f %%); several cars %d, of them mixed electric/non-electric %d "
+             "(exempt: any owned car is a BEV/PHEV); powertrains of the car vehicles: %s", _LOG_TAG, n_fleet_owners,
+             n_owners, _rate(n_fleet_owners, n_owners), n_owners, n_exempt, _rate(n_exempt, n_owners),
+             _rate(n_exempt, n_fleet_owners), n_other_known, _rate(n_other_known, n_owners), n_placeholder_only,
+             _rate(n_placeholder_only, n_owners), n_unclassified, _rate(n_unclassified, n_owners), n_several, n_mixed,
              format_value_counts(powertrain.where(is_known)))
     if n_owners and not has_powertrain_column:
         log.warning("%s EV exemption: the vehicles frame has no 'powertrain' column (the legacy fleet of "

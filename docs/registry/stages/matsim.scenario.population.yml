@@ -31,7 +31,11 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   (ASSUMPTION A1-b: an explicit mapping workplace class -> SrV class whose share replaces the own share of the class, the
   explicit null entry restores it because configuration overlays are deep-merged) and parking_campus_free_share
   (ASSUMPTION C2: the share of the persons with work or education on a campus who find a free place, never shifted
-  by parking_workplace_free_share_shift); their code defaults are off, their production values live in
+  by parking_workplace_free_share_shift); since parking cost zones v3 (ADR-0142, ASSUMPTION E1) the wrapper also
+  declares parking_ev_exemption_enabled (only with parking_zones_enabled; a validated boolean, default true) and, when it is on,
+  attaches the person flag parking_ev_exempt from the vehicles frame after the in-commuter merge (written as the person
+  attribute parkingEvExempt; docs/codebase/notes/parking-ev-exemption.md); their code defaults are off, their production
+  values live in
   configs/base_bs.yml and equal in the two popsim fixture configurations, and the draw logs both under [parking]; both
   options act only when the flag is on; combining the flag with the legacy ring
   enable_urban_parking is rejected in configure, and with the flag off no parking column is attached
@@ -71,3 +75,4 @@ decisions:
 - ADR-0110
 - ADR-0139
 - ADR-0140
+- ADR-0142

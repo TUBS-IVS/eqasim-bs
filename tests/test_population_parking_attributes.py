@@ -1253,7 +1253,8 @@ def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release
     assert "parkingFree=true on 1 activities" in coverage and "1/3 persons" in coverage
     assert any(message.startswith("[parking] activities in resident districts: 2/9") for message in messages)
     assert any(message.startswith("[parking] persons with a resident parking district: 0/3") for message in messages)
-    assert "[parking] EV exemption: 1 of 2 car owners (50.0 %) are BEV/PHEV and exempt where a zone grants it" in messages
+    assert ("[parking] EV exemption: 1 of 2 car owners (50.0 %) are BEV/PHEV and exempt where a zone grants it "
+            "(incl. placeholder-car owners)") in messages
 
 
 def test_real_attach_module_frees_the_campus_in_commuter_with_the_campus_share_one(tmp_path):

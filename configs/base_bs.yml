@@ -753,7 +753,8 @@ config:
   # the MAGNITUDE of the car cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998
   # (eqasim-java-bs): one money coefficient for the choice between parking options, without the income or distance
   # elasticity of the person's whole utility. A release value, not a free parameter: the Java startup check refuses a
-  # tariff model whose value differs from the mode choice by more than 1e-9. 0 gives the price-independent weights of v2.
+  # tariff model whose value differs from the mode choice by more than 1e-9, 0 included; 0 gives the price-independent
+  # weights of v2 in the Python reference only, not in a MATSim run.
   parking_option_price_beta_u_per_eur: 0.310998
 
   remode_carless_car_legs: true
