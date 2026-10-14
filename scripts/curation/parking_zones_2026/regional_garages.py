@@ -180,8 +180,9 @@ ATTRIBUTION = (
     "from OpenStreetMap (Peine Werderstrasse, Salzgitter BRAWO Carree, and the four main points of the supplement package). "
     "Packages: " + rz.PACKAGE_FILE + " (SHA-256 " + rz.PACKAGE_SHA256 + "), supplement package " + sup.SUPPLEMENT_FILE
     + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + "), follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 "
-    + sup.FOLLOWUP_SHA256 + "), Wolfsburg car-park package " + SUPERSEDED_WOLFSBURG_LOTS_FILE + " (SHA-256 " + SUPERSEDED_WOLFSBURG_LOTS_SHA256
-    + "; the points of the Stadt Wolfsburg Geoviewer theme Parken, the tariffs of the Autostadt GmbH and the Klinikum Wolfsburg "
+    + sup.FOLLOWUP_SHA256 + "), Wolfsburg car-park package " + SUPERSEDED_WOLFSBURG_LOTS_FILE + " (SHA-256 "
+    + SUPERSEDED_WOLFSBURG_LOTS_SHA256 + "; the points of the Stadt Wolfsburg Geoviewer theme Parken, the tariffs of the "
+    "Autostadt GmbH and the Klinikum Wolfsburg "
     "after their own pages, the free car parks after the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg) and "
     "Braunschweig monthly package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + "; the monthly products of the "
     "Braunschweig garages after the operators' pages, with the Contipark configurator capture of the evidence directory "
@@ -284,9 +285,9 @@ COLUMN_GLOSSARY = {
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
-                      "Wolfsburg car-park package " + SUPERSEDED_WOLFSBURG_LOTS_FILE + " (spec E14) touches (a position, a tariff value or a "
-                      "finding of it) lists that package's SHA-256 as well, in the order regional, supplement, follow-up, "
-                      "Wolfsburg car-park package, joined by ';'; "
+                      "Wolfsburg car-park package " + SUPERSEDED_WOLFSBURG_LOTS_FILE + " (spec E14) touches (a position, a tariff "
+                      "value or a finding of it) lists that package's SHA-256 as well, in the order regional, supplement, "
+                      "follow-up, Wolfsburg car-park package, joined by ';'; "
                       "a Braunschweig row cites the monthly package " + bsm.PACKAGE_FILE + " (spec Amendment F1; its monthly "
                       "status or product is read from it) as its last hash; a large surface lot (spec Amendment I) cites the "
                       "research package " + ll.LOTS_FILE + " alone; a row has at most five",

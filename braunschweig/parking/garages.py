@@ -5,8 +5,8 @@ on disk like the zone polygons, EPSG:25832 in memory) with its identity, the gar
 monthly product where one is published, the reported capacity and the provenance of every value. The dataset is built by
 the curation step ``scripts/curation/parking_zones_2026/regional_garages.py`` from the regional evidence package of
 2026-10-07 and read by the distance-weighted garage options of spec Amendment E (task 4d): the zone release stage
-(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3 introduced them; the export is schema 4 now)
-and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
+(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3
+introduced them; the export is schema 4 now) and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
 
 The garage tariff columns are those of the tariff table (``braunschweig.parking.zones.GARAGE_COLUMNS``, money in EUR,
 minutes as whole numbers, fee window in decimal hours of the weekday) and mean the same: the core (hourly rate, billing
@@ -701,8 +701,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
     it has tiers and on ASSUMPTION P8 exactly when it has a schedule with a priced band and no tiers; ASSUMPTION P10 (a grace
     period) needs a free first band that something follows (a priced band or the tiers) and a tiered garage with a grace
-    period lists it; ASSUMPTION P12 (a municipal free default; WITHDRAWN, spec Amendment I5) needs the free schedule. ASSUMPTION P14 (an imputed lot
-    tariff) belongs to a surface lot.
+    period lists it; ASSUMPTION P12 (a municipal free default; WITHDRAWN, spec Amendment I5) needs the free
+    schedule. ASSUMPTION P14 (an imputed lot tariff) belongs to a surface lot.
     Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
     and neither text without the amount. Imputed monthly product (ASSUMPTION P13, spec Amendment F2): ``monthly_imputed_eur``
     is a positive whole-cent amount that appears only together with P13 in ``assumptions`` (and P13 only with the amount),
