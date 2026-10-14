@@ -152,6 +152,10 @@ OPTIONAL_PERSON_FIELDS = [
     # containing the person's home (written as residentParkingDistrict). Present only with
     # parking_zones_enabled; a second layer, independent of the zone above.
     "resident_parking_district",
+    # Parking cost zones v3 (spec A5, assumption E1): True for a person who owns a BEV/PHEV car (written as
+    # parkingEvExempt, java.lang.Boolean, only where True). Present only with parking_zones_enabled and
+    # parking_ev_exemption_enabled.
+    "parking_ev_exempt",
 ]
 
 
@@ -255,6 +259,20 @@ def _is_free_parking(value):
     raise ValueError(
         "Invalid parking_free %r; expected a boolean from the free-parking draw "
         "(braunschweig.parking.attach.draw_parking_free) for every activity." % (value,))
+
+
+def _is_ev_exempt(value):
+    """Whether a person's ``parking_ev_exempt`` value is True; raises ValueError unless boolean.
+
+    braunschweig.parking.attach.attach_ev_exemption assigns a boolean to EVERY person, so a missing or
+    non-boolean value means the row bypassed it -- writing it as "not exempt" would silently price an
+    electric car's stay as paid, hence the error.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid parking_ev_exempt %r; expected a boolean from the EV exemption "
+        "(braunschweig.parking.attach.attach_ev_exemption) for every person." % (value,))
 
 
 TRIP_FIELDS = [
@@ -467,6 +485,15 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if not _is_missing_value(_resident_parking_district):
             writer.add_attribute("residentParkingDistrict", "java.lang.String",
                                  _parking_district_id("resident_parking_district", _resident_parking_district))
+
+    # Parking cost zones v3 (spec A5, assumption E1): the person owns a BEV/PHEV car, so a zone's EV exemption
+    # (ev_free_minutes) applies to their street stays. Attached by braunschweig.parking.attach.attach_ev_exemption
+    # for EVERY person; ADDITIVE and written only as "true" -- every other person gets NO attribute (the Java cost
+    # model reads an absent attribute as not exempt). Byte-identical when parking_zones_enabled or
+    # parking_ev_exemption_enabled is off (the column is then never attached).
+    if "parking_ev_exempt" in person_fields:
+        if _is_ev_exempt(person[person_fields.index("parking_ev_exempt")]):
+            writer.add_attribute("parkingEvExempt", "java.lang.Boolean", "true")
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])

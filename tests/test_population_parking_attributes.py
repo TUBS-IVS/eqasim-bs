@@ -344,6 +344,27 @@ def test_resident_parking_district_is_written_as_a_person_attribute():
     assert ('<attribute name="residentParkingDistrict" class="java.lang.String">bs_district_b</attribute>' in xml)
 
 
+def test_parking_ev_exempt_is_written_as_a_boolean_person_attribute_only_where_true():
+    fields = pop.PERSON_FIELDS + ["parking_ev_exempt"]
+    xml = _write_one_person([{}], person_fields=fields, person_overrides={"parking_ev_exempt": True})
+    assert '<attribute name="parkingEvExempt" class="java.lang.Boolean">true</attribute>' in xml
+    # numpy booleans are what a frame column hands over
+    xml_numpy = _write_one_person([{}], person_fields=fields, person_overrides={"parking_ev_exempt": np.bool_(True)})
+    assert _person_attributes(_parse(xml_numpy), 1)["parkingEvExempt"] == ("java.lang.Boolean", "true")
+    for value in (False, np.bool_(False)):
+        xml_false = _write_one_person([{}], person_fields=fields, person_overrides={"parking_ev_exempt": value})
+        assert "parkingEvExempt" not in xml_false
+        assert _person_attributes(_parse(xml_false), 1) == _person_attributes(_parse(_write_one_person([{}])), 1)
+
+
+@pytest.mark.parametrize("value", [1, 0, "true", "True", "", np.nan, None, pd.NA],
+                         ids=["int1", "int0", "text_true", "text_True", "empty", "nan", "none", "pd_na"])
+def test_a_non_boolean_parking_ev_exempt_raises_instead_of_exempting_or_pricing_silently(value):
+    with pytest.raises(ValueError, match="parking_ev_exempt"):
+        _write_one_person([{}], person_fields=pop.PERSON_FIELDS + ["parking_ev_exempt"],
+                          person_overrides={"parking_ev_exempt": value})
+
+
 @pytest.mark.parametrize("missing", [None, np.nan, pd.NA], ids=["none", "nan", "pd_na"])
 def test_missing_resident_parking_district_writes_no_attribute(missing):
     xml = _write_one_person([{}], person_fields=pop.PERSON_FIELDS + ["resident_parking_district"],
@@ -401,6 +422,14 @@ def test_the_resident_parking_columns_are_optional_person_fields():
                                                                       "resident_parking_district"]
 
 
+def test_parking_ev_exempt_is_an_optional_person_field_after_the_resident_columns():
+    assert "parking_ev_exempt" in pop.OPTIONAL_PERSON_FIELDS
+    columns = pop.PERSON_FIELDS + ["parking_ev_exempt", "resident_parking_district"]
+    frame = pd.DataFrame({field: [0] for field in columns})
+    assert pop.effective_person_fields(frame) == pop.PERSON_FIELDS + ["resident_parking_district",
+                                                                      "parking_ev_exempt"]
+
+
 # --------------------------------------------------------------------------- writer: whole frames
 
 def test_write_population_carries_the_parking_columns_to_the_plans(tmp_path):
@@ -423,6 +452,16 @@ def test_write_population_carries_the_parking_columns_to_the_plans(tmp_path):
     ]
     assert _activity_attributes(root, 2) == [
         {}, {"parkingZone": ("java.lang.String", "fx_bs_ia")}, {}]
+
+
+def test_write_population_carries_the_ev_exemption_column_to_the_plans(tmp_path):
+    persons, activities, locations, trips, vehicles = _two_person_frames()
+    persons = persons.assign(parking_ev_exempt=[True, False])
+
+    root = _parse(_write_frames(tmp_path, persons, activities, locations, trips, vehicles))
+
+    assert _person_attributes(root, 1)["parkingEvExempt"] == ("java.lang.Boolean", "true")
+    assert "parkingEvExempt" not in _person_attributes(root, 2)
 
 
 def test_write_population_carries_the_district_columns_to_the_plans(tmp_path):
@@ -565,6 +604,17 @@ def test_configure_declares_the_proxy_mapping_and_the_campus_share_with_the_off_
     recorder = _declare(parking_zones_enabled=True)
     assert recorder.config_keys["parking_free_share_proxy_classes"] == {}
     assert recorder.config_keys["parking_campus_free_share"] == 0.0
+
+
+def test_configure_declares_the_ev_exemption_flag_default_on_only_when_the_zones_are_on():
+    assert _declare(parking_zones_enabled=True).config_keys["parking_ev_exemption_enabled"] is True
+    assert "parking_ev_exemption_enabled" not in _declare().config_keys
+
+
+@pytest.mark.parametrize("value", ["false", "true", 1, 0, None], ids=str)
+def test_configure_rejects_a_non_boolean_ev_exemption_flag(value):
+    with pytest.raises(ValueError, match="parking_ev_exemption_enabled"):
+        _declare(parking_zones_enabled=True, parking_ev_exemption_enabled=value)
 
 
 def test_the_wrapper_defaults_without_the_two_options_pass_the_v1_draw_to_the_attach_module(tmp_path, monkeypatch):
@@ -730,10 +780,13 @@ def _wrapper_stages(incommuter_work):
         "departure_time": [27000.0, 59400.0, 34200.0, 41400.0],
         "arrival_time": [28800.0, 61200.0, 36000.0, 43200.0],
     })
+    # The fleet columns of the household fleet: resident 1 owns a BEV, resident 2 owns no car vehicle.
     vehicles = pd.DataFrame({
         "owner_id": [1, 1, 2],
         "vehicle_id": ["1:car", "1:car_passenger", "2:car_passenger"],
         "mode": ["car", "car_passenger", "car_passenger"],
+        "type_id": ["fx_bev", "default_car_passenger", "default_car_passenger"],
+        "powertrain": pd.Series(["bev", np.nan, np.nan], dtype=object),
     })
     incommuter = {
         "persons": pd.DataFrame([_person_values(
@@ -759,6 +812,8 @@ def _wrapper_stages(incommuter_work):
             "owner_id": [INCOMMUTER_ID] * 2,
             "vehicle_id": ["900001:car", "900001:car_passenger"],
             "mode": ["car", "car_passenger"],
+            "type_id": ["fx_diesel", "default_car_passenger"],
+            "powertrain": pd.Series(["diesel", np.nan], dtype=object),
         }),
     }
     # The zero-column frames a skipped student in-commuter stage returns.
@@ -777,7 +832,7 @@ def _wrapper_stages(incommuter_work):
 
 
 def _wrapper_context(tmp_path, parking_enabled=True, incommuter_work=Point(605150.0, 5790250.0),
-                     shift=0.25, proxy_classes=None, campus_free_share=None):
+                     shift=0.25, proxy_classes=None, campus_free_share=None, ev_exemption_enabled=None):
     config = dict(_OTHER_FEATURES_OFF, cordon_enabled=True, enable_urban_parking=False,
                   write_income_eur=False, parking_zones_enabled=parking_enabled)
     if parking_enabled:
@@ -787,6 +842,9 @@ def _wrapper_context(tmp_path, parking_enabled=True, incommuter_work=Point(60515
             config["parking_free_share_proxy_classes"] = proxy_classes
         if campus_free_share is not None:
             config["parking_campus_free_share"] = campus_free_share
+        # Left out unless given: the wrapper then runs on its code default (on).
+        if ev_exemption_enabled is not None:
+            config["parking_ev_exemption_enabled"] = ev_exemption_enabled
     declared = _ConfigureRecorder(config=config)
     POP.configure(declared)
     return _ExecuteContext(declared, _wrapper_stages(incommuter_work), config, tmp_path)
@@ -858,7 +916,19 @@ def _stub_attach_module(calls, drop_a_row=False):
         result["resident_parking_district"] = result["person_id"].map(home_district).astype(object)
         return result
 
+    def attach_ev_exemption(persons, vehicles, enabled):
+        calls.setdefault("attach_ev_exemption", []).append(
+            {"persons": persons.copy(), "vehicles": vehicles.copy(), "enabled": enabled})
+        if not enabled:
+            return persons
+        electric_owners = set(vehicles.loc[(vehicles["mode"] == "car")
+                                           & vehicles["powertrain"].isin(("bev", "phev")), "owner_id"])
+        result = persons.copy()
+        result["parking_ev_exempt"] = result["person_id"].isin(electric_owners).to_numpy(dtype=bool)
+        return result
+
     module.attach_parking_zones = attach_parking_zones
+    module.attach_ev_exemption = attach_ev_exemption
     module.attach_resident_zones = attach_resident_zones
     module.draw_parking_free = draw_parking_free
     module.attach_parking_districts = attach_parking_districts
@@ -991,6 +1061,57 @@ def test_execute_off_never_touches_the_attach_module(tmp_path, monkeypatch):
     assert all(len(activity) == 0 for activity in root.iter("activity"))
 
 
+def test_execute_hands_the_merged_vehicles_to_the_ev_exemption_and_writes_the_attribute_where_true(tmp_path, monkeypatch):
+    calls = {}
+    _inject_attach(monkeypatch, _stub_attach_module(calls))
+
+    POP.execute(_wrapper_context(tmp_path))
+
+    # The exemption sees the persons and the vehicles AFTER the in-commuter merge ...
+    [ev_call] = calls["attach_ev_exemption"]
+    assert ev_call["enabled"] is True
+    assert set(ev_call["persons"]["person_id"]) == {1, 2, INCOMMUTER_ID}
+    assert set(ev_call["vehicles"]["owner_id"]) == {1, 2, INCOMMUTER_ID}
+    # ... and the attribute reaches the plans exactly where the column is True (resident 1 owns the BEV).
+    root = _read_plans(tmp_path)
+    assert _person_attributes(root, 1)["parkingEvExempt"] == ("java.lang.Boolean", "true")
+    assert "parkingEvExempt" not in _person_attributes(root, 2)
+    assert "parkingEvExempt" not in _person_attributes(root, INCOMMUTER_ID)
+
+
+def test_execute_with_the_ev_exemption_off_writes_no_attribute(tmp_path, monkeypatch, caplog):
+    calls = {}
+    _inject_attach(monkeypatch, _stub_attach_module(calls))
+
+    with caplog.at_level(logging.INFO, logger=POP.__name__):
+        POP.execute(_wrapper_context(tmp_path, ev_exemption_enabled=False))
+
+    [ev_call] = calls["attach_ev_exemption"]
+    assert ev_call["enabled"] is False
+    root = _read_plans(tmp_path)
+    assert not [name for person in (1, 2, INCOMMUTER_ID) for name in _person_attributes(root, person)
+                if name == "parkingEvExempt"]
+    # the zone attributes are unaffected
+    assert _person_attributes(root, 1)["residentParkingZone"] == ("java.lang.String", "fx_res_a")
+
+
+def test_execute_rejects_an_ev_exemption_result_that_changes_the_row_count(tmp_path, monkeypatch):
+    module = _stub_attach_module({})
+    original = module.attach_ev_exemption
+    module.attach_ev_exemption = lambda persons, vehicles, enabled: original(persons, vehicles, enabled).iloc[:-1]
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match="attach_ev_exemption returned 2 rows for 3"):
+        POP.execute(_wrapper_context(tmp_path))
+
+
+def test_execute_rejects_an_enabled_ev_exemption_result_without_the_added_column(tmp_path, monkeypatch):
+    module = _stub_attach_module({})
+    module.attach_ev_exemption = lambda persons, vehicles, enabled: persons
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match="parking_ev_exempt"):
+        POP.execute(_wrapper_context(tmp_path))
+
+
 def test_execute_rejects_an_attach_result_that_changes_the_row_count(tmp_path, monkeypatch):
     _inject_attach(monkeypatch, _stub_attach_module({}, drop_a_row=True))
     with pytest.raises(ValueError, match="attach_parking_zones returned 8 rows for 9"):
@@ -1120,6 +1241,10 @@ def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release
         {}, {"parkingZone": ("java.lang.String", "fx_campus")}, {}]
     assert not [name for person in (1, 2, INCOMMUTER_ID) for name in _person_attributes(root, person)
                 if name == "residentParkingDistrict"]
+    # The REAL EV exemption (ASSUMPTION E1): resident 1 owns the BEV, the in-commuter a diesel car, resident 2 no car.
+    assert _person_attributes(root, 1)["parkingEvExempt"] == ("java.lang.Boolean", "true")
+    assert "parkingEvExempt" not in _person_attributes(root, 2)
+    assert "parkingEvExempt" not in _person_attributes(root, INCOMMUTER_ID)
 
     messages = [record.getMessage() for record in caplog.records]
     assert any(message.startswith("[parking] activities in zones: 5/9") for message in messages)
@@ -1128,6 +1253,7 @@ def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release
     assert "parkingFree=true on 1 activities" in coverage and "1/3 persons" in coverage
     assert any(message.startswith("[parking] activities in resident districts: 2/9") for message in messages)
     assert any(message.startswith("[parking] persons with a resident parking district: 0/3") for message in messages)
+    assert "[parking] EV exemption: 1 of 2 car owners (50.0 %) are BEV/PHEV and exempt where a zone grants it" in messages
 
 
 def test_real_attach_module_frees_the_campus_in_commuter_with_the_campus_share_one(tmp_path):

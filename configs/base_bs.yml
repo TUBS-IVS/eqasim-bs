@@ -699,6 +699,10 @@ config:
   # shifted by parking_workplace_free_share_shift). A number in [0, 1]; 0.0 keeps the v1 campus pricing and 0.4 is
   # the other sensitivity arm.
   parking_campus_free_share: 0.2
+  # ASSUMPTION E1 (owner decision 2026-10-14, spec v3 A5): every BEV or PHEV of the synthetic fleet belongs to an
+  # E-plate holder, so its owner is exempt from the street fee where a zone grants an EV exemption (ev_free_minutes
+  # of the tariff table). Boolean; false writes no parkingEvExempt attribute and reproduces the v2 prices.
+  parking_ev_exemption_enabled: true
   # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends. The only
   # supported value; the preparation stage and the Java ParkingConfigGroup reject others.
   parking_terminal_stay_rule: until_fee_end

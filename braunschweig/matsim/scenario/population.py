@@ -145,6 +145,13 @@ DEFAULT_FREE_SHIFT = 0.0
 KEY_PROXY_CLASSES = _free_draw_options.KEY_PROXY_CLASSES
 KEY_CAMPUS_FREE_SHARE = _free_draw_options.KEY_CAMPUS_FREE_SHARE
 
+#: Parking cost zones v3 (spec A5, assumption E1): mark the owners of a BEV/PHEV car as exempt from the street fee where
+#: a zone grants it (``braunschweig.parking.attach.attach_ev_exemption``; written as the person attribute
+#: ``parkingEvExempt``). A boolean switch, declared only when the zones are on; on by default, so that a configuration
+#: reproducing the v2 prices states ``false`` explicitly.
+KEY_PARKING_EV_EXEMPTION_ENABLED = "parking_ev_exemption_enabled"
+DEFAULT_PARKING_EV_EXEMPTION_ENABLED = True
+
 #: Frame columns ``braunschweig.parking.attach`` adds and ``matsim.scenario.population`` writes:
 #: activity attributes ``parkingZone`` / ``parkingFree`` / ``parkingDistrict``, person attributes
 #: ``residentParkingZone`` / ``residentParkingDistrict``.
@@ -153,6 +160,7 @@ PARKING_FREE_COLUMN = "parking_free"
 RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
 PARKING_DISTRICT_COLUMN = "parking_district"
 RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
+PARKING_EV_EXEMPT_COLUMN = "parking_ev_exempt"
 #: The purpose of the activities at the household home (they never pay, H1), and the mode of the initial plan's
 #: car-driver legs; only the own-district coverage rate reads them.
 HOME_PURPOSE = "home"
@@ -240,6 +248,21 @@ def configure(context):
         _free_draw_options.require_campus_free_share(
             context.config(KEY_CAMPUS_FREE_SHARE, _free_draw_options.DEFAULT_CAMPUS_FREE_SHARE))
         context.config("random_seed")
+        _require_ev_exemption_flag(
+            context.config(KEY_PARKING_EV_EXEMPTION_ENABLED, DEFAULT_PARKING_EV_EXEMPTION_ENABLED))
+
+
+def _require_ev_exemption_flag(value):
+    """Return ``parking_ev_exemption_enabled`` as a bool, raising unless it is one.
+
+    A switch that decides whether electric cars are exempt from street fees must not be set by a truthy text such as
+    ``"false"`` (which would read as True), so only a real boolean is accepted.
+    """
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {KEY_PARKING_EV_EXEMPTION_ENABLED} must be a boolean (true: owners of a BEV/PHEV "
+            f"are exempt where a zone grants it, ASSUMPTION E1; false: no exemption); got {value!r}.")
+    return value
 
 
 def _require_free_share_shift(value):
@@ -546,12 +569,21 @@ def execute(context):
         raw["persons"] = _require_attach_result(
             raw["persons"], persons_with_district, RESIDENT_PARKING_DISTRICT_COLUMN,
             "attach_resident_districts", PERSON_KEY_COLUMNS)
+        # The EV exemption of the zones of parking cost zones v3 (spec A5, assumption E1): read from the owner's
+        # vehicles AFTER the in-commuter merge, so the in-commuters' cars count like the residents'. With the switch
+        # off the function logs and returns the persons unchanged: no column, no attribute.
+        ev_exemption_enabled = _require_ev_exemption_flag(context.config(KEY_PARKING_EV_EXEMPTION_ENABLED))
+        persons_with_exemption = attach.attach_ev_exemption(raw["persons"], raw["vehicles"], ev_exemption_enabled)
+        if ev_exemption_enabled:
+            raw["persons"] = _require_attach_result(
+                raw["persons"], persons_with_exemption, PARKING_EV_EXEMPT_COLUMN, "attach_ev_exemption",
+                PERSON_KEY_COLUMNS)
         _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids, raw["trips"])
     else:
         # No column -> matsim.scenario.population.effective_activity_fields and
         # effective_person_fields are unchanged -> no parking attribute -> byte-identical plans.
-        logger.info("%s %s is false -- no parkingZone, parkingFree, parkingDistrict, residentParkingZone or "
-                    "residentParkingDistrict attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
+        logger.info("%s %s is false -- no parkingZone, parkingFree, parkingDistrict, residentParkingZone, "
+                    "residentParkingDistrict or parkingEvExempt attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])

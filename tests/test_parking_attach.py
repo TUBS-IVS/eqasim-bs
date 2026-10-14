@@ -992,3 +992,172 @@ def test_the_campus_line_reports_persons_share_and_the_realised_campus_rate_and_
     [campus] = [message for message in messages if "campus persons 200" in message]
     assert "campus_free_share 0.2500" in campus and f"realised {realised:.4f}" in campus
     assert not any("never drawn" in message for message in messages)
+
+
+# --------------------------------------------------------------------------- attach_ev_exemption (v3, A5 / E1)
+
+
+def _car_vehicles(rows):
+    """Vehicles as the plans writer sees them: rows of (owner_id, vehicle_id, mode, type_id, powertrain)."""
+    return pd.DataFrame({
+        "owner_id": [row[0] for row in rows],
+        "vehicle_id": [row[1] for row in rows],
+        "mode": [row[2] for row in rows],
+        "type_id": [row[3] for row in rows],
+        "powertrain": pd.Series([row[4] for row in rows], dtype=object),
+    })
+
+
+def _ev_flags(result):
+    return dict(zip(result["person_id"], result["parking_ev_exempt"]))
+
+
+def _fleet_vehicles():
+    """Persons 1..7: BEV, PHEV, diesel, no car vehicle, a BEV and a diesel car, two non-electric cars, a placeholder."""
+    return _car_vehicles([
+        (1, "1:car:0", "car", "t_bev", "bev"),
+        (1, "1:car_passenger", "car_passenger", "default_car_passenger", np.nan),
+        (2, "2:car:0", "car", "t_phev", "phev"),
+        (3, "3:car:0", "car", "t_diesel", "diesel"),
+        (4, "4:car_passenger", "car_passenger", "default_car_passenger", np.nan),
+        (5, "5:car:0", "car", "t_diesel", "diesel"),
+        (5, "5:car:1", "car", "t_bev", "bev"),
+        (6, "6:car:0", "car", "t_diesel", "diesel"),
+        (6, "6:car:1", "car", "t_petrol", "petrol"),
+        (7, "7:car", "car", "default_car", ""),
+    ])
+
+
+def test_ev_exemption_constants_are_the_ones_the_plans_writer_writes():
+    import matsim.scenario.population as writer
+    from braunschweig.matsim.scenario import population as wrapper
+    from braunschweig.synthesis.vehicles import fleet_sampling_de
+
+    assert attach.PARKING_EV_EXEMPT_COLUMN == "parking_ev_exempt" == wrapper.PARKING_EV_EXEMPT_COLUMN
+    assert attach.PARKING_EV_EXEMPT_COLUMN in writer.OPTIONAL_PERSON_FIELDS
+    assert attach.ELECTRIC_POWERTRAINS == fleet_sampling_de.ELECTRIC_POWERTRAINS == ("bev", "phev")
+
+
+def test_a_bev_or_phev_car_makes_the_owner_exempt_and_every_other_person_not():
+    result = attach.attach_ev_exemption(_persons(range(1, 8)), _fleet_vehicles(), True)
+    assert _ev_flags(result) == {1: True, 2: True, 3: False, 4: False, 5: True, 6: False, 7: False}
+    assert result["parking_ev_exempt"].dtype == bool
+
+
+def test_the_car_passenger_vehicle_of_a_bev_owner_does_not_count_alone():
+    vehicles = _car_vehicles([(1, "1:car_passenger", "car_passenger", "t_bev", "bev")])
+    assert _ev_flags(attach.attach_ev_exemption(_persons([1]), vehicles, True)) == {1: False}
+
+
+@pytest.mark.parametrize("label", ["BEV", " bev ", "Phev"])
+def test_the_powertrain_label_is_compared_case_and_whitespace_insensitively(label):
+    vehicles = _car_vehicles([(1, "1:car:0", "car", "t", label)])
+    assert _ev_flags(attach.attach_ev_exemption(_persons([1]), vehicles, True)) == {1: True}
+
+
+@pytest.mark.parametrize("label", ["hybrid", "hydrogen", "other", "gas"])
+def test_the_other_powertrains_are_not_electric(label):
+    vehicles = _car_vehicles([(1, "1:car:0", "car", "t", label)])
+    assert _ev_flags(attach.attach_ev_exemption(_persons([1]), vehicles, True)) == {1: False}
+
+
+def test_ev_exemption_keeps_rows_order_index_and_the_input():
+    persons = _persons([3, 1, 2]).set_index(pd.Index([30, 10, 20]))
+    snapshot = persons.copy()
+    result = attach.attach_ev_exemption(persons, _fleet_vehicles(), True)
+    pd.testing.assert_frame_equal(persons, snapshot)
+    assert list(result.index) == [30, 10, 20]
+    assert list(result["person_id"]) == [3, 1, 2]
+    assert list(result["parking_ev_exempt"]) == [False, True, True]
+    assert list(result.columns) == list(persons.columns) + ["parking_ev_exempt"]
+
+
+def test_ev_exemption_disabled_returns_the_persons_without_the_column(caplog):
+    persons = _persons([1, 2])
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(persons, _fleet_vehicles(), False)
+    assert "parking_ev_exempt" not in result.columns
+    pd.testing.assert_frame_equal(result, persons)
+    assert any("EV exemption is disabled" in record.getMessage() for record in caplog.records)
+
+
+def test_ev_exemption_logs_the_rate_among_the_car_owners(caplog):
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.attach_ev_exemption(_persons(range(1, 8)), _fleet_vehicles(), True)
+    messages = [record.getMessage() for record in caplog.records]
+    # Persons 1, 2, 3, 5, 6, 7 own a car vehicle; 1, 2 and 5 of them are BEV/PHEV owners.
+    [line] = [m for m in messages if m.startswith("[parking] EV exemption:")]
+    assert line == ("[parking] EV exemption: 3 of 6 car owners (50.0 %) are BEV/PHEV and exempt where a zone "
+                    "grants it")
+    [detail] = [m for m in messages if m.startswith("[parking] EV exemption basis")]
+    assert "BEV/PHEV 3" in detail and "other known powertrain 2" in detail
+    assert "placeholder car without powertrain 1" in detail
+    assert "several cars 2" in detail and "mixed electric/non-electric 1" in detail
+
+
+def test_a_placeholder_routing_car_is_counted_and_never_a_defect_warning(caplog):
+    vehicles = _car_vehicles([(1, "1:car", "car", "default_car", ""), (2, "2:car", "car", "t_bev", "bev")])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons([1, 2]), vehicles, True)
+    assert _ev_flags(result) == {1: False, 2: True}
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+def test_a_fleet_car_without_a_powertrain_is_warned_about_and_not_exempt(caplog):
+    vehicles = _car_vehicles([(1, "1:car:0", "car", "t_fleet", np.nan), (2, "2:car:0", "car", "t_bev", "bev")])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons([1, 2]), vehicles, True)
+    assert _ev_flags(result) == {1: False, 2: True}
+    [warning] = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert "1 car owner(s)" in warning and "without a powertrain" in warning
+
+
+def test_a_vehicle_frame_without_the_powertrain_column_exempts_nobody_and_warns(caplog):
+    vehicles = _fleet_vehicles().drop(columns=["powertrain"])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons(range(1, 8)), vehicles, True)
+    assert not result["parking_ev_exempt"].any()
+    [warning] = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert "no 'powertrain' column" in warning and "fleet_model_enabled" in warning
+
+
+def test_a_frame_without_any_car_vehicle_is_not_a_warning(caplog):
+    vehicles = _car_vehicles([(1, "1:car_passenger", "car_passenger", "default_car_passenger", np.nan)])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons([1]), vehicles, True)
+    assert _ev_flags(result) == {1: False}
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+def test_a_zero_exempt_result_among_known_powertrains_is_warned_about(caplog):
+    vehicles = _car_vehicles([(1, "1:car:0", "car", "t", "diesel"), (2, "2:car:0", "car", "t", "petrol")])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        attach.attach_ev_exemption(_persons([1, 2]), vehicles, True)
+    assert any("no BEV/PHEV" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+
+
+def test_vehicles_of_unknown_owners_are_warned_about_and_ignored(caplog):
+    vehicles = _car_vehicles([(1, "1:car:0", "car", "t", "bev"), (99, "99:car:0", "car", "t", "bev")])
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons([1, 2]), vehicles, True)
+    assert _ev_flags(result) == {1: True, 2: False}
+    assert any("1 car vehicle(s)" in r.getMessage() and "no person" in r.getMessage()
+               for r in caplog.records if r.levelno == logging.WARNING)
+
+
+def test_ev_exemption_rejects_duplicate_person_ids_and_missing_columns():
+    with pytest.raises(ValueError, match="duplicate"):
+        attach.attach_ev_exemption(_persons([1, 1]), _fleet_vehicles(), True)
+    with pytest.raises(ValueError, match="persons"):
+        attach.attach_ev_exemption(pd.DataFrame({"household_id": [1]}), _fleet_vehicles(), True)
+    with pytest.raises(ValueError, match="vehicles"):
+        attach.attach_ev_exemption(_persons([1]), _fleet_vehicles().drop(columns=["owner_id"]), True)
+
+
+def test_ev_exemption_accepts_the_bare_vehicle_columns_of_the_writer_tests(caplog):
+    """The vehicle frame of the writer tests has only owner_id, vehicle_id, mode (no powertrain, no type_id)."""
+    vehicles = pd.DataFrame({"owner_id": [1], "vehicle_id": ["1:car"], "mode": ["car"]})
+    with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):
+        result = attach.attach_ev_exemption(_persons([1]), vehicles, True)
+    assert _ev_flags(result) == {1: False}
+    assert any("no 'powertrain' column" in r.getMessage() for r in caplog.records)

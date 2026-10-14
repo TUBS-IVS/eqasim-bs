@@ -3,7 +3,7 @@
 The zone-based parking costs (design spec 2026-09-28, sections 3.4 and 3.5) need three facts on the plans:
 the zone of every activity location, the resident zone of every person and the free-parking draw of the
 work/education activities; parking cost zones v2 (spec Amendment C3) adds the resident parking district of every
-activity location and of every person's home. ``braunschweig.matsim.scenario.population`` calls the five functions
+activity location and of every person's home. ``braunschweig.matsim.scenario.population`` calls the six functions
 below in this order on the frames the plans writer consumes, AFTER the cross-cordon in-commuter merge, so injected
 in-commuters are treated exactly like residents:
 
@@ -28,6 +28,10 @@ in-commuters are treated exactly like residents:
    home, NaN when the home lies in no district (assumption R2: residence inside a district equals permit possession;
    the cost model exempts a stay inside that very district). Written as the person attribute
    ``residentParkingDistrict``.
+
+6. :func:`attach_ev_exemption` (parking cost zones v3, spec A5) adds ``parking_ev_exempt`` to the persons: True for
+   a person owning a battery-electric or plug-in-hybrid car (assumption E1). Written as the person attribute
+   ``parkingEvExempt`` (only where True).
 
 Every function returns a COPY of the frame it extends with exactly one column added -- same rows, same
 order, same index -- and raises instead of writing a wrong attribute: a missing, duplicated or empty
@@ -73,6 +77,26 @@ PARKING_FREE_COLUMN = "parking_free"
 RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
 PARKING_DISTRICT_COLUMN = "parking_district"
 RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
+#: The electric powertrain labels (battery-electric, plug-in hybrid) of the fleet vehicles. A MIRROR of
+#: ``braunschweig.synthesis.vehicles.fleet_sampling_de.ELECTRIC_POWERTRAINS``, the owner of the vocabulary:
+#: importing it here would put the whole fleet-sampling import closure (ten modules) into the cache token of every
+#: stage that imports this module (the plans writer and ``zones_stage``), so
+#: ``tests/test_parking_attach.py::test_ev_exemption_constants_are_the_ones_the_plans_writer_writes`` pins the two
+#: equal instead.
+ELECTRIC_POWERTRAINS = ("bev", "phev")
+#: Added by :func:`attach_ev_exemption`; written as the person attribute ``parkingEvExempt`` (only where True).
+PARKING_EV_EXEMPT_COLUMN = "parking_ev_exempt"
+
+#: Columns of the vehicles frame the plans writer consumes (``matsim.scenario.population.VEHICLE_FIELDS``) and the
+#: per-vehicle fleet column that ``matsim.scenario.vehicles`` writes as the vehicle attribute ``powertrain``.
+CAR_VEHICLE_MODE = "car"
+VEHICLE_OWNER_COLUMN = "owner_id"
+VEHICLE_MODE_COLUMN = "mode"
+VEHICLE_POWERTRAIN_COLUMN = "powertrain"
+VEHICLE_TYPE_COLUMN = "type_id"
+#: ``type_id`` of the routing car that ``braunschweig.synthesis.vehicles.cars.household`` gives a person without a fleet
+#: car (and of every legacy in-commuter car): a placeholder that carries no fleet identity, hence no powertrain.
+PLACEHOLDER_CAR_TYPE_ID = "default_car"
 
 #: Key of one activity in the activities and the locations frame of the plans writer.
 ACTIVITY_KEYS = ("person_id", "activity_index")
@@ -574,4 +598,119 @@ def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace
              _rate(n_campus_persons, n_persons), n_campus_free_persons,
              _rate(n_campus_free_persons, n_campus_persons), int(parking_free.sum()), n_paid + n_campus,
              int(parking_free[in_paid_zone].sum()), n_paid, int(parking_free[on_campus].sum()), n_campus)
+    return result
+
+
+# --------------------------------------------------------------------------- EV exemption (v3, A5)
+
+
+def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: bool) -> pd.DataFrame:
+    """Return ``persons`` with ``parking_ev_exempt``: True for a person who owns a BEV or PHEV car (ASSUMPTION E1).
+
+    Parking cost zones v3 (spec A5): some towns let electric cars park free on the street up to a limit
+    (``ev_free_minutes`` of the tariff table). ASSUMPTION E1 (owner decision 2026-10-14): every battery-electric (BEV)
+    or plug-in-hybrid (PHEV) car of the synthetic fleet (``ELECTRIC_POWERTRAINS``) belongs to an E-plate holder; there
+    is no share and no sensitivity. The Java cost model reads the flag as the person attribute ``parkingEvExempt``.
+
+    Source: the per-vehicle ``powertrain`` column of the ``vehicles`` frame (the second element of the stage
+    ``synthesis.vehicles.vehicles``, after the in-commuter merge), which is the column ``matsim.scenario.vehicles``
+    writes as the vehicle attribute ``powertrain``. The vehicle TYPES frame carries no powertrain (only the HBEFA
+    technology), so it is not consulted. A person is exempt iff at least one of the vehicles it owns with
+    ``mode == "car"`` has a powertrain in ``ELECTRIC_POWERTRAINS`` (case and surrounding whitespace ignored); a person
+    without a car vehicle, with only ``car_passenger`` vehicles, or with only non-electric cars is not exempt.
+
+    SEVERAL CARS (limitation, not silently resolved): a person can own several car vehicles (the household fleet
+    assigns surplus cars round-robin to the licensed adults) and the plans do not tie a leg to one vehicle: the
+    MATSim ``vehicles`` person attribute maps the mode ``car`` to a single id, and routing resolves the car by mode.
+    The rule here is therefore "ANY owned car vehicle is a BEV/PHEV", which can over-assign the exemption to a
+    person who drives a non-electric car of a mixed pair; the number of such mixed owners is logged. Cars are
+    attributed to their ``owner_id``, not to the other members of the household: a household member without a car of
+    their own owns only a placeholder routing car (``type_id`` ``default_car``, no powertrain) and is not exempt.
+
+    Fallback transparency: every car owner is counted as BEV/PHEV (exempt), other known powertrain, or placeholder
+    car without powertrain (``type_id`` ``default_car``: no fleet identity, by design, never exempt). A fleet car
+    without a powertrain (or a vehicles frame with no ``powertrain`` column at all, e.g. the legacy fleet of
+    ``fleet_model_enabled: false``) cannot be classified: it is never exempt, and it is warned about, because the
+    exemption would silently be missing. A result without a single exempt person although powertrains are known is
+    warned about, too. Vehicles whose owner is not in ``persons`` are ignored and warned about.
+
+    ``enabled`` false returns ``persons`` unchanged (no column, byte-identical plans) after logging that fact.
+    Otherwise the result is a COPY with exactly one bool column added -- same rows, order and index. Raises
+    ``ValueError`` for missing columns or duplicate person ids.
+    """
+    if not enabled:
+        log.info("%s EV exemption is disabled (parking_ev_exemption_enabled false): no parkingEvExempt attribute is "
+                 "written", _LOG_TAG)
+        return persons
+    _require_columns(persons, ("person_id",), "persons")
+    _require_columns(vehicles, (VEHICLE_OWNER_COLUMN, VEHICLE_MODE_COLUMN), "vehicles")
+    duplicated = sorted(set(persons.loc[persons["person_id"].duplicated(), "person_id"]))
+    if duplicated:
+        raise ValueError(f"{_LOG_TAG} the persons carry duplicate person_id(s) {duplicated[:5]}; the exemption is "
+                         "attached per person")
+
+    cars = vehicles[vehicles[VEHICLE_MODE_COLUMN] == CAR_VEHICLE_MODE]
+    has_powertrain_column = VEHICLE_POWERTRAIN_COLUMN in vehicles.columns
+    if has_powertrain_column:
+        raw_powertrain = cars[VEHICLE_POWERTRAIN_COLUMN].astype(object)
+        powertrain = raw_powertrain.where(raw_powertrain.notna(), "").astype(str).str.strip().str.lower()
+    else:
+        powertrain = pd.Series("", index=cars.index, dtype=object)
+    is_electric = powertrain.isin(ELECTRIC_POWERTRAINS)
+    is_known = powertrain != ""
+    if VEHICLE_TYPE_COLUMN in cars.columns:
+        is_placeholder = ~is_known & (cars[VEHICLE_TYPE_COLUMN] == PLACEHOLDER_CAR_TYPE_ID)
+    else:
+        is_placeholder = pd.Series(False, index=cars.index)
+
+    known_owner = cars[VEHICLE_OWNER_COLUMN].isin(persons["person_id"])
+    n_orphan_cars = int((~known_owner).sum())
+    if n_orphan_cars:
+        orphan_owners = sorted(set(cars.loc[~known_owner, VEHICLE_OWNER_COLUMN]))[:5]
+        log.warning("%s EV exemption: %d car vehicle(s) belong to an owner that is no person of the frame (e.g. %s) "
+                    "and are ignored; the vehicles and the persons must come from one merged population", _LOG_TAG,
+                    n_orphan_cars, orphan_owners)
+    cars, powertrain = cars[known_owner], powertrain[known_owner]
+    is_electric, is_known, is_placeholder = is_electric[known_owner], is_known[known_owner], is_placeholder[known_owner]
+
+    per_owner = pd.DataFrame({
+        "owner": cars[VEHICLE_OWNER_COLUMN].to_numpy(),
+        "electric": is_electric.to_numpy(),
+        "known": is_known.to_numpy(),
+        "placeholder": is_placeholder.to_numpy(),
+    }).groupby("owner").agg(cars=("electric", "size"), electric=("electric", "sum"), known=("known", "sum"),
+                            placeholder=("placeholder", "sum"))
+    exempt_owners = per_owner.index[per_owner["electric"] > 0]
+    result = persons.copy()
+    result[PARKING_EV_EXEMPT_COLUMN] = pd.Series(result["person_id"].isin(exempt_owners).to_numpy(dtype=bool),
+                                                 index=result.index, dtype=bool)
+
+    n_owners = len(per_owner)
+    n_exempt = len(exempt_owners)
+    n_other_known = int(((per_owner["known"] > 0) & (per_owner["electric"] == 0)).sum())
+    n_placeholder_only = int(((per_owner["known"] == 0) & (per_owner["placeholder"] == per_owner["cars"])).sum())
+    n_unclassified = n_owners - n_exempt - n_other_known - n_placeholder_only
+    n_several = int((per_owner["cars"] > 1).sum())
+    n_mixed = int(((per_owner["cars"] > 1) & (per_owner["electric"] > 0)
+                   & (per_owner["electric"] < per_owner["cars"])).sum())
+    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it",
+             _LOG_TAG, n_exempt, n_owners, _rate(n_exempt, n_owners))
+    log.info("%s EV exemption basis (ASSUMPTION E1): BEV/PHEV %d, other known powertrain %d, placeholder car without "
+             "powertrain %d, car without powertrain %d; several cars %d, of them mixed electric/non-electric %d "
+             "(exempt: any owned car is a BEV/PHEV); powertrains of the car vehicles: %s", _LOG_TAG, n_exempt,
+             n_other_known, n_placeholder_only, n_unclassified, n_several, n_mixed,
+             format_value_counts(powertrain.where(is_known)))
+    if n_owners and not has_powertrain_column:
+        log.warning("%s EV exemption: the vehicles frame has no 'powertrain' column (the legacy fleet of "
+                    "fleet_model_enabled false carries none), so none of the %d car owners can be classified and "
+                    "nobody is exempt; zones with an EV exemption then price electric cars like all others",
+                    _LOG_TAG, n_owners)
+    elif n_unclassified:
+        log.warning("%s EV exemption: %d car owner(s) (%.1f %% of %d) own a car without a powertrain that is no "
+                    "placeholder routing car (type_id %s); they cannot be classified and are not exempt",
+                    _LOG_TAG, n_unclassified, _rate(n_unclassified, n_owners), n_owners, PLACEHOLDER_CAR_TYPE_ID)
+    if n_exempt == 0 and int(is_known.sum()) > 0:
+        log.warning("%s EV exemption: no BEV/PHEV among the %d car vehicle(s) with a known powertrain; the "
+                    "electric share of the fleet is zero, which is implausible for the synthetic fleet; check the "
+                    "powertrain column", _LOG_TAG, int(is_known.sum()))
     return result

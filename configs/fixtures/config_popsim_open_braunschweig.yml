@@ -238,6 +238,7 @@ config:
   parking_workplace_free_share_shift: 0.0
   parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
   parking_campus_free_share: 0.2
+  parking_ev_exemption_enabled: true
   parking_terminal_stay_rule: until_fee_end
   parking_minimum_stay_min: 15
   parking_garage_max_distance_m: 1000.0
