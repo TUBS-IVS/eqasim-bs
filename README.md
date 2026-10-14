@@ -309,7 +309,8 @@ garage options of a stay), because their sources are not cleared for redistribut
 are **available on request: open an issue in TUBS-IVS/eqasim-bs**; place them at the paths above (the folder is ignored
 by git, like the other raw data) and verify them against the SHA-256 that each record states (the garage dataset gained the
 column `max_stay_min` on 2026-10-14, spec v3 B: the loader refuses a copy from before that date with the command that
-regenerates it, so request the current one). Without them the tests that
+regenerates it, so request the current one; rebuilding the district file is a curation step and needs `pdfplumber` (0.11.9 was
+used; a curation-time dependency, not in `environment.yml`) to read the Peine list). Without them the tests that
 read them skip and the pipeline stops with a message that names the file and this route. All six files are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
 D11 (D5, D10 and D11 as `[RESTRICTED]` when absent), and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The

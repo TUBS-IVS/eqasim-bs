@@ -16,8 +16,10 @@ neither district is hand-digitised (``geometry_source`` ``map_named_streets_osm`
 1. **Helmstedt** (``enclosed_area_of_ring_streets``): the OSM ways of the six streets that carry the ring (Leuckartstrasse,
    Goethestrasse, Am Ludgerihof, Poststrasse, Wilhelmstrasse, and Walbecker Strasse, which closes the north-western
    corner where Leuckartstrasse and Goethestrasse do not meet) are noded and polygonised; the district is the face that
-   contains the street Markt, widened by half the width of the ring street (``HELMSTEDT_RING_HALF_WIDTH_M``: the dotted
-   line lies on the middle of the road, the face ends at its inner edge). Spurs of ring-named streets that leave the
+   contains the street Markt. The face is polygonised from the road centrelines, so it already ends on the middle of
+   the ring road, where the dotted line lies; it is not widened (``HELMSTEDT_RING_HALF_WIDTH_M`` = 0, ruling R-B-14: the
+   brochure lists the spaces of Poststrasse, Wilhelmstrasse and Walbecker Strasse as outside the ring). The link of
+   Walbecker Strasse is ASSUMPTION HE-a. Spurs of ring-named streets that leave the
    ring (Goethestrasse east of the ring) and the arm of Walbecker Strasse that leads away are outside the face and
    stay out. An open ring (no face contains Markt) stops the step.
 2. **Wolfenbuettel** (``build_street_map_district``): the streets labelled inside the pink area (``WOLFENBUETTEL_STREETS``,
@@ -25,8 +27,9 @@ neither district is hand-digitised (``geometry_source`` ``map_named_streets_osm`
    around Stadtmarkt, 25 m buffer, ASSUMPTION R3) and united; the holes between the buffers (blocks) are filled, because
    the map colours whole blocks.
 
-Both are geographic envelopes: the Wolfenbuettel map is schematic (the arms end where the locality ends, not where the
-map ends), and the Helmstedt ring is the OSM geometry of today, not a surveyed boundary. CRS: EPSG:25832, metres.
+Both are geographic envelopes: the Wolfenbuettel map is schematic (a way is used whole when any part lies within 600 m
+of the reference point, so the arms and through streets are cut by that rule, not by the map), and the Helmstedt ring is
+the OSM geometry of today, not a surveyed boundary. CRS: EPSG:25832, metres.
 """
 from __future__ import annotations
 
@@ -66,9 +69,16 @@ HELMSTEDT_RING_STREETS = ("Leuckartstrasse", "Goethestrasse", "Am Ludgerihof", "
                           "Walbecker Strasse")
 #: A street inside the ring: the face of the street network that contains it is the district.
 HELMSTEDT_INSIDE_STREET = "Markt"
-#: Half the width of the ring road, metres (ASSUMPTION: the dotted line of the map lies on the middle of the road, the
-#: face of the network ends at the inner edge of its inner carriageway).
-HELMSTEDT_RING_HALF_WIDTH_M = 10.0
+#: Widening of the face, metres (ruling R-B-14): 0, because the face is polygonised from the road centrelines and so
+#: already ends on the middle of the ring road, where the dotted line of the map lies. The brochure also lists the
+#: parking spaces of Poststrasse, Wilhelmstrasse and Walbecker Strasse as "ausserhalb des Stadtringes", so the district
+#: must not reach beyond the road middle.
+HELMSTEDT_RING_HALF_WIDTH_M = 0.0
+#: ASSUMPTION HE-a (named in the note of the district).
+HELMSTEDT_LINK_ASSUMPTION = (
+    "ASSUMPTION HE-a: Walbecker Strasse is the north-western link of the ring: the Leuckartstrasse and Goethestrasse "
+    "ways end about 100 m apart at the NW corner, where Walbecker Strasse leaves the ring, and no polygon closes "
+    "without it.")
 
 #: The streets labelled inside the pink area of the Wolfenbuettel map, in OSM spelling (map abbreviations spelled
 #: out: Gr./Kl. Kirchstr., Kannengiessserstr., Brauergildenstr., Kommissstrasse, Lohenstr.). Arms: north Lessingstrasse
@@ -85,7 +95,7 @@ WOLFENBUETTEL_STREETS = (
 
 #: Localities (EPSG:25832) set from the OSM position of reference streets: Helmstedt from "Markt", Wolfenbuettel from
 #: "Stadtmarkt". Helmstedt's radius covers the ring (its farthest point is about 650 m from Markt); Wolfenbuettel's
-#: 600 m cover the old town and the ends of the arms (the map is schematic and ends the arms at the car parks).
+#: 600 m (a way counts when any part lies within them) cover the old town and the arms; the map is schematic.
 HELMSTEDT = rds.TownSpec(
     key="helmstedt", name="Helmstedt", municipality_ags="03154028", id_prefix="he",
     localities={"default": rds.Locality(637312.0, 5788285.0, 900.0)}, bbox_wgs84=(10.95, 52.18, 11.10, 52.28),
@@ -107,6 +117,8 @@ class RingMapSpec:
     ring_half_width_m: float
     map_reference: str
     map_description: str
+    #: Sentences that name an assumption of the construction; appended to the note.
+    assumptions: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -118,19 +130,23 @@ class StreetMapSpec:
     street_names: tuple
     map_reference: str
     map_description: str
+    #: Sentence of the note about the extent of the longest ways (the 600 m rule cuts the arms of the map).
+    extent_note: str = ""
 
 
 HELMSTEDT_SPEC = RingMapSpec(
     code="HE_RING", name="Helmstedt Bewohnerparkzone Altstadt innerhalb des Stadtringes",
     ring_streets=HELMSTEDT_RING_STREETS, inside_street=HELMSTEDT_INSIDE_STREET,
-    ring_half_width_m=HELMSTEDT_RING_HALF_WIDTH_M,
+    ring_half_width_m=HELMSTEDT_RING_HALF_WIDTH_M, assumptions=(HELMSTEDT_LINK_ASSUMPTION,),
     map_reference=("brochure Parken in Helmstedt (December 2024), page 'Bewohnerparken'; zone 'Altstadt innerhalb des "
                    "Stadtringes' of the Bewohnerparkgebuehrenordnung of 2024-04-10, section 1 (" + HELMSTEDT_ORDINANCE_URL + ")"),
     map_description="red dotted line along the old-town ring road")
 WOLFENBUETTEL_SPEC = StreetMapSpec(
     code="WF_CENTRE", name="Wolfenbuettel Bewohnerparkgebiet Innenstadt", street_names=WOLFENBUETTEL_STREETS,
     map_reference="Karte Geltungsbereich Bewohnerparkausweis (wolfenbuettel_area_map.pdf)",
-    map_description="schematic map, not to scale, pink area with labelled streets")
+    map_description="schematic map, not to scale, pink area with labelled streets",
+    extent_note=("The longest ways that the rule takes whole are Am Herzogtore 644 m, Lange Strasse 633 m and "
+                 "Landeshuter Platz 613 m."))
 
 
 def verify_map_members(archive_path) -> dict:
@@ -197,7 +213,8 @@ def build_ring_district(town: rds.TownSpec, spec: RingMapSpec, network: rds.OsmS
                                                spec.ring_half_width_m)
     found, _, _ = _ways_in_locality(network.lines, spec.ring_streets, locality)
     source_rows = [{"row": index + 1, "street": rds.normalise_street_name(name), "raw": rds._ascii(name),
-                    "street_source": "way", "ways": int(len(found[name])), "resolution": "ring_street"}
+                    "street_source": "way", "ways": int(len(found[name])),
+                    "osm_way_ids": sorted(int(value) for value in found[name]["osm_id"]), "resolution": "ring_street"}
                    for index, name in enumerate(spec.ring_streets)]
     note = rds._ascii(
         f"Resident parking district {spec.code} of {town.name}: {spec.map_reference}; {spec.map_description}; owner package "
@@ -205,8 +222,13 @@ def build_ring_district(town: rds.TownSpec, spec: RingMapSpec, network: rds.OsmS
         f"the map follows named streets, so the polygon is built from the OSM geometry (extract {provenance.osm_extract}, "
         f"SHA-256 {provenance.osm_sha256[:12]}...) of the ring streets {', '.join(spec.ring_streets)}: their ways inside "
         f"{locality.radius_m:.0f} m of the reference point are noded and polygonised, the district is the face that "
-        f"contains the street {spec.inside_street} ({info['face_area_m2']:,.0f} m2), widened by half the width of the ring "
-        f"street ({spec.ring_half_width_m:g} m, ASSUMPTION: the dotted line of the map lies on the middle of the road). "
+        f"contains the street {spec.inside_street} ({info['face_area_m2']:,.0f} m2); "
+        + (f"it is widened by half the width of the ring street ({spec.ring_half_width_m:g} m, ASSUMPTION: the dotted "
+           "line of the map lies on the middle of the road). " if spec.ring_half_width_m > 0.0 else
+           "the face is polygonised from the road centrelines, so it ends on the middle of the ring road, where the dotted "
+           "line of the map lies, and is not widened (ruling R-B-14: the brochure lists the parking spaces of Poststrasse, "
+           "Wilhelmstrasse and Walbecker Strasse as outside the ring). ")
+        + " ".join(spec.assumptions) + " "
         "No vertex is drawn by hand. A geographic envelope, not a surveyed boundary; it includes buildings and areas "
         "without parking; the unified zone applies to the managed car parks inside the ring.")
     record = {"district_id": f"{town.id_prefix}_district_{spec.code.lower()}", "district_code": spec.code,
@@ -233,6 +255,7 @@ def build_street_map_district(town: rds.TownSpec, spec: StreetMapSpec, network: 
     with ``fill_holes``; an unmatched street stops the step."""
     rows = [rds.ListRow(zone=spec.code, raw=name, mixed=False) for name in spec.street_names]
     map_town = replace(town, geometry_source=pz.MAP_STREETS_GEOMETRY_SOURCE,
-                       source_kind=f"the streets labelled on the map {spec.map_reference} ({spec.map_description})")
+                       source_kind=f"the streets labelled on the map {spec.map_reference} ({spec.map_description})",
+                       extent_note=spec.extent_note)
     return rds.build_town_districts(map_town, rows, network, replace(settings, fill_holes=True), provenance,
                                     zone_names={spec.code: spec.name})

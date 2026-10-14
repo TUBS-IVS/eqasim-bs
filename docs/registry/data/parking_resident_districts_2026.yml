@@ -26,7 +26,7 @@ vintage: >-
 geography: >-
   The resident parking districts A, B and C of Braunschweig (about 2.56 km2 around the inner city) and A, B, C, F, G, H
   and J of Goslar (about 0.97 km2, essentially the old town with adjacent areas); since spec v3 B3 also Wolfsburg (10
-  districts, about 0.62 km2), Peine (7, about 0.22 km2), Helmstedt (1, about 0.70 km2, the old town inside the ring road)
+  districts, about 0.62 km2), Peine (7, about 0.22 km2), Helmstedt (1, about 0.67 km2, the old town inside the ring road)
   and Wolfenbuettel (1, about 0.59 km2, the old town with four arms): 29 districts in six municipalities. Salzgitter has
   no district (resident permits exist, but the city publishes neither a street list nor an area map) and Gifhorn has
   none (the resident scheme ended in 2025/26); both are named in the coverage register.
@@ -48,7 +48,8 @@ acquisition:
     525ac99eeb929bdd067d0012a9759b65f60cc0a81556f871c4cf4bbf1475057c, source
     https://www.wolfsburg.de/-/media/wolfsburg/statistik_daten_fakten/buergerdienste/bewohnerparken_strassenverzeichnis_20230723.pdf;
     raw_sources/resident_other_cities/peine_zone_street_list.pdf SHA-256
-    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f, source
+    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f (read with pdfplumber 0.11.9: curation only, not in
+    environment.yml, an installed package of the curation environment), source
     https://www.peine.de/de-wAssets/docs/mediadaten_stadt/eigene_daten/Buergerbuero/Team-A/Parkzonen-Bewohnerparkausweis.pdf;
     helmstedt_parking_brochure.pdf SHA-256 f1dc902583b195972c7ddd83450be46e273867c07e31509e20ce46d9cce824df, source
     https://www.stadt-helmstedt.de/fileadmin/user_upload/02_Kultur/pdf_Broschueren/Parken_in_Helmstedt.pdf, with the
@@ -88,8 +89,10 @@ acquisition:
     square without a street way, Otto-Wels-Platz, is matched by the boundary of its named OSM area). A house-number range
     is cut at the OSM house numbers (nodes and building areas with addr:street of the same key, within 60 m of the street):
     the piece of the street between the projections of the extreme houses; a range whose ends share their parity lies on
-    one side of the street (Wolfsburg only: its list interleaves zones this way, e.g. Schillerstr. 1-25, 2-30, 31-57, 38-66;
-    Peine does not state it and is not inferred) and is buffered on that side only; a range with fewer than 2 matching houses
+    one side of the street (ASSUMPTION R3-b, Wolfsburg only: its list interleaves zones this way, e.g. Schillerstr. 1-25,
+    2-30, 31-57, 38-66, but does not state it; Peine does not interleave and is not inferred) and is buffered on that side
+    only (a piece whose houses do not agree on a side falls back to both sides; the run logs "one-sided primary x/y,
+    fallback n": Wolfsburg 41/41, 0 fallback; Peine and the maps 0/0); a range with fewer than 2 matching houses
     (1 for a single number) would be range_not_resolved (whole street, flagged, counted, warned above 20 %); none was. Every
     piece is buffered by 25 m (ASSUMPTION R3, the width of a street with both kerbs, --buffer-m) and the pieces of a zone are
     united. Overlaps between zones go to the more specific footprint (range or single number before whole street) and, between
@@ -97,10 +100,15 @@ acquisition:
     street, then the earlier zone code). Helmstedt and Wolfenbuettel (resident_districts_from_maps.py): the maps follow named
     streets, so no vertex is hand-digitised. Helmstedt: the OSM ways of Leuckartstrasse, Goethestrasse, Am Ludgerihof,
     Poststrasse, Wilhelmstrasse and Walbecker Strasse (which closes the north-western corner where Leuckartstrasse and
-    Goethestrasse do not meet) within 900 m of Markt are noded and polygonised; the district is the face that contains Markt
-    (672,391 m2), widened by 10 m (ASSUMPTION: half the width of the ring road, the dotted line lies on its middle); the spurs
-    of ring-named streets that leave the ring stay out. Wolfenbuettel: the 46 streets labelled inside the pink area of the map
-    (transcribed from the map into WOLFENBUETTEL_STREETS) within 600 m of Stadtmarkt, buffered by 25 m, united, and the holes
+    Goethestrasse do not meet; ASSUMPTION HE-a: the Leuckartstrasse and Goethestrasse ways end about 100 m apart at the NW
+    corner, where Walbecker Strasse leaves the ring, and no polygon closes without it) within 900 m of Markt are noded and
+    polygonised; the district is the face that contains Markt (672,391 m2), NOT widened (ruling R-B-14: the face is
+    polygonised from the road centrelines, so it already ends on the road middle where the dotted line lies, and the
+    brochure lists the spaces of Poststrasse, Wilhelmstrasse and Walbecker Strasse as "ausserhalb des Stadtringes"); the
+    spurs of ring-named streets that leave the ring stay out. Wolfenbuettel: the 46 streets labelled inside the pink area of the map
+    (transcribed from the map into WOLFENBUETTEL_STREETS; a way is used whole when any part lies within 600 m of Stadtmarkt,
+    the longest such ways being Am Herzogtore 644 m, Lange Strasse 633 m and Landeshuter Platz 613 m), buffered by 25 m,
+    united, and the holes
     (blocks, 95,285 m2) filled because the map colours whole blocks. The step prints the share of each district inside the paid
     street zones of its town (an indicator, not a gate).
 storage:
@@ -112,12 +120,12 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    0737226ea15263ee6f037c7b425d772570d81e3f07d4bf0cd4b400846d98d42b. ASCII, LF, WGS84 GeoJSON with seven coordinate
+    5cc8d31d6b78285adf8d5c7c990cf29f00b5e1fa88f0b7c74eab6aa0ef807dda. ASCII, LF, WGS84 GeoJSON with seven coordinate
     decimals and the licence and attribution as top-level members; one feature per district (29) with the properties
     district_id, district_code, municipality_ags, name, geometry_source, source_url, source_date, digitised_on and
     digitising_note (braunschweig.parking.zones.DISTRICT_PROVENANCE_COLUMNS) and, for the 19 districts of spec v3 B3, source_rows
-    (JSON text: one entry per street entry of the list or map with its resolution, OSM ways and house numbers used and area
-    after the overlaps) and mixed_zone_rows (number of list rows marked as mixed-zone streets). The owner's packages stay local.
+    (a JSON list: one entry per street entry of the list or map with its resolution, the OSM way ids and house numbers
+    used and the area after the overlaps; the ids are empty for the one entry matched by an area boundary) and mixed_zone_rows (number of list rows marked as mixed-zone streets). The owner's packages stay local.
 verification:
   verifier_entry: D10
   script: scripts/validate_parking_zones.py
@@ -180,20 +188,25 @@ limitations: >-
   (ASSUMPTION R3) and includes buildings and areas without parking; the Peine parking-area column (for example Luisenstrasse
   Nordseite between Hermann-Ehlers-Strasse and Bahnhofstrasse, Am Werderpark) is carried as text and is not geometry. A
   house-number range is as good as the OSM house numbers (all 29 Wolfsburg and 9 Peine ranges were resolved, none fell back
-  to the whole street); the parity of a Wolfsburg range is an inference from the interleaved ranges of the list. Five
+  to the whole street); the parity of a Wolfsburg range is an inference from the interleaved ranges of the list (ASSUMPTION
+  R3-b; all 41 parity pieces found a side: one-sided primary 41/41). Five
   Wolfsburg entries and one Peine entry carry a qualifier the step cannot apply (exclusions "ausser Nr. 38" and "ohne Nr.
   22-24", parts of a street such as Westteil or Rondell, and a Teilstueck opposite the Schuetzenplatz): the whole street is
-  used and the entry is flagged qualifier_not_resolved in source_rows. 48 of the 67 Wolfsburg rows and 5 of the Peine rows are
+  used and the entry is flagged qualifier_not_resolved in source_rows (rate: Wolfsburg primary 62/67 = 92.5 %, fallback 5 =
+  7.5 %; Peine primary 30/31 = 96.8 %, fallback 1; the maps 0). No street entry lost its whole area to another zone
+  (rows_without_area 0 in all four towns). 48 of the 67 Wolfsburg rows and 5 of the Peine rows are
   mixed-zone streets (the Peine flag is derived: the street is listed for more than one zone); where equal footprints meet
   the nearer street decides, and the zone whose parking-area column names the street wins ties (Peine Wallstrasse: listed
-  for zones E and G, zone G keeps it). The Helmstedt district is the OSM geometry of the ring road of today, the Wolfenbuettel
-  district is built from a schematic map without coordinates: its arms and the through streets that leave the old town
-  (Bahnhofstrasse, Lange Strasse, Dr.-Heinrich-Jasper-Strasse, Wallstrasse) end where the 600 m locality ends, not where the
-  map ends. Indicator, not a gate: the share of a district inside the paid street zones of its town is Wolfsburg A 91.9 %,
+  for zones E and G, zone G keeps it). The Helmstedt district is the OSM geometry of the ring road of today (the NW link is
+  ASSUMPTION HE-a), the Wolfenbuettel district is built from a schematic map without coordinates: a way is used whole when
+  any part lies within 600 m of the reference point, so the arms and the through streets that leave the old town
+  (Bahnhofstrasse, Lange Strasse, Dr.-Heinrich-Jasper-Strasse, Wallstrasse) are cut by that rule, not by the map; the longest
+  ways taken whole are Am Herzogtore 644 m, Lange Strasse 633 m and Landeshuter Platz 613 m. Indicator, not a gate: the share of a district inside the paid street zones of its town is Wolfsburg A 91.9 %,
   B 72.8 %, C 67.4 %, D 100.0 %, E 90.6 %, F 79.4 %, FA 58.6 %, G 76.9 %, K 0.0 %, VO 69.4 %; Peine A 100.0 %, B 35.1 %, C 100.0
-  %, D 35.0 %, E 100.0 %, F 25.1 %, G 100.0 %; Helmstedt 46.2 %; Wolfenbuettel 74.6 %. Wolfsburg district K (Koehlerbergstrasse,
-  Koenigswiese, Braunschweiger Strasse 31-79) lies in no paid street zone, so rule R2 is inert there (R2 acts inside a fee
-  zone only). By area, the districts
+  %, D 35.0 %, E 100.0 %, F 25.1 %, G 100.0 %; Helmstedt 48.1 %; Wolfenbuettel 74.6 %. Wolfsburg district K (Koehlerbergstrasse,
+  Koenigswiese, Braunschweiger Strasse 31-79) neither overlaps nor touches a paid street zone (the nearest is 52.5 m away), so
+  rule R2 is inert there (R2 acts inside a fee zone only) and the spec's "inside or touch a resident-relevant paid zone"
+  indicator is unmet for K. By area, the districts
   overlay the fee zones heavily (they are independent layers): Braunschweig A 0.104 km2 of zone Ia and 0.508 km2 of Ib, B
   0.933 km2 of Ia and 0.295 km2 of Ib, C 0.464 km2 of Ia and 0.161 km2 of Ib; of the other zones four of the five BgA car
   parks (about 400 to 2,600 m2 each, inside A, B and C; Willy-Brandt-Platz lies in no district) and about 3,700 m2 of the
@@ -203,7 +216,8 @@ limitations: >-
   m2, about 2,600 m2 of the Zentralcampus, all in A, and 0.402 of 0.642 km2 in Goslar).
 notes: >-
   History of the file (LF SHA-256): 1f346983bedef9a31f9bf54b5a084f2078b0ae4f6a6a75b47858192832022ac7 (10 districts, 2026-10-08, the first release), then 0737226ea15263ee6f037c7b425d772570d81e3f07d4bf0cd4b400846d98d42b
-  (29 districts, spec v3 B3, 2026-10-14; deterministic: two runs gave the same bytes). Counts of the run of 2026-10-14
+  (29 districts, spec v3 B3, 2026-10-14, the Helmstedt face widened by 10 m), then 5cc8d31d6b78285adf8d5c7c990cf29f00b5e1fa88f0b7c74eab6aa0ef807dda (29 districts, B3 fix round 1,
+  2026-10-14: Helmstedt not widened, ruling R-B-14, plus osm_way_ids in source_rows; deterministic: two runs gave the same bytes). Counts of the run of 2026-10-14
   (OSM extract niedersachsen-260929): Wolfsburg 67 list rows = 67 street entries, 67 matched (66 by an OSM way = 98.5 %, 1 by
   the boundary of a named area = 1.5 %: Otto-Wels-Platz), 0 unmatched; 29 ranged entries, 29 resolved (100.0 %), 0
   range_not_resolved; 5 qualifier_not_resolved; 48 mixed rows; 19 overlaps resolved; 87 OSM ways of listed names dropped by
@@ -213,7 +227,7 @@ notes: >-
   ranged entries, 9 resolved (100.0 %), 0 range_not_resolved; 1 qualifier_not_resolved; 5 mixed rows (derived); 35 overlaps
   resolved; 47 ways dropped by locality; 4 names in several places inside the locality (Hagenstrasse, St.-Jakobi-Kirchplatz,
   Bahnhofstr., Lindenstrasse); districts A 25,802 m2, B 23,836, C 19,550, D 51,278, E 60,766, F 25,214, G 13,961. Helmstedt:
-  73 ring ways (8 dangling ends), enclosed face 672,391 m2, district 703,428 m2, 7 ways dropped by locality. Wolfenbuettel: 46
+  73 ring ways (8 dangling ends), enclosed face 672,391 m2, district 672,391 m2 (not widened), 7 ways dropped by locality. Wolfenbuettel: 46
   of 46 map streets matched by an OSM way, 40 ways dropped by locality, 7 names in several places inside the locality, holes
   filled 95,285 m2, district 593,027 m2. Braunschweig and Goslar districts are unchanged (the same areas as in the first
   release). The coverage register names Salzgitter (no street list or map; the official GIS holds no resident layer) and

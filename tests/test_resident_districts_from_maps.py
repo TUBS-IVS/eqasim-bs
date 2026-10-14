@@ -149,7 +149,7 @@ def test_the_streets_of_a_map_are_buffered_united_and_the_blocks_between_them_ar
     assert row["geometry_source"] == pz.MAP_STREETS_GEOMETRY_SOURCE
     assert result.summary["holes_filled_m2"] == pytest.approx(100.0 * 100.0, rel=0.05)
     assert "filled" in row["digitising_note"] and "schematic" in row["digitising_note"]
-    assert "end where this radius ends" in row["digitising_note"] and "house-number range" not in row["digitising_note"]
+    assert "any part lies within" in row["digitising_note"] and "house-number range" not in row["digitising_note"]
     assert "holes filled" in caplog.text
 
 
@@ -165,3 +165,37 @@ def test_a_far_street_of_the_same_name_is_clipped_by_the_locality(mods):
     result = _wolfenbuettel(maps, streets, ("Nordstrasse", "Suedstrasse", "Weststrasse", "Oststrasse"), lines)
     assert result.districts.iloc[0].geometry.bounds[2] < X0 + 1000.0
     assert result.summary["ways_outside_locality"] == 1
+
+
+# --------------------------------------------------------------------------- fix round 1 (R-B-14, M1, M4)
+
+
+def test_the_helmstedt_ring_ends_on_the_road_middle_and_the_link_is_an_assumption(mods):
+    maps, streets = mods
+    assert maps.HELMSTEDT_RING_HALF_WIDTH_M == 0.0 and maps.HELMSTEDT_SPEC.ring_half_width_m == 0.0
+    town = streets.TownSpec(key="helmstedt", name="Helmstedt", municipality_ags="03154028", id_prefix="he",
+                            localities={"default": _locality(streets)}, bbox_wgs84=(10.0, 52.0, 11.0, 53.0),
+                            infer_parity_from_range_ends=False, list_source_url="https://example.invalid/b.pdf",
+                            list_document_date="not stated")
+    spec = maps.RingMapSpec(code="HE_RING", name="Helmstedt ring", ring_streets=RING_STREETS, inside_street="Markt",
+                            ring_half_width_m=0.0, map_reference="brochure page 1", map_description="dotted line",
+                            assumptions=("ASSUMPTION HE-a: Ostring is the link of the corner.",))
+    result = maps.build_ring_district(town, spec, _network(streets, _lines(RING)), streets.Provenance())
+    row = result.districts.iloc[0]
+    assert row.geometry.area == pytest.approx(600.0 ** 2, rel=0.001)
+    assert "ASSUMPTION HE-a" in row["digitising_note"] and "widened by half" not in row["digitising_note"]
+    assert "centrelines" in row["digitising_note"]
+    assert "ASSUMPTION HE-a" in maps.HELMSTEDT_SPEC.assumptions[0] and "100 m" in maps.HELMSTEDT_SPEC.assumptions[0]
+    assert json.loads(row["source_rows"])[0]["osm_way_ids"] == [1]
+
+
+def test_the_wolfenbuettel_note_says_that_a_way_is_used_whole_and_names_the_longest_ways(mods):
+    maps, streets = mods
+    result = _wolfenbuettel(maps, streets, ("Nordstrasse", "Suedstrasse", "Weststrasse", "Oststrasse"), _lines(BLOCKS),
+                            extent_note="Longest ways: Nordstrasse 150 m.")
+    note = result.districts.iloc[0]["digitising_note"]
+    assert "a way is used whole when any part lies within 400 m of the reference point" in note
+    assert "Longest ways: Nordstrasse 150 m." in note and "end where this radius ends" not in note
+    extent = maps.WOLFENBUETTEL_SPEC.extent_note
+    for text in ("Am Herzogtore 644 m", "Lange Strasse 633 m", "Landeshuter Platz 613 m"):
+        assert text in extent

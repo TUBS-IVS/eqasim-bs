@@ -28,7 +28,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import MultiPolygon, Point, Polygon, box
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 
 from braunschweig.parking import zones as pz
 from tests.restricted_parking_data import parking_data_path
@@ -335,6 +335,57 @@ def test_the_file_with_street_districts_names_the_four_regimes_loads_strictly_an
     assert loaded.loc["wob_district_b", "mixed_zone_rows"] == 2
     assert json.loads(loaded.loc["he_district_he_ring", "source_rows"])[0]["resolution"] == "range"
     assert pd.isna(loaded.loc["bs_district_a", "source_rows"]) and pd.isna(loaded.loc["bs_district_a", "mixed_zone_rows"])
+
+
+def test_build_street_districts_builds_the_four_towns_from_one_reading_of_the_extract(curation, monkeypatch, tmp_path):
+    """The wiring of ``build_street_districts`` on synthetic data (fix round 1, M6). The function existed before this test,
+    so there was no red state; the test pins it from now on. Package checks and the OSM reading are replaced, the lists and
+    the Wolfenbuettel map are synthetic, the ring is the real list of Helmstedt street names on a synthetic square."""
+    rds, rdm = curation.rds, curation.rdm
+    reads = []
+
+    def way(name, osm_id, *points):
+        return {"osm_id": osm_id, "name": name, "geometry": LineString(points)}
+
+    wx, wy = 621350.0, 5809450.0            # Wolfsburg Stadtmitte (the default locality)
+    px, py = 584075.0, 5797290.0            # Peine old town
+    hx, hy = 637312.0, 5788285.0            # Helmstedt, Markt
+    fx, fy = 605001.0, 5780235.0            # Wolfenbuettel, Stadtmarkt
+    ring = [(hx - 300, hy - 300), (hx + 300, hy - 300), (hx + 300, hy + 300), (hx - 300, hy + 300)]
+    ways = [way("Teststrasse", 1, (wx - 100, wy), (wx + 100, wy)), way("Nordweg", 2, (wx - 100, wy + 300), (wx + 100, wy + 300)),
+            way("Peinerweg", 3, (px - 100, py), (px + 100, py)),
+            way("Leuckartstrasse", 4, ring[3], ring[0]), way("Goethestrasse", 5, ring[0], ring[1]),
+            way("Am Ludgerihof", 6, ring[1], (hx + 300, hy)), way("Poststrasse", 7, (hx + 300, hy), ring[2]),
+            way("Wilhelmstrasse", 8, ring[2], (hx, hy + 300)), way("Walbecker Strasse", 9, (hx, hy + 300), ring[3]),
+            way("Markt", 10, (hx - 50, hy), (hx + 50, hy)),
+            way("Nordweg", 11, (fx - 100, fy + 100), (fx + 100, fy + 100)),
+            way("Suedweg", 12, (fx - 100, fy - 100), (fx + 100, fy - 100)),
+            way("Westweg", 13, (fx - 100, fy - 100), (fx - 100, fy + 100)),
+            way("Ostweg", 14, (fx + 100, fy - 100), (fx + 100, fy + 100))]
+    network = rds.OsmStreetData(
+        lines=gpd.GeoDataFrame(ways, geometry="geometry", crs=METRIC_CRS),
+        houses=gpd.GeoDataFrame({"street_key": [], "house_number": []}, geometry=[], crs=METRIC_CRS))
+    lists = {"wolfsburg": [rds.ListRow("A", "Teststrasse", False), rds.ListRow("B", "Nordweg", True)],
+             "peine": [rds.ListRow("A", "Peinerweg")]}
+    monkeypatch.setattr(rds, "verify_package", lambda path, *args: "a" * 64)
+    monkeypatch.setattr(rdm, "verify_map_members", lambda path: {})
+    monkeypatch.setattr(rds, "_file_sha256", lambda path: "b" * 64)
+    monkeypatch.setattr(rds, "read_town_list", lambda town, path: rds.ParsedList(
+        rows=lists[town.key], source_url="https://example.org/list", document_date="2023-07-20"))
+    monkeypatch.setattr(rds, "read_osm_extract", lambda path, bbox: reads.append(bbox) or network)
+    monkeypatch.setattr(rdm, "WOLFENBUETTEL_SPEC", rdm.StreetMapSpec(
+        code="WF_CENTRE", name="Wolfenbuettel test area", street_names=("Nordweg", "Suedweg", "Westweg", "Ostweg"),
+        map_reference="synthetic", map_description="synthetic"))
+    frame, summaries = curation.build_street_districts(tmp_path / "package.zip", tmp_path / "extract.osm.pbf")
+    assert len(reads) == 1, "the extract is read once for the union box of the four towns"
+    assert [summary["town"] for summary in summaries] == ["Wolfsburg", "Peine", "Helmstedt", "Wolfenbuettel"]
+    assert list(frame["district_id"]) == ["wob_district_a", "wob_district_b", "pe_district_a", "he_district_he_ring",
+                                          "wf_district_wf_centre"]
+    assert frame.crs.to_epsg() == 25832
+    assert list(frame.columns) == list(pz.DISTRICT_PROVENANCE_COLUMNS) + ["source_rows", "mixed_zone_rows", "geometry"]
+    pz.validate_resident_districts(frame[list(pz.DISTRICT_PROVENANCE_COLUMNS) + ["geometry"]])
+    assert frame.set_index("district_id").loc["wob_district_b", "mixed_zone_rows"] == 1
+    assert set(frame["geometry_source"]) == {pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE, pz.MAP_STREETS_GEOMETRY_SOURCE}
 
 
 def test_the_research_package_and_the_osm_extract_belong_together(curation, tmp_path):

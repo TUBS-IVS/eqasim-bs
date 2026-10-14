@@ -569,6 +569,7 @@ def test_the_real_wolfsburg_list_has_the_67_rows_of_the_spec_in_ten_zones(rds, o
 
 
 def test_the_real_peine_list_has_29_entries_in_the_seven_zones_a_to_g(rds, owner_package):
+    pytest.importorskip("pdfplumber")   # a curation-time dependency only, not in environment.yml
     parsed = rds.read_peine_list(owner_package)
     assert len(parsed.rows) == 29
     assert sorted({row.zone for row in parsed.rows}) == list("ABCDEFG")
@@ -635,3 +636,52 @@ def test_the_paid_zone_share_counts_only_street_paid_zones_of_the_districts_town
     row = table.iloc[0]
     assert row["district_area_m2"] == pytest.approx(10_000.0) and row["paid_street_area_m2"] == pytest.approx(5_000.0)
     assert row["paid_street_share"] == pytest.approx(0.5)
+
+
+# --------------------------------------------------------------------------- fix round 1 (R-B-14, M2, M3, M4, M8)
+
+
+def test_one_sided_parity_ranges_are_logged_as_a_rate_and_counted(rds, caplog):
+    caplog.set_level(logging.INFO)
+    result = _build(rds, [("F", "Alleestra\u00dfe 5 - 11", False), ("G", "Alleestra\u00dfe 6 - 12", False)])
+    assert result.summary["one_sided_pieces"] == 2 and result.summary["side_not_resolved_pieces"] == 0
+    assert "one-sided primary 2/2 (100.0 %), fallback 0 (0.0 %)" in caplog.text
+
+
+def test_a_parity_range_whose_houses_lie_on_both_sides_falls_back_to_both_sides_and_is_counted(rds, caplog):
+    caplog.set_level(logging.INFO)
+    houses = _houses(rds, [("Alleestra\u00dfe", 5, -150.0, 12.0), ("Alleestra\u00dfe", 7, -130.0, -12.0),
+                           ("Alleestra\u00dfe", 9, -110.0, 12.0), ("Alleestra\u00dfe", 11, -90.0, -12.0)])
+    result = _build(rds, [("F", "Alleestra\u00dfe 5 - 11", False)], houses=houses)
+    assert result.summary["one_sided_pieces"] == 1 and result.summary["side_not_resolved_pieces"] == 1
+    assert "one-sided primary 0/1 (0.0 %), fallback 1 (100.0 %)" in caplog.text
+    assert _by_code(result).loc["F"].geometry.bounds[1] < Y0 - 20.0
+
+
+def test_the_parity_inference_carries_its_assumption_id_in_the_note(rds):
+    note = _by_code(_build(rds, [("F", "Alleestra\u00dfe 5 - 11", False)])).loc["F", "digitising_note"]
+    assert "ASSUMPTION R3-b" in note and "one side of the street" in note
+    plain = _by_code(_build(rds, [("F", "Alleestra\u00dfe 5 - 11", False)], town=_town(rds, parity=False))).loc[
+        "F", "digitising_note"]
+    assert "R3-b" not in plain
+
+
+def test_qualifier_and_lost_rows_are_logged_as_primary_and_fallback_rates(rds, caplog):
+    caplog.set_level(logging.INFO)
+    _build(rds, [("A", "Alleestra\u00dfe (Rondell)", False)])
+    assert "qualifiers primary 0/1 (0.0 %), fallback 1 (100.0 %) qualifier_not_resolved" in caplog.text
+    caplog.clear()
+    rows = [rds.ListRow(zone="E", raw="Alleestra\u00dfe"), rds.ListRow(zone="E", raw="Bergweg"),
+            rds.ListRow(zone="G", raw="Alleestra\u00dfe", area_street_keys=frozenset({"alleestrasse"}))]
+    lines = _lines([ALLEE, ("Bergweg", [(0.0, 300.0), (50.0, 300.0)])])
+    rds.build_town_districts(_town(rds), rows, _network(rds, lines), rds.MatchSettings())
+    assert "qualifiers primary 3/3 (100.0 %), fallback 0 (0.0 %)" in caplog.text
+    assert "kept an area primary 2/3 (66.7 %), fallback 1 (33.3 %) rows_without_area" in caplog.text
+
+
+def test_the_source_rows_name_the_osm_ways_used(rds):
+    result = _build(rds, [("A", "Schillerstr.", False)], lines=_two_places_lines(), houses=_houses(rds, []))
+    assert json.loads(_by_code(result).loc["A", "source_rows"])[0]["osm_way_ids"] == [1]
+    lines = _lines([("Schillerstra\u00dfe", [(-100.0, 0.0), (-20.0, 0.0)]), ("Schillerstra\u00dfe", [(300.0, 0.0), (380.0, 0.0)])])
+    result = _build(rds, [("A", "Schillerstra\u00dfe", False)], lines=lines, houses=_houses(rds, []))
+    assert json.loads(_by_code(result).loc["A", "source_rows"])[0]["osm_way_ids"] == [1, 2]

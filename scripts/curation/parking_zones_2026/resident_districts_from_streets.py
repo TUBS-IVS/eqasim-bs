@@ -170,6 +170,8 @@ class TownSpec:
     geometry_source: str = pz.STREET_LIST_BUFFER_GEOMETRY_SOURCE
     #: How the note names the source of the streets.
     source_kind: str = "the official street list"
+    #: Extra sentence of the note of a map district about the extent of its streets (maps only).
+    extent_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -640,13 +642,15 @@ def _side(part, position_m: float, point) -> int:
 
 
 def _range_footprints(parts: list, points: list, one_sided: bool, settings: MatchSettings) -> tuple:
-    """(footprints, centrelines, sides_unresolved) of the houses of one range: the piece of each part between the
-    projections of its houses, buffered on the side of the houses where ``one_sided`` and the houses agree."""
+    """(footprints, centrelines, one_sided_pieces, sides_unresolved) of the houses of one range: the piece of each part
+    between the projections of its houses, buffered on the side of the houses where ``one_sided`` and the houses agree.
+    ``one_sided_pieces`` counts the pieces that asked for a one-sided buffer, ``sides_unresolved`` those of them whose
+    houses do not agree on a side (both-sided fallback)."""
     by_part = {}
     for point in points:
         index = int(np.argmin([part.distance(point) for part in parts]))
         by_part.setdefault(index, []).append((parts[index].project(point), point))
-    footprints, centrelines, sides_unresolved = [], [], 0
+    footprints, centrelines, sides_unresolved, one_sided_pieces = [], [], 0, 0
     for index in sorted(by_part):
         part = parts[index]
         positions = [position for position, _ in by_part[index]]
@@ -660,6 +664,7 @@ def _range_footprints(parts: list, points: list, one_sided: bool, settings: Matc
         sides = [_side(part, position, point) for position, point in by_part[index]]
         side = 0
         if one_sided:
+            one_sided_pieces += 1
             counts = {1: sides.count(1), -1: sides.count(-1)}
             side = max(counts, key=counts.get)
             if counts[side] / len(sides) < settings.side_agreement:
@@ -668,7 +673,7 @@ def _range_footprints(parts: list, points: list, one_sided: bool, settings: Matc
         footprints.append(piece.buffer(side * settings.buffer_m, single_sided=True) if side
                           else piece.buffer(settings.buffer_m))
         centrelines.append(piece)
-    return footprints, centrelines, sides_unresolved
+    return footprints, centrelines, one_sided_pieces, sides_unresolved
 
 
 def _target_claims(town: TownSpec, row_index: int, row: ListRow, mixed: bool, target_index: int,
@@ -706,7 +711,9 @@ def _target_claims(town: TownSpec, row_index: int, row: ListRow, mixed: bool, ta
     if street_source == "area_boundary":
         counters["area_matched_targets"] += 1
     entry = {"row": row_index + 1, "target": target_index + 1, "zone": row.zone, "raw": row.raw, "mixed": mixed,
-             "street": key, "street_source": street_source, "ways": int(len(inside)), "places_in_locality": places,
+             "street": key, "street_source": street_source, "ways": int(len(inside)),
+             "osm_way_ids": sorted(int(value) for value in inside["osm_id"]) if street_source == "way" else [],
+             "places_in_locality": places,
              "qualifiers": list(target.unresolved_qualifiers)}
     if target.unresolved_qualifiers:
         counters["qualifier_not_resolved_targets"] += 1
@@ -735,7 +742,8 @@ def _target_claims(town: TownSpec, row_index: int, row: ListRow, mixed: bool, ta
             break
         matched_houses += len(points)
         one_sided = house_range.parity is not None
-        pieces, lines, unresolved_sides = _range_footprints(parts, points, one_sided, settings)
+        pieces, lines, requested_sides, unresolved_sides = _range_footprints(parts, points, one_sided, settings)
+        counters["one_sided_pieces"] += requested_sides
         counters["side_not_resolved_pieces"] += unresolved_sides
         footprints.extend(pieces)
         centrelines.extend(lines)
@@ -792,7 +800,7 @@ def _ascii(text) -> str:
 
 def _ascii_entry(entry: dict) -> dict:
     """A ``source_rows`` entry with every text (and every text in a list) in the ASCII form of the committed files."""
-    return {key: ([_ascii(item) for item in value] if isinstance(value, list)
+    return {key: ([_ascii(item) if isinstance(item, str) else item for item in value] if isinstance(value, list)
                   else _ascii(value) if isinstance(value, str) else value) for key, value in entry.items()}
 
 
@@ -816,6 +824,10 @@ def _district_note(town: TownSpec, zone: str, entries: list, mixed_rows: int, co
            else "the streets the map labels, not a surveyed boundary")
         + " and no proof of parking supply. Overlaps with other zones of the town go to the more specific footprint "
         "and, between equally specific ones, to the nearer street (the town's districts never overlap).")
+    if from_list and town.infer_parity_from_range_ends:
+        note += (" ASSUMPTION R3-b: a range whose two ends share their parity (for example 1 - 25) lies on one side of the "
+                 "street, so its piece is buffered on the side of its houses only (the list interleaves zones this way, "
+                 "but does not state it); a piece whose houses do not agree on a side is buffered on both sides.")
     if from_list:
         note += (f" {mixed_rows} list row(s) of this zone are marked as mixed-zone streets (the street also serves "
                  "another zone); source_rows lists every row with its resolution. "
@@ -823,10 +835,10 @@ def _district_note(town: TownSpec, zone: str, entries: list, mixed_rows: int, co
                  "range_not_resolved (whole street used).")
     else:
         locality = _locality(town, zone)
-        note += (f" The map is schematic and carries no coordinates: a street is used as far as OSM has it within "
+        note += (f" The map is schematic and carries no coordinates: a way is used whole when any part lies within "
                  f"{locality.radius_m:.0f} m of the reference point ({locality.x:.0f}, {locality.y:.0f} in EPSG:25832), so "
-                 "the arms of the map and the through streets that leave the old town end where this radius ends, not "
-                 "where the map ends.")
+                 "the arms of the map and the through streets that leave the old town are cut by this rule, not by the "
+                 "map." + (f" {town.extent_note}" if town.extent_note else ""))
     if area_text:
         note += f" The list's parking-area column for this zone reads: {area_text} (reference only, not used as geometry)."
     if settings.fill_holes:
@@ -855,7 +867,7 @@ def build_town_districts(town: TownSpec, rows: list, network: OsmStreetData, set
             zones_of_key.setdefault(normalise_street_name(target.street_text), set()).add(row.zone)
     counters = {name: 0 for name in ("ways_outside_locality", "names_in_several_places", "qualifier_not_resolved_targets",
                                      "ranged_targets", "range_resolved_targets", "range_not_resolved_targets",
-                                     "side_not_resolved_pieces", "area_matched_targets")}
+                                     "side_not_resolved_pieces", "one_sided_pieces", "area_matched_targets")}
     claims, unmatched, mixed_rows = [], [], {}
     for row_index, (row, targets) in enumerate(zip(rows, parsed)):
         mixed = row.mixed if row.mixed is not None else any(
@@ -884,6 +896,16 @@ def build_town_districts(town: TownSpec, rows: list, network: OsmStreetData, set
     log.info("[resident-districts] %s: ranged street entries primary %d/%d (%.1f %%), fallback %d (%.1f %%) "
              "range_not_resolved (whole street used)", town.name, counters["range_resolved_targets"], ranged,
              100.0 * (1.0 - rate) if ranged else 100.0, not_resolved, 100.0 * rate)
+    requested, unresolved_sides = counters["one_sided_pieces"], counters["side_not_resolved_pieces"]
+    log.info("[resident-districts] %s: one-sided primary %d/%d (%.1f %%), fallback %d (%.1f %%) both-sided buffer (the "
+             "houses of a parity range do not agree on a side)", town.name, requested - unresolved_sides, requested,
+             100.0 * (requested - unresolved_sides) / requested if requested else 100.0, unresolved_sides,
+             100.0 * unresolved_sides / requested if requested else 0.0)
+    qualifiers = counters["qualifier_not_resolved_targets"]
+    log.info("[resident-districts] %s: qualifiers primary %d/%d (%.1f %%), fallback %d (%.1f %%) qualifier_not_resolved "
+             "(whole street used)", town.name, target_total - qualifiers, target_total,
+             100.0 * (target_total - qualifiers) / target_total if target_total else 100.0, qualifiers,
+             100.0 * qualifiers / target_total if target_total else 0.0)
     if rate > settings.range_warning_rate:
         log.warning("[resident-districts] %s: range_not_resolved rate %.1f %% exceeds %.0f %%: the extract has too few "
                     "house numbers for many ranges", town.name, 100.0 * rate, 100.0 * settings.range_warning_rate)
@@ -895,6 +917,11 @@ def build_town_districts(town: TownSpec, rows: list, network: OsmStreetData, set
         entries_by_zone.setdefault(claim.zone, []).append(claim.entry)
         regions_by_zone.setdefault(claim.zone, []).append(regions[index])
     rows_without_area = [claim.entry["raw"] for claim in claims if area_by_claim[id(claim)] <= 0.0]
+    kept = len(claims) - len(rows_without_area)
+    log.info("[resident-districts] %s: street entries that kept an area primary %d/%d (%.1f %%), fallback %d (%.1f %%) "
+             "rows_without_area (absorbed by another zone in an overlap)", town.name, kept, len(claims),
+             100.0 * kept / len(claims) if claims else 100.0, len(rows_without_area),
+             100.0 * len(rows_without_area) / len(claims) if claims else 0.0)
     if rows_without_area:
         log.warning("[resident-districts] %s: %d street entries kept no area after the overlaps with other zones: %s",
                     town.name, len(rows_without_area), "; ".join(rows_without_area))
