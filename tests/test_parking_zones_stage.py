@@ -436,7 +436,7 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     with caplog.at_level(logging.WARNING, logger=STAGE_LOGGER):
         release = zones_stage.execute(context)
     # No warning: since the 29 free lots of spec Amendment I rest on no assumption, 50 of the 91 priced rows (54.9 %) rest on at
-    # least one assumption and 41 of 91 (45.1 %) on P4 or P5, both below the 75 % threshold of the garage loader (it warned about
+    # least one assumption and 39 of 91 (42.9 %) on P4 or P5, both below the 75 % threshold of the garage loader (it warned about
     # 45 of 49 rows, 91.8 %, before). No marker and no other problem either; the rates themselves are in the loader's log line.
     warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
     assert [record.getMessage() for record in warnings] == []

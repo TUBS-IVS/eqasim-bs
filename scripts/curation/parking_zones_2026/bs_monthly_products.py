@@ -5,7 +5,7 @@ Not part of the pipeline and never run by synpp: two further optional inputs of 
 research package on the monthly and long-term products of 14 garages and 5 surface lots of Braunschweig; the directory
 ``contipark_configurator_2026-10-08`` holds two evidence captures that the controller made of the public Contipark pages on the
 owner's instruction (the product configurator of the Parkhaus Wallstrasse and the location page of the Tiefgarage Eiermarkt).
-The step reads them the way the other packages are read (``garage_supplement``, ``wolfsburg_lots``):
+The step reads them the way the other packages are read (``garage_supplement``, ``large_lots``):
 
 * ``load_monthly_inputs`` checks the zip against the SHA-256 pinned in ``PACKAGE_SHA256`` before anything is read, every member
   that is read against the zip's own ``manifest.sha256``, the evidence directory against its ``SHA256SUMS`` (itself pinned in

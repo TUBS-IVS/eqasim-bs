@@ -4,7 +4,7 @@ Not part of the pipeline and never run by synpp: an optional input of ``regional
 (``--large-lots-zip``). The owner-supplied ``Grossparkplaetze_ZGB8_2026-10-12.zip`` (data state 2026-10-13) is a research
 package of 152 reviewed parking records of the eight ZGB towns: per record the access class, the capacity for the size
 threshold with its origin, the geometry scope, the documented tariff components and the sources. It is read the way the
-Wolfsburg car-park package is read (``wolfsburg_lots``):
+supplement packages are read (``garage_supplement``):
 
 * ``load_package`` checks the zip against the SHA-256 pinned in ``LOTS_SHA256`` before anything is read, and every member of
   the zip against the zip's own ``MANIFEST.json`` (the set of members must equal the set of the manifest and every member must

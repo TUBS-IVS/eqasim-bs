@@ -138,7 +138,8 @@ acquisition:
     on them, they are recorded in the data record parking_zones_2026 and its QA table. P3 (a night tariff that is no per-unit
     rate is not charged; no garage rests on it since the supplement of 2026-10-07) and its siblings P4 to P8, P10 (a free
     period read as a grace period), P11 (the best available secondary evidence where no operator tariff is published) and P12
-    (the municipal free default of a Wolfsburg car park without any fee evidence outside every published tariff area) are
+    (the municipal free default of a Wolfsburg car park without any fee evidence outside every published tariff area;
+    WITHDRAWN by spec Amendment I5, no row of the garage dataset rests on it) are
     assumptions of the garage dataset, not of this table: they are named in each garage's notes and in the data record
     parking_garages_2026.
     Spec Amendment G1 (Task 4g, 2026-10-08): three rows bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west for the DB

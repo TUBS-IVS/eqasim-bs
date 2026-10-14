@@ -5,7 +5,7 @@ on disk like the zone polygons, EPSG:25832 in memory) with its identity, the gar
 monthly product where one is published, the reported capacity and the provenance of every value. The dataset is built by
 the curation step ``scripts/curation/parking_zones_2026/regional_garages.py`` from the regional evidence package of
 2026-10-07 and read by the distance-weighted garage options of spec Amendment E (task 4d): the zone release stage
-(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3)
+(``braunschweig.parking.zones_stage``) loads and validates it, the tariff model export writes its priced garages (schema 3 introduced them; the export is schema 4 now)
 and ``braunschweig.parking.cost.parking_cost_with_garages`` is the reference pricing.
 
 The garage tariff columns are those of the tariff table (``braunschweig.parking.zones.GARAGE_COLUMNS``, money in EUR,
@@ -35,7 +35,8 @@ because the validator enforces it (one tariff structure per garage):
 Two uses of the bands text are no schedule in that sense (Task 4b3, spec E14), and the validator tells them apart:
 
 * the FREE SCHEDULE ``"0- free"`` (:func:`is_free_schedule`): one open free band, a car park that is free for every stay (the
-  free public car parks of the Wolfsburg city layer; ASSUMPTION P12 where the car park is free only by default). It has the
+  free public car parks; ASSUMPTION P12, the municipal free default of the Wolfsburg city-layer points of Task 4b3, is
+  WITHDRAWN (spec Amendment I5): no row of the current dataset rests on it, see ``WITHDRAWN_ASSUMPTIONS``). It has the
   formal fee window 0 to 24 h, rests on no assumption of the bands (neither P8 nor P10) and counts as ``priced_free``;
 * the GRACE PERIOD of a tiered garage (:func:`is_grace_period`): ``tariff_tiers`` together with one CLOSED free band, e.g.
   ``"0-30 free"``: a stay not longer than the band costs 0 and every longer stay is priced by the tiers from its arrival
@@ -687,7 +688,7 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
     it has tiers and on ASSUMPTION P8 exactly when it has a schedule with a priced band and no tiers; ASSUMPTION P10 (a grace
     period) needs a free first band that something follows (a priced band or the tiers) and a tiered garage with a grace
-    period lists it; ASSUMPTION P12 (a municipal free default) needs the free schedule. ASSUMPTION P14 (an imputed lot
+    period lists it; ASSUMPTION P12 (a municipal free default; WITHDRAWN, spec Amendment I5) needs the free schedule. ASSUMPTION P14 (an imputed lot
     tariff) belongs to a surface lot.
     Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
     and neither text without the amount. Imputed monthly product (ASSUMPTION P13, spec Amendment F2): ``monthly_imputed_eur``

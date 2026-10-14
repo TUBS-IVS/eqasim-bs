@@ -1,61 +1,22 @@
-# The Wolfsburg car parks of the garage dataset
+# The Wolfsburg car-park package of 2026-10-07 (historical, reader removed)
 
-> **Superseded for the rows of the dataset (spec Amendment I, Task 4j, 2026-10-14).** The release dataset no longer reads this
-> package: its surface lots were replaced by the sites of the large-lot research package under its size and access policy
-> (ASSUMPTION P12 withdrawn; the Autostadt, the Klinikum and the Volkswagen Arena are QA rows; the Allerpark and the
-> Theaterparkplatz are rows of the research package). See [parking-large-lots.md](parking-large-lots.md) and ADR-0140 decision 13.
-> `--wolfsburg-lots-zip` and `--large-lots-zip` cannot be combined. The reader below, its classes and its tests remain; the table
-> and the rules describe that reading of the 24 points, not the current dataset.
+> **Superseded and removed (spec Amendment I, Task 4j; reader deleted in Task 4l, owner decision 2026-10-14, issue #436).**
+> The owner package `Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip` (SHA-256
+> `650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0`, 24 car parks of the city layer `wob_parkplaetze`) is no input of
+> the current dataset and no code reads it: the module `wolfsburg_lots.py`, the option `--wolfsburg-lots-zip`, the owner decisions
+> of spec E14 (`LOT_SPECS`, `LOT_RULE_IDS`, `LOT_RELEASED`) and the tests of the reader are gone. Every Wolfsburg surface lot of
+> `parking_garages_2026` now comes from the large-lot research package, see [parking-large-lots.md](parking-large-lots.md).
 
-Mechanism of spec Amendment E14 of the parking cost zones v2 design (issue #436, Task 4b3): how the 24 car parks of the
-Wolfsburg city layer enter `parking_garages_2026`. The decisions and the rejected alternatives live in the design spec, the
-ADR of the feature and the data record `parking_garages_2026` (counts, assumptions, licences); this note says where the code
-is and which rules a maintainer must keep. The garage options around it are in
-[parking-garage-options.md](parking-garage-options.md).
+Where the history lives (this stub keeps no facts of its own):
 
-## What it does
-
-`scripts/curation/parking_zones_2026/wolfsburg_lots.py` reads the owner's package `Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`
-(fourth optional input of `regional_garages.py`: `--wolfsburg-lots-zip`, needs `--zones` and `--tariffs`). Each of the 24
-points gets exactly one class, decided from the fee status of the package and the position of the point, never from a name:
-
-| Class | Meaning | Result |
-| --- | --- | --- |
-| a | paid municipal car park inside one zone and one strictly matched tariff area (data decide it) | QA candidate `zone_street_product` with the consistency check of its published hourly reference against the zone's street rate |
-| b | operator tariff (Autostadt P2, Klinikum visitor car parks) | dataset row, `facility_kind` `surface_lot` |
-| c | free for the public (Allerpark, Theaterparkplatz, Volkswagen Arena P1/P2) | dataset row at cost 0, no assumption |
-| d | no fee evidence, outside every tariff area and zone (data decide it) | dataset row at cost 0 under ASSUMPTION P12 |
-| e | user group only (disabled parking) or customers only (BadeLand) | QA candidate `user_group_only` or `customer_regime` |
-
-## Where things are
-
-| Concern | Place |
-| --- | --- |
-| Reading and verifying the package, classes, conversion of the components, operator quotation | `scripts/curation/parking_zones_2026/wolfsburg_lots.py` |
-| The owner decisions (class per point, roles of the components, release, readings) | `scripts/curation/parking_zones_2026/regional_garage_specs.py` (`LOT_SPECS`, `LOT_RULE_IDS`, `LOT_RELEASED`) |
-| Rows and QA rows | `scripts/curation/parking_zones_2026/regional_garages.py` (`decide_lots`, `build_lot`, `lot_zone_row`, `qa_rows`) |
-| `facility_kind`, the free schedule, the grace period of a tiered garage, P12 | `braunschweig/parking/garages.py` (`FACILITY_KINDS`, `is_free_schedule`, `is_grace_period`, `ASSUMPTIONS`) |
-| Zone consistency check, QA reason `user_group_only` | `braunschweig/parking/garage_qa.py` (`zone_reference_check`, `zone_reference_summary`) |
-| Tests | `tests/test_parking_wolfsburg_lots.py` (synthetic package and the committed rows at the tariff edges) |
-
-## Rules maintainers must keep
-
-- **A package value enters only through an owner decision.** The package marks every record `full_cost_calculation_ready=false`;
-  `LOT_RELEASED` names the owner decision per component and the statuses of the package's own field decisions it relied
-  on; if the package changes a status, the release stops the step. Never type a tariff number into the specifications.
-- **The data decide classes a and d.** A class the fee status does not allow, a class that the data refute and a point decided
-  as a municipal free default that lies inside a published tariff area or a committed zone stop the step
-  (`wolfsburg_lots.check_decision`). The same 24 points must be the points of the regional layer `wob_parkplaetze`.
-- **Cost 0 is the free schedule `0- free`** (one open free band, formal fee window 0 to 24 h), never a tariff row with a
-  zero rate. A free rule that states a free period or an end is the grace form, not a free car park.
-- **A row that goes against a package recommendation says so**: every class d row and the Autostadt and Klinikum rows quote
-  the recommendation of the package's facility review in their notes and QA note and name the owner direction "alle
-  integrieren" that overrides it (`regional_garages.lot_override_sentence`; spec E14 amendment (2)).
-- **P12 is the weakest evidence of the dataset**: no fee evidence is not evidence of none, and section 2(2) of the fee
-  ordinance defines Zone II as all other streets and places of the city area, so the published areas are not shown to be
-  exhaustive. Every P12 row cites the field decision of its fee status as its evidence and is counted by the validator
-  and the loader.
-- **Positions are the city's points** (`geoviewer_car_park_point`), no entrances; capacity and operator only where the package
-  states them (capacity with its scope; the operator by a quotation in the package's copy of the operator's own page).
-- **Do not edit the two data files by hand**; regenerate them (command in the data record) and update the pinned hashes of
-  the record.
+- **Why and how the package was read, and why it was replaced:** ADR-0140 decision 8 (garage tariff forms and evidence rules,
+  Amendments E10 to E14, the classes a to e of the 24 points, ASSUMPTION P12) and decision 13 (large surface lots, Amendment I, with
+  the withdrawal of P12 under I5 and the rejected alternatives).
+- **The package as a dataset input in history** (pinned SHA-256, what was read, the 13 rows it contributed before Task 4j and the
+  hashes of those datasets): the data record `docs/registry/data/parking_garages_2026.yml`.
+- **The code as it was:** the git history of `scripts/curation/parking_zones_2026/wolfsburg_lots.py` before the Task 4l commit.
+- **What stays in the code on purpose:** the file name and SHA-256 of the package as the constants
+  `SUPERSEDED_WOLFSBURG_LOTS_FILE` and `SUPERSEDED_WOLFSBURG_LOTS_SHA256` of `regional_garages.py`, because the attribution and the
+  column glossary written into the dataset name the package as part of its history (the dataset must stay byte-identical), and the
+  withdrawn ASSUMPTION P12 in `braunschweig/parking/garages.py` (`WITHDRAWN_ASSUMPTIONS`), which keeps the register entry that the
+  Java fixture pins.

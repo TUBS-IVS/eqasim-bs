@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import json
 import random
 import sys
@@ -1130,7 +1131,6 @@ def test_the_qa_rows_of_the_large_lots_validate_against_the_dataset(step, packag
     monkeypatch.setattr(step.specs, "GARAGE_SPECS", regional_tests._specs())
     monkeypatch.setattr(step.specs, "MONTHLY_PRODUCTS", regional_tests.MONTHLY)
     monkeypatch.setattr(step.specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
-    monkeypatch.setattr(step.specs, "LOT_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_MONTHLY_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_RECORDED_SPECS", ())
     monkeypatch.setattr(step.specs, "DIRECTORY_DECISIONS", {
@@ -1167,7 +1167,6 @@ def test_a_directory_entry_decided_as_a_site_of_the_package_needs_the_package(
     monkeypatch.setattr(step.specs, "GARAGE_SPECS", regional_tests._specs())
     monkeypatch.setattr(step.specs, "MONTHLY_PRODUCTS", regional_tests.MONTHLY)
     monkeypatch.setattr(step.specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
-    monkeypatch.setattr(step.specs, "LOT_SPECS", ())
     monkeypatch.setattr(step.specs, "LARGE_LOT_SPECS", {})
     monkeypatch.setattr(step.specs, "BS_MONTHLY_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_RECORDED_SPECS", ())
@@ -1187,8 +1186,7 @@ def test_a_directory_entry_decided_as_a_site_of_the_package_needs_the_package(
 # --------------------------------------------------------------------------- the inputs of the step
 
 
-def test_the_large_lot_package_needs_zones_and_tariffs_and_a_known_threshold_and_supersedes_the_wolfsburg_package(
-        step, package_file, regional_tests, tmp_path):
+def test_the_large_lot_package_needs_zones_and_tariffs_and_a_known_threshold(step, package_file, regional_tests, tmp_path):
     regional_tests._write_package(tmp_path / "regional", regional_tests._layers(), regional_tests._rules(),
                                   regional_tests._facilities())
     regional_sha = hashlib.sha256((tmp_path / "regional" / f"{regional_tests.PACKAGE}.zip").read_bytes()).hexdigest()
@@ -1200,11 +1198,20 @@ def test_the_large_lot_package_needs_zones_and_tariffs_and_a_known_threshold_and
         step.load_garage_inputs(tmp_path / "regional", zones=_zones(), **common)
     with pytest.raises(SystemExit, match="the size threshold 75 is none of the release value 50 and the sensitivities"):
         step.load_garage_inputs(tmp_path / "regional", zones=_zones(), tariffs=_step_tariffs(), lot_threshold=75, **common)
-    with pytest.raises(SystemExit, match="supersedes the Wolfsburg car-park package"):
-        step.load_garage_inputs(tmp_path / "regional", zones=_zones(), tariffs=_step_tariffs(),
-                                lots_path=tmp_path / "wolfsburg.zip", **common)
     inputs = step.load_garage_inputs(tmp_path / "regional", zones=_zones(), tariffs=_step_tariffs(), lot_threshold=30, **common)
     assert inputs["large"]["threshold"] == 30 and "lots" not in inputs and inputs["large"]["evidence"] == {}
+
+
+def test_the_reader_of_the_superseded_wolfsburg_package_is_gone(step, tmp_path):
+    """Task 4l: the Wolfsburg car-park package of spec E14 is superseded by the large-lot package and no code reads it: the
+    command-line option and the loader argument are gone, only its name and SHA-256 stay in the attribution of the dataset."""
+    with pytest.raises(SystemExit) as refused:
+        step.main(["--regional-dir", str(tmp_path), "--directory", "d", "--municipalities", "m", "--out", "o", "--qa-out", "q",
+                   "--wolfsburg-lots-zip", "x.zip"])
+    assert refused.value.code == 2
+    assert "lots_path" not in inspect.signature(step.load_garage_inputs).parameters
+    assert not hasattr(step.specs, "LOT_SPECS") and not hasattr(step, "wl")
+    assert step.SUPERSEDED_WOLFSBURG_LOTS_FILE in step.ATTRIBUTION and step.SUPERSEDED_WOLFSBURG_LOTS_SHA256 in step.ATTRIBUTION
 
 
 def test_a_sensitivity_threshold_is_never_written_under_the_release_names(step, tmp_path):
@@ -1950,7 +1957,6 @@ def test_a_lot_inside_a_zone_polygon_is_written_to_its_qa_row_with_the_zone_ids(
     monkeypatch.setattr(step.specs, "GARAGE_SPECS", regional_tests._specs())
     monkeypatch.setattr(step.specs, "MONTHLY_PRODUCTS", regional_tests.MONTHLY)
     monkeypatch.setattr(step.specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
-    monkeypatch.setattr(step.specs, "LOT_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_MONTHLY_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_RECORDED_SPECS", ())
     monkeypatch.setattr(step.specs, "DIRECTORY_DECISIONS", regional_tests.DIRECTORY)
@@ -2124,7 +2130,7 @@ def test_the_qa_intro_names_the_large_lot_package_the_threshold_the_evidence_and
     assert "parking_tariffs_2026.csv:<zone_id>" in intro
     lot_reasons = [reason for reason in pq.CANDIDATE_REASONS if reason.startswith("lot_")]
     assert len(lot_reasons) == 12 and all(reason in intro for reason in lot_reasons)
-    assert step.wl.LOTS_FILE not in intro and step.wl.LOTS_SHA256 not in intro
+    assert step.SUPERSEDED_WOLFSBURG_LOTS_FILE not in intro and step.SUPERSEDED_WOLFSBURG_LOTS_SHA256 not in intro
 
 
 # --------------------------------------------------------------------------- the released rows after fix round 1 (R-4j-6 to R-4j-8)

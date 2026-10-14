@@ -278,9 +278,7 @@ def step(garages_step, monkeypatch):
     monkeypatch.setattr(garages_step.specs, "MONTHLY_PRODUCTS", MONTHLY)
     monkeypatch.setattr(garages_step.specs, "PACKAGE_CANDIDATES", CANDIDATES)
     monkeypatch.setattr(garages_step.specs, "DIRECTORY_DECISIONS", DIRECTORY)
-    # a step without lot decisions: the layer wob_parkplaetze stays one aggregated candidate row (the Wolfsburg car-park package
-    # of spec E14 has its own tests in test_parking_wolfsburg_lots.py)
-    monkeypatch.setattr(garages_step.specs, "LOT_SPECS", ())
+    # a step without the large-lot package: the layer wob_parkplaetze stays one aggregated candidate row
     # no Braunschweig monthly package (spec Amendment F1; it has its own tests in test_parking_bs_monthly_products.py)
     monkeypatch.setattr(garages_step.specs, "BS_MONTHLY_SPECS", ())
     monkeypatch.setattr(garages_step.specs, "BS_RECORDED_SPECS", ())

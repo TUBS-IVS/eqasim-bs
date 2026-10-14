@@ -32,6 +32,10 @@ CONFIGS = {"base": REPO / "configs" / "base_bs.yml",
            "popsim_open": REPO / "configs" / "fixtures" / "config_popsim_open_braunschweig.yml"}
 SCRIPT = REPO / "scripts" / "parking" / "calibrate_garage_decay.py"
 GARAGE_RECORD = REPO / "docs" / "registry" / "data" / "parking_garages_2026.yml"
+#: The run manifest of the 25 % plans that the table was calibrated on (it owns the SHA-256 of the population file).
+PLANS_RUN_MANIFEST = REPO / "docs" / "runs" / "parking-v2-plans-25pct-2026-10-12.yml"
+#: The lot-threshold sensitivities of the table (spec Amendment I6); the garage data record owns their SHA-256.
+SENSITIVITY_THRESHOLDS = (30, 100)
 ZONES_RECORD = REPO / "docs" / "registry" / "data" / "parking_zones_2026.yml"
 #: The two committed SrV tables the table header pins (their hashes are those of the files in the repository).
 SRV_TABLES = {
@@ -116,6 +120,78 @@ def test_the_committed_table_belongs_to_the_garage_dataset_pinned_in_its_data_re
     assert _table_input_hash("garages") == _record_pin(GARAGE_RECORD), (
         f"{TABLE.name} was calibrated on a garage dataset that is not the pin of {GARAGE_RECORD.name}: "
         "rerun scripts/parking/calibrate_garage_decay.py on the current dataset, or restore the pin")
+
+
+def _manifest_population_pin(manifest_path: Path) -> str:
+    """The ONE SHA-256 that the notes of a run manifest state for the population file (``population.xml.gz, <bytes> bytes,
+    SHA-256 <hash>``); the notes also hold the hashes of other outputs, so the pin is read by its anchor, exactly once."""
+    record = yaml.safe_load(Path(manifest_path).read_text(encoding="utf-8"))
+    pins = re.findall(r"population\.xml\.gz, [\d,]+ bytes, SHA-256 ([0-9a-f]{64})", " ".join(record["notes"].split()))
+    assert len(pins) == 1, f"{Path(manifest_path).name}: notes must pin the population file exactly once, found {len(pins)}"
+    return pins[0]
+
+
+def _table_sensitivity_hash(threshold: int) -> str:
+    """The SHA-256 that the header of the committed table records for the sensitivity garage dataset of a lot threshold
+    (``... parking_garages_2026_lot_threshold_<n>.geojson sha256=<hash>``)."""
+    pattern = rf"parking_garages_2026_lot_threshold_{threshold}\.geojson sha256=([0-9a-f]{{64}})"
+    found = re.findall(pattern, TABLE.read_text(encoding="utf-8"))
+    assert len(found) == 1, f"{TABLE.name}: expected exactly one sensitivity hash for threshold {threshold}, found {len(found)}"
+    return found[0]
+
+
+def _record_sensitivity_pin(record_path: Path, threshold: int) -> str:
+    """The ONE SHA-256 that a garage data record states for ``parking_garages_2026_lot_threshold_<n>.geojson`` anywhere in
+    its text (the file name followed by its hash); a second, older statement fails instead of hiding a stale table."""
+    record = yaml.safe_load(Path(record_path).read_text(encoding="utf-8"))
+    text = " ".join(yaml.safe_dump(record, width=10 ** 6).split())
+    found = re.findall(rf"parking_garages_2026_lot_threshold_{threshold}\.geojson ([0-9a-f]{{64}})", text)
+    assert len(found) == 1, f"{Path(record_path).name}: expected exactly one pin for threshold {threshold}, found {len(found)}"
+    return found[0]
+
+
+def test_the_manifest_and_sensitivity_pin_readers_demand_exactly_one_pin(tmp_path):
+    first, second = "a" * 64, "b" * 64
+    manifest = tmp_path / "manifest.yml"
+    manifest.write_text(f"notes: 'out.xml.gz, 1,234 bytes, SHA-256 {second}; x_population.xml.gz, 9,876 bytes, SHA-256 {first}'\n",
+                        encoding="utf-8")
+    assert _manifest_population_pin(manifest) == first   # read by its anchor, not by position or by the other hashes
+    manifest.write_text(f"notes: 'population.xml.gz, 1 bytes, SHA-256 {first}; population.xml.gz, 2 bytes, SHA-256 {second}'\n",
+                        encoding="utf-8")
+    with pytest.raises(AssertionError, match="exactly once, found 2"):
+        _manifest_population_pin(manifest)
+    manifest.write_text("notes: 'no pin'\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="exactly once, found 0"):
+        _manifest_population_pin(manifest)
+
+    record = tmp_path / "record.yml"
+    record.write_text(f"notes: >-\n  files: parking_garages_2026_lot_threshold_30.geojson\n  {first}, qa {second}\n", encoding="utf-8")
+    assert _record_sensitivity_pin(record, 30) == first
+    with pytest.raises(AssertionError, match="exactly one pin for threshold 100, found 0"):
+        _record_sensitivity_pin(record, 100)
+    record.write_text(f"notes: >-\n  parking_garages_2026_lot_threshold_30.geojson {first} and then "
+                      f"parking_garages_2026_lot_threshold_30.geojson {second}\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="exactly one pin for threshold 30, found 2"):
+        _record_sensitivity_pin(record, 30)
+
+
+def test_the_committed_table_names_the_plans_pinned_in_the_run_manifest():
+    # the plans are a local restricted output: the run manifest of the 25 % plans run owns the SHA-256 of the population file
+    # that the table was calibrated on (exact equality, like the garage dataset pin)
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert _table_input_hash("plans") == _manifest_population_pin(PLANS_RUN_MANIFEST), (
+        f"{TABLE.name} was calibrated on other plans than the population file of {PLANS_RUN_MANIFEST.name}: "
+        "rerun the calibration on the plans of the manifest, or record the new run in its own manifest")
+
+
+@pytest.mark.parametrize("threshold", SENSITIVITY_THRESHOLDS)
+def test_the_sensitivity_datasets_of_the_table_are_those_pinned_in_the_garage_data_record(threshold):
+    # the two sensitivity datasets are local files that are not the release: their hashes are stated once in the garage record
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert _table_sensitivity_hash(threshold) == _record_sensitivity_pin(GARAGE_RECORD, threshold), (
+        f"{TABLE.name} used another lot-threshold-{threshold} garage dataset than the one pinned in {GARAGE_RECORD.name}")
 
 
 def test_the_committed_table_names_the_zone_file_pinned_in_its_data_record():

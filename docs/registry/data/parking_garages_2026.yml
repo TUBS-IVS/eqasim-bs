@@ -25,7 +25,8 @@ provider: >-
   I, owner decisions of 2026-10-13) the research package Grossparkplaetze_ZGB8_2026-10-12.zip (SHA-256
   d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4: 152 reviewed records of large surface lots of the eight
   towns with 198 tariff rules, 238 sources and 120 research points, every rule with its source) is the source of every row
-  of a surface lot and replaces the Wolfsburg car-park package for the rows
+  of a surface lot and replaces the Wolfsburg car-park package for the rows (that package is SUPERSEDED: since Task 4l the
+  curation step no longer reads it; it is listed here as the history of the dataset)
 vintage: >-
   Package of 2026-10-07: the tariff rules and pages were retrieved between 2026-10-02 and 2026-10-07 (source_date per
   garage); the Braunschweig car-park directory 2026-09-29; the Goslar positions are the city's snapshot of 2018-11-22.
@@ -48,18 +49,14 @@ acquisition:
     The package zip and the directory under eqasim-data/data/braunschweig/parking/raw_sources/ (local, gitignored): the
     garage layers bs_parkhaeuser, wob_parkhaeuser, region_parkhaeuser and gos_parking_locations of
     daten/Regional_Parkdaten.gpkg, the tables daten/facilities.json and daten/tariff_rules.json, and the directory
-    bs_plan_parkplaetze.geojson (SHA-256 861bc29046fe1ee95dead0ead198908505529cd26ba133de46335efcfb62fd43); and the three
+    bs_plan_parkplaetze.geojson (SHA-256 861bc29046fe1ee95dead0ead198908505529cd26ba133de46335efcfb62fd43); and the two
     zips next to the package: Parkhaus_Ergaenzungen_2026-10-07.zip (SHA-256
     76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa; members
     data/entrances.geojson, data/parking_patch.gpkg layer entrances, data/facility_updates.json, data/tariff_rules.json,
     data/tariff_observations.json, data/field_decisions.json, data/sources.json and two evidence texts) and
     Parkhaus_Nachrecherche_2026-10-07.zip (SHA-256 3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8; members data/facility_review.json, data/tariff_rules.json,
-    data/field_decisions.json, data/model_actions.json, data/archived_charley_point.geojson, data/sources.json) and
-    Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256 650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0;
-    147 members; read: data/parking_lots.gpkg layer parking_lots and data/parking_lots.geojson, data/facility_review.json,
-    data/tariff_rules.json, data/field_decisions.json, data/sources.json, data/summary.json, data/point_area_matches.json,
-    data/published_tariff_areas.geojson, evidence/input/daten/geojson/wob_handyparkflaechen.geojson and the evidence texts
-    of the operators; the Wolfsburg package is the fourth optional input of the step) and, for the monthly products of the
+    data/field_decisions.json, data/model_actions.json, data/archived_charley_point.geojson, data/sources.json) and, for the
+    monthly products of the
     Braunschweig garages (spec Amendment F1, Task 4f), Braunschweig_Monatstarife_2026-10-08.zip (SHA-256
     72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81; 90 files, manifest.sha256 of 89 entries verified; read:
     README.md, data/tariff_rules.json, data/tariff_observations.json, data/facilities.json, data/sources.json and
@@ -77,6 +74,11 @@ acquisition:
     --large-lots-zip, with the size threshold --lot-threshold) and the folder
     raw_sources/municipal_2026-10-13/wob_free_lots_evidence/ (MANIFEST.md and the archived evidence pages of the three free
     Wolfsburg car parks of spec Amendment I5a, none archived yet; the eighth optional input, --wob-free-evidence-dir)
+    SUPERSEDED INPUT (not read by the command below): Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256
+    650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0; 147 members), the owner's review of the 24 car parks of the
+    city layer wob_parkplaetze. Until Task 4j it was the fourth optional input (--wolfsburg-lots-zip) and the source of the 13
+    surface lots of Task 4b3; its reader was removed in Task 4l (owner decision 2026-10-14). The file stays in raw_sources/ and its
+    SHA-256 stays in the attribution of the dataset because it is part of the dataset's history.
   script: scripts/curation/parking_zones_2026/regional_garages.py
   notes: >-
     One-off curation, never a pipeline stage: python scripts/curation/parking_zones_2026/regional_garages.py
@@ -375,11 +377,12 @@ acquisition:
     integrieren'). SUPERSEDED FOR THE ROWS OF THE DATASET by Task 4j below (spec Amendment I, owner decisions of 2026-10-13):
     the 13 surface lots of this paragraph left the dataset, their sites are decided again by the size and access policy
     (ASSUMPTION L50), ASSUMPTION P12 is withdrawn and the Wolfsburg car-park package is no input of the release command any
-    more; the paragraph stays as the history of Task 4b3 and as the description of the code path of --wolfsburg-lots-zip.
-    The fourth optional input (--wolfsburg-lots-zip, which needs --zones, the local zone polygons, and
-    --tariffs) is the owner's review of the 24 car parks of the city layer wob_parkplaetze,
-    Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256
-    650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0). It is read by
+    more; the paragraph stays as the history of Task 4b3. The code path it describes was REMOVED in Task 4l (owner decision
+    2026-10-14): the symbols wolfsburg_lots.py, --wolfsburg-lots-zip, LOT_SPECS, LOT_RULE_IDS, LOT_RELEASED, decide_lots,
+    build_lot and lot_zone_row named below exist in the git history only. The fourth optional input (--wolfsburg-lots-zip,
+    which needed --zones, the local zone polygons, and --tariffs) was the owner's review of the 24 car parks of the city
+    layer wob_parkplaetze, Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (SHA-256
+    650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0). It was read by
     scripts/curation/parking_zones_2026/wolfsburg_lots.py the way the supplements are read: pinned SHA-256, every member
     read checked against the zip's own manifest.sha256, nothing extracted and its scripts never run; the GeoPackage layer
     parking_lots (EPSG:25832) is checked against the GeoJSON points (EPSG:4326) to 1 cm and against the layer
@@ -510,7 +513,7 @@ acquisition:
     extracted and no script of the package executed; its fields are read as its README states them
     (capacity_selected_for_threshold and never capacity_reported, null is unknown and never 0, one capacity per site,
     facility_key is the facility_id of the tariff rules, components are evidence and no alternatives). The command above no
-    longer passes --wolfsburg-lots-zip (the option and its code path stay, --large-lots-zip excludes it). MUNICIPALITY
+    longer passes --wolfsburg-lots-zip (the option and its code path were removed in Task 4l). MUNICIPALITY
     PICKLE of the position check (finding I6 of the task review): the command passes
     .cache/vg250/municipalities_zgb8_vg250.p (SHA-256 c5f96d491dd1a4dfc8d992e52b4bd7980dfaa1571d2feef9062d6cae56bcae90,
     356470 bytes), a pickled GeoDataFrame of the 123 municipalities of the eight ZGB counties with the columns commune_id
@@ -712,7 +715,7 @@ verification:
     Listed as D11 (matsim_only, required, restricted, local only) in scripts/verify_braunschweig_inputs.py: the sixth input of the
     release of braunschweig.parking.zones_stage (config key parking_garages_path), which loads and validates it with
     the validator below; braunschweig.parking.tariff_export.garage_entries writes its priced garages into the tariff
-    model (schema 3).
+    model (schema 4).
     braunschweig.parking.garages.validate_garages checks unique ids, valid points inside the ZGB counties, the garage
     core all-or-none (spec Amendment A6), the three tariff forms (a tiered row has valid tariff_tiers and leaves the
     single window empty; a banded row has valid tariff_duration_bands, leaves the rate, the unit, the first period and
@@ -753,12 +756,10 @@ verification:
     garages and the 55 surface lots, each lot typed by hand from its package rules, with their tier and band strings, the
     published anchors of the band schedules and
     their edges, the identity check of the Ring-Center, the coverage numbers, the notes rules, the QA counts) and,
-    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_bs_monthly_products.py pins the Braunschweig monthly reader and ASSUMPTION P13 on a synthetic package (and reads the real package where it exists); tests/test_parking_wolfsburg_lots.py
-    pins the Wolfsburg package reader (the code path of --wolfsburg-lots-zip, which the release command no longer uses) on a
-    synthetic package (verification, the classes from the fee status and the position, the owner decision against the data,
-    the conversion and release of the components, the operator quotation, the rows, the QA rows and the zone check; its tests
-    of the committed rows of the 13 Wolfsburg car parks were removed in Task 4j because those rows left the release by owner
-    decision); tests/test_parking_large_lots.py pins the large-lot reader and the selection policy on a synthetic package (the
+    where the packages exist locally, reproduces both committed files byte for byte; tests/test_parking_bs_monthly_products.py pins the Braunschweig monthly reader and ASSUMPTION P13 on a synthetic package (and reads the real package where it exists); tests/test_parking_large_lots.py
+    pins that the reader of the superseded Wolfsburg package is gone (the option, the loader argument and the specifications of
+    spec E14 are removed in Task 4l; the tests of that reader, tests/test_parking_wolfsburg_lots.py, were removed with it, and
+    its tests of the committed rows of the 13 Wolfsburg car parks already in Task 4j); the same file pins the large-lot reader and the selection policy on a synthetic package (the
     verification of the zip and its manifest, every reason of the policy in its order, the conversion of the components, the zone
     product and its consistency check, ASSUMPTION P14 by zone and by municipality with the ties, the evidence gate of the free
     lots, the logged rates and warnings, ASCII, the refusal of a sensitivity threshold under the release names) and, where the
@@ -821,7 +822,7 @@ licensing:
     names its sources in its header.
 limitations: >-
   The zone-level garage columns of the tariff table stay empty (spec Amendment E8). The zone release stage loads the
-  dataset and the tariff model lists its priced garages (schema 3), but a garage becomes an option of a stay only with a
+  dataset and the tariff model lists its priced garages (schema 4), but a garage becomes an option of a stay only with a
   decay length greater than 0 (config parking_garage_decay_m, spec E6); the decay length is the calibrated lambda of
   the data record parking_garage_decay_calibration_2026 (see there for the run, the plans and the result), so the model
   prices the garage options of a stay in a paid zone as an expected cost; with a decay length of 0 (the sensitivity arm)

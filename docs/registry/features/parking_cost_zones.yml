@@ -99,7 +99,6 @@ evidence:
   - tests/test_parking_station_lots.py
   - tests/test_parking_regional_zones.py
   - tests/test_parking_supply_share.py
-  - tests/test_parking_wolfsburg_lots.py
   - tests/test_parking_large_lots.py
   - tests/test_parking_zone_assembly.py
   - tests/test_parking_zone_exposure.py
@@ -194,7 +193,7 @@ validation:
     table belongs to the garage dataset named in its header exactly (a test ties it to the pin of the data record), so a new
     option set needs a new calibration; the commuter and Wolfsburg rows of the run comparison count all off-street options,
     free ones included, and are labelled so (the outcome report has no paid/free split); the Java side of the commuter decay
-    (schema 4) is pending (Task 4i); the parking search time is
+    (schema 4) is merged (Task 4i, eqasim-java-bs 0bda7137f); the parking search time is
     off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:

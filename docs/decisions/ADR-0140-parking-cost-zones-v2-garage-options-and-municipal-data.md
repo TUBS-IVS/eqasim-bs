@@ -159,7 +159,7 @@ run (see Status).
    day rate; lambda is NOT tuned to it. The baseline arm for work and education stays is `zones_v2_no_garages` (lambda 0).
    Limitation: E4 fires only for a stay that is free on the street as a whole, so mostly-evening stays still get the
    garage mixture.
-   RESULT (calibration run 2026-10-09, issue #436 Task 5b; a calibration, no validation): on the plans of the 1 % reference
+   RESULT (superseded by decision 14; calibration run 2026-10-09, issue #436 Task 5b; a calibration, no validation): on the plans of the 1 % reference
    run of 2026-10-08 (`parking_zones_enabled` true, garage options off, no MATSim run; plans SHA-256
    `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`, 12,567 persons) the script found lambda = 396.19 m
    (the committed table `parking_garage_decay_calibration_2026.csv`, which records every input hash, the search and the
@@ -354,10 +354,11 @@ run (see Status).
       schema 3 always did: `tariff_export.garage_decays_from_model`, tested) and the golden file schema 5 (every case carries
       `garage_decay_commute_m`; every case before E33 carries the commuter decay equal to the decay, so all earlier cases are
       unchanged in content and price; E33 to E38 pin the two decays with a work, a shopping and an education stay at the same
-      destination and the off switches). The Java reader and calculator follow in a separate task (Task 4i); until then the Python
-      export writes a model the existing Java reader refuses (exact key sets).
-    - **Calibration of lambda_c (H2, revised by ruling R-4h-1), the result of 2026-10-09 (a calibration, no validation).** The
-      same script and the same plans as decision 7 (SHA-256 `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`,
+      destination and the off switches). The Java reader and calculator followed in Task 4i (merged, eqasim-java-bs 0bda7137f:
+      `ParkingTariffs.SUPPORTED_SCHEMA_VERSIONS` is 1 to 4); a jar from before that task refuses a schema-4 model (exact key
+      sets), so the Java package of Task 4i must be in the jar before any run.
+    - **Calibration of lambda_c (H2, revised by ruling R-4h-1), the result of 2026-10-09 (a calibration, no validation).**
+      (superseded by decision 14) The same script and the same plans as decision 7 (SHA-256 `a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc`,
       12,567 persons). Universe: the work and education main activities inside `bs_zone_ia` and `bs_zone_ib` that do NOT carry
       `parkingFree`: 54 of the 245 work and education activities there (191 carry `parkingFree`: the free-parking draw frees
       them, so the universe holds the payers only), all 54 with a priced garage within 1,000 m. Target: the PAID-only share
@@ -635,7 +636,7 @@ run (see Status).
       no issue.
     - **Rejected alternatives.** (a) The all-options measure for lambda_c: free options would stand in the numerator of a quantity
       of payers, and the SrV denominator has no free parker. (b) The free-inclusive commuter target: rejected by decision 12. (c)
-      Turning a decay to the Wolfsburg check. (d) Regenerating the plans for the new option set: not needed, see above.
+      Tuning a decay to the Wolfsburg check. (d) Regenerating the plans for the new option set: not needed, see above.
     - **Limits.** The universes are samples of a 25 % population (their sizes are in the table) and the SrV paid cells are small
       (decision 12); no sampling uncertainty is quantified, and the values depend on the plans file they were calibrated on. The
       universe caveat (SrV asks residents about their usual place, the model averages over destinations), the transfer
@@ -655,9 +656,9 @@ run (see Status).
 - v2 is unvalidated. A future run records its comparison with the SrV references in a run manifest (a comparison with a
   universe caveat; convergence of a run is not validation); the SrV garage share is a calibration target and counts as no
   validation of the garage options.
-- The Java reader accepts the tariff model schemas 1, 2 and 3; the Python export writes schema 4 since decision 12 whenever
-  the zones are on, which the existing Java reader refuses until Task 4i adds the key, so the Java package of the same branch
-  must be in the jar before any run (the existing run checks of ADR-0139 enforce the
+- The Java reader accepts the tariff model schemas 1 to 4 (Task 4i, merged: eqasim-java-bs 0bda7137f); the Python export
+  writes schema 4 since decision 12 whenever the zones are on, which a jar from before Task 4i refuses (exact key sets), so the
+  Java package of the same branch must be in the jar before any run (the existing run checks of ADR-0139 enforce the
   package). The plans carry the new attributes `parkingDistrict` and `residentParkingDistrict`; the Java population check
   rejects a district id the tariff model does not list.
 - Mode-choice parameters are not recalibrated; the calibration of #23 starts with the zones on.
@@ -800,6 +801,9 @@ The ids are historical labels: the sentences state the rule, which the code and 
   band free) are stricter than spec E11 and say so.
 - `R-4e-3`: Java integration of the garage options in the car cost model: the activity coordinate is passed in, a spatial
   index or per-activity cache keeps the evaluation cheap, and with the decay 0 or absent no option code runs.
+- `R-4h-1`: The calibration target of the commuter decay is like-for-like with the SrV quantity: the PAID-only share
+  `paid garage or large lot / (paid garage or large lot + paid street)` of the per-place payment follow-up, because the
+  model's universe holds only payers; the first free-inclusive target is superseded (decision 12, revision of the target).
 - `R-4j-3`: A public surface lot with a customer discount (class public_with_customer_discount) or a mixed public and
   customer site is an option at its general tariff, as the package's own shortlist rule counts it; the customer discount is
   not modelled (spec E14 (e) is reversed for the BadeLand on the new evidence).
