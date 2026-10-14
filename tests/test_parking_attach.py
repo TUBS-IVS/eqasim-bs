@@ -1095,6 +1095,31 @@ def test_ev_exemption_logs_the_rate_among_the_car_owners(caplog):
     assert "several cars 2" in detail and "mixed electric/non-electric 1" in detail
 
 
+def test_the_basis_line_states_the_fleet_car_share_and_the_rate_of_every_category(caplog):
+    """The headline rate counts the placeholder routing cars as car owners; the basis line must put it in context."""
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.attach_ev_exemption(_persons(range(1, 8)), _fleet_vehicles(), True)
+    [detail] = [record.getMessage() for record in caplog.records
+                if record.getMessage().startswith("[parking] EV exemption basis")]
+    # Owners 1, 2, 3, 5, 6, 7: owner 7 holds only the placeholder car, so 5 of 6 are fleet-car owners and 3 of 5 of
+    # them (60.0 %) are BEV/PHEV owners.
+    assert "fleet-car owners 5 of 6 (83.3 %)" in detail
+    assert "BEV/PHEV 3 (50.0 % of car owners, 60.0 % of fleet-car owners)" in detail
+    assert "other known powertrain 2 (33.3 %)" in detail
+    assert "placeholder car without powertrain 1 (16.7 %)" in detail
+    assert "car without powertrain 0 (0.0 %)" in detail
+
+
+def test_a_population_of_placeholder_cars_only_has_no_fleet_car_owner_and_no_division_error(caplog):
+    vehicles = _car_vehicles([(1, "1:car", "car", "default_car", ""), (2, "2:car", "car", "default_car", "")])
+    with caplog.at_level(logging.INFO, logger=ATTACH_LOGGER):
+        attach.attach_ev_exemption(_persons([1, 2]), vehicles, True)
+    [detail] = [record.getMessage() for record in caplog.records
+                if record.getMessage().startswith("[parking] EV exemption basis")]
+    assert "fleet-car owners 0 of 2 (0.0 %)" in detail
+    assert "0.0 % of fleet-car owners" in detail
+
+
 def test_a_placeholder_routing_car_is_counted_and_never_a_defect_warning(caplog):
     vehicles = _car_vehicles([(1, "1:car", "car", "default_car", ""), (2, "2:car", "car", "t_bev", "bev")])
     with caplog.at_level(logging.WARNING, logger=ATTACH_LOGGER):

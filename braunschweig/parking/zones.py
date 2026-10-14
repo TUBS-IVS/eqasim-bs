@@ -187,7 +187,7 @@ GEOMETRY_SOURCE_ZONE_TYPES = {CAMPUS_DETECTION_ZONES_GEOMETRY_SOURCE: "campus",
                               SINGLE_SITE_BUFFERED_GEOMETRY_SOURCE: "street_paid"}
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
-#: Literal text a street_paid zone with a maximum stay and a commuter product must carry in its ``notes`` (spec v3 A6).
+#: Literal text a zone (of any type) with a maximum stay and a commuter product must carry in its ``notes`` (spec v3 A6).
 COMMUTER_UNLIMITED_STAY_MARKER = "unlimited-stay product:"
 ZONE_PROVENANCE_COLUMNS = ("geometry_source", "source_url", "source_date", "digitised_on", "digitising_note")
 #: Required for ``osm_fee_erosion`` polygons only (empty on every other source): the walking tolerance W in metres
@@ -424,8 +424,9 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
     first-period pair are optional but need the core; a maximum stay needs a long-stay product or a garage (a longer
     stay loses the street product); ``commuter_day_eur`` exists on
     street_paid and campus rows only and is never negative; ``search_time_min`` is a whole number >= 0. Spec v3 A6: a
-    street_paid zone with both ``max_stay_min`` and ``commuter_day_eur`` must name its unlimited-stay product in ``notes``
-    (``COMMUTER_UNLIMITED_STAY_MARKER``). A frame
+    zone of ANY type with both ``max_stay_min`` and ``commuter_day_eur`` must name its unlimited-stay product in ``notes``
+    (``COMMUTER_UNLIMITED_STAY_MARKER``); campus rows additionally never carry a maximum stay, and resident rows no
+    commuter product, so in practice the combination can only be valid on a street_paid row. A frame
     without the schema-2 columns is checked as if they were empty. ``allow_fixture_marker=False`` additionally
     rejects the synthetic test-set marker ``fixture`` in ``source_url`` and ``fee_window_source`` (the committed data
     must never carry it).
@@ -541,10 +542,11 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
             problem("long_stay_product_eur", "max_stay_min is set but neither long_stay_product_eur nor the garage "
                                              "columns are: a stay above the maximum stay would have no product")
         # Spec v3 A6: the commuter product (P2) is a day price of a product WITHOUT a single-stay maximum (30-day ticket,
-        # member month, garage month). A street_paid zone that keeps a maximum stay and states a commuter product must
+        # member month, garage month). A zone of any type that keeps a maximum stay and states a commuter product must
         # name that product's unlimited-stay evidence in its notes; the 2 h / local-maximum tickets (Gifhorn, Bad Harzburg,
-        # Braunlage) are not commuter products and are never entered.
-        if (zone_type == "street_paid" and _is_set(row["max_stay_min"]) and _is_set(row["commuter_day_eur"])
+        # Braunlage) are not commuter products and are never entered. The rule is not scoped to street_paid, so it
+        # still holds if the per-type bans of the two columns are ever loosened.
+        if (_is_set(row["max_stay_min"]) and _is_set(row["commuter_day_eur"])
                 and COMMUTER_UNLIMITED_STAY_MARKER not in (str(row["notes"]) if _is_set(row["notes"]) else "")):
             problem("commuter_day_eur", f"the zone keeps max_stay_min {row['max_stay_min']}, so its commuter product "
                                         f"must be a product without a single-stay maximum; name it in notes with the "

@@ -456,8 +456,8 @@ def _write_parking_inputs(context, config_name):
                                              garage_monthly_imputation=garage_monthly_imputation,
                                              option_price_beta_u_per_eur=option_price_beta_u_per_eur)
     monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
-    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION P13): %s"
-          % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
+    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, "
+          "ASSUMPTION P13): %s" % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
