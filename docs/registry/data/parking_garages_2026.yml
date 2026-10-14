@@ -1162,8 +1162,8 @@ notes: >-
   the Lessingtheater (zone-pass sentence), and 18 lots whose limitation sentence no longer says that the garage columns carry no
   maximum stay (it now says that a lot's own maximum stay is read into max_stay_min only on a lot that takes the street product of
   its zone). The calibration table parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931...
-  and is NOT
-  recomputed here: it is stale against this dataset until Task B5.
+  and was NOT
+  recomputed here (Task B5 recalibrated it on the final dataset of storage.notes).
   Fix round 2 (ruling R-B-11, 2026-10-14): the note of the three zone-Ia lots now says that the lot compares the ELAPSED stay with
   max_stay_min and the street the CHARGEABLE minutes inside its fee window, so the lot is never less restrictive than the street
   but can be stricter (example: 07:00 to 11:00 is feasible on the street, 120 chargeable minutes, and not at the lot, 240 elapsed
@@ -1195,8 +1195,8 @@ notes: >-
   fca655ebbde165e03376dcf7987142c614c6927458b651339ba9b8c9b44e6bb9); the
   sensitivity dataset at 100 spaces and its QA table are unchanged (neither lot is an option at 100 spaces). The report-only pass
   keeps its counts (22 lots inside a zone at 50 spaces, 13 equal, 9 differing). The calibration table
-  parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931... and stays stale until Task B5
-  (ruling R-B-8).
+  parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931... and stayed stale until Task B5
+  (ruling R-B-8; Task B5 recalibrated it on the final dataset of storage.notes).
   Spec v3 B2, fix round 1 (2026-10-14): the notes of the two lots in an area zone now state the measured overlap of the lot with
   the street section of the area (the evidence for the maximum stay that the row takes from the zone): Parkplatz Cinemaxx
   (lot_wob_park_1769502, wob_area_680, 60 min): the section of 979 m2 lies 100 % inside the 2,416 m2 OSM outline of the lot
@@ -1240,8 +1240,8 @@ notes: >-
   161d5ed1618823eea0d129d41ac43fc18327211057bf8e163288ec7499ca3df9 (100 spaces). Expected effect on model output (no run exists to
   compare): three more free off-street options in Wolfsburg (the Suedufer and Freibad lots have 68 and 71 spaces by area estimates,
   Arena P1 494 reported) enter the option set of every activity near them and pull a free alternative closer than before; the
-  calibration table parking_garage_decay_calibration_2026 was computed on an earlier dataset and stays stale until Task B5
-  (ruling R-B-8). The Arena P1 position is a prior municipal point, not a verified entrance.
+  calibration table parking_garage_decay_calibration_2026 was computed on an earlier dataset and stayed stale until Task B5
+  (ruling R-B-8; Task B5 recalibrated it on the final dataset of storage.notes). The Arena P1 position is a prior municipal point, not a verified entrance.
   Spec v3 B4, fix round 1 (2026-10-14, issue #436). (1) The position of Arena P1, for which the package names neither an OpenStreetMap
   object nor a coordinate source, has its own geometry_method value package_prior_municipal_point (the prior municipal point
   WOB_PARK_1441813, kept by the package as no verified entrance; the step also knows package_point_without_source for a point

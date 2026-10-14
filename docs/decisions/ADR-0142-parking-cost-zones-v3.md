@@ -64,7 +64,10 @@ shared golden file.
      R-A-17), a plausibility flag and no scientific parameter.
    - **Calibration consequence (Part B, B5).** The calibration measure must use the same option set as the pricing: the street
      weight is 1 only where the street is feasible for the stay's duration, and a commuter activity without a feasible street
-     contributes an off-street share of 1. Part B implements it; the targets and universes do not change.
+     contributes an off-street share of 1. Part B implements it (Task B5, the calibration prices every stay through the
+     production code); the targets and universes do not change. A stay with NO feasible option at all contributes an
+     off-street share of 0 (the production pricing gives it no option share; no share of 1 is invented), counted and reported
+     as a rate per universe (data record `parking_garage_decay_calibration_2026`).
 2. **Price in the option choice (spec A2, ASSUMPTION G1-d; owner item 5).** The weight of an option is
    `w_i = exp(-d_i / lambda - beta * c_i / 100)` for every option including the street (d_i the distance in metres, 0 for the
    street; c_i the option's cost in cents for THIS stay: duration, fee window, products, EV exemption, feasibility; lambda the
@@ -88,13 +91,14 @@ shared golden file.
    - **All option weights underflow (review minor).** A stay whose weights all underflow to 0 raises a named
      `ValueError` in Python and the same refusal in Java; real tariffs cannot reach it (the street always carries a finite
      price), and v2 had the same hole for distances alone.
-   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 (the values are stated there)
-     were fitted WITHOUT the price term, on the price-independent weights. With beta > 0 the weights differ, so the garage shares
-     the lengths reproduce differ too: lambda and lambda_c are refitted in Part B (B5) with beta fixed before any production
-     run, and this record's Part B section will state the new values. Until then the configured values are those of v2.
-     The preparation logs a warning whenever beta > 0 and a decay length > 0 (`matsim.simulation.prepare`), and the
-     configuration comments, the README and the calibration record say that the lengths were fitted without the price term
-     (beta 0) and are stale until the recalibration of Part B.
+   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 were fitted WITHOUT the price
+     term, on the price-independent weights, so with beta > 0 the garage shares they reproduced differed. They were
+     recalibrated with the price term (beta 0.310998, fixed during the calibration) on 2026-10-14 in Part B (B5), with every
+     stay priced and weighted by the production code (feasibility of decision 1, price term of this decision), on the final
+     option set; see the calibration record `parking_garage_decay_calibration_2026` for the values, the superseded v2 values,
+     the sensitivities (large-lot thresholds 30 and 100, beta 0) and the limitations. The preparation warns when a run's
+     coefficient differs from the one the committed lengths were calibrated with (`matsim.simulation.prepare`, the constant
+     `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`, pinned to the table by a test).
 3. **Parking cost factor (spec A3, ASSUMPTION CF; owner item 2).** The config key `parking_cost_utility_factor` (Java module
    parameter `costFactor` of `braunschweigParking`) multiplies the parking cost of a car trip before it is added to the car
    cost that enters the utility. Default 1.0, finite, in [0, 10] (ruling R-A-15: the spec's "finite, >= 0" gives the lower
@@ -207,13 +211,14 @@ shared golden file.
 - Scientific results change when the zones are on. Against ADR-0140 the prices change through (1) the feasibility rule
   (stays above a maximum stay leave the street; the rule acts wherever Part B's data states a maximum stay: the spec names
   Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg and Seesen, and a stay in Ia then no longer buys Ib's ticket), (2) the
-  price term (cheaper options carry more weight; the effect depends on lambda, which is refitted in Part B), (3) the EV
+  price term (cheaper options carry more weight; the effect depends on lambda, which was refitted in Part B, B5), (3) the EV
   exemption wherever a zone states one (which zones state one today: the validation note of the feature record
   `parking_cost_zones`), and (4) the cost
   factor, which at 1.0 changes nothing. How much the mode shares move is not established: no v3 run exists, so no direction
   or size is stated here.
-- The garage decay lengths of the configuration (ADR-0140 decision 14) were fitted without the price term and are refitted in
-  Part B (B5) before any production run; until then a run with beta > 0 uses lengths that were calibrated for other weights.
+- The garage decay lengths of the configuration (ADR-0140 decision 14) were fitted without the price term; they were
+  recalibrated with the price term (beta 0.310998) on 2026-10-14, see the calibration record
+  `parking_garage_decay_calibration_2026`. A calibration is no validation, and no v3 run exists.
 - The jar must be a v3 build: a jar without `ParkingOptionPriceBetaCheck` is refused before the run, and a v2 jar would refuse the
   schema-5 tariff model by its exact key sets. The Java package of the same branch must be in the jar.
 - The report v4 is read by v3 readers unchanged in its first seven columns; the compare script reads v1 to v4.

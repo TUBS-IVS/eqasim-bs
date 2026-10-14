@@ -210,8 +210,8 @@ validation:
     maximum stay of v2 (bs_zone_ia, bs_resident_stadthalle_132, pe_innenstadt, each with a long-stay product) and no EV
     exemption (the data of Part B, issue 436), so until Part B the committed data give the feasibility rule and the exemption no
     case to act on and v3 changes the prices through the option price term only (a garage maximum stay is not in the dataset
-    either). The decay lengths named above were fitted WITHOUT the price term and are to be refitted in Part B (B5) with the
-    coefficient fixed before any production run. Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
+    either). The decay lengths named above were recalibrated with the price term (beta 0.310998) in Part B (B5), on the
+    feasible, price-weighted option set of v3 (data record parking_garage_decay_calibration_2026). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:
   status: pending
