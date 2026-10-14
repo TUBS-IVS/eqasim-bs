@@ -61,9 +61,12 @@ Metrics (``universe`` identifiers are in the table; Ia and Ib are the two city-c
       table (``garage_share_*_work_education_*``) cannot separate them: their model side is labelled "all off-street options;
       free options included" and their note states the limitation. The calibration is exact, this run comparison is not, wherever
       free options lie within the maximum distance (the calibration table states how many, per universe). From CSV v4 on the
-      rows ``garage_share_ia_ib_work_education_paid_calls`` and ``garage_share_wolfsburg_work_education_paid_calls`` are EXACT:
-      ``sum(garage_probability_sum_paid) / (calls - sum(garage_probability_sum_free))`` over the PAID_* calls, labelled "paid
-      off-street options only; free options excluded"; the other four commuter and Wolfsburg rows keep free calls in the
+      rows ``garage_share_ia_ib_work_education_paid_calls`` and ``garage_share_wolfsburg_work_education_paid_calls`` are a
+      pooled paid-only ratio: ``sum(garage_probability_sum_paid) / (calls - sum(garage_probability_sum_free))`` over the PAID_*
+      calls, labelled "paid off-street options only; free options excluded". The calibration averages per-stay shares, this row
+      pools the probabilities over the stays, and the two are equal only when no free option is in range of any stay. A universe
+      whose calls all lie on free options has no paying user: the row is empty with that reason. The other four commuter and
+      Wolfsburg rows keep free calls in the
       denominator and stay orientation rows with the old label. The delta of the two paid_calls rows between a v4 arm and an older
       one is not computed (two different measures). The visitor row (``garage_share_ia_ib_other_purposes``) is
       payment-inclusive on both sides, like the E5 target, in every version.
@@ -200,6 +203,9 @@ POOLING_NOTE = ("pooling does not change the pre-equilibrium status of early ite
 NO_REPORT_NOTE = "no parking outcome report for this arm (it prices no zones); the metric needs the outcomes of the Java module"
 V2_REPORT_NOTE = "the report is CSV v2 and has no garage columns (the run predates CSV v3), so no garage figure is available"
 EMPTY_UNIVERSE_NOTE = "No pricing call of this universe in this arm, so there is no model value."
+#: The paid-only share has a denominator (calls - free garage probability) that is 0 when every call's probability lies on free
+#: options: calls exist, but no paying user, so the share is undefined (not an empty universe).
+NO_PAYING_USER_NOTE = "no paying user: every call's probability lies on free options"
 RESIDENT_CAVEAT = ("SrV asks Braunschweig residents about their usual place, the model counts calls at all destinations: "
                    "a comparison, not a validation")
 #: Spec Amendment I6: the label of the model side of the commuter and Wolfsburg garage rows. The outcome report has no
@@ -208,17 +214,18 @@ RESIDENT_CAVEAT = ("SrV asks Braunschweig residents about their usual place, the
 FREE_OPTIONS_INCLUDED_LABEL = "all off-street options; free options included"
 PAID_ONLY_LABEL = "paid off-street options only; free options excluded"
 V4_PAID_ONLY_NOTE = (
-    f"Model side: {PAID_ONLY_LABEL}, exact (outcome report v4): sum(garage_probability_sum_paid) / (pricing calls - "
-    "sum(garage_probability_sum_free)) over the PAID_* calls of the universe. Per stay the street and the paid garage options "
-    "carry the probability 1 - free, so this is the paid-only share of the calibration of lambda_c and of the Wolfsburg check "
-    "(spec Amendment I6: a free option is a free parker in SrV terms and leaves numerator and denominator) pooled over the "
-    "stays, without the limitation of the v3 report. A stay priced NO_FEASIBLE_OPTION counts with the street. Remaining "
-    "differences to the SrV universe are those of every row of this table: calls instead of residents, destinations "
-    "instead of usual places")
+    f"Model side: {PAID_ONLY_LABEL}: a pooled paid-only ratio computed from the paid/free split of outcome report v4, "
+    "sum(garage_probability_sum_paid) / (pricing calls - sum(garage_probability_sum_free)) over the PAID_* calls of the "
+    "universe, without the limitation of the v3 report (a free option is a free parker in SrV terms and leaves numerator and "
+    "denominator, spec Amendment I6). Per stay the street and the paid garage options carry the probability 1 - free. "
+    "Difference to the calibration: calibrate_garage_decay.py averages per-stay shares, this row pools the probabilities over "
+    "the stays, and the two are equal only when no free option is in range of any stay of the universe. A stay priced "
+    "NO_FEASIBLE_OPTION counts with the street. Remaining differences to the SrV universe are those of every row of this "
+    "table: calls instead of residents, destinations instead of usual places")
 V4_ORIENTATION_NOTE = (
     f"Model side: {FREE_OPTIONS_INCLUDED_LABEL}: this row keeps the calls of the free outcomes in the denominator and counts "
     "every off-street option (garage_probability_sum), so it is an orientation row; the like-for-like paid-only quantity of "
-    "the reference is the row with the suffix paid_calls, exact from garage_probability_sum_paid (outcome report v4)")
+    "the reference is the row with the suffix paid_calls, computed from garage_probability_sum_paid (outcome report v4)")
 V4_MISSING_NOTE = ("the report is CSV v{version} and has no outcome report v4 columns (garage_probability_sum_paid and "
                    "_free, street_infeasible_count, no_feasible_option_count, expected_cost_cents_sum, ev_exempt_count), so "
                    "no figure is available; rerun the arm with the Java parking module of spec v3")
@@ -489,6 +496,7 @@ class MetricSpec(NamedTuple):
     compute: Callable[[pd.DataFrame], "float | None"]
     size: "Callable[[pd.DataFrame], int] | None" = None   # the universe size (pricing calls) of the row
     needs_v4_columns: bool = False   # the metric needs the six columns of outcome report v4
+    undefined_note: "str | None" = None   # the reason of a None value although the universe has calls (else: no call)
 
 
 def _ratio(numerator, denominator):
@@ -533,22 +541,26 @@ def _paid_specs(references: References) -> list[MetricSpec]:
 
 
 def paid_only_garage_share(frame: pd.DataFrame, mask) -> "float | None":
-    """The EXACT paid-only expected garage share of the calls of ``mask`` (outcome report v4):
-    ``sum(garage_probability_sum_paid) / (sum(count) - sum(garage_probability_sum_free))``, None for an empty selection.
+    """The pooled paid-only expected garage share of the calls of ``mask`` (outcome report v4):
+    ``sum(garage_probability_sum_paid) / (sum(count) - sum(garage_probability_sum_free))``, None for an empty selection and
+    for a denominator at or below ``GARAGE_SPLIT_TOLERANCE`` (no paying user: every call's probability lies on free options,
+    where the difference of two rounded sums is noise, not a share).
 
     Per stay the street and the paid garage options carry the probability 1 - free garage probability (the street weight is
     0 when the street was no option, then the garage probabilities sum to 1), so the denominator is the sum of the paid
     options and the street over the stays: the paid-only share of the calibration of lambda_c (a free option leaves numerator
     and denominator, spec Amendment I6) pooled over the stays. Needs a v4 report."""
-    free = frame.loc[mask, "garage_probability_sum_free"].sum()
-    return _ratio(frame.loc[mask, "garage_probability_sum_paid"].sum(), _calls(frame, mask) - free)
+    denominator = _calls(frame, mask) - frame.loc[mask, "garage_probability_sum_free"].sum()
+    if denominator <= GARAGE_SPLIT_TOLERANCE:
+        return None
+    return _ratio(frame.loc[mask, "garage_probability_sum_paid"].sum(), denominator)
 
 
 def _garage_specs(references: References, report_version: int = LATEST_REPORT_VERSION) -> list[MetricSpec]:
-    """The garage metrics. With ``report_version`` 4 the rows ``*_paid_calls`` are the exact paid-only share (outcome report
+    """The garage metrics. With ``report_version`` 4 the rows ``*_paid_calls`` are the pooled paid-only share (outcome report
     v4) and the other commuter and Wolfsburg rows are labelled orientation rows; with an older version every commuter and
     Wolfsburg row counts all off-street options and carries the limitation of the missing paid/free split."""
-    exact = report_version >= 4
+    has_paid_split = report_version >= 4
     target, commuter = references.garage_target, references.commuter_garage
     wolfsburg = references.commuter_garage_wolfsburg
     target_source = (f"{target.table} rows {target.numerator_name} / ({target.numerator_name} + {target.other_name})")
@@ -598,14 +610,15 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
     def model_side_note(base, kind):
         """``base`` plus the model-side sentence of the row: v3 and older reports cannot split paid from free options, so
         every commuter and Wolfsburg row counts all off-street options (the limitation of spec Amendment I6); a v4 report
-        can, so the ``paid`` rows are exact and the rows that keep free calls in the denominator are orientation rows."""
-        if not exact:
+        can, so the ``paid`` rows are pooled paid-only ratios and the rows that keep free calls in the denominator are
+        orientation rows."""
+        if not has_paid_split:
             side = FREE_OPTIONS_LIMITATION
         else:
             side = V4_PAID_ONLY_NOTE if kind == "paid" else V4_ORIENTATION_NOTE
         return f"{base}{side}. {RESIDENT_CAVEAT}"
 
-    paid_garage_share = paid_only_garage_share if exact else expected_garage_share
+    paid_garage_share = paid_only_garage_share if has_paid_split else expected_garage_share
     commuter_orientation, commuter_paid = model_side_note(commuter_base, "orientation"), model_side_note(commuter_base, "paid")
     wolfsburg_orientation = model_side_note(wolfsburg_base, "orientation")
     wolfsburg_paid = model_side_note(wolfsburg_base, "paid")
@@ -613,6 +626,7 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
     removes_employer_free = (" This row removes the EMPLOYER_FREE calls (the employer-lot users) from the denominator, the "
                              "closer universe to the street and garage users of the reference.")
     counts_payers = " This row counts the PAID_* calls only (the payers): the universe of the reference."
+    paid_undefined_note = NO_PAYING_USER_NOTE if has_paid_split else None
     return [
         MetricSpec("garage_share_ia_ib_other_purposes", SHARE_UNIT, "pricing_calls_ia_ib_other_purposes", target.value,
                    target_source, garage_note, True, lambda frame: expected_garage_share(frame, other_purposes(frame)),
@@ -642,7 +656,8 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
                    commuter.value, commuter_source,
                    commuter_paid + counts_payers, True,
                    lambda frame: paid_garage_share(frame, paid_calls(frame, commuters(frame))),
-                   lambda frame: _calls(frame, paid_calls(frame, commuters(frame)))),
+                   lambda frame: _calls(frame, paid_calls(frame, commuters(frame))),
+                   undefined_note=paid_undefined_note),
         MetricSpec("garage_share_wolfsburg_work_education_all_calls", SHARE_UNIT, "pricing_calls_wolfsburg_work_education",
                    wolfsburg.value, wolfsburg_source,
                    wolfsburg_orientation + keeps_employer_free, True,
@@ -657,7 +672,8 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
                    wolfsburg.value, wolfsburg_source,
                    wolfsburg_paid + counts_payers, True,
                    lambda frame: paid_garage_share(frame, paid_calls(frame, wolfsburg_commuters(frame))),
-                   lambda frame: _calls(frame, paid_calls(frame, wolfsburg_commuters(frame)))),
+                   lambda frame: _calls(frame, paid_calls(frame, wolfsburg_commuters(frame))),
+                   undefined_note=paid_undefined_note),
     ]
 
 
@@ -795,7 +811,7 @@ def _v4_specs(city_ids) -> list[MetricSpec]:
 def outcome_specs(references: References, zone_classes: pd.Series, city_ids=CITY_CENTER_ZONE_IDS,
                   report_version: int = LATEST_REPORT_VERSION) -> list[MetricSpec]:
     """Every metric computed from an outcome report, in the order of the table. ``report_version`` selects the measure of the
-    commuter and Wolfsburg garage rows (exact paid-only from v4, else all off-street options); the rows of the v4 columns are
+    commuter and Wolfsburg garage rows (pooled paid-only from v4, else all off-street options); the rows of the v4 columns are
     in the list for every version (their value is empty with the reason for an older report), so the table stays rectangular."""
     return [*_paid_specs(references), *_garage_specs(references, report_version), *_coverage_specs(city_ids),
             *_class_specs(references, zone_classes), *_v4_specs(city_ids)]
@@ -842,11 +858,20 @@ def outcome_rows(arm: str, specs: list[MetricSpec], frame: "pd.DataFrame | None"
             rows.append(_row(arm, spec, None, f"{prefix}{V4_MISSING_NOTE.format(version=version)}. {spec.note}", size))
             continue
         value = spec.compute(frame)
-        note = spec.note if value is not None else f"{EMPTY_UNIVERSE_NOTE} {spec.note}"
+        # A None value has one of two reasons: no call in the universe, or calls without a defined share (spec.undefined_note)
+        undefined = value is None and spec.undefined_note is not None and size is not None and size > 0
+        if value is not None:
+            note = spec.note
+        elif undefined:
+            note = f"{spec.undefined_note}. {spec.note}"
+        else:
+            note = f"{EMPTY_UNIVERSE_NOTE} {spec.note}"
         if inert and spec.needs_garage_columns:
             note = f"{GARAGE_INERT_NOTE}. {note}"
         rows.append(_row(arm, spec, value, f"{prefix}{note}", size))
-        if value is None:
+        if undefined:
+            log.warning("[parking-compare] %s: %s in the universe of %s", arm, spec.undefined_note, spec.name)
+        elif value is None:
             log.warning("[parking-compare] %s: no pricing call in the universe of %s", arm, spec.name)
     return rows
 
@@ -1013,8 +1038,8 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
     return Comparison(table, arm_deltas(table, labels, report_versions), provenance)
 
 
-#: Metrics whose MEASURE depends on the report version: from v4 on the commuter and Wolfsburg ``paid_calls`` rows are the exact
-#: paid-only share, before they count every off-street option (free options included). A delta between a v4 arm and an older
+#: Metrics whose MEASURE depends on the report version: from v4 on the commuter and Wolfsburg ``paid_calls`` rows are the
+#: pooled paid-only share, before they count every off-street option (free options included). A delta between a v4 arm and an older
 #: one would compare two different quantities, so it is not computed.
 VERSION_DEPENDENT_METRICS = ("garage_share_ia_ib_work_education_paid_calls", "garage_share_wolfsburg_work_education_paid_calls")
 
@@ -1037,8 +1062,9 @@ def arm_deltas(table: pd.DataFrame, labels, report_versions=None) -> pd.DataFram
                 if (metric in VERSION_DEPENDENT_METRICS and arm in report_versions and baseline in report_versions
                         and (report_versions[arm] >= 4) != (report_versions[baseline] >= 4)):
                     log.warning("[parking-compare] arms %s (report v%d) and %s (report v%d) have different report versions: the "
-                                "delta of %s is not computed because the paid-only measure differs (exact from v4, free options "
-                                "included before)", arm, report_versions[arm], baseline, report_versions[baseline], metric)
+                                "delta of %s is not computed because the paid-only measure differs (pooled paid-only from v4, "
+                                "free options included before)", arm, report_versions[arm], baseline,
+                                report_versions[baseline], metric)
                     continue
                 rows.append({"arm": arm, "baseline_arm": baseline, "metric": metric,
                              "universe": indexed.loc[(arm, metric), "universe"],

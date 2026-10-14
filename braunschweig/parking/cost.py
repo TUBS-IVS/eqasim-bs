@@ -1068,10 +1068,10 @@ class GarageStayPrice(NamedTuple):
     """Result of ``parking_cost_with_garages_detail``: the price in cents, the outcome, the sum of the garage
     probabilities (0.0 when no garage acted) and the expected cost before rounding (None when no expectation was formed).
 
-    Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the EV exemption, the street or
-    long-stay product or the zone commuter product could serve it (False only where the maximum stay removed all of them; a stay decided before the
-    options act, by an early rule or on a campus, reports True; a stay with the options off for its purpose reports
-    the same value as with them on); ``feasible_option_ids`` are the ids of the garage options
+    Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the EV exemption, the street
+    or long-stay product or the zone commuter product could serve it (False only where the maximum stay removed all of
+    them; a stay decided before the options act, by an early rule or on a campus, reports True; a stay with the options
+    off for its purpose reports the same value as with them on); ``feasible_option_ids`` are the ids of the garage options
     that admit the stay (ascending, empty when none acted).
 
     Spec v3 A2: ``street_weight`` and ``option_weights`` are the UNNORMALISED weights ``option_weight`` gave the street and

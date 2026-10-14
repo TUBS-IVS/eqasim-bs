@@ -162,7 +162,9 @@ def test_a_v2_jar_with_the_garage_options_but_without_the_option_price_check_rai
     with pytest.raises(RuntimeError) as error:
         runtime_checks.require_parking_package(jar)
     message = str(error.value)
-    for part in (str(jar), PRICE_BETA_CHECK_CLASS_ENTRY, "schema 5", "v3", "braunschweigParking", "eqasim_source_path"):
+    for part in (str(jar), PRICE_BETA_CHECK_CLASS_ENTRY, "predates the v3 mechanics", "no price coefficient check",
+                 "possibly no schema-5 reading, outcome report v4 or cost factor", "braunschweigParking",
+                 "eqasim_source_path"):
         assert part in message, (part, message)
     assert PARKING_CLASS_ENTRY not in message and GARAGE_MODEL_CLASS_ENTRY not in message
 

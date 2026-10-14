@@ -867,7 +867,7 @@ def test_a_v4_report_with_a_removed_column_is_refused_as_an_unknown_header(cmp, 
         cmp.read_parking_outcomes(path)
 
 
-def test_the_paid_only_commuter_share_is_exact_from_the_v4_paid_probability(cmp, data, tmp_path):
+def test_the_paid_only_commuter_share_is_the_pooled_ratio_of_the_v4_paid_probability(cmp, data, tmp_path):
     table = compare_v4(cmp, data, tmp_path).table
     # PAID_* work and education calls in Ia and Ib: Ia work PAID_EXPECTED 20 (paid 3.0, free 1.0), PAID_COMMUTER 10, Ib education
     # PAID_LONG_STAY 10 and Ib work NO_FEASIBLE_OPTION 2 -> 42 calls. Paid-only share = sum(paid) / sum(paid options + street)
@@ -876,7 +876,12 @@ def test_the_paid_only_commuter_share_is_exact_from_the_v4_paid_probability(cmp,
     assert paid["model"] == pytest.approx(3.0 / 41, abs=1e-6) and paid["universe_size"] == 42
     assert paid["reference"] == pytest.approx(0.1 / 0.15, abs=1e-12)
     assert cmp.PAID_ONLY_LABEL in paid["universe_note"] and cmp.FREE_OPTIONS_INCLUDED_LABEL not in paid["universe_note"]
-    assert "exact" in paid["universe_note"] and "garage_probability_sum_paid" in paid["universe_note"]
+    assert "garage_probability_sum_paid" in paid["universe_note"]
+    # the row is a pooled ratio, no exact image of the calibration, which averages per-stay shares: say so, say when they agree
+    for needle in ("pooled paid-only ratio", "calibrate_garage_decay.py averages per-stay shares",
+                   "equal only when no free option is in range of any stay"):
+        assert needle in paid["universe_note"], needle
+    assert "exact" not in paid["universe_note"].lower().replace("exactly", "")
     # the same stays in a v3 report: the all-options share with the free options in, 4.0 / 42, labelled as before
     old = compare_v4(cmp, data, tmp_path, name="v3", extras=None, version=3).table
     legacy = row(old, "v3", "garage_share_ia_ib_work_education_paid_calls")
@@ -885,7 +890,7 @@ def test_the_paid_only_commuter_share_is_exact_from_the_v4_paid_probability(cmp,
     assert "no paid/free split" in legacy["universe_note"]
 
 
-def test_the_wolfsburg_paid_only_share_is_exact_too_and_the_orientation_rows_keep_their_label(cmp, data, tmp_path):
+def test_the_wolfsburg_paid_only_share_is_a_pooled_ratio_too_and_the_orientation_rows_keep_their_label(cmp, data, tmp_path):
     extras = {**V4_MECHANICS_EXTRAS, ("PAID_EXPECTED", "wob_tarifzone_1", "work"): {"paid": 4.0, "free": 2.0}}
     tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
     lines = tariffs_path.read_text(encoding="utf-8").splitlines()
@@ -904,6 +909,39 @@ def test_the_wolfsburg_paid_only_share_is_exact_too_and_the_orientation_rows_kee
         assert cmp.FREE_OPTIONS_INCLUDED_LABEL in note and cmp.PAID_ONLY_LABEL not in note, name
     # the visitor row is payment-inclusive on both sides in every version
     assert row(table, "v4", "garage_share_ia_ib_other_purposes")["model"] == pytest.approx(21 / 116, abs=1e-6)
+
+
+def test_a_paid_only_universe_without_a_paying_user_is_undefined_with_its_own_reason(cmp, data, tmp_path, caplog):
+    # 20 PAID_EXPECTED work calls in Ia whose whole garage probability lies on free options: calls exist, the denominator
+    # calls - sum(free) is 0, so there is no paying user and the share is undefined, which is not an empty universe.
+    rows = [("PAID_EXPECTED", "bs_zone_ia", "work", 20, 20.0, 20), ("NO_ZONE", "", "shop", 5, 0.0, 0)]
+    name = "garage_share_ia_ib_work_education_paid_calls"
+    with caplog.at_level("WARNING"):
+        table = compare_v4(cmp, data, tmp_path, rows=rows,
+                           extras={("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.0, "free": 20.0}}).table
+    entry = row(table, "v4", name)
+    assert math.isnan(entry["model"]) and entry["universe_size"] == 20
+    assert cmp.NO_PAYING_USER_NOTE == "no paying user: every call's probability lies on free options"
+    assert cmp.NO_PAYING_USER_NOTE in entry["universe_note"] and "No pricing call" not in entry["universe_note"]
+    assert any(cmp.NO_PAYING_USER_NOTE in message and name in message for message in caplog.messages)
+    assert not any("no pricing call in the universe of " + name in message for message in caplog.messages)
+    # the rounding case: the free part is 1e-6 below the call count, the denominator is the difference of two rounded sums and
+    # not above the tolerance, so it is noise and not a share
+    rounded = compare_v4(cmp, data, tmp_path, name="rounded", rows=rows, extras={
+        ("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.000001, "free": 19.999999}}).table
+    near = row(rounded, "rounded", name)
+    assert math.isnan(near["model"]) and cmp.NO_PAYING_USER_NOTE in near["universe_note"]
+    # just above the tolerance the share is defined again: paid 0.01 over a denominator of 0.01
+    above = compare_v4(cmp, data, tmp_path, name="above", rows=rows, extras={
+        ("PAID_EXPECTED", "bs_zone_ia", "work"): {"paid": 0.01, "free": 19.99}}).table
+    assert row(above, "above", name)["model"] == pytest.approx(1.0)
+    assert cmp.NO_PAYING_USER_NOTE not in row(above, "above", name)["universe_note"]
+    # a universe without any call keeps the empty-universe reason
+    empty = row(table, "v4", "garage_share_wolfsburg_work_education_paid_calls")
+    assert "No pricing call of this universe" in empty["universe_note"] and cmp.NO_PAYING_USER_NOTE not in empty["universe_note"]
+    # an older report has no paid/free split and never takes this reason
+    old = compare_v4(cmp, data, tmp_path, name="v3", rows=rows, extras=None, version=3).table
+    assert cmp.NO_PAYING_USER_NOTE not in row(old, "v3", name)["universe_note"]
 
 
 def test_the_paid_only_share_of_an_empty_universe_is_a_row_without_a_value(cmp, data, tmp_path):

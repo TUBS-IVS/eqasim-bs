@@ -12,8 +12,9 @@ calls the three functions below at the point of use:
    nothing else, so the OFF path runs MATSim exactly as before.
 2. :func:`require_parking_package`, before the run: the jar contains the classes of the Java ``ParkingConfigGroup``,
    ``GarageOptionModel`` (the garage options of the tariff model) and ``ParkingOptionPriceBetaCheck`` (the startup check of
-   the option price coefficient, which exists only in a jar of the v3 mechanics; the pipeline always writes tariff model
-   schema 5, whose coefficient that check compares with the mode choice cost coefficient).
+   the option price coefficient, which exists only in a jar of the v3 mechanics). A jar without it predates the v3
+   mechanics: it has no price coefficient check, and possibly no schema-5 reading (the pipeline always writes tariff model
+   schema 5), no outcome report v4 and no parking cost factor.
 3. :func:`require_parking_outcomes`, after the run: the last iteration that ran wrote the outcome report of the
    Java ``ParkingOutcomeReportListener``, which the parking module writes at the end of EVERY iteration, so its
    absence proves that the module did not price parking.
@@ -45,8 +46,9 @@ PARKING_CONFIG_GROUP_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingConfi
 GARAGE_OPTION_MODEL_CLASS_ENTRY = "org/eqasim/braunschweig/parking/GarageOptionModel.class"
 #: Jar entry of ``org.eqasim.braunschweig.parking.ParkingOptionPriceBetaCheck`` (spec v3 A2/A7): the startup check that the
 #: tariff model's option price coefficient equals the magnitude of the mode choice cost coefficient. It exists only in a jar
-#: of the v3 mechanics, so a jar of the v2 mechanics (which has the two classes above but cannot read the schema-5 tariff
-#: model with the option price coefficient) is named before the run instead of failing inside MATSim.
+#: of the v3 mechanics, so a jar that has the two classes above but not this one predates the v3 mechanics (no price
+#: coefficient check, and possibly no schema-5 reading, outcome report v4 or cost factor) and is named before the run
+#: instead of failing inside MATSim.
 OPTION_PRICE_BETA_CHECK_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingOptionPriceBetaCheck.class"
 #: The classes a jar must contain for the run: the parking package, its garage option model and the option price check.
 REQUIRED_PARKING_CLASS_ENTRIES = (PARKING_CONFIG_GROUP_CLASS_ENTRY, GARAGE_OPTION_MODEL_CLASS_ENTRY,
@@ -103,12 +105,11 @@ def require_parking_package(jar_path) -> None:
             f"[parking] the prepared config enables the MATSim config module {PARKING_MODULE}, but the jar {path} "
             f"does not contain {', '.join(missing)}: without the package org.eqasim.braunschweig.parking "
             "MATSim reads the module as an untyped config group and the run would price no parking at all; without "
-            "GarageOptionModel the jar predates the garage options, and without ParkingOptionPriceBetaCheck it is a jar "
-            "of the v2 mechanics that cannot read the tariff model schema 5 the pipeline always writes (it carries the "
-            "option price coefficient that the v3 jar checks against the mode choice cost coefficient). Check out an "
-            "eqasim-java-bs revision of the v3 mechanics (all of these classes) in the tree eqasim_source_path points "
-            "to (the jar is rebuilt from it on the next run), or supply a jar built from such a revision as "
-            "eqasim_path.")
+            "GarageOptionModel the jar predates the garage options, and without ParkingOptionPriceBetaCheck the jar "
+            "predates the v3 mechanics: no price coefficient check, and possibly no schema-5 reading, outcome report v4 "
+            "or cost factor (the pipeline always writes tariff model schema 5). Check out an eqasim-java-bs revision of "
+            "the v3 mechanics (all of these classes) in the tree eqasim_source_path points to (the jar is rebuilt from "
+            "it on the next run), or supply a jar built from such a revision as eqasim_path.")
 
 
 def _last_iteration(iters_directory: Path) -> int:
