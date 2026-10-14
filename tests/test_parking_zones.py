@@ -1293,11 +1293,11 @@ def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys,
     seen = []
     original = cli.tariff_export.tariff_row_to_zone
 
-    def contract(row):
+    def contract(row, *, snapshot_date):
         seen.append(row["zone_id"])
         if row["zone_id"] == "bs_zone_ia":
             raise ValueError("rejected by the test contract")
-        return original(row)
+        return original(row, snapshot_date=snapshot_date)
 
     monkeypatch.setattr(cli.tariff_export, "tariff_row_to_zone", contract)
     assert cli.main(["--data-path", str(tmp_path)]) == 1

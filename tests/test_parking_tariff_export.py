@@ -340,7 +340,7 @@ def test_duplicate_zone_ids_missing_columns_and_empty_tables_are_rejected(table,
 
 def test_row_conversion_reads_text_cells_as_a_csv_reader_delivers_them(table):
     zone = te.tariff_row_to_zone(_row(table, "fx_sz", hourly_rate_eur="1.00", billing_unit_min="6",
-                                      daily_cap_eur="", resident_exempt="FALSE"))
+                                      daily_cap_eur="", resident_exempt="FALSE"), snapshot_date=None)
     assert isinstance(zone, ZoneTariff)
     assert (zone.hourly_rate_cents, zone.billing_unit_min, zone.daily_cap_cents, zone.resident_exempt) == (
         100, 6, None, False)
@@ -349,17 +349,17 @@ def test_row_conversion_reads_text_cells_as_a_csv_reader_delivers_them(table):
 def test_the_permit_cell_is_true_false_or_empty_and_empty_takes_the_default_of_the_zone_type(table):
     street, campus = _row(table, "fx_bs_ia"), _row(table, "fx_campus")
     for empty in (None, "", "  ", pd.NA, float("nan")):
-        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: empty}).resident_permits_valid is True
-        assert te.tariff_row_to_zone({**campus, PERMITS_COLUMN: empty}).resident_permits_valid is False
+        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: empty}, snapshot_date=None).resident_permits_valid is True
+        assert te.tariff_row_to_zone({**campus, PERMITS_COLUMN: empty}, snapshot_date=None).resident_permits_valid is False
     for stated in (False, "false", "FALSE", " False "):
-        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: stated}).resident_permits_valid is False
-    assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: "TRUE"}).resident_permits_valid is True
+        assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: stated}, snapshot_date=None).resident_permits_valid is False
+    assert te.tariff_row_to_zone({**street, PERMITS_COLUMN: "TRUE"}, snapshot_date=None).resident_permits_valid is True
     # a row of a table that predates the column is a row with an empty cell
     older = {key: value for key, value in street.items() if key != PERMITS_COLUMN}
-    assert te.tariff_row_to_zone(older) == te.tariff_row_to_zone(street)
+    assert te.tariff_row_to_zone(older, snapshot_date=None) == te.tariff_row_to_zone(street, snapshot_date=None)
     # a campus cannot honour permits: the row is refused with the column named
     with pytest.raises(ValueError, match=r"'fx_campus'.*resident_permits_valid must be false for zone_type 'campus'"):
-        te.tariff_row_to_zone({**campus, PERMITS_COLUMN: "true"})
+        te.tariff_row_to_zone({**campus, PERMITS_COLUMN: "true"}, snapshot_date=None)
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -374,7 +374,7 @@ def test_the_permit_cell_is_true_false_or_empty_and_empty_takes_the_default_of_t
 ])
 def test_row_conversion_rejects_cells_it_cannot_convert_exactly(table, changes, message):
     with pytest.raises(ValueError, match=message):
-        te.tariff_row_to_zone(_row(table, "fx_bs_ia", **changes))
+        te.tariff_row_to_zone(_row(table, "fx_bs_ia", **changes), snapshot_date=None)
 
 
 @pytest.mark.parametrize("prefix, zone_id", [("", "fx_bs_ia"), ("garage_", "fx_bs_ib_v2")], ids=["street", "garage"])
@@ -384,7 +384,7 @@ def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, prefix, z
     # The table holds decimal hours; the message must speak in those columns, not in the derived seconds.
     start, end = f"{prefix}fee_start_h", f"{prefix}fee_end_h"
     with pytest.raises(ValueError) as error:
-        te.tariff_row_to_zone(_row(table, zone_id, **{start: fee_start_h, end: fee_end_h}))
+        te.tariff_row_to_zone(_row(table, zone_id, **{start: fee_start_h, end: fee_end_h}), snapshot_date=None)
     message = str(error.value)
     assert message.startswith(f"tariff row {zone_id!r}: ")
     assert f"{start} = {fee_start_h:g} h" in message and f"{end} = {fee_end_h:g} h" in message
@@ -404,7 +404,7 @@ def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, prefix, z
 ])
 def test_a_cell_the_zone_type_does_not_have_is_named_with_the_hint_to_leave_it_empty(table, zone_id, changes, column):
     with pytest.raises(ValueError) as error:
-        te.tariff_row_to_zone(_row(table, zone_id, **changes))
+        te.tariff_row_to_zone(_row(table, zone_id, **changes), snapshot_date=None)
     message = str(error.value)
     assert message.startswith(f"tariff row {zone_id!r}: {column} does not apply to zone_type ")
     assert "leave the cell empty" in message
@@ -413,8 +413,8 @@ def test_a_cell_the_zone_type_does_not_have_is_named_with_the_hint_to_leave_it_e
 def test_a_daily_cap_below_the_first_period_price_is_rejected_for_the_row(table):
     # fx_wob charges a first period of 1.10 EUR; a cap of 1.00 EUR contradicts it.
     with pytest.raises(ValueError, match=r"'fx_wob'.*daily_cap_cents 100 is below first_period_cents 110"):
-        te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.00))
-    assert te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.10)).daily_cap_cents == 110
+        te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.00), snapshot_date=None)
+    assert te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.10), snapshot_date=None).daily_cap_cents == 110
 
 
 def test_write_tariff_model_writes_sorted_keys_and_lf_line_endings(tmp_path, model):
@@ -831,7 +831,8 @@ def test_the_register_never_lists_the_withdrawn_assumption_p12_and_a_row_that_na
         model = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=frame)
     assert not any(text.startswith("ASSUMPTION P12:") for text in model["assumptions"])
     [message] = [record.getMessage() for record in caplog.records if "P12" in record.getMessage()]
-    assert "withdrawn" in message and "1 priced garage" in message and "not listed" in message
+    assert "withdrawn" in message and "1 priced garage" in message and "the it is" not in message
+    assert "it is not listed in the register of the model" in message
 
 
 def test_the_monthly_summary_counts_published_imputed_and_none_per_municipality(garage_frame):
@@ -936,18 +937,18 @@ def test_an_ev_validity_date_without_the_snapshot_date_is_a_structural_check_and
     # Without the snapshot date (the zones stage and the validation script write no model) the date is checked for its form but
     # not compared: the minutes stay as stated, also for a date that would be expired. build_tariff_model always passes its
     # date, so no model carries such a conversion (test_the_table_export_writes_ev_free_minutes_per_zone_...).
-    assert te.tariff_row_to_zone(_ev_row(table, "2026-12-31")).ev_free_minutes == 240
-    assert te.tariff_row_to_zone(_ev_row(table, "2020-01-01")).ev_free_minutes == 240
+    assert te.tariff_row_to_zone(_ev_row(table, "2026-12-31"), snapshot_date=None).ev_free_minutes == 240
+    assert te.tariff_row_to_zone(_ev_row(table, "2020-01-01"), snapshot_date=None).ev_free_minutes == 240
     for bad in ("31.12.2026", "2026-12-32", "2026-9-1", "soon", 20261231):
         with pytest.raises(ValueError, match="'fx_bs_ia': ev_rule_valid_until must be an ISO date YYYY-MM-DD"):
-            te.tariff_row_to_zone(_ev_row(table, bad))
+            te.tariff_row_to_zone(_ev_row(table, bad), snapshot_date=None)
     for bad in ("31.12.2026", "2026-12-32", "2026-9-1", "soon", 20261231):
         with pytest.raises(ValueError, match="'fx_bs_ia': ev_rule_valid_until must be an ISO date YYYY-MM-DD"):
             te.tariff_row_to_zone(_ev_row(table, bad), snapshot_date=SNAPSHOT_DATE)
     with pytest.raises(ValueError, match="'fx_bs_ia': ev_rule_valid_until .* needs ev_free_minutes"):
         te.tariff_row_to_zone(_ev_row(table, "2026-12-31", minutes=None), snapshot_date=SNAPSHOT_DATE)
     # without a validity date the snapshot date is not needed (the rule is open-ended)
-    assert te.tariff_row_to_zone(_ev_row(table, None)).ev_free_minutes == 240
+    assert te.tariff_row_to_zone(_ev_row(table, None), snapshot_date=None).ev_free_minutes == 240
 
 
 def test_the_table_export_writes_ev_free_minutes_per_zone_and_applies_the_snapshot_date(table, sources, caplog):
@@ -988,11 +989,11 @@ def test_the_fixture_table_exports_its_ev_rows_and_switches_the_expired_one_off(
 
 def test_the_ev_column_converts_into_the_tariff_field_and_a_campus_row_names_the_column(table):
     row = table.set_index("zone_id").loc["fx_bs_ia"].to_dict() | {"zone_id": "fx_bs_ia", "ev_free_minutes": 240}
-    assert te.tariff_row_to_zone(row).ev_free_minutes == 240
-    assert te.tariff_row_to_zone({**row, "ev_free_minutes": None}).ev_free_minutes is None
+    assert te.tariff_row_to_zone(row, snapshot_date=None).ev_free_minutes == 240
+    assert te.tariff_row_to_zone({**row, "ev_free_minutes": None}, snapshot_date=None).ev_free_minutes is None
     campus = table.set_index("zone_id").loc["fx_campus"].to_dict() | {"zone_id": "fx_campus", "ev_free_minutes": 240}
     with pytest.raises(ValueError, match="ev_free_minutes does not apply to zone_type 'campus'"):
-        te.tariff_row_to_zone(campus)
+        te.tariff_row_to_zone(campus, snapshot_date=None)
 
 
 # ------------------------------------------------------------- schema 5: option_price_beta_u_per_eur (spec v3 A2, R-A-7)
@@ -1090,3 +1091,13 @@ def test_the_committed_fixture_model_has_every_schema_5_key(model):
     assert sorted(committed) == sorted(model)
     assert all(sorted(entry) == GARAGE_KEYS for entry in committed["garages"])
     assert all("ev_free_minutes" in zone for zone in committed["zones"].values())
+
+
+def test_tariff_row_to_zone_requires_the_snapshot_date_so_an_expired_ev_rule_cannot_ship_by_omission(table):
+    # keyword-only and without a default: omitting it is a TypeError, the structural callers pass None explicitly
+    with pytest.raises(TypeError, match="snapshot_date"):
+        te.tariff_row_to_zone(_ev_row(table, "2020-01-01"))
+    with pytest.raises(TypeError):
+        te.tariff_row_to_zone(_ev_row(table, "2020-01-01"), SNAPSHOT_DATE)
+    assert te.tariff_row_to_zone(_ev_row(table, "2020-01-01"), snapshot_date=None).ev_free_minutes == 240
+    assert te.tariff_row_to_zone(_ev_row(table, "2020-01-01"), snapshot_date=SNAPSHOT_DATE).ev_free_minutes is None

@@ -1285,7 +1285,8 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
 
     ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
     ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m``, ``option_price_beta_u_per_eur`` or
-    distance, duplicate garage ids and option weights that all underflow to 0.0 (no street option carries weight 1 then). Pure
+    distance, duplicate garage ids and option weights that all underflow to 0.0 (no street option is present, or its weight
+    exp(-beta * c / 100) underflows too: with beta > 0 the street weight is no longer 1). Pure
     but for ``counters``.
     """
     detail = parking_cost_with_garages_detail(

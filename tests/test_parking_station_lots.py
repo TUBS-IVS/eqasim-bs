@@ -596,7 +596,7 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
         assert row["resident_permits_valid"] == False and row["resident_exempt"] == False, zone_id  # noqa: E712
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["first_period_eur"]) and pd.isna(row["long_stay_product_eur"]), zone_id
         assert row["commuter_day_eur"] == round(monthly / 21, 2) and row["notes"].isascii(), zone_id
-        assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}).commuter_day_cents == cents
+        assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}, snapshot_date=None).commuter_day_cents == cents
         for assumption in ("C-a", "F1", "G-a", "G-b", "R2-a", "P2"):
             assert f"ASSUMPTION {assumption}" in row["notes"], (zone_id, assumption)
     assert "Kiss&Ride" in tariffs.loc["bs_hbf_p1_nord", "notes"] and "evening tariff" in tariffs.loc["bs_hbf_p1_nord", "notes"]
@@ -604,7 +604,7 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
 
 def _station_tariff(zone_id: str) -> cost.ZoneTariff:
     row = _committed_tariffs().loc[zone_id].to_dict()
-    return tariff_row_to_zone({**row, "zone_id": zone_id})
+    return tariff_row_to_zone({**row, "zone_id": zone_id}, snapshot_date=None)
 
 
 def _stay(zone_id, hours, purpose):

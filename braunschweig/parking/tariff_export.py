@@ -261,10 +261,11 @@ ASSUMPTIONS_REGISTER = (
                "and is offered to work and education only",
                "Work/education stays in zones with commuter_day_eur and at garages with a monthly product",
                "commuter_day_eur presence; monthly product of the garage dataset"),
-    # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P12 of the
-    # dataset (their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``, the data record
-    # parking_garages_2026 is their source text; P13 follows P12 where a model uses an imputed monthly product and P14 follows
-    # them where a model lists a lot with an imputed tariff), P9 of the pricing code, and the choice model G1, G2 and G3.
+    # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P11 of the
+    # dataset (P12 is withdrawn and never listed; their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``,
+    # the data record parking_garages_2026 is their source text; since schema 5 each is listed only when a priced row names it,
+    # ``assumption_texts``; P13 follows the last of them where a model uses an imputed monthly product and P14 follows P13 where a
+    # model lists a lot with an imputed tariff, both before G1), P9 of the pricing code, and the choice model G1, G2 and G3.
     *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id] + _GARAGE_ASSUMPTION_ADDENDUM.get(assumption_id, ""),
                  _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
                  "garage dataset rows that name it (column assumptions of parking_garages_2026)")
@@ -538,7 +539,7 @@ def _ev_rule_in_force(row: Mapping, zone_id: str, ev_free_minutes, snapshot_date
     return None
 
 
-def tariff_row_to_zone(row: Mapping, *, snapshot_date: str | None = None) -> ZoneTariff:
+def tariff_row_to_zone(row: Mapping, *, snapshot_date: str | None) -> ZoneTariff:
     """Convert one tariff-table row (spec 5.3 columns; a dict or a pandas Series) into a ``ZoneTariff``.
 
     Euros become integer cents with ``int(round(eur * 100))`` (a value that is not a whole number of cents
@@ -554,8 +555,10 @@ def tariff_row_to_zone(row: Mapping, *, snapshot_date: str | None = None) -> Zon
     ``resident_exempt`` (true/false in any case) but may be empty or absent; ``ZoneTariff`` then resolves the default of
     the zone type (ASSUMPTION R2-a) and rejects true on a campus. Spec v3 A5: ``ev_free_minutes`` is kept only while its rule is
     in force on ``snapshot_date`` (the ISO date of the tariff state): ``ev_rule_valid_until`` empty or on or after it; an expired
-    rule becomes None and is logged (see :func:`_ev_rule_in_force`); without ``snapshot_date`` the validity date is checked for its
-    form only and the minutes stay as stated (a structural check of the stage, never the input of a model).
+    rule becomes None and is logged (see :func:`_ev_rule_in_force`). ``snapshot_date`` is keyword-only and REQUIRED (omitting it
+    is a ``TypeError``, so an expired rule cannot reach a model by omission); a caller that only validates structure (the zones
+    stage, the validation script, tests of other columns) passes ``snapshot_date=None`` explicitly: the validity date is then
+    checked for its form only and the minutes stay as stated, which must never be the input of a model.
     """
     missing = [column for column in REQUIRED_COLUMNS if column not in row]
     if missing:
@@ -950,7 +953,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
                     len(zones), ", ".join(family), garage_decay_m, garage_decay_commute_m)
     named_assumptions = garage_assumption_ids(garages)
     if "P12" in named_assumptions:
-        log.warning("[parking-garages] %d priced garage row(s) name the withdrawn ASSUMPTION P12 (spec Amendment I5a): the "
+        log.warning("[parking-garages] %d priced garage row(s) name the withdrawn ASSUMPTION P12 (spec Amendment I5a): "
                     "it is not listed in the register of the model; regenerate the garage dataset", garages_naming_assumption(
                         garages, "P12"))
     ev_zones = sorted(zone_id for zone_id, entry in zones.items() if entry["ev_free_minutes"] is not None)

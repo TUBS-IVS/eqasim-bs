@@ -1688,7 +1688,7 @@ def _zone_tariff(row: dict) -> cost.ZoneTariff:
     full = {column: float("nan") for column in te.REQUIRED_COLUMNS}
     full.update(zone_type="street_paid", resident_exempt=False)
     full.update({key: value for key, value in row.items() if key in te.TARIFF_COLUMNS})
-    return te.tariff_row_to_zone(full)
+    return te.tariff_row_to_zone(full, snapshot_date=None)
 
 
 def _lot_frame(rows) -> gpd.GeoDataFrame:

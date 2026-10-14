@@ -96,7 +96,7 @@ def check_tariff_model_rows(tariffs) -> None:
     problems = []
     for row in tariffs.to_dict(orient="records"):
         try:
-            tariff_export.tariff_row_to_zone(row)
+            tariff_export.tariff_row_to_zone(row, snapshot_date=None)
         except ValueError as error:
             problems.append(f"zone {row['zone_id']!r}: {error}")
     if problems:
@@ -107,7 +107,7 @@ def _print_resident_permits(tariffs) -> None:
     """One line on where rule R2 is off (ASSUMPTION R2-a): the rows that state ``resident_permits_valid`` false, and the
     campus zones whose default is false. Read from the ``ZoneTariff`` of each row, so the default of the zone type is
     the one the model carries."""
-    zones = [tariff_export.tariff_row_to_zone(row) for row in tariffs.to_dict(orient="records")]
+    zones = [tariff_export.tariff_row_to_zone(row, snapshot_date=None) for row in tariffs.to_dict(orient="records")]
     not_valid = [zone for zone in zones if not zone.resident_permits_valid]
     stated = sorted(zone.zone_id for zone in not_valid if zone.zone_type != "campus")
     campus = sum(1 for zone in not_valid if zone.zone_type == "campus")

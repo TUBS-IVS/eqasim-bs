@@ -31,7 +31,7 @@ CONFIG_NAME = f"{PREFIX}config.xml"
 JAR_RELATIVE_PATH = "eqasim-java/braunschweig/target/braunschweig-2.3.1.jar"
 #: Written out here independently of the implementation: the class the Java ParkingConfigGroup compiles to.
 PARKING_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingConfigGroup.class"
-#: The class of the garage option model: the Python pipeline always writes tariff model schema 4, so a jar without it cannot
+#: The class of the garage option model: the Python pipeline always writes tariff model schema 5, so a jar without it cannot
 #: read the tariff model (written out independently of the implementation).
 GARAGE_MODEL_CLASS_ENTRY = "org/eqasim/braunschweig/parking/GarageOptionModel.class"
 #: Another class of the braunschweig module, present in every jar the pipeline builds.
