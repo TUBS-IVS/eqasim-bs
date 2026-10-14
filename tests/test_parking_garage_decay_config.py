@@ -221,7 +221,7 @@ def test_the_three_configs_name_the_same_garage_dataset_and_decay():
     for name in ("popsim_mid", "popsim_open"):
         for key in ("parking_garages_path", "parking_garage_decay_m", "parking_garage_decay_commute_m",
                     "parking_garage_max_distance_m",
-                    "parking_garage_monthly_imputation"):
+                    "parking_garage_monthly_imputation", "parking_option_price_beta_u_per_eur"):
             assert _config(name)[key] == base[key], (name, key)
     assert base["parking_garages_path"] == "braunschweig/parking/parking_garages_2026.geojson"
 
@@ -245,3 +245,16 @@ def test_the_monthly_imputation_switch_is_on_in_every_config_and_matches_the_pre
 
     value = _config(name)["parking_garage_monthly_imputation"]
     assert value is True and prepare.PARKING_DEFAULTS["parking_garage_monthly_imputation"] is True
+
+
+@pytest.mark.parametrize("name", CONFIGS)
+def test_the_option_price_coefficient_is_the_mode_choice_magnitude_in_every_config_and_matches_the_prepare_default(name):
+    # spec v3 A2 (ASSUMPTION G1-d, ruling R-A-7): the key carries the MAGNITUDE of BraunschweigModeParameters.betaCost_u_MU
+    # (-0.310998 in eqasim-java-bs), one money coefficient for the choice between parking options, no income or distance
+    # term. It is a release value that the Java startup check of Task A7 compares with the mode choice (1e-9), so a config that
+    # drifts from it is a defect, not a sensitivity: the sensitivity arm is 0 (the weights of v2).
+    from braunschweig.matsim.simulation import prepare
+
+    value = _config(name)["parking_option_price_beta_u_per_eur"]
+    assert value == prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998
+    assert isinstance(value, float)

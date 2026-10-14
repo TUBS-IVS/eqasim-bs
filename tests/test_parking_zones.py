@@ -46,7 +46,8 @@ def test_fixture_tariffs_load_typed():
     assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus",
                                         "fx_frac", "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2",
                                         "fx_garage_window_v2", "fx_capped_street_v2", "fx_campus_tie_v2",
-                                        "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2"]
+                                        "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2", "fx_ia_nolong_v3",
+                                        "fx_ev_street_v3", "fx_ev_clip_v3", "fx_ev_expired_v3"]
     row = tariffs.set_index("zone_id").loc["fx_sz"]
     assert row["first_period_min"] == 60 and row["first_period_eur"] == pytest.approx(0.70)
     assert pd.isna(row["max_stay_min"])
@@ -67,7 +68,10 @@ def test_fixture_tariffs_load_typed():
     assert (v2["garage_hourly_rate_eur"], v2["garage_first_period_min"], v2["garage_fee_end_h"]) == (1.20, 60, 24.0)
     assert (v2["commuter_day_eur"], v2["search_time_min"]) == (3.76, 5)
     assert tariffs.set_index("zone_id").loc["fx_campus_v2", "search_time_min"] == 0
-    assert tariffs.loc[~tariffs["zone_id"].str.endswith("_v2"), list(pz.OPTIONAL_TARIFF_COLUMNS)].isna().all().all()
+    assert tariffs.loc[~tariffs["zone_id"].str.endswith(("_v2", "_v3")), list(pz.OPTIONAL_TARIFF_COLUMNS)].isna().all().all()
+    # the schema-6 rows (spec v3) carry no garage or commuter product, only the EV columns where they state an exemption
+    v3 = tariffs.loc[tariffs["zone_id"].str.endswith("_v3")]
+    assert v3[[column for column in pz.OPTIONAL_TARIFF_COLUMNS if column not in pz.EV_COLUMNS]].isna().all().all()
     # Spec amendment A6: a garage without a day cap (empty cell) is a valid garage, priced without a cap.
     uncapped = tariffs.set_index("zone_id").loc["fx_garage_window_v2"]
     assert pd.isna(uncapped["garage_daily_cap_eur"]) and uncapped[list(pz.GARAGE_CORE_COLUMNS)].notna().all()
@@ -100,9 +104,9 @@ def test_resident_permits_valid_is_an_optional_nullable_boolean_column(tmp_path)
 def test_resident_permits_valid_accepts_only_the_literals_true_false_or_empty(tmp_path):
     text = TARIFF_FIXTURE.read_text(encoding="utf-8")
     row = next(line for line in text.splitlines() if line.startswith("fx_bga_v2,"))
-    assert row.endswith(",false")
+    assert row.endswith(",false,,")       # the permit flag, then the two empty EV columns (spec v3 A5)
     path = tmp_path / "t.csv"
-    path.write_text(text.replace(row, row[:-len("false")] + "no"), encoding="utf-8")
+    path.write_text(text.replace(row, row[:-len("false,,")] + "no,,"), encoding="utf-8")
     with pytest.raises(ValueError, match=r"zone 'fx_bga_v2': resident_permits_valid = 'no'; use the literal 'true' or "
                                          r"'false', or leave the cell empty"):
         pz.load_tariffs(path)
@@ -349,7 +353,7 @@ def test_fixture_marker_can_be_rejected_for_committed_data():
 
 def test_fixture_zones_load_in_metric_crs():
     zones = pz.load_zone_polygons(ZONE_FIXTURE)
-    assert zones.crs.to_epsg() == 25832 and len(zones) == 18 and zones["zone_id"].is_unique
+    assert zones.crs.to_epsg() == 25832 and len(zones) == 22 and zones["zone_id"].is_unique
     for column in pz.ZONE_PROVENANCE_COLUMNS:
         assert zones[column].notna().all(), column
 
@@ -1301,11 +1305,11 @@ def test_validator_runs_the_tariff_model_contract_on_every_row(tmp_path, capsys,
     seen = []
     original = cli.tariff_export.tariff_row_to_zone
 
-    def contract(row):
+    def contract(row, *, snapshot_date):
         seen.append(row["zone_id"])
         if row["zone_id"] == "bs_zone_ia":
             raise ValueError("rejected by the test contract")
-        return original(row)
+        return original(row, snapshot_date=snapshot_date)
 
     monkeypatch.setattr(cli.tariff_export, "tariff_row_to_zone", contract)
     assert cli.main(["--data-path", str(tmp_path)]) == 1
@@ -1491,8 +1495,15 @@ def test_the_ev_columns_are_optional_and_a_table_without_them_reads_them_as_empt
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     assert "ev_free_minutes" in pz.OPTIONAL_TARIFF_COLUMNS and "ev_rule_valid_until" in pz.OPTIONAL_TARIFF_COLUMNS
     assert list(tariffs.columns) == list(pz.TARIFF_COLUMNS)
-    assert str(tariffs["ev_free_minutes"].dtype) == "Int64" and tariffs["ev_free_minutes"].isna().all()
-    assert tariffs["ev_rule_valid_until"].isna().all()
+    # the fixture states the exemption on its three EV rows only (golden X cases, spec v3): in force, clipped by a maximum stay
+    # and expired; a table without the two columns reads them as empty
+    assert str(tariffs["ev_free_minutes"].dtype) == "Int64"
+    assert set(tariffs.loc[tariffs["ev_free_minutes"].notna(), "zone_id"]) == {
+        "fx_ev_street_v3", "fx_ev_clip_v3", "fx_ev_expired_v3"}
+    assert set(tariffs.loc[tariffs["ev_rule_valid_until"].notna(), "zone_id"]) == {"fx_ev_street_v3", "fx_ev_expired_v3"}
+    older = pz.load_tariffs(_write_tariffs(tmp_path / "no_ev.csv", tariffs.drop(columns=list(pz.EV_COLUMNS))))
+    assert older["ev_free_minutes"].isna().all() and older["ev_rule_valid_until"].isna().all()
+    assert str(older["ev_free_minutes"].dtype) == "Int64" and list(older.columns) == list(pz.TARIFF_COLUMNS)
     pz.validate_tariffs(tariffs)
     # the values survive a round trip through the CSV
     stated = tariffs.copy()
@@ -1540,11 +1551,16 @@ def test_the_validator_names_the_e2_clipping_of_an_exemption_longer_than_the_max
     tariffs.loc[mask, "ev_free_minutes"] = 240
     with caplog.at_level("INFO", logger="braunschweig.parking.zones"):
         pz.validate_tariffs(tariffs)
-    messages = [record.getMessage() for record in caplog.records if "ASSUMPTION E2" in record.getMessage()]
+    messages = [record.getMessage() for record in caplog.records
+                if "ASSUMPTION E2" in record.getMessage() and "'fx_bs_ia_v2'" in record.getMessage()]
     assert len(messages) == 1 and "fx_bs_ia_v2" in messages[0] and "240" in messages[0] and "180" in messages[0]
+    # the fixture's own clipped row (fx_ev_clip_v3: 240 above its maximum 150) is named too
+    assert any("'fx_ev_clip_v3'" in record.getMessage() and "ASSUMPTION E2" in record.getMessage()
+               for record in caplog.records)
     # within the maximum: nothing to name
     caplog.clear()
     tariffs.loc[mask, "ev_free_minutes"] = 120
     with caplog.at_level("INFO", logger="braunschweig.parking.zones"):
         pz.validate_tariffs(tariffs)
-    assert not [record for record in caplog.records if "ASSUMPTION E2" in record.getMessage()]
+    assert not [record for record in caplog.records
+                if "ASSUMPTION E2" in record.getMessage() and "'fx_bs_ia_v2'" in record.getMessage()]

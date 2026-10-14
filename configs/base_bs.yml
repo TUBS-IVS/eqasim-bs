@@ -747,6 +747,13 @@ config:
   # sensitivity, never calibrated: no local price-response evidence exists. A finite number in [0, 10]; the arms 0.5
   # and 2.0 of Part C report the spread of the mode-share effect.
   parking_cost_utility_factor: 1.0
+  # ASSUMPTION G1-d (spec v3 A2, issue #436): the money coefficient of the parking option weights
+  # exp(-d / lambda - beta * c / 100), utility per EUR, written into the tariff model as option_price_beta_u_per_eur. It is
+  # the MAGNITUDE of the car cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998
+  # (eqasim-java-bs): one money coefficient for the choice between parking options, without the income or distance
+  # elasticity of the person's whole utility. A release value, not a free parameter: the Java startup check refuses a
+  # tariff model whose value differs from the mode choice by more than 1e-9. 0 gives the price-independent weights of v2.
+  parking_option_price_beta_u_per_eur: 0.310998
 
   remode_carless_car_legs: true
 

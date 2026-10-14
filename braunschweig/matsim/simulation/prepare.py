@@ -104,6 +104,13 @@ PARKING_DEFAULTS = {
     # utility (the module parameter costFactor). A sensitivity, never calibrated: no local price-response evidence
     # exists. 1.0 is the model and reproduces v2 bit for bit; the Java ParkingConfigGroup accepts [0, 10].
     "parking_cost_utility_factor": 1.0,
+    # ASSUMPTION G1-d (spec v3 A2): the money coefficient of the parking option weights exp(-d / lambda - beta * c / 100) in
+    # utility per EUR, written into the tariff model as option_price_beta_u_per_eur. The default is the MAGNITUDE of the car
+    # cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998 (eqasim-java-bs): one money
+    # coefficient for the choice between parking options, without the income or distance elasticity of the person's whole
+    # utility (no local evidence identifies a separate parking price coefficient). The Java startup check of Task A7 refuses
+    # a tariff model whose value differs from the mode choice by more than 1e-9; 0 gives the price-independent weights of v2.
+    "parking_option_price_beta_u_per_eur": 0.310998,
 }
 #: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
 PARKING_COST_FACTOR_MINIMUM = 0.0
@@ -226,12 +233,14 @@ def configure(context):
                                   context.config("parking_garage_max_distance_m"),
                                   context.config("parking_garage_monthly_imputation"),
                                   context.config("parking_garage_decay_commute_m"),
-                                  context.config("parking_cost_utility_factor"))
+                                  context.config("parking_cost_utility_factor"),
+                                  context.config("parking_option_price_beta_u_per_eur"))
 
 
 def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
                               garage_max_distance_m=1000.0, garage_monthly_imputation=True, garage_decay_commute_m=None,
-                              cost_factor=1.0):
+                              cost_factor=1.0, option_price_beta_u_per_eur=PARKING_DEFAULTS[
+                                  "parking_option_price_beta_u_per_eur"]):
     """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
@@ -246,7 +255,8 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     (``tariff_export.check_garage_parameters``); the commuter decay is required as soon as the decay length is above 0. The
     monthly imputation switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep
     the imputation on. The cost factor (ASSUMPTION CF) must be a finite number, no bool, in the Java range
-    ``[PARKING_COST_FACTOR_MINIMUM, PARKING_COST_FACTOR_MAXIMUM]``.
+    ``[PARKING_COST_FACTOR_MINIMUM, PARKING_COST_FACTOR_MAXIMUM]``. The money coefficient of the option weights (ASSUMPTION
+    G1-d, spec v3 A2) must be a finite number >= 0, no bool (``tariff_export.check_option_price_beta``, the validator of ``cost``).
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
@@ -269,6 +279,10 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
         raise ValueError(f"parking_cost_utility_factor must be a finite number in [{PARKING_COST_FACTOR_MINIMUM:g}, "
                          f"{PARKING_COST_FACTOR_MAXIMUM:g}] (spec v3 A3, ASSUMPTION CF; 1.0 is the model), got "
                          f"{cost_factor!r}")
+    try:
+        tariff_export.check_option_price_beta(option_price_beta_u_per_eur)
+    except ValueError as error:
+        raise ValueError(f"{error} (config key parking_option_price_beta_u_per_eur, spec v3 A2, ASSUMPTION G1-d)") from error
     example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
         tariff_export.check_snapshot_date(snapshot_date)
@@ -433,12 +447,14 @@ def _write_parking_inputs(context, config_name):
     garage_max_distance_m = context.config("parking_garage_max_distance_m")
     garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
     cost_factor = float(context.config("parking_cost_utility_factor"))
+    option_price_beta_u_per_eur = float(context.config("parking_option_price_beta_u_per_eur"))
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],
                                              garage_decay_m=garage_decay_m, garage_decay_commute_m=garage_decay_commute_m,
                                              garage_max_distance_m=garage_max_distance_m,
-                                             garage_monthly_imputation=garage_monthly_imputation)
+                                             garage_monthly_imputation=garage_monthly_imputation,
+                                             option_price_beta_u_per_eur=option_price_beta_u_per_eur)
     monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
     print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, ASSUMPTION P13): %s"
           % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
@@ -458,16 +474,18 @@ def _write_parking_inputs(context, config_name):
               "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
               "garage_decay_m": model["garage_decay_m"], "garage_decay_commute_m": model["garage_decay_commute_m"],
               "garage_max_distance_m": model["garage_max_distance_m"],
+              "option_price_beta_u_per_eur": model["option_price_beta_u_per_eur"],
               "garage_monthly_imputation": garage_monthly_imputation, "parking_cost_utility_factor": cost_factor,
               "garage_monthly_products": monthly_products,
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
     print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
-          "%d min, cost factor %g; garages priced %d of %d listed, decay length %s m (%s), commuter decay length %s m (%s), maximum "
-          "distance %s m; tariff model %s, "
+          "%d min, cost factor %g, option price coefficient %g per EUR; garages priced %d of %d listed, decay length %s m (%s), "
+          "commuter decay length %s m (%s), maximum distance %s m; tariff model %s, "
           "module %s in %s, report %s" % (
               len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
-              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, cost_factor, len(model["garages"]),
+              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, cost_factor,
+              model["option_price_beta_u_per_eur"], len(model["garages"]),
               len(release["garages"]), model["garage_decay_m"],
               "garage options ON" if model["garage_decay_m"] > 0 else "garage options OFF",
               "%g" % model["garage_decay_commute_m"],

@@ -605,7 +605,7 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
         assert pd.isna(row["ev_free_minutes"]) and pd.isna(row["ev_rule_valid_until"]), zone_id
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["first_period_eur"]) and pd.isna(row["long_stay_product_eur"]), zone_id
         assert row["commuter_day_eur"] == round(monthly / 21, 2) and row["notes"].isascii(), zone_id
-        assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}).commuter_day_cents == cents
+        assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}, snapshot_date=None).commuter_day_cents == cents
         for assumption in ("C-a", "G-a", "G-b", "R2-a", "P2"):
             assert f"ASSUMPTION {assumption}" in row["notes"], (zone_id, assumption)
         assert "ASSUMPTION F1" not in row["notes"] and "source id db_hbf" in row["notes"], zone_id
@@ -614,7 +614,7 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
 
 def _station_tariff(zone_id: str) -> cost.ZoneTariff:
     row = _committed_tariffs().loc[zone_id].to_dict()
-    return tariff_row_to_zone({**row, "zone_id": zone_id})
+    return tariff_row_to_zone({**row, "zone_id": zone_id}, snapshot_date=None)
 
 
 def _stay(zone_id, hours, purpose):
@@ -638,12 +638,13 @@ def test_a_work_stay_in_a_station_zone_pays_the_cheaper_of_the_street_product_an
 
 def test_the_station_zones_change_neither_the_java_contract_nor_the_golden_file():
     # the zones and the tariff rows are data: they add no key to the tariff model and no case to the golden file; the schema
-    # is that of the last contract change (4 since spec Amendment H, the commuter decay) and the golden fixtures keep the
-    # committed bytes whose LF hashes are pinned in test_parking_cost.py (ADR-0140 cross-language contract)
+    # is that of the last contract change (5 since spec v3 A1, A2 and A5, Task A6: the money coefficient, the garage maximum
+    # stay and the EV exemption; 4 since spec Amendment H, the commuter decay) and the golden fixtures keep the committed
+    # bytes whose LF hashes are pinned in test_parking_cost.py (ADR-0140 cross-language contract)
     from braunschweig.parking import tariff_export
 
     pinned = importlib.import_module("tests.test_parking_cost")
-    assert tariff_export.SCHEMA_VERSION == 4
+    assert tariff_export.SCHEMA_VERSION == 5
     for name, digest in pinned.PINNED_FIXTURE_SHA256.items():
         assert tariff_export.content_sha256(pinned.GOLDEN_JSON.parent / name) == digest, name
 

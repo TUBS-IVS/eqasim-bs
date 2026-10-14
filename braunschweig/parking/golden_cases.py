@@ -10,7 +10,7 @@ for the Java ``ParkingCostCalculatorTest``.
 Fields of a case (they are the keys of the JSON cases, too):
 
 - ``id``: ``G01`` .. ``G38``, ``L01`` .. ``L08``, ``L01Z`` .. ``L08Z``, ``V01`` .. ``V23``, ``R01`` .. ``R13``,
-  ``E01`` .. ``E38``.
+  ``E01`` .. ``E38``, ``F01`` .. ``F08``, ``P01`` .. ``P06``, ``X01`` .. ``X09``.
 - ``zone_id``: a zone of the fixture tariff set.
 - ``arrival_s``, ``departure_s``: car arrival and activity departure in simulation seconds (may exceed
   86,400).
@@ -24,6 +24,10 @@ Fields of a case (they are the keys of the JSON cases, too):
   the person attribute ``residentParkingDistrict`` (both set and equal); the calculator receives only the boolean, so
   a stay in another district and a stay in no district are the same input, ``false``. Whether the rule frees the stay
   also depends on the tariff of the zone: its ``resident_permits_valid`` (ASSUMPTION R2-a), a field of the fixture
+  tariffs that the cases do not repeat.
+- ``ev_exempt`` (schema 6, spec v3 A5, ASSUMPTION E1): whether the person owns an electric car that the town's ordinance exempts
+  from the street fee; false in every case but X01..X03 and X05..X09. Whether it frees the stay also depends on the tariff of
+  the zone: its ``ev_free_minutes`` (the export has already applied the validity date of the rule), a field of the fixture
   tariffs that the cases do not repeat.
 - ``minimum_stay_min``: the minimum parked duration L of rule L1 (ADR-0139 decision 9) in whole minutes the stay
   is priced under. The evaluation applies T1 (terminal cases), then ``cost.minimum_stay_departure_s`` with
@@ -39,6 +43,10 @@ Fields of a case (they are the keys of the JSON cases, too):
   work or education (ASSUMPTION G1-c; 0 switches their garage options off). It equals ``garage_decay_m`` in every case
   before E33 (one decay for every purpose, exactly as before Amendment H, so those cases are unchanged in content and
   price) and ``FIXTURE_GARAGE_DECAY_COMMUTE_M``, a different illustrative value of the fixture, in E33..E38 (E36: 0).
+- ``option_price_beta_u_per_eur`` (schema 6, spec v3 A2, ASSUMPTION G1-d): the money coefficient of the option weights
+  exp(-d / lambda - beta * c / 100) in utility per EUR. 0.0 in every case of the schema-5 families (their weights are those
+  of v2, so their expected numbers did not change) and in F01..F08, P04 and the cases without a mixture;
+  ``FIXTURE_OPTION_PRICE_BETA_U_PER_EUR`` (0.310998, the value of the fixture tariff model) in P01..P03, P05, P06, X07 and X08.
 - ``expected_cents`` (integer euro cents) and ``expected_outcome`` (a ``cost.OUTCOMES`` name); both None
   when ``expected_error`` is true, i.e. the stay is invalid -- its departure lies before its arrival -- and
   the calculation must raise the ``ValueError`` of the stay check (``STAY_ERROR_PATTERN``), not any other.
@@ -100,12 +108,29 @@ The families:
   and times (E33, E34; E04 is the shopping stay with one decay), an education stay (E35), the commuter decay 0 that
   switches the garages off for work but not for shopping (E36) and the visitor decay 0 that switches them off for
   shopping but not for work (E37, E38).
+- F01..F08 (schema 6, spec v3 A1, ASSUMPTION M3): the maximum-stay feasibility. A street within the maximum (F01), above it
+  without a product (F02, NO_FEASIBLE_OPTION at the metered cents) and above it with the long-stay product (F03); a garage
+  whose maximum stay equals the stay (F04, a mixture) and one second above it (F05, the garage drops out and the street stays);
+  every option infeasible (F06); an early rule before the test (F07); the street infeasible and one of two garages dropped
+  (F08, the other carries probability 1). All at beta 0, so the derivations isolate the rule.
+- P01..P06 (schema 6, spec v3 A2, ASSUMPTION G1-d): the price in the option weights. Two garages at the same distance with
+  different prices (P01), a free lot against a paid garage (P02), a stay whose street is infeasible (P03), the stay of P01 at
+  beta 0, which is the v2 value (P04), a commuter stay whose garage is weighed by its monthly product per working day at lambda_c
+  (P05) and one whose street is weighed by the zone commuter product (P06).
+- X01..X09 (schema 6, spec v3 A5, ASSUMPTIONS E1 and E2): the EV exemption. Exempt within the limit (X01) and exactly at it (X02),
+  the full schedule one minute above it, no deduction (X03), a person who is no exemption holder (X04), the exemption clipped
+  by the maximum stay (X05 exactly at the maximum, X06 above it and within the exemption), an exempt person with a garage in
+  range (X07, E4) and above the limit (X08, a mixture), and a rule that expired before the snapshot date (X09).
 - O01..O44 (``GOLDEN_GARAGE_OPTION_CASES``, the key ``garage_option_cases`` of the JSON): the price of ONE garage option
   without any mixture, pinning the three tariff structures (spec E10, E11, E12 and the amendments P6, P8, P9, P10) exactly:
   single window with a first period tied to a clock window, tiers (a stay across tier boundaries, a night stay, a unit that
   starts exactly at a boundary, times outside every tier, the day cap), a first period with its clock window, bands (the
   edge d = to and one second or one minute more, the jump to a total, the cap over a schedule), the grace period, the
   closed schedule repeated per started 24 h (1441 min) and the monthly product per working day.
+- S01..S25 (schema 6, spec v3 R-FW-2, appended to ``GOLDEN_GARAGE_OPTION_CASES``): the band shapes of the garage release dataset
+  that the fixture lacked, one garage per shape: increment then an open total (S01..S03), total, increment, open total
+  (S04..S07), increment, total, open total (S08..S11), two increments, a total, an open increment (S12..S16), two increments with
+  the second open (S17..S20), and the zone-Ia lot '0-180 0.03/1; 180- total 9.00' inside a 09:00-20:00 fee window (S21..S25).
 
 The Java ``ParkingCostCalculatorTest`` evaluates every case of the JSON file with its ``minimum_stay_min`` and its
 ``resident_of_district`` against the file's own tariffs (``resident_permits_valid`` included), so a port that meets the
@@ -122,9 +147,11 @@ from typing import Mapping, Sequence
 from braunschweig.parking import cost
 
 CASE_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "resident_of_zone",
-               "resident_of_district", "terminal", "minimum_stay_min", "destination_x_m", "destination_y_m",
-               "garage_decay_m", "garage_decay_commute_m", "expected_cents", "expected_outcome",
-               "expected_garage_probability", "expected_error")
+               "resident_of_district", "ev_exempt", "terminal", "minimum_stay_min", "destination_x_m", "destination_y_m",
+               "garage_decay_m", "garage_decay_commute_m", "option_price_beta_u_per_eur", "expected_cents",
+               "expected_outcome", "expected_garage_probability", "expected_error")
+#: The keys schema 6 added to every case (spec v3 A5 and A2); the schema-5 cases carry False and 0.0.
+SCHEMA_6_CASE_FIELDS = ("ev_exempt", "option_price_beta_u_per_eur")
 #: The keys of a garage option case (``GOLDEN_GARAGE_OPTION_CASES``).
 OPTION_CASE_FIELDS = ("id", "garage_id", "arrival_s", "departure_s", "purpose", "expected_cents")
 
@@ -135,6 +162,11 @@ FIXTURE_GARAGE_DECAY_M = 400.0
 #: that differs from ``FIXTURE_GARAGE_DECAY_M`` so that a port that mixes the two up fails; no calibration (the calibrated
 #: value of a release is a config value, ``parking_garage_decay_commute_m``).
 FIXTURE_GARAGE_DECAY_COMMUTE_M = 250.0
+#: The money coefficient of the fixture tariff model (``option_price_beta_u_per_eur``), utility per EUR: the magnitude of
+#: ``BraunschweigModeParameters.betaCost_u_MU`` = -0.310998 (eqasim-java-bs), the value of the production config key
+#: ``parking_option_price_beta_u_per_eur`` (ASSUMPTION G1-d). The cases of schema 6 that test the price weights carry it; the
+#: schema-5 cases carry 0.0, which gives their v2 weights bit for bit.
+FIXTURE_OPTION_PRICE_BETA_U_PER_EUR = 0.310998
 #: Absolute tolerance of the compared garage probabilities (the pinned numbers carry ten decimals).
 PROBABILITY_TOLERANCE = 1e-9
 #: The unrounded expectation of a pinned case keeps at least this distance (in cents) from a half cent, so that a different
@@ -157,7 +189,7 @@ _MINIMUM_STAY_MIN = 15
 _GARAGE_FIELDS = ("destination_x_m", "destination_y_m", "garage_decay_m", "garage_decay_commute_m",
                   "expected_garage_probability")
 _ROW_FIELDS = tuple(field for field in CASE_FIELDS
-                    if field not in ("minimum_stay_min", "resident_of_district", *_GARAGE_FIELDS))
+                    if field not in ("minimum_stay_min", "resident_of_district", *SCHEMA_6_CASE_FIELDS, *_GARAGE_FIELDS))
 
 # The comment above a row is its hand derivation. Times of day on day 0: 32400 = 09:00, 36000 = 10:00,
 # 61200 = 17:00, 64800 = 18:00, 72000 = 20:00, 86400 = 24:00.
@@ -389,10 +421,12 @@ _R_CASE_ROWS = (
 
 def _without_garages(values: dict) -> dict:
     """The garage fields of a case that has no destination: no coordinates, the fixture decay for every purpose (without a
-    destination no garage can act) and the garage probability 0.0 (None for an error case, which prices nothing)."""
-    return dict(values, destination_x_m=None, destination_y_m=None, garage_decay_m=FIXTURE_GARAGE_DECAY_M,
-                garage_decay_commute_m=FIXTURE_GARAGE_DECAY_M,
-                expected_garage_probability=None if values["expected_error"] else 0.0)
+    destination no garage can act) and the garage probability 0.0 (None for an error case, which prices nothing). The schema-6
+    fields take their schema-5 values unless the row sets them: no EV exemption and beta 0 (the weights of v2)."""
+    return {"ev_exempt": False, "option_price_beta_u_per_eur": 0.0, **values, "destination_x_m": None,
+            "destination_y_m": None, "garage_decay_m": FIXTURE_GARAGE_DECAY_M,
+            "garage_decay_commute_m": FIXTURE_GARAGE_DECAY_M,
+            "expected_garage_probability": None if values["expected_error"] else 0.0}
 
 
 def _case(row: Sequence, minimum_stay_min: int) -> dict:
@@ -579,6 +613,206 @@ _H_CASE_ROWS = (
     ("E38", "fx_bs_ib", 28800, 57600, "shop", False, False, False, False, 0, *_D1, 0.0, 250.0, 900, "PAID_METERED", 0.0),
 )
 
+# Spec v3 A1 (ASSUMPTION M3), schema 6: the maximum-stay feasibility. One row per case, (id, zone_id, arrival_s, departure_s,
+# purpose, parking_free, ev_exempt, destination, expected_cents, expected_outcome, expected_garage_probability); beta is 0 in
+# every row of this table (the weights of v2), so that the derivations isolate the rule. L = 0, the decays are those of the
+# fixture model (lambda = 400 m, lambda_c = 250 m) where a destination exists. Zones (fixture tariffs): fx_ia_nolong_v3 street
+# 180 ct/h in 1-min units (3 ct a minute), 09:00-20:00, maximum stay 180 min, NO long-stay product, no cap and no zone-level
+# garage; fx_bs_ia the same street WITH the long-stay product 9.00 EUR; fx_bs_ib street 3 ct a minute, cap 900 ct, no maximum.
+# Destinations (EPSG:25832 metres) and their garages (D_max = 1000 m), far from every earlier destination: D20 (580000, 5780000):
+# fx_g20_max120 300 m east, 1.50 EUR per started hour, all day, maximum stay 120 min; D28 (580000, 5790000): fx_g28_max90 300 m
+# east, 1.00 EUR per started hour, maximum stay 90 min; D30 (590000, 5790000): fx_g30a_max120 300 m east, 2.00 EUR per started
+# hour, maximum stay 120 min, and fx_g30b_open 700 m north, 1.00 EUR per started hour, no maximum. With beta 0 a garage at 300 m
+# weighs exp(-300 / 400) = 0.4723665527 and the street 1. Times of day on day 0: 28800 = 08:00, 32400 = 09:00, 34200 = 09:30,
+# 36000 = 10:00, 43200 = 12:00, 48600 = 13:30, 57600 = 16:00.
+_D20, _D28, _D30 = ((580000.0, 5780000.0), (580000.0, 5790000.0), (590000.0, 5790000.0))
+_F_CASE_ROWS = (
+    # 10:00-12:00 = 120 chargeable min <= the maximum 180: the street meters 120 x 3 = 360 ct (no destination: no garage).
+    ("F01", "fx_ia_nolong_v3", 36000, 43200, "shop", False, False, None, 360, "PAID_METERED", 0.0),
+    # 09:30-13:30 = 240 min > 180 and the zone sells no product (M3): no street option; no garage, no commuter product (shop)
+    # either, so the stay is priced as the street at its metered price with the maximum IGNORED, 240 x 3 = 720 ct, and named
+    # NO_FEASIBLE_OPTION (a model that kept the street available would price the same 720 ct as PAID_METERED).
+    ("F02", "fx_ia_nolong_v3", 34200, 48600, "shop", False, False, None, 720, "NO_FEASIBLE_OPTION", 0.0),
+    # 10:00-13:30 = 210 min > 180 and fx_bs_ia sells the long-stay product: the street side is the 9.00 EUR ticket (M1) = 900 ct
+    # PAID_LONG_STAY (the metered 210 x 3 = 630 ct is not available above the maximum).
+    ("F03", "fx_bs_ia", 36000, 48600, "work", False, False, None, 900, "PAID_LONG_STAY", 0.0),
+    # 10:00-12:00 = 120 min elapsed = the maximum stay of fx_g20_max120 (the elapsed stay, 120 min, is NOT above it): feasible.
+    # Street 120 x 3 = 360 ct (the cap 900 does not bind); garage 2 started hours x 150 = 300 ct at 300 m, w = 0.4723665527.
+    # expected = (360 + 0.4723665527 x 300) / 1.4723665527 = (360 + 141.7099658) / 1.4723665527 = 501.7099658 / 1.4723665527 =
+    # 340.7507220 -> 341 ct; P_garage = 0.4723665527 / 1.4723665527 = 0.3208213008.
+    ("F04", "fx_bs_ib", 36000, 43200, "shop", False, False, _D20, 341, "PAID_EXPECTED", 0.3208213008),
+    # 120 min + 1 s: the street charges ceil(7201 / 60) = 121 started min x 3 = 363 ct (the cap does not bind); the garage maximum
+    # is compared on the elapsed stay rounded up to 121 min > 120: the garage drops out, the street is the only option and keeps
+    # its own outcome, 363 ct PAID_METERED, probability 0 (no mixture: with the garage it would be a PAID_EXPECTED).
+    ("F05", "fx_bs_ib", 36000, 43201, "shop", False, False, _D20, 363, "PAID_METERED", 0.0),
+    # 09:30-13:30 = 240 min: the street is infeasible (F02) and the only garage in range, fx_g28_max90, admits 90 min only: no
+    # option remains, the stay is priced as the street at its metered 240 x 3 = 720 ct and named NO_FEASIBLE_OPTION, probability 0.
+    ("F06", "fx_ia_nolong_v3", 34200, 48600, "shop", False, False, _D28, 720, "NO_FEASIBLE_OPTION", 0.0),
+    # the stay of F06 with parkingFree: the early rule (employer-free) precedes the feasibility test: 0 ct EMPLOYER_FREE.
+    ("F07", "fx_ia_nolong_v3", 34200, 48600, "work", True, False, _D28, 0, "EMPLOYER_FREE", 0.0),
+    # 240 min: the street is infeasible, fx_g30a_max120 drops out (240 > 120), fx_g30b_open (700 m) is the only option: 4 started
+    # hours x 100 = 400 ct, weight w = exp(-700 / 400) = 0.1737739435 and P = w / w = 1.0 exactly, expected = 1.0 x 400 = 400 ct
+    # PAID_EXPECTED, probability 1.0 (the street, infeasible, carries no weight).
+    ("F08", "fx_ia_nolong_v3", 34200, 48600, "shop", False, False, _D30, 400, "PAID_EXPECTED", 1.0),
+)
+
+# Spec v3 A2 (ASSUMPTION G1-d), schema 6: the price in the option weights, w = exp(-d / lambda - beta * c / 100) with
+# beta = 0.310998 per EUR and c the cents the option charges for THIS stay (the street included; beta 0 is P04 only). Same row
+# layout as the F table plus the beta in front of the expected cents. Destinations and garages (all 24 h): D21 (590000, 5780000):
+# fx_g21_cheap 300 m east 1.00 EUR per started hour, fx_g21_dear 300 m west 3.00 EUR; D22 (600000, 5780000): fx_g22_free 300 m
+# east (the open free band, a car park free for every stay), fx_g22_paid 300 m west 1.00 EUR; D23 (610000, 5780000): fx_g23_a 300 m
+# east 2.00 EUR, fx_g23_b 700 m north 1.00 EUR; D24 (620000, 5780000): fx_g24_monthly 300 m east 2.00 EUR with the monthly product
+# 63.00 EUR = 6300 / 21 = 300 ct per working day; D26 (630000, 5780000): fx_g26_dear 300 m east 2.00 EUR. Zone fx_bs_ib_v2 is
+# fx_bs_ib with the commuter product 376 ct (its zone-level garage family is superseded by the options, E8). Every
+# derivation lists the options as (distance, cents, weight): the hand-derived numbers below are the sums and quotients of them.
+_D21, _D22, _D23, _D24, _D26 = ((590000.0, 5780000.0), (600000.0, 5780000.0), (610000.0, 5780000.0), (620000.0, 5780000.0),
+                                (630000.0, 5780000.0))
+_P_CASE_ROWS = (
+    # shop 10:00-11:00 = 60 min: street 60 x 3 = 180 ct; fx_g21_cheap 1 started hour = 100 ct; fx_g21_dear 300 ct, both at 300 m.
+    # w_street = exp(-0.310998 x 1.80) = exp(-0.5597964) = 0.5713253739; w_cheap = exp(-0.75 - 0.310998 x 1.00) =
+    # exp(-1.060998) = 0.3461102199; w_dear = exp(-0.75 - 0.310998 x 3.00) = exp(-1.682994) = 0.1858168069; sum 1.1032524006.
+    # numerator = 0.5713253739 x 180 + 0.3461102199 x 100 + 0.1858168069 x 300 = 102.8385673 + 34.6110220 + 55.7450421 =
+    # 193.1946313 -> expected 193.1946313 / 1.1032524006 = 175.1137194 -> 175 ct; P_garage = (0.3461102199 + 0.1858168069) /
+    # 1.1032524006 = 0.4821444544 (the cheap garage gets 0.3137, the dear one 0.1684: equal distance, different price).
+    ("P01", "fx_bs_ib", 36000, 39600, "shop", False, False, _D21, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 175, "PAID_EXPECTED",
+     0.4821444544),
+    # shop 10:00-12:00 = 120 min: street 360 ct = 3.60 EUR; fx_g22_free 0 ct (the open free band); fx_g22_paid 2 started hours x
+    # 100 = 200 ct. w_street = exp(-0.310998 x 3.60) = exp(-1.1195928) = 0.3264126828; w_free = exp(-0.75 - 0) = 0.4723665527 (the
+    # weight of a free option is its distance weight alone); w_paid = exp(-0.75 - 0.310998 x 2.00) = exp(-1.371996) =
+    # 0.2536002679; sum 1.0523795035. numerator = 117.5085658 + 0 + 50.7200536 = 168.2286194 -> expected 168.2286194 /
+    # 1.0523795035 = 159.8554693 -> 160 ct; P_garage = (0.4723665527 + 0.2536002679) / 1.0523795035 = 0.6898336753.
+    ("P02", "fx_bs_ib", 36000, 43200, "shop", False, False, _D22, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 160, "PAID_EXPECTED",
+     0.6898336753),
+    # 09:30-13:30 = 240 min in fx_ia_nolong_v3: the street is infeasible (no weight). fx_g23_a 4 started hours x 200 = 800 ct at 300
+    # m: w_a = exp(-0.75 - 0.310998 x 8.00) = exp(-3.237984) = 0.0392429292; fx_g23_b 4 x 100 = 400 ct at 700 m: w_b =
+    # exp(-1.75 - 0.310998 x 4.00) = exp(-2.993992) = 0.0500870894; sum 0.0893300186 (the weights renormalise over the garages).
+    # numerator = 0.0392429292 x 800 + 0.0500870894 x 400 = 31.3943433 + 20.0348358 = 51.4291791 -> expected 51.4291791 /
+    # 0.0893300186 = 575.7211283 -> 576 ct; P_garage = 1.0 (the sum of the two garage probabilities).
+    ("P03", "fx_ia_nolong_v3", 34200, 48600, "shop", False, False, _D23, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 576,
+     "PAID_EXPECTED", 1.0),
+    # the stay of P01 at beta 0 (the weights of v2: street 1, both garages exp(-0.75) = 0.4723665527, however different their
+    # prices): numerator = 180 + 0.4723665527 x 100 + 0.4723665527 x 300 = 180 + 47.2366553 + 141.7099658 = 368.9466211, sum =
+    # 1 + 2 x 0.4723665527 = 1.9447331055 -> expected 368.9466211 / 1.9447331055 = 189.7158124 -> 190 ct (175 ct with the price in
+    # the weights, P01); P_garage = 0.9447331055 / 1.9447331055 = 0.4857906223.
+    ("P04", "fx_bs_ib", 36000, 39600, "shop", False, False, _D21, 0.0, 190, "PAID_EXPECTED", 0.4857906223),
+    # work 08:00-16:00 (a commuter purpose: lambda_c = 250 m): street chargeable 09:00-16:00 = 420 min x 3 = 1260 ct, capped at
+    # 900 ct (fx_bs_ib has no commuter product); fx_g24_monthly metered 8 started hours x 200 = 1600 ct but its monthly product
+    # 6300 / 21 = 300 ct per working day is cheaper (P2): the option costs 300 ct and WEIGHS by that cost. w_street =
+    # exp(-0.310998 x 9.00) = exp(-2.798982) = 0.0608719988; w_garage = exp(-300 / 250 - 0.310998 x 3.00) = exp(-2.132994) =
+    # 0.1184820271; sum 0.1793540259. numerator = 54.7847989 + 35.5446081 = 90.3294070 -> expected 90.3294070 / 0.1793540259 =
+    # 503.6374656 -> 504 ct; P_garage = 0.1184820271 / 0.1793540259 = 0.6606042240.
+    ("P05", "fx_bs_ib", 28800, 57600, "work", False, False, _D24, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 504, "PAID_EXPECTED",
+     0.6606042240),
+    # work 08:00-16:00 in fx_bs_ib_v2: the street side is the cheaper of the capped metered 900 ct and the zone commuter product
+    # 376 ct, i.e. 376 ct, and it weighs by it: w_street = exp(-0.310998 x 3.76) = exp(-1.1693525) = 0.3105679751; fx_g26_dear 8
+    # started hours x 200 = 1600 ct (no monthly product) at 300 m, lambda_c: w_garage = exp(-1.2 - 0.310998 x 16.00) =
+    # exp(-6.175968) = 0.0020787927; sum 0.3126467678. numerator = 0.3105679751 x 376 + 0.0020787927 x 1600 = 116.7735587 +
+    # 3.3260683 = 120.0996270 -> expected 120.0996270 / 0.3126467678 = 384.1383929 -> 384 ct; P_garage = 0.0020787927 /
+    # 0.3126467678 = 0.0066490138 (an expensive garage far in price terms all but vanishes).
+    ("P06", "fx_bs_ib_v2", 28800, 57600, "work", False, False, _D26, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 384, "PAID_EXPECTED",
+     0.0066490138),
+)
+
+# Spec v3 A5 (ASSUMPTIONS E1 and E2), schema 6: the EV exemption. Zones (fixture tariffs; street 3 ct a minute, 09:00-20:00,
+# no cap, resident_exempt false): fx_ev_street_v3 ev_free_minutes 240, no maximum stay, rule valid until 2026-12-31 (in force at
+# the snapshot date 2026-09-28); fx_ev_clip_v3 ev_free_minutes 240 ABOVE its maximum stay 150 min, no long-stay product, open-ended
+# rule; fx_ev_expired_v3 ev_free_minutes 180 with ev_rule_valid_until 2026-09-27, one day before the snapshot date: the export
+# writes NO exemption for it (null), so its exempt person pays. D27 (640000, 5780000): fx_g27_core 300 m east, 2.00 EUR per started
+# hour, all day. Row layout as the P table (beta before the expected cents). Times of day: 36000 = 10:00, 39600 = 11:00, 43200 =
+# 12:00, 45000 = 12:30, 46800 = 13:00, 48000 = 13:20, 50400 = 14:00, 50460 = 14:01.
+_D27 = (640000.0, 5780000.0)
+_X_CASE_ROWS = (
+    # 10:00-13:00 = 180 chargeable min <= 240 and the zone has no maximum: the exempt person parks free, 0 ct EV_EXEMPT.
+    ("X01", "fx_ev_street_v3", 36000, 46800, "shop", False, True, None, 0.0, 0, "EV_EXEMPT", 0.0),
+    # 10:00-14:00 = exactly 240 min = ev_free_minutes: the limit itself is inside: 0 ct EV_EXEMPT.
+    ("X02", "fx_ev_street_v3", 36000, 50400, "shop", False, True, None, 0.0, 0, "EV_EXEMPT", 0.0),
+    # 10:00-14:01 = 241 min > 240: the exemption is no deduction, the FULL schedule applies: 241 x 3 = 723 ct (not 3 ct for the one
+    # minute above the limit) PAID_METERED.
+    ("X03", "fx_ev_street_v3", 36000, 50460, "shop", False, True, None, 0.0, 723, "PAID_METERED", 0.0),
+    # the stay of X01 of a person who owns no electric car: 180 x 3 = 540 ct PAID_METERED.
+    ("X04", "fx_ev_street_v3", 36000, 46800, "shop", False, False, None, 0.0, 540, "PAID_METERED", 0.0),
+    # fx_ev_clip_v3, 10:00-12:30 = 150 min = the maximum stay and <= ev_free_minutes 240: exempt, 0 ct EV_EXEMPT.
+    ("X05", "fx_ev_clip_v3", 36000, 45000, "shop", False, True, None, 0.0, 0, "EV_EXEMPT", 0.0),
+    # 10:00-13:20 = 200 min: within ev_free_minutes 240 but above the maximum stay 150 (ASSUMPTION E2: the exemption applies
+    # within the maximum only): not exempt; the street is infeasible (no long-stay product), no garage, no commuter product:
+    # priced as the street at its metered 200 x 3 = 600 ct with the maximum ignored, NO_FEASIBLE_OPTION.
+    ("X06", "fx_ev_clip_v3", 36000, 48000, "shop", False, True, None, 0.0, 600, "NO_FEASIBLE_OPTION", 0.0),
+    # an exempt person with a garage in range: 10:00-12:00 = 120 min <= 240: the street side is free (0 ct, EV_EXEMPT), so nobody
+    # pays a garage (E4): 0 ct EV_EXEMPT, probability 0 (fx_g27_core is an option that no probability reaches).
+    ("X07", "fx_ev_street_v3", 36000, 43200, "shop", False, True, _D27, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 0, "EV_EXEMPT",
+     0.0),
+    # the same exempt person above the limit: 10:00-14:01 = 241 min: street 241 x 3 = 723 ct (no exemption); fx_g27_core 241 min =
+    # 5 started hours x 200 = 1000 ct at 300 m. w_street = exp(-0.310998 x 7.23) = exp(-2.2485155) = 0.1055558017; w_garage =
+    # exp(-0.75 - 0.310998 x 10.00) = exp(-3.85998) = 0.0210684209; sum 0.1266242226. numerator = 76.3168446 + 21.0684209 =
+    # 97.3852655 -> expected 97.3852655 / 0.1266242226 = 769.0887535 -> 769 ct PAID_EXPECTED; P_garage = 0.0210684209 /
+    # 0.1266242226 = 0.1663853918.
+    ("X08", "fx_ev_street_v3", 36000, 50460, "shop", False, True, _D27, FIXTURE_OPTION_PRICE_BETA_U_PER_EUR, 769,
+     "PAID_EXPECTED", 0.1663853918),
+    # fx_ev_expired_v3 states ev_free_minutes 180 until 2026-09-27, before the snapshot date 2026-09-28: the model carries no
+    # exemption, so the exempt person pays 10:00-11:00 = 60 x 3 = 180 ct PAID_METERED.
+    ("X09", "fx_ev_expired_v3", 36000, 39600, "shop", False, True, None, 0.0, 180, "PAID_METERED", 0.0),
+)
+
+# Spec v3 R-FW-2 (S01..S25, appended to the garage option cases): the band shapes of the release dataset that the fixture
+# lacked, one garage each, all day (0-24 h) unless stated, no cap, shop (no monthly product). The schedule of a band is read
+# cumulatively over the elapsed minutes d (ASSUMPTION P8): free costs 0, a total band costs its amount, an increment band adds its
+# amount per started unit counted from the band's start to the price reached at its start. (id, garage_id, arrival_s,
+# departure_s, purpose, expected_cents); every stay starts at 36000 = 10:00 unless stated, 600 s = 10 min.
+_S_CASE_ROWS = (
+    # fx_g40_inc_total_open '0-120 0.60/30; 120- total 6.00': d = 45: ceil(45 / 30) = 2 units x 60 = 120 ct.
+    ("S01", "fx_g40_inc_total_open", 36000, 38700, "shop", 120),
+    # d = 120 (the edge belongs to the first band): ceil(120 / 30) = 4 units x 60 = 240 ct.
+    ("S02", "fx_g40_inc_total_open", 36000, 43200, "shop", 240),
+    # d = 121: the open total band, 600 ct (an increment band would give 5 x 60 = 300 ct).
+    ("S03", "fx_g40_inc_total_open", 36000, 43260, "shop", 600),
+    # fx_g41_total_inc_total_open '0-30 total 0.80; 30-120 0.40/30; 120- total 4.00': d = 20: the total band, 80 ct.
+    ("S04", "fx_g41_total_inc_total_open", 36000, 37200, "shop", 80),
+    # d = 75: 80 ct reached at 30 min + ceil((75 - 30) / 30) = 2 units x 40 = 160 ct.
+    ("S05", "fx_g41_total_inc_total_open", 36000, 40500, "shop", 160),
+    # d = 120 (edge): 80 + ceil(90 / 30) = 3 x 40 = 200 ct.
+    ("S06", "fx_g41_total_inc_total_open", 36000, 43200, "shop", 200),
+    # d = 121: the open total band, 400 ct.
+    ("S07", "fx_g41_total_inc_total_open", 36000, 43260, "shop", 400),
+    # fx_g42_inc_total_total_open '0-60 0.50/30; 60-240 total 2.50; 240- total 5.00': d = 45: 2 units x 50 = 100 ct.
+    ("S08", "fx_g42_inc_total_total_open", 36000, 38700, "shop", 100),
+    # d = 61: the total band, 250 ct (the price reached at 60 min is 100 ct; the total is absolute, no addition).
+    ("S09", "fx_g42_inc_total_total_open", 36000, 39660, "shop", 250),
+    # d = 240 (edge of the middle band): 250 ct.
+    ("S10", "fx_g42_inc_total_total_open", 36000, 50400, "shop", 250),
+    # d = 241: the open total band, 500 ct.
+    ("S11", "fx_g42_inc_total_total_open", 36000, 50460, "shop", 500),
+    # fx_g43_inc_inc_total_inc_open '0-60 0.50/30; 60-180 0.40/30; 180-300 total 3.00; 300- 0.30/30': the price reached at 60 min is
+    # 2 x 50 = 100 ct, at 180 min 100 + 4 x 40 = 260 ct, at 300 min the total 300 ct. d = 90: 100 + ceil(30 / 30) = 1 x 40 = 140 ct.
+    ("S12", "fx_g43_inc_inc_total_inc_open", 36000, 41400, "shop", 140),
+    # d = 180 (edge of the second band): 100 + 4 x 40 = 260 ct.
+    ("S13", "fx_g43_inc_inc_total_inc_open", 36000, 46800, "shop", 260),
+    # d = 200: the total band, 300 ct.
+    ("S14", "fx_g43_inc_inc_total_inc_open", 36000, 48000, "shop", 300),
+    # d = 330: the open increment band starts at the 300 ct reached at 300 min: 300 + ceil(30 / 30) = 1 x 30 = 330 ct.
+    ("S15", "fx_g43_inc_inc_total_inc_open", 36000, 55800, "shop", 330),
+    # d = 331: 300 + ceil(31 / 30) = 2 x 30 = 360 ct.
+    ("S16", "fx_g43_inc_inc_total_inc_open", 36000, 55860, "shop", 360),
+    # fx_g44_inc_inc_open '0-120 0.50/60; 120- 0.20/30': d = 90: ceil(90 / 60) = 2 units x 50 = 100 ct.
+    ("S17", "fx_g44_inc_inc_open", 36000, 41400, "shop", 100),
+    # d = 120 (edge): 2 x 50 = 100 ct.
+    ("S18", "fx_g44_inc_inc_open", 36000, 43200, "shop", 100),
+    # d = 150: 100 ct reached at 120 min + ceil(30 / 30) = 1 x 20 = 120 ct.
+    ("S19", "fx_g44_inc_inc_open", 36000, 45000, "shop", 120),
+    # d = 151: 100 + ceil(31 / 30) = 2 x 20 = 140 ct.
+    ("S20", "fx_g44_inc_inc_open", 36000, 45060, "shop", 140),
+    # fx_g45_window_bands: fee window 09:00-20:00, '0-180 0.03/1; 180- total 9.00' (the zone-Ia lots). Only the minutes inside the
+    # window count. 08:00-11:00: 09:00-11:00 = 120 chargeable min = 120 units x 3 = 360 ct.
+    ("S21", "fx_g45_window_bands", 28800, 39600, "shop", 360),
+    # 09:00-12:00 = 180 min (the edge of the first band): 180 x 3 = 540 ct.
+    ("S22", "fx_g45_window_bands", 32400, 43200, "shop", 540),
+    # 09:00-12:01 = 181 min: the open total band, 900 ct.
+    ("S23", "fx_g45_window_bands", 32400, 43260, "shop", 900),
+    # 19:00-21:00: only 19:00-20:00 = 60 min is inside the window: 60 x 3 = 180 ct.
+    ("S24", "fx_g45_window_bands", 68400, 75600, "shop", 180),
+    # 20:30-22:00: no chargeable second: 0 ct.
+    ("S25", "fx_g45_window_bands", 73800, 79200, "shop", 0),
+)
+
 # Garage option cases (the price of ONE garage option, no mixture): (id, garage_id, arrival_s, departure_s, purpose,
 # expected_cents). 600 = 10 min; times of day: 19800 = 05:30, 21600 = 06:00, 28800 = 08:00, 34200 = 09:30, 36000 = 10:00,
 # 37800 = 10:30, 38700 = 10:45, 39600 = 11:00, 43200 = 12:00, 46800 = 13:00, 54000 = 15:00, 59400 = 16:30, 63000 = 17:30,
@@ -723,14 +957,33 @@ _H_ROW_FIELDS = (*_E_ROW_FIELDS[:13], "garage_decay_commute_m", *_E_ROW_FIELDS[1
 def _garage_case(row: Sequence) -> dict:
     """One E case of ``_E_CASE_ROWS`` (E01..E32): the stay, its destination, the decay and the expectation; the commuter decay
     equals the decay (one decay for every purpose, as before spec Amendment H)."""
-    values = dict(zip(_E_ROW_FIELDS, row), expected_error=False)
+    values = dict(zip(_E_ROW_FIELDS, row), expected_error=False, ev_exempt=False, option_price_beta_u_per_eur=0.0)
     values["garage_decay_commute_m"] = values["garage_decay_m"]
     return {field: values[field] for field in CASE_FIELDS}
 
 
 def _commuter_decay_case(row: Sequence) -> dict:
     """One E case of ``_H_CASE_ROWS`` (E33..E38): like ``_garage_case`` with its own commuter decay in the row."""
-    values = dict(zip(_H_ROW_FIELDS, row), expected_error=False)
+    values = dict(zip(_H_ROW_FIELDS, row), expected_error=False, ev_exempt=False, option_price_beta_u_per_eur=0.0)
+    return {field: values[field] for field in CASE_FIELDS}
+
+
+_F_ROW_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "parking_free", "ev_exempt", "destination",
+                 "expected_cents", "expected_outcome", "expected_garage_probability")
+_P_ROW_FIELDS = (*_F_ROW_FIELDS[:8], "option_price_beta_u_per_eur", *_F_ROW_FIELDS[8:])
+
+
+def _v3_case(row: Sequence, fields: Sequence[str]) -> dict:
+    """One case of the schema-6 tables ``_F_CASE_ROWS`` (beta 0, ``_F_ROW_FIELDS``), ``_P_CASE_ROWS`` and ``_X_CASE_ROWS``
+    (``_P_ROW_FIELDS``): a stay at L = 0 without a terminal, resident or error flag. With a destination the decays are those of
+    the fixture model (a garage may act), without one the visitor decay twice, as the other cases without a destination."""
+    values = dict(zip(fields, row), expected_error=False, terminal=False, minimum_stay_min=_WITHOUT_MINIMUM_STAY_MIN,
+                  resident_of_zone=False, resident_of_district=False)
+    values.setdefault("option_price_beta_u_per_eur", 0.0)
+    destination = values.pop("destination")
+    values["destination_x_m"], values["destination_y_m"] = destination if destination is not None else (None, None)
+    values["garage_decay_m"] = FIXTURE_GARAGE_DECAY_M
+    values["garage_decay_commute_m"] = FIXTURE_GARAGE_DECAY_M if destination is None else FIXTURE_GARAGE_DECAY_COMMUTE_M
     return {field: values[field] for field in CASE_FIELDS}
 
 
@@ -750,10 +1003,13 @@ GOLDEN_CASES: tuple[dict, ...] = (
     + tuple(_district_case(row) for row in _R_CASE_ROWS)
     + tuple(_garage_case(row) for row in _E_CASE_ROWS)
     + tuple(_commuter_decay_case(row) for row in _H_CASE_ROWS)
+    + tuple(_v3_case(row, _F_ROW_FIELDS) for row in _F_CASE_ROWS)
+    + tuple(_v3_case(row, _P_ROW_FIELDS) for row in _P_CASE_ROWS)
+    + tuple(_v3_case(row, _P_ROW_FIELDS) for row in _X_CASE_ROWS)
 )
 
 GOLDEN_GARAGE_OPTION_CASES: tuple[dict, ...] = tuple(
-    {field: value for field, value in zip(OPTION_CASE_FIELDS, row)} for row in _O_CASE_ROWS)
+    {field: value for field, value in zip(OPTION_CASE_FIELDS, row)} for row in _O_CASE_ROWS + _S_CASE_ROWS)
 
 
 def evaluate_case_detail(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff], garages: Sequence = (),
@@ -766,7 +1022,8 @@ def evaluate_case_detail(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneT
     honours resident permits (R2: the flag ``resident_of_district`` of the case and the ``resident_permits_valid`` of the
     tariff free it before any interval is priced). The garage options (spec Amendment E) are those of ``garages``
     (``cost.GarageTariff`` objects) within ``garage_max_distance_m`` of the destination of the case; a case without a
-    destination has none. Raises ``ValueError`` for an
+    destination has none. Schema 6: the ``ev_exempt`` and ``option_price_beta_u_per_eur`` of the case are passed to the
+    reference (the schema-5 cases carry False and 0.0 and price as before). Raises ``ValueError`` for an
     invalid stay (the stay check's error, ``STAY_ERROR_PATTERN``, is what an ``expected_error`` case expects) and for
     a zone id missing from ``tariffs_by_zone`` (the tariffs and the cases must come from the same fixture set).
     """
@@ -785,7 +1042,8 @@ def evaluate_case_detail(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneT
     return cost.parking_cost_with_garages_detail(
         tariff, arrival_s, priced_departure_s, purpose=case["purpose"], parking_free=case["parking_free"],
         resident_of_zone=case["resident_of_zone"], resident_of_district=case["resident_of_district"],
-        garage_options=options, decay_m=case["garage_decay_m"], decay_commute_m=case["garage_decay_commute_m"])
+        ev_exempt=case["ev_exempt"], garage_options=options, decay_m=case["garage_decay_m"],
+        decay_commute_m=case["garage_decay_commute_m"], option_price_beta_u_per_eur=case["option_price_beta_u_per_eur"])
 
 
 def evaluate_case(case: Mapping, tariffs_by_zone: Mapping[str, cost.ZoneTariff], garages: Sequence = (),

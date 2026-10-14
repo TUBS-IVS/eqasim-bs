@@ -641,10 +641,11 @@ GARAGE_BAND_FIELDS = ("from_min", "to_min", "kind", "price_cents", "unit_min")
 GARAGE_BAND_KINDS = ("free", "total", "increment")
 #: Every key of one entry of the model's ``garages`` list, in the order of the documentation; the Java reader accepts
 #: exactly these. The single-window form fills ``hourly_rate_cents`` .. ``fee_end_s``, the tiered form ``tiers`` and the
-#: banded form ``bands`` together with the fee window; the keys of the other forms are null.
+#: banded form ``bands`` together with the fee window; the keys of the other forms are null. ``max_stay_min`` joined the entry
+#: with tariff model schema 5 (spec v3 A1): null = no maximum.
 GARAGE_FIELDS_JSON = ("garage_id", "x_m", "y_m", "hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s",
                       "first_period_min", "first_period_cents", "first_period_start_s", "first_period_end_s",
-                      "daily_cap_cents", "tiers", "bands", "monthly_cents")
+                      "daily_cap_cents", "tiers", "bands", "monthly_cents", "max_stay_min")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -735,14 +736,8 @@ class GarageTariff:
                                                   band.unit_min) for band in self.bands)
 
     def to_json(self) -> dict:
-        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``.
-
-        The schema-4 entry has no ``max_stay_min`` key (it joins the model with schema 5, spec v3 A1, together with the
-        regenerated fixtures and the Java reader), so a garage that carries a maximum stay is refused here instead of
-        being written without it: a dropped maximum would silently make the Java side price the garage as unlimited."""
-        if self.max_stay_min is not None:
-            raise ValueError(f"garage {self.garage_id!r}: max_stay_min {self.max_stay_min} cannot be exported yet: the "
-                             "tariff model schema 4 has no such key (schema 5 adds it)")
+        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``, ``max_stay_min`` (null = no
+        maximum, spec v3 A1) included since tariff model schema 5."""
         fields = {name: getattr(self, name) for name in GARAGE_FIELDS_JSON}
         if self.tiers is not None:
             fields["tiers"] = [{name: getattr(tier, name) for name in GARAGE_TIER_FIELDS} for tier in self.tiers]
@@ -1224,6 +1219,14 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
     total_weight = 0.0
     for weight in weights:
         total_weight += weight
+    if not total_weight > 0.0:
+        # Every weight underflowed to 0.0 (a decay length far below the distances, or prices far above what exp() can
+        # resolve) while no street option carried weight 1: w / sum(w) is undefined. Refused by name, never priced by a
+        # guess; Java guards the same sum (spec v3 A2, deferred minor of the A2 review).
+        raise ValueError(f"all option weights underflow to 0.0 for the garage options {sorted(feasible_ids)} (decay length "
+                         f"{decay_of_stay_m:g} m, option_price_beta_u_per_eur {option_price_beta_u_per_eur:g}, street "
+                         f"option {'present' if street is not None else 'absent'}): the probabilities are undefined; "
+                         "check the decay length against the garage distances")
     expected, garage_probability = 0.0, 0.0
     first_garage = 1 if street is not None else 0
     for position, (weight, option_cents) in enumerate(zip(weights, costs)):
@@ -1282,7 +1285,8 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
 
     ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
     ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m``, ``option_price_beta_u_per_eur`` or
-    distance and duplicate garage ids. Pure
+    distance, duplicate garage ids and option weights that all underflow to 0.0 (no street option is present, or its weight
+    exp(-beta * c / 100) underflows too: with beta > 0 the street weight is no longer 1). Pure
     but for ``counters``.
     """
     detail = parking_cost_with_garages_detail(

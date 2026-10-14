@@ -58,20 +58,24 @@ def fixture_garages():
     return fixture_garage_tariffs()
 
 
-def test_the_contract_holds_the_g_l_lz_v_r_and_e_cases_each_with_its_minimum_stay():
+def test_the_contract_holds_the_g_l_lz_v_r_e_f_p_and_x_cases_each_with_its_minimum_stay():
     # G01..G38 price as before rule L1 (L = 0); L01..L08 pin L1 at 15 min and their twins L01Z..L08Z the same stays at
     # L = 0 (ADR-0139 decision 9); V01..V23 pin the product minimum of schema 2 at L = 15 (issue #436), V15..V23 its
     # edge rules (ties, the garage's own fee window, the uncapped garage, the unavailable street, T1 before L1);
     # R01..R13 pin the resident district rule R2 (spec Amendment C3) and its scope R2-a (resident_permits_valid), at L = 0
     # except R10 and R11 at L = 15; E01..E32 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15
     # (E29..E32 the free options of E14: a free garage lowers the expected cost, never raises a street-free stay);
-    # E33..E38 pin the separate commuter decay length of spec Amendment H (work and education against every other purpose).
+    # E33..E38 pin the separate commuter decay length of spec Amendment H (work and education against every other purpose);
+    # schema 6 (spec v3, Task A6) appends F01..F08 (maximum-stay feasibility), P01..P06 (the price in the option weights) and
+    # X01..X09 (the EV exemption), all at L = 0.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
     expected = [(f"{prefix}{number:02d}{suffix}", minimum_stay_min)
                 for prefix, suffix, numbers, minimum_stay_min in families for number in numbers]
     expected += [(f"R{number:02d}", 15 if number in (10, 11) else 0) for number in range(1, 14)]
     expected += [(f"E{number:02d}", 15 if number == 26 else 0) for number in range(1, 39)]
+    expected += [(f"{prefix}{number:02d}", 0) for prefix, count in (("F", 8), ("P", 6), ("X", 9))
+                 for number in range(1, count + 1)]
     assert [(case["id"], case["minimum_stay_min"]) for case in GOLDEN_CASES] == expected
     # only the R cases and E12 (R2 before the garages) set the district flag, and the flag is a key of every case
     assert all("resident_of_district" in case for case in GOLDEN_CASES)
@@ -95,8 +99,10 @@ def test_golden_garage_option_case(case, fixture_garages):
     assert option_case_mismatches(fixture_garages, [case]) == []
 
 
-def test_the_garage_option_cases_are_named_o01_to_o69_and_name_known_fixture_garages(fixture_garages):
-    assert [case["id"] for case in GOLDEN_GARAGE_OPTION_CASES] == [f"O{number:02d}" for number in range(1, 70)]
+def test_the_garage_option_cases_are_named_o01_to_o69_then_s01_to_s25_and_name_known_fixture_garages(fixture_garages):
+    # S01..S25 (spec v3 R-FW-2) are the release band shapes the fixture lacked, appended after O69
+    assert [case["id"] for case in GOLDEN_GARAGE_OPTION_CASES] == (
+        [f"O{number:02d}" for number in range(1, 70)] + [f"S{number:02d}" for number in range(1, 26)])
     assert {case["garage_id"] for case in GOLDEN_GARAGE_OPTION_CASES} <= {garage.garage_id for garage in fixture_garages}
     assert option_case_mismatches(fixture_garages, [{**GOLDEN_GARAGE_OPTION_CASES[0], "garage_id": "fx_unknown"}])
 
@@ -109,7 +115,8 @@ def test_the_e14_fixture_garages_leave_every_earlier_garage_option_set_unchanged
     # The Java contract copies the golden file byte for byte, so the cases written before the E14 garages (E01..E28) must
     # keep their option sets: no destination of those cases may see an E14 garage, and the E14 cases (E29..E32) see
     # only fx_g17_free. The margin keeps a clear distance beyond D_max, so no rounding of coordinates can change this.
-    earlier_cases = [case for case in GOLDEN_CASES if case["destination_x_m"] is not None and int(case["id"][1:]) <= 28]
+    earlier_cases = [case for case in GOLDEN_CASES if case["id"][0] == "E" and case["destination_x_m"] is not None
+                     and int(case["id"][1:]) <= 28]
     e14_cases = [case for case in GOLDEN_CASES if case["id"] in ("E29", "E30", "E31", "E32")]
     assert len(earlier_cases) == 28 and len(e14_cases) == 4
     assert {garage.garage_id for garage in fixture_garages} >= set(_E14_GARAGE_IDS)
@@ -129,8 +136,8 @@ def test_the_cases_of_amendment_h_pin_a_work_a_shopping_and_an_education_stay_wi
     # Amendment H), so their pricing is unchanged; E33..E38 carry the decays of the fixture model (lambda 400 m, lambda_c
     # 250 m) or a switched-off one. The hand derivations are in the comments of braunschweig.parking.golden_cases.
     by_id = {case["id"]: case for case in GOLDEN_CASES}
-    older = [case for case in GOLDEN_CASES if case["id"] < "E33" or case["id"][0] != "E"]
-    assert len(older) == len(GOLDEN_CASES) - 6
+    older = [case for case in GOLDEN_CASES if case["id"][0] in "GLVR" or (case["id"][0] == "E" and case["id"] < "E33")]
+    assert len(older) == len(GOLDEN_CASES) - 6 - 23
     assert all(case["garage_decay_commute_m"] == case["garage_decay_m"] for case in older)
     from braunschweig.parking.golden_cases import FIXTURE_GARAGE_DECAY_COMMUTE_M, FIXTURE_GARAGE_DECAY_M
     assert (FIXTURE_GARAGE_DECAY_M, FIXTURE_GARAGE_DECAY_COMMUTE_M) == (400.0, 250.0)
@@ -156,9 +163,10 @@ def test_the_cases_of_amendment_h_pin_a_work_a_shopping_and_an_education_stay_wi
 
 def test_the_cases_without_a_destination_price_exactly_as_before_the_garage_options(fixture_zones):
     # Families G, L, LZ, V and R carry no destination: their numbers must be those of the schema-2 reference
-    # parking_cost_cents, whatever garages exist and whatever the decay.
-    without_destination = [case for case in GOLDEN_CASES if case["destination_x_m"] is None]
-    assert [case["id"] for case in without_destination] == [case["id"] for case in GOLDEN_CASES if case["id"][0] != "E"]
+    # parking_cost_cents, whatever garages exist and whatever the decay. (The cases of F, P and X that have none are pinned in
+    # tests/test_parking_golden_cases.py: they price the v3 rules, which this schema-2 comparison does not know.)
+    without_destination = [case for case in GOLDEN_CASES if case["destination_x_m"] is None and case["id"][0] in "GLVR"]
+    assert [case["id"] for case in without_destination] == [case["id"] for case in GOLDEN_CASES if case["id"][0] in "GLVR"]
     assert len(without_destination) == 90
     for case in without_destination:
         if case["expected_error"]:
@@ -190,12 +198,14 @@ def test_the_committed_golden_json_is_in_sync(fixture_zones, fixture_garages):
     from scripts.export_parking_golden_cases import GOLDEN_SCHEMA_VERSION
 
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    # 5 since the separate commuter decay (spec Amendment H): garage_decay_commute_m of every case; 4 since the garage
-    # options (spec Amendment E): garages, garage_max_distance_m, garage_option_cases and the four garage keys of every case
-    # (3: resident_of_district of the rule R2; 2: minimum_stay_min)
-    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 5, REGENERATE_HINT
-    assert sorted(document) == ["cases", "garage_max_distance_m", "garage_option_cases", "garages", "schema_version",
-                                "tariffs"], REGENERATE_HINT
+    # 6 since the v3 mechanics (spec v3 A1, A2, A5): ev_exempt and option_price_beta_u_per_eur of every case and the document key
+    # option_price_beta_u_per_eur of the fixture model; 5 since the separate commuter decay (spec Amendment H):
+    # garage_decay_commute_m of every case; 4 since the garage options (spec Amendment E): garages, garage_max_distance_m,
+    # garage_option_cases and the four garage keys of every case (3: resident_of_district of the rule R2; 2: minimum_stay_min)
+    assert document["schema_version"] == GOLDEN_SCHEMA_VERSION == 6, REGENERATE_HINT
+    assert sorted(document) == ["cases", "garage_max_distance_m", "garage_option_cases", "garages",
+                                "option_price_beta_u_per_eur", "schema_version", "tariffs"], REGENERATE_HINT
+    assert document["option_price_beta_u_per_eur"] == 0.310998, REGENERATE_HINT
     assert document["cases"] == [dict(case) for case in GOLDEN_CASES], REGENERATE_HINT
     assert document["garage_option_cases"] == [dict(case) for case in GOLDEN_GARAGE_OPTION_CASES], REGENERATE_HINT
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
@@ -213,7 +223,7 @@ def test_the_golden_cases_carry_exactly_the_documented_keys():
     from braunschweig.parking.golden_cases import CASE_FIELDS, OPTION_CASE_FIELDS
     assert all(list(case) == list(CASE_FIELDS) for case in GOLDEN_CASES)
     assert all(list(case) == list(OPTION_CASE_FIELDS) for case in GOLDEN_GARAGE_OPTION_CASES)
-    assert len(CASE_FIELDS) == 18 and len(OPTION_CASE_FIELDS) == 6
+    assert len(CASE_FIELDS) == 20 and len(OPTION_CASE_FIELDS) == 6
 
 
 def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones):
@@ -714,11 +724,12 @@ def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():
 
 
 # The Java test resources hold byte copies of these two fixtures (eqasim-java-bs, braunschweig/src/test/resources/parking).
-# The hashes of the LF blobs are recorded in ADR-0140 (cross-language contract), so regenerating one fixture here without
-# copying it to the Java repository fails this test as well as the ADR record, instead of leaving the two sides apart.
+# The hashes of the LF blobs are recorded in the ADR of the contract (ADR-0140 up to golden schema 5, ADR-0141 from tariff model
+# schema 5 and golden schema 6, spec v3 Task A6), so regenerating one fixture here without copying it to the Java repository
+# fails this test as well as the ADR record, instead of leaving the two sides apart.
 PINNED_FIXTURE_SHA256 = {
-    "parking_golden_cases.json": "342bc4bcb5593e3601584ad2bfcc6c68db2b866867d97621a75200e41fae3b06",
-    "parking_tariffs_fixture.json": "9f7298bafe0d5f7feb6f2825ee07887e680134163a0ce63599d7fe18fd82f283",
+    "parking_golden_cases.json": "ac635f3b64a56fb7dd60e2abbb457a7efcdf14003efc02739679ed7b95bea080",
+    "parking_tariffs_fixture.json": "f51c7341a769c84c25d6dffd11c8ebe3ae2462c9b696eed56773f0ca5967a7cd",
 }
 
 
@@ -729,7 +740,7 @@ def test_the_fixtures_copied_to_the_java_repository_match_their_pinned_lf_hash(n
     actual = content_sha256(GOLDEN_JSON.parent / name)   # LF-normalised, as git stores the blob
     assert actual == PINNED_FIXTURE_SHA256[name], (
         f"{name} changed (sha256 {actual}): copy it byte for byte to eqasim-java-bs "
-        "braunschweig/src/test/resources/parking, then update this pin and the hashes in ADR-0140 (cross-language contract)")
+        "braunschweig/src/test/resources/parking, then update this pin and the hashes in the ADR of the contract (ADR-0141)")
 
 
 # --------------------------------------------------------------------- maximum-stay feasibility (spec A1, issue #436)
@@ -865,11 +876,17 @@ def test_a_model_with_no_maximum_stay_prices_as_before_and_lists_every_garage():
     assert detail.street_feasible is True and detail.feasible_option_ids == ("g_a", "g_b")
 
 
-def test_a_garage_maximum_stay_is_never_dropped_silently_by_the_schema_4_export():
-    assert "max_stay_min" not in cost.GARAGE_FIELDS_JSON
+def test_a_garage_maximum_stay_is_exported_by_the_schema_5_entry_and_read_back():
+    # tariff model schema 5 (spec v3 A1): max_stay_min is the last key of the garage entry, null = no maximum; a maximum is
+    # never dropped (the A1 interim guard that refused to export one is gone) and the strict reader accepts exactly this key set
+    assert cost.GARAGE_FIELDS_JSON[-1] == "max_stay_min"
     assert list(_option_garage().to_json()) == list(cost.GARAGE_FIELDS_JSON)
-    with pytest.raises(ValueError, match="max_stay_min 120 cannot be exported"):
-        _option_garage("g_short", max_stay_min=120).to_json()
+    assert _option_garage().to_json()["max_stay_min"] is None
+    entry = _option_garage("g_short", max_stay_min=120).to_json()
+    assert entry["max_stay_min"] == 120
+    assert cost.GarageTariff.from_json(entry) == _option_garage("g_short", max_stay_min=120)
+    with pytest.raises(ValueError, match="differ from the documented"):
+        cost.GarageTariff.from_json({key: value for key, value in entry.items() if key != "max_stay_min"})
 
 
 def test_a_garage_maximum_stay_is_validated():
@@ -967,24 +984,29 @@ def test_beta_zero_is_the_v2_weight_bit_for_bit():
 
 
 def test_beta_zero_reproduces_the_schema_5_golden_cases(monkeypatch):
-    # The COMMITTED golden file (schema 5) is priced with beta 0 passed explicitly through the new path: every case is
-    # reproduced, and the keyword is really used (the wrapper records every call).
+    # Every case of the schema-5 families (G, L, V, R, E) of the COMMITTED golden file (schema 6) carries beta 0 and no EV
+    # exemption and is reproduced with beta 0 passed explicitly through the new path: the price term changes no v2 value (the
+    # keyword is really used: the wrapper records every call). Their content is unchanged since schema 5 (the prefix digests
+    # in tests/test_parking_golden_cases.py).
     document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
-    assert document["schema_version"] == 5
+    assert document["schema_version"] == 6
     zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
     garages = [cost.GarageTariff.from_json(entry) for entry in document["garages"]]
+    schema_5_cases = [case for case in document["cases"] if case["id"][0] in "GLVRE"]
+    assert len(schema_5_cases) == 128
+    assert all(case["option_price_beta_u_per_eur"] == 0.0 and case["ev_exempt"] is False for case in schema_5_cases)
     original = cost.parking_cost_with_garages_detail
     betas = []
 
     def with_explicit_beta_zero(*args, **kwargs):
-        betas.append(kwargs.setdefault("option_price_beta_u_per_eur", 0.0))
+        betas.append(kwargs["option_price_beta_u_per_eur"])
         return original(*args, **kwargs)
 
     monkeypatch.setattr(cost, "parking_cost_with_garages_detail", with_explicit_beta_zero)
-    assert golden_case_mismatches(zones, document["cases"], garages, document["garage_max_distance_m"]) == []
-    assert len(betas) == len(document["cases"]) - 1 and set(betas) == {0.0}      # G26 raises before pricing
+    assert golden_case_mismatches(zones, schema_5_cases, garages, document["garage_max_distance_m"]) == []
+    assert len(betas) == len(schema_5_cases) - 1 and set(betas) == {0.0}      # G26 raises before pricing
     # the golden cases that form a mixture are among them (the weights did act)
-    assert any(case["expected_outcome"] == cost.PAID_EXPECTED for case in document["cases"])
+    assert any(case["expected_outcome"] == cost.PAID_EXPECTED for case in schema_5_cases)
 
 
 def test_a_positive_beta_moves_probability_to_the_cheaper_option():
@@ -1161,3 +1183,22 @@ def test_the_ev_exemption_without_garage_options_and_with_decay_zero_prices_as_t
     assert (detail.cents, detail.outcome) == (0, cost.EV_EXEMPT)
     with pytest.raises(TypeError, match="ev_exempt must be a bool"):
         _detail(zone, 200, [], ev_exempt="yes")
+
+
+def test_a_stay_whose_option_weights_all_underflow_raises_a_named_error_not_a_zero_division():
+    # Spec v3 A2 (deferred minor of the A2 review): with the street infeasible (maximum stay 180 min, no product) the weights
+    # of the garages alone are summed, and a decay of 1 m at 1000 m gives exp(-1000) = 0.0 in double precision, so the sum is
+    # 0.0 and the probabilities w / sum(w) are undefined. The pricing refuses the stay and names the garages and the stay;
+    # a bare ZeroDivisionError told nothing, and v2 had the same hole for the distance-only weights.
+    zone = _tariff(**_MAX_STAY_ZONE)
+    far_garage = _option_garage("g_far")
+    assert math.exp(-1000.0 / 1.0) == 0.0
+    with pytest.raises(ValueError, match=r"all option weights underflow.*g_far.*decay"):
+        cost.parking_cost_with_garages_detail(zone, 32400, 32400 + 200 * 60, purpose="shop", parking_free=False,
+                                              resident_of_zone=False, garage_options=[(far_garage, 1000.0)], decay_m=1.0,
+                                              decay_commute_m=1.0)
+    # the same garage with a usable decay length prices normally (the guard is not a fallback)
+    detail = cost.parking_cost_with_garages_detail(zone, 32400, 32400 + 200 * 60, purpose="shop", parking_free=False,
+                                                   resident_of_zone=False, garage_options=[(far_garage, 1000.0)],
+                                                   decay_m=400.0, decay_commute_m=400.0)
+    assert detail.outcome == cost.PAID_EXPECTED

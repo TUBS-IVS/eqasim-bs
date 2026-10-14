@@ -187,11 +187,12 @@ def load_workplace_shares(path) -> pd.DataFrame:
 
 def _check_tariff_model_rows(tariffs: pd.DataFrame) -> None:
     """Convert every row with ``tariff_export.tariff_row_to_zone`` (the per-row contract of the tariff model,
-    stricter than ``validate_tariffs``); raise ``ValueError`` listing every row the conversion rejects."""
+    stricter than ``validate_tariffs``); raise ``ValueError`` listing every row the conversion rejects. A structural check
+    only: no model is written here, so the tariff snapshot date is not known and ``snapshot_date=None`` is passed explicitly."""
     problems = []
     for row in tariffs.to_dict(orient="records"):
         try:
-            tariff_export.tariff_row_to_zone(row)
+            tariff_export.tariff_row_to_zone(row, snapshot_date=None)
         except ValueError as error:
             problems.append(f"{row.get('zone_id')!r}: {error}")
     if problems:
