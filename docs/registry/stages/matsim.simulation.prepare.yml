@@ -25,7 +25,9 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   from the release of braunschweig.parking.zones_stage, whose key parking_garages_path names the dataset, and a decay
   above 0 for either decay without a priced garage is rejected), the MATSim
   config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
-  minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1) that
+  minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1, and costFactor from
+  parking_cost_utility_factor, the sensitivity factor of assumption CF in [0, 10], written only when it differs from the
+  model value 1.0 so the default config stays byte-identical) that
   switches the Java car cost model to the zone tariffs, and the inputs report
   <prefix>parking_inputs_report.json listing the files matsim.output copies; it has no configuration key for the
   search-time factor of the Java module (the lever is off by owner decision D4 of ADR-0140, a key is added only with a

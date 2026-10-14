@@ -169,7 +169,7 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
         "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
         "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": None,
         "parking_garage_max_distance_m": 1000.0,
-        "parking_garage_monthly_imputation": True}
+        "parking_garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0}
 
 
 @pytest.mark.parametrize("values, message", [
@@ -325,6 +325,43 @@ def test_on_execute_writes_the_configured_minimum_stay_as_plain_digits(tmp_path,
     assert report["minimum_stay_min"] == minimum_stay_min
 
 
+@pytest.mark.parametrize("factor, written", [(0.5, "0.5"), (2.0, "2.0"), (0.0, "0.0"), (10.0, "10.0"),
+                                              (0.00001, "0.00001")],
+                         ids=["half", "double", "zero_is_valid", "upper_bound", "plain_decimal_not_scientific"])
+def test_cost_factor_is_written_to_the_parking_module_and_validated(tmp_path, monkeypatch, factor, written):
+    # Spec v3 A3: the factor travels as the module parameter costFactor in plain decimal (the Java side reads it as a
+    # Double in [0, 10]) and is recorded in the inputs report; ASSUMPTION CF: a sensitivity, never calibrated.
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True,
+                                       parking_cost_utility_factor=factor)
+    prepare.execute(context)
+    assert config_modules.read_module(config, prepare.PARKING_MODULE) == {
+        "enabled": "true", "tariffsPath": TARIFFS_NAME, "terminalStayRule": "until_fee_end",
+        "minimumStayMinutes": "15", "costFactor": written}
+    report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["parking_cost_utility_factor"] == factor
+
+
+def test_the_default_cost_factor_leaves_the_module_as_v2_wrote_it(tmp_path, monkeypatch):
+    # 1.0 writes no costFactor line (the Java default is 1.0), so the written config of every run without the
+    # sensitivity stays byte-identical to the v2 config; an explicit 1.0 is the same run.
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True,
+                                       parking_cost_utility_factor=1.0)
+    prepare.execute(context)
+    assert "costFactor" not in config.read_bytes().decode("utf-8")
+    assert "parking_cost_utility_factor" in context.declared_config
+
+
+@pytest.mark.parametrize("value", [-1, -0.5, float("nan"), float("inf"), 10.5, "1.0", True, None],
+                         ids=["negative_int", "negative", "nan", "infinite", "above_the_java_range", "text", "boolean",
+                              "none"])
+def test_a_cost_factor_outside_the_java_range_is_refused_at_configure_time(tmp_path, value):
+    context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
+                                              "freight_enabled": False, "parking_zones_enabled": True,
+                                              "parking_cost_utility_factor": value})
+    with pytest.raises(ValueError, match=r"parking_cost_utility_factor must be a finite number in \[0, 10\]"):
+        prepare.configure(context)
+
+
 def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     # Review focus 5 of the plan: a relocated scenario resolves tariffsPath next to its config, so the module
     # must name the file without a directory, and the report that matsim.output copies from must list it.
@@ -341,7 +378,7 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
                       "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_decay_commute_m": 0.0,
                       "garage_max_distance_m": 1000.0,
-                      "garage_monthly_imputation": True,
+                      "garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0,
                       "garage_monthly_products": parking_garages.monthly_summary(
                           context.stages[PARKING_STAGE]["garages"], imputation=True),
                       "sources": context.stages[PARKING_STAGE]["sources"]}

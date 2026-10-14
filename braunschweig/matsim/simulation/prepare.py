@@ -19,11 +19,13 @@ attribution against the supplied shapefile).
 """
 
 import datetime
+import decimal
 import gzip
 import hashlib
 import importlib
 import inspect
 import json
+import math
 import shutil
 import os.path
 import xml.etree.ElementTree as ET
@@ -98,7 +100,16 @@ PARKING_DEFAULTS = {
     # municipality (median of the published products, computed by the curation) as the monthly product of work and education
     # stays; false is the sensitivity arm 'published only' (the zones_v2_published_monthly_only arm of the 25 % A/B).
     "parking_garage_monthly_imputation": True,
+    # ASSUMPTION CF (spec v3 A3): the parking cost of a car trip is multiplied by this factor before it enters the car
+    # utility (the module parameter costFactor). A sensitivity, never calibrated: no local price-response evidence
+    # exists. 1.0 is the model and reproduces v2 bit for bit; the Java ParkingConfigGroup accepts [0, 10].
+    "parking_cost_utility_factor": 1.0,
 }
+#: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
+PARKING_COST_FACTOR_MINIMUM = 0.0
+PARKING_COST_FACTOR_MAXIMUM = 10.0
+#: The factor of the model: no module parameter is written for it (the Java default is the same value).
+PARKING_COST_FACTOR_DEFAULT = 1.0
 #: Largest parking_minimum_stay_min the Java ParkingConfigGroup accepts: the minimum in seconds must fit a Java int.
 PARKING_MINIMUM_STAY_MAXIMUM_MIN = (2 ** 31 - 1) // 60
 #: MATSim config module read by the Java ParkingConfigGroup (eqasim-java-bs, org.eqasim.braunschweig.parking).
@@ -214,11 +225,13 @@ def configure(context):
                                   context.config("parking_garage_decay_m"),
                                   context.config("parking_garage_max_distance_m"),
                                   context.config("parking_garage_monthly_imputation"),
-                                  context.config("parking_garage_decay_commute_m"))
+                                  context.config("parking_garage_decay_commute_m"),
+                                  context.config("parking_cost_utility_factor"))
 
 
 def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
-                              garage_max_distance_m=1000.0, garage_monthly_imputation=True, garage_decay_commute_m=None):
+                              garage_max_distance_m=1000.0, garage_monthly_imputation=True, garage_decay_commute_m=None,
+                              cost_factor=1.0):
     """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
@@ -232,7 +245,8 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     numbers of metres >= 0 and the maximum garage distance (G2) a finite number of metres > 0, all numbers and no bool
     (``tariff_export.check_garage_parameters``); the commuter decay is required as soon as the decay length is above 0. The
     monthly imputation switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep
-    the imputation on.
+    the imputation on. The cost factor (ASSUMPTION CF) must be a finite number, no bool, in the Java range
+    ``[PARKING_COST_FACTOR_MINIMUM, PARKING_COST_FACTOR_MAXIMUM]``.
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
@@ -250,6 +264,11 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
     if not isinstance(garage_monthly_imputation, bool):
         raise ValueError(f"parking_garage_monthly_imputation must be true or false (a YAML boolean), got "
                          f"{garage_monthly_imputation!r}")
+    if (isinstance(cost_factor, bool) or not isinstance(cost_factor, (int, float)) or not math.isfinite(cost_factor)
+            or not PARKING_COST_FACTOR_MINIMUM <= cost_factor <= PARKING_COST_FACTOR_MAXIMUM):
+        raise ValueError(f"parking_cost_utility_factor must be a finite number in [{PARKING_COST_FACTOR_MINIMUM:g}, "
+                         f"{PARKING_COST_FACTOR_MAXIMUM:g}] (spec v3 A3, ASSUMPTION CF; 1.0 is the model), got "
+                         f"{cost_factor!r}")
     example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
         tariff_export.check_snapshot_date(snapshot_date)
@@ -413,6 +432,7 @@ def _write_parking_inputs(context, config_name):
     garage_decay_commute_m = context.config("parking_garage_decay_commute_m")
     garage_max_distance_m = context.config("parking_garage_max_distance_m")
     garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
+    cost_factor = float(context.config("parking_cost_utility_factor"))
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],
@@ -425,9 +445,12 @@ def _write_parking_inputs(context, config_name):
     tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
-    config_modules.write_module(root / config_name, PARKING_MODULE, {
-        "enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule,
-        "minimumStayMinutes": str(int(minimum_stay_min))})
+    module_parameters = {"enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule,
+                         "minimumStayMinutes": str(int(minimum_stay_min))}
+    if cost_factor != PARKING_COST_FACTOR_DEFAULT:
+        # The model value 1.0 writes nothing: the Java default applies and the config stays byte-identical to v2.
+        module_parameters["costFactor"] = format(decimal.Decimal(repr(cost_factor)), "f")
+    config_modules.write_module(root / config_name, PARKING_MODULE, module_parameters)
     zone_types = dict(sorted(Counter(zone["zone_type"] for zone in model["zones"].values()).items()))
     report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
               "resident_districts": len(model["resident_districts"]), "zone_types": zone_types,
@@ -435,15 +458,16 @@ def _write_parking_inputs(context, config_name):
               "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
               "garage_decay_m": model["garage_decay_m"], "garage_decay_commute_m": model["garage_decay_commute_m"],
               "garage_max_distance_m": model["garage_max_distance_m"],
-              "garage_monthly_imputation": garage_monthly_imputation, "garage_monthly_products": monthly_products,
+              "garage_monthly_imputation": garage_monthly_imputation, "parking_cost_utility_factor": cost_factor,
+              "garage_monthly_products": monthly_products,
               "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
     print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
-          "%d min; garages priced %d of %d listed, decay length %s m (%s), commuter decay length %s m (%s), maximum "
+          "%d min, cost factor %g; garages priced %d of %d listed, decay length %s m (%s), commuter decay length %s m (%s), maximum "
           "distance %s m; tariff model %s, "
           "module %s in %s, report %s" % (
               len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
-              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, len(model["garages"]),
+              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, cost_factor, len(model["garages"]),
               len(release["garages"]), model["garage_decay_m"],
               "garage options ON" if model["garage_decay_m"] > 0 else "garage options OFF",
               "%g" % model["garage_decay_commute_m"],

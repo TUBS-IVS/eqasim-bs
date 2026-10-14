@@ -742,6 +742,11 @@ config:
   # product that work and education stays pay per working day (monthly / 21, ASSUMPTION P2). false is the
   # sensitivity arm "published only" (zones_v2_published_monthly_only): only the published products count.
   parking_garage_monthly_imputation: true
+  # ASSUMPTION CF (spec v3 A3): multiplies the parking cost of a car trip before it enters the car utility
+  # (module parameter costFactor of braunschweigParking; 1.0 writes nothing and reproduces v2 bit for bit). A
+  # sensitivity, never calibrated: no local price-response evidence exists. A finite number in [0, 10]; the arms 0.5
+  # and 2.0 of Part C report the spread of the mode-share effect.
+  parking_cost_utility_factor: 1.0
 
   remode_carless_car_legs: true
 

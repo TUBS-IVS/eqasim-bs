@@ -165,6 +165,30 @@ def test_the_schema_2_columns_are_validated_per_row(zone_id, changes, field):
         pz.validate_tariffs(broken)
 
 
+def test_a_commuter_product_next_to_a_maximum_stay_needs_its_unlimited_stay_evidence():
+    # Spec v3 A6: commuter_day_eur may only come from a product without a single-stay maximum. A street_paid zone that
+    # keeps a maximum stay AND states a commuter product must name the unlimited-stay product in its notes.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    row = tariffs["zone_id"] == "fx_bs_ia_v2"
+    assert tariffs.loc[row, "max_stay_min"].iloc[0] == 180 and pd.isna(tariffs.loc[row, "commuter_day_eur"].iloc[0])
+    changed = tariffs.copy()
+    changed.loc[row, "commuter_day_eur"] = 3.76
+    with pytest.raises(ValueError, match=r"zone 'fx_bs_ia_v2': commuter_day_eur: .*unlimited-stay product:"):
+        pz.validate_tariffs(changed)
+    # a note without the literal marker does not count
+    changed.loc[row, "notes"] = "30-day ticket, no maximum stay"
+    with pytest.raises(ValueError, match="fx_bs_ia_v2"):
+        pz.validate_tariffs(changed)
+    # the literal text names the evidence: accepted
+    changed.loc[row, "notes"] = "unlimited-stay product: 30-day ticket (source: city tariff page)"
+    pz.validate_tariffs(changed)
+    # a zone without a maximum stay needs no evidence (fx_bs_ib_v2 carries a commuter product and no note marker)
+    ib = tariffs[tariffs["zone_id"] == "fx_bs_ib_v2"].iloc[0]
+    assert pd.isna(ib["max_stay_min"]) and ib["commuter_day_eur"] == 3.76
+    assert "unlimited-stay product:" not in str(ib["notes"])
+    pz.validate_tariffs(tariffs)
+
+
 def test_hash_inside_a_field_is_not_a_comment(tmp_path):
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     tariffs.loc[0, "source_url"] = "https://www.braunschweig.de/plan/#parken"
