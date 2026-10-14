@@ -1088,7 +1088,7 @@ def test_the_table_header_and_rows_say_which_measure_each_target_uses_and_count_
     target_commuter = next(line for line in header if line.startswith("# Target of lambda_c:"))
     assert "payment-inclusive measure (every option counts)" in target_lambda
     assert "PAID-only measure (the free option leaves numerator and denominator)" in target_commuter
-    wolfsburg = next(line for line in header if "Wolfsburg: mean" in line)
+    wolfsburg = next(line for line in header if "Wolfsburg: payer-conditional mean" in line)
     assert "PAID-only measure" in wolfsburg
     # the free options within D_max are stated per universe
     universe_line = next(line for line in header if line.startswith("# Universe of lambda:"))
@@ -1686,3 +1686,197 @@ def test_the_module_documentation_says_the_calibration_routes_through_the_produc
     code = "\n".join(line for line in SCRIPT.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
     code = re.sub(r'""".*?"""', "", code, flags=re.S)
     assert "math.exp" not in code and "np.exp" not in code and not re.search(r"\bmean_garage_probability\(", code)
+
+
+# ------------------------------------------- B5 fix round 1 (ruling R-B-16): the payer-conditional commuter measure, sensitivities
+
+
+def test_a_zero_priced_stay_leaves_the_payer_conditional_measure_is_counted_and_the_visitor_measure_is_unchanged(cal):
+    # R-B-16: the lambda_c target is the PAID-only SrV share among payers (R-4h-1), so a stay that the model prices at 0 ct is no
+    # payer and leaves numerator AND denominator: here a free street (E4), a stay outside the street fee window and a stay whose
+    # street is infeasible and whose only feasible option is free (expected cost exactly 0)
+    normal = _stay([("fx_g01_core", 300.0)])
+    free_street = _stay([("fx_g01_core", 300.0)], zone=_zone(free_if_stay_at_most_min=90))
+    outside_window = _stay([("fx_g01_core", 300.0)], arrival_s=23 * 3600, departure_s=24 * 3600)
+    only_free = _stay([("fx_g17_free", 300.0)], zone=_zone(max_stay_min=30), purpose="work", arrival_s=8 * 3600,
+                      departure_s=16 * 3600)
+    stays = [normal, free_street, outside_window, only_free]
+    share = _probability(300.0, 400.0)          # beta 0: the street weighs 1, the garage exp(-0.75)
+    paid = cal.MEASURE_PAID_OPTIONS
+    # the payer-conditional mean is the share of the only payer; the payer-inclusive mean divides by all four stays
+    assert cal.mean_option_share(stays, 400.0, 0.0, paid, ALL_PAID, payers_only=True) == pytest.approx(share, abs=1e-12)
+    assert cal.mean_option_share(stays, 400.0, 0.0, paid, ALL_PAID) == pytest.approx(share / 4, abs=1e-12)
+    # the visitor measure (payment-inclusive, every stay) is unchanged: the free-only stay is a full off-street stay there
+    every = cal.MEASURE_ALL_OPTIONS
+    assert cal.mean_option_share(stays, 400.0, 0.0, every, ALL_PAID) == pytest.approx((share + 1.0) / 4, abs=1e-12)
+    # the zero-priced stays are counted
+    outcomes = cal.stay_outcomes(stays, 400.0, 0.0)
+    assert outcomes.stays == 4 and outcomes.non_payers == 3
+    assert (outcomes.street_free, outcomes.outside_fee_hours, outcomes.expectation) == (1, 1, 2)
+    assert cal.stay_outcomes([normal], 400.0, 0.0).non_payers == 0
+    # a universe without any payer cannot be averaged: refused, never read as 0
+    with pytest.raises(ValueError, match="no payer"):
+        cal.mean_option_share([free_street, outside_window], 400.0, 0.0, paid, ALL_PAID, payers_only=True)
+
+
+def test_a_mutant_that_keeps_the_garage_price_term_but_gives_the_street_weight_one_gives_another_share(cal, monkeypatch):
+    # the second mutant: the street weight 1 (the v2 street) with the price term kept on the garages. With beta > 0 and a street
+    # that costs something it differs from the production weight exp(-beta * c_street / 100)
+    stay = _stay([("fx_g01_core", 300.0)])
+    production = cal.mean_option_share([stay], 400.0, BETA, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    original = cost.option_weight
+    monkeypatch.setattr(cost, "option_weight", lambda d, decay, cents, beta: 1.0 if d == 0.0 else original(d, decay, cents, beta))
+    mutant = cal.mean_option_share([stay], 400.0, BETA, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    # street 180 ct: production street weight exp(-0.310998 * 1.8) = 0.5714, the mutant 1
+    assert abs(mutant - production) > 0.02
+    assert mutant == pytest.approx(math.exp(-0.75 - BETA * 2.0) / (1.0 + math.exp(-0.75 - BETA * 2.0)), abs=1e-12)
+
+
+def _payer_scenario(inputs):
+    """Zone Ib charges only from 16:00 to 22:00, so the Ib stays (p03 and p04 visitors, p06 commuter, all before 16:00) lie outside
+    the street fee window; the Ia stays (p01, p02 visitors, p05 commuter) pay. The visitor target is lowered to 0.1 (the two
+    paying visitors alone reach at most 0.5 * 0.5 = 0.25 of four stays)."""
+    _set_tariffs(inputs, ib={"fee_start_h": "16.0", "fee_end_h": "22.0"})
+    inputs["city_center_path"].write_text("parking_type,share,n_unweighted\ngarage_large_lot,0.1,1\nstreet,0.9,1\n"
+                                          "paid_share_overall,0.8,1\n", encoding="utf-8")
+    return inputs
+
+
+def test_the_commuter_measure_leaves_the_non_payers_out_of_numerator_and_denominator_but_lambda_keeps_every_stay(
+        cal, inputs, caplog, tmp_path):
+    # beta 0 closed forms. Commuters: p05 (Ia, 300 m) pays, p06 (Ib, outside the window) is a non-payer and leaves: the mean is
+    # P(300) alone, target 0.04 / (0.04 + 0.06) = 0.4 -> w = 2/3 -> lambda_c = 300 / ln 1.5 = 739.9 m. With p06 counted as 0 the
+    # mean would be P(300) / 2 <= 0.25 and the target unreachable. Visitors: p01 and p02 pay, p03 and p04 are outside the window
+    # but STAY in the mean (the SrV street category contains free parkers): 2 P / 4 = 0.1 -> P = 0.2 -> lambda = 300 / ln 4.
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, generated_on="2026-10-14", **_payer_scenario(inputs))
+    assert result["decay_commute_length_m"] == pytest.approx(300.0 / math.log(1.5), abs=8.0)
+    assert _closed_form(300.0, result["decay_commute_length_m"]) == pytest.approx(0.4, abs=0.0006)
+    assert result["decay_length_m"] == pytest.approx(300.0 / math.log(4.0), abs=2.0)
+    assert 2 * _closed_form(300.0, result["decay_length_m"]) / 4 == pytest.approx(0.1, abs=0.0006)   # all four visitors count
+    commuters, visitors = result["commuter_outcomes"], result["universe_outcomes"]
+    assert (commuters.stays, commuters.non_payers, commuters.outside_fee_hours) == (2, 1, 1)
+    assert (visitors.stays, visitors.non_payers, visitors.outside_fee_hours) == (4, 2, 2)
+    messages = [message for message in caplog.messages if "non-payers" in message]
+    assert any("commuter universe" in message and "non-payers (priced 0 ct) 1/2 (50.0 %)" in message and "payer-conditional" in message
+               for message in messages)
+    assert any("destination universe" in message and "non-payers (priced 0 ct) 2/4 (50.0 %)" in message and "payment-inclusive" in message
+               for message in messages)
+    table = tmp_path / "payer_table.csv"
+    cal.run(out_path=table, generated_on="2026-10-14", **inputs)
+    rows = cal.read_calibration_table(table)
+    assert rows["commuter_universe_stays_non_payer"] == 1 and rows["universe_stays_non_payer"] == 2
+    assert rows["commuter_universe_payer_stays"] == 1 and rows["check_wolfsburg_payer_stays"] == 2
+    for needle in ("payer-conditional", "non-payers", "leave numerator and denominator", "the SrV street category contains free "
+                   "parkers"):
+        assert needle in result["text"], needle
+
+
+def test_the_wolfsburg_check_is_payer_conditional_too(cal, inputs, tmp_path):
+    # the Wolfsburg universe of the fixture: p11 work and p12 education pay (window 06:00-24:00). A window that ends before them
+    # (06:00-07:00) makes both non-payers: the check has no payer and is refused instead of reading 0 or 1
+    _set_tariffs(inputs, wob={"fee_start_h": "6.0", "fee_end_h": "7.0"})
+    with pytest.raises(ValueError, match="no payer"):
+        cal.run(out_path=None, **inputs)
+    _set_tariffs(inputs)
+    result = cal.run(out_path=None, **inputs)
+    assert result["wolfsburg_outcomes"].non_payers == 0 and result["wolfsburg_payers"] == result["wolfsburg_activities"] == 2
+
+
+def test_the_visitor_sensitivity_over_in_window_stays_only_is_a_header_line_and_no_release_value(cal, inputs, tmp_path):
+    # in the payer scenario the two in-window visitors p01 and p02 alone must reach 0.1: P = 0.1 -> w = 1/9 -> lambda = 300 /
+    # ln 9 = 136.5 m against the release lambda = 300 / ln 4 = 216.4 m
+    scenario = _payer_scenario(inputs)
+    out = tmp_path / "table.csv"
+    result = cal.run(out_path=out, generated_on="2026-10-14", sensitivity_visitors_in_window=True, **scenario)
+    entry = result["visitor_window_sensitivity"]
+    assert entry["label"] == "visitors_in_window"
+    assert entry["decay_length_m"] == pytest.approx(300.0 / math.log(9.0), abs=1.5)
+    assert _closed_form(300.0, entry["decay_length_m"]) == pytest.approx(0.1, abs=0.0006)
+    assert result["decay_length_m"] == pytest.approx(300.0 / math.log(4.0), abs=2.0)   # the release value did not move
+    assert entry["payer_stays"] == 2 and entry["stays"] == 4
+    text = out.read_text(encoding="ascii")
+    line = next(line for line in text.splitlines() if line.startswith("# Sensitivity of lambda over in-window stays only"))
+    assert "NOT a release value" in line and "visitors_in_window" in line and f"lambda = {entry['decay_length_m']:.2f} m" in line
+    assert "2 of 4 stays" in line
+    # without the flag there is no such line and no entry
+    plain = cal.run(out_path=None, **scenario)
+    assert plain["visitor_window_sensitivity"] is None
+
+
+def test_the_commuter_target_uncertainty_table_reports_lambda_c_at_shifted_targets_and_where_it_is_unreachable(
+        cal, inputs, tmp_path):
+    # target 0.4 with n = 100 paid respondents: SE = sqrt(0.4 * 0.6 / 100) = 0.04899 (a lower bound: the design effect is ignored).
+    # Both commuters pay, beta 0: the mean is (P(300) + P(500)) / 2 at every lambda_c, the shifted targets are met by closed form.
+    out = tmp_path / "table.csv"
+    result = cal.run(out_path=out, generated_on="2026-10-14", commuter_target_respondents=100,
+                     sensitivity_commuter_target_se=[-1.0, 0.5, 1.0], **inputs)
+    entries = result["commuter_target_sensitivities"]
+    assert [entry["label"] for entry in entries] == ["commuter_target_minus_1_se", "commuter_target_plus_0.5_se",
+                                                     "commuter_target_plus_1_se"]
+    se = math.sqrt(0.4 * 0.6 / 100)
+    assert entries[0]["standard_error"] == pytest.approx(se, abs=1e-6)
+    for entry, multiple in zip(entries, (-1.0, 0.5, 1.0)):
+        assert entry["target"] == pytest.approx(0.4 + multiple * se, abs=1e-6) and not entry["unreachable"]
+        mean = (_closed_form(300.0, entry["decay_commute_length_m"]) + _closed_form(500.0, entry["decay_commute_length_m"])) / 2
+        assert mean == pytest.approx(entry["target"], abs=0.0006)
+    lambdas = [entry["decay_commute_length_m"] for entry in entries]
+    assert lambdas == sorted(lambdas) and len(set(lambdas)) == 3 and lambdas[0] < result["decay_commute_length_m"] < lambdas[1]
+    text = out.read_text(encoding="ascii")
+    lines = [line for line in text.splitlines() if line.startswith("# Sensitivity of the lambda_c target")]
+    assert len(lines) == 3 and "NOT a release value" in lines[0] and "n = 100" in lines[0] and "design effect" in lines[0]
+    # a target that the options cannot reach is reported as unreachable with the floor, never as a value
+    wide = cal.run(out_path=None, commuter_target_respondents=2, sensitivity_commuter_target_se=[1.0], **inputs)
+    [unreachable] = wide["commuter_target_sensitivities"]
+    assert unreachable["unreachable"] and unreachable["decay_commute_length_m"] is None
+    assert unreachable["low_end_mean"] < 0.01 and unreachable["high_end_mean"] < 0.5
+    # the shifts need the respondents, and the respondents must be a positive whole number
+    with pytest.raises(ValueError, match="commuter_target_respondents"):
+        cal.run(out_path=None, sensitivity_commuter_target_se=[1.0], **inputs)
+    for bad in (0, -3, 2.5, True):
+        with pytest.raises(ValueError, match="commuter_target_respondents"):
+            cal.run(out_path=None, commuter_target_respondents=bad, sensitivity_commuter_target_se=[1.0], **inputs)
+    for bad in (0.0, float("nan"), "one"):
+        with pytest.raises(ValueError, match="sensitivity_commuter_target_se"):
+            cal.run(out_path=None, commuter_target_respondents=100, sensitivity_commuter_target_se=[bad], **inputs)
+
+
+def test_the_header_lists_every_sensitivity_names_the_zone_split_of_the_commuters_and_the_code_state_rule(cal, inputs, tmp_path):
+    free_lot, paid_lot = _dataset_files(inputs, tmp_path)
+    result = cal.run(out_path=None, generated_on="2026-10-14", sensitivity_garages={"lot_threshold_30": free_lot},
+                     sensitivity_betas=[0.5], sensitivity_visitors_in_window=True, commuter_target_respondents=100,
+                     sensitivity_commuter_target_se=[-1.0], **inputs)
+    header = [line for line in result["text"].splitlines() if line.startswith("#")]
+    summary = next(line for line in header if line.startswith("# Sensitivities in this table"))
+    for label in ("lot_threshold_30", "beta_0.5", "visitors_in_window", "commuter_target_minus_1_se"):
+        assert label in summary, label
+    assert "none is a release value" in summary
+    labelled = [line for line in header if "NOT a release value" in line]
+    assert len(labelled) == 4          # every listed sensitivity has its own line
+    note = next(line for line in header if "code state" in line and "names the commit of the producing code" in line)
+    assert "changes only that line" in note
+    zones = next(line for line in header if line.startswith("# Commuter universe:"))
+    assert "By zone: bs_zone_ia 1 (50.0 %), bs_zone_ib 1 (50.0 %)" in zones
+    # without any optional sensitivity the summary says so
+    plain = cal.run(out_path=None, **inputs)["text"]
+    assert "# Sensitivities in this table (none is a release value): none." in plain
+    assert result["commuter_zone_counts"] == {"bs_zone_ia": 1, "bs_zone_ib": 1}
+
+
+def test_the_command_line_takes_the_new_sensitivity_options(cal, monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(cal, "run", lambda **options: captured.update(options))
+    base = ["--plans", str(tmp_path / "plans.xml"), "--data-path", str(tmp_path / "data")]
+    cal.main(base)
+    assert captured["sensitivity_visitors_in_window"] is False and captured["commuter_target_respondents"] is None
+    assert captured["sensitivity_commuter_target_se"] is None
+    cal.main(base + ["--sensitivity-visitors-in-window", "--commuter-target-respondents", "42",
+                     "--sensitivity-commuter-target-se", "-1", "--sensitivity-commuter-target-se", "0.5"])
+    assert captured["sensitivity_visitors_in_window"] is True and captured["commuter_target_respondents"] == 42
+    assert captured["sensitivity_commuter_target_se"] == [-1.0, 0.5]
+    with pytest.raises(SystemExit) as refused:
+        cal.main(base + ["--sensitivity-commuter-target-se", "1"])      # the respondents are missing
+    assert refused.value.code == 2
+    with pytest.raises(SystemExit) as refused:
+        cal.main(base + ["--commuter-target-respondents", "0", "--sensitivity-commuter-target-se", "1"])
+    assert refused.value.code == 2

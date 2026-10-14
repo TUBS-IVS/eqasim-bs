@@ -67,6 +67,13 @@ Definitions (the committed calibration table records them, so that its number ca
     expectation over the street and the options (then ``p_paid + p_street`` is 1 for every activity, so the denominator of the
     pooled ratio is the number of activities); with free options in range, or stays that are decided before the options act, the
     two may differ (the pooled ratio is not computed).
+  - PAYER-CONDITIONAL (ruling R-B-16): the paid-only target is conditional on the paying users, so the commuter measure and the
+    Wolfsburg check leave every stay that the production pricing prices at 0 ct out of numerator AND denominator
+    (``is_payer``): a stay outside the street fee window, with a free street (E4), or whose street is infeasible and whose
+    feasible options are all free (expected cost exactly 0) is a non-payer. The non-payers are counted and logged as a rate per
+    universe. A universe without a payer is refused. The payment-inclusive visitor measure (lambda) keeps every stay: the SrV
+    street category contains free parkers, so a free-street stay is a street stay there (the sensitivity
+    ``--sensitivity-visitors-in-window`` leaves the non-payers out of lambda too).
 * NO FEASIBLE OPTION (spec v3 A1): a stay whose street cannot serve it (maximum stay exceeded, no long-stay product, no commuter
   product) and for which no garage or lot within D_max can serve it either. The production pricing prices it as the street at
   its metered price (outcome ``NO_FEASIBLE_OPTION``, a signal that the option set is incomplete). The calibration gives such a stay
@@ -131,7 +138,11 @@ Definitions (the committed calibration table records them, so that its number ca
   of Task 4j, and writes lambda and lambda_c of each as header lines of the table, labelled sensitivity and never a release value;
   ``--sensitivity-beta`` does the same for another option price coefficient on the release dataset. The release rows are those of
   the primary dataset at the release beta. A sensitivity dataset with the content of the primary one, or a coefficient equal to
-  the release one, is refused.
+  the release one, is refused. ``--sensitivity-visitors-in-window`` adds the line "lambda over in-window stays only" (the visitor
+  measure over the payers only). ``--commuter-target-respondents N`` with ``--sensitivity-commuter-target-se M`` (repeatable)
+  adds lambda_c at the target shifted by M standard errors, ``SE = sqrt(p (1 - p) / N)`` of the paid SrV share p among N
+  unweighted respondents (N is read from the data record, never from the table; the binomial SE ignores the design effect and
+  is a lower bound), or the statement that the shifted target is unreachable with the floor of the forced share.
 
 Fallback transparency: the log and the table report, per universe, how every stay was priced (``StayOutcomes``: priced as an
 expectation over the street and the options, of which forced off-street because the street is infeasible; priced as the street
@@ -267,6 +278,16 @@ class Target(NamedTuple):
     other_name: str
     other: float
     table: str
+
+
+class TargetUnreachable(ValueError):
+    """A target outside the range of the mean share at the two ends of the search; ``low_end_mean`` is the floor (the share of
+    the stays that are forced off-street plus the choices at the smallest decay) and ``high_end_mean`` the ceiling."""
+
+    def __init__(self, message: str, low_end_mean: float, high_end_mean: float):
+        super().__init__(message)
+        self.low_end_mean = low_end_mean
+        self.high_end_mean = high_end_mean
 
 
 class Calibration(NamedTuple):
@@ -581,21 +602,40 @@ def option_share(detail: cost.GarageStayPrice, measure: str, paid_by_id: Mapping
     return paid_weight / total if total > 0.0 else 0.0
 
 
+def is_payer(detail: cost.GarageStayPrice) -> bool:
+    """Whether the production pricing makes the stay a PAYER (ruling R-B-16): it prices the stay above 0 ct. A stay priced as an
+    expectation is a payer unless its unrounded expected cost is exactly 0 (every feasible option free and no street option:
+    the rounded price would depend on the decay length, the exact zero does not); every other stay is a payer when its price
+    is above 0 ct (a stay outside the street fee window or with a free street, E4, is priced 0)."""
+    if detail.outcome == cost.PAID_EXPECTED:
+        return detail.expected_cents is not None and detail.expected_cents > 0.0
+    return detail.cents > 0
+
+
 def mean_option_share(stays: Sequence, decay_m: float, option_price_beta_u_per_eur: float, measure: str,
-                      paid_by_id: Mapping) -> float:
+                      paid_by_id: Mapping, payers_only: bool = False) -> float:
     """Mean over ``stays`` of ``option_share`` of the production pricing at the decay length ``decay_m`` (a universe is averaged
-    over its activities, as in E5). Raises ``ValueError`` for an empty universe, a decay that is no positive finite number of
-    metres (the production pricing reads 0 as "options off", which is no calibration state) and another measure."""
+    over its activities, as in E5). With ``payers_only`` (the payer-conditional measure of lambda_c and the Wolfsburg check,
+    ruling R-B-16) the stays that are no payers (``is_payer``) leave numerator and denominator. Raises ``ValueError`` for an
+    empty universe, a payer-conditional universe without a payer, a decay that is no positive finite number of metres (the
+    production pricing reads 0 as "options off", which is no calibration state) and another measure."""
     if measure not in MEASURES:
         raise ValueError(f"unknown measure {measure!r}; the measures are {MEASURES}")
     if not stays:
         raise ValueError("the destination universe is empty: no stay to average the off-street share over")
     if isinstance(decay_m, bool) or not isinstance(decay_m, (int, float)) or not (math.isfinite(decay_m) and decay_m > 0):
         raise ValueError(f"decay_m must be a positive finite number of metres, got {decay_m!r}")
-    total = 0.0
+    total, counted = 0.0, 0
     for stay in stays:
-        total += option_share(price_stay(stay, decay_m, option_price_beta_u_per_eur), measure, paid_by_id)
-    return total / len(stays)
+        detail = price_stay(stay, decay_m, option_price_beta_u_per_eur)
+        if payers_only and not is_payer(detail):
+            continue
+        total += option_share(detail, measure, paid_by_id)
+        counted += 1
+    if counted == 0:
+        raise ValueError(f"no payer stay among the {len(stays)} stays of the universe: the payer-conditional measure (a stay "
+                         "priced at 0 ct leaves numerator and denominator) cannot be averaged")
+    return total / counted
 
 
 class StayOutcomes(NamedTuple):
@@ -604,7 +644,8 @@ class StayOutcomes(NamedTuple):
     option and are forced off-street), ``street_only`` had the street as their only option (no feasible garage), ``street_free``
     had a free street (E4: nobody pays an option), ``outside_fee_hours`` lay outside the street fee window (the street is free)
     and ``no_feasible_option`` had no option at all (priced as the street, off-street share 0). The five classes sum to
-    ``stays``."""
+    ``stays``. ``non_payers`` counts the stays the pricing prices at 0 ct (``is_payer``; they overlap the classes above): the
+    payer-conditional measure leaves them out, the payment-inclusive one keeps them."""
 
     stays: int
     expectation: int
@@ -613,15 +654,18 @@ class StayOutcomes(NamedTuple):
     street_free: int
     outside_fee_hours: int
     no_feasible_option: int
+    non_payers: int = 0
 
 
 def stay_outcomes(stays: Sequence, decay_m: float, option_price_beta_u_per_eur: float) -> StayOutcomes:
     """The ``StayOutcomes`` of ``stays`` priced by the production code at ``decay_m``. Raises ``ValueError`` for an outcome the
     calibration does not expect (a stay decided by home, employer-free, resident or no-zone: the flags are off and the universes
     hold no home activity, so one of those would be a defect)."""
-    counts = dict(expectation=0, street_infeasible=0, street_only=0, street_free=0, outside_fee_hours=0, no_feasible_option=0)
+    counts = dict(expectation=0, street_infeasible=0, street_only=0, street_free=0, outside_fee_hours=0, no_feasible_option=0,
+                  non_payers=0)
     for stay in stays:
         detail = price_stay(stay, decay_m, option_price_beta_u_per_eur)
+        counts["non_payers"] += not is_payer(detail)
         if detail.outcome == cost.NO_FEASIBLE_OPTION:
             counts["no_feasible_option"] += 1
         elif detail.outcome == cost.OUTSIDE_FEE_HOURS:
@@ -659,8 +703,9 @@ def calibrate_decay(mean_of_decay, target: float, *, lambda_min_m: float = DEFAU
     low_mean = mean_of_decay(lambda_min_m)
     high_mean = mean_of_decay(lambda_max_m)
     if not low_mean - tolerance <= target <= high_mean + tolerance:
-        raise ValueError(f"the target {target:.4f} is unreachable: the mean off-street share is {low_mean:.4f} at "
-                         f"lambda = {lambda_min_m} m and {high_mean:.4f} at lambda = {lambda_max_m} m")
+        raise TargetUnreachable(f"the target {target:.4f} is unreachable: the mean off-street share is {low_mean:.4f} at "
+                                f"lambda = {lambda_min_m} m and {high_mean:.4f} at lambda = {lambda_max_m} m", low_mean,
+                                high_mean)
     low, high, iterations = lambda_min_m, lambda_max_m, 0
     while True:
         middle = 0.5 * (low + high)
@@ -871,7 +916,8 @@ def _outcomes_text(outcomes: StayOutcomes) -> str:
     return (f"stays {outcomes.stays}: expectation {outcomes.expectation} (street infeasible {outcomes.street_infeasible}: "
             f"forced off-street), street only {outcomes.street_only}, street free {outcomes.street_free}, outside fee hours "
             f"{outcomes.outside_fee_hours}, no feasible option {outcomes.no_feasible_option}/{outcomes.stays} "
-            f"({100.0 * outcomes.no_feasible_option / outcomes.stays:.1f} %)")
+            f"({100.0 * outcomes.no_feasible_option / outcomes.stays:.1f} %), non-payers (priced 0 ct) {outcomes.non_payers}/"
+            f"{outcomes.stays} ({100.0 * outcomes.non_payers / outcomes.stays:.1f} %)")
 
 
 def _warn_when_no_feasible_option_is_frequent(name: str, outcomes: StayOutcomes, context: str, maximum_share: float) -> None:
@@ -892,8 +938,8 @@ def calibrate_option_set(universes: Universes, options: pd.DataFrame, tariffs_by
                          lambda_min_m: float, lambda_max_m: float, tolerance: float, context: str = "",
                          wolfsburg_label: str = "the Wolfsburg zones",
                          minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING,
-                         maximum_no_feasible_option_share_warning: float = MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING
-                         ) -> OptionSetCalibration:
+                         maximum_no_feasible_option_share_warning: float = MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING,
+                         visitors_payers_only: bool = False) -> OptionSetCalibration:
     """Calibrate lambda (payment-inclusive measure on every option, E5) and lambda_c (paid-only measure, H2) on the priced
     ``options`` at the option price coefficient ``option_price_beta_u_per_eur`` and compute the paid-only Wolfsburg check mean at
     lambda_c (H3b); every stay is priced by the production code (module documentation). ``pricing`` carries D_max, L1 and the
@@ -901,7 +947,9 @@ def calibrate_option_set(universes: Universes, options: pd.DataFrame, tariffs_by
     Logs, per universe, the activities with an option within D_max, the free options within D_max and the outcomes of the stays
     (primary method against fallbacks, the rate of NO FEASIBLE OPTION), and warns about a universe below
     ``minimum_reach_share_warning`` and above ``maximum_no_feasible_option_share_warning``. Raises ``ValueError`` naming the
-    calibration (and the measure) whose target the options cannot reach."""
+    calibration (and the measure) whose target the options cannot reach. The commuter measure and the Wolfsburg check are
+    PAYER-CONDITIONAL (ruling R-B-16: the stays priced at 0 ct leave numerator and denominator); the visitor measure keeps every
+    stay unless ``visitors_payers_only`` (the sensitivity "lambda over in-window stays only")."""
     max_distance_m = pricing.max_distance_m
     minimum_stay_s = pricing.minimum_stay_min * cost.SECONDS_PER_MINUTE
     paid_by_id = dict(zip(options["garage_id"].tolist(), paid_option_flags(options).tolist()))
@@ -944,34 +992,46 @@ def calibrate_option_set(universes: Universes, options: pd.DataFrame, tariffs_by
                               wolfsburg_reach.activities, "paid", max_distance_m, context, minimum_reach_share_warning)
     search = dict(lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, tolerance=tolerance)
 
-    def mean_of(name, measure):
-        return lambda decay_m: mean_option_share(stays[name], decay_m, option_price_beta_u_per_eur, measure, paid_by_id)
+    def mean_of(name, measure, payers_only):
+        return lambda decay_m: mean_option_share(stays[name], decay_m, option_price_beta_u_per_eur, measure, paid_by_id,
+                                                 payers_only)
+
+    def refuse(error, what):
+        if isinstance(error, TargetUnreachable):
+            return TargetUnreachable(f"{context}{what}: {error}", error.low_end_mean, error.high_end_mean)
+        return ValueError(f"{context}{what}: {error}")
 
     try:
-        visitors = calibrate_decay(mean_of("visitors", MEASURE_ALL_OPTIONS), visitor_target.value, **search)
+        visitors = calibrate_decay(mean_of("visitors", MEASURE_ALL_OPTIONS, visitors_payers_only), visitor_target.value,
+                                   **search)
     except ValueError as error:
-        raise ValueError(f"{context}lambda (payment-inclusive measure, every option counts): {error}") from error
+        raise refuse(error, "lambda (payment-inclusive measure, every option counts"
+                            + (", payers only" if visitors_payers_only else "") + ")") from error
     log.info("[garage-decay] %starget %.6f (%s, payment-inclusive measure); lambda %.2f m, mean %.6f after %d halvings",
              context, visitor_target.value, visitor_target.table, visitors.decay_m, visitors.achieved, visitors.iterations)
     try:
-        commuters = calibrate_decay(mean_of("commuters", MEASURE_PAID_OPTIONS), commuter_target.value, **search)
+        commuters = calibrate_decay(mean_of("commuters", MEASURE_PAID_OPTIONS, True), commuter_target.value, **search)
     except ValueError as error:
-        raise ValueError(f"{context}lambda_c (PAID-only measure, {commuter_reach.with_paid_option_in_range} of "
-                         f"{commuter_reach.activities} activities have a paid option within {max_distance_m:g} m): "
-                         f"{error}") from error
-    log.info("[garage-decay] %scommuter target %.6f (%s class %s, PAID-only measure); lambda_c %.2f m, mean %.6f after %d "
+        raise refuse(error, f"lambda_c (PAID-only payer-conditional measure, {commuter_reach.with_paid_option_in_range} of "
+                            f"{commuter_reach.activities} activities have a paid option within {max_distance_m:g} m)"
+                     ) from error
+    log.info("[garage-decay] %scommuter target %.6f (%s class %s, PAID-only payer-conditional measure); lambda_c %.2f m, "
+             "mean %.6f after %d "
              "halvings", context, commuter_target.value, commuter_target.table, COMMUTER_CLASS, commuters.decay_m,
              commuters.achieved, commuters.iterations)
     wolfsburg_mean = mean_option_share(stays["wolfsburg"], commuters.decay_m, option_price_beta_u_per_eur,
-                                       MEASURE_PAID_OPTIONS, paid_by_id)
+                                       MEASURE_PAID_OPTIONS, paid_by_id, payers_only=True)
     visitor_outcomes = stay_outcomes(stays["visitors"], visitors.decay_m, option_price_beta_u_per_eur)
     commuter_outcomes = stay_outcomes(stays["commuters"], commuters.decay_m, option_price_beta_u_per_eur)
     wolfsburg_outcomes = stay_outcomes(stays["wolfsburg"], commuters.decay_m, option_price_beta_u_per_eur)
-    for name, outcomes, notes_of in (("destination universe", visitor_outcomes, notes["visitors"]),
-                                     ("commuter universe", commuter_outcomes, notes["commuters"]),
-                                     ("Wolfsburg check universe", wolfsburg_outcomes, notes["wolfsburg"])):
-        log.info("[garage-decay] %s%s: %s; terminal stays %d, planned end before arrival %d", context, name,
-                 _outcomes_text(outcomes), notes_of.terminal_stays, notes_of.planned_end_before_arrival)
+    visitor_rule = ("leave the in-window measure (payers only)" if visitors_payers_only
+                    else "stay in the payment-inclusive measure")
+    for name, outcomes, notes_of, rule in (
+            ("destination universe", visitor_outcomes, notes["visitors"], visitor_rule),
+            ("commuter universe", commuter_outcomes, notes["commuters"], "leave the payer-conditional measure"),
+            ("Wolfsburg check universe", wolfsburg_outcomes, notes["wolfsburg"], "leave the payer-conditional measure")):
+        log.info("[garage-decay] %s%s: %s (the non-payers %s); terminal stays %d, planned end before arrival %d", context, name,
+                 _outcomes_text(outcomes), rule, notes_of.terminal_stays, notes_of.planned_end_before_arrival)
         _warn_when_no_feasible_option_is_frequent(name, outcomes, context, maximum_no_feasible_option_share_warning)
     return OptionSetCalibration(
         len(options), free_count, option_price_beta_u_per_eur, visitors, commuters, wolfsburg_mean, visitor_reach,
@@ -1034,7 +1094,8 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
                commuter_target: Target, wolfsburg_reference: Target, commuter_excluded_free: int, sensitivities: list,
                tolerance: float, wolfsburg_label: str,
                lambda_min_m: float, lambda_max_m: float, max_distance_m: float, generated_on: str, code_state: str,
-               pricing: PricingConfig, beta_sensitivities: list) -> str:
+               pricing: PricingConfig, beta_sensitivities: list, visitor_window_sensitivity: dict | None = None,
+               target_sensitivities: Sequence = (), commuter_zone_counts: Mapping | None = None) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
     zone_text = ", ".join(CALIBRATION_ZONE_IDS)
     calibration, commuter_calibration = release.visitors, release.commuters
@@ -1048,6 +1109,8 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         f"# Generated by scripts/parking/calibrate_garage_decay.py on {generated_on}; code state {code_state}.",
         "# Inputs (SHA-256; text files with LF line endings, .gz files as stored):",
         *[f"#   {name}: {path} sha256={digest}" for name, (path, digest) in inputs.items()],
+        "# The code state of the Generated-by line names the commit of the producing code (the script is run on a clean tree); "
+        "a rerun of the same inputs at a later commit changes only that line and the date.",
         "# This table belongs to the garage dataset, the zone file and the tariff table named above (sha256) exactly: another "
         "option set (a regenerated release, a car park that becomes a free option) or another zone or tariff table (a fee window, "
         "a maximum stay or a long-stay product moves feasibility and prices) needs a new calibration.",
@@ -1061,8 +1124,12 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         "street w_street / W and option i w_i / W (W = the sum of all weights) the paid-only share sum(p_paid) / (sum(p_paid) + "
         "p_street) = W_paid / (W_paid + w_street), because the factor W cancels. A stay without a street option has the "
         "paid-only share 1 where a paid option is feasible and 0 where none is; an activity without a paid option in range has "
-        "the paid-only share 0; a stay that the early rules or E4 decide (outside the fee window, a free street) has the "
-        "share 0 in both measures.",
+        "the paid-only share 0. lambda_c and the Wolfsburg check are PAYER-CONDITIONAL (ruling R-B-16): the target is the share "
+        "among the paying users, so a stay that the pricing prices at 0 ct (outside the street fee window, a free street (E4), "
+        "or a street that is infeasible with only free options) is a non-payer and leaves numerator and denominator (counted per "
+        "universe below). lambda keeps every stay (payment-inclusive): the SrV street category contains free parkers, so a "
+        "stay with a free street is a street stay there, and the share 0 of a stay that the early rules or E4 decide stays in "
+        "its mean.",
         f"# Universe of lambda: the main activities of the selected plans ({persons} persons; {freight_agents} freight agents "
         f"with ids {freight_filter.FREIGHT_PERSON_PREFIX}* excluded, they are no residents) inside {zone_text} "
         f"whose type is none of {', '.join(sorted(HOME_AND_COMMUTER_PURPOSES))} (all modes, destination universe): "
@@ -1129,6 +1196,9 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         f"{max_distance_m:g} m and {commuters.with_paid_option_in_range} of {commuters.activities} activities with at least one "
         f"PAID option within {max_distance_m:g} m (the activities whose paid-only share can be above 0). "
         f"By purpose: {purposes['commuters']}. "
+        + (("By zone: " + ", ".join(f"{zone} {count} ({100.0 * count / commuters.activities:.1f} %)"
+                                    for zone, count in sorted(commuter_zone_counts.items())) + ". ")
+           if commuter_zone_counts else "")
         + _free_reach_text(commuters, max_distance_m, "they leave the paid-only measure"),
         f"# Target of lambda_c: {commuter_target.numerator_name} / ({commuter_target.numerator_name} + "
         f"{commuter_target.other_name}) = {commuter_target.numerator} / ({commuter_target.numerator} + {commuter_target.other}) "
@@ -1145,7 +1215,9 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         "# Independent check (H3b), computed on the same plans with lambda_c and the PAID-only measure, a number only with no "
         "pre-registered bound and no validation (the reference is a quantity of residents, the model averages over "
         "destinations, and the universe is a sample whose size is stated):",
-        f"#   Wolfsburg: mean garage probability of the {wolfsburg.activities} work and education activities without "
+        f"#   Wolfsburg: payer-conditional mean off-street share (the {release.wolfsburg_outcomes.non_payers} non-payer stays "
+        f"of the universe leave numerator and denominator, {wolfsburg.activities - release.wolfsburg_outcomes.non_payers} payer "
+        f"stays remain) of the {wolfsburg.activities} work and education activities without "
         f"parkingFree inside {wolfsburg_label} ({wolfsburg.with_option_in_range} with a priced garage within "
         f"{max_distance_m:g} m, {wolfsburg.with_paid_option_in_range} with a PAID option) against {wolfsburg_reference.value:.4f} "
         f"= {wolfsburg_reference.numerator_name} / ({wolfsburg_reference.numerator_name} + {wolfsburg_reference.other_name}) of "
@@ -1157,6 +1229,11 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         "the model priced (time-aware); no paid share is checked here (ruling R-5-4). That run comparison counts ALL off-street "
         "options in its commuter and Wolfsburg rows (the outcome report has no paid/free split) and is labelled so.",
     ]
+    sensitivity_labels = ([entry["label"] for entry in sensitivities] + [entry["label"] for entry in beta_sensitivities]
+                          + ([visitor_window_sensitivity["label"]] if visitor_window_sensitivity else [])
+                          + [entry["label"] for entry in target_sensitivities])
+    header.append("# Sensitivities in this table (none is a release value): "
+                  + (", ".join(sensitivity_labels) if sensitivity_labels else "none") + ".")
     for entry in sensitivities:
         header.append(
             f"# Sensitivity of the option set (spec Amendment I6; NOT a release value) {entry['label']}: the same calibration "
@@ -1175,6 +1252,26 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
             + f": lambda = {entry['decay_length_m']:.{LAMBDA_DECIMALS}f} m (achieved mean {entry['achieved']:.6f}), lambda_c = "
             f"{entry['decay_commute_length_m']:.{LAMBDA_DECIMALS}f} m (achieved mean {entry['commuter_achieved']:.6f}); the "
             "release values are decay_length_m and decay_commute_length_m below.")
+    if visitor_window_sensitivity:
+        entry = visitor_window_sensitivity
+        header.append(
+            f"# Sensitivity of lambda over in-window stays only (spec v3 B5, ruling R-B-16; NOT a release value) "
+            f"{entry['label']}: the visitor measure over the {entry['payer_stays']} of {entry['stays']} stays that the pricing "
+            "does not price at 0 ct (the stays outside the street fee window and with a free street leave numerator and "
+            f"denominator, as the commuter measure does): lambda = {entry['decay_length_m']:.{LAMBDA_DECIMALS}f} m (achieved "
+            f"mean {entry['achieved']:.6f}); the release lambda keeps every stay.")
+    for entry in target_sensitivities:
+        shifted = (f"lambda_c = {entry['decay_commute_length_m']:.{LAMBDA_DECIMALS}f} m (achieved mean "
+                   f"{entry['achieved']:.6f})" if entry["decay_commute_length_m"] is not None else
+                   (f"UNREACHABLE: the mean is {entry['low_end_mean']:.4f} at the smallest and {entry['high_end_mean']:.4f} at "
+                    "the largest decay of the search (the floor is the share of the forced stays)" if entry["unreachable"]
+                    else f"not calibrated ({entry['error']})"))
+        header.append(
+            f"# Sensitivity of the lambda_c target (spec v3 B5, ruling R-B-16; NOT a release value) {entry['label']}: the target "
+            f"{entry['target']:.6f} = {entry['base_target']:.6f} {'+' if entry['multiple'] >= 0 else '-'} "
+            f"{abs(entry['multiple']):g} x SE {entry['standard_error']:.4f} (binomial SE of the paid share among n = "
+            f"{entry['respondents']} unweighted respondents, a lower bound: the design effect is ignored), same stays, options "
+            f"and measure: {shifted}.")
     rows = [
         ("decay_length_m", f"{calibration.decay_m:.{LAMBDA_DECIMALS}f}", "m", "calibrated lambda of the garage weights"),
         ("decay_commute_length_m", f"{commuter_calibration.decay_m:.{LAMBDA_DECIMALS}f}", "m",
@@ -1254,11 +1351,19 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
              f"{what}: stays outside the street fee window (off-street share 0)"),
             (f"{prefix}_stays_no_feasible_option", str(outcomes.no_feasible_option), "count",
              f"{what}: NO FEASIBLE OPTION stays (priced as the street; off-street share 0 and never an invented 1)"),
+            (f"{prefix}_stays_non_payer", str(outcomes.non_payers), "count",
+             f"{what}: stays the pricing prices at 0 ct (non-payers; they leave the payer-conditional measure)"),
+            (f"{prefix}_payer_stays", str(outcomes.stays - outcomes.non_payers), "count",
+             f"{what}: payer stays" + (" (the stays of the payer-conditional measure)" if prefix != "universe"
+                                       else " (lambda keeps every stay)")),
             (f"{prefix}_stays_terminal_rule", str(notes.terminal_stays), "count",
              f"{what}: stays without end_time (terminal-stay rule T1)"),
             (f"{prefix}_stays_planned_end_before_arrival", str(notes.planned_end_before_arrival), "count",
              f"{what}: stays whose planned end precedes the arrival (priced by the minimum stay)"),
         ]
+    for zone, count in sorted((commuter_zone_counts or {}).items()):
+        rows.append((f"commuter_universe_activities_zone_{zone}", str(count), "count",
+                     f"work and education activities of the commuter universe in zone {zone}"))
     if any("," in field for row in rows for field in row):
         raise ValueError("a table field contains a comma")   # the long format has no quoting
     body = [",".join(TABLE_COLUMNS)] + [",".join(row) for row in rows]
@@ -1368,6 +1473,35 @@ def validate_sensitivity_betas(sensitivity_betas, release_beta: float) -> list:
     return checked
 
 
+def target_sensitivity_label(multiple: float) -> str:
+    """The label of a commuter-target sensitivity, ``commuter_target_minus_1_se`` / ``commuter_target_plus_0.5_se``."""
+    return f"commuter_target_{'plus' if multiple > 0 else 'minus'}_{abs(multiple):g}_se"
+
+
+def validate_commuter_target_sensitivities(respondents, multiples) -> list:
+    """The shifts of the commuter-target sensitivity in standard errors as a list of floats, checked BEFORE any plan is read: each
+    a finite non-zero number (zero is the release), none given twice, and ``respondents`` (the unweighted respondents behind the
+    paid share, a positive whole number, no bool) given. Without shifts nothing is validated and nothing is computed. Raises
+    ``ValueError`` naming ``commuter_target_respondents`` or ``sensitivity_commuter_target_se``."""
+    if respondents is not None and (isinstance(respondents, bool) or not isinstance(respondents, int) or respondents < 1):
+        raise ValueError(f"commuter_target_respondents must be a positive whole number of unweighted respondents, got "
+                         f"{respondents!r}")
+    if not multiples:
+        return []
+    if respondents is None:
+        raise ValueError("sensitivity_commuter_target_se needs commuter_target_respondents (the unweighted respondents behind "
+                         "the paid commuter share, stated in the data record): the standard error is not invented")
+    checked = []
+    for value in multiples:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value == 0:
+            raise ValueError(f"sensitivity_commuter_target_se must be a finite non-zero number of standard errors (zero is the "
+                             f"release), got {value!r}")
+        if float(value) in checked:
+            raise ValueError(f"sensitivity_commuter_target_se {value:g} is given twice")
+        checked.append(float(value))
+    return checked
+
+
 def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, tariffs_path=None,
         overwrite: bool = False, max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH,
         option_price_beta_u_per_eur: float | None = None, sensitivity_betas=None,
@@ -1375,7 +1509,9 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
         facility_kinds=None, sensitivity_garages=None, generated_on: str | None = None,
         minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING,
-        maximum_no_feasible_option_share_warning: float = MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING) -> dict:
+        maximum_no_feasible_option_share_warning: float = MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING,
+        sensitivity_visitors_in_window: bool = False, commuter_target_respondents=None,
+        sensitivity_commuter_target_se=None) -> dict:
     """Calibrate lambda (E5, payment-inclusive) and lambda_c (H2, paid-only) on ``plans`` through the production pricing (module
     documentation), write the table to ``out_path`` and return the results (a dict of the table's numbers, including the
     paid-only Wolfsburg check of H3b, the stay outcomes of every universe and the sensitivities).
@@ -1387,6 +1523,11 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     coefficient (a sensitivity: a value other than the config's must not be written under the release table's file name);
     ``sensitivity_betas`` (a list of coefficients) adds a header line per coefficient next to the release values, never a release
     value.
+
+    ``sensitivity_visitors_in_window`` adds the header line "lambda over in-window stays only" (the visitor measure over the stays
+    the pricing does not price at 0 ct). ``commuter_target_respondents`` (the number of unweighted respondents behind the paid
+    commuter share, from the data record) with ``sensitivity_commuter_target_se`` (multiples of the binomial standard error)
+    adds lambda_c at the shifted targets, or the statement that a shifted target is unreachable. None of them is a release value.
 
     ``tariffs_path`` is the tariff table whose rows price the stays of every zone and whose zones of Wolfsburg
     (``wolfsburg_zone_ids``, by municipality_ags) form the check universe of H3b; None = ``parking_tariffs_2026.csv`` next to the
@@ -1445,6 +1586,7 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         raise FileExistsError(f"{out_path} exists; a calibrated release value is not replaced silently (use --overwrite)")
     sensitivity_inputs = validate_sensitivity_garages(sensitivity_garages, garages_path)
     beta_inputs = validate_sensitivity_betas(sensitivity_betas, beta)
+    target_multiples = validate_commuter_target_sensitivities(commuter_target_respondents, sensitivity_commuter_target_se)
     exposure = load_exposure_module()
     activities, persons = exposure.read_main_activities(plans)
     activities, persons, freight_agents = exclude_freight_agents(activities, persons)
@@ -1529,6 +1671,39 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
             "commuter_achieved": outcome.commuters.achieved, "wolfsburg_mean": outcome.wolfsburg_mean})
         log.info("[garage-decay] sensitivity %s (NOT a release value): lambda %.2f m, lambda_c %.2f m at option price "
                  "coefficient %g per EUR", label, outcome.visitors.decay_m, outcome.commuters.decay_m, sensitivity_beta)
+    window_entry = None
+    if sensitivity_visitors_in_window:
+        outcome = calibrate_option_set(universes, priced, tariffs_by_zone, option_price_beta_u_per_eur=beta,
+                                       context="sensitivity visitors_in_window: ", visitors_payers_only=True, **search)
+        window_entry = {"label": "visitors_in_window", "decay_length_m": outcome.visitors.decay_m,
+                        "achieved": outcome.visitors.achieved, "stays": outcome.visitor_outcomes.stays,
+                        "payer_stays": outcome.visitor_outcomes.stays - outcome.visitor_outcomes.non_payers}
+        log.info("[garage-decay] sensitivity visitors_in_window (NOT a release value): lambda %.2f m over %d of %d stays",
+                 outcome.visitors.decay_m, window_entry["payer_stays"], window_entry["stays"])
+    target_entries = []
+    for multiple in target_multiples:
+        base = commuter_target.value
+        standard_error = math.sqrt(base * (1.0 - base) / commuter_target_respondents)
+        entry = {"label": target_sensitivity_label(multiple), "multiple": multiple, "base_target": base,
+                 "target": base + multiple * standard_error, "standard_error": standard_error,
+                 "respondents": commuter_target_respondents, "decay_commute_length_m": None, "achieved": None,
+                 "unreachable": False, "low_end_mean": None, "high_end_mean": None, "error": None}
+        try:
+            outcome = calibrate_option_set(universes, priced, tariffs_by_zone, option_price_beta_u_per_eur=beta,
+                                           context=f"sensitivity {entry['label']}: ",
+                                           **{**search, "commuter_target": commuter_target._replace(value=entry["target"])})
+            entry.update(decay_commute_length_m=outcome.commuters.decay_m, achieved=outcome.commuters.achieved)
+            log.info("[garage-decay] sensitivity %s (NOT a release value): target %.6f, lambda_c %.2f m", entry["label"],
+                     entry["target"], outcome.commuters.decay_m)
+        except TargetUnreachable as error:
+            entry.update(unreachable=True, low_end_mean=error.low_end_mean, high_end_mean=error.high_end_mean, error=str(error))
+            log.warning("[garage-decay] sensitivity %s (NOT a release value): the target %.6f is UNREACHABLE (floor %.4f, "
+                        "ceiling %.4f)", entry["label"], entry["target"], error.low_end_mean, error.high_end_mean)
+        except ValueError as error:
+            entry.update(error=str(error))
+            log.warning("[garage-decay] sensitivity %s (NOT a release value): not calibrated: %s", entry["label"], error)
+        target_entries.append(entry)
+    commuter_zone_counts = {str(zone): int(count) for zone, count in universes.commuters.zone_ids.value_counts().items()}
     inputs = {name: (path_label(path), file_sha256(path)) for name, path in (
         ("plans", plans), ("zones", zones_path), ("tariffs", tariffs_path), ("garages", garages_path),
         ("srv2023_city_center_parking", city_center_path), ("srv2023_commute_parking_by_workplace_class", commute_path))}
@@ -1539,7 +1714,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         commuter_excluded_free=masks.commuters_with_parking_free, sensitivities=sensitivities, tolerance=tolerance,
         wolfsburg_label=wolfsburg_label, lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m,
         generated_on=generated_on or datetime.date.today().isoformat(), code_state=git_state(), pricing=pricing,
-        beta_sensitivities=beta_sensitivities)
+        beta_sensitivities=beta_sensitivities, visitor_window_sensitivity=window_entry, target_sensitivities=target_entries,
+        commuter_zone_counts=commuter_zone_counts)
     if out_path is not None:
         out_path.write_bytes(text.encode("ascii"))
         log.info("[garage-decay] wrote %s", out_path)
@@ -1572,6 +1748,10 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
             "commuter_activities_with_free_option": release.commuter_reach.with_free_option_in_range,
             "wolfsburg_free_options_in_range": release.wolfsburg_reach.free_options_in_range,
             "wolfsburg_activities_with_free_option": release.wolfsburg_reach.with_free_option_in_range,
+            "wolfsburg_payers": release.wolfsburg_outcomes.stays - release.wolfsburg_outcomes.non_payers,
+            "commuter_payers": release.commuter_outcomes.stays - release.commuter_outcomes.non_payers,
+            "commuter_zone_counts": commuter_zone_counts, "visitor_window_sensitivity": window_entry,
+            "commuter_target_sensitivities": target_entries,
             "sensitivities": sensitivities, "beta_sensitivities": beta_sensitivities, "text": text}
 
 
@@ -1618,6 +1798,18 @@ def main(argv=None) -> int:
                         help="a sensitivity of the option price coefficient (spec v3 B5): the same calibration with another "
                              "beta on the release dataset, written as a header line of the table, labelled sensitivity and "
                              "never a release value; repeatable (--sensitivity-beta 0 is the price-independent form of v2)")
+    parser.add_argument("--sensitivity-visitors-in-window", dest="sensitivity_visitors_in_window", action="store_true",
+                        help="add the header line 'lambda over in-window stays only' (spec v3 B5, ruling R-B-16): the visitor "
+                             "measure over the stays the pricing does not price at 0 ct; never a release value")
+    parser.add_argument("--commuter-target-respondents", dest="commuter_target_respondents", type=int, default=None, metavar="N",
+                        help="the unweighted respondents behind the paid commuter share of the SrV (29 paid garage and 13 paid "
+                             "street in bs_zentrum, stated in the data record; not in the SrV table): the binomial standard "
+                             "error of the target is sqrt(p (1 - p) / N); needed by --sensitivity-commuter-target-se")
+    parser.add_argument("--sensitivity-commuter-target-se", dest="sensitivity_commuter_target_se", action="append", type=float,
+                        default=None, metavar="MULTIPLE",
+                        help="lambda_c at the commuter target shifted by MULTIPLE standard errors (repeatable, e.g. -1, -0.5, "
+                             "0.5, 1), or the statement that the shifted target is unreachable; a header line, never a "
+                             "release value")
     parser.add_argument("--maximum-no-feasible-option-share-warning", type=float,
                         default=MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING, metavar="SHARE",
                         help="a universe in which more than this share (0 to 1) of the stays has NO FEASIBLE OPTION is warned "
@@ -1657,6 +1849,7 @@ def main(argv=None) -> int:
                              f"than the release table {data / TABLE_RELATIVE}")
         for sensitivity_beta in args.sensitivity_betas or ():
             _beta_value(sensitivity_beta, "--sensitivity-beta")
+        validate_commuter_target_sensitivities(args.commuter_target_respondents, args.sensitivity_commuter_target_se)
     except ValueError as error:
         parser.error(str(error))
     sensitivity_garages = None
@@ -1675,7 +1868,10 @@ def main(argv=None) -> int:
         option_price_beta_u_per_eur=args.option_price_beta_u_per_eur, sensitivity_betas=args.sensitivity_betas,
         facility_kinds=args.facility_kinds, sensitivity_garages=sensitivity_garages,
         minimum_reach_share_warning=args.minimum_reach_share_warning,
-        maximum_no_feasible_option_share_warning=args.maximum_no_feasible_option_share_warning)
+        maximum_no_feasible_option_share_warning=args.maximum_no_feasible_option_share_warning,
+        sensitivity_visitors_in_window=args.sensitivity_visitors_in_window,
+        commuter_target_respondents=args.commuter_target_respondents,
+        sensitivity_commuter_target_se=args.sensitivity_commuter_target_se)
     return 0
 
 
