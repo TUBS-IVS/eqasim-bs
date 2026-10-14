@@ -43,7 +43,8 @@ Schema 5 (spec v3 A1, A2 and A5, issue #436, Task A6) adds three things, all of 
   ``parking_option_price_beta_u_per_eur``, the magnitude of the car cost coefficient ``betaCost_u_MU`` of the mode choice; a model
   of schema 4 has no such key and its weights carry no price, ``option_price_beta_from_model``);
 * the key ``max_stay_min`` of every garage entry (int >= 1 or null = no maximum, ASSUMPTION M3): read from a ``max_stay_min``
-  column of the garage dataset where the dataset carries one (it has none until Part B of the v3 plan) and null otherwise;
+  column of the garage dataset where the dataset carries one (the dataset has it since spec v3 B, ruling R-B-2; a legacy
+  fixture layout has none) and null otherwise;
 * the key ``ev_free_minutes`` of every zone entry (int >= 1 or null = no exemption, ASSUMPTIONS E1 and E2). The tariff table
   also carries ``ev_rule_valid_until`` (an ISO date or empty = open-ended): the export writes the exemption only when that date
   is empty or on or after ``tariff_snapshot_date`` and writes null for an expired rule, with an info line that names the zone
@@ -661,8 +662,8 @@ def garage_row_to_tariff(row: Mapping, *, monthly_imputation: bool = True) -> Ga
         "bands": None if _is_empty(bands) else garage_bands_from_text(bands),
         "monthly_cents": _euros_to_cents(garage_monthly_eur(row, where, monthly_imputation=monthly_imputation),
                                          "monthly_eur", where),
-        # Spec v3 A1: the dataset has no such column until Part B; a frame that carries one (nullable integer minutes) is read
-        # and an absent column is null (no maximum), never a guess.
+        # Spec v3 A1: the dataset has the column since spec v3 B (ruling R-B-2); a frame that carries one (nullable integer
+        # minutes) is read and an absent column (a legacy fixture layout) is null (no maximum), never a guess.
         "max_stay_min": _whole_minutes(row["max_stay_min"] if "max_stay_min" in row else None, "max_stay_min", where),
     }
     return GarageTariff(**fields)
