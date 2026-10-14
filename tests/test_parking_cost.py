@@ -1202,3 +1202,61 @@ def test_a_stay_whose_option_weights_all_underflow_raises_a_named_error_not_a_ze
                                                    resident_of_zone=False, garage_options=[(far_garage, 1000.0)],
                                                    decay_m=400.0, decay_commute_m=400.0)
     assert detail.outcome == cost.PAID_EXPECTED
+
+
+# ------------------------------------------------------------- street_feasible on the decay 0 path (parity with Java, A8)
+
+
+def _decay_zero_detail(zone, minutes, *, purpose="shop", **flags):
+    """The detail of a stay priced with both decay lengths 0 (the garage options off) and no garage in range."""
+    flags = {"parking_free": False, "resident_of_zone": False, **flags}
+    return cost.parking_cost_with_garages_detail(zone, 32400, 32400 + minutes * 60, purpose=purpose, decay_m=0.0,
+                                                 decay_commute_m=0.0, **flags)
+
+
+def test_street_feasible_means_the_street_side_can_serve_the_stay_also_with_the_garage_options_off():
+    # Documented meaning (GarageStayPrice, Java GarageParkingCostCalculator.Result): the street product, the long-stay
+    # product, the zone commuter product or the EV exemption can serve the stay. It must not depend on the decay length.
+    no_product = _tariff(max_stay_min=180)
+    detail = _decay_zero_detail(no_product, 300)
+    assert detail.street_feasible is False and detail.outcome == cost.NO_FEASIBLE_OPTION and detail.cents == 900
+    # within the maximum stay the street serves it
+    within = _decay_zero_detail(no_product, 150)
+    assert within.street_feasible is True and (within.cents, within.outcome) == (450, cost.PAID_METERED)
+    # without a maximum stay the street always serves it
+    assert _decay_zero_detail(_tariff(), 600).street_feasible is True
+
+
+def test_the_long_stay_product_commuter_product_and_ev_exemption_keep_the_street_side_alive_with_the_options_off():
+    long_stay = _tariff(max_stay_min=180, long_stay_product_cents=900)
+    detail = _decay_zero_detail(long_stay, 300)
+    assert detail.street_feasible is True and (detail.cents, detail.outcome) == (900, cost.PAID_LONG_STAY)
+    commuter = _tariff(max_stay_min=180, commuter_day_cents=700)
+    work = _decay_zero_detail(commuter, 300, purpose="work")
+    assert work.street_feasible is True and (work.cents, work.outcome) == (700, cost.PAID_COMMUTER)
+    # the same zone for a purpose without the commuter product has no street side above the maximum
+    assert _decay_zero_detail(commuter, 300).street_feasible is False
+    ev = _decay_zero_detail(_tariff(ev_free_minutes=240, max_stay_min=150), 90, ev_exempt=True)
+    assert ev.street_feasible is True and (ev.cents, ev.outcome) == (0, cost.EV_EXEMPT)
+
+
+def test_a_zone_level_garage_product_prices_the_stay_but_is_no_street_side_with_the_options_off():
+    # _MAX_STAY_ZONE sells a zone-level garage product above the maximum stay: the stay is priced PAID_GARAGE, but the
+    # street side cannot serve it (the garage family is superseded by the options, spec Amendment E8), as in Java.
+    detail = _decay_zero_detail(_tariff(**_MAX_STAY_ZONE), 300)
+    assert detail.outcome == cost.PAID_GARAGE and detail.street_feasible is False
+
+
+def test_street_feasible_is_the_same_with_the_options_off_as_with_an_unused_option_set():
+    # The flag describes the street side, so switching the options on without a garage in range must not change it.
+    zones = [_tariff(max_stay_min=180), _tariff(max_stay_min=180, long_stay_product_cents=900), _tariff(),
+             _tariff(max_stay_min=180, commuter_day_cents=700), _tariff(**_MAX_STAY_ZONE)]
+    for zone in zones:
+        for minutes in (60, 180, 181, 300):
+            for purpose in ("shop", "work"):
+                off = _decay_zero_detail(zone, minutes, purpose=purpose)
+                on = cost.parking_cost_with_garages_detail(zone, 32400, 32400 + minutes * 60, purpose=purpose,
+                                                           parking_free=False, resident_of_zone=False, decay_m=_DECAY_M,
+                                                           decay_commute_m=_DECAY_M)
+                assert off.street_feasible is on.street_feasible, (zone, minutes, purpose)
+                assert (off.cents, off.outcome) == (on.cents, on.outcome)

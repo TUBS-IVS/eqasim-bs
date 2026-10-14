@@ -1068,9 +1068,10 @@ class GarageStayPrice(NamedTuple):
     """Result of ``parking_cost_with_garages_detail``: the price in cents, the outcome, the sum of the garage
     probabilities (0.0 when no garage acted) and the expected cost before rounding (None when no expectation was formed).
 
-    Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the street product or the
-    zone commuter product could serve it (False only where the maximum stay removed both; a stay decided before the
-    options act, by an early rule or on a campus, reports True); ``feasible_option_ids`` are the ids of the garage options
+    Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the EV exemption, the street or
+    long-stay product or the zone commuter product could serve it (False only where the maximum stay removed all of them; a stay decided before the
+    options act, by an early rule or on a campus, reports True; a stay with the options off for its purpose reports
+    the same value as with them on); ``feasible_option_ids`` are the ids of the garage options
     that admit the stay (ascending, empty when none acted).
 
     Spec v3 A2: ``street_weight`` and ``option_weights`` are the UNNORMALISED weights ``option_weight`` gave the street and
@@ -1157,12 +1158,11 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
             raise ValueError(f"garage {garage.garage_id!r}: distance_m must be a finite number >= 0, got {distance_m!r}")
     if len({garage.garage_id for garage, _ in options}) != len(options):
         raise ValueError("duplicate garage_id among the garage options")
-    # Early rules first (R-4d-2), then campus zones (priced as before: no garages); the garages act on street and resident
-    # zones only, with the options switched on and at least one garage in range.
-    if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS or decay_of_stay_m == 0:
+    # Early rules first (R-4d-2), then campus zones (priced as before: no garages); a stay decided there reports
+    # street_feasible True (the street side was never in question). The garages act on street and resident zones only, with
+    # the options switched on and at least one garage in range.
+    if outcome in _EARLY_OUTCOMES or tariff.zone_type == CAMPUS:
         return GarageStayPrice(cents, outcome, 0.0, None)
-    if counters is not None:
-        counters.eligible += 1
     # E8: with garage options the zone-level garage family is superseded; the street option is the street or long-stay
     # product or the zone commuter product, or unavailable (maximum stay exceeded without a long-stay product).
     chargeable_s = chargeable_seconds(arrival_s, departure_s, tariff.fee_start_s, tariff.fee_end_s)
@@ -1172,6 +1172,13 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
                                                _street_product(tariff, chargeable_s), _commuter_product(tariff, purpose))
                        if product is not None]
     street = min(street_products, key=lambda product: product[0]) if street_products else None
+    if decay_of_stay_m == 0:
+        # The options are off for this purpose: the price is that of parking_cost_cents, but street_feasible keeps its
+        # documented meaning (the street side can serve the stay), as in Java GarageParkingCostCalculator, so that it does
+        # not depend on the decay length.
+        return GarageStayPrice(cents, outcome, 0.0, None, street is not None)
+    if counters is not None:
+        counters.eligible += 1
     if not options:
         if outcome == NO_FEASIBLE_OPTION and counters is not None:
             # No garage in range and no street product either (a street zone with a maximum stay and nothing to sell
