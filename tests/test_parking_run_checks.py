@@ -31,7 +31,7 @@ CONFIG_NAME = f"{PREFIX}config.xml"
 JAR_RELATIVE_PATH = "eqasim-java/braunschweig/target/braunschweig-2.3.1.jar"
 #: Written out here independently of the implementation: the class the Java ParkingConfigGroup compiles to.
 PARKING_CLASS_ENTRY = "org/eqasim/braunschweig/parking/ParkingConfigGroup.class"
-#: The class of the schema-3 garage option model: the Python pipeline always writes schema 3, so a jar without it cannot
+#: The class of the garage option model: the Python pipeline always writes tariff model schema 4, so a jar without it cannot
 #: read the tariff model (written out independently of the implementation).
 GARAGE_MODEL_CLASS_ENTRY = "org/eqasim/braunschweig/parking/GarageOptionModel.class"
 #: Another class of the braunschweig module, present in every jar the pipeline builds.
@@ -138,7 +138,7 @@ def test_a_jar_without_the_parking_package_raises_naming_the_jar_the_class_the_m
 
 
 def test_a_jar_with_the_config_group_but_without_the_garage_option_model_raises_naming_the_class(tmp_path):
-    # The Python pipeline always writes the schema-3 tariff model, which a jar from before the garage options cannot
+    # The Python pipeline always writes the schema-4 tariff model, which a jar from before the garage options cannot
     # read: the old parking package alone must not pass the check.
     jar = _jar(tmp_path / "before_garages.jar", OTHER_CLASS_ENTRY, PARKING_CLASS_ENTRY)
     with pytest.raises(RuntimeError) as error:

@@ -161,7 +161,8 @@ a special case: a lot is one more point with a schedule
 (single window, duration bands or the free schedule). The reading of the package, the policy, the tariff roles, the median
 product of P14 and the evidence gate are in [parking-large-lots.md](parking-large-lots.md); the decisions in ADR-0140 decision 13.
 Three consequences for this mechanism: a lot that carries the street product of its zone has the same price as the street
-there for every stay, because the maximum stay of the zone is written as bands and the lot row alone reproduces the street
+there for every stay of 1 to 720 min (the range of the exactness sweep: arrivals 06:00, 09:00, 14:00 and 19:00, purposes work
+and shopping; the data record `parking_garages_2026` states the sweep, no claim is made outside it), because the maximum stay of the zone is written as bands and the lot row alone reproduces the street
 path (owner decision A and ruling R-4j-6, so the option changes the weights and not the price at the same spot); many lots
 are free (cost 0 at every duration, E4 unchanged); and the decay lengths were recalibrated on the enlarged set (spec I6,
 ADR-0140 decision 14), where the commuter decay and the Wolfsburg check count paid options only, so a free option leaves them.
