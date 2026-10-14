@@ -24,6 +24,9 @@ Wolfsburg car-park package is read (``wolfsburg_lots``):
   ``parking_tariffs_2026.csv`` (spec Amendment I1: a lot whose documented tariff is its zone's street product carries that
   product as its own schedule). A component the grammar of ``braunschweig.parking.garages`` cannot express stops the row
   (``SystemExit`` from the encoder, reported as ``lot_tariff_not_expressible``); nothing is approximated.
+* ``source_of`` names the source of a row: the first source of the package that states a URL and a date and is no web-service
+  layer (``is_web_service_url``: a map layer places and zones a site, it states no fee); ``capacity_origin`` tells the origin
+  of the capacity that the threshold uses (reported, OSM tag, area estimate, derived), both counted and logged by the step.
 * ``median_schedule`` is ASSUMPTION P14 (spec Amendment I4): the median product of the priced lots of the same zone.
 * ``load_free_evidence`` checks the archived evidence pages of the free Wolfsburg lots (spec Amendment I5a) against their
   ``MANIFEST.md``.
@@ -305,6 +308,33 @@ def check_package_flags(package: dict) -> None:
                          f"but facilities.json flags {count}")
 
 
+#: The origins of the capacity that the size threshold uses, in the order the step logs them. ``other`` is a selection method that
+#: ``capacity_origin`` does not know (a changed package): counted apart and warned, never silently put under another origin.
+CAPACITY_ORIGINS = ("reported", "osm_tag", "area_estimate", "derived", "other")
+#: The selection methods of the package that are an integer capacity tag of OpenStreetMap, and the ones that are an estimate
+#: from the floor area (25 m2 per space), alone or summed over geometry components; a sum that adds an OSM tag to an estimate
+#: counts as an estimate because an estimate enters it.
+OSM_TAG_METHODS = ("osm_integer_capacity",)
+AREA_ESTIMATE_METHODS = ("estimated_floor_area_m2_divided_by_25", "sum_nonoverlapping_component_area_estimates",
+                         "sum_nonoverlapping_osm_capacities_and_area_estimates")
+
+
+def capacity_origin(record: dict) -> str:
+    """The origin of the capacity that the size threshold uses, from the selection method of the package (its own order: a reported
+    capacity before an OSM tag before an area estimate): one of ``CAPACITY_ORIGINS``. ``derived`` is a derivation of reported
+    numbers (the Check In car park: 334 spaces less 130 for hotel guests); a method that is none of the known ones is ``other``."""
+    method = str(record.get("capacity_selection_method") or "")
+    if method in REPORTED_METHODS:
+        return "reported"
+    if method in OSM_TAG_METHODS:
+        return "osm_tag"
+    if method in AREA_ESTIMATE_METHODS:
+        return "area_estimate"
+    if method.startswith("derived_"):
+        return "derived"
+    return "other"
+
+
 def capacity_phrase(record: dict) -> str:
     """The capacity of a record in words with its origin, for the notes: 'capacity 101 for the threshold (reported, evidence
     level primary)' or 'capacity unknown'."""
@@ -316,14 +346,32 @@ def capacity_phrase(record: dict) -> str:
 
 
 # ---------------------------------------------------------------- sources
+#: The URL of an OGC web service or a map-server layer (the Geoviewer of the city of Wolfsburg is one). A layer places and zones a
+#: site but states no fee in words, so it is the source of a tariff only where no other source of the row states a URL and a date.
+WEB_SERVICE_URL = re.compile(r"/ows/|[?&]service=|/wms\b|/wfs\b|/arcgis/rest/|/FeatureServer\b|/MapServer\b", re.IGNORECASE)
+
+
+def is_web_service_url(url) -> bool:
+    """Whether ``url`` is the endpoint of a web-service layer (``WEB_SERVICE_URL``); an empty or missing URL is none."""
+    return bool(url) and bool(WEB_SERVICE_URL.search(str(url)))
+
+
 def source_of(package: dict, source_ids) -> tuple:
-    """(URL, ISO date) of the first source of ``source_ids`` that states both, else ``SystemExit``: the source of a row is a
-    source of the package, never a made-up one."""
+    """(URL, ISO date) of the source of a row, a source of the package and never a made-up one: the first of ``source_ids`` that
+    states both a URL and a date and is no web-service layer (the layer that places a site is no statement of its fee: the first
+    source of the Allerpark is the Geoviewer layer, its fee statement is the page after it), else the first that states both. The
+    caller counts the second case (``is_web_service_url`` of the result) and logs it as a fallback. ``SystemExit`` when none of
+    the sources states both."""
+    layer = None
     for source_id in source_ids:
         source = package["sources"].get(source_id)
         if source and source["url"] and source["date"]:
-            return source["url"], source["date"]
-    raise SystemExit(f"none of the sources {list(source_ids)} states both a URL and a date")
+            if not is_web_service_url(source["url"]):
+                return source["url"], source["date"]
+            layer = layer or (source["url"], source["date"])
+    if layer is None:
+        raise SystemExit(f"none of the sources {list(source_ids)} states both a URL and a date")
+    return layer
 
 
 # ---------------------------------------------------------------- tariff components in the regional rule schema
@@ -420,11 +468,18 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
     """The street product of the zone ``zone_id`` of the tariff table ``tariffs`` (``parking_tariffs_2026.csv``, a DataFrame
     indexed or not by ``zone_id``) as regional rules of the lot ``facility_key``: the rate (EUR per billing unit = hourly rate x
     unit / 60, a whole number of cents; the unit of the table is a started unit) with the zone's fee window on Monday to Friday
-    and, where the zone has a daily cap, the cap rule ``<facility_key>:zone_cap``. Returns {"rules": {id: rule}, "rate": rate rule
-    id, "cap": cap rule id or None, "row": the zone's table row as a dict}. ``SystemExit`` for a zone that the table does not hold
-    or that has no hourly rate, an amount that is no whole number of cents, and a zone product with a free threshold, a first
-    period or a commuter-only price (the garage grammar of the lot cannot carry those; they stop the row instead of being
-    dropped)."""
+    and, where the zone has a daily cap, the cap rule ``<facility_key>:zone_cap``. A zone with a maximum stay and its long-stay
+    product (assumption M1: a stay above the maximum stay buys the product, whatever the metered price would be) gives the rate
+    rule the elapsed range 0 min to the maximum stay and the long-stay product the open total rule ``<facility_key>:zone_long_stay``
+    from the maximum stay, so the lot's schedule is the BANDS form that reproduces the street exactly (ruling R-4j-6; the bands
+    take the chargeable minutes in the fee window like the street, and a total band and tiers may not mix). Returns {"rules":
+    {id: rule}, "rate": rate rule id, "cap": cap rule id or None, "long_stay": long-stay rule id or None, "form": the form of the
+    specification for the encoder ({"rate": ...} or {"bands": [...]}, "window": "rate", and "cap" where there is one), "row":
+    the zone's table row as a dict}. ``SystemExit`` for a zone that the table does not hold or that has no hourly rate, an amount
+    that is no whole number of cents, a zone product with a free threshold, a first period or a commuter-only price, a maximum stay
+    without a long-stay product (the street product is then unavailable above it) and a daily cap beside a long-stay product (the
+    cap would cap the product, the street does not): the garage grammar of the lot cannot carry those exactly, so they stop the row
+    instead of being dropped or approximated."""
     table = tariffs.set_index("zone_id") if "zone_id" in tariffs.columns else tariffs
     if zone_id not in table.index:
         raise SystemExit(f"the tariff table holds no zone {zone_id}")
@@ -436,6 +491,14 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
         if pd.notna(row[column]):
             raise SystemExit(f"the street product of {zone_id} has {column} {row[column]}, which the schedule of a lot cannot "
                              "carry as one product; this zone needs components of its own")
+    max_stay, long_stay = row["max_stay_min"], row["long_stay_product_eur"]
+    if pd.notna(max_stay) and pd.isna(long_stay):
+        raise SystemExit(f"the street product of {zone_id} has a maximum stay of {max_stay} min and no long-stay product: a stay "
+                         "above it loses the street product (assumption M1), which a lot cannot carry; this zone needs "
+                         "components of its own")
+    if pd.notna(max_stay) and pd.notna(row["daily_cap_eur"]):
+        raise SystemExit(f"the street product of {zone_id} has a daily cap beside a long-stay product, which the bands of a lot "
+                         "cannot carry exactly: the cap would cap the long-stay product that the street does not cap")
     unit_amount = round(float(hourly) * float(unit) / 60.0, 6)
     if abs(unit_amount * 100 - round(unit_amount * 100)) > 1e-6:
         raise SystemExit(f"the street rate of {zone_id} ({hourly} EUR per hour, unit {unit} min) is {unit_amount} EUR per unit, no "
@@ -449,8 +512,15 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
               "preferred_for_current_use": True, "max_stay_minutes": None}
     rules = {rate_id: {**common, "rule_id": rate_id, "rule_type": "increment", "amount_eur": round(unit_amount, 2),
                        "billing_unit_minutes": int(unit), "rounding": "started_unit", "elapsed_from_minutes": 0,
-                       "elapsed_to_minutes": None, "free_period_minutes": None, "daily_cap_eur": None, "cap_period": None,
-                       "charging_times": times}}
+                       "elapsed_to_minutes": None if pd.isna(max_stay) else int(max_stay), "free_period_minutes": None,
+                       "daily_cap_eur": None, "cap_period": None, "charging_times": times}}
+    long_stay_id = None
+    if pd.notna(max_stay):
+        long_stay_id = f"{facility_key}:zone_long_stay"
+        rules[long_stay_id] = {**common, "rule_id": long_stay_id, "rule_type": "duration_total",
+                               "amount_eur": float(long_stay), "billing_unit_minutes": None, "rounding": None,
+                               "elapsed_from_minutes": int(max_stay), "elapsed_to_minutes": None, "free_period_minutes": None,
+                               "daily_cap_eur": None, "cap_period": None, "charging_times": times}
     cap_id = None
     if pd.notna(row["daily_cap_eur"]):
         cap_id = f"{facility_key}:zone_cap"
@@ -458,16 +528,48 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
                          "billing_unit_minutes": None, "rounding": None, "elapsed_from_minutes": None,
                          "elapsed_to_minutes": None, "free_period_minutes": None, "daily_cap_eur": float(row["daily_cap_eur"]),
                          "cap_period": None, "charging_times": {day: None for day in WEEKDAY_NAMES + ("public_holidays",)}}
-    return {"rules": rules, "rate": rate_id, "cap": cap_id,
+    form = {"bands": [rate_id, long_stay_id], "window": "rate"} if long_stay_id else {"rate": rate_id, "window": "rate"}
+    if cap_id:
+        form["cap"] = cap_id
+    return {"rules": rules, "rate": rate_id, "cap": cap_id, "long_stay": long_stay_id, "form": form,
             "row": {key: (None if pd.isna(value) else value) for key, value in row.to_dict().items()}}
+
+
+#: A weekday window in the free text of paid hours: an optional day range, then ``HH:MM-HH:MM`` (what follows, such as a shorter
+#: Saturday, is not a weekday window; the Saturday part is named by ``regional_garages._lot_limitations`` as not modelled).
+_FREE_TEXT_WEEKDAY_WINDOW = re.compile(
+    r"^\s*(?:Mo\s*[-\u2013]\s*(?:Fr|Sa|So|Su)\s+)?"
+    r"(\d{1,2}):(\d{2})\s*[-\u2013]\s*(\d{1,2}):(\d{2})")
+
+
+def _named_source(package: dict, source_ids) -> str:
+    """The first source of ``source_ids`` that states a URL as '<id> <URL> of <date>' (a source of the package, never made up),
+    else a sentence saying that there is none."""
+    for source_id in source_ids or ():
+        source = package["sources"].get(source_id)
+        if source and source["url"]:
+            return f"source {source_id} {source['url']}" + (f" of {source['date']}" if source["date"] else "")
+    return "no source of the package states a URL"
+
+
+def _zone_row_source(row: dict) -> str:
+    """The source of a table row of the zone as 'source <URL> of <date>' (and the assumption that its notes state for the billing
+    unit, such as ASSUMPTION D3-a), else a sentence saying that the row names none."""
+    if not row.get("source_url"):
+        return "the table row names no source"
+    text = f"source {row['source_url']}" + (f" of {row['source_date']}" if row.get("source_date") else "")
+    assumption = re.search(r"ASSUMPTION ([A-Z][0-9]+-[a-z]+): billing_unit_min", str(row.get("notes") or ""))
+    return text + (f", ASSUMPTION {assumption.group(1)}" if assumption else "")
 
 
 def zone_check_sentence(package: dict, facility_key: str, rule_id: str, product: dict, zone_id: str) -> tuple:
     """(sentence, verdict) of the consistency check of a lot that carries the street product of its zone (spec Amendment I1): the
     documented component of the package (``rule_id``) against the table row of the zone. The hourly equivalent of the component
     (amount x 60 / unit) is compared with the zone's hourly rate; a difference is named as such and changes nothing (the zone
-    tariff is never changed by a lot, the lot carries the zone's product). The component's paid hours are stated verbatim and the
-    zone's fee window beside them, compared where the package structures them as weekday windows."""
+    tariff is never changed by a lot, the lot carries the zone's product). A billing unit that the package states differently from
+    the zone row (the package reads an hour where the zone row bills a started half hour, ruling R-4j-7) is named with both
+    sources. The component's paid hours are stated verbatim and the zone's fee window beside them, compared where the package
+    structures them as weekday windows or states a weekday window in free text; hours that are neither are named as not compared."""
     raw = package["rules"][rule_id]
     amount, unit = raw.get("amount_eur"), raw.get("billing_unit_minutes")
     if not amount or not unit:
@@ -476,6 +578,11 @@ def zone_check_sentence(package: dict, facility_key: str, rule_id: str, product:
     zone_rate = float(product["row"]["hourly_rate_eur"])
     verdicts = ["rate equal" if abs(reference - zone_rate) < 0.005 else
                 f"rate DIFFERS by {abs(reference - zone_rate):.2f} EUR per hour"]
+    zone_unit = int(product["row"]["billing_unit_min"])
+    if int(unit) != zone_unit:
+        package_source = _named_source(package, raw.get("source_ids"))
+        verdicts.append(f"billing unit DIFFERS: the package states {int(unit)} min ({package_source}), the zone row "
+                        f"{zone_unit} min ({_zone_row_source(product['row'])})")
     window = f"{float(product['row']['fee_start_h']):g}-{float(product['row']['fee_end_h']):g} h"
     raw_hours = raw.get("paid_hours_raw") or raw.get("paid_hours")
     schedule = raw.get("schedule")
@@ -488,6 +595,15 @@ def zone_check_sentence(package: dict, facility_key: str, rule_id: str, product:
         verdicts.append("fee window equal" if same else "fee window DIFFERS")
     elif raw_hours == "24/7":
         verdicts.append("fee window equal (24/7)" if zone_hours == (0.0, 24.0) else "fee window DIFFERS (the package states 24/7)")
+    elif raw_hours and _FREE_TEXT_WEEKDAY_WINDOW.match(str(raw_hours)):
+        found = _FREE_TEXT_WEEKDAY_WINDOW.match(str(raw_hours))
+        package_minutes = (int(found.group(1)) * 60 + int(found.group(2)), int(found.group(3)) * 60 + int(found.group(4)))
+        zone_minutes = (round(zone_hours[0] * 60), round(zone_hours[1] * 60))
+        if package_minutes == zone_minutes:
+            verdicts.append(f"fee window equal (read from the free text '{raw_hours}' on weekdays)")
+        else:
+            verdicts.append(f"fee window DIFFERS (the package states '{raw_hours}', the zone row "
+                            f"{_clock_text(zone_hours[0])}-{_clock_text(zone_hours[1])})")
     elif raw_hours:
         verdicts.append("fee window not compared (the package states its weekdays only in free text)")
     sentence = (f"Consistency check of the documented component {rule_id} ({amount:.2f} EUR per {int(unit)} min = "

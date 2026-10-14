@@ -751,8 +751,9 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             if len(set(hashes)) != len(hashes):
                 problem("package_sha256", f"{row['package_sha256']!r} lists a package SHA-256 twice")
             if len(hashes) > MAXIMUM_PACKAGE_HASHES:
-                problem("package_sha256", f"{row['package_sha256']!r}: at most four package SHA-256 values (the regional "
-                                          "package and the three supplement packages), separated by ';'")
+                problem("package_sha256", f"{row['package_sha256']!r}: at most {MAXIMUM_PACKAGE_HASHES} package SHA-256 "
+                                          "values (the regional package, the supplement, the follow-up, the Wolfsburg car-park "
+                                          "package and the large-lot package), separated by ';'")
         capacity = row["capacity_reported"]
         if zones._is_set(capacity):
             if capacity <= 0:
@@ -954,8 +955,9 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
     charging times replaced by an assumption), the priced garages in the tiered form (``priced_tiered``, the tiered garages
     with a grace period included), in the banded form (``priced_banded``: a schedule without tiers) and with the free
     schedule (``priced_free``) and the garages with a published monthly product (``with_monthly_product``) and with an
-    imputed one (``with_monthly_imputed``, ASSUMPTION P13). Plain numbers and dicts, sorted, so a caller can print or compare
-    them."""
+    imputed one (``with_monthly_imputed``, ASSUMPTION P13); the surface lots that carry a monthly product (the commuter product of
+    the zone that a lot is too, spec Amendment I1, owner decision A) are ``lots_with_monthly_product``, never a garage product and
+    never a value of ASSUMPTION P13. Plain numbers and dicts, sorted, so a caller can print or compare them."""
     priced = frame["priced"].astype(bool)
     reasons = frame.loc[~priced, "not_priced_reason"].fillna("").astype(str)
     by_reason = {reason: int(count) for reason, count in reasons.value_counts().sort_index().items()}
@@ -989,7 +991,8 @@ def coverage(frame: gpd.GeoDataFrame) -> dict:
             "priced_with_p4_or_p5": int(with_p4_or_p5),
             "priced_tiered": int(frame.loc[priced, "tariff_tiers"].map(zones._is_set).sum()),
             "priced_banded": banded, "priced_free": free,
-            "with_monthly_product": int(frame["monthly_eur"].notna().sum()),
+            "with_monthly_product": int(frame.loc[frame["facility_kind"] == "garage", "monthly_eur"].notna().sum()),
+            "lots_with_monthly_product": int(frame.loc[frame["facility_kind"] != "garage", "monthly_eur"].notna().sum()),
             "with_monthly_imputed": int(frame["monthly_imputed_eur"].notna().sum())}
 
 

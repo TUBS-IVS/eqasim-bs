@@ -899,7 +899,8 @@ def test_a_row_may_cite_the_regional_package_and_the_two_supplement_packages_by_
 @pytest.mark.parametrize("value, message", [
     (f"{SHA};E789", "not a lower-case hexadecimal SHA-256"),
     (f"{SHA};{SHA}", "lists a package SHA-256 twice"),
-    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]};{'a' * 64}", "at most four package SHA-256 values"),
+    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]};{'a' * 64}",
+     f"at most {pg.MAXIMUM_PACKAGE_HASHES} package SHA-256 values"),
     (f"{SHA}, {SUPPLEMENT_SHA}", "not a lower-case hexadecimal SHA-256"),
 ])
 def test_a_malformed_duplicated_or_too_long_package_sha256_list_is_rejected(value, message):
@@ -1364,12 +1365,14 @@ def test_a_lot_that_carries_the_street_product_of_a_zone_must_equal_the_table_ro
 
 
 @pytest.mark.parametrize("changes, text", [
-    ({"garage_hourly_rate_eur": 2.4}, "garage_hourly_rate_eur 2.4 against hourly_rate_eur 2.2"),
-    ({"garage_billing_unit_min": 60}, "garage_billing_unit_min 60.0 against billing_unit_min 30.0"),
-    ({"garage_daily_cap_eur": 12.0}, "garage_daily_cap_eur 12.0 against daily_cap_eur 11.0"),
-    ({"garage_daily_cap_eur": None}, "garage_daily_cap_eur None against daily_cap_eur 11.0"),
-    ({"garage_fee_start_h": 6.0}, "garage_fee_start_h 6.0 against fee_start_h 0.0"),
-    ({"garage_fee_end_h": 20.0}, "garage_fee_end_h 20.0 against fee_end_h 24.0"),
+    ({"garage_hourly_rate_eur": 2.4}, "hourly_rate_eur 2.4 against 2.2"),
+    ({"garage_billing_unit_min": 60}, "billing_unit_min 60 against 30"),
+    ({"garage_daily_cap_eur": 12.0}, "daily_cap_eur 12 against 11"),
+    ({"garage_daily_cap_eur": None}, "daily_cap_eur none against 11"),
+    ({"garage_fee_start_h": 6.0}, "fee_start_h 6 against 0"),
+    ({"garage_fee_end_h": 20.0}, "fee_end_h 20 against 24"),
+    ({"monthly_eur": 120.0, "monthly_source_url": "https://x.example/m", "monthly_product": "month"},
+     "commuter_day_eur 5.71 against none"),
 ])
 def test_a_lot_that_differs_from_the_zone_row_it_names_is_a_stale_dataset_and_the_validator_says_so(changes, text):
     garages, qa, tariffs = _zone_product_tables(**changes)
@@ -1563,3 +1566,168 @@ def test_a_municipality_with_a_majority_of_imputed_monthly_products_is_warned_ab
     # nothing imputed (the sensitivity arm) or no majority: no warning
     assert pg.monthly_imputation_warnings(pg.monthly_summary(frame, imputation=False)) == []
     assert pg.monthly_imputation_warnings({}) == []
+
+
+# --------------------------------------------------------------------------- the street equivalent of a lot (R-4j-6, R-4j-7)
+
+ZONE_COLUMNS = ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "daily_cap_eur", "fee_start_h", "fee_end_h",
+                "max_stay_min", "long_stay_product_eur", "commuter_day_eur")
+
+
+def _lot(**changes) -> dict:
+    """A priced surface lot in the single-window form: 2.20 EUR per hour in units of 30 min, at most 11.00 EUR, 0-24 h."""
+    lot = dict(garage_id="lot_a", package_facility_id="a", facility_kind="surface_lot", garage_hourly_rate_eur=2.2,
+               garage_billing_unit_min=30, garage_first_period_min=None, garage_first_period_eur=None,
+               garage_daily_cap_eur=11.0, garage_fee_start_h=0.0, garage_fee_end_h=24.0, assumptions=None)
+    lot.update(changes)
+    return _row(**lot)
+
+
+def _zone_row(**changes) -> dict:
+    zone = dict(hourly_rate_eur=2.2, billing_unit_min=30, free_if_stay_at_most_min=np.nan, daily_cap_eur=11.0, fee_start_h=0.0,
+                fee_end_h=24.0, max_stay_min=np.nan, long_stay_product_eur=np.nan, commuter_day_eur=np.nan)
+    zone.update(changes)
+    return zone
+
+
+def test_the_street_equivalent_of_a_single_window_lot_is_its_columns_and_its_commuter_product():
+    lot = pq.lot_street_equivalent(_lot())
+    assert tuple(lot) == pq.ZONE_PRODUCT_COLUMNS == ZONE_COLUMNS
+    assert lot == {"hourly_rate_eur": 2.2, "billing_unit_min": 30, "free_if_stay_at_most_min": 0, "daily_cap_eur": 11.0,
+                   "fee_start_h": 0.0, "fee_end_h": 24.0, "max_stay_min": None, "long_stay_product_eur": None,
+                   "commuter_day_eur": None}
+    # the monthly product is the commuter product per working day (ASSUMPTION P2: 21 days, rounded half up to the cent)
+    with_month = pq.lot_street_equivalent(_lot(monthly_eur=120.0, monthly_source_url="https://x.example/m", monthly_product="m"))
+    assert with_month["commuter_day_eur"] == 5.71
+    assert pq.lot_street_equivalent(_lot(monthly_eur=74.0, monthly_source_url="https://x.example/m",
+                                         monthly_product="m"))["commuter_day_eur"] == 3.52
+
+
+@pytest.mark.parametrize("bands, expected", [
+    # the Salzgitter municipal tariff: a free half hour, the first hour as a total, then 0.10 EUR per started 6 min
+    ("0-30 free; 30-60 total 0.70; 60- 0.10/6", {"hourly_rate_eur": 1.0, "billing_unit_min": 6, "free_if_stay_at_most_min": 30,
+                                                  "max_stay_min": None, "long_stay_product_eur": None}),
+    # the maximum stay of zone Ia written as bands: the rate to the maximum stay, then the long-stay product as a total
+    ("0-180 0.03/1; 180- total 9.00", {"hourly_rate_eur": 1.8, "billing_unit_min": 1, "free_if_stay_at_most_min": 0,
+                                       "max_stay_min": 180, "long_stay_product_eur": 9.0}),
+    # a half-day and a day ticket after the rate are products of their own, no maximum stay of a street
+    ("0-150 0.50/30; 150-240 total 2.60; 240- total 4.20",
+     {"hourly_rate_eur": 1.0, "billing_unit_min": 30, "free_if_stay_at_most_min": 0, "max_stay_min": None,
+      "long_stay_product_eur": None}),
+    ("0-15 total 0.25; 15-120 0.05/3; 120- total 2.00",
+     {"hourly_rate_eur": 1.0, "billing_unit_min": 3, "free_if_stay_at_most_min": 0, "max_stay_min": None,
+      "long_stay_product_eur": None}),
+])
+def test_the_street_equivalent_of_a_banded_lot_reads_rate_unit_grace_and_the_maximum_stay_from_its_bands(bands, expected):
+    lot = _lot(garage_hourly_rate_eur=None, garage_billing_unit_min=None, garage_daily_cap_eur=None, garage_fee_start_h=9.0,
+               garage_fee_end_h=20.0, tariff_duration_bands=bands, assumptions="P8")
+    equivalent = pq.lot_street_equivalent(lot)
+    assert {key: equivalent[key] for key in expected} == expected
+    assert (equivalent["fee_start_h"], equivalent["fee_end_h"], equivalent["daily_cap_eur"]) == (9.0, 20.0, None)
+
+
+def test_the_street_equivalent_of_the_free_schedule_has_no_rate_and_an_empty_zone_cell_is_none():
+    free = pq.lot_street_equivalent(_lot(garage_hourly_rate_eur=None, garage_billing_unit_min=None, garage_daily_cap_eur=None,
+                                         tariff_duration_bands=pg.FREE_SCHEDULE_TEXT))
+    assert free["hourly_rate_eur"] is None and free["billing_unit_min"] is None
+    zone = pq.zone_street_equivalent(_zone_row())
+    assert zone == {"hourly_rate_eur": 2.2, "billing_unit_min": 30, "free_if_stay_at_most_min": 0, "daily_cap_eur": 11.0,
+                    "fee_start_h": 0.0, "fee_end_h": 24.0, "max_stay_min": None, "long_stay_product_eur": None,
+                    "commuter_day_eur": None}
+    assert pq.zone_street_equivalent(_zone_row(free_if_stay_at_most_min=30, max_stay_min=180, long_stay_product_eur=9.0,
+                                               commuter_day_eur=3.76))["max_stay_min"] == 180
+
+
+def test_the_differences_of_a_lot_from_its_zone_are_named_in_the_terms_of_the_zone_columns():
+    zone = pq.zone_street_equivalent(_zone_row())
+    assert pq.street_differences(pq.lot_street_equivalent(_lot()), zone) == []
+    differences = pq.street_differences(pq.lot_street_equivalent(_lot(garage_billing_unit_min=60, garage_daily_cap_eur=None)), zone)
+    assert differences == ["billing_unit_min 60 against 30", "daily_cap_eur none against 11"]
+    banded = pq.lot_street_equivalent(_lot(garage_hourly_rate_eur=None, garage_billing_unit_min=None, garage_daily_cap_eur=11.0,
+                                           tariff_duration_bands="0-30 free; 30-60 total 1.10; 60- 1.10/30", assumptions="P8;P10"))
+    assert pq.street_differences(banded, zone) == ["free_if_stay_at_most_min 30 against 0"]
+
+
+def _zone_tables(*lots, zone_rows=None, evidence="parking_tariffs_2026.csv:t_hbf;hbf__1", zone_ids="t_hbf"):
+    """A dataset of the lots, one garage QA row each (zone_ids and evidence as the curation writes them) and a tariff table."""
+    garages = _frame(*lots)
+    qa = _qa(*[_qa_row(record_id=f"garage_{lot['garage_id']}", subject=lot["garage_id"], garage_id=lot["garage_id"],
+                       zone_ids=zone_ids, evidence=evidence, note="x") for lot in lots])
+    rows = zone_rows if zone_rows is not None else [dict(zone_id="t_hbf", **_zone_row())]
+    return garages, qa, pd.DataFrame(rows)
+
+
+def test_a_zone_product_lot_with_the_maximum_stay_of_its_zone_as_bands_equals_the_zone_row():
+    zone = dict(zone_id="t_ia", **_zone_row(hourly_rate_eur=1.8, billing_unit_min=1, daily_cap_eur=np.nan, fee_start_h=9.0,
+                                            fee_end_h=20.0, max_stay_min=180, long_stay_product_eur=9.0))
+    lot = _lot(garage_hourly_rate_eur=None, garage_billing_unit_min=None, garage_daily_cap_eur=None, garage_fee_start_h=9.0,
+               garage_fee_end_h=20.0, tariff_duration_bands="0-180 0.03/1; 180- total 9.00", assumptions="P8",
+               tariff_rule_ids="parking_tariffs_2026.csv:t_ia;lot__1")
+    garages, qa, tariffs = _zone_tables(lot, zone_rows=[zone], evidence="parking_tariffs_2026.csv:t_ia;lot__1", zone_ids="t_ia")
+    assert pq.zone_product_lot_check(qa, garages, tariffs) == [{"garage_id": "lot_a", "zone_id": "t_ia", "differences": []}]
+    # the plain rate without the maximum stay is the stale or approximated product: the check names the missing long-stay product
+    plain = _lot(garage_hourly_rate_eur=1.8, garage_billing_unit_min=1, garage_daily_cap_eur=None, garage_fee_start_h=9.0,
+                 garage_fee_end_h=20.0, tariff_rule_ids="parking_tariffs_2026.csv:t_ia;lot__1")
+    garages, qa, tariffs = _zone_tables(plain, zone_rows=[zone], evidence="parking_tariffs_2026.csv:t_ia;lot__1", zone_ids="t_ia")
+    [check] = pq.zone_product_lot_check(qa, garages, tariffs)
+    assert check["differences"] == ["max_stay_min none against 180", "long_stay_product_eur none against 9"]
+
+
+def test_a_zone_product_lot_carries_the_commuter_product_of_its_zone_and_the_validator_says_when_it_does_not():
+    zone = dict(zone_id="t_hbf", **_zone_row(commuter_day_eur=5.71))
+    lot = _lot(monthly_eur=120.0, monthly_source_url="https://x.example/m", monthly_product="1 Monat",
+               tariff_rule_ids="parking_tariffs_2026.csv:t_hbf;hbf__1")
+    garages, qa, tariffs = _zone_tables(lot, zone_rows=[zone])
+    month = _qa_row(record_id="monthly_hbf", record_type="monthly_product", garage_id="lot_a", zone_ids="t_hbf", decision="used",
+                    amount_eur="120.00", evidence="package;offer", note="1 Monat")
+    qa = pd.concat([qa, _qa(month)], ignore_index=True)
+    assert pq.zone_product_lot_check(qa, garages, tariffs)[0]["differences"] == []
+    pq.validate_garage_qa(qa, garages, tariffs)
+    # a lot without the product, and one with another amount, differ from the zone's commuter_day_eur
+    bare = _lot(tariff_rule_ids="parking_tariffs_2026.csv:t_hbf;hbf__1")
+    garages_bare, qa_bare, tariffs = _zone_tables(bare, zone_rows=[zone])
+    [check] = pq.zone_product_lot_check(qa_bare, garages_bare, tariffs)
+    assert check["differences"] == ["commuter_day_eur none against 5.71"]
+    other = _lot(monthly_eur=100.0, monthly_source_url="https://x.example/m", monthly_product="1 Monat",
+                 tariff_rule_ids="parking_tariffs_2026.csv:t_hbf;hbf__1")
+    garages_other, qa_other, tariffs = _zone_tables(other, zone_rows=[zone])
+    [check] = pq.zone_product_lot_check(qa_other, garages_other, tariffs)
+    assert check["differences"] == ["commuter_day_eur 4.76 against 5.71"]
+
+
+def _in_zone_tables():
+    """Four lots inside the zone t_hbf (2.20 EUR per hour, 30 min, at most 11.00 EUR, 0-24 h) that mirror it, differ in the unit,
+    differ in a grace band, and one lot outside every zone; their QA rows name the zone as the curation writes it."""
+    equal = _lot(garage_id="lot_equal")
+    unit = _lot(garage_id="lot_unit", garage_billing_unit_min=60)
+    grace = _lot(garage_id="lot_grace", garage_hourly_rate_eur=None, garage_billing_unit_min=None,
+                 tariff_duration_bands="0-30 free; 30-60 total 1.10; 60- 1.10/30", assumptions="P8;P10")
+    outside = _lot(garage_id="lot_outside")
+    garages = _frame(equal, unit, grace, outside)
+    rows = [_qa_row(record_id=f"garage_{lot['garage_id']}", subject=lot["garage_id"], garage_id=lot["garage_id"],
+                    zone_ids=zone, evidence=lot["garage_id"], note="x")
+            for lot, zone in ((equal, "t_hbf"), (unit, "t_hbf"), (grace, "t_hbf"), (outside, ""))]
+    return garages, _qa(*rows), pd.DataFrame([dict(zone_id="t_hbf", **_zone_row())])
+
+
+def test_the_pass_over_the_lots_inside_a_zone_names_every_difference_and_counts_equal_and_differing_lots():
+    garages, qa, tariffs = _in_zone_tables()
+    checks = pq.zone_consistency_check(qa, garages, tariffs)
+    assert [(check["garage_id"], check["zone_id"], check["differences"], check["zone_product"]) for check in checks] == [
+        ("lot_equal", "t_hbf", [], False), ("lot_unit", "t_hbf", ["billing_unit_min 60 against 30"], False),
+        ("lot_grace", "t_hbf", ["free_if_stay_at_most_min 30 against 0"], False)]
+    assert pq.zone_consistency_summary(qa, garages, tariffs) == {"checked": 3, "equal": 1, "differing": ["lot_unit", "lot_grace"]}
+    # report only: a difference of a lot that is no zone-product lot never fails the validation
+    pq.validate_garage_qa(qa, garages, tariffs)
+
+
+def test_a_zone_that_the_table_does_not_hold_and_a_garage_inside_a_zone_are_handled_by_the_pass():
+    garages, qa, tariffs = _in_zone_tables()
+    with pytest.raises(ValueError, match="names the zone 't_unknown', which is not in the tariff table"):
+        pq.validate_garage_qa(_set("garage_lot_unit", zone_ids="t_unknown")(qa), garages, tariffs)
+    # a garage has its own tariff by construction: the pass compares surface lots only
+    garage_row = _row(garage_id="g_in_zone")
+    mixed = _frame(_lot(garage_id="lot_equal"), garage_row)
+    qa = _qa(_qa_row(record_id="garage_lot_equal", subject="x", garage_id="lot_equal", zone_ids="t_hbf", evidence="e", note="x"),
+             _qa_row(record_id="garage_g_in_zone", subject="y", garage_id="g_in_zone", zone_ids="t_hbf", evidence="e", note="x"))
+    assert [check["garage_id"] for check in pq.zone_consistency_check(qa, mixed, tariffs)] == ["lot_equal"]

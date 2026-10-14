@@ -467,9 +467,10 @@ def read_garage_products(inputs: dict, specs_rows) -> dict:
 def read_recorded_products(inputs: dict, recorded_specs) -> list:
     """The products of the facilities that are no garage of the dataset (``regional_garage_specs.BS_RECORDED_SPECS``): a list of
     {"record_id", "facility", "name", "decision" ("not_used" with a "reason", or "used" with the "zone_ids" it is the commuter
-    product of, spec Amendment G1), "reason", "zone_ids", "amount_eur", "product_name", "note", "evidence"}: the
-    cheapest publicly purchasable current product of each facility (a sold-out facility included, the note says so), with the
-    other products of the facility named in the note. ``SystemExit`` for a facility that has no such product or whose
+    product of, spec Amendment G1), "reason", "zone_ids", "amount_eur", "product_name", "note", "evidence"; a used product also
+    "monthly_source_url" and "monthly_product", the source page and the product text that a lot carrying it as its monthly
+    product states, spec Amendment I1 and ruling R-4j-6}: the cheapest publicly purchasable current product of each facility (a
+    sold-out facility included, the note says so), with the other products of the facility named in the note. ``SystemExit`` for a facility that has no such product or whose
     package record is of another kind than the specification expects (a garage or a surface parking)."""
     rows = []
     for spec in recorded_specs:
@@ -501,12 +502,16 @@ def read_recorded_products(inputs: dict, recorded_specs) -> list:
                      "amount_eur": amount,
                      "product_name": _ascii(cheapest["product_name"]), "note": _ascii(note),
                      "evidence": [PACKAGE_FILE, cheapest["offer_id"]]})
+        if decision == "used":
+            rows[-1].update(monthly_source_url=_source_url(inputs, cheapest), monthly_product=_product_text(cheapest, amount))
     return rows
 
 
-def qa_product_rows(garage_products: dict, recorded: list, names: dict) -> list:
+def qa_product_rows(garage_products: dict, recorded: list, names: dict, lot_garage_ids: Optional[dict] = None) -> list:
     """The QA rows (field dicts for ``regional_garages.qa_rows``) of every product that ``read_garage_products`` and
-    ``read_recorded_products`` found; ``names`` is {garage_id: name of the garage in the dataset} (the subject of a row)."""
+    ``read_recorded_products`` found; ``names`` is {garage_id: name of the garage in the dataset} (the subject of a row).
+    ``lot_garage_ids`` is {record_id of a recorded product: garage_id of the surface lot that carries it as its monthly product}
+    (a decision-A lot, ruling R-4j-6): the row then names the lot, so the dataset's ``monthly_eur`` has its used product."""
     rows = []
     for garage_id, found in garage_products.items():
         for product in found["products"]:
@@ -517,7 +522,8 @@ def qa_product_rows(garage_products: dict, recorded: list, names: dict) -> list:
                          "count": 1, "evidence": ";".join(product["evidence"]), "note": product["note"]})
     for product in recorded:
         rows.append({"record_id": product["record_id"], "record_type": "monthly_product", "municipality_ags": BRAUNSCHWEIG_AGS,
-                     "subject": f"{product['name']}: {product['product_name']}", "garage_id": None,
+                     "subject": f"{product['name']}: {product['product_name']}",
+                     "garage_id": (lot_garage_ids or {}).get(product["record_id"]),
                      "zone_ids": ";".join(product["zone_ids"]), "decision": product["decision"],
                      "reason_code": product["reason"], "amount_eur": _eur_text(product["amount_eur"]), "count": 1,
                      "evidence": ";".join(product["evidence"]), "note": product["note"]})

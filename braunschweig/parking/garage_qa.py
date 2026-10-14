@@ -23,6 +23,7 @@ dataset or tariff table cannot keep a stale table. Money in EUR.
 from __future__ import annotations
 
 import logging
+import math
 import re
 
 import pandas as pd
@@ -120,11 +121,13 @@ _RECORD_ID = re.compile(r"^[a-z0-9_]+$")
 #: A lot that carries the street product of its zone (spec Amendment I1) names the table row it carries in its ``evidence`` as
 #: ``parking_tariffs_2026.csv:<zone_id>``; ``zone_product_lot_check`` compares the dataset row with that table row.
 ZONE_PRODUCT_EVIDENCE = re.compile(r"parking_tariffs_2026\.csv:([a-z0-9_]+)")
-#: The columns of the garage dataset and the tariff table that a zone product carries (rate per hour, billing unit, daily cap, fee
-#: window); a maximum stay and a long-stay product are not carried (the notes of the row name them).
-ZONE_PRODUCT_COLUMNS = (("garage_hourly_rate_eur", "hourly_rate_eur"), ("garage_billing_unit_min", "billing_unit_min"),
-                        ("garage_daily_cap_eur", "daily_cap_eur"), ("garage_fee_start_h", "fee_start_h"),
-                        ("garage_fee_end_h", "fee_end_h"))
+#: The columns of the zone's table row that a lot inside the zone is compared with (spec Amendment I1, rulings R-4j-6 and R-4j-7):
+#: the street product (rate per hour, billing unit, the free threshold that a lot carries as its grace band, daily cap, fee window,
+#: and the maximum stay with its long-stay product, assumption M1) and the commuter product per working day. A lot that carries the
+#: street product of its zone equals the row in all of them; ``lot_street_equivalent`` reads the same quantities from a dataset row
+#: (from its columns or, for the banded form, from its bands) and the differences are named in the terms of these columns.
+ZONE_PRODUCT_COLUMNS = ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "daily_cap_eur", "fee_start_h",
+                        "fee_end_h", "max_stay_min", "long_stay_product_eur", "commuter_day_eur")
 
 
 def load_garage_qa(path) -> pd.DataFrame:
@@ -280,6 +283,12 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
             elif check["differences"]:
                 problems.append(f"garage {check['garage_id']!r}: it carries the street product of the zone {check['zone_id']!r} "
                                 "but differs from the table row: " + "; ".join(check["differences"]))
+        # every zone that a lot's QA row names (the zone polygons that contain it, ruling R-4j-7) is a zone of the table; a
+        # difference of a lot that carries no zone product is reported, never an error
+        for check in zone_consistency_check(qa, garages, tariffs):
+            if not check["zone_in_table"]:
+                problems.append(f"garage {check['garage_id']!r}: the QA row names the zone {check['zone_id']!r}, which is not in "
+                                "the tariff table")
     # --- the tariff table: commuter_day_eur = monthly amount / working days (ASSUMPTION P2)
     if tariffs is not None:
         commuter = tariffs.set_index("zone_id")["commuter_day_eur"]
@@ -304,13 +313,87 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
         raise ValueError("invalid parking garage QA table:\n  " + "\n  ".join(problems))
 
 
+def _cell(value):
+    """The value of a dataset or table cell as a float; None for an empty cell (None, NaN, NA or blank text)."""
+    if value is None or value is pd.NA:
+        return None
+    if isinstance(value, str):
+        return float(value) if value.strip() else None
+    number = float(value)
+    return None if math.isnan(number) else number
+
+
+def _same(left, right) -> bool:
+    """Two quantities are the same when both are empty or both are numbers that agree to a ten-thousandth."""
+    if left is None or right is None:
+        return left is None and right is None
+    return abs(round(left, 4) - round(right, 4)) < 1e-9
+
+
+def _text(value) -> str:
+    return "none" if value is None else f"{value:g}"
+
+
+def lot_street_equivalent(row) -> dict:
+    """The quantities of the street product of a zone that a dataset row of a lot carries, in the terms of the zone's table
+    columns (``ZONE_PRODUCT_COLUMNS``): the hourly rate and the billing unit (of the columns, or, for the banded form, of the first
+    increment band), the grace period (the closed free band that opens the bands, else 0 min), the daily cap, the fee window, the
+    maximum stay with its long-stay product (assumption M1: only the form that the street product itself has, the rate from 0 min
+    to the maximum stay and one open total band after it; any other bands are products of the lot of their own) and the commuter
+    product per working day (the monthly product over ``WORKING_DAYS_PER_MONTH`` working days, rounded half up to the cent as
+    ``braunschweig.parking.cost.garage_monthly_day_cents`` does, ASSUMPTION P2). An empty quantity is None. Pure."""
+    equivalent = {column: None for column in ZONE_PRODUCT_COLUMNS}
+    equivalent["free_if_stay_at_most_min"] = 0
+    equivalent["hourly_rate_eur"] = _cell(row["garage_hourly_rate_eur"])
+    equivalent["billing_unit_min"] = _cell(row["garage_billing_unit_min"])
+    equivalent["daily_cap_eur"] = _cell(row["garage_daily_cap_eur"])
+    equivalent["fee_start_h"] = _cell(row["garage_fee_start_h"])
+    equivalent["fee_end_h"] = _cell(row["garage_fee_end_h"])
+    bands_text = row["tariff_duration_bands"]
+    if isinstance(bands_text, str) and bands_text.strip():
+        bands = pg.parse_duration_bands(bands_text)
+        if not pg.is_free_schedule(bands):
+            if bands[0].kind == "free" and bands[0].to_min is not None:
+                equivalent["free_if_stay_at_most_min"] = bands[0].to_min
+            increments = [band for band in bands if band.kind == "increment"]
+            if increments:
+                equivalent["hourly_rate_eur"] = round(increments[0].eur * 60.0 / increments[0].unit_min, 4)
+                equivalent["billing_unit_min"] = increments[0].unit_min
+            if (len(bands) == 2 and bands[0].kind == "increment" and bands[0].from_min == 0 and bands[0].to_min is not None
+                    and bands[1].kind == "total" and bands[1].to_min is None):
+                equivalent["max_stay_min"], equivalent["long_stay_product_eur"] = bands[0].to_min, bands[1].eur
+    monthly = _cell(row["monthly_eur"])
+    if monthly is not None:
+        from braunschweig.parking.cost import garage_monthly_day_cents
+
+        equivalent["commuter_day_eur"] = garage_monthly_day_cents(int(round(monthly * 100))) / 100.0
+    return equivalent
+
+
+def zone_street_equivalent(zone_row) -> dict:
+    """The quantities of ``ZONE_PRODUCT_COLUMNS`` of a row of the tariff table; an empty cell is None, and a zone without a free
+    threshold has a grace period of 0 min (the same reading as ``lot_street_equivalent``). Pure."""
+    equivalent = {column: _cell(zone_row[column]) if column in zone_row else None for column in ZONE_PRODUCT_COLUMNS}
+    if equivalent["free_if_stay_at_most_min"] is None:
+        equivalent["free_if_stay_at_most_min"] = 0
+    return equivalent
+
+
+def street_differences(lot: dict, zone: dict) -> list:
+    """The differences of a lot's street equivalent from its zone's, one text per column of ``ZONE_PRODUCT_COLUMNS`` that differs:
+    ``'<column> <the lot's value> against <the zone's value>'`` (``none`` for an empty quantity). Empty means equal. Pure."""
+    return [f"{column} {_text(lot[column])} against {_text(zone[column])}" for column in ZONE_PRODUCT_COLUMNS
+            if not _same(lot[column], zone[column])]
+
+
 def zone_product_lot_check(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> list:
-    """The consistency check of the lots that carry the street product of their zone (spec Amendment I1 and owner decision A):
-    per ``garage`` row of the QA table whose ``evidence`` names a table row (``ZONE_PRODUCT_EVIDENCE``), the dataset row against
-    that row of the tariff table in the columns of ``ZONE_PRODUCT_COLUMNS`` (rate per hour, billing unit, daily cap, fee window; an
-    empty cell equals an empty cell). A list of {"garage_id", "zone_id", "differences" (the columns that differ, as text; empty =
-    equal)}, in the order of the QA table; a garage that the dataset does not hold is reported by ``validate_garage_qa`` and skipped
-    here. The zone tariff is never changed by a lot: a difference means the dataset or the table is stale."""
+    """The consistency check of the lots that carry the street product of their zone (spec Amendment I1, owner decision A, ruling
+    R-4j-6): per ``garage`` row of the QA table whose ``evidence`` names a table row (``ZONE_PRODUCT_EVIDENCE``), the street
+    equivalent of the dataset row against that row of the tariff table in all ``ZONE_PRODUCT_COLUMNS`` (rate, unit, grace, cap,
+    fee window, maximum stay with its long-stay product, commuter product; an empty quantity equals an empty one). A list of
+    {"garage_id", "zone_id", "differences" (``street_differences``; empty = equal)}, in the order of the QA table; a garage that the
+    dataset does not hold is reported by ``validate_garage_qa`` and skipped here. The zone tariff is never changed by a lot: a
+    difference means the dataset or the table is stale."""
     table = tariffs.set_index("zone_id")
     dataset = garages.set_index("garage_id")
     checks = []
@@ -321,12 +404,8 @@ def zone_product_lot_check(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.
         zone_id = match.group(1)
         differences = []
         if zone_id in table.index:
-            for garage_column, table_column in ZONE_PRODUCT_COLUMNS:
-                left, right = dataset.loc[row["garage_id"], garage_column], table.loc[zone_id, table_column]
-                if not ((pd.isna(left) and pd.isna(right)) or (not pd.isna(left) and not pd.isna(right)
-                                                              and abs(float(left) - float(right)) < 1e-9)):
-                    differences.append(f"{garage_column} {None if pd.isna(left) else float(left)} against "
-                                       f"{table_column} {None if pd.isna(right) else float(right)}")
+            differences = street_differences(lot_street_equivalent(dataset.loc[row["garage_id"]]),
+                                             zone_street_equivalent(table.loc[zone_id]))
         checks.append({"garage_id": row["garage_id"], "zone_id": zone_id, "differences": differences})
     return checks
 
@@ -334,6 +413,37 @@ def zone_product_lot_check(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.
 def zone_product_lot_summary(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> dict:
     """{"checked", "equal", "differing" (the garage ids that differ from their zone's table row)}."""
     checks = zone_product_lot_check(qa, garages, tariffs)
+    return {"checked": len(checks), "equal": sum(not check["differences"] for check in checks),
+            "differing": [check["garage_id"] for check in checks if check["differences"]]}
+
+
+def zone_consistency_check(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> list:
+    """The report-only pass over EVERY surface lot that lies inside a zone polygon (ruling R-4j-7): per ``garage`` row of the QA
+    table that names zones (``zone_ids``, the zone polygons that contain the lot's point, written by the curation) and per zone, the
+    street equivalent of the dataset row against the zone's table row. A list of {"garage_id", "zone_id", "differences"
+    (``street_differences``), "zone_product" (the lot carries that zone's product: it must be equal), "zone_in_table"}. A garage
+    is no lot: its tariff is its own product by construction and it is not compared. The values of a lot are never changed by
+    the pass; the package component stands as documented and a difference is named."""
+    table = tariffs.set_index("zone_id")
+    dataset = garages.set_index("garage_id")
+    checks = []
+    for _, row in qa[qa["record_type"] == "garage"].iterrows():
+        zones = [zone.strip() for zone in row["zone_ids"].split(pg.LIST_SEPARATOR) if zone.strip()]
+        if not zones or row["garage_id"] not in dataset.index or dataset.loc[row["garage_id"], "facility_kind"] != "surface_lot":
+            continue
+        lot = lot_street_equivalent(dataset.loc[row["garage_id"]])
+        named = ZONE_PRODUCT_EVIDENCE.search(row["evidence"])
+        for zone_id in zones:
+            in_table = zone_id in table.index
+            checks.append({"garage_id": row["garage_id"], "zone_id": zone_id,
+                           "differences": street_differences(lot, zone_street_equivalent(table.loc[zone_id])) if in_table else [],
+                           "zone_product": bool(named and named.group(1) == zone_id), "zone_in_table": in_table})
+    return checks
+
+
+def zone_consistency_summary(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> dict:
+    """{"checked", "equal", "differing" (the garage ids that differ from the zone they lie in)} of ``zone_consistency_check``."""
+    checks = zone_consistency_check(qa, garages, tariffs)
     return {"checked": len(checks), "equal": sum(not check["differences"] for check in checks),
             "differing": [check["garage_id"] for check in checks if check["differences"]]}
 

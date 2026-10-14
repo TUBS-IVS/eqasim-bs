@@ -287,22 +287,30 @@ COLUMN_GLOSSARY = {
              "capacity observations",
 }
 QA_INTRO = (
-    "Curation QA of the parking garage dataset and of the monthly products (parking cost zones v2, spec Amendments D2 and "
-    "E1, issue #436), written by scripts/curation/parking_zones_2026/regional_garages.py from the regional evidence package "
+    "Curation QA of the parking garage dataset and of the monthly products (parking cost zones v2, spec Amendments D2, E1 and "
+    "I, issue #436), written by scripts/curation/parking_zones_2026/regional_garages.py from the regional evidence package "
     "of 2026-10-07 (" + rz.PACKAGE_FILE + ", SHA-256 " + rz.PACKAGE_SHA256 + ", gitignored under raw_sources/"
     "municipal_2026-10-07/), the supplement package " + sup.SUPPLEMENT_FILE + " (SHA-256 " + sup.SUPPLEMENT_SHA256 + "), the "
-    "follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 " + sup.FOLLOWUP_SHA256 + "), the Wolfsburg car-park package "
-    + wl.LOTS_FILE + " (SHA-256 " + wl.LOTS_SHA256 + ") and the car-park directory of "
-    "Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
+    "follow-up package " + sup.FOLLOWUP_FILE + " (SHA-256 " + sup.FOLLOWUP_SHA256 + "), the large-lot research package "
+    + ll.LOTS_FILE + " (SHA-256 " + ll.LOTS_SHA256 + ", gitignored under raw_sources/municipal_2026-10-13/; the surface lots of "
+    "the eight towns, which supersedes the Wolfsburg car-park package of 2026-10-07 for them) read under the size and access "
+    "policy of spec Amendment I2 (ASSUMPTION L50: a public surface lot is an option from the capacity threshold of the run, 50 "
+    "spaces for the release; the sensitivity runs at 30 and 100 spaces are written under other names), the archived evidence "
+    "pages of the free Wolfsburg lots (the folder wob_free_lots_evidence/ next to that package, spec Amendment I5a) and the "
+    "car-park directory of Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
     + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "), and, for the monthly products of the Braunschweig garages "
     "(spec Amendment F1), the owner's package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + ") with the Contipark "
     "captures of " + bsm.EVIDENCE_DIRECTORY_NAME + " (SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + "). One row per "
-    "garage of the dataset (record_type garage), per "
+    "garage of the dataset (record_type garage; a surface lot that carries the street product of its zone names that zone row in "
+    "its evidence as parking_tariffs_2026.csv:<zone_id>, and a lot inside a zone polygon names the zone in zone_ids for the "
+    "report-only consistency pass of ruling R-4j-7), per "
     "monthly or 30-day product the sources publish (monthly_product: used, or recorded and not used with a reason, ruling "
     "R-D2-a; every Braunschweig garage has at least one row with its monthly status, and the published current monthly products "
     "of the garages that are no option of the dataset are the reason not_a_dataset_option: with the used products of the "
     "dataset's garages they are the values of ASSUMPTION P13, whose medians parking_garages_2026.geojson holds in "
-    "monthly_imputed_eur) and per car park or garage that is not in the dataset (candidate: ruling R-4b-4). "
+    "monthly_imputed_eur) and per car park or garage that is not in the dataset (candidate: ruling R-4b-4; a record of the "
+    "large-lot package that is no option has one of the reasons " + ", ".join(
+        reason for reason in pq.CANDIDATE_REASONS if reason.startswith("lot_")) + "). "
     "braunschweig.parking.garage_qa.validate_garage_qa compares the table with parking_garages_2026.geojson and with "
     "parking_tariffs_2026.csv (commuter_day_eur is the amount of a used zone product over 21 working days, ASSUMPTION P2). "
     "Money in EUR. ASCII. Columns:")
@@ -314,7 +322,9 @@ QA_COLUMN_GLOSSARY = {
     "garage_id": "garage_id in parking_garages_2026.geojson (garage rows and the monthly products of a garage); empty otherwise",
     "zone_ids": "';'-separated zone ids of parking_tariffs_2026.csv whose commuter_day_eur a used zone product sets; for a "
                 "candidate of the reason zone_street_product that is a Wolfsburg car park inside a zone (spec E14) the one zone "
-                "whose street product is its tariff; empty otherwise",
+                "whose street product is its tariff; for the garage row of a surface lot inside a zone polygon the zone(s) that "
+                "contain it, which the report-only pass of ruling R-4j-7 compares with the row (garage_qa."
+                "zone_consistency_check); empty otherwise",
     "decision": "garage: priced or not_priced; monthly_product: used or not_used; candidate: not_listed",
     "reason_code": "not_priced: a code of garages.NOT_PRICED_REASONS; not_used: garage_qa.MONTHLY_NOT_USED_REASONS; not_listed: "
                    "garage_qa.CANDIDATE_REASONS; empty for priced and used rows",
@@ -1866,11 +1876,32 @@ def _osm_url(record: dict) -> Optional[str]:
     return f"https://www.openstreetmap.org/{osm_ids[0]}" if osm_ids else None
 
 
-def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> list:
-    """The sentences naming what a lot row does not carry: the maximum stay and the weekend window of a used component (the garage
-    columns have no field for a maximum stay and the model's weekday is Monday to Friday, spec D1) and the components that set no
-    value, with their reason. Restrictions, not tariff components: they never stop a row, they are listed and counted. The
-    30 min of a free short stay (the Broetchentaste) is the length of the free band and no maximum stay of the lot."""
+def _position_source(package: dict, record: dict) -> tuple:
+    """(URL, origin) of the source of the research point of a record, the primary methods first: the OpenStreetMap object that the
+    package matched to the record (``osm_object``), else the first source of the coordinates that the package names and that
+    states a URL (``coordinate_source``: ``coordinate_source_ids``, or ``coordinates.source_ids`` where the coordinates are an
+    object); (None, ``none``) where the package names neither. The caller then lets the tariff source stand in as
+    ``geometry_source_url`` (a fallback), and ``_large_lot_counts`` counts and warns of it."""
+    osm_url = _osm_url(record)
+    if osm_url:
+        return osm_url, "osm_object"
+    coordinates = record.get("coordinates")
+    source_ids = list(record.get("coordinate_source_ids") or []) + list(
+        coordinates.get("source_ids") or [] if isinstance(coordinates, dict) else [])
+    for source_id in source_ids:
+        source = package["sources"].get(source_id)
+        if source and source["url"]:
+            return source["url"], "coordinate_source"
+    return None, "none"
+
+
+def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple:
+    """(sentences, restricted) of what a lot row does not carry: the maximum stay and the weekend window of a used component (the
+    garage columns have no field for a maximum stay and the model's weekday is Monday to Friday, spec D1) and the components that
+    set no value, with their reason. ``restricted`` is True where the row has a maximum stay or a weekend window (the count of the
+    run log reads this fact, never the text of the notes). Restrictions, not tariff components: they never stop a row, they are
+    listed and counted. The 30 min of a free short stay (the Broetchentaste) is the length of the free band and no maximum stay of
+    the lot."""
     stays, weekends = {}, {}
     for rule_id in used_rule_ids:
         raw = package["rules"].get(rule_id)
@@ -1891,7 +1922,7 @@ def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> list:
     for rule_id, why in ignored.items():
         raw = package["rules"][rule_id]
         sentences.append(f"Not used: {rule_id} ({raw.get('billing_period')}, {raw.get('amount_eur')} EUR): {why}.")
-    return sentences
+    return sentences, bool(texts)
 
 
 def _encode_or_not_expressible(spec: dict, rules: dict) -> dict:
@@ -1942,19 +1973,19 @@ def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
                              "its point does not lie inside that zone of the committed zone polygons")
         sentence, verdicts = ll.zone_check_sentence(package, key, spec["check"], product, spec["zone_product"])
         rules = {**ll.convert_rules(package, key, roles, set()), **product["rules"]}
-        form = {"rate": product["rate"], "window": "rate", **({"cap": product["cap"]} if product["cap"] else {})}
-        encoded = _encode_or_not_expressible({"garage_id": garage_id, **form}, rules)
+        unknown = sorted(set(ignored) - set(rules))
+        if unknown:
+            raise SystemExit(f"large lot {key}: the owner decision ignores the components {unknown}, which the facility does not "
+                             "hold")
+        encoded = _encode_or_not_expressible({"garage_id": garage_id, **product["form"]}, rules)
         used = [spec["check"]]
         row = product["row"]
-        kept = []
-        if row.get("max_stay_min") is not None:
-            kept.append(f"maximum stay {int(row['max_stay_min'])} min")
-        if row.get("long_stay_product_eur") is not None:
-            kept.append(f"long-stay product {float(row['long_stay_product_eur']):.2f} EUR")
-        zone_limitation = ("Not modelled (the garage columns carry no maximum stay or long-stay product): the zone product's "
-                           + " and ".join(kept) + ".") if kept else None
+        # the maximum stay with its long-stay product (assumption M1) is carried by the bands of the schedule (ruling R-4j-6)
+        zone_carried = (f"The maximum stay {int(row['max_stay_min'])} min and the long-stay product "
+                        f"{float(row['long_stay_product_eur']):.2f} EUR of the zone (assumption M1) are the bands of the schedule."
+                        if product["long_stay"] else None)
         return {"encoded": encoded, "rules": rules, "used": used, "zone_sentence": sentence, "verdicts": verdicts,
-                "zone_limitation": zone_limitation,
+                "zone_carried": zone_carried,
                 "tariff_rule_ids": [f"parking_tariffs_2026.csv:{spec['zone_product']}", spec["check"]]}
     used = set()
     for field in ("free", "rate", "cap"):
@@ -1989,8 +2020,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
     source_url, source_date = ll.source_of(
         package, [source for rule_id in primary_ids for source in package["rules"][rule_id].get("source_ids") or []]
         + list(record.get("source_ids") or []))
-    geometry_url = _osm_url(record) or ll.source_of(package, record.get("coordinate_source_ids") or [])[0] \
-        if (_osm_url(record) or record.get("coordinate_source_ids")) else source_url
+    geometry_url = _position_source(package, record)[0] or source_url    # the fallback is counted by _large_lot_counts
     capacity, scope = None, None
     if record.get("capacity_selection_method") in ll.REPORTED_METHODS and record.get("capacity_reported") is not None:
         capacity = int(record["capacity_reported"])
@@ -2009,7 +2039,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
                      "resolved by the package, one row per site).")
     if lot["zone_sentence"]:
         notes.append(f"Tariff: the street product of the zone {spec['zone_product']} (spec Amendment I1"
-                     + (", owner decision A" if spec["zone_product"].startswith(("bs_hbf", "bs_bga_markthalle")) else "")
+                     + (", owner decision A" if spec.get("decision_a") else "")
                      + f"): {encoded['sentence']}. {lot['zone_sentence']}.")
     elif "p14" in spec:
         notes.append("Tariff: " + encoded["sentence"] + ".")
@@ -2033,9 +2063,10 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
     if spec.get("comment"):
         comment = _lot_ascii(spec["comment"])
         notes.append(comment[:1].upper() + comment[1:] + ("" if comment.endswith(".") else "."))
-    notes.extend(_lot_ascii(sentence) for sentence in _lot_limitations(package, lot["used"], spec.get("ignored") or {}))
-    if lot.get("zone_limitation"):
-        notes.append(lot["zone_limitation"])
+    if lot.get("zone_carried"):
+        notes.append(lot["zone_carried"])
+    limitations, restricted = _lot_limitations(package, lot["used"], spec.get("ignored") or {})
+    notes.extend(_lot_ascii(sentence) for sentence in limitations)
     if record.get("access_notes"):
         notes.append("Access (package): " + _lot_ascii(record["access_notes"]).rstrip(".") + ".")
     row = {"garage_id": large_lot_garage_id(key), "package_facility_id": key, "name": _lot_ascii(record["name"]),
@@ -2051,8 +2082,74 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
     row["_facts"] = {"tiered": False, "banded": False, "cap": encoded["values"]["garage_daily_cap_eur"] is not None
                      or any(reading[0] == "cap" for reading in encoded["readings"]), "readings": encoded["readings"],
                      "supplement": False, "followup": False, "point": False, "priced": True, "followup_values": False,
-                     "lot": True, "large": True}
+                     "lot": True, "large": True, "zone_product": bool(lot["zone_sentence"]), "restricted": restricted}
     return row
+
+
+def _attach_zone_monthly(inputs: dict, key: str, spec: dict, row: dict) -> None:
+    """Owner decision A (spec Amendment I1, ruling R-4j-6): the lot that is a zone too carries the commuter product of its zone as
+    its monthly product: ``monthly_eur`` with its source page and product text, read from the used recorded product of the
+    Braunschweig monthly package named in ``LARGE_LOT_ZONE_MONTHLY`` (the product that sets ``commuter_day_eur`` of the zone),
+    so the garage option prices a work or education stay like the zone (ASSUMPTION P2). ``SystemExit`` where the monthly package
+    is not given, does not hold the record, the record is not the used commuter product or belongs to another zone: nothing is
+    guessed."""
+    record_id = specs.LARGE_LOT_ZONE_MONTHLY[key]
+    if "zone_product" not in spec:
+        raise SystemExit(f"large lot {key}: a commuter product belongs to a lot that carries the street product of its zone")
+    recorded = inputs.get("bs_recorded")
+    if recorded is None:
+        raise SystemExit(f"large lot {key}: decision A gives it the commuter product {record_id} of its zone, which needs the "
+                         "Braunschweig monthly package (--bs-monthly-zip)")
+    product = next((item for item in recorded if item["record_id"] == record_id), None)
+    if product is None:
+        raise SystemExit(f"large lot {key}: decision A needs the recorded product {record_id}, which the Braunschweig monthly "
+                         f"package does not give (it gives {sorted(item['record_id'] for item in recorded)})")
+    if product["decision"] != "used":
+        raise SystemExit(f"large lot {key}: the recorded product {record_id} is not the used commuter product (decision "
+                         f"{product['decision']!r})")
+    if tuple(product["zone_ids"]) != (spec["zone_product"],):
+        raise SystemExit(f"large lot {key}: the recorded product {record_id} is the commuter product of the zone "
+                         f"{list(product['zone_ids'])}, not of {spec['zone_product']}")
+    row.update(monthly_eur=float(product["amount_eur"]), monthly_source_url=product["monthly_source_url"],
+               monthly_product=product["monthly_product"])
+    commuter = pq.lot_street_equivalent(row)["commuter_day_eur"]
+    row["notes"] = _lot_ascii(
+        f"{row['notes']} Monthly product (spec Amendment I1, owner decision A): {product['monthly_product']}; it is the commuter "
+        f"product of the zone {spec['zone_product']} ({commuter:.2f} EUR per working day, ASSUMPTION P2). Source of the product: "
+        f"{product['evidence'][-1]} of {product['evidence'][0]}.")
+
+
+def _zone_pass_sentence(zone_id: str, differences: list) -> str:
+    """The sentence of the report-only pass over the lots inside a zone polygon (ruling R-4j-7): the row against the zone row in
+    the columns of ``garage_qa.ZONE_PRODUCT_COLUMNS``, every difference named, no value changed."""
+    head = f"Inside the zone {zone_id} (report-only pass, ruling R-4j-7): "
+    if not differences:
+        return head + "the row equals the zone row in every compared column."
+    return head + ("the row DIFFERS from the zone row: " + "; ".join(differences) + "; the package component stands as "
+                   "documented and no value is changed.")
+
+
+def _zone_consistency_pass(options: dict, zones: gpd.GeoDataFrame, tariffs: pd.DataFrame) -> dict:
+    """The report-only pass over EVERY lot inside a zone polygon (ruling R-4j-7 b): {garage_id: {zone_id: [differences]}} of the
+    lots whose point lies inside a zone polygon of the committed zones, the street equivalent of the row
+    (``garage_qa.lot_street_equivalent``: rate, unit, grace, cap, fee window, maximum stay, commuter product) against the zone's
+    table row. The sentence of each zone is appended to the notes of the row; the values are never changed (the package component
+    stands as documented). ``SystemExit`` for a zone polygon that the tariff table does not hold."""
+    table = tariffs.set_index("zone_id") if "zone_id" in tariffs.columns else tariffs
+    consistency = {}
+    for key, row in options.items():
+        zone_ids = _zone_ids_of(zones, row["geometry"])
+        if not zone_ids:
+            continue
+        missing = [zone_id for zone_id in zone_ids if zone_id not in table.index]
+        if missing:
+            raise SystemExit(f"large lot {key}: the zone polygon(s) {missing} that contain its point are not in the tariff table")
+        equivalent = pq.lot_street_equivalent(row)
+        consistency[row["garage_id"]] = {zone_id: pq.street_differences(equivalent, pq.zone_street_equivalent(table.loc[zone_id]))
+                                         for zone_id in zone_ids}
+        row["notes"] = _lot_ascii(row["notes"] + " " + " ".join(
+            _zone_pass_sentence(zone_id, differences) for zone_id, differences in consistency[row["garage_id"]].items()))
+    return consistency
 
 
 def _free_evidence(key: str, evidence: dict) -> tuple:
@@ -2140,6 +2237,8 @@ def build_large_lots(inputs: dict) -> dict:
                     lot = _large_lot_encoding(inputs, key, spec)
                     options[key] = _large_lot_row(inputs, key, spec, lot)
                     options[key]["_lot"], options[key]["_spec"] = lot, spec
+                    if key in specs.LARGE_LOT_ZONE_MONTHLY:
+                        _attach_zone_monthly(inputs, key, spec, options[key])
             except TariffNotExpressible as error:
                 failures.append((key, str(error)))
                 reason, detail = "lot_tariff_not_expressible", f"the named error: {error}"
@@ -2149,6 +2248,7 @@ def build_large_lots(inputs: dict) -> dict:
     options.update(imputed_rows)
     for facility_id, row in _subpoint_rows(package, threshold):
         qa.append(row)
+    zone_consistency = _zone_consistency_pass(options, zones, large["tariffs"])
     town_order = {town: index for index, town in enumerate(specs.TOWNS)}
     order = {key: index for index, key in enumerate(package["facilities"])}
     rows = []
@@ -2157,9 +2257,14 @@ def build_large_lots(inputs: dict) -> dict:
         row = options[key]
         info = {name: row.pop(name) for name in ("_lot", "_spec", "_qa_note") if name in row}
         notes[row["garage_id"]] = info.get("_qa_note") or _large_qa_note(row, info)
+        if row["garage_id"] in zone_consistency:
+            notes[row["garage_id"]] = _lot_ascii(notes[row["garage_id"]] + "; " + " ".join(
+                _zone_pass_sentence(zone_id, differences)
+                for zone_id, differences in zone_consistency[row["garage_id"]].items()))
         rows.append(row)
-    counts = _large_lot_counts(package, rows, qa, failures, imputed_rows, threshold)
-    return {"rows": rows, "qa": qa, "notes": notes, "counts": counts, "failures": failures}
+    counts = _large_lot_counts(package, rows, qa, failures, imputed_rows, threshold, zone_consistency=zone_consistency)
+    return {"rows": rows, "qa": qa, "notes": notes, "counts": counts, "failures": failures,
+            "zone_consistency": zone_consistency}
 
 
 def _large_qa_note(row: dict, info: dict) -> str:
@@ -2168,6 +2273,9 @@ def _large_qa_note(row: dict, info: dict) -> str:
     note = lot["encoded"]["sentence"] + (f" ({row['assumptions'].replace(';', ', ')})" if row["assumptions"] else "")
     if lot.get("verdicts"):
         note += "; consistency check against the zone product: " + "; ".join(lot["verdicts"])
+    if row.get("monthly_eur") is not None:
+        note += (f"; monthly product {float(row['monthly_eur']):.2f} EUR (the commuter product of the zone, spec Amendment I1, "
+                 "owner decision A)")
     return _lot_ascii(note)
 
 
@@ -2287,7 +2395,8 @@ def _subpoint_rows(package: dict, threshold: int) -> list:
             target = package["aliases"].get(key)
             if target not in package["facilities"]:
                 raise SystemExit(f"the subpoint {key} must name a package facility in the aliases, found {target!r}")
-            rows.append((key, {"record_id": LARGE_LOT_QA_PREFIX + key.lower(), "municipality_ags": "03103000",
+            rows.append((key, {"record_id": LARGE_LOT_QA_PREFIX + key.lower(),
+                               "municipality_ags": specs.TOWNS[ll.TOWN_KEYS[package["facilities"][target]["city"]]][0],
                                "subject": f"{_lot_ascii(point['name'])} ({key})", "reason": "lot_alias",
                                "evidence": f"{CROSSWALK_MEMBER_NAME}; {ll.ALIASES_MEMBER}",
                                "note": _lot_ascii(f"{pq.CANDIDATE_REASONS['lot_alias']}; "
@@ -2302,10 +2411,12 @@ def _subpoint_rows(package: dict, threshold: int) -> list:
 CROSSWALK_MEMBER_NAME = ll.CROSSWALK_MEMBER
 
 
-def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imputed: dict, threshold: int) -> dict:
+def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imputed: dict, threshold: int,
+                      zone_consistency: Optional[dict] = None) -> dict:
     """The counts of the run (fallback transparency): options against QA rows, the options by town and tariff form and the QA rows
     by reason; prints them as rates and warns when a share of the options is imputed (P14) above
-    ``LARGE_LOT_IMPUTATION_WARNING_SHARE`` or any tariff is not expressible."""
+    ``LARGE_LOT_IMPUTATION_WARNING_SHARE`` or any tariff is not expressible. ``zone_consistency`` (``_zone_consistency_pass``) adds
+    the counts of the report-only pass over the lots inside a zone polygon (ruling R-4j-7)."""
     by_town, by_reason = {}, {}
     for row in rows:
         by_town[row["municipality"]] = by_town.get(row["municipality"], 0) + 1
@@ -2313,7 +2424,7 @@ def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imput
         by_reason[entry["reason"]] = by_reason.get(entry["reason"], 0) + 1
     free = sum(row["tariff_duration_bands"] == pg.FREE_SCHEDULE_TEXT for row in rows)
     total = len(rows)
-    zone_products = sum(1 for row in rows if "street product of the zone" in row["notes"])
+    zone_products = sum(bool(row["_facts"]["zone_product"]) for row in rows)
     print(f"[garages] large lots (threshold {threshold}): {len(package['facilities'])} package records, {total} options "
           f"({', '.join(f'{town} {count}' for town, count in sorted(by_town.items()))}); tariff from the site's own components "
           f"{total - len(imputed) - zone_products - free}/{total}, zone street product {zone_products}/{total}, "
@@ -2325,11 +2436,58 @@ def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imput
               "ASSUMPTION P14 (an imputed tariff)")
     for key, message in failures:
         print(f"[garages] WARNING: the tariff of the large lot {key} is not expressible in the schedule grammar: {message}")
-    limited = sum("Not modelled" in row["notes"] for row in rows)
+    limited = sum(bool(row["_facts"]["restricted"]) for row in rows)
     print("[garages] large lots with a restriction that the columns do not carry (maximum stay or weekend window): "
           f"{limited}/{total}")
+    # the primary source against the fallback of each provenance column (fallback transparency): the page that states the tariff
+    # against a web-service layer, the OpenStreetMap object or the coordinate sources of the package against the tariff source
+    layer_only = [row["package_facility_id"] for row in rows if ll.is_web_service_url(row["source_url"])]
+    print(f"[garages] large lots, source of the tariff: a page that states it {total - len(layer_only)}/{total}, only a "
+          f"web-service layer (fallback) {len(layer_only)}/{total}")
+    if layer_only:
+        print(f"[garages] WARNING: the tariff source of the large lot(s) {', '.join(sorted(layer_only))} is a web-service layer: "
+              "no other source of the package states both a URL and a date (fallback)")
+    position_origin = {"osm_object": 0, "coordinate_source": 0, "tariff_source_fallback": 0}
+    unplaced = []
+    for row in rows:
+        origin = _position_source(package, package["facilities"][row["package_facility_id"]])[1]
+        position_origin["tariff_source_fallback" if origin == "none" else origin] += 1
+        if origin == "none":
+            unplaced.append(row["package_facility_id"])
+    print(f"[garages] large lots, source of the position: OpenStreetMap object {position_origin['osm_object']}/{total}, "
+          f"coordinate source of the package {position_origin['coordinate_source']}/{total}, tariff-source fallback "
+          f"{position_origin['tariff_source_fallback']}/{total}")
+    if unplaced:
+        print(f"[garages] WARNING: the position of the large lot(s) {', '.join(sorted(unplaced))} has no source in the package "
+              "(no OpenStreetMap object, no coordinate source): the tariff source stands in as geometry_source_url (fallback)")
+    capacity_origin = {origin: 0 for origin in ll.CAPACITY_ORIGINS}
+    unknown_origin = []
+    for row in rows:
+        record = package["facilities"][row["package_facility_id"]]
+        origin = ll.capacity_origin(record)
+        capacity_origin[origin] += 1
+        if origin == "other":
+            unknown_origin.append((row["package_facility_id"], record.get("capacity_selection_method")))
+    labels = (("reported", "reported"), ("OSM tag", "osm_tag"), ("area estimate", "area_estimate"), ("derived", "derived"))
+    print("[garages] large lots, capacity origin: " + ", ".join(
+        f"{label} {capacity_origin[name]}/{total} ({100.0 * capacity_origin[name] / max(total, 1):.1f} %)"
+        for label, name in labels))
+    if unknown_origin:
+        keys = ", ".join(sorted(key for key, _ in unknown_origin))
+        methods = ", ".join(sorted({str(method) for _, method in unknown_origin}))
+        print(f"[garages] WARNING: the capacity origin of the large lot(s) {keys} is none of the known ones "
+              f"(selection method {methods})")
+    differing = []
+    if zone_consistency is not None:
+        differing = sorted(garage_id for garage_id, zones in zone_consistency.items()
+                           if any(differences for differences in zones.values()))
+        print("[garages] lots inside a zone polygon (report-only pass, ruling R-4j-7): "
+              f"{len(zone_consistency)} of {total} lots, equal to the zone row {len(zone_consistency) - len(differing)}, "
+              f"differing {len(differing)} ({', '.join(differing) or 'none'})")
     return {"options": total, "by_town": by_town, "qa_by_reason": by_reason, "free": free, "imputed": len(imputed),
-            "zone_products": zone_products, "failures": len(failures), "limited": limited}
+            "zone_products": zone_products, "failures": len(failures), "limited": limited,
+            "tariff_source_web_service": len(layer_only), "position_origin": position_origin,
+            "capacity_origin": capacity_origin, "in_zone": len(zone_consistency or {}), "in_zone_differing": differing}
 
 
 def build_garages(inputs: dict) -> gpd.GeoDataFrame:
@@ -2611,6 +2769,7 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         if large is not None and garage["garage_id"] in large["result"]["notes"]:
             row(record_id=f"garage_{garage['garage_id']}", record_type="garage", municipality_ags=garage["municipality_ags"],
                 subject=garage["name"], garage_id=garage["garage_id"], decision="priced", count=1,
+                zone_ids=";".join(large["result"]["zone_consistency"].get(garage["garage_id"], {})),
                 evidence=garage["tariff_rule_ids"], note=large["result"]["notes"][garage["garage_id"]])
             continue
         spec = specs_by_id[garage["garage_id"]]
@@ -2667,7 +2826,12 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         # spec Amendment F1: one row per product the Braunschweig monthly package and its evidence record, among them the status
         # of every Braunschweig garage and the recorded garages that are no option (the values of ASSUMPTION P13)
         names = dict(zip(frame["garage_id"], frame["name"]))
-        for fields in bsm.qa_product_rows(inputs["bs_monthly_products"], inputs["bs_recorded"], names):
+        lot_garage_ids = {}
+        if large is not None:
+            present = set(frame["garage_id"])
+            lot_garage_ids = {record_id: large_lot_garage_id(lot_key) for lot_key, record_id in specs.LARGE_LOT_ZONE_MONTHLY.items()
+                              if large_lot_garage_id(lot_key) in present}
+        for fields in bsm.qa_product_rows(inputs["bs_monthly_products"], inputs["bs_recorded"], names, lot_garage_ids):
             row(**fields)
     for entry in directory:
         reason, why = specs.DIRECTORY_DECISIONS[entry["name"]]

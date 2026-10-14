@@ -170,8 +170,14 @@ def _print_garages(garages, garage_qa_table, garages_file, tariffs=None) -> None
               f"{len(check['differing'])} differ ({', '.join(check['differing']) or 'none'})")
         lots = garage_qa.zone_product_lot_summary(garage_qa_table, garages, tariffs)
         print(f"[parking-validate] lots with the street product of their zone (spec Amendment I1): {lots['checked']} checked, "
-              f"the dataset row against the row of the tariff table (rate, unit, cap, fee window): {lots['equal']} equal, "
-              f"{len(lots['differing'])} differ ({', '.join(lots['differing']) or 'none'})")
+              f"the dataset row against the row of the tariff table (rate, unit, grace, cap, fee window, maximum stay, commuter "
+              f"product): {lots['equal']} equal, {len(lots['differing'])} differ ({', '.join(lots['differing']) or 'none'})")
+        # ruling R-4j-7: the report-only pass over EVERY surface lot inside a zone polygon (a difference is named in the QA note
+        # of the lot, never an error; the values of a lot that carries a package component stand as documented)
+        inside = garage_qa.zone_consistency_summary(garage_qa_table, garages, tariffs)
+        print(f"[parking-validate] lots inside a zone polygon (report-only pass, ruling R-4j-7): {inside['checked']} checked "
+              f"(lot and zone), the dataset row against the row of the zone it lies in: {inside['equal']} equal, "
+              f"{len(inside['differing'])} differ ({', '.join(inside['differing']) or 'none'})")
 
 
 #: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).

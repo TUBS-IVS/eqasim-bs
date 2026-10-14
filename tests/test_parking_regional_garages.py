@@ -1264,21 +1264,24 @@ BS_MONTHLY_EVIDENCE_SUMS_SHA256 = "2617d497bddfaadced2ff433cd4b675122570a58ca7b6
 #: city brochures (the ordinance of 2018 states opening hours only).
 STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe", "he_groepern_tiefgarage")
 #: The 55 surface lots of the large-lot research package at the threshold of 50 spaces (spec Amendment I, Task 4j; written by hand
-#: from the package's documented components and the zone products, not read back from the dataset): the SIX lots with the street
-#: product of the zone of the owner decisions (Wendenstrasse/Werder, Grosser Hof, the Markthalle and the three Hbf lots, one rate
-#: per started billing unit of the table row with its fee window; the Hbf lots with the daily cap of the zone) and the three
-#: Wolfsburg lots inside a tariff zone, 29 lots that are free of charge by an explicit statement of their source (the free
-#: schedule '0- free', no assumption), 15 lots priced from their own components (a rate with a window and cap, the Broetchentaste
+#: from the package's documented components and the zone products, not read back from the dataset): the EIGHT lots with the street
+#: product of the zone of the owner decisions (Wendenstrasse/Werder and Grosser Hof with the bands of the maximum stay of zone Ia,
+#: the Markthalle, the three Hbf lots with the daily cap and the commuter product of their zone, and the two single-site zones of
+#: Goslar, Baeringerstrasse and Klubgartenstrasse, one rate per started billing unit of the table row with its fee window) and the
+#: three Wolfsburg lots inside a tariff zone, 29 lots that are free of charge by an explicit statement of their source (the free
+#: schedule '0- free', no assumption), 13 lots priced from their own components (a rate with a window and cap, the Broetchentaste
 #: of Helmstedt and Salzgitter as a grace band under ASSUMPTION P10, the cheapest product for a stay at the Peine Schlosswall, the
 #: three minimum and day tariffs of Wolfenbuettel) and the two lots without a stated tariff that take the median product of
 #: their zone (ASSUMPTION P14: Buergerpark, Buechereivorplatz). A capacity is held only where the package REPORTS it. Per town
 #: (Braunschweig 11, Wolfsburg 7, Wolfenbuettel 7, Gifhorn 3, Helmstedt 5, Peine 4, Salzgitter 9, Goslar 9).
 SZ_BANDS = "0-30 free; 30-60 total 0.70; 60- 0.10/6"
+ZONE_IA_BANDS = "0-180 0.03/1; 180- total 9.00"     # zone Ia: 1.80 EUR per hour per started minute, 180 min, then the 9.00 EUR day
 HE_BANDS = "0-30 free; 30-60 total 1.20; 60- 0.60/30"
 
 
-def _lot(ags, *, rate=None, unit=None, cap=None, start=0.0, end=24.0, bands=None, capacity=None, assumptions=None) -> Priced:
-    return Priced(ags, rate, unit, None, None, cap, start, end, None, None, capacity, assumptions, bands=bands)
+def _lot(ags, *, rate=None, unit=None, cap=None, start=0.0, end=24.0, bands=None, capacity=None, assumptions=None,
+         monthly=None) -> Priced:
+    return Priced(ags, rate, unit, None, None, cap, start, end, None, monthly, capacity, assumptions, bands=bands)
 
 
 def _free_lot(ags, capacity=None) -> Priced:
@@ -1289,17 +1292,17 @@ PRICED_LOTS = {
     # Braunschweig: the street products of the zones Ia (Wendenstrasse/Werder, Grosser Hof) and the BgA zone of the Markthalle,
     # the three Hbf lots of DB BahnPark with the products of their own zones (owner decision A), four free P+R car parks and the
     # Buergerpark with the median product of bs_zone_ia (ASSUMPTION P14)
-    "lot_braunschweig_wendenstrasse_werder": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=101),
-    "lot_braunschweig_grosser_hof": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=78),
+    "lot_braunschweig_wendenstrasse_werder": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=101, assumptions="P8"),
+    "lot_braunschweig_grosser_hof": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=78, assumptions="P8"),
     "lot_braunschweig_markthalle": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=70),
-    "lot_braunschweig_hbf_sued": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=379),
-    "lot_braunschweig_hbf_west": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=70),
-    "lot_braunschweig_hbf_nord": _lot(BS, rate=2.5, unit=60, cap=17.0, capacity=185),
+    "lot_braunschweig_hbf_sued": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=379, monthly=74.0),
+    "lot_braunschweig_hbf_west": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=70, monthly=74.0),
+    "lot_braunschweig_hbf_nord": _lot(BS, rate=2.5, unit=60, cap=17.0, capacity=185, monthly=120.0),
     "lot_braunschweig_pr_petzvalstrasse": _free_lot(BS, 75),
     "lot_braunschweig_pr_gaensekamp": _free_lot(BS, 108),
     "lot_braunschweig_pr_rote_wiese": _free_lot(BS, 170),
     "lot_braunschweig_pr_thueringenplatz": _free_lot(BS, 225),
-    "lot_braunschweig_buergerpark": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=74, assumptions="P14"),
+    "lot_braunschweig_buergerpark": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=74, assumptions="P8;P14"),
     # Wolfsburg: two lots free by a source (capacities secondary, 85 and 233), the BadeLand (Zone I fee of non-guests, 1.00 EUR
     # per started 30 min, no rounding and no hours stated), three lots with the product of their zone (Zone 2, Zone 1, Zone 2:
     # 07-18 h) and the Allerpark (free, no capacity reported)
@@ -1351,15 +1354,16 @@ PRICED_LOTS = {
     "lot_sz_see_nord": _free_lot(SZ),
     "lot_sz_petershagen_public": _free_lot(SZ),
     "lot_sz_buechereivorplatz": _lot(SZ, bands=SZ_BANDS, start=10.0, end=18.0, assumptions="P4;P8;P10;P14"),
-    # Goslar: five free lots and four with the hourly rate of the official parking table (the rounding is not published: ASSUMPTION
-    # P4), Mo-Sa (read on Monday to Friday) 10-18 h and the Klubgartenstrasse Mo-Fr 10-16 h
+    # Goslar: five free lots, the two single-site zones Baeringerstrasse and Klubgartenstrasse (zone AND lot by owner decision
+    # A: the row of the zone, 1.00 EUR per started 30 min) and two lots with the hourly rate of the official parking table (the
+    # rounding is not published: ASSUMPTION P4), Mo-Sa (read on Monday to Friday) 10-18 h and the Klubgartenstrasse Mo-Fr 10-16 h
     "lot_gs_fuellekuhle": _free_lot(GS),
     "lot_gs_osterfeld": _free_lot(GS),
-    "lot_gs_baeringer": _lot(GS, rate=1.0, unit=60, start=10.0, end=18.0, assumptions="P4"),
+    "lot_gs_baeringer": _lot(GS, rate=1.0, unit=30, start=10.0, end=18.0),
     "lot_gs_marktstrasse": _lot(GS, rate=2.0, unit=60, start=10.0, end=18.0, assumptions="P4"),
     "lot_gs_kornstrasse": _lot(GS, rate=2.0, unit=60, start=10.0, end=18.0, assumptions="P4"),
     "lot_gs_hildesheimer": _free_lot(GS, 140),
-    "lot_gs_klubgarten": _lot(GS, rate=1.0, unit=60, start=10.0, end=16.0, capacity=120, assumptions="P4"),
+    "lot_gs_klubgarten": _lot(GS, rate=1.0, unit=30, start=10.0, end=16.0, capacity=120),
     "lot_gs_hahnen_stab": _free_lot(GS),
     "lot_gs_hahnen_teichwiesen": _free_lot(GS),
 }
@@ -1461,8 +1465,10 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
         expected.cap, expected.start, expected.end)
     assert (_plain(row["tariff_duration_bands"]), _plain(row["capacity_reported"]), _plain(row["assumptions"])) == (
         expected.bands, expected.capacity, expected.assumptions)
-    # a lot never has a monthly product (spec F2: surface lots never impute) and cites the large-lot package alone
-    assert _plain(row["monthly_eur"]) is None and _plain(row["monthly_imputed_eur"]) is None
+    # only a lot that is a zone too (owner decision A) has a monthly product, the commuter product of its zone (ruling R-4j-6);
+    # a lot never imputes one (spec F2); it cites the large-lot package alone
+    assert _plain(row["monthly_eur"]) == expected.monthly and _plain(row["monthly_imputed_eur"]) is None
+    assert (_plain(row["monthly_source_url"]) is None) == (expected.monthly is None)
     assert row["package_sha256"] == LARGE_LOT_PACKAGE_SHA256
     assert row["geometry_method"] == "package_research_point_in_parking_area" and row["geometry_source_url"].startswith("https://")
     # the key of the site: the package's facility key in lower case, the municipal point of the city layer is no key
@@ -1495,19 +1501,23 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     assert coverage["by_facility_kind"] == {"garage": {"listed": 36, "priced": 36, "not_priced": 0},
                                             "surface_lot": {"listed": 55, "priced": 55, "not_priced": 0}}
     # the assumption rates (fallback transparency; counted from the hand-written pins below as well): no row rests on P3 any more,
-    # P4 31 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 18, P10 8 (Forschungsflughafen, Suedkopf-Center, the five Broetchentaste
+    # P4 29 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 21 (every row with a priced duration schedule, the three lots with the
+    # bands of the maximum stay of zone Ia among them), P10 8 (Forschungsflughafen, Suedkopf-Center, the five Broetchentaste
     # lots of Helmstedt and Salzgitter and the Buechereivorplatz that takes their product), P11 4, P12 on none (withdrawn, spec
-    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 50 of 91 on at least one assumption and 41 of 91
+    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 50 of 91 on at least one assumption and 39 of 91
     # on P4 or P5 (both below the 75 % warning threshold now that 29 free lots rest on no assumption), 7 rows in the tiered form,
-    # 18 in the banded form and 29 with the free schedule, 12 monthly products at a garage
-    assert coverage["priced_by_assumption"] == {"P10": 8, "P11": 4, "P13": 15, "P14": 2, "P4": 31, "P5": 27, "P6": 7, "P7": 5,
-                                                "P8": 18}
+    # 21 in the banded form and 29 with the free schedule, 12 monthly products at a garage and 3 at a lot
+    assert coverage["priced_by_assumption"] == {"P10": 8, "P11": 4, "P13": 15, "P14": 2, "P4": 29, "P5": 27, "P6": 7, "P7": 5,
+                                                "P8": 21}
     # spec Amendment F: 12 published monthly products at a garage (the nine of Amendment D2, the Braunschweig Steinstrasse and
     # Wallstrasse and, since spec Amendment G2, the Wolfsburg deck at the Hauptbahnhof), 15 garages with an imputed one (10 in
     # Braunschweig, 5 in Wolfsburg; P13 changes no union rate; a surface lot never gets one)
     assert (coverage["with_monthly_product"], coverage["with_monthly_imputed"]) == (12, 15)
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
-            coverage["priced_banded"], coverage["priced_free"]) == (50, 41, 7, 18, 29)
+            coverage["priced_banded"], coverage["priced_free"]) == (50, 39, 7, 21, 29)
+    # the monthly products of the garages and, apart, those of the three decision-A lots (ruling R-4j-6: the commuter product of the
+    # zone that the lot is too; a garage count that included them would blur the 12 published products of spec Amendment F)
+    assert coverage["lots_with_monthly_product"] == 3
     pins = {**PRICED_GARAGES, **PRICED_LOTS}
     assigned = [values.assumptions.split(";") if values.assumptions else [] for values in pins.values()]
     counted = {key: sum(key in parts for parts in assigned)
@@ -1520,7 +1530,8 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     assert sum(values.bands is not None and values.tiers is None and values.bands != "0- free"
                for values in pins.values()) == coverage["priced_banded"]
     assert sum(values.bands == "0- free" for values in pins.values()) == coverage["priced_free"]
-    assert sum(bool(values.monthly) for values in pins.values()) == coverage["with_monthly_product"]
+    assert sum(bool(values.monthly) for values in PRICED_GARAGES.values()) == coverage["with_monthly_product"]
+    assert sum(bool(values.monthly) for values in PRICED_LOTS.values()) == coverage["lots_with_monthly_product"]
 
 
 def _committed_price(garage_id: str, duration_min: float) -> float:
@@ -1674,9 +1685,10 @@ def test_no_garage_is_left_unpriced_the_reason_vocabulary_stays_and_the_forms_ar
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
     garages = _committed_garages()
     assert bool(garages["priced"].all())
-    # bands: the 10 banded garages and the 8 banded lots (Lessingtheater, Schlosswall, the three Broetchentaste lots of Helmstedt,
-    # the Konrad-Adenauer-Strasse, the Rathausvorplatz, the Buechereivorplatz) and the 29 free lots; tiers: the 7 tiered garages
-    assert garages["tariff_duration_bands"].notna().sum() == 47 and garages["tariff_tiers"].notna().sum() == 7
+    # bands: the 10 banded garages and the 11 banded lots (Lessingtheater, Schlosswall, the three Broetchentaste lots of Helmstedt,
+    # the Konrad-Adenauer-Strasse, the Rathausvorplatz, the Buechereivorplatz and the three lots with the bands of the maximum stay
+    # of zone Ia) and the 29 free lots; tiers: the 7 tiered garages
+    assert garages["tariff_duration_bands"].notna().sum() == 50 and garages["tariff_tiers"].notna().sum() == 7
 
 
 def test_the_four_garages_without_coordinates_are_listed_at_the_main_points_of_the_supplement():
@@ -2006,8 +2018,9 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     assert "1.20 EUR at 2 h" in rows.loc["garage_he_groepern_tiefgarage", "note"]
     assert "8.00" in rows.loc["garage_gs_galeria", "note"] and "conflicting variant" in rows.loc["garage_gs_galeria", "note"]
     used = qa[(qa["record_type"] == "monthly_product") & (qa["decision"] == "used")]
+    # the used products name their garage, and the three station products name the lot that carries them (ruling R-4j-6)
     assert sorted(used.loc[used["garage_id"] != "", "garage_id"]) == sorted(
-        garage_id for garage_id, values in PRICED_GARAGES.items() if values.monthly)
+        garage_id for garage_id, values in {**PRICED_GARAGES, **PRICED_LOTS}.items() if values.monthly)
     zone_products = used[used["zone_ids"] != ""]
     assert set(";".join(zone_products["zone_ids"]).split(";")) == {
         "bs_zone_ib", "tu_zentralcampus", "tu_campus_nord", "tu_campus_ost_beethovenstrasse", "tu_campus_ost_langer_kamp",
@@ -2099,6 +2112,9 @@ def test_the_committed_braunschweig_garages_carry_the_published_products_read_fr
                                      "monthly_bs_hbf_west_p3": ("", "74.00"),
                                      "monthly_bs_apcoa_s1": ("surface_lot", "99.00"),
                                      "monthly_bs_apcoa_s3": ("surface_lot", "129.00")}.items():
-        assert (qa.loc[record, "reason_code"], qa.loc[record, "amount_eur"], qa.loc[record, "garage_id"]) == (reason, amount, "")
+        # the used station products are the monthly products of the three decision-A lots and name them (ruling R-4j-6)
+        lot = {"monthly_bs_hbf_nord_p1": "lot_braunschweig_hbf_nord", "monthly_bs_hbf_sued_p2": "lot_braunschweig_hbf_sued",
+               "monthly_bs_hbf_west_p3": "lot_braunschweig_hbf_west"}.get(record, "")
+        assert (qa.loc[record, "reason_code"], qa.loc[record, "amount_eur"], qa.loc[record, "garage_id"]) == (reason, amount, lot)
     assert BS_MONTHLY_PACKAGE_SHA256 in json.loads(_garages_path().read_text(encoding="utf-8"))["attribution"]
     assert BS_MONTHLY_EVIDENCE_SUMS_SHA256 in json.loads(_garages_path().read_text(encoding="utf-8"))["attribution"]

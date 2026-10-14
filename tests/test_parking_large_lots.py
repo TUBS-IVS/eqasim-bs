@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import random
 import sys
 import zipfile
 from pathlib import Path
@@ -33,8 +34,10 @@ import pytest
 from pyproj import Transformer
 from shapely.geometry import Point, box
 
+from braunschweig.parking import cost
 from braunschweig.parking import garage_qa as pq
 from braunschweig.parking import garages as pg
+from braunschweig.parking import tariff_export as te
 from braunschweig.parking import zones as pz
 from tests.restricted_parking_data import parking_data_path
 
@@ -562,7 +565,9 @@ def _tariffs() -> pd.DataFrame:
                          ["t_first", 1.0, 6, 30, 60, 0.7, nan, 10.0, 18.0, nan, nan],
                          ["t_firstonly", 1.0, 30, nan, 60, 1.5, nan, 10.0, 18.0, nan, nan],
                          ["t_cents", 1.0, 7, nan, nan, nan, nan, 8.0, 18.0, nan, nan],
-                         ["t_none", nan, nan, nan, nan, nan, nan, 8.0, 18.0, nan, nan]], columns=columns)
+                         ["t_none", nan, nan, nan, nan, nan, nan, 8.0, 18.0, nan, nan],
+                         ["t_capms", 1.0, 30, nan, nan, nan, 5.0, 8.0, 18.0, 180, 4.2],
+                         ["t_msonly", 1.0, 30, nan, nan, nan, nan, 8.0, 18.0, 120, nan]], columns=columns)
 
 
 def test_the_street_product_of_a_zone_is_its_rate_per_unit_its_window_and_its_cap(ll):
@@ -574,6 +579,16 @@ def test_the_street_product_of_a_zone_is_its_rate_per_unit_its_window_and_its_ca
     assert rate["preferred_for_current_use"] and cap["preferred_for_current_use"]
     minute = ll.zone_product_rules(_tariffs(), "t_ia", "lot")
     assert minute["cap"] is None and minute["rules"][minute["rate"]]["amount_eur"] == 0.03  # per started minute
+    # the maximum stay of the zone with its long-stay product (assumption M1, ruling R-4j-6) are the two bands of its schedule: the
+    # rate from 0 min to the maximum stay and the long-stay product as one open total band after it
+    rate_rule, long_stay = minute["rules"][minute["rate"]], minute["rules"][minute["long_stay"]]
+    assert (rate_rule["elapsed_from_minutes"], rate_rule["elapsed_to_minutes"]) == (0, 180)
+    assert (long_stay["rule_type"], long_stay["amount_eur"], long_stay["elapsed_from_minutes"],
+            long_stay["elapsed_to_minutes"]) == ("duration_total", 9.0, 180, None)
+    assert long_stay["preferred_for_current_use"] and long_stay["charging_times"] == rate_rule["charging_times"]
+    assert minute["form"] == {"bands": ["lot:zone_rate", "lot:zone_long_stay"], "window": "rate"}
+    plain = ll.zone_product_rules(_tariffs(), "t_hbf", "lot")
+    assert plain["long_stay"] is None and plain["form"] == {"rate": "lot:zone_rate", "window": "rate", "cap": "lot:zone_cap"}
 
 
 @pytest.mark.parametrize("zone, message", [
@@ -582,6 +597,9 @@ def test_the_street_product_of_a_zone_is_its_rate_per_unit_its_window_and_its_ca
     ("t_cents", "no whole number of cents"),
     ("t_none", "has no hourly street rate in the tariff table"),
     ("t_unknown", "the tariff table holds no zone t_unknown"),
+    # a day cap would cap the long-stay product of a lot's bands, which the street does not (a long stay buys the product)
+    ("t_capms", "a daily cap beside a long-stay product, which the bands of a lot cannot carry exactly"),
+    ("t_msonly", "has a maximum stay of 120.0 min and no long-stay product"),
 ])
 def test_a_zone_product_that_a_lot_cannot_carry_stops_the_row_and_is_never_approximated(ll, zone, message):
     with pytest.raises(SystemExit, match=message):
@@ -593,11 +611,13 @@ def test_the_consistency_check_names_a_difference_and_changes_nothing(ll, packag
     package = ll.load_package(path, sha256)
     product = ll.zone_product_rules(_tariffs(), "t_ia", "t_zone_a")
     sentence, verdicts = ll.zone_check_sentence(package, "t_zone_a", "t_zone_a__1", product, "t_ia")
-    assert verdicts == ["rate equal"] and "0.90 EUR per 30 min = 1.80 EUR per hour" in sentence
+    # the price is stated per 30 min and the zone row bills per started minute: the same hourly price, a named difference of unit
+    assert verdicts[0] == "rate equal" and "0.90 EUR per 30 min = 1.80 EUR per hour" in sentence
+    assert verdicts[1].startswith("billing unit DIFFERS: the package states 30 min") and len(verdicts) == 2
     assert "the zone tariff is not changed by it" in sentence
     differing = ll.zone_product_rules(_tariffs().replace({"hourly_rate_eur": {1.8: 3.0}}), "t_ia", "t_zone_a")
     sentence, verdicts = ll.zone_check_sentence(package, "t_zone_a", "t_zone_a__1", differing, "t_ia")
-    assert verdicts == ["rate DIFFERS by 1.20 EUR per hour"] and "rate DIFFERS by 1.20 EUR per hour" in sentence
+    assert verdicts[0] == "rate DIFFERS by 1.20 EUR per hour" and "rate DIFFERS by 1.20 EUR per hour" in sentence
     # the lot keeps the zone's product (3.00 EUR per hour = 0.05 EUR per started minute), not the documented one
     assert differing["rules"][differing["rate"]]["amount_eur"] == 0.05
 
@@ -810,16 +830,18 @@ def test_the_threshold_decides_which_records_are_options(step, package_file):
 
 def test_a_zone_product_lot_carries_the_street_product_of_its_zone_with_the_consistency_check(step, package_file):
     row = _by_id(step.build_large_lots(_inputs(step, package_file)))["lot_t_zone_a"]
-    assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"], row["garage_fee_start_h"],
-            row["garage_fee_end_h"]) == (1.8, 1, 9.0, 20.0)   # the zone's table row, per started minute, its fee window
-    assert row["facility_kind"] == "surface_lot" and row["assumptions"] is None
+    # the zone's table row: per started minute, its fee window, and its maximum stay with the long-stay product as the bands
+    assert row["tariff_duration_bands"] == "0-180 0.03/1; 180- total 9.00" and row["garage_hourly_rate_eur"] is None
+    assert (row["garage_fee_start_h"], row["garage_fee_end_h"]) == (9.0, 20.0)
+    assert row["facility_kind"] == "surface_lot" and row["assumptions"] == "P8"
     assert row["capacity_reported"] == 101 and "reported" in row["notes"]
     assert row["tariff_rule_ids"] == "parking_tariffs_2026.csv:t_ia;t_zone_a__1"
     assert "Tariff: the street product of the zone t_ia (spec Amendment I1)" in row["notes"]
     assert "rate equal" in row["notes"] and "the zone tariff is not changed by it" in row["notes"]
-    # what the garage columns cannot carry of the zone's product is named, never dropped silently
-    assert ("Not modelled (the garage columns carry no maximum stay or long-stay product): the zone product's maximum stay "
-            "180 min and long-stay product 9.00 EUR.") in row["notes"]
+    # the maximum stay of the zone is carried by the bands, not dropped: the notes say so
+    assert "Not modelled (the garage columns carry no maximum stay or long-stay product)" not in row["notes"]
+    assert ("The maximum stay 180 min and the long-stay product 9.00 EUR of the zone (assumption M1) are the bands of the "
+            "schedule.") in row["notes"]
     assert row["package_sha256"] == package_file[1] and row["municipality_ags"] == BS
     assert row["geometry"].distance(Point(X0 + 100, Y0 + 100)) < 0.001
     assert row["geometry_method"] == "package_research_point_in_parking_area" and row["source_url"] == SOURCE_URL
@@ -885,7 +907,7 @@ def test_the_p14_lot_takes_the_median_product_of_its_zone_and_names_it(step, pac
     imputed, donor = rows["lot_t_p14_zone"], rows["lot_t_zone_a"]
     for column in step.TARIFF_VALUE_COLUMNS:
         assert imputed[column] == donor[column], column
-    assert imputed["assumptions"] == "P14" and "ASSUMPTION P14 basis" in imputed["notes"]
+    assert imputed["assumptions"] == "P8;P14" and "ASSUMPTION P14 basis" in imputed["notes"]
     assert "the median product of the 2 priced lots of the zone t_ia" in imputed["notes"]
     assert "level zone" in imputed["notes"] and imputed["source_url"] == SOURCE_URL
     assert imputed["tariff_rule_ids"] == "parking_tariffs_2026.csv:t_ia;t_zone_a__1;t_p14_zone__1"
@@ -1032,6 +1054,7 @@ def test_the_subpoint_of_a_lot_is_a_qa_row_and_every_municipal_point_is_accounte
     result = step.build_large_lots(_inputs(step, package_file))
     entry = next(item for item in result["qa"] if item["record_id"] == "candidate_lot_wob_park_sub")
     assert entry["reason"] == "lot_alias" and "counted once" in entry["note"] and "package facility t_free" in entry["note"]
+    assert entry["municipality_ags"] == GS     # derived from the town of the target lot, never typed (finding I4)
     # the alias that is no subpoint is the record of its target (no extra row); the point of a facility needs none
     assert "candidate_lot_wob_park_alias" not in _reasons(result) and "lot_wob_park_alias" not in _by_id(result)
     path, sha256 = _write_package(tmp_path / "w", crosswalk=CROSSWALK + [{"facility_key": "WOB_PARK_LOST", "name": "x"}])
@@ -1061,6 +1084,15 @@ def test_the_rates_are_logged_and_a_high_imputation_share_is_a_warning(step, pac
     assert "tariff from the site's own components 5/12, zone street product 2/12, free 3/12, imputed (ASSUMPTION P14) 2/12 " \
            "(16.7 %)" in printed
     assert f"QA rows {len(result['qa'])} by reason" in printed and "WARNING: more than 25 % of the large lots" not in printed
+    assert ("[garages] large lots, source of the tariff: a page that states it 12/12, only a web-service layer (fallback) 0/12"
+            in printed)
+    assert ("[garages] large lots, source of the position: OpenStreetMap object 0/12, coordinate source of the package 12/12, "
+            "tariff-source fallback 0/12") in printed
+    assert ("[garages] large lots, capacity origin: reported 9/12 (75.0 %), OSM tag 1/12 (8.3 %), area estimate 2/12 (16.7 %), "
+            "derived 0/12 (0.0 %)") in printed
+    assert result["counts"]["capacity_origin"] == {"reported": 9, "osm_tag": 1, "area_estimate": 2, "derived": 0, "other": 0}
+    assert result["counts"]["position_origin"] == {"osm_object": 0, "coordinate_source": 12, "tariff_source_fallback": 0}
+    assert result["counts"]["tariff_source_web_service"] == 0
     assert result["counts"]["by_town"] == {"Braunschweig": 3, "Goslar": 4, "Helmstedt": 2, "Salzgitter": 3}
     assert (result["counts"]["free"], result["counts"]["imputed"], result["counts"]["zone_products"],
             result["counts"]["failures"]) == (3, 2, 2, 1)
@@ -1200,6 +1232,8 @@ def test_texts_of_the_package_are_ascii_with_the_euro_and_section_signs_read_as_
 REAL_PACKAGE = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-13" / f"{PACKAGE}.zip"
 REAL_ZONES = COMMITTED_PARKING_DIR / "parking_zones_2026.geojson"
 REAL_TARIFFS = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
+REAL_MONTHLY = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08" / "Braunschweig_Monatstarife_2026-10-08.zip"
+REAL_MONTHLY_EVIDENCE = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08" / "contipark_configurator_2026-10-08"
 #: The counts of spec Amendment I and of the package's README, written from the package's own tables (its summary and
 #: facilities.json), not read back from the code: 152 reviewed records, 57 / 72 / 40 public size candidates at 50 / 30 / 100.
 PACKAGE_RECORDS, SHORTLIST_COUNTS = 152, {30: 72, 50: 57, 100: 40}
@@ -1227,13 +1261,17 @@ def test_the_real_package_verifies_and_the_policy_reproduces_its_shortlists(ll, 
 
 @pytest.fixture(scope="module")
 def real_inputs(garages_step, real_package):
+    if not (REAL_MONTHLY.is_file() and REAL_MONTHLY_EVIDENCE.is_dir()):
+        pytest.skip("the Braunschweig monthly package (the commuter products of decision A) is gitignored and absent here")
     zones = gpd.read_file(REAL_ZONES).to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(REAL_TARIFFS)
     census = {"rate_rules": 54, "stated": 25, "started_unit": 25}   # the regional package's census, as the step prints it
+    monthly = garages_step.bsm.load_monthly_inputs(REAL_MONTHLY, REAL_MONTHLY_EVIDENCE)
+    recorded = garages_step.bsm.read_recorded_products(monthly, garages_step.specs.BS_RECORDED_SPECS)
 
     def inputs(threshold):
         return {"large": {"package": real_package, "threshold": threshold, "zones": zones, "tariffs": tariffs, "evidence": {}},
-                "rounding_census": census}
+                "rounding_census": census, "bs_recorded": recorded}
 
     return inputs
 
@@ -1242,8 +1280,8 @@ def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(ga
     result = garages_step.build_large_lots(real_inputs(50))
     counts = result["counts"]
     assert counts["options"] == 55 and counts["failures"] == 0 and result["failures"] == []
-    # the primary path: 15 + 9 + 29 + 2 = 55; the imputed lots are the two without a stated tariff
-    assert (counts["zone_products"], counts["free"], counts["imputed"]) == (9, 29, 2)
+    # the primary path: 13 + 11 + 29 + 2 = 55; the imputed lots are the two without a stated tariff
+    assert (counts["zone_products"], counts["free"], counts["imputed"]) == (11, 29, 2)
     assert counts["by_town"] == {"Braunschweig": 11, "Gifhorn": 3, "Goslar": 9, "Helmstedt": 5, "Peine": 4, "Salzgitter": 9,
                                  "Wolfenbuettel": 7, "Wolfsburg": 7}
     assert counts["qa_by_reason"] == {
@@ -1251,8 +1289,15 @@ def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(ga
         "lot_free_evidence_missing": 3, "lot_mixed_tariff_unseparated": 2, "lot_not_open": 2, "lot_not_surface_lot": 6,
         "lot_unconfirmed_candidate": 9}
     printed = capsys.readouterr().out
-    assert "tariff from the site's own components 15/55, zone street product 9/55, free 29/55, imputed (ASSUMPTION P14) 2/55 " \
+    assert "tariff from the site's own components 13/55, zone street product 11/55, free 29/55, imputed (ASSUMPTION P14) 2/55 " \
            "(3.6 %)" in printed and "WARNING" not in printed
+    # the primary source of each provenance column and no fallback (the counts are the ones of the data record)
+    assert counts["tariff_source_web_service"] == 0 and counts["limited"] == 18
+    assert counts["position_origin"] == {"osm_object": 51, "coordinate_source": 4, "tariff_source_fallback": 0}
+    assert counts["capacity_origin"] == {"reported": 33, "osm_tag": 5, "area_estimate": 16, "derived": 1, "other": 0}
+    assert "capacity origin: reported 33/55 (60.0 %), OSM tag 5/55 (9.1 %), area estimate 16/55 (29.1 %), derived 1/55 (1.8 %)" \
+        in printed
+    assert (counts["in_zone"], len(counts["in_zone_differing"])) == (22, 6)
     ids = [row["garage_id"] for row in result["rows"]]
     assert len(set(ids)) == 55 and all(garage_id.startswith("lot_") for garage_id in ids)
     assert not any("P12" in str(row["assumptions"]) for row in result["rows"])     # the municipal free default is withdrawn
@@ -1272,13 +1317,13 @@ def test_the_sensitivities_at_30_and_100_stop_at_no_tariff_and_have_the_counts_o
 
 def test_the_imputed_lots_carry_the_median_product_of_their_zone(garages_step, real_inputs):
     rows = {row["garage_id"]: row for row in garages_step.build_large_lots(real_inputs(50))["rows"]}
-    # Buergerpark: the product of bs_zone_ia (1.80 EUR per hour, started minute, 09:00-20:00) of Wendenstrasse/Werder and Grosser
-    # Hof
+    # Buergerpark: the product of bs_zone_ia of Wendenstrasse/Werder and Grosser Hof (1.80 EUR per hour, started minute,
+    # 09:00-20:00, a maximum stay of 180 min and the long-stay product 9.00 EUR: the bands of the zone's schedule, ruling R-4j-6)
     park = rows["lot_braunschweig_buergerpark"]
-    assert (park["garage_hourly_rate_eur"], park["garage_billing_unit_min"], park["garage_fee_start_h"],
-            park["garage_fee_end_h"], park["assumptions"]) == (1.8, 1, 9.0, 20.0, "P14")
+    assert (park["tariff_duration_bands"], park["garage_fee_start_h"], park["garage_fee_end_h"], park["assumptions"]) == (
+        "0-180 0.03/1; 180- total 9.00", 9.0, 20.0, "P8;P14")
     for donor in ("lot_braunschweig_wendenstrasse_werder", "lot_braunschweig_grosser_hof"):
-        assert rows[donor]["garage_hourly_rate_eur"] == 1.8 and rows[donor]["assumptions"] is None
+        assert rows[donor]["tariff_duration_bands"] == park["tariff_duration_bands"] and rows[donor]["assumptions"] == "P8"
     # Buechereivorplatz: the municipal tariff of Konrad-Adenauer-Strasse and Rathausvorplatz (a 30 min grace band)
     library = rows["lot_sz_buechereivorplatz"]
     assert library["tariff_duration_bands"] == "0-30 free; 30-60 total 0.70; 60- 0.10/6"
@@ -1291,7 +1336,7 @@ def test_the_imputed_lots_carry_the_median_product_of_their_zone(garages_step, r
 def test_decision_a_the_station_lots_and_the_markthalle_carry_exactly_the_product_of_their_own_zone(garages_step, real_inputs):
     rows = {row["garage_id"]: row for row in garages_step.build_large_lots(real_inputs(50))["rows"]}
     tariffs = pz.load_tariffs(REAL_TARIFFS).set_index("zone_id")
-    assert "long-stay product 9.00 EUR" in rows["lot_braunschweig_wendenstrasse_werder"]["notes"]   # the Zone Ia product
+    assert "the long-stay product 9.00 EUR of the zone (assumption M1)" in rows["lot_braunschweig_wendenstrasse_werder"]["notes"]
     assert "long-stay product" not in rows["lot_braunschweig_hbf_nord"]["notes"]
     for garage_id, zone in (("lot_braunschweig_hbf_nord", "bs_hbf_p1_nord"), ("lot_braunschweig_hbf_sued", "bs_hbf_p2_sued"),
                             ("lot_braunschweig_hbf_west", "bs_hbf_p3_west"), ("lot_braunschweig_markthalle", "bs_bga_markthalle")):
@@ -1451,22 +1496,36 @@ def test_the_zone_products_of_decision_a_equal_the_table_rows_of_their_zones_and
              "lot_braunschweig_hbf_west": "bs_hbf_p3_west", "lot_braunschweig_markthalle": "bs_bga_markthalle",
              "lot_braunschweig_wendenstrasse_werder": "bs_zone_ia", "lot_braunschweig_grosser_hof": "bs_zone_ia",
              "lot_wob_park_1638410": "wob_tarifzone_2", "lot_wob_park_1769502": "wob_tarifzone_1",
-             "lot_wob_park_1835014": "wob_tarifzone_2"}
+             "lot_wob_park_1835014": "wob_tarifzone_2", "lot_gs_baeringer": "gs_parkplatz_baeringerstrasse",
+             "lot_gs_klubgarten": "gs_parkplatz_klubgartenstrasse_zob"}
     for garage_id, zone in pairs.items():
         row, product = committed.loc[garage_id], tariffs.loc[zone]
-        assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"]) == (
-            product["hourly_rate_eur"], product["billing_unit_min"]), garage_id
-        assert (row["garage_fee_start_h"], row["garage_fee_end_h"]) == (product["fee_start_h"], product["fee_end_h"]), garage_id
-        assert _same(row["garage_daily_cap_eur"], product["daily_cap_eur"]), garage_id
-        assert pd.isna(row["tariff_duration_bands"]) and pd.isna(row["assumptions"]), garage_id
+        # the street equivalent of the row equals the table row in every compared column: rate, unit, grace, cap, fee window and
+        # the maximum stay with its long-stay product (the bands of zone Ia) and the commuter product (ruling R-4j-6)
+        assert pq.street_differences(pq.lot_street_equivalent(row), pq.zone_street_equivalent(product)) == [], garage_id
         assert f"parking_tariffs_2026.csv:{zone}" in row["tariff_rule_ids"]
         assert "the zone tariff is not changed by it" in row["notes"]
         assert "rate equal" in committed_qa.loc[f"garage_{garage_id}", "note"], garage_id
-    # the zone product of Zone Ia has a maximum stay and a long-stay product that the garage columns do not carry: named
-    assert "maximum stay 180 min and long-stay product 9.00 EUR" in committed.loc["lot_braunschweig_grosser_hof", "notes"]
-    # the Wolfsburg lots state their paid hours in free text: the fee window of the zone is carried, not compared (named)
-    assert "fee window not compared" in committed_qa.loc["garage_lot_wob_park_1638410", "note"]
+        if zone == "bs_zone_ia":     # the maximum stay and the long-stay product are the two bands of the schedule (assumption M1)
+            assert row["tariff_duration_bands"] == "0-180 0.03/1; 180- total 9.00" and row["assumptions"] == "P8", garage_id
+            assert "of the zone (assumption M1) are the bands of the schedule" in row["notes"], garage_id
+        else:
+            assert pd.isna(row["tariff_duration_bands"]) and pd.isna(row["assumptions"]), garage_id
+            assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"]) == (
+                product["hourly_rate_eur"], product["billing_unit_min"]), garage_id
+            assert (row["garage_fee_start_h"], row["garage_fee_end_h"]) == (product["fee_start_h"], product["fee_end_h"]), garage_id
+            assert _same(row["garage_daily_cap_eur"], product["daily_cap_eur"]), garage_id
+    # the paid hours that the package states in free text are compared where they state a weekday window (finding I5): the
+    # CongressPark states 07:00-15:00 against the zone's 07:00-18:00, Cinemaxx and the Amtsgericht 07:00-18:00
+    assert ("fee window DIFFERS (the package states '07:00-15:00, Sa 07:00-14:00', the zone row 07:00-18:00)"
+            in committed_qa.loc["garage_lot_wob_park_1638410", "note"])
+    for garage_id in ("lot_wob_park_1769502", "lot_wob_park_1835014"):
+        assert "fee window equal (read from the free text '07:00-18:00, Sa 07:00-14:00' on weekdays)" in committed_qa.loc[
+            f"garage_{garage_id}", "note"]
     assert "fee window equal (24/7)" in committed_qa.loc["garage_lot_braunschweig_hbf_nord", "note"]
+    # the unit of the package against the unit of the zone row, both sources named (ruling R-4j-7 a)
+    for garage_id in ("lot_wob_park_1638410", "lot_braunschweig_grosser_hof", "lot_gs_baeringer"):
+        assert "billing unit DIFFERS: the package states" in committed_qa.loc[f"garage_{garage_id}", "note"], garage_id
 
 
 def _same(left, right) -> bool:
@@ -1609,3 +1668,575 @@ def test_the_tariff_model_export_converts_every_lot_of_the_release_with_its_form
     free = [entry for entry in entries
             if entry["bands"] and entry["bands"][0]["kind"] == "free" and entry["bands"][0]["to_min"] is None]
     assert len(free) == 29
+
+
+# --------------------------------------------------------------------------- the zone product is exact to the cent (R-4j-6)
+HOUR_SECONDS = 3600
+SWEEP_ARRIVALS_H = (6, 9, 14, 19)
+SWEEP_PURPOSES = ("work", "shopping")
+
+
+def _zone_tariff(row: dict) -> cost.ZoneTariff:
+    """The ``ZoneTariff`` of a row of the synthetic tariff table (the columns that it lacks are empty cells)."""
+    full = {column: float("nan") for column in te.REQUIRED_COLUMNS}
+    full.update(zone_type="street_paid", resident_exempt=False)
+    full.update({key: value for key, value in row.items() if key in te.TARIFF_COLUMNS})
+    return te.tariff_row_to_zone(full)
+
+
+def _lot_frame(rows) -> gpd.GeoDataFrame:
+    """The dataset of the rows that ``build_large_lots`` returns (the ``_facts`` of the rows removed)."""
+    rows = [{key: value for key, value in row.items() if key != "_facts"} for row in rows]
+    frame = gpd.GeoDataFrame(pd.DataFrame(rows).drop(columns=["geometry"]).reindex(columns=list(pg.DATASET_COLUMNS)),
+                             geometry=[row["geometry"] for row in rows], crs=METRIC_CRS)
+    for column in pg.MINUTE_COLUMNS + pg.INTEGER_COLUMNS:
+        frame[column] = frame[column].astype("Int64")
+    for column in pg.MONEY_COLUMNS + pg.HOUR_COLUMNS:
+        frame[column] = frame[column].astype(float)
+    frame["priced"] = frame["priced"].astype(bool)
+    return frame
+
+
+def sweep_mismatches(zone: cost.ZoneTariff, garage: cost.GarageTariff, durations_min=range(1, 721)) -> list:
+    """Every stay of ``durations_min`` minutes at the arrivals ``SWEEP_ARRIVALS_H`` and for the purposes ``SWEEP_PURPOSES`` that the
+    street product of ``zone`` (``cost.parking_cost_cents``, the ZONE path) and the garage option of ``garage`` (``cost.
+    garage_option_cents``, the LOT row alone) price differently: (arrival h, minutes, purpose, street cents, lot cents)."""
+    mismatches = []
+    for arrival_h in SWEEP_ARRIVALS_H:
+        arrival_s = arrival_h * HOUR_SECONDS
+        for minutes in durations_min:
+            for purpose in SWEEP_PURPOSES:
+                street = cost.parking_cost_cents(zone, arrival_s, arrival_s + minutes * 60, purpose=purpose, parking_free=False,
+                                                 resident_of_zone=False)[0]
+                lot = cost.garage_option_cents(garage, arrival_s, arrival_s + minutes * 60, purpose=purpose)
+                if street != lot:
+                    mismatches.append((arrival_h, minutes, purpose, street, lot))
+    return mismatches
+
+
+def test_the_maximum_stay_of_a_zone_is_written_as_bands_that_price_every_stay_like_the_street(step, package_file):
+    result = step.build_large_lots(_inputs(step, package_file))
+    frame = _lot_frame(result["rows"]).set_index("garage_id", drop=False)
+    zone = _zone_tariff(_step_tariffs().set_index("zone_id", drop=False).loc["t_ia"].to_dict())
+    for garage_id in ("lot_t_zone_a", "lot_t_zone_b", "lot_t_p14_zone"):      # the P14 lot takes the donors' schedule
+        garage = te.garage_row_to_tariff(frame.loc[garage_id])
+        assert garage.bands is not None and garage.hourly_rate_cents is None
+        assert sweep_mismatches(zone, garage) == [], garage_id
+    # the same on stays that are no whole number of minutes: a seeded sample at second resolution, over several days
+    garage = te.garage_row_to_tariff(frame.loc["lot_t_zone_a"])
+    generator = random.Random(7)
+    for _ in range(20_000):
+        arrival_s = generator.randrange(0, 86_400)
+        departure_s = arrival_s + generator.randrange(1, 40 * HOUR_SECONDS)
+        for purpose in SWEEP_PURPOSES:
+            assert cost.garage_option_cents(garage, arrival_s, departure_s, purpose=purpose) == cost.parking_cost_cents(
+                zone, arrival_s, departure_s, purpose=purpose, parking_free=False, resident_of_zone=False)[0]
+
+
+def test_the_sweep_would_catch_a_zone_product_without_the_bands_of_its_maximum_stay(step, package_file):
+    """The control of the sweep: the plain rate (the lot as it was before ruling R-4j-6) prices the long stays differently."""
+    result = step.build_large_lots(_inputs(step, package_file))
+    row = _by_id(result)["lot_t_zone_a"]
+    plain = dict(row, tariff_duration_bands=None, garage_hourly_rate_eur=1.8, garage_billing_unit_min=1)
+    zone = _zone_tariff(_step_tariffs().set_index("zone_id", drop=False).loc["t_ia"].to_dict())
+    garage = te.garage_row_to_tariff(_lot_frame([plain]).iloc[0])
+    mismatches = sweep_mismatches(zone, garage)
+    # 06:00 plus 361 min: 181 min lie in the fee window 09:00-20:00, so the street buys the long-stay product (9.00 EUR) and the
+    # plain rate charges 181 started minutes (5.43 EUR)
+    assert mismatches[0] == (6, 361, "work", 900, 543) and len(mismatches) > 1000
+
+
+# --------------------------------------------------------------------------- decision A: the commuter product (R-4j-6 a)
+
+
+def _recorded_station_product(**changes) -> dict:
+    product = {"record_id": "monthly_t_zone_a", "facility": "BS_X", "name": "Parkplatz X", "decision": "used", "reason": "",
+               "zone_ids": ("t_ia",), "amount_eur": 74.0, "product_name": "1 Monat", "note": "n", "evidence": ["pkg", "offer"],
+               "monthly_source_url": "https://op.example/month", "monthly_product": "1 Monat: 74.00 EUR per month, VAT included"}
+    product.update(changes)
+    return product
+
+
+def test_a_decision_a_lot_carries_the_commuter_product_of_its_zone_as_its_monthly_product(step, package_file, monkeypatch):
+    monkeypatch.setattr(step.specs, "LARGE_LOT_ZONE_MONTHLY", {"t_zone_a": "monthly_t_zone_a"})
+    inputs = _inputs(step, package_file)
+    inputs["bs_recorded"] = [_recorded_station_product()]
+    result = step.build_large_lots(inputs)
+    rows = _by_id(result)
+    lot = rows["lot_t_zone_a"]
+    assert (lot["monthly_eur"], lot["monthly_source_url"], lot["monthly_product"]) == (
+        74.0, "https://op.example/month", "1 Monat: 74.00 EUR per month, VAT included")
+    # the zone's commuter product per working day (ASSUMPTION P2: 74.00 / 21 = 3.52 EUR) is named, and the price is the zone's
+    assert ("Monthly product (spec Amendment I1, owner decision A): 1 Monat: 74.00 EUR per month, VAT included; it is the "
+            "commuter product of the zone t_ia (3.52 EUR per working day, ASSUMPTION P2).") in lot["notes"]
+    assert "monthly product 74.00 EUR" in result["notes"]["lot_t_zone_a"]
+    assert rows["lot_t_zone_b"]["monthly_eur"] is None       # a lot without the decision carries none
+    frame = _lot_frame(result["rows"]).set_index("garage_id", drop=False)
+    assert te.garage_row_to_tariff(frame.loc["lot_t_zone_a"]).monthly_cents == 7400
+
+
+@pytest.mark.parametrize("change, message", [
+    ({"decision": "not_used", "reason": "not_the_cheapest", "zone_ids": ()}, "is not the used commuter product"),
+    ({"zone_ids": ("t_hbf",)}, "is the commuter product of the zone"),
+    ({"record_id": "monthly_other"}, "needs the recorded product monthly_t_zone_a"),
+])
+def test_a_commuter_product_that_is_not_the_one_of_the_zone_of_the_lot_stops_the_step(step, package_file, monkeypatch, change,
+                                                                                    message):
+    monkeypatch.setattr(step.specs, "LARGE_LOT_ZONE_MONTHLY", {"t_zone_a": "monthly_t_zone_a"})
+    inputs = _inputs(step, package_file)
+    inputs["bs_recorded"] = [_recorded_station_product(**change)]
+    with pytest.raises(SystemExit, match=message):
+        step.build_large_lots(inputs)
+
+
+def test_the_commuter_product_needs_the_monthly_package(step, package_file, monkeypatch):
+    monkeypatch.setattr(step.specs, "LARGE_LOT_ZONE_MONTHLY", {"t_zone_a": "monthly_t_zone_a"})
+    with pytest.raises(SystemExit, match="decision A gives it the commuter product monthly_t_zone_a of its zone, which needs the "
+                                         "Braunschweig monthly package"):
+        step.build_large_lots(_inputs(step, package_file))
+
+
+def test_the_monthly_qa_row_of_a_station_product_names_the_lot_that_carries_it(step):
+    recorded = [_recorded_station_product(), _recorded_station_product(record_id="monthly_other", zone_ids=())]
+    rows = step.bsm.qa_product_rows({}, recorded, {}, lot_garage_ids={"monthly_t_zone_a": "lot_t_zone_a"})
+    assert [(row["record_id"], row["garage_id"], row["zone_ids"]) for row in rows] == [
+        ("monthly_t_zone_a", "lot_t_zone_a", "t_ia"), ("monthly_other", None, "")]
+    # without the lots the rows are as before (a recorded facility has no garage_id)
+    assert [row["garage_id"] for row in step.bsm.qa_product_rows({}, recorded, {})] == [None, None]
+
+
+def test_the_coverage_counts_the_monthly_products_of_the_garages_and_names_those_of_the_lots_apart():
+    from braunschweig.parking import garages as garages_module
+
+    assert "lots_with_monthly_product" in garages_module.coverage.__doc__
+    frame = _lot_frame([{"garage_id": "lot_a", "package_facility_id": "a", "name": "A", "facility_kind": "surface_lot",
+                         "municipality": "Braunschweig", "municipality_ags": BS, "capacity_reported": None, "capacity_scope": None,
+                         "monthly_eur": 74.0, "monthly_source_url": "https://x.example/m", "monthly_product": "m", "priced": True,
+                         "not_priced_reason": None, "assumptions": None, "source_url": SOURCE_URL, "source_date": "2026-10-12",
+                         "tariff_rule_ids": "r", "geometry_method": "m", "geometry_source_url": SOURCE_URL,
+                         "package_sha256": "0" * 64, "notes": "n", "operator": None, "garage_hourly_rate_eur": 1.0,
+                         "garage_billing_unit_min": 30, "garage_fee_start_h": 8.0, "garage_fee_end_h": 18.0,
+                         "geometry": Point(X0, Y0)}])
+    counts = garages_module.coverage(frame)
+    assert counts["with_monthly_product"] == 0 and counts["lots_with_monthly_product"] == 1
+
+
+
+def test_the_station_lots_carry_the_commuter_product_of_their_zone_and_name_every_other_component(committed, committed_qa):
+    """Decision A (ruling R-4j-6): the lot prices a work stay like the zone, the other components are named, none is dropped."""
+    tariffs = pz.load_tariffs(REAL_TARIFFS).set_index("zone_id")
+    stations = (("lot_braunschweig_hbf_nord", "bs_hbf_p1_nord", "monthly_bs_hbf_nord_p1", 120.0,
+                 ("braunschweig_hbf_nord__2", "braunschweig_hbf_nord__3", "braunschweig_hbf_nord__5")),
+                ("lot_braunschweig_hbf_sued", "bs_hbf_p2_sued", "monthly_bs_hbf_sued_p2", 74.0,
+                 ("braunschweig_hbf_sued__2", "braunschweig_hbf_sued__3", "braunschweig_hbf_sued__5")),
+                ("lot_braunschweig_hbf_west", "bs_hbf_p3_west", "monthly_bs_hbf_west_p3", 74.0,
+                 ("braunschweig_hbf_west__2", "braunschweig_hbf_west__3", "braunschweig_hbf_west__5")))
+    for garage_id, zone, record_id, amount, others in stations:
+        row = committed.loc[garage_id]
+        assert row["monthly_eur"] == amount
+        assert row["monthly_product"].startswith(f"1 Monat fuer Stellplatzmieter: {amount:.2f} EUR")
+        assert row["monthly_source_url"].startswith("https://") and "commuter product of the zone" in row["notes"]
+        assert round(amount / 21.0 + 1e-9, 2) == tariffs.loc[zone, "commuter_day_eur"]
+        month = committed_qa.loc[record_id]
+        assert month["garage_id"] == garage_id and month["zone_ids"] == zone and month["decision"] == "used"
+        # the package components that the lot does not model are named in its notes, each with its rule id
+        for rule_id in others:
+            assert f"Not used: {rule_id}" in row["notes"], rule_id
+    # the Markthalle has no commuter product (its zone has none), and no lot is a garage: the garage counts are unchanged
+    assert pd.isna(committed.loc["lot_braunschweig_markthalle", "monthly_eur"])
+    assert committed["monthly_eur"].notna().sum() == 15 and committed.loc[committed["facility_kind"] == "garage", "monthly_eur"
+                                                                         ].notna().sum() == 12
+
+
+def test_a_billing_unit_that_the_package_states_differently_is_named_with_both_sources(ll, package_file):
+    path, sha256 = package_file
+    package = ll.load_package(path, sha256)
+    rule = package["rules"]["t_zone_a__1"]
+    rule["amount_eur"], rule["billing_unit_minutes"] = 1.0, 60          # 1.00 EUR per hour, the package's reading of the unit
+    tariffs = _tariffs()
+    tariffs["source_url"], tariffs["source_date"] = "https://zone.example/service", "2026-10-07"
+    tariffs["notes"] = ("ASSUMPTION D3-a: billing_unit_min 30, the started half hour of the ordinance, because the page "
+                        "states no unit")
+    tariffs.loc[tariffs["zone_id"] == "t_ia", ["hourly_rate_eur", "billing_unit_min"]] = [1.0, 30]
+    product = ll.zone_product_rules(tariffs, "t_ia", "t_zone_a")
+    sentence, verdicts = ll.zone_check_sentence(package, "t_zone_a", "t_zone_a__1", product, "t_ia")
+    assert verdicts == ["rate equal", "billing unit DIFFERS: the package states 60 min (source src_prices "
+                                      "https://op.example/prices of 2026-10-12), the zone row 30 min (source "
+                                      "https://zone.example/service of 2026-10-07, ASSUMPTION D3-a)"]
+    assert verdicts[1] in sentence and "the zone tariff is not changed by it" in sentence
+    # the lot keeps the zone's reading (a started half hour): the package component stands as documented, only named
+    assert product["rules"][product["rate"]]["billing_unit_minutes"] == 30
+    # the same unit on both sides is no difference to name
+    rule["billing_unit_minutes"], rule["amount_eur"] = 30, 0.5
+    equal = ll.zone_check_sentence(package, "t_zone_a", "t_zone_a__1", product, "t_ia")[1]
+    assert equal == ["rate equal"]
+
+
+@pytest.mark.parametrize("hours, verdict", [
+    ("07:00-18:00, Sa 07:00-14:00", "fee window equal (read from the free text '07:00-18:00, Sa 07:00-14:00' on weekdays)"),
+    ("Mo-Fr 07:00-18:00", "fee window equal (read from the free text 'Mo-Fr 07:00-18:00' on weekdays)"),
+    ("07:00-15:00, Sa 07:00-14:00",
+     "fee window DIFFERS (the package states '07:00-15:00, Sa 07:00-14:00', the zone row 07:00-18:00)"),
+    ("by arrangement", "fee window not compared (the package states its weekdays only in free text)"),
+])
+def test_paid_hours_in_free_text_are_compared_where_they_state_a_weekday_window_and_named_where_they_differ(
+        ll, package_file, hours, verdict):
+    path, sha256 = package_file
+    package = ll.load_package(path, sha256)
+    rule = package["rules"]["t_zone_a__1"]
+    rule["schedule"], rule["paid_hours"] = None, hours
+    tariffs = _tariffs()
+    tariffs.loc[tariffs["zone_id"] == "t_ia", ["fee_start_h", "fee_end_h"]] = [7.0, 18.0]
+    product = ll.zone_product_rules(tariffs, "t_ia", "t_zone_a")
+    sentence, verdicts = ll.zone_check_sentence(package, "t_zone_a", "t_zone_a__1", product, "t_ia")
+    assert verdict in verdicts and verdict in sentence
+
+
+def test_the_two_goslar_lots_that_are_single_site_zones_carry_the_zone_row_and_name_the_unit_of_the_package(
+        committed, committed_qa):
+    """Ruling R-4j-7 a: the same car park as the zone, so the lot is zone AND lot (decision A) and carries exactly the zone row; the
+    unit that the package reads (an hour) beside the one of the zone row (a started half hour, assumption D3-a) is named."""
+    for garage_id, zone, window in (("lot_gs_baeringer", "gs_parkplatz_baeringerstrasse", (10.0, 18.0)),
+                                    ("lot_gs_klubgarten", "gs_parkplatz_klubgartenstrasse_zob", (10.0, 16.0))):
+        row = committed.loc[garage_id]
+        assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"], row["garage_fee_start_h"],
+                row["garage_fee_end_h"]) == (1.0, 30, *window)
+        assert pd.isna(row["assumptions"]) and f"parking_tariffs_2026.csv:{zone}" in row["tariff_rule_ids"]
+        assert "owner decision A" in row["notes"]
+        note = committed_qa.loc[f"garage_{garage_id}", "note"]
+        assert "billing unit DIFFERS: the package states 60 min" in note and "the zone row 30 min" in note
+        assert "ASSUMPTION D3-a" in note and "https://www.meingoslar.de/service" in note
+
+
+# --------------------------------------------------------------------------- the pass over every lot inside a zone (R-4j-7)
+
+
+def _street_zone_tables():
+    """The synthetic zones and tariffs with one more zone, ``t_street``, around the lot ``t_rate``: 1.00 EUR per hour in started
+    units of 30 min, at most 8.00 EUR, 10-18 h (the lot reads an hour: 1.00 EUR per started 60 min, the same cap and window)."""
+    nan = float("nan")
+    zones = pd.concat([_zones(), gpd.GeoDataFrame({"zone_id": ["t_street"]}, crs=METRIC_CRS,
+                                                   geometry=[box(X0 + 3150, Y0 - 50, X0 + 3250, Y0 + 50)])], ignore_index=True)
+    base = _step_tariffs()
+    tariffs = pd.concat([base, pd.DataFrame([["t_street", 1.0, 30, nan, nan, nan, 8.0, 10.0, 18.0, nan, nan]],
+                                            columns=base.columns)], ignore_index=True)
+    return zones, tariffs
+
+
+def test_a_lot_inside_a_zone_polygon_is_compared_with_the_zone_row_and_every_difference_is_named(step, package_file, capsys):
+    zones, tariffs = _street_zone_tables()
+    result = step.build_large_lots(_inputs(step, package_file, zones=zones, tariffs=tariffs))
+    consistency = result["zone_consistency"]
+    # an injected lot whose unit differs (an hour against a started half hour): named, and the values stay as the package says
+    assert consistency["lot_t_rate"] == {"t_street": ["billing_unit_min 60 against 30"]}
+    row = _by_id(result)["lot_t_rate"]
+    assert row["garage_billing_unit_min"] == 60 and row["garage_hourly_rate_eur"] == 1.0 and row["garage_daily_cap_eur"] == 8.0
+    sentence = ("Inside the zone t_street (report-only pass, ruling R-4j-7): the row DIFFERS from the zone row: "
+                "billing_unit_min 60 against 30; the package component stands as documented and no value is changed.")
+    assert sentence in row["notes"] and result["notes"]["lot_t_rate"].endswith(sentence)
+    # a lot that carries the zone's product is equal; a lot outside every zone polygon is not part of the pass
+    assert consistency["lot_t_zone_a"] == {"t_ia": []} and consistency["lot_t_zone_b"] == {"t_ia": []}
+    assert consistency["lot_t_p14_zone"] == {"t_ia": []}
+    assert "lot_t_free" not in consistency and "lot_t_bands" not in consistency
+    equal = ("Inside the zone t_ia (report-only pass, ruling R-4j-7): the row equals the zone row in every compared column.")
+    assert equal in _by_id(result)["lot_t_zone_a"]["notes"]
+    printed = capsys.readouterr().out
+    assert "[garages] lots inside a zone polygon (report-only pass, ruling R-4j-7): 4 of 12 lots, equal to the zone row 3, " \
+           "differing 1 (lot_t_rate)" in printed
+
+
+def test_a_lot_inside_a_zone_polygon_is_written_to_its_qa_row_with_the_zone_ids(step, package_file, regional_tests, tmp_path,
+                                                                                monkeypatch):
+    monkeypatch.setattr(step.specs, "GARAGE_SPECS", regional_tests._specs())
+    monkeypatch.setattr(step.specs, "MONTHLY_PRODUCTS", regional_tests.MONTHLY)
+    monkeypatch.setattr(step.specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
+    monkeypatch.setattr(step.specs, "LOT_SPECS", ())
+    monkeypatch.setattr(step.specs, "BS_MONTHLY_SPECS", ())
+    monkeypatch.setattr(step.specs, "BS_RECORDED_SPECS", ())
+    monkeypatch.setattr(step.specs, "DIRECTORY_DECISIONS", regional_tests.DIRECTORY)
+    monkeypatch.setattr(step.specs, "DIRECTORY_LOT_KEYS", {})
+    regional_tests._write_package(tmp_path / "regional", regional_tests._layers(), regional_tests._rules(),
+                                  regional_tests._facilities())
+    regional_sha = hashlib.sha256((tmp_path / "regional" / f"{regional_tests.PACKAGE}.zip").read_bytes()).hexdigest()
+    path, large_sha = package_file
+    zones, tariffs = _street_zone_tables()
+    inputs = step.load_garage_inputs(tmp_path / "regional", expected_sha256=regional_sha, large_lots_path=path,
+                                     expected_large_lots_sha256=large_sha, zones=zones, tariffs=tariffs)
+    frame = step.build_garages(inputs)
+    rows = step.qa_rows(inputs, frame, step.load_directory(regional_tests._directory(tmp_path, step, monkeypatch)))
+    table = pd.DataFrame(rows).set_index("record_id")
+    assert table.loc["garage_lot_t_rate", "zone_ids"] == "t_street" and table.loc["garage_lot_t_zone_a", "zone_ids"] == "t_ia"
+    assert table.loc["garage_lot_t_free", "zone_ids"] == "" and table.loc["garage_lot_t_bands", "zone_ids"] == ""
+    assert "billing_unit_min 60 against 30" in table.loc["garage_lot_t_rate", "note"]
+    # the garages of the regional package are no lots: no zone ids, whatever zone they lie in
+    assert (table[table["subject"].str.startswith("Parkhaus")]["zone_ids"] == "").all()
+    # the validator reads the QA table against the dataset and the zone table: the difference is reported, never an error
+    qa = pd.DataFrame(rows)
+    checks = pq.zone_consistency_check(qa, frame, tariffs)
+    assert {(check["garage_id"], check["zone_id"]): check["differences"] for check in checks}[("lot_t_rate", "t_street")] == [
+        "billing_unit_min 60 against 30"]
+
+
+# --------------------------------------------------------------------------- sources, origins and counts (fix round 1)
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://geoviewer.stadt.wolfsburg.de/default/ows/projects/gpt/parken", True),
+    ("https://maps.example/arcgis/rest/services/parking/MapServer", True),
+    ("https://maps.example/geoserver/wfs?service=WFS&request=GetCapabilities", True),
+    ("https://www.wolfsburg-erleben.de/poi/parkplatz-allerpark-wolfsburg", False),
+    ("https://www.wolfsburg.de/-/media/satzungen/parkgebuehrenordnung_20200721.pdf", False),
+    ("", False),
+    (None, False),
+])
+def test_a_web_service_layer_is_told_from_a_page_that_states_a_fee(ll, url, expected):
+    assert ll.is_web_service_url(url) is expected
+
+
+def test_the_source_of_a_row_is_the_first_page_with_a_url_and_a_date_that_is_no_web_service_layer(ll):
+    """Finding L2: the Geoviewer layer comes first in the source list of the Allerpark but carries no fee statement."""
+    layer = "https://geo.example/default/ows/projects/gpt/parken"
+    package = {"sources": {"ROOT_LAYER": {"id": "ROOT_LAYER", "url": layer, "date": "2026-10-07"},
+                           "EV_PAGE": {"id": "EV_PAGE", "url": "https://page.example/lot", "date": "2026-10-08"},
+                           "EV_NODATE": {"id": "EV_NODATE", "url": "https://other.example/x", "date": None},
+                           "EV_LATER": {"id": "EV_LATER", "url": "https://later.example/y", "date": "2026-10-09"}}}
+    assert ll.source_of(package, ["ROOT_LAYER", "EV_NODATE", "EV_PAGE", "EV_LATER"]) == ("https://page.example/lot", "2026-10-08")
+    # a layer is the source only where no other source states a URL and a date (the caller counts and logs it)
+    assert ll.source_of(package, ["ROOT_LAYER", "EV_NODATE"]) == (layer, "2026-10-07")
+    with pytest.raises(SystemExit, match="none of the sources"):
+        ll.source_of(package, ["EV_NODATE", "UNKNOWN"])
+
+
+def test_a_tariff_source_that_is_only_a_web_service_layer_is_counted_and_warned(step, package_file, capsys):
+    inputs = _inputs(step, package_file)
+    inputs["large"]["package"]["sources"]["src_prices"]["url"] = "https://geo.example/default/ows/projects/gpt/parken"
+    result = step.build_large_lots(inputs)
+    assert result["counts"]["tariff_source_web_service"] == 12
+    printed = capsys.readouterr().out
+    assert "source of the tariff: a page that states it 0/12, only a web-service layer (fallback) 12/12" in printed
+    assert "[garages] WARNING: the tariff source of the large lot(s) " in printed and "is a web-service layer" in printed
+
+
+def test_the_position_source_is_the_osm_object_then_the_coordinate_sources_then_the_counted_tariff_source(
+        step, package_file, capsys):
+    """Finding L3: the sources that the package names for a position are read before the tariff source stands in."""
+    inputs = _inputs(step, package_file)
+    facilities = inputs["large"]["package"]["facilities"]
+    facilities["t_zone_a"]["osm_ids"] = ["way/25102260"]                        # primary: the OpenStreetMap object
+    facilities["t_zone_b"].update(coordinate_source_ids=None, coordinates={      # primary: the sources of the coordinates
+        "longitude": 10.0, "latitude": 52.0, "source_ids": ["src_prices"], "method": "published_primary_jsonld_geo"})
+    facilities["t_rate"].update(coordinate_source_ids=None)                      # fallback: the package names no source
+    result = step.build_large_lots(inputs)
+    rows = _by_id(result)
+    assert rows["lot_t_zone_a"]["geometry_source_url"] == "https://www.openstreetmap.org/way/25102260"
+    assert rows["lot_t_zone_b"]["geometry_source_url"] == SOURCE_URL and rows["lot_t_zone_b"]["source_url"] == SOURCE_URL
+    assert rows["lot_t_rate"]["geometry_source_url"] == rows["lot_t_rate"]["source_url"] == SOURCE_URL
+    assert result["counts"]["position_origin"] == {"osm_object": 1, "coordinate_source": 10, "tariff_source_fallback": 1}
+    printed = capsys.readouterr().out
+    assert ("source of the position: OpenStreetMap object 1/12, coordinate source of the package 10/12, tariff-source "
+            "fallback 1/12") in printed
+    assert "[garages] WARNING: the position of the large lot(s) t_rate has no source in the package" in printed
+
+
+@pytest.mark.parametrize("method, origin", [
+    ("reported", "reported"),
+    ("osm_integer_capacity", "osm_tag"),
+    ("estimated_floor_area_m2_divided_by_25", "area_estimate"),
+    ("sum_nonoverlapping_component_area_estimates", "area_estimate"),
+    ("sum_nonoverlapping_osm_capacities_and_area_estimates", "area_estimate"),
+    ("derived_public_capacity_334_minus_130", "derived"),
+    ("unknown", "other"),
+    (None, "other"),
+])
+def test_the_capacity_origin_is_told_by_the_selection_method_of_the_package(ll, method, origin):
+    assert ll.capacity_origin({"capacity_selection_method": method}) == origin
+
+
+def test_an_unknown_capacity_origin_is_counted_apart_and_warned(step, package_file, capsys):
+    inputs = _inputs(step, package_file)
+    inputs["large"]["package"]["facilities"]["t_zero"]["capacity_selection_method"] = "typed_by_hand"
+    result = step.build_large_lots(inputs)
+    assert result["counts"]["capacity_origin"]["other"] == 1 and result["counts"]["capacity_origin"]["reported"] == 8
+    assert "[garages] WARNING: the capacity origin of the large lot(s) t_zero is none of the known ones" in capsys.readouterr().out
+
+
+def test_the_counts_read_the_fields_of_the_rows_and_never_the_text_of_their_notes(step, package_file, capsys):
+    inputs = _inputs(step, package_file)
+    result = step.build_large_lots(inputs)
+    package, rows = inputs["large"]["package"], result["rows"]
+    imputed = {row["garage_id"]: row for row in rows if "P14" in str(row["assumptions"]).split(";")}
+    before = (result["counts"]["zone_products"], result["counts"]["limited"])
+    assert before[0] == 2 and before[1] > 0
+    for row in rows:        # a sentence of the notes that is no fact of the row changes no count
+        row["notes"] += " The street product of the zone t_ia is not the tariff of this row. Not modelled: nothing."
+    again = step._large_lot_counts(package, rows, result["qa"], [], imputed, 50)
+    assert (again["zone_products"], again["limited"]) == before
+    # and a row that is a zone product by its fact is counted whatever its notes say
+    for row in rows:
+        row["notes"] = "no sentence of the notes"
+    assert step._large_lot_counts(package, rows, result["qa"], [], imputed, 50)["zone_products"] == 2
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("imputed, warns", [(2, False), (3, True)])
+def test_the_imputation_warning_share_is_pinned_at_a_quarter_of_the_options(step, package_file, capsys, imputed, warns):
+    """Two of eight options imputed is exactly 25 % and gives no warning (the rule is: more than); three of eight is above it. The
+    pair fails for a share below 0.25 (2 of 8 would warn) and for one of 0.375 or more (3 of 8 would not)."""
+    assert step.LARGE_LOT_IMPUTATION_WARNING_SHARE == 0.25
+    inputs = _inputs(step, package_file)
+    result = step.build_large_lots(inputs)
+    capsys.readouterr()
+    step._large_lot_counts(inputs["large"]["package"], result["rows"][:8], [], [], {f"imputed_{n}": None for n in range(imputed)},
+                           50)
+    printed = capsys.readouterr().out
+    assert ("WARNING: more than 25 % of the large lots rest on ASSUMPTION P14" in printed) is warns
+
+
+def test_a_zone_with_one_priced_lot_gives_the_p14_lot_the_median_of_its_municipality(step, package_file, tmp_path, monkeypatch,
+                                                                                    capsys):
+    """Finding L5: the zone t_ia holds one priced lot only (a median needs two), so the lot without a stated tariff takes the
+    median of the three priced lots of the municipality, two of them outside the zone with products of their own."""
+    catalogue = _catalogue()
+    del catalogue["t_zone_b"]
+    for key, rate, offset in (("t_out_a", 2.0, (900, 100)), ("t_out_b", 3.0, (950, 100))):
+        catalogue[key] = (_facility(key, "Braunschweig", capacity_selected_for_threshold=80, capacity_reported=80), offset,
+                          [_rule(f"{key}__1", key, rate, billing_period="started_hour", billing_unit_minutes=60)])
+    specs = {key: value for key, value in SPECS.items() if key != "t_zone_b"}
+    specs.update(t_out_a={"rate": "t_out_a__1", "window": None}, t_out_b={"rate": "t_out_b__1", "window": None})
+    monkeypatch.setattr(step.specs, "LARGE_LOT_SPECS", specs)
+    result = step.build_large_lots(_inputs(step, _write_package(tmp_path / "one_donor", catalogue)))
+    imputed = _by_id(result)["lot_t_p14_zone"]
+    assert "level municipality" in imputed["notes"] and "level zone" not in imputed["notes"]
+    assert f"the median product of the 3 priced lots of the municipality {BS}" in imputed["notes"]
+    assert (imputed["garage_hourly_rate_eur"], imputed["garage_billing_unit_min"]) == (2.0, 60)      # the middle one, t_out_a
+    assert "t_out_a__1" in imputed["tariff_rule_ids"] and "t_zone_a__1" not in imputed["tariff_rule_ids"]
+    assert result["notes"]["lot_t_p14_zone"].startswith("imputed (ASSUMPTION P14, level municipality) from the median lot t_out_a")
+    assert "[garages] P14 t_p14_zone: median product of 3 priced lots of the municipality" in capsys.readouterr().out
+
+
+def test_the_qa_intro_names_the_large_lot_package_the_threshold_the_evidence_and_the_reasons(step):
+    """Finding M3: the intro of the committed QA table is a statement of provenance, so it names the inputs of the run that wrote
+    it: the large-lot package with its SHA-256, the size threshold, the evidence folder, the reason codes and the convention of
+    the zone evidence; the superseded Wolfsburg car-park package is no input of it."""
+    intro = step.QA_INTRO
+    assert step.ll.LOTS_FILE in intro and step.ll.LOTS_SHA256 in intro
+    assert "ASSUMPTION L50" in intro and "wob_free_lots_evidence" in intro
+    assert "parking_tariffs_2026.csv:<zone_id>" in intro
+    lot_reasons = [reason for reason in pq.CANDIDATE_REASONS if reason.startswith("lot_")]
+    assert len(lot_reasons) == 12 and all(reason in intro for reason in lot_reasons)
+    assert step.wl.LOTS_FILE not in intro and step.wl.LOTS_SHA256 not in intro
+
+
+# --------------------------------------------------------------------------- the released rows after fix round 1 (R-4j-6 to R-4j-8)
+
+
+def _zone_product_lots(committed) -> dict:
+    """{garage_id: zone_id} of the released lots whose evidence names a row of the tariff table."""
+    return {garage_id: pq.ZONE_PRODUCT_EVIDENCE.search(str(row["tariff_rule_ids"])).group(1)
+            for garage_id, row in committed.iterrows() if pq.ZONE_PRODUCT_EVIDENCE.search(str(row["tariff_rule_ids"]))}
+
+
+def test_every_released_zone_product_lot_prices_every_stay_like_the_street_of_its_zone(committed):
+    """Ruling R-4j-6 c on the released rows: the 12 lots that carry a zone's street product (ten of the research package and the two
+    single-site zones of Goslar) against the street path of their zone, stays of 1 to 720 min at 06:00, 09:00, 14:00 and 19:00 for
+    the purposes work and shopping, equal to the cent (69,120 pairs)."""
+    tariffs = pz.load_tariffs(REAL_TARIFFS).set_index("zone_id", drop=False)
+    lots = _zone_product_lots(committed)
+    assert len(lots) == 12 and {"lot_gs_baeringer", "lot_gs_klubgarten", "lot_braunschweig_buergerpark"} <= set(lots)
+    checked = 0
+    for garage_id, zone_id in lots.items():
+        zone = _zone_tariff(tariffs.loc[zone_id].to_dict())
+        assert sweep_mismatches(zone, te.garage_row_to_tariff(committed.loc[garage_id])) == [], garage_id
+        checked += len(SWEEP_ARRIVALS_H) * 720 * len(SWEEP_PURPOSES)
+    assert checked == 69_120
+    # the control on the released row: the plain rate that a lot of zone Ia had before ruling R-4j-6 (1.80 EUR per hour, started
+    # minute, no bands) prices 2,874 of the 5,760 pairs differently from the street, the first at 06:00 with 361 min for work
+    # (9.00 EUR on the street, 5.43 EUR at the lot); the data record cites this measurement
+    plain = committed.loc["lot_braunschweig_grosser_hof"].copy()
+    plain["tariff_duration_bands"], plain["garage_hourly_rate_eur"], plain["garage_billing_unit_min"] = None, 1.8, 1
+    mismatches = sweep_mismatches(_zone_tariff(tariffs.loc["bs_zone_ia"].to_dict()), te.garage_row_to_tariff(plain))
+    assert len(mismatches) == 2874 and mismatches[0] == (6, 361, "work", 900, 543)
+
+
+#: The lots inside a zone polygon that differ from the table row of that zone, with the named differences (ruling R-4j-7 b): the
+#: package component stands as documented and the difference is named in the QA note, never changed.
+EXPECTED_ZONE_DIFFERENCES = {
+    "lot_wf_lessingtheater": ("wf_innenstadt", ["hourly_rate_eur 1 against 1.2", "billing_unit_min 3 against 30",
+                                                "fee_start_h 0 against 10", "fee_end_h 24 against 18"]),
+    "lot_helmstedt_harsleber_tor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0"]),
+    "lot_helmstedt_holzberg": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0"]),
+    "lot_helmstedt_suedertor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0", "daily_cap_eur 3 against none"]),
+    "lot_gs_marktstrasse": ("gs_altstadt_zone1", ["billing_unit_min 60 against 30"]),
+    "lot_gs_kornstrasse": ("gs_altstadt_zone1", ["billing_unit_min 60 against 30"]),
+}
+
+
+def test_the_pass_over_every_released_lot_inside_a_zone_polygon_finds_16_equal_and_6_named_differences(committed, committed_qa):
+    tariffs = pz.load_tariffs(REAL_TARIFFS)
+    garages, qa = committed.reset_index(drop=True), committed_qa.reset_index(drop=True)
+    checks = pq.zone_consistency_check(qa, garages, tariffs)
+    assert len(checks) == 22 and all(check["zone_in_table"] for check in checks)
+    differing = {check["garage_id"]: (check["zone_id"], check["differences"]) for check in checks if check["differences"]}
+    assert differing == EXPECTED_ZONE_DIFFERENCES
+    # the 12 zone-product lots are equal by construction; Iseparkplatz and the three Salzgitter lots equal the row of their zone
+    assert sum(check["zone_product"] and not check["differences"] for check in checks) == 12
+    assert {check["garage_id"] for check in checks if not check["zone_product"] and not check["differences"]} == {
+        "lot_gf_iseparkplatz", "lot_sz_konrad_adenauer_16", "lot_sz_rathausvorplatz", "lot_sz_buechereivorplatz"}
+    summary = pq.zone_consistency_summary(qa, garages, tariffs)
+    assert (summary["checked"], summary["equal"]) == (22, 16) and set(summary["differing"]) == set(EXPECTED_ZONE_DIFFERENCES)
+    # every difference is named in the QA note of its lot, and the values of the row are the package's, never the zone's
+    for garage_id, (zone_id, differences) in EXPECTED_ZONE_DIFFERENCES.items():
+        note = committed_qa.loc[f"garage_{garage_id}", "note"]
+        assert f"Inside the zone {zone_id} (report-only pass, ruling R-4j-7): the row DIFFERS from the zone row: " + "; ".join(
+            differences) in note, garage_id
+        assert committed_qa.loc[f"garage_{garage_id}", "zone_ids"] == zone_id
+    assert "the row equals the zone row in every compared column" in committed_qa.loc["garage_lot_gf_iseparkplatz", "note"]
+    # the garages of the regional packages are no lots: no zone ids, whatever zone they lie in
+    garage_rows = qa[qa["record_type"] == "garage"]
+    kinds = garages.set_index("garage_id")["facility_kind"].reindex(garage_rows["garage_id"]).to_numpy()
+    assert len(garage_rows) == 91 and (garage_rows.loc[kinds == "garage", "zone_ids"] == "").all()
+
+
+def test_the_released_rows_cite_a_page_for_the_tariff_and_the_position_by_the_primary_method(ll, committed):
+    lots = committed[committed["facility_kind"] == "surface_lot"]
+    assert not any(ll.is_web_service_url(url) for url in lots["source_url"])
+    # finding L2: the Allerpark cites the page of the Wolfsburg Marketing GmbH that states it free, not the Geoviewer layer
+    wmg = "https://www.wolfsburg-erleben.de/poi/"
+    assert committed.loc["lot_wob_park_1835028", "source_url"] == wmg + "parkplatz-allerpark-wolfsburg"
+    assert committed.loc["lot_wob_park_1114127", "source_url"] == wmg + "parkplatz-badeland-wolfsburg"
+    for garage_id in ("lot_wob_park_1638410", "lot_wob_park_1769502", "lot_wob_park_1835014"):
+        assert committed.loc[garage_id, "source_url"].endswith("/parkgebuehrenordnung_20200721.pdf"), garage_id
+    # finding L3: a position source is the OpenStreetMap object of the package (51 lots) or a source that the package names for the
+    # coordinates (the other four); the count of the tariff source standing in as a fallback is pinned on the real package
+    # (counts["position_origin"] of the primary-method test), because the same page can be both sources of a lot
+    assert int(lots["geometry_source_url"].str.startswith("https://www.openstreetmap.org/").sum()) == 51
+    assert lots["geometry_source_url"].str.startswith("https://").all()
+
+
+def test_the_two_lots_at_exactly_the_threshold_are_named_with_their_capacity_origin(ll, real_package):
+    """Finding L4: the options at exactly 50 spaces are the cases that the sensitivities at 30 and 100 do not settle; the data
+    record names them: the Iseparkplatz (an area estimate) and the Rathausvorplatz (an OSM tag of 50 against a historic survey
+    of 47)."""
+    edge = {key: (record["capacity_selected_for_threshold"], ll.capacity_origin(record))
+            for key, record in real_package["facilities"].items()
+            if ll.decide(record, 50) is None and record["capacity_selected_for_threshold"] == 50}
+    assert edge == {"gf_iseparkplatz": (50, "area_estimate"), "sz_rathausvorplatz": (50, "osm_tag")}
+    assert "Historic municipal survey capacity 47" in real_package["facilities"]["sz_rathausvorplatz"]["notes"]
+
+
+def test_the_check_in_lot_names_the_derived_capacity_of_its_mixed_access(committed, real_package):
+    """Finding I3 (ruling R-4j-8): the numbers of the note are the package's, not typed: 334 in total, 130 for hotel guests."""
+    record = real_package["facilities"]["wf_bahnhof_checkin"]
+    assert record["access_class"] == "mixed_public_and_customers"
+    assert (record["capacity_reported"], record["capacity_selected_for_threshold"]) == (334, 204)
+    assert "130 Pl" in record["access_notes"] and record["capacity_selection_method"] == "derived_public_capacity_334_minus_130"
+    row = committed.loc["lot_wf_bahnhof_checkin"]
+    assert "derived capacity 204 of 334 (130 hotel guests)" in row["notes"] and pd.isna(row["capacity_reported"])
+
+
+def test_the_committed_qa_header_names_the_inputs_of_the_run_that_wrote_it(ll):
+    header = " ".join(line[1:].strip() for line in COMMITTED_QA.read_text(encoding="utf-8").splitlines() if line.startswith("#"))
+    assert f"{ll.LOTS_FILE} (SHA-256 {ll.LOTS_SHA256}" in header and "ASSUMPTION L50" in header
+    assert "wob_free_lots_evidence" in header and "parking_tariffs_2026.csv:<zone_id>" in header
+    assert "Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip" not in header
+    assert all(reason in header for reason in pq.CANDIDATE_REASONS if reason.startswith("lot_"))

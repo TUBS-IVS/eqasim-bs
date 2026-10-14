@@ -941,7 +941,8 @@ BS_MONTHLY_SPECS = (
 #: the two APCOA surface lots are no garage products and never count there.
 _STATION_PRODUCT_WHY = (
     "the commuter product of the station zone {zone_id} (spec Amendment G1): commuter_day_eur is this amount over 21 working days "
-    "(ASSUMPTION P2); a surface lot, no garage product and never a value of ASSUMPTION P13")
+    "(ASSUMPTION P2); a surface lot, no garage product and never a value of ASSUMPTION P13; the surface lot of the same site "
+    "carries it as its monthly product (spec Amendment I1, owner decision A)")
 BS_RECORDED_SPECS = (
     {"record_id": "monthly_bs_eves", "facility": "BS_EVES", "facility_key": "eves", "facility_type": "garage",
      "reason": "not_a_dataset_option",
@@ -998,21 +999,48 @@ BS_RECORDED_SPECS = (
 #: ``roles`` types a component whose role is not the plain one (``large_lots.infer_rule_type``), ``ignored`` names the
 #: components that set no value with the reason, ``comment`` explains the decision. The restrictions that the garage columns do not
 #: carry (a maximum stay, a Saturday window, a customer discount) are NOT tariff components: they are listed per row in the notes
-#: from the package components (``large_lot_limitations``) and counted in the run log.
+#: from the package components (``regional_garages._lot_limitations``) and counted in the run log.
 _BROETCHENTASTE = ("the free short stay (the Broetchentaste, a free ticket of up to 30 min at the machine) is a grace band, never "
                    "a free day (spec I3): a stay not longer than it is free and a longer stay is billed from its arrival, the "
                    "free minutes are not deducted (ASSUMPTION P10); the package states that no additive free time is "
                    "proven for a longer paid stay")
 _STARTED = "Mo-Sa windows are read on Monday to Friday of the model's average weekday (spec D1)"
 
+#: Owner decision A (spec Amendment I1, ruling R-4j-6): a lot that is a zone too carries EXACTLY the row of its zone, the commuter
+#: product per working day included: the lot key -> the ``record_id`` of the used recorded product of the Braunschweig monthly
+#: package (``BS_RECORDED_SPECS``) that sets ``commuter_day_eur`` of the zone of the lot. The lot's ``monthly_eur`` is that amount
+#: with its source page and product text, so the garage option prices a work or education stay like the zone (ASSUMPTION P2).
+LARGE_LOT_ZONE_MONTHLY = {"braunschweig_hbf_nord": "monthly_bs_hbf_nord_p1", "braunschweig_hbf_sued": "monthly_bs_hbf_sued_p2",
+                          "braunschweig_hbf_west": "monthly_bs_hbf_west_p3"}
+_HBF_MONTH_NOT_CHEAPEST = ("the month product with a fixed place is not the cheapest month product ({cheapest} is the monthly "
+                           "product of the lot); not used, as the zone row names it")
+_HBF_WEEK = ("the week product is a product of another duration (spec D2 takes monthly and 30-day products); not used, as the "
+             "zone row names it")
+_HBF_MACHINE_MONTH = ("the month product at the machine is not the cheapest month product ({cheapest} is the monthly product of "
+                      "the lot); not used, as the zone row names it")
 LARGE_LOT_SPECS = {
     # ---- Braunschweig: lots with the ParkGO or BgA product of their zone, the Hbf lots of DB BahnPark (owner decision A), P+R
     "braunschweig_wendenstrasse_werder": {"zone_product": "bs_zone_ia", "check": "braunschweig_wendenstrasse_werder__1"},
     "braunschweig_grosser_hof": {"zone_product": "bs_zone_ia", "check": "braunschweig_grosser_hof__1"},
-    "braunschweig_markthalle": {"zone_product": "bs_bga_markthalle", "check": "braunschweig_markthalle__1"},
-    "braunschweig_hbf_nord": {"zone_product": "bs_hbf_p1_nord", "check": "braunschweig_hbf_nord__1"},
-    "braunschweig_hbf_sued": {"zone_product": "bs_hbf_p2_sued", "check": "braunschweig_hbf_sued__1"},
-    "braunschweig_hbf_west": {"zone_product": "bs_hbf_p3_west", "check": "braunschweig_hbf_west__1"},
+    "braunschweig_markthalle": {"zone_product": "bs_bga_markthalle", "check": "braunschweig_markthalle__1",
+                                "decision_a": True},
+    "braunschweig_hbf_nord": {
+        "zone_product": "bs_hbf_p1_nord", "check": "braunschweig_hbf_nord__1", "decision_a": True,
+        "ignored": {"braunschweig_hbf_nord__2": "the Kiss&Ride tariff of 15 min is a short-stay special tariff, not the general "
+                                                "tariff; not modelled, as the zone row names it",
+                    "braunschweig_hbf_nord__3": "the evening tariff (18:00-02:00, at most 5.00 EUR on the first parking day) is a "
+                                                "time-limited special tariff; not modelled, as the zone row names it",
+                    "braunschweig_hbf_nord__5": _HBF_MONTH_NOT_CHEAPEST.format(cheapest="braunschweig_hbf_nord__4")}},
+    "braunschweig_hbf_sued": {
+        "zone_product": "bs_hbf_p2_sued", "check": "braunschweig_hbf_sued__1", "decision_a": True,
+        "ignored": {"braunschweig_hbf_sued__2": _HBF_WEEK,
+                    "braunschweig_hbf_sued__3": _HBF_MACHINE_MONTH.format(cheapest="braunschweig_hbf_sued__4"),
+                    "braunschweig_hbf_sued__5": _HBF_MONTH_NOT_CHEAPEST.format(cheapest="braunschweig_hbf_sued__4")}},
+    "braunschweig_hbf_west": {
+        "zone_product": "bs_hbf_p3_west", "check": "braunschweig_hbf_west__1", "decision_a": True,
+        "ignored": {"braunschweig_hbf_west__2": _HBF_WEEK,
+                    "braunschweig_hbf_west__3": _HBF_MACHINE_MONTH.format(cheapest="braunschweig_hbf_west__4"),
+                    "braunschweig_hbf_west__5": _HBF_MONTH_NOT_CHEAPEST.format(cheapest="braunschweig_hbf_west__4")}},
     "braunschweig_willy_brandt_kommunal": {"zone_product": "bs_bga_willy_brandt_platz",
                                            "check": "braunschweig_willy_brandt_kommunal__1"},
     "braunschweig_pr_petzvalstrasse": {"free": "braunschweig_pr_petzvalstrasse__1"},
@@ -1043,7 +1071,12 @@ LARGE_LOT_SPECS = {
     "WOB_THEATERPARKPLATZ": {"free": "WOB_THEATERPARKPLATZ__1"},
     "WOB_HOFFMANN_VON_FALLERSLEBEN": {"free": "WOB_HOFFMANN_VON_FALLERSLEBEN__1"},
     # ---- Wolfenbuettel
-    "wf_bahnhof_checkin": {"free": "wf_bahnhof_checkin__1"},
+    "wf_bahnhof_checkin": {"free": "wf_bahnhof_checkin__1",
+                           "comment": "mixed public and customer access (the package class mixed_public_and_customers): the public "
+                                      "part of the site is an option (ruling R-4j-8, which the rule of ruling R-4j-3 covers: a lot "
+                                      "with a customer condition is an option at its general tariff); derived capacity 204 of 334 "
+                                      "(130 hotel guests), the package's derivation and no separately published value, which the "
+                                      "size threshold uses and which no column of the dataset carries"},
     "wf_alte_spinnerei": {"free": "wf_alte_spinnerei__1"},
     "wf_am_forum": {"free": "wf_am_forum__1"},
     "wf_aral": {"free": "wf_aral__1"},
@@ -1153,17 +1186,22 @@ LARGE_LOT_SPECS = {
     "gs_hildesheimer": {"free": "gs_hildesheimer__1"},
     "gs_hahnen_stab": {"free": "gs_hahnen_stab__1"},
     "gs_hahnen_teichwiesen": {"free": "gs_hahnen_teichwiesen__1"},
-    "gs_baeringer": {"rate": "gs_baeringer__1", "window": "rate", "comment": _STARTED},
+    # the same car parks as the single-site zones of the tariff table (ruling R-4j-7 a): zone AND lot (decision A), carrying
+    # exactly the zone row; the unit that the package reads (an hour) and the zone's started half hour are both named
+    "gs_baeringer": {"zone_product": "gs_parkplatz_baeringerstrasse", "check": "gs_baeringer__1", "decision_a": True,
+                     "comment": _STARTED},
     "gs_marktstrasse": {"rate": "gs_marktstrasse__1", "window": "rate", "comment": _STARTED},
     "gs_kornstrasse": {"rate": "gs_kornstrasse__1", "window": "rate", "comment": _STARTED},
-    "gs_klubgarten": {"rate": "gs_klubgarten__1", "window": "rate"},
+    "gs_klubgarten": {"zone_product": "gs_parkplatz_klubgartenstrasse_zob", "check": "gs_klubgarten__1",
+                      "decision_a": True},
     "gs_christian_dohm": {"rate": "gs_christian_dohm__1", "window": "rate", "comment": _STARTED},
     "gs_glockengiesser": {"rate": "gs_glockengiesser__1", "window": "rate"},
 }
 
 #: The owner decision on the free Wolfsburg lots whose free status the package keeps open although the owner takes it on a per-site
-#: source (spec Amendment I5a; ASSUMPTION P12 is withdrawn, so there is no default). Per site: ``public_access`` (the owner decision
-#: that the lot is general public, the package class is unknown), the archived ``evidence`` page (a file of
+#: source (spec Amendment I5a; ASSUMPTION P12 is withdrawn, so there is no default). A site in this table is the owner decision
+#: that the lot is general public although the package class is unknown (``large_lots.decide`` takes the keys of this table as the
+#: sites whose public access an owner decision establishes). Per site: the ``name``, the archived ``evidence`` page (a file of
 #: ``wob_free_lots_evidence/`` with its ``quotation``, which must be in the archived page) and, where no page could be archived,
 #: ``not_found`` (what was searched). A site whose page is not archived is a QA row ``lot_free_evidence_missing``; it is never free
 #: without a source.
