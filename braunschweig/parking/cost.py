@@ -1030,7 +1030,12 @@ class GarageStayPrice(NamedTuple):
     Spec v3 A1: ``street_feasible`` is whether the street side was an option of the stay, i.e. the street product or the
     zone commuter product could serve it (False only where the maximum stay removed both; a stay decided before the
     options act, by an early rule or on a campus, reports True); ``feasible_option_ids`` are the ids of the garage options
-    that admit the stay (ascending, empty when none acted). The price weighting of the options (Task A2) reads both.
+    that admit the stay (ascending, empty when none acted).
+
+    Spec v3 A2: ``street_weight`` and ``option_weights`` are the UNNORMALISED weights ``option_weight`` gave the street and
+    the garages of ``feasible_option_ids`` (same order) when the stay was priced as an expectation over the options
+    (outcome ``PAID_EXPECTED``); where no expectation was formed they are 0.0 and empty, and so is the street weight when
+    the street was no option of the stay. The probabilities are ``w_i / sum(w)``.
     """
 
     cents: int
@@ -1039,6 +1044,8 @@ class GarageStayPrice(NamedTuple):
     expected_cents: float | None
     street_feasible: bool = True
     feasible_option_ids: tuple[str, ...] = ()
+    street_weight: float = 0.0
+    option_weights: tuple[float, ...] = ()
 
 
 #: The outcomes decided before any product is priced; with them, and on a campus, the garages never act.
@@ -1063,16 +1070,38 @@ def check_decay_lengths(*, decay_m, decay_commute_m) -> None:
                              f"got {value!r}")
 
 
+def check_option_price_beta(option_price_beta_u_per_eur) -> None:
+    """Raise ``ValueError`` naming the argument unless it is a finite number >= 0 (utility per EUR; 0 = the price-independent
+    weights of v2); a bool or a text is no number."""
+    value = option_price_beta_u_per_eur
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError(f"option_price_beta_u_per_eur must be a finite number >= 0 (utility per EUR; 0 = weights without "
+                         f"price), got {value!r}")
+
+
+def option_weight(distance_m: float, decay_m: float, cost_cents: float, beta_u_per_eur: float) -> float:
+    """The unnormalised weight of a parking option (spec v3 A2, ASSUMPTION G1-d):
+    ``exp(-distance_m / decay_m - beta_u_per_eur * cost_cents / 100)``. ``distance_m`` is the walking distance in metres
+    (0 for the street), ``decay_m`` the decay length in metres (> 0), ``cost_cents`` the cents the option charges for THIS
+    stay (0 is valid), ``beta_u_per_eur`` the money coefficient in utility per EUR (the magnitude of the mode-choice cost
+    coefficient, no income or distance term; 0 gives the price-independent v2 weight ``exp(-distance_m / decay_m)`` bit for
+    bit). The operations and their order are the contract with Java (``StrictMath.exp``): the exponent is
+    ``(-distance_m / decay_m) - ((beta_u_per_eur * cost_cents) / 100)``. Pure, no validation of the arguments."""
+    return math.exp(-distance_m / decay_m - beta_u_per_eur * cost_cents / 100)
+
+
 def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                                      parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
                                      garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
+                                     option_price_beta_u_per_eur: float = 0.0,
                                      counters: GarageOptionCounters | None = None) -> GarageStayPrice:
-    """``parking_cost_with_garages`` with the unrounded expectation; see there for the rules."""
+    """``parking_cost_with_garages`` with the unrounded expectation and the option weights; see there for the rules."""
     cents, outcome = parking_cost_cents(tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free,
                                         resident_of_zone=resident_of_zone, resident_of_district=resident_of_district)
     if counters is not None:
         counters.stays += 1
     check_decay_lengths(decay_m=decay_m, decay_commute_m=decay_commute_m)
+    check_option_price_beta(option_price_beta_u_per_eur)
     decay_of_stay_m = garage_decay_m_for_purpose(purpose, decay_m=decay_m, decay_commute_m=decay_commute_m)
     options = list(garage_options)
     for option in options:
@@ -1129,10 +1158,16 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
             return GarageStayPrice(_street_metered_cents(tariff, chargeable_s), NO_FEASIBLE_OPTION, 0.0, None, False, ())
         # The street is the only option left: it is not an expectation over a mixture, so it keeps its own outcome.
         return GarageStayPrice(street[0], street[1], 0.0, None, True, ())
-    weights, costs = ([1.0], [street[0]]) if street is not None else ([], [])
+    # Spec v3 A2: every option, the street included (distance 0, its own cents), is weighted by its distance AND its price
+    # for THIS stay; the street only when it is an option (street_feasible). beta 0 gives the v2 weights bit for bit.
+    weights, costs = ([], [])
+    if street is not None:
+        weights.append(option_weight(0.0, decay_of_stay_m, street[0], option_price_beta_u_per_eur))
+        costs.append(street[0])
     for garage, distance_m in feasible:
-        weights.append(math.exp(-distance_m / decay_of_stay_m))
-        costs.append(garage_option_cents(garage, arrival_s, departure_s, purpose=purpose, counters=counters))
+        garage_cents = garage_option_cents(garage, arrival_s, departure_s, purpose=purpose, counters=counters)
+        weights.append(option_weight(distance_m, decay_of_stay_m, garage_cents, option_price_beta_u_per_eur))
+        costs.append(garage_cents)
     # R-4d-4: P_i = w_i / sum(w) and the expectation are summed left to right in double precision in the order street,
     # then the garages by ascending id; Java does the same operations in the same order.
     total_weight = 0.0
@@ -1149,12 +1184,13 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
         counters.expected += 1
     # Rounded half up to the cent once, at the end.
     return GarageStayPrice(int(math.floor(expected + 0.5)), PAID_EXPECTED, garage_probability, expected, street is not None,
-                           feasible_ids)
+                           feasible_ids, weights[0] if street is not None else 0.0, tuple(weights[first_garage:]))
 
 
 def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                               parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
                               garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
+                              option_price_beta_u_per_eur: float = 0.0,
                               counters: GarageOptionCounters | None = None) -> tuple[int, str, float]:
     """Parking cost of one car stay with garage options (spec Amendment E): ``(cents, outcome, garage_probability)``.
 
@@ -1162,13 +1198,17 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
     ``garage_options_in_range``); ``decay_m`` is the decay length lambda in metres (ASSUMPTION G1; 0 = garage options off)
     of every purpose but work and education, whose stays use ``decay_commute_m`` (lambda_c, ASSUMPTION G1-c, spec Amendment
     H1; required, never defaulted to lambda; ``garage_decay_m_for_purpose`` decides which one governs a stay).
+    ``option_price_beta_u_per_eur`` (spec v3 A2) is the money coefficient of the option weights in utility per EUR (finite,
+    >= 0; default 0 = the price-independent weights of v2, bit for bit).
     The early rules, the campus zones and the street option are those of ``parking_cost_cents`` (called, not copied):
 
     1. a stay that ``parking_cost_cents`` decides before any product (no zone, home, employer-free, resident, outside the
        street fee window), a campus stay, a decay of 0 for the purpose or no garage in range prices exactly as
        ``parking_cost_cents`` (same outcome, probability 0.0);
-    2. otherwise the options are the street (weight 1) and every garage g (weight ``exp(-d_g / lambda)`` with the decay of
-       the purpose, E3). The street option costs its cheapest street-side product, the street or long-stay product or the
+    2. otherwise the options are the street and every garage g, weighted by ``option_weight``: ``exp(-d / lambda - beta *
+       c / 100)`` with the decay of the purpose (E3), the distance d (0 for the street) and the cents c the option charges
+       for this stay (spec v3 A2; with beta 0 the street weighs 1 and a garage ``exp(-d_g / lambda)``). The street option
+       costs its cheapest street-side product, the street or long-stay product or the
        zone commuter product (the zone-level garage family is superseded, E8), or is unavailable above the maximum stay
        without a long-stay product;
        a garage option costs its metered or day product, for work and education also its monthly product per working day
@@ -1177,18 +1217,21 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
        unavailable street renormalises the weights over the garages;
     3a. spec v3 A1 (M3), before the weights: a garage whose ``max_stay_min`` the elapsed stay (``departure_s - arrival_s``,
        rounded up to minutes) exceeds is no option (``option_feasible``); the street is no option above its maximum stay
-       without a long-stay product (``street_feasible``). The stay is then priced over the remaining options only. With the
+       without a long-stay product (``street_feasible``); the weights are formed over the remaining options only, and the
+       street carries its weight only when it is an option. The stay is then priced over the remaining options only. With the
        street alone left it prices as the street (its own outcome, probability 0.0); with NO option left it is priced as
        the street at its metered price, the maximum ignored, with outcome ``NO_FEASIBLE_OPTION`` (probability 0.0);
-    4. else ``P_i = w_i / sum(w)``, the price is ``floor(sum(P_i * cost_i) + 0.5)`` cents (rounded half up once, at the end),
+    4. else ``P_i = w_i / sum(w)`` (summed left to right in the order street, then the garages by ascending id, the order
+       Java sums in too), the price is ``floor(sum(P_i * cost_i) + 0.5)`` cents (rounded half up once, at the end),
        the outcome ``PAID_EXPECTED`` and the probability the sum of the garage ``P_i``.
 
     ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
-    ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m`` or distance and duplicate garage ids. Pure
+    ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m``, ``option_price_beta_u_per_eur`` or
+    distance and duplicate garage ids. Pure
     but for ``counters``.
     """
     detail = parking_cost_with_garages_detail(
         tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free, resident_of_zone=resident_of_zone,
         resident_of_district=resident_of_district, garage_options=garage_options, decay_m=decay_m,
-        decay_commute_m=decay_commute_m, counters=counters)
+        decay_commute_m=decay_commute_m, option_price_beta_u_per_eur=option_price_beta_u_per_eur, counters=counters)
     return detail.cents, detail.outcome, detail.garage_probability

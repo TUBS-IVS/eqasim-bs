@@ -902,3 +902,152 @@ def test_a_stay_without_a_feasible_option_and_without_a_garage_in_range_is_count
     family = _tariff(**_MAX_STAY_ZONE)
     assert _detail(family, 300, [], counters=counters).outcome == cost.PAID_GARAGE
     assert counters.no_feasible_option == 1
+
+
+# ------------------------------------------------------------- price in the option weights (spec v3 A2, issue #436)
+# w_i = exp(-d_i / lambda - beta * c_i / 100), c_i in cents, beta in utility per EUR (the magnitude of the mode-choice
+# money coefficient, ASSUMPTION G1-d); the street is the option at distance 0 with its own price. beta 0 is the v2 form.
+_BETA_U_PER_EUR = 0.31
+
+
+def _priced_detail(zone, minutes, options, *, beta, purpose="shop", **flags):
+    flags = {"parking_free": False, "resident_of_zone": False, **flags}
+    return cost.parking_cost_with_garages_detail(zone, 32400, 32400 + minutes * 60, purpose=purpose,
+                                                 garage_options=options, decay_m=_DECAY_M, decay_commute_m=_DECAY_M,
+                                                 option_price_beta_u_per_eur=beta, **flags)
+
+
+def test_option_weights_fall_with_price_at_equal_distance():
+    zone = _tariff()
+    dear = _option_garage("g_dear", hourly_rate_cents=200)      # 1 h stay: 200 ct = 2.00 EUR
+    cheap = _option_garage("g_cheap", hourly_rate_cents=100)    # 1 h stay: 100 ct = 1.00 EUR
+    detail = _priced_detail(zone, 60, [(dear, 300.0), (cheap, 300.0)], beta=_BETA_U_PER_EUR)
+    assert detail.feasible_option_ids == ("g_cheap", "g_dear")
+    weight_cheap, weight_dear = detail.option_weights
+    assert weight_cheap > weight_dear
+    assert weight_cheap / weight_dear == pytest.approx(math.exp(_BETA_U_PER_EUR * 1.0), rel=1e-12)
+    # hand-derived absolute values: exp(-300 / 400 - 0.31 * EUR)
+    assert weight_cheap == pytest.approx(math.exp(-0.75 - 0.31 * 1.0), rel=1e-12)
+    assert weight_dear == pytest.approx(math.exp(-0.75 - 0.31 * 2.0), rel=1e-12)
+
+
+def test_the_street_weight_carries_its_own_price():
+    # 180 ct per hour, 1-minute billing: 09:00-12:00 costs 540 ct = 5.40 EUR on the street
+    zone = _tariff()
+    garage = _option_garage("g1", hourly_rate_cents=200)         # 3 h: 600 ct
+    detail = _priced_detail(zone, 180, [(garage, 100.0)], beta=_BETA_U_PER_EUR)
+    assert detail.street_weight == pytest.approx(math.exp(-0.31 * 5.4), rel=1e-12)
+    garage_weight = math.exp(-100 / 400 - 0.31 * 6.0)
+    assert detail.option_weights == pytest.approx((garage_weight,), rel=1e-12)
+    expected = (540 * detail.street_weight + 600 * garage_weight) / (detail.street_weight + garage_weight)
+    assert detail.expected_cents == pytest.approx(expected, rel=1e-12)
+    assert detail.cents == int(math.floor(expected + 0.5)) and detail.outcome == cost.PAID_EXPECTED
+    # a free street costs 0 ct and keeps the weight 1 (the weight function, the street at distance 0)
+    assert cost.option_weight(0.0, _DECAY_M, 0, _BETA_U_PER_EUR) == 1.0
+    assert cost.option_weight(0.0, _DECAY_M, 540, _BETA_U_PER_EUR) == pytest.approx(math.exp(-0.31 * 5.4), rel=1e-12)
+
+
+def test_a_free_option_has_weight_exp_minus_distance_only():
+    assert cost.option_weight(200.0, 400.0, 0, _BETA_U_PER_EUR) == math.exp(-200.0 / 400.0)
+    free_garage = _option_garage("g_free", fee_start_s=0, fee_end_s=3600)    # the stay lies outside its fee window
+    detail = _priced_detail(_tariff(), 60, [(free_garage, 200.0)], beta=_BETA_U_PER_EUR)
+    assert detail.option_weights == (math.exp(-200.0 / 400.0),)
+
+
+def test_beta_zero_is_the_v2_weight_bit_for_bit():
+    for distance_m, decay_m, cents in ((0.0, 400.0, 0), (123.456, 400.0, 540), (999.9, 250.0, 12345), (1e-9, 3.0, 1)):
+        assert cost.option_weight(distance_m, decay_m, cents, 0.0) == math.exp(-distance_m / decay_m)
+    zone = _tariff()
+    options = [(_option_garage("g_a", hourly_rate_cents=200), 120.0), (_option_garage("g_b", hourly_rate_cents=100), 640.0)]
+    detail = _priced_detail(zone, 180, options, beta=0.0)
+    assert detail.street_weight == 1.0
+    assert detail.option_weights == (math.exp(-120.0 / 400.0), math.exp(-640.0 / 400.0))
+    # the default (no keyword) is beta 0
+    assert _detail(zone, 180, options) == detail
+
+
+def test_beta_zero_reproduces_the_schema_5_golden_cases(monkeypatch):
+    # The COMMITTED golden file (schema 5) is priced with beta 0 passed explicitly through the new path: every case is
+    # reproduced, and the keyword is really used (the wrapper records every call).
+    document = json.loads(GOLDEN_JSON.read_text(encoding="utf-8"))
+    assert document["schema_version"] == 5
+    zones = {zone_id: cost.ZoneTariff(zone_id=zone_id, **fields) for zone_id, fields in document["tariffs"].items()}
+    garages = [cost.GarageTariff.from_json(entry) for entry in document["garages"]]
+    original = cost.parking_cost_with_garages_detail
+    betas = []
+
+    def with_explicit_beta_zero(*args, **kwargs):
+        betas.append(kwargs.setdefault("option_price_beta_u_per_eur", 0.0))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cost, "parking_cost_with_garages_detail", with_explicit_beta_zero)
+    assert golden_case_mismatches(zones, document["cases"], garages, document["garage_max_distance_m"]) == []
+    assert len(betas) == len(document["cases"]) - 1 and set(betas) == {0.0}      # G26 raises before pricing
+    # the golden cases that form a mixture are among them (the weights did act)
+    assert any(case["expected_outcome"] == cost.PAID_EXPECTED for case in document["cases"])
+
+
+def test_a_positive_beta_moves_probability_to_the_cheaper_option():
+    zone = _tariff()
+    options = [(_option_garage("g_a", hourly_rate_cents=100), 300.0)]       # 3 h: 300 ct against the street's 540 ct
+    cheap_garage_share = {}
+    for beta in (0.0, 0.31, 1.0):
+        cheap_garage_share[beta] = _priced_detail(zone, 180, options, beta=beta).garage_probability
+    assert cheap_garage_share[0.0] < cheap_garage_share[0.31] < cheap_garage_share[1.0]
+    # an expensive garage loses probability instead
+    dear = [(_option_garage("g_a", hourly_rate_cents=400), 300.0)]           # 3 h: 1200 ct
+    with_price = _priced_detail(zone, 180, dear, beta=0.31).garage_probability
+    assert with_price < _priced_detail(zone, 180, dear, beta=0.0).garage_probability
+
+
+def test_an_infeasible_street_is_not_weighted_and_an_infeasible_garage_is_dropped():
+    zone = _tariff(**_MAX_STAY_ZONE)       # maximum stay 180 min, no long-stay product: the street is infeasible at 200
+    short = _option_garage("g_short", max_stay_min=120)
+    open_garage = _option_garage("g_open", hourly_rate_cents=200)
+    detail = _priced_detail(zone, 200, [(short, 50.0), (open_garage, 100.0)], beta=_BETA_U_PER_EUR)
+    assert detail.street_feasible is False and detail.feasible_option_ids == ("g_open",)
+    assert detail.street_weight == 0.0                   # no street option: no weight, no probability
+    assert detail.option_weights == (math.exp(-100 / 400 - 0.31 * 8.0),)        # 200 min = 4 started hours: 800 ct
+    assert detail.garage_probability == pytest.approx(1.0, rel=1e-12)
+    assert detail.expected_cents == pytest.approx(800.0, rel=1e-12)
+
+
+def test_the_weights_are_formed_only_where_a_mixture_is_formed():
+    # a street free of charge (E4) and a stay decided before the options act form no mixture: no weights are reported
+    free_street = _tariff(free_if_stay_at_most_min=30)
+    detail = _priced_detail(free_street, 20, [(_option_garage("g1"), 100.0)], beta=_BETA_U_PER_EUR)
+    assert detail.expected_cents is None and detail.street_weight == 0.0 and detail.option_weights == ()
+    early = cost.parking_cost_with_garages_detail(None, 32400, 36000, purpose="shop", parking_free=False,
+                                                  resident_of_zone=False, garage_options=[], decay_m=_DECAY_M,
+                                                  decay_commute_m=_DECAY_M, option_price_beta_u_per_eur=0.31)
+    assert early.option_weights == () and early.street_weight == 0.0
+
+
+def test_the_price_coefficient_is_validated():
+    zone, options = _tariff(), [(_option_garage("g1"), 100.0)]
+    for bad in (-0.1, float("nan"), float("inf"), -float("inf"), True, "0.31", None):
+        with pytest.raises(ValueError, match="option_price_beta_u_per_eur"):
+            _priced_detail(zone, 60, options, beta=bad)
+        with pytest.raises(ValueError, match="option_price_beta_u_per_eur"):
+            cost.parking_cost_with_garages(zone, 32400, 36000, purpose="shop", parking_free=False,
+                                           resident_of_zone=False, garage_options=options, decay_m=_DECAY_M,
+                                           decay_commute_m=_DECAY_M, option_price_beta_u_per_eur=bad)
+    # an int is a number; 0 is the v2 form
+    assert (_priced_detail(zone, 60, options, beta=0).option_weights
+            == _priced_detail(zone, 60, options, beta=0.0).option_weights)
+    # the validation does not depend on the stay reaching the weights: an early rule rejects a bad coefficient too
+    with pytest.raises(ValueError, match="option_price_beta_u_per_eur"):
+        cost.parking_cost_with_garages_detail(None, 32400, 36000, purpose="shop", parking_free=False,
+                                              resident_of_zone=False, decay_m=_DECAY_M, decay_commute_m=_DECAY_M,
+                                              option_price_beta_u_per_eur=-1.0)
+
+
+def test_the_wrapper_passes_the_price_coefficient_through():
+    zone = _tariff()
+    options = [(_option_garage("g_a", hourly_rate_cents=100), 300.0)]
+    for beta in (0.0, 0.31):
+        detail = _priced_detail(zone, 180, options, beta=beta)
+        wrapped = cost.parking_cost_with_garages(zone, 32400, 32400 + 180 * 60, purpose="shop", parking_free=False,
+                                                 resident_of_zone=False, garage_options=options, decay_m=_DECAY_M,
+                                                 decay_commute_m=_DECAY_M, option_price_beta_u_per_eur=beta)
+        assert wrapped == (detail.cents, detail.outcome, detail.garage_probability)
