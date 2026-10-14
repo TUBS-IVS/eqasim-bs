@@ -2330,3 +2330,18 @@ def test_a_component_maximum_stay_equal_to_the_maximum_stay_of_the_row_is_not_li
         assert "maximum stay 60 min (R1); maximum stay 120 min (R2)" in sentences[0]
     only, restricted = garages_step._lot_limitations(package, ["R1"], {}, row_max_stay_min=60)
     assert restricted and len(only) == 1 and not only[0].startswith("Not modelled")
+
+
+def test_the_two_lots_in_a_wolfsburg_area_zone_state_the_measured_overlap_with_the_street_section(committed, garages_step):
+    # spec v3 B2: the max_stay_min of Cinemaxx (60 min) and of the Hoffmannstrasse lot (120 min, in the 30-space set) rests on the
+    # lot lying in the street section of an area with that maximum; the overlap numbers are in the notes (measured on the Wolfsburg
+    # layer and the outlines of the lot package) and the lot's own component states the same maximum
+    cinemaxx = committed.loc["lot_wob_park_1769502", "notes"]
+    for phrase in ("wob_area_680", "979 m2", "100 % inside the OSM outline of the lot (way 115027361, 2,416 m2",
+                   "40.5 % of the outline", "research point lies inside the section", "Hoechstparkdauer 60 Minuten"):
+        assert phrase in cinemaxx, phrase
+    specs = garages_step.specs.LARGE_LOT_SPECS
+    hoffmann = specs["WOB_PARK_1245204"]
+    assert hoffmann["zone_product"] == "wob_area_736"
+    for phrase in ("89.1 %", "way 25672155, 680 m2", "1,317 m2", "WOB_PARK_1245204__1 states a maximum stay of 120 min"):
+        assert phrase in hoffmann["comment"], phrase

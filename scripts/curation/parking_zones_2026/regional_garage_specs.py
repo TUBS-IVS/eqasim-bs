@@ -839,10 +839,24 @@ LARGE_LOT_SPECS = {
                                             "get 50 % off the fee, a customer condition that is not modelled)"},
     # ---- Wolfsburg
     "WOB_PARK_1638410": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1638410__1"},
-    "WOB_PARK_1769502": {"zone_product": "wob_area_680", "check": "WOB_PARK_1769502__1"},
+    # The two lots in a Wolfsburg area zone (spec v3 B2): the comment states the measured overlap of the lot outline with the street
+    # section of the area (the Wolfsburg layer of Wolfsburg_Parkdaten.zip against researched_outlines.geojson and
+    # researched_locations.geojson of the lot package, EPSG:25832) and the maximum stay of the lot's own component, which is
+    # the maximum of the area zone.
+    "WOB_PARK_1769502": {"zone_product": "wob_area_680", "check": "WOB_PARK_1769502__1",
+                         "comment": "area zone evidence (spec v3 B2): the street section of area 680 of the Wolfsburg layer "
+                                    "(979 m2) lies 100 % inside the OSM outline of the lot (way 115027361, 2,416 m2; the section "
+                                    "is 40.5 % of the outline), the research point lies inside the section, and the component "
+                                    "WOB_PARK_1769502__1 states a maximum stay of 60 min (its condition text names the "
+                                    "Hoechstparkdauer 60 Minuten), the maximum of the area zone wob_area_680"},
     "WOB_PARK_1835014": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1835014__1"},
     "WOB_PARK_720901": {"zone_product": "wob_tarifzone_1", "check": "WOB_PARK_720901__1"},
     "WOB_PARK_1245204": {"zone_product": "wob_area_736", "check": "WOB_PARK_1245204__1",
+                         "comment": "area zone evidence (spec v3 B2): the street section of area 736 of the Wolfsburg layer "
+                                    "(1,317 m2) contains 89.1 % of the OSM outline of the lot (way 25672155, 680 m2; 606 m2 of "
+                                    "it), the research point lies inside the section and the outline, and the component "
+                                    "WOB_PARK_1245204__1 states a maximum stay of 120 min, the maximum of the area zone "
+                                    "wob_area_736",
                          "ignored": {"WOB_PARK_1245204__2": "a short-stay product of at most 30 min that the package says is "
                                                             "not to be added as a discount to every longer stay"}},
     "WOB_PARK_1114127": {"rate": "WOB_PARK_1114127__1", "window": None,

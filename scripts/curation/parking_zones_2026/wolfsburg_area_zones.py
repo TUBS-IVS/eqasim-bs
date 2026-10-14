@@ -59,7 +59,7 @@ PARENT_ZONE_ID = mz.WOLFSBURG_ZONE_ID
 #: Key of the sections of a parent that carry no recorded maximum, in the nearest-section split.
 _REST_KEY = "rest"
 _ID_TOKEN = re.compile(r"^[a-z0-9]+$")
-#: ASSUMPTION C-b / provenance of the parent rows are in their notes; an area row names the parent instead of copying them.
+#: The layer of the owner's package Wolfsburg_Parkdaten.zip that the area zones are read from.
 _LAYER_NAME = "mobile_parking_areas"
 
 
@@ -85,14 +85,19 @@ def recorded_maximum_areas(sections: gpd.GeoDataFrame, *, expected_areas: int = 
     """The areas of the layer with a recorded maximum stay (``max_duration_minutes`` set), counted and logged.
 
     The layer must hold ``expected_areas`` areas with unique ``source_id`` tokens and exactly ``expected_recorded`` of
-    them a recorded maximum, else ``SystemExit`` with the list of the recorded ones. The others are not carved out
-    (ASSUMPTION W-max).
+    them a recorded maximum, else ``SystemExit`` with the list of the recorded ones; a recorded maximum of 0 min or less stops
+    as well. The others are not carved out (ASSUMPTION W-max).
     """
     ids = [area_id(value) for value in sections["source_id"]]
     duplicated = sorted({value for value in ids if ids.count(value) > 1})
     if duplicated:
         raise SystemExit(f"mobile_parking_areas source_id not unique: {duplicated}")
     recorded = sections[sections["max_duration_minutes"].notna()]
+    not_positive = recorded[recorded["max_duration_minutes"] <= 0]
+    if len(not_positive):
+        raise SystemExit("mobile_parking_areas records a maximum stay that is not a positive number of minutes (a maximum of "
+                         "0 min would leave the area no street option at all and is no reading of 'no maximum'): "
+                         + "; ".join(_describe(not_positive)))
     if len(sections) != expected_areas or len(recorded) != expected_recorded:
         raise SystemExit(f"mobile_parking_areas holds {len(sections)} areas with {len(recorded)} areas with a recorded "
                          f"maximum stay, the pinned layer has {expected_areas} and {expected_recorded}; the recorded ones: "
@@ -145,9 +150,8 @@ def carve_area_zones(parent_zones: dict, sections: gpd.GeoDataFrame, ranking: li
         area_keys = list(group["area_id"])
         own, higher = {}, None
         for name, geometry in zip(area_keys, group.geometry):
-            section = shapely.union_all([geometry])
-            own[name] = section if higher is None else mz._on_grid(shapely.difference, section, higher)
-            higher = section if higher is None else mz._on_grid(shapely.union, higher, section)
+            own[name] = geometry if higher is None else mz._on_grid(shapely.difference, geometry, higher)
+            higher = geometry if higher is None else mz._on_grid(shapely.union, higher, geometry)
         names = list(area_keys)
         if len(rest_frame):
             rest = mz._on_grid(shapely.union_all, list(rest_frame.geometry))

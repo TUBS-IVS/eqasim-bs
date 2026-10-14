@@ -21,14 +21,16 @@ of the town rows); the recorded ``b5_passed`` and ``h2_passed`` and every decisi
 present, the release of the classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``,
 ``supply_share_qa.load_paid_share_release``); and the municipal QA table (``--municipal-qa-path``,
 ``parking_zones_2026_municipal_qa.csv``; spec Amendment C; required as soon as a polygon has geometry_source
-``municipal_street_sections_buffered`` or a ``reconstructed_section_m2`` value):
+``municipal_street_sections_buffered`` or ``municipal_mobile_parking_area`` (the Wolfsburg area zones of spec v3 B2) or a
+``reconstructed_section_m2`` value):
 ``braunschweig.parking.municipal_zone_qa.validate_municipal_qa`` against the polygons. The resident parking districts
 (``--districts-path``, ``parking_resident_districts_2026.geojson``; spec Amendment C3) are part of the release and
 always required: ``braunschweig.parking.zones.load_resident_districts`` (valid as stored, never repaired: unique ids,
 no overlap) and ``validate_district_municipalities`` (every district municipality has a register status row), without
 the test-set marker. Since spec Amendment D the zone polygons of the regional evidence package of 2026-10-07 are checked
 as well: ``campus_detection_zones`` and ``campus_outline_and_detection_zones`` polygons must be ``campus`` zones,
-``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m``
+``single_site_buffered`` polygons ``street_paid`` zones with a positive ``site_buffer_m`` and ``municipal_mobile_parking_area``
+polygons ``street_paid`` zones with a positive ``section_buffer_m``
 (``braunschweig.parking.zones.validate_geometry_source_zone_types``), and all need rows in the municipal QA table.
 The garage dataset (``--garages-path``, ``parking_garages_2026.geojson``, and its QA table ``--garages-qa-path``,
 ``parking_garages_2026_qa.csv``; spec Amendment E1) is read by the zones stage and therefore required, like the zone

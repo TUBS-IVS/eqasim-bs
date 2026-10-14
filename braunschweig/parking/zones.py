@@ -36,15 +36,14 @@ Polygons built from a municipality's published paid street sections (spec Amendm
 ``geometry_source`` ``municipal_mobile_parking_area`` and the same ``section_buffer_m``. Any polygon may carry
 ``reconstructed_section_m2`` (``RECONSTRUCTED_SECTION_COLUMN``), the part of its area whose boundary the digitised source
 reconstructs from an older map (spec Amendment C1); the municipal QA table is checked by
-``municipal_zone_qa.validate_municipal_qa``. The regional
-evidence package of 2026-10-07 (spec Amendment D, the curation step ``scripts/curation/parking_zones_2026/
-regional_zones.py``) adds three sources: ``campus_outline_and_detection_zones`` (a campus zone is the union of the campus
-grounds, an OSM university outline of the v1 release, and the camera detection zones of its campus map, ruling R-4a-8;
-a digitisation, so no rule parameter), ``campus_detection_zones`` (the same without an outline of the grounds: the
-detection zones alone) and ``single_site_buffered`` (a single paid car park or street section is a zone of its own,
-the area within ``site_buffer_m`` of it, ``SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS``);
-``validate_geometry_source_zone_types`` pairs each with the zone type it describes, and all are compared with their
-references in the same municipal QA table.
+``municipal_zone_qa.validate_municipal_qa``. The regional evidence package of 2026-10-07 (spec Amendment D, the curation step
+``scripts/curation/parking_zones_2026/regional_zones.py``) adds three sources: ``campus_outline_and_detection_zones`` (a
+campus zone is the union of the campus grounds, an OSM university outline of the v1 release, and the camera detection zones of
+its campus map, ruling R-4a-8; a digitisation, so no rule parameter), ``campus_detection_zones`` (the same without an outline
+of the grounds: the detection zones alone) and ``single_site_buffered`` (a single paid car park or street section is a zone of
+its own, the area within ``site_buffer_m`` of it, ``SINGLE_SITE_BUFFERED_PROVENANCE_COLUMNS``);
+``validate_geometry_source_zone_types`` pairs each with the zone type it describes, and all are compared with their references
+in the same municipal QA table.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is

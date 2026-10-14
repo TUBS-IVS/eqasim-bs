@@ -551,7 +551,7 @@ acquisition:
     eqasim-data/output_parking_lot_threshold_sensitivity/: at 30 spaces 103 rows (36 garages, 67 lots; three more sites
     without a position are lot_no_position, none is invented) and at 100 spaces 74 rows (36 garages, 38 lots); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    3ad8bfb276fa4438de3f065d81507644eb388e534a5354fedc4da20729692ea5, parking_garages_2026_qa_lot_threshold_30.csv
+    287c15c192756b6af5c8379dcd9c3b9d79396bad4a7550e48cef82a1c2cd1197, parking_garages_2026_qa_lot_threshold_30.csv
     1512ad1120a32284f5abf41390d5e3c161674853de02289a3c3fbdcc585a6e98, parking_garages_2026_lot_threshold_100.geojson
     d826a089362e3ffaa30001bf1725f2e7e383309593e914be07c89d28cf4e22e5 and parking_garages_2026_qa_lot_threshold_100.csv
     161d5ed1618823eea0d129d41ac43fc18327211057bf8e163288ec7499ca3df9 (the files regenerated in the fix round of Task 4j; the
@@ -708,7 +708,7 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    aa6fcd454d324c811c3e6846b052b41e023d6a73d430400d9f984d31cee72b1e (the earlier pins are in the history of the field notes:
+    b355554cbda574bcfefd6044f077098ced3f1fa3931ce88d72163a045b443893 (the earlier pins are in the history of the field notes:
     storage.notes holds exactly one, the test of the calibration table reads it). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
@@ -1151,3 +1151,20 @@ notes: >-
   keeps its counts (22 lots inside a zone at 50 spaces, 13 equal, 9 differing). The calibration table
   parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931... and stays stale until Task B5
   (ruling R-B-8).
+  Spec v3 B2, fix round 1 (2026-10-14): the notes of the two lots in an area zone now state the measured overlap of the lot with
+  the street section of the area (the evidence for the maximum stay that the row takes from the zone): Parkplatz Cinemaxx
+  (lot_wob_park_1769502, wob_area_680, 60 min): the section of 979 m2 lies 100 % inside the 2,416 m2 OSM outline of the lot
+  (way 115027361; the section is 40.5 % of the outline), the research point lies inside the section, and the component
+  WOB_PARK_1769502__1 states a maximum stay of 60 min (its condition text names the Hoechstparkdauer 60 Minuten);
+  Hoffmannstrasse Dreieckparkplatz (lot_wob_park_1245204, wob_area_736, 120 min; only in the 30-space dataset): 89.1 % of the
+  680 m2 OSM outline (way 25672155; 606 m2) lies in the 1,317 m2 section of area 736, the research point lies inside the section
+  and the outline, and the component WOB_PARK_1245204__1 states 120 min. The numbers were measured on the Wolfsburg layer of the
+  package Wolfsburg_Parkdaten.zip against researched_outlines.geojson and researched_locations.geojson of the lot package
+  (EPSG:25832) and are stated in the lot comments of regional_garage_specs.LARGE_LOT_SPECS (a test pins them); no value changed,
+  only these two notes. Regenerated with the release command above (also --lot-threshold 30 and 100; the QA tables and the
+  dataset at 100 spaces are unchanged). SHA-256 (LF): parking_garages_2026.geojson
+  b355554cbda574bcfefd6044f077098ced3f1fa3931ce88d72163a045b443893 (before
+  aa6fcd454d324c811c3e6846b052b41e023d6a73d430400d9f984d31cee72b1e); the dataset at 30
+  spaces is 287c15c192756b6af5c8379dcd9c3b9d79396bad4a7550e48cef82a1c2cd1197 (before
+  3ad8bfb276fa4438de3f065d81507644eb388e534a5354fedc4da20729692ea5). Every hash of the earlier paragraph of Task B2 that
+  differs is superseded by these.

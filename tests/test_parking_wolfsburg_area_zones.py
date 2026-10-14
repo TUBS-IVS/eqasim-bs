@@ -107,6 +107,15 @@ def test_another_count_than_the_recorded_one_stops_with_the_list(waz, layer):
         waz.recorded_maximum_areas(layer, expected_areas=73, expected_recorded=3)
 
 
+@pytest.mark.parametrize("maximum", [0.0, -30.0])
+def test_a_recorded_maximum_that_is_not_positive_stops(waz, layer, maximum):
+    # a maximum of 0 min (or less) is no reading of "no maximum": the area would have no street option at all
+    layer.loc[0, "max_duration_minutes"] = maximum
+    with pytest.raises(SystemExit, match="not a positive number of minutes") as stop:
+        waz.recorded_maximum_areas(layer, expected_areas=5, expected_recorded=3)
+    assert "a1" in str(stop.value) and "Area A" in str(stop.value)
+
+
 def test_an_area_id_that_is_not_a_unique_lower_case_token_stops(waz, layer):
     layer.loc[0, "source_id"] = "A 1"
     with pytest.raises(SystemExit, match="source_id"):

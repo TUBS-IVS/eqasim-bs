@@ -869,11 +869,13 @@ notes: >-
   are thin, activity points lie beside them and would almost never fall inside, so the maximum stay would never act. The
   parent loses exactly the area zones, so no two zones overlap (the validator check passes: pairwise overlap at most the
   tolerance). The zones take the same simplification (0.5 m), cut clearance (0.05 m), opening (0.05 m) and sliver rule (20 m2)
-  as every rule-based Wolfsburg zone. RESULT (areas in m2 as written by the step, before the rounding of the file): the 15 area
-  zones 187,690 m2 in total (668 10,965; 680 3,933; 723 9,166; 724 13,170; 725 29,371; 726 7,918; 727 9,098; 728 18,371; 729
-  11,400; 730 7,913; 731 10,511; 732 34,104; 734 5,875; 735 8,480; 736 7,415); wob_tarifzone_1 638,518 -> 623,585 m2 (the
-  polygon after the precedence and the opening), wob_tarifzone_2 unchanged (660,710), wob_tarifzone_3 265,302 -> 92,467 m2
-  (13 of its 17 sections are areas with a recorded maximum). The Wolfsburg zones are now 18 (1.564 km2); the geometry-source
+  as every rule-based Wolfsburg zone. RESULT (areas in m2 of the polygons in the WRITTEN zone file, EPSG:25832, to 0.1 m2: the
+  step's own log states the areas before the 7-decimal WGS84 rounding of the file, which differs by up to about 1 m2; the
+  file is the reference): the 15 area zones 187,689.8 m2 in total (668 10,965.1; 680 3,932.7; 723 9,165.6; 724 13,170.2;
+  725 29,371.0; 726 7,917.8; 727 9,098.4; 728 18,370.0; 729 11,400.4; 730 7,912.5; 731 10,511.5; 732 34,104.2; 734 5,875.5;
+  735 8,480.3; 736 7,414.5); wob_tarifzone_1 638,517.7 -> 623,584.9 m2, wob_tarifzone_2 660,713.9 -> 660,713.8 (no area of it
+  left the zone; the 0.1 m2 is the rounding of the file), wob_tarifzone_3 265,301.8 -> 92,466.0 m2 (13 of its 17 sections
+  are areas with a recorded maximum). The Wolfsburg zones are now 18 (1.564 km2); the geometry-source
   mix of the validator is municipal_mobile_parking_area 15 zones 0.188 km2 (2.4 %) and municipal_street_sections_buffered 3
   zones 1.377 km2 (17.6 %, 1.565 km2 before). The extent of an area zone is a modelling assumption (C-a and the nearer-section
   rule), not a measured catchment, and no reference exists against which it was validated.
