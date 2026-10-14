@@ -1224,6 +1224,14 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
     total_weight = 0.0
     for weight in weights:
         total_weight += weight
+    if not total_weight > 0.0:
+        # Every weight underflowed to 0.0 (a decay length far below the distances, or prices far above what exp() can
+        # resolve) while no street option carried weight 1: w / sum(w) is undefined. Refused by name, never priced by a
+        # guess; Java guards the same sum (spec v3 A2, deferred minor of the A2 review).
+        raise ValueError(f"all option weights underflow to 0.0 for the garage options {sorted(feasible_ids)} (decay length "
+                         f"{decay_of_stay_m:g} m, option_price_beta_u_per_eur {option_price_beta_u_per_eur:g}, street "
+                         f"option {'present' if street is not None else 'absent'}): the probabilities are undefined; "
+                         "check the decay length against the garage distances")
     expected, garage_probability = 0.0, 0.0
     first_garage = 1 if street is not None else 0
     for position, (weight, option_cents) in enumerate(zip(weights, costs)):
@@ -1282,7 +1290,7 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
 
     ``counters`` (optional) is incremented as documented at ``GarageOptionCounters``. Raises as ``parking_cost_cents``, and
     ``ValueError`` for a negative or non-finite ``decay_m``, ``decay_commute_m``, ``option_price_beta_u_per_eur`` or
-    distance and duplicate garage ids. Pure
+    distance, duplicate garage ids and option weights that all underflow to 0.0 (no street option carries weight 1 then). Pure
     but for ``counters``.
     """
     detail = parking_cost_with_garages_detail(

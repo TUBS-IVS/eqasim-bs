@@ -1161,3 +1161,22 @@ def test_the_ev_exemption_without_garage_options_and_with_decay_zero_prices_as_t
     assert (detail.cents, detail.outcome) == (0, cost.EV_EXEMPT)
     with pytest.raises(TypeError, match="ev_exempt must be a bool"):
         _detail(zone, 200, [], ev_exempt="yes")
+
+
+def test_a_stay_whose_option_weights_all_underflow_raises_a_named_error_not_a_zero_division():
+    # Spec v3 A2 (deferred minor of the A2 review): with the street infeasible (maximum stay 180 min, no product) the weights
+    # of the garages alone are summed, and a decay of 1 m at 1000 m gives exp(-1000) = 0.0 in double precision, so the sum is
+    # 0.0 and the probabilities w / sum(w) are undefined. The pricing refuses the stay and names the garages and the stay;
+    # a bare ZeroDivisionError told nothing, and v2 had the same hole for the distance-only weights.
+    zone = _tariff(**_MAX_STAY_ZONE)
+    far_garage = _option_garage("g_far")
+    assert math.exp(-1000.0 / 1.0) == 0.0
+    with pytest.raises(ValueError, match=r"all option weights underflow.*g_far.*decay"):
+        cost.parking_cost_with_garages_detail(zone, 32400, 32400 + 200 * 60, purpose="shop", parking_free=False,
+                                              resident_of_zone=False, garage_options=[(far_garage, 1000.0)], decay_m=1.0,
+                                              decay_commute_m=1.0)
+    # the same garage with a usable decay length prices normally (the guard is not a fallback)
+    detail = cost.parking_cost_with_garages_detail(zone, 32400, 32400 + 200 * 60, purpose="shop", parking_free=False,
+                                                   resident_of_zone=False, garage_options=[(far_garage, 1000.0)],
+                                                   decay_m=400.0, decay_commute_m=400.0)
+    assert detail.outcome == cost.PAID_EXPECTED
