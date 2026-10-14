@@ -24,7 +24,7 @@ campus zone and every early-rule stay price exactly as before. The new outcome `
 | --- | --- |
 | Pricing of one stay, the three tariff structures, counters | `braunschweig/parking/cost.py` (`GarageTariff`, `garage_metered_cents`, `garage_option_cents`, `garage_options_in_range`, `parking_cost_with_garages`, `parking_cost_with_garages_detail`, `option_weight`, `street_feasible`, `garage_decay_m_for_purpose`, `GarageOptionCounters`) |
 | Band evaluation (reference, called not copied) | `braunschweig.parking.garages.duration_band_price_eur` |
-| Dataset to model entries, schema 5, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `garage_decays_from_model`, `ASSUMPTIONS_REGISTER` G1 to G3, G1-c, G1-d, M3 and P3 to P11; E1 and E2 only with an EV exemption in the model, P13 only with imputed monthly products) |
+| Dataset to model entries, schema 5, assumptions register | `braunschweig/parking/tariff_export.py` (`garage_entries`, `build_tariff_model`, `garage_decays_from_model`, `ASSUMPTIONS_REGISTER` present only where a priced row names them: P3 to P8, P10, P11, P13, P14; always present: P9, G1 to G3 (with G1-c, G1-d) and M3; E1 and E2 only with an EV exemption in the model; P12 is withdrawn and never listed) |
 | Release input, config keys | `braunschweig/parking/zones_stage.py` (`parking_garages_path`), `braunschweig/matsim/simulation/prepare.py` (`parking_garage_decay_m`, `parking_garage_decay_commute_m`, `parking_garage_max_distance_m`) |
 | Golden cases (Java contract) | `braunschweig/parking/golden_cases.py` (E01..E38, O01..O69 and the v3 families F, P and X), `scripts/export_parking_golden_cases.py`, `tests/fixtures/parking/parking_golden_cases.json` (schema 6) |
 | Calibration of lambda and lambda_c | `scripts/parking/calibrate_garage_decay.py` |
@@ -89,8 +89,9 @@ campus zone and every early-rule stay price exactly as before. The new outcome `
   `GarageStayPrice.street_feasible`, which counts street OR zone commuter product, not the free function `street_feasible`,
   decides the street weight). A garage or lot whose own `max_stay_min` is below the duration leaves the set too. A stay with no
   feasible option is priced as the street at its metered cents, the maximum ignored, and named `NO_FEASIBLE_OPTION`; the
-  counters `street_infeasible` and `no_feasible_option` and the report columns `street_infeasible_count` and
-  `no_feasible_option_count` make the case visible. An error is never raised for it; the arm check of Part C flags a high rate.
+  Python counters `street_unavailable` (a street-infeasible stay), `options_infeasible` and `no_feasible_option` of
+  `cost.GarageOptionCounters` and the Java report columns `street_infeasible_count` and `no_feasible_option_count` make the
+  case visible. An error is never raised for it; the arm check of Part C flags a high rate.
 - **Price term.** `cost.option_weight` is `exp(-distance_m / decay_m - beta_u_per_eur * cost_cents / 100)` with the exponent
   evaluated as `(-d / lambda) - ((beta * c) / 100)` in this order (Java: `StrictMath.exp`; the order is a contract like the
   summation order of the expectation). beta is the config key `parking_option_price_beta_u_per_eur` (0.310998, the magnitude of

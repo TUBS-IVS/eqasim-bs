@@ -7,7 +7,7 @@
 - **Numbering:** ADR-0142 is the next free id after ADR-0140 for this branch. The design spec and the plans said ADR-0141;
   on 2026-10-14, checked across all local and remote branches, ADR-0141 is taken by `feature/i442-portal-trips`
   (`ADR-0141-portal-trips-through-the-cordon-gates.md`, pushed), so the v3 record is ADR-0142 (ruling R-ADR). No other branch
-  holds an id above ADR-0140.
+  holds an id above ADR-0141.
 - **Issue:** #436 (the owner decided on 2026-10-14 that v3 needs no issue of its own: all v3 commits carry #436).
 - **Extends:** ADR-0140 (and through it ADR-0139). **Supersedes in part:** the v2 rule of ADR-0140 decision 1 that a zone
   with a maximum stay needs a long-stay product or a garage (assumption M1 stays for the zones that have the product), and the
@@ -48,8 +48,10 @@ shared golden file.
      resident_zone keeps the v2 rule. The v2 test that pinned the refusal was replaced by its opposite, a deliberate behaviour
      change of the spec, stated in the commit. Part B needs it for Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg and
      Seesen.
-   - **Counters (fallback transparency).** `GarageOptionCounters` and the Java counters count the stays whose street is
-     infeasible and the stays without any feasible option; the outcome report v4 carries both (decision 4). The model has no
+   - **Counters (fallback transparency).** The Python `cost.GarageOptionCounters` counts the stays priced over the garages
+     alone because the street is unavailable (`street_unavailable`), the garage options left out for a maximum stay
+     (`options_infeasible`) and the stays without any feasible option (`no_feasible_option`); the Java outcome report v4
+     carries `street_infeasible_count` and `no_feasible_option_count` (decision 4). The model has no
      threshold for `NO_FEASIBLE_OPTION`: the planned Part C arm check flags a share of 1 % of the stays in Ia and Ib (ruling
      R-A-17), a plausibility flag and no scientific parameter.
    - **Calibration consequence (Part B, B5).** The calibration measure must use the same option set as the pricing: the street
@@ -78,8 +80,8 @@ shared golden file.
    - **All option weights underflow (review minor of Task A2).** A stay whose weights all underflow to 0 raises a named
      `ValueError` in Python and the same refusal in Java; real tariffs cannot reach it (the street always carries a finite
      price), and v2 had the same hole for distances alone.
-   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 (324.31 m and 261.57 m) were
-     fitted WITHOUT the price term, on the price-independent weights. With beta > 0 the weights differ, so the garage shares
+   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 (the values are stated there)
+     were fitted WITHOUT the price term, on the price-independent weights. With beta > 0 the weights differ, so the garage shares
      the lengths reproduce differ too: lambda and lambda_c are refitted in Part B (B5) with beta fixed before any production
      run, and this record's Part B section will state the new values. Until then the configured values are those of v2.
 3. **Parking cost factor (spec A3, ASSUMPTION CF; owner item 2).** The config key `parking_cost_utility_factor` (Java module
@@ -137,7 +139,9 @@ shared golden file.
    monthly products). A zone with a maximum stay AND a commuter product must name the unlimited-stay product in its `notes` with
    the literal text `unlimited-stay product:` (`zones.COMMUTER_UNLIMITED_STAY_MARKER`), else the validator stops. The check
    applies to every zone type, not only street_paid (spec wording; the Task A5 brief said street_paid; pinned by a test with a
-   campus row, whose maximum stay is additionally forbidden by its own rule). The annual tickets of Gifhorn, Bad Harzburg and
+   campus row, whose maximum stay is additionally forbidden by its own rule); this is a deliberate behaviour change of the
+   validator with no effect on valid data (a campus row cannot carry a maximum stay, a resident row no commuter product). The
+   annual tickets of Gifhorn, Bad Harzburg and
    Braunlage keep their 2 h or local maximum and are not entered (spec A6).
 7. **Cross-language contract and run checks.** Tariff model schema 5 adds `option_price_beta_u_per_eur` (document),
    `max_stay_min` (every garage entry; null until the garage dataset carries it, Part B) and `ev_free_minutes` (every zone
@@ -169,6 +173,12 @@ shared golden file.
   of the comparison between two car parks (ASSUMPTION G1-d).
 - **Allow beta 0 in a schema-5 run model as a free sensitivity.** It would let the coefficient of the garage choice drift from
   the mode choice; a price-free comparison is a schema-4 model (ruling R-A-17).
+- **Scope the commuter-product check to street_paid zones only** (the wording of the earlier Task A5 brief): it would leave a
+  gap if the per-type bans of the two columns were loosened; the spec says "a zone" (decision 6).
+- **Enter the annual tickets of Gifhorn, Bad Harzburg and Braunlage as commuter products.** They keep a 2 h or local single-stay
+  maximum, so they are no commuter product; spec A6 rejects it.
+- **Ship no jar marker.** A v2 jar would then fail late, on the exact key sets of the schema-5 model, instead of before the run
+  (decision 7).
 - **Calibrate the cost factor.** No local price-response evidence exists; a factor in [0, 10] is a sensitivity (ASSUMPTION CF).
 - **An E-plate share or an EV sensitivity arm.** The owner decided "einfach fuer alle E-Autos": every BEV/PHEV is an E-plate
   holder (E1); the only switch is the flag.
@@ -187,10 +197,11 @@ shared golden file.
   (stays above a maximum stay leave the street; the rule acts wherever Part B's data states a maximum stay: the spec names
   Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg and Seesen, and a stay in Ia then no longer buys Ib's ticket), (2) the
   price term (cheaper options carry more weight; the effect depends on lambda, which is refitted in Part B), (3) the EV
-  exemption wherever a zone states one (none in the committed table until Part B fills the columns), and (4) the cost
+  exemption wherever a zone states one (which zones state one today: the validation note of the feature record
+  `parking_cost_zones`), and (4) the cost
   factor, which at 1.0 changes nothing. How much the mode shares move is not established: no v3 run exists, so no direction
   or size is stated here.
-- The garage decay lengths of the configuration (324.31 m and 261.57 m) were fitted without the price term and are refitted in
+- The garage decay lengths of the configuration (ADR-0140 decision 14) were fitted without the price term and are refitted in
   Part B (B5) before any production run; until then a run with beta > 0 uses lengths that were calibrated for other weights.
 - The jar must be a v3 build: a jar without `ParkingOptionPriceBetaCheck` is refused before the run, and a v2 jar would refuse the
   schema-5 tariff model by its exact key sets. The Java package of the same branch must be in the jar.
@@ -213,7 +224,9 @@ shared golden file.
 - Python commits of Part A on `feature/i436-v3-a-mechanics` (feasibility `c3e400b3`, `437552a8`, `123c91cc`; the comparison
   classification `abcc0229`; price weights `8d2e0001`; EV rule `c4ab1ee6`, `72b8ea98`; EV attribute `d0dad070`; cost factor and the
   commuter rule `b4084df3`; weight-sum guard `87e71507`; schema 5, golden schema 6 `49294b21`, `2f56ce2d`; report v4 `a1d8854a`,
-  `bf129ce4`, `5d355f83`, `a463da1d`; the deferred minors `20c7d6e7`).
+  `bf129ce4`, `5d355f83`, `a463da1d`; the deferred minors `20c7d6e7`; the comment fix on beta 0 `b45922ec`). `20c7d6e7`,
+  `b45922ec` and the later fix round of the records review change comments or code in hashed stage sources (`prepare.py`,
+  `zones.py`, `attach.py`), so the stages that import them re-hash; that is expected for v3.
 - Java commits of eqasim-java-bs, branch `feature/i436-v3-a-mechanics`, from `24b5fea42` to
   `ea74c1f26`: `24b5fea42` (schema 5 reader), `6c60ebedf` (feasibility, price weights, EV exemption), `381e3331e` (cost factor),
   `cf6c4989b` (report v4, EV flag in the car cost model, the beta check), `ea74c1f26` (direct paid accumulation, strict golden

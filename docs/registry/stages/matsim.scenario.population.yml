@@ -34,7 +34,8 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   by parking_workplace_free_share_shift); since parking cost zones v3 (ADR-0142, ASSUMPTION E1) the wrapper also
   declares parking_ev_exemption_enabled (only with parking_zones_enabled; a validated boolean, default true) and, when it is on,
   attaches the person flag parking_ev_exempt from the vehicles frame after the in-commuter merge (written as the person
-  attribute parkingEvExempt; docs/codebase/notes/parking-ev-exemption.md); their code defaults are off, their production values live in
+  attribute parkingEvExempt; docs/codebase/notes/parking-ev-exemption.md); their code defaults are off, their production
+  values live in
   configs/base_bs.yml and equal in the two popsim fixture configurations, and the draw logs both under [parking]; both
   options act only when the flag is on; combining the flag with the legacy ring
   enable_urban_parking is rejected in configure, and with the flag off no parking column is attached

@@ -1088,7 +1088,7 @@ def test_ev_exemption_logs_the_rate_among_the_car_owners(caplog):
     # Persons 1, 2, 3, 5, 6, 7 own a car vehicle; 1, 2 and 5 of them are BEV/PHEV owners.
     [line] = [m for m in messages if m.startswith("[parking] EV exemption:")]
     assert line == ("[parking] EV exemption: 3 of 6 car owners (50.0 %) are BEV/PHEV and exempt where a zone "
-                    "grants it")
+                    "grants it (incl. placeholder-car owners)")
     [detail] = [m for m in messages if m.startswith("[parking] EV exemption basis")]
     assert "BEV/PHEV 3" in detail and "other known powertrain 2" in detail
     assert "placeholder car without powertrain 1" in detail

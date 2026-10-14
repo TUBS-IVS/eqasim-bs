@@ -421,8 +421,8 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
     """Check the tariff rows against spec 3.1/5.3 and the schema-2 rules; raise ``ValueError`` listing every violation.
 
     Schema 2 (v2 lever 2, amendment A6): the garage core is all-or-none, its day cap (empty = no cap) and its
-    first-period pair are optional but need the core; a maximum stay needs a long-stay product or a garage (a longer
-    stay loses the street product); ``commuter_day_eur`` exists on
+    first-period pair are optional but need the core; a maximum stay needs a long-stay product or a garage (a street_paid
+    zone may omit both, spec v3 A1; a longer stay loses the street product); ``commuter_day_eur`` exists on
     street_paid and campus rows only and is never negative; ``search_time_min`` is a whole number >= 0. Spec v3 A6: a
     zone of ANY type with both ``max_stay_min`` and ``commuter_day_eur`` must name its unlimited-stay product in ``notes``
     (``COMMUTER_UNLIMITED_STAY_MARKER``); campus rows additionally never carry a maximum stay, and resident rows no

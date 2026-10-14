@@ -700,7 +700,8 @@ def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: 
     n_several = int((per_owner["cars"] > 1).sum())
     n_mixed = int(((per_owner["cars"] > 1) & (per_owner["electric"] > 0)
                    & (per_owner["electric"] < per_owner["cars"])).sum())
-    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it",
+    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it "
+             "(incl. placeholder-car owners)",
              _LOG_TAG, n_exempt, n_owners, _rate(n_exempt, n_owners))
     log.info("%s EV exemption basis (ASSUMPTION E1): fleet-car owners %d of %d (%.1f %%), the others own only the "
              "placeholder routing car; of the %d car owners: BEV/PHEV %d (%.1f %% of car owners, %.1f %% of "
