@@ -129,7 +129,8 @@ ALWAYS_REQUIRED_COLUMNS = ("zone_id", "name", "municipality_ags", "zone_type", "
                            "fee_window_source")
 #: Spec 3.1. ``resident_zone`` also needs ``billing_unit_min`` so that the metering arithmetic of spec 3.2
 #: (units of the billing unit at rate 0) is defined; the unit has no effect on the price at rate 0. Its long-stay
-#: product is required by the maximum-stay rule of ``validate_tariffs`` unless the row has a garage (v2).
+#: product is required by the maximum-stay rule of ``validate_tariffs`` (ADR-0142 decision 1: a zone-level garage core no
+#: longer rescues a row that is not a marked test row).
 REQUIRED_FIELDS_BY_TYPE = {
     "street_paid": ("hourly_rate_eur", "billing_unit_min"),
     "resident_zone": ("hourly_rate_eur", "billing_unit_min", "max_stay_min"),
@@ -422,7 +423,8 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
 
     Schema 2 (v2 lever 2, amendment A6): the garage core is all-or-none, its day cap (empty = no cap) and its
     first-period pair are optional but need the core; a maximum stay needs a long-stay product or a garage (a street_paid
-    zone may omit both, spec v3 A1; a longer stay loses the street product); ``commuter_day_eur`` exists on
+    zone may omit both, spec v3 A1; a longer stay loses the street product; a resident_zone needs the long-stay product
+    also with a garage core, unless it is a marked test row, ADR-0142 decision 1); ``commuter_day_eur`` exists on
     street_paid and campus rows only and is never negative; ``search_time_min`` is a whole number >= 0. Spec v3 A6: a
     zone of ANY type with both ``max_stay_min`` and ``commuter_day_eur`` must name its unlimited-stay product in ``notes``
     (``COMMUTER_UNLIMITED_STAY_MARKER``); campus rows additionally never carry a maximum stay, and resident rows no
@@ -541,6 +543,16 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
                 and zone_type != "street_paid"):
             problem("long_stay_product_eur", "max_stay_min is set but neither long_stay_product_eur nor the garage "
                                              "columns are: a stay above the maximum stay would have no product")
+        # ADR-0142 decision 1: a zone-level garage core does not rescue a resident zone. With the dataset garage options on
+        # the core is superseded (E8); a stay above the maximum with no long-stay product and no feasible garage would then
+        # be priced at the disc's 0 ct as NO_FEASIBLE_OPTION and counted as a paid call. The synthetic test-set rows are
+        # exempt: fx_res_garage_v2 pins the zone-garage arithmetic of v2 (golden V22, V23) and the cross-language fixtures.
+        if (zone_type == "resident_zone" and _is_set(row["max_stay_min"]) and not _is_set(row["long_stay_product_eur"])
+                and has_garage and row["source_url"] != FIXTURE_MARKER):
+            problem("long_stay_product_eur", f"a resident_zone with max_stay_min {row['max_stay_min']} needs a long-stay "
+                                             "product also when it carries the garage columns: the zone-level garage is "
+                                             "superseded by the garage options, and a longer stay would be priced at the "
+                                             "disc's 0 ct without any feasible option; enter the long-stay product")
         # Spec v3 A6: the commuter product (P2) is a day price of a product WITHOUT a single-stay maximum (30-day ticket,
         # member month, garage month). A zone of any type that keeps a maximum stay and states a commuter product must
         # name that product's unlimited-stay evidence in its notes; the 2 h / local-maximum tickets (Gifhorn, Bad Harzburg,

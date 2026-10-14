@@ -1,4 +1,4 @@
-"""Schema 6 of the golden parking cases (spec v3 A1, A2, A5, issue #436, Task A6): the families F (maximum-stay feasibility),
+"""Schema 6 of the golden parking cases (spec v3 A1, A2, A5, issue #436): the families F (maximum-stay feasibility),
 P (the price in the option weights), X (the EV exemption) and S (the release band shapes), and the proof that the schema-5
 cases did not change.
 
@@ -332,8 +332,8 @@ OLD_CASE_FIELDS = ("id", "zone_id", "arrival_s", "departure_s", "purpose", "park
                    "resident_of_district", "terminal", "minimum_stay_min", "destination_x_m", "destination_y_m",
                    "garage_decay_m", "garage_decay_commute_m", "expected_cents", "expected_outcome",
                    "expected_garage_probability", "expected_error")
-# SHA-256 of the sorted, compact JSON of the schema-5 content of the COMMITTED golden file before Task A6 (the file whose LF
-# SHA-256 was 342bc4bc...), computed from that file with the projections below: the first 128 cases with the 18 schema-5 fields,
+# SHA-256 of the sorted, compact JSON of the schema-5 content of the COMMITTED golden file before the v3 mechanics (the file
+# whose LF SHA-256 was 342bc4bc...), computed from that file with the projections below: the first 128 cases with the 18 schema-5 fields,
 # the first 69 option cases, the 18 schema-5 zone entries without ev_free_minutes and the 19 schema-5 garage entries without
 # max_stay_min. A change of any schema-5 case, expectation, tariff or garage fails here, which is the proof that the schema-6
 # case lists are exact prefixes in content of the schema-5 lists.

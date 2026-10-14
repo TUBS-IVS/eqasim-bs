@@ -187,7 +187,7 @@ class ZoneTariff:
     that parks free on the street of the zone (``parking_cost_cents``, ``ev_exempt``). It exists on street_paid rows only:
     a campus car park is the university's, not the town's paid street (the campus branch returns before the rule), and a
     resident zone charges visitors by disc, not by the town's fee ordinance. The validity date of the rule
-    (``ev_rule_valid_until`` of the zone table) is NOT a tariff field: the export (Task A6) compares it with the tariff
+    (``ev_rule_valid_until`` of the zone table) is NOT a tariff field: the export (tariff_export.py) compares it with the tariff
     snapshot date and leaves the field None for an expired rule, so the pricing sees only rules in force.
     """
 
@@ -311,7 +311,7 @@ def _check_tariff(tariff: ZoneTariff) -> None:
         if getattr(tariff, name) is not None:
             fail(f"{name} does not apply to zone_type {tariff.zone_type!r} and must be empty")
     # Spec v3 A5: the EV exemption is a rule of the town's paid street. It is checked here and not listed in
-    # _NOT_APPLICABLE_FIELDS, whose entries the export names by their table column (Task A6 wires this one).
+    # _NOT_APPLICABLE_FIELDS, whose entries the export names by their table column (tariff_export.py wires this one).
     if tariff.ev_free_minutes is not None and tariff.zone_type != STREET_PAID:
         fail(f"ev_free_minutes does not apply to zone_type {tariff.zone_type!r} and must be empty: the EV exemption is "
              f"a rule of the paid street, a {tariff.zone_type} would never price it")
@@ -560,7 +560,7 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
        within it and within the maximum stay (ASSUMPTION E2) -> 0, ``EV_EXEMPT``, before the street product (so before the
        free threshold too). A longer stay pays the full schedule of rule 6, never a deduction. The rule belongs to the
        street zone only (``ZoneTariff`` refuses ``ev_free_minutes`` elsewhere) and is evaluated on the zone's snapshot: the
-       validity date of the rule is applied at the export (Task A6), which leaves ``ev_free_minutes`` empty for an expired
+       validity date of the rule is applied at the export (tariff_export.py), which leaves ``ev_free_minutes`` empty for an expired
        rule, so this function sees only rules in force;
     6. street_paid and resident_zone: the cheapest product the driver can use (P1), a tie going to the first of
        a. the street product, spec 3.2 rules 6 to 8: chargeable minutes (seconds rounded up) within the free

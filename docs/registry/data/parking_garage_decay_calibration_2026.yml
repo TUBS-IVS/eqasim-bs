@@ -141,6 +141,8 @@ limitations: |
   once as 160a4dc8); the commuter number 0.7142 over 245 activities at the single decay length (the pre-registered expected
   miss of ADR-0140 decision 7).
 notes: |
+  Stale under v3: both decay lengths were fitted without the price term (beta 0); stale until the recalibration of Part B
+  (ADR-0142 decision 2). The preparation logs a warning whenever beta > 0 and a decay length > 0.
   Result (calibration run 2026-10-14, code state bb5fecc1; a calibration, no validation): lambda = 324.31 m (decay_length_m;
   target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736029 after 11 halvings, 8,226 of 8,226 universe
   activities with an option within 1,000 m, payment-inclusive) and lambda_c = 261.57 m (decay_commute_length_m; target 0.679099

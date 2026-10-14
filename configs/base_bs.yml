@@ -723,6 +723,7 @@ config:
   # parking_garage_decay_calibration_2026.csv, whose decay_length_m this value equals
   # (tests/test_parking_garage_decay_config.py requires the equality). A calibration is no validation. A new option set
   # needs a new calibration. 0 switches the garage options off (E6, the sensitivity arm).
+  # Fitted without the price term (beta 0); stale until the recalibration of Part B (ADR-0142 decision 2).
   parking_garage_decay_m: 324.31
   # ASSUMPTION G1-c (spec Amendment H): the decay length lambda_c in metres of the off-street option weights of work and
   # education stays (lambda above governs every other purpose). A release value, CALIBRATED (not estimated) by the same
@@ -735,6 +736,7 @@ config:
   # bs_zentrum paid share is a calibration target; the independent check is the paid-only Wolfsburg commuter share of that
   # table, a number and no validation. 0 switches the garage options off for work and education only (sensitivity arm);
   # there is no default to lambda.
+  # Fitted without the price term (beta 0); stale until the recalibration of Part B (ADR-0142 decision 2).
   parking_garage_decay_commute_m: 261.57
   # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
   # imputed product of its municipality (the median of the published current garage monthly products of that

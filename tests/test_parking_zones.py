@@ -194,7 +194,7 @@ def test_a_commuter_product_next_to_a_maximum_stay_needs_its_unlimited_stay_evid
 
 
 def test_the_commuter_evidence_rule_covers_a_campus_zone_too():
-    # Spec v3 A6 says "a zone with a maximum stay and a commuter product" (any zone type); the Task A5 brief named only
+    # Spec v3 A6 says "a zone with a maximum stay and a commuter product" (any zone type); an earlier brief named only
     # street_paid. The rule is pinned for every type: a campus row that carries both is refused by the commuter rule
     # (not only by the generic ban of max_stay_min on campus rows), and the marker in its notes does not rescue it
     # because the maximum stay itself stays forbidden there.
@@ -208,6 +208,25 @@ def test_the_commuter_evidence_rule_covers_a_campus_zone_too():
     changed.loc[row, "notes"] = "unlimited-stay product: member month ticket (source: campus page)"
     with pytest.raises(ValueError, match=r"zone 'fx_campus_v2': max_stay_min: not applicable to zone_type 'campus'"):
         pz.validate_tariffs(changed)
+
+
+def test_a_resident_zone_with_a_maximum_stay_needs_a_long_stay_product_also_with_a_zone_garage():
+    # ADR-0142 decision 1: with the dataset garage options on, the zone-level garage core of a resident zone is superseded, and a
+    # stay above the maximum with no long-stay product and no feasible garage would be priced at the disc's 0 ct as
+    # NO_FEASIBLE_OPTION and counted as a paid call. The validator refuses the row, naming the row and the fix. The synthetic
+    # fixture row fx_res_garage_v2 (golden V22 and V23, which pin the zone-garage arithmetic of v2) is marked as a test set.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    row = tariffs["zone_id"] == "fx_res_garage_v2"
+    assert tariffs.loc[row, "max_stay_min"].iloc[0] == 120 and pd.isna(tariffs.loc[row, "long_stay_product_eur"].iloc[0])
+    pz.validate_tariffs(tariffs)
+    changed = tariffs.copy()
+    changed.loc[row, "source_url"] = "https://www.braunschweig.de/leben/verkehr/parken.php"
+    with pytest.raises(ValueError, match=r"zone 'fx_res_garage_v2': long_stay_product_eur: .*resident_zone.*max_stay_min 120"
+                                         r".*enter the long-stay product"):
+        pz.validate_tariffs(changed)
+    # the fix named in the message makes the row valid
+    changed.loc[row, "long_stay_product_eur"] = 9.0
+    pz.validate_tariffs(changed)
 
 
 def test_hash_inside_a_field_is_not_a_comment(tmp_path):

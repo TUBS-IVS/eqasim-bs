@@ -43,11 +43,19 @@ shared golden file.
    comparison (it is priced at the street's metered cents). Unchanged and in front of the test: E4 (free street, everything
    free), the home, employer-free, campus and resident rules. Fee window and maximum stay stay separate fields; the maximum
    compares the chargeable duration inside the fee window.
+   An asymmetry that is intended: the maximum stay of a garage or lot is compared with the ELAPSED stay (the car stands there
+   all the time; `cost.option_feasible`, Java `GarageParkingCostCalculator`), the street maximum with the chargeable stay
+   inside the fee window (M1); a lot that carries the zone's own maximum is therefore never less restrictive than its street,
+   but it can be stricter.
    - **Validator relaxation (ruling R-A-6).** A street_paid zone may now state `max_stay_min` without a long-stay product and
      without garage columns (`braunschweig.parking.cost` ZoneTariff and `braunschweig.parking.zones.validate_tariffs`); a
-     resident_zone keeps the v2 rule. The v2 test that pinned the refusal was replaced by its opposite, a deliberate behaviour
-     change of the spec, stated in the commit. Part B needs it for Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg and
-     Seesen.
+     resident_zone keeps the v2 rule, and since the final review of Part A even a zone-level garage core no longer rescues
+     it: with the garage options on that core is superseded, and a stay above the maximum would be priced at the disc's 0 ct
+     as `NO_FEASIBLE_OPTION` and counted as paid. That check is in `zones.validate_tariffs` (the table gate); the marked
+     synthetic fixture row `fx_res_garage_v2`, which pins the v2 zone-garage arithmetic in both repositories, is exempt, and
+     the Java reader keeps accepting that combination for the same reason. The v2 test that pinned the refusal was replaced
+     by its opposite, a deliberate behaviour change of the spec, stated in the commit. Part B needs it for Braunschweig Ia,
+     Salzgitter, Helmstedt, Bad Harzburg and Seesen.
    - **Counters (fallback transparency).** The Python `cost.GarageOptionCounters` counts the stays priced over the garages
      alone because the street is unavailable (`street_unavailable`), the garage options left out for a maximum stay
      (`options_infeasible`) and the stays without any feasible option (`no_feasible_option`); the Java outcome report v4
@@ -73,17 +81,20 @@ shared golden file.
      differs from `Math.abs(betaCost_u_MU)` of the mode choice actually in force (after the mode parameter file and the
      command-line overrides) by more than 1e-9, naming both values and both ways out. The coefficient of the garage choice and
      the one of the mode choice cannot drift apart silently.
-   - **beta 0 is refused in a schema-5 model (ruling R-A-17).** The coefficient is the mode-choice cost coefficient, not a free
-     lever: a schema-5 run model with 0 fails the check like any other value that differs from the mode choice. A price-free
+   - **beta 0 is refused in a schema-5 model (decision 2).** The coefficient is the mode-choice cost coefficient, not a
+     free lever: a schema-5 run model with 0 fails the check like any other value that differs from the mode choice. A price-free
      comparison uses a schema-4 model (no coefficient, price-independent weights). The Python reference and the golden cases
      keep 0 valid as the v2 form (and the Part B recalibration reports it as a sensitivity, spec B5).
-   - **All option weights underflow (review minor of Task A2).** A stay whose weights all underflow to 0 raises a named
+   - **All option weights underflow (review minor).** A stay whose weights all underflow to 0 raises a named
      `ValueError` in Python and the same refusal in Java; real tariffs cannot reach it (the street always carries a finite
      price), and v2 had the same hole for distances alone.
    - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 (the values are stated there)
      were fitted WITHOUT the price term, on the price-independent weights. With beta > 0 the weights differ, so the garage shares
      the lengths reproduce differ too: lambda and lambda_c are refitted in Part B (B5) with beta fixed before any production
      run, and this record's Part B section will state the new values. Until then the configured values are those of v2.
+     The preparation logs a warning whenever beta > 0 and a decay length > 0 (`matsim.simulation.prepare`), and the
+     configuration comments, the README and the calibration record say that the lengths were fitted without the price term
+     (beta 0) and are stale until the recalibration of Part B.
 3. **Parking cost factor (spec A3, ASSUMPTION CF; owner item 2).** The config key `parking_cost_utility_factor` (Java module
    parameter `costFactor` of `braunschweigParking`) multiplies the parking cost of a car trip before it is added to the car
    cost that enters the utility. Default 1.0, finite, in [0, 10] (ruling R-A-15: the spec's "finite, >= 0" gives the lower
@@ -98,7 +109,7 @@ shared golden file.
    `ParkingOutcomeReportListener` gains six columns after the seven of v3: `garage_probability_sum_paid`,
    `garage_probability_sum_free`, `street_infeasible_count`, `no_feasible_option_count`, `expected_cost_cents_sum` and
    `ev_exempt_count`; written per iteration, outcome, zone and purpose as before. The paid probability is accumulated directly
-   per option (never as a total minus the free part, which can be -1e-17 and abort a run: review fix of Task A7). The reader
+   per option (never as a total minus the free part, which can be -1e-17 and abort a run: review fix). The reader
    `scripts/parking/compare_parking_targets.py` reads v4 and older reports (the version follows from the header; rows are keyed by
    outcome name) and computes from v4 on the paid-only garage share of the two `*_paid_calls` rows (commuter group and
    Wolfsburg): `sum(garage_probability_sum_paid) / (calls - sum(garage_probability_sum_free))` over the PAID_* calls, labelled
@@ -138,7 +149,7 @@ shared golden file.
    only come from a product without a single-stay maximum (the Braunschweig Ib 30-day ticket, the TU member month, garage
    monthly products). A zone with a maximum stay AND a commuter product must name the unlimited-stay product in its `notes` with
    the literal text `unlimited-stay product:` (`zones.COMMUTER_UNLIMITED_STAY_MARKER`), else the validator stops. The check
-   applies to every zone type, not only street_paid (spec wording; the Task A5 brief said street_paid; pinned by a test with a
+   applies to every zone type, not only street_paid (spec wording; an earlier brief said street_paid; pinned by a test with a
    campus row, whose maximum stay is additionally forbidden by its own rule); this is a deliberate behaviour change of the
    validator with no effect on valid data (a campus row cannot carry a maximum stay, a resident row no commuter product). The
    annual tickets of Gifhorn, Bad Harzburg and
@@ -172,8 +183,8 @@ shared golden file.
 - **The income and distance elasticity of the person's utility in beta.** That term is a property of the whole trip utility, not
   of the comparison between two car parks (ASSUMPTION G1-d).
 - **Allow beta 0 in a schema-5 run model as a free sensitivity.** It would let the coefficient of the garage choice drift from
-  the mode choice; a price-free comparison is a schema-4 model (ruling R-A-17).
-- **Scope the commuter-product check to street_paid zones only** (the wording of the earlier Task A5 brief): it would leave a
+  the mode choice; a price-free comparison is a schema-4 model (decision 2).
+- **Scope the commuter-product check to street_paid zones only** (the wording of an earlier brief): it would leave a
   gap if the per-type bans of the two columns were loosened; the spec says "a zone" (decision 6).
 - **Enter the annual tickets of Gifhorn, Bad Harzburg and Braunlage as commuter products.** They keep a 2 h or local single-stay
   maximum, so they are no commuter product; spec A6 rejects it.
@@ -207,7 +218,8 @@ shared golden file.
   schema-5 tariff model by its exact key sets. The Java package of the same branch must be in the jar.
 - The report v4 is read by v3 readers unchanged in its first seven columns; the compare script reads v1 to v4.
 - The Python `street_feasible` of the reference reports the documented meaning (can the street serve the stay) on the decay-0
-  path as well, so `street_infeasible_count` agrees across languages (ruling R-A-17, Task A8). The golden file does not pin it.
+  path as well, so `street_infeasible_count` agrees across languages (ruling R-A-17, decisions 2 and 4). The golden file
+  does not pin it.
 - Limitations to state with every v3 result, additional to those of ADR-0140: the EV exemption is a rule for every BEV/PHEV
   owner (E1) and over-assigns it to owners of a mixed fleet; the marked-machine condition of Goslar and the charging-only
   regime of Wolfenbuettel are not modelled; the cost factor and beta are not estimated from any local price response; the

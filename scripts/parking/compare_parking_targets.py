@@ -160,7 +160,7 @@ HOME_PURPOSE = cost.HOME_PURPOSE
 PAID_OUTCOMES = (cost.PAID_METERED, cost.PAID_LONG_STAY, cost.PAID_CAMPUS_MEMBER, cost.PAID_CAMPUS_GUEST, cost.PAID_GARAGE,
                  cost.PAID_COMMUTER, cost.PAID_EXPECTED, cost.NO_FEASIBLE_OPTION)
 #: Outcomes that cost nothing by their own rule (a PAID_* call that happens to cost 0 ct is counted as paid). EV_EXEMPT (spec
-#: v3 A5, R-A-9) is one of them: the town's ordinance frees the electric car's stay within its limit.
+#: v3 A5) is one of them: the town's ordinance frees the electric car's stay within its limit.
 FREE_OUTCOMES = (cost.EMPLOYER_FREE, cost.RESIDENT_FREE, cost.OUTSIDE_FEE_HOURS, cost.FREE_WITHIN_LIMIT, cost.EV_EXEMPT)
 OTHER_OUTCOMES = (cost.HOME, cost.NO_ZONE)
 

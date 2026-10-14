@@ -249,10 +249,10 @@ def test_the_monthly_imputation_switch_is_on_in_every_config_and_matches_the_pre
 
 @pytest.mark.parametrize("name", CONFIGS)
 def test_the_option_price_coefficient_is_the_mode_choice_magnitude_in_every_config_and_matches_the_prepare_default(name):
-    # spec v3 A2 (ASSUMPTION G1-d, ruling R-A-7): the key carries the MAGNITUDE of BraunschweigModeParameters.betaCost_u_MU
+    # spec v3 A2 (ASSUMPTION G1-d, ADR-0142 decision 2): the key carries the MAGNITUDE of BraunschweigModeParameters.betaCost_u_MU
     # (-0.310998 in eqasim-java-bs), one money coefficient for the choice between parking options, no income or distance
-    # term. It is a release value that the Java startup check of Task A7 compares with the mode choice (1e-9), so a config that
-    # drifts from it is a defect, not a sensitivity: the sensitivity arm is 0 (the weights of v2).
+    # term. It is a release value that the Java startup check ParkingOptionPriceBetaCheck compares with the mode choice
+    # (1e-9), so a config that drifts from it is a defect, not a sensitivity: the sensitivity arm is 0 (the weights of v2).
     from braunschweig.matsim.simulation import prepare
 
     value = _config(name)["parking_option_price_beta_u_per_eur"]

@@ -628,7 +628,7 @@ def test_a_work_stay_in_a_station_zone_pays_the_cheaper_of_the_street_product_an
 
 def test_the_station_zones_change_neither_the_java_contract_nor_the_golden_file():
     # the zones and the tariff rows are data: they add no key to the tariff model and no case to the golden file; the schema
-    # is that of the last contract change (5 since spec v3 A1, A2 and A5, Task A6: the money coefficient, the garage maximum
+    # is that of the last contract change (5 since spec v3 A1, A2 and A5: the money coefficient, the garage maximum
     # stay and the EV exemption; 4 since spec Amendment H, the commuter decay) and the golden fixtures keep the committed
     # bytes whose LF hashes are pinned in test_parking_cost.py (ADR-0140 cross-language contract)
     from braunschweig.parking import tariff_export

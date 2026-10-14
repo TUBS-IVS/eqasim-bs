@@ -87,8 +87,12 @@ campus zone and every early-rule stay price exactly as before. The new outcome `
 - **Feasible options.** A stay whose chargeable duration (street fee window, seconds rounded up to minutes) exceeds the
   maximum stay of its zone has no street option unless the zone has a long-stay product (ASSUMPTION M3; the detail flag
   `GarageStayPrice.street_feasible`, which counts street OR zone commuter product, not the free function `street_feasible`,
-  decides the street weight). A garage or lot whose own `max_stay_min` is below the duration leaves the set too. A stay with no
-  feasible option is priced as the street at its metered cents, the maximum ignored, and named `NO_FEASIBLE_OPTION`; the
+  decides the street weight). A garage or lot whose own `max_stay_min` is below the duration leaves the set too.
+  The two maxima are compared on different durations, on purpose: a garage or lot maximum with the ELAPSED stay (the car
+  stands there all the time; `cost.option_feasible`, Java `GarageParkingCostCalculator`), the street maximum with the
+  chargeable stay inside the fee window (M1), so a lot that carries the zone's own maximum is never less restrictive than
+  its street but can be stricter. A stay with no feasible option is priced as the street at its
+  metered cents, the maximum ignored, and named `NO_FEASIBLE_OPTION`; the
   Python counters `street_unavailable` (a street-infeasible stay), `options_infeasible` and `no_feasible_option` of
   `cost.GarageOptionCounters` and the Java report columns `street_infeasible_count` and `no_feasible_option_count` make the
   case visible. An error is never raised for it; the arm check of Part C flags a high rate.
@@ -96,7 +100,7 @@ campus zone and every early-rule stay price exactly as before. The new outcome `
   evaluated as `(-d / lambda) - ((beta * c) / 100)` in this order (Java: `StrictMath.exp`; the order is a contract like the
   summation order of the expectation). beta is the config key `parking_option_price_beta_u_per_eur` (0.310998, the magnitude of
   `betaCost_u_MU`), written into the model as `option_price_beta_u_per_eur`; the Java class `ParkingOptionPriceBetaCheck`
-  refuses a run whose model value differs from the mode choice by more than 1e-9, also 0 in a schema-5 model (ruling R-A-17).
+  refuses a run whose model value differs from the mode choice by more than 1e-9, also 0 in a schema-5 model (ADR-0142 decision 2).
   The Python reference accepts beta 0 (finite and >= 0 is validated) and then reproduces the v2 weights bit for bit; the v2
   golden cases are pinned that way. beta is no free parameter: it is not calibrated (one share cannot identify it together
   with lambda).

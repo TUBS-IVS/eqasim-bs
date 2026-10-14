@@ -66,7 +66,7 @@ def test_the_contract_holds_the_g_l_lz_v_r_e_f_p_and_x_cases_each_with_its_minim
     # except R10 and R11 at L = 15; E01..E32 pin the garage options of spec Amendment E at L = 0 except E26 at L = 15
     # (E29..E32 the free options of E14: a free garage lowers the expected cost, never raises a street-free stay);
     # E33..E38 pin the separate commuter decay length of spec Amendment H (work and education against every other purpose);
-    # schema 6 (spec v3, Task A6) appends F01..F08 (maximum-stay feasibility), P01..P06 (the price in the option weights) and
+    # schema 6 (spec v3) appends F01..F08 (maximum-stay feasibility), P01..P06 (the price in the option weights) and
     # X01..X09 (the EV exemption), all at L = 0.
     families = (("G", "", range(1, 39), 0), ("L", "", range(1, 9), 15), ("L", "Z", range(1, 9), 0),
                 ("V", "", range(1, 24), 15))
@@ -725,7 +725,7 @@ def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():
 
 # The Java test resources hold byte copies of these two fixtures (eqasim-java-bs, braunschweig/src/test/resources/parking).
 # The hashes of the LF blobs are recorded in the ADR of the contract (ADR-0140 up to golden schema 5, ADR-0141 from tariff model
-# schema 5 and golden schema 6, spec v3 Task A6), so regenerating one fixture here without copying it to the Java repository
+# schema 5 and golden schema 6, spec v3), so regenerating one fixture here without copying it to the Java repository
 # fails this test as well as the ADR record, instead of leaving the two sides apart.
 PINNED_FIXTURE_SHA256 = {
     "parking_golden_cases.json": "ac635f3b64a56fb7dd60e2abbb457a7efcdf14003efc02739679ed7b95bea080",
