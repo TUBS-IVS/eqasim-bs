@@ -91,6 +91,7 @@ import pandas as pd
 import curation_common as cc
 import bs_monthly_products as bsm
 import garage_supplement as sup
+import large_lots as ll
 import municipal_zones as mz
 import regional_garage_specs as specs
 import regional_zones as rz
@@ -165,7 +166,11 @@ LICENSE = (
     "contributors); the Braunschweig monthly package of 2026-10-08 (operator pages and the city page of the garages, "
     "evidence copies that the package keeps; it states no general licence for the re-publication of the original files) and the "
     "two captures of the public Contipark pages (a configurator text and a location page, retrieved 2026-10-08 on the owner's "
-    "instruction; the terms of the pages are not verified)")
+    "instruction; the terms of the pages are not verified); and the large-lot research package of 2026-10-13 (the surface lots "
+    "of the eight towns: capacities from the cities, operators, tourism pages, OpenStreetMap tags and area estimates, positions "
+    "inside OpenStreetMap parking areas (the research point of a lot lies inside the area that geometry_source_url names), tariff "
+    "facts from the pages of the cities and operators; OpenStreetMap-derived values are under the ODbL 1.0, (c) OpenStreetMap "
+    "contributors; the package states that it claims no additional release by the cities or operators)")
 ATTRIBUTION = (
     "Tariffs and capacities after the garage operators and the cities of Braunschweig, Wolfsburg, Wolfenbuettel, Gifhorn, "
     "Helmstedt, Peine, Salzgitter and Goslar (source_url per feature); positions after the city feeds, the operators' map "
@@ -178,7 +183,11 @@ ATTRIBUTION = (
     "after their own pages, the free car parks after the pages of the Wolfsburg Marketing GmbH and the Theater Wolfsburg) and "
     "Braunschweig monthly package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + "; the monthly products of the "
     "Braunschweig garages after the operators' pages, with the Contipark configurator capture of the evidence directory "
-    + bsm.EVIDENCE_DIRECTORY_NAME + ", SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + ").")
+    + bsm.EVIDENCE_DIRECTORY_NAME + ", SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + ") and large-lot research package "
+    + ll.LOTS_FILE + " (SHA-256 " + ll.LOTS_SHA256 + "; the large public surface lots of the eight towns, spec Amendment I; "
+    "(c) OpenStreetMap contributors for the capacities, areas and positions taken from OpenStreetMap: the position of a lot is "
+    "the research point of the package inside the parking area that geometry_source_url names, an OpenStreetMap object for most "
+    "lots).")
 
 #: The definition of every column of the dataset (the foreign member ``documentation`` of the file and the data record).
 COLUMN_GLOSSARY = {
@@ -187,13 +196,16 @@ COLUMN_GLOSSARY = {
                            "features there; this dataset joins by the feature's source id)",
     "name": "name of the garage in the package layer, ASCII transliteration",
     "facility_kind": "what the row is (ruling R-4b3-0): garage (a multi-storey or underground garage, or a car park the sources "
-                     "call one) or surface_lot (an open car park of the Wolfsburg city layer); the pricing treats both alike",
+                     "call one) or surface_lot (an open car park: the large public surface lots of the eight towns of the research "
+                     "package, spec Amendment I); the pricing treats both alike",
     "operator": "operator as the package states it (feature or facility attribute) or, where the page named in source_url is "
                 "the operator's own page, that operator (the notes say which); empty where no source names one",
     "municipality": "municipality of the garage (the municipality of its zone tariff rows)",
     "municipality_ags": "8-digit AGS of the municipality",
     "capacity_reported": "spaces as the package's facility record reports them, empty where it reports none or conflicting "
-                         "values; the other observations are in the notes; no capacity is a model input",
+                         "values (a large surface lot: only a REPORTED capacity, never an OSM value or an area estimate, which "
+                         "the notes give with their origin); the other observations are in the notes; no capacity is a model "
+                         "input",
     "capacity_scope": "what capacity_reported counts, as the package states it",
     "garage_hourly_rate_eur": "EUR per hour of the garage tariff; the price of one billing unit is this rate times "
                               "garage_billing_unit_min / 60 (garage columns of the tariff table, spec Amendment A6); empty "
@@ -253,13 +265,14 @@ COLUMN_GLOSSARY = {
     "priced": "true exactly when the garage columns express the published tariff (the garage core is set)",
     "not_priced_reason": "why a garage is listed and not priced: one of " + ", ".join(sorted(pg.NOT_PRICED_REASONS)),
     "assumptions": "';'-separated ids of the assumptions the priced row rests on: " + "; ".join(
-        f"{key} = {text}" for key, text in pg.ASSUMPTIONS.items()),
+        f"{key} = {pg.assumption_status_text(key)}" for key in pg.ASSUMPTIONS),
     "source_url": "primary source of the tariff (the rate rule's page; for an unpriced garage the page or layer that shows the "
                   "reason)",
     "source_date": "retrieval date of source_url (ISO)",
     "tariff_rule_ids": "';'-separated package rule ids the values (or the reason) rest on; for a car park that is free by "
                        "ASSUMPTION P12 the field decision of its fee status",
-    "geometry_method": "how the position was found, as the package states it",
+    "geometry_method": "how the position was found, as the package states it (a large surface lot: the research point of the "
+                       "package inside the parking area, no entrance)",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
@@ -267,7 +280,8 @@ COLUMN_GLOSSARY = {
                       "finding of it) lists that package's SHA-256 as well, in the order regional, supplement, follow-up, "
                       "Wolfsburg car-park package, joined by ';'; "
                       "a Braunschweig row cites the monthly package " + bsm.PACKAGE_FILE + " (spec Amendment F1; its monthly "
-                      "status or product is read from it) as its last hash, so a row has at most four",
+                      "status or product is read from it) as its last hash; a large surface lot (spec Amendment I) cites the "
+                      "research package " + ll.LOTS_FILE + " alone; a row has at most five",
     "notes": "the tariff in words, every assumption and reading by name, what the columns do not express (other tiers, "
              "caps not applied, ignored rules, conflicts), the rules that are not preferred and not used, and the other "
              "capacity observations",
@@ -413,7 +427,9 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
                         expected_followup_sha256: Optional[str] = None, lots_path=None,
                         expected_lots_sha256: Optional[str] = None, zones=None, bs_monthly_path=None,
                         evidence_directory=None, expected_bs_monthly_sha256: Optional[str] = None,
-                        expected_evidence_sums_sha256: Optional[str] = None) -> dict:
+                        expected_evidence_sums_sha256: Optional[str] = None, large_lots_path=None,
+                        expected_large_lots_sha256: Optional[str] = None, lot_threshold: int = ll.DEFAULT_THRESHOLD,
+                        tariffs=None, free_evidence_directory=None) -> dict:
     """The verified garage layers, facility records, tariff rules and sources of the owner's package in ``directory``, and, where
     given, the supplement package (``supplement_path``, spec E12) and the follow-up package (``followup_path``, spec E13) merged
     into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to) and the
@@ -422,13 +438,21 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
     the lot decisions use join the rules), and the Braunschweig monthly package (``bs_monthly_path``, the zip, and its Contipark
     evidence directory ``evidence_directory``, spec Amendment F1, ``bs_monthly_products``: the monthly status of every
     Braunschweig garage and the products of the recorded facilities, read into ``inputs["bs_monthly_products"]`` and
-    ``inputs["bs_recorded"]``).
+    ``inputs["bs_recorded"]``) and the research package of the large surface lots (``large_lots_path``, spec Amendment I,
+    ``large_lots``: every record is an option or a QA row under the size and access policy at ``lot_threshold``; it needs the
+    committed zone polygons ``zones``, the tariff table ``tariffs`` (a DataFrame of ``parking_tariffs_2026.csv``) and, for the free
+    Wolfsburg lots, the folder ``free_evidence_directory`` with the archived evidence pages). The large-lot package supersedes the
+    Wolfsburg car-park package for the rows of the dataset (one row per site, spec Amendment I2), so passing both stops the step.
 
     The regional package must exist as ``regional_zones.PACKAGE_FILE`` with exactly the pinned SHA-256 (or ``expected_sha256``,
     for a synthetic test package), else ``SystemExit``; so must the other two zips. Returns {"file": {"file", "sha256",
     "bytes"}, "layers" (layer -> GeoDataFrame in EPSG:25832), "facilities" (facility_id -> record), "rules" (rule_id ->
     rule), "sources" (source_id -> record), "wob_lots" (the GeoDataFrame of the Wolfsburg car parks), "ledger" (the per-layer
     accounting)}."""
+    if large_lots_path is not None and lots_path is not None:
+        raise SystemExit("the large-lot package (--large-lots-zip) supersedes the Wolfsburg car-park package for the rows of the "
+                         "dataset (spec Amendment I2: one row per site); pass only one of --large-lots-zip and "
+                         "--wolfsburg-lots-zip")
     path, sha256 = rz.verify_package_file(directory, expected_sha256)
     layers = {layer: rz.read_zip_layer(path, layer) for layer in GARAGE_LAYERS}
     facilities = {}
@@ -454,6 +478,15 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
         if supplement_path is None:
             raise SystemExit("the follow-up package (--followup-zip) refines the supplement package: pass --supplement-zip too")
         sup.attach_followup(inputs, sup.load_followup(followup_path, expected_followup_sha256), specs.FOLLOWUP_RELEASED)
+    if large_lots_path is not None:
+        if zones is None or tariffs is None:
+            raise SystemExit("the large-lot package assigns zone products and finds the zone of a point: pass the committed zone "
+                             "polygons (--zones) and the tariff table (--tariffs)")
+        if lot_threshold not in (ll.DEFAULT_THRESHOLD,) + ll.SENSITIVITY_THRESHOLDS:
+            raise SystemExit(f"the size threshold {lot_threshold} is none of the release value {ll.DEFAULT_THRESHOLD} and the "
+                             f"sensitivities {list(ll.SENSITIVITY_THRESHOLDS)} (spec Amendment I2)")
+        inputs["large"] = {"package": ll.load_package(large_lots_path, expected_large_lots_sha256), "threshold": lot_threshold,
+                           "zones": zones, "tariffs": tariffs, "evidence": ll.load_free_evidence(free_evidence_directory)}
     if lots_path is not None:
         if zones is None:
             raise SystemExit("the Wolfsburg car-park package classifies its points by the committed zone polygons: pass them "
@@ -1793,6 +1826,512 @@ def build_lot(inputs: dict, spec: dict) -> dict:
     return row
 
 
+# ---------------------------------------------------------------- large surface lots (spec Amendment I, Task 4j)
+#: How the position of a large lot was found: the research point of the package inside the parking area (no entrance).
+LARGE_LOT_GEOMETRY_METHOD = "package_research_point_in_parking_area"
+LARGE_LOT_ID_PREFIX = "lot_"
+#: Warn when more than this share (0 to 1) of the lot options rests on ASSUMPTION P14 (an imputed product): then the tariff of the
+#: lots mostly rests on a median of other lots and not on their own documents (fallback transparency).
+LARGE_LOT_IMPUTATION_WARNING_SHARE = 0.25
+#: The QA record id of a non-option package record.
+LARGE_LOT_QA_PREFIX = "candidate_lot_"
+
+
+class TariffNotExpressible(Exception):
+    """The documented tariff of a lot cannot be written in the schedule grammar of ``braunschweig.parking.garages`` (spec Amendment
+    I3): the row is stopped and reported, never approximated. Raised only around the encoders; a mistake of an owner decision
+    stops the whole step instead."""
+
+
+#: Characters of the research package's texts that have a plain ASCII reading (the euro sign, the section sign, comparison signs);
+#: every other character without an ASCII form still stops the step in ``curation_common.ascii_transliteration``.
+LOT_TEXT_TO_ASCII = str.maketrans({"\u20ac": "EUR", "\u00a7": "sec.", "\u2265": ">=", "\u2264": "<=", "\u00d7": "x"})
+
+
+def _lot_ascii(text) -> str:
+    """ASCII form of a text of the research package: the characters of ``LOT_TEXT_TO_ASCII`` read as ASCII, then the
+    transliteration of the other curation files (a character without an ASCII form stops the step)."""
+    return _ascii(str(text).translate(LOT_TEXT_TO_ASCII))
+
+
+def large_lot_garage_id(facility_key: str) -> str:
+    """The stable dataset key of a package site: ``lot_`` and the package's facility key in lower-case ASCII (one key per
+    site, spec Amendment I2; the geometry components and aliases of a site never become keys)."""
+    return LARGE_LOT_ID_PREFIX + re.sub(r"[^a-z0-9]+", "_", facility_key.lower()).strip("_")
+
+
+def _osm_url(record: dict) -> Optional[str]:
+    """The OpenStreetMap URL of the first object of a record that the package matched to it, else None."""
+    osm_ids = record.get("osm_ids") or []
+    return f"https://www.openstreetmap.org/{osm_ids[0]}" if osm_ids else None
+
+
+def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> list:
+    """The sentences naming what a lot row does not carry: the maximum stay and the weekend window of a used component (the garage
+    columns have no field for a maximum stay and the model's weekday is Monday to Friday, spec D1) and the components that set no
+    value, with their reason. Restrictions, not tariff components: they never stop a row, they are listed and counted. The
+    30 min of a free short stay (the Broetchentaste) is the length of the free band and no maximum stay of the lot."""
+    stays, weekends = {}, {}
+    for rule_id in used_rule_ids:
+        raw = package["rules"].get(rule_id)
+        if raw is None:
+            continue
+        if raw.get("max_stay_minutes") and raw.get("billing_period") not in ll.FREE_SHORT_STAY_BILLING_PERIODS:
+            stays.setdefault(int(raw["max_stay_minutes"]), []).append(rule_id)
+        schedule = raw.get("schedule")
+        if isinstance(schedule, dict) and any(set(window["days"]) & {"SA", "SU"}
+                                              for window in schedule.get("weekly_windows") or []):
+            weekends.setdefault(str(schedule.get("raw")), []).append(rule_id)
+    texts = [f"maximum stay {minutes} min ({', '.join(ids)})" for minutes, ids in sorted(stays.items())]
+    texts += [f"the Saturday window of '{raw}' ({', '.join(ids)})" for raw, ids in sorted(weekends.items())]
+    sentences = []
+    if texts:
+        sentences.append("Not modelled (the garage columns carry no maximum stay; the model's day is an average weekday, spec D1): "
+                         + "; ".join(texts) + ".")
+    for rule_id, why in ignored.items():
+        raw = package["rules"][rule_id]
+        sentences.append(f"Not used: {rule_id} ({raw.get('billing_period')}, {raw.get('amount_eur')} EUR): {why}.")
+    return sentences
+
+
+def _encode_or_not_expressible(spec: dict, rules: dict) -> dict:
+    """:func:`encode_tariff`, with the refusal of the encoder (a component the grammar cannot express) as ``TariffNotExpressible``.
+    A duration schedule that opens with a closed free band (the free short stay, spec Amendment I3) is a grace period whichever
+    form wrote it (the ``grace`` form lists ASSUMPTION P10 itself): the result names P10 once."""
+    try:
+        encoded = encode_tariff(spec, rules)
+    except SystemExit as error:
+        raise TariffNotExpressible(str(error)) from None
+    text = encoded["values"].get("tariff_duration_bands")
+    if text and "P10" not in encoded["assumptions"]:
+        bands = pg.parse_duration_bands(text)
+        if len(bands) > 1 and bands[0].kind == "free" and bands[0].to_min is not None:
+            encoded = {**encoded, "assumptions": [*encoded["assumptions"], "P10"]}
+    return encoded
+
+
+def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
+    """The encoded tariff of a lot from its owner decision (:func:`encode_tariff` of the rules converted from the package or the
+    street product of its zone) plus the facts for the notes: {"encoded", "rules", "used" (package rule ids that set a value),
+    "zone_sentence" (the consistency check of a zone product, else None)}."""
+    large = inputs["large"]
+    package = large["package"]
+    garage_id = large_lot_garage_id(key)
+    ignored = spec.get("ignored") or {}
+    forms = [name for name in ("zone_product", "free", "rate", "grace", "bands") if spec.get(name)]
+    if len(forms) != 1:
+        raise SystemExit(f"large lot {key}: the owner decision names exactly one of zone_product, free, rate, grace and bands, "
+                         f"found {forms}")
+    roles = spec.get("roles") or {}
+    named = [spec[name] for name in ("free", "rate", "cap", "check") if spec.get(name)]
+    named += list(spec.get("grace") or ()) + list(spec.get("bands") or ())
+    held = set(package["facilities"][key].get("tariff_rule_ids") or [])
+    missing = sorted(rule_id for rule_id in named if rule_id.removesuffix(":cap") not in held)
+    if missing:
+        # a mistake of the owner decision (a component the facility does not hold), never a tariff gap: it stops the whole step
+        raise SystemExit(f"large lot {key}: the owner decision names the components {missing}, which the facility does not hold")
+    if forms[0] == "zone_product":
+        try:
+            product = ll.zone_product_rules(large["tariffs"], spec["zone_product"], key)
+        except SystemExit as error:
+            raise TariffNotExpressible(str(error)) from None
+        zone_polygon = large["zones"].set_index("zone_id").geometry.get(spec["zone_product"])
+        point = package["points"].loc[key, "geometry"]
+        if zone_polygon is None or not zone_polygon.contains(point):
+            raise SystemExit(f"large lot {key}: the owner decision gives it the street product of {spec['zone_product']}, but "
+                             "its point does not lie inside that zone of the committed zone polygons")
+        sentence, verdicts = ll.zone_check_sentence(package, key, spec["check"], product, spec["zone_product"])
+        rules = {**ll.convert_rules(package, key, roles, set()), **product["rules"]}
+        form = {"rate": product["rate"], "window": "rate", **({"cap": product["cap"]} if product["cap"] else {})}
+        encoded = _encode_or_not_expressible({"garage_id": garage_id, **form}, rules)
+        used = [spec["check"]]
+        row = product["row"]
+        kept = []
+        if row.get("max_stay_min") is not None:
+            kept.append(f"maximum stay {int(row['max_stay_min'])} min")
+        if row.get("long_stay_product_eur") is not None:
+            kept.append(f"long-stay product {float(row['long_stay_product_eur']):.2f} EUR")
+        zone_limitation = ("Not modelled (the garage columns carry no maximum stay or long-stay product): the zone product's "
+                           + " and ".join(kept) + ".") if kept else None
+        return {"encoded": encoded, "rules": rules, "used": used, "zone_sentence": sentence, "verdicts": verdicts,
+                "zone_limitation": zone_limitation,
+                "tariff_rule_ids": [f"parking_tariffs_2026.csv:{spec['zone_product']}", spec["check"]]}
+    used = set()
+    for field in ("free", "rate", "cap"):
+        if spec.get(field):
+            used.add(spec[field])
+    used.update(spec.get("grace") or ())
+    used.update(spec.get("bands") or ())
+    rules = ll.convert_rules(package, key, roles, used)
+    unknown = sorted(set(ignored) - set(rules))
+    if unknown:
+        raise SystemExit(f"large lot {key}: the owner decision ignores the components {unknown}, which the facility does not hold")
+    form = {name: spec[name] for name in ("free", "rate", "grace", "bands", "cap", "window") if name in spec}
+    encoded = _encode_or_not_expressible({"garage_id": garage_id, **form}, rules)
+    return {"encoded": encoded, "rules": rules, "used": sorted(used), "zone_sentence": None, "verdicts": [],
+            "tariff_rule_ids": list(encoded["rule_ids"])}
+
+
+def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumptions=(), basis_sentences=()) -> dict:
+    """The dataset row (properties and ``geometry``, EPSG:25832) of one large lot (``facility_kind`` surface_lot): the research
+    point of the package as it stands, the capacity only where the package REPORTS it, the tariff as encoded, and notes that state
+    the selection (ASSUMPTION L50), the tariff, every assumption and reading by name, the zone consistency check and what is not
+    modelled. ``lot`` is the result of :func:`_large_lot_encoding`; ``extra_assumptions`` (ASSUMPTION P14) and
+    ``basis_sentences`` come from the imputation."""
+    large = inputs["large"]
+    package, threshold = large["package"], large["threshold"]
+    record = package["facilities"][key]
+    encoded = lot["encoded"]
+    ags, municipality = specs.TOWNS[ll.TOWN_KEYS[record["city"]]]
+    point = package["points"].loc[key, "geometry"]
+    primary_ids = (lot.get("source_rules") or [rule_id for rule_id in lot["used"] if rule_id in package["rules"]]
+                   or list(record.get("tariff_rule_ids") or []))
+    source_url, source_date = ll.source_of(
+        package, [source for rule_id in primary_ids for source in package["rules"][rule_id].get("source_ids") or []]
+        + list(record.get("source_ids") or []))
+    geometry_url = _osm_url(record) or ll.source_of(package, record.get("coordinate_source_ids") or [])[0] \
+        if (_osm_url(record) or record.get("coordinate_source_ids")) else source_url
+    capacity, scope = None, None
+    if record.get("capacity_selection_method") in ll.REPORTED_METHODS and record.get("capacity_reported") is not None:
+        capacity = int(record["capacity_reported"])
+        scope = _lot_ascii(f"{record.get('capacity_applies_to')}; evidence level {record.get('capacity_evidence_level')}"
+                       + (f"; as of {record['capacity_as_of']}" if record.get("capacity_as_of") else ""))
+    assumptions = list(encoded["assumptions"]) + [item for item in extra_assumptions if item not in encoded["assumptions"]]
+    notes = [f"Package facility {key} of the research package {ll.LOTS_FILE} (SHA-256 {package['file']['sha256']}), "
+             f"'{_lot_ascii(record['name'])}' ({record['city']}); position: {LARGE_LOT_GEOMETRY_METHOD}, the research point of the "
+             "package inside the parking area (no entrance, no ring, no tariff extent).",
+             f"Option of the dataset under ASSUMPTION L50 (spec Amendment I2): access class {record.get('access_class')}, "
+             f"{ll.capacity_phrase(record)} against the threshold {threshold}; facility_kind surface_lot whatever its tariff is "
+             "(spec Amendment I1: the facility type is independent of the tariff, the street stays the roadside parking)."]
+    aliases = sorted(point_id for point_id, target in package["aliases"].items() if target == key)
+    if aliases:
+        notes.append("The municipal point(s) " + ", ".join(aliases) + " of the Wolfsburg city layer are this site (alias "
+                     "resolved by the package, one row per site).")
+    if lot["zone_sentence"]:
+        notes.append(f"Tariff: the street product of the zone {spec['zone_product']} (spec Amendment I1"
+                     + (", owner decision A" if spec["zone_product"].startswith(("bs_hbf", "bs_bga_markthalle")) else "")
+                     + f"): {encoded['sentence']}. {lot['zone_sentence']}.")
+    elif "p14" in spec:
+        notes.append("Tariff: " + encoded["sentence"] + ".")
+    else:
+        notes.append(f"Priced from the package components {', '.join(lot['tariff_rule_ids'])} (owner decision of spec "
+                     f"Amendment I3): {encoded['sentence']}.")
+    notes.extend(basis_sentences)
+    if "P4" in assumptions:
+        notes.append(_p4_lot_note(inputs["rounding_census"]))
+    if "P5" in assumptions:
+        notes.append("ASSUMPTION P5: the package states no charging times of the rate, so the fee window is 0-24 h.")
+    if "P8" in assumptions:
+        notes.append(f"ASSUMPTION P8: {pg.ASSUMPTIONS['P8']}.")
+    if "P10" in assumptions:
+        if not spec.get("p10_basis"):
+            raise SystemExit(f"large lot {key}: a row that rests on ASSUMPTION P10 states its basis in p10_basis")
+        notes.append(f"ASSUMPTION P10: {pg.ASSUMPTIONS['P10']}. Basis of the reading: {spec['p10_basis']}.")
+    if "P14" in assumptions:
+        notes.append(f"ASSUMPTION P14: {pg.ASSUMPTIONS['P14']}.")
+    notes.extend(_reading_notes(encoded["readings"], lot["rules"]))
+    if spec.get("comment"):
+        comment = _lot_ascii(spec["comment"])
+        notes.append(comment[:1].upper() + comment[1:] + ("" if comment.endswith(".") else "."))
+    notes.extend(_lot_ascii(sentence) for sentence in _lot_limitations(package, lot["used"], spec.get("ignored") or {}))
+    if lot.get("zone_limitation"):
+        notes.append(lot["zone_limitation"])
+    if record.get("access_notes"):
+        notes.append("Access (package): " + _lot_ascii(record["access_notes"]).rstrip(".") + ".")
+    row = {"garage_id": large_lot_garage_id(key), "package_facility_id": key, "name": _lot_ascii(record["name"]),
+           "facility_kind": "surface_lot", "operator": None, "municipality": municipality, "municipality_ags": ags,
+           "capacity_reported": capacity, "capacity_scope": scope, "monthly_eur": None, "monthly_source_url": None,
+           "monthly_product": None, "priced": True, "not_priced_reason": None,
+           "assumptions": ";".join(assumptions) or None, "source_url": source_url, "source_date": source_date,
+           "tariff_rule_ids": ";".join(lot["tariff_rule_ids"]), "geometry_method": LARGE_LOT_GEOMETRY_METHOD,
+           "geometry_source_url": geometry_url, "package_sha256": package["file"]["sha256"], "geometry": point}
+    for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
+        row[column] = encoded["values"][column]
+    row["notes"] = _lot_ascii(" ".join(notes))
+    row["_facts"] = {"tiered": False, "banded": False, "cap": encoded["values"]["garage_daily_cap_eur"] is not None
+                     or any(reading[0] == "cap" for reading in encoded["readings"]), "readings": encoded["readings"],
+                     "supplement": False, "followup": False, "point": False, "priced": True, "followup_values": False,
+                     "lot": True, "large": True}
+    return row
+
+
+def _free_evidence(key: str, evidence: dict) -> tuple:
+    """("ok", entry) where the free status of one of the Wolfsburg lots of ``WOB_FREE_LOT_EVIDENCE`` rests on an archived page that
+    holds the quotation, else ("missing", the sentence of what was searched or still needs archiving)."""
+    wanted = specs.WOB_FREE_LOT_EVIDENCE[key]
+    if wanted.get("evidence") and wanted["evidence"] in evidence:
+        entry = evidence[wanted["evidence"]]
+        text = Path(entry["path"]).read_bytes().decode("utf-8", errors="replace")
+        if wanted["quotation"] in text:
+            return "ok", entry
+        raise SystemExit(f"the archived evidence {entry['path']} does not hold the quotation {wanted['quotation']!r} that the "
+                         f"free status of {key} rests on")
+    return "missing", wanted["not_found"]
+
+
+def _qa_candidate(record: dict, reason: str, threshold: int, detail: str = "") -> dict:
+    """The QA row of a package record that is no option: the reason with its definition, the facts the policy used (access class,
+    capacity for the threshold with its origin) and the package's own notes."""
+    ags = specs.TOWNS[ll.TOWN_KEYS[record["city"]]][0]
+    notes = record.get("notes")
+    notes = " ".join(notes) if isinstance(notes, list) else (notes or "")
+    text = (f"{pq.CANDIDATE_REASONS[reason]}; threshold {threshold}: access class {record.get('access_class')}, "
+            f"{ll.capacity_phrase(record)}" + (f"; {detail}" if detail else "") + (f"; package notes: {notes}" if notes else ""))
+    return {"record_id": LARGE_LOT_QA_PREFIX + large_lot_garage_id(record["facility_key"])[len(LARGE_LOT_ID_PREFIX):],
+            "municipality_ags": ags, "subject": f"{_lot_ascii(record['name'])} ({record['facility_key']})", "reason": reason,
+            "evidence": f"facilities.json {record['facility_key']}; access_class {record.get('access_class')}; "
+                        f"capacity_selected_for_threshold {record.get('capacity_selected_for_threshold')}",
+            "note": _lot_ascii(text)}
+
+
+def build_large_lots(inputs: dict) -> dict:
+    """Apply the size and access policy (spec Amendment I2, ASSUMPTION L50) to every record of the research package and build the
+    rows of the options and the QA rows of the others. Returns {"rows" (dataset rows in town and package order), "qa" (QA
+    candidate rows), "notes" (garage_id -> the QA note of an option row), "counts"}.
+
+    Per record: ``large_lots.decide`` (not open, no surface lot, alias, unconfirmed, access, capacity); an option that has no
+    point is ``lot_no_position``; one of the Wolfsburg lots of ``WOB_FREE_LOT_EVIDENCE`` is free only on archived evidence
+    (``lot_free_evidence_missing`` otherwise); a mixed paid and free site is ``lot_mixed_tariff_unseparated`` (no blanket tariff,
+    spec I3); a site whose tariff the grammar cannot express is ``lot_tariff_not_expressible`` with the named error (never
+    approximated; counted and warned); a site without a stated tariff takes the median product of the priced lots of its zone
+    (ASSUMPTION P14, spec I4) or, with fewer than two, of its municipality, else is ``lot_tariff_unknown``. Every option needs an
+    owner decision in ``LARGE_LOT_SPECS``; an option without one stops the step. The counts are logged as rates (primary tariff
+    against imputed, free, restricted)."""
+    large = inputs["large"]
+    package, threshold, zones = large["package"], large["threshold"], large["zones"]
+    evidence = large["evidence"]
+    unknown_specs = sorted(set(specs.LARGE_LOT_SPECS) - set(package["facilities"]))
+    if unknown_specs:
+        raise SystemExit(f"LARGE_LOT_SPECS names facilities that the package does not hold: {unknown_specs}")
+    unknown_evidence = sorted(set(specs.WOB_FREE_LOT_EVIDENCE) - set(package["facilities"]))
+    if unknown_evidence:
+        raise SystemExit(f"WOB_FREE_LOT_EVIDENCE names facilities that the package does not hold: {unknown_evidence}")
+    owner_public = frozenset(specs.WOB_FREE_LOT_EVIDENCE)
+    options, qa, failures, pending = {}, [], [], []
+    for key, record in package["facilities"].items():
+        reason, detail = ll.decide(record, threshold, owner_public), specs.LARGE_LOT_QA_DETAILS.get(key, "")
+        spec = specs.LARGE_LOT_SPECS.get(key)
+        if reason is None and key not in package["points"].index:
+            reason, detail = "lot_no_position", "the package states no position of the site, and none is invented"
+        if reason is None and key in specs.WOB_FREE_LOT_EVIDENCE:
+            state, text = _free_evidence(key, evidence)
+            if state == "missing":
+                reason, detail = "lot_free_evidence_missing", text
+        if reason is None and spec is None and key not in specs.WOB_FREE_LOT_EVIDENCE:
+            raise SystemExit(f"large lot {key} is an option at the threshold {threshold} but has no owner decision in "
+                             "regional_garage_specs.LARGE_LOT_SPECS (spec Amendment I3)")
+        if reason is None and spec is not None and spec.get("mixed"):
+            if record.get("price_readiness") != "requires_subarea_split":
+                raise SystemExit(f"large lot {key}: the owner decision marks it mixed, but the package states the price readiness "
+                                 f"{record.get('price_readiness')!r}")
+            reason, detail = "lot_mixed_tariff_unseparated", "the package states the price readiness requires_subarea_split"
+        if reason is None and spec is not None and spec.get("p14"):
+            component = package["rules"].get(spec["unknown_component"])
+            if component is None or component.get("amount_eur") is not None or component.get("billing_unit_minutes") is not None:
+                raise SystemExit(f"large lot {key}: ASSUMPTION P14 imputes a tariff that the package does not state, but "
+                                 f"{spec['unknown_component']} states one")
+            pending.append(key)
+            continue
+        if reason is None:
+            try:
+                if key in specs.WOB_FREE_LOT_EVIDENCE:
+                    options[key] = _archived_free_row(inputs, key)
+                else:
+                    lot = _large_lot_encoding(inputs, key, spec)
+                    options[key] = _large_lot_row(inputs, key, spec, lot)
+                    options[key]["_lot"], options[key]["_spec"] = lot, spec
+            except TariffNotExpressible as error:
+                failures.append((key, str(error)))
+                reason, detail = "lot_tariff_not_expressible", f"the named error: {error}"
+        if reason is not None:
+            qa.append(_qa_candidate(record, reason, threshold, detail))
+    imputed_rows = _impute_p14(inputs, options, pending, qa, zones)
+    options.update(imputed_rows)
+    for facility_id, row in _subpoint_rows(package, threshold):
+        qa.append(row)
+    town_order = {town: index for index, town in enumerate(specs.TOWNS)}
+    order = {key: index for index, key in enumerate(package["facilities"])}
+    rows = []
+    notes = {}
+    for key in sorted(options, key=lambda item: (town_order[ll.TOWN_KEYS[package["facilities"][item]["city"]]], order[item])):
+        row = options[key]
+        info = {name: row.pop(name) for name in ("_lot", "_spec", "_qa_note") if name in row}
+        notes[row["garage_id"]] = info.get("_qa_note") or _large_qa_note(row, info)
+        rows.append(row)
+    counts = _large_lot_counts(package, rows, qa, failures, imputed_rows, threshold)
+    return {"rows": rows, "qa": qa, "notes": notes, "counts": counts, "failures": failures}
+
+
+def _large_qa_note(row: dict, info: dict) -> str:
+    """The note of the QA garage row of a large lot: the tariff in words with its assumptions and the zone consistency verdict."""
+    lot = info["_lot"]
+    note = lot["encoded"]["sentence"] + (f" ({row['assumptions'].replace(';', ', ')})" if row["assumptions"] else "")
+    if lot.get("verdicts"):
+        note += "; consistency check against the zone product: " + "; ".join(lot["verdicts"])
+    return _lot_ascii(note)
+
+
+def _archived_free_row(inputs: dict, key: str) -> dict:
+    """The row of one of the free Wolfsburg lots of spec Amendment I5a on its archived evidence page: the free schedule
+    ``0- free`` (the page states the lot free; no assumption), the page as the source, the owner decision that the lot is general
+    public named in the notes."""
+    state, entry = _free_evidence(key, inputs["large"]["evidence"])
+    if state != "ok":
+        raise SystemExit(f"large lot {key}: no archived evidence for its free status")
+    encoded = _free_encoding([f"evidence:{entry['file']}"], [], "free of charge for every stay (the free schedule 0- free, the "
+                                                                "fee window 0-24 h is formal)")
+    lot = {"encoded": encoded, "rules": {}, "used": [], "zone_sentence": None, "verdicts": [],
+           "tariff_rule_ids": [f"evidence:{entry['file']}"]}
+    spec = {"comment": f"free status and public access by owner decision (spec Amendment I5a, which withdraws ASSUMPTION "
+                       f"P12) on the archived evidence page {entry['file']} ({entry['url']}, retrieved "
+                       f"{entry['retrieved']}, SHA-256 "
+                       f"{entry['sha256']}): {entry['statement']}"}
+    row = _large_lot_row(inputs, key, spec, lot)
+    row["source_url"], row["source_date"] = entry["url"], entry["retrieved"]
+    row["_lot"], row["_spec"] = lot, spec
+    return row
+
+
+def _zone_ids_of(zones: gpd.GeoDataFrame, point) -> list:
+    """The ids of the committed zone polygons that contain ``point``, sorted."""
+    return sorted(zone for zone, polygon in zip(zones["zone_id"], zones.geometry) if polygon.contains(point))
+
+
+TARIFF_VALUE_COLUMNS = pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS
+
+
+def _same_zone(package: dict, zones: gpd.GeoDataFrame, zone_ids: list):
+    """A test of a package facility key: whether its point lies inside one of the zones ``zone_ids``."""
+    def test(other: str) -> bool:
+        return bool(set(_zone_ids_of(zones, package["points"].loc[other, "geometry"])) & set(zone_ids))
+
+    return test
+
+
+def _same_municipality(package: dict, ags: str):
+    """A test of a package facility key: whether its town is the one with the AGS ``ags``."""
+    def test(other: str) -> bool:
+        return specs.TOWNS[ll.TOWN_KEYS[package["facilities"][other]["city"]]][0] == ags
+
+    return test
+
+
+def _impute_p14(inputs: dict, options: dict, pending: list, qa: list, zones: gpd.GeoDataFrame) -> dict:
+    """ASSUMPTION P14 (spec Amendment I4): the rows of the lots whose general tariff the package does not state. The donors are the
+    PAID lot options (a free schedule is no product to take a median of) that carry a tariff of their own; the median product of
+    the donors in the same zone (at least two), else in the same municipality (at least two), is the lot's complete schedule
+    (``large_lots.median_schedule``: ordered by the price of 60 min, a tie of different schedules stops the step). A lot with fewer
+    than two donors on both levels is ``lot_tariff_unknown``. Logs primary (own tariff) against imputed counts."""
+    large = inputs["large"]
+    package, threshold = large["package"], large["threshold"]
+    rows = {}
+    for key in pending:
+        record = package["facilities"][key]
+        point = package["points"].loc[key, "geometry"] if key in package["points"].index else None
+        if point is None:
+            qa.append(_qa_candidate(record, "lot_no_position", threshold, "the package states no position of the site"))
+            continue
+        ags = specs.TOWNS[ll.TOWN_KEYS[record["city"]]][0]
+        zone_ids = _zone_ids_of(zones, point)
+        chosen = None
+        # the lots with a tariff of their own, in the same zone first (only where the point lies inside exactly one zone)
+        for level, label, same in (("zone", f"the zone {','.join(zone_ids)}", _same_zone(package, zones, zone_ids)),
+                                   ("municipality", f"the municipality {ags}", _same_municipality(package, ags))):
+            if level == "zone" and len(zone_ids) != 1:
+                continue
+            donors = [{"id": other, "values": {column: row[column] for column in TARIFF_VALUE_COLUMNS}, "row": row}
+                      for other, row in options.items()
+                      if row["tariff_duration_bands"] != pg.FREE_SCHEDULE_TEXT and "_lot" in row and same(other)]
+            if len(donors) >= 2:
+                chosen = (level, label, donors)
+                break
+        if chosen is None:
+            qa.append(_qa_candidate(record, "lot_tariff_unknown", threshold,
+                                    "no stated tariff and fewer than two priced lots in its zone and in its municipality, so "
+                                    "ASSUMPTION P14 imputes none"))
+            continue
+        level, label, donors = chosen
+        median = ll.median_schedule(donors, f"large lot {key}")
+        donor_row, donor_lot = median["row"], median["row"]["_lot"]
+        spec = specs.LARGE_LOT_SPECS[key]
+        encoded = {**donor_lot["encoded"], "assumptions": [*donor_lot["encoded"]["assumptions"]]}
+        lot = {**donor_lot, "encoded": encoded, "zone_sentence": None, "verdicts": [], "source_rules": [spec["unknown_component"]],
+               "tariff_rule_ids": list(dict.fromkeys(list(donor_lot["tariff_rule_ids"]) + [spec["unknown_component"]]))}
+        listed = ", ".join(f"{donor['id']} ({ll.hourly_equivalent_eur(donor['values']):.2f} EUR for 60 min)"
+                           for donor in sorted(donors, key=lambda item: item["id"]))
+        basis = (f"ASSUMPTION P14 basis: the package states no general tariff ({spec['unknown_component']}); the median product "
+                 f"of the {len(donors)} priced lots of {label} ({listed}) is the lot {median['id']} with its complete schedule "
+                 f"(level {level}; the donors' schedules are identical at the middle). The tariff is the median donor's, never a "
+                 "value typed here.")
+        row = _large_lot_row(inputs, key, {**spec, "p14": True, "p10_basis": donor_row["_spec"].get("p10_basis")}, lot,
+                             extra_assumptions=("P14",), basis_sentences=(basis,))
+        row["_lot"], row["_spec"] = lot, spec
+        row["_qa_note"] = _lot_ascii(f"imputed (ASSUMPTION P14, level {level}) from the median lot {median['id']}: "
+                                 f"{donor_lot['encoded']['sentence']}")
+        rows[key] = row
+        print(f"[garages] P14 {key}: median product of {len(donors)} priced lots of {label} = {median['id']}: "
+              f"{donor_lot['encoded']['sentence']}")
+    return rows
+
+
+def _subpoint_rows(package: dict, threshold: int) -> list:
+    """The QA rows of the municipal points of the Wolfsburg city layer that are subpoints of a lot of the package (the Theater
+    accessible-parking point, spec Amendment I2): never a second row of the site. Every municipal point of the crosswalk must be a
+    package facility, a point that the package resolves to one (``aliases``) or a subpoint of ``LARGE_LOT_SUBPOINTS``."""
+    rows = []
+    for point in package["crosswalk"]:
+        key = point["facility_key"]
+        if key in package["facilities"]:
+            continue
+        if key in specs.LARGE_LOT_SUBPOINTS:
+            target = package["aliases"].get(key)
+            if target not in package["facilities"]:
+                raise SystemExit(f"the subpoint {key} must name a package facility in the aliases, found {target!r}")
+            rows.append((key, {"record_id": LARGE_LOT_QA_PREFIX + key.lower(), "municipality_ags": "03103000",
+                               "subject": f"{_lot_ascii(point['name'])} ({key})", "reason": "lot_alias",
+                               "evidence": f"{CROSSWALK_MEMBER_NAME}; {ll.ALIASES_MEMBER}",
+                               "note": _lot_ascii(f"{pq.CANDIDATE_REASONS['lot_alias']}; "
+                                                  f"{specs.LARGE_LOT_SUBPOINTS[key]}; the site is the package facility "
+                                                  f"{target}, counted once")}))
+        elif key not in package["aliases"]:
+            raise SystemExit(f"the municipal point {key} of the Wolfsburg crosswalk is neither a package facility, an alias nor a "
+                             "named subpoint; the policy accounts for every point")
+    return rows
+
+
+CROSSWALK_MEMBER_NAME = ll.CROSSWALK_MEMBER
+
+
+def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imputed: dict, threshold: int) -> dict:
+    """The counts of the run (fallback transparency): options against QA rows, the options by town and tariff form and the QA rows
+    by reason; prints them as rates and warns when a share of the options is imputed (P14) above
+    ``LARGE_LOT_IMPUTATION_WARNING_SHARE`` or any tariff is not expressible."""
+    by_town, by_reason = {}, {}
+    for row in rows:
+        by_town[row["municipality"]] = by_town.get(row["municipality"], 0) + 1
+    for entry in qa:
+        by_reason[entry["reason"]] = by_reason.get(entry["reason"], 0) + 1
+    free = sum(row["tariff_duration_bands"] == pg.FREE_SCHEDULE_TEXT for row in rows)
+    total = len(rows)
+    zone_products = sum(1 for row in rows if "street product of the zone" in row["notes"])
+    print(f"[garages] large lots (threshold {threshold}): {len(package['facilities'])} package records, {total} options "
+          f"({', '.join(f'{town} {count}' for town, count in sorted(by_town.items()))}); tariff from the site's own components "
+          f"{total - len(imputed) - zone_products - free}/{total}, zone street product {zone_products}/{total}, "
+          f"free {free}/{total}, "
+          f"imputed (ASSUMPTION P14) {len(imputed)}/{total} ({100.0 * len(imputed) / max(total, 1):.1f} %); QA rows "
+          f"{len(qa)} by reason {dict(sorted(by_reason.items()))}")
+    if total and len(imputed) / total > LARGE_LOT_IMPUTATION_WARNING_SHARE:
+        print(f"[garages] WARNING: more than {100.0 * LARGE_LOT_IMPUTATION_WARNING_SHARE:.0f} % of the large lots rest on "
+              "ASSUMPTION P14 (an imputed tariff)")
+    for key, message in failures:
+        print(f"[garages] WARNING: the tariff of the large lot {key} is not expressible in the schedule grammar: {message}")
+    limited = sum("Not modelled" in row["notes"] for row in rows)
+    print("[garages] large lots with a restriction that the columns do not carry (maximum stay or weekend window): "
+          f"{limited}/{total}")
+    return {"options": total, "by_town": by_town, "qa_by_reason": by_reason, "free": free, "imputed": len(imputed),
+            "zone_products": zone_products, "failures": len(failures), "limited": limited}
+
+
 def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     """The dataset: one row per garage specification, in specification order, EPSG:25832. Stops (``SystemExit``) when a
     garage of the package's layers is covered by no specification and no candidate decision, when a facility is both a
@@ -1805,9 +2344,10 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     if any(spec.get("followup") for spec in specs.GARAGE_SPECS) and "followup" not in inputs:
         raise SystemExit("the garage specifications rest on the follow-up package: pass it as --followup-zip "
                          f"({sup.FOLLOWUP_FILE})")
-    if specs.LOT_SPECS and "lots" not in inputs:
-        raise SystemExit("the lot decisions of regional_garage_specs rest on the Wolfsburg car-park package: pass it as "
-                         f"--wolfsburg-lots-zip ({wl.LOTS_FILE}) with --zones")
+    if specs.LOT_SPECS and "lots" not in inputs and "large" not in inputs:
+        raise SystemExit("the lot decisions of regional_garage_specs rest on the large-lot research package "
+                         f"(--large-lots-zip {ll.LOTS_FILE}, spec Amendment I) or on the Wolfsburg car-park package "
+                         f"(--wolfsburg-lots-zip {wl.LOTS_FILE}) with --zones")
     if (specs.BS_MONTHLY_SPECS or specs.BS_RECORDED_SPECS) and "bs_monthly_products" not in inputs:
         raise SystemExit("the monthly specifications rest on the Braunschweig monthly package: pass it as --bs-monthly-zip "
                          f"({bsm.PACKAGE_FILE}) with --contipark-evidence-dir ({bsm.EVIDENCE_DIRECTORY_NAME})")
@@ -1826,10 +2366,14 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
             used[spec["layer"]].append(spec["feature"])
         if spec.get("attributes"):
             used[spec["attributes"][0]].append(spec["attributes"][1])
-    for spec in lot_specs():
-        rows.append(build_lot(inputs, spec))
+    if "lots" in inputs:
+        for spec in lot_specs():
+            rows.append(build_lot(inputs, spec))
+    if "large" in inputs:
+        inputs["large"]["result"] = build_large_lots(inputs)
+        rows.extend(inputs["large"]["result"]["rows"])
     facts = [row.pop("_facts") for row in rows]
-    ids = [spec["garage_id"] for spec in specs.GARAGE_SPECS] + [spec["garage_id"] for spec in lot_specs()]
+    ids = [row["garage_id"] for row in rows]
     if len(set(ids)) != len(ids):
         raise SystemExit("two garage specifications share a garage_id")
     # Every garage of the package's layers must be known: specified explicitly, a twin (the same facility id in another
@@ -1894,7 +2438,8 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
           f"{summary['not_priced']} (" + ", ".join(f"{reason} {count}" for reason, count in
                                                    summary["not_priced_by_reason"].items()) + ")")
     counts = summary["priced_by_assumption"]
-    for assumption, text in pg.ASSUMPTIONS.items():
+    for assumption in pg.ASSUMPTIONS:
+        text = pg.assumption_status_text(assumption)
         if assumption == "P13":
             continue  # imputed after the QA rows exist: apply_monthly_imputation reports it
         count = counts.get(assumption, 0)
@@ -1933,7 +2478,7 @@ def _print_rates(frame: gpd.GeoDataFrame, facts: list) -> None:
     if touched:
         print(f"[garages] supplement package: {len(touched)} garages touched ({sum(fact['point'] for fact in touched)} at its "
               f"main points), {sum(fact['priced'] for fact in touched)} priced from its rules or points")
-    lot_rows = [fact for fact in facts if fact.get("lot")]
+    lot_rows = [fact for fact in facts if fact.get("lot") and not fact.get("large")]
     if lot_rows:
         print(f"[garages] Wolfsburg car-park package: {len(lot_rows)} rows (surface lots), "
               f"{sum(fact['priced'] for fact in lot_rows)} priced from its components or by the municipal free default")
@@ -2061,7 +2606,13 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         rows.append(record)
 
     specs_by_id = {spec["garage_id"]: spec for spec in specs.GARAGE_SPECS + tuple(lot_specs())}
+    large = inputs.get("large")
     for _, garage in frame.iterrows():
+        if large is not None and garage["garage_id"] in large["result"]["notes"]:
+            row(record_id=f"garage_{garage['garage_id']}", record_type="garage", municipality_ags=garage["municipality_ags"],
+                subject=garage["name"], garage_id=garage["garage_id"], decision="priced", count=1,
+                evidence=garage["tariff_rule_ids"], note=large["result"]["notes"][garage["garage_id"]])
+            continue
         spec = specs_by_id[garage["garage_id"]]
         priced = bool(garage["priced"])
         if priced:
@@ -2120,6 +2671,12 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
             row(**fields)
     for entry in directory:
         reason, why = specs.DIRECTORY_DECISIONS[entry["name"]]
+        if reason == specs.DIRECTORY_SURFACE_LOT:
+            # a site of the research package: one record per site, its own row or its own QA row (spec Amendment I2)
+            if large is None or specs.DIRECTORY_LOT_KEYS[entry["name"]] not in large["package"]["facilities"]:
+                raise SystemExit(f"the directory entry {entry['name']!r} is decided as a site of the large-lot package "
+                                 f"({specs.DIRECTORY_LOT_KEYS.get(entry['name'])}); pass --large-lots-zip")
+            continue
         row(record_id=f"candidate_bs_directory_{_slug(entry['name'])}", record_type="candidate", municipality_ags="03101000",
             subject=entry["name"], decision="not_listed", reason_code=reason, count=1,
             evidence=f"{DIRECTORY_FILE} id {entry['id']}",
@@ -2136,7 +2693,15 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         row(record_id=candidate["record_id"], record_type="candidate", municipality_ags=ags, subject=candidate["subject"],
             decision="not_listed", reason_code=candidate["reason"], count=1, evidence=_ascii(evidence),
             note=_ascii(candidate["note"] + (f"; package rules: {tariff}" if tariff else "")))
-    if specs.LOT_SPECS:
+    if large is not None:
+        # spec Amendment I2: one QA row per package record that is no option (a site is one record: an option has its own garage
+        # row above, a record that fails the policy is a candidate row with its reason)
+        for entry in large["result"]["qa"]:
+            row(record_id=entry["record_id"], record_type="candidate", municipality_ags=entry["municipality_ags"],
+                subject=entry["subject"], decision="not_listed", reason_code=entry["reason"], count=1,
+                evidence=entry["evidence"], note=entry["note"])
+        return rows
+    if specs.LOT_SPECS and "lots" in inputs:
         # spec E14: one QA row per point of the city layer: garage rows (classes b, c, d) are written above, a candidate row
         # (reason zone_street_product with its consistency check, user_group_only or customer_regime) is written here
         for spec in lot_specs(("a", "e")):
@@ -2269,6 +2834,11 @@ def dataset_members() -> dict:
 
 
 # ---------------------------------------------------------------- command line
+#: The file names of the release; a sensitivity threshold is never written under them.
+RELEASE_DATASET_NAME = "parking_garages_2026.geojson"
+RELEASE_QA_NAME = "parking_garages_2026_qa.csv"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--regional-dir", required=True, help="folder with the package zip (raw_sources/municipal_2026-10-07)")
@@ -2287,6 +2857,16 @@ def main(argv=None) -> int:
                                                      "--tariffs; required where the lot decisions rest on it)")
     parser.add_argument("--zones", help="parking_zones_2026.geojson: the committed zone polygons (EPSG:25832), which classify "
                                         "the points of the Wolfsburg car-park package")
+    parser.add_argument("--large-lots-zip", help="the owner's research package Grossparkplaetze_ZGB8_2026-10-12.zip (spec "
+                                                 "Amendment I; needs --zones and --tariffs; supersedes --wolfsburg-lots-zip for "
+                                                 "the rows of the dataset)")
+    parser.add_argument("--lot-threshold", type=int, default=ll.DEFAULT_THRESHOLD,
+                        help="size threshold of a surface lot in spaces (ASSUMPTION L50): the release value is "
+                             f"{ll.DEFAULT_THRESHOLD}; {' and '.join(map(str, ll.SENSITIVITY_THRESHOLDS))} are sensitivities of "
+                             "the calibration and are written only to --out and --qa-out paths that are not the release names")
+    parser.add_argument("--wob-free-evidence-dir", help="the folder wob_free_lots_evidence with the archived evidence pages and "
+                                                        "their MANIFEST.md (spec Amendment I5a); without it the free Wolfsburg "
+                                                        "lots are QA rows")
     parser.add_argument("--bs-monthly-zip", help="the owner's Braunschweig monthly package "
                                                  "Braunschweig_Monatstarife_2026-10-08.zip "
                                                  "(spec Amendment F1; needs --contipark-evidence-dir; required where the monthly "
@@ -2295,13 +2875,20 @@ def main(argv=None) -> int:
                                                          "Contipark captures and their SHA256SUMS (spec Amendment F1; needs "
                                                          "--bs-monthly-zip)")
     args = parser.parse_args(argv)
+    if args.lot_threshold != ll.DEFAULT_THRESHOLD and (
+            Path(args.out).name == RELEASE_DATASET_NAME or Path(args.qa_out).name == RELEASE_QA_NAME):
+        raise SystemExit(f"the threshold {args.lot_threshold} is a sensitivity of the calibration (spec Amendment I2), never the "
+                         f"release: write it to --out and --qa-out files that are not named {RELEASE_DATASET_NAME} and "
+                         f"{RELEASE_QA_NAME}")
     zones = None
     if args.zones:
         zones = gpd.read_file(args.zones).to_crs(cc.METRIC_CRS)
     tariffs = pz.load_tariffs(args.tariffs) if args.tariffs else None
     inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip,
                                 lots_path=args.wolfsburg_lots_zip, zones=zones, bs_monthly_path=args.bs_monthly_zip,
-                                evidence_directory=args.contipark_evidence_dir)
+                                evidence_directory=args.contipark_evidence_dir, large_lots_path=args.large_lots_zip,
+                                lot_threshold=args.lot_threshold, tariffs=tariffs,
+                                free_evidence_directory=args.wob_free_evidence_dir)
     frame = build_garages(inputs)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)

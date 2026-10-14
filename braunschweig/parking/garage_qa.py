@@ -75,8 +75,12 @@ MONTHLY_NOT_USED_REASONS = {
 RECORDED_GARAGE_REASON = "not_a_dataset_option"
 #: Why a car park or garage is not in the dataset (``reason_code`` of a ``candidate`` row).
 CANDIDATE_REASONS = {
-    "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role)",
-    "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff",
+    "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role; spec Amendment I1 revises the rule for large "
+                "surface lots: such a lot is a zone AND an option, so a BgA car park is a candidate of this reason only where no "
+                "lot of the research package covers it)",
+    "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff (ruling R-E1; no "
+                           "row of the current dataset has this reason: spec Amendment I1 makes such a car park an option when it "
+                           "passes the size policy, so the reason stays in the vocabulary for tables written before)",
     "station_zone": "a station car park of DB BahnPark (Contipark) that is a single paid-site zone of its own (spec Amendment "
                     "G1; the owner decision of 2026-10-08 revokes rulings R-4b-4 and R-4b-9 for the Braunschweig Hbf car parks)",
     "customer_regime": "a hospital, shopping-centre or airport short-stay regime (ruling R-4b-4)",
@@ -88,8 +92,39 @@ CANDIDATE_REASONS = {
                         "parking of such a group is covered by the free-parking share of the model)",
     "user_group_only": "a car park or a part of one that is reserved for a user group (disabled parking), so no option of the "
                        "general public",
+    # spec Amendment I2 to I5 (Task 4j): the records of the research package of the large surface lots that are no option
+    "lot_below_threshold": "a public surface lot whose capacity for the size threshold is below it (spec Amendment I2, ASSUMPTION "
+                           "L50: 50 spaces; 30 and 100 are sensitivities)",
+    "lot_capacity_unknown": "a surface lot whose capacity the package does not state or estimate (unknown, never 0): the size "
+                            "policy cannot select it",
+    "lot_access_not_public": "access that is not evidenced as general public use: customers, visitors, events, monthly-only, "
+                             "permit-only, a closed group or unknown in the package (spec Amendment I2)",
+    "lot_not_open": "closed, planned, under construction or excluded from the current inventory",
+    "lot_not_surface_lot": "a record that is no single surface lot (a roadside parking stretch, a site group or an unresolved "
+                           "street or lot)",
+    "lot_alias": "an alias or a subpoint of another record of the same site: one site is one row (spec Amendment I2)",
+    "lot_unconfirmed_candidate": "a candidate that the package keeps unconfirmed (secondary evidence only): no current primary "
+                                 "confirmation of its public use",
+    "lot_mixed_tariff_unseparated": "paid and free subareas without separate verified subarea geometry: no blanket tariff, and "
+                                    "the cheapest subarea product is never taken for the whole site (spec Amendment I3)",
+    "lot_tariff_not_expressible": "a documented tariff component that the schedule grammar of the dataset cannot express: the "
+                                  "row is stopped with the named error and never approximated (spec Amendment I3; a grammar or "
+                                  "Java extension is a separate task)",
+    "lot_tariff_unknown": "a public lot of at least the threshold whose tariff is not stated and for which ASSUMPTION P14 has "
+                          "fewer than two priced lots in its zone and in its municipality",
+    "lot_no_position": "a site without a position in the package; none is invented",
+    "lot_free_evidence_missing": "a Wolfsburg lot that is free only on a per-site source (spec Amendment I5a, ASSUMPTION P12 "
+                                 "withdrawn) whose evidence page is not archived: never free without a source",
 }
 _RECORD_ID = re.compile(r"^[a-z0-9_]+$")
+#: A lot that carries the street product of its zone (spec Amendment I1) names the table row it carries in its ``evidence`` as
+#: ``parking_tariffs_2026.csv:<zone_id>``; ``zone_product_lot_check`` compares the dataset row with that table row.
+ZONE_PRODUCT_EVIDENCE = re.compile(r"parking_tariffs_2026\.csv:([a-z0-9_]+)")
+#: The columns of the garage dataset and the tariff table that a zone product carries (rate per hour, billing unit, daily cap, fee
+#: window); a maximum stay and a long-stay product are not carried (the notes of the row name them).
+ZONE_PRODUCT_COLUMNS = (("garage_hourly_rate_eur", "hourly_rate_eur"), ("garage_billing_unit_min", "billing_unit_min"),
+                        ("garage_daily_cap_eur", "daily_cap_eur"), ("garage_fee_start_h", "fee_start_h"),
+                        ("garage_fee_end_h", "fee_end_h"))
 
 
 def load_garage_qa(path) -> pd.DataFrame:
@@ -236,6 +271,15 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
             problems.append(f"garage {garage_id!r}: monthly_imputed_eur is {None if pd.isna(actual) else float(actual)} but the "
                             f"median of the published garage monthly products of municipality {row['municipality_ags']} in the "
                             f"QA table is {wanted:.2f} EUR (ASSUMPTION P13)")
+    # --- a lot that carries the street product of its zone must equal the zone's row of the tariff table (spec Amendment I1)
+    if tariffs is not None:
+        for check in zone_product_lot_check(qa, garages, tariffs):
+            if check["zone_id"] not in set(tariffs["zone_id"]):
+                problems.append(f"garage {check['garage_id']!r}: it carries the street product of the zone {check['zone_id']!r}, "
+                                "which is not in the tariff table")
+            elif check["differences"]:
+                problems.append(f"garage {check['garage_id']!r}: it carries the street product of the zone {check['zone_id']!r} "
+                                "but differs from the table row: " + "; ".join(check["differences"]))
     # --- the tariff table: commuter_day_eur = monthly amount / working days (ASSUMPTION P2)
     if tariffs is not None:
         commuter = tariffs.set_index("zone_id")["commuter_day_eur"]
@@ -258,6 +302,40 @@ def validate_garage_qa(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.Data
                                 "explains")
     if problems:
         raise ValueError("invalid parking garage QA table:\n  " + "\n  ".join(problems))
+
+
+def zone_product_lot_check(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> list:
+    """The consistency check of the lots that carry the street product of their zone (spec Amendment I1 and owner decision A):
+    per ``garage`` row of the QA table whose ``evidence`` names a table row (``ZONE_PRODUCT_EVIDENCE``), the dataset row against
+    that row of the tariff table in the columns of ``ZONE_PRODUCT_COLUMNS`` (rate per hour, billing unit, daily cap, fee window; an
+    empty cell equals an empty cell). A list of {"garage_id", "zone_id", "differences" (the columns that differ, as text; empty =
+    equal)}, in the order of the QA table; a garage that the dataset does not hold is reported by ``validate_garage_qa`` and skipped
+    here. The zone tariff is never changed by a lot: a difference means the dataset or the table is stale."""
+    table = tariffs.set_index("zone_id")
+    dataset = garages.set_index("garage_id")
+    checks = []
+    for _, row in qa[qa["record_type"] == "garage"].iterrows():
+        match = ZONE_PRODUCT_EVIDENCE.search(row["evidence"])
+        if match is None or row["garage_id"] not in dataset.index:
+            continue
+        zone_id = match.group(1)
+        differences = []
+        if zone_id in table.index:
+            for garage_column, table_column in ZONE_PRODUCT_COLUMNS:
+                left, right = dataset.loc[row["garage_id"], garage_column], table.loc[zone_id, table_column]
+                if not ((pd.isna(left) and pd.isna(right)) or (not pd.isna(left) and not pd.isna(right)
+                                                              and abs(float(left) - float(right)) < 1e-9)):
+                    differences.append(f"{garage_column} {None if pd.isna(left) else float(left)} against "
+                                       f"{table_column} {None if pd.isna(right) else float(right)}")
+        checks.append({"garage_id": row["garage_id"], "zone_id": zone_id, "differences": differences})
+    return checks
+
+
+def zone_product_lot_summary(qa: pd.DataFrame, garages: pd.DataFrame, tariffs: pd.DataFrame) -> dict:
+    """{"checked", "equal", "differing" (the garage ids that differ from their zone's table row)}."""
+    checks = zone_product_lot_check(qa, garages, tariffs)
+    return {"checked": len(checks), "equal": sum(not check["differences"] for check in checks),
+            "differing": [check["garage_id"] for check in checks if check["differences"]]}
 
 
 def published_monthly_values(qa: pd.DataFrame, garages: pd.DataFrame) -> dict:

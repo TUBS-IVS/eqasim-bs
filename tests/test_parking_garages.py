@@ -200,7 +200,16 @@ def test_the_dataset_layout_is_the_documented_one():
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13", "P14"}
+    # spec Amendment I4 and I5a: P14 imputes the tariff of a surface lot from the median of its zone; P12 is withdrawn (the id and
+    # its text stay so that older tables remain readable, no row of the current dataset rests on it)
+    assert set(pg.WITHDRAWN_ASSUMPTIONS) == {"P12"} and pg.assumption_status_text("P12").startswith(
+        "WITHDRAWN (spec Amendment I5a")
+    assert pg.assumption_status_text("P12").endswith(pg.ASSUMPTIONS["P12"]) and not pg.ASSUMPTIONS["P12"].startswith("WITHDRAWN")
+    assert pg.assumption_status_text("P14") == pg.ASSUMPTIONS["P14"]
+    for phrase in ("MEDIAN product of the priced lots of the SAME ZONE", "at least two", "otherwise of its municipality",
+                   "identical schedules", "never a value typed or averaged", "fewer than two priced lots on both levels"):
+        assert phrase in pg.ASSUMPTIONS["P14"], phrase
     assert pg.ASSUMPTIONS["P6"].startswith("units are counted from arrival and each started unit costs the rate of the tier "
                                            "in force at the unit's start")
     # P6 as amended (ruling R-4b-12): the first period belongs to its clock window, the tiers run on from its end
@@ -818,6 +827,16 @@ def test_p12_belongs_to_the_free_schedule_alone():
         pg.validate_garages(_frame(_row(assumptions="P12", notes="ASSUMPTION P12.")))
 
 
+def test_p14_belongs_to_a_surface_lot_and_a_garage_never_rests_on_it():
+    # spec Amendment I4: an imputed lot tariff; the row names the assumption in its notes like every other
+    lot = dict(facility_kind="surface_lot", assumptions="P14", notes="ASSUMPTION P14: the median product of the zone.")
+    pg.validate_garages(_frame(_row(**lot)))
+    with pytest.raises(ValueError, match="ASSUMPTION P14 imputes the tariff of a surface lot only"):
+        pg.validate_garages(_frame(_row(assumptions="P14", notes="ASSUMPTION P14.")))
+    with pytest.raises(ValueError, match="the notes must name ASSUMPTION P14"):
+        pg.validate_garages(_frame(_row(facility_kind="surface_lot", assumptions="P14")))
+
+
 def test_a_tiered_garage_may_carry_one_closed_free_band_as_its_grace_period():
     pg.validate_garages(_frame(_graced_tiers()))
     pg.validate_garages(_frame(_graced_tiers(garage_daily_cap_eur=6.0)))
@@ -870,13 +889,17 @@ def test_a_row_may_cite_the_regional_package_and_the_two_supplement_packages_by_
     # Task 4b3 (ruling R-4b3-0): the Wolfsburg car-park package of 2026-10-07 is the fourth package a row may cite
     pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{WOLFSBURG_LOTS_SHA}")))
     pg.validate_garages(_frame(_row(package_sha256=f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA}")))
-    assert pg.MAXIMUM_PACKAGE_HASHES == 4
+    # Task 4j (spec Amendment I): the research package of the large surface lots is the fifth; a lot cites it alone
+    pg.validate_garages(_frame(_row(package_sha256=SHA[::-1])))
+    pg.validate_garages(_frame(_row(
+        package_sha256=f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]}")))
+    assert pg.MAXIMUM_PACKAGE_HASHES == 5
 
 
 @pytest.mark.parametrize("value, message", [
     (f"{SHA};E789", "not a lower-case hexadecimal SHA-256"),
     (f"{SHA};{SHA}", "lists a package SHA-256 twice"),
-    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]}", "at most four package SHA-256 values"),
+    (f"{SHA};{SUPPLEMENT_SHA};{FOLLOWUP_SHA};{WOLFSBURG_LOTS_SHA};{SHA[::-1]};{'a' * 64}", "at most four package SHA-256 values"),
     (f"{SHA}, {SUPPLEMENT_SHA}", "not a lower-case hexadecimal SHA-256"),
 ])
 def test_a_malformed_duplicated_or_too_long_package_sha256_list_is_rejected(value, message):
@@ -1312,10 +1335,70 @@ def test_a_car_park_inside_a_zone_names_its_zone_and_its_reference_and_the_zone_
         pq.validate_garage_qa(qa, garages, _wolfsburg_tariffs())
 
 
+def _zone_product_tables(**changes):
+    """A dataset of one lot that carries the street product of the zone t_hbf (2.20 EUR per hour in units of 30 min, at most
+    11.00 EUR, 0-24 h), its QA row and the tariff table with that zone (spec Amendment I1)."""
+    lot = dict(garage_id="lot_hbf", package_facility_id="hbf", facility_kind="surface_lot", garage_hourly_rate_eur=2.2,
+               garage_billing_unit_min=30, garage_daily_cap_eur=11.0, garage_fee_start_h=0.0, garage_fee_end_h=24.0,
+               tariff_rule_ids="parking_tariffs_2026.csv:t_hbf;hbf__1")
+    lot.update(changes)
+    garages = _frame(_row(**lot))
+    qa = _qa(_qa_row(record_id="garage_lot_hbf", subject="Hbf", garage_id="lot_hbf",
+                     evidence="parking_tariffs_2026.csv:t_hbf;hbf__1", note="rate equal"))
+    tariffs = pd.DataFrame({"zone_id": ["t_hbf"], "hourly_rate_eur": [2.2], "billing_unit_min": [30],
+                            "daily_cap_eur": [11.0], "fee_start_h": [0.0], "fee_end_h": [24.0], "commuter_day_eur": [np.nan]})
+    return garages, qa, tariffs
+
+
+def test_a_lot_that_carries_the_street_product_of_a_zone_must_equal_the_table_row_of_that_zone():
+    garages, qa, tariffs = _zone_product_tables()
+    assert pq.zone_product_lot_check(qa, garages, tariffs) == [{"garage_id": "lot_hbf", "zone_id": "t_hbf", "differences": []}]
+    assert pq.zone_product_lot_summary(qa, garages, tariffs) == {"checked": 1, "equal": 1, "differing": []}
+    pq.validate_garage_qa(qa, garages, tariffs)
+    # a lot without a daily cap equals a zone without one (an empty cell equals an empty cell)
+    garages, qa, tariffs = _zone_product_tables(garage_daily_cap_eur=None)
+    tariffs["daily_cap_eur"] = np.nan
+    assert pq.zone_product_lot_summary(qa, garages, tariffs)["equal"] == 1
+    # a garage row without a table reference is no zone-product lot
+    assert pq.zone_product_lot_check(_qa(_qa_row()), _frame(_row()), tariffs) == []
+
+
+@pytest.mark.parametrize("changes, text", [
+    ({"garage_hourly_rate_eur": 2.4}, "garage_hourly_rate_eur 2.4 against hourly_rate_eur 2.2"),
+    ({"garage_billing_unit_min": 60}, "garage_billing_unit_min 60.0 against billing_unit_min 30.0"),
+    ({"garage_daily_cap_eur": 12.0}, "garage_daily_cap_eur 12.0 against daily_cap_eur 11.0"),
+    ({"garage_daily_cap_eur": None}, "garage_daily_cap_eur None against daily_cap_eur 11.0"),
+    ({"garage_fee_start_h": 6.0}, "garage_fee_start_h 6.0 against fee_start_h 0.0"),
+    ({"garage_fee_end_h": 20.0}, "garage_fee_end_h 20.0 against fee_end_h 24.0"),
+])
+def test_a_lot_that_differs_from_the_zone_row_it_names_is_a_stale_dataset_and_the_validator_says_so(changes, text):
+    garages, qa, tariffs = _zone_product_tables(**changes)
+    summary = pq.zone_product_lot_summary(qa, garages, tariffs)
+    assert summary == {"checked": 1, "equal": 0, "differing": ["lot_hbf"]}
+    with pytest.raises(ValueError, match="it carries the street product of the zone 't_hbf' but differs from the table row: .*"
+                                         + text.replace(".", r"\.")):
+        pq.validate_garage_qa(qa, garages, tariffs)
+
+
+def test_a_lot_that_names_a_zone_the_tariff_table_does_not_hold_is_refused():
+    garages, qa, tariffs = _zone_product_tables()
+    with pytest.raises(ValueError, match="it carries the street product of the zone 't_hbf', which is not in the tariff table"):
+        pq.validate_garage_qa(qa, garages, tariffs.assign(zone_id=["other"]))
+
+
 def test_the_qa_vocabulary_names_the_station_zones_and_excludes_the_lots_of_long_term_renters():
     assert set(pq.CANDIDATE_REASONS) == {"bga_zone", "zone_street_product", "station_zone", "customer_regime",
                                          "no_coordinates", "no_published_tariff", "outside_source_list", "dauerparker_only",
-                                         "user_group_only"}
+                                         "user_group_only", "lot_below_threshold", "lot_capacity_unknown",
+                                         "lot_access_not_public", "lot_not_open", "lot_not_surface_lot", "lot_alias",
+                                         "lot_unconfirmed_candidate", "lot_mixed_tariff_unseparated",
+                                         "lot_tariff_not_expressible", "lot_tariff_unknown", "lot_no_position",
+                                         "lot_free_evidence_missing"}
+    # spec Amendment I1: ruling R-E1 is revised for large surface lots; the reasons of the earlier rulings stay readable
+    assert "spec Amendment I1" in pq.CANDIDATE_REASONS["zone_street_product"]
+    assert "spec Amendment I1" in pq.CANDIDATE_REASONS["bga_zone"]
+    assert "never approximated" in pq.CANDIDATE_REASONS["lot_tariff_not_expressible"]
+    assert "never free without a source" in pq.CANDIDATE_REASONS["lot_free_evidence_missing"]
     assert "reserved for a user group" in pq.CANDIDATE_REASONS["user_group_only"]
     station = pq.CANDIDATE_REASONS["station_zone"]
     assert "single paid-site zone" in station and "Amendment G1" in station and "R-4b-4" in station and "R-4b-9" in station

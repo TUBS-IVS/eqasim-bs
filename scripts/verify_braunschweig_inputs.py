@@ -345,15 +345,16 @@ INPUTS: List[Input] = [
         rel_path="braunschweig/parking/parking_garages_2026.geojson",
         source=RESTRICTED_PARKING_SOURCE.format(record="parking_garages_2026, docs/registry/data/parking_garages_2026.yml"),
         notes=(
-            "Config key parking_garages_path. 49 rows of eight ZGB towns with their own tariff, every one priced (36 "
-            "garages and 13 surface lots of the Wolfsburg city layer, column facility_kind): where the published "
+            "Config key parking_garages_path. 91 rows of eight ZGB towns with their own tariff, every one priced (36 "
+            "garages and 55 large public surface lots of the research package, column facility_kind): where the published "
             "structure maps exactly to the garage columns, to time-of-day tiers or to duration bands, otherwise under named "
-            "assumptions (grace period, best secondary evidence, the municipal free default); monthly product "
+            "assumptions (grace period, best secondary evidence, the imputed median tariff of a lot); monthly product "
             "published at 12 garages and imputed at 15 (column monthly_imputed_eur, ASSUMPTION P13, spec Amendment F: "
             "the median of the published products of the same municipality); the QA table "
             "parking_garages_2026_qa.csv "
             "lies next to it. Licence per source (facts of public pages, licences not verified; six OpenStreetMap "
-            "positions under the ODbL 1.0, (c) OpenStreetMap contributors), see the data record parking_garages_2026. "
+            "positions of garages and the lot positions inside OpenStreetMap parking areas under the ODbL 1.0, (c) "
+            "OpenStreetMap contributors), see the data record parking_garages_2026. "
             "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
         ),
         matsim_only=True,

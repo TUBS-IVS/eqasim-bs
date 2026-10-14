@@ -168,6 +168,10 @@ def _print_garages(garages, garage_qa_table, garages_file, tariffs=None) -> None
         print(f"[parking-validate] car parks inside a zone (spec E14): {check['checked']} checked, the published hourly "
               f"reference of the tariff area against the street rate of the zone: {check['equal']} equal, "
               f"{len(check['differing'])} differ ({', '.join(check['differing']) or 'none'})")
+        lots = garage_qa.zone_product_lot_summary(garage_qa_table, garages, tariffs)
+        print(f"[parking-validate] lots with the street product of their zone (spec Amendment I1): {lots['checked']} checked, "
+              f"the dataset row against the row of the tariff table (rate, unit, cap, fee window): {lots['equal']} equal, "
+              f"{len(lots['differing'])} differ ({', '.join(lots['differing']) or 'none'})")
 
 
 #: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).

@@ -599,25 +599,39 @@ OTHER_TOWNS = {"cl": ("03153018", "Clausthal-Zellerfeld"), "se": ("03153012", "S
 
 #: The decisions on the entries of the Braunschweig car-park directory (ASCII names as ``regional_garages`` transliterates
 #: them): reason code of ``garage_qa.CANDIDATE_REASONS`` and a note. A directory entry that is not listed stops the step.
+DIRECTORY_SURFACE_LOT = "surface_lot_site"
 DIRECTORY_DECISIONS = {
     "Kurzzeitparkplatz Lilienthalplatz": ("customer_regime", "airport short-stay car park; the coverage register lists it as "
                                                              "excluded (customer and visitor regime)"),
-    "Parkplatz Grosser Hof": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
-                                                     "its zone is its tariff"),
-    "Parkplatz Hauptbahnhof Nord": ("station_zone", "station car park of DB BahnPark (Contipark), public: the single paid-site "
-                                                    "zone bs_hbf_p1_nord (spec Amendment G1, which revokes rulings R-4b-4 and "
-                                                    "R-4b-9 for it)"),
-    "Parkplatz Hauptbahnhof Sued": ("station_zone", "station car park of DB BahnPark (Contipark), public: the single paid-site "
-                                                    "zone bs_hbf_p2_sued (spec Amendment G1, which revokes rulings R-4b-4 and "
-                                                    "R-4b-9 for it)"),
-    "Parkplatz Markthalle": ("bga_zone", "BgA car park, the zone bs_bga_markthalle"),
-    "Parkplatz Nimesstrasse": ("zone_street_product", "ParkGO zone 1 car park (maximum stay 3 h): the street product of "
-                                                      "its zone is its tariff"),
-    "Parkplatz Suedstrasse": ("bga_zone", "BgA car park, the zone bs_bga_suedstrasse"),
-    "Parkplatz Werder": ("zone_street_product", "ParkGO zone 1 car park: the street product of its zone is its tariff"),
-    "Stellplaetze am Loewenwall": ("zone_street_product", "ParkGO tariff zone 1 spaces: the street product of their zone is "
-                                                         "their tariff"),
+    # spec Amendment I1 revises ruling R-E1 for surface lots: a car park of ParkGO or of the BgA is an off-street option whenever
+    # it is public and large (spec I2), so these entries are sites of the research package (DIRECTORY_LOT_KEYS): the site is its
+    # own dataset row or its own QA row of the package, never a second record here
+    "Parkplatz Grosser Hof": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I)"),
+    "Parkplatz Hauptbahnhof Nord": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I; owner decision A: "
+                                                           "the station zone bs_hbf_p1_nord stays a zone and the lot is an "
+                                                           "option)"),
+    "Parkplatz Hauptbahnhof Sued": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I; owner decision A: "
+                                                           "the station zone bs_hbf_p2_sued stays a zone and the lot is an "
+                                                           "option)"),
+    "Parkplatz Markthalle": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I; owner decision A: the BgA "
+                                                    "zone bs_bga_markthalle stays a zone and the lot is an option)"),
+    "Parkplatz Nimesstrasse": ("lot_capacity_unknown", "ParkGO zone 1 car park (maximum stay 3 h): the street product of its zone "
+                                                       "would be its tariff, but neither the directory nor the research package "
+                                                       "states its capacity, so the size policy (spec Amendment I2) cannot select "
+                                                       "it"),
+    "Parkplatz Suedstrasse": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I; a BgA zone that passes "
+                                                     "the size policy like every lot)"),
+    "Parkplatz Werder": (DIRECTORY_SURFACE_LOT, "a site of the large-lot package (spec Amendment I; Wendenstrasse / Werder)"),
+    "Stellplaetze am Loewenwall": ("lot_capacity_unknown", "ParkGO tariff zone 1 spaces: the street product of their zone would "
+                                                           "be their tariff, but neither the directory nor the research package "
+                                                           "states a capacity, so the size policy (spec Amendment I2) cannot "
+                                                           "select them"),
 }
+#: The research-package site (``facility_key``) of each directory entry decided as ``DIRECTORY_SURFACE_LOT``.
+DIRECTORY_LOT_KEYS = {"Parkplatz Grosser Hof": "braunschweig_grosser_hof",
+                      "Parkplatz Hauptbahnhof Nord": "braunschweig_hbf_nord",
+                      "Parkplatz Hauptbahnhof Sued": "braunschweig_hbf_sued", "Parkplatz Markthalle": "braunschweig_markthalle",
+                      "Parkplatz Suedstrasse": "braunschweig_suedstrasse", "Parkplatz Werder": "braunschweig_wendenstrasse_werder"}
 
 #: Owner decisions that release a rule of the supplement package for use (spec E12, rulings R-4b2-2, R-4b2-4 and R-4b2-5):
 #: {rule id: (the ruling, {field decision id of the package: the statuses it may have})}. The supplement marks every rule
@@ -955,3 +969,240 @@ BS_RECORDED_SPECS = (
      "facility_type": "surface_parking", "reason": "surface_lot",
      "why": "an open APCOA car park, no garage: it is no garage of the dataset and never a value of ASSUMPTION P13"},
 )
+
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Large surface lots as off-street options (spec Amendment I, issue #436, Task 4j; owner decisions of 2026-10-13: "A ist
+# ebenfalls entschieden", "P12 streichen, Belege einzeln", "die anderen beiden nehmen wir den avg oder median wo sie liegen",
+# threshold 50 with 30 and 100 as sensitivities, all eight towns). The input is the research package
+# ``Grossparkplaetze_ZGB8_2026-10-12.zip`` (``large_lots.py``). The selection (access and size, ASSUMPTION L50) is a rule of
+# ``large_lots.decide`` and needs no entry here; an entry states the TARIFF decision (spec I3) of a site that is an option at a
+# threshold of 30, 50 or 100, by the role of its package components. The values (rates, units, caps, windows) are read from the
+# components and never typed here; the only numbers of this section are the elapsed minutes of a duration band, which are the
+# boundaries between the published products (derived in the comment of the entry where they are not stated by the source).
+
+#: The forms of an entry (exactly one):
+#:
+#: * ``zone_product``: the lot carries the street product of the zone (``parking_tariffs_2026.csv``) that contains its point
+#:   (spec I1; owner decision A for the Hbf lots and the BgA car park Markthalle), ``check`` is the package component that
+#:   documents the same tariff for the consistency check (a difference is named in the notes and the QA table, never resolved
+#:   silently);
+#: * ``free``: the component that states the lot free of charge (an explicit source statement, never a default);
+#: * ``rate``: one rate in started units (+ ``cap`` = a ``<rule id>:cap`` component, ``window`` ``"rate"`` = the rate's explicit
+#:   weekday window, ``None`` = none stated, ASSUMPTION P5);
+#: * ``grace``: (free short stay, rate): the free short stay is a grace band (ASSUMPTION P10, spec I3), never a free day;
+#: * ``bands``: the components of a duration schedule in order (their ``roles`` give the elapsed range of each);
+#: * ``p14``: the tariff is not stated; the lot takes the median product of the priced lots of its zone (ASSUMPTION P14, spec I4);
+#: * ``mixed``: paid and free subareas without separate verified geometry: no blanket tariff (spec I3), a QA row.
+#:
+#: ``roles`` types a component whose role is not the plain one (``large_lots.infer_rule_type``), ``ignored`` names the
+#: components that set no value with the reason, ``comment`` explains the decision. The restrictions that the garage columns do not
+#: carry (a maximum stay, a Saturday window, a customer discount) are NOT tariff components: they are listed per row in the notes
+#: from the package components (``large_lot_limitations``) and counted in the run log.
+_BROETCHENTASTE = ("the free short stay (the Broetchentaste, a free ticket of up to 30 min at the machine) is a grace band, never "
+                   "a free day (spec I3): a stay not longer than it is free and a longer stay is billed from its arrival, the "
+                   "free minutes are not deducted (ASSUMPTION P10); the package states that no additive free time is "
+                   "proven for a longer paid stay")
+_STARTED = "Mo-Sa windows are read on Monday to Friday of the model's average weekday (spec D1)"
+
+LARGE_LOT_SPECS = {
+    # ---- Braunschweig: lots with the ParkGO or BgA product of their zone, the Hbf lots of DB BahnPark (owner decision A), P+R
+    "braunschweig_wendenstrasse_werder": {"zone_product": "bs_zone_ia", "check": "braunschweig_wendenstrasse_werder__1"},
+    "braunschweig_grosser_hof": {"zone_product": "bs_zone_ia", "check": "braunschweig_grosser_hof__1"},
+    "braunschweig_markthalle": {"zone_product": "bs_bga_markthalle", "check": "braunschweig_markthalle__1"},
+    "braunschweig_hbf_nord": {"zone_product": "bs_hbf_p1_nord", "check": "braunschweig_hbf_nord__1"},
+    "braunschweig_hbf_sued": {"zone_product": "bs_hbf_p2_sued", "check": "braunschweig_hbf_sued__1"},
+    "braunschweig_hbf_west": {"zone_product": "bs_hbf_p3_west", "check": "braunschweig_hbf_west__1"},
+    "braunschweig_willy_brandt_kommunal": {"zone_product": "bs_bga_willy_brandt_platz",
+                                           "check": "braunschweig_willy_brandt_kommunal__1"},
+    "braunschweig_pr_petzvalstrasse": {"free": "braunschweig_pr_petzvalstrasse__1"},
+    "braunschweig_pr_gaensekamp": {"free": "braunschweig_pr_gaensekamp__1"},
+    "braunschweig_pr_rote_wiese": {"free": "braunschweig_pr_rote_wiese__1"},
+    "braunschweig_pr_thueringenplatz": {"free": "braunschweig_pr_thueringenplatz__1"},
+    "braunschweig_pr_lincolnsiedlung": {"free": "braunschweig_pr_lincolnsiedlung__1"},
+    "braunschweig_buergerpark": {"p14": True, "unknown_component": "braunschweig_buergerpark__1",
+                                 "comment": "the general tariff is not stated by the package (a paid general offer; bathers "
+                                            "get 50 % off the fee, a customer condition that is not modelled)"},
+    # ---- Wolfsburg
+    "WOB_PARK_1638410": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1638410__1"},
+    "WOB_PARK_1769502": {"zone_product": "wob_tarifzone_1", "check": "WOB_PARK_1769502__1"},
+    "WOB_PARK_1835014": {"zone_product": "wob_tarifzone_2", "check": "WOB_PARK_1835014__1"},
+    "WOB_PARK_720901": {"zone_product": "wob_tarifzone_1", "check": "WOB_PARK_720901__1"},
+    "WOB_PARK_1245204": {"zone_product": "wob_tarifzone_3", "check": "WOB_PARK_1245204__1",
+                         "ignored": {"WOB_PARK_1245204__2": "a short-stay product of at most 30 min that the package says is "
+                                                            "not to be added as a discount to every longer stay"}},
+    "WOB_PARK_1114127": {"rate": "WOB_PARK_1114127__1", "window": None,
+                         "ignored": {"WOB_PARK_1114127__2": "free of charge only for guests of the BadeLand with a validated "
+                                                            "parking ticket: a customer condition, never an unconditional "
+                                                            "option"},
+                         "comment": "public car park with a customer discount (the package class public_with_customer_discount): "
+                                    "the general tariff of non-guests is the Zone I fee of the bath tariff; spec E14 had left "
+                                    "this lot out as a customer regime, which the size policy of spec I2 reverses for the "
+                                    "package class public_with_customer_discount"},
+    "WOB_PARK_1835028": {"free": "WOB_PARK_1835028__1"},
+    "WOB_THEATERPARKPLATZ": {"free": "WOB_THEATERPARKPLATZ__1"},
+    "WOB_HOFFMANN_VON_FALLERSLEBEN": {"free": "WOB_HOFFMANN_VON_FALLERSLEBEN__1"},
+    # ---- Wolfenbuettel
+    "wf_bahnhof_checkin": {"free": "wf_bahnhof_checkin__1"},
+    "wf_alte_spinnerei": {"free": "wf_alte_spinnerei__1"},
+    "wf_am_forum": {"free": "wf_am_forum__1"},
+    "wf_aral": {"free": "wf_aral__1"},
+    "wf_lechlumer": {"free": "wf_lechlumer__1"},
+    "wf_oderwald": {"free": "wf_oderwald__1"},
+    "wf_lessingtheater": {
+        "bands": ("wf_lessingtheater__1", "wf_lessingtheater__2", "wf_lessingtheater__3"), "window": None,
+        "roles": {"wf_lessingtheater__1": {"type": "duration_total", "from": 0, "to": 15},
+                  "wf_lessingtheater__2": {"type": "increment", "from": 15, "to": 120, "rounding": "started_unit"},
+                  "wf_lessingtheater__3": {"type": "duration_total", "from": 120, "to": None}},
+        "comment": "the package states: a minimum fee for the first 15 min, then a rate per started 3 min within the first 2 "
+                   "hours, then the day ticket; the bands 0-15 total, 15-120 increment and 120- total are these three statements "
+                   "(the increment band reaches the day ticket exactly at 120 min: 0.25 EUR + 35 started units of 3 min); the "
+                   "fee times are not stated (ASSUMPTION P5)"},
+    "wf_okeraue": {"rate": "wf_okeraue__1", "window": None,
+                   "ignored": {"wf_okeraue__2": "free of charge only for guests of the Stadtbad and its offers: a customer "
+                                                "condition, not an unconditional option"},
+                   "comment": "outside users are admitted against a fee per started hour (the general tariff); guests of the "
+                              "Stadtbad park free"},
+    # ---- Gifhorn
+    "gf_schottische_muehle": {"rate": "gf_schottische_muehle__1", "window": "rate", "cap": "gf_schottische_muehle__1:cap",
+                              "ignored": {"gf_schottische_muehle__2": "states that parking outside the paid times is free, which "
+                                                                       "the fee window of the rate already is"},
+                              "comment": "a special card tariff is mentioned by the source without a price and is not modelled"},
+    "gf_schuetzenplatz": {"free": "gf_schuetzenplatz__1"},
+    "gf_iseparkplatz": {"rate": "gf_iseparkplatz__1", "window": "rate"},
+    # ---- Helmstedt (the Broetchentaste of the three paid lots)
+    "helmstedt_harsleber_tor": {"grace": ("helmstedt_harsleber_tor__2", "helmstedt_harsleber_tor__1"), "window": "rate",
+                                "p10_basis": _BROETCHENTASTE},
+    "helmstedt_holzberg": {"grace": ("helmstedt_holzberg__2", "helmstedt_holzberg__1"), "window": "rate",
+                           "p10_basis": _BROETCHENTASTE},
+    "helmstedt_suedertor": {"grace": ("helmstedt_suedertor__2", "helmstedt_suedertor__1"), "window": "rate",
+                            "cap": "helmstedt_suedertor__3:cap", "p10_basis": _BROETCHENTASTE,
+                            "comment": "the day ticket is valid until 09:00 of the next day; it is read as a maximum per stay "
+                                       "(the day boundary of the cap is not stated)"},
+    "helmstedt_wallplatz": {"grace": ("helmstedt_wallplatz__2", "helmstedt_wallplatz__1"), "window": "rate",
+                            "p10_basis": _BROETCHENTASTE,
+                            "comment": "only the paid subarea of the Wallplatz (43 spaces) is the lot; the free disc and long-term "
+                                       "spaces under the same name are other regimes and not added"},
+    "helmstedt_bahnhof": {"free": "helmstedt_bahnhof__1"},
+    "helmstedt_maschweg": {"free": "helmstedt_maschweg__1"},
+    "helmstedt_lappwaldsee": {"free": "helmstedt_lappwaldsee__1"},
+    # ---- Peine (the paid zone II products: the cheapest product for a stay, spec E2)
+    "peine_schuetzenplatz_sued": {"mixed": True},
+    "peine_friedrich_ebert_platz": {"mixed": True},
+    "peine_schuetzenplatz_nord": {"free": "peine_schuetzenplatz_nord__1"},
+    "peine_kirchhofstrasse": {"free": "peine_kirchhofstrasse__1"},
+    "peine_hagenmarkt": {"free": "peine_hagenmarkt__1"},
+    "peine_schleifmuehlenweg": {"free": "peine_schleifmuehlenweg__1"},
+    "peine_schlosswall": {
+        "bands": ("peine_schlosswall__1", "peine_schlosswall__2", "peine_schlosswall__3"), "window": "rate",
+        "roles": {"peine_schlosswall__1": {"type": "increment", "from": 0, "to": 150},
+                  "peine_schlosswall__2": {"type": "duration_total", "from": 150, "to": 240},
+                  "peine_schlosswall__3": {"type": "duration_total", "from": 240, "to": None}},
+        "ignored": {"peine_schlosswall__4": "free of charge for vehicles with an electric plate for 3 h with a parking disc until "
+                                            "2028-04-30: a vehicle-group condition, not a general tariff"},
+        "comment": "the machine sells three products: a rate per started half hour, a 4 h half-day ticket and a day ticket; the "
+                   "driver buys the cheapest product for the stay (ASSUMPTION P1 and spec E2), so the schedule is the rate up to "
+                   "the duration at which it reaches the half-day ticket (5 started half hours = 2.50 EUR; the 6th would be 3.00 "
+                   "EUR against 2.60 EUR) = 150 min, the half-day ticket up to its 4 h = 240 min, then the day ticket (the "
+                   "metered price would exceed it from the first started half hour after 240 min); the fee window 09:00-17:00 "
+                   "limits a stay to 8 h, the validity the municipal page names for the day ticket"},
+    "peine_werderpark": {
+        "bands": ("peine_werderpark__1", "peine_werderpark__2"), "window": "rate",
+        "roles": {"peine_werderpark__1": {"type": "increment", "from": 0, "to": 150},
+                  "peine_werderpark__2": {"type": "duration_total", "from": 150, "to": None}},
+        "ignored": {"peine_werderpark__3": "an electric-plate exemption, a vehicle-group condition"},
+        "comment": "a rate per started half hour and a 3 h ticket: the rate up to 150 min (2.50 EUR), then the ticket"},
+    # ---- Salzgitter
+    "sz_konrad_adenauer_16": {
+        "bands": ("sz_konrad_adenauer_16__1", "sz_konrad_adenauer_16__2", "sz_konrad_adenauer_16__3"), "window": "rate",
+        "roles": {"sz_konrad_adenauer_16__1": {"type": "free", "from": 0, "to": 30},
+                  "sz_konrad_adenauer_16__2": {"type": "duration_total", "from": 30, "to": 60},
+                  "sz_konrad_adenauer_16__3": {"type": "increment", "from": 60, "to": None}},
+        "p10_basis": _BROETCHENTASTE,
+        "comment": "up to 30 min free (the Broetchentaste), the first hour of a longer stay as a total, then a rate per further "
+                   "6 min (the rounding is not stated, ASSUMPTION P4); the municipal tariff of the zone sz_lebenstedt"},
+    "sz_rathausvorplatz": {
+        "bands": ("sz_rathausvorplatz__1", "sz_rathausvorplatz__2", "sz_rathausvorplatz__3"), "window": "rate",
+        "roles": {"sz_rathausvorplatz__1": {"type": "free", "from": 0, "to": 30},
+                  "sz_rathausvorplatz__2": {"type": "duration_total", "from": 30, "to": 60},
+                  "sz_rathausvorplatz__3": {"type": "increment", "from": 60, "to": None}},
+        "p10_basis": _BROETCHENTASTE,
+        "comment": "the same municipal tariff as the Konrad-Adenauer-Strasse lot; the capacity of 50 is an OSM tag (the historical "
+                   "municipal survey states 47), so the lot is at the edge of the threshold"},
+    "sz_berliner_6": {
+        "bands": ("sz_berliner_6__1", "sz_berliner_6__2", "sz_berliner_6__3"), "window": "rate",
+        "roles": {"sz_berliner_6__1": {"type": "free", "from": 0, "to": 30},
+                  "sz_berliner_6__2": {"type": "duration_total", "from": 30, "to": 60},
+                  "sz_berliner_6__3": {"type": "increment", "from": 60, "to": None}},
+        "p10_basis": _BROETCHENTASTE, "comment": "the same municipal tariff as the Konrad-Adenauer-Strasse lot"},
+    "sz_schillerstrasse": {"free": "sz_schillerstrasse__1"},
+    "sz_see_ost_stadtbad": {"free": "sz_see_ost_stadtbad__1"},
+    "sz_see_sued": {"free": "sz_see_sued__1"},
+    "sz_see_west": {"free": "sz_see_west__1"},
+    "sz_see_nord": {"free": "sz_see_nord__1"},
+    "sz_bad_pr_petershagen_south": {"free": "sz_bad_pr_petershagen_south__1"},
+    "sz_petershagen_public": {"free": "sz_petershagen_public__1",
+                              "comment": "free of charge with a parking disc (a 2 h maximum stay in the paid-hours window); the "
+                                         "disc and the maximum stay are restrictions and no price"},
+    "sz_buechereivorplatz": {"p14": True, "unknown_component": "sz_buechereivorplatz__1",
+                             "comment": "historically paid in the masterplan; the current tariff page does not name the lot and "
+                                        "the package transfers no price from the Rathausvorplatz, which this decision does"},
+    # ---- Goslar
+    "gs_fuellekuhle": {"free": "gs_fuellekuhle__1"},
+    "gs_osterfeld": {"free": "gs_osterfeld__1"},
+    "gs_hildesheimer": {"free": "gs_hildesheimer__1"},
+    "gs_hahnen_stab": {"free": "gs_hahnen_stab__1"},
+    "gs_hahnen_teichwiesen": {"free": "gs_hahnen_teichwiesen__1"},
+    "gs_baeringer": {"rate": "gs_baeringer__1", "window": "rate", "comment": _STARTED},
+    "gs_marktstrasse": {"rate": "gs_marktstrasse__1", "window": "rate", "comment": _STARTED},
+    "gs_kornstrasse": {"rate": "gs_kornstrasse__1", "window": "rate", "comment": _STARTED},
+    "gs_klubgarten": {"rate": "gs_klubgarten__1", "window": "rate"},
+    "gs_christian_dohm": {"rate": "gs_christian_dohm__1", "window": "rate", "comment": _STARTED},
+    "gs_glockengiesser": {"rate": "gs_glockengiesser__1", "window": "rate"},
+}
+
+#: The owner decision on the free Wolfsburg lots whose free status the package keeps open although the owner takes it on a per-site
+#: source (spec Amendment I5a; ASSUMPTION P12 is withdrawn, so there is no default). Per site: ``public_access`` (the owner decision
+#: that the lot is general public, the package class is unknown), the archived ``evidence`` page (a file of
+#: ``wob_free_lots_evidence/`` with its ``quotation``, which must be in the archived page) and, where no page could be archived,
+#: ``not_found`` (what was searched). A site whose page is not archived is a QA row ``lot_free_evidence_missing``; it is never free
+#: without a source.
+WOB_FREE_LOT_EVIDENCE = {
+    "WOB_PARK_720902": {"name": "Allersee Suedufer", "evidence": None,
+                        "not_found": "the WMG page of the Allersee Suedufer car park (wolfsburg-erleben.de) that the owner cites "
+                                     "(free, public, 24 h) was not found on 2026-10-13: the guessed point-of-interest addresses "
+                                     "return HTTP 404 and the web search finds no page naming this car park; the package's own "
+                                     "source, the WMG flyer Allerpark 2025, describes free and paid areas without naming this lot"},
+    "WOB_PARK_1703940": {"name": "Freibad Fallersleben", "evidence": "vfb_fallersleben_geschaeftsstelle.html",
+                         "quotation": "kostenlosen Parkpl\u00e4tzen",
+                         "not_found": "the page of the VfB Fallersleben "
+                                      "(https://www.vfb-fallersleben.de/dein-vfb/geschaeftsstelle/) states, under "
+                                      "'Unser Standort in Fallersleben', that one can park next to the Freibad or opposite the "
+                                      "school on the free car parks; the page is not archived in wob_free_lots_evidence/ (an "
+                                      "archived copy needs the owner's confirmation of the download)"},
+    "WOB_PARK_327697": {"name": "VW-Bad", "evidence": None,
+                        "not_found": "the WMG flyer of 2024 that names the car park at the VW-Bad free (the package's source "
+                                     "EV_WMG_GREEN_2024) is HTTP 404 and no other page was found: the package keeps only a search "
+                                     "index entry, which it does not take as a tariff"},
+}
+
+#: The municipal points of the Wolfsburg city layer that are subpoints of a lot of the research package and never a second row of
+#: the site (spec Amendment I2): the point and the reason text of its QA row; the package's alias file names the lot.
+LARGE_LOT_SUBPOINTS = {
+    "WOB_PARK_1048584": "the disabled-parking point of the Theater car park (a subset of the Theater lot for holders of a blue "
+                        "permit, no option of the general public and no second row of the site)"}
+
+#: What spec Amendment I5a states about the Wolfsburg points that carried the withdrawn free default of ASSUMPTION P12 and are no
+#: option (the owner's reasons, appended to the QA note of the record; the reason code is the one the policy yields). Reislinger
+#: Markt: spec I5a says "reported 48 < 50"; the package states an area estimate of 60 and no reported capacity, so the figure 48 is
+#: not traceable in the package (named in the note, not resolved).
+LARGE_LOT_QA_DETAILS = {
+    "WOB_PARK_327689": "spec Amendment I5a: Schloss, only wedding guests are evidenced, no general public use",
+    "WOB_PARK_524301": "spec Amendment I5a: Dunantplatz, OSM access=customers and an 8-year-old press note only",
+    "WOB_PARK_589853": "spec Amendment I5a: Reislinger Markt, a reported capacity of 48 below the threshold; the research package "
+                       "states no reported capacity but an area estimate of 60, so the figure 48 is not traceable in the package "
+                       "and the record is no option on its unknown access alone",
+    "WOB_PARK_262165": "spec Amendment I5a: no evidence at all, about 17 spaces by the area of the matched OSM parking polygon "
+                       "(443.77 m2 / 25 m2)",
+    "WOB_PARK_1703946": "spec Amendment I5a: neither a fee nor an access evidence",
+}

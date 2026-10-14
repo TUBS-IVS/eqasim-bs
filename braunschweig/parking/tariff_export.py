@@ -31,7 +31,11 @@ entry is the published monthly product of the dataset (``monthly_eur``) or, wher
 'published only'), the imputed product of ASSUMPTION P13 (``monthly_imputed_eur``); the pricing rule of work and education
 stays min(metered or day price, monthly_cents / 21) (ASSUMPTION P2). The export logs per municipality how many garages carry a
 published, an imputed or no product and the P13 median, and the model lists ASSUMPTION P13 in its register exactly when an
-imputed product is used (a model without one is byte-identical to a model of before Amendment F).
+imputed product is used (a model without one is byte-identical to a model of before Amendment F). Spec Amendment I (Task 4j) is
+the same kind of change: the model lists ASSUMPTION P14 (an imputed lot tariff) exactly when a priced garage entry names it,
+and the register keeps the rule text of the withdrawn ASSUMPTION P12 (garages.WITHDRAWN_ASSUMPTIONS states the withdrawal in the
+dataset documentation): the text is part of the committed fixture model whose LF hash is pinned for the Java copies, so no key, no
+schema and no fixture changes.
 
 Spec Amendment C3 (resident parking districts) adds two more keys without a new schema version, because they are
 additive: every zone entry carries ``resident_permits_valid``, a bool that is never null (an empty table cell resolves to
@@ -164,6 +168,9 @@ _GARAGE_ASSUMPTION_WHERE_IT_BITES = {
     "P11": "Garages priced from secondary evidence (the garages that name ASSUMPTION P11 in their notes)",
     "P12": "Wolfsburg car parks without any fee evidence that are free by the municipal default (the rows that name "
            "ASSUMPTION P12 in their notes): every stay at such a car park costs 0, whatever the street costs",
+    "P14": "Surface lots without a stated general tariff (the rows that name ASSUMPTION P14 in their notes): the tariff of such "
+           "a lot is the median product of the priced lots of its zone, so the lot weighs as much as the other lots at the "
+           "same distance and costs what they cost",
 }
 
 #: ASSUMPTION P13 (spec Amendment F2): the model lists it (after P12) exactly when a garage entry uses an imputed monthly
@@ -174,6 +181,13 @@ MONTHLY_IMPUTATION_ASSUMPTION = Assumption(
     "that name ASSUMPTION P13 in their notes): work and education stays pay min(metered or day price, imputed product / 21)",
     "parking_garage_monthly_imputation false (published products only); garage dataset rows that name it (column assumptions "
     "of parking_garages_2026)")
+
+#: ASSUMPTION P14 (spec Amendment I4): the model lists it (after P12 and P13) exactly when a garage entry of the model is a priced
+#: row that names it (a surface lot whose general tariff is the median product of the lots of its zone), so the model of a dataset
+#: without such a lot (and every fixture model) carries the register as before.
+LOT_TARIFF_IMPUTATION_ASSUMPTION = Assumption(
+    "P14", parking_garages.ASSUMPTIONS["P14"], _GARAGE_ASSUMPTION_WHERE_IT_BITES["P14"],
+    "garage dataset rows that name it (column assumptions of parking_garages_2026)")
 
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
@@ -223,7 +237,8 @@ ASSUMPTIONS_REGISTER = (
                "commuter_day_eur presence; monthly product of the garage dataset"),
     # Parking cost zones v2, Amendment E and the garage dataset parking_garages_2026: the assumptions P3 to P12 of the
     # dataset (their texts are the single source ``braunschweig.parking.garages.ASSUMPTIONS``, the data record
-    # parking_garages_2026 is their source text), P9 of the pricing code, and the choice model G1, G2 and G3.
+    # parking_garages_2026 is their source text; P13 follows P12 where a model uses an imputed monthly product and P14 follows
+    # them where a model lists a lot with an imputed tariff), P9 of the pricing code, and the choice model G1, G2 and G3.
     *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id] + _GARAGE_ASSUMPTION_ADDENDUM.get(assumption_id, ""),
                  _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
                  "garage dataset rows that name it (column assumptions of parking_garages_2026)")
@@ -290,13 +305,17 @@ ASSUMPTIONS_REGISTER = (
 )
 
 
-def assumption_texts(monthly_imputed: bool = False) -> list[str]:
+def assumption_texts(monthly_imputed: bool = False, lot_tariff_imputed: bool = False) -> list[str]:
     """The register as the ``assumptions`` list of the model: ``ASSUMPTION <id>: ...`` strings. With ``monthly_imputed`` the
-    model uses an imputed monthly product and the register lists ASSUMPTION P13 right after P12."""
+    model uses an imputed monthly product and the register lists ASSUMPTION P13 right after P12; with ``lot_tariff_imputed`` it
+    lists a surface lot whose tariff is imputed and the register lists ASSUMPTION P14 right after P13 (or P12 without P13)."""
     entries = list(ASSUMPTIONS_REGISTER)
+    position = next(index for index, entry in enumerate(entries) if entry.assumption_id == "P12") + 1
     if monthly_imputed:
-        position = next(index for index, entry in enumerate(entries) if entry.assumption_id == "P12") + 1
         entries.insert(position, MONTHLY_IMPUTATION_ASSUMPTION)
+        position += 1
+    if lot_tariff_imputed:
+        entries.insert(position, LOT_TARIFF_IMPUTATION_ASSUMPTION)
     return [assumption.render() for assumption in entries]
 
 
@@ -560,6 +579,16 @@ def garage_entries(garages, monthly_imputation: bool = True) -> list[dict]:
     return [garage.to_json() for garage in sorted(entries, key=lambda garage: garage.garage_id)]
 
 
+def garages_naming_assumption(garages, assumption_id: str) -> int:
+    """The number of PRICED rows of the garage dataset whose ``assumptions`` column names ``assumption_id`` (0 for no dataset).
+    The model lists a conditional assumption (P13, P14) in its register exactly when this is positive for it. Pure."""
+    if garages is None:
+        return 0
+    return sum(1 for _, row in garages.iterrows()
+               if bool(row["priced"]) and assumption_id in (str(row["assumptions"]).split(parking_garages.LIST_SEPARATOR)
+                                                           if not _is_empty(row["assumptions"]) else ()))
+
+
 def garages_from_model(model: Mapping) -> list[GarageTariff]:
     """The model's garage entries as ``GarageTariff`` objects (inverse of ``garage_entries``); a model without the key (a
     schema 1 or 2 file) has none."""
@@ -778,7 +807,8 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         "terminal_stay_rule": terminal_stay_rule,
         # D1: the fee windows are those of an average weekday.
         "weekday_only": True,
-        "assumptions": assumption_texts(monthly_imputed=monthly_imputed_used),
+        "assumptions": assumption_texts(monthly_imputed=monthly_imputed_used,
+                                        lot_tariff_imputed=garages_naming_assumption(garages, "P14") > 0),
         "sources": checked_sources,
         "resident_districts": district_entries,
         "garages": garage_list,

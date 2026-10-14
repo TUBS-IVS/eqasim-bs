@@ -131,11 +131,12 @@ REQUIRED_TEXT_COLUMNS = ("garage_id", "package_facility_id", "name", "facility_k
                          "source_url",
                          "source_date", "geometry_method", "geometry_source_url", "package_sha256", "notes")
 LIST_SEPARATOR = ";"
-#: A row cites the regional evidence package and, where the supplement package (spec E12), the follow-up package (spec E13) or
-#: the Wolfsburg car-park package (spec E14) of 2026-10-07 touches the row, that package too: its ``package_sha256`` holds one
-#: to four lower-case SHA-256 values separated by ``LIST_SEPARATOR`` (the regional package first, then the supplement, the
-#: follow-up and the Wolfsburg car-park package in that order).
-MAXIMUM_PACKAGE_HASHES = 4
+#: A row cites the regional evidence package and, where the supplement package (spec E12), the follow-up package (spec E13), the
+#: Wolfsburg car-park package (spec E14) of 2026-10-07 or the large-lot research package (spec Amendment I) touches the row, that
+#: package too: its ``package_sha256`` holds one to five lower-case SHA-256 values separated by ``LIST_SEPARATOR`` (the regional
+#: package first, then the supplement, the follow-up, the Wolfsburg car-park package and the large-lot package in that order; a
+#: large surface lot cites the large-lot package alone).
+MAXIMUM_PACKAGE_HASHES = 5
 
 #: Why a garage is listed and not priced (``not_priced_reason``): the column holds the code, the details of the garage
 #: (what is published, which rule ids) are in its notes.
@@ -200,6 +201,31 @@ ASSUMPTIONS = {
            "model export can switch the imputation off (config parking_garage_monthly_imputation, the sensitivity arm "
            "'published only')",
 }
+#: Assumptions that stay defined and validated (so that older datasets and records remain readable) but that no row of the
+#: current dataset rests on, with the statement that goes in front of their rule text in the dataset documentation and the
+#: curation log (``assumption_status_text``). ASSUMPTION P12, the blanket municipal free default of the Wolfsburg car parks, was
+#: withdrawn by spec Amendment I5a (owner decision 2026-10-13: a car park is free only on a per-site source, never by a
+#: default). The tariff model export keeps the raw rule text of ``ASSUMPTIONS`` in its register: that text is part of the
+#: committed fixture model whose LF hash is pinned for the Java copies (tests/test_parking_cost.py), so the export takes the
+#: withdrawn wording when those copies are synced.
+WITHDRAWN_ASSUMPTIONS = {
+    "P12": "WITHDRAWN (spec Amendment I5a, 2026-10-13): no row of the current dataset rests on it, the id stays so that older "
+           "datasets and records remain readable; "}
+ASSUMPTIONS["P14"] = (
+    "a public surface lot of at least the size threshold (ASSUMPTION L50) whose general tariff the sources do not state takes "
+    "the MEDIAN product of the priced lots of the SAME ZONE when at least two exist there, otherwise of its municipality (the "
+    "paid lots with a tariff of their own; ordered by the price of a 60 min stay; with an even number the two middle lots must "
+    "have identical schedules, else the step stops); the product is the median lot's complete schedule, never a value typed or "
+    "averaged; a customer discount of the lot (for example for bathers) is not modelled; with fewer than two priced lots on both "
+    "levels the lot is no option; every such row is named and counted")
+
+
+def assumption_status_text(assumption_id: str) -> str:
+    """The rule text of an assumption of ``ASSUMPTIONS`` with the statement of ``WITHDRAWN_ASSUMPTIONS`` in front where it was
+    withdrawn: the text of the dataset documentation (``COLUMN_GLOSSARY`` of the curation step) and of the curation log."""
+    return WITHDRAWN_ASSUMPTIONS.get(assumption_id, "") + ASSUMPTIONS[assumption_id]
+
+
 #: The least number of published current garage monthly products a municipality needs before ASSUMPTION P13 imputes a monthly
 #: product for its other garages (a median of one value would copy a single price to every garage).
 MINIMUM_PUBLISHED_MONTHLY_PRODUCTS = 2
@@ -661,7 +687,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
     one of ``ASSUMPTIONS`` and is named as ``ASSUMPTION <id>`` in the notes, and a row rests on ASSUMPTION P6 exactly when
     it has tiers and on ASSUMPTION P8 exactly when it has a schedule with a priced band and no tiers; ASSUMPTION P10 (a grace
     period) needs a free first band that something follows (a priced band or the tiers) and a tiered garage with a grace
-    period lists it; ASSUMPTION P12 (a municipal free default) needs the free schedule.
+    period lists it; ASSUMPTION P12 (a municipal free default) needs the free schedule. ASSUMPTION P14 (an imputed lot
+    tariff) belongs to a surface lot.
     Monthly product: ``monthly_eur`` is a positive whole-cent amount with its ``monthly_source_url`` and ``monthly_product``,
     and neither text without the amount. Imputed monthly product (ASSUMPTION P13, spec Amendment F2): ``monthly_imputed_eur``
     is a positive whole-cent amount that appears only together with P13 in ``assumptions`` (and P13 only with the amount),
@@ -880,6 +907,8 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
                                        "but nothing follows the free band of this garage (a car park that is free for every stay)")
         if "P12" in assumptions and not (bands is not None and is_free_schedule(bands) and not has_tiers):
             problem("assumptions", "ASSUMPTION P12 frees a car park: it belongs to the free schedule '0- free' only")
+        if "P14" in assumptions and kind != "surface_lot":
+            problem("assumptions", "ASSUMPTION P14 imputes the tariff of a surface lot only (spec Amendment I4)")
         # --- imputed monthly product (ASSUMPTION P13, spec Amendment F2): a value only with P13, never next to a published
         # product, never at a surface lot, never at a garage that is not priced
         imputed = row["monthly_imputed_eur"]

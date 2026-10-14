@@ -711,6 +711,62 @@ def test_the_model_lists_assumption_p13_exactly_when_an_imputed_product_is_used(
     assert "parking_garage_monthly_imputation=True" in messages and "P13 median 107.48 EUR" in messages
 
 
+def _with_lot_tariff_imputed(frame, garage_id: str):
+    """The fixture garage dataset with ASSUMPTION P14 named on one priced garage that becomes a surface lot (the dataset
+    validator allows P14 on a surface lot only; the export reads the assumptions column and the facility kind)."""
+    changed = frame.copy()
+    index = changed.index[changed["garage_id"] == garage_id][0]
+    assert bool(changed.loc[index, "priced"]) and pd.isna(changed.loc[index, "monthly_eur"])
+    existing = changed.loc[index, "assumptions"]
+    changed.loc[index, "assumptions"] = f"{existing};P14" if isinstance(existing, str) and existing else "P14"
+    changed.loc[index, "facility_kind"] = "surface_lot"
+    return changed
+
+
+def test_the_model_lists_assumption_p14_exactly_when_a_priced_row_names_it(table, sources, garage_frame):
+    candidates = [row["garage_id"] for _, row in garage_frame.iterrows()
+                  if pd.isna(row["monthly_eur"]) and row["priced"] and row["facility_kind"] == "garage"]
+    garage_id, other_id = candidates[0], candidates[1]
+    frame = _with_lot_tariff_imputed(garage_frame, garage_id)
+    plain = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=garage_frame)
+    on = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=frame)
+    ids = [text.split(":")[0] for text in on["assumptions"]]
+    assert ids.index("ASSUMPTION P14") == ids.index("ASSUMPTION P12") + 1
+    assert [text for text in on["assumptions"] if "P14" not in text.split(":")[0]] == plain["assumptions"]
+    assert "ASSUMPTION P14" not in " ".join(plain["assumptions"])
+    p14 = next(text for text in on["assumptions"] if text.startswith("ASSUMPTION P14:"))
+    assert "MEDIAN" in p14 and "SAME ZONE" in p14 and "Surface lots without a stated general tariff" in p14
+    # same schema, same keys: the Java reader and the golden fixture see no difference
+    assert sorted(on) == sorted(plain) and on["schema_version"] == plain["schema_version"] == 4
+    assert on["zones"] == plain["zones"] and [entry["garage_id"] for entry in on["garages"]] == [
+        entry["garage_id"] for entry in plain["garages"]]
+    # only a PRICED row lists it, and the count is of priced rows that name the id (not of a longer id that contains it)
+    unpriced = frame.copy()
+    unpriced.loc[unpriced["garage_id"] == garage_id, "priced"] = False
+    assert te.garages_naming_assumption(frame, "P14") == 1 and te.garages_naming_assumption(unpriced, "P14") == 0
+    assert te.garages_naming_assumption(None, "P14") == 0 and te.garages_naming_assumption(garage_frame, "P14") == 0
+    assert te.garages_naming_assumption(frame, "P1") == 0
+    # a model that uses an imputed monthly product as well lists P12, P13, P14 in that order
+    both = te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources,
+                                 garages=_with_imputed_monthly(frame, other_id))
+    both_ids = [text.split(":")[0] for text in both["assumptions"]]
+    position = both_ids.index("ASSUMPTION P12")
+    assert both_ids[position:position + 3] == ["ASSUMPTION P12", "ASSUMPTION P13", "ASSUMPTION P14"]
+    assert te.assumption_texts(monthly_imputed=True, lot_tariff_imputed=True) == both["assumptions"]
+
+
+def test_the_register_keeps_the_rule_text_of_the_withdrawn_assumption_p12_because_the_fixture_hash_is_a_contract(model):
+    # spec Amendment I5a (Task 4j) withdraws P12 in the dataset documentation (garages.assumption_status_text); the exported
+    # register is part of the committed fixture model whose LF hash is pinned for the Java copies (tests/test_parking_cost.py),
+    # so it keeps the rule text until those copies are synced: the register still lists the id, and the withdrawal is stated in
+    # garages
+    from braunschweig.parking import garages as pg
+
+    p12 = next(text for text in model["assumptions"] if text.startswith("ASSUMPTION P12:"))
+    assert "WITHDRAWN" not in p12 and pg.ASSUMPTIONS["P12"] in p12 and "municipal default" in p12
+    assert "P12" in pg.WITHDRAWN_ASSUMPTIONS
+
+
 def test_the_monthly_summary_counts_published_imputed_and_none_per_municipality(garage_frame):
     frame = _with_imputed_monthly(garage_frame, next(row["garage_id"] for _, row in garage_frame.iterrows()
                                                      if pd.isna(row["monthly_eur"]) and row["priced"]
