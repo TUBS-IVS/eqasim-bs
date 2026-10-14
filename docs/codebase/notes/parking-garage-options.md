@@ -139,18 +139,20 @@ as a sensitivity number (the table records the filter).
 
 ## Large surface lots (spec Amendment I, Task 4j)
 
-The option set is the 36 garages and the 55 large public surface lots of the research package (`facility_kind` surface_lot,
-threshold 50 spaces, ASSUMPTION L50), priced by the same code without a special case: a lot is one more point with a schedule
+The option set is the garages and the large public surface lots of the research package (`facility_kind` surface_lot, the
+size threshold of ASSUMPTION L50; the data record `parking_garages_2026` states the counts), priced by the same code without
+a special case: a lot is one more point with a schedule
 (single window, duration bands or the free schedule). The reading of the package, the policy, the tariff roles, the median
 product of P14 and the evidence gate are in [parking-large-lots.md](parking-large-lots.md); the decisions in ADR-0140 decision 13.
 Three consequences for this mechanism: a lot that carries the street product of its zone has the same price as the street
-there (owner decision A, so the option changes the weights and not the price at the same spot); 29 of the 55 lots are free
-(cost 0 at every duration, E4 unchanged); and the calibrated decay lengths were calibrated on the 49-row option set, so they are
-to be recalibrated on the 91-row set (spec I6, Task 4k) before any run is compared with the SrV.
+there for every stay, because the maximum stay of the zone is written as bands and the lot row alone reproduces the street
+path (owner decision A and ruling R-4j-6, so the option changes the weights and not the price at the same spot); many lots
+are free (cost 0 at every duration, E4 unchanged); and the calibrated decay lengths were calibrated on the former option
+set, so they are to be recalibrated on the enlarged set (spec I6, Task 4k) before any run is compared with the SrV.
 
 ## Known limitations
 
-- **Option weights ignore capacity.** A 50-space lot pulls as much as a 1,300-space garage at the same distance (E3: capacity and
+- **Option weights ignore capacity.** A small lot pulls as much as the largest garage at the same distance (E3: capacity and
   occupancy are not modelled); the dataset's `capacity_reported` is information only.
 - The garage shares of the city centre and of `bs_zentrum` are calibration targets, so they no longer validate the model;
   the universe caveat of E5 and H2 (SrV asks residents about their usual place, the model averages over destinations) is

@@ -74,6 +74,7 @@ code_paths:
 - scripts/curation/parking_zones_2026/regional_garages.py
 - scripts/curation/parking_zones_2026/bs_monthly_products.py
 - scripts/curation/parking_zones_2026/station_lots.py
+- scripts/curation/parking_zones_2026/large_lots.py
 evidence:
   tests:
   - tests/test_parking_cost.py
@@ -99,6 +100,7 @@ evidence:
   - tests/test_parking_regional_zones.py
   - tests/test_parking_supply_share.py
   - tests/test_parking_wolfsburg_lots.py
+  - tests/test_parking_large_lots.py
   - tests/test_parking_zone_assembly.py
   - tests/test_parking_zone_exposure.py
   - tests/test_parking_zone_geometry.py
@@ -145,8 +147,9 @@ evidence:
       draw logs the realised free share per workplace class and per campus together with the proxy mapping, the
       outcome report (CSV v3) carries the expected garage share and the stays with a garage in range per outcome, zone
       and purpose, and the Java listener logs the garage rates per iteration while the garage options are on. An
-      activity inside a resident district outside every fee zone is free by Z1, not a fallback. A garage priced from secondary evidence (P11) and a surface lot
-      priced by an imputed median tariff (P14) are named per row, not hidden; the municipal free default (P12) is withdrawn
+      activity inside a resident district outside every fee zone is free by Z1, not a fallback. A garage priced from
+      secondary evidence (P11) and a surface lot priced by an imputed median tariff (P14) are named per row, not hidden; the
+      municipal free default (P12) is withdrawn
       (ADR-0140 decision 13, no row rests on it).
   reference:
     kind: committed
@@ -186,9 +189,10 @@ validation:
     the paid-only share of bs_zentrum, 0.679, like-for-like with a universe of payers; no validation; the independent
     paid-only Wolfsburg commuter check is 0.5535 over 18 activities against the SrV row 03103 paid share 0.7377, a number
     without a pre-registered bound whose difference is not explained: ADR-0140 decision 12; the earlier miss of the commuter share at the single decay length was the
-    pre-registered one of decision 7); since Task 4j (spec Amendment I, ADR-0140 decision 13) the option set holds 91 rows (36 garages and 55 large
-    surface lots) and the two decay lengths above were calibrated on the former option set of 49 rows, so they are stale for
-    the new set until the recalibration of Task 4k (spec Amendment I6), which is pending; the Java side of the commuter decay
+    pre-registered one of decision 7); since Task 4j (spec Amendment I, ADR-0140 decision 13) the option set is enlarged by
+    the large surface lots (the counts are in the data record parking_garages_2026) and the two decay lengths above were
+    calibrated on the former option set, so they are stale for the enlarged set until the recalibration of Task 4k (spec
+    Amendment I6), which is pending; the Java side of the commuter decay
     (schema 4) is pending (Task 4i); the parking search time is
     off (searchTimeFactor 0.0, no zone carries a search time). Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
     (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.

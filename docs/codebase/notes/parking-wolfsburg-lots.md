@@ -1,7 +1,7 @@
 # The Wolfsburg car parks of the garage dataset
 
 > **Superseded for the rows of the dataset (spec Amendment I, Task 4j, 2026-10-14).** The release dataset no longer reads this
-> package: its 13 surface lots were replaced by the sites of the large-lot research package under its size and access policy
+> package: its surface lots were replaced by the sites of the large-lot research package under its size and access policy
 > (ASSUMPTION P12 withdrawn; the Autostadt, the Klinikum and the Volkswagen Arena are QA rows; the Allerpark and the
 > Theaterparkplatz are rows of the research package). See [parking-large-lots.md](parking-large-lots.md) and ADR-0140 decision 13.
 > `--wolfsburg-lots-zip` and `--large-lots-zip` cannot be combined. The reader below, its classes and its tests remain; the table
