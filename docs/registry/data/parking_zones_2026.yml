@@ -847,3 +847,6 @@ notes: >-
   Forschungsflughafen 4 / 1, Zentralcampus 44 / 11): the activities lie at the buildings of the campus grounds, not in
   the paid car parks.
   Tariffs: parking_tariffs_2026; coverage: parking_coverage_register_2026.
+  Spec v3 B1 (Task B1, issue #436, 2026-10-14): the zone polygons are unchanged (SHA-256 of the file above, 4008d609...); the
+  tariff rows of the zones changed and are recorded in the data record parking_tariffs_2026 (cells and source ids by
+  pointer), the excluded Peine Echternplatz lot in parking_coverage_register_2026.

@@ -53,6 +53,11 @@ acquisition:
     11, no_paid_parking_known 1, not_audited 111, excluded 7 (130 rows). SHA-256 of the file (LF):
     7e25d6051f85416ca3193e57c6671cd14a776d98ade181a64d22729322814af3 (before:
     223ede2ab05384b6aa3964aa8aeadcfe2eeaf94f2e4349a841d57bb37854d0a2).
+    Spec v3 B1 (2026-10-14) adds the excluded row 'Peine: Parkplatz Echternplatz (zone I of the Parkgebuehrenordnung)': a
+    single lot (1.70 EUR per started 30 min, Mo-Fr 9-17 h, maximum stay 60 min of the city's lot page), sources pe_current and
+    pe_echtern of the package Parkdaten_Nachrecherche_2026-10-14.zip; it is not part of the Peine zone II row. Status counts:
+    zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131 rows). SHA-256 of the file (LF): 8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c
+    (before: 7e25d6051f85416ca3193e57c6671cd14a776d98ade181a64d22729322814af3).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true

@@ -751,8 +751,10 @@ def _notes(zone_id, values) -> str:
     """A note that names what the evidence requires: every assumption of the row, F1 where the window is assumed, the
     rule the package marks as not preferred, and what the OSM charge tag of a Bad Harzburg car park says."""
     parts = [f"ASSUMPTION {assumption}" for assumption in values["assumptions"]]
-    if values["window"] is None:
+    if values["window"] is None and values.get("brochure_window") is None:
         parts.append("ASSUMPTION F1: fee window, labelled")
+    if values.get("brochure_window") is not None:
+        parts.append("the dated brochure bh_brochure_calendar states the window")
     if values["unpreferred_rule"] is not None:
         parts.append(f"the package marks {values['unpreferred_rule']} as not preferred for current use (prior_snapshot)")
     if zone_id.startswith("bh_"):
@@ -762,15 +764,18 @@ def _notes(zone_id, values) -> str:
 
 
 def _tariff_rows(evidence, f1) -> pd.DataFrame:
-    """Rows that carry the evidence of the package: what the sources state, and the F1 window where they state none."""
+    """Rows that carry the evidence of the package: what the sources state, the dated brochure window of Bad Harzburg (spec v3
+    B1), the modelled maximum stay, and the F1 window where they state none."""
     rows = []
     for zone_id, values in evidence.items():
-        window = values["window"] or tuple(f1[zone_id][:2])
+        brochure = values.get("brochure_window")
+        window = values["window"] or tuple((brochure or f1[zone_id])[:2])
         extras = {column: values[column] for column in ("free_if_stay_at_most_min", "first_period_min", "first_period_eur",
-                                                        "daily_cap_eur") if values.get(column) is not None}
+                                                        "daily_cap_eur", "max_stay_min") if values.get(column) is not None}
         rows.append(_row(zone_id, BS if zone_id.startswith("bs_") else GS, hourly_rate_eur=values["hourly_rate_eur"],
                          billing_unit_min=values["billing_unit_min"], fee_start_h=window[0], fee_end_h=window[1],
-                         fee_window_source="assumption" if values["window"] is None else "municipal_page",
+                         fee_window_source=("assumption" if values["window"] is None and brochure is None
+                                            else "municipal_page"),
                          notes=_notes(zone_id, values),
                          resident_permits_valid=False if zone_id in RESIDENT_PERMITS_NOT_VALID else pd.NA, **extras))
     frame = pd.DataFrame(rows, columns=list(pz.TARIFF_COLUMNS))
@@ -810,6 +815,21 @@ def test_tariff_evidence_comes_from_the_package_rules(regional, release):
     assert hexenritt["window"] is None
 
 
+def test_the_step_names_the_ev_columns_and_the_modelled_values_of_spec_v3_b1(regional):
+    assert regional.EV_COLUMNS == pz.EV_COLUMNS
+    assert regional.MODELLED_MAX_STAY_MIN == {"bh_sole_therme": 360, "bh_kurpark": 360, "bh_grossparkplatz": 600,
+                                              "bh_burgberg": 600, "bh_berliner_platz": 600, "se_am_markt": 360}
+    assert set(regional.BROCHURE_WINDOWS) == set(regional.D3_ZONE_IDS) & {zone for zone in regional.D3_ZONE_IDS
+                                                                         if zone.startswith("bh_")}
+    assert not any(zone.startswith("bh_") for zone in regional.F1_WINDOWS)
+
+
+def test_a_modelled_maximum_stay_that_the_package_does_not_state_is_refused(regional, release, monkeypatch):
+    monkeypatch.setitem(regional.MODELLED_MAX_STAY_MIN, "bh_kurpark", 480)
+    with pytest.raises(SystemExit, match="bh_kurpark: the modelled maximum stay 480 min is not one of the stays"):
+        regional.tariff_evidence(release["package"])
+
+
 def test_hexenritt_bands_that_the_row_fields_cannot_express_are_refused(regional, release):
     rules = _rules()
     for rule in rules:
@@ -840,22 +860,37 @@ def test_a_missing_or_ambiguous_window_is_never_guessed(regional, release):
     ("gs_parkplatz_baeringerstrasse", {"billing_unit_min": 60}, "ASSUMPTION D3-a"),
     ("gs_parkplatz_klubgartenstrasse_zob", {"fee_end_h": 18.0}, "fee window 10.0-18.0 but the package gives \\(10.0, 16.0\\)"),
     ("gs_parkplatz_klubgartenstrasse_zob", {"fee_window_source": "assumption"}, "must not be 'assumption'"),
-    ("bh_kurpark", {"fee_window_source": "municipal_page"}, "state no fee window, so fee_window_source must be 'assumption'"),
-    ("bh_kurpark", {"fee_start_h": 9.0}, "ASSUMPTION F1 gives \\(8.0, 18.0\\)"),
-    ("bh_kurpark", {"notes": "a window without its label"}, "note must name ASSUMPTION F1"),
-    ("bh_kurpark", {"max_stay_min": 360}, "max_stay_min must stay empty"),
+    ("br_wurmberg", {"fee_window_source": "municipal_page"}, "state no fee window, so fee_window_source must be 'assumption'"),
+    ("br_wurmberg", {"fee_start_h": 8.0}, "ASSUMPTION F1 gives \\(9.0, 18.0\\)"),
+    ("br_wurmberg", {"notes": "a window without its label"}, "note must name ASSUMPTION F1"),
+    ("bh_kurpark", {"fee_window_source": "assumption"}, "so fee_window_source must be 'municipal_page'"),
+    ("bh_kurpark", {"fee_start_h": 9.0}, "fee window 9.0-18.0 but the brochure gives \\(8.0, 18.0\\)"),
+    ("bh_kurpark", {"notes": "ASSUMPTION M3 ASSUMPTION D3-b ASSUMPTION C-a"},
+     "must cite the brochure source id bh_brochure_calendar"),
+    ("bh_kurpark", {"max_stay_min": 120}, "max_stay_min 120 but the package gives 360"),
+    ("bh_burgberg", {"max_stay_min": 360}, "max_stay_min 360 but the package gives 600"),
+    ("bh_kurpark", {"max_stay_min": None}, "max_stay_min <NA> but the package gives 360"),
+    ("br_wurmberg", {"max_stay_min": 60}, "max_stay_min 60 but the package gives None"),
+    ("se_am_markt", {"max_stay_min": 600}, "max_stay_min 600 but the package gives 360"),
+    ("br_wurmberg", {"ev_free_minutes": 240}, "ev_free_minutes must stay empty"),
+    ("bh_kurpark", {"ev_rule_valid_until": "2026-12-31"}, "ev_rule_valid_until must stay empty"),
     ("se_am_markt", {"long_stay_product_eur": 6.0}, "long_stay_product_eur must stay empty"),
     ("br_hexenritt", {"daily_cap_eur": None}, "daily_cap_eur \\S+ but the package gives 10.0"),
     ("br_wurmberg", {"zone_type": "campus"}, "a single paid site is street_paid"),
     ("bs_bga_willy_brandt_platz", {"billing_unit_min": 30}, "billing_unit_min 30 but 1"),
 ], ids=["wrong_rate", "billing_unit_not_the_ruled_one", "window_end_differs", "sourced_window_labelled_assumption",
         "assumed_window_labelled_sourced", "assumed_window_differs_from_f1", "assumed_window_without_the_label",
-        "maximum_stay_filled", "long_stay_product_filled", "day_cap_missing", "wrong_zone_type", "bga_billing_unit"])
+        "brochure_window_labelled_assumption", "brochure_window_differs", "brochure_not_cited",
+        "maximum_stay_differs", "maximum_stay_differs_burgberg", "maximum_stay_missing", "maximum_stay_where_none_is_modelled",
+        "seesen_maximum_stay_10_h_applied", "ev_exemption_where_none_is_stated", "ev_date_where_none_is_stated",
+        "long_stay_product_filled", "day_cap_missing", "wrong_zone_type", "bga_billing_unit"])
 def test_the_new_tariff_rows_must_carry_the_values_the_package_gives(regional, release, capsys, zone_id, changes, message):
     evidence = regional.tariff_evidence(release["package"])
     table = _tariff_rows(evidence, regional.F1_WINDOWS)
     regional.check_tariff_rows(evidence, table)
-    assert "fee window sourced 4/12" in capsys.readouterr().out  # Goslar x3 and Seesen; ASSUMPTION F1 on the other 8
+    out = capsys.readouterr().out
+    # Goslar x3 and Seesen state a window; the five Bad Harzburg rows the dated brochure (spec v3 B1); ASSUMPTION F1 on the other 3
+    assert "fee window sourced 4/12" in out and "dated brochure 5/12" in out and "ASSUMPTION F1 3/12" in out
     broken = table.copy()
     for column, value in changes.items():
         broken[column] = broken[column].astype(object)
@@ -870,8 +905,8 @@ def test_the_new_tariff_rows_must_carry_the_values_the_package_gives(regional, r
     ("gs_parkplatz_glockengiesserstrasse", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),
     ("gs_parkplatz_klubgartenstrasse_zob", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),
     ("bh_kurpark", "ASSUMPTION D3-b", "note must name ASSUMPTION D3-b"),
-    ("bh_burgberg", "ASSUMPTION M2", "note must name ASSUMPTION M2"),
-    ("se_am_markt", "ASSUMPTION M2", "note must name ASSUMPTION M2"),
+    ("bh_burgberg", "ASSUMPTION M3", "note must name ASSUMPTION M3"),
+    ("se_am_markt", "ASSUMPTION M3", "note must name ASSUMPTION M3"),
     ("se_am_markt", "ASSUMPTION C-a", "note must name ASSUMPTION C-a"),
     ("br_wurmberg", "ASSUMPTION C-a", "note must name ASSUMPTION C-a"),
     ("bs_bga_willy_brandt_platz", "ASSUMPTION R2-a", "note must name ASSUMPTION R2-a"),

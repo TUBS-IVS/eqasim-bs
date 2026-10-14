@@ -94,9 +94,12 @@ FACILITY_FEE_STATUSES = ("paid", "free", "unknown")
 #: (ASSUMPTION C-b, ruling R-T1d-a); the layer states no unit.
 WOLFSBURG_BILLING_UNIT_MIN = 30
 #: Street-product columns of the Wolfsburg rows that no source fills (no first period, day cap, free period or
-#: long-stay product is published for the sections): they must stay empty.
+#: long-stay product is published for the sections; spec v3 B1: no EV exemption is verified for Wolfsburg): they must stay
+#: empty. The maximum stay is empty too where the sections do not state one uniformly; ASSUMPTION W-max (owner decision
+#: 2026-10-14) reads a Wolfsburg area without a recorded maximum as "long parking allowed", so the zone row carries none and
+#: the areas with a recorded maximum become area zones of their own (spec v3 B2).
 WOLFSBURG_EMPTY_COLUMNS = ("free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur",
-                           "long_stay_product_eur")
+                           "long_stay_product_eur", "ev_free_minutes", "ev_rule_valid_until")
 
 _PRICE = re.compile(r"^\s*(\d+(?:,\d+)?)\s*\N{EURO SIGN}\s*pro\s+Stunde\s*$")
 _WEEKDAY_WINDOW = re.compile(r"^(?:Mo-Fr\s+)?(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
@@ -342,7 +345,7 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
         unit = row["billing_unit_min"]
         if pd.isna(unit) or int(unit) != WOLFSBURG_BILLING_UNIT_MIN:
             problems.append(f"{zone_id}: billing_unit_min {unit} but ASSUMPTION C-b gives {WOLFSBURG_BILLING_UNIT_MIN}")
-        filled = [column for column in WOLFSBURG_EMPTY_COLUMNS if pd.notna(row[column])]
+        filled = [column for column in WOLFSBURG_EMPTY_COLUMNS if column in row.index and pd.notna(row[column])]
         if filled:
             problems.append(f"{zone_id}: {filled} must stay empty (no source publishes them for the street sections)")
     if problems:

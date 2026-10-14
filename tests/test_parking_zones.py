@@ -1054,16 +1054,17 @@ TU_CAMPUS_ZONES = tuple(sorted(TU_CAMPUS_AREAS_M2))
 REGIONAL_PACKAGE_SHA256 = "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7"
 
 #: The eleven single paid sites of spec Amendment D3 (2026-10-07): municipality, hourly rate in EUR, billing unit in
-#: minutes, fee window start and end in hours, fee window source. The 50 m area of each site is ASSUMPTION C-a.
+#: minutes, fee window start and end in hours, fee window source. The 50 m area of each site is ASSUMPTION C-a. Spec v3 B1
+#: (2026-10-14) moved the five Bad Harzburg windows to the dated municipal brochure (municipal_page).
 D3_SITES = {
     "gs_parkplatz_baeringerstrasse": ("03153017", 1.0, 30, 10.0, 18.0, "municipal_page"),
     "gs_parkplatz_klubgartenstrasse_zob": ("03153017", 1.0, 30, 10.0, 16.0, "municipal_page"),
     "gs_parkplatz_glockengiesserstrasse": ("03153017", 1.0, 30, 10.0, 18.0, "municipal_page"),
-    "bh_sole_therme": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
-    "bh_kurpark": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
-    "bh_grossparkplatz": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
-    "bh_burgberg": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
-    "bh_berliner_platz": ("03153002", 1.0, 30, 8.0, 18.0, "assumption"),
+    "bh_sole_therme": ("03153002", 1.0, 30, 8.0, 18.0, "municipal_page"),
+    "bh_kurpark": ("03153002", 1.0, 30, 8.0, 18.0, "municipal_page"),
+    "bh_grossparkplatz": ("03153002", 1.0, 30, 8.0, 18.0, "municipal_page"),
+    "bh_burgberg": ("03153002", 1.0, 30, 8.0, 18.0, "municipal_page"),
+    "bh_berliner_platz": ("03153002", 1.0, 30, 8.0, 18.0, "municipal_page"),
     "se_am_markt": ("03153012", 0.6, 10, 8.0, 18.0, "ordinance"),
     "br_hexenritt": ("03153016", 1.25, 120, 9.0, 18.0, "assumption"),
     "br_wurmberg": ("03153016", 1.0, 30, 9.0, 18.0, "assumption"),
@@ -1112,6 +1113,11 @@ def test_committed_braunschweig_zones_follow_spec_amendment_d1():
     assert "ASSUMPTION" in tariffs.loc["bs_bga_willy_brandt_platz", "notes"]
 
 
+#: Spec v3 B1: the maximum stays in minutes of the D3 sites that state one (bh_places 6 h and 10 h, seesen_reg 6 h).
+D3_MAX_STAY_MIN = {"bh_sole_therme": 360, "bh_kurpark": 360, "bh_grossparkplatz": 600, "bh_burgberg": 600,
+                   "bh_berliner_platz": 600, "se_am_markt": 360}
+
+
 def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
     zones = pz.load_zone_polygons(parking_data_path("parking_zones_2026.geojson"), max_repairs=0).set_index("zone_id")
     tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").set_index("zone_id")
@@ -1125,9 +1131,14 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
         assert (row["hourly_rate_eur"], row["billing_unit_min"]) == (rate, unit), zone_id
         assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (start, end, window_source), zone_id
         assert row["resident_exempt"] == False, zone_id  # noqa: E712
-        # no source states a maximum stay that this table can model as a rule, a resident permit validity, a garage or
-        # commuter price, or a search time: the cells stay empty (never invented, Task 4b owns the later columns)
-        assert pd.isna(row["max_stay_min"]) and pd.isna(row["long_stay_product_eur"]), zone_id
+        # spec v3 B1 models the maximum stays of Bad Harzburg and Seesen (without a long-stay product); no source states a
+        # long-stay product, a resident permit validity, a garage or commuter price, or a search time for a site: those
+        # cells stay empty (never invented, Task 4b owns the later columns)
+        if zone_id in D3_MAX_STAY_MIN:
+            assert row["max_stay_min"] == D3_MAX_STAY_MIN[zone_id], zone_id
+        else:
+            assert pd.isna(row["max_stay_min"]), zone_id
+        assert pd.isna(row["long_stay_product_eur"]), zone_id
         assert pd.isna(row["search_time_min"]), zone_id
         # ASSUMPTION R2-a: the permit flag is false where no resident regime is stated (the ZOB), else the empty default
         if zone_id == "gs_parkplatz_klubgartenstrasse_zob":
@@ -1139,13 +1150,13 @@ def test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs():
         if zone_id.startswith("gs_"):
             assert "ASSUMPTION D3-a" in notes and "ASSUMPTION R2-a" in notes, zone_id
         if zone_id.startswith("bh_"):
-            assert "ASSUMPTION D3-b" in notes and "ASSUMPTION M2" in notes, zone_id
+            assert "ASSUMPTION D3-b" in notes and "ASSUMPTION M3" in notes and "ASSUMPTION M2" not in notes, zone_id
             # M-4: the package marks the ceiling rule not preferred (prior_snapshot); the OSM charge tags corroborate it
             assert "bh_ordinary_ceiling" in notes and "not preferred for current use" in notes and "prior_snapshot" in notes
             assert ("charge='0.50 EUR/30 min'" in notes) == (zone_id != "bh_berliner_platz"), zone_id
             assert ("no charge tag" in notes) == (zone_id == "bh_berliner_platz"), zone_id
         if zone_id == "se_am_markt":
-            assert "ASSUMPTION M2" in notes, zone_id
+            assert "ASSUMPTION M3" in notes and "ASSUMPTION M2" not in notes, zone_id
         # every row cites the package it was built from and states the buffer assumption and its own site kind
         assert "Single paid site of spec Amendment D3" in row["notes"] and "ASSUMPTION C-a" in row["notes"], zone_id
         assert f"Regional_Parkdaten_Belege_2026-10-07.zip (SHA-256 {REGIONAL_PACKAGE_SHA256}" in row["notes"], zone_id
@@ -1173,10 +1184,11 @@ COMMUTER_WORKING_DAYS = 21
 #: The rows that keep the assumption-grade fee window (ASSUMPTION F1) in the release of spec Amendment D1, 13 of 37: the
 #: two rows that Amendment D1 moves to a sourced window (he_innenstadt 9-16 h, gs_altstadt_zone1 10-18 h) are not among them;
 #: the three station rows of Amendment G1 add 3 (16 of 40; ruling R-4g-2: a window read from the opening hours of an operator page).
+#: Spec v3 B1 (2026-10-14) sources the five Bad Harzburg windows (dated brochure) and the three station windows (DB BahnPark
+#: page): 8 of 40 rows keep the assumption.
 F1_ASSUMPTION_ZONES = (
-    "bh_berliner_platz", "bh_burgberg", "bh_grossparkplatz", "bh_kurpark", "bh_sole_therme", "br_hexenritt", "br_wurmberg",
-    "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz", "bs_hbf_p1_nord",
-    "bs_hbf_p2_sued", "bs_hbf_p3_west",
+    "br_hexenritt", "br_wurmberg",
+    "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz",
     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_marthastrasse_koernerstrasse",
     "bs_parkscheininsel_mentestrasse")
 
@@ -1228,7 +1240,7 @@ def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendm
     # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
     # (the three station rows of Amendment G1 read the window from the opening hours of an operator page, ruling R-4g-2:
     # assumption 13 + 3)
-    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 17, "assumption": 16, "ordinance": 7}
+    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 25, "assumption": 8, "ordinance": 7}
     assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
 
 

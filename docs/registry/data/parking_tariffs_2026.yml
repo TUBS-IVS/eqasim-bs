@@ -164,6 +164,10 @@ acquisition:
     C-a for the 50 m zone. Named and NOT modelled: the Kiss&Ride tariff of P1 (0.80 EUR for 15 min), its evening tariff
     (18:00 to 02:00, at most 5.00 EUR on the first day), the BahnCard and Pcard discounts, the weekly (55.00 EUR) and
     machine monthly (78.00 EUR) products of P2 and P3 and the reserved-space products (160.00, 130.00 EUR).
+    Spec v3 B1 (2026-10-14) supersedes the statements above where they differ (the maximum stays of Bad Harzburg and
+    Seesen, the window sources of the Bad Harzburg and station rows, assumption M2, Ia, Peine and Wolfenbuettel): see the
+    last paragraph of the field notes. Its inputs are read from the pinned packages as evidence, by source id; no script
+    of a package was run and nothing was extracted into the repository.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
   committed: true
@@ -187,8 +191,11 @@ verification:
     Task 4b test_committed_commuter_products_follow_spec_amendment_d2 (the seven commuter values against the monthly
     products over 21 working days, no commuter value elsewhere, the campus day tickets kept, no garage product and no
     search time) and test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendment_d1 (the two
-    windows, no ASSUMPTION F1 in their notes, the window source counts municipal_page 17, assumption 16 and ordinance 7,
-    the 16 assumption rows by id, incl. the three station rows of Amendment G1).
+    windows, no ASSUMPTION F1 in their notes, the window source counts and the assumption rows by id; since spec v3 B1
+    municipal_page 25, assumption 8 and ordinance 7: the five Bad Harzburg and the three station rows left the assumption
+    rows). tests/test_parking_zone_tariff_corrections_v3.py pins every cell that Task B1 changed with its source id (the
+    changed cells per row against the table of the base commit a9b640f2, every other row byte-equal in all columns, the
+    EV columns, the header assumptions M3, W-max and E2, the Echternplatz row of the coverage register).
 requirements:
   synthesis: not_needed
   matsim: required
@@ -206,10 +213,12 @@ limitations: >-
   Assumption-labelled fee windows (fee_window_source assumption, F1): bs_bga_an_der_martinikirche,
   bs_bga_jodutenstrasse_klint and bs_bga_willy_brandt_platz (Mo-Sa 9-20 as at the directory-listed BgA car parks),
   the three Parkscheininseln of the Stadthalle concept (8-18 h, the concept's
-  regulated daytime window; their fee hours are not published), the five Bad Harzburg car parks (8-18 h) and the two
-  Braunlage car parks (9-18 h): no current source states their charging hours (spec Amendment D3); the three
-  Braunschweig station lots bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west (0-24 h, read from the operator's opening
-  hours, spec Amendment G1, ruling R-4g-2). The islands take
+  regulated daytime window; their fee hours are not published) and the two Braunlage car parks (9-18 h): no current
+  source states their charging hours (spec Amendment D3). Since spec v3 B1 (2026-10-14) the five Bad Harzburg windows
+  (8-18 h, the dated 2021/22 citizen brochure of the town, source id bh_brochure_calendar) and the three Braunschweig
+  station windows bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west (0-24 h, the DB BahnPark station page, source id
+  db_hbf) are sourced and say municipal_page, the nearest value of the vocabulary: neither a brochure nor an operator page
+  is an ordinance or signage, and the page states opening hours and no separate fee hours. The islands take
   the ParkGO zone II amounts (0.50
   EUR per 30 min, 9.00 EUR for 9-24 h), which parkraummanagement.php quotes for them. Braunschweig's ParkGO sets no
   fee hours (machine display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page).
@@ -217,8 +226,9 @@ limitations: >-
   ordinance (the rate and the windows; the billing unit is ASSUMPTION D3-a) and carry the Saturday and holiday parts of
   the page unmodelled (D1); the Bad Harzburg rows take the ParkGO ceiling of 0.50 EUR per started half hour for every
   car park (ASSUMPTION D3-b), because the rates of the individual car parks are not published; maximum stays that a
-  source states (Bad Harzburg 6 h and 10 h, Seesen 6 h against 10 h) are not modelled, so a longer stay is priced
-  metered like any other (ASSUMPTION M2: the tables hold no long-stay product for them); Seesen states Mo-Fr 8-18 h in
+  source states are modelled since spec v3 B1 as max_stay_min without a long-stay product (Bad Harzburg 6 h and 10 h,
+  Seesen 6 h; the 10 h of the Seesen city page is a named conflict and not applied; ASSUMPTION M3: a longer stay has no
+  street option; M2 is withdrawn); Seesen states Mo-Fr 8-18 h in
   the ordinance and a Saturday window that is not modelled; the Braunlage row br_wurmberg rests on the ParkGO of
   Braunlage (parkgo2018.pdf, valid_from its effective date 2018-01-10) and br_hexenritt on the tariff page of
   2026-10-07, whose prose and table differ on the free period (the table, 30 min, is read). The rows of the sites
@@ -226,13 +236,14 @@ limitations: >-
   he_innenstadt (9-16 h) and gs_altstadt_zone1 (10-18 h) are sourced since Task 4b (spec Amendment D1), but they are
   readings of pages that list places, not of the meters: the Helmstedt brochure states Mo-Fr 09:00-16:00 at 10 of its 11
   places and Mo-Fr 09:00-18:00 at the Wallplatz (the window is the common one, not a per-meter window; the maximum stay of
-  180 min at 10 places is not modelled), and the Goslar page lists car parks (the car park Kornstrasse and the three
+  180 min at 10 places is modelled since spec v3 B1, ASSUMPTION M3), and the Goslar page lists car parks (the car park Kornstrasse and the three
   other 2 EUR/h car parks state 10-18 h) and no street meters, so the zone 1 window is an inference from the car parks of
   the same rate; the Saturday parts of both are not modelled (D1).
-  Long-stay products chosen by assumption M1: Ia (zone Ib day ticket 9.00 EUR), Peine (8-hour lot ticket 4.20 EUR;
-  overprices stays of 3-4 h, for which the same car parks sell a 4-hour ticket of 2.60 EUR), Stadthalle
-  (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of 2-9 h, which cost 2.00-9.00 EUR at 1.00 EUR per hour on
-  an island); the v1 schema has one long-stay product per zone. One regime per zone (S1): Wolfenbuettel takes the
+  Long-stay products chosen by assumption M1: the Stadthalle (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of
+  2-9 h, which cost 2.00-9.00 EUR at 1.00 EUR per hour on an island); the v1 schema has one long-stay product per zone.
+  Spec v3 B1 withdrew M1 for Ia (the 9.00 EUR ticket is zone Ib's) and Peine (the 8-hour ticket is sold at three lots
+  only): both rows carry no long-stay product, Ia keeps its 180 min maximum, Peine has no zone-wide maximum, and a stay
+  above a maximum has no street option (ASSUMPTION M3). One regime per zone (S1): Wolfenbuettel takes the
   garage day tariff, Gifhorn the city meter tariff, and each Wolfsburg tariff zone the weekday window of most of its
   street sections (tariff zone 1: the sections Am Bahnhof 1 and 2 state 00:00-24:00; tariff zone 2: the section
   Klieverhagen states 07:00-15:00); night, shoulder and Saturday tariffs are not modelled (D1). Wolfsburg (since spec
@@ -300,3 +311,43 @@ notes: >-
   Forschungsflughafen 18, Volkmaroder Strasse 0, zone Ib 15), 24 lie in Helmstedt (17 of them home arrivals, free by H1) and
   78 in Goslar zone 1 (60 of them home arrivals). An exposure indicator of an older model state on a 1 % sample, not a
   validation and no run of the cost model.
+  Spec v3 B1 (Task B1, issue #436, 2026-10-14). Evidence: the owner research packages Parkdaten_Nachrecherche_2026-10-14.zip
+  (SHA-256 5a81c0b94da2a078540be2c58299bf246a269733ff69598e9a35b1faa4fad3bb; data/root_findings.json and research/
+  street_sz_pe_gf.json, street_wf_harz.json, wob_residents_street.json) and Parkdaten_Restluecken_2026-10-14.zip (SHA-256
+  80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c; evidence/harz_windows), and for the station windows the
+  page db_hbf of Grossparkplaetze_ZGB8_2026-10-12.zip (SHA-256 d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4,
+  member SHA-256 c63a4bc4d2e89d977a795c41771dcf5ec57948caf0dc3a732951dd8fb8788933). The table gained the last two columns
+  ev_free_minutes and ev_rule_valid_until (braunschweig.parking.zones.EV_COLUMNS; Part A defines them, this task fills values).
+  Changed cells, each with its source id (the note of the row repeats it): bs_zone_ia long_stay_product_eur 9.00 EUR to empty
+  (bs_parkgo_2025; the ticket is zone Ib's; max 180 min kept; assumption M1 withdrawn for it); pe_innenstadt day cap 2.60,
+  maximum stay 180 min and long-stay product 4.20 EUR to empty (pe_current: 0.50 EUR per started 30 min; the tickets and the
+  180 min limits belong to lots; Echternplatz is excluded in the coverage register), EV 180 min to 2028-04-30 (pe_current
+  sec. 1a), source and valid_from the ordinance of 2023-04-01; wf_innenstadt 1.20 EUR per 30 min to 0.25 EUR for the first
+  15 min and then 0.05 EUR per started 3 min (wf_2026, Amtsblatt 55/2025, from 2026-01-01; the window 10-18 h stays the garage
+  window because the street windows are unresolved in the package); sz_lebenstedt maximum stay 150 min (sz_current, from
+  2026-06-25) and EV 240 min to 2026-12-31 (ASSUMPTION E2: within the maximum; marked machines only, not modelled);
+  he_innenstadt maximum stay 180 min (he_brochure); bh_sole_therme and bh_kurpark 360 min, bh_grossparkplatz, bh_burgberg
+  and bh_berliner_platz 600 min (bh_places; the brochure's 4 h for the Sole-Therme is named as a historical conflict) and
+  the window source municipal_page from the dated brochure (bh_brochure_calendar); se_am_markt maximum stay 360 min
+  (seesen_reg; the 10 h of seesen_parking is a named conflict and not applied) and EV 360 min to 2026-12-31 (the ordinance
+  states no duration, so the zone maximum bounds it); the four Goslar rows EV 240 min to 2026-12-31 (gs_2025_gazette; marked
+  machines only, so the exemption is an upper bound); bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west window source
+  municipal_page (db_hbf: Mo-So including holidays 00:00-00:00; these rows are written by scripts/curation/parking_zones_2026/
+  station_lots.py, whose DB_WINDOW_EVIDENCE pins the package and member hashes); wob_tarifzone_1 to 3 note only (ASSUMPTION
+  W-max: no zone-wide maximum; the areas with a recorded maximum become area zones in Task B2). The curation checks
+  regional_zones.check_tariff_rows and station_lots.check_tariff_rows enforce the new values and were run against the
+  committed table and the real packages without a deviation. Header: M2 withdrawn, M3, W-max and E2 added, M1 narrowed to
+  the resident zones. Counts: street_paid 33, resident_zone 1, campus 6 (40 rows); fee_window_source municipal_page 25,
+  ordinance 7, assumption 8; EV exemption on seven rows (sz_lebenstedt, pe_innenstadt, se_am_markt, four Goslar rows). The
+  zone geometries are unchanged (parking_zones_2026.geojson SHA-256 4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490).
+  SHA-256 of the file (LF): c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2 (before: 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc).
+  Expected output change of Task B1 (its one statement; no run exists and the size is not established): with the Part A
+  rules, a stay in Ia above 180 min no longer buys the 9.00 EUR ticket and has no street option (priced over the garage and
+  lot options, else NO_FEASIBLE_OPTION); a Peine stay pays 0.50 EUR per started half hour without cap (8 h = 8.00 EUR, before
+  4.20 EUR above 3 h); a Wolfenbuettel stay pays 0.25 EUR for the first 15 min and then 1.00 EUR per hour (before 1.20 EUR per
+  hour); a stay above the new maxima in Salzgitter, Helmstedt, Bad Harzburg and Seesen has no street option; electric cars in
+  Salzgitter, Peine, Goslar and Seesen park free up to the exemption within its validity (Part A, ASSUMPTIONS E1 and E2).
+  Known gap at this commit: the garage dataset parking_garages_2026 still holds the three Braunschweig lots that carry the
+  Ia street product with its withdrawn long-stay band (Wendenstrasse/Werder, Grosser Hof, Buergerpark); the garage QA tie
+  of spec Amendment I1 reports the difference, and regenerating the dataset needs a decision on those lots (the lot grammar
+  cannot carry a maximum stay without a long-stay product).

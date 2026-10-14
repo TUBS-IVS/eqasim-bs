@@ -31,7 +31,8 @@ the step logs how many features it used, dropped (with the reason) and repaired 
   to the higher tariff (``split_single_sites``, the nearest-section split of ``municipal_zones``).
 * ``tariff_evidence`` derives the tariff values of the new rows from the package's tariff rules and ``check_tariff_rows``
   checks the hand-written tariff rows against them (the rate, billing unit and fee window the sources state, the
-  assumptions F1, D3-a and D3-b for what they do not).
+  assumptions F1, D3-a and D3-b for what they do not; since spec v3 B1 also the maximum stays of Bad Harzburg and
+  Seesen, ``MODELLED_MAX_STAY_MIN``, and the dated brochure window of Bad Harzburg, ``BROCHURE_WINDOWS``).
 * ``qa_rows`` adds the comparisons of the new polygons with their references and every precedence cut to the municipal
   QA table (layout ``braunschweig.parking.municipal_zone_qa``).
 
@@ -207,14 +208,35 @@ CONTAINMENT_EXCEPTIONS = {
 #: ASSUMPTION F1 fee windows of the single sites whose sources state none (decimal hours of the weekday), with the basis.
 F1_WINDOWS = {
     "bs_bga_willy_brandt_platz": (9.0, 20.0, "as at the directory-listed BgA car parks Markthalle and Suedstrasse"),
-    "bh_sole_therme": (8.0, 18.0, "the window of the 2022 brochure for the outlying car parks"),
-    "bh_kurpark": (8.0, 18.0, "the window of the 2022 brochure for the outlying car parks"),
-    "bh_grossparkplatz": (8.0, 18.0, "the window of the 2022 brochure for the outlying car parks"),
-    "bh_burgberg": (8.0, 18.0, "the window of the 2022 brochure for the outlying car parks"),
-    "bh_berliner_platz": (8.0, 18.0, "the window of the 2022 brochure for the outlying car parks"),
     "br_hexenritt": (9.0, 18.0, "the generic window of the Goslar zone 1 row"),
     "br_wurmberg": (9.0, 18.0, "the generic window of the Goslar zone 1 row"),
 }
+#: Spec v3 B1 (owner-approved 2026-10-14): the fee window of the five Bad Harzburg car parks is the weekday window of the
+#: municipal citizen-information brochure of 2021/22 (source id ``bh_brochure_calendar``, printed p. 41, package
+#: ``Parkdaten_Restluecken_2026-10-14.zip``, ``evidence/harz_windows``): fees are due Mo-Fr 8:00-18:00 at the machines and daily
+#: 8:00-18:00 at the car parks at the Bergbahn/Sole-Therme, Am Kurpark, Am Kursaal and the Grossparkplatz Nationalpark. The
+#: brochure is dated and historical (not certified unchanged in 2026); the model day is a weekday, so the Saturday (8-16) and
+#: Sunday parts are not modelled (D1). It replaces ASSUMPTION F1 for these rows; the row says ``municipal_page``.
+BROCHURE_SOURCE_ID = "bh_brochure_calendar"
+BROCHURE_WINDOWS = {
+    "bh_sole_therme": (8.0, 18.0, "named in the brochure (Bergbahn/Sole-Therme): daily 8:00-18:00"),
+    "bh_kurpark": (8.0, 18.0, "named in the brochure (Am Kurpark): daily 8:00-18:00"),
+    "bh_grossparkplatz": (8.0, 18.0, "named in the brochure (Grossparkplatz Nationalpark an der B4): daily 8:00-18:00"),
+    "bh_burgberg": (8.0, 18.0, "not named for the daily window; the brochure's machine window Mo-Fr 8:00-18:00 applies"),
+    "bh_berliner_platz": (8.0, 18.0, "not named for the daily window; the brochure's machine window Mo-Fr 8:00-18:00 applies"),
+}
+#: Spec v3 B1: the maximum stays of the rows, in minutes (ASSUMPTION M3: a stay above it has no street option). Bad Harzburg:
+#: the current municipal tourism page (source id ``bh_places``, 6 h Sole-Therme and Kurpark, 10 h the other three); Seesen: the
+#: ordinance sec. 2(4) (source id ``seesen_reg``, 6 h; the city page's 10 h, ``seesen_parking``, is named as a conflict and not
+#: applied). Each value must be one of the maximum stays that the 2026-10-07 package states for the site.
+MODELLED_MAX_STAY_MIN = {"bh_sole_therme": 360, "bh_kurpark": 360, "bh_grossparkplatz": 600, "bh_burgberg": 600,
+                         "bh_berliner_platz": 600, "se_am_markt": 360}
+#: Spec v3 B1/A5: the rows of this step that carry an EV exemption (``ev_free_minutes``): the three Goslar car parks (240 min to
+#: 2026-12-31, source id ``gs_2025_gazette``, marked machines only: not modelled) and Seesen (E plate until 2026-12-31; no
+#: duration is stated, so the zone maximum, ASSUMPTION E2). Every other row of this step has the columns empty.
+EV_COLUMNS = ("ev_free_minutes", "ev_rule_valid_until")     # braunschweig.parking.zones.EV_COLUMNS (pinned by a test)
+EV_EXEMPTION_ROWS = ("gs_parkplatz_baeringerstrasse", "gs_parkplatz_klubgartenstrasse_zob",
+                     "gs_parkplatz_glockengiesserstrasse", "se_am_markt")
 #: ASSUMPTION D3-a (ruling R-4a-3): the three Goslar 1 EUR/h car parks bill per started half hour, the unit of the
 #: city's ParkGO (sec. 1(2)); the service page states the rate per hour and no unit.
 GOSLAR_LOT_BILLING_UNIT_MIN = 30
@@ -664,9 +686,11 @@ def _hourly_rate(rule: dict) -> float:
 
 def _note_evidence(package: dict, zone_id: str, rules: list) -> dict:
     """What the note of a new row must say beyond its numbers (checked by ``check_tariff_rows``): ``assumptions`` (the
-    ids it must name: C-a for every single site, D3-a for the Goslar lots, D3-b for the Bad Harzburg ceiling, M2 where a
-    source states a maximum stay that the row does not model, R2-a where the permit flag is set or a Goslar district
+    ids it must name: C-a for every single site, D3-a for the Goslar lots, D3-b for the Bad Harzburg ceiling, M3 where the
+    row models a maximum stay (``MODELLED_MAX_STAY_MIN``), R2-a where the permit flag is set or a Goslar district
     can act), ``max_stay_stated_min`` (the stated maximum stays in minutes: the Bad Harzburg and Seesen sources),
+    ``max_stay_min`` (the maximum stay the row models, spec v3 B1, or None), ``brochure_window`` (the dated brochure window of a
+    Bad Harzburg row, or None),
     ``unpreferred_rule`` (the rule the row rests on although the package marks it not preferred for current use) and
     ``osm_charge`` (the OSM ``charge`` tag of a Bad Harzburg car park, the corroboration of the ceiling, None where it
     has none)."""
@@ -685,13 +709,17 @@ def _note_evidence(package: dict, zone_id: str, rules: list) -> dict:
         row = package["street"].loc[zone_id]
         stays = sorted({int(row[column]) for column in ("max_stay_ordinance_minutes", "max_stay_webpage_minutes")
                         if pd.notna(row[column])})
-    if stays:
-        assumptions.append("M2")
+    if zone_id in MODELLED_MAX_STAY_MIN:
+        if MODELLED_MAX_STAY_MIN[zone_id] not in stays:
+            raise SystemExit(f"{zone_id}: the modelled maximum stay {MODELLED_MAX_STAY_MIN[zone_id]} min is not one of the "
+                             f"stays the package states {stays}; the row would carry an invented value")
+        assumptions.append("M3")
     if zone_id.startswith("gs_") or zone_id in RESIDENT_PERMITS_NOT_VALID:
         assumptions.append("R2-a")
     unpreferred = next((rule["rule_id"] for rule in rules if not rule.get("preferred_for_current_use", True)), None)
     return {"assumptions": assumptions, "max_stay_stated_min": stays, "unpreferred_rule": unpreferred,
-            "osm_charge": osm_charge}
+            "osm_charge": osm_charge, "max_stay_min": MODELLED_MAX_STAY_MIN.get(zone_id),
+            "brochure_window": BROCHURE_WINDOWS.get(zone_id)}
 
 
 def tariff_evidence(package: dict) -> dict:
@@ -792,15 +820,17 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
     """The new street rows of ``tariffs`` carry the package's values: the rate, billing unit, the extra fields of the
     Hexenritt bands (empty where the rules state none), no maximum stay and no long-stay product (ruling R-4a-4), and the
     fee window the rules state with a source other than 'assumption'; where the rules state no window, the F1 window of
-    ``F1_WINDOWS`` with ``fee_window_source`` 'assumption'. The note of a row names every assumption it rests on
-    (``tariff_evidence``: C-a, D3-a, D3-b, M2, R2-a, and F1 where it has no sourced window), says that the package marks
+    ``F1_WINDOWS`` with ``fee_window_source`` 'assumption'. The EV columns may be filled only on ``EV_EXEMPTION_ROWS``.
+    The note of a row names every assumption it rests on
+    (``tariff_evidence``: C-a, D3-a, D3-b, M3, R2-a, and F1 where it has no sourced window; a Bad Harzburg row has the
+    dated brochure window instead, spec v3 B1, and models the maximum stay ``MODELLED_MAX_STAY_MIN``), says that the package marks
     the rule it uses as not preferred where it does, and says what the OSM ``charge`` tag of a Bad Harzburg car park is
     (the corroboration of the ceiling) or that it has none; the permit flag is false exactly on
     ``RESIDENT_PERMITS_NOT_VALID`` (ASSUMPTION R2-a) and empty elsewhere. Raises ``SystemExit`` listing every deviation;
     prints how many windows are sourced and how many fall back to ASSUMPTION F1."""
     f1_windows = F1_WINDOWS if f1_windows is None else f1_windows
     rows = tariffs.set_index("zone_id")
-    problems, sourced, assumed, corroborated = [], [], [], []
+    problems, sourced, assumed, corroborated, dated = [], [], [], [], []
     missing = sorted(set(evidence) - set(rows.index))
     if missing:
         problems.append(f"tariff rows missing for the zones {missing}")
@@ -819,10 +849,18 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
         unit = row["billing_unit_min"]
         if pd.isna(unit) or int(unit) != values["billing_unit_min"]:
             problems.append(f"{zone_id}: billing_unit_min {unit} but {values['billing_unit_min']} ({values['billing_basis']})")
-        for column in ("max_stay_min", "long_stay_product_eur", "member_day_eur", "guest_day_eur"):
+        expected_maximum, maximum = values.get("max_stay_min"), row["max_stay_min"]
+        if (expected_maximum is None) != bool(pd.isna(maximum)) or (
+                expected_maximum is not None and int(maximum) != expected_maximum):
+            problems.append(f"{zone_id}: max_stay_min {maximum} but the package gives {expected_maximum} "
+                            "(spec v3 B1; empty where no maximum is modelled)")
+        for column in ("long_stay_product_eur", "member_day_eur", "guest_day_eur"):
             if pd.notna(row[column]):
-                problems.append(f"{zone_id}: {column} must stay empty (ruling R-4a-4: stays above a stated maximum are "
-                                "priced metered; no source states a long-stay product)")
+                problems.append(f"{zone_id}: {column} must stay empty (no source states a long-stay product; a stay above "
+                                "the maximum has no street option, spec v3 A1)")
+        for column in EV_COLUMNS:
+            if pd.notna(row[column]) and zone_id not in EV_EXEMPTION_ROWS:
+                problems.append(f"{zone_id}: {column} must stay empty (no source states an EV exemption for it)")
         notes = str(row["notes"])
         for assumption in values["assumptions"]:
             if f"ASSUMPTION {assumption}" not in notes:
@@ -856,6 +894,20 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
             if (float(row["fee_start_h"]), float(row["fee_end_h"])) != tuple(values["window"]):
                 problems.append(f"{zone_id}: fee window {row['fee_start_h']}-{row['fee_end_h']} but the package gives "
                                 f"{values['window']}")
+        elif values.get("brochure_window") is not None:
+            dated.append(zone_id)
+            brochure = values["brochure_window"]
+            if row["fee_window_source"] != "municipal_page":
+                problems.append(f"{zone_id}: the dated brochure states the fee window {brochure[:2]}, so fee_window_source "
+                                "must be 'municipal_page'")
+            if (float(row["fee_start_h"]), float(row["fee_end_h"])) != tuple(brochure[:2]):
+                problems.append(f"{zone_id}: fee window {row['fee_start_h']}-{row['fee_end_h']} but the brochure gives "
+                                f"{brochure[:2]}")
+            if BROCHURE_SOURCE_ID not in notes:
+                problems.append(f"{zone_id}: the note must cite the brochure source id {BROCHURE_SOURCE_ID}")
+            if "ASSUMPTION F1" in notes:
+                problems.append(f"{zone_id}: the note must not name ASSUMPTION F1 any more: the window is sourced by the "
+                                "dated brochure (spec v3 B1)")
         else:
             assumed.append(zone_id)
             if zone_id not in f1_windows:
@@ -868,9 +920,10 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame, f1_windows: Optiona
                                 f"{f1_windows[zone_id][:2]}")
     if problems:
         raise SystemExit("regional tariff rows contradict the package's tariff rules:\n  " + "\n  ".join(problems))
-    total = len(sourced) + len(assumed)
+    total = len(sourced) + len(dated) + len(assumed)
     print(f"regional tariff rows agree with the package's rules: fee window sourced {len(sourced)}/{total} "
-          f"({', '.join(sourced) or 'none'}), ASSUMPTION F1 {len(assumed)}/{total} ({', '.join(assumed) or 'none'}); the "
+          f"({', '.join(sourced) or 'none'}), dated brochure {len(dated)}/{total} ({', '.join(dated) or 'none'}), "
+          f"ASSUMPTION F1 {len(assumed)}/{total} ({', '.join(assumed) or 'none'}); the "
           f"notes name their assumptions; the OSM charge tag corroborates the Bad Harzburg ceiling at "
           f"{len(corroborated)}/{sum(1 for zone_id in evidence if zone_id.startswith('bh_'))} car parks")
 

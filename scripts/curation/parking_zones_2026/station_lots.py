@@ -82,11 +82,25 @@ BGA_NEIGHBOUR_ZONE = "bs_bga_willy_brandt_platz"
 #: of the Hauptbahnhof forecourt, ``bs_outer``.
 WORKPLACE_CLASS = "bs_outer"
 #: The fee window of the rows, decimal hours of the weekday: the pages state the car parks open around the clock and a fee
-#: table without a time limit (the evening tariff of P1 is not modelled). Ruling R-4g-2: a window read from the opening hours of
-#: an operator page is no ordinance or signage statement (the situation of ASSUMPTION P5 at the garages), so by the rule of
-#: ASSUMPTION F1 the rows say ``assumption`` and name ASSUMPTION F1.
+#: table without a time limit (the evening tariff of P1 is not modelled). Task 4g (ruling R-4g-2) labelled the window
+#: ``assumption`` (ASSUMPTION F1) because it was read from the Contipark opening hours. Spec v3 B1 (owner-approved
+#: 2026-10-14) sources it from the station's DB BahnPark page instead: ``DB_WINDOW_EVIDENCE`` below states Mo-So including
+#: holidays 00:00-00:00 for Nord, West and Ackerstrasse (= P2 Sued). The table's ``fee_window_source`` vocabulary has no
+#: operator value, so the row says ``municipal_page`` (a published page of the car park's operator, no ordinance or signage
+#: statement) and the note says so; the page states opening hours and no separate fee hours (named in the note).
 FEE_WINDOW_H = (0.0, 24.0)
-FEE_WINDOW_SOURCE = "assumption"
+FEE_WINDOW_SOURCE = "municipal_page"
+#: The evidence of the window (spec v3 B1, source id ``db_hbf``): the text of the station page ``bahnhof.de/braunschweig-hbf/
+#: parkplaetze`` in the owner's package ``Grossparkplaetze_ZGB8_2026-10-12.zip`` (not an input of this step: the values are
+#: pinned here and checked by ``tests/test_parking_zone_tariff_corrections_v3.py`` against the package where it is present).
+DB_WINDOW_EVIDENCE = {
+    "source_id": "db_hbf", "url": "https://www.bahnhof.de/braunschweig-hbf/parkplaetze",
+    "package_file": "Grossparkplaetze_ZGB8_2026-10-12.zip",
+    "package_sha256": "d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4",
+    "member": "Grossparkplaetze_ZGB8_2026-10-12/evidence/braunschweig/raw/db_hbf.txt",
+    "member_sha256": "c63a4bc4d2e89d977a795c41771dcf5ec57948caf0dc3a732951dd8fb8788933",
+    "opening_hours_text": "Montag bis Sonntag",
+}
 #: The unit, in minutes, of the labels of the fee tables that name a billing unit (''1 Tag'' is no unit).
 LABEL_UNIT_MIN = {"30 Minuten": 30, "1 Stunde": 60}
 GERMAN_MONTH_LABEL = "1 Monat f\u00fcr Stellplatzmieter"
@@ -365,8 +379,14 @@ def _note(station: dict, values: dict, inputs: dict) -> str:
         "(ASSUMPTION P2). The same amounts stand in the DB BahnPark sheet of 2026-05-29 (member "
         f"{SHEET_MEMBER}, checked). ASSUMPTION G-a: the amount is billed per started {unit} min and the '{DAY_LABEL}' amount is "
         "the daily maximum per stay (the pages state neither a rounding nor the day boundary). Fee window 0-24 h: the page states "
-        "the car park open 00:00-24:00 and a fee table without a time limit (a reading of the opening hours, no explicit fee "
-        "hours): ASSUMPTION F1, fee_window_source assumption (ruling R-4g-2; the operator's page is no ordinance or signage)."
+        "the car park open 00:00-24:00 and a fee table without a time limit; spec v3 B1 (2026-10-14) sources the window from the "
+        f"DB BahnPark station page (source id {DB_WINDOW_EVIDENCE['source_id']}, {DB_WINDOW_EVIDENCE['url']}; package "
+        f"{DB_WINDOW_EVIDENCE['package_file']} (SHA-256 {DB_WINDOW_EVIDENCE['package_sha256']}), member "
+        f"{DB_WINDOW_EVIDENCE['member']} (SHA-256 {DB_WINDOW_EVIDENCE['member_sha256']})): Monday to Sunday including holidays "
+        "00:00-00:00 for the three DB BahnPark car parks Nord, West and Ackerstrasse (= P2 Sued), so the mapping of the entries to "
+        "the zones does not matter for the window. The page states opening hours and no separate fee hours; "
+        "fee_window_source municipal_page is the nearest value of the table's vocabulary for a published page of the "
+        "operator, which is no ordinance or signage. This replaces the assumption F1 of ruling R-4g-2."
         + special + other + " The stated maximum parking durations are not modelled. resident_permits_valid false: a car park of "
         "DB BahnPark; no source states that resident permits are valid there (ASSUMPTION R2-a). ASSUMPTION C-a: the zone is the "
         f"area within {rz.SITE_BUFFER_M:.0f} m of the lot outline. workplace_class {WORKPLACE_CLASS}: the Hauptbahnhof lies in the "
@@ -391,7 +411,7 @@ def tariff_rows(evidence: dict, inputs: dict) -> list:
             "fee_end_h": f"{values['window'][1]:.1f}", "resident_exempt": "false", "source_url": values["source_url"],
             "source_date": STATION_DATE, "valid_from": STATION_DATE, "fee_window_source": FEE_WINDOW_SOURCE,
             "notes": _note(station, values, inputs), "commuter_day_eur": f"{values['commuter_day_eur']:.2f}",
-            "resident_permits_valid": "false"})
+            "resident_permits_valid": "false", "ev_free_minutes": "", "ev_rule_valid_until": ""})
     return rows
 
 
@@ -415,7 +435,8 @@ HEADER_ANCHOR = "# ASSUMPTION D3-b:"
 HEADER_LINES = (
     "# ASSUMPTION G-a: The three Braunschweig Hbf station car parks (DB BahnPark, Contipark) bill the published amount per started "
     "unit (60 min at P1, 30 min at P2 and P3) and the published '1 Tag' amount is the daily maximum per stay; the pages state "
-    "neither a rounding nor the day boundary, and the fee window is the 0-24 h opening of the car park (spec Amendment G1; bites: "
+    "neither a rounding nor the day boundary; the fee window 0-24 h is the Mo-So opening of the car parks on the DB BahnPark "
+    "station page (source id db_hbf, spec v3 B1; the page states no separate fee hours; spec Amendment G1; bites: "
     + STATION_BITES + ").",
     "# ASSUMPTION G-b: The three station rows take the workplace class bs_outer of the BgA row at the Hauptbahnhof forecourt: the "
     "station lies in the SrV Unterbezirk Hauptbahnhof; no Unterbezirk polygon is available, so the class is a reading of the "
@@ -497,13 +518,19 @@ def check_tariff_rows(evidence: dict, tariffs: pd.DataFrame) -> None:
         if row["workplace_class"] != WORKPLACE_CLASS:
             problems.append(f"{zone_id}: workplace_class {row['workplace_class']} but ASSUMPTION G-b gives {WORKPLACE_CLASS}")
         if row["fee_window_source"] != FEE_WINDOW_SOURCE:
-            problems.append(f"{zone_id}: fee_window_source must be '{FEE_WINDOW_SOURCE}' (the window is read from the opening "
-                            "hours of an operator page, ASSUMPTION F1, ruling R-4g-2)")
+            problems.append(f"{zone_id}: fee_window_source must be '{FEE_WINDOW_SOURCE}' (the window is the Mo-So 00:00-00:00 "
+                            f"of the DB BahnPark page, source id {DB_WINDOW_EVIDENCE['source_id']}, spec v3 B1)")
+        for column in pz.EV_COLUMNS:
+            if pd.notna(row[column]):
+                problems.append(f"{zone_id}: {column} must stay empty (no source states an EV exemption at a station car park)")
         notes = str(row["notes"])
-        for phrase in ("ASSUMPTION C-a", "ASSUMPTION F1", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2",
-                       values["rule_id"], "NOT modelled", "BahnCard"):
+        for phrase in ("ASSUMPTION C-a", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2",
+                       values["rule_id"], "NOT modelled", "BahnCard", DB_WINDOW_EVIDENCE["source_id"],
+                       DB_WINDOW_EVIDENCE["package_sha256"]):
             if phrase not in notes:
                 problems.append(f"{zone_id}: the note must hold {phrase!r}")
+        if "ASSUMPTION F1" in notes:
+            problems.append(f"{zone_id}: the note must not name ASSUMPTION F1 any more: the window is sourced (spec v3 B1)")
         if values["special"] and ("Kiss&Ride" not in notes or "evening tariff" not in notes):
             problems.append(f"{zone_id}: the note must name the Kiss&Ride and the evening tariff as not modelled")
     if problems:

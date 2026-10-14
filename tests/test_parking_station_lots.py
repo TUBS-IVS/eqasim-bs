@@ -398,11 +398,15 @@ def test_the_tariff_rows_carry_the_evidence_and_the_named_assumptions(sl, inputs
     assert tuple(p1[column] for column in figures) == ("3.00", "60", "18.00", "6.19")
     assert tuple(p2[column] for column in figures) == ("1.80", "30", "9.50", "3.14")
     assert p1["resident_permits_valid"] == "false" and p1["workplace_class"] == "bs_outer" and p1["zone_type"] == "street_paid"
-    # ruling R-4g-2: the window is read from the opening hours of an operator page, so the source is the assumption F1
-    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "assumption")
+    # spec v3 B1: the window 0-24 h is sourced from the DB BahnPark station page (source id db_hbf), the earlier assumption F1 of
+    # ruling R-4g-2 is replaced; the table's vocabulary has no operator value, so the source is municipal_page
+    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "municipal_page")
+    assert p1["ev_free_minutes"] == "" and p1["ev_rule_valid_until"] == ""
     assert p1["max_stay_min"] == "" and p1["long_stay_product_eur"] == "" and p1["source_date"] == "2026-10-08"
-    for assumption in ("ASSUMPTION C-a", "ASSUMPTION F1", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2"):
+    for assumption in ("ASSUMPTION C-a", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2"):
         assert assumption in p1["notes"], assumption
+    assert "ASSUMPTION F1" not in p1["notes"] and "source id db_hbf" in p1["notes"]
+    assert sl.DB_WINDOW_EVIDENCE["package_sha256"] in p1["notes"] and sl.DB_WINDOW_EVIDENCE["member_sha256"] in p1["notes"]
     assert "Kiss&Ride" in p1["notes"] and "evening tariff" in p1["notes"] and "NOT modelled" in p2["notes"]
     assert "Kiss&Ride" not in p2["notes"] and p1["notes"].isascii()
     assert list(p1) == ["zone_id", "name", "municipality_ags", "zone_type", "workplace_class", "hourly_rate_eur",
@@ -410,7 +414,7 @@ def test_the_tariff_rows_carry_the_evidence_and_the_named_assumptions(sl, inputs
                         "free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur", "max_stay_min",
                         "long_stay_product_eur", "member_day_eur", "guest_day_eur", "fee_start_h", "fee_end_h", "resident_exempt",
                         "source_url", "source_date", "valid_from", "fee_window_source", "notes", "commuter_day_eur",
-                        "resident_permits_valid"]
+                        "resident_permits_valid", "ev_free_minutes", "ev_rule_valid_until"]
 
 
 def _table(sl, inputs, tmp_path, edit=None) -> pd.DataFrame:
@@ -426,6 +430,8 @@ def _table(sl, inputs, tmp_path, edit=None) -> pd.DataFrame:
                    "member_day_eur", "guest_day_eur"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     frame["resident_permits_valid"] = frame["resident_permits_valid"] == "true"
+    frame["ev_free_minutes"] = pd.to_numeric(frame["ev_free_minutes"], errors="coerce")
+    frame["ev_rule_valid_until"] = frame["ev_rule_valid_until"].where(frame["ev_rule_valid_until"] != "", pd.NA)
     if edit:
         edit(frame)
     return frame
@@ -445,13 +451,15 @@ def test_a_consistent_tariff_table_passes_the_check_and_reports_it(sl, inputs, t
     (lambda frame: frame.__setitem__("resident_permits_valid", True), "must be false"),
     (lambda frame: frame.__setitem__("workplace_class", "bs_zentrum"), "workplace_class"),
     (lambda frame: frame.__setitem__("max_stay_min", 60.0), "must stay empty"),
-    (lambda frame: frame.__setitem__("fee_window_source", "municipal_page"), "fee_window_source must be 'assumption'"),
-    (lambda frame: frame.__setitem__("notes", frame["notes"].str.replace("ASSUMPTION F1", "ASSUMPTION F9")),
-     "the note must hold 'ASSUMPTION F1'"),
+    (lambda frame: frame.__setitem__("fee_window_source", "assumption"), "fee_window_source must be 'municipal_page'"),
+    (lambda frame: frame.__setitem__("notes", frame["notes"].str.replace("db_hbf", "db_x")),
+     "the note must hold 'db_hbf'"),
+    (lambda frame: frame.__setitem__("notes", frame["notes"] + " ASSUMPTION F1"), "must not name ASSUMPTION F1 any more"),
+    (lambda frame: frame.__setitem__("ev_free_minutes", 240.0), "ev_free_minutes must stay empty"),
     (lambda frame: frame.__setitem__("notes", "no assumption named"), "the note must hold"),
     (lambda frame: frame.drop(index=[2], inplace=True), "tariff row missing"),
-], ids=["rate", "unit", "cap", "commuter", "window", "permit", "class", "max_stay", "window_source_municipal_page",
-        "no_f1_in_notes", "notes", "missing_row"])
+], ids=["rate", "unit", "cap", "commuter", "window", "permit", "class", "max_stay", "window_source_assumption",
+        "no_db_hbf_in_notes", "f1_named_again", "ev_exemption_filled", "notes", "missing_row"])
 def test_a_tariff_table_that_contradicts_the_evidence_is_refused(sl, inputs, tmp_path, edit, message):
     with pytest.raises(SystemExit, match=message):
         sl.check_tariff_rows(sl.station_evidence(inputs), _table(sl, inputs, tmp_path, edit))
@@ -461,7 +469,7 @@ def test_the_rows_are_appended_with_the_line_ending_of_the_table_and_never_twice
     evidence = sl.station_evidence(inputs)
     path = tmp_path / "tariffs.csv"
     header = ",".join(sl.tariff_rows(evidence, inputs)[0])
-    old_row = "old_zone," + ",".join([""] * 24)
+    old_row = "old_zone," + ",".join([""] * 26)
     path.write_bytes((HEADER_BEFORE.replace("\n", "\r\n") + header + "\r\n" + old_row + "\r\n").encode("utf-8"))
     sl.append_tariff_rows(path, sl.tariff_rows(evidence, inputs))
     raw = path.read_bytes()
@@ -592,13 +600,15 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
         assert (row["hourly_rate_eur"], row["billing_unit_min"], row["daily_cap_eur"], row["commuter_day_eur"]) == (
             rate, unit, day, commuter), zone_id
         assert (row["zone_type"], row["municipality_ags"], row["workplace_class"]) == ("street_paid", "03101000", "bs_outer")
-        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "assumption")
+        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "municipal_page")
         assert row["resident_permits_valid"] == False and row["resident_exempt"] == False, zone_id  # noqa: E712
+        assert pd.isna(row["ev_free_minutes"]) and pd.isna(row["ev_rule_valid_until"]), zone_id
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["first_period_eur"]) and pd.isna(row["long_stay_product_eur"]), zone_id
         assert row["commuter_day_eur"] == round(monthly / 21, 2) and row["notes"].isascii(), zone_id
         assert tariff_row_to_zone({**row.to_dict(), "zone_id": zone_id}).commuter_day_cents == cents
-        for assumption in ("C-a", "F1", "G-a", "G-b", "R2-a", "P2"):
+        for assumption in ("C-a", "G-a", "G-b", "R2-a", "P2"):
             assert f"ASSUMPTION {assumption}" in row["notes"], (zone_id, assumption)
+        assert "ASSUMPTION F1" not in row["notes"] and "source id db_hbf" in row["notes"], zone_id
     assert "Kiss&Ride" in tariffs.loc["bs_hbf_p1_nord", "notes"] and "evening tariff" in tariffs.loc["bs_hbf_p1_nord", "notes"]
 
 
@@ -674,21 +684,41 @@ def test_a_header_without_an_anchor_line_of_the_chain_output_is_refused(sl, anch
         sl.station_header(HEADER_BEFORE.replace(anchor, "x"))
 
 
-def test_the_chain_output_before_the_step_plus_the_step_is_the_committed_tariff_table_byte_for_byte(sl, tmp_path):
-    import subprocess
-
-    base = "9e5cc143"      # the commit before Task 4g: the table as the zone chain wrote it
-    path = "eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv"
-    blob = subprocess.run(["git", "show", f"{base}:{path}"], cwd=REPO_ROOT, capture_output=True)
+def test_the_committed_table_without_its_station_rows_plus_the_step_is_the_committed_table_byte_for_byte(sl, tmp_path):
+    # Since spec v3 B1 the other rows are corrected by hand-checked edits of their own
+    # (tests/test_parking_zone_tariff_corrections_v3.py pins every changed cell), so the old pin "the chain output of
+    # commit 9e5cc143 plus the step" no longer holds. What the step owns is pinned instead: its three rows and its header
+    # lines are exactly what it writes, never edited by hand.
     directory = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08"
-    if blob.returncode != 0 or not (directory / sl.PACKAGE_FILE).is_file() or not (directory / sl.OSM_FILE).is_file():
-        pytest.skip("the base commit or the gitignored station inputs are not available")
+    if not (directory / sl.PACKAGE_FILE).is_file() or not (directory / sl.OSM_FILE).is_file():
+        pytest.skip("the gitignored station inputs are not available")
+    committed = (COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").read_bytes().replace(b"\r\n", b"\n")
+    stations = tuple(f"{zone_id},".encode("ascii") for zone_id in sl.STATION_ZONE_IDS)
+    kept = [line for line in committed.split(b"\n") if not line.startswith(stations)]
+    assert len(kept) == len(committed.split(b"\n")) - 3
     table = tmp_path / "parking_tariffs_2026.csv"
-    table.write_bytes(blob.stdout.replace(b"\r\n", b"\n"))
+    table.write_bytes(b"\n".join(kept))
     inputs = sl.load_station_inputs(directory / sl.PACKAGE_FILE, directory / sl.OSM_FILE)
     sl.append_tariff_rows(table, sl.tariff_rows(sl.station_evidence(inputs), inputs))
-    committed = (COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").read_bytes().replace(b"\r\n", b"\n")
     assert table.read_bytes() == committed
+
+
+def test_the_db_bahnpark_window_evidence_is_pinned_to_the_package_it_cites(sl):
+    # spec v3 B1: the window 0-24 h of the three rows rests on the station page of the owner's package of 2026-10-12 (source id
+    # db_hbf); the pinned hashes and the stated opening hours are checked against the package where it is present
+    evidence = sl.DB_WINDOW_EVIDENCE
+    path = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-13" / evidence["package_file"]
+    if not path.is_file():
+        pytest.skip("the gitignored Grossparkplaetze package is not available")
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == evidence["package_sha256"]
+    with zipfile.ZipFile(path) as archive:
+        member = archive.read(evidence["member"])
+    assert hashlib.sha256(member).hexdigest() == evidence["member_sha256"]
+    text = member.decode("utf-8")
+    # one block per DB BahnPark car park (Ackerstrasse, West, Nord), each: Montag bis Sonntag, incl. Feiertage, 00:00 - 00:00
+    assert text.count(evidence["opening_hours_text"]) == 4 and text.count("inkl.\u00a0Feiertage\n00:00\n\u2013\n00:00") == 4
+    for name in ("Parkplatz Ackerstra\u00dfe", "Parkplatz West", "Parkplatz Nord"):
+        assert f"Braunschweig Hbf {name}" in text
 
 
 def test_the_zone_file_written_by_the_step_must_carry_the_name_of_the_release(sl, tmp_path):
