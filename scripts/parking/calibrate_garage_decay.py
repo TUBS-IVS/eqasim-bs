@@ -66,7 +66,8 @@ Definitions (the committed calibration table records them, so that its number ca
   lambda_c. The bs_zentrum paid share is therefore a calibration target and no longer checks the model.
 * Independent check (H3b) on the SAME plans, reported as a number and never as validation: the paid-only mean option
   probability with lambda_c of the work and education activities without parkingFree inside the Wolfsburg zones
-  ``WOLFSBURG_ZONE_IDS`` against the same paid-only share of the row ``03103`` of the same table, with no pre-registered bound.
+  ``wolfsburg_zone_ids`` (every zone of the tariff table with municipality_ags 03103000: the tariff zones and, since spec v3 B2,
+  the Wolfsburg area zones) against the same paid-only share of the row ``03103`` of the same table, with no pre-registered bound.
   The universe size is stated; the reference is a quantity of residents, the model averages over destinations. The paid share is
   NOT checked here (ruling R-5-4, issue #436): a zone-level check, blind to the fee window, the free threshold and the maximum
   stay, read 1.0 in the zones Ia and Ib and said nothing. The time-aware paid share is computed on the outcomes of a model run by
@@ -136,6 +137,7 @@ log = logging.getLogger("calibrate_garage_decay")
 
 DEFAULT_DATA_PATH = REPO / "eqasim-data" / "data"
 ZONES_RELATIVE = "braunschweig/parking/parking_zones_2026.geojson"
+TARIFFS_RELATIVE = "braunschweig/parking/parking_tariffs_2026.csv"
 GARAGES_RELATIVE = "braunschweig/parking/parking_garages_2026.geojson"
 CITY_CENTER_RELATIVE = "braunschweig/srv/srv2023_city_center_parking.csv"
 COMMUTE_RELATIVE = "braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv"
@@ -158,9 +160,10 @@ GARAGE_ROW, STREET_ROW, PAID_ROW = "garage_large_lot", "street", "paid_share_ove
 COMMUTER_CLASS = "bs_zentrum"
 #: The per-place payment columns of the commute table the commuter shares are read from (ruling R-4h-1, paid-only).
 GARAGE_PAID_COLUMN, STREET_PAID_COLUMN = "share_garage_large_lot_paid", "share_street_paid"
-#: Spec H3b: the Wolfsburg zones (the tariff areas of the municipal fee ordinance) and the table row of Wolfsburg, whose
-#: commuter garage share is the independent CHECK (a number, no validation).
-WOLFSBURG_ZONE_IDS = ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
+#: Spec H3b: the Wolfsburg zones are every zone of the tariff table of this municipality (``wolfsburg_zone_ids``: the three tariff
+#: zones and, since spec v3 B2, the area zones carved out of them; a hand-kept list silently dropped the area zones) and the
+#: table row of Wolfsburg, whose commuter garage share is the independent CHECK (a number, no validation).
+WOLFSBURG_AGS = "03103000"
 WOLFSBURG_CLASS = "03103"
 DEFAULT_LAMBDA_MIN_M, DEFAULT_LAMBDA_MAX_M = 10.0, 5000.0
 DEFAULT_TOLERANCE = 0.0005
@@ -391,15 +394,39 @@ class UniverseMasks(NamedTuple):
     commuters_with_parking_free: int
 
 
-def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zone_ids=CALIBRATION_ZONE_IDS,
-                   wolfsburg_zone_ids=WOLFSBURG_ZONE_IDS) -> UniverseMasks:
+def wolfsburg_zone_ids(tariffs: pd.DataFrame) -> tuple:
+    """The zone ids of the Wolfsburg check universe (H3b) from the tariff table ``tariffs`` (``zones.load_tariffs``): every zone
+    whose ``municipality_ags`` is ``WOLFSBURG_AGS``, sorted. Selecting by municipality keeps the Wolfsburg area zones
+    (``wob_area_<id>``, spec v3 B2) in the universe; the one helper of the calibration and the comparison script. Logs the
+    number of zones. Raises ``ValueError`` for an empty selection: a check without zones is not skipped."""
+    ids = tuple(sorted(str(zone_id) for zone_id, ags in zip(tariffs["zone_id"], tariffs["municipality_ags"])
+                       if str(ags) == WOLFSBURG_AGS))
+    if not ids:
+        raise ValueError(f"the tariff table has no zone with municipality_ags {WOLFSBURG_AGS} (Wolfsburg): the Wolfsburg check "
+                         "(spec H3b) has no zones, and a check that cannot be computed is not skipped")
+    areas = sum(zone_id.startswith("wob_area_") for zone_id in ids)
+    log.info("[garage-decay] Wolfsburg zones (municipality_ags %s): %d of the tariff table (%d tariff or other zones, %d area "
+             "zones)", WOLFSBURG_AGS, len(ids), len(ids) - areas, areas)
+    return ids
+
+
+def wolfsburg_zone_label(zone_ids) -> str:
+    """The Wolfsburg zones in words for logs, notes and the table (their number and the selection rule, not the 18 ids)."""
+    return f"the {len(tuple(zone_ids))} Wolfsburg zones (municipality_ags {WOLFSBURG_AGS} of the tariff table)"
+
+
+def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, wolfsburg_zone_ids,
+                   calibration_zone_ids=CALIBRATION_ZONE_IDS) -> UniverseMasks:
     """Boolean masks over ``activities`` (columns ``purpose``, ``x``, ``y``, ``parking_free``; ``zone_id`` aligned to its
     index): the destination universe of spec E5 (inside a calibration zone, purpose not home, work or education; parkingFree
     does not change it), the commuter universe of H2 (inside a calibration zone, purpose work or education, NOT parkingFree)
     and the Wolfsburg check universe of H3b (inside a Wolfsburg zone, purpose work or education, NOT parkingFree), plus the
     number of work and education activities inside the calibration zones that carry parkingFree and are left out of the
-    commuter universe. Raises ``ValueError`` when ``parking_free`` is missing: a frame that does not say who parks free must
-    not be read as nobody does."""
+    commuter universe. ``wolfsburg_zone_ids`` is the selection of ``wolfsburg_zone_ids(tariffs)``. Raises ``ValueError`` when
+    ``parking_free`` is missing: a frame that does not say who parks free must not be read as nobody does, and when no Wolfsburg
+    zone is given."""
+    if not len(tuple(wolfsburg_zone_ids)):
+        raise ValueError("no Wolfsburg zone is given: the check universe of H3b would be empty by construction")
     if "parking_free" not in activities.columns:
         raise ValueError("the activities lack the column parking_free: the commuter universe of H2 leaves out the activities "
                          "that carry parkingFree and cannot be selected without it (use the plans reader of "
@@ -513,7 +540,7 @@ class OptionSetCalibration(NamedTuple):
 
 def calibrate_option_set(activities: pd.DataFrame, masks: UniverseMasks, options: pd.DataFrame, *, visitor_target: Target,
                          commuter_target: Target, max_distance_m: float, lambda_min_m: float, lambda_max_m: float,
-                         tolerance: float, context: str = "",
+                         tolerance: float, context: str = "", wolfsburg_label: str = "the Wolfsburg zones",
                          minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING) -> OptionSetCalibration:
     """Calibrate lambda (payment-inclusive measure on every option, E5) and lambda_c (paid-only measure on the paid options,
     H2) on the priced ``options`` and compute the paid-only Wolfsburg check mean at lambda_c (H3b). ``context`` prefixes the log
@@ -547,7 +574,7 @@ def calibrate_option_set(activities: pd.DataFrame, masks: UniverseMasks, options
              commuter_reach.free_options_in_range, commuter_reach.with_free_option_in_range, commuter_reach.activities)
     log.info("[garage-decay] %sWolfsburg check universe %d work and education activities without parkingFree inside %s; with a "
              "priced garage within %g m: %d/%d; paid options within %g m: %d/%d; free options within %g m: %d distinct, reach "
-             "%d/%d activities", context, wolfsburg_reach.activities, ", ".join(WOLFSBURG_ZONE_IDS), max_distance_m,
+             "%d/%d activities", context, wolfsburg_reach.activities, wolfsburg_label, max_distance_m,
              wolfsburg_reach.with_option_in_range, wolfsburg_reach.activities, max_distance_m,
              wolfsburg_reach.with_paid_option_in_range, wolfsburg_reach.activities, max_distance_m,
              wolfsburg_reach.free_options_in_range, wolfsburg_reach.with_free_option_in_range, wolfsburg_reach.activities)
@@ -633,7 +660,7 @@ def _free_reach_text(reach: OptionReach, max_distance_m: float, consequence: str
 def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dict, listed_options: int, options_used: int,
                facility_kinds_text: str, option_set_text: str, release: OptionSetCalibration, target: Target,
                commuter_target: Target, wolfsburg_reference: Target, commuter_excluded_free: int, sensitivities: list,
-               tolerance: float,
+               tolerance: float, wolfsburg_label: str,
                lambda_min_m: float, lambda_max_m: float, max_distance_m: float, generated_on: str, code_state: str) -> str:
     """The calibration table as text: the provenance header and the long-format rows ``TABLE_COLUMNS``."""
     zone_text = ", ".join(CALIBRATION_ZONE_IDS)
@@ -704,7 +731,7 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         "pre-registered bound and no validation (the reference is a quantity of residents, the model averages over "
         "destinations, and the universe is a sample whose size is stated):",
         f"#   Wolfsburg: mean garage probability of the {wolfsburg.activities} work and education activities without "
-        f"parkingFree inside {', '.join(WOLFSBURG_ZONE_IDS)} ({wolfsburg.with_option_in_range} with a priced garage within "
+        f"parkingFree inside {wolfsburg_label} ({wolfsburg.with_option_in_range} with a priced garage within "
         f"{max_distance_m:g} m, {wolfsburg.with_paid_option_in_range} with a PAID option) against {wolfsburg_reference.value:.4f} "
         f"= {wolfsburg_reference.numerator_name} / ({wolfsburg_reference.numerator_name} + {wolfsburg_reference.other_name}) of "
         f"class {WOLFSBURG_CLASS} of {wolfsburg_reference.table} (paying street and garage users), which the calibration does "
@@ -852,8 +879,9 @@ def validate_minimum_reach_share_warning(value) -> float:
     return float(value)
 
 
-def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
-        max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
+def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, tariffs_path=None,
+        overwrite: bool = False, max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH,
+        lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
         facility_kinds=None, sensitivity_garages=None, generated_on: str | None = None,
         minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING) -> dict:
@@ -862,6 +890,9 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
 
     ``max_distance_m`` (D_max, metres) defaults to the config key ``parking_garage_max_distance_m`` of ``config_path``
     (``read_configured_max_distance_m``; fails when missing); an explicit value is a sensitivity and is recorded in the table.
+
+    ``tariffs_path`` is the tariff table whose zones of Wolfsburg (``wolfsburg_zone_ids``, by municipality_ags) form the
+    check universe of H3b; None = ``parking_tariffs_2026.csv`` next to the zone polygons.
 
     ``facility_kinds`` (None = every kind) restricts the priced options to the given ``facility_kind`` values of the garage
     dataset (``garage``, ``surface_lot``), so that lambda can be reported with and without the surface lots; the table
@@ -899,8 +930,17 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     exposure = load_exposure_module()
     activities, persons = exposure.read_main_activities(plans)
     activities, persons, freight_agents = exclude_freight_agents(activities, persons)
+    tariffs_path = Path(tariffs_path) if tariffs_path is not None else Path(zones_path).with_name(Path(TARIFFS_RELATIVE).name)
+    wolfsburg_zones = wolfsburg_zone_ids(parking_zones.load_tariffs(tariffs_path))
+    wolfsburg_label = wolfsburg_zone_label(wolfsburg_zones)
     zone_id = exposure.zone_per_activity(activities, zones_path)
-    masks = universe_masks(activities, zone_id)
+    masks = universe_masks(activities, zone_id, wolfsburg_zones)
+    in_wolfsburg = zone_id.isin(list(wolfsburg_zones)).to_numpy() & masks.wolfsburg_commuters
+    log.info("[garage-decay] zones and activities per universe: destination %d activities in %d calibration zones; commuter %d "
+             "activities in %d calibration zones; Wolfsburg check %d activities in %d of %d Wolfsburg zones",
+             int(masks.universe.sum()), zone_id[masks.universe].nunique(), int(masks.commuters.sum()),
+             zone_id[masks.commuters].nunique(), int(masks.wolfsburg_commuters.sum()), zone_id[in_wolfsburg].nunique(),
+             len(wolfsburg_zones))
     if not masks.universe.any():
         raise ValueError(f"no destination of the universe: the {len(activities)} main activities of the {persons} persons "
                          f"contain none outside home, work and education inside {', '.join(CALIBRATION_ZONE_IDS)}")
@@ -910,8 +950,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
                          f"({masks.commuters_with_parking_free} carry parkingFree); lambda_c (spec H2) cannot be calibrated")
     if not masks.wolfsburg_commuters.any():
         raise ValueError(f"the Wolfsburg check has no universe: none of the {len(activities)} main activities of the {persons} "
-                         "persons is a work or education activity without parkingFree inside "
-                         f"{', '.join(WOLFSBURG_ZONE_IDS)} (spec H3b); a check that cannot be computed is not skipped")
+                         f"persons is a work or education activity without parkingFree inside {wolfsburg_label} (spec "
+                         "H3b); a check that cannot be computed is not skipped")
     target = read_city_center_target(city_center_path)
     commuter_target = read_commuter_reference(commute_path, COMMUTER_CLASS)
     wolfsburg_reference = read_commuter_reference(commute_path, WOLFSBURG_CLASS)
@@ -926,16 +966,18 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
              purposes["commuters"], purposes["wolfsburg"])
     search = dict(max_distance_m=max_distance_m, lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, tolerance=tolerance)
     release = calibrate_option_set(activities, masks, priced, visitor_target=target, commuter_target=commuter_target,
+                                   wolfsburg_label=wolfsburg_label,
                                    minimum_reach_share_warning=minimum_reach_share_warning, **search)
     log.info("[garage-decay] Wolfsburg check (a number, no validation): paid-only garage probability %.4f at lambda_c over %d "
              "work and education activities without parkingFree inside %s (%d with a paid option within %g m) vs reference "
-             "%.4f (class %s)", release.wolfsburg_mean, release.wolfsburg_reach.activities, ", ".join(WOLFSBURG_ZONE_IDS),
+             "%.4f (class %s)", release.wolfsburg_mean, release.wolfsburg_reach.activities, wolfsburg_label,
              release.wolfsburg_reach.with_paid_option_in_range, max_distance_m, wolfsburg_reference.value, WOLFSBURG_CLASS)
     sensitivities = []
     for label, path in sensitivity_inputs:
         _, sensitivity_options = load_priced_options(path, kinds)
         outcome = calibrate_option_set(activities, masks, sensitivity_options, visitor_target=target,
                                        commuter_target=commuter_target, context=f"sensitivity {label}: ",
+                                       wolfsburg_label=wolfsburg_label,
                                        minimum_reach_share_warning=minimum_reach_share_warning, **search)
         sensitivities.append({
             "label": label, "path": path_label(path), "sha256": file_sha256(path), "options": outcome.options,
@@ -952,7 +994,7 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
         options_used=len(priced), facility_kinds_text=kinds_text, option_set_text=option_set_text(priced), release=release,
         target=target, commuter_target=commuter_target, wolfsburg_reference=wolfsburg_reference,
         commuter_excluded_free=masks.commuters_with_parking_free, sensitivities=sensitivities, tolerance=tolerance,
-        lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m,
+        wolfsburg_label=wolfsburg_label, lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, max_distance_m=max_distance_m,
         generated_on=generated_on or datetime.date.today().isoformat(), code_state=git_state())
     if out_path is not None:
         out_path.write_bytes(text.encode("ascii"))
@@ -1049,7 +1091,8 @@ def main(argv=None) -> int:
                 parser.error(f"--sensitivity-garages: the label {label!r} is given twice")
             sensitivity_garages[label] = path
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
-    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, garages_path=data / GARAGES_RELATIVE,
+    run(plans=args.plans, zones_path=data / ZONES_RELATIVE, tariffs_path=data / TARIFFS_RELATIVE,
+        garages_path=data / GARAGES_RELATIVE,
         city_center_path=data / CITY_CENTER_RELATIVE, commute_path=data / COMMUTE_RELATIVE,
         out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite, max_distance_m=args.max_distance_m,
         config_path=args.config, lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m, tolerance=args.tolerance,

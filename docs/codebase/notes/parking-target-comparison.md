@@ -39,7 +39,7 @@ comparison, never a validation, and a stable run is convergence, not validation.
   rows; the reference is the paid-only share because the model's commuter universe holds payers, so the like-for-like model
   rows are `garage_share_*_work_education_paid_calls`, the garage share among the PAID_* calls, while the rows that keep
   free calls in the denominator are for orientation); the paid-only Wolfsburg commuter garage share (row `03103`, the zones
-  `wob_tarifzone_1` to `wob_tarifzone_3`, rows `garage_share_wolfsburg_work_education_*`, H3b) and the free shares per
+  of the tariff table with municipality_ags 03103000, the tariff zones and the area zones, rows `garage_share_wolfsburg_work_education_*`, H3b) and the free shares per
   workplace class are independent checks. A v3 or v4 report whose garage columns are 0 in every row flags the garage rows
   ("no garage option acted").
 - The commuter and Wolfsburg garage rows (`garage_share_*_work_education_*`): a report of CSV v3 or older has one

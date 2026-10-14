@@ -371,11 +371,14 @@ def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, d
             ("FREE_WITHIN_LIMIT", "wob_tarifzone_3", "work", 10, 0.0, 0),
             ("PAID_EXPECTED", "wob_tarifzone_1", "shop", 10, 5.0, 10),
             ("PAID_EXPECTED", "wob_tarifzone_4", "work", 10, 9.0, 10)]
-    # the run and the committed release must belong together: the zones of the report need a tariff row (copies of fx_sz)
+    # the run and the committed release must belong together: the zones of the report need a tariff row (copies of fx_wob, a
+    # Wolfsburg row, for the three zones of Wolfsburg; the zone 4 is a copy of fx_sz, a Salzgitter row: not Wolfsburg)
     tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
     lines = tariffs_path.read_text(encoding="utf-8").splitlines()
-    template = next(line for line in lines if line.startswith("fx_sz,"))
-    copies = [template.replace("fx_sz,", f"wob_tarifzone_{number},", 1) for number in (1, 2, 3, 4)]
+    template = next(line for line in lines if line.startswith("fx_wob,"))
+    other = next(line for line in lines if line.startswith("fx_sz,"))
+    copies = [template.replace("fx_wob,", f"wob_tarifzone_{number},", 1) for number in (1, 2, 3)]
+    copies.append(other.replace("fx_sz,", "wob_tarifzone_4,", 1))
     tariffs_path.write_text("\n".join(lines + copies) + "\n", encoding="utf-8")
     run = write_run(tmp_path / "runs", "wob", ZONES_TRIPS, rows)
     table = cmp.compare([cmp.ArmSpec("wob", run, True)], data_path=data,
@@ -400,6 +403,26 @@ def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, d
                             zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table,
                 "nowob", "garage_share_wolfsburg_work_education_without_employer_free")
     assert math.isnan(empty["model"]) and "No pricing call of this universe" in empty["universe_note"]
+
+
+def test_a_wolfsburg_area_zone_is_part_of_the_wolfsburg_check_universe(cmp, data, tmp_path, caplog):
+    # spec v3 B2: the Wolfsburg zones are selected from the tariff table by municipality_ags, so the area zones wob_area_<id>
+    # count like the tariff zones (a hand-kept list of the three tariff zones silently dropped them)
+    rows = [*ROWS, ("PAID_EXPECTED", "wob_area_668", "work", 20, 6.0, 20), ("EMPLOYER_FREE", "wob_tarifzone_2", "work", 10, 0.0, 0),
+            ("PAID_METERED", "wob_area_723", "education", 10, 0.0, 0), ("PAID_EXPECTED", "wob_area_668", "shop", 10, 5.0, 10)]
+    tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
+    lines = tariffs_path.read_text(encoding="utf-8").splitlines()
+    template = next(line for line in lines if line.startswith("fx_wob,"))
+    names = ("wob_area_668", "wob_area_723", "wob_tarifzone_2")
+    tariffs_path.write_text("\n".join(lines + [template.replace("fx_wob,", f"{name},", 1) for name in names]) + "\n",
+                            encoding="utf-8")
+    run = write_run(tmp_path / "runs", "area", ZONES_TRIPS, rows)
+    with caplog.at_level("INFO", logger="compare_parking_targets"):
+        table = cmp.compare([cmp.ArmSpec("area", run, True)], data_path=data,
+                            zones_geojson=data / "braunschweig" / "parking" / "parking_zones_2026.geojson").table
+    everything = row(table, "area", "garage_share_wolfsburg_work_education_all_calls")
+    assert everything["universe_size"] == 40 and everything["model"] == pytest.approx(6.0 / 40, abs=1e-6)
+    assert "Wolfsburg universe" in caplog.text and "in 3 of 5 Wolfsburg zones" in caplog.text
 
 
 COMMUTER_AND_WOLFSBURG_GARAGE_ROWS = (
@@ -894,8 +917,8 @@ def test_the_wolfsburg_paid_only_share_is_a_pooled_ratio_too_and_the_orientation
     extras = {**V4_MECHANICS_EXTRAS, ("PAID_EXPECTED", "wob_tarifzone_1", "work"): {"paid": 4.0, "free": 2.0}}
     tariffs_path = data / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
     lines = tariffs_path.read_text(encoding="utf-8").splitlines()
-    template = next(line for line in lines if line.startswith("fx_sz,"))
-    tariffs_path.write_text("\n".join(lines + [template.replace("fx_sz,", f"wob_tarifzone_{n},", 1) for n in (1, 2, 3)]) + "\n",
+    template = next(line for line in lines if line.startswith("fx_wob,"))
+    tariffs_path.write_text("\n".join(lines + [template.replace("fx_wob,", f"wob_tarifzone_{n},", 1) for n in (1, 2, 3)]) + "\n",
                             encoding="utf-8")
     table = compare_v4(cmp, data, tmp_path, rows=[*ROWS_V4, *WOLFSBURG_ROWS], extras=extras).table
     # PAID_* calls in Wolfsburg: PAID_EXPECTED 20 (paid 4.0, free 2.0) + PAID_METERED 10 = 30 calls: 4.0 / (30 - 2.0)

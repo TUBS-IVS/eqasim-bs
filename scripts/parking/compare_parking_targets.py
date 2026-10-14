@@ -139,14 +139,14 @@ log = logging.getLogger("compare_parking_targets")
 
 DEFAULT_DATA_PATH = calibrate.DEFAULT_DATA_PATH
 ZONES_RELATIVE = calibrate.ZONES_RELATIVE
-TARIFFS_RELATIVE = "braunschweig/parking/parking_tariffs_2026.csv"
+TARIFFS_RELATIVE = calibrate.TARIFFS_RELATIVE
 CITY_CENTER_RELATIVE = calibrate.CITY_CENTER_RELATIVE
 COMMUTE_RELATIVE = calibrate.COMMUTE_RELATIVE
 
 #: Spec E5: the two city-centre zones of Braunschweig, shared with the calibration.
 CITY_CENTER_ZONE_IDS = calibrate.CALIBRATION_ZONE_IDS
-#: Spec H3b: the Wolfsburg zones of the independent check, shared with the calibration.
-WOLFSBURG_ZONE_IDS = calibrate.WOLFSBURG_ZONE_IDS
+# Spec H3b: the Wolfsburg zones of the independent check are selected from the tariff table by municipality_ags, with the helper
+# of the calibration (calibrate.wolfsburg_zone_ids): the tariff zones and the area zones of spec v3 B2.
 CAR_MODE = "car"
 COMMUTER_PURPOSES = tuple(sorted(cost.COMMUTER_PURPOSES))
 HOME_PURPOSE = cost.HOME_PURPOSE
@@ -556,7 +556,7 @@ def paid_only_garage_share(frame: pd.DataFrame, mask) -> "float | None":
     return _ratio(frame.loc[mask, "garage_probability_sum_paid"].sum(), denominator)
 
 
-def _garage_specs(references: References, report_version: int = LATEST_REPORT_VERSION) -> list[MetricSpec]:
+def _garage_specs(references: References, wolfsburg_zone_ids, report_version: int = LATEST_REPORT_VERSION) -> list[MetricSpec]:
     """The garage metrics. With ``report_version`` 4 the rows ``*_paid_calls`` are the pooled paid-only share (outcome report
     v4) and the other commuter and Wolfsburg rows are labelled orientation rows; with an older version every commuter and
     Wolfsburg row counts all off-street options and carries the limitation of the missing paid/free split."""
@@ -576,7 +576,7 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
         return (frame["zone_id"].isin(city_ids) & frame["purpose"].isin(COMMUTER_PURPOSES)).to_numpy()
 
     def wolfsburg_commuters(frame):
-        return (frame["zone_id"].isin(WOLFSBURG_ZONE_IDS) & frame["purpose"].isin(COMMUTER_PURPOSES)).to_numpy()
+        return (frame["zone_id"].isin(wolfsburg_zone_ids) & frame["purpose"].isin(COMMUTER_PURPOSES)).to_numpy()
 
     def without_employer_free(frame, mask):
         return mask & (frame["outcome"] != cost.EMPLOYER_FREE).to_numpy()
@@ -601,7 +601,7 @@ def _garage_specs(references: References, report_version: int = LATEST_REPORT_VE
         f"work and education calls in Ia and Ib; {CALLS_NOTE}; garage share = sum of garage probability over calls. ")
     wolfsburg_base = (
         "independent check, not used in the calibration (spec Amendment H3b), a number and no validation: the same quantity for "
-        f"the Wolfsburg zones {', '.join(WOLFSBURG_ZONE_IDS)} with the commuter decay length lambda_c calibrated on bs_zentrum. "
+        f"{calibrate.wolfsburg_zone_label(wolfsburg_zone_ids)} with the commuter decay length lambda_c calibrated on bs_zentrum. "
         "Reference: paid garage / (paid garage + paid street) of the SrV row 03103 (Wolfsburg) among the PAYING street and "
         "garage users only (employer lots, other places and free parkers excluded; ruling R-4h-1). Model: work and education "
         f"calls in the Wolfsburg zones; {CALLS_NOTE}; garage share = "
@@ -748,15 +748,15 @@ def _class_specs(references: References, zone_classes: pd.Series) -> list[Metric
     return specs
 
 
-def _v4_specs(city_ids) -> list[MetricSpec]:
+def _v4_specs(city_ids, wolfsburg_zone_ids) -> list[MetricSpec]:
     """The metrics that exist only with outcome report v4 (spec v3 A4): the mean expected parking cost per zone group and
     purpose group, the share of EV_EXEMPT calls per zone group and the share of work and education calls whose street side
     was no option (the maximum stay removed the street, the long-stay product and the commuter product). Model only, no
     reference: descriptive figures. The zone groups are the zones Ia and Ib, the Wolfsburg zones and every zone of the report
     (the calls decided NO_ZONE, which have no zone id, left out)."""
     groups = (("ia_ib", "the zones Ia and Ib", lambda frame: frame["zone_id"].isin(city_ids).to_numpy()),
-              ("wolfsburg", f"the Wolfsburg zones {', '.join(WOLFSBURG_ZONE_IDS)}",
-               lambda frame: frame["zone_id"].isin(WOLFSBURG_ZONE_IDS).to_numpy()),
+              ("wolfsburg", calibrate.wolfsburg_zone_label(wolfsburg_zone_ids),
+               lambda frame: frame["zone_id"].isin(wolfsburg_zone_ids).to_numpy()),
               ("all_zones", "every parking zone of the report (stays outside every zone, NO_ZONE, left out)",
                lambda frame: (frame["zone_id"] != "").to_numpy()))
 
@@ -808,13 +808,14 @@ def _v4_specs(city_ids) -> list[MetricSpec]:
     return specs
 
 
-def outcome_specs(references: References, zone_classes: pd.Series, city_ids=CITY_CENTER_ZONE_IDS,
+def outcome_specs(references: References, zone_classes: pd.Series, wolfsburg_zone_ids, city_ids=CITY_CENTER_ZONE_IDS,
                   report_version: int = LATEST_REPORT_VERSION) -> list[MetricSpec]:
     """Every metric computed from an outcome report, in the order of the table. ``report_version`` selects the measure of the
     commuter and Wolfsburg garage rows (pooled paid-only from v4, else all off-street options); the rows of the v4 columns are
-    in the list for every version (their value is empty with the reason for an older report), so the table stays rectangular."""
-    return [*_paid_specs(references), *_garage_specs(references, report_version), *_coverage_specs(city_ids),
-            *_class_specs(references, zone_classes), *_v4_specs(city_ids)]
+    in the list for every version (their value is empty with the reason for an older report), so the table stays rectangular.
+    ``wolfsburg_zone_ids`` is the selection of ``calibrate.wolfsburg_zone_ids(tariffs)``."""
+    return [*_paid_specs(references), *_garage_specs(references, wolfsburg_zone_ids, report_version),
+            *_coverage_specs(city_ids), *_class_specs(references, zone_classes), *_v4_specs(city_ids, wolfsburg_zone_ids)]
 
 
 def _row(arm, spec: MetricSpec, model: "float | None", note: str, size: "int | None" = None) -> dict:
@@ -974,12 +975,14 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
     tariffs_path = data_path / TARIFFS_RELATIVE
     tariffs = parking_zones.load_tariffs(tariffs_path)
     zone_classes = free_draw_zone_classes(tariffs)
+    wolfsburg_zone_ids = calibrate.wolfsburg_zone_ids(tariffs)
     specs_by_version = {}   # the commuter and Wolfsburg garage rows are measured differently from v4 on
 
     def specs_for(report_version):
         measure = min(report_version, LATEST_REPORT_VERSION)
         if measure not in specs_by_version:
-            specs_by_version[measure] = outcome_specs(references, zone_classes, city_center_zone_ids, measure)
+            specs_by_version[measure] = outcome_specs(references, zone_classes, wolfsburg_zone_ids, city_center_zone_ids,
+                                                      measure)
         return specs_by_version[measure]
 
     rows, arm_provenance, report_versions = [], {}, {}
@@ -1011,6 +1014,11 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
                                            for report in reports])
             log.info("[parking-compare] arm %s: outcome report v%d, iteration(s) %s, %d pricing calls in %d rows", arm.label,
                      version, chosen, int(frame["count"].sum()), len(frame))
+            in_wolfsburg = frame["zone_id"].isin(wolfsburg_zone_ids).to_numpy()
+            log.info("[parking-compare] arm %s: Wolfsburg universe %d pricing calls in %d of %d Wolfsburg zones; Ia and Ib "
+                     "universe %d pricing calls", arm.label, int(frame.loc[in_wolfsburg, "count"].sum()),
+                     frame.loc[in_wolfsburg, "zone_id"].nunique(), len(wolfsburg_zone_ids),
+                     int(frame.loc[frame["zone_id"].isin(city_center_zone_ids).to_numpy(), "count"].sum()))
         if version is not None:
             report_versions[arm.label] = version
         rows.extend(outcome_rows(arm.label, specs_for(LATEST_REPORT_VERSION if version is None else version), frame, version,

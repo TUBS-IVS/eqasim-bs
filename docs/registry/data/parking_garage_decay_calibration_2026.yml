@@ -28,7 +28,8 @@ acquisition:
         --sensitivity-garages lot_threshold_100=<parking_garages_2026_lot_threshold_100.geojson>
     (the two sensitivity datasets are the outputs of Task 4j in eqasim-data/output_parking_lot_threshold_sensitivity/, local and
     restricted like the release dataset; the table header names them with their SHA-256). Inputs: the plans file (MATSim .xml
-    or .xml.gz, selected plans), parking_zones_2026 (zones bs_zone_ia and bs_zone_ib and the Wolfsburg zones wob_tarifzone_1..3),
+    or .xml.gz, selected plans), parking_zones_2026 (zones bs_zone_ia and bs_zone_ib and the Wolfsburg zones: every zone of parking_tariffs_2026 with
+    municipality_ags 03103000, the tariff zones and, since spec v3 B2, the area zones wob_area_<id>),
     parking_garages_2026 (the options), srv2023_city_center_parking (the target of lambda is READ from its rows garage_large_lot
     and street) and srv2023_commute_parking_by_workplace_class (the target of lambda_c is READ from the paid columns of its row
     bs_zentrum, the Wolfsburg check from those of its row 03103). The plans carry the activity attribute parkingFree, which the

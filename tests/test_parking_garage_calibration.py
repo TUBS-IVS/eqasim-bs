@@ -177,7 +177,7 @@ def test_the_destination_universe_leaves_out_home_work_education_and_everything_
                                "x": 0.0, "y": 0.0, "parking_free": False})
     zone_id = pd.Series(["bs_zone_ia", "bs_zone_ib", "bs_zone_ia", "bs_zone_ia", "bs_zone_ia", "bs_zone_ib", np.nan,
                          "other_zone"])
-    masks = cal.universe_masks(activities, zone_id)
+    masks = cal.universe_masks(activities, zone_id, WOLFSBURG_ZONES)
     assert masks.universe.tolist() == [True, True, True, False, False, False, False, False]
     assert masks.commuters.tolist() == [False, False, False, False, True, True, False, False]
     assert not masks.wolfsburg_commuters.any()
@@ -187,14 +187,13 @@ def test_the_commuter_universe_of_h2_leaves_out_parking_free_activities_and_the_
     # work and education inside Ia and Ib WITHOUT parkingFree (H2): the employer-lot and free-parking users leave the
     # denominator because the SrV share is among those who park on the street or in a garage; parkingFree does not change
     # the E5 universe (it has no work and education); the Wolfsburg check (H3b) is work and education without parkingFree
-    # inside wob_tarifzone_1..3
+    # inside the Wolfsburg zones of the tariff table (the three tariff zones and the area zones, spec v3 B2)
     activities = pd.DataFrame({
         "purpose": ["work", "work", "education", "education", "shop", "work", "education", "work", "work", "home"],
         "parking_free": [False, True, False, True, True, False, False, True, False, False], "x": 0.0, "y": 0.0})
     zone_id = pd.Series(["bs_zone_ia", "bs_zone_ia", "bs_zone_ib", "bs_zone_ib", "bs_zone_ia", "wob_tarifzone_1",
                          "wob_tarifzone_3", "wob_tarifzone_2", "wob_tarifzone_4", "wob_tarifzone_1"])
-    masks = cal.universe_masks(activities, zone_id)
-    assert cal.WOLFSBURG_ZONE_IDS == ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
+    masks = cal.universe_masks(activities, zone_id, WOLFSBURG_ZONES)
     assert masks.commuters.tolist() == [True, False, True, False, False, False, False, False, False, False]
     assert masks.universe.tolist() == [False, False, False, False, True, False, False, False, False, False]
     assert masks.wolfsburg_commuters.tolist() == [False, False, False, False, False, True, True, False, False, False]
@@ -204,7 +203,41 @@ def test_the_commuter_universe_of_h2_leaves_out_parking_free_activities_and_the_
 def test_a_frame_without_the_parking_free_column_is_refused_instead_of_assuming_nobody_is_free(cal):
     activities = pd.DataFrame({"purpose": ["work"], "x": 0.0, "y": 0.0})
     with pytest.raises(ValueError, match="parking_free"):
-        cal.universe_masks(activities, pd.Series(["bs_zone_ia"]))
+        cal.universe_masks(activities, pd.Series(["bs_zone_ia"]), WOLFSBURG_ZONES)
+
+
+#: The Wolfsburg zones of the synthetic cases (the tariff zones 1 to 3).
+WOLFSBURG_ZONES = ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
+
+
+def _tariff_frame(*rows) -> pd.DataFrame:
+    return pd.DataFrame(rows, columns=["zone_id", "municipality_ags"])
+
+
+def test_the_wolfsburg_zones_are_selected_by_municipality_and_an_area_zone_counts(cal, caplog):
+    # spec v3 B2: the Wolfsburg area zones wob_area_<id> are zones of Wolfsburg like the tariff zones; a hand-kept list of the
+    # three tariff zones silently dropped them, so the selection is by municipality_ags of the tariff table
+    tariffs = _tariff_frame(("bs_zone_ia", "03101000"), ("wob_tarifzone_2", "03103000"), ("wob_area_668", "03103000"),
+                            ("wob_tarifzone_1", "03103000"), ("sz_lebenstedt", "03102000"), ("wob_area_723", "03103000"))
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        ids = cal.wolfsburg_zone_ids(tariffs)
+    assert ids == ("wob_area_668", "wob_area_723", "wob_tarifzone_1", "wob_tarifzone_2")
+    assert "4 of the tariff table (2 tariff or other zones, 2 area zones)" in caplog.text
+    assert not hasattr(cal, "WOLFSBURG_ZONE_IDS")
+    # an activity inside an area zone is a member of the Wolfsburg check universe
+    activities = pd.DataFrame({"purpose": ["work", "education", "work", "shop"], "parking_free": False, "x": 0.0, "y": 0.0})
+    zone_id = pd.Series(["wob_area_668", "wob_tarifzone_1", "wob_area_999", "wob_area_723"])
+    masks = cal.universe_masks(activities, zone_id, ids)
+    assert masks.wolfsburg_commuters.tolist() == [True, True, False, False]
+    assert "4 Wolfsburg zones (municipality_ags 03103000" in cal.wolfsburg_zone_label(ids)
+
+
+def test_an_empty_wolfsburg_selection_fails_loudly(cal):
+    with pytest.raises(ValueError, match="no zone with municipality_ags 03103000"):
+        cal.wolfsburg_zone_ids(_tariff_frame(("bs_zone_ia", "03101000"), ("sz_lebenstedt", "03102000")))
+    with pytest.raises(ValueError, match="no Wolfsburg zone is given"):
+        cal.universe_masks(pd.DataFrame({"purpose": ["work"], "parking_free": False, "x": 0.0, "y": 0.0}),
+                           pd.Series(["bs_zone_ia"]), ())
 
 
 def test_the_zone_level_paid_share_check_is_gone_the_time_aware_one_is_the_comparison_scripts(cal):
@@ -247,8 +280,35 @@ def inputs(tmp_path):
         "share_street_free\n"
         "bs_zentrum,class,221,104.4,0.1,0.1,0.5,0.0,0.1,0.9,0.04,0.46,0.06,0.04\n"
         "03103,class,691,162.7,0.1,0.1,0.5,0.0,0.1,0.9,0.06,0.44,0.04,0.06\n", encoding="utf-8")
+    # the tariff table next to the zone polygons (the Wolfsburg zones of the check universe are selected from it by municipality)
+    (tmp_path / "parking_tariffs_2026.csv").write_text(
+        (FIXTURES / "parking_tariffs_fixture.csv").read_text(encoding="utf-8").replace("\nfx_wob,", "\nwob_tarifzone_1,"),
+        encoding="utf-8")
     return {"plans": plans, "zones_path": zones_path, "garages_path": garages_path,
             "city_center_path": city_center, "commute_path": commute}
+
+
+def test_the_check_universe_of_h3b_counts_an_area_zone_and_logs_zones_and_activities_per_universe(cal, inputs, tmp_path, caplog):
+    # the polygon of wob_tarifzone_1 is renamed wob_area_9 and the tariff table holds the area zone only: the same activities
+    # are the Wolfsburg check universe, so an area zone counts
+    base = cal.run(out_path=None, **inputs)
+    assert base["wolfsburg_activities"] > 0
+    zones = gpd.read_file(inputs["zones_path"])
+    zones["zone_id"] = zones["zone_id"].replace({"wob_tarifzone_1": "wob_area_9"})
+    zones.to_file(inputs["zones_path"], driver="GeoJSON")
+    tariffs_path = tmp_path / "parking_tariffs_2026.csv"
+    tariffs_path.write_text(tariffs_path.read_text(encoding="utf-8").replace("\nwob_tarifzone_1,", "\nwob_area_9,"),
+                            encoding="utf-8")
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, **inputs)
+    assert result["wolfsburg_activities"] == base["wolfsburg_activities"] and result["wolfsburg_mean"] == base["wolfsburg_mean"]
+    assert "zones and activities per universe: destination" in caplog.text
+    assert f"Wolfsburg check {base['wolfsburg_activities']} activities in 1 of 2 Wolfsburg zones" in caplog.text
+    # without a Wolfsburg zone in the tariff table the run stops instead of computing an empty check
+    tariffs_path.write_text("\n".join(line for line in tariffs_path.read_text(encoding="utf-8").splitlines()
+                                      if ",03103000," not in line) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="municipality_ags 03103000"):
+        cal.run(out_path=None, **inputs)
 
 
 def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_writes_the_table(cal, inputs, tmp_path, caplog):
@@ -295,7 +355,8 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
                    "1 more carry parkingFree and are left out",
                    "share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid) = 0.04 / (0.04 + 0.06)",
                    "the payers only", "like-for-like",
-                   "class bs_zentrum", "Independent check", "class 03103", "wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",
+                   "class bs_zentrum", "Independent check", "class 03103",
+                   "the 2 Wolfsburg zones (municipality_ags 03103000 of the tariff table)",
                    "2 work and education activities", "calibration target"):
         assert needle in text, needle
     assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 5   # plans, zones, garages and the two SrV tables
