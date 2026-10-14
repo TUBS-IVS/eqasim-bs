@@ -5,14 +5,16 @@
 ``parking_garage_decay_calibration_2026.csv`` (written by ``scripts/parking/calibrate_garage_decay.py``).
 The table is committed (the calibration of the 25 % reference plans on the option set of the garage dataset named in its
 header, spec Amendment I6, issue #436) and the value equals it. The table belongs to that garage dataset exactly: the
-SHA-256 in its header must be the pin of the data record ``parking_garages_2026`` (a test below), so a regenerated
-dataset with a stale table fails here. The 0 branch below remains for a checkout without the table: the value must
+SHA-256 in its header must be the single pin of the data record ``parking_garages_2026`` (a test below), and the pins of the
+zone file and of the two committed SrV tables must be those of their record and files, so a regenerated input with a stale
+table fails here. The 0 branch below remains for a checkout without the table: the value must
 then be 0 (the garage options are off, E6); with the table the value must equal it, and the first of these two tests
 that fits the repository state decides. Writing the table without setting the config value, or setting a value without
 the table, fails here.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
 import sys
@@ -30,6 +32,12 @@ CONFIGS = {"base": REPO / "configs" / "base_bs.yml",
            "popsim_open": REPO / "configs" / "fixtures" / "config_popsim_open_braunschweig.yml"}
 SCRIPT = REPO / "scripts" / "parking" / "calibrate_garage_decay.py"
 GARAGE_RECORD = REPO / "docs" / "registry" / "data" / "parking_garages_2026.yml"
+ZONES_RECORD = REPO / "docs" / "registry" / "data" / "parking_zones_2026.yml"
+#: The two committed SrV tables the table header pins (their hashes are those of the files in the repository).
+SRV_TABLES = {
+    "srv2023_city_center_parking": REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_city_center_parking.csv",
+    "srv2023_commute_parking_by_workplace_class": (REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
+                                                  / "srv2023_commute_parking_by_workplace_class.csv")}
 
 
 def _config(name: str) -> dict:
@@ -70,17 +78,61 @@ def _table_input_hash(name: str) -> str:
     return found[0]
 
 
+def _record_pin(record_path: Path) -> str:
+    """The ONE SHA-256 that a data record of a restricted file pins in ``storage.notes``; the test fails when the notes hold none
+    or several (a stale table would otherwise pass a membership test against notes that also mention an older hash)."""
+    record = yaml.safe_load(Path(record_path).read_text(encoding="utf-8"))
+    pins = re.findall(r"\b[0-9a-f]{64}\b", " ".join(record["storage"]["notes"].split()))
+    assert len(pins) == 1, f"{Path(record_path).name}: storage.notes must pin exactly one SHA-256, found {len(pins)}"
+    return pins[0]
+
+
+def _lf_sha256(path: Path) -> str:
+    """SHA-256 of a committed text file with LF line endings (a Windows checkout may rewrite them; the header pins the LF form)."""
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def test_the_record_pin_reader_demands_exactly_one_pin(tmp_path):
+    old, new = "a" * 64, "b" * 64
+
+    def record(notes: str) -> Path:
+        path = tmp_path / "record.yml"
+        path.write_text("storage:\n  notes: >-\n    " + notes + "\n", encoding="utf-8")
+        return path
+
+    assert _record_pin(record(f"pinned {new} for this file")) == new
+    with pytest.raises(AssertionError, match="exactly one SHA-256, found 2"):
+        _record_pin(record(f"pinned {new}; the first release had {old}"))   # a stale hash must not be hidden by an old mention
+    with pytest.raises(AssertionError, match="exactly one SHA-256, found 0"):
+        _record_pin(record("no hash here"))
+
+
 def test_the_committed_table_belongs_to_the_garage_dataset_pinned_in_its_data_record():
     # The decay lengths are calibrated on ONE option set: another garage dataset (a regenerated release, a lot that becomes
-    # a free option) needs a new calibration. The data record owns the pin of the restricted dataset (storage.notes, once),
-    # so the test runs without the dataset itself; a stale table fails here instead of silently pricing another option set.
+    # a free option) needs a new calibration. The data record owns the pin of the restricted dataset (storage.notes, exactly
+    # one), so the test runs without the dataset itself; a stale table fails here instead of silently pricing another set.
     if not TABLE.is_file():
         pytest.skip("the calibration table does not exist yet")
-    record = yaml.safe_load(GARAGE_RECORD.read_text(encoding="utf-8"))
-    pinned = " ".join(record["storage"]["notes"].split())
-    assert _table_input_hash("garages") in pinned, (
+    assert _table_input_hash("garages") == _record_pin(GARAGE_RECORD), (
         f"{TABLE.name} was calibrated on a garage dataset that is not the pin of {GARAGE_RECORD.name}: "
         "rerun scripts/parking/calibrate_garage_decay.py on the current dataset, or restore the pin")
+
+
+def test_the_committed_table_names_the_zone_file_pinned_in_its_data_record():
+    # the zone polygons are a local restricted file too: the pin of their data record is the reference
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert _table_input_hash("zones") == _record_pin(ZONES_RECORD), (
+        f"{TABLE.name} was calibrated on a zone file that is not the pin of {ZONES_RECORD.name}: rerun the calibration")
+
+
+@pytest.mark.parametrize("name", SRV_TABLES)
+def test_the_committed_table_names_the_committed_srv_tables_it_was_calibrated_against(name):
+    # the two SrV tables are committed: the header must pin the LF SHA-256 of the file that the repository holds now
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert _table_input_hash(name) == _lf_sha256(SRV_TABLES[name]), (
+        f"{TABLE.name} was calibrated on another {name}.csv than the committed one: rerun the calibration")
 
 
 @pytest.mark.parametrize("name", CONFIGS)

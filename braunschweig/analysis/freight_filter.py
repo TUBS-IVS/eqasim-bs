@@ -25,6 +25,8 @@ def drop_freight_agents(df, person_column="person_id", label="trips"):
     mask = df[person_column].astype(str).str.startswith(FREIGHT_PERSON_PREFIX)
     excluded = int(mask.sum())
     if excluded > 0:
-        logger.info("[%s] excluded %d freight agents (%.2f%%) from person-travel analysis",
-                    label, excluded, 100.0 * excluded / len(df))
+        # the filter counts ROWS (trips, activities), so the message says rows and names the distinct agents behind them
+        agents = int(df.loc[mask, person_column].nunique())
+        logger.info("[%s] excluded %d rows of %d freight agents (%.2f%% of the rows) from person-travel analysis",
+                    label, excluded, agents, 100.0 * excluded / len(df))
     return df.loc[~mask].copy()

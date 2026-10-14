@@ -27,9 +27,10 @@ Definitions (the committed calibration table records them, so that its number ca
     (1 + W)) = W_paid / (1 + W_paid)``, because the factor ``1 + W`` cancels: the paid-only share is the payment-inclusive form
     on the paid options alone (``measure_distances`` selects them). A stay without a paid option within D_max has the paid-only
     share 0 (its paying users park on the street). A universe is averaged over its activities, as in E5; this mean of the
-    per-activity shares equals the pooled ratio of summed probabilities where no free option is in range or where every activity
-    sees the same options, and may differ from it where free options reach only a part of the universe (the pooled ratio is not
-    computed).
+    per-activity shares equals the pooled ratio of the summed probabilities, ``sum(p_paid) / sum(p_paid + p_street)``, when no
+    free option is in range of any activity of the universe (then ``W_paid = W`` for every activity and ``p_paid + p_street`` is
+    1, so the denominator of the pooled ratio is the number of activities); with free options in range the two may differ (the
+    pooled ratio is not computed).
 * Destination universe: every main activity of the selected plans (the activities of type ``* interaction`` that the router
   inserts are no destinations; the freight agents, ids ``freight_*``, are trip creators and no residents and are excluded
   with the shared ``braunschweig.analysis.freight_filter``, counted in the log and the header) whose type is none of
@@ -77,7 +78,8 @@ Definitions (the committed calibration table records them, so that its number ca
   those of the primary dataset. A sensitivity dataset with the content of the primary one is refused.
 
 Fallback transparency: the log and the table report, per universe, how many activities have an option of the measure within
-D_max (the share whose probability can be positive at all; a universe below ``MINIMUM_REACH_SHARE_WARNING`` is warned about) and
+D_max (the share whose probability can be positive at all; a universe below the share of ``--minimum-reach-share-warning``,
+default ``MINIMUM_REACH_SHARE_WARNING``, is warned about: a log-only plausibility threshold that changes no result) and
 how many free options lie within D_max of the universe (distinct options and activities reached); a target that the options
 cannot reach fails instead of returning the end of the range, and an empty commuter or Wolfsburg universe fails instead of
 skipping its row.
@@ -95,7 +97,7 @@ Usage (from the repository root)::
     python scripts/parking/calibrate_garage_decay.py --plans <population.xml.gz> [--data-path eqasim-data/data]
         [--out eqasim-data/data/braunschweig/parking/parking_garage_decay_calibration_2026.csv] [--overwrite]
         [--sensitivity-garages lot_threshold_30=<geojson> --sensitivity-garages lot_threshold_100=<geojson>]
-        [--facility-kinds garage]
+        [--facility-kinds garage] [--minimum-reach-share-warning 0.5]
 
 ``--facility-kinds`` (default: every kind) restricts the priced options to the given ``facility_kind`` values of the garage
 dataset (ruling C1 of the Task 5a review). The RELEASE value is the calibration on every kind; a filtered run is a sensitivity
@@ -128,7 +130,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.analysis import freight_filter  # noqa: E402
-from braunschweig.parking import cost, garages as parking_garages, restricted_inputs  # noqa: E402
+from braunschweig.parking import cost, garages as parking_garages, restricted_inputs, zones as parking_zones  # noqa: E402
 
 log = logging.getLogger("calibrate_garage_decay")
 
@@ -173,7 +175,8 @@ TABLE_COLUMNS = ("quantity", "value", "unit", "note")
 MEASURE_ALL_OPTIONS, MEASURE_PAID_OPTIONS = "all_options", "paid_options"
 MEASURES = (MEASURE_ALL_OPTIONS, MEASURE_PAID_OPTIONS)
 #: Fallback transparency: a universe in which fewer than this share of the activities has an option of its measure within D_max
-#: is warned about (its probability is then 0 for the rest). A plausibility threshold for the warning, not a scientific bound.
+#: is warned about (its probability is then 0 for the rest). The default of ``--minimum-reach-share-warning``: a log-only
+#: plausibility threshold that changes no result, not a scientific parameter.
 MINIMUM_REACH_SHARE_WARNING = 0.5
 #: A sensitivity label: letters, digits, underscore, dot and hyphen (it is a header word and a key of the result).
 SENSITIVITY_LABEL_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
@@ -414,22 +417,16 @@ def universe_masks(activities: pd.DataFrame, zone_id: pd.Series, calibration_zon
 # --------------------------------------------------------------------------- free and paid options, the measures (I6)
 
 
-def _is_set(value) -> bool:
-    """Whether a cell of the garage dataset holds a value: ``None``, NaN, ``pd.NA`` and the empty string are empty (the loader
-    reads an empty text cell as ``None``)."""
-    if isinstance(value, str):
-        return value.strip() != ""
-    return value is not None and not pd.isna(value)
-
-
 def is_free_option(tariff_tiers, tariff_duration_bands) -> bool:
     """Whether an option is FREE: its schedule is the free schedule ``garages.FREE_SCHEDULE_TEXT`` ("0- free"), i.e.
     ``tariff_duration_bands`` parses (``garages.parse_duration_bands``) to ONE open-ended free band
     (``garages.is_free_schedule``) and the option has no ``tariff_tiers``. A free first band that something follows, a closed
     free band (the grace period of a tiered garage) and every other schedule are PAID options. The marker is the schedule of the
-    row, never its name or a rate. Raises ``ValueError`` for a schedule text that does not parse (``garages.validate_garages``
-    refuses it earlier)."""
-    if _is_set(tariff_tiers) or not _is_set(tariff_duration_bands):
+    row, never its name or a rate. Whether a cell is empty is decided by the garage module's own rule (``zones._is_set``: None,
+    NaN, ``pd.NA`` and the empty string are empty, as ``garages.coverage`` counts ``priced_free``; the loader turns a blank
+    cell into None before this point). Raises ``ValueError`` for a schedule text that does not parse
+    (``garages.validate_garages`` refuses it earlier)."""
+    if parking_zones._is_set(tariff_tiers) or not parking_zones._is_set(tariff_duration_bands):
         return False
     return parking_garages.is_free_schedule(parking_garages.parse_duration_bands(tariff_duration_bands))
 
@@ -489,14 +486,15 @@ def option_reach(distances_m: np.ndarray, paid: np.ndarray, max_distance_m: floa
                        with_free_option_in_range=int(free_in_range.any(axis=1).sum()), free_option_ids=names)
 
 
-def _warn_when_barely_reached(name: str, reached: int, activities: int, kind: str, max_distance_m: float, context: str) -> None:
-    """Warn when fewer than ``MINIMUM_REACH_SHARE_WARNING`` of the activities of a universe have an option (``kind``: "priced"
-    or "paid") within ``max_distance_m``: the probability of the others is 0, so the calibration or the check rests on a
-    minority."""
-    if activities and reached / activities < MINIMUM_REACH_SHARE_WARNING:
+def _warn_when_barely_reached(name: str, reached: int, activities: int, kind: str, max_distance_m: float, context: str,
+                              minimum_share: float) -> None:
+    """Warn when fewer than ``minimum_share`` of the activities of a universe have an option (``kind``: "priced" or "paid")
+    within ``max_distance_m``: the probability of the others is 0, so the calibration or the check rests on a minority. The
+    threshold is a log-only plausibility threshold (``--minimum-reach-share-warning``), no scientific parameter."""
+    if activities and reached / activities < minimum_share:
         log.warning("[garage-decay] %s%s: only %d/%d (%.1f %%) of the activities have a %s option within reach (%g m), below "
                     "the warning share of %.0f %%: the option set barely covers this universe", context, name, reached,
-                    activities, 100.0 * reached / activities, kind, max_distance_m, 100.0 * MINIMUM_REACH_SHARE_WARNING)
+                    activities, 100.0 * reached / activities, kind, max_distance_m, 100.0 * minimum_share)
 
 
 class OptionSetCalibration(NamedTuple):
@@ -515,12 +513,13 @@ class OptionSetCalibration(NamedTuple):
 
 def calibrate_option_set(activities: pd.DataFrame, masks: UniverseMasks, options: pd.DataFrame, *, visitor_target: Target,
                          commuter_target: Target, max_distance_m: float, lambda_min_m: float, lambda_max_m: float,
-                         tolerance: float, context: str = "") -> OptionSetCalibration:
+                         tolerance: float, context: str = "",
+                         minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING) -> OptionSetCalibration:
     """Calibrate lambda (payment-inclusive measure on every option, E5) and lambda_c (paid-only measure on the paid options,
     H2) on the priced ``options`` and compute the paid-only Wolfsburg check mean at lambda_c (H3b). ``context`` prefixes the log
     lines and the errors (e.g. ``"sensitivity lot_threshold_30: "``). Logs, per universe, the activities with an option within
-    D_max and the free options within D_max. Raises ``ValueError`` naming the calibration (and the measure) whose target the
-    options cannot reach."""
+    D_max and the free options within D_max, and warns about a universe below ``minimum_reach_share_warning``. Raises
+    ``ValueError`` naming the calibration (and the measure) whose target the options cannot reach."""
     paid = paid_option_flags(options)
     x_m, y_m = options.geometry.x.to_numpy(dtype=float), options.geometry.y.to_numpy(dtype=float)
     visitor_distances = garage_distances_m(activities[masks.universe], x_m, y_m)
@@ -553,11 +552,11 @@ def calibrate_option_set(activities: pd.DataFrame, masks: UniverseMasks, options
              wolfsburg_reach.with_paid_option_in_range, wolfsburg_reach.activities, max_distance_m,
              wolfsburg_reach.free_options_in_range, wolfsburg_reach.with_free_option_in_range, wolfsburg_reach.activities)
     _warn_when_barely_reached("destination universe", visitor_reach.with_option_in_range, visitor_reach.activities, "priced",
-                              max_distance_m, context)
+                              max_distance_m, context, minimum_reach_share_warning)
     _warn_when_barely_reached("commuter universe", commuter_reach.with_paid_option_in_range, commuter_reach.activities, "paid",
-                              max_distance_m, context)
+                              max_distance_m, context, minimum_reach_share_warning)
     _warn_when_barely_reached("Wolfsburg check universe", wolfsburg_reach.with_paid_option_in_range,
-                              wolfsburg_reach.activities, "paid", max_distance_m, context)
+                              wolfsburg_reach.activities, "paid", max_distance_m, context, minimum_reach_share_warning)
     search = dict(max_distance_m=max_distance_m, lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, tolerance=tolerance)
     try:
         visitors = calibrate_decay(measure_distances(visitor_distances, paid, MEASURE_ALL_OPTIONS), visitor_target.value,
@@ -678,7 +677,10 @@ def table_text(*, inputs: dict, persons: int, freight_agents: int, purposes: dic
         "Universe caveat: SrV asks residents about their usual place, the model averages over destinations.",
         f"# Search for lambda: bisection in [{lambda_min_m:g}, {lambda_max_m:g}] m to a tolerance of {tolerance:g} in the mean "
         f"probability, {calibration.iterations} halvings; the mean is {calibration.high_end_mean:.4f} at the upper end and "
-        f"{calibration.low_end_mean:.4f} at the lower end. The decays are rounded to {LAMBDA_DECIMALS} decimals.",
+        f"{calibration.low_end_mean:.4f} at the lower end. The decays are rounded to {LAMBDA_DECIMALS} decimals. A reported "
+        "decay is the first bisection midpoint whose mean lies within the tolerance of the target, not the exact root of the "
+        "target, so differences between option sets of the order of the tolerance divided by the local slope of the mean are "
+        "not resolved (this holds for lambda_c and for the sensitivities below).",
         f"# Commuter universe: the {commuters.activities} work and education activities inside {zone_text} that do not carry "
         f"parkingFree ({commuter_excluded_free} more carry parkingFree and are left out: the free-parking draw frees them, so "
         f"the universe holds the payers only), {commuters.with_option_in_range} of them with at least one priced garage within "
@@ -841,10 +843,20 @@ def validate_sensitivity_garages(sensitivity_garages, release_garages_path) -> l
     return checked
 
 
+def validate_minimum_reach_share_warning(value) -> float:
+    """The warning threshold of the reach log (``--minimum-reach-share-warning``) as a float: a number in [0, 1], no bool. It is
+    a log-only plausibility threshold and changes no result. Raises ``ValueError`` naming the option otherwise."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"minimum_reach_share_warning must be a share in [0, 1] (a log-only plausibility threshold), got "
+                         f"{value!r}")
+    return float(value)
+
+
 def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_path, overwrite: bool = False,
         max_distance_m: float | None = None, config_path=DEFAULT_CONFIG_PATH, lambda_min_m: float = DEFAULT_LAMBDA_MIN_M,
         lambda_max_m: float = DEFAULT_LAMBDA_MAX_M, tolerance: float = DEFAULT_TOLERANCE,
-        facility_kinds=None, sensitivity_garages=None, generated_on: str | None = None) -> dict:
+        facility_kinds=None, sensitivity_garages=None, generated_on: str | None = None,
+        minimum_reach_share_warning: float = MINIMUM_REACH_SHARE_WARNING) -> dict:
     """Calibrate lambda (E5, payment-inclusive) and lambda_c (H2, paid-only) on ``plans``, write the table to ``out_path`` and
     return the results (a dict of the table's numbers, including the paid-only Wolfsburg check of H3b and the sensitivities).
 
@@ -859,6 +871,9 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     large-lot thresholds 30 and 100); each result is a header line of the table and an entry of ``result["sensitivities"]``,
     never a release value.
 
+    ``minimum_reach_share_warning`` (a share in [0, 1], default ``MINIMUM_REACH_SHARE_WARNING``) is the log-only plausibility
+    threshold below which a universe that the options barely reach is warned about; it changes no result.
+
     Raises ``FileNotFoundError`` (naming the data record and the request route) when the zone polygons or the garage dataset,
     both local restricted files, are absent, ``FileExistsError`` when ``out_path`` exists and ``overwrite`` is false
     (a calibrated release value is never replaced silently), ``ValueError`` for an empty universe (destination, commuter
@@ -866,6 +881,7 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     reads the inputs, logs, writes ``out_path`` (its directory must exist) after every calibration has succeeded.
     """
     out_path = Path(out_path) if out_path is not None else None
+    minimum_reach_share_warning = validate_minimum_reach_share_warning(minimum_reach_share_warning)
     # the zone polygons and the garage dataset are local restricted files (issue #436): name the record and the request route
     restricted_inputs.require_restricted_file("parking_zones_2026", "zone polygons", zones_path)
     restricted_inputs.require_restricted_file("parking_garages_2026", "garage dataset", garages_path)
@@ -909,7 +925,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     log.info("[garage-decay] universes by purpose: destination %s; commuter %s; Wolfsburg check %s", purposes["visitors"],
              purposes["commuters"], purposes["wolfsburg"])
     search = dict(max_distance_m=max_distance_m, lambda_min_m=lambda_min_m, lambda_max_m=lambda_max_m, tolerance=tolerance)
-    release = calibrate_option_set(activities, masks, priced, visitor_target=target, commuter_target=commuter_target, **search)
+    release = calibrate_option_set(activities, masks, priced, visitor_target=target, commuter_target=commuter_target,
+                                   minimum_reach_share_warning=minimum_reach_share_warning, **search)
     log.info("[garage-decay] Wolfsburg check (a number, no validation): paid-only garage probability %.4f at lambda_c over %d "
              "work and education activities without parkingFree inside %s (%d with a paid option within %g m) vs reference "
              "%.4f (class %s)", release.wolfsburg_mean, release.wolfsburg_reach.activities, ", ".join(WOLFSBURG_ZONE_IDS),
@@ -918,7 +935,8 @@ def run(*, plans, zones_path, garages_path, city_center_path, commute_path, out_
     for label, path in sensitivity_inputs:
         _, sensitivity_options = load_priced_options(path, kinds)
         outcome = calibrate_option_set(activities, masks, sensitivity_options, visitor_target=target,
-                                       commuter_target=commuter_target, context=f"sensitivity {label}: ", **search)
+                                       commuter_target=commuter_target, context=f"sensitivity {label}: ",
+                                       minimum_reach_share_warning=minimum_reach_share_warning, **search)
         sensitivities.append({
             "label": label, "path": path_label(path), "sha256": file_sha256(path), "options": outcome.options,
             "free_options": outcome.free_options, "kind_counts": _kind_counts_text(sensitivity_options),
@@ -1003,6 +1021,10 @@ def main(argv=None) -> int:
                         help="a sensitivity of the option set (spec Amendment I6): the same calibration on another garage "
                              "dataset (e.g. the large-lot thresholds 30 and 100), written as a header line of the table, "
                              "labelled sensitivity and never a release value; repeatable, a label once")
+    parser.add_argument("--minimum-reach-share-warning", type=float, default=MINIMUM_REACH_SHARE_WARNING, metavar="SHARE",
+                        help="a universe in which fewer than this share (0 to 1) of the activities has an option of its "
+                             f"measure within D_max is warned about (default {MINIMUM_REACH_SHARE_WARNING:g}); a log-only "
+                             "plausibility threshold that changes no result and is not a scientific parameter (0 never warns)")
     parser.add_argument("--facility-kinds", type=parse_facility_kinds, default=None, metavar="KIND[,KIND]|all",
                         help="calibrate on the priced options of these facility kinds only (garage, surface_lot; default all); "
                              "a filtered run is a sensitivity number and must not be written over the release table. "
@@ -1015,6 +1037,10 @@ def main(argv=None) -> int:
         if args.out is None or args.out.resolve() == (data / TABLE_RELATIVE).resolve():
             parser.error("--facility-kinds gives a sensitivity number, not the release value: pass --out with another path "
                          f"than the release table {data / TABLE_RELATIVE}")
+    try:
+        validate_minimum_reach_share_warning(args.minimum_reach_share_warning)
+    except ValueError as error:
+        parser.error(str(error))
     sensitivity_garages = None
     if args.sensitivity_garages is not None:
         sensitivity_garages = {}
@@ -1027,7 +1053,8 @@ def main(argv=None) -> int:
         city_center_path=data / CITY_CENTER_RELATIVE, commute_path=data / COMMUTE_RELATIVE,
         out_path=args.out or data / TABLE_RELATIVE, overwrite=args.overwrite, max_distance_m=args.max_distance_m,
         config_path=args.config, lambda_min_m=args.lambda_min_m, lambda_max_m=args.lambda_max_m, tolerance=args.tolerance,
-        facility_kinds=args.facility_kinds, sensitivity_garages=sensitivity_garages)
+        facility_kinds=args.facility_kinds, sensitivity_garages=sensitivity_garages,
+        minimum_reach_share_warning=args.minimum_reach_share_warning)
     return 0
 
 

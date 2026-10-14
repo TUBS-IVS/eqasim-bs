@@ -12,7 +12,6 @@ from __future__ import annotations
 import importlib.util
 import math
 import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -576,6 +575,9 @@ def _fixture_garages():
     ("06:00-18:00 1.00/60", "0- free", False),                   # tiers are never free (and the validator refuses this)
     (None, "", False), (float("nan"), None, False),
     (float("nan"), "0- free", True), ("", "0- free", True),      # an empty tiers cell is no tiers
+    # the emptiness rule is the one of the garage module (zones._is_set, as garages.coverage counts priced_free): a blank
+    # string is a value there, so a blank tiers cell is tiers (the loader turns a blank cell into None before this point)
+    ("   ", "0- free", False),
 ])
 def test_a_free_option_is_the_free_schedule_and_nothing_else(cal, tiers, bands, expected):
     assert cal.is_free_option(tiers, bands) is expected
@@ -597,6 +599,15 @@ def test_the_free_marker_reads_the_schedule_of_the_rows_and_never_the_name_or_th
     zero_rate = frame.copy()
     zero_rate.loc[zero_rate["garage_id"] == "fx_g01_core", "garage_hourly_rate_eur"] = 0.0
     assert cal.paid_option_flags(zero_rate).tolist() == paid.tolist()
+    # the id of a row does not decide either (a marker by id text would follow the ids): swap the ids of the free row and a paid
+    # row, the flags stay with the schedules and the free row now carries the paid row's id
+    ids = frame["garage_id"].tolist()
+    free_position, paid_position = ids.index("fx_g17_free"), ids.index("fx_g01_core")
+    ids[free_position], ids[paid_position] = ids[paid_position], ids[free_position]
+    rotated = frame.copy()
+    rotated["garage_id"] = ids
+    assert cal.paid_option_flags(rotated).tolist() == paid.tolist()
+    assert rotated.loc[~cal.paid_option_flags(rotated), "garage_id"].tolist() == ["fx_g01_core"]
 
 
 def test_the_free_marker_is_the_one_the_garage_module_counts_as_priced_free(cal):
@@ -832,6 +843,21 @@ def test_the_table_header_and_rows_say_which_measure_each_target_uses_and_count_
     assert "paid-only" in notes["check_wolfsburg_commuter_mean_garage_probability"]
 
 
+def test_the_table_states_that_the_decays_are_bisection_results_within_the_tolerance_and_no_exact_roots(cal, inputs):
+    # the search stops at the first midpoint whose mean is within the tolerance of the target, so a decay is not the exact root
+    # and option-set differences of the order of the tolerance (divided by the local slope of the mean) are not resolved,
+    # the sensitivities included: ONE sentence in the header, stating the rule and quoting no number of this scenario
+    text = cal.run(out_path=None, generated_on="2026-10-14", **inputs)["text"]
+    header = [line for line in text.splitlines() if line.startswith("#")]
+    search = next(line for line in header if line.startswith("# Search for lambda:"))
+    for needle in ("first bisection midpoint whose mean lies within the tolerance of the target", "not the exact root",
+                   "of the order of the tolerance divided by the local slope of the mean", "not resolved",
+                   "the sensitivities below"):
+        assert needle in search, needle
+    assert text.count("not the exact root") == 1 and text.count("first bisection midpoint") == 1
+    assert "0.7 m" not in text and "0.4 m" not in text   # the rule, not the local slopes of one scenario
+
+
 def test_a_universe_that_the_options_barely_reach_is_warned_about_and_a_covered_one_is_not(cal, inputs, tmp_path, caplog):
     # primary-method coverage (fallback transparency): a universe in which fewer than MINIMUM_REACH_SHARE_WARNING of the
     # activities have an option of the measure within D_max warns, with its name and the numbers
@@ -875,8 +901,83 @@ def test_freight_agents_are_left_out_of_the_universes_and_counted_in_the_header(
     assert result["decay_length_m"] == plain["decay_length_m"]
     assert "(14 persons; 1 freight agents with ids freight_* excluded" in result["text"]
     assert "(14 persons; 0 freight agents with ids freight_* excluded" in plain["text"]
-    assert any("excluded 2 freight agents" in message for message in caplog.messages)   # the shared filter logs its rows
+    # the shared filter logs what it counts: the two main activities (rows) of the one freight agent
+    assert any("excluded 2 rows of 1 freight agents" in message for message in caplog.messages)
     assert any("1 freight agents" in message and "14 persons" in message for message in caplog.messages)
+
+
+def test_the_reach_warning_threshold_is_a_log_only_option_with_a_documented_default(cal, inputs, tmp_path, caplog):
+    # a universe with fewer than the threshold of its activities in reach of an option of its measure is warned about: 0 never
+    # warns, the default 0.5 warns below half, a higher threshold also warns for a half-covered universe. Only the log changes.
+    west = _option_set(inputs, tmp_path, [0, 1], [(602700.0, 5790100.0), FAR_GARAGE], name="west_option.geojson")
+    messages = {}
+    for threshold in (0.0, 0.5, 1.0):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+            result = cal.run(out_path=None, minimum_reach_share_warning=threshold, **west)
+        messages[threshold] = [m for m in caplog.messages if "within reach" in m]
+        assert result["wolfsburg_with_paid_option_in_range"] == 0   # the numbers do not depend on the threshold
+    assert messages[0.0] == []
+    assert len(messages[0.5]) == 1 and "Wolfsburg" in messages[0.5][0] and "50 %" in messages[0.5][0]
+    assert len(messages[1.0]) == 1 and "100 %" in messages[1.0][0]   # the covered universes reach 100 %, not below it
+    # the default is the documented constant
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        cal.run(out_path=None, **west)
+    assert len([m for m in caplog.messages if "within reach" in m]) == 1 and cal.MINIMUM_REACH_SHARE_WARNING == 0.5
+    for bad in (-0.1, 1.5, float("nan"), True, "half"):
+        with pytest.raises(ValueError, match="minimum_reach_share_warning"):
+            cal.run(out_path=None, minimum_reach_share_warning=bad, **inputs)
+
+
+def test_the_reach_warning_threshold_applies_to_the_sensitivities_too_with_their_label(cal, inputs, tmp_path, caplog):
+    # the release dataset covers every universe; the sensitivity option set barely reaches the Wolfsburg universe: its warning
+    # carries the label and follows the threshold that the run was given
+    west = _option_set(inputs, tmp_path, [0, 1], [(602700.0, 5790100.0), FAR_GARAGE],
+                       name="west_sensitivity.geojson")["garages_path"]
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        cal.run(out_path=None, sensitivity_garages={"west_sensitivity": west}, **inputs)
+    warned = [m for m in caplog.messages if "within reach" in m]
+    assert len(warned) == 1 and warned[0].startswith("[garage-decay] sensitivity west_sensitivity: Wolfsburg check universe")
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        cal.run(out_path=None, sensitivity_garages={"west_sensitivity": west}, minimum_reach_share_warning=0.0, **inputs)
+    assert [m for m in caplog.messages if "within reach" in m] == []
+
+
+def test_the_command_line_takes_the_reach_warning_threshold_and_refuses_a_value_outside_zero_to_one(cal, monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(cal, "run", lambda **options: captured.update(options))
+    base = ["--plans", str(tmp_path / "plans.xml"), "--data-path", str(tmp_path / "data")]
+    cal.main(base)
+    assert captured["minimum_reach_share_warning"] == cal.MINIMUM_REACH_SHARE_WARNING == 0.5
+    cal.main(base + ["--minimum-reach-share-warning", "0.2"])
+    assert captured["minimum_reach_share_warning"] == 0.2
+    for bad in ("1.5", "-0.1", "nan", "half"):
+        with pytest.raises(SystemExit) as refused:
+            cal.main(base + ["--minimum-reach-share-warning", bad])
+        assert refused.value.code == 2
+    text = SCRIPT.read_text(encoding="utf-8")
+    help_text = text.split("def main", 1)[1]
+    assert "--minimum-reach-share-warning" in help_text and "not a scientific parameter" in help_text   # said in the help
+
+
+# I2: the exact condition of the equality of the per-activity mean and the pooled ratio
+def test_the_documentation_states_the_exact_condition_for_the_equality_of_the_mean_and_the_pooled_ratio(cal):
+    documentation = " ".join(SCRIPT.read_text(encoding="utf-8").split("def main", 1)[0].split())
+    assert "when no free option is in range of any activity of the universe" in documentation
+    assert "or where every activity sees the same options" not in documentation
+    # the equality it states, checked numerically: without a free option in range the per-activity mean of W / (1 + W)
+    # equals sum(p_paid) / sum(p_paid + p_street); with one free option in reach of part of the universe the two differ
+    weights = np.array([0.5, 1.5, 3.0])                      # W of three activities, all options paid: W_paid = W
+    p_paid, p_street = weights / (1.0 + weights), 1.0 / (1.0 + weights)
+    pooled = p_paid.sum() / (p_paid + p_street).sum()
+    assert pooled == pytest.approx(np.mean(weights / (1.0 + weights)), abs=1e-12)
+    paid_weights = np.array([0.5, 1.5, 1.0])                 # the third activity has a free option of weight 2 in reach
+    total = np.array([0.5, 1.5, 3.0])
+    pooled_with_free = (paid_weights / (1.0 + total)).sum() / ((paid_weights + 1.0) / (1.0 + total)).sum()
+    assert abs(pooled_with_free - np.mean(paid_weights / (1.0 + paid_weights))) > 1e-3
 
 
 # ---------------------------------------------------------------- the sensitivities of the option set (I6, no release value)
@@ -953,6 +1054,23 @@ def test_a_sensitivity_that_is_the_release_dataset_or_is_badly_named_or_missing_
     with pytest.raises(ValueError):
         cal.run(out_path=out, sensitivity_garages={"same": copy}, **inputs)
     assert not out.exists()   # nothing is written when a sensitivity fails
+
+
+def test_a_bad_sensitivity_is_refused_before_the_plans_are_read(cal, inputs, tmp_path):
+    # the plans (the slow step) are read only after every sensitivity passed its checks: with a plans file that does not exist
+    # a bad sensitivity raises ITS error, and the control with a good sensitivity goes on to the plans and raises THEIR error
+    options = {**inputs, "plans": tmp_path / "missing_plans.xml"}
+    copy = tmp_path / "copy_of_release.geojson"
+    copy.write_bytes(inputs["garages_path"].read_bytes())
+    free_lot, _ = _dataset_files(inputs, tmp_path)
+    with pytest.raises(ValueError, match="same SHA-256 as the release dataset"):
+        cal.run(out_path=None, sensitivity_garages={"same": copy}, **options)
+    with pytest.raises(ValueError, match="label"):
+        cal.run(out_path=None, sensitivity_garages={"two words": free_lot}, **options)
+    with pytest.raises(FileNotFoundError, match="sensitivity dataset lot_threshold_30"):
+        cal.run(out_path=None, sensitivity_garages={"lot_threshold_30": tmp_path / "nope.geojson"}, **options)
+    with pytest.raises(FileNotFoundError, match="missing_plans.xml"):   # the control: the sensitivity is fine, the plans are not
+        cal.run(out_path=None, sensitivity_garages={"lot_threshold_30": free_lot}, **options)
 
 
 def test_a_sensitivity_whose_target_is_unreachable_fails_naming_its_label(cal, inputs, tmp_path):
