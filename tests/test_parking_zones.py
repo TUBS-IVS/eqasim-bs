@@ -1494,3 +1494,21 @@ def test_an_open_ended_ev_rule_needs_no_date():
     pz.validate_tariffs(tariffs)
     row = tariffs.set_index("zone_id").loc["fx_bs_ia"]
     assert pd.isna(row["ev_rule_valid_until"]) and row["ev_free_minutes"] == 240
+
+
+def test_the_validator_names_the_e2_clipping_of_an_exemption_longer_than_the_maximum_stay(caplog):
+    # ASSUMPTION E2: where ev_free_minutes exceeds max_stay_min the exemption applies within the maximum only; say so.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    mask = tariffs["zone_id"] == "fx_bs_ia_v2"
+    assert tariffs.loc[mask, "max_stay_min"].iloc[0] == 180
+    tariffs.loc[mask, "ev_free_minutes"] = 240
+    with caplog.at_level("INFO", logger="braunschweig.parking.zones"):
+        pz.validate_tariffs(tariffs)
+    messages = [record.getMessage() for record in caplog.records if "ASSUMPTION E2" in record.getMessage()]
+    assert len(messages) == 1 and "fx_bs_ia_v2" in messages[0] and "240" in messages[0] and "180" in messages[0]
+    # within the maximum: nothing to name
+    caplog.clear()
+    tariffs.loc[mask, "ev_free_minutes"] = 120
+    with caplog.at_level("INFO", logger="braunschweig.parking.zones"):
+        pz.validate_tariffs(tariffs)
+    assert not [record for record in caplog.records if "ASSUMPTION E2" in record.getMessage()]

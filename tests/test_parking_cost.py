@@ -1103,6 +1103,7 @@ def test_the_ev_exemption_comes_after_the_early_rules_and_before_the_street_prod
     assert _ev_price(zone, 20, ev_exempt=False) == (0, cost.FREE_WITHIN_LIMIT)
     assert _ev_price(zone, 90, parking_free=True) == (0, cost.EMPLOYER_FREE)
     assert _ev_price(zone, 90, resident_of_zone=True) == (0, cost.RESIDENT_FREE)
+    assert _ev_price(zone, 90, resident_of_district=True) == (0, cost.RESIDENT_FREE)           # the R2 district path
     assert _ev_price(zone, 90, purpose="home") == (0, cost.HOME)
     assert _ev_price(None, 90) == (0, cost.NO_ZONE)
     # no chargeable second in the street fee window: the early rule names it, not the exemption

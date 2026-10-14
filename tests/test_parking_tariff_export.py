@@ -827,3 +827,25 @@ def test_the_interim_export_keeps_schema_5_free_of_the_ev_exemption_and_refuses_
     assert "ev_free_minutes" not in te.zone_to_json(plain)
     with pytest.raises(ValueError, match="ev_free_minutes is set but the tariff model schema 5 cannot carry it"):
         te.zone_to_json(dataclasses.replace(plain, ev_free_minutes=240))
+
+
+def test_a_table_row_that_states_an_ev_exemption_is_refused_by_the_interim_export_not_dropped(table, sources):
+    # R-A-11 on the TABLE path: the table column is read, so the guard of zone_to_json sees it (no silent drop).
+    stated = table.copy()
+    stated.loc[stated["zone_id"] == "fx_bs_ia", "ev_free_minutes"] = 240
+    with pytest.raises(ValueError, match="zone 'fx_bs_ia': ev_free_minutes is set but the tariff model schema 5"):
+        te.build_tariff_model(stated, snapshot_date=SNAPSHOT_DATE, sources=sources)
+    # a validity date alone is a known column and changes nothing here (the date is applied by the export of Task A6)
+    dated = table.copy()
+    dated["ev_rule_valid_until"] = "2026-12-31"
+    assert te.build_tariff_model(dated, snapshot_date=SNAPSHOT_DATE, sources=sources)["zones"] == te.build_tariff_model(
+        table, snapshot_date=SNAPSHOT_DATE, sources=sources)["zones"]
+
+
+def test_the_ev_column_converts_into_the_tariff_field_and_a_campus_row_names_the_column(table):
+    row = table.set_index("zone_id").loc["fx_bs_ia"].to_dict() | {"zone_id": "fx_bs_ia", "ev_free_minutes": 240}
+    assert te.tariff_row_to_zone(row).ev_free_minutes == 240
+    assert te.tariff_row_to_zone({**row, "ev_free_minutes": None}).ev_free_minutes is None
+    campus = table.set_index("zone_id").loc["fx_campus"].to_dict() | {"zone_id": "fx_campus", "ev_free_minutes": 240}
+    with pytest.raises(ValueError, match="ev_free_minutes does not apply to zone_type 'campus'"):
+        te.tariff_row_to_zone(campus)

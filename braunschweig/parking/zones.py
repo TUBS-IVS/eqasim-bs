@@ -372,15 +372,15 @@ def _log_schema_2_products(tariffs: pd.DataFrame, absent: list, path) -> None:
              rows_with(("search_time_min",)), len(tariffs))
     # R2-a: say how many rows state the permit flag; the others take the default of their zone type, so the default
     # is visible instead of silent.
-    # Spec v3 A5: the EV exemption rows, so that a table without any is visibly priced without the exemption.
-    ev_rows = int(tariffs["ev_free_minutes"].notna().sum())
-    log.info("[parking-zones] EV exemption (spec v3 A5): stated on %d/%d rows (%d with a validity date)", ev_rows,
-             len(tariffs), int(tariffs["ev_rule_valid_until"].notna().sum()))
     permits = tariffs["resident_permits_valid"]
     stated_false, stated_true = int(permits.eq(False).sum()), int(permits.eq(True).sum())
     log.info("[parking-zones] resident permits (rule R2, ASSUMPTION R2-a): stated not valid on %d/%d rows, stated valid "
              "on %d/%d, default of the zone type (valid on streets, not on a campus) on %d/%d", stated_false,
              len(tariffs), stated_true, len(tariffs), len(tariffs) - stated_false - stated_true, len(tariffs))
+    # Spec v3 A5: the EV exemption rows, so that a table without any is visibly priced without the exemption.
+    ev_rows = int(tariffs["ev_free_minutes"].notna().sum())
+    log.info("[parking-zones] EV exemption (spec v3 A5): stated on %d/%d rows (%d with a validity date)", ev_rows,
+             len(tariffs), int(tariffs["ev_rule_valid_until"].notna().sum()))
 
 
 def load_tariffs(path) -> pd.DataFrame:
@@ -520,6 +520,11 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
                                                "nothing")
             if not _is_iso_date(row["ev_rule_valid_until"]):
                 problem("ev_rule_valid_until", f"{row['ev_rule_valid_until']!r} is not an ISO date YYYY-MM-DD")
+        # ASSUMPTION E2: an exemption longer than the maximum stay is clipped by the pricing; name it, never silently.
+        if (_is_set(row["ev_free_minutes"]) and _is_set(row["max_stay_min"])
+                and row["ev_free_minutes"] > row["max_stay_min"]):
+            log.info("[parking-zones] zone %r: ev_free_minutes %d exceeds max_stay_min %d; ASSUMPTION E2: the EV exemption "
+                     "applies within the maximum stay only", zone_id, row["ev_free_minutes"], row["max_stay_min"])
         # A long-stay product is sold only above a maximum stay, and a longer stay loses the street product (v2): it
         # needs the long-stay product or a garage (the commuter product serves work and education only).
         if _is_set(row["long_stay_product_eur"]) and not _is_set(row["max_stay_min"]):

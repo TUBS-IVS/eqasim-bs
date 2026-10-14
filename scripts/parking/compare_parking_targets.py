@@ -589,7 +589,8 @@ def _class_specs(references: References, zone_classes: pd.Series) -> list[Metric
         specs.append(MetricSpec(
             f"free_share_work_education_class_{workplace_class}", SHARE_UNIT,
             f"pricing_calls_work_education_zones_of_class_{workplace_class}", reference, source,
-            f"free = outcome EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT or EV_EXEMPT; {free_direction} {scope}", False,
+            f"free = outcome EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT or EV_EXEMPT; "
+            f"{free_direction} {scope}", False,
             lambda frame, selection=selection: _ratio(
                 _calls(frame, selection(frame) & frame["outcome"].isin(FREE_OUTCOMES).to_numpy()),
                 _calls(frame, selection(frame))),

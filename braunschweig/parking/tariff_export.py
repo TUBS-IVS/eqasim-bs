@@ -99,7 +99,7 @@ EURO_COLUMNS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "fir
                 "garage_daily_cap_eur": "garage_daily_cap_cents", "commuter_day_eur": "commuter_day_cents"}
 # Table columns in whole minutes, same name in the table and in ZoneTariff.
 MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min",
-                  "garage_billing_unit_min", "garage_first_period_min", "search_time_min")
+                  "garage_billing_unit_min", "garage_first_period_min", "search_time_min", "ev_free_minutes")
 # Table column (decimal hours of the day) -> ZoneTariff field (seconds after midnight). The street fee window is
 # required; the garage fee window belongs to the optional garage core (spec amendment A6).
 HOUR_COLUMNS = {"fee_start_h": "fee_start_s", "fee_end_h": "fee_end_s"}
@@ -108,12 +108,16 @@ GARAGE_HOUR_COLUMNS = {"garage_fee_start_h": "garage_fee_start_s", "garage_fee_e
 #: zone attachment (spec 3.4); name, municipality_ags, source_url, source_date, valid_from, fee_window_source
 #: and notes document provenance in the table itself.
 TARIFF_COLUMNS = ("zone_id", "zone_type", *EURO_COLUMNS, *MINUTE_COLUMNS, *HOUR_COLUMNS, *GARAGE_HOUR_COLUMNS,
-                  "resident_exempt", "resident_permits_valid")
+                  "resident_exempt", "resident_permits_valid", "ev_rule_valid_until")
 #: The schema-2 columns (v2 levers 2 and 4) and the permit flag of Amendment C3: a table or row without them converts
 #: with their fields None, i.e. no garage, no commuter product and the default of the zone type for the permit flag.
 OPTIONAL_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage_first_period_min",
                     "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h",
-                    "commuter_day_eur", "search_time_min", "resident_permits_valid")
+                    "commuter_day_eur", "search_time_min", "resident_permits_valid", "ev_free_minutes",
+                    "ev_rule_valid_until")
+#: Spec v3 A5: ``ev_free_minutes`` is read into ``ZoneTariff`` (the interim guard of ``zone_to_json`` then refuses a stated
+#: exemption); ``ev_rule_valid_until`` is a known optional column that is not read here: its snapshot-date switch-off is the
+#: export of Task A6.
 #: The columns every table and row must have (schema 1).
 REQUIRED_COLUMNS = tuple(column for column in TARIFF_COLUMNS if column not in OPTIONAL_COLUMNS)
 # ZoneTariff money/minute/garage-hour field -> the table column it is read from, so that row errors name the column.
