@@ -230,6 +230,11 @@ ASSUMPTIONS["P14"] = (
     "have identical schedules, else the step stops); the product is the median lot's complete schedule, never a value typed or "
     "averaged; a customer discount of the lot (for example for bathers) is not modelled; with fewer than two priced lots on both "
     "levels the lot is no option; every such row is named and counted")
+ASSUMPTIONS["W-match"] = (
+    "a free surface lot whose source states the free use only outside the match days of a stadium (the Volkswagen Arena P1 and "
+    "P2: 'outside match days, generally free'; on match days P1 is open to permit holders only and larger events restrict the "
+    "access) is a free option on every simulated weekday: match days and event closures are NOT modelled, so on such days the "
+    "dataset overstates the free supply near the stadium; the id belongs to a free surface lot only (the free schedule '0- free')")
 
 
 def assumption_status_text(assumption_id: str) -> str:
@@ -924,6 +929,10 @@ def validate_garages(frame: gpd.GeoDataFrame) -> None:
             problem("assumptions", "ASSUMPTION P12 frees a car park: it belongs to the free schedule '0- free' only")
         if "P14" in assumptions and kind != "surface_lot":
             problem("assumptions", "ASSUMPTION P14 imputes the tariff of a surface lot only (spec Amendment I4)")
+        if "W-match" in assumptions and not (kind == "surface_lot" and bands is not None and is_free_schedule(bands)
+                                             and not has_tiers):
+            problem("assumptions", "ASSUMPTION W-match qualifies the free use of a surface lot outside match days: it belongs to "
+                                   "a surface lot with the free schedule '0- free' only (spec v3 B4)")
         # --- imputed monthly product (ASSUMPTION P13, spec Amendment F2): a value only with P13, never next to a published
         # product, never at a surface lot, never at a garage that is not priced
         imputed = row["monthly_imputed_eur"]

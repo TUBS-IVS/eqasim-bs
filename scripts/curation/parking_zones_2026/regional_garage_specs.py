@@ -1003,8 +1003,8 @@ LARGE_LOT_SPECS = {
 #: decision that the lot is general public although the package class is unknown or event-conditional (``large_lots.decide`` takes
 #: the keys of this table as the sites whose public access an owner decision establishes). Per site: the ``name``, the archived
 #: ``pages`` ((file, quotation) pairs: files of the archived evidence, each with the quotation that must be in the page; the first
-#: page is the source of the row), a ``position`` remark and the ``condition`` of the owner decision that the dataset does not
-#: model (both named in the notes) and,
+#: page is the source of the row), an ``assumption`` id of ``garages.ASSUMPTIONS`` that the row rests on (listed in its column
+#: ``assumptions`` and named in its notes) and the ``condition`` of the owner decision (named in the notes) and,
 #: where no page is archived or the run is given none, ``not_found`` (what was searched). A site whose pages are not given is a QA
 #: row ``lot_free_evidence_missing``; it is never free without a source. A site that the package gives no position is a QA row
 #: ``lot_no_position`` whatever its pages state (``LARGE_LOT_QA_DETAILS`` names the decision).
@@ -1014,10 +1014,12 @@ WOB_FREE_LOT_EVIDENCE = {
     "WOB_PARK_720902": {"name": "Allersee Suedufer",
                         "pages": (("wmg_schotter_suedufer.html", _WMG_FREE_QUOTATION),
                                   ("wmg_befestigt_suedufer.html", _WMG_FREE_QUOTATION)),
-                        "condition": "Identification of the lot (owner decision 2026-10-14, spec v3 B4): the package names no "
-                                     "polygon for the two WMG points (polygon match not established), so the lot is taken as "
-                                     "the Allersee Suedufer car park on the owner's decision and on the nearness of the point "
-                                     "given in the page sentences above; both WMG pages state the same free, public, 24/7 use",
+                        "condition": "Identification of the lot (owner decision 2026-10-14, spec v3 B4): the package records "
+                                     "for both WMG pages the claim scope 'This named POI only. No extension to neighboring "
+                                     "facility lots.' and names no polygon for their points (polygon match not established); "
+                                     "the release extends the claim to this lot by the owner's decision and on the nearness of "
+                                     "the point given in the page sentences above; both WMG pages state the same free, public, "
+                                     "24/7 use",
                         "not_found": "the free status rests on the pages wmg_schotter_suedufer.html and "
                                      "wmg_befestigt_suedufer.html (WMG Wolfsburg, free, public, 24 h) of " + _RESTLUECKEN
                                      + "; this run was given no such evidence"},
@@ -1028,30 +1030,28 @@ WOB_FREE_LOT_EVIDENCE = {
                                       "arrival at the club office, names the free car parks relatively (next to the Freibad or "
                                       "opposite the school) and states no hours or visitor rule; the package establishes neither "
                                       "the exact surface, nor all school car parks, nor an unrestricted 24/7 use, so the lot is "
-                                      "taken as the car park next to the Freibad, free for every stay, on the owner's decision",
+                                      "taken as the car park next to the Freibad on the owner's decision; the free schedule "
+                                      "'0- free' (free for every stay) is the owner's decision too: the page gives no hours or "
+                                      "stay rule and the package makes no unrestricted 24/7 claim",
                          "not_found": "the free status rests on the page vfb_geschaeftsstelle.html (VfB Fallersleben, "
                                       "'Unser Standort in Fallersleben') of " + _RESTLUECKEN + "; this run was given no such "
                                       "evidence"},
     "WOB_ARENA_P1": {"name": "Volkswagen Arena P1",
                      "pages": (("vfl_anreise.html", "kann in der Regel auf den Parkpl\u00e4tzen P1 und P2 kostenfrei geparkt "
                                                     "werden"),),
-                     "position": "Position: the prior municipal point WOB_PARK_1441813 of the Wolfsburg city layer, which the "
-                                 "package keeps as 'not a verified entrance' and for which it names neither an OpenStreetMap "
-                                 "object nor a coordinate source, so the page of the tariff source stands in as "
-                                 "geometry_source_url (the counted fallback of the run log) and the point is no verified "
-                                 "position inside the parking area",
-                     "condition": "ASSUMPTION W-match (owner decision 2026-10-14, spec v3 B4): the VfL page states that P1 and P2 "
-                                  "can generally be used free of charge outside match days; on match days P1 is open to P1/TG "
-                                  "permit holders and P2 to P2 permit holders only, and larger events can restrict the access "
-                                  "partly or completely. Match days and event closures are NOT modelled: the lot is a free "
-                                  "option on every simulated weekday",
+                     "assumption": "W-match",
+                     "condition": "Owner decision 2026-10-14, spec v3 B4: the VfL page states that P1 and P2 can generally be used "
+                                  "free of charge outside match days; on match days P1 is open to P1/TG permit holders and P2 to "
+                                  "P2 permit holders only, and larger events can restrict the access partly or completely. Match "
+                                  "days and event closures are NOT modelled: the lot is a free option on every simulated weekday",
                      "not_found": "the free status outside match days rests on the page vfl_anreise.html (VfL Wolfsburg, "
                                   "Anreise zur Volkswagen Arena) of " + _RESTLUECKEN + "; this run was given no such evidence"},
     "WOB_ARENA_P2": {"name": "Volkswagen Arena P2",
                      "pages": (("vfl_anreise.html", "kann in der Regel auf den Parkpl\u00e4tzen P1 und P2 kostenfrei geparkt "
                                                     "werden"),),
-                     "condition": "ASSUMPTION W-match (owner decision 2026-10-14, spec v3 B4): as for P1 (free outside match "
-                                  "days, match days and event closures not modelled)",
+                     "assumption": "W-match",
+                     "condition": "Owner decision 2026-10-14, spec v3 B4: as for P1 (free outside match days, match days and "
+                                  "event closures not modelled)",
                      "not_found": "the free status outside match days rests on the page vfl_anreise.html (VfL Wolfsburg, "
                                   "Anreise zur Volkswagen Arena) of " + _RESTLUECKEN + "; this run was given no such evidence"},
     "WOB_PARK_327697": {"name": "VW-Bad", "pages": (),

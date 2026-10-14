@@ -702,7 +702,8 @@ def evidence_text(entry: dict) -> str:
 
 def load_package_free_evidence(path, expected_sha256: Optional[str] = None) -> dict:
     """{file name: {"file", "url", "retrieved", "sha256", "statement", "text", "member", "package_file", "package_sha256",
-    "polygon_match" (None where the source states none), and "source_point_wgs84" where the source states the page's own point}}
+    "polygon_match" and "claim_scope" (None where the source states none), and "source_point_wgs84" where the source states the
+    page's own point}}
     of the pages of the Restluecken package at ``path`` (the zip itself; ``None`` is no evidence: the lots that rest on it are then
     QA rows, never free without a source).
 
@@ -755,7 +756,7 @@ def load_package_free_evidence(path, expected_sha256: Optional[str] = None) -> d
             "file": name, "url": source["url"], "retrieved": source["retrieved_date"], "sha256": _sha256(content),
             "statement": f"{source['publisher'].strip()}, '{source['title'].strip()}'",
             "text": content.decode("utf-8", errors="replace"), "member": prefix + name, "package_file": WOB_EVIDENCE_FILE,
-            "package_sha256": sha256, "polygon_match": source.get("polygon_match"),
+            "package_sha256": sha256, "polygon_match": source.get("polygon_match"), "claim_scope": source.get("claim_scope"),
             **({"source_point_wgs84": source["source_point_wgs84"]} if source.get("source_point_wgs84") else {})}
     print(f"[free evidence] {WOB_EVIDENCE_FILE} verified (SHA-256 {sha256}): {len(evidence)} pages of {prefix} against "
           f"{WOB_EVIDENCE_MANIFEST}, each with its source in {WOB_EVIDENCE_FINDINGS}")

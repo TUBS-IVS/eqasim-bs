@@ -290,7 +290,9 @@ COLUMN_GLOSSARY = {
     "tariff_rule_ids": "';'-separated package rule ids the values (or the reason) rest on; for a car park that is free by "
                        "ASSUMPTION P12 the field decision of its fee status",
     "geometry_method": "how the position was found, as the package states it (a large surface lot: the research point of the "
-                       "package inside the parking area, no entrance)",
+                       "package inside the parking area, no entrance; package_prior_municipal_point: the prior municipal "
+                       "point that the package keeps as no verified entrance where it names no source of a position; "
+                       "package_point_without_source: a point of which the package names no source at all)",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
@@ -1630,6 +1632,13 @@ def _p4_lot_note(census: dict) -> str:
 
 #: How the position of a large lot was found: the research point of the package inside the parking area (no entrance).
 LARGE_LOT_GEOMETRY_METHOD = "package_research_point_in_parking_area"
+#: The position of a large lot for which the package names neither an OpenStreetMap object nor a coordinate source (the tariff
+#: source then stands in as ``geometry_source_url``, a counted fallback): the prior municipal point that the package keeps for
+#: review as no verified entrance (``prior_municipal_point_ids``), else a point without any source. Neither is a research point
+#: inside a parking area.
+LARGE_LOT_PRIOR_POINT_METHOD = "package_prior_municipal_point"
+LARGE_LOT_UNSOURCED_POINT_METHOD = "package_point_without_source"
+LARGE_LOT_GEOMETRY_METHODS = (LARGE_LOT_GEOMETRY_METHOD, LARGE_LOT_PRIOR_POINT_METHOD, LARGE_LOT_UNSOURCED_POINT_METHOD)
 LARGE_LOT_ID_PREFIX = "lot_"
 #: Warn when more than this share (0 to 1) of the lot options rests on ASSUMPTION P14 (an imputed product): then the tariff of the
 #: lots mostly rests on a median of other lots and not on their own documents (fallback transparency).
@@ -1684,6 +1693,25 @@ def _position_source(package: dict, record: dict) -> tuple:
         if source and source["url"]:
             return source["url"], "coordinate_source"
     return None, "none"
+
+
+def _position_method(record: dict, position_origin: str) -> tuple:
+    """(geometry_method, sentence) of the position of a large lot by the origin of its source (``_position_source``): the research
+    point inside the parking area where the package names an OpenStreetMap object or a coordinate source; else the prior municipal
+    point of the package (``prior_municipal_point_ids``, not a verified entrance) or, without even that, a point without any source
+    (never described as a research point inside the parking area)."""
+    if position_origin != "none":
+        return LARGE_LOT_GEOMETRY_METHOD, ("the research point of the package inside the parking area (no entrance, no ring, no "
+                                           "tariff extent).")
+    prior = list(record.get("prior_municipal_point_ids") or [])
+    if prior:
+        return LARGE_LOT_PRIOR_POINT_METHOD, (
+            f"the prior municipal point {', '.join(prior)} of the package, which it keeps for review as no verified entrance; "
+            "the package names neither an OpenStreetMap object nor a coordinate source for it, so it is not a research point "
+            "inside the parking area and the tariff source stands in as geometry_source_url (no ring, no tariff extent).")
+    return LARGE_LOT_UNSOURCED_POINT_METHOD, (
+        "a point of which the package names no source (no OpenStreetMap object, no coordinate source, no prior municipal point); "
+        "it is not a research point inside the parking area and the tariff source stands in as geometry_source_url.")
 
 
 def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict, row_max_stay_min=None) -> tuple:
@@ -1844,7 +1872,9 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
     source_url, source_date = ll.source_of(
         package, [source for rule_id in primary_ids for source in package["rules"][rule_id].get("source_ids") or []]
         + list(record.get("source_ids") or []))
-    geometry_url = _position_source(package, record)[0] or source_url    # the fallback is counted by _large_lot_counts
+    geometry_url, position_origin = _position_source(package, record)
+    geometry_url = geometry_url or source_url                             # the fallback is counted by _large_lot_counts
+    geometry_method, position_sentence = _position_method(record, position_origin)
     capacity, scope = None, None
     if record.get("capacity_selection_method") in ll.REPORTED_METHODS and record.get("capacity_reported") is not None:
         capacity = int(record["capacity_reported"])
@@ -1852,8 +1882,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
                        + (f"; as of {record['capacity_as_of']}" if record.get("capacity_as_of") else ""))
     assumptions = list(encoded["assumptions"]) + [item for item in extra_assumptions if item not in encoded["assumptions"]]
     notes = [f"Package facility {key} of the research package {ll.LOTS_FILE} (SHA-256 {package['file']['sha256']}), "
-             f"'{_lot_ascii(record['name'])}' ({record['city']}); position: {LARGE_LOT_GEOMETRY_METHOD}, the research point of the "
-             "package inside the parking area (no entrance, no ring, no tariff extent).",
+             f"'{_lot_ascii(record['name'])}' ({record['city']}); position: {geometry_method}, {position_sentence}",
              f"Option of the dataset under ASSUMPTION L50 (spec Amendment I2): access class {record.get('access_class')}, "
              f"{ll.capacity_phrase(record)} against the threshold {threshold}; facility_kind surface_lot whatever its tariff is "
              "(spec Amendment I1: the facility type is independent of the tariff, the street stays the roadside parking)."]
@@ -1898,7 +1927,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
            "capacity_reported": capacity, "capacity_scope": scope, "monthly_eur": None, "monthly_source_url": None,
            "monthly_product": None, "priced": True, "not_priced_reason": None,
            "assumptions": ";".join(assumptions) or None, "source_url": source_url, "source_date": source_date,
-           "tariff_rule_ids": ";".join(lot["tariff_rule_ids"]), "geometry_method": LARGE_LOT_GEOMETRY_METHOD,
+           "tariff_rule_ids": ";".join(lot["tariff_rule_ids"]), "geometry_method": geometry_method,
            "geometry_source_url": geometry_url, "package_sha256": package["file"]["sha256"], "geometry": point}
     for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
         row[column] = encoded["values"][column]
@@ -2143,6 +2172,8 @@ def _evidence_page_sentence(entry: dict, quotation: str, lot_point) -> str:
     if entry.get("package_sha256"):
         sentence += f", member of {entry['package_file']} with the SHA-256 {entry['package_sha256']}"
     sentence += f"): {entry['statement']}; the page states '{quotation}'"
+    if entry.get("claim_scope"):
+        sentence += f"; the claim scope that the package records for it: '{entry['claim_scope']}'"
     point = entry.get("source_point_wgs84")
     if point:
         x, y = TO_METRIC.transform(point["longitude"], point["latitude"])
@@ -2154,10 +2185,10 @@ def _evidence_page_sentence(entry: dict, quotation: str, lot_point) -> str:
 def _archived_free_row(inputs: dict, key: str) -> dict:
     """The row of one of the free Wolfsburg lots of spec Amendment I5a and spec v3 B4 on its archived evidence pages: the free
     schedule ``0- free`` (the pages state the lot free; no assumption id), every page as a source (the first page is the
-    ``source_url``), the owner decision that the lot is general public named in the notes together with the remark on its position
-    and the condition of the specification that is not modelled (the Arena: match days). The lot carries no maximum stay: only
-    its own evidence could state one, and a free lot does not inherit the product of a tariff zone around it. The row cites the
-    package of the pages in ``package_sha256`` next to the large-lot package."""
+    ``source_url``), the owner decision that the lot is general public named in the notes together with the assumption of the
+    specification (the Arena: ASSUMPTION W-match, which is listed in the column ``assumptions``) and its condition. The lot
+    carries no maximum stay: only its own evidence could state one, and a free lot does not inherit the product of a tariff zone
+    around it. The row cites the package of the pages in ``package_sha256`` next to the large-lot package."""
     state, entries = _free_evidence(key, inputs["large"]["evidence"])
     if state != "ok":
         raise SystemExit(f"large lot {key}: no archived evidence for its free status")
@@ -2165,16 +2196,21 @@ def _archived_free_row(inputs: dict, key: str) -> dict:
     quotations = dict(wanted["pages"])
     lot_point = inputs["large"]["package"]["points"].loc[key, "geometry"]
     rule_ids = [f"evidence:{entry['file']}" for entry in entries]
-    encoded = _free_encoding(rule_ids, [], "free of charge for every stay (the free schedule 0- free, the fee window 0-24 h is "
-                                           "formal)")
+    assumption = wanted.get("assumption")
+    if assumption is not None and assumption not in pg.ASSUMPTIONS:
+        raise SystemExit(f"WOB_FREE_LOT_EVIDENCE names the assumption {assumption!r} for {key}, which is none of "
+                         f"{sorted(pg.ASSUMPTIONS)}")
+    encoded = _free_encoding(rule_ids, [assumption] if assumption else [],
+                             "free of charge for every stay (the free schedule 0- free, the fee window 0-24 h is formal)")
     lot = {"encoded": encoded, "rules": {}, "used": [], "zone_sentence": None, "verdicts": [], "tariff_rule_ids": rule_ids}
     pages = "; ".join(_evidence_page_sentence(entry, quotations[entry["file"]], lot_point) for entry in entries)
     comment = (f"free status and public access by owner decision (spec Amendment I5a, which withdraws the municipal free "
                f"default) on the archived evidence page{'s' if len(entries) > 1 else ''} {pages}. The lot carries no maximum "
                "stay: its own evidence states none, and a free lot does not inherit the product of a tariff zone around it")
-    for extra in ("position", "condition"):
-        if wanted.get(extra):
-            comment += ". " + wanted[extra]
+    if assumption:
+        comment += f". ASSUMPTION {assumption}: {pg.ASSUMPTIONS[assumption]}"
+    if wanted.get("condition"):
+        comment += ". " + wanted["condition"]
     spec = {"comment": comment, "evidence_pages": True}
     row = _large_lot_row(inputs, key, spec, lot)
     row["source_url"], row["source_date"] = entries[0]["url"], entries[0]["retrieved"]

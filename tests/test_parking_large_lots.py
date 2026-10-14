@@ -1182,6 +1182,81 @@ def test_an_owner_decided_free_lot_without_a_position_is_a_qa_row_that_names_the
     assert "the owner decides the lot free on its page" in entry["note"]
 
 
+def test_a_page_that_the_table_names_and_the_given_archive_lacks_stops_the_step(step, package_file, tmp_path, monkeypatch):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Lot", "pages": (("page_a.html", "kostenlos"), ("missing.html", "kostenlos")), "not_found": "x"}})
+    with pytest.raises(SystemExit, match=r"names the page\(s\) \['missing.html'\] for WOB_PARK_E1, which the archived evidence "
+                                         r"does not hold"):
+        step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    # without any archived evidence the lot is a QA row with what was searched (the documented, logged state)
+    result = step.build_large_lots(_inputs(step, package_file))
+    assert "lot_wob_park_e1" not in _by_id(result)
+    assert _reasons(result)["candidate_lot_wob_park_e1"] == "lot_free_evidence_missing"
+
+
+def test_a_page_held_by_two_sources_of_evidence_is_refused(step, tmp_path):
+    folder_evidence = step.ll.load_free_evidence(_evidence_folder(tmp_path / "f"))        # holds page.html
+    path, sha256 = _restluecken_package(tmp_path / "r", pages={"page.html": "kostenlosen Parkplaetzen"})
+    zip_evidence = step.ll.load_package_free_evidence(path, sha256)
+    with pytest.raises(SystemExit, match=r"the archived evidence pages \['page.html'\] are held by two sources"):
+        step._merge_evidence(folder_evidence, zip_evidence)
+    other_path, other_sha256 = _restluecken_package(tmp_path / "r2")
+    other = step.ll.load_package_free_evidence(other_path, other_sha256)
+    assert sorted(step._merge_evidence(folder_evidence, other)) == ["page.html", "page_a.html", "page_b.html"]
+    assert step._merge_evidence({}, {}) == {}
+
+
+def test_archived_evidence_that_releases_no_owner_decided_lot_is_a_warning_not_silence(step, package_file, tmp_path, monkeypatch,
+                                                                                    capsys):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    # every owner-decided lot has no page in the table: evidence is given, nothing is released (a name or format mismatch)
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {key: {**spec, "pages": ()} for key, spec in EVIDENCE_SPECS.items()})
+    result = step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    printed = capsys.readouterr().out
+    assert "free options on archived pages 0/3 (0.0 %), QA rows 3" in printed
+    assert "[large lots] WARNING: archived evidence was given but no owner-decided free lot was released" in printed
+    assert not [row for row in result["rows"] if row["garage_id"].startswith("lot_wob_park_e")]
+    # no evidence given: the same rate line without the warning (the lots are QA rows by design)
+    step.build_large_lots(_inputs(step, package_file))
+    assert "WARNING: archived evidence was given" not in capsys.readouterr().out
+    # a lot released on its pages: no warning, the rate counts it
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Lot", "pages": (("page_a.html", "kostenlos"),), "not_found": "x"}})
+    step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    printed = capsys.readouterr().out
+    assert "free options on archived pages 1/3 (33.3 %)" in printed and "WARNING: archived evidence was given" not in printed
+
+
+def test_the_assumption_of_a_free_lot_is_a_column_value_and_the_claim_scope_of_a_page_is_quoted(step, package_file, tmp_path,
+                                                                                               monkeypatch):
+    # the claim scope is data of findings.json, whose own hash is checked, so the synthetic package carries it from the start
+    pages = {"page_a.html": "Der Parkplatz ist kostenlos."}
+    path, sha256 = _restluecken_package(tmp_path / "r", pages=pages, sources=[{
+        "source_id": "page_a", "publisher": "Publisher A", "url": "https://example.org/page_a", "title": "T",
+        "retrieved_date": "2026-10-14", "claim_scope": "This named POI only."}])
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    assert evidence["page_a.html"]["claim_scope"] == "This named POI only."
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Arena test", "pages": (("page_a.html", "kostenlos"),), "assumption": "W-match",
+        "condition": "Owner decision: free outside match days", "not_found": "x"}})
+    row = _by_id(step.build_large_lots(_inputs(step, package_file, evidence=evidence)))["lot_wob_park_e1"]
+    assert row["assumptions"] == "W-match" and "ASSUMPTION W-match: " + pg.ASSUMPTIONS["W-match"] in row["notes"]
+    assert "the claim scope that the package records for it: 'This named POI only.'" in row["notes"]
+    # an assumption that the dataset vocabulary does not know stops the step
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Lot", "pages": (("page_a.html", "kostenlos"),), "assumption": "W-nothing", "not_found": "x"}})
+    with pytest.raises(SystemExit, match="names the assumption 'W-nothing' for WOB_PARK_E1"):
+        step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    # the validator accepts W-match on a free surface lot and refuses it elsewhere
+    frame = _lot_frame([{**row, "assumptions": "W-match"}])
+    pg.validate_garages(frame)
+    with pytest.raises(ValueError, match="ASSUMPTION W-match qualifies the free use of a surface lot"):
+        pg.validate_garages(_lot_frame([{**row, "assumptions": "W-match", "facility_kind": "garage"}]))
+
+
 def test_the_subpoint_of_a_lot_is_a_qa_row_and_every_municipal_point_is_accounted_for(step, package_file, tmp_path):
     result = step.build_large_lots(_inputs(step, package_file))
     entry = next(item for item in result["qa"] if item["record_id"] == "candidate_lot_wob_park_sub")
@@ -1563,7 +1638,9 @@ def test_the_free_wolfsburg_lots_of_spec_v3_b4_rest_on_their_archived_pages_and_
             ("lot_wob_park_1703940", ("vfb_geschaeftsstelle.html",), "https://www.vfb-fallersleben.de/dein-vfb/geschaeftsstelle/"),
             ("lot_wob_arena_p1", ("vfl_anreise.html",), "https://www.vfl-wolfsburg.de/stadien/volkswagen-arena/anreise")):
         row = rows[garage_id]
-        assert row["facility_kind"] == "surface_lot" and row["priced"] and row["assumptions"] is None, garage_id
+        assert row["facility_kind"] == "surface_lot" and row["priced"], garage_id
+        # ASSUMPTION W-match (match days not modelled) is the one assumption of the Arena lot; the pages of the others state it
+        assert row["assumptions"] == ("W-match" if garage_id == "lot_wob_arena_p1" else None), garage_id
         assert row["tariff_duration_bands"] == "0- free" and row["max_stay_min"] is None, garage_id
         assert row["tariff_rule_ids"] == ";".join(f"evidence:{page}" for page in pages), garage_id
         assert row["source_url"] == url and row["source_date"] == "2026-10-14" and row["package_sha256"] == package_hashes
@@ -1575,15 +1652,25 @@ def test_the_free_wolfsburg_lots_of_spec_v3_b4_rest_on_their_archived_pages_and_
     note = rows["lot_wob_park_720902"]["notes"]
     assert "lies 162 m from the research point" in note and "lies 443 m from the research point" in note
     assert "polygon match not_established" in note
+    # the claim scope of the package is quoted, and the release extends the claim to the lot by the owner's decision
+    assert "'This named POI only. No extension to neighboring facility lots.'" in note
+    assert "the release extends the claim to this lot by the owner's decision" in note
     assert rows["lot_wob_park_720902"]["capacity_reported"] is None       # an area estimate (68 spaces), never reported
     # the Freibad: the VfB page names its car parks relatively and has no point of its own
     assert "from the research point" not in rows["lot_wob_park_1703940"]["notes"]
     assert "next to the Freibad or opposite the school" in rows["lot_wob_park_1703940"]["notes"]
+    assert ("the free schedule '0- free' (free for every stay) is the owner's decision too: the page gives no hours or stay rule "
+            "and the package makes no unrestricted 24/7 claim") in rows["lot_wob_park_1703940"]["notes"]
     # the Arena: the match-day condition is named as an assumption and not modelled; the package reports 494 spaces
     arena = rows["lot_wob_arena_p1"]
     assert "ASSUMPTION W-match" in arena["notes"] and "Match days and event closures are NOT modelled" in arena["notes"]
     assert arena["capacity_reported"] == 494 and "WOB_PARK_1441813" in arena["notes"]
-    assert "the point is no verified position inside the parking area" in arena["notes"]
+    # its position is the prior municipal point, with its own method and sentence (no research point inside a parking area)
+    assert arena["geometry_method"] == "package_prior_municipal_point"
+    assert "position: package_prior_municipal_point, the prior municipal point WOB_PARK_1441813" in arena["notes"]
+    assert "it is not a research point inside the parking area" in arena["notes"]
+    assert all(row["geometry_method"] == "package_research_point_in_parking_area"
+               for garage_id, row in rows.items() if garage_id != "lot_wob_arena_p1")   # only P1 has another method
     assert arena["geometry_source_url"] == "https://www.vfl-wolfsburg.de/stadien/volkswagen-arena/anreise/"   # the counted stand-in
     # BadeLand stays a paid option and VW-Bad is no option
     assert rows["lot_wob_park_1114127"]["tariff_duration_bands"] is None and "lot_wob_park_327697" not in rows
@@ -1708,7 +1795,10 @@ def test_the_five_withdrawn_wolfsburg_defaults_are_qa_rows_and_the_owner_decided
     # spec v3 B4 are read in place from the Restluecken package
     if EVIDENCE_FOLDER.is_dir():
         manifest = (EVIDENCE_FOLDER / "MANIFEST.md").read_text(encoding="utf-8")
-        assert "NO PAGE IS ARCHIVED YET" in manifest and "never free by a default" in manifest
+        assert "NO PAGE IS ARCHIVED IN THIS FOLDER" in manifest and "never free by a default" in manifest
+        # the pages of spec v3 B4 are named with their member hashes: the manifest is as current as the archive
+        for digest in PAGE_SHA256.values():
+            assert digest in manifest
     # Autostadt, Klinikum and the Volkswagen Arena are no public options (spec I2: customer, event and conflicting access)
     for number in (1900571, 1966086):
         assert committed_qa.loc[f"candidate_lot_wob_park_{number}", "reason_code"] == "lot_access_not_public"
@@ -2264,10 +2354,29 @@ def test_the_position_source_is_the_osm_object_then_the_coordinate_sources_then_
     assert rows["lot_t_zone_b"]["geometry_source_url"] == SOURCE_URL and rows["lot_t_zone_b"]["source_url"] == SOURCE_URL
     assert rows["lot_t_rate"]["geometry_source_url"] == rows["lot_t_rate"]["source_url"] == SOURCE_URL
     assert result["counts"]["position_origin"] == {"osm_object": 1, "coordinate_source": 10, "tariff_source_fallback": 1}
+    # a point of which the package names no source at all (and no prior municipal point) is no research point in a parking area
+    assert rows["lot_t_rate"]["geometry_method"] == "package_point_without_source"
+    assert "it is not a research point inside the parking area" in rows["lot_t_rate"]["notes"]
+    assert rows["lot_t_zone_a"]["geometry_method"] == "package_research_point_in_parking_area"
+    assert {row["geometry_method"] for row in rows.values()} <= set(step.LARGE_LOT_GEOMETRY_METHODS)
     printed = capsys.readouterr().out
     assert ("source of the position: OpenStreetMap object 1/12, coordinate source of the package 10/12, tariff-source "
             "fallback 1/12") in printed
     assert "[garages] WARNING: the position of the large lot(s) t_rate has no source in the package" in printed
+
+
+def test_a_lot_with_a_prior_municipal_point_and_no_position_source_has_its_own_geometry_method(step, package_file):
+    inputs = _inputs(step, package_file)
+    inputs["large"]["package"]["facilities"]["t_rate"].update(coordinate_source_ids=None,
+                                                              prior_municipal_point_ids=["WOB_PARK_PRIOR"])
+    row = _by_id(step.build_large_lots(inputs))["lot_t_rate"]
+    assert row["geometry_method"] == step.LARGE_LOT_PRIOR_POINT_METHOD == "package_prior_municipal_point"
+    assert "the prior municipal point WOB_PARK_PRIOR of the package, which it keeps for review as no verified entrance" in row[
+        "notes"]
+    assert row["geometry_source_url"] == row["source_url"]       # the counted stand-in of the tariff source
+    assert step.LARGE_LOT_GEOMETRY_METHODS == ("package_research_point_in_parking_area", "package_prior_municipal_point",
+                                               "package_point_without_source")
+    assert "package_prior_municipal_point" in step.COLUMN_GLOSSARY["geometry_method"]
 
 
 @pytest.mark.parametrize("method, origin", [

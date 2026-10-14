@@ -203,7 +203,7 @@ def test_the_dataset_layout_is_the_documented_one():
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}
-    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13", "P14"}
+    assert set(pg.ASSUMPTIONS) == {"P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13", "P14", "W-match"}
     # spec Amendment I4 and I5a: P14 imputes the tariff of a surface lot from the median of its zone; P12 is withdrawn (the id and
     # its text stay so that older tables remain readable, no row of the current dataset rests on it)
     assert set(pg.WITHDRAWN_ASSUMPTIONS) == {"P12"} and pg.assumption_status_text("P12").startswith(
@@ -838,6 +838,22 @@ def test_p14_belongs_to_a_surface_lot_and_a_garage_never_rests_on_it():
         pg.validate_garages(_frame(_row(assumptions="P14", notes="ASSUMPTION P14.")))
     with pytest.raises(ValueError, match="the notes must name ASSUMPTION P14"):
         pg.validate_garages(_frame(_row(facility_kind="surface_lot", assumptions="P14")))
+
+
+def test_w_match_belongs_to_a_free_surface_lot_and_is_named_in_its_notes():
+    # spec v3 B4 (owner decision 2026-10-14): the free use of the Arena lot outside match days; match days are not modelled
+    free_lot = dict(facility_kind="surface_lot", garage_hourly_rate_eur=None, garage_billing_unit_min=None,
+                    garage_first_period_min=None, garage_first_period_eur=None, garage_daily_cap_eur=None,
+                    garage_fee_start_h=0.0, garage_fee_end_h=24.0, tariff_duration_bands="0- free", assumptions="W-match",
+                    notes="ASSUMPTION W-match: match days are not modelled.")
+    pg.validate_garages(_frame(_row(**free_lot)))
+    assert "match days and event closures are NOT modelled" in pg.ASSUMPTIONS["W-match"]
+    with pytest.raises(ValueError, match="the notes must name ASSUMPTION W-match"):
+        pg.validate_garages(_frame(_row(**{**free_lot, "notes": "a free lot"})))
+    with pytest.raises(ValueError, match="ASSUMPTION W-match qualifies the free use of a surface lot"):
+        pg.validate_garages(_frame(_row(**{**free_lot, "facility_kind": "garage"})))
+    with pytest.raises(ValueError, match="ASSUMPTION W-match qualifies the free use of a surface lot"):
+        pg.validate_garages(_frame(_row(assumptions="W-match", notes="ASSUMPTION W-match.")))   # a priced garage
 
 
 def test_a_tiered_garage_may_carry_one_closed_free_band_as_its_grace_period():

@@ -236,6 +236,24 @@ def test_the_dataset_assumptions_are_listed_exactly_when_a_priced_garage_row_nam
     assert te.garage_assumption_ids(unpriced) == frozenset()
 
 
+def test_assumption_w_match_is_listed_between_p14_and_g1_exactly_when_a_priced_row_names_it(garage_frame):
+    # spec v3 B4: the Arena lot is free outside match days only; the register lists ASSUMPTION W-match after P14 and before G1
+    # where a priced row names it, so the register of every dataset without such a lot (the fixture models) is unchanged
+    from braunschweig.parking import garages as pg
+
+    ids = lambda assumptions: [text.split(":")[0].removeprefix("ASSUMPTION ") for text in assumptions]      # noqa: E731
+    listed = te.assumption_texts(monthly_imputed=True, lot_tariff_imputed=True, garage_assumption_ids=("W-match",))
+    order = ids(listed)
+    assert order[order.index("P9"):order.index("G1")] == ["P9", "P13", "P14", "W-match"]
+    assert pg.ASSUMPTIONS["W-match"] in next(text for text in listed if text.startswith("ASSUMPTION W-match:"))
+    assert "W-match" not in ids(te.assumption_texts()) and "W-match" not in ids(te.assumption_texts(garage_assumption_ids=("P3",)))
+    # the fixture garages never name it, so the exported fixture model is byte-identical to before
+    assert "W-match" not in te.garage_assumption_ids(garage_frame)
+    named = garage_frame.copy()
+    named["assumptions"] = "W-match"
+    assert te.garage_assumption_ids(named) == frozenset({"W-match"})
+
+
 def test_the_ev_assumptions_are_listed_exactly_when_a_zone_states_an_exemption():
     # ASSUMPTIONS E1 (every BEV/PHEV is an E-plate holder) and E2 (the exemption applies within the maximum stay) matter only to
     # a model that carries an exemption; they follow R2-a.

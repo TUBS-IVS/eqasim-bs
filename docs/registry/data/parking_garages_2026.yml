@@ -565,10 +565,10 @@ acquisition:
     position are lot_no_position, none is invented: three of the package and Arena P2) and at 100 spaces 75 rows (36 garages,
     39 lots; Arena P2 is lot_no_position); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    df080f504635dce573d0f1998f57c12fe1a5c7fc3c81f06ae154996ec023754e, parking_garages_2026_qa_lot_threshold_30.csv
-    cdbb5c7c6be04c94a5e02d47f9caeec6614fbd7e652aa1851e1942dc8cd82454, parking_garages_2026_lot_threshold_100.geojson
-    ad7f5c951751ae2e83e41c031ba74d965d7e88d3729f9f7e0505f47c8f43a9e0 and parking_garages_2026_qa_lot_threshold_100.csv
-    22536af4f2506c5cb5d0f56d594389df6fc4524af89885373e287ac8b90d6c9c (the files regenerated in Task B4 of spec v3;
+    d8665253dc0ad6853ec2035f3979319ec5d266aa36fcb912b67b6b94e674373d, parking_garages_2026_qa_lot_threshold_30.csv
+    248b15cf6c594585266545824640fc465380cfcf2b84da83d73e25ff41fde7c4, parking_garages_2026_lot_threshold_100.geojson
+    559b31c5ddaeaa969d2e7dd467cc3bd4370b208532aa21f576d12022211d1dbb and parking_garages_2026_qa_lot_threshold_100.csv
+    18aceba3790eaee42b17efc74028bced54610f5db75716257f4c758c87d6d01d (the files regenerated in Task B4 of spec v3;
     the earlier hashes are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
     Christian-Dohm and Glockengiesser and Helmstedt Wallplatz) and 12 at 100 spaces (8 equal, 4 differing: Goslar
@@ -682,18 +682,23 @@ acquisition:
     the table names and a given archive lacks stops the step. STATE OF THE RUN OF 2026-10-14 (spec v3 B4, owner decision of the
     same day): THREE lots are free rows on their pages (the log line reads: owner-decided free lots, free options on archived pages
     3 of 5). Allersee Suedufer: the WMG pages wmg_schotter_suedufer.html (the first and the source_url) and
-    wmg_befestigt_suedufer.html, both stating 'oeffentlich zugaenglich und kostenlos' for 24/7; the package names no polygon for the
-    two WMG points (polygon match not established), the nearer point (Schotter-Parkplatz) lies 162 m and the other 443 m from the
-    research point of the lot (the note states both), so the identification of the lot with the Suedufer car park rests on the
-    owner's decision and on that nearness. Freibad Fallersleben: the page vfb_geschaeftsstelle.html of the VfB Fallersleben, which
+    wmg_befestigt_suedufer.html, both stating 'oeffentlich zugaenglich und kostenlos' for 24/7; findings.json of the package records
+    for both the claim scope "This named POI only. No extension to neighboring facility lots." and no polygon for the two WMG
+    points (polygon match not established); the nearer point (Schotter-Parkplatz) lies 162 m and the other 443 m from the
+    research point of the lot (the note states both and quotes the claim scope), so the release EXTENDS the claim of the two POIs
+    to this lot by the owner's decision (2026-10-14) and on that nearness. Freibad Fallersleben: the page vfb_geschaeftsstelle.html of the VfB Fallersleben, which
     states for visitors of the club office that one can park 'neben dem Freibad oder gegenueber von der Schule' on the free car
     parks, with no hours and no exact surface; the package's own caution is that the exact surface, all school car parks and an
-    unrestricted 24/7 use are not established, and the owner decides the lot free. Volkswagen Arena P1: the page vfl_anreise.html of
+    unrestricted 24/7 use are not established; the page gives no hours or stay rule, so the free schedule '0- free' (free for
+    every stay) is the owner's decision, which the note of the row states. Volkswagen Arena P1: the page vfl_anreise.html of
     the VfL Wolfsburg, which states that P1 and P2 can generally be used free of charge outside match days; ASSUMPTION W-match (owner
     decision 2026-10-14): the dataset carries P1 as free on every simulated weekday, match days (P1 for permit holders only, P2
-    likewise) and event closures are NOT modelled, which the note of the row names; P1 has the prior municipal point WOB_PARK_1441813
-    as its position (the package: 'not a verified entrance', no OpenStreetMap object and no coordinate source named), so the tariff
-    source stands in as geometry_source_url, the one counted fallback of the run and no verified position inside the parking area.
+    likewise) and event closures are NOT modelled, which the note of the row names, and the id W-match is in the assumptions column of the row (ASSUMPTION W-match, defined in
+    braunschweig.parking.garages.ASSUMPTIONS; the tariff export lists it in the register of a model whose priced rows name it, and
+    the validator admits it on a free surface lot only); P1 has the prior municipal point WOB_PARK_1441813 as its position (the
+    package: 'not a verified entrance', no OpenStreetMap object and no coordinate source named), so its geometry_method is
+    package_prior_municipal_point (not a research point inside the parking area) and the tariff source stands in as
+    geometry_source_url, the one counted fallback of the run.
     Arena P2 (380 spaces) is NO row: the package gives it no position at all (coordinate_role unresolved), so it is the QA row
     lot_no_position whatever its page states (the QA note names the decision; none is invented) and becomes a row when a position is
     supplied and the step is run again. VW-Bad has no page (HTTP 404 of the WMG flyer of 2024) and stays a QA row; BadeLand stays a
@@ -743,7 +748,7 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    7703aac614130f21a8cd6d9891e3c647f96dc860625f5e1d5f70748047ababea (the earlier pins are in the history of the field notes:
+    0a7af9cf3a56b3c84c16480875c22d881fe4b3c4a6f4f6c4a3ed8187fd09d218 (the earlier pins are in the history of the field notes:
     storage.notes holds exactly one, the test of the calibration table reads it). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
@@ -921,11 +926,11 @@ limitations: >-
   surface lots the rules of the large-lot package that an owner decision names or the street product of the zone of the lot;
   they were not compared with any observed payment, occupancy or cash-desk data, so the dataset says what the operators and,
   where none
-  publishes a tariff, the directories publish, not what drivers pay. Ten assumptions and five readings carry the encoding
+  publishes a tariff, the directories publish, not what drivers pay. Eleven assumptions and five readings carry the encoding
   and are counted per row (see the acquisition notes; ASSUMPTION L50, the size threshold, selects the rows and is no value of
   the assumptions column): P3 on none of the 94 priced rows (it stays defined), P4 on 29, P5 on 27, P6 on 7 (every tiered
   row), P7 on 5, P8 on 18 (every row with a priced duration schedule), P10 on 8 and P11 on 4, P12 on none (withdrawn, it
-  stays defined for older datasets) and P14 on 2; 48 of the 94 priced rows rest on at least one assumption (51.1 %, below
+  stays defined for older datasets) P14 on 2 and W-match on 1 (Arena P1); 49 of the 94 priced rows rest on at least one assumption (52.1 %, below
   the warning share of 75 %), and 39 of the 94 on P4 or P5 (41.5 %, below it too), which is the share of the priced rows
   whose rounding or charging times the sources do not state: the dataset is mostly a structure published by the operators
   plus these assumptions, and a sensitivity arm can leave a group out by the id in the assumptions column.
@@ -1237,3 +1242,22 @@ notes: >-
   Arena P1 494 reported) enter the option set of every activity near them and pull a free alternative closer than before; the
   calibration table parking_garage_decay_calibration_2026 was computed on an earlier dataset and stays stale until Task B5
   (ruling R-B-8). The Arena P1 position is a prior municipal point, not a verified entrance.
+  Spec v3 B4, fix round 1 (2026-10-14, issue #436). (1) The position of Arena P1, for which the package names neither an OpenStreetMap
+  object nor a coordinate source, has its own geometry_method value package_prior_municipal_point (the prior municipal point
+  WOB_PARK_1441813, kept by the package as no verified entrance; the step also knows package_point_without_source for a point
+  without any source; the vocabulary is regional_garages.LARGE_LOT_GEOMETRY_METHODS and the glossary of the dataset), with a note
+  that says it is no research point inside a parking area; no other row changed its method. (2) ASSUMPTION W-match (the Arena match
+  days are not modelled) is an id of braunschweig.parking.garages.ASSUMPTIONS and stands in the assumptions column of
+  lot_wob_arena_p1; the validator admits it on a free surface lot only; the tariff export lists it in the register (after P14,
+  before G1) exactly when a priced row names it, so the fixture models (no such row) are unchanged. Rows resting on at least one
+  assumption: 49 of 94 (52.1 %; 48 before), W-match on 1. (3) The note of the Suedufer lot quotes the claim scope of findings.json
+  ("This named POI only. No extension to neighboring facility lots.") and says that the release extends it to the lot by the owner's
+  decision; the note of the Freibad lot says that the free schedule is the owner's decision, the page giving no hours or stay rule
+  and the package making no unrestricted 24/7 claim. Compared with the dataset of the first B4 commit: no value of any row changed;
+  the cells that changed are assumptions, geometry_method and notes of lot_wob_arena_p1 and the notes of lot_wob_park_720902 and
+  lot_wob_park_1703940, and the QA note of garage_lot_wob_arena_p1; the same in the datasets at 30 and 100 spaces (100: Arena P1
+  only). The local folder wob_free_lots_evidence/MANIFEST.md now names the pages of the Restluecken package with their member hashes.
+  SHA-256 (LF) of the QA table: parking_garages_2026_qa.csv 930603bd93d761bc77fae25c909ba71f3dce5c07099a89be56e01b085a01b134 (the
+  QA table of the first B4 commit was 54d95723250f8ca7c0e30b0c2871a911bb67efe6f1f38bc26dec179e4015ed99); the dataset pin is in
+  storage.notes (the first B4 commit: 7703aac614130f21a8cd6d9891e3c647f96dc860625f5e1d5f70748047ababea); the pins of the sensitivity
+  datasets are in the acquisition notes. Every hash of the first B4 paragraph that differs is superseded by these.

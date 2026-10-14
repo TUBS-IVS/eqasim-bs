@@ -205,6 +205,15 @@ LOT_TARIFF_IMPUTATION_ASSUMPTION = Assumption(
     "P14", parking_garages.ASSUMPTIONS["P14"], _GARAGE_ASSUMPTION_WHERE_IT_BITES["P14"],
     "garage dataset rows that name it (column assumptions of parking_garages_2026)")
 
+#: ASSUMPTION W-match (spec v3 B4, owner decision 2026-10-14): the model lists it (after P14, before G1) exactly when a priced row
+#: of the garage dataset names it (a free lot that the source frees only outside match days), so the model of a dataset without
+#: such a lot (and every fixture model) carries the register as before.
+MATCH_DAY_ASSUMPTION = Assumption(
+    "W-match", parking_garages.ASSUMPTIONS["W-match"],
+    "Free surface lots that name ASSUMPTION W-match in their notes (the Volkswagen Arena car park P1): every simulated weekday, "
+    "including a match day on which the lot is reserved for permit holders",
+    "garage dataset rows that name it (column assumptions of parking_garages_2026)")
+
 ASSUMPTIONS_REGISTER = (
     Assumption("Z1", "Outside every zone parking is free", "Municipalities marked not_audited",
                "Register status; A/B by adding zones"),
@@ -345,6 +354,7 @@ ASSUMPTIONS_REGISTER = (
 #: The assumptions of the garage DATASET that the register lists only when a priced row names them (spec v3 R-FW-1). P9 is a rule
 #: of the pricing code and always listed; P12 is withdrawn and never listed; P13 and P14 have their own switches.
 CONDITIONAL_GARAGE_ASSUMPTION_IDS = ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11")
+#: ``W-match`` has its own entry (``MATCH_DAY_ASSUMPTION``) that ``assumption_texts`` inserts before G1 when a row names it.
 #: Assumptions of the dataset that the register never lists as a dataset assumption: the withdrawn P12 and the two that have a
 #: switch of their own (``monthly_imputed``, ``lot_tariff_imputed``).
 _OTHER_DATASET_ASSUMPTION_IDS = ("P12", "P13", "P14")
@@ -372,7 +382,8 @@ def assumption_texts(monthly_imputed: bool = False, lot_tariff_imputed: bool = F
     withdrawn and never listed, whatever ``garage_assumption_ids`` holds; an id that is no assumption of the dataset raises
     ``ValueError``. With ``monthly_imputed`` the model uses an imputed monthly product and the register lists ASSUMPTION P13
     after the last of them; with ``lot_tariff_imputed`` it lists a surface lot whose tariff is imputed and the register lists
-    ASSUMPTION P14 right after P13; both stand before G1. With ``ev_exemption`` (a zone states ``ev_free_minutes``) the register
+    ASSUMPTION P14 right after P13; both stand before G1, and ASSUMPTION W-match (spec v3 B4) stands between P14 and G1 where
+    ``garage_assumption_ids`` holds it. With ``ev_exemption`` (a zone states ``ev_free_minutes``) the register
     ends with ASSUMPTIONS E1 and E2."""
     named = frozenset(garage_assumption_ids)
     unknown = sorted(named - set(parking_garages.ASSUMPTIONS))
@@ -388,6 +399,8 @@ def assumption_texts(monthly_imputed: bool = False, lot_tariff_imputed: bool = F
                 entries.append(MONTHLY_IMPUTATION_ASSUMPTION)
             if lot_tariff_imputed:
                 entries.append(LOT_TARIFF_IMPUTATION_ASSUMPTION)
+            if "W-match" in named:
+                entries.append(MATCH_DAY_ASSUMPTION)
         entries.append(entry)
     if ev_exemption:
         entries.extend(EV_ASSUMPTIONS)

@@ -906,8 +906,8 @@ def test_committed_parking_data_is_valid(capsys):
     # the free Wolfsburg lots on archived pages of spec v3 B4)
     assert ("garages: 94 listed, 94 priced, 0 not priced (none); per municipality 03101000 23 listed 23 priced") in out
     assert "03103000 20 listed 20 priced" in out
-    assert ("priced garages resting on an assumption: P10 8, P11 4, P13 15, P14 2, P4 29, P5 27, P6 7, P7 5, P8 18 of 94 "
-            "(at least one assumption 48, P4 or P5 39; in the tiered form 7, in the banded form 18, with the free "
+    assert ("priced garages resting on an assumption: P10 8, P11 4, P13 15, P14 2, P4 29, P5 27, P6 7, P7 5, P8 18, "
+            "W-match 1 of 94 (at least one assumption 49, P4 or P5 39; in the tiered form 7, in the banded form 18, with the free "
             "schedule 32); by facility kind garage 36 listed 36 priced, surface_lot 58 listed 58 priced; "
             "monthly product on 12 garages") in out
     # the three Braunschweig station products and the Wolfsburg deck product are used (G1, G2): 13 + 4 used, 36 - 4 recorded

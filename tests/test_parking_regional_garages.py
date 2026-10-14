@@ -1320,10 +1320,10 @@ PRICED_LOTS = {
     "lot_wob_park_1835028": _free_lot(WOB),
     # spec v3 B4: three owner-decided free lots on the archived pages of the Restluecken package: the Allersee Suedufer and the
     # Freibad Fallersleben (area estimates of the capacity, none reported) and Volkswagen Arena P1 (494 spaces reported by the event
-    # operator; free outside match days, match days not modelled)
+    # operator; free outside match days, ASSUMPTION W-match: match days not modelled)
     "lot_wob_park_720902": _free_lot(WOB),
     "lot_wob_park_1703940": _free_lot(WOB),
-    "lot_wob_arena_p1": _free_lot(WOB, 494),
+    "lot_wob_arena_p1": _lot(WOB, bands="0- free", capacity=494, assumptions="W-match"),
     # Wolfenbuettel: five free lots, the Lessingtheater (0.25 EUR for the first 15 min, 0.05 EUR per started 3 min up to 2 h =
     # 2.00 EUR, then the day ticket of 2.00 EUR) and the Stadtbad Okeraue (2.00 EUR per started hour for outside users)
     "lot_wf_bahnhof_checkin": _free_lot(WF),
@@ -1483,7 +1483,10 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
     assert (_plain(row["monthly_source_url"]) is None) == (expected.monthly is None)
     assert row["package_sha256"] == (f"{LARGE_LOT_PACKAGE_SHA256};{RESTLUECKEN_PACKAGE_SHA256}"
                                      if garage_id in FREE_LOTS_ON_ARCHIVED_PAGES else LARGE_LOT_PACKAGE_SHA256)
-    assert row["geometry_method"] == "package_research_point_in_parking_area" and row["geometry_source_url"].startswith("https://")
+    # the research point of the package inside the parking area; Arena P1 has the prior municipal point of the package instead
+    assert row["geometry_method"] == ("package_prior_municipal_point" if garage_id == "lot_wob_arena_p1"
+                                      else "package_research_point_in_parking_area")
+    assert row["geometry_source_url"].startswith("https://")
     # the key of the site: the package's facility key in lower case, the municipal point of the city layer is no key
     assert garage_id == "lot_" + re.sub(r"[^a-z0-9]+", "_", row["package_facility_id"].lower()).strip("_")
     parts = expected.assumptions.split(";") if expected.assumptions else []
@@ -1543,24 +1546,25 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     # left it with ruling R-B-2: they carry the plain rate and max_stay_min 180), P10 8 (Forschungsflughafen, Suedkopf-Center,
     # the five Broetchentaste
     # lots of Helmstedt and Salzgitter and the Buechereivorplatz that takes their product), P11 4, P12 on none (withdrawn, spec
-    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 48 of 94 on at least one assumption and 39 of 94
-    # on P4 or P5 (both below the 75 % warning threshold now that 32 free lots rest on no assumption), 7 rows in the tiered form,
+    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); W-match 1 (Arena P1); the union rates 49 of 94 on at least one
+    # assumption and 39 of 94 on P4 or P5 (both below the 75 % warning threshold now that 32 free lots rest on no assumption),
+    # 7 rows in the tiered form,
     # 18 in the banded form and 32 with the free schedule, 12 monthly products at a garage and 3 at a lot
     assert coverage["priced_by_assumption"] == {"P10": 8, "P11": 4, "P13": 15, "P14": 2, "P4": 29, "P5": 27, "P6": 7, "P7": 5,
-                                                "P8": 18}
+                                                "P8": 18, "W-match": 1}
     # spec Amendment F: 12 published monthly products at a garage (the nine of Amendment D2, the Braunschweig Steinstrasse and
     # Wallstrasse and, since spec Amendment G2, the Wolfsburg deck at the Hauptbahnhof), 15 garages with an imputed one (10 in
     # Braunschweig, 5 in Wolfsburg; P13 changes no union rate; a surface lot never gets one)
     assert (coverage["with_monthly_product"], coverage["with_monthly_imputed"]) == (12, 15)
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
-            coverage["priced_banded"], coverage["priced_free"]) == (48, 39, 7, 18, 32)
+            coverage["priced_banded"], coverage["priced_free"]) == (49, 39, 7, 18, 32)
     # the monthly products of the garages and, apart, those of the three decision-A lots (ruling R-4j-6: the commuter product of the
     # zone that the lot is too; a garage count that included them would blur the 12 published products of spec Amendment F)
     assert coverage["lots_with_monthly_product"] == 3
     pins = {**PRICED_GARAGES, **PRICED_LOTS}
     assigned = [values.assumptions.split(";") if values.assumptions else [] for values in pins.values()]
     counted = {key: sum(key in parts for parts in assigned)
-               for key in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13", "P14")}
+               for key in ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11", "P12", "P13", "P14", "W-match")}
     assert {key: count for key, count in counted.items() if count} == coverage["priced_by_assumption"]
     assert counted["P3"] == 0
     assert sum(bool(parts) for parts in assigned) == coverage["priced_with_assumption"]
