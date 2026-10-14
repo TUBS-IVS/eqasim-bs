@@ -116,7 +116,8 @@ limitations: |
   R-5-4: the zone-level paid share was blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run
   is compared with the SrV by scripts/parking/compare_parking_targets.py, whose commuter and Wolfsburg rows count ALL off-street
   options (the outcome report has no paid/free split) and are labelled so: the calibration is exact, that run comparison is not
-  where free options lie within D_max. Sensitivities of the option set (spec I6; header lines of the table, never release
+  where free options lie within D_max (pointer: from outcome report v4 on the two *_paid_calls rows are paid-only ratios,
+  ADR-0142 decision 4). Sensitivities of the option set (spec I6; header lines of the table, never release
   values): the same calibration with the datasets of the large-lot thresholds 30 spaces (103 options, 34 free: lambda 324.31 m,
   lambda_c 260.96 m) and 100 spaces (74 options, 22 free: lambda 390.10 m, lambda_c 302.38 m). The search stops at the first
   bisection midpoint whose mean is within 0.0005 of the target (the achieved means are in the header), so lambda and lambda_c

@@ -21,8 +21,9 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   0 = commuter garage options off); schema 5, spec v3 A1, A2 and A5 (issue 436), adds option_price_beta_u_per_eur
   (config parking_option_price_beta_u_per_eur, default 0.310998, the magnitude of the car cost coefficient
   betaCost_u_MU of the mode choice, assumption G1-d, one money coefficient for the parking option weights without the
-  income or distance term; validated finite and >= 0 at configure time, 0 gives the price-independent weights of v2; the
-  Java reader of Task A7 refuses a model whose value differs from the mode choice by more than 1e-9), max_stay_min on
+  income or distance term; validated finite and >= 0 at configure time, 0 gives the price-independent weights of v2 in the
+  Python reference; the Java reader of Task A7 refuses a model whose value differs from the mode choice by more than 1e-9, 0
+  included, so a run needs the mode-choice value, ruling R-A-17), max_stay_min on
   every garage entry (null until the garage dataset carries the column, Part B) and ev_free_minutes on every zone entry
   (written only while the zone's ev_rule_valid_until is empty or not before parking_tariff_snapshot_date, else null with
   an info log line naming the zone), and lists the assumptions M3, G1-d and, with an exemption in the model, E1 and E2;
@@ -74,3 +75,4 @@ decisions:
 - ADR-0133
 - ADR-0139
 - ADR-0140
+- ADR-0142

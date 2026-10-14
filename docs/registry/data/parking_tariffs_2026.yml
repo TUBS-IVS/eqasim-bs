@@ -300,3 +300,16 @@ notes: >-
   Forschungsflughafen 18, Volkmaroder Strasse 0, zone Ib 15), 24 lie in Helmstedt (17 of them home arrivals, free by H1) and
   78 in Goslar zone 1 (60 of them home arrivals). An exposure indicator of an older model state on a 1 % sample, not a
   validation and no run of the cost model.
+  Columns of the v3 mechanics (ADR-0142, Part A of issue 436; the record's values stay those above until Part B fills
+  them): the table layout gained the optional columns ev_free_minutes (whole minutes >= 1; the longest chargeable stay of an
+  electric car that parks free on the street, empty = no exemption) and ev_rule_valid_until (ISO date, the last day of the
+  ordinance's rule, empty = open-ended; only together with ev_free_minutes); both exist on street_paid rows only; the
+  committed file does not carry them yet (the loader reads an absent optional column as empty), so no committed row grants an
+  exemption. max_stay_min is an existing column; since v3 a
+  street_paid row may state it without a long-stay product (a stay above it then has no street option, ASSUMPTION M3), and a
+  row with a maximum stay and a commuter_day_eur must name the unlimited-stay product in its notes with the literal text
+  'unlimited-stay product:' (any zone type). The tariff model JSON built from the table is schema 5 (zone entry field
+  ev_free_minutes, written only while ev_rule_valid_until is not before the snapshot date). The values that use these
+  columns (maximum stays of Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg and Seesen, the EV exemptions of Goslar,
+  Salzgitter, Peine and Seesen, the dropped long-stay product of Ia) are the data of Part B (design spec of 2026-10-14,
+  section B1) and are recorded here when they are committed.
