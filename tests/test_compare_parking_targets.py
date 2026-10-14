@@ -377,6 +377,43 @@ def test_the_wolfsburg_commuter_garage_share_is_the_independent_check_h3b(cmp, d
     assert math.isnan(empty["model"]) and "No pricing call of this universe" in empty["universe_note"]
 
 
+COMMUTER_AND_WOLFSBURG_GARAGE_ROWS = (
+    "garage_share_ia_ib_work_education_all_calls", "garage_share_ia_ib_work_education_without_employer_free",
+    "garage_share_ia_ib_work_education_paid_calls", "garage_share_wolfsburg_work_education_all_calls",
+    "garage_share_wolfsburg_work_education_without_employer_free", "garage_share_wolfsburg_work_education_paid_calls")
+
+
+def test_the_commuter_and_wolfsburg_rows_label_that_the_run_counts_free_options_the_paid_only_reference_leaves_out(
+        cmp, data, two_arms):
+    # Spec Amendment I6: the calibration of lambda_c and the Wolfsburg check count PAID options only (a free option is a free
+    # parker and leaves numerator and denominator), exactly. The outcome report v3 has ONE garage_probability_sum over all
+    # options and no paid/free split, so the run comparison cannot separate them: its commuter and Wolfsburg rows are
+    # labelled "all off-street options; free options included" and the limitation is stated; the Java side and the report
+    # are unchanged.
+    assert cmp.FREE_OPTIONS_INCLUDED_LABEL == "all off-street options; free options included"
+    table = compare_two(cmp, data, *two_arms).table
+    for name in COMMUTER_AND_WOLFSBURG_GARAGE_ROWS:
+        note = row(table, "zones_v2", name)["universe_note"]
+        assert cmp.FREE_OPTIONS_INCLUDED_LABEL in note, name
+        for needle in ("garage_probability_sum", "no paid/free split", "PAID options only", "calibration of lambda_c is exact",
+                       "this run comparison is not"):
+            assert needle in note, (name, needle)
+    # the label sits in the note of an empty universe too (the Wolfsburg rows of an arm without a Wolfsburg call)
+    empty = row(table, "zones_v2", "garage_share_wolfsburg_work_education_paid_calls")
+    assert math.isnan(empty["model"]) and cmp.FREE_OPTIONS_INCLUDED_LABEL in empty["universe_note"]
+    # the visitor row is payment-inclusive like the E5 target: every option counts on both sides, no label of a limitation
+    visitor = row(table, "zones_v2", "garage_share_ia_ib_other_purposes")["universe_note"]
+    assert "payment-inclusive" in visitor and "every off-street option" in visitor
+    assert cmp.FREE_OPTIONS_INCLUDED_LABEL not in visitor and "calibration of lambda_c is exact" not in visitor
+    # no other row carries the label
+    for found in table["metric"].unique():
+        if found not in COMMUTER_AND_WOLFSBURG_GARAGE_ROWS:
+            assert cmp.FREE_OPTIONS_INCLUDED_LABEL not in " ".join(table.loc[table["metric"] == found, "universe_note"]), found
+    # the documentation of the script states the limitation once (whitespace folded: the docstring is wrapped)
+    documentation = " ".join(cmp.__doc__.split())
+    assert cmp.FREE_OPTIONS_INCLUDED_LABEL in documentation and "no paid/free split" in documentation
+
+
 def test_free_shares_per_workplace_class_use_the_zones_of_the_class(cmp, data, two_arms):
     table = compare_two(cmp, data, *two_arms).table
     # class bs_zentrum (zones Ia and Ib), work and education: 85 calls; no-charge outcomes EMPLOYER_FREE 30 + 10 and

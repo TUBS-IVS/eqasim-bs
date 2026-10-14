@@ -46,11 +46,20 @@ Metrics (``universe`` identifiers are in the table; Ia and Ib are the two city-c
       universe of the reference; the other two keep free calls in the denominator and are shown for orientation.
     * ``garage_share_wolfsburg_work_education_*``: the same quantities for the work and education calls in the Wolfsburg zones
       ``wob_tarifzone_1..3``. Reference: the same paid-only share of the row ``03103``: the
-      INDEPENDENT CHECK of spec H3b (not used in the calibration), a number and no validation; the universe is small at 1 %.
+      INDEPENDENT CHECK of spec H3b (not used in the calibration), a number and no validation; the universe is a sample whose
+      size every row states (``universe_size``).
     * ``free_share_work_education_class_<class>`` and ``employer_free_share_work_education_class_<class>``: the share of the
       work and education calls in the street and resident zones of a workplace class that carry a no-charge outcome
       (EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT) and the share that is EMPLOYER_FREE alone (the
       mechanism of the free-parking draw). Reference: ``share_free_total`` of the class row.
+    * Free options (spec Amendment I6): the calibration of lambda_c and the Wolfsburg check of the calibration table
+      (``scripts/parking/calibrate_garage_decay.py``) count PAID options only; a free option (the free schedule, cost 0 at every
+      stay duration) is a free parker in SrV terms and leaves numerator and denominator. The outcome report CSV v3 has ONE
+      ``garage_probability_sum`` over all options and no paid/free split, so the commuter and Wolfsburg rows of this table
+      (``garage_share_*_work_education_*``) cannot separate them: their model side is labelled "all off-street options; free
+      options included" and their note states the limitation. The calibration is exact, this run comparison is not, wherever free
+      options lie within the maximum distance (the calibration table states how many, per universe). The visitor row
+      (``garage_share_ia_ib_other_purposes``) is payment-inclusive on both sides, like the E5 target. The Java report is unchanged.
     * ``pricing_calls_*`` and ``no_zone_share_of_pricing_calls``: the call counts and the share of calls outside every zone
       (primary-path coverage: a share near 0 or 1 points to a broken zone join).
     * ``car_trip_share_*``, ``trips_*``: the share of chosen trips by ``car`` among the trips ending in any zone, outside every
@@ -166,6 +175,16 @@ V2_REPORT_NOTE = "the report is CSV v2 and has no garage columns (the run predat
 EMPTY_UNIVERSE_NOTE = "No pricing call of this universe in this arm, so there is no model value."
 RESIDENT_CAVEAT = ("SrV asks Braunschweig residents about their usual place, the model counts calls at all destinations: "
                    "a comparison, not a validation")
+#: Spec Amendment I6: the label of the model side of the commuter and Wolfsburg garage rows. The outcome report has no
+#: paid/free split of the garage probability, so these rows count every off-street option while the reference (and the
+#: calibration) is paid-only.
+FREE_OPTIONS_INCLUDED_LABEL = "all off-street options; free options included"
+FREE_OPTIONS_LIMITATION = (
+    f"Model side: {FREE_OPTIONS_INCLUDED_LABEL}. The outcome report CSV v3 has one garage_probability_sum over all options and "
+    "no paid/free split, so the model quantity counts free options, whereas the reference is PAID-only and the calibration of "
+    "lambda_c and the Wolfsburg check of the calibration table count PAID options only (a free option is a free parker in SrV "
+    "terms and leaves numerator and denominator, spec Amendment I6): the calibration of lambda_c is exact, this run comparison "
+    "is not, wherever free options lie within the maximum distance (the calibration table states how many, per universe)")
 
 
 def format_iterations(iterations) -> str:
@@ -445,7 +464,8 @@ def _garage_specs(references: References) -> list[MetricSpec]:
         "(all stays of all modes at destinations in Ia and Ib, no early rules) equals this share. This row is NOT the "
         f"calibration universe: {CALLS_NOTE}, of the other purposes (not home, work, education) in Ia and Ib; early outcomes "
         "(outside fee hours, free within limit, resident, employer free) and stays with a free street (E4) stay in the "
-        f"denominator with garage probability 0. {RESIDENT_CAVEAT}")
+        "denominator with garage probability 0. Measure: payment-inclusive, every off-street option counts on both sides (the "
+        f"garage probability sum of the report and the E5 target alike). {RESIDENT_CAVEAT}")
     commuter_note = (
         "calibration target, not validation (spec Amendment H2): lambda_c, the decay length of the garage weights of work and "
         "education stays, is set so that the mean garage probability of the commuter universe of the calibration (work and "
@@ -454,15 +474,15 @@ def _garage_specs(references: References) -> list[MetricSpec]:
         "Zentrum, wider than the zones Ia and Ib) among the PAYING street and garage users only (employer lots, other places "
         "and free parkers excluded; ruling R-4h-1). Model: "
         f"work and education calls in Ia and Ib; {CALLS_NOTE}; garage share = sum of garage probability over calls. "
-        f"{RESIDENT_CAVEAT}")
+        f"{FREE_OPTIONS_LIMITATION}. {RESIDENT_CAVEAT}")
     wolfsburg_note = (
         "independent check, not used in the calibration (spec Amendment H3b), a number and no validation: the same quantity for "
         f"the Wolfsburg zones {', '.join(WOLFSBURG_ZONE_IDS)} with the commuter decay length lambda_c calibrated on bs_zentrum. "
         "Reference: paid garage / (paid garage + paid street) of the SrV row 03103 (Wolfsburg) among the PAYING street and "
         "garage users only (employer lots, other places and free parkers excluded; ruling R-4h-1). Model: work and education "
         f"calls in the Wolfsburg zones; {CALLS_NOTE}; garage share = "
-        "sum of garage probability over calls; the universe is small at 1 % of the population (see universe_size). "
-        f"{RESIDENT_CAVEAT}")
+        "sum of garage probability over calls; the universe is small in a sample (see universe_size). "
+        f"{FREE_OPTIONS_LIMITATION}. {RESIDENT_CAVEAT}")
     return [
         MetricSpec("garage_share_ia_ib_other_purposes", SHARE_UNIT, "pricing_calls_ia_ib_other_purposes", target.value,
                    target_source, garage_note, True, lambda frame: expected_garage_share(frame, other_purposes(frame)),
