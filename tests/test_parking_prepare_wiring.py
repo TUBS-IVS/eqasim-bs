@@ -327,38 +327,52 @@ def test_the_option_price_coefficient_default_is_the_magnitude_of_the_mode_choic
     assert context.declared_config["parking_option_price_beta_u_per_eur"] == 0.310998
 
 
-STALE_DECAY_WARNING = "decay lengths were fitted on price-free weights"
+STALE_DECAY_WARNING = "decay lengths were calibrated with"
 
 
-@pytest.mark.parametrize("values", [
-    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57},
-    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 0.0},
-    {"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 261.57}],
-    ids=["both", "only_the_general_decay", "only_the_commuter_decay"])
-def test_a_decay_length_with_a_price_term_warns_that_the_calibration_is_price_free(tmp_path, monkeypatch, caplog, values):
-    # ADR-0142 decision 2: the committed decay lengths were fitted WITHOUT the price term (beta 0); with beta > 0 they are
-    # stale until the recalibration of Part B. The preparation says so in the log, never silently.
+@pytest.mark.parametrize("values, run_beta", [
+    ({"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57,
+      "parking_option_price_beta_u_per_eur": 0.0}, 0.0),
+    ({"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 0.0,
+      "parking_option_price_beta_u_per_eur": 0.5}, 0.5),
+    ({"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 261.57,
+      "parking_option_price_beta_u_per_eur": 0.5}, 0.5)],
+    ids=["price_free_run", "other_beta_general_decay", "other_beta_commuter_decay"])
+def test_a_decay_length_calibrated_at_another_beta_than_the_run_uses_warns(tmp_path, monkeypatch, caplog, values, run_beta):
+    # ADR-0142 decision 2, spec v3 B5: the committed decay lengths were calibrated WITH the price term at the coefficient
+    # PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR (the table states it, a test pins it); a run with garage options on and
+    # another coefficient reproduces other garage shares than the calibrated ones, which the preparation says in the log.
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, **values)
     with caplog.at_level("WARNING", logger=prepare.log.name):
         prepare.execute(context)
     [record] = [record for record in caplog.records if STALE_DECAY_WARNING in record.getMessage()]
     assert record.levelname == "WARNING"
     message = record.getMessage()
-    assert "parking_option_price_beta_u_per_eur 0.310998" in message
-    assert "recalibration of Part B (ADR-0142 decision 2)" in message
+    assert f"parking_option_price_beta_u_per_eur {prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR:g}" in message
+    assert f"this run uses {run_beta:g}" in message
+    assert "parking_garage_decay_calibration_2026" in message and "calibrate_garage_decay.py" in message
 
 
 @pytest.mark.parametrize("values", [
+    {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57},
     {"parking_garage_decay_m": 324.31, "parking_garage_decay_commute_m": 261.57,
-     "parking_option_price_beta_u_per_eur": 0.0},
+     "parking_option_price_beta_u_per_eur": 0.310998},
     {},
+    {"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 0.0, "parking_option_price_beta_u_per_eur": 0.0},
     {"parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": 0.0}],
-    ids=["beta_zero", "default_decays_zero", "options_off"])
-def test_no_stale_decay_warning_without_a_price_term_or_without_garage_options(tmp_path, monkeypatch, caplog, values):
+    ids=["default_beta", "calibrated_beta", "default_decays_zero", "options_off_beta_zero", "options_off"])
+def test_no_decay_warning_at_the_calibrated_beta_or_without_garage_options(tmp_path, monkeypatch, caplog, values):
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True, **values)
     with caplog.at_level("WARNING", logger=prepare.log.name):
         prepare.execute(context)
     assert not [record for record in caplog.records if STALE_DECAY_WARNING in record.getMessage()]
+
+
+def test_the_calibrated_beta_constant_is_the_default_of_the_run_and_the_stale_wording_is_gone():
+    assert (prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR
+            == prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998)
+    source = Path(prepare.__file__).read_text(encoding="utf-8")
+    assert "stale until" not in source and "price-free weights" not in source
 
 
 def test_a_commuter_decay_of_zero_is_written_and_named_in_the_log_line(tmp_path, monkeypatch, capsys):

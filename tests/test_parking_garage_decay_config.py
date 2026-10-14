@@ -269,3 +269,53 @@ def test_the_cost_factor_is_the_model_value_in_every_config_and_matches_the_prep
     value = _config(name)["parking_cost_utility_factor"]
     assert value == prepare.PARKING_DEFAULTS["parking_cost_utility_factor"] == prepare.PARKING_COST_FACTOR_DEFAULT == 1.0
     assert isinstance(value, float)
+
+
+#: The committed tariff table the table header pins (the stays of the calibration are priced with its rows, spec v3 B5).
+TARIFFS = REPO / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_tariffs_2026.csv"
+
+
+def test_the_committed_table_names_the_committed_tariff_table_it_priced_its_stays_with():
+    # spec v3 B5: every calibration stay is priced by the production code with the tariff of its zone, so the tariff table is an
+    # input of the calibration: the header must pin the LF SHA-256 of the committed file (a changed fee window, maximum stay
+    # or long-stay product moves feasibility and prices, hence the decay lengths)
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert _table_input_hash("tariffs") == _lf_sha256(TARIFFS), (
+        f"{TABLE.name} was calibrated on another parking_tariffs_2026.csv than the committed one: rerun the calibration")
+
+
+def test_the_committed_table_was_calibrated_with_the_option_price_coefficient_of_the_config_and_the_pipeline_default():
+    # spec v3 B5 / ADR-0142 decision 2: the decay lengths are calibrated WITH the price term at the coefficient the run uses
+    # (the magnitude of the mode-choice cost coefficient, ASSUMPTION G1-d). The table states the coefficient it used; it must
+    # equal PARKING_DEFAULTS and every config, otherwise the config values are calibrated for another weight than the run's.
+    from braunschweig.matsim.simulation import prepare
+
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    beta = _table_value("option_price_beta_u_per_eur")
+    assert beta == prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998
+    for name in CONFIGS:
+        assert _config(name)["parking_option_price_beta_u_per_eur"] == beta, name
+    # the header says it in words as well (the reader of the file sees the coefficient without parsing the rows)
+    assert re.search(rf"option_price_beta_u_per_eur {beta:g}\b", TABLE.read_text(encoding="utf-8"))
+
+
+def test_the_pipeline_knows_the_coefficient_the_decay_lengths_were_calibrated_with():
+    # The preparation warns when a run's beta differs from the one the committed decay lengths were fitted with. That
+    # coefficient is a module constant of prepare.py, pinned here to the table: recalibrating at another beta without moving the
+    # constant (or the reverse) fails here instead of silencing or faking the warning.
+    from braunschweig.matsim.simulation import prepare
+
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    assert prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR == _table_value("option_price_beta_u_per_eur")
+
+
+def test_the_committed_table_prices_its_stays_with_the_minimum_stay_and_distance_of_the_config():
+    # the other pricing parameters of the calibration are those of the config (spec v3 B5): L1 and D_max
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    for name in CONFIGS:
+        assert _config(name).get("parking_minimum_stay_min", 15) == _table_value("parking_minimum_stay_min"), name
+        assert _config(name)["parking_garage_max_distance_m"] == _table_value("garage_max_distance_m"), name

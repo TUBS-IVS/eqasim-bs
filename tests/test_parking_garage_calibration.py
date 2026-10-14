@@ -9,6 +9,7 @@ provenance and its reader, and the refusal to replace a table silently. Every ex
 """
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import math
 import re
@@ -21,7 +22,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import Point, box
 
-from braunschweig.parking import garages as pg
+from braunschweig.parking import cost, garages as pg, tariff_export
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "fixtures" / "parking"
@@ -29,13 +30,23 @@ COMMITTED = REPO / "eqasim-data" / "data" / "braunschweig"
 SCRIPT = REPO / "scripts" / "parking" / "calibrate_garage_decay.py"
 
 
+_SCRIPT_MODULE = []
+
+
+def _script():
+    """The calibration script as a module, loaded once (the helpers below build its ``Stay`` objects outside a fixture)."""
+    if not _SCRIPT_MODULE:
+        spec = importlib.util.spec_from_file_location("calibrate_garage_decay_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _SCRIPT_MODULE.append(module)
+    return _SCRIPT_MODULE[0]
+
+
 @pytest.fixture(scope="module")
 def cal():
-    spec = importlib.util.spec_from_file_location("calibrate_garage_decay_under_test", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return _script()
 
 
 def _probability(distance_m: float, decay_m: float) -> float:
@@ -100,51 +111,187 @@ def test_a_city_center_table_without_a_usable_target_row_is_refused(cal, tmp_pat
         cal.read_city_center_target(path)
 
 
-# --------------------------------------------------------------------------------- probability and bisection
+# --------------------------------------------------------------------------- the stays, the production weights, the bisection
 
 
-def test_the_mean_garage_probability_is_the_choice_share_of_the_garage_options_g1(cal):
-    # one destination, garages at 300 m and 700 m, lambda 400: w = 0.4723665527 and 0.1737739435;
-    # P = 0.6461404962 / 1.6461404962 = 0.39251844
-    distances = np.array([[300.0, 700.0]])
-    assert cal.mean_garage_probability(distances, 400.0) == pytest.approx(0.3925184379, abs=1e-9)
+def _zone(**overrides) -> cost.ZoneTariff:
+    """A street zone: 1.80 EUR per started minute-unit hour rate (180 ct/h, billing unit 1 min), fee window 06:00-22:00."""
+    fields = dict(zone_id="z", zone_type="street_paid", hourly_rate_cents=180, billing_unit_min=1,
+                  free_if_stay_at_most_min=None, first_period_min=None, first_period_cents=None, daily_cap_cents=None,
+                  max_stay_min=None, long_stay_product_cents=None, member_day_cents=None, guest_day_cents=None,
+                  fee_start_s=6 * 3600, fee_end_s=22 * 3600, resident_exempt=False)
+    fields.update(overrides)
+    return cost.ZoneTariff(**fields)
+
+
+def _garage_tariff(garage_id: str) -> cost.GarageTariff:
+    """The ``GarageTariff`` of a priced row of the garage fixture: fx_g01_core 2.00 EUR per started hour, all day, monthly
+    product 63.00 EUR (3.00 EUR per working day, P2); fx_g02_a the same without a monthly product; fx_g17_free the free
+    schedule."""
+    frame = pg.load_garages(FIXTURES / "parking_garages_fixture.geojson", allow_legacy_columns=True)
+    return tariff_export.garage_row_to_tariff(frame[frame["garage_id"] == garage_id].iloc[0])
+
+
+def _stay(options, *, zone=None, purpose="shop", arrival_s=9 * 3600, departure_s=10 * 3600):
+    """A stay of the given zone with ``options`` = ``[(garage_id, distance_m)]`` (a one-hour stay at 09:00 by default)."""
+    zone = zone or _zone()
+    return _script().Stay(zone_id=zone.zone_id, tariff=zone, purpose=purpose, arrival_s=arrival_s,
+                          departure_s=departure_s,
+                          options=tuple((_garage_tariff(garage_id), distance_m) for garage_id, distance_m in options))
+
+
+def _priced_share(distance_m, decay_m, beta, street_cents, option_cents):
+    """The share of ONE garage next to the street with the weights exp(-d / lambda - beta * c / 100) (spec v3 A2), derived
+    here and not read from the code: street weight exp(-beta * c_street / 100), garage weight exp(-d / lambda - beta *
+    c_garage / 100), share w / (w + w_street)."""
+    street = math.exp(-beta * street_cents / 100.0)
+    garage = math.exp(-distance_m / decay_m - beta * option_cents / 100.0)
+    return garage / (garage + street)
+
+
+ALL_PAID = {"fx_g01_core": True, "fx_g02_a": True, "fx_g08_bands": True, "fx_g17_free": False}
+
+
+def test_the_mean_option_share_is_the_choice_share_of_the_options_and_the_street_g1(cal):
+    # beta 0 is the price-independent weight of v2: one destination, garages at 300 m and 700 m, lambda 400:
+    # w = 0.4723665527 and 0.1737739435; P = 0.6461404962 / 1.6461404962 = 0.39251844
+    one = _stay([("fx_g01_core", 300.0), ("fx_g02_a", 700.0)])
+    assert cal.mean_option_share([one], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == pytest.approx(0.3925184379, abs=1e-9)
     # two destinations average: (0.3925184379 + 0.3208213008) / 2 (the second sees only the 300 m garage)
-    two = np.array([[300.0, 700.0], [300.0, 5000.0]])
-    assert cal.mean_garage_probability(two, 400.0, max_distance_m=1000.0) == pytest.approx(
+    two = _stay([("fx_g01_core", 300.0)])
+    assert cal.mean_option_share([one, two], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == pytest.approx(
         (0.3925184379 + 0.3208213008) / 2, abs=1e-9)
-    # a garage beyond the maximum distance has weight 0, however near the threshold; exactly at it counts
-    assert cal.mean_garage_probability(np.array([[1001.0]]), 400.0) == 0.0
-    assert cal.mean_garage_probability(np.array([[1000.0]]), 400.0) == pytest.approx(_probability(1000.0, 400.0))
-    assert cal.mean_garage_probability(np.zeros((3, 0)), 400.0) == 0.0
+    # a stay without an option in range has the share 0 (it parks on the street)
+    assert cal.mean_option_share([_stay([])], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == 0.0
 
 
 def test_an_empty_universe_and_a_bad_decay_are_refused(cal):
     with pytest.raises(ValueError, match="universe is empty"):
-        cal.mean_garage_probability(np.zeros((0, 2)), 400.0)
+        cal.mean_option_share([], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
     for decay in (0.0, -1.0, float("nan"), float("inf")):
         with pytest.raises(ValueError, match="decay_m"):
-            cal.mean_garage_probability(np.array([[300.0]]), decay)
+            cal.mean_option_share([_stay([("fx_g01_core", 300.0)])], decay, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    with pytest.raises(ValueError, match="measure"):
+        cal.mean_option_share([_stay([("fx_g01_core", 300.0)])], 400.0, 0.0, "free_only", ALL_PAID)
+
+
+def test_every_stay_is_priced_and_weighted_by_the_production_code_in_the_order_street_then_garages(cal, monkeypatch):
+    # Part A final review, B5 amendment 1: ONE weight implementation. The calibration calls cost.option_weight (through
+    # cost.parking_cost_with_garages_detail) with the street (distance 0, its cents for THIS stay) first and the garages by id.
+    calls = []
+    original = cost.option_weight
+
+    def spy(distance_m, decay_m, cost_cents, beta_u_per_eur):
+        calls.append((distance_m, decay_m, cost_cents, beta_u_per_eur))
+        return original(distance_m, decay_m, cost_cents, beta_u_per_eur)
+
+    monkeypatch.setattr(cost, "option_weight", spy)
+    # a one-hour stay at 09:00: the street costs 180 ct (1.80 EUR per hour, minute units), fx_g01_core 200 ct (2.00 per hour)
+    stay = _stay([("fx_g01_core", 300.0)])
+    share = cal.mean_option_share([stay], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    assert calls == [(0.0, 400.0, 180, 0.310998), (300.0, 400.0, 200, 0.310998)]
+    assert share == pytest.approx(_priced_share(300.0, 400.0, 0.310998, 180, 200), abs=1e-12)
+
+
+def test_a_mutant_with_the_old_closed_form_weight_gives_another_share_when_beta_is_above_zero(cal, monkeypatch):
+    # the closed form exp(-d / lambda) with street weight 1 (v2) is the mutant: with beta > 0 and a garage that costs more than
+    # the street it differs from the production weight, so a calibration that kept it would calibrate another quantity
+    stay = _stay([("fx_g01_core", 300.0)])
+    production = cal.mean_option_share([stay], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    # independent value: street 180 ct, garage 200 ct: w / w_street = exp(-300 / 400 - 0.310998 * 20 / 100)
+    ratio = math.exp(-300.0 / 400.0 - 0.310998 * 20 / 100.0)
+    assert production == pytest.approx(ratio / (1.0 + ratio), abs=1e-12)
+    monkeypatch.setattr(cost, "option_weight", lambda distance_m, decay_m, cost_cents, beta: math.exp(-distance_m / decay_m))
+    mutant = cal.mean_option_share([stay], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    assert mutant == pytest.approx(_probability(300.0, 400.0), abs=1e-12)
+    assert abs(mutant - production) > 0.01          # the test sees the mutant
+    # with beta 0 the production weight IS the old formula, bit for bit: there the mutant cannot be told apart
+    assert cal.mean_option_share([stay], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == mutant
+
+
+def test_a_cheaper_option_gets_more_weight_and_the_free_street_pays_no_option_e4(cal):
+    # price in the choice (spec v3 A2): the 300 m garage costs 200 ct, the street 180 ct; at a street that costs 600 ct the
+    # same garage is the cheap option, so its share rises
+    dear_street = _zone(hourly_rate_cents=600)
+    cheap = cal.mean_option_share([_stay([("fx_g01_core", 300.0)])], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    dear = cal.mean_option_share([_stay([("fx_g01_core", 300.0)], zone=dear_street)], 400.0, 0.310998,
+                                 cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    assert dear > cheap
+    assert dear == pytest.approx(_priced_share(300.0, 400.0, 0.310998, 600, 200), abs=1e-12)
+    # E4 (production rule): a stay within the free threshold has a free street, nobody pays a garage: share 0
+    free_street = _zone(free_if_stay_at_most_min=90)
+    assert cal.mean_option_share([_stay([("fx_g01_core", 300.0)], zone=free_street)], 400.0, 0.310998,
+                                 cal.MEASURE_ALL_OPTIONS, ALL_PAID) == 0.0
+
+
+def test_the_paid_only_share_leaves_the_free_option_out_but_keeps_its_weight_in_the_choice(cal):
+    # One destination; paid options at 300 m (fx_g01_core, 200 ct) and 700 m (fx_g02_a, 200 ct) and a FREE option at 200 m
+    # (fx_g17_free, 0 ct); lambda 400 m, beta 0 (price-independent weights, street 1):
+    # w = exp(-0.75) = 0.4723665527 (paid), exp(-1.75) = 0.1737739435 (paid), exp(-0.5) = 0.6065306597 (free);
+    # the model's probabilities: street 1 / (1 + W), option i w_i / (1 + W), W = 1.2526711559
+    stay = _stay([("fx_g01_core", 300.0), ("fx_g02_a", 700.0), ("fx_g17_free", 200.0)])
+    weights = np.exp(-np.array([300.0, 700.0, 200.0]) / 400.0)
+    p_street, p_option = 1.0 / (1.0 + weights.sum()), weights / (1.0 + weights.sum())
+    # the SrV quantity: paid garage / (paid garage + paid street); the free option is a free parker and leaves both
+    from_probabilities = p_option[:2].sum() / (p_option[:2].sum() + p_street)
+    assert from_probabilities == pytest.approx(0.6461404962 / 1.6461404962, abs=1e-9)
+    paid_only = cal.mean_option_share([stay], 400.0, 0.0, cal.MEASURE_PAID_OPTIONS, ALL_PAID)
+    assert paid_only == pytest.approx(from_probabilities, abs=1e-12) and paid_only == pytest.approx(0.39251844, abs=1e-8)
+    # the payment-inclusive measure counts every option: W / (1 + W) = 1.2526711559 / 2.2526711559 = 0.55610
+    every = cal.mean_option_share([stay], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID)
+    assert every == pytest.approx(1.2526711559 / 2.2526711559, abs=1e-9) and every > paid_only
+    # with the price term the free option (0 ct) outweighs the paid ones and the street (180 ct): the paid-only share is
+    # W_paid / (W_paid + w_street) with the production weights, derived here: street exp(-b * 1.80), paid exp(-d / 400 - b * 2.00)
+    beta = 0.310998
+    street, paid_weight = math.exp(-beta * 1.80), math.exp(-0.75 - beta * 2.0) + math.exp(-1.75 - beta * 2.0)
+    assert cal.mean_option_share([stay], 400.0, beta, cal.MEASURE_PAID_OPTIONS, ALL_PAID) == pytest.approx(
+        paid_weight / (paid_weight + street), abs=1e-12)
+
+
+def test_the_paid_only_share_of_a_stay_without_a_paid_option_or_without_a_street_is_defined_not_silent(cal):
+    free_only = _stay([("fx_g17_free", 200.0)])
+    # only a free option: no paying parker exists next to the paid street, the paid-only share is 0 and no target above 0 is
+    # reachable (the measure cannot be silently replaced by the payment-inclusive one)
+    assert cal.mean_option_share([free_only], 400.0, 0.0, cal.MEASURE_PAID_OPTIONS, ALL_PAID) == 0.0
+    assert cal.mean_option_share([free_only], 400.0, 0.0, cal.MEASURE_ALL_OPTIONS, ALL_PAID) > 0.0
+    # a street that cannot serve the stay (maximum stay, no long-stay product): the garages carry the whole share, 1 when a
+    # paid option is feasible (spec v3 A1: an off-street share of 1), 0 when only a free one is
+    no_street = _zone(max_stay_min=30)
+    paid_stay = _stay([("fx_g01_core", 300.0)], zone=no_street, purpose="work", arrival_s=8 * 3600, departure_s=16 * 3600)
+    assert cal.mean_option_share([paid_stay], 400.0, 0.310998, cal.MEASURE_PAID_OPTIONS, ALL_PAID) == pytest.approx(1.0, abs=1e-12)
+    assert cal.mean_option_share([paid_stay], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == pytest.approx(1.0, abs=1e-12)
+    free_stay = _stay([("fx_g17_free", 300.0)], zone=no_street, purpose="work", arrival_s=8 * 3600, departure_s=16 * 3600)
+    assert cal.mean_option_share([free_stay], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == pytest.approx(1.0, abs=1e-12)
+    assert cal.mean_option_share([free_stay], 400.0, 0.310998, cal.MEASURE_PAID_OPTIONS, ALL_PAID) == 0.0
+    # no option can serve the stay at all (NO_FEASIBLE_OPTION): share 0, never an invented 1
+    nothing = _stay([], zone=no_street, purpose="work", arrival_s=8 * 3600, departure_s=16 * 3600)
+    assert cal.mean_option_share([nothing], 400.0, 0.310998, cal.MEASURE_ALL_OPTIONS, ALL_PAID) == 0.0
 
 
 def test_the_bisection_finds_the_known_lambda_of_one_destination(cal):
     # one destination 300 m from one garage: P = w / (1 + w) = 0.25 needs w = 1/3, i.e. lambda = 300 / ln 3 = 273.06 m.
     # The slope there is 0.00075 per metre, so the tolerance 0.0005 allows a lambda within about 0.7 m.
-    result = cal.calibrate_decay(np.array([[300.0]]), 0.25)
+    def mean(decay):
+        return _probability(300.0, decay)
+
+    result = cal.calibrate_decay(mean, 0.25)
     assert result.decay_m == pytest.approx(300.0 / math.log(3.0), abs=1.0)
     assert abs(result.achieved - 0.25) <= 0.0005
     assert abs(_probability(300.0, result.decay_m) - result.achieved) < 1e-12   # the mean at the rounded lambda
     assert result.decay_m == round(result.decay_m, 2)
     assert result.low_end_mean < 0.25 < result.high_end_mean and result.iterations > 1
     # a tighter tolerance gives a closer lambda (down to the rounding of lambda to 0.01 m: 0.005 m x 0.00075 = 4e-6)
-    tight = cal.calibrate_decay(np.array([[300.0]]), 0.25, tolerance=1e-5)
+    tight = cal.calibrate_decay(mean, 0.25, tolerance=1e-5)
     assert tight.decay_m == pytest.approx(300.0 / math.log(3.0), abs=0.02)
     with pytest.raises(ValueError, match="rounded to"):
-        cal.calibrate_decay(np.array([[300.0]]), 0.25, tolerance=1e-8)
+        cal.calibrate_decay(mean, 0.25, tolerance=1e-8)
 
 
 def test_the_bisection_is_monotone_a_higher_target_needs_a_longer_decay(cal):
-    distances = np.array([[200.0, 650.0], [450.0, 900.0]])
-    lambdas = [cal.calibrate_decay(distances, target).decay_m for target in (0.1, 0.2, 0.3)]
+    def mean(decay):
+        return float(np.mean([_probability(distance, decay) for distance in (200.0, 650.0, 450.0, 900.0)]))
+
+    lambdas = [cal.calibrate_decay(mean, target).decay_m for target in (0.1, 0.2, 0.3)]
     assert lambdas == sorted(lambdas) and len(set(lambdas)) == 3
 
 
@@ -153,20 +300,96 @@ def test_an_unreachable_target_fails_instead_of_returning_the_end_of_the_range(c
     # a garage at 300 m gives 0.485 at lambda 5000 m (below 0.9); a garage at 1 m already gives 0.475 at lambda 10 m
     # (above 0.1): neither target lies between the two ends
     with pytest.raises(ValueError, match="unreachable") as error:
-        cal.calibrate_decay(np.array([[distance_m]]), target)
+        cal.calibrate_decay(lambda decay: _probability(distance_m, decay), target)
     assert "0.4" in str(error.value)   # the message names the mean at the two ends of the range
 
 
-def test_a_universe_without_a_garage_in_range_cannot_reach_a_positive_target(cal):
+def test_a_universe_without_an_option_in_range_cannot_reach_a_positive_target(cal):
     with pytest.raises(ValueError, match="unreachable"):
-        cal.calibrate_decay(np.array([[2500.0], [3000.0]]), 0.3)
+        cal.calibrate_decay(lambda decay: 0.0, 0.3)
 
 
 def test_the_search_range_and_target_are_validated(cal):
     with pytest.raises(ValueError, match="target"):
-        cal.calibrate_decay(np.array([[300.0]]), 1.0)
+        cal.calibrate_decay(lambda decay: 0.5, 1.0)
     with pytest.raises(ValueError, match="lambda_min_m"):
-        cal.calibrate_decay(np.array([[300.0]]), 0.25, lambda_min_m=100.0, lambda_max_m=50.0)
+        cal.calibrate_decay(lambda decay: 0.5, 0.25, lambda_min_m=100.0, lambda_max_m=50.0)
+
+
+# --------------------------------------------------------------- the times of a stay (spec v3 A1: the activity duration, L1, T1)
+
+
+def test_a_stay_is_priced_from_the_activity_start_to_its_end_with_the_minimum_stay_and_the_terminal_rule(cal):
+    hour = 3600
+    # the planned stay, longer than the minimum: priced as it is
+    assert cal.priced_stay_times_s(8 * hour, 9 * hour, fee_end_s=22 * hour, minimum_stay_s=900) == (
+        8 * hour, 9 * hour, "planned")
+    # L1: a stay shorter than the minimum is priced as the minimum (the priced interval changes, never the plan)
+    assert cal.priced_stay_times_s(8 * hour, 8 * hour + 300, fee_end_s=22 * hour, minimum_stay_s=900) == (
+        8 * hour, 8 * hour + 900, "planned")
+    # T1: a terminal stay (no end_time) pays until the fee window of the arrival day ends
+    assert cal.priced_stay_times_s(8 * hour, float("nan"), fee_end_s=22 * hour, minimum_stay_s=900) == (
+        8 * hour, 22 * hour, "terminal_stay_rule")
+    # a plan that runs past midnight: the arrival day is the day of the arrival (T1 uses the arrival day)
+    assert cal.priced_stay_times_s(25 * hour, float("nan"), fee_end_s=22 * hour, minimum_stay_s=0) == (
+        25 * hour, 46 * hour, "terminal_stay_rule")
+    # an end before the start (the planned end precedes the arrival): the minimum stay prices it, and it is labelled
+    assert cal.priced_stay_times_s(10 * hour, 9 * hour, fee_end_s=22 * hour, minimum_stay_s=900) == (
+        10 * hour, 10 * hour + 900, "planned_end_before_arrival")
+    # seconds are whole numbers: a read float second is rounded, not truncated
+    assert cal.priced_stay_times_s(28800.0, 32400.4, fee_end_s=22 * hour, minimum_stay_s=0)[:2] == (28800, 32400)
+    # a stay without its start is never priced from midnight
+    with pytest.raises(ValueError, match="start_time"):
+        cal.priced_stay_times_s(float("nan"), 9 * hour, fee_end_s=22 * hour, minimum_stay_s=900)
+
+
+def test_the_stays_of_a_universe_hold_the_options_within_the_maximum_distance_from_the_production_function(cal):
+    near, edge, beyond = _garage_tariff("fx_g01_core"), _garage_tariff("fx_g02_a"), _garage_tariff("fx_g08_bands")
+    garages = [dataclasses.replace(near, x_m=300.0, y_m=0.0), dataclasses.replace(edge, x_m=0.0, y_m=1000.0),
+               dataclasses.replace(beyond, x_m=1000.0, y_m=1.0)]
+    activities = pd.DataFrame({"purpose": ["shop", "work"], "x": 0.0, "y": 0.0, "start_time_s": [8 * 3600.0, 8 * 3600.0],
+                               "end_time_s": [9 * 3600.0, float("nan")]})
+    zone = _zone(zone_id="a")
+    stays, notes = cal.build_stays(activities, pd.Series(["a", "a"]), {"a": zone}, garages, max_distance_m=1000.0,
+                                   minimum_stay_s=900)
+    assert [stay.zone_id for stay in stays] == ["a", "a"] and [stay.purpose for stay in stays] == ["shop", "work"]
+    # exactly at D_max counts (1,000.0 m), 1,000.0005 m does not; the options are ordered by id (the production order)
+    assert [(garage.garage_id, distance) for garage, distance in stays[0].options] == [
+        ("fx_g01_core", 300.0), ("fx_g02_a", 1000.0)]
+    assert (stays[0].arrival_s, stays[0].departure_s) == (8 * 3600, 9 * 3600)
+    assert (stays[1].arrival_s, stays[1].departure_s) == (8 * 3600, 22 * 3600)   # the terminal stay
+    assert notes.terminal_stays == 1 and notes.planned_end_before_arrival == 0
+
+
+def test_a_stay_in_a_zone_without_a_tariff_row_or_without_a_start_time_is_refused_naming_it(cal):
+    activities = pd.DataFrame({"purpose": ["shop"], "x": 0.0, "y": 0.0, "start_time_s": [8 * 3600.0],
+                               "end_time_s": [9 * 3600.0]})
+    with pytest.raises(ValueError, match="no tariff row for the zone 'ghost'"):
+        cal.build_stays(activities, pd.Series(["ghost"]), {"a": _zone(zone_id="a")}, [], max_distance_m=1000.0,
+                        minimum_stay_s=900)
+    activities["start_time_s"] = float("nan")
+    with pytest.raises(ValueError, match="start_time"):
+        cal.build_stays(activities, pd.Series(["a"]), {"a": _zone(zone_id="a")}, [], max_distance_m=1000.0,
+                        minimum_stay_s=900)
+
+
+def test_the_outcomes_of_the_stays_are_classified_and_sum_to_the_stays(cal):
+    work = dict(purpose="work", arrival_s=8 * 3600, departure_s=16 * 3600)
+    capped = _zone(max_stay_min=180)
+    stays = [
+        _stay([("fx_g01_core", 300.0)]),                                           # an expectation over street and option
+        _stay([("fx_g01_core", 300.0)], zone=capped, **work),                      # the street is no option: garages only
+        _stay([], zone=capped, **work),                                            # nothing can serve the stay
+        _stay([], **work),                                                         # no option in range: priced as the street
+        _stay([("fx_g01_core", 300.0)], zone=_zone(free_if_stay_at_most_min=90)),  # E4: the street is free
+        _stay([("fx_g01_core", 300.0)], arrival_s=23 * 3600, departure_s=24 * 3600),   # outside the fee window 06:00-22:00
+    ]
+    outcomes = cal.stay_outcomes(stays, 400.0, 0.310998)
+    assert outcomes.stays == 6 and outcomes.expectation == 2 and outcomes.street_infeasible == 1
+    assert outcomes.no_feasible_option == 1 and outcomes.street_only == 1 and outcomes.street_free == 1
+    assert outcomes.outside_fee_hours == 1
+    assert (outcomes.expectation + outcomes.street_only + outcomes.street_free + outcomes.outside_fee_hours
+            + outcomes.no_feasible_option) == outcomes.stays
 
 
 # ------------------------------------------------------------------------------------ universe, checks, end to end
@@ -250,6 +473,32 @@ def test_the_zone_level_paid_share_check_is_gone_the_time_aware_one_is_the_compa
     assert "compare_parking_targets.py" in text
 
 
+def _tariff_columns() -> list:
+    header = next(line for line in (FIXTURES / "parking_tariffs_fixture.csv").read_text(encoding="utf-8").splitlines()
+                  if line.startswith("zone_id,"))
+    return header.split(",")
+
+
+def _write_tariffs(path, *, ia=None, ib=None, wob=None) -> Path:
+    """The synthetic tariff table of the calibration tests: bs_zone_ia and bs_zone_ib (street, 1.80 EUR per hour in minute
+    units, fee window 06:00-22:00, no maximum stay unless ``ia`` / ``ib`` set columns) and wob_tarifzone_1 (the Wolfsburg
+    fixture row: 1.20 EUR per started hour, first hour 1.10 EUR, day cap 6.00 EUR, window 06:00-24:00)."""
+    base = {"name": "Synthetic zone", "municipality_ags": "03101000", "zone_type": "street_paid", "workplace_class": "bs_zentrum",
+            "hourly_rate_eur": "1.80", "billing_unit_min": "1", "fee_start_h": "6.0", "fee_end_h": "22.0",
+            "resident_exempt": "false", "source_url": "fixture", "source_date": "2026-09-28", "valid_from": "2026-01-01",
+            "fee_window_source": "fixture", "notes": "synthetic: pins arithmetic not truth"}
+    wolfsburg = {**base, "municipality_ags": "03103000", "workplace_class": "03103", "hourly_rate_eur": "1.20",
+                 "billing_unit_min": "60", "first_period_min": "60", "first_period_eur": "1.10", "daily_cap_eur": "6.00",
+                 "fee_end_h": "24.0"}
+    rows = {"bs_zone_ia": {**base, **(ia or {})}, "bs_zone_ib": {**base, **(ib or {})},
+            "wob_tarifzone_1": {**wolfsburg, **(wob or {})}}
+    columns = _tariff_columns()
+    lines = [",".join(columns)] + [",".join(str({**{"zone_id": zone_id}, **row}.get(column, "")) for column in columns)
+                                   for zone_id, row in rows.items()]
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return Path(path)
+
+
 @pytest.fixture
 def inputs(tmp_path):
     """The synthetic universe of tests/fixtures/parking/calibration_plans_fixture.xml: zones, garages, SrV tables."""
@@ -280,12 +529,16 @@ def inputs(tmp_path):
         "share_street_free\n"
         "bs_zentrum,class,221,104.4,0.1,0.1,0.5,0.0,0.1,0.9,0.04,0.46,0.06,0.04\n"
         "03103,class,691,162.7,0.1,0.1,0.5,0.0,0.1,0.9,0.06,0.44,0.04,0.06\n", encoding="utf-8")
-    # the tariff table next to the zone polygons (the Wolfsburg zones of the check universe are selected from it by municipality)
-    (tmp_path / "parking_tariffs_2026.csv").write_text(
-        (FIXTURES / "parking_tariffs_fixture.csv").read_text(encoding="utf-8").replace("\nfx_wob,", "\nwob_tarifzone_1,"),
-        encoding="utf-8")
+    # the tariff table next to the zone polygons: the Wolfsburg zones of the check universe are selected from it by municipality,
+    # and since spec v3 B5 every calibration stay is priced with the tariff of its zone
+    _write_tariffs(tmp_path / "parking_tariffs_2026.csv")
+    # beta 0 is the price-independent weight of v2: the synthetic numbers below are the closed forms exp(-d / lambda), so the
+    # synthetic config says beta 0; the tests of the price term pass their own beta
+    config = tmp_path / "config_beta_zero.yml"
+    config.write_text("config:\n  parking_garage_max_distance_m: 1000.0\n  parking_option_price_beta_u_per_eur: 0.0\n",
+                      encoding="utf-8")
     return {"plans": plans, "zones_path": zones_path, "garages_path": garages_path,
-            "city_center_path": city_center, "commute_path": commute}
+            "city_center_path": city_center, "commute_path": commute, "config_path": config}
 
 
 def test_the_check_universe_of_h3b_counts_an_area_zone_and_logs_zones_and_activities_per_universe(cal, inputs, tmp_path, caplog):
@@ -303,7 +556,7 @@ def test_the_check_universe_of_h3b_counts_an_area_zone_and_logs_zones_and_activi
         result = cal.run(out_path=None, **inputs)
     assert result["wolfsburg_activities"] == base["wolfsburg_activities"] and result["wolfsburg_mean"] == base["wolfsburg_mean"]
     assert "zones and activities per universe: destination" in caplog.text
-    assert f"Wolfsburg check {base['wolfsburg_activities']} activities in 1 of 2 Wolfsburg zones" in caplog.text
+    assert f"Wolfsburg check {base['wolfsburg_activities']} activities in 1 of 1 Wolfsburg zones" in caplog.text
     # without a Wolfsburg zone in the tariff table the run stops instead of computing an empty check
     tariffs_path.write_text("\n".join(line for line in tariffs_path.read_text(encoding="utf-8").splitlines()
                                       if ",03103000," not in line) + "\n", encoding="utf-8")
@@ -340,14 +593,14 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
     assert result["wolfsburg_activities"] == 2 and result["wolfsburg_with_garage_in_range"] == 2
     assert result["wolfsburg_mean"] == pytest.approx(
         (_probability(math.sqrt(700.0 ** 2 + 300.0 ** 2), at_lambda_c)
-         + _probability(math.sqrt(700.0 ** 2 + 250.0 ** 2), at_lambda_c)) / 2, abs=1e-6)
+         + _probability(math.sqrt(700.0 ** 2 + 250.0 ** 2), at_lambda_c)) / 2, abs=5e-5)   # garages at 1 cm WGS84 precision
     assert result["wolfsburg_reference"] == pytest.approx(0.6, abs=1e-12)
     assert "commuter_mean" not in result   # the bs_zentrum share is a target now, not a check
     assert "street_paid_share" not in result and "paid_reference" not in result   # R-5-4: dropped, see the comparison script
     # the table: ASCII, provenance header, the rows, readable by the reader that the config test uses
     text = out.read_bytes().decode("ascii")
     assert text == result["text"] and "\r" not in text
-    assert "paid_share" not in text and "tariffs" not in text and "compare_parking_targets.py" in text
+    assert "paid_share" not in text and "compare_parking_targets.py" in text
     for needle in ("calibrate_garage_decay.py on 2026-10-07", "sha256=", "ASSUMPTIONS G1 to G3 and G1-c", "Universe caveat",
                    "bs_zone_ia, bs_zone_ib", "4 activities, 4 of them with at least one priced garage",
                    "garage_large_lot / (garage_large_lot + street) = 0.2718 / (0.2718 + 0.7282)", "no validation",
@@ -356,10 +609,10 @@ def test_the_calibration_recovers_its_lambda_on_the_synthetic_universe_and_write
                    "share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid) = 0.04 / (0.04 + 0.06)",
                    "the payers only", "like-for-like",
                    "class bs_zentrum", "Independent check", "class 03103",
-                   "the 2 Wolfsburg zones (municipality_ags 03103000 of the tariff table)",
+                   "the 1 Wolfsburg zones (municipality_ags 03103000 of the tariff table)",
                    "2 work and education activities", "calibration target"):
         assert needle in text, needle
-    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 5   # plans, zones, garages and the two SrV tables
+    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 6   # plans, zones, tariffs, garages and the two SrV tables
     # the two release values are named in the header with the config keys and the test that requires their equality
     assert "parking_garage_decay_m" in text and "parking_garage_decay_commute_m" in text
     assert "decay_commute_length_m" in text
@@ -575,11 +828,13 @@ def test_an_unusable_configured_maximum_distance_fails_naming_the_key(cal, tmp_p
 
 def test_run_takes_the_maximum_distance_of_the_config_by_default_and_records_it(cal, inputs, tmp_path):
     # 750 m is another value than the code constant (1000 m); the garage 300 m and 500 m away stays in range
-    config = _config_with_distance(tmp_path, "config:\n  parking_garage_max_distance_m: 750.0\n")
-    result = cal.run(out_path=None, config_path=config, generated_on="2026-10-07", **inputs)
+    config = _config_with_distance(tmp_path, "config:\n  parking_garage_max_distance_m: 750.0\n"
+                                             "  parking_option_price_beta_u_per_eur: 0.0\n")
+    inputs = {**inputs, "config_path": config}
+    result = cal.run(out_path=None, generated_on="2026-10-07", **inputs)
     assert "garage_max_distance_m,750,m,ASSUMPTION G2" in result["text"]
     assert "within 750 m" in result["text"]
-    explicit = cal.run(out_path=None, config_path=config, max_distance_m=900.0, generated_on="2026-10-07", **inputs)
+    explicit = cal.run(out_path=None, max_distance_m=900.0, generated_on="2026-10-07", **inputs)
     assert "garage_max_distance_m,900,m,ASSUMPTION G2" in explicit["text"]   # an explicit value still wins
 
 
@@ -677,75 +932,36 @@ def test_the_free_marker_is_the_one_the_garage_module_counts_as_priced_free(cal)
     assert int((~cal.paid_option_flags(frame)).sum()) == pg.coverage(frame)["priced_free"] == 2
 
 
-def test_the_paid_only_share_is_the_choice_share_of_the_paid_options_among_paid_options_and_the_street(cal):
-    # One destination; two paid options at 300 m and 700 m and one free option at 200 m; lambda 400 m:
-    # w = exp(-0.75) = 0.4723665527 (paid), exp(-1.75) = 0.1737739435 (paid), exp(-0.5) = 0.6065306597 (free);
-    # W (all options) = 1.2526711559, W_paid = 0.6461404962.
-    distances = np.array([[300.0, 700.0, 200.0]])
-    paid = np.array([True, True, False])
-    weights = np.exp(-distances[0] / 400.0)
-    # the model's choice probabilities: street 1 / (1 + W), option i w_i / (1 + W)
-    p_street, p_option = 1.0 / (1.0 + weights.sum()), weights / (1.0 + weights.sum())
-    # the SrV quantity: paid garage / (paid garage + paid street); the free option is a free parker and leaves both
-    paid_share_from_probabilities = p_option[paid].sum() / (p_option[paid].sum() + p_street)
-    assert paid_share_from_probabilities == pytest.approx(0.6461404962 / 1.6461404962, abs=1e-9)
-    # the form of the script: the same share, W_paid / (1 + W_paid), reached by dropping the free option (1 + W cancels)
-    paid_measure = cal.measure_distances(distances, paid, cal.MEASURE_PAID_OPTIONS)
-    assert paid_measure.shape == (1, 2)
-    assert cal.mean_garage_probability(paid_measure, 400.0) == pytest.approx(paid_share_from_probabilities, abs=1e-12)
-    assert cal.mean_garage_probability(paid_measure, 400.0) == pytest.approx(0.39251844, abs=1e-8)
-    # the payment-inclusive measure counts every option: W / (1 + W) = 1.2526711559 / 2.2526711559 = 0.55610
-    every = cal.measure_distances(distances, paid, cal.MEASURE_ALL_OPTIONS)
-    assert every.shape == (1, 3)
-    assert cal.mean_garage_probability(every, 400.0) == pytest.approx(1.2526711559 / 2.2526711559, abs=1e-9)
-    assert cal.mean_garage_probability(every, 400.0) > cal.mean_garage_probability(paid_measure, 400.0)
-    with pytest.raises(ValueError, match="measure"):
-        cal.measure_distances(distances, paid, "free_only")
-
-
-def test_the_paid_only_measure_without_a_paid_option_has_no_probability_instead_of_a_silent_one(cal):
-    # only a free option exists: the paid-only share is 0 / (0 + street) = 0 and no target above 0 is reachable
-    distances = np.array([[200.0], [300.0]])
-    paid = np.array([False])
-    measure = cal.measure_distances(distances, paid, cal.MEASURE_PAID_OPTIONS)
-    assert measure.shape == (2, 0) and cal.mean_garage_probability(measure, 400.0) == 0.0
-    with pytest.raises(ValueError, match="unreachable"):
-        cal.calibrate_decay(measure, 0.3)
-
-
 def test_the_option_reach_counts_the_free_options_within_the_maximum_distance_of_a_universe(cal):
-    # columns: paid, paid, free; D_max 1000 m
-    distances = np.array([[300.0, 1500.0, 900.0],      # a paid and the free option in range
-                          [1200.0, 1100.0, 1001.0],    # nothing in range (1001 m is beyond D_max)
-                          [1500.0, 400.0, 1500.0],     # one paid option in range
-                          [1500.0, 1500.0, 500.0],     # only the free option in range
-                          [1000.0, 1500.0, 1500.0]])   # exactly at D_max counts
-    paid = np.array([True, True, False])
-    reach = cal.option_reach(distances, paid, 1000.0)
+    # the options of a stay are already those within D_max (build_stays); g01 and g02 are paid, g17 is free
+    stays = [_stay([("fx_g01_core", 300.0), ("fx_g17_free", 900.0)]),      # a paid and the free option in range
+             _stay([]),                                                      # nothing in range
+             _stay([("fx_g02_a", 400.0)]),                                   # one paid option in range
+             _stay([("fx_g17_free", 500.0)]),                                # only the free option in range
+             _stay([("fx_g01_core", 1000.0)])]                               # exactly at D_max counts (build_stays keeps it)
+    reach = cal.option_reach(stays, ALL_PAID)
     assert reach.activities == 5
-    assert reach.with_option_in_range == 4            # rows 0, 2, 3, 4
-    assert reach.with_paid_option_in_range == 3       # rows 0, 2, 4
-    assert reach.free_options_in_range == 1           # the one free option (column 2) reaches rows 0 and 3
+    assert reach.with_option_in_range == 4            # stays 0, 2, 3, 4
+    assert reach.with_paid_option_in_range == 3       # stays 0, 2, 4
+    assert reach.free_options_in_range == 1           # the one free option reaches stays 0 and 3
     assert reach.with_free_option_in_range == 2
-    # no free option at all and an empty option set are zeros, not errors
-    none_free = cal.option_reach(distances[:, :2], paid[:2], 1000.0)
+    assert reach.free_option_ids == ("fx_g17_free",)
+    # no free option at all and an empty universe are zeros, not errors
+    none_free = cal.option_reach([stays[0], stays[2]], {"fx_g01_core": True, "fx_g02_a": True, "fx_g17_free": True})
     assert (none_free.free_options_in_range, none_free.with_free_option_in_range) == (0, 0)
-    assert none_free.with_paid_option_in_range == 3
-    empty = cal.option_reach(np.zeros((3, 0)), np.zeros(0, dtype=bool), 1000.0)
-    assert (empty.activities, empty.with_option_in_range, empty.free_options_in_range) == (3, 0, 0)
-    assert reach.free_option_ids == () and empty.free_option_ids == ()   # no ids given: none named
+    assert none_free.free_option_ids == () and none_free.with_paid_option_in_range == 2
+    empty = cal.option_reach([], ALL_PAID)
+    assert (empty.activities, empty.with_option_in_range, empty.free_options_in_range) == (0, 0, 0)
 
 
 def test_the_option_reach_names_the_free_options_in_range_sorted_by_id(cal):
-    # two paid options (columns 0 and 2) and two free ones (columns 1 and 3), each free option within reach of one activity
-    distances = np.array([[1500.0, 400.0, 300.0, 1500.0], [1500.0, 1500.0, 1500.0, 700.0]])
-    paid = np.array([True, False, True, False])
-    reach = cal.option_reach(distances, paid, 1000.0, option_ids=["p1", "f_b", "p2", "f_a"])
-    assert reach.free_options_in_range == 2 and reach.free_option_ids == ("f_a", "f_b")
-    out_of_range = cal.option_reach(distances + 2000.0, paid, 1000.0, option_ids=["p1", "f_b", "p2", "f_a"])
-    assert out_of_range.free_options_in_range == 0 and out_of_range.free_option_ids == ()
-    with pytest.raises(ValueError, match="option ids"):
-        cal.option_reach(distances, paid, 1000.0, option_ids=["only_one"])
+    # two free options (fx_g17_free and a copy named fx_g00_free), each within reach of one stay
+    free_copy = dataclasses.replace(_garage_tariff("fx_g17_free"), garage_id="fx_g00_free")
+    stays = [_stay([("fx_g01_core", 300.0)]), _stay([("fx_g17_free", 700.0)]),
+             cal.Stay(zone_id="z", tariff=_zone(), purpose="shop", arrival_s=0, departure_s=3600,
+                      options=((free_copy, 400.0),))]
+    reach = cal.option_reach(stays, {**ALL_PAID, "fx_g00_free": False})
+    assert reach.free_options_in_range == 2 and reach.free_option_ids == ("fx_g00_free", "fx_g17_free")
 
 
 def _option_set(inputs, tmp_path, rows, points, kinds=None, name="options.geojson"):
@@ -1085,7 +1301,7 @@ def test_the_sensitivities_run_the_same_calibration_on_another_option_set_and_go
         assert f"lambda = {entry['decay_length_m']:.2f} m" in line and f"lambda_c = {entry['decay_commute_length_m']:.2f} m" in line
         assert "3 options (2 garage + 1 surface_lot" in line
     assert "1 free" in lines[0] and "0 free" in lines[1]
-    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 7   # the five inputs and the two sensitivity datasets
+    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 8   # the six inputs and the two sensitivity datasets
     values = cal.read_calibration_table(out)
     assert values["decay_length_m"] == release["decay_length_m"]
     assert not [name for name in values if "sensitivity" in name or "threshold" in name]
@@ -1166,3 +1382,305 @@ def test_the_release_path_guard_of_a_filtered_run_stays_with_sensitivities(cal, 
     with pytest.raises(ValueError, match="sensitivity number"):
         cal.run(out_path=tmp_path / release_name, facility_kinds=("surface_lot",), sensitivity_garages={"x": free_lot}, **mixed)
     assert not (tmp_path / release_name).exists()
+
+
+# ------------------------------------------------------ spec v3 B5: feasibility, the price term, the production pricing (#436)
+
+
+def _set_tariffs(inputs, **columns):
+    """Rewrite the synthetic tariff table next to the zone polygons of ``inputs`` (see ``_write_tariffs``)."""
+    return _write_tariffs(Path(inputs["zones_path"]).with_name("parking_tariffs_2026.csv"), **columns)
+
+
+def _set_commute_target(inputs, garage_paid, street_paid):
+    """The commuter targets: bs_zentrum paid garage / (paid garage + paid street); the Wolfsburg row stays 0.06 / 0.10."""
+    inputs["commute_path"].write_text(
+        "# synthetic\nworkplace_class,level,n_unweighted,n_eff,share_garage_large_lot_paid,share_street_paid\n"
+        f"bs_zentrum,class,221,104.4,{garage_paid},{street_paid}\n03103,class,691,162.7,0.06,0.04\n", encoding="utf-8")
+
+
+def _closed_form(distance_m, decay_m):
+    """beta 0: the street weighs 1, a garage exp(-d / lambda); the share w / (1 + w) (the v2 form, derived here)."""
+    return _probability(distance_m, decay_m)
+
+
+BETA = 0.310998   # the money coefficient of the option weights (ASSUMPTION G1-d), the value of the config
+
+
+def test_the_calibration_weights_every_stay_by_the_price_term_and_a_mutant_with_the_old_formula_fails(cal, inputs, monkeypatch):
+    # Universe of the synthetic plans (activity times in tests/fixtures/parking/calibration_plans_fixture.xml; street 1.80 EUR
+    # per hour in minute units; the near garage fx_g01_core 2.00 EUR per started hour, monthly product 63.00 EUR = 3.00 EUR
+    # per working day for work and education): visitors p01 (1 h, Ia, 300 m), p02 (2 h, Ia, 300 m), p03 and p04 (1 h, Ib,
+    # 500 m): street 180 / 360 / 180 / 180 ct, garage 200 / 400 / 200 / 200 ct. Commuters p05 (8 h, Ia, 300 m) and p06 (7 h,
+    # Ib, 500 m): street 1,440 and 1,260 ct, garage min(1,600; 300) = 300 ct (the monthly product per day).
+    inputs = {**inputs, "option_price_beta_u_per_eur": BETA}
+    result = cal.run(out_path=None, **inputs)
+
+    def visitor_mean(decay):
+        stays = ((300.0, 180, 200), (300.0, 360, 400), (500.0, 180, 200), (500.0, 180, 200))
+        return sum(_priced_share(d, decay, BETA, street, garage) for d, street, garage in stays) / 4
+
+    def commuter_mean(decay):
+        return (_priced_share(300.0, decay, BETA, 1440, 300) + _priced_share(500.0, decay, BETA, 1260, 300)) / 2
+
+    def wolfsburg_mean(decay):   # street: first hour 1.10 EUR + started hours at 1.20, capped at 6.00 EUR; garage 300 ct
+        return (_priced_share(math.hypot(700.0, 300.0), decay, BETA, 600, 300)
+                + _priced_share(math.hypot(700.0, 250.0), decay, BETA, 600, 300)) / 2
+
+    # the results satisfy the independent price-weighted means (the targets are 0.2718 and 0.4 of the synthetic tables)
+    assert visitor_mean(result["decay_length_m"]) == pytest.approx(0.2718, abs=0.0007)
+    assert commuter_mean(result["decay_commute_length_m"]) == pytest.approx(0.4, abs=0.0007)
+    assert result["wolfsburg_mean"] == pytest.approx(wolfsburg_mean(result["decay_commute_length_m"]), abs=1e-5)
+    assert result["option_price_beta_u_per_eur"] == BETA
+    # the price changes the answer: the v2 lambdas (beta 0) are another pair
+    v2 = cal.run(out_path=None, **{key: value for key, value in inputs.items() if key != "option_price_beta_u_per_eur"})
+    assert abs(v2["decay_length_m"] - result["decay_length_m"]) > 10.0
+    assert abs(v2["decay_commute_length_m"] - result["decay_commute_length_m"]) > 100.0
+    assert abs(v2["decay_length_m"] - 400.0) <= 2.0
+    # the mutant: the old closed form exp(-d / lambda) with street weight 1 in place of the production weight. With beta > 0 it
+    # calibrates another quantity, and the independent price-weighted mean misses the target at its lambdas
+    monkeypatch.setattr(cost, "option_weight", lambda distance_m, decay_m, cost_cents, beta: math.exp(-distance_m / decay_m))
+    mutant = cal.run(out_path=None, **inputs)
+    assert abs(visitor_mean(mutant["decay_length_m"]) - 0.2718) > 0.005
+    assert abs(commuter_mean(mutant["decay_commute_length_m"]) - 0.4) > 0.05
+    assert mutant["decay_length_m"] == pytest.approx(v2["decay_length_m"], abs=1e-9)   # it IS the v2 calibration
+
+
+def test_beta_zero_reproduces_the_v2_closed_form_values_on_the_synthetic_set(cal, inputs):
+    # the v2 table values were the closed form exp(-d / lambda), street weight 1: with beta 0 the production weights give
+    # them again (lambda 400 m on the four visitors, 4 x 0.27176 = the target 0.2718; lambda_c from the two commuters)
+    result = cal.run(out_path=None, **inputs)
+    assert result["option_price_beta_u_per_eur"] == 0.0   # the synthetic config says beta 0
+    mean = (2 * _closed_form(300.0, result["decay_length_m"]) + 2 * _closed_form(500.0, result["decay_length_m"])) / 4
+    assert mean == pytest.approx(0.2718, abs=0.0006) and abs(result["decay_length_m"] - 400.0) <= 2.0
+    commuters = (_closed_form(300.0, result["decay_commute_length_m"]) + _closed_form(500.0, result["decay_commute_length_m"])) / 2
+    assert commuters == pytest.approx(0.4, abs=0.0006)
+
+
+def test_a_commuter_stay_above_the_maximum_stay_of_its_zone_is_forced_off_street(cal, inputs, caplog):
+    # spec v3 A1 / B5: zone Ia has a maximum stay of 180 min and no long-stay product, so the 8 h commuter p05 has NO street
+    # option: its off-street share is 1 (the garage is feasible, no maximum stay) however long lambda_c is. The Ib commuter
+    # p06 (7 h, no maximum stay) is a normal choice. The target 0.07 / (0.07 + 0.03) = 0.7 is reached with the Ib share
+    # 0.4: mean = (1 + P) / 2 = 0.7 -> P = 0.4 -> w = 2/3 -> 500 / lambda_c = ln 1.5 -> lambda_c = 1,233.2 m (beta 0)
+    _set_tariffs(inputs, ia={"max_stay_min": "180"})
+    _set_commute_target(inputs, 0.07, 0.03)
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, **inputs)
+    assert result["decay_commute_length_m"] == pytest.approx(500.0 / math.log(1.5), abs=25.0)
+    assert (1.0 + _closed_form(500.0, result["decay_commute_length_m"])) / 2 == pytest.approx(0.7, abs=0.0006)
+    outcomes = result["commuter_outcomes"]
+    assert (outcomes.stays, outcomes.expectation, outcomes.street_infeasible, outcomes.no_feasible_option) == (2, 2, 1, 0)
+    assert result["commuter_no_feasible_option"] == 0
+    assert any("street infeasible 1" in message and "forced off-street" in message for message in caplog.messages)
+    # the visitors (1 h and 2 h stays) are within the maximum stay of the zone: none is forced
+    assert result["universe_outcomes"].street_infeasible == 0
+
+
+def test_a_commuter_with_no_feasible_option_counts_zero_is_reported_as_a_rate_and_warned_about(cal, inputs, tmp_path, caplog):
+    # the only garage lies 900 m from the Ib activities and 1,300 m from the Ia ones: the Ia commuter p05 has no street option
+    # (maximum stay 180 min, no long-stay product) and no garage in range, i.e. NO FEASIBLE OPTION. The production pricing
+    # prices it as the street; the calibration gives it NO off-street share (0, never an invented 1), counts it and logs the
+    # rate. The target 0.02 / (0.02 + 0.08) = 0.2 is reached with the Ib share 0.4: mean = (0 + P) / 2 = 0.2, w = 2/3,
+    # 900 / lambda_c = ln 1.5 -> lambda_c = 2,219.6 m (beta 0)
+    _set_tariffs(inputs, ia={"max_stay_min": "180"})
+    _set_commute_target(inputs, 0.02, 0.08)
+    east = _option_set(inputs, tmp_path, [0, 1], [(604400.0, 5790100.0), FAR_GARAGE], name="east.geojson")
+    # the east garage reaches the two Ib visitors only (900 m): the visitor target is lowered to 0.1 / (0.1 + 0.9) = 0.1
+    inputs["city_center_path"].write_text("parking_type,share,n_unweighted\ngarage_large_lot,0.1,1\nstreet,0.9,1\n"
+                                          "paid_share_overall,0.8,1\n", encoding="utf-8")
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, generated_on="2026-10-14", **east)
+    assert result["commuter_no_feasible_option"] == 1 and result["commuter_universe_activities"] == 2
+    assert 0.5 * _closed_form(900.0, result["decay_commute_length_m"]) == pytest.approx(0.2, abs=0.0006)
+    assert result["commuter_outcomes"].no_feasible_option == 1 and result["commuter_outcomes"].expectation == 1
+    assert any("commuter universe" in message and "no feasible option 1/2 (50.0 %)" in message for message in caplog.messages)
+    warned = [message for message in caplog.messages if "no feasible option" in message and "above the warning share" in message]
+    assert len(warned) == 1 and "commuter universe" in warned[0] and "1/2" in warned[0]
+    # the threshold is log-only: a higher one stays silent, the result does not change
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        quiet = cal.run(out_path=None, maximum_no_feasible_option_share_warning=0.6, **east)
+    assert not [message for message in caplog.messages if "above the warning share" in message]
+    assert quiet["decay_commute_length_m"] == result["decay_commute_length_m"]
+    for bad in (-0.1, 1.5, float("nan"), True):
+        with pytest.raises(ValueError, match="maximum_no_feasible_option_share_warning"):
+            cal.run(out_path=None, maximum_no_feasible_option_share_warning=bad, **inputs)
+    # the table states the count and the definition
+    text = result["text"]
+    assert "NO FEASIBLE OPTION" in text and "contributes an off-street share of 0" in text and "never an invented" in text
+    out = tmp_path / "no_feasible.csv"
+    cal.run(out_path=out, generated_on="2026-10-14", **east)
+    assert cal.read_calibration_table(out)["commuter_universe_stays_no_feasible_option"] == 1
+
+
+def test_a_stay_with_a_free_street_or_outside_the_fee_window_has_no_off_street_share_and_is_counted(cal, inputs):
+    # production rules that now enter the calibration through the pricing code: E4 (a free street: nobody pays an option)
+    # and the fee window (outside it the street is free). Zone Ia: stays of at most 90 min are free, so the 1 h visitor p01
+    # is a free-street stay; its 2 h neighbour p02 pays. The two Ib visitors are normal choices (beta 0, closed form).
+    _set_tariffs(inputs, ia={"free_if_stay_at_most_min": "90"})
+    result = cal.run(out_path=None, **inputs)
+    outcomes = result["universe_outcomes"]
+    assert (outcomes.stays, outcomes.street_free, outcomes.expectation, outcomes.outside_fee_hours) == (4, 1, 3, 0)
+    decay = result["decay_length_m"]
+    mean = (0.0 + _closed_form(300.0, decay) + 2 * _closed_form(500.0, decay)) / 4
+    assert mean == pytest.approx(0.2718, abs=0.0006)
+    # the fee window of zone Ia is 08:00-18:00: the 19:00-21:00 stay of p02 lies outside it (the street is free, early rule)
+    _set_tariffs(inputs, ia={"fee_start_h": "8.0", "fee_end_h": "18.0"})
+    window = cal.run(out_path=None, **inputs)
+    assert (window["universe_outcomes"].outside_fee_hours, window["universe_outcomes"].expectation) == (1, 3)
+
+
+def test_a_universe_activity_without_a_start_time_fails_before_a_table_is_written(cal, inputs, tmp_path):
+    plans = tmp_path / "no_times.xml"
+    plans.write_text(
+        '<population><person id="a"><plan selected="yes"><activity type="home" x="590000" y="5780000"/><leg mode="car"/>'
+        '<activity type="shop" x="603100" y="5790100" end_time="09:00:00"/><leg mode="car"/>'
+        '<activity type="work" x="603100" y="5790100" start_time="08:00:00" end_time="16:00:00"/>'
+        '<activity type="work" x="603800" y="5790100" start_time="08:00:00" end_time="16:00:00"/></plan></person>'
+        "</population>", encoding="utf-8")
+    out = tmp_path / "table.csv"
+    with pytest.raises(ValueError, match="start_time"):
+        cal.run(**{**inputs, "plans": plans}, out_path=out)
+    assert not out.exists()
+
+
+def test_the_table_states_the_price_coefficient_the_pricing_parameters_and_the_outcomes_of_every_universe(cal, inputs, tmp_path):
+    out = tmp_path / "calibration_beta_0.310998.csv"   # a beta other than the config's: not the release name
+    result = cal.run(out_path=out, generated_on="2026-10-14", **{**inputs, "option_price_beta_u_per_eur": BETA})
+    text = out.read_bytes().decode("ascii")
+    header = [line for line in text.splitlines() if line.startswith("#")]
+    beta_line = next(line for line in header if line.startswith("# Option price coefficient"))
+    for needle in ("ASSUMPTION G1-d", "option_price_beta_u_per_eur 0.310998", "exp(-d / lambda - beta * c / 100)",
+                   "cost.option_weight", "parking_cost_with_garages_detail", "fixed during the calibration"):
+        assert needle in beta_line, needle
+    stays_line = next(line for line in header if line.startswith("# Stays:"))
+    for needle in ("start_time", "end_time", "minimum stay of 15 min", "terminal-stay rule", "parkingEvExempt",
+                   "ASSUMPTION", "not applied", "limitation"):
+        assert needle in stays_line, needle
+    values = cal.read_calibration_table(out)
+    assert values["option_price_beta_u_per_eur"] == BETA and values["parking_minimum_stay_min"] == 15
+    assert values["universe_stays_expectation"] == 4 and values["universe_stays_no_feasible_option"] == 0
+    assert values["commuter_universe_stays_expectation"] == 2 and values["check_wolfsburg_stays_expectation"] == 2
+    for prefix in ("universe", "commuter_universe", "check_wolfsburg"):
+        names = ("expectation", "street_only", "street_free", "outside_fee_hours", "no_feasible_option")
+        assert sum(values[f"{prefix}_stays_{name}"] for name in names) == values[
+            {"universe": "universe_activities", "commuter_universe": "commuter_universe_activities",
+             "check_wolfsburg": "check_wolfsburg_commuter_activities"}[prefix]]
+        assert f"{prefix}_stays_street_infeasible" in values
+    # the inputs: the tariff table joins the plans, zones, garages and the two SrV tables as a pinned input
+    assert re.search(r"#   tariffs: \S+parking_tariffs_2026.csv sha256=[0-9a-f]{64}", text)
+    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 6
+    assert result["text"] == text
+
+
+def test_the_beta_sensitivity_runs_the_same_calibration_with_another_coefficient_and_is_no_release_value(cal, inputs, tmp_path):
+    released = {**inputs, "option_price_beta_u_per_eur": BETA}
+    out = tmp_path / "calibration_beta_0.310998.csv"
+    result = cal.run(out_path=out, generated_on="2026-10-14", sensitivity_betas=[0.0], **released)
+    direct = cal.run(out_path=None, **inputs)   # the synthetic config says beta 0
+    [entry] = result["beta_sensitivities"]
+    assert entry["label"] == "beta_0" and entry["option_price_beta_u_per_eur"] == 0.0
+    assert entry["decay_length_m"] == direct["decay_length_m"]
+    assert entry["decay_commute_length_m"] == direct["decay_commute_length_m"]
+    assert entry["decay_length_m"] != result["decay_length_m"]
+    release = cal.run(out_path=None, **released)
+    assert result["decay_length_m"] == release["decay_length_m"]   # the release values do not move with a sensitivity
+    lines = out.read_text(encoding="ascii").splitlines()
+    line = next(line for line in lines if line.startswith("# Sensitivity of the option price"))
+    assert "NOT a release value" in line and "beta_0" in line and "option_price_beta_u_per_eur 0" in line
+    assert f"lambda = {entry['decay_length_m']:.2f} m" in line and f"lambda_c = {entry['decay_commute_length_m']:.2f} m" in line
+    assert "the price-independent weights of v2" in line
+    values = cal.read_calibration_table(out)
+    assert values["option_price_beta_u_per_eur"] == BETA and values["decay_length_m"] == release["decay_length_m"]
+    # a sensitivity with the release coefficient is no sensitivity; a negative or non-numeric one is refused
+    with pytest.raises(ValueError, match="same as the release"):
+        cal.run(out_path=None, sensitivity_betas=[BETA], **released)
+    for bad in (-0.1, float("nan"), True, "zero"):
+        with pytest.raises(ValueError, match="option_price_beta_u_per_eur"):
+            cal.run(out_path=None, sensitivity_betas=[bad], **released)
+
+
+def test_a_run_with_another_beta_than_the_config_must_not_overwrite_the_release_table(cal, inputs, tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text("config:\n  parking_garage_max_distance_m: 1000.0\n  parking_option_price_beta_u_per_eur: 0.310998\n",
+                      encoding="utf-8")
+    release_name = Path(cal.TABLE_RELATIVE).name
+    options = {key: value for key, value in inputs.items() if key != "config_path"}
+    with pytest.raises(ValueError, match="sensitivity number"):
+        cal.run(out_path=tmp_path / release_name, config_path=config, option_price_beta_u_per_eur=0.0, **options)
+    assert not (tmp_path / release_name).exists()
+    cal.run(out_path=tmp_path / "beta_zero_sensitivity.csv", config_path=config, option_price_beta_u_per_eur=0.0, **options)
+    # without an override the beta of the config is the release value and may be written under the release name
+    default = cal.run(out_path=tmp_path / release_name, config_path=config, **options)
+    assert default["option_price_beta_u_per_eur"] == 0.310998
+
+
+def test_the_pricing_parameters_come_from_the_config_with_the_pipeline_defaults_and_beta_defaults_to_the_config_key(cal, tmp_path):
+    from braunschweig.matsim.simulation import prepare
+
+    defaults = prepare.PARKING_DEFAULTS
+    base = cal.read_pricing_config(REPO / "configs" / "base_bs.yml")
+    assert base.option_price_beta_u_per_eur == defaults["parking_option_price_beta_u_per_eur"] == BETA
+    assert base.minimum_stay_min == 15 and base.max_distance_m == 1000.0 and base.monthly_imputation is True
+    assert base.tariff_snapshot_date == defaults["parking_tariff_snapshot_date"]
+    assert base.terminal_stay_rule == "until_fee_end"
+    # a config that carries the keys wins over the pipeline defaults; D_max stays mandatory
+    config = tmp_path / "config.yml"
+    config.write_text("config:\n  parking_garage_max_distance_m: 750.0\n  parking_option_price_beta_u_per_eur: 0.5\n"
+                      "  parking_minimum_stay_min: 30\n  parking_garage_monthly_imputation: false\n"
+                      "  parking_tariff_snapshot_date: '2026-10-01'\n", encoding="utf-8")
+    custom = cal.read_pricing_config(config)
+    assert (custom.max_distance_m, custom.option_price_beta_u_per_eur, custom.minimum_stay_min) == (750.0, 0.5, 30)
+    assert custom.monthly_imputation is False and custom.tariff_snapshot_date == "2026-10-01"
+    # an explicit beta (a sensitivity) overrides the config; a config without the key falls back to the default
+    assert cal.read_pricing_config(config, option_price_beta_u_per_eur=0.0).option_price_beta_u_per_eur == 0.0
+    bare = tmp_path / "bare.yml"
+    bare.write_text("config:\n  parking_garage_max_distance_m: 750.0\n", encoding="utf-8")
+    assert cal.read_pricing_config(bare).option_price_beta_u_per_eur == BETA
+    assert cal.read_pricing_config(bare).minimum_stay_min == defaults["parking_minimum_stay_min"]
+    # unusable values fail naming the key
+    for text, key in (("parking_option_price_beta_u_per_eur: -1", "parking_option_price_beta_u_per_eur"),
+                      ("parking_minimum_stay_min: -5", "parking_minimum_stay_min"),
+                      ("parking_garage_monthly_imputation: maybe", "parking_garage_monthly_imputation"),
+                      ("parking_terminal_stay_rule: never", "parking_terminal_stay_rule")):
+        broken = tmp_path / "broken.yml"
+        broken.write_text("config:\n  parking_garage_max_distance_m: 750.0\n  " + text + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=key):
+            cal.read_pricing_config(broken)
+
+
+def test_the_command_line_takes_the_beta_and_the_beta_sensitivities(cal, monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(cal, "run", lambda **options: captured.update(options))
+    base = ["--plans", str(tmp_path / "plans.xml"), "--data-path", str(tmp_path / "data")]
+    cal.main(base)
+    assert captured["option_price_beta_u_per_eur"] is None and captured["sensitivity_betas"] is None   # the config decides
+    assert captured["maximum_no_feasible_option_share_warning"] == cal.MAXIMUM_NO_FEASIBLE_OPTION_SHARE_WARNING
+    cal.main(base + ["--beta", "0", "--out", str(tmp_path / "beta_zero_sensitivity.csv")])
+    assert captured["option_price_beta_u_per_eur"] == 0.0
+    cal.main(base + ["--sensitivity-beta", "0", "--sensitivity-beta", "0.5"])
+    assert captured["sensitivity_betas"] == [0.0, 0.5]
+    cal.main(base + ["--maximum-no-feasible-option-share-warning", "0.25"])
+    assert captured["maximum_no_feasible_option_share_warning"] == 0.25
+    for bad in (["--beta", "-1"], ["--beta", "nan"], ["--sensitivity-beta", "x"], ["--sensitivity-beta", "-0.2"],
+                ["--maximum-no-feasible-option-share-warning", "1.5"]):
+        with pytest.raises(SystemExit) as refused:
+            cal.main(base + bad)
+        assert refused.value.code == 2
+    # a beta that differs from the config is a sensitivity number: it must not be written onto the release table
+    release = tmp_path / "data" / cal.TABLE_RELATIVE
+    release.parent.mkdir(parents=True)
+    with pytest.raises(SystemExit) as onto_release:
+        cal.main(base + ["--beta", "0", "--out", str(release)])
+    assert onto_release.value.code == 2
+
+
+def test_the_module_documentation_says_the_calibration_routes_through_the_production_pricing(cal):
+    documentation = " ".join(SCRIPT.read_text(encoding="utf-8").split("def main", 1)[0].split())
+    for needle in ("cost.parking_cost_with_garages_detail", "cost.option_weight", "NO FEASIBLE OPTION", "off-street share of 0",
+                   "parkingEvExempt", "ASSUMPTION", "price term", "feasible"):
+        assert needle in documentation, needle
+    # no second implementation of the weight: the closed form of v2 is gone from the code
+    code = "\n".join(line for line in SCRIPT.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
+    code = re.sub(r'""".*?"""', "", code, flags=re.S)
+    assert "math.exp" not in code and "np.exp" not in code and not re.search(r"\bmean_garage_probability\(", code)

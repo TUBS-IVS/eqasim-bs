@@ -117,6 +117,13 @@ PARKING_DEFAULTS = {
     # sensitivity, not in a MATSim run.
     "parking_option_price_beta_u_per_eur": 0.310998,
 }
+#: The option price coefficient (utility per EUR) the committed garage decay lengths ``parking_garage_decay_m`` and
+#: ``parking_garage_decay_commute_m`` were CALIBRATED with (spec v3 B5, ASSUMPTION G1-d): the committed calibration table states it
+#: (row ``option_price_beta_u_per_eur``) and tests/test_parking_garage_decay_config.py pins this constant to the table, to
+#: ``PARKING_DEFAULTS`` and to every config. A run that uses another coefficient with garage options on reproduces other garage
+#: shares than the calibrated ones; ``_warn_if_decay_lengths_were_calibrated_at_another_beta`` says so. Move it only together
+#: with a new calibration table.
+PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR = 0.310998
 #: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
 PARKING_COST_FACTOR_MINIMUM = 0.0
 PARKING_COST_FACTOR_MAXIMUM = 10.0
@@ -428,21 +435,25 @@ def _write_vrb_fare_inputs(context, config_name):
                            "field of the polygon layer" % (100 * facility_coverage, 100 * minimum))
 
 
-def _warn_if_decay_lengths_predate_the_price_term(garage_decay_m, garage_decay_commute_m, option_price_beta_u_per_eur):
-    """Warn when garage options with a price term use decay lengths that were fitted without one (ADR-0142 decision 2).
+def _warn_if_decay_lengths_were_calibrated_at_another_beta(garage_decay_m, garage_decay_commute_m,
+                                                           option_price_beta_u_per_eur):
+    """Warn when garage options act with an option price coefficient other than the one the decay lengths were calibrated with.
 
-    The committed decay lengths (``parking_garage_decay_m``, ``parking_garage_decay_commute_m``) were calibrated on
-    price-free weights (beta 0); the calibration record states no beta yet. With ``parking_option_price_beta_u_per_eur`` > 0
-    and a decay length > 0 the realised garage shares therefore differ from the calibrated ones. The warning is unconditional
-    on purpose (the simplest honest form): it disappears only when the calibration record states the beta it was fitted with
-    and this check compares the two. Never raises.
+    The committed decay lengths (``parking_garage_decay_m``, ``parking_garage_decay_commute_m``) were calibrated with the
+    price term at ``PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`` (spec v3 B5; the calibration table
+    ``parking_garage_decay_calibration_2026.csv`` states it and a test pins the constant to it). With garage options on (a decay
+    length above 0) and another ``parking_option_price_beta_u_per_eur`` (0 included: the weights of v2) the realised garage
+    shares differ from the calibrated ones. No warning at the calibrated coefficient or with the garage options off. Never
+    raises.
     """
-    if option_price_beta_u_per_eur > 0 and (garage_decay_m > 0 or (garage_decay_commute_m or 0) > 0):
-        log.warning("[parking-garages] the garage decay lengths were fitted on price-free weights (beta 0) but the run uses "
-                    "parking_option_price_beta_u_per_eur %g, so the garage shares they reproduce differ from the calibrated "
-                    "ones: stale until the recalibration of Part B (ADR-0142 decision 2). Decay lengths: "
-                    "parking_garage_decay_m %g m, parking_garage_decay_commute_m %s m.",
-                    option_price_beta_u_per_eur, garage_decay_m,
+    options_on = garage_decay_m > 0 or (garage_decay_commute_m or 0) > 0
+    if options_on and option_price_beta_u_per_eur != PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR:
+        log.warning("[parking-garages] the garage decay lengths were calibrated with parking_option_price_beta_u_per_eur %g "
+                    "(calibration record parking_garage_decay_calibration_2026, scripts/parking/calibrate_garage_decay.py) but "
+                    "this run uses %g, so the garage shares they reproduce differ from the calibrated ones: recalibrate at "
+                    "the beta of the run or restore the calibrated beta. Decay lengths: parking_garage_decay_m %g m, "
+                    "parking_garage_decay_commute_m %s m.",
+                    PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR, option_price_beta_u_per_eur, garage_decay_m,
                     "%g" % garage_decay_commute_m if garage_decay_commute_m is not None else "not given")
 
 
@@ -471,7 +482,8 @@ def _write_parking_inputs(context, config_name):
     garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
     cost_factor = float(context.config("parking_cost_utility_factor"))
     option_price_beta_u_per_eur = float(context.config("parking_option_price_beta_u_per_eur"))
-    _warn_if_decay_lengths_predate_the_price_term(garage_decay_m, garage_decay_commute_m, option_price_beta_u_per_eur)
+    _warn_if_decay_lengths_were_calibrated_at_another_beta(garage_decay_m, garage_decay_commute_m,
+                                                           option_price_beta_u_per_eur)
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
                                              resident_districts=release["districts"], garages=release["garages"],

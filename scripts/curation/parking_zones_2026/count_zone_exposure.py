@@ -69,11 +69,36 @@ def _carries_parking_free(activity: ElementTree.Element) -> bool:
                for attribute in attributes.findall("attribute"))
 
 
+def parse_time_seconds(text, what: str) -> float:
+    """A MATSim activity time in seconds: ``hh:mm:ss`` (hours may exceed 24 for a plan that runs past midnight) or plain
+    seconds (``"3600"``, ``"3600.0"``). Raises ``ValueError`` naming ``what`` for any other text."""
+    value = str(text).strip()
+    parts = value.split(":")
+    try:
+        if len(parts) == 3:
+            return int(parts[0]) * 3600.0 + int(parts[1]) * 60.0 + float(parts[2])
+        if len(parts) == 1:
+            return float(parts[0])
+    except ValueError:
+        pass
+    raise ValueError(f"{what}: {text!r} is neither hh:mm:ss nor a number of seconds")
+
+
+def _activity_time_s(activity: ElementTree.Element, attribute: str, person_id: str) -> float:
+    """The ``start_time`` or ``end_time`` of an activity in seconds, NaN when the activity has none (never 0)."""
+    text = activity.get(attribute)
+    if text is None:
+        return float("nan")
+    return parse_time_seconds(text, f"person {person_id}, activity {activity.get('type')}, {attribute}")
+
+
 def read_main_activities(path) -> tuple:
     """(frame, persons) of the main activities of the selected plans in a MATSim plans file (``.xml`` or ``.xml.gz``).
 
     The frame has ``person_id``, ``activity_index``, ``purpose`` (the activity type), ``x`` and ``y`` (metres, as in the
-    file), ``car_arrival`` and ``parking_free`` (see the module docstring), one row per main activity in file order;
+    file), ``car_arrival`` and ``parking_free`` (see the module docstring) and, since spec v3 B5, ``start_time_s`` and
+    ``end_time_s`` (the activity times in seconds after midnight of the plan day, NaN where the plan has none: the first
+    activity has no start and the last no end), one row per main activity in file order;
     ``persons`` counts every person of the file. The file is streamed, so the 1 % population needs little memory. Raises
     ``ValueError`` for an activity without coordinates (the check needs a location, never a default) and when no person has a
     main activity in a selected plan.
@@ -101,7 +126,9 @@ def read_main_activities(path) -> tuple:
                                      f"{person_id} has no x/y attribute; the exposure check needs the location")
                 rows.append({"person_id": person_id, "activity_index": activity_index, "purpose": element.get("type"),
                              "x": float(element.get("x")), "y": float(element.get("y")),
-                             "car_arrival": CAR_MODE in trip_modes, "parking_free": _carries_parking_free(element)})
+                             "car_arrival": CAR_MODE in trip_modes, "parking_free": _carries_parking_free(element),
+                             "start_time_s": _activity_time_s(element, "start_time", person_id),
+                             "end_time_s": _activity_time_s(element, "end_time", person_id)})
                 activity_index += 1
                 trip_modes = []
             elif tag == "plan":

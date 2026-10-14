@@ -249,3 +249,33 @@ def test_the_parser_refuses_an_activity_without_coordinates(exposure, tmp_path):
                     "</population>", encoding="utf-8")
     with pytest.raises(ValueError, match="no x/y attribute"):
         exposure.read_main_activities(path)
+
+
+def test_the_plans_parser_reads_the_activity_times_in_seconds_and_leaves_an_absent_time_as_nan(exposure, tmp_path):
+    # Spec v3 B5: the calibration prices every stay by its activity times (``start_time`` = arrival, ``end_time`` = departure).
+    # MATSim writes ``hh:mm:ss`` (hours may exceed 24 for a plan that runs past midnight); plain seconds are read too. An
+    # absent time is NaN, never 0: a stay without its times must be refused by the caller, not priced from midnight.
+    path = tmp_path / "times.xml.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        stream.write(
+            '<population><person id="a"><plan selected="yes">'
+            '<activity type="home" x="1" y="2" end_time="06:30:15"/><leg mode="car"/>'
+            '<activity type="work" x="3" y="4" start_time="07:00:00" end_time="25:15:30"/><leg mode="car"/>'
+            '<activity type="shop" x="5" y="6" start_time="3600.0" end_time="7200"/><leg mode="car"/>'
+            '<activity type="home" x="1" y="2" start_time="26:00:00"/></plan></person></population>')
+    activities, _ = exposure.read_main_activities(path)
+    assert activities["start_time_s"].isna().tolist() == [True, False, False, False]
+    assert activities["end_time_s"].isna().tolist() == [False, False, False, True]
+    assert activities["end_time_s"].iloc[0] == 6 * 3600 + 30 * 60 + 15
+    assert activities["start_time_s"].iloc[1] == 7 * 3600 and activities["end_time_s"].iloc[1] == 25 * 3600 + 15 * 60 + 30
+    assert (activities["start_time_s"].iloc[2], activities["end_time_s"].iloc[2]) == (3600.0, 7200.0)
+    assert activities["start_time_s"].iloc[3] == 26 * 3600
+
+
+def test_a_malformed_activity_time_is_refused_naming_the_person(exposure, tmp_path):
+    path = tmp_path / "bad_time.xml.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        stream.write('<population><person id="p77"><plan selected="yes">'
+                     '<activity type="home" x="1" y="2" end_time="soon"/></plan></person></population>')
+    with pytest.raises(ValueError, match="p77.*end_time"):
+        exposure.read_main_activities(path)

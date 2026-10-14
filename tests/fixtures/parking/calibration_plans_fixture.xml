@@ -10,13 +10,16 @@
      parkingFree. p14 is a work activity at Ia with parkingFree (excluded from the commuter universe, which stays p05 and p06).
      The test also writes the zone wob_tarifzone_1 = box(603700, 5790000, 603900, 5790200), 761.6 m and 743.3 m from the
      near garage: p11 work and p12 education there form the Wolfsburg check universe; p13 is a work activity there with
-     parkingFree (excluded). -->
+     parkingFree (excluded).
+     Spec v3 B5 (the calibration prices every stay by its activity times): every activity of the three universes carries a
+     start_time (the arrival) inside the street fee window 06:00-22:00 of the synthetic tariffs the test writes, and an
+     end_time; the stays last one hour (p01, p03, p04), two hours (p02) and seven to eight hours (the commuters). -->
 <population>
   <person id="p01">
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="shop" x="603100" y="5790100" end_time="09:00:00"/>
+      <activity type="shop" x="603100" y="5790100" start_time="08:00:00" end_time="09:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -25,7 +28,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="pt"/>
-      <activity type="leisure" x="603100" y="5790100" end_time="21:00:00"/>
+      <activity type="leisure" x="603100" y="5790100" start_time="19:00:00" end_time="21:00:00"/>
       <leg mode="walk"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -34,7 +37,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="bike"/>
-      <activity type="other" x="603500" y="5790100" end_time="11:00:00"/>
+      <activity type="other" x="603500" y="5790100" start_time="10:00:00" end_time="11:00:00"/>
       <leg mode="bike"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -43,7 +46,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="shop" x="603500" y="5790100" end_time="10:00:00"/>
+      <activity type="shop" x="603500" y="5790100" start_time="09:00:00" end_time="10:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -52,7 +55,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="work" x="603100" y="5790100" end_time="16:00:00"/>
+      <activity type="work" x="603100" y="5790100" start_time="08:00:00" end_time="16:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -61,7 +64,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="education" x="603500" y="5790100" end_time="15:00:00"/>
+      <activity type="education" x="603500" y="5790100" start_time="08:00:00" end_time="15:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -103,7 +106,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="work" x="603800" y="5790100" end_time="16:00:00"/>
+      <activity type="work" x="603800" y="5790100" start_time="08:00:00" end_time="16:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -112,7 +115,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="education" x="603800" y="5790150" end_time="15:00:00"/>
+      <activity type="education" x="603800" y="5790150" start_time="08:00:00" end_time="15:00:00"/>
       <leg mode="car"/>
       <activity type="home" x="590000" y="5780000"/>
     </plan>
@@ -121,7 +124,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="work" x="603800" y="5790100" end_time="16:00:00">
+      <activity type="work" x="603800" y="5790100" start_time="08:00:00" end_time="16:00:00">
         <attributes>
           <attribute name="parkingFree" class="java.lang.Boolean">true</attribute>
         </attributes>
@@ -134,7 +137,7 @@
     <plan selected="yes">
       <activity type="home" x="590000" y="5780000" end_time="07:00:00"/>
       <leg mode="car"/>
-      <activity type="work" x="603100" y="5790100" end_time="16:00:00">
+      <activity type="work" x="603100" y="5790100" start_time="08:00:00" end_time="16:00:00">
         <attributes>
           <attribute name="parkingFree" class="java.lang.Boolean">true</attribute>
         </attributes>
