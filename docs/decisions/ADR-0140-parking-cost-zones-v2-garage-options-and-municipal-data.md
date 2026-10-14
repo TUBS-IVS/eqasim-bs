@@ -12,10 +12,14 @@
   Consequences bullet "Parts of ADR-0139 this record supersedes or closes".
 - **Updated 2026-10-14 (Task 4j):** decision 13 (large surface lots as off-street options, spec Amendment I) revises ruling R-E1
   for surface lots, withdraws ASSUMPTION P12 and adds ASSUMPTIONS L50 and P14; the option set is enlarged by the large
-  surface lots (the data record `parking_garages_2026` states the counts) and the decay lengths of decisions 7 and 12 are
-  those of the superseded option set until Task 4k recalibrates them. Fix round 1 of Task 4j (2026-10-14, rulings R-4j-6 to
+  surface lots (the data record `parking_garages_2026` states the counts); until Task 4k the decay lengths of decisions 7
+  and 12 were those of the superseded option set. Fix round 1 of Task 4j (2026-10-14, rulings R-4j-6 to
   R-4j-8) completes the product of a lot that is a zone too, adds the report-only comparison of every lot inside a zone
   polygon with the zone row and the primary-against-fallback logs of the source, the position and the capacity origin.
+- **Updated 2026-10-14 (Task 4k):** decision 14 (spec Amendment I6) makes the calibration measure like-for-like with the SrV
+  quantity of each target (paid-only for the commuter decay and the Wolfsburg check) and recalibrates both decay lengths on
+  the 25 % plans and the enlarged option set; the values of decisions 7 and 12 are the superseded 1 % state and the
+  current ones are those of decision 14.
 
 ## Context
 
@@ -175,6 +179,8 @@ run (see Status).
    is pushed up to let the garages carry the large-lot share. A calibration on the garages alone (`--facility-kinds garage`)
    is therefore vacuous for the destination universe of the zones Ia and Ib (the same option set) and is NOT run as a
    sensitivity; the option stays in the script for datasets where surface lots lie within D_max of the universe.
+   SUPERSEDED (Task 4k): the values of this result belong to the 1 % plans and the 49-row option set; decision 14 states the
+   current ones (25 % plans, enlarged option set). The result above stays as the record of that state.
    The comparison script
    `scripts/parking/compare_parking_targets.py` (lever 3) compares the arms of a run with the SrV tables; it is a comparison,
    never a validation, and no knob is turned on a difference without a repeat arm.
@@ -409,6 +415,9 @@ run (see Status).
       a reason offered for the difference. In a run the like-for-like model quantity is the garage share among the PAID_*
       pricing calls of the work and education stays (rows `garage_share_*_work_education_paid_calls` of the comparison script);
       the rows that keep free calls in the denominator are shown for orientation only.
+    - **Superseded values (Task 4k).** lambda_c = 359.64 m and the Wolfsburg number 0.553517 belong to the 1 % plans and the
+      49-row option set; decision 14 recalibrates both decay lengths on the 25 % plans and the enlarged option set and states
+      the current values.
     - **Limits.** The commuter calibration rests on 54 activities of a 1 % sample and on paid cells of 29 and 13 respondents, so
       lambda_c is a coarse estimate and its sampling uncertainty is not quantified; the SrV share is about residents' usual
       place, the model averages over destinations (universe caveat); the effect on a run's commuter garage share is not
@@ -556,21 +565,96 @@ run (see Status).
       alone or as a sum of components) or a derivation (Wolfenbuettel Check In: the package's 334 less 130 hotel spaces);
       the run logs the mix, the data record states it and names the two options at exactly the threshold, and only a
       reported capacity fills the dataset column. The point of a lot is a research point inside the parking area, no
-      entrance. The calibrated decay lengths of decisions 7 and 12 (396.19 m and 359.64 m) were calibrated on the former
-      option set (the garages and the Wolfsburg city-layer car parks of the earlier dataset); their recalibration on the
-      enlarged set with the paid-only reading for the commuter target (spec I6, Task 4k) is NOT part of this decision, so
-      until it is run the configured decay lengths belong to the superseded option set and no run is a valid comparison with
-      the SrV shares. Nothing in this decision is a validation: the lot tariffs were not compared with any observed payment
-      or occupancy data.
+      entrance. The decay lengths of decisions 7 and 12 (396.19 m and 359.64 m) were calibrated on the former option set (the
+      garages and the Wolfsburg city-layer car parks of the earlier dataset); their recalibration on the enlarged set with
+      the paid-only reading for the commuter target (spec I6) is not part of this decision but of decision 14 (Task 4k), so
+      the configured decay lengths belong to the option set of this decision. Nothing in this decision is a validation: the
+      lot tariffs were not compared with any observed payment or occupancy data.
+
+14. **The calibration measure is like-for-like with the SrV quantity of each target, and both decay lengths are
+    recalibrated on the 25 % plans (Amendment I6, owner decisions 2026-10-13, Task 4k).**
+    Reason: with the large surface lots (decision 13) the option set contains free options (cost 0 at every stay duration: the
+    free schedule). The commuter target of decision 12 is a PAID-only SrV quantity (ruling R-4h-1: paid garage / (paid garage
+    + paid street) among the paying users), so a model share that counts a free option in its numerator would not have the
+    universe of its reference: in SrV terms a free option is a free parker and leaves numerator and denominator. The visitor
+    target of decision 7 is payment-inclusive (its SrV shares contain free and paying parkers) and counts every option.
+    - **Measures.** lambda: `sum(w) / (1 + sum(w))` over every priced option within D_max (payment-inclusive). lambda_c and the
+      Wolfsburg check (H3b): `sum(w_paid) / (1 + sum(w_paid))` over the PAID options. Derivation: with W the sum of all weights
+      the choice probabilities are street `1 / (1 + W)` and option i `w_i / (1 + W)`, so the paid-only share
+      `sum(p_paid) / (sum(p_paid) + p_street) = W_paid / (1 + W_paid)`, because the factor `1 + W` cancels. An option is free
+      exactly when its schedule is the free schedule `0- free` (`garages.is_free_schedule`; read from the row, never from a name or
+      a rate; a grace period is no free option). A universe is averaged over its activities as in E5; that mean equals the pooled
+      ratio of summed probabilities where no free option is in range, and the pooled ratio is not computed. The script
+      `scripts/parking/calibrate_garage_decay.py` names the measure of every target in the table header and rows, logs and tables
+      the free options within D_max per universe (distinct options by id and activities reached), warns when fewer than half of
+      a universe has an option of its measure within reach, and excludes the freight agents (ids `freight_*`, no residents) like
+      the other person-travel analyses.
+    - **Plans and what they need.** The 25 % reference plans (SHA-256
+      `43607798e1cbe9d7c7223776516db4f1750a241dc5e2d602246f350aac0a595a`) carry the activity attributes `parkingZone`,
+      `parkingFree` and `parkingDistrict`, which the zone polygons, the tariff table, the SrV free shares and the seed
+      determine and the garage dataset does not enter; the garage options act in the pricing only. The plans therefore need no
+      regeneration for another option set: the script recomputes the zone of every activity from the polygons and reads only
+      coordinates, purposes and `parkingFree` from the plans. Their provenance (the v2 plans run of 2026-10-12 on the server from
+      code 6e120332, `parking_zones_enabled` true, garage decays 0 in that run) is as stated in the task brief of Task 4k and is
+      held by the data record `parking_garage_decay_calibration_2026`; no run manifest of that plans run is in this repository
+      state.
+    - **Result (calibration run of 2026-10-14; a calibration, no validation).** The table
+      `parking_garage_decay_calibration_2026.csv` (inputs with SHA-256, universes, targets, searches, sensitivities and code
+      state in its header; two runs gave byte-identical files) gives lambda = 324.31 m (payment-inclusive; 8,226 destination
+      activities, target 0.736196 read from `srv2023_city_center_parking`, achieved mean 0.736029 after 11 halvings) and
+      lambda_c = 261.57 m (paid-only; 1,327 work and education activities without `parkingFree` in `bs_zone_ia` and
+      `bs_zone_ib`, 5,235 more carry `parkingFree`; target 0.679099 read from the paid columns of the row `bs_zentrum`,
+      achieved 0.679221 after 13 halvings). `parking_garage_decay_m` and `parking_garage_decay_commute_m` of
+      `configs/base_bs.yml` and the two popsim fixtures equal these values (a test requires both equalities), and a test ties the
+      table to the garage dataset pinned in the data record `parking_garages_2026` (which states its option counts).
+    - **Free options and what the correction did.** No free option lies within D_max of any activity of the zones Ia and Ib (0
+      distinct options reach 0 of the 8,226 and 0 of the 1,327 activities), so for both calibrations the paid-only measure and
+      the payment-inclusive measure coincide: the values equal what
+      the former all-options measure gives on this option set, and the change against the earlier values is a change of the option
+      set (and, for the 1 % values, of the sample). The correction acts only in the Wolfsburg check, where two free options
+      (`lot_wob_hoffmann_von_fallersleben`, `lot_wob_theaterparkplatz`) reach 232 of the 622 activities.
+    - **Wolfsburg check (H3b), a number without a bound.** The paid-only mean option probability at lambda_c over the 622 work and
+      education activities without `parkingFree` inside `wob_tarifzone_1` to `wob_tarifzone_3` (601 with an option and 555 with a
+      paid option within 1,000 m) is 0.572593 against the SrV paid-only share 0.737705 of the row `03103` (read from the table),
+      0.165 below. There is no pre-registered bound, so it is neither a pass nor a fail; the cause is not established (the SrV row
+      covers the Kreis while the zones are three tariff areas, lambda_c is transferred from Braunschweig, the universe is a
+      sample); no decay is tuned to it.
+    - **Sensitivities (spec I6; not release values).** The option sets of the lot thresholds 30 and 100 (Task 4j) are run with the
+      same plans, targets, D_max, measures and tolerance and written as header lines of the table: threshold 30 (103 options, 34
+      free) lambda 324.31 m and lambda_c 260.96 m, threshold 100 (74 options, 22 free) lambda 390.10 m and lambda_c 302.38 m. The
+      search stops at the first midpoint whose mean is within 0.0005 of the target, so differences of that order are not
+      resolved: the release and the threshold-30 values cannot be told apart at this tolerance (same lambda; the lambda_c values
+      differ by 0.61 m with achieved means 0.678605 and 0.679221 around the target 0.679099), and the fewer options of
+      threshold 100 give the longer decays.
+    - **Superseded values.** 396.19 m and 359.64 m (1 % plans of 2026-10-08, the 49-row option set, the all-options measure;
+      decisions 7 and 12); 412.03 m and 320.66 m (the same 25 % plans, the 49-row option set and the all-options measure,
+      computed on 2026-10-12 as a scratch run and never committed, so neither reproducible from the repository nor
+      evidence); 191.52 m (the first H2, decision 12). None is used by any config.
+    - **The table belongs to its garage dataset.** It is valid for the dataset with the SHA-256 in its header exactly. Three
+      Wolfsburg sites are QA rows pending owner evidence (Allersee Suedufer, Freibad Fallersleben, VW-Bad, decision 13 I5a); if
+      they become free options the dataset changes and the calibration must be run again.
+    - **The run comparison cannot separate free options.** The outcome report CSV v3 has one `garage_probability_sum` over all
+      options and no paid/free split, so the commuter and Wolfsburg rows of `scripts/parking/compare_parking_targets.py` count all
+      off-street options; they are labelled "all off-street options; free options included" and state that the calibration is
+      exact and the run comparison is not where free options lie within D_max. Neither the Java report nor the outcome CSV
+      changed; a paid/free split would be a Java extension (a follow-up, no issue opened).
+    - **Rejected alternatives.** (a) The all-options measure for lambda_c: free options would stand in the numerator of a quantity
+      of payers, and the SrV denominator has no free parker. (b) The free-inclusive commuter target: rejected by decision 12. (c)
+      Turning a decay to the Wolfsburg check. (d) Regenerating the plans for the new option set: not needed, see above.
+    - **Limits.** The universes are samples of a 25 % population (1,327 and 622 activities) and the SrV paid cells are small
+      (decision 12); no sampling uncertainty is quantified, and the values depend on the plans file they were calibrated on. The
+      universe caveat (SrV asks residents about their usual place, the model averages over destinations), the transfer
+      assumption of G3 for every town and the free-inclusive target of lambda with its known remaining mismatch (decision 12)
+      stand. Option weights ignore capacity (decision 13).
 
 ## Consequences
 
 - Scientific results change when the flag is on. Against ADR-0139 the prices change through the zone geometry (Wolfsburg
   zones, Braunschweig 1a/1b, TU campus unions, the single paid sites), the product minimum (cheaper long stays through
   commuter products), the resident districts, the Wolfsburg and campus free-parking shares and the BgA corrections. The
-  garage options change prices through the calibrated decay lengths (lambda 396.19 m, decision 7, and lambda_c 359.64 m for
-  work and education stays, decision 12): with `parking_garage_decay_m` 396.19 and `parking_garage_decay_commute_m` 359.64,
-  the state of this record, they are on. How much the mode shares move is not established: no v2 run exists,
+  garage options change prices through the calibrated decay lengths (lambda, decision 7, and lambda_c for work and education
+  stays, decision 12; the current values are those of decision 14 and the config keys `parking_garage_decay_m` and
+  `parking_garage_decay_commute_m`): they are on. How much the mode shares move is not established: no v2 run exists,
   so no direction or size is stated here.
   The expected output change of each data update is stated once in its data record.
 - v2 is unvalidated. A future run records its comparison with the SrV references in a run manifest (a comparison with a

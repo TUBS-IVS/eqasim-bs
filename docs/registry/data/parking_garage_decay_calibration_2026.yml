@@ -1,14 +1,15 @@
 dataset: parking_garage_decay_calibration_2026
-title: Calibrated decay lengths of the garage options (lambda and lambda_c) and their provenance (committed table)
+title: Calibrated decay lengths of the off-street options (lambda and lambda_c) and their provenance (committed table)
 inventory_id: null
 provider: >-
-  Own calibration (issue #436, parking cost zones v2, spec Amendments E5 and H2, Tasks 4d and 4h) with
+  Own calibration (issue #436, parking cost zones v2, spec Amendments E5, H2 and I6, Tasks 4d, 4h and 4k) with
   scripts/parking/calibrate_garage_decay.py on the plans of the reference scenario: lambda against the SrV 2023 city-centre
-  parking shares (srv2023_city_center_parking), lambda_c against the PAID-only SrV commuter garage share of the class bs_zentrum
-  (srv2023_commute_parking_by_workplace_class, ruling R-4h-1)
+  parking shares (srv2023_city_center_parking, payment-inclusive measure), lambda_c against the PAID-only SrV commuter garage
+  share of the class bs_zentrum (srv2023_commute_parking_by_workplace_class, ruling R-4h-1, paid-only measure)
 vintage: >-
-  generated 2026-10-09 (the header of the table states the date) on the plans of the 1 % reference run of 2026-10-08
-  (server run, parking zones on, garage options off, no MATSim run)
+  generated 2026-10-14 (the header of the table states the date) at the code state 974fa1bb on the 25 % reference plans (the
+  v2 plans run of 2026-10-12 on the server, parking zones on, garage options off, no MATSim run) and the garage dataset of
+  Task 4j (options: garages and large public surface lots)
 geography: The Braunschweig city centre (the fee zones bs_zone_ia and bs_zone_ib) for the calibration of both values, the Wolfsburg tariff areas wob_tarifzone_1..3 for the check; the values apply in every ZGB town (transfer assumption G3)
 crs: EPSG:25832 (distances in metres)
 roles:
@@ -18,14 +19,22 @@ used_by: []
 acquisition:
   method: derived
   source: |
-    Run python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario, server run of Task 5>
-    [--data-path eqasim-data/data] [--out eqasim-data/data/braunschweig/parking/parking_garage_decay_calibration_2026.csv]
-    [--overwrite]. Inputs: the plans file (MATSim .xml or .xml.gz, selected plans), parking_zones_2026 (zones bs_zone_ia and
-    bs_zone_ib and the Wolfsburg zones wob_tarifzone_1..3), parking_garages_2026, srv2023_city_center_parking (the target
-    of lambda is READ from its rows garage_large_lot and street) and srv2023_commute_parking_by_workplace_class (the target of
-    lambda_c is READ from the paid columns of its row bs_zentrum, the Wolfsburg check from those of its row 03103). The plans carry the activity attribute
-    parkingFree, which the commuter universe reads. The header of the table names every input with its SHA-256, both
-    universes, both target derivations, both searches, the check and the code state.
+    Run (from the repository root, on a clean tree with committed code; the plans are COPIED, not linked, to the repo-relative
+    path that the header records) the command
+      python scripts/parking/calibrate_garage_decay.py --plans
+        eqasim-data/output_bs_25pct_parking_v2_plans/braunschweig_25pct_parking_v2_plans_population.xml.gz
+        --data-path eqasim-data/data --overwrite
+        --sensitivity-garages lot_threshold_30=<parking_garages_2026_lot_threshold_30.geojson>
+        --sensitivity-garages lot_threshold_100=<parking_garages_2026_lot_threshold_100.geojson>
+    (the two sensitivity datasets are the outputs of Task 4j in eqasim-data/output_parking_lot_threshold_sensitivity/, local and
+    restricted like the release dataset; the table header names them with their SHA-256). Inputs: the plans file (MATSim .xml
+    or .xml.gz, selected plans), parking_zones_2026 (zones bs_zone_ia and bs_zone_ib and the Wolfsburg zones wob_tarifzone_1..3),
+    parking_garages_2026 (the options), srv2023_city_center_parking (the target of lambda is READ from its rows garage_large_lot
+    and street) and srv2023_commute_parking_by_workplace_class (the target of lambda_c is READ from the paid columns of its row
+    bs_zentrum, the Wolfsburg check from those of its row 03103). The plans carry the activity attribute parkingFree, which the
+    commuter universe reads. The header of the table names every input with its SHA-256, the measures, all three universes
+    (with their purposes and the free options within reach), both target derivations, both searches, the check, the
+    sensitivities and the code state.
   script: scripts/parking/calibrate_garage_decay.py
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_garage_decay_calibration_2026.csv
@@ -33,85 +42,122 @@ storage:
   local_only: false
   notes: >-
     Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
-    9e93f6edb396b3bb61baf091446d02fe07f2de490823d8515c35beccc0ead249. Long format quantity,value,unit,note under a '#'
+    50554411cb1c8e796562e82b98b1d6411af91df22df21f2242ea96d007a1e5d6. Long format quantity,value,unit,note under a '#'
     header; read by calibrate_garage_decay.read_calibration_table (which refuses a table without decay_commute_length_m, i.e.
     one written before Amendment H). Produced by the unmodified script on a clean tree at the code state named in its header
-    (commit d459675e); the header names the plans by a repo-relative path. Repeated runs on
-    the same inputs and the same clean code state gave byte-identical files, so the generation date in the header and the
-    code-state line are the only run-dependent content.
+    (commit 974fa1bb); the header names the plans by a repo-relative path. Two runs on the same inputs and the same clean code
+    state gave byte-identical files, so the generation date in the header and the code-state line are the only run-dependent
+    content. THE TABLE BELONGS TO THE GARAGE DATASET NAMED IN ITS HEADER EXACTLY (SHA-256
+    724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81, the release dataset of the data record parking_garages_2026):
+    another option set needs a new calibration, and tests/test_parking_garage_decay_config.py compares the header hash with the
+    pin of that record. Three Wolfsburg car parks (Allersee Suedufer WOB_PARK_720902, Freibad Fallersleben WOB_PARK_1703940,
+    VW-Bad WOB_PARK_327697) are QA rows of the dataset pending the owner's evidence that they are free; if they become free
+    options the dataset changes and the calibration must be run again.
 verification:
   verifier_entry: null
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: no stage reads the table, the config value
+    Not listed in scripts/verify_braunschweig_inputs.py: no stage reads the table, the config values
     parking_garage_decay_m and parking_garage_decay_commute_m carry its result. tests/test_parking_garage_decay_config.py
     requires parking_garage_decay_m to equal decay_length_m and parking_garage_decay_commute_m to equal decay_commute_length_m
-    of the table once it exists, and both to be 0 while it does not; tests/test_parking_garage_calibration.py
-    pins the script on a synthetic universe (a known lambda, an unreachable target, the universe of E5, the table).
+    of the table once it exists (and both to be 0 while it does not), and requires the garage dataset hash of the table header to
+    be the pin of the data record parking_garages_2026; tests/test_parking_garage_calibration.py pins the script on a synthetic
+    universe (a known lambda, an unreachable target, the universes of E5 and H2, the free marker and the paid-only measure, the
+    sensitivities, the table).
 requirements:
   synthesis: not_needed
   matsim: not_needed
   production: optional
 licensing:
   license: >-
-    own derived scalar aggregate: the table holds lambda, counts and SHA-256 hashes only, no microdata and no
-    geometry. Its inputs include the two restricted local-only files parking_zones_2026 and parking_garages_2026
-    (see their data records) besides the committed SrV tables and the plans of the reference scenario.
-    Redistribution of this aggregate is allowed (owner decision 2026-10-08: only the three geometry files stay out
-    of the repository).
+    own derived scalar aggregate: the table holds lambda, counts, option ids of car parks that are free (ids of the committed QA
+    table) and SHA-256 hashes only, no microdata and no geometry. Its inputs include the two restricted local-only files
+    parking_zones_2026 and parking_garages_2026 (see their data records) besides the committed SrV tables and the plans of the
+    reference scenario. Redistribution of this aggregate is allowed (owner decision 2026-10-08: only the three geometry files
+    stay out of the repository).
   restricted: false
   redistribution: allowed
 limitations: |
-  Calibration, not validation: the table reports the check below as a number and never as agreement. Two targets: lambda
-  against the SrV share 0.708 / (0.708 + 0.2537) = 0.736 of garages and large lots among the Braunschweig residents who park
-  on the street or in a garage when they drive to the city centre (all stays of the universe of 340 activities outside home,
-  work and education in bs_zone_ia and bs_zone_ib), and lambda_c against the PAID-only SrV commuter garage share 0.0965 /
-  (0.0965 + 0.0456) = 0.6791 of the class bs_zentrum (ruling R-4h-1: the universe is the work and education activities in the
-  same two zones that do not carry parkingFree, i.e. the payers: 54 activities; 191 more carry parkingFree and are left out, 245
-  in total; the free-inclusive share 0.1923 / (0.1923 + 0.2225) = 0.4636 has free parkers in its denominator and is not used).
-  The payers of bs_zentrum (share_paid_total 0.2062) are 46.8 % paid garage or large lot, 22.1 % paid street, 28.1 % paid
-  employer lot and 3.0 % paid other place; the target is conditional on the street and garage payers (0.0965 / (0.0965 +
-  0.0456)), because the model has no employer-lot or other-place option; the paid garage share over all payers would be
-  0.0965 / 0.2062 = 0.468 (an alternative that is not used and whose effect on lambda_c was not computed). The paid cells are
-  small (29 paid garage and 13 paid street respondents in bs_zentrum), so the target carries a wide sampling uncertainty that
-  is not quantified. lambda keeps the free-inclusive city-centre target: its universe (E5) has no early rule and no free draw,
-  so the free parkers of the SrV denominator have counterparts there; it remains not like-for-like in other respects (all modes
-  and purposes at destinations against car drivers to the city centre; no mechanism ties the rule-free share to the SrV free
-  share 0.167). SrV asks residents about their usual place, the model averages over the
-  destinations of all persons of the plans (universe caveat, spec E5 and H2), and the bs_zentrum class covers the whole
-  Oberbezirk Zentrum, wider than the two zones. The garage probability is the choice share of the options (weights exp(-d /
-  decay), street 1, garages within 1000 m), without price, early rules or E4. Independent check on the same plans (H3b): the
-  mean garage probability at lambda_c of the 18 work and education activities without parkingFree inside wob_tarifzone_1..3 (15
-  of them with a priced garage within 1000 m) is 0.5535 against the paid-only SrV row 03103 share 0.0225 / (0.0225 + 0.0080) =
-  0.7377, 0.184 below; a number and no validation, with no pre-registered bound (neither pass nor fail), the universe is small
-  and the cause of the difference is not established (ADR-0140 decision 12). The table checks no paid share (ruling R-5-4: the
-  zone-level paid share was blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run is
-  compared with the SrV by scripts/parking/compare_parking_targets.py. The same two decay lengths for every town are a transfer
-  assumption (G3). The values depend on the plans file they were calibrated on: another scenario gives other values. Both
-  universes are 1 % samples (12,567 persons), so lambda and especially lambda_c (54 activities) are coarse estimates and their
-  sampling uncertainty is not quantified. The script logs the mean garage probability at the two ends of both searches
-  (lambda: 0.0055 at 10 m, 0.8911 at 5,000 m; lambda_c: 0.0000 at 10 m, 0.8861 at 5,000 m, in the table header), so the mean
-  rises monotonically with the decay over that range; no local sensitivity around the results is stated. Superseded values:
-  the first H2 version (free-inclusive target 0.4636) gave lambda_c = 191.52 m and a Wolfsburg check of 0.3487 against 0.6387; it
-  was committed once (160a4dc8) and is not used. The earlier commuter number (0.7142 over 245 activities at the single lambda,
-  the pre-registered expected miss of ADR-0140 decision 7) belongs to the one-decay state of the table of 2026-10-09 (commit
-  26a56cca) and is superseded as well.
+  Calibration, not validation: the table reports the check below as a number and never as agreement. Two targets, each with the
+  measure that has the universe of its SrV quantity (spec Amendment I6). lambda: the SrV share 0.708 / (0.708 + 0.2537) = 0.736
+  of garages and large lots among the Braunschweig residents who park on the street or in a garage when they drive to the city
+  centre, PAYMENT-INCLUSIVE (every off-street option counts, free ones included, because the SrV shares contain free and paying
+  parkers); universe: the 8,226 main activities outside home, work and education in bs_zone_ia and bs_zone_ib (escort 509,
+  leisure 2,548, other 1,511, shop 3,658), all modes. lambda_c: the PAID-only SrV commuter garage share 0.0965 / (0.0965 +
+  0.0456) = 0.6791 of the class bs_zentrum (ruling R-4h-1), PAID-ONLY (only the paid options count: a free option, the free
+  schedule, is a free parker in SrV terms and leaves numerator and denominator, which reduces to sum(w_paid) / (1 + sum(w_paid));
+  the derivation is in the script documentation and in ADR-0140 decision 14); universe: the 1,327 work and education activities
+  (work 1,067, education 260) in the same two zones that do not carry parkingFree, i.e. the payers; 5,235 more carry
+  parkingFree and are left out (6,562 in all); the free-inclusive share 0.1923 / (0.1923 + 0.2225) = 0.4636 has free parkers in
+  its denominator and is not used. The payers of bs_zentrum (share_paid_total 0.2062) are 46.8 % paid garage or large lot,
+  22.1 % paid street, 28.1 % paid employer lot and 3.0 % paid other place; the target is conditional on the street and garage
+  payers because the model has no employer-lot or other-place option; the paid garage share over all payers would be 0.0965 /
+  0.2062 = 0.468 (an alternative that is not used and whose effect on lambda_c was not computed). The paid cells are small (29
+  paid garage and 13 paid street respondents in bs_zentrum), so the target carries a wide sampling uncertainty that is not
+  quantified. lambda keeps the free-inclusive city-centre target: its universe (E5) has no early rule and no free draw, so the
+  free parkers of the SrV denominator have counterparts there; it remains not like-for-like in other respects (all modes and
+  purposes at destinations against car drivers to the city centre; no mechanism ties the rule-free share to the SrV free share
+  0.167). Free options: the header and the rows state, per universe, the free options within 1,000 m by id and the activities
+  they reach. No free option lies within 1,000 m of any activity of the two Braunschweig universes (0 of 8,226 and 0 of 1,327),
+  so there the paid-only and the payment-inclusive measure are the same function and the values equal what the all-options
+  measure gives on this option set;
+  the correction acts only in the Wolfsburg check, where two free options (lot_wob_hoffmann_von_fallersleben and
+  lot_wob_theaterparkplatz) reach 232 of the 622 activities. A universe is averaged over its activities (as in E5): that mean
+  equals the pooled ratio of the summed probabilities where no free option is in range, and may differ from it in the
+  Wolfsburg check (the pooled ratio is not computed). The freight agents of the plans (ids freight_*, 14,103 of the 314,958
+  person elements; they are no residents) are excluded from every universe like in the other person-travel analyses; 300,855
+  persons remain. Independent check (H3b) on the same plans and the same decay: the paid-only mean option probability at
+  lambda_c of the 622 work and education activities without parkingFree inside wob_tarifzone_1..3 (601 with an option and
+  555 with a paid option within 1,000 m) is 0.5726 against the paid-only SrV row 03103
+  share 0.0225 / (0.0225 + 0.0080) = 0.7377, 0.165 below; a number and no validation, with no pre-registered bound (neither pass
+  nor fail), the cause of the difference is not established (ADR-0140 decisions 12 and 14). The table checks no paid share (ruling
+  R-5-4: the zone-level paid share was blind to the fee window and read 1.0 in the two zones); the time-aware paid share of a run
+  is compared with the SrV by scripts/parking/compare_parking_targets.py, whose commuter and Wolfsburg rows count ALL off-street
+  options (the outcome report has no paid/free split) and are labelled so: the calibration is exact, that run comparison is not
+  where free options lie within D_max. Sensitivities of the option set (spec I6; header lines of the table, never release
+  values): the same calibration with the datasets of the large-lot thresholds 30 spaces (103 options, 34 free: lambda 324.31 m,
+  lambda_c 260.96 m) and 100 spaces (74 options, 22 free: lambda 390.10 m, lambda_c 302.38 m). The search stops at the first
+  bisection midpoint whose mean is within 0.0005 of the target (the achieved means are in the header), so lambda and lambda_c
+  are not exact roots and differences of that order between option sets are not resolved: the release and the threshold-30
+  values cannot be told apart at this tolerance. The same two decay lengths for every town are a transfer assumption (G3). The
+  values depend on the plans file they were calibrated on: another scenario gives other values. Both universes are samples of
+  a 25 % population (300,855 persons), so lambda and lambda_c are estimates whose sampling uncertainty is not quantified. The
+  script logs the mean at the two ends of both searches (lambda: 0.0052 at 10 m, 0.9142 at 5,000 m; lambda_c: 0.0012 at 10 m,
+  0.9166 at 5,000 m, in the table header), so the mean rises monotonically with the decay over that range; no local sensitivity
+  around the results is stated. SrV asks residents about their usual place, the model averages over the destinations of all
+  persons of the plans (universe caveat, spec E5 and H2), and the bs_zentrum class covers the whole Oberbezirk Zentrum, wider than
+  the two zones. Option weights ignore capacity (decision 13 of ADR-0140). SUPERSEDED values, none used by any config: lambda =
+  396.19 m and lambda_c = 359.64 m (the committed table of 2026-10-09 on the 1 % plans of 2026-10-08, plans SHA-256
+  a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc, the 49-row option set of Task 4g and the all-options
+  measure); lambda = 412.03 m and lambda_c = 320.66 m (the same 25 % plans, the 49-row option set and the all-options measure,
+  computed on 2026-10-12 as a SCRATCH run that was never committed, so not reproducible from the repository and no evidence,
+  recorded only so that the number is not mistaken for a result); lambda_c = 191.52 m with a Wolfsburg check of 0.3487 against
+  0.6387 (the first H2 on the free-inclusive target, committed once as 160a4dc8); the commuter number 0.7142 over 245 activities
+  at the single decay length (the pre-registered expected miss of ADR-0140 decision 7).
 notes: |
-  Result: lambda = 396.19 m (decay_length_m; target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736279,
-  340 of 340 universe activities with a priced garage within 1,000 m, all 49 priced options of the dataset) and lambda_c =
-  359.64 m (decay_commute_length_m; target 0.679099 read from the paid columns share_garage_large_lot_paid and share_street_paid
-  of the row bs_zentrum of srv2023_commute_parking_by_workplace_class, achieved mean 0.678955 after 12 halvings, 54 of 54
-  commuter activities with a priced garage within 1,000 m).
-  parking_garage_decay_m and parking_garage_decay_commute_m of configs/base_bs.yml and the two popsim fixture configs equal
-  them (a test requires both equalities), so the garage options are ON in the canonical configuration. The calibration is no
-  validation (ADR-0140 decisions 7 and 12). The release table was regenerated on 2026-10-09 (Task 4h and its fix round 1) from the same
-  plans file as the table of Task 5b (the lambda row is unchanged: the E5 method is unchanged); the commuter rows were
-  regenerated once more after the SrV commute table gained the paid columns (ruling R-4h-1).
-  Plans provenance: the plans file braunschweig_1pct_parking_v2_plans_population.xml.gz (SHA-256
-  a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc) is the output of the server run of 2026-10-08 14:45
-  to 2026-10-09 03:36 (exit 0, server log logs/run_20261008_144516.log on felix) with the overlay ~/parking_v2_plans.yml
-  on the server: configs/base_bs.yml plus the test_1pct scale block, run_matsim false,
-  parking_zones_enabled true, enable_urban_parking false, parking_garage_decay_m 0 (plans without a garage option, as the
-  calibration needs). The plans stay in the gitignored output folder of the main checkout (a copy under
-  eqasim-data/output_bs_1pct_parking_v2_plans/ of a worktree gives the repo-relative path of the header); the run manifest
-  of the v2 runs (Task 5b-3) will reference this plans run. Task 4d built the script and tested it on a synthetic fixture
-  (tests/fixtures/parking/calibration_plans_fixture.xml, extended in Task 4h by parkingFree and Wolfsburg activities).
+  Result (calibration run 2026-10-14, code state 974fa1bb; a calibration, no validation): lambda = 324.31 m (decay_length_m;
+  target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736029 after 11 halvings, 8,226 of 8,226 universe
+  activities with an option within 1,000 m, payment-inclusive) and lambda_c = 261.57 m (decay_commute_length_m; target 0.679099
+  read from the paid columns share_garage_large_lot_paid and share_street_paid of the row bs_zentrum of
+  srv2023_commute_parking_by_workplace_class, achieved mean 0.679221 after 13 halvings, 1,327 of 1,327 commuter activities with
+  a paid option within 1,000 m, paid-only). parking_garage_decay_m and parking_garage_decay_commute_m of configs/base_bs.yml and
+  the two popsim fixture configs equal them (a test requires both equalities), so the garage options are ON in the canonical
+  configuration. The calibration is no validation (ADR-0140 decisions 7, 12 and 14).
+  Plans provenance: the plans file braunschweig_25pct_parking_v2_plans_population.xml.gz (SHA-256
+  43607798e1cbe9d7c7223776516db4f1750a241dc5e2d602246f350aac0a595a, 314,958 person elements: 300,855 persons and 14,103 freight
+  agents, counted in the table header) is, as stated in the task brief of Task 4k, the output of the v2 plans run of 2026-10-12 on
+  the server from code 6e120332 (a commit of this repository) at sampling_rate 0.25 with parking_zones_enabled true and garage
+  decays 0 (the parking attributes that the population stage writes on activities are parkingZone, parkingFree and
+  parkingDistrict). No run manifest and no
+  server log of that run is in this repository state, and the plans file carries no run metadata of its own; the project lead
+  holds the run. The plans stay in the gitignored output folder of the main checkout (a copy under
+  eqasim-data/output_bs_25pct_parking_v2_plans/ of a worktree gives the repo-relative path of the header).
+  Why the plans need no regeneration for a new option set (checked in the code on 2026-10-14): the attributes of the plans come
+  from attach_parking_zones, draw_parking_free and attach_parking_districts (braunschweig.matsim.scenario.population), which read
+  the zone polygons, the tariff table, the SrV free shares, the districts and the random seed; the garage dataset is loaded by
+  the zones stage but only the tariff export and the Java pricing use it, and the calibration script recomputes the zone of every
+  activity from the polygons and reads only coordinates, purposes and parkingFree from the plans.
+  Earlier states of this record: the table of 2026-10-09 (Tasks 5b and 4h, plans of the 1 % server run of 2026-10-08, server log
+  logs/run_20261008_144516.log on felix, overlay ~/parking_v2_plans.yml) is superseded as stated under limitations; Task 4d
+  built the
+  script and tested it on a synthetic fixture (tests/fixtures/parking/calibration_plans_fixture.xml, extended in Task 4h by
+  parkingFree and Wolfsburg activities and in Task 4k by a free option, a freight agent and the sensitivities).

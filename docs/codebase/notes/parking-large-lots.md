@@ -83,7 +83,8 @@ its reason. The steps, the rule of each and the code that carries it:
   discount, a vehicle-group exemption and a purchase-bound free period are listed per row in the notes ("Not modelled", "Not
   used") and never change a price.
 - **Sensitivities never reach the release.** `--lot-threshold 30` or `100` is refused when `--out` or `--qa-out` carries the release
-  file name; the sensitivity datasets are the inputs of the calibration (Task 4k), written elsewhere.
+  file name; the sensitivity datasets are the sensitivities of the calibration (`--sensitivity-garages` of
+  `scripts/parking/calibrate_garage_decay.py`, header lines of its table, never a release value), written elsewhere.
 - **Regenerate, never edit.** The dataset is a local restricted file (never `git add` it), the QA table is committed; the command,
   the municipality pickle of the position check and the pinned hashes are in the data record.
 
@@ -92,6 +93,8 @@ its reason. The steps, the rule of each and the code that carries it:
 - Option weights ignore capacity: a small lot pulls as much as the largest garage at the same distance (spec E3).
 - Many lots are free by an explicit source statement; a free option within 1,000 m lowers the expected cost of a stay in a paid
   zone (the data record counts them).
-- The calibrated decay lengths belong to the former option set of decisions 7 and 12 until Task 4k recalibrates them (spec I6).
+- The decay lengths were recalibrated on this option set (Task 4k, spec I6, ADR-0140 decision 14, data record
+  `parking_garage_decay_calibration_2026`); a new option set, a lot that becomes a free option included, needs a new calibration
+  (a test ties the table to the dataset pinned in the data record).
 - The Wolfsburg sites with the owner's free evidence are QA rows while no page is archived; the archived copy of a page needs the
   owner's confirmation of the download.

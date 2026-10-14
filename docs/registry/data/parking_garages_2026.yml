@@ -556,7 +556,7 @@ acquisition:
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
     Christian-Dohm and Glockengiesser and Helmstedt Wallplatz) and 12 at 100 spaces (8 equal, 4 differing: Goslar
     Kornstrasse, Helmstedt Harsleber Tor and Holzberg and the Wolfenbuettel Lessingtheater); the 30 and 100 option sets are
-    inputs of Task 4k, not of a run.
+    the sensitivities of the calibration (data record parking_garage_decay_calibration_2026), not of a run.
     FACILITY TYPE AND ZONE PRODUCT (spec I1, revising ruling R-E1 for surface lots; owner decision A; rulings R-4j-6 and
     R-4j-7 of the fix round of Task 4j): facility_kind is surface_lot whatever the tariff is, and a lot inside a zone
     carries the street product of that zone as its own schedule, read from parking_tariffs_2026.csv by the zone id and never
@@ -996,9 +996,10 @@ notes: >-
   Ia costs the long-stay product like the street, a stay at the two Goslar lots is billed per started half hour, and a work
   stay at a Hauptbahnhof lot costs the lower of the metered price and the monthly product per working day; no value of the
   36 garages changed. The sensitivity datasets at 30 and 100 spaces and their
-  SHA-256 are in the acquisition notes (Task 4j paragraph). The decay lengths of the calibration record
-  parking_garage_decay_calibration_2026 (396.19 m and 359.64 m) were calibrated against the option set of Task 4g (49 rows) and
-  do not belong to the option set of this paragraph; their recalibration is Task 4k (spec Amendment I6). Content on 2026-10-08
+  SHA-256 are in the acquisition notes (Task 4j paragraph). The calibration record
+  parking_garage_decay_calibration_2026 was recalibrated on the option set of this paragraph in Task 4k (spec Amendment I6);
+  it states the values, the measures and the earlier values, and belongs to the dataset pinned here exactly. Content on
+  2026-10-08
   (Task 4g, spec Amendment G2, on top of Task 4f): the Wolfsburg Parkdeck Hauptbahnhof P1 is a
   garage (wob_hauptbahnhof, priced from the rules WOB_HBF_P1_R01, WOB_HBF_P1_R02 and WOB_HAUPTBAHNHOF_MONTHLY_1,
   assumptions P4 and P5, no capacity reported because the sources conflict at 186 and 190; geometry the package's

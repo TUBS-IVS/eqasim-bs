@@ -94,21 +94,36 @@ and no validation. The independent check the table reports (H3b) is the paid-onl
 probability at lambda_c of the work and education activities without `parkingFree` in `wob_tarifzone_1` to `wob_tarifzone_3`
 against the row `03103`, a number with its universe size and never validation. The script is tested on a synthetic fixture
 (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 % server run of
-2026-10-08: the table is committed and the two config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
-`configs/base_bs.yml` and the two popsim fixture configs (`tests/test_parking_garage_decay_config.py` requires both
-equalities; the results, universes and provenance are in ADR-0140 decisions 7 and 12 and the data record
-`parking_garage_decay_calibration_2026`). The table checks no paid share (the zone-level one was blind to the fee window and
+2026-10-08 and again, on the 25 % reference plans and the enlarged option set, on 2026-10-14 (the table is committed and the two
+config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
+`configs/base_bs.yml` and the two popsim fixture configs; `tests/test_parking_garage_decay_config.py` requires both
+equalities and that the table belongs to the garage dataset pinned in the data record `parking_garages_2026`; the results,
+universes and provenance are in ADR-0140 decision 14 and the data record `parking_garage_decay_calibration_2026`). The table
+checks no paid share (the zone-level one was blind to the fee window and
 read 1.0 in Ia and Ib, ruling R-5-4): a run's time-aware paid share, garage share and free shares are compared with the SrV
 by `scripts/parking/compare_parking_targets.py` on the run's own outcome report (see the next section). The reader of the
 table refuses a table without `decay_commute_length_m` (written before Amendment H).
+
+The measure of each target has the universe of its SrV quantity (spec Amendment I6): lambda counts EVERY option
+(payment-inclusive, the SrV shares contain free and paying parkers), lambda_c and the Wolfsburg check count the PAID options only
+(a free option, the free schedule `0- free` read from the schedule of the row and never from a name or a rate, is a free
+parker in SrV terms and leaves numerator and denominator: `sum(w_paid) / (1 + sum(w_paid))`, derived in the script
+documentation). The table header and rows name the measure of each target and the free options within D_max per universe (by id,
+with the activities reached), and the freight agents of the plans (ids `freight_*`, no residents) are excluded. A universe that
+the options barely reach (fewer than half of its activities with an option of its measure within D_max) is warned about.
+`--sensitivity-garages LABEL=PATH` runs the same calibration on another garage dataset (the lot thresholds 30 and 100) and
+writes the two decay lengths as header lines, labelled sensitivity and never a release value; the search stops at the first
+bisection midpoint within the tolerance, so differences of that order between option sets are not resolved. The table belongs
+to the garage dataset named in its header exactly: any change of the option set needs a new calibration.
 
 ## Comparison with the SrV references
 
 How a run's paid share, garage share and free shares are compared with the committed SrV tables
 (`scripts/parking/compare_parking_targets.py`), with the universe caveats, is in
-[parking-target-comparison.md](parking-target-comparison.md). The calibration script takes `--facility-kinds` (default every
-kind): the release value is the calibration on every kind, and a run on `garage` only reports lambda without the surface lots
-as a sensitivity number (the table records the filter).
+[parking-target-comparison.md](parking-target-comparison.md); its commuter and Wolfsburg rows count all off-street options,
+free ones included, because the outcome report has no paid/free split (labelled, spec I6). The calibration script takes
+`--facility-kinds` (default every kind): the release value is the calibration on every kind, and a run on `garage` only reports
+lambda without the surface lots as a sensitivity number (the table records the filter).
 
 ## Monthly products at garages (spec Amendment F, Task 4f)
 
@@ -147,8 +162,8 @@ product of P14 and the evidence gate are in [parking-large-lots.md](parking-larg
 Three consequences for this mechanism: a lot that carries the street product of its zone has the same price as the street
 there for every stay, because the maximum stay of the zone is written as bands and the lot row alone reproduces the street
 path (owner decision A and ruling R-4j-6, so the option changes the weights and not the price at the same spot); many lots
-are free (cost 0 at every duration, E4 unchanged); and the calibrated decay lengths were calibrated on the former option
-set, so they are to be recalibrated on the enlarged set (spec I6, Task 4k) before any run is compared with the SrV.
+are free (cost 0 at every duration, E4 unchanged); and the decay lengths were recalibrated on the enlarged set (spec I6,
+ADR-0140 decision 14), where the commuter decay and the Wolfsburg check count paid options only, so a free option leaves them.
 
 ## Known limitations
 
@@ -156,11 +171,11 @@ set, so they are to be recalibrated on the enlarged set (spec I6, Task 4k) befor
   occupancy are not modelled); the dataset's `capacity_reported` is information only.
 - The garage shares of the city centre and of `bs_zentrum` are calibration targets, so they no longer validate the model;
   the universe caveat of E5 and H2 (SrV asks residents about their usual place, the model averages over destinations) is
-  stated in the table header. The commuter decay rests on a small universe (54 activities of a 1 % sample), and the
-  independent Wolfsburg check misses the SrV row (ADR-0140 decision 12; the cause is not established).
+  stated in the table header. The universes are samples whose sizes the table states, and the independent Wolfsburg check is
+  a number without a bound that differs from the SrV row (ADR-0140 decisions 12 and 14; the cause is not established).
 - Most committed rows rest on at least one assumption; the counts per assumption and the warning share are in the data record `parking_garages_2026` (one fact, one file), and the loader warns at every load for the first share.
-- The effect of the garage options on exposure and expected cost per town is not reported yet: it needs plans, and the
-  reference plans are lost (task 5b of issue #436).
+- The effect of the garage options on exposure and expected cost per town is not reported yet (no v2 run exists; task 5b of
+  issue #436).
 - Monthly products (Amendment F): Tarif A of the Steinstrasse is limited to Mo-Fr 06:30-21:00 and the limit is not modelled;
   the imputed products rest on the published products of their own municipality (counts in the data record `parking_garages_2026`) and no capacity of monthly places is modelled (the sold-out
   garages Magni and Packhof, and the Eiermarkt, whose operator offers no monthly product at all (Contipark capture of
