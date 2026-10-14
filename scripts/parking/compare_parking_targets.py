@@ -139,9 +139,10 @@ HOME_PURPOSE = cost.HOME_PURPOSE
 #: nobody classified, so a new pricing branch cannot be counted as neither paid nor free by accident. Counting every PAID_*
 #: call as paid makes the paid share an UPPER BOUND of the paid share of chosen trips: PAID_EXPECTED (a mean over the street and
 #: the garages) and a PAID_* call that costs zero cents count as paid, and the calls include the non-chosen alternatives, which
-#: are less likely chosen when they pay, so the chosen-trip paid share is expected to be lower.
+#: are less likely chosen when they pay, so the chosen-trip paid share is expected to be lower. NO_FEASIBLE_OPTION (spec v3 A1)
+#: is paid too: the model prices that stay as the street at its metered cents, so it adds to the same upper bound.
 PAID_OUTCOMES = (cost.PAID_METERED, cost.PAID_LONG_STAY, cost.PAID_CAMPUS_MEMBER, cost.PAID_CAMPUS_GUEST, cost.PAID_GARAGE,
-                 cost.PAID_COMMUTER, cost.PAID_EXPECTED)
+                 cost.PAID_COMMUTER, cost.PAID_EXPECTED, cost.NO_FEASIBLE_OPTION)
 #: Outcomes that cost nothing by their own rule (a PAID_* call that happens to cost 0 ct is counted as paid).
 FREE_OUTCOMES = (cost.EMPLOYER_FREE, cost.RESIDENT_FREE, cost.OUTSIDE_FEE_HOURS, cost.FREE_WITHIN_LIMIT)
 OTHER_OUTCOMES = (cost.HOME, cost.NO_ZONE)

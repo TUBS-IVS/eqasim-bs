@@ -207,6 +207,14 @@ def test_the_outcome_names_are_the_python_reference_names(cmp):
     assert sorted(classified) == sorted(cost.OUTCOMES)
 
 
+def test_no_feasible_option_is_classified_as_paid_because_the_model_prices_it_at_the_street_metered_cents(cmp):
+    # Spec v3 A1 / R-A-8: a stay without any feasible option is priced as the street at its metered price, so it counts as a
+    # paid call (like PAID_EXPECTED and the PAID_* calls that cost 0 ct, which keep the paid share an UPPER BOUND).
+    from braunschweig.parking import cost
+    assert cost.NO_FEASIBLE_OPTION in cmp.PAID_OUTCOMES
+    assert cost.NO_FEASIBLE_OPTION not in (*cmp.FREE_OUTCOMES, *cmp.OTHER_OUTCOMES)
+
+
 # ------------------------------------------------------------------------------------------------------- the references
 
 
