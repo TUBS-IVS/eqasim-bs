@@ -276,8 +276,9 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum
     # distance 1000 m (spec Amendment E6).
     fixture_model = json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))
-    # The garage dataset has no max_stay_min column until Part B of the v3 plan, so every exported garage carries null there;
-    # the committed fixture model has the maximum of three fixture garages, which the golden exporter sets on the loaded frame.
+    # The fixture geojson keeps a legacy layout without the max_stay_min column (the dataset has it since spec v3 B), so every
+    # exported garage carries null here; the committed fixture model has the maximum of three fixture garages, which the golden
+    # exporter sets from the sidecar tests/fixtures/parking/parking_garages_fixture_max_stay_min.json.
     assert all(entry["max_stay_min"] is None for entry in model["garages"])
     assert [{key: value for key, value in entry.items() if key != "max_stay_min"} for entry in model["garages"]] == [
         {key: value for key, value in entry.items() if key != "max_stay_min"} for entry in fixture_model["garages"]]

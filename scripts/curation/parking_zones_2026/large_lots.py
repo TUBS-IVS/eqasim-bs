@@ -474,8 +474,12 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
     from the maximum stay, so the lot's schedule is the BANDS form that reproduces the street exactly (ruling R-4j-6; the bands
     take the chargeable minutes in the fee window like the street, and a total band and tiers may not mix); its ``max_stay_min``
     is None. A zone with a maximum stay and NO long-stay product (spec v3 B1, the Braunschweig zone Ia; ruling R-B-2) gives the
-    plain rate form and the maximum as ``max_stay_min``: the lot carries the zone's maximum stay as its own, and a longer stay
-    leaves the lot out of the option set exactly as it leaves the street. Returns {"rules": {id: rule}, "rate": rate rule id,
+    plain rate form and the maximum as ``max_stay_min``: the lot carries the zone's maximum stay as its own. The lot compares the
+    ELAPSED stay with it (``cost.option_feasible``), the street the CHARGEABLE minutes inside its fee window
+    (``cost.street_feasible``), so the lot is NEVER LESS RESTRICTIVE than the street but can be stricter (ruling R-B-11): a stay
+    from 07:00 to 11:00 in zone Ia (fee window 09:00-20:00, maximum 180 min) is feasible on the street (120 chargeable minutes) and
+    not at the lot (240 elapsed minutes). The price is unaffected; only the option weights shift. Returns {"rules": {id: rule},
+    "rate": rate rule id,
     "cap": cap rule id or None, "long_stay": long-stay rule id or None, "max_stay_min": the maximum stay of a zone without a
     long-stay product (whole minutes) or None, "form": the form of the specification for the encoder ({"rate": ...} or {"bands":
     [...]}, "window": "rate", and "cap" where there is one), "row": the zone's table row as a dict}. ``SystemExit`` for a zone that

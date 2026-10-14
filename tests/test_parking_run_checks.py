@@ -46,7 +46,7 @@ PREPARED_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
                    '\t<module name="global">\n\t\t<param name="randomSeed" value="1234" />\n\t</module>\n'
                    '</config>\n')
 #: The module braunschweig.matsim.simulation.prepare._write_parking_inputs writes with the zones on.
-ENABLED_MODULE = {"enabled": "true", "tariffsPath": f"{PREFIX}parking_tariffs_2026-09-29.json",
+ENABLED_MODULE = {"enabled": "true", "tariffsPath": f"{PREFIX}parking_tariffs_2026-10-14.json",
                   "terminalStayRule": "until_fee_end"}
 DISABLED_MODULE = {**ENABLED_MODULE, "enabled": "false"}
 

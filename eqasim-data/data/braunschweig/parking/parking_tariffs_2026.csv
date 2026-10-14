@@ -1,5 +1,6 @@
 # Parking tariffs 2026 of the ZGB parking cost zones (issue #249), one row per zone of parking_zones_2026.geojson.
-# Target world: tariffs as published in September 2026 (retrieved 2026-09-29), applied to the model's average weekday.
+# Target world: tariffs as published in September 2026 (retrieved 2026-09-29), applied to the model's average weekday; the rows
+# corrected by spec v3 B1 (issue #436) rest on the 2026-10-14 research packages (their source_date and note say which).
 # Units: money in EUR (the Java side converts to integer cents), minutes as whole numbers, fee_start_h/fee_end_h as
 # decimal hours of the weekday (0 <= fee_start_h < fee_end_h <= 24). Empty = not applicable. resident_exempt in {true, false}.
 # resident_permits_valid (the column before the two EV columns) in {true, false} or empty: whether the parking honours resident parking permits, i.e.

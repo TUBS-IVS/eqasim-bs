@@ -1038,7 +1038,8 @@ def test_the_committed_fixture_model_carries_the_option_price_coefficient_of_the
 
 def test_schema_5_writes_the_garage_maximum_stay_and_refuses_schema_4_readers_silently_dropping_it(garage_frame):
     # The dataset has the max_stay_min column since spec v3 B (ruling R-B-2); the fixture file is a legacy layout without it, so the
-    # loaded fixture frame carries it empty and an entry then carries null; where a dataset frame carries a value, it is written as an
+    # loaded fixture frame carries it empty and an entry then carries null; where a dataset frame carries a value, it is written
+    # as an
     # integer number of minutes. The key set is exactly GARAGE_KEYS either way, so a schema-4 reader (which rejects an unknown
     # key, like the Java one) cannot silently drop a maximum.
     assert garage_frame["max_stay_min"].isna().all()

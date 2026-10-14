@@ -1707,6 +1707,11 @@ def _encode_or_not_expressible(spec: dict, rules: dict) -> dict:
     return encoded
 
 
+def _clock_h(hours: float) -> str:
+    """Decimal hours of the weekday as HH:MM."""
+    return f"{int(hours):02d}:{int(round((hours - int(hours)) * 60)):02d}"
+
+
 def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
     """The encoded tariff of a lot from its owner decision (:func:`encode_tariff` of the rules converted from the package or the
     street product of its zone) plus the facts for the notes: {"encoded", "rules", "used" (package rule ids that set a value),
@@ -1753,9 +1758,20 @@ def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
                             f"{float(row['long_stay_product_eur']):.2f} EUR of the zone (assumption M1) are the bands of the "
                             "schedule.")
         elif product["max_stay_min"] is not None:
+            start_h, end_h = float(row["fee_start_h"]), float(row["fee_end_h"])
+            example = ""
+            if start_h >= 2.0:
+                # a stay that begins two hours before the fee window opens: its chargeable minutes are two hours fewer than its
+                # elapsed minutes, so the street admits it and the lot (elapsed rule) does not
+                elapsed_min = product["max_stay_min"] + 60
+                example = (f" Example: a stay from {_clock_h(start_h - 2)} to {_clock_h(start_h - 2 + elapsed_min / 60)} is "
+                           f"feasible on the street ({elapsed_min - 120} chargeable minutes in the fee window "
+                           f"{_clock_h(start_h)}-{_clock_h(end_h)}) and not at this lot ({elapsed_min} elapsed minutes).")
             zone_carried = (f"The maximum stay {product['max_stay_min']} min of the zone, which has no long-stay product, is the "
-                            "column max_stay_min of this row (ASSUMPTION M3, ruling R-B-2): a stay longer than it leaves this lot "
-                            "out of the option set, as it leaves the street.")
+                            "column max_stay_min of this row (ASSUMPTION M3, ruling R-B-2). The lot compares the ELAPSED stay "
+                            "with it and the street the CHARGEABLE minutes inside the fee window, so the lot is never less "
+                            "restrictive than the street but can be stricter (ruling R-B-11)." + example
+                            + " The price is unaffected; only the option weights shift.")
         else:
             zone_carried = None
         return {"encoded": encoded, "rules": rules, "used": used, "zone_sentence": sentence, "verdicts": verdicts,

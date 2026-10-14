@@ -254,7 +254,9 @@ def test_the_schema_6_fixture_garages_carry_their_maximum_stay_and_the_rest_of_t
     by_id = {garage.garage_id: garage for garage in fixture_garages}
     assert {garage_id: garage.max_stay_min for garage_id, garage in by_id.items() if garage.max_stay_min is not None} == {
         "fx_g20_max120": 120, "fx_g28_max90": 90, "fx_g30a_max120": 120}
-    # the exporter sets the column on the loaded frame (the dataset has none until Part B): the maximum travels in the model
+    # the fixture geojson keeps a legacy layout without the column (the dataset has it since spec v3 B), so the exporter sets it
+    # from
+    # the sidecar tests/fixtures/parking/parking_garages_fixture_max_stay_min.json: the maximum travels in the model
     model = json.loads(FIXTURE_JSON.read_text(encoding="utf-8"))
     assert {entry["garage_id"] for entry in model["garages"] if entry["max_stay_min"] is not None} == {
         "fx_g20_max120", "fx_g28_max90", "fx_g30a_max120"}

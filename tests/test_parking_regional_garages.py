@@ -1490,7 +1490,8 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
 
 
 def test_exactly_the_three_lots_of_zone_ia_carry_a_maximum_stay_and_it_is_the_zones_ruling_r_b_2():
-    # spec v3 B1 dropped the long-stay product of Ia; ruling R-B-2: a lot that takes the product of a zone with a maximum stay and no
+    # spec v3 B1 dropped the long-stay product of Ia; ruling R-B-2: a lot that takes the product of a zone with a maximum stay
+    # and no
     # long-stay product carries the maximum as its own (column max_stay_min, 180 min); Buergerpark takes it with its P14 product
     garages = _committed_garages()
     assert str(garages["max_stay_min"].dtype) == "Int64"
@@ -1498,7 +1499,8 @@ def test_exactly_the_three_lots_of_zone_ia_carry_a_maximum_stay_and_it_is_the_zo
     assert carrying == ["lot_braunschweig_buergerpark", "lot_braunschweig_grosser_hof", "lot_braunschweig_wendenstrasse_werder"]
     assert (garages.loc[carrying, "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN).all()
     tariffs = pz.load_tariffs(TARIFFS_PATH).set_index("zone_id")
-    assert tariffs.loc["bs_zone_ia", "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN and pd.isna(tariffs.loc["bs_zone_ia", "long_stay_product_eur"])
+    assert tariffs.loc["bs_zone_ia", "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN
+    assert pd.isna(tariffs.loc["bs_zone_ia", "long_stay_product_eur"])
     for garage_id in carrying:
         row = garages.loc[garage_id]
         assert _plain(row["tariff_duration_bands"]) is None
@@ -1521,7 +1523,8 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
                                             "surface_lot": {"listed": 55, "priced": 55, "not_priced": 0}}
     # the assumption rates (fallback transparency; counted from the hand-written pins below as well): no row rests on P3 any more,
     # P4 29 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 18 (every row with a priced duration schedule; the three lots of zone Ia
-    # left it with ruling R-B-2: they carry the plain rate and max_stay_min 180), P10 8 (Forschungsflughafen, Suedkopf-Center, the five Broetchentaste
+    # left it with ruling R-B-2: they carry the plain rate and max_stay_min 180), P10 8 (Forschungsflughafen, Suedkopf-Center,
+    # the five Broetchentaste
     # lots of Helmstedt and Salzgitter and the Buechereivorplatz that takes their product), P11 4, P12 on none (withdrawn, spec
     # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 48 of 91 on at least one assumption and 39 of 91
     # on P4 or P5 (both below the 75 % warning threshold now that 29 free lots rest on no assumption), 7 rows in the tiered form,

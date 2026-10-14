@@ -5,12 +5,14 @@ packages that carries it (``Parkdaten_Nachrecherche_2026-10-14.zip``: ``sz_curre
 ``he_brochure``, ``seesen_reg``, ``seesen_parking``, ``bh_places``, ``gs_2025_gazette``, ``bs_parkgo_2025``;
 ``Parkdaten_Restluecken_2026-10-14.zip``: ``bh_brochure_calendar``; ``Grossparkplaetze_ZGB8_2026-10-12.zip``: ``db_hbf``)
 or the ASSUMPTION id of the spec (M3, W-max, E2). Fee windows and maximum stays are separate columns. The unchanged rows
-are pinned against the table of the base commit, so that a row nobody meant to touch cannot move.
+are pinned against the committed digest of the base table (a9b640f2, the table before Task B1), so that a row nobody meant to
+touch cannot move; no git access is needed and nothing is skipped.
 """
 from __future__ import annotations
 
-import subprocess
-import tempfile
+import hashlib
+import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -24,9 +26,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
 TARIFFS_PATH = PARKING_DIR / "parking_tariffs_2026.csv"
 REGISTER_PATH = PARKING_DIR / "parking_coverage_register_2026.csv"
-#: The table before Task B1 (Part A of v3 merged with the v2 tip); the unchanged rows must equal it.
-BASE_COMMIT = "a9b640f2"
-TABLE_RELATIVE = "eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv"
+#: The table before Task B1 (Part A of v3 merged with the v2 tip), committed as every row's cells and note digest.
+BASE_ROWS_PATH = REPO_ROOT / "tests" / "fixtures" / "parking" / "parking_tariffs_base_rows_a9b640f2.json"
+RECORD_PATH = REPO_ROOT / "docs" / "registry" / "data" / "parking_tariffs_2026.yml"
 
 BAD_HARZBURG = ("bh_sole_therme", "bh_kurpark", "bh_grossparkplatz", "bh_burgberg", "bh_berliner_platz")
 GOSLAR = ("gs_altstadt_zone1", "gs_parkplatz_baeringerstrasse", "gs_parkplatz_klubgartenstrasse_zob",
@@ -43,14 +45,15 @@ def tariffs() -> pd.DataFrame:
     return pz.load_tariffs(TARIFFS_PATH).set_index("zone_id")
 
 
-def _base_table() -> pd.DataFrame:
-    result = subprocess.run(["git", "show", f"{BASE_COMMIT}:{TABLE_RELATIVE}"], cwd=REPO_ROOT, capture_output=True)
-    if result.returncode != 0:
-        pytest.skip(f"the base commit {BASE_COMMIT} is not available in this clone")
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "parking_tariffs_base.csv"
-        path.write_bytes(result.stdout)
-        return pz.load_tariffs(path).set_index("zone_id")
+def _base_rows() -> dict:
+    """zone id -> {"cells": the base row's columns except zone_id, notes and the EV columns (null = empty), "notes_sha256"}."""
+    document = json.loads(BASE_ROWS_PATH.read_text(encoding="utf-8"))
+    assert document["base_commit"] == "a9b640f2" and len(document["rows"]) == 40
+    return document["rows"]
+
+
+def _note_digest(notes) -> str:
+    return hashlib.sha256(str(notes).encode("utf-8")).hexdigest()
 
 
 def _price(zone: pd.Series, zone_id: str, start_h: float, minutes: int, purpose: str = "shop") -> int:
@@ -102,29 +105,37 @@ def _same(left, right) -> bool:
 
 
 def test_every_row_outside_the_listed_corrections_equals_the_base_table(tariffs):
-    base = _base_table()
-    assert set(base.index) <= set(tariffs.index) and set(tariffs.index) - set(base.index) == set()
+    base = _base_rows()
+    assert set(base) == set(tariffs.index)
     moved = []
-    for zone_id in base.index:
+    for zone_id, row in base.items():
         if zone_id in EXPECTED_CHANGES:
             continue
-        for column in base.columns:
-            if not _same(base.loc[zone_id, column], tariffs.loc[zone_id, column]):
+        for column, before in row["cells"].items():
+            if not _same(before if before is not None else pd.NA, tariffs.loc[zone_id, column]):
                 moved.append((zone_id, column))
+        if _note_digest(tariffs.loc[zone_id, "notes"]) != row["notes_sha256"]:
+            moved.append((zone_id, "notes"))
         for column in pz.EV_COLUMNS:
             if pd.notna(tariffs.loc[zone_id, column]):
                 moved.append((zone_id, column))
     assert moved == []
 
 
+def test_the_base_digest_has_every_corrected_row_and_the_unchanged_ones_are_the_majority():
+    base = _base_rows()
+    assert set(EXPECTED_CHANGES) < set(base) and len(set(base) - set(EXPECTED_CHANGES)) == 40 - len(EXPECTED_CHANGES)
+
+
 @pytest.mark.parametrize("zone_id", sorted(EXPECTED_CHANGES))
 def test_a_corrected_row_changes_exactly_the_listed_cells(tariffs, zone_id):
-    base = _base_table()
+    base = _base_rows()[zone_id]
     differing = {}
     for column in pz.TARIFF_COLUMNS:
         if column in ("zone_id", "notes"):
             continue
-        before = base.loc[zone_id, column] if column in base.columns else pd.NA
+        before = base["cells"][column] if column in base["cells"] else None
+        before = pd.NA if before is None else before
         after = tariffs.loc[zone_id, column]
         if not _same(before, after):
             differing[column] = after
@@ -134,7 +145,23 @@ def test_a_corrected_row_changes_exactly_the_listed_cells(tariffs, zone_id):
         if value is None:
             continue    # a source URL: pinned in its own test
         assert _same(differing[column], value), (zone_id, column, differing[column], value)
-    assert tariffs.loc[zone_id, "notes"] != base.loc[zone_id, "notes"], f"{zone_id}: the note must record the change"
+    assert _note_digest(tariffs.loc[zone_id, "notes"]) != base["notes_sha256"], f"{zone_id}: the note must record the change"
+
+
+# ------------------------------------------------------------------------------------------------ the record pins the file
+def test_the_data_record_pins_the_committed_tariff_table_so_it_cannot_go_stale():
+    # the table is committed with LF line endings (a Windows checkout may hold CRLF); the record states the hash of the CURRENT
+    # file in its last "SHA-256 of the file (LF)" statement and keeps the chain of earlier versions behind it
+    digest = hashlib.sha256(TARIFFS_PATH.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    import yaml
+
+    notes = " ".join(yaml.safe_load(RECORD_PATH.read_text(encoding="utf-8"))["notes"].split())
+    statements = re.findall(r"SHA-256 of the file \(LF\): ([0-9a-f]{64})", notes)
+    assert statements and statements[-1] == digest, (statements[-1:], digest)
+    for earlier in ("9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc",
+                    "c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2",
+                    "1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19"):
+        assert earlier in notes and earlier != digest
 
 
 # ------------------------------------------------------------------------------------------------ the EV columns

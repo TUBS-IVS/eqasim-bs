@@ -573,7 +573,8 @@ def load_garages(path, *, allow_legacy_columns: bool = False) -> gpd.GeoDataFram
     if legacy and not allow_legacy_columns:
         raise LegacyColumnsError(
             f"{path}: the dataset lacks the column(s) {legacy} (written before spec Amendment F: imputed monthly products, "
-            "ASSUMPTION P13, or before spec v3 B: the maximum stay, ASSUMPTION M3); regenerate it with scripts/curation/parking_zones_2026/regional_garages.py (the command is in the "
+            "ASSUMPTION P13, or before spec v3 B: the maximum stay, ASSUMPTION M3); regenerate it with "
+            "scripts/curation/parking_zones_2026/regional_garages.py (the command is in the "
             "data record parking_garages_2026) or, for a test fixture only, load it with allow_legacy_columns=True")
     if legacy:
         # a file written before Amendment F, opted in: the column is explicitly empty (nothing imputed), never guessed

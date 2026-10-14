@@ -13,7 +13,8 @@ provider: >-
   and tourism page), Stadt Seesen (ParkGO 2017 and information page), Stadt Braunlage (ParkGO 2018 and the tariff page
   of the car park Hexenritt) and the service page of Stadt Goslar (three car parks at 1 EUR/h)
 vintage: >-
-  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of every row); the three Wolfsburg rows
+  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of the primary source of a row; spec v3 B1 moved
+  pe_innenstadt, wf_innenstadt and sz_lebenstedt to 2026-10-14, see the last paragraph of the field notes); the three Wolfsburg rows
   (spec Amendment C2) come from the city's Geoviewer layer of Stand 12/2024, retrieved 2026-10-01. valid_from per
   row is the first date the source confirms (the retrieval date where the start is not published). The 13 rows of spec
   Amendment D (the BgA car park Willy-Brandt-Platz, the campus Volkmaroder Strasse, three Goslar, five Bad Harzburg,
@@ -193,7 +194,8 @@ verification:
     search time) and test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendment_d1 (the two
     windows, no ASSUMPTION F1 in their notes, the window source counts and the assumption rows by id; since spec v3 B1
     municipal_page 22, operator_page 3, assumption 8 and ordinance 7: the five Bad Harzburg and the three station rows
-    left the assumption rows; the station rows say operator_page, ruling R-B-4). tests/test_parking_zone_tariff_corrections_v3.py pins every cell that Task B1 changed with its source id (the
+    left the assumption rows; the station rows say operator_page, ruling R-B-4).
+    tests/test_parking_zone_tariff_corrections_v3.py pins every cell that Task B1 changed with its source id (the
     changed cells per row against the table of the base commit a9b640f2, every other row byte-equal in all columns, the
     EV columns, the header assumptions M3, W-max and E2, the Echternplatz row of the coverage register).
 requirements:
@@ -270,8 +272,9 @@ limitations: >-
   the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
   a polygon overlay. The Wolfenbuettel URL of the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the
   current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
-  retrieval and snapshot date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts
-  ticketing that campus on that day (GB3 page), so on the snapshot date this zone charged nothing.
+  retrieval date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts ticketing that campus
+  on that day (GB3 page), so on the snapshot date 2026-09-29 this zone charged nothing; the snapshot date of the release is
+  2026-10-14 since spec v3 B1 (ruling R-B-7), when it charges.
   40 rows after spec Amendment G1 (2026-10-08): street_paid 33, resident_zone 1, campus 6; fee_window_source municipal_page 17, ordinance 7, assumption 16; commuter_day_eur on 10 rows (bs_zone_ib, the six campus rows and the
   three station rows); resident_permits_valid false on nine stated rows (the five bs_bga_* rows,
   gs_parkplatz_klubgartenstrasse_zob and the three station rows), so R2 is off on 15 of the 40 zones with the six campus
@@ -333,14 +336,24 @@ notes: >-
   (seesen_reg; the 10 h of seesen_parking is a named conflict and not applied) and EV 360 min to 2026-12-31 (the ordinance
   states no duration, so the zone maximum bounds it); the four Goslar rows EV 240 min to 2026-12-31 (gs_2025_gazette; marked
   machines only, so the exemption is an upper bound); bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west window source
-  operator_page (ruling R-B-4; db_hbf: Mo-So including holidays 00:00-00:00; these rows are written by scripts/curation/parking_zones_2026/
+  operator_page (ruling R-B-4; db_hbf: Mo-So including holidays 00:00-00:00; these rows are written by
+  scripts/curation/parking_zones_2026/
   station_lots.py, whose DB_WINDOW_EVIDENCE pins the package and member hashes); wob_tarifzone_1 to 3 note only (ASSUMPTION
   W-max: no zone-wide maximum; the areas with a recorded maximum become area zones in Task B2). The curation checks
   regional_zones.check_tariff_rows and station_lots.check_tariff_rows enforce the new values and were run against the
   committed table and the real packages without a deviation. Header: M2 withdrawn, M3, W-max and E2 added, M1 narrowed to
-  the resident zones. Counts: street_paid 33, resident_zone 1, campus 6 (40 rows); fee_window_source municipal_page 22, operator_page 3, ordinance 7, assumption 8; EV exemption on seven rows (sz_lebenstedt, pe_innenstadt, se_am_markt, four Goslar rows). The
+  the resident zones. Counts: street_paid 33, resident_zone 1, campus 6 (40 rows); fee_window_source municipal_page 22,
+  operator_page 3, ordinance 7, assumption 8; EV exemption on seven rows (sz_lebenstedt, pe_innenstadt, se_am_markt, four
+  Goslar rows). The
   zone geometries are unchanged (parking_zones_2026.geojson SHA-256 4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490).
-  SHA-256 of the file (LF): c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2 (before: 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc).
+  History of the file (LF SHA-256): 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc before Task B1; then
+  c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2 (commit 9d51bbf1, Task B1); then
+  1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19 (commit 3d4682cc: the station windows say operator_page and the
+  header names that value); now, after fix round 2 (header line 2 states that the rows corrected by spec v3 B1 rest on the
+  2026-10-14
+  packages): SHA-256 of the file (LF): 8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f (before:
+  1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19). The
+  record's hash is pinned against the committed file by a test.
   Expected output change of Task B1 (its one statement; no run exists and the size is not established): with the Part A
   rules, a stay in Ia above 180 min no longer buys the 9.00 EUR ticket and has no street option (priced over the garage and
   lot options, else NO_FEASIBLE_OPTION); a Peine stay pays 0.50 EUR per started half hour without cap (8 h = 8.00 EUR, before
