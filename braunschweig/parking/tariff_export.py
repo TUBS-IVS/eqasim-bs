@@ -1,4 +1,4 @@
-"""Build the parking tariff model JSON (schema 4) that the Java parking cost model reads (issues #249, #436).
+"""Build the parking tariff model JSON (schema 5) that the Java parking cost model reads (issues #249, #436).
 
 The tariff table (design spec section 5.3: money in euros, fee hours as decimal hours of the weekday) is
 converted ONCE, here, into integer euro cents and integer seconds after midnight; the Java side reads only
@@ -32,10 +32,22 @@ entry is the published monthly product of the dataset (``monthly_eur``) or, wher
 stays min(metered or day price, monthly_cents / 21) (ASSUMPTION P2). The export logs per municipality how many garages carry a
 published, an imputed or no product and the P13 median, and the model lists ASSUMPTION P13 in its register exactly when an
 imputed product is used (a model without one is byte-identical to a model of before Amendment F). Spec Amendment I (Task 4j) is
-the same kind of change: the model lists ASSUMPTION P14 (an imputed lot tariff) exactly when a priced garage entry names it,
-and the register keeps the rule text of the withdrawn ASSUMPTION P12 (garages.WITHDRAWN_ASSUMPTIONS states the withdrawal in the
-dataset documentation): the text is part of the committed fixture model whose LF hash is pinned for the Java copies, so no key, no
-schema and no fixture changes.
+the same kind of change: the model lists ASSUMPTION P14 (an imputed lot tariff) exactly when a priced garage entry names it. Since
+schema 5 the register lists EVERY dataset assumption (P3 to P8, P10, P11) only when a priced garage row names it, like P13 and
+P14, and never the withdrawn ASSUMPTION P12 (garages.WITHDRAWN_ASSUMPTIONS states the withdrawal in the dataset documentation).
+
+Schema 5 (spec v3 A1, A2 and A5, issue #436, Task A6) adds three things, all of them keys of the Java reader of Task A7:
+
+* the top-level key ``option_price_beta_u_per_eur`` (the money coefficient of the option weights exp(-d / lambda - beta * c /
+  100) in utility per EUR, ASSUMPTION G1-d; a finite float >= 0, 0 = the price-independent weights of v2; config key
+  ``parking_option_price_beta_u_per_eur``, the magnitude of the car cost coefficient ``betaCost_u_MU`` of the mode choice; a model
+  of schema 4 has no such key and its weights carry no price, ``option_price_beta_from_model``);
+* the key ``max_stay_min`` of every garage entry (int >= 1 or null = no maximum, ASSUMPTION M3): read from a ``max_stay_min``
+  column of the garage dataset where the dataset carries one (it has none until Part B of the v3 plan) and null otherwise;
+* the key ``ev_free_minutes`` of every zone entry (int >= 1 or null = no exemption, ASSUMPTIONS E1 and E2). The tariff table
+  also carries ``ev_rule_valid_until`` (an ISO date or empty = open-ended): the export writes the exemption only when that date
+  is empty or on or after ``tariff_snapshot_date`` and writes null for an expired rule, with an info line that names the zone
+  and the expiry, so the pricing sees only rules in force and the date is not part of the model.
 
 Spec Amendment C3 (resident parking districts) adds two more keys without a new schema version, because they are
 additive: every zone entry carries ``resident_permits_valid``, a bool that is never null (an empty table cell resolves to
@@ -66,16 +78,19 @@ import pandas as pd
 
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking.cost import (GARAGE_MAX_DISTANCE_M, SECONDS_PER_DAY, ZONE_TYPES, GarageBand, GarageTariff,
-                                       GarageTier, ZoneTariff, not_applicable_fields)
+                                       GarageTier, ZoneTariff, check_option_price_beta, not_applicable_fields)
 
 log = logging.getLogger(__name__)
 
-#: 4 since the separate commuter decay length (spec Amendment H, issue #436): the model gained ``garage_decay_commute_m``;
-#: 3 added ``garages``, ``garage_decay_m`` and ``garage_max_distance_m`` (spec Amendment E); 2 added the optional schema-2 keys
-#: of the zone entries.
-SCHEMA_VERSION = 4
+#: 5 since the v3 mechanics (spec v3 A1, A2, A5, issue #436): the model gained ``option_price_beta_u_per_eur``, every garage
+#: entry ``max_stay_min`` and every zone entry ``ev_free_minutes``; 4 added the separate commuter decay length (spec Amendment H):
+#: ``garage_decay_commute_m``; 3 added ``garages``, ``garage_decay_m`` and ``garage_max_distance_m`` (spec Amendment E); 2 added
+#: the optional schema-2 keys of the zone entries.
+SCHEMA_VERSION = 5
 #: The first schema version whose model carries ``garage_decay_commute_m``.
 COMMUTER_DECAY_SCHEMA_VERSION = 4
+#: The first schema version whose model carries ``option_price_beta_u_per_eur``.
+PRICE_WEIGHT_SCHEMA_VERSION = 5
 CURRENCY = "EUR"
 #: Assumption T1. The only rule implemented; the config key ``parking_terminal_stay_rule`` is reserved.
 TERMINAL_STAY_RULE_UNTIL_FEE_END = "until_fee_end"
@@ -115,9 +130,8 @@ OPTIONAL_COLUMNS = ("garage_hourly_rate_eur", "garage_billing_unit_min", "garage
                     "garage_first_period_eur", "garage_daily_cap_eur", "garage_fee_start_h", "garage_fee_end_h",
                     "commuter_day_eur", "search_time_min", "resident_permits_valid", "ev_free_minutes",
                     "ev_rule_valid_until")
-#: Spec v3 A5: ``ev_free_minutes`` is read into ``ZoneTariff`` (the interim guard of ``zone_to_json`` then refuses a stated
-#: exemption); ``ev_rule_valid_until`` is a known optional column that is not read here: its snapshot-date switch-off is the
-#: export of Task A6.
+#: Spec v3 A5: ``ev_free_minutes`` is read into ``ZoneTariff``; ``ev_rule_valid_until`` is read by ``tariff_row_to_zone`` only to
+#: switch an expired rule off (it is no tariff field and no key of the model).
 #: The columns every table and row must have (schema 1).
 REQUIRED_COLUMNS = tuple(column for column in TARIFF_COLUMNS if column not in OPTIONAL_COLUMNS)
 # ZoneTariff money/minute/garage-hour field -> the table column it is read from, so that row errors name the column.
@@ -170,15 +184,14 @@ _GARAGE_ASSUMPTION_WHERE_IT_BITES = {
     "P10": "Garages with a free first duration band or a grace period next to their tiers, read as a grace period: stays of "
            "the free minutes or a little longer",
     "P11": "Garages priced from secondary evidence (the garages that name ASSUMPTION P11 in their notes)",
-    "P12": "Wolfsburg car parks without any fee evidence that are free by the municipal default (the rows that name "
-           "ASSUMPTION P12 in their notes): every stay at such a car park costs 0, whatever the street costs",
     "P14": "Surface lots without a stated general tariff (the rows that name ASSUMPTION P14 in their notes): the tariff of such "
            "a lot is the median product of the priced lots of its zone, so the lot weighs as much as the other lots at the "
            "same distance and costs what they cost",
 }
 
-#: ASSUMPTION P13 (spec Amendment F2): the model lists it (after P12) exactly when a garage entry uses an imputed monthly
-#: product, so the model of a release without imputation (and every fixture model) carries the register as before.
+#: ASSUMPTION P13 (spec Amendment F2): the model lists it (after the last dataset assumption listed, before G1) exactly when a
+#: garage entry uses an imputed monthly product, so the model of a release without imputation (and every fixture model) carries
+#: the register as before.
 MONTHLY_IMPUTATION_ASSUMPTION = Assumption(
     "P13", parking_garages.ASSUMPTIONS["P13"],
     "Garages without a published monthly product in a municipality with at least two published garage products (the garages "
@@ -186,9 +199,9 @@ MONTHLY_IMPUTATION_ASSUMPTION = Assumption(
     "parking_garage_monthly_imputation false (published products only); garage dataset rows that name it (column assumptions "
     "of parking_garages_2026)")
 
-#: ASSUMPTION P14 (spec Amendment I4): the model lists it (after P12 and P13) exactly when a garage entry of the model is a priced
-#: row that names it (a surface lot whose general tariff is the median product of the lots of its zone), so the model of a dataset
-#: without such a lot (and every fixture model) carries the register as before.
+#: ASSUMPTION P14 (spec Amendment I4): the model lists it (after P13, before G1) exactly when a garage entry of the model is a
+#: priced row that names it (a surface lot whose general tariff is the median product of the lots of its zone), so the model of a
+#: dataset without such a lot (and every fixture model) carries the register as before.
 LOT_TARIFF_IMPUTATION_ASSUMPTION = Assumption(
     "P14", parking_garages.ASSUMPTIONS["P14"], _GARAGE_ASSUMPTION_WHERE_IT_BITES["P14"],
     "garage dataset rows that name it (column assumptions of parking_garages_2026)")
@@ -203,6 +216,15 @@ ASSUMPTIONS_REGISTER = (
     Assumption("M1", "Maximum stay compares the chargeable duration; a longer stay buys the zone's long-stay "
                "product, and where the zone has none it loses the street product (P1)", "Ia, Peine, resident zones",
                "long_stay_product_eur per zone"),
+    # Spec v3 A1 (issue #436).
+    Assumption("M3", "A stay whose chargeable duration exceeds the maximum stay of the street (max_stay_min) has no street "
+               "option unless the zone sells a long-stay product (M1); a garage or lot whose maximum stay (max_stay_min of the "
+               "garage entry) the ELAPSED stay exceeds is no option either; the stay is priced over the remaining options "
+               "only, and with none left it is priced as the street at its metered price for the duration, the maximum "
+               "ignored, and counted as outcome NO_FEASIBLE_OPTION, the signal that the option set is incomplete; the early "
+               "rules (home, employer-free, campus, resident) precede the test",
+               "Zones with a max_stay_min and no long-stay product, and garages or lots with a max_stay_min",
+               "max_stay_min and long_stay_product_eur per zone; max_stay_min per garage entry"),
     Assumption("A1", "The free share observed for current SrV car commuters applies to all workers/students "
                "of the class", "Work/education in paid zones", "parking_workplace_free_share_shift"),
     # Parking cost zones v2, Amendment D5: the Wolfsburg class share is a proxy, set in the configuration.
@@ -254,12 +276,13 @@ ASSUMPTIONS_REGISTER = (
                "counters"),
     *(Assumption(assumption_id, parking_garages.ASSUMPTIONS[assumption_id], _GARAGE_ASSUMPTION_WHERE_IT_BITES[assumption_id],
                  "garage dataset rows that name it (column assumptions of parking_garages_2026)")
-      for assumption_id in ("P10", "P11", "P12")),
-    Assumption("G1", "A car stay in a paid zone has the options street (weight 1) and every priced garage within the maximum "
-               "distance, weight exp(-d / lambda) with d the straight-line distance in metres (a gravity-type choice by "
-               "distance); the price of the stay is the probability-weighted mean of the option costs (an expected cost, no "
-               "random draw), the price does not enter the weights and capacity or occupancy are not modelled; lambda is "
-               "garage_decay_m for every purpose but work and education, whose stays use lambda_c (G1-c)",
+      for assumption_id in ("P10", "P11")),
+    Assumption("G1", "A car stay in a paid zone has the options street (distance 0) and every priced garage within the maximum "
+               "distance, each with the weight exp(-d / lambda - beta * c / 100), d the straight-line distance in metres and "
+               "c the cents the option charges for this stay (a gravity-type choice by distance and price, G1-d); the price "
+               "of the stay is the probability-weighted mean of the option costs (an expected cost, no random draw) and "
+               "capacity or occupancy are not modelled; lambda is garage_decay_m for every purpose but work and education, "
+               "whose stays use lambda_c (G1-c)",
                "Stays in street_paid and resident_zone zones with a garage in range (never campus zones, never a stay that "
                "is free by an early rule or whose street option costs 0)",
                "garage_decay_m (0 switches the garage options off; lambda is calibrated, see G3)"),
@@ -277,6 +300,16 @@ ASSUMPTIONS_REGISTER = (
                "Stays with the purposes work and education that have a garage option (never campus zones, never a stay that "
                "is free by an early rule or whose street option costs 0)",
                "garage_decay_commute_m (config parking_garage_decay_commute_m; 0 switches the commuter garage options off)"),
+    # Spec v3 A2 (issue #436).
+    Assumption("G1-d", "The price enters the option weights with ONE money coefficient beta = option_price_beta_u_per_eur "
+               "(utility per EUR), the magnitude of the car cost coefficient betaCost_u_MU of the mode choice, WITHOUT the "
+               "income or distance elasticity (those belong to the person's whole utility, not to the comparison of parking "
+               "options); c is the option's cost in EUR for THIS stay with its duration, fee window, products, EV exemption "
+               "and feasibility, the street included; no local evidence identifies a separate parking price coefficient, and "
+               "beta 0 gives the price-independent weights of v2",
+               "Every stay with at least one feasible garage option (never campus zones, never a stay that is free by an early "
+               "rule or whose street option costs 0)",
+               "parking_option_price_beta_u_per_eur (0 reproduces the weights of v2; the value of the mode choice is the model)"),
     Assumption("G2", "A garage is an option of a stay when its straight-line distance to the destination (EPSG:25832) is at "
                "most 1000 m", "Garages far from a destination carry a small weight (exp(-d / lambda)) but widen the option "
                "set; a garage just inside the limit is an option, one just outside is none",
@@ -309,17 +342,55 @@ ASSUMPTIONS_REGISTER = (
 )
 
 
-def assumption_texts(monthly_imputed: bool = False, lot_tariff_imputed: bool = False) -> list[str]:
-    """The register as the ``assumptions`` list of the model: ``ASSUMPTION <id>: ...`` strings. With ``monthly_imputed`` the
-    model uses an imputed monthly product and the register lists ASSUMPTION P13 right after P12; with ``lot_tariff_imputed`` it
-    lists a surface lot whose tariff is imputed and the register lists ASSUMPTION P14 right after P13 (or P12 without P13)."""
-    entries = list(ASSUMPTIONS_REGISTER)
-    position = next(index for index, entry in enumerate(entries) if entry.assumption_id == "P12") + 1
-    if monthly_imputed:
-        entries.insert(position, MONTHLY_IMPUTATION_ASSUMPTION)
-        position += 1
-    if lot_tariff_imputed:
-        entries.insert(position, LOT_TARIFF_IMPUTATION_ASSUMPTION)
+#: The assumptions of the garage DATASET that the register lists only when a priced row names them (spec v3 R-FW-1). P9 is a rule
+#: of the pricing code and always listed; P12 is withdrawn and never listed; P13 and P14 have their own switches.
+CONDITIONAL_GARAGE_ASSUMPTION_IDS = ("P3", "P4", "P5", "P6", "P7", "P8", "P10", "P11")
+#: Assumptions of the dataset that the register never lists as a dataset assumption: the withdrawn P12 and the two that have a
+#: switch of their own (``monthly_imputed``, ``lot_tariff_imputed``).
+_OTHER_DATASET_ASSUMPTION_IDS = ("P12", "P13", "P14")
+
+#: Spec v3 A5: the EV exemption assumptions, listed (after R2-a) exactly when a zone of the model carries ``ev_free_minutes``.
+EV_ASSUMPTIONS = (
+    Assumption("E1", "Every battery-electric (BEV) and plug-in-hybrid (PHEV) car of the synthetic fleet counts as the electric car "
+               "of an E-plate holder (owner decision 2026-10-14), so every person who owns one is exempt wherever a zone states "
+               "ev_free_minutes; no share of the electric cars is drawn", "Persons with a BEV or PHEV in zones with an exemption",
+               "none: no share, no sensitivity arm (the person attribute parkingEvExempt is written by the preparation)"),
+    Assumption("E2", "The EV exemption (ev_free_minutes) applies within the maximum stay of the zone only (max_stay_min): a stay "
+               "above the maximum is not exempt even where it is within ev_free_minutes (the ordinance does not state how both "
+               "relate), and a longer stay pays the full schedule, never a deduction; a rule whose validity date "
+               "(ev_rule_valid_until) lies before the tariff snapshot date is exported as no exemption",
+               "Exempt persons in zones whose ev_free_minutes exceeds their max_stay_min", "ev_free_minutes per zone"),
+)
+
+
+def assumption_texts(monthly_imputed: bool = False, lot_tariff_imputed: bool = False, garage_assumption_ids=(),
+                     ev_exemption: bool = False) -> list[str]:
+    """The register as the ``assumptions`` list of the model: ``ASSUMPTION <id>: ...`` strings.
+
+    Spec v3 R-FW-1: the dataset assumptions P3 to P8, P10 and P11 are listed only when ``garage_assumption_ids`` (the ids that
+    priced garage rows name, ``garage_assumption_ids``) holds them; P9 (a rule of the pricing code) is always listed; P12 is
+    withdrawn and never listed, whatever ``garage_assumption_ids`` holds; an id that is no assumption of the dataset raises
+    ``ValueError``. With ``monthly_imputed`` the model uses an imputed monthly product and the register lists ASSUMPTION P13
+    after the last of them; with ``lot_tariff_imputed`` it lists a surface lot whose tariff is imputed and the register lists
+    ASSUMPTION P14 right after P13; both stand before G1. With ``ev_exemption`` (a zone states ``ev_free_minutes``) the register
+    ends with ASSUMPTIONS E1 and E2."""
+    named = frozenset(garage_assumption_ids)
+    unknown = sorted(named - set(parking_garages.ASSUMPTIONS))
+    if unknown:
+        raise ValueError(f"garage_assumption_ids {unknown} are no assumptions of the garage dataset "
+                         f"({sorted(parking_garages.ASSUMPTIONS)})")
+    entries = []
+    for entry in ASSUMPTIONS_REGISTER:
+        if entry.assumption_id in CONDITIONAL_GARAGE_ASSUMPTION_IDS and entry.assumption_id not in named:
+            continue
+        if entry.assumption_id == "G1":
+            if monthly_imputed:
+                entries.append(MONTHLY_IMPUTATION_ASSUMPTION)
+            if lot_tariff_imputed:
+                entries.append(LOT_TARIFF_IMPUTATION_ASSUMPTION)
+        entries.append(entry)
+    if ev_exemption:
+        entries.extend(EV_ASSUMPTIONS)
     return [assumption.render() for assumption in entries]
 
 
@@ -439,7 +510,35 @@ def _check_empty_cells(fields: Mapping, where: str) -> None:
                              "leave the cell empty")
 
 
-def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
+def _ev_rule_in_force(row: Mapping, zone_id: str, ev_free_minutes, snapshot_date, where: str):
+    """``ev_free_minutes`` as the model carries it (spec v3 A5): the stated minutes when the rule is open-ended or its validity
+    date ``ev_rule_valid_until`` is on or after ``snapshot_date``, else None, with an info line naming the zone and the expiry (the
+    switch is never silent). Raises ``ValueError`` for a validity date without ``ev_free_minutes`` and a date that is no ISO date
+    ``YYYY-MM-DD`` (text; compared as a date, never as text). Without ``snapshot_date`` (None) the conversion is a STRUCTURAL check
+    only (the zones stage and the validation script, which write no model): the date is validated but not compared and the minutes
+    are returned as stated, so such a conversion must never feed a model; ``build_tariff_model`` always passes its date."""
+    valid_until = row["ev_rule_valid_until"] if "ev_rule_valid_until" in row else None
+    if _is_empty(valid_until):
+        return ev_free_minutes
+    if ev_free_minutes is None:
+        raise ValueError(f"{where}: ev_rule_valid_until {valid_until!r} needs ev_free_minutes (a validity date without an "
+                         "exemption states nothing)")
+    try:
+        expiry = datetime.date.fromisoformat(valid_until) if isinstance(valid_until, str) else None
+    except ValueError:
+        expiry = None
+    if expiry is None or expiry.isoformat() != valid_until:
+        raise ValueError(f"{where}: ev_rule_valid_until must be an ISO date YYYY-MM-DD, got {valid_until!r}")
+    if snapshot_date is None:
+        return ev_free_minutes
+    if expiry >= datetime.date.fromisoformat(check_snapshot_date(snapshot_date)):
+        return ev_free_minutes
+    log.info("[parking-tariffs] zone %r: the EV exemption (ev_free_minutes %d) expired on %s, before the tariff snapshot %s: "
+             "exported as null (no exemption, ASSUMPTION E2)", zone_id, ev_free_minutes, valid_until, snapshot_date)
+    return None
+
+
+def tariff_row_to_zone(row: Mapping, *, snapshot_date: str | None = None) -> ZoneTariff:
     """Convert one tariff-table row (spec 5.3 columns; a dict or a pandas Series) into a ``ZoneTariff``.
 
     Euros become integer cents with ``int(round(eur * 100))`` (a value that is not a whole number of cents
@@ -453,7 +552,10 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
     window names its ``*fee_start_h`` and ``*fee_end_h`` columns in hours, and a filled cell of a column the zone type
     does not have names that column and says to leave the cell empty. ``resident_permits_valid`` is read like
     ``resident_exempt`` (true/false in any case) but may be empty or absent; ``ZoneTariff`` then resolves the default of
-    the zone type (ASSUMPTION R2-a) and rejects true on a campus.
+    the zone type (ASSUMPTION R2-a) and rejects true on a campus. Spec v3 A5: ``ev_free_minutes`` is kept only while its rule is
+    in force on ``snapshot_date`` (the ISO date of the tariff state): ``ev_rule_valid_until`` empty or on or after it; an expired
+    rule becomes None and is logged (see :func:`_ev_rule_in_force`); without ``snapshot_date`` the validity date is checked for its
+    form only and the minutes stay as stated (a structural check of the stage, never the input of a model).
     """
     missing = [column for column in REQUIRED_COLUMNS if column not in row]
     if missing:
@@ -475,6 +577,7 @@ def tariff_row_to_zone(row: Mapping) -> ZoneTariff:
         fields[field] = _hours_to_seconds(cell(column), column, where, required=False)
     fields["resident_exempt"] = _flag(row["resident_exempt"], "resident_exempt", where)
     fields["resident_permits_valid"] = _optional_flag(cell("resident_permits_valid"), "resident_permits_valid", where)
+    fields["ev_free_minutes"] = _ev_rule_in_force(row, zone_id, fields["ev_free_minutes"], snapshot_date, where)
     _check_fee_window_columns(row, fields, where)
     _check_empty_cells(fields, where)
     return ZoneTariff(**fields)
@@ -524,7 +627,8 @@ def garage_row_to_tariff(row: Mapping, *, monthly_imputation: bool = True) -> Ga
 
     Euros become integer cents (a value that is not a whole number of cents raises, as for the zone rows), decimal hours
     seconds after midnight (``int(round(h * 3600))``), the position the point's EPSG:25832 coordinates in metres rounded to
-    millimetres (``COORDINATE_DECIMALS_M``), the tier and band texts their integer forms. An empty cell is None. Raises
+    millimetres (``COORDINATE_DECIMALS_M``), the tier and band texts their integer forms, ``max_stay_min`` (spec v3 A1) the
+    whole minutes of the dataset column of that name where the row has one, None otherwise. An empty cell is None. Raises
     ``ValueError`` for an unpriced garage (listed, never priced: no value is approximated) and for anything
     ``GarageTariff`` rejects.
     """
@@ -554,6 +658,9 @@ def garage_row_to_tariff(row: Mapping, *, monthly_imputation: bool = True) -> Ga
         "bands": None if _is_empty(bands) else garage_bands_from_text(bands),
         "monthly_cents": _euros_to_cents(garage_monthly_eur(row, where, monthly_imputation=monthly_imputation),
                                          "monthly_eur", where),
+        # Spec v3 A1: the dataset has no such column until Part B; a frame that carries one (nullable integer minutes) is read
+        # and an absent column is null (no maximum), never a guess.
+        "max_stay_min": _whole_minutes(row["max_stay_min"] if "max_stay_min" in row else None, "max_stay_min", where),
     }
     return GarageTariff(**fields)
 
@@ -583,6 +690,18 @@ def garage_entries(garages, monthly_imputation: bool = True) -> list[dict]:
     return [garage.to_json() for garage in sorted(entries, key=lambda garage: garage.garage_id)]
 
 
+def garage_assumption_ids(garages) -> frozenset:
+    """The assumption ids that the PRICED rows of the garage dataset name in their ``assumptions`` column (empty for no dataset):
+    the input of :func:`assumption_texts` for the dataset assumptions the register lists conditionally (spec v3 R-FW-1). Pure."""
+    if garages is None:
+        return frozenset()
+    named = set()
+    for _, row in garages.iterrows():
+        if bool(row["priced"]) and not _is_empty(row["assumptions"]):
+            named.update(part.strip() for part in str(row["assumptions"]).split(parking_garages.LIST_SEPARATOR) if part.strip())
+    return frozenset(named)
+
+
 def garages_naming_assumption(garages, assumption_id: str) -> int:
     """The number of PRICED rows of the garage dataset whose ``assumptions`` column names ``assumption_id`` (0 for no dataset).
     The model lists a conditional assumption (P13, P14) in its register exactly when this is positive for it. Pure."""
@@ -600,16 +719,10 @@ def garages_from_model(model: Mapping) -> list[GarageTariff]:
 
 
 def zone_to_json(zone: ZoneTariff) -> dict:
-    """The zone entry of the model JSON: every ``ZoneTariff`` field except ``zone_id``, which is its key."""
+    """The zone entry of the model JSON: every ``ZoneTariff`` field except ``zone_id``, which is its key. Since schema 5 the
+    entry always has the key ``ev_free_minutes`` (int >= 1, or null = no exemption; spec v3 A5)."""
     fields = asdict(zone)
     del fields["zone_id"]
-    # Spec v3 A5, interim until Task A6 exports the EV exemption: ``ev_free_minutes`` is not part of tariff model schema 5,
-    # whose bytes (and LF SHA-256 of the committed fixture model) are pinned in both repositories. It is omitted while no
-    # zone states it, so that every model written today is byte-identical; a zone WITH an exemption is refused rather than
-    # silently dropped (a model that loses the rule would price the stay in full without saying so).
-    if fields.pop("ev_free_minutes") is not None:
-        raise ValueError(f"zone {zone.zone_id!r}: ev_free_minutes is set but the tariff model schema 5 cannot carry it; "
-                         "the EV exemption export arrives with the schema bump of Task A6 (spec v3 A5)")
     return fields
 
 
@@ -747,12 +860,25 @@ def garage_decays_from_model(model: Mapping) -> tuple[float, float]:
     return decay_m, float(model["garage_decay_commute_m"])
 
 
+def option_price_beta_from_model(model: Mapping) -> float:
+    """``option_price_beta_u_per_eur`` of a tariff model of any schema: a Python stand-in for the Java reader (``ParkingTariffs``),
+    which implements the same rule independently; no pipeline stage calls it, the tests pin the rule. A model of schema 4 or
+    older has no such key and its option weights carry no price (0.0, as before schema 5); a model of schema 5 or later without
+    the key is invalid (``ValueError``), never defaulted."""
+    if model["schema_version"] < PRICE_WEIGHT_SCHEMA_VERSION:
+        return 0.0
+    if "option_price_beta_u_per_eur" not in model:
+        raise ValueError(f"tariff model of schema {model['schema_version']} has no option_price_beta_u_per_eur: it is required "
+                         f"from schema {PRICE_WEIGHT_SCHEMA_VERSION} on and is never defaulted")
+    return float(model["option_price_beta_u_per_eur"])
+
+
 def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Sequence[Mapping],
                        terminal_stay_rule: str = TERMINAL_STAY_RULE_UNTIL_FEE_END,
                        resident_districts: pd.DataFrame | None = None, garages=None, garage_decay_m: float = 0.0,
                        garage_decay_commute_m: float | None = None, garage_max_distance_m: float = GARAGE_MAX_DISTANCE_M,
-                       garage_monthly_imputation: bool = True) -> dict:
-    """The tariff model of spec 5.4 (schema 4) for a tariff table with the spec 5.3 columns.
+                       garage_monthly_imputation: bool = True, option_price_beta_u_per_eur: float = 0.0) -> dict:
+    """The tariff model of spec 5.4 (schema 5) for a tariff table with the spec 5.3 columns.
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
@@ -768,7 +894,12 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     distance D_max (G2, > 0). ``garage_monthly_imputation``
     (spec Amendment F3, config key ``parking_garage_monthly_imputation``) lets a garage without a published monthly product use
     the imputed one of ASSUMPTION P13, which the model then lists in its register; the counts per municipality (published,
-    imputed, none, median) are logged. Raises ``ValueError`` for an
+    imputed, none, median) are logged. ``option_price_beta_u_per_eur`` (spec v3 A2, ASSUMPTION G1-d, config key
+    ``parking_option_price_beta_u_per_eur``) is the money coefficient of the option weights in utility per EUR, a finite number
+    >= 0 (the magnitude of the car cost coefficient of the mode choice; 0 = the price-independent weights of v2, the default of
+    this function; the preparation always passes the configured value). Spec v3 A5: a zone's ``ev_free_minutes`` is exported only
+    while its ``ev_rule_valid_until`` is empty or on or after ``snapshot_date`` (``tariff_row_to_zone``), and the register lists
+    ASSUMPTIONS E1 and E2 when a zone of the model carries one. Raises ``ValueError`` for an
     empty table, a missing schema-1 column, a duplicate zone id, an invalid row, invalid sources, invalid districts, an
     invalid garage or an invalid garage parameter. The returned dict is plain JSON data: integer cents and
     seconds, None for "not applicable".
@@ -780,6 +911,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     checked_sources = _check_sources(sources)
     district_entries = resident_district_entries(resident_districts)
     check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_commute_m)
+    check_option_price_beta(option_price_beta_u_per_eur)
     if garage_decay_commute_m is None:
         garage_decay_commute_m = 0.0   # both decays are off (checked above): the explicit value of the model
     if not isinstance(garage_monthly_imputation, bool):
@@ -787,6 +919,11 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     garage_list = garage_entries(garages, monthly_imputation=garage_monthly_imputation)
     monthly_summary = monthly_product_summary(garages, garage_monthly_imputation)
     _log_monthly_products(garages, monthly_summary, garage_monthly_imputation)
+    # Fallback transparency (spec v3 A1): a dataset without a max_stay_min column exports every garage as unlimited; say how many
+    # exported garages carry a maximum, so that a column that never reached the model is visible in the log of every export.
+    with_maximum = sorted(entry["garage_id"] for entry in garage_list if entry["max_stay_min"] is not None)
+    log.info("[parking-garages] maximum stay (spec v3 A1, ASSUMPTION M3): %d of %d exported garages carry max_stay_min%s",
+             len(with_maximum), len(garage_list), f" ({', '.join(with_maximum)})" if with_maximum else "")
     monthly_imputed_used = any(entry["imputed"] for entry in monthly_summary.values())
     if (garage_decay_m > 0 or garage_decay_commute_m > 0) and not garage_list:
         raise ValueError(f"garage_decay_m is {garage_decay_m} and garage_decay_commute_m {garage_decay_commute_m} (the garage "
@@ -799,7 +936,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         raise ValueError("tariff table has no rows")
     zones: dict[str, dict] = {}
     for row in tariffs.to_dict(orient="records"):
-        zone = tariff_row_to_zone(row)
+        zone = tariff_row_to_zone(row, snapshot_date=snapshot_date)
         if zone.zone_id in zones:
             raise ValueError(f"tariff table has a duplicate zone_id {zone.zone_id!r}")
         zones[zone.zone_id] = zone_to_json(zone)
@@ -811,6 +948,14 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
                     "garage_decay_commute_m %g: with garage options the zone-level garage family is superseded (spec "
                     "Amendment E8) and priced by the garage options only; the production tariff table has none", len(family),
                     len(zones), ", ".join(family), garage_decay_m, garage_decay_commute_m)
+    named_assumptions = garage_assumption_ids(garages)
+    if "P12" in named_assumptions:
+        log.warning("[parking-garages] %d priced garage row(s) name the withdrawn ASSUMPTION P12 (spec Amendment I5a): the "
+                    "it is not listed in the register of the model; regenerate the garage dataset", garages_naming_assumption(
+                        garages, "P12"))
+    ev_zones = sorted(zone_id for zone_id, entry in zones.items() if entry["ev_free_minutes"] is not None)
+    log.info("[parking-tariffs] EV exemption (spec v3 A5): %d of %d exported zones carry ev_free_minutes%s",
+             len(ev_zones), len(zones), f" ({', '.join(ev_zones)})" if ev_zones else "")
     return {
         "schema_version": SCHEMA_VERSION,
         "tariff_snapshot_date": snapshot_date,
@@ -819,13 +964,16 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
         # D1: the fee windows are those of an average weekday.
         "weekday_only": True,
         "assumptions": assumption_texts(monthly_imputed=monthly_imputed_used,
-                                        lot_tariff_imputed=garages_naming_assumption(garages, "P14") > 0),
+                                        lot_tariff_imputed=garages_naming_assumption(garages, "P14") > 0,
+                                        garage_assumption_ids=named_assumptions - set(_OTHER_DATASET_ASSUMPTION_IDS),
+                                        ev_exemption=bool(ev_zones)),
         "sources": checked_sources,
         "resident_districts": district_entries,
         "garages": garage_list,
         "garage_decay_m": float(garage_decay_m),
         "garage_decay_commute_m": float(garage_decay_commute_m),
         "garage_max_distance_m": float(garage_max_distance_m),
+        "option_price_beta_u_per_eur": float(option_price_beta_u_per_eur),
         "zones": zones,
     }
 

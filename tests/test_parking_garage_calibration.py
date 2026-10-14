@@ -586,10 +586,10 @@ def test_a_free_option_is_the_free_schedule_and_nothing_else(cal, tiers, bands, 
 def test_the_free_marker_reads_the_schedule_of_the_rows_and_never_the_name_or_the_rate(cal):
     frame = _fixture_garages()
     paid = cal.paid_option_flags(frame)
-    assert paid.dtype == bool and len(paid) == len(frame) == 19
-    # of the 19 fixture rows only fx_g17_free is the free schedule; the grace periods, the free first band of fx_g08_bands
-    # and the tiers with a grace period are PAID options
-    assert frame.loc[~paid, "garage_id"].tolist() == ["fx_g17_free"]
+    assert paid.dtype == bool and len(paid) == len(frame) == 38
+    # of the 38 fixture rows only fx_g17_free and fx_g22_free (golden P02, spec v3) are the free schedule; the grace periods, the
+    # free first band of fx_g08_bands and the tiers with a grace period are PAID options
+    assert frame.loc[~paid, "garage_id"].tolist() == ["fx_g17_free", "fx_g22_free"]
     # a name that says free does not free a paid option; a name that says paid does not charge a free one
     renamed = frame.copy()
     renamed.loc[renamed["garage_id"] == "fx_g01_core", "name"] = "Kostenlos free gratis"
@@ -607,13 +607,13 @@ def test_the_free_marker_reads_the_schedule_of_the_rows_and_never_the_name_or_th
     rotated = frame.copy()
     rotated["garage_id"] = ids
     assert cal.paid_option_flags(rotated).tolist() == paid.tolist()
-    assert rotated.loc[~cal.paid_option_flags(rotated), "garage_id"].tolist() == ["fx_g01_core"]
+    assert rotated.loc[~cal.paid_option_flags(rotated), "garage_id"].tolist() == ["fx_g01_core", "fx_g22_free"]
 
 
 def test_the_free_marker_is_the_one_the_garage_module_counts_as_priced_free(cal):
     # garages.coverage counts priced_free with is_free_schedule(parse_duration_bands(...)): the script marks the same rows
     frame = _fixture_garages()
-    assert int((~cal.paid_option_flags(frame)).sum()) == pg.coverage(frame)["priced_free"] == 1
+    assert int((~cal.paid_option_flags(frame)).sum()) == pg.coverage(frame)["priced_free"] == 2
 
 
 def test_the_paid_only_share_is_the_choice_share_of_the_paid_options_among_paid_options_and_the_street(cal):

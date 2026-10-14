@@ -246,6 +246,7 @@ config:
   parking_garage_decay_commute_m: 261.57
   parking_garage_monthly_imputation: true
   parking_cost_utility_factor: 1.0
+  parking_option_price_beta_u_per_eur: 0.310998
 
   # Household fleet routing-consistency: re-mode the initial car-driver legs of
   # carless persons (0-car households own no "car" vehicle) to car_passenger

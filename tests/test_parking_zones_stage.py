@@ -35,7 +35,8 @@ STAGE_LOGGER = "braunschweig.parking.zones_stage"
 
 FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac",
                     "fx_bs_ib_v2", "fx_bs_ia_v2", "fx_wob_v2", "fx_campus_v2", "fx_garage_window_v2",
-                    "fx_capped_street_v2", "fx_campus_tie_v2", "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2"]
+                    "fx_capped_street_v2", "fx_campus_tie_v2", "fx_res_garage_v2", "fx_bga_v2", "fx_res_nopermit_v2",
+                    "fx_ia_nolong_v3", "fx_ev_street_v3", "fx_ev_clip_v3", "fx_ev_expired_v3"]
 DEFAULT_PATHS = {
     "parking_zones_path": "braunschweig/parking/parking_zones_2026.geojson",
     "parking_tariffs_path": "braunschweig/parking/parking_tariffs_2026.csv",
@@ -56,7 +57,7 @@ FIXTURE_PATHS = {
 SOURCE_IDS = ["parking_zones_2026", "parking_tariffs_2026", "parking_coverage_register_2026",
               "srv2023_commute_parking_by_workplace_class", "parking_resident_districts_2026", "parking_garages_2026"]
 FIXTURE_DISTRICT_IDS = ["fx_district_a", "fx_district_b", "fx_district_sz_a"]
-FIXTURE_GARAGE_COUNT = 19
+FIXTURE_GARAGE_COUNT = 38
 #: The loader of the garage dataset warns when most priced garages rest on an assumption (P4, P5 and the others); the
 #: committed dataset does (34 of 35), so these two warnings are expected at every load and are no defect of the release.
 GARAGE_ASSUMPTION_RATE_WARNING = "rest on"
@@ -362,7 +363,7 @@ def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fi
     with caplog.at_level(logging.INFO, logger=STAGE_LOGGER):
         _release(fixture_data)
     [line] = [record.getMessage() for record in caplog.records if "zone release:" in record.getMessage()]
-    assert "18 zones (campus 3, resident_zone 3, street_paid 12) in 4 municipalities" in line
+    assert "22 zones (campus 3, resident_zone 3, street_paid 16) in 4 municipalities" in line
     assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
     assert "free shares for 6 workplace classes" in line
     assert "resident districts 3 (03101000 2, 03102000 1)" in line
@@ -449,11 +450,11 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     # The committed garage dataset: 91 rows (36 garages, 55 surface lots), every one priced (specs E13, E14 and I), in EPSG:25832.
     assert len(release["garages"]) == 91 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64
-    # The committed release exports as the schema-4 tariff model the preparation writes: with the decay 0 (the garage
+    # The committed release exports as the schema-5 tariff model the preparation writes: with the decay 0 (the garage
     # options off) and with a decay value, both list the 91 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],
                                              garages=release["garages"])
-    assert model["schema_version"] == 4 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
+    assert model["schema_version"] == 5 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
     assert len(model["garages"]) == 91 and model["garage_decay_m"] == 0.0
 
 

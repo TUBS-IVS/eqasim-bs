@@ -641,10 +641,11 @@ GARAGE_BAND_FIELDS = ("from_min", "to_min", "kind", "price_cents", "unit_min")
 GARAGE_BAND_KINDS = ("free", "total", "increment")
 #: Every key of one entry of the model's ``garages`` list, in the order of the documentation; the Java reader accepts
 #: exactly these. The single-window form fills ``hourly_rate_cents`` .. ``fee_end_s``, the tiered form ``tiers`` and the
-#: banded form ``bands`` together with the fee window; the keys of the other forms are null.
+#: banded form ``bands`` together with the fee window; the keys of the other forms are null. ``max_stay_min`` joined the entry
+#: with tariff model schema 5 (spec v3 A1): null = no maximum.
 GARAGE_FIELDS_JSON = ("garage_id", "x_m", "y_m", "hourly_rate_cents", "billing_unit_min", "fee_start_s", "fee_end_s",
                       "first_period_min", "first_period_cents", "first_period_start_s", "first_period_end_s",
-                      "daily_cap_cents", "tiers", "bands", "monthly_cents")
+                      "daily_cap_cents", "tiers", "bands", "monthly_cents", "max_stay_min")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -735,14 +736,8 @@ class GarageTariff:
                                                   band.unit_min) for band in self.bands)
 
     def to_json(self) -> dict:
-        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``.
-
-        The schema-4 entry has no ``max_stay_min`` key (it joins the model with schema 5, spec v3 A1, together with the
-        regenerated fixtures and the Java reader), so a garage that carries a maximum stay is refused here instead of
-        being written without it: a dropped maximum would silently make the Java side price the garage as unlimited."""
-        if self.max_stay_min is not None:
-            raise ValueError(f"garage {self.garage_id!r}: max_stay_min {self.max_stay_min} cannot be exported yet: the "
-                             "tariff model schema 4 has no such key (schema 5 adds it)")
+        """The entry of the model's ``garages`` list: exactly the keys ``GARAGE_FIELDS_JSON``, ``max_stay_min`` (null = no
+        maximum, spec v3 A1) included since tariff model schema 5."""
         fields = {name: getattr(self, name) for name in GARAGE_FIELDS_JSON}
         if self.tiers is not None:
             fields["tiers"] = [{name: getattr(tier, name) for name in GARAGE_TIER_FIELDS} for tier in self.tiers]

@@ -169,7 +169,8 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
         "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
         "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": None,
         "parking_garage_max_distance_m": 1000.0,
-        "parking_garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0}
+        "parking_garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0,
+        "parking_option_price_beta_u_per_eur": 0.310998}
 
 
 @pytest.mark.parametrize("values, message", [
@@ -200,11 +201,21 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     # spec Amendment F3: the imputation switch is a YAML boolean; the text "false" is truthy and must not keep it on silently
     ({"parking_garage_monthly_imputation": "false"}, "parking_garage_monthly_imputation must be true or false"),
     ({"parking_garage_monthly_imputation": 0}, "parking_garage_monthly_imputation must be true or false"),
+    # spec v3 A2: the money coefficient of the option weights is a finite number >= 0, no bool and no text
+    ({"parking_option_price_beta_u_per_eur": -0.1}, "option_price_beta_u_per_eur must be a finite number >= 0.*"
+                                                    "parking_option_price_beta_u_per_eur"),
+    ({"parking_option_price_beta_u_per_eur": float("nan")}, "option_price_beta_u_per_eur must be a finite number"),
+    ({"parking_option_price_beta_u_per_eur": float("inf")}, "option_price_beta_u_per_eur must be a finite number"),
+    ({"parking_option_price_beta_u_per_eur": True}, "option_price_beta_u_per_eur must be a finite number"),
+    ({"parking_option_price_beta_u_per_eur": "0.31"}, "option_price_beta_u_per_eur must be a finite number"),
+    ({"parking_option_price_beta_u_per_eur": None}, "option_price_beta_u_per_eur must be a finite number"),
 ], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
         "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds", "negative_decay",
         "text_decay", "nan_decay", "negative_commute_decay", "text_commute_decay", "nan_commute_decay",
         "boolean_commute_decay", "commute_decay_missing_while_the_options_are_on", "zero_maximum_distance",
-        "boolean_maximum_distance", "text_imputation", "numeric_imputation"])
+        "boolean_maximum_distance", "text_imputation", "numeric_imputation", "negative_option_price_beta",
+        "nan_option_price_beta", "infinite_option_price_beta", "boolean_option_price_beta", "text_option_price_beta",
+        "none_option_price_beta"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
@@ -246,8 +257,9 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     prepare.execute(context)
     model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
     assert sorted(model["zones"]) == ["fx_bga_v2", "fx_bs_ia", "fx_bs_ia_v2", "fx_bs_ib", "fx_bs_ib_v2", "fx_campus",
-                                      "fx_campus_tie_v2", "fx_campus_v2", "fx_capped_street_v2", "fx_frac",
-                                      "fx_garage_window_v2", "fx_pe", "fx_res_a", "fx_res_garage_v2",
+                                      "fx_campus_tie_v2", "fx_campus_v2", "fx_capped_street_v2",
+                                      "fx_ev_clip_v3", "fx_ev_expired_v3", "fx_ev_street_v3", "fx_frac",
+                                      "fx_garage_window_v2", "fx_ia_nolong_v3", "fx_pe", "fx_res_a", "fx_res_garage_v2",
                                       "fx_res_nopermit_v2", "fx_sz", "fx_wob", "fx_wob_v2"]
     # Same fixture table, same production export: the cents and seconds of the committed fixture model.
     assert model["zones"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["zones"]
@@ -258,11 +270,18 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     assert model["resident_districts"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["resident_districts"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        4, "2026-09-29", "until_fee_end")
+        5, "2026-09-29", "until_fee_end")
+    # spec v3 A2: the configured money coefficient of the option weights reaches the model (the default of the stage)
+    assert model["option_price_beta_u_per_eur"] == 0.310998
     # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum
     # distance 1000 m (spec Amendment E6).
     fixture_model = json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))
-    assert model["garages"] == fixture_model["garages"] and len(model["garages"]) == 19
+    # The garage dataset has no max_stay_min column until Part B of the v3 plan, so every exported garage carries null there;
+    # the committed fixture model has the maximum of three fixture garages, which the golden exporter sets on the loaded frame.
+    assert all(entry["max_stay_min"] is None for entry in model["garages"])
+    assert [{key: value for key, value in entry.items() if key != "max_stay_min"} for entry in model["garages"]] == [
+        {key: value for key, value in entry.items() if key != "max_stay_min"} for entry in fixture_model["garages"]]
+    assert len(model["garages"]) == 38
     assert (model["garage_decay_m"], model["garage_decay_commute_m"], model["garage_max_distance_m"]) == (0.0, 0.0, 1000.0)
 
 
@@ -275,10 +294,36 @@ def test_on_execute_writes_the_configured_garage_parameters_into_the_model_and_t
         400.0, 250.0, 800.0)
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert (report["garages_listed"], report["garages_priced"], report["garage_decay_m"],
-            report["garage_decay_commute_m"], report["garage_max_distance_m"]) == (19, 19, 400.0, 250.0, 800.0)
+            report["garage_decay_commute_m"], report["garage_max_distance_m"]) == (38, 38, 400.0, 250.0, 800.0)
     [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
-    assert "garages priced 19 of 19 listed" in line and "garage options ON" in line
+    assert "garages priced 38 of 38 listed" in line and "garage options ON" in line
     assert "commuter decay length 250 m" in line
+
+
+@pytest.mark.parametrize("beta", [0.0, 0.5, 2.0], ids=["v2_weights", "half", "double"])
+def test_the_option_price_coefficient_is_written_into_the_model_the_report_and_the_log_line(
+        tmp_path, monkeypatch, capsys, beta):
+    # Spec v3 A2 (ASSUMPTION G1-d, ruling R-A-7): the config key parking_option_price_beta_u_per_eur is the money coefficient
+    # of the option weights; it travels in the TARIFF MODEL (not as a module parameter: it is part of the tariff
+    # state the Java reader checks against betaCost_u_MU) and is recorded in the inputs report and the log line.
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True,
+                                       parking_option_price_beta_u_per_eur=beta)
+    prepare.execute(context)
+    model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
+    assert model["option_price_beta_u_per_eur"] == beta
+    report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["option_price_beta_u_per_eur"] == beta
+    assert "option_price_beta_u_per_eur" not in config.read_bytes().decode("utf-8")
+    [line] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
+    assert f"option price coefficient {beta:g} per EUR" in line
+
+
+def test_the_option_price_coefficient_default_is_the_magnitude_of_the_mode_choice_cost_coefficient(tmp_path, monkeypatch):
+    # 0.310998 = |BraunschweigModeParameters.betaCost_u_MU| (eqasim-java-bs): ASSUMPTION G1-d, no income or distance term. The
+    # Java startup check of Task A7 refuses a tariff model whose value differs by more than 1e-9.
+    assert prepare.PARKING_DEFAULTS["parking_option_price_beta_u_per_eur"] == 0.310998
+    context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
+    assert context.declared_config["parking_option_price_beta_u_per_eur"] == 0.310998
 
 
 def test_a_commuter_decay_of_zero_is_written_and_named_in_the_log_line(tmp_path, monkeypatch, capsys):
@@ -373,11 +418,11 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert (config.parent / tariffs_path).is_file()
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert report["parking_input_files"] == [tariffs_path, REPORT_NAME]
-    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 18, "resident_districts": 3,
-                      "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 12},
+    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 22, "resident_districts": 3,
+                      "zone_types": {"campus": 3, "resident_zone": 3, "street_paid": 16},
                       "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
-                      "garages_listed": 19, "garages_priced": 19, "garage_decay_m": 0.0, "garage_decay_commute_m": 0.0,
-                      "garage_max_distance_m": 1000.0,
+                      "garages_listed": 38, "garages_priced": 38, "garage_decay_m": 0.0, "garage_decay_commute_m": 0.0,
+                      "garage_max_distance_m": 1000.0, "option_price_beta_u_per_eur": 0.310998,
                       "garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0,
                       "garage_monthly_products": parking_garages.monthly_summary(
                           context.stages[PARKING_STAGE]["garages"], imputation=True),
@@ -389,7 +434,7 @@ def test_on_execute_logs_the_zone_count_and_the_file_names_once(tmp_path, monkey
     prepare.execute(context)
     lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
     assert len(lines) == 1, lines
-    assert "18 zones" in lines[0] and "3 resident districts" in lines[0], lines[0]
+    assert "22 zones" in lines[0] and "3 resident districts" in lines[0], lines[0]
     assert TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
 
 
