@@ -69,7 +69,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
 5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
    the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
    config enables `braunschweigParking`, `require_parking_package` refuses a jar without
-   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` or without `.../parking/GarageOptionModel.class` (the pipeline always writes tariff model schema 3) before MATSim starts, and `require_parking_outcomes`
+   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` or without `.../parking/GarageOptionModel.class` (the pipeline always writes tariff model schema 4) before MATSim starts, and `require_parking_outcomes`
    refuses a run whose last iteration (the highest `ITERS/it.N`; the eqasim termination criterion can end a run
    before `lastIteration`) wrote no `N.parking_outcomes.csv`; one `[parking] run check:` INFO line reports that both
    passed. With the module absent or disabled neither check runs.
@@ -128,15 +128,16 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   car parks and at the Goslar car park at the ZOB, `gs_parkplatz_klubgartenstrasse_zob`), after the home and
   employer-free rules and before the fee-window check. The flag switches off R2 only:
   the zone's own residents (R1) stay exempt. The golden cases R01 to R13 pin it, and the golden JSON has
-  `schema_version` 3 since.
+  `schema_version` 5 now (the tariff fixture and the export are schema 4).
 - The garage dataset is data of its own, not zones (spec Amendment E1): `parking_garages_2026.geojson` (points, WGS84
   on disk, EPSG:25832 after `braunschweig.parking.garages.load_garages`) with its QA table
   `parking_garages_2026_qa.csv` (`braunschweig.parking.garage_qa`) is built by
-  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its three optional
-  packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`, and `--wolfsburg-lots-zip`, read by
-  `wolfsburg_lots.py`, see [parking-wolfsburg-lots.md](parking-wolfsburg-lots.md)), so a change is made in
+  `scripts/curation/parking_zones_2026/regional_garages.py` from the owner's regional package and its optional
+  packages (`--supplement-zip`, `--followup-zip`, read by `garage_supplement.py`, and, for every surface lot,
+  `--large-lots-zip`, read by `large_lots.py`; the mechanism is in [parking-large-lots.md](parking-large-lots.md), the removed
+  reader of the earlier Wolfsburg package in [parking-wolfsburg-lots.md](parking-wolfsburg-lots.md)), so a change is made in
   `regional_garage_specs.py` (which package rule plays which role) and the two files are regenerated, never edited by
-  hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 3) lists its
+  hand. `braunschweig.parking.zones_stage` loads it as the sixth release input and the tariff model (schema 4) lists its
   priced garages; the zone-level garage columns of the tariff table stay empty (Amendment E8) and garages enter the
   pricing only through the distance-weighted garage options ([parking-garage-options.md](parking-garage-options.md)). A garage is priced only where the published structure maps
   exactly to ONE of three exclusive forms (one tariff structure per garage; no approximation, `not_priced_reason` says
@@ -190,7 +191,7 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   Java. The two orders differ (the Java enum starts with `NO_ZONE`, the Python tuple with `HOME`): the order is no
   contract, and every reader of the outcome report keys the rows by outcome name.
 - `braunschweig.parking.cost` is the reference; the Java `ParkingCostCalculator` must agree with it on the golden
-  cases (schema 4), which include the eight minimum-stay cases L01 to L08 and their twins L01Z to L08Z at L = 0;
+  cases (`schema_version` 5), which include the eight minimum-stay cases L01 to L08 and their twins L01Z to L08Z at L = 0;
   `tests/test_parking_cost.py` additionally pins those sixteen against the numbers of ADR-0139 decision 9,
   independently of the generator. After changing the fixture table, the golden cases or the export, re-run
   `python scripts/export_parking_golden_cases.py` and copy `parking_golden_cases.json` and

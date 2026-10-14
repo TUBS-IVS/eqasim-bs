@@ -669,7 +669,6 @@ def step_with_specs(step, regional_tests, monkeypatch):
     monkeypatch.setattr(step.specs, "MONTHLY_PRODUCTS", ())
     monkeypatch.setattr(step.specs, "PACKAGE_CANDIDATES", regional_tests.CANDIDATES)
     monkeypatch.setattr(step.specs, "DIRECTORY_DECISIONS", regional_tests.DIRECTORY)
-    monkeypatch.setattr(step.specs, "LOT_SPECS", ())
     monkeypatch.setattr(step.specs, "BS_MONTHLY_SPECS", BS_A_SPECS)
     monkeypatch.setattr(step.specs, "BS_RECORDED_SPECS", ())
     return step

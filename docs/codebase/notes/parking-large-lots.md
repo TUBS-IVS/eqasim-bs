@@ -5,14 +5,14 @@ package of the large public surface lots enters `parking_garages_2026`. The deci
 alternatives live in ADR-0140 (decision 13); every number of the dataset (counts, shares, hashes, the lots that differ from their
 zone) and the rules and licences of its sources live in the data record `parking_garages_2026`, which is the only place that
 states them; this note says where the code is and which rules a maintainer must keep. The garage options around it are in
-[parking-garage-options.md](parking-garage-options.md); the superseded reading of the Wolfsburg city-layer points is in
+[parking-garage-options.md](parking-garage-options.md); the history of the superseded Wolfsburg city-layer package (reader removed) is in
 [parking-wolfsburg-lots.md](parking-wolfsburg-lots.md).
 
 ## What it does
 
 `scripts/curation/parking_zones_2026/large_lots.py` reads the owner's package `Grossparkplaetze_ZGB8_2026-10-12.zip` (an
-optional input of `regional_garages.py`: `--large-lots-zip`, needs `--zones` and `--tariffs`; it supersedes
-`--wolfsburg-lots-zip` for the rows, so passing both stops the step before anything is read). Every record of the package is
+optional input of `regional_garages.py`: `--large-lots-zip`, needs `--zones` and `--tariffs`; it superseded the earlier
+Wolfsburg car-park package, whose option `--wolfsburg-lots-zip` was removed in Task 4l). Every record of the package is
 either an option (one dataset row with `facility_kind` surface_lot and the key `lot_<facility key>`) or ONE QA candidate row with
 its reason. The steps, the rule of each and the code that carries it:
 
