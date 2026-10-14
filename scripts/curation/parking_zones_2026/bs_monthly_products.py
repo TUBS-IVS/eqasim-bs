@@ -470,8 +470,9 @@ def read_recorded_products(inputs: dict, recorded_specs) -> list:
     product of, spec Amendment G1), "reason", "zone_ids", "amount_eur", "product_name", "note", "evidence"; a used product also
     "monthly_source_url" and "monthly_product", the source page and the product text that a lot carrying it as its monthly
     product states, spec Amendment I1 and ruling R-4j-6}: the cheapest publicly purchasable current product of each facility (a
-    sold-out facility included, the note says so), with the other products of the facility named in the note. ``SystemExit`` for a facility that has no such product or whose
-    package record is of another kind than the specification expects (a garage or a surface parking)."""
+    sold-out facility included, the note says so), with the other products of the facility named in the note. ``SystemExit``
+    for a facility that has no such product or whose package record is of another kind than the specification expects (a
+    garage or a surface parking)."""
     rows = []
     for spec in recorded_specs:
         record = _facility(inputs, spec)

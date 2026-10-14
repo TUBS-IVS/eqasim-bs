@@ -744,7 +744,8 @@ verification:
     lines with the consistency checks: the car parks inside a zone of spec E14 (0 checked, no candidate of the reason
     zone_street_product is left), the lots with the street product of their zone (12 checked, 12 equal, 0 differ) and the
     report-only pass over every lot inside a zone polygon (22 checked, 16 equal, 6 differ, the lots named in the acquisition
-    notes).
+    notes; surface lots only: a garage inside a zone polygon, 28 of the 36, keeps its own operator tariff by design and is
+    not compared with the street row of its zone).
     tests/test_parking_garages.py pins
     the loader, the writer,
     the band grammar, the evaluation and both validators on synthetic rows; tests/test_parking_regional_garages.py
@@ -764,7 +765,8 @@ verification:
     package exists locally, the real counts (152 records, the shortlists of 57, 72 and 40, 55 options at 50, 67 at 30 and 38
     at 100, no tariff that stops the step, the primary method of each provenance column without a fallback) and the
     committed rows (every record of the package once against an independent reading of the policy, the zone product of the
-    eleven lots equal to the table rows and priced like the street of its zone for every stay of the sweep, the pass over
+    eleven lots equal to the table rows, and the twelve of the sweep (those eleven plus the Buergerpark under P14) priced like
+    the street of its zone for every stay, the pass over
     every lot inside a zone polygon, the median donors of ASSUMPTION P14, the free lots at cost 0, the grace edges of
     Helmstedt and Salzgitter, the Peine Schlosswall bands against the minimum of its products);
     tests/test_parking_garage_supplement.py pins the supplement and follow-up readers
