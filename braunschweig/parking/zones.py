@@ -156,7 +156,9 @@ FORBIDDEN_FIELDS_BY_TYPE = {
 #: period). ``max_stay_min`` and ``long_stay_product_eur`` follow the maximum-stay rule of ``validate_tariffs``.
 PAIRED_FIELDS = (("first_period_min", "first_period_eur"), GARAGE_FIRST_PERIOD_COLUMNS)
 
-FEE_WINDOW_SOURCES = ("ordinance", "signage", "municipal_page", "assumption")
+#: Where the fee window of a row comes from: the ordinance, signage, a municipal page or brochure, the published page of a car
+#: park's operator (``operator_page``, ruling R-B-4: the DB BahnPark page of the Braunschweig station car parks) or an assumption.
+FEE_WINDOW_SOURCES = ("ordinance", "signage", "municipal_page", "operator_page", "assumption")
 #: Rule-based core of v2 lever 1 (``braunschweig.parking.zone_geometry``): erode(fill(R), W) minus buffer(F, W).
 EROSION_GEOMETRY_SOURCE = "osm_fee_erosion"
 #: Majority rule of v2 Amendment B (``braunschweig.parking.supply_share``): paid_share of the supply within W.

@@ -472,14 +472,17 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
     product (assumption M1: a stay above the maximum stay buys the product, whatever the metered price would be) gives the rate
     rule the elapsed range 0 min to the maximum stay and the long-stay product the open total rule ``<facility_key>:zone_long_stay``
     from the maximum stay, so the lot's schedule is the BANDS form that reproduces the street exactly (ruling R-4j-6; the bands
-    take the chargeable minutes in the fee window like the street, and a total band and tiers may not mix). Returns {"rules":
-    {id: rule}, "rate": rate rule id, "cap": cap rule id or None, "long_stay": long-stay rule id or None, "form": the form of the
-    specification for the encoder ({"rate": ...} or {"bands": [...]}, "window": "rate", and "cap" where there is one), "row":
-    the zone's table row as a dict}. ``SystemExit`` for a zone that the table does not hold or that has no hourly rate, an amount
-    that is no whole number of cents, a zone product with a free threshold, a first period or a commuter-only price, a maximum stay
-    without a long-stay product (the street product is then unavailable above it) and a daily cap beside a long-stay product (the
-    cap would cap the product, the street does not): the garage grammar of the lot cannot carry those exactly, so they stop the row
-    instead of being dropped or approximated."""
+    take the chargeable minutes in the fee window like the street, and a total band and tiers may not mix); its ``max_stay_min``
+    is None. A zone with a maximum stay and NO long-stay product (spec v3 B1, the Braunschweig zone Ia; ruling R-B-2) gives the
+    plain rate form and the maximum as ``max_stay_min``: the lot carries the zone's maximum stay as its own, and a longer stay
+    leaves the lot out of the option set exactly as it leaves the street. Returns {"rules": {id: rule}, "rate": rate rule id,
+    "cap": cap rule id or None, "long_stay": long-stay rule id or None, "max_stay_min": the maximum stay of a zone without a
+    long-stay product (whole minutes) or None, "form": the form of the specification for the encoder ({"rate": ...} or {"bands":
+    [...]}, "window": "rate", and "cap" where there is one), "row": the zone's table row as a dict}. ``SystemExit`` for a zone that
+    the table does not hold or that has no hourly rate, an amount that is no whole number of cents, a zone product with a free
+    threshold, a first period or a commuter-only price and a daily cap beside a long-stay product (the cap would cap the product,
+    the street does not): the garage grammar of the lot cannot carry those exactly, so they stop the row instead of being dropped
+    or approximated."""
     table = tariffs.set_index("zone_id") if "zone_id" in tariffs.columns else tariffs
     if zone_id not in table.index:
         raise SystemExit(f"the tariff table holds no zone {zone_id}")
@@ -492,11 +495,7 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
             raise SystemExit(f"the street product of {zone_id} has {column} {row[column]}, which the schedule of a lot cannot "
                              "carry as one product; this zone needs components of its own")
     max_stay, long_stay = row["max_stay_min"], row["long_stay_product_eur"]
-    if pd.notna(max_stay) and pd.isna(long_stay):
-        raise SystemExit(f"the street product of {zone_id} has a maximum stay of {max_stay} min and no long-stay product: a stay "
-                         "above it loses the street product (assumption M1), which a lot cannot carry; this zone needs "
-                         "components of its own")
-    if pd.notna(max_stay) and pd.notna(row["daily_cap_eur"]):
+    if pd.notna(max_stay) and pd.notna(long_stay) and pd.notna(row["daily_cap_eur"]):
         raise SystemExit(f"the street product of {zone_id} has a daily cap beside a long-stay product, which the bands of a lot "
                          "cannot carry exactly: the cap would cap the long-stay product that the street does not cap")
     unit_amount = round(float(hourly) * float(unit) / 60.0, 6)
@@ -512,10 +511,11 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
               "preferred_for_current_use": True, "max_stay_minutes": None}
     rules = {rate_id: {**common, "rule_id": rate_id, "rule_type": "increment", "amount_eur": round(unit_amount, 2),
                        "billing_unit_minutes": int(unit), "rounding": "started_unit", "elapsed_from_minutes": 0,
-                       "elapsed_to_minutes": None if pd.isna(max_stay) else int(max_stay), "free_period_minutes": None,
+                       "elapsed_to_minutes": None if pd.isna(max_stay) or pd.isna(long_stay) else int(max_stay),
+                       "free_period_minutes": None,
                        "daily_cap_eur": None, "cap_period": None, "charging_times": times}}
     long_stay_id = None
-    if pd.notna(max_stay):
+    if pd.notna(max_stay) and pd.notna(long_stay):
         long_stay_id = f"{facility_key}:zone_long_stay"
         rules[long_stay_id] = {**common, "rule_id": long_stay_id, "rule_type": "duration_total",
                                "amount_eur": float(long_stay), "billing_unit_minutes": None, "rounding": None,
@@ -531,7 +531,9 @@ def zone_product_rules(tariffs, zone_id: str, facility_key: str) -> dict:
     form = {"bands": [rate_id, long_stay_id], "window": "rate"} if long_stay_id else {"rate": rate_id, "window": "rate"}
     if cap_id:
         form["cap"] = cap_id
-    return {"rules": rules, "rate": rate_id, "cap": cap_id, "long_stay": long_stay_id, "form": form,
+    carried_maximum = int(max_stay) if pd.notna(max_stay) and pd.isna(long_stay) else None
+    return {"rules": rules, "rate": rate_id, "cap": cap_id, "long_stay": long_stay_id, "max_stay_min": carried_maximum,
+            "form": form,
             "row": {key: (None if pd.isna(value) else value) for key, value in row.to_dict().items()}}
 
 

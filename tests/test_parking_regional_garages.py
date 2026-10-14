@@ -1273,7 +1273,9 @@ STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe", "he_groepern_tiefga
 #: their zone (ASSUMPTION P14: Buergerpark, Buechereivorplatz). A capacity is held only where the package REPORTS it. Per town
 #: (Braunschweig 11, Wolfsburg 7, Wolfenbuettel 7, Gifhorn 3, Helmstedt 5, Peine 4, Salzgitter 9, Goslar 9).
 SZ_BANDS = "0-30 free; 30-60 total 0.70; 60- 0.10/6"
-ZONE_IA_BANDS = "0-180 0.03/1; 180- total 9.00"     # zone Ia: 1.80 EUR per hour per started minute, 180 min, then the 9.00 EUR day
+#: Zone Ia (spec v3 B1, ruling R-B-2): 1.80 EUR per hour per started minute, 9-20 h; the 180 min maximum has NO long-stay product
+#: (the 9.00 EUR ticket is zone Ib's), so the lots that carry the product have the plain rate form and max_stay_min 180.
+ZONE_IA_LOT_MAX_STAY_MIN = 180
 HE_BANDS = "0-30 free; 30-60 total 1.20; 60- 0.60/30"
 
 
@@ -1290,8 +1292,8 @@ PRICED_LOTS = {
     # Braunschweig: the street products of the zones Ia (Wendenstrasse/Werder, Grosser Hof) and the BgA zone of the Markthalle,
     # the three Hbf lots of DB BahnPark with the products of their own zones (owner decision A), four free P+R car parks and the
     # Buergerpark with the median product of bs_zone_ia (ASSUMPTION P14)
-    "lot_braunschweig_wendenstrasse_werder": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=101, assumptions="P8"),
-    "lot_braunschweig_grosser_hof": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=78, assumptions="P8"),
+    "lot_braunschweig_wendenstrasse_werder": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=101),
+    "lot_braunschweig_grosser_hof": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=78),
     "lot_braunschweig_markthalle": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=70),
     "lot_braunschweig_hbf_sued": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=379, monthly=74.0),
     "lot_braunschweig_hbf_west": _lot(BS, rate=2.2, unit=30, cap=11.0, capacity=70, monthly=74.0),
@@ -1300,7 +1302,7 @@ PRICED_LOTS = {
     "lot_braunschweig_pr_gaensekamp": _free_lot(BS, 108),
     "lot_braunschweig_pr_rote_wiese": _free_lot(BS, 170),
     "lot_braunschweig_pr_thueringenplatz": _free_lot(BS, 225),
-    "lot_braunschweig_buergerpark": _lot(BS, bands=ZONE_IA_BANDS, start=9.0, end=20.0, capacity=74, assumptions="P8;P14"),
+    "lot_braunschweig_buergerpark": _lot(BS, rate=1.8, unit=1, start=9.0, end=20.0, capacity=74, assumptions="P14"),
     # Wolfsburg: two lots free by a source (capacities secondary, 85 and 233), the BadeLand (Zone I fee of non-guests, 1.00 EUR
     # per started 30 min, no rounding and no hours stated), three lots with the product of their zone (Zone 2, Zone 1, Zone 2:
     # 07-18 h) and the Allerpark (free, no capacity reported)
@@ -1487,6 +1489,25 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
         assert garage_id.startswith("lot_braunschweig_hbf_") or "P5" in parts
 
 
+def test_exactly_the_three_lots_of_zone_ia_carry_a_maximum_stay_and_it_is_the_zones_ruling_r_b_2():
+    # spec v3 B1 dropped the long-stay product of Ia; ruling R-B-2: a lot that takes the product of a zone with a maximum stay and no
+    # long-stay product carries the maximum as its own (column max_stay_min, 180 min); Buergerpark takes it with its P14 product
+    garages = _committed_garages()
+    assert str(garages["max_stay_min"].dtype) == "Int64"
+    carrying = sorted(garages.index[garages["max_stay_min"].notna()])
+    assert carrying == ["lot_braunschweig_buergerpark", "lot_braunschweig_grosser_hof", "lot_braunschweig_wendenstrasse_werder"]
+    assert (garages.loc[carrying, "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN).all()
+    tariffs = pz.load_tariffs(TARIFFS_PATH).set_index("zone_id")
+    assert tariffs.loc["bs_zone_ia", "max_stay_min"] == ZONE_IA_LOT_MAX_STAY_MIN and pd.isna(tariffs.loc["bs_zone_ia", "long_stay_product_eur"])
+    for garage_id in carrying:
+        row = garages.loc[garage_id]
+        assert _plain(row["tariff_duration_bands"]) is None
+        assert "max_stay_min" in row["notes"] and "ASSUMPTION M3, ruling R-B-2" in row["notes"]
+    # the lots of the zones with a maximum stay AND a long-stay product keep the bands form and an empty column: none exists now
+    assert (tariffs["max_stay_min"].notna() & tariffs["long_stay_product_eur"].notna()
+            & tariffs["zone_type"].eq("street_paid")).sum() == 0
+
+
 def test_the_committed_coverage_is_the_one_the_task_reports():
     coverage = pg.coverage(pg.load_garages(_garages_path()))
     assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (91, 91, 0)
@@ -1499,20 +1520,20 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     assert coverage["by_facility_kind"] == {"garage": {"listed": 36, "priced": 36, "not_priced": 0},
                                             "surface_lot": {"listed": 55, "priced": 55, "not_priced": 0}}
     # the assumption rates (fallback transparency; counted from the hand-written pins below as well): no row rests on P3 any more,
-    # P4 29 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 21 (every row with a priced duration schedule, the three lots with the
-    # bands of the maximum stay of zone Ia among them), P10 8 (Forschungsflughafen, Suedkopf-Center, the five Broetchentaste
+    # P4 29 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 18 (every row with a priced duration schedule; the three lots of zone Ia
+    # left it with ruling R-B-2: they carry the plain rate and max_stay_min 180), P10 8 (Forschungsflughafen, Suedkopf-Center, the five Broetchentaste
     # lots of Helmstedt and Salzgitter and the Buechereivorplatz that takes their product), P11 4, P12 on none (withdrawn, spec
-    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 50 of 91 on at least one assumption and 39 of 91
+    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 48 of 91 on at least one assumption and 39 of 91
     # on P4 or P5 (both below the 75 % warning threshold now that 29 free lots rest on no assumption), 7 rows in the tiered form,
-    # 21 in the banded form and 29 with the free schedule, 12 monthly products at a garage and 3 at a lot
+    # 18 in the banded form and 29 with the free schedule, 12 monthly products at a garage and 3 at a lot
     assert coverage["priced_by_assumption"] == {"P10": 8, "P11": 4, "P13": 15, "P14": 2, "P4": 29, "P5": 27, "P6": 7, "P7": 5,
-                                                "P8": 21}
+                                                "P8": 18}
     # spec Amendment F: 12 published monthly products at a garage (the nine of Amendment D2, the Braunschweig Steinstrasse and
     # Wallstrasse and, since spec Amendment G2, the Wolfsburg deck at the Hauptbahnhof), 15 garages with an imputed one (10 in
     # Braunschweig, 5 in Wolfsburg; P13 changes no union rate; a surface lot never gets one)
     assert (coverage["with_monthly_product"], coverage["with_monthly_imputed"]) == (12, 15)
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
-            coverage["priced_banded"], coverage["priced_free"]) == (50, 39, 7, 21, 29)
+            coverage["priced_banded"], coverage["priced_free"]) == (48, 39, 7, 18, 29)
     # the monthly products of the garages and, apart, those of the three decision-A lots (ruling R-4j-6: the commuter product of the
     # zone that the lot is too; a garage count that included them would blur the 12 published products of spec Amendment F)
     assert coverage["lots_with_monthly_product"] == 3
@@ -1686,7 +1707,7 @@ def test_no_garage_is_left_unpriced_the_reason_vocabulary_stays_and_the_forms_ar
     # bands: the 10 banded garages and the 11 banded lots (Lessingtheater, Schlosswall, the three Broetchentaste lots of Helmstedt,
     # the Konrad-Adenauer-Strasse, the Rathausvorplatz, the Buechereivorplatz and the three lots with the bands of the maximum stay
     # of zone Ia) and the 29 free lots; tiers: the 7 tiered garages
-    assert garages["tariff_duration_bands"].notna().sum() == 50 and garages["tariff_tiers"].notna().sum() == 7
+    assert garages["tariff_duration_bands"].notna().sum() == 47 and garages["tariff_tiers"].notna().sum() == 7
 
 
 def test_the_four_garages_without_coordinates_are_listed_at_the_main_points_of_the_supplement():

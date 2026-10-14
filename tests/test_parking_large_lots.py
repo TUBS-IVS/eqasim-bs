@@ -590,6 +590,18 @@ def test_the_street_product_of_a_zone_is_its_rate_per_unit_its_window_and_its_ca
     assert minute["form"] == {"bands": ["lot:zone_rate", "lot:zone_long_stay"], "window": "rate"}
     plain = ll.zone_product_rules(_tariffs(), "t_hbf", "lot")
     assert plain["long_stay"] is None and plain["form"] == {"rate": "lot:zone_rate", "window": "rate", "cap": "lot:zone_cap"}
+    assert plain["max_stay_min"] is None and minute["max_stay_min"] is None   # the bands carry the maximum, the column stays empty
+
+
+def test_a_zone_with_a_maximum_stay_and_no_long_stay_product_gives_the_plain_rate_form_and_carries_the_maximum(ll):
+    # spec v3 B1, ruling R-B-2: the lot takes the zone's maximum stay as its own (column max_stay_min) instead of being refused; a
+    # stay above it leaves the lot out of the option set exactly as it leaves the street
+    product = ll.zone_product_rules(_tariffs(), "t_msonly", "lot")
+    assert product["max_stay_min"] == 120 and product["long_stay"] is None
+    rate_rule = product["rules"][product["rate"]]
+    assert (rate_rule["elapsed_from_minutes"], rate_rule["elapsed_to_minutes"]) == (0, None)    # no band: the rate is open-ended
+    assert product["form"] == {"rate": "lot:zone_rate", "window": "rate"}
+    assert not [rule_id for rule_id in product["rules"] if rule_id.endswith("zone_long_stay")]
 
 
 @pytest.mark.parametrize("zone, message", [
@@ -600,7 +612,6 @@ def test_the_street_product_of_a_zone_is_its_rate_per_unit_its_window_and_its_ca
     ("t_unknown", "the tariff table holds no zone t_unknown"),
     # a day cap would cap the long-stay product of a lot's bands, which the street does not (a long stay buys the product)
     ("t_capms", "a daily cap beside a long-stay product, which the bands of a lot cannot carry exactly"),
-    ("t_msonly", "has a maximum stay of 120.0 min and no long-stay product"),
 ])
 def test_a_zone_product_that_a_lot_cannot_carry_stops_the_row_and_is_never_approximated(ll, zone, message):
     with pytest.raises(SystemExit, match=message):
@@ -1304,7 +1315,9 @@ def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(ga
     assert counts["capacity_origin"] == {"reported": 33, "osm_tag": 5, "area_estimate": 16, "derived": 1, "other": 0}
     assert "capacity origin: reported 33/55 (60.0 %), OSM tag 5/55 (9.1 %), area estimate 16/55 (29.1 %), derived 1/55 (1.8 %)" \
         in printed
-    assert (counts["in_zone"], len(counts["in_zone_differing"])) == (22, 6)
+    # 22 lots inside a zone polygon; 9 differ from their zone row (the six of the release at 50 and, since spec v3 B1 and ruling R-B-3,
+    # the Salzgitter and Helmstedt lots against the new maximum stays and the Wolfenbuettel Lessingtheater against the new rate)
+    assert (counts["in_zone"], len(counts["in_zone_differing"])) == (22, 9)
     ids = [row["garage_id"] for row in result["rows"]]
     assert len(set(ids)) == 55 and all(garage_id.startswith("lot_") for garage_id in ids)
     assert not any("P12" in str(row["assumptions"]) for row in result["rows"])     # the municipal free default is withdrawn
@@ -1325,12 +1338,15 @@ def test_the_sensitivities_at_30_and_100_stop_at_no_tariff_and_have_the_counts_o
 def test_the_imputed_lots_carry_the_median_product_of_their_zone(garages_step, real_inputs):
     rows = {row["garage_id"]: row for row in garages_step.build_large_lots(real_inputs(50))["rows"]}
     # Buergerpark: the product of bs_zone_ia of Wendenstrasse/Werder and Grosser Hof (1.80 EUR per hour, started minute,
-    # 09:00-20:00, a maximum stay of 180 min and the long-stay product 9.00 EUR: the bands of the zone's schedule, ruling R-4j-6)
+    # 09:00-20:00 and, since spec v3 B1 and ruling R-B-2, the maximum stay of 180 min of the zone in the column max_stay_min: the
+    # zone has no long-stay product, so the lots have the plain rate form and no bands)
     park = rows["lot_braunschweig_buergerpark"]
-    assert (park["tariff_duration_bands"], park["garage_fee_start_h"], park["garage_fee_end_h"], park["assumptions"]) == (
-        "0-180 0.03/1; 180- total 9.00", 9.0, 20.0, "P8;P14")
+    assert (park["tariff_duration_bands"], park["garage_hourly_rate_eur"], park["garage_billing_unit_min"],
+            park["garage_fee_start_h"], park["garage_fee_end_h"], park["assumptions"], park["max_stay_min"]) == (
+        None, 1.8, 1, 9.0, 20.0, "P14", 180)
     for donor in ("lot_braunschweig_wendenstrasse_werder", "lot_braunschweig_grosser_hof"):
-        assert rows[donor]["tariff_duration_bands"] == park["tariff_duration_bands"] and rows[donor]["assumptions"] == "P8"
+        assert rows[donor]["tariff_duration_bands"] is None and rows[donor]["assumptions"] is None
+        assert (rows[donor]["garage_hourly_rate_eur"], rows[donor]["max_stay_min"]) == (1.8, 180)
     # Buechereivorplatz: the municipal tariff of Konrad-Adenauer-Strasse and Rathausvorplatz (a 30 min grace band)
     library = rows["lot_sz_buechereivorplatz"]
     assert library["tariff_duration_bands"] == "0-30 free; 30-60 total 0.70; 60- 0.10/6"
@@ -1343,7 +1359,10 @@ def test_the_imputed_lots_carry_the_median_product_of_their_zone(garages_step, r
 def test_decision_a_the_station_lots_and_the_markthalle_carry_exactly_the_product_of_their_own_zone(garages_step, real_inputs):
     rows = {row["garage_id"]: row for row in garages_step.build_large_lots(real_inputs(50))["rows"]}
     tariffs = pz.load_tariffs(REAL_TARIFFS).set_index("zone_id")
-    assert "the long-stay product 9.00 EUR of the zone (assumption M1)" in rows["lot_braunschweig_wendenstrasse_werder"]["notes"]
+    # ruling R-B-2: the maximum stay of the zone, which has no long-stay product, is the column max_stay_min of the lot
+    note = rows["lot_braunschweig_wendenstrasse_werder"]["notes"]
+    assert "The maximum stay 180 min of the zone, which has no long-stay product, is the column max_stay_min of this row" in note
+    assert "9.00 EUR of the zone (assumption M1)" not in note
     assert "long-stay product" not in rows["lot_braunschweig_hbf_nord"]["notes"]
     for garage_id, zone in (("lot_braunschweig_hbf_nord", "bs_hbf_p1_nord"), ("lot_braunschweig_hbf_sued", "bs_hbf_p2_sued"),
                             ("lot_braunschweig_hbf_west", "bs_hbf_p3_west"), ("lot_braunschweig_markthalle", "bs_bga_markthalle")):
@@ -1513,15 +1532,16 @@ def test_the_zone_products_of_decision_a_equal_the_table_rows_of_their_zones_and
         assert f"parking_tariffs_2026.csv:{zone}" in row["tariff_rule_ids"]
         assert "the zone tariff is not changed by it" in row["notes"]
         assert "rate equal" in committed_qa.loc[f"garage_{garage_id}", "note"], garage_id
-        if zone == "bs_zone_ia":     # the maximum stay and the long-stay product are the two bands of the schedule (assumption M1)
-            assert row["tariff_duration_bands"] == "0-180 0.03/1; 180- total 9.00" and row["assumptions"] == "P8", garage_id
-            assert "of the zone (assumption M1) are the bands of the schedule" in row["notes"], garage_id
-        else:
-            assert pd.isna(row["tariff_duration_bands"]) and pd.isna(row["assumptions"]), garage_id
-            assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"]) == (
-                product["hourly_rate_eur"], product["billing_unit_min"]), garage_id
-            assert (row["garage_fee_start_h"], row["garage_fee_end_h"]) == (product["fee_start_h"], product["fee_end_h"]), garage_id
-            assert _same(row["garage_daily_cap_eur"], product["daily_cap_eur"]), garage_id
+        # the plain rate form for every zone product; the maximum stay of a zone WITHOUT a long-stay product (Ia, ruling R-B-2) is the
+        # column max_stay_min of the lot, empty on every other lot
+        assert pd.isna(row["tariff_duration_bands"]) and pd.isna(row["assumptions"]), garage_id
+        assert (row["garage_hourly_rate_eur"], row["garage_billing_unit_min"]) == (
+            product["hourly_rate_eur"], product["billing_unit_min"]), garage_id
+        assert (row["garage_fee_start_h"], row["garage_fee_end_h"]) == (product["fee_start_h"], product["fee_end_h"]), garage_id
+        assert _same(row["garage_daily_cap_eur"], product["daily_cap_eur"]), garage_id
+        assert _same(row["max_stay_min"], product["max_stay_min"]), garage_id
+        if zone == "bs_zone_ia":
+            assert row["max_stay_min"] == 180 and "the column max_stay_min of this row (ASSUMPTION M3, ruling R-B-2)" in row["notes"]
     # the paid hours that the package states in free text are compared where they state a weekday window (finding I5): the
     # CongressPark states 07:00-15:00 against the zone's 07:00-18:00, Cinemaxx and the Amtsgericht 07:00-18:00
     assert ("fee window DIFFERS (the package states '07:00-15:00, Sa 07:00-14:00', the zone row 07:00-18:00)"
@@ -2155,41 +2175,62 @@ def test_every_released_zone_product_lot_prices_every_stay_like_the_street_of_it
         assert sweep_mismatches(zone, te.garage_row_to_tariff(committed.loc[garage_id])) == [], garage_id
         checked += len(SWEEP_ARRIVALS_H) * 720 * len(SWEEP_PURPOSES)
     assert checked == 69_120
-    # the control on the released row: the plain rate that a lot of zone Ia had before ruling R-4j-6 (1.80 EUR per hour, started
-    # minute, no bands) prices 2,874 of the 5,760 pairs differently from the street, the first at 06:00 with 361 min for work
-    # (9.00 EUR on the street, 5.43 EUR at the lot); the data record cites this measurement
-    plain = committed.loc["lot_braunschweig_grosser_hof"].copy()
-    plain["tariff_duration_bands"], plain["garage_hourly_rate_eur"], plain["garage_billing_unit_min"] = None, 1.8, 1
-    mismatches = sweep_mismatches(_zone_tariff(tariffs.loc["bs_zone_ia"].to_dict()), te.garage_row_to_tariff(plain))
-    assert len(mismatches) == 2874 and mismatches[0] == (6, 361, "work", 900, 543)
+    # spec v3 B1 dropped the 9.00 EUR ticket of zone Ia, so the street has no product above its 180 min and the plain rate prices every
+    # stay like the street (a stay the street cannot serve is priced as the metered street, the cheapest infeasible option); what
+    # separates the lot from the street is the FEASIBILITY, and ruling R-B-2 gives the lot the zone's maximum as its own
+    # (max_stay_min 180, compared with the ELAPSED stay): wherever the street cannot serve a stay (its chargeable minutes exceed
+    # 180) the lot cannot either, because the elapsed stay is never shorter than the chargeable one
+    zone = _zone_tariff(tariffs.loc["bs_zone_ia"].to_dict())
+    assert zone.max_stay_min == 180 and zone.long_stay_product_cents is None
+    for garage_id in ("lot_braunschweig_wendenstrasse_werder", "lot_braunschweig_grosser_hof", "lot_braunschweig_buergerpark"):
+        garage = te.garage_row_to_tariff(committed.loc[garage_id])
+        assert garage.max_stay_min == 180 and garage.bands is None
+        for arrival_h in SWEEP_ARRIVALS_H:
+            arrival_s = arrival_h * HOUR_SECONDS
+            for minutes in range(1, 721):
+                chargeable_s = cost.chargeable_seconds(arrival_s, arrival_s + minutes * 60, zone.fee_start_s, zone.fee_end_s)
+                if not cost.street_feasible(zone, chargeable_s):
+                    assert not cost.option_feasible(garage, minutes * 60), (garage_id, arrival_h, minutes)
+        assert cost.option_feasible(garage, 180 * 60) and not cost.option_feasible(garage, 180 * 60 + 1)
+    # the control of the sweep: a plain rate WITHOUT the maximum would offer the lot for stays the street cannot serve
+    row = committed.loc["lot_braunschweig_grosser_hof"].copy()
+    row["max_stay_min"] = pd.NA
+    assert cost.option_feasible(te.garage_row_to_tariff(row), 361 * 60)
 
 
 #: The lots inside a zone polygon that differ from the table row of that zone, with the named differences (ruling R-4j-7 b): the
 #: package component stands as documented and the difference is named in the QA note, never changed.
+#: Since spec v3 B1 (ruling R-B-3): the Wolfenbuettel Lessingtheater carries the 2026 street rate (0.25 EUR, then 0.05 EUR per 3 min), so
+#: only its fee window differs; the Helmstedt lots (zone maximum 180 min) and the Salzgitter lots (zone maximum 150 min) do not carry
+#: the zone's maximum stay in their own components, which the pass names.
 EXPECTED_ZONE_DIFFERENCES = {
-    "lot_wf_lessingtheater": ("wf_innenstadt", ["hourly_rate_eur 1 against 1.2", "billing_unit_min 3 against 30",
-                                                "fee_start_h 0 against 10", "fee_end_h 24 against 18"]),
-    "lot_helmstedt_harsleber_tor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0"]),
-    "lot_helmstedt_holzberg": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0"]),
-    "lot_helmstedt_suedertor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0", "daily_cap_eur 3 against none"]),
+    "lot_wf_lessingtheater": ("wf_innenstadt", ["fee_start_h 0 against 10", "fee_end_h 24 against 18"]),
+    "lot_helmstedt_harsleber_tor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0", "max_stay_min none against 180"]),
+    "lot_helmstedt_holzberg": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0", "max_stay_min none against 180"]),
+    "lot_helmstedt_suedertor": ("he_innenstadt", ["free_if_stay_at_most_min 30 against 0", "daily_cap_eur 3 against none",
+                                                  "max_stay_min none against 180"]),
+    "lot_sz_buechereivorplatz": ("sz_lebenstedt", ["max_stay_min none against 150"]),
+    "lot_sz_konrad_adenauer_16": ("sz_lebenstedt", ["max_stay_min none against 150"]),
+    "lot_sz_rathausvorplatz": ("sz_lebenstedt", ["max_stay_min none against 150"]),
     "lot_gs_marktstrasse": ("gs_altstadt_zone1", ["billing_unit_min 60 against 30"]),
     "lot_gs_kornstrasse": ("gs_altstadt_zone1", ["billing_unit_min 60 against 30"]),
 }
 
 
-def test_the_pass_over_every_released_lot_inside_a_zone_polygon_finds_16_equal_and_6_named_differences(committed, committed_qa):
+def test_the_pass_over_every_released_lot_inside_a_zone_polygon_finds_13_equal_and_9_named_differences(committed, committed_qa):
     tariffs = pz.load_tariffs(REAL_TARIFFS)
     garages, qa = committed.reset_index(drop=True), committed_qa.reset_index(drop=True)
     checks = pq.zone_consistency_check(qa, garages, tariffs)
     assert len(checks) == 22 and all(check["zone_in_table"] for check in checks)
     differing = {check["garage_id"]: (check["zone_id"], check["differences"]) for check in checks if check["differences"]}
     assert differing == EXPECTED_ZONE_DIFFERENCES
-    # the 12 zone-product lots are equal by construction; Iseparkplatz and the three Salzgitter lots equal the row of their zone
+    # the 12 zone-product lots are equal by construction; Iseparkplatz is the only other lot equal to the row of its zone (the three
+    # Salzgitter lots differ since the zone row has its maximum stay, ruling R-B-3)
     assert sum(check["zone_product"] and not check["differences"] for check in checks) == 12
     assert {check["garage_id"] for check in checks if not check["zone_product"] and not check["differences"]} == {
-        "lot_gf_iseparkplatz", "lot_sz_konrad_adenauer_16", "lot_sz_rathausvorplatz", "lot_sz_buechereivorplatz"}
+        "lot_gf_iseparkplatz"}
     summary = pq.zone_consistency_summary(qa, garages, tariffs)
-    assert (summary["checked"], summary["equal"]) == (22, 16) and set(summary["differing"]) == set(EXPECTED_ZONE_DIFFERENCES)
+    assert (summary["checked"], summary["equal"]) == (22, 13) and set(summary["differing"]) == set(EXPECTED_ZONE_DIFFERENCES)
     # every difference is named in the QA note of its lot, and the values of the row are the package's, never the zone's
     for garage_id, (zone_id, differences) in EXPECTED_ZONE_DIFFERENCES.items():
         note = committed_qa.loc[f"garage_{garage_id}", "note"]

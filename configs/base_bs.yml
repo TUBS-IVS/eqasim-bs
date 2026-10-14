@@ -678,10 +678,11 @@ config:
   # distance-weighted garage options of a stay in a paid zone (ASSUMPTIONS G1 and G2), loaded and validated
   # with the rest of the release by braunschweig.parking.zones_stage.
   parking_garages_path: braunschweig/parking/parking_garages_2026.geojson
-  # Tariff state of the release (the date its tariff rows were retrieved, source_date of
-  # parking_tariffs_2026.csv); names the tariff model JSON. Quoted: an unquoted YAML date is
+  # Tariff state of the release: 2026-10-14, the date of the research packages whose ordinances the corrected rows of
+  # parking_tariffs_2026.csv follow (spec v3 B1, ruling R-B-7); an EV exemption is exported only while its
+  # ev_rule_valid_until is not before this date. Names the tariff model JSON. Quoted: an unquoted YAML date is
   # rejected at configure time.
-  parking_tariff_snapshot_date: "2026-09-29"
+  parking_tariff_snapshot_date: "2026-10-14"
   # Sensitivity arm for assumption A1: a share difference in [-1, 1] added to the SrV free-parking
   # share of every workplace class before the draw clips it to [0, 1]; 0.0 keeps the SrV shares.
   parking_workplace_free_share_shift: 0.0

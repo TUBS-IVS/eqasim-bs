@@ -55,6 +55,11 @@ F2): the median of the published current garage monthly products of its own muni
 dataset and the recorded garages of its QA table (``braunschweig.parking.garage_qa.published_monthly_values``), never for a
 surface lot and never next to a published product; :func:`monthly_summary` counts the products per municipality.
 
+The maximum stay (``max_stay_min``, whole minutes >= 1, empty = none; spec v3 A1, ASSUMPTION M3, ruling R-B-2) is the longest
+ELAPSED stay the facility admits; the pricing leaves the option out of the option set for a longer stay. It is independent of
+the tariff structure: a lot that takes the street product of a zone with a maximum stay and no long-stay product carries the
+zone's rate form plus that maximum (the Braunschweig zone Ia, 180 min).
+
 Every validator raises ``ValueError`` listing every violation with the garage id and the column, so a broken dataset fails
 at load time. CRS: EPSG:25832 in memory, distances in metres, clock times in minutes after midnight.
 """
@@ -104,24 +109,30 @@ BAND_COLUMNS = ("tariff_duration_bands",)
 #: The monthly product of a garage: the published product (``monthly_eur`` with its source and description) or, where none is
 #: published, the imputed product of ASSUMPTION P13 (``monthly_imputed_eur``, spec Amendment F2); never both on one row.
 MONTHLY_COLUMNS = ("monthly_eur", "monthly_source_url", "monthly_product", "monthly_imputed_eur")
-#: A dataset file written before Amendment F lacks these columns. ``load_garages`` refuses such a file (``LegacyColumnsError``)
-#: unless the caller opts in with ``allow_legacy_columns=True`` (the test fixtures are such files); the column is then read as
-#: empty and the log says so. The committed dataset carries the columns, so the production path never opts in.
-LEGACY_OPTIONAL_COLUMNS = ("monthly_imputed_eur",)
+#: The maximum stay of a garage or lot in whole minutes (spec v3 A1, ASSUMPTION M3, ruling R-B-2): the longest ELAPSED stay the
+#: facility admits; empty = no maximum. A lot that takes the street product of a zone whose street has a maximum stay and no
+#: long-stay product (the Braunschweig zone Ia) carries that maximum as its own; a longer stay leaves the lot out of the option
+#: set. A zone with a maximum stay AND a long-stay product keeps the bands form and leaves this column empty.
+MAX_STAY_COLUMNS = ("max_stay_min",)
+#: A dataset file written before Amendment F (``monthly_imputed_eur``) or before spec v3 B (``max_stay_min``) lacks these columns.
+#: ``load_garages`` refuses such a file (``LegacyColumnsError``) unless the caller opts in with ``allow_legacy_columns=True`` (the
+#: test fixtures are such files); the column is then read as empty and the log says so. The committed dataset carries the
+#: columns, so the production path never opts in.
+LEGACY_OPTIONAL_COLUMNS = ("monthly_imputed_eur", "max_stay_min")
 
 
 class LegacyColumnsError(ValueError):
-    """A dataset file lacks a column of ``LEGACY_OPTIONAL_COLUMNS`` (written before spec Amendment F) and the caller did not opt
-    in to reading it as empty."""
+    """A dataset file lacks a column of ``LEGACY_OPTIONAL_COLUMNS`` (written before spec Amendment F or spec v3 B) and the caller
+    did not opt in to reading it as empty."""
 STATUS_COLUMNS = ("priced", "not_priced_reason", "assumptions")
 PROVENANCE_COLUMNS = ("source_url", "source_date", "tariff_rule_ids", "geometry_method", "geometry_source_url",
                       "package_sha256", "notes")
 #: Every property of a feature, in file order.
 DATASET_COLUMNS = (IDENTITY_COLUMNS + CAPACITY_COLUMNS + TARIFF_COLUMNS + FIRST_PERIOD_WINDOW_COLUMNS + TIER_COLUMNS
-                   + BAND_COLUMNS + MONTHLY_COLUMNS + STATUS_COLUMNS + PROVENANCE_COLUMNS)
+                   + BAND_COLUMNS + MAX_STAY_COLUMNS + MONTHLY_COLUMNS + STATUS_COLUMNS + PROVENANCE_COLUMNS)
 MONEY_COLUMNS = ("garage_hourly_rate_eur", "garage_first_period_eur", "garage_daily_cap_eur", "monthly_eur",
                  "monthly_imputed_eur")
-MINUTE_COLUMNS = ("garage_billing_unit_min", "garage_first_period_min")
+MINUTE_COLUMNS = ("garage_billing_unit_min", "garage_first_period_min", "max_stay_min")
 HOUR_COLUMNS = ("garage_fee_start_h", "garage_fee_end_h") + FIRST_PERIOD_WINDOW_COLUMNS
 INTEGER_COLUMNS = ("capacity_reported",)
 TEXT_COLUMNS = tuple(column for column in DATASET_COLUMNS
@@ -562,12 +573,13 @@ def load_garages(path, *, allow_legacy_columns: bool = False) -> gpd.GeoDataFram
     if legacy and not allow_legacy_columns:
         raise LegacyColumnsError(
             f"{path}: the dataset lacks the column(s) {legacy} (written before spec Amendment F: imputed monthly products, "
-            "ASSUMPTION P13); regenerate it with scripts/curation/parking_zones_2026/regional_garages.py (the command is in the "
+            "ASSUMPTION P13, or before spec v3 B: the maximum stay, ASSUMPTION M3); regenerate it with scripts/curation/parking_zones_2026/regional_garages.py (the command is in the "
             "data record parking_garages_2026) or, for a test fixture only, load it with allow_legacy_columns=True")
     if legacy:
         # a file written before Amendment F, opted in: the column is explicitly empty (nothing imputed), never guessed
-        log.warning("[parking-garages] %s lacks the column(s) %s (a dataset written before spec Amendment F): read as empty, "
-                    "so no monthly product is imputed (ASSUMPTION P13)", path, legacy)
+        log.warning("[parking-garages] %s lacks the column(s) %s (a dataset written before spec Amendment F or spec v3 B): read "
+                    "as empty, so no monthly product is imputed (ASSUMPTION P13) and no garage has a maximum stay "
+                    "(ASSUMPTION M3)", path, legacy)
         frame = frame.assign(**{column: None for column in legacy})
     missing = [column for column in DATASET_COLUMNS if column not in frame.columns]
     unexpected = [column for column in frame.columns if column not in DATASET_COLUMNS and column != "geometry"]

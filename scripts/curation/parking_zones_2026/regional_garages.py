@@ -250,6 +250,12 @@ COLUMN_GLOSSARY = {
                              "('0-30 free') next to tariff_tiers is the grace period of a tiered garage (ASSUMPTION P10: a "
                              "stay not longer than the band costs 0, a longer stay is priced by the tiers from its arrival); "
                              "empty for a garage priced by one fee window or by tiers alone",
+    "max_stay_min": "the maximum stay of the garage or lot in whole minutes >= 1 (spec v3 A1, ASSUMPTION M3, ruling R-B-2): the "
+                    "longest ELAPSED stay it admits, so a longer stay leaves it out of the option set; empty = no maximum is "
+                    "stated or modelled. Set only on a lot that carries the street product of a zone whose street has a maximum "
+                    "stay and no long-stay product (the Braunschweig zone Ia, 180 min) or that is imputed from such lots "
+                    "(ASSUMPTION P14); a zone with a maximum stay AND a long-stay product keeps the bands form and leaves it "
+                    "empty; independent of the tariff structure and of priced",
     "monthly_eur": "the cheapest publicly purchasable fixed-price monthly or 30-day product in EUR (spec Amendment D2; for "
                    "the Braunschweig garages spec Amendment F1: read from the monthly package of 2026-10-08 and the Contipark "
                    "configurator capture, the cheapest current product); empty where the sources hold none (the notes of a "
@@ -1655,7 +1661,8 @@ def _position_source(package: dict, record: dict) -> tuple:
 
 def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple:
     """(sentences, restricted) of what a lot row does not carry: the maximum stay and the weekend window of a used component (the
-    garage columns have no field for a maximum stay and the model's weekday is Monday to Friday, spec D1) and the components that
+    column max_stay_min is set only on a lot that takes the street product of a zone, ruling R-B-2, and the model's weekday is
+    Monday to Friday, spec D1) and the components that
     set no value, with their reason. ``restricted`` is True where the row has a maximum stay or a weekend window (the count of the
     run log reads this fact, never the text of the notes). Restrictions, not tariff components: they never stop a row, they are
     listed and counted. The 30 min of a free short stay (the Broetchentaste) is the length of the free band and no maximum stay of
@@ -1675,8 +1682,9 @@ def _lot_limitations(package: dict, used_rule_ids: list, ignored: dict) -> tuple
     texts += [f"the Saturday window of '{raw}' ({', '.join(ids)})" for raw, ids in sorted(weekends.items())]
     sentences = []
     if texts:
-        sentences.append("Not modelled (the garage columns carry no maximum stay; the model's day is an average weekday, spec D1): "
-                         + "; ".join(texts) + ".")
+        sentences.append("Not modelled (a maximum stay of the lot's own components is not read into max_stay_min, which only a lot "
+                         "that takes the street product of its zone carries, ruling R-B-2; the model's day is an average "
+                         "weekday, spec D1): " + "; ".join(texts) + ".")
     for rule_id, why in ignored.items():
         raw = package["rules"][rule_id]
         sentences.append(f"Not used: {rule_id} ({raw.get('billing_period')}, {raw.get('amount_eur')} EUR): {why}.")
@@ -1738,12 +1746,20 @@ def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
         encoded = _encode_or_not_expressible({"garage_id": garage_id, **product["form"]}, rules)
         used = [spec["check"]]
         row = product["row"]
-        # the maximum stay with its long-stay product (assumption M1) is carried by the bands of the schedule (ruling R-4j-6)
-        zone_carried = (f"The maximum stay {int(row['max_stay_min'])} min and the long-stay product "
-                        f"{float(row['long_stay_product_eur']):.2f} EUR of the zone (assumption M1) are the bands of the schedule."
-                        if product["long_stay"] else None)
+        # the maximum stay with its long-stay product (assumption M1) is carried by the bands of the schedule (ruling R-4j-6); a
+        # maximum stay without a long-stay product by the column max_stay_min (ASSUMPTION M3, ruling R-B-2)
+        if product["long_stay"]:
+            zone_carried = (f"The maximum stay {int(row['max_stay_min'])} min and the long-stay product "
+                            f"{float(row['long_stay_product_eur']):.2f} EUR of the zone (assumption M1) are the bands of the "
+                            "schedule.")
+        elif product["max_stay_min"] is not None:
+            zone_carried = (f"The maximum stay {product['max_stay_min']} min of the zone, which has no long-stay product, is the "
+                            "column max_stay_min of this row (ASSUMPTION M3, ruling R-B-2): a stay longer than it leaves this lot "
+                            "out of the option set, as it leaves the street.")
+        else:
+            zone_carried = None
         return {"encoded": encoded, "rules": rules, "used": used, "zone_sentence": sentence, "verdicts": verdicts,
-                "zone_carried": zone_carried,
+                "zone_carried": zone_carried, "max_stay_min": product["max_stay_min"],
                 "tariff_rule_ids": [f"parking_tariffs_2026.csv:{spec['zone_product']}", spec["check"]]}
     used = set()
     for field in ("free", "rate", "cap"):
@@ -1836,6 +1852,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
            "geometry_source_url": geometry_url, "package_sha256": package["file"]["sha256"], "geometry": point}
     for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
         row[column] = encoded["values"][column]
+    row["max_stay_min"] = lot.get("max_stay_min")
     row["notes"] = _lot_ascii(" ".join(notes))
     row["_facts"] = {"tiered": False, "banded": False, "cap": encoded["values"]["garage_daily_cap_eur"] is not None
                      or any(reading[0] == "cap" for reading in encoded["readings"]), "readings": encoded["readings"],
@@ -2063,7 +2080,8 @@ def _zone_ids_of(zones: gpd.GeoDataFrame, point) -> list:
     return sorted(zone for zone, polygon in zip(zones["zone_id"], zones.geometry) if polygon.contains(point))
 
 
-TARIFF_VALUE_COLUMNS = pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS
+TARIFF_VALUE_COLUMNS = (pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS
+                        + pg.MAX_STAY_COLUMNS)
 
 
 def _same_zone(package: dict, zones: gpd.GeoDataFrame, zone_ids: list):

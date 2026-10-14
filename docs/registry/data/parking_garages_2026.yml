@@ -551,10 +551,10 @@ acquisition:
     eqasim-data/output_parking_lot_threshold_sensitivity/: at 30 spaces 103 rows (36 garages, 67 lots; three more sites
     without a position are lot_no_position, none is invented) and at 100 spaces 74 rows (36 garages, 38 lots); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    73d11b5577fb89f64c361dcf55d6717abf4f0f6f5800f4ecb95109ffd673bcd2, parking_garages_2026_qa_lot_threshold_30.csv
-    3785473a8f530ba548b3be7bbcbf609b7c45bd1eb601505ef0ecde8225c02674, parking_garages_2026_lot_threshold_100.geojson
-    d62e14338eaaef0c2d223db4d77d0ffaf55cfafb385094badc0cfd57b94b6488 and parking_garages_2026_qa_lot_threshold_100.csv
-    37476e711e82203cf99153117249570d1327db2af315774feb7ad83c8ae35e8e (the files regenerated in the fix round of Task 4j; the
+    a2e423b3e2fdaad8d10a9cefa7fba86550f856872460797b70234932516e35db, parking_garages_2026_qa_lot_threshold_30.csv
+    fca655ebbde165e03376dcf7987142c614c6927458b651339ba9b8c9b44e6bb9, parking_garages_2026_lot_threshold_100.geojson
+    38d87b03a32e1e189418aa2d0fec93f5f8033c38ecaf8ca36a3be58d4c54cf22 and parking_garages_2026_qa_lot_threshold_100.csv
+    161d5ed1618823eea0d129d41ac43fc18327211057bf8e163288ec7499ca3df9 (the files regenerated in the fix round of Task 4j; the
     hashes of the first run are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
     Christian-Dohm and Glockengiesser and Helmstedt Wallplatz) and 12 at 100 spaces (8 equal, 4 differing: Goslar
@@ -571,11 +571,13 @@ acquisition:
     name a zone. The Markthalle, the three Hauptbahnhof car parks and the two Goslar car parks are zone AND lot by owner
     decision A: the lot carries exactly the row of its own zone, so a stay inside the polygon keeps the zone price. THE
     WHOLE ZONE ROW is the product (ruling R-4j-6): the rate per started unit, the fee window and the daily cap and, since
-    the fix round, the maximum stay with its long-stay product and the commuter product. The maximum stay of zone Ia (a stay
-    that is longer than 180 min in the fee window buys the long-stay product of 9.00 EUR, assumption M1 of the zone) is
-    written as the bands of the lot's schedule, '0-180 0.03/1; 180- total 9.00' with ASSUMPTION P8 (the three lots of zone
-    Ia: Wendenstrasse / Werder, Grosser Hof and the Buergerpark), because bands over the chargeable minutes reproduce the
-    street path exactly; the commuter product of the zone is the monthly_eur of the three Hauptbahnhof lots (120.00 EUR at
+    the fix round, the maximum stay with its long-stay product and the commuter product. A zone with a maximum stay AND a long-stay product keeps the bands form (the maximum stay and the long-stay product as
+    the two bands of the schedule, assumption M1; no zone of the table has both now). Zone Ia has a maximum stay of 180
+    min and, since spec v3 B1 (the 9.00 EUR ticket is zone Ib's), NO long-stay product: ruling R-B-2 (2026-10-14, option
+    b) gives its three lots (Wendenstrasse / Werder, Grosser Hof and the Buergerpark) the plain rate form (1.80 EUR per
+    hour, started minute, 09:00-20:00, no ASSUMPTION P8) and the maximum stay as their own, the dataset column
+    max_stay_min = 180 (ASSUMPTION M3: a stay longer than it leaves the lot out of the option set exactly as it leaves the
+    street); the commuter product of the zone is the monthly_eur of the three Hauptbahnhof lots (120.00 EUR at
     P1 Nord, 74.00 EUR at P2 Sued and at P3 West, with the source page and the product text of the station product of the
     Braunschweig monthly package that sets commuter_day_eur of the zone), so a work or education stay costs the lower of the
     metered price and the monthly product per working day, like the zone (ASSUMPTION P2). Of the twelve other components
@@ -585,9 +587,11 @@ acquisition:
     zone row names them. EXACTNESS (tests/test_parking_large_lots.py): for each of the 12 lots that carry a zone product,
     the street path of the zone (cost.parking_cost_cents) and the garage option of the lot row alone
     (cost.garage_option_cents) price every stay of 1 to 720 min at the arrivals 06:00, 09:00, 14:00 and 19:00 for the
-    purposes work and shopping identically to the cent: 69,120 pairs, 0 differences. The same sweep of the plain rate that
-    the lot had before the fix round (1.80 EUR per hour, started minute, no bands) differs in 2,874 of the 5,760 pairs of
-    zone Ia, the first at 06:00 with 361 min (9.00 EUR on the street, 5.43 EUR at the lot); a seeded sample of 20,000 stays
+    purposes work and shopping identically to the cent: 69,120 pairs, 0 differences. Before spec v3 B1 the same sweep of the plain rate (1.80 EUR per hour, started minute, no bands) differed in 2,874 of
+    the 5,760 pairs of zone Ia because the street bought the 9.00 EUR ticket; without the ticket the plain rate prices
+    every stay like the street, and what separates lot and street is the feasibility, which the maximum stay settles
+    (tests/test_parking_large_lots.py: wherever the street cannot serve a stay, the lot cannot either, because the elapsed
+    stay is never shorter than the chargeable one); a seeded sample of 20,000 stays
     at second resolution on the synthetic zone gives 0 differences as well. The step checks that the research point lies
     inside the zone polygon and compares the component that the package documents with the table row of the zone: the hourly
     equivalent of the rate (11 of 11 equal), the billing unit and the fee window. A billing unit that the package states
@@ -634,8 +638,8 @@ acquisition:
     median lot, ordered by the price of a 60 min stay, with an even number the two middle schedules must be identical (else the
     step stops), never a typed or averaged value, every such row counted and logged. Two rows: the Stadtbad Buergerpark takes
     the product of bs_zone_ia (donors Grosser Hof and Wendenstrasse / Werder: the product of zone Ia, 1.80 EUR per hour
-    billed per started minute from 09:00 to 20:00 with the maximum stay of 180 min and the long-stay product of 9.00 EUR as
-    bands, as the zone's row of the table reads; the package documents the same hourly price as 0.90 EUR per started 30 min,
+    billed per started minute from 09:00 to 20:00 with the maximum stay of 180 min in the column max_stay_min (the zone has no long-stay product),
+    as the zone's row of the table reads; the package documents the same hourly price as 0.90 EUR per started 30 min,
     so the billing unit differs and the hourly price is equal, which the notes of the donors name; the bather discount of 50
     % is a customer condition and not modelled) and the Salzgitter Buechereivorplatz takes the schedule
     of the Konrad-Adenauer-Strasse 16, the median lot of its zone sz_lebenstedt (donors Konrad-Adenauer-Strasse 16 and
@@ -696,7 +700,8 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81. The QA table parking_garages_2026_qa.csv next
+    3fb89fbbf04328837e3eeee3fa5258a543a2424ff03db7b619e7f38719957e39 (before spec v3 B1, ruling R-B-2:
+    724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
     column, from COLUMN_GLOSSARY of the curation step); ASCII, LF.
@@ -978,8 +983,8 @@ notes: >-
   customer_regime 1, no_coordinates 1, outside_source_list 1). The same numbers are printed by
   scripts/validate_parking_zones.py and pinned by tests/test_parking_regional_garages.py and tests/test_parking_large_lots.py.
   SHA-256 of the files as written by the step (LF; two runs identical): parking_garages_2026.geojson (the current pin of the
-  dataset is in storage.notes), parking_garages_2026_qa.csv 541edf6decd3b0ae0b66f14712b8c38c95f2a85e05c4ec3803c5950bf7ae0f55
-  (the QA table of the first run of Task 4j: 4f167b1a09f72a92c404eecb5af8fdc5fc32013f06592a02e6548bd5a162d878, which the
+  dataset is in storage.notes), parking_garages_2026_qa.csv 0abc282397d2c5ce52f5e444a7fef8fe36c0699ae888f4558e924eaa5253ced2 (the QA table before spec
+    v3 B1: 541edf6decd3b0ae0b66f14712b8c38c95f2a85e05c4ec3803c5950bf7ae0f55; the QA table of the first run of Task 4j: 4f167b1a09f72a92c404eecb5af8fdc5fc32013f06592a02e6548bd5a162d878, which the
   commit message of that run states with a typo, fdc5fb32 for fdc5fc32, and which cannot be amended after review: this
   record is right; before Task 4j: 72b6a276a848ff8cfb93562d618fca884be18e7fbd18f1c6392fb1fcd0ed8193); the dataset of the
   first run of Task 4j had the SHA-256 b213e9ca377353c8e048b4bd0174e055f6a12c8a10d296636a47956f329cc119, the dataset before
@@ -1066,3 +1071,30 @@ notes: >-
   a day name and a time; the QA table gained the row monthly_he_groepern_tiefgarage and one changed garage note; no other
   value changed. The dataset is read by the zone release stage and exported with the tariff model, but the decay length of
   the garage options is 0 until it is calibrated (Task 5), so no simulation output changes yet.
+  Spec v3 B, Task B1 fix round 1 (ruling R-B-2, owner-approved 2026-10-14; issue #436). The dataset gained the nullable whole-minute
+  column max_stay_min (braunschweig.parking.garages.MAX_STAY_COLUMNS; position after tariff_duration_bands; read by the tariff
+  export since schema 5, spec v3 A1, ASSUMPTION M3): the longest ELAPSED stay a garage or lot admits; a longer stay leaves it out of the
+  option set. It is set on exactly the lots that take the street product of a zone whose street has a maximum stay and no long-stay
+  product (large_lots.zone_product_rules, plain rate form plus the maximum) or are imputed from such lots (ASSUMPTION P14): Wendenstrasse /
+  Werder, Grosser Hof and the Buergerpark (zone Ia, 180 min); every other row is empty, so the three Hauptbahnhof lots, the Markthalle,
+  the Wolfsburg and the Goslar zone-product lots are unchanged. A dataset file without the column is a legacy layout: load_garages
+  refuses it unless allow_legacy_columns=True (the test fixtures), exactly as for monthly_imputed_eur. Regenerated with the release
+  command above (also --lot-threshold 30 and 100 into eqasim-data/output_parking_lot_threshold_sensitivity/); the API route of the tests
+  and the command line write identical bytes; no geometry changed. RESULT: 91 rows (36 garages, 55 surface lots), 245 QA rows,
+  priced garages resting on ASSUMPTION P8 18 of 91 (21 before: the two Ia lots with their own schedule and the imputed Buergerpark left
+  it), on at least one assumption 48 of 91 (50), the banded form 18 (21). SHA-256 (LF): parking_garages_2026.geojson
+  3fb89fbbf04328837e3eeee3fa5258a543a2424ff03db7b619e7f38719957e39 (before 724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81),
+  parking_garages_2026_qa.csv 0abc282397d2c5ce52f5e444a7fef8fe36c0699ae888f4558e924eaa5253ced2 (before
+  541edf6decd3b0ae0b66f14712b8c38c95f2a85e05c4ec3803c5950bf7ae0f55); sensitivity datasets: 30 spaces 103 rows geojson
+  a2e423b3e2fdaad8d10a9cefa7fba86550f856872460797b70234932516e35db, QA fca655ebbde165e03376dcf7987142c614c6927458b651339ba9b8c9b44e6bb9;
+  100 spaces 74 rows geojson 38d87b03a32e1e189418aa2d0fec93f5f8033c38ecaf8ca36a3be58d4c54cf22, QA
+  161d5ed1618823eea0d129d41ac43fc18327211057bf8e163288ec7499ca3df9 (their report-only pass: 29 lots at 30 spaces, 16 equal and 13
+  differing; 12 at 100, 7 equal and 5 differing; at 50: 22 lots, 13 equal, 9 differing: Goslar Kornstrasse and Marktstrasse, the three
+  Helmstedt lots Harsleber Tor, Holzberg and Suedertor (max_stay_min none against 180), the three Salzgitter lots Buechereivorplatz,
+  Konrad-Adenauer-Strasse 16 and Rathausvorplatz (none against 150) and the Wolfenbuettel Lessingtheater, whose rate now equals the
+  zone's 2026 street rate, so only its fee window differs). Notes changed (ruling R-B-3, 22 of 91 rows and the same QA notes): the
+  three zone-Ia lots (tariff sentence, ASSUMPTION P8 sentence removed, sentence on max_stay_min), the Helmstedt and Salzgitter lots and
+  the Lessingtheater (zone-pass sentence), and 18 lots whose limitation sentence no longer says that the garage columns carry no
+  maximum stay (it now says that a lot's own maximum stay is read into max_stay_min only on a lot that takes the street product of
+  its zone). The calibration table parking_garage_decay_calibration_2026 was computed on the dataset of SHA-256 724d9931... and is NOT
+  recomputed here: it is stale against this dataset until Task B5.

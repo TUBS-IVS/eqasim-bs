@@ -191,11 +191,15 @@ def test_the_dataset_layout_is_the_documented_one():
     assert pg.DATASET_COLUMNS[position - 1] == pg.TARIFF_COLUMNS[-1]
     assert pg.DATASET_COLUMNS[position:position + 4] == ("garage_first_period_start_h", "garage_first_period_end_h",
                                                          "tariff_tiers", "tariff_duration_bands")
-    assert pg.DATASET_COLUMNS[position + 4] == "monthly_eur"
+    # spec v3 B (ruling R-B-2): the maximum stay in whole minutes follows the banded form and precedes the monthly product
+    assert pg.MAX_STAY_COLUMNS == ("max_stay_min",) and pg.DATASET_COLUMNS[position + 4] == "max_stay_min"
+    assert "max_stay_min" in pg.MINUTE_COLUMNS
+    assert pg.DATASET_COLUMNS[position + 5] == "monthly_eur"
     # spec Amendment F2: the imputed monthly product (ASSUMPTION P13) follows the published one and is money
-    assert pg.DATASET_COLUMNS[position + 4:position + 8] == ("monthly_eur", "monthly_source_url", "monthly_product",
+    assert pg.DATASET_COLUMNS[position + 5:position + 9] == ("monthly_eur", "monthly_source_url", "monthly_product",
                                                              "monthly_imputed_eur")
-    assert "monthly_imputed_eur" in pg.MONEY_COLUMNS and pg.LEGACY_OPTIONAL_COLUMNS == ("monthly_imputed_eur",)
+    assert "monthly_imputed_eur" in pg.MONEY_COLUMNS
+    assert pg.LEGACY_OPTIONAL_COLUMNS == ("monthly_imputed_eur", "max_stay_min")
     assert set(pg.FIRST_PERIOD_WINDOW_COLUMNS) <= set(pg.HOUR_COLUMNS)
     # banded_tariff is gone: every duration schedule of the sources is expressible (ruling R-4b-11)
     assert set(pg.NOT_PRICED_REASONS) == {"no_published_tariff", "free_period", "incomplete_tariff", "conflicting_sources"}

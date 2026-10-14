@@ -803,9 +803,10 @@ def test_committed_parking_data_is_valid(capsys):
     # Goslar came in, Braunschweig stays at 17 with Willy-Brandt-Platz and Volkmaroder Strasse for Kannengiesserstrasse
     # and the International House); the register has 11 zoned municipalities and the audited Schoeningen
     # spec Amendment G1 (2026-10-08): 40 zones (the three station car parks of Braunschweig Hbf came in, Braunschweig has 20)
-    # and 130 register rows (the excluded row of the Braunschweig station car parks is gone, they are zones)
-    assert "[parking-validate] 40 zones, 40 tariff rows, 130 register rows (123 municipalities)" in out
-    assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 7" in out
+    # and 131 register rows (the excluded row of the Braunschweig station car parks is gone, they are zones; spec v3 B1 added the
+    # excluded Peine Echternplatz row)
+    assert "[parking-validate] 40 zones, 40 tariff rows, 131 register rows (123 municipalities)" in out
+    assert "register status: zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8" in out
     # ruling R-4a-8: the five campuses with a v1 outline are the union of the outline and the detection zones, Volkmaroder
     # Strasse (no outline exists) its detection zone alone
     assert "campus_outline_and_detection_zones 5" in out and "campus_detection_zones 1," in out
@@ -821,7 +822,7 @@ def test_committed_parking_data_is_valid(capsys):
     # Task 4b (spec Amendments D1, D2, D4, E8) left 13 assumption windows, 16 with the three station rows of Amendment G1;
     # the commuter product is on zone Ib and the six
     # campus zones, no zone row carries a garage product or a search time
-    assert "fee_window_source: assumption 16, municipal_page 17, ordinance 7" in out
+    assert "fee_window_source: assumption 8, municipal_page 22, operator_page 3, ordinance 7" in out
     assert ("tariff products (schema 2): commuter product on 10 of 40 rows (bs_hbf_p1_nord, bs_hbf_p2_sued, bs_hbf_p3_west, "
             "bs_zone_ib, tu_campus_nord, "
             "tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, "
@@ -832,8 +833,8 @@ def test_committed_parking_data_is_valid(capsys):
     # since Amendment G2, and the 55 large public surface lots of the research package at the threshold of 50 spaces)
     assert ("garages: 91 listed, 91 priced, 0 not priced (none); per municipality 03101000 23 listed 23 priced") in out
     assert "03103000 17 listed 17 priced" in out
-    assert ("priced garages resting on an assumption: P10 8, P11 4, P13 15, P14 2, P4 29, P5 27, P6 7, P7 5, P8 21 of 91 "
-            "(at least one assumption 50, P4 or P5 39; in the tiered form 7, in the banded form 21, with the free "
+    assert ("priced garages resting on an assumption: P10 8, P11 4, P13 15, P14 2, P4 29, P5 27, P6 7, P7 5, P8 18 of 91 "
+            "(at least one assumption 48, P4 or P5 39; in the tiered form 7, in the banded form 18, with the free "
             "schedule 29); by facility kind garage 36 listed 36 priced, surface_lot 55 listed 55 priced; "
             "monthly product on 12 garages") in out
     # the three Braunschweig station products and the Wolfsburg deck product are used (G1, G2): 13 + 4 used, 36 - 4 recorded
@@ -860,8 +861,9 @@ def test_committed_parking_data_is_valid(capsys):
             "the tariff table (rate, unit, grace, cap, fee window, maximum stay, commuter product): 12 equal, 0 differ "
             "(none)") in out
     assert ("lots inside a zone polygon (report-only pass, ruling R-4j-7): 22 checked (lot and zone), the dataset row against "
-            "the row of the zone it lies in: 16 equal, 6 differ (lot_wf_lessingtheater, lot_helmstedt_harsleber_tor, "
-            "lot_helmstedt_holzberg, lot_helmstedt_suedertor, lot_gs_marktstrasse, lot_gs_kornstrasse)") in out
+            "the row of the zone it lies in: 13 equal, 9 differ (lot_wf_lessingtheater, lot_helmstedt_harsleber_tor, "
+            "lot_helmstedt_holzberg, lot_helmstedt_suedertor, lot_sz_konrad_adenauer_16, lot_sz_rathausvorplatz, "
+            "lot_sz_buechereivorplatz, lot_gs_marktstrasse, lot_gs_kornstrasse)") in out
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -1189,7 +1191,7 @@ COMMUTER_WORKING_DAYS = 21
 #: two rows that Amendment D1 moves to a sourced window (he_innenstadt 9-16 h, gs_altstadt_zone1 10-18 h) are not among them;
 #: the three station rows of Amendment G1 add 3 (16 of 40; ruling R-4g-2: a window read from the opening hours of an operator page).
 #: Spec v3 B1 (2026-10-14) sources the five Bad Harzburg windows (dated brochure) and the three station windows (DB BahnPark
-#: page): 8 of 40 rows keep the assumption.
+#: page): 8 of 40 rows keep the assumption. Ruling R-B-4: the three station windows say operator_page, not municipal_page.
 F1_ASSUMPTION_ZONES = (
     "br_hexenritt", "br_wurmberg",
     "bs_bga_an_der_martinikirche", "bs_bga_jodutenstrasse_klint", "bs_bga_willy_brandt_platz",
@@ -1244,7 +1246,8 @@ def test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendm
     # every other window source is unchanged: 13 rows keep the assumption (all explained by ASSUMPTION F1 in their notes)
     # (the three station rows of Amendment G1 read the window from the opening hours of an operator page, ruling R-4g-2:
     # assumption 13 + 3)
-    assert tariffs["fee_window_source"].value_counts().to_dict() == {"municipal_page": 25, "assumption": 8, "ordinance": 7}
+    assert tariffs["fee_window_source"].value_counts().to_dict() == {
+        "municipal_page": 22, "assumption": 8, "ordinance": 7, "operator_page": 3}
     assert sorted(tariffs.index[tariffs["fee_window_source"] == "assumption"]) == list(F1_ASSUMPTION_ZONES)
 
 

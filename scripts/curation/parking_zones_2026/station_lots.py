@@ -85,11 +85,11 @@ WORKPLACE_CLASS = "bs_outer"
 #: table without a time limit (the evening tariff of P1 is not modelled). Task 4g (ruling R-4g-2) labelled the window
 #: ``assumption`` (ASSUMPTION F1) because it was read from the Contipark opening hours. Spec v3 B1 (owner-approved
 #: 2026-10-14) sources it from the station's DB BahnPark page instead: ``DB_WINDOW_EVIDENCE`` below states Mo-So including
-#: holidays 00:00-00:00 for Nord, West and Ackerstrasse (= P2 Sued). The table's ``fee_window_source`` vocabulary has no
-#: operator value, so the row says ``municipal_page`` (a published page of the car park's operator, no ordinance or signage
-#: statement) and the note says so; the page states opening hours and no separate fee hours (named in the note).
+#: holidays 00:00-00:00 for Nord, West and Ackerstrasse (= P2 Sued). The row says ``operator_page`` (ruling R-B-4: the published
+#: page of the car park's operator, no ordinance or signage statement); the page states opening hours and no separate fee hours
+#: (named in the note).
 FEE_WINDOW_H = (0.0, 24.0)
-FEE_WINDOW_SOURCE = "municipal_page"
+FEE_WINDOW_SOURCE = "operator_page"
 #: The evidence of the window (spec v3 B1, source id ``db_hbf``): the text of the station page ``bahnhof.de/braunschweig-hbf/
 #: parkplaetze`` in the owner's package ``Grossparkplaetze_ZGB8_2026-10-12.zip`` (not an input of this step: the values are
 #: pinned here and checked by ``tests/test_parking_zone_tariff_corrections_v3.py`` against the package where it is present).
@@ -385,8 +385,8 @@ def _note(station: dict, values: dict, inputs: dict) -> str:
         f"{DB_WINDOW_EVIDENCE['member']} (SHA-256 {DB_WINDOW_EVIDENCE['member_sha256']})): Monday to Sunday including holidays "
         "00:00-00:00 for the three DB BahnPark car parks Nord, West and Ackerstrasse (= P2 Sued), so the mapping of the entries to "
         "the zones does not matter for the window. The page states opening hours and no separate fee hours; "
-        "fee_window_source municipal_page is the nearest value of the table's vocabulary for a published page of the "
-        "operator, which is no ordinance or signage. This replaces the assumption F1 of ruling R-4g-2."
+        "fee_window_source operator_page (ruling R-B-4) says that the window is read from the published page of the operator, "
+        "which is no ordinance or signage. This replaces the assumption F1 of ruling R-4g-2."
         + special + other + " The stated maximum parking durations are not modelled. resident_permits_valid false: a car park of "
         "DB BahnPark; no source states that resident permits are valid there (ASSUMPTION R2-a). ASSUMPTION C-a: the zone is the "
         f"area within {rz.SITE_BUFFER_M:.0f} m of the lot outline. workplace_class {WORKPLACE_CLASS}: the Hauptbahnhof lies in the "

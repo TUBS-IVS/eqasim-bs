@@ -13,8 +13,9 @@ truth. The script
    validated by ``braunschweig.parking.garages``; the model lists the priced ones as ``garages`` with the illustrative
    decays ``golden_cases.FIXTURE_GARAGE_DECAY_M`` and ``FIXTURE_GARAGE_DECAY_COMMUTE_M`` (work and education, spec
    Amendment H), the maximum distance 1000 m and, since schema 5 of the model, the money coefficient
-   ``golden_cases.FIXTURE_OPTION_PRICE_BETA_U_PER_EUR``; the garage dataset has no ``max_stay_min`` column until Part B of
-   the v3 plan, so the three fixture garages with a maximum stay get it here, ``FIXTURE_GARAGE_MAX_STAY_MIN``) and evaluates every
+   ``golden_cases.FIXTURE_OPTION_PRICE_BETA_U_PER_EUR``; the three fixture garages with a maximum stay get the dataset column
+   ``max_stay_min`` from the sidecar ``tests/fixtures/parking/parking_garages_fixture_max_stay_min.json``, because the geojson is
+   a legacy layout whose recorded SHA-256 must not change) and evaluates every
    golden case of ``braunschweig.parking.golden_cases`` (``GOLDEN_CASES``: G01..G38, L01..L08, L01Z..L08Z, V01..V23,
    R01..R13, E01..E38, F01..F08, P01..P06, X01..X09, each priced under its own minimum stay ``minimum_stay_min``, its own
    resident district flag ``resident_of_district``, its EV flag ``ev_exempt``, its price coefficient
@@ -41,6 +42,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -85,10 +87,12 @@ FIXTURE_SNAPSHOT_DATE = "2026-09-28"
 FIXTURE_SOURCE_ID = "parking_tariffs_fixture"
 FIXTURE_DISTRICTS_SOURCE_ID = "parking_resident_districts_fixture"
 FIXTURE_GARAGES_SOURCE_ID = "parking_garages_fixture"
-#: The maximum stay in whole minutes (spec v3 A1, ASSUMPTION M3) of the fixture garages that have one (golden F04..F08). The
-#: garage dataset has no ``max_stay_min`` column until Part B of the v3 plan, so the fixture file cannot carry it (the loader
-#: rejects an unknown column); the exporter sets the column on the loaded frame, which ``tariff_export.garage_row_to_tariff`` reads.
-FIXTURE_GARAGE_MAX_STAY_MIN = {"fx_g20_max120": 120, "fx_g28_max90": 90, "fx_g30a_max120": 120}
+#: The maximum stay in whole minutes (spec v3 A1, ASSUMPTION M3) of the fixture garages that have one (golden F04..F08), read from
+#: this sidecar file (key ``max_stay_min``). The garage dataset has the column since spec v3 B (ruling R-B-2), but the fixture
+#: geojson is a legacy layout without it and its LF SHA-256 is recorded in the ``sources`` of the fixture model, which the Java
+#: tests pin byte for byte, so the geojson is left as it is and the exporter sets the column on the loaded frame, which
+#: ``tariff_export.garage_row_to_tariff`` reads.
+FIXTURE_GARAGE_MAX_STAY_JSON = FIXTURE_DIRECTORY / "parking_garages_fixture_max_stay_min.json"
 
 
 def read_fixture_tariffs_csv(path: Path) -> pd.DataFrame:
@@ -137,20 +141,34 @@ def load_fixture_districts(geojson_path=None) -> tuple:
     return districts, source
 
 
-def with_fixture_maximum_stays(frame):
-    """The fixture garages with the column ``max_stay_min`` (``Int64``, NA = no maximum) set from ``FIXTURE_GARAGE_MAX_STAY_MIN``.
+def read_fixture_maximum_stays(path=None) -> dict:
+    """The maximum stays of the fixture garages (garage id -> whole minutes >= 1) of the sidecar ``FIXTURE_GARAGE_MAX_STAY_JSON``.
+    ``FileNotFoundError`` when the file is absent, ``ValueError`` for a value that is no whole number of minutes >= 1."""
+    path = Path(path) if path is not None else FIXTURE_GARAGE_MAX_STAY_JSON
+    if not path.is_file():
+        raise FileNotFoundError(f"fixture maximum stays not found: {path}")
+    stays = json.loads(path.read_text(encoding="utf-8"))["max_stay_min"]
+    bad = {garage_id: value for garage_id, value in stays.items()
+           if isinstance(value, bool) or not isinstance(value, int) or value < 1}
+    if bad:
+        raise ValueError(f"{path}: max_stay_min must be whole minutes >= 1, found {bad}")
+    return stays
 
-    Raises ``ValueError`` when the frame already has such a column (the dataset has gained it: the override is then obsolete and
-    must be replaced by a column of the fixture file) or when an id of the table is not a garage of the frame (a renamed or
-    removed fixture garage must not silently lose its maximum)."""
-    if "max_stay_min" in frame.columns:
-        raise ValueError("the fixture garages already have a max_stay_min column: move FIXTURE_GARAGE_MAX_STAY_MIN into the "
-                         "fixture file and drop the override")
-    unknown = sorted(set(FIXTURE_GARAGE_MAX_STAY_MIN) - set(frame["garage_id"]))
+
+def with_fixture_maximum_stays(frame, stays: Mapping[str, int]):
+    """The fixture garages with the dataset column ``max_stay_min`` (``Int64``, NA = no maximum) set from ``stays``.
+
+    The fixture geojson is a legacy layout, so ``load_garages(allow_legacy_columns=True)`` gives the column empty. Raises
+    ``ValueError`` when the frame already carries a maximum (the fixture file has gained the column: the sidecar is then obsolete
+    and would silently overwrite it) or when an id of ``stays`` is not a garage of the frame (a renamed or removed fixture garage
+    must not silently lose its maximum)."""
+    if "max_stay_min" in frame.columns and frame["max_stay_min"].notna().any():
+        raise ValueError("the fixture garages already carry max_stay_min values: drop the sidecar "
+                         f"{FIXTURE_GARAGE_MAX_STAY_JSON.name} and keep the column of the fixture file")
+    unknown = sorted(set(stays) - set(frame["garage_id"]))
     if unknown:
-        raise ValueError(f"FIXTURE_GARAGE_MAX_STAY_MIN names garages that the fixture file does not have: {unknown}")
-    return frame.assign(max_stay_min=pd.array([FIXTURE_GARAGE_MAX_STAY_MIN.get(garage_id) for garage_id in frame["garage_id"]],
-                                              dtype="Int64"))
+        raise ValueError(f"the fixture maximum stays name garages that the fixture file does not have: {unknown}")
+    return frame.assign(max_stay_min=pd.array([stays.get(garage_id) for garage_id in frame["garage_id"]], dtype="Int64"))
 
 
 def load_fixture_garages(geojson_path=None) -> tuple:
@@ -167,9 +185,10 @@ def load_fixture_garages(geojson_path=None) -> tuple:
     parking_garages.validate_garages(frame)
     source = {"source_id": FIXTURE_GARAGES_SOURCE_ID, "path": _repository_path(path),
               "sha256": tariff_export.content_sha256(path)}
+    stays = read_fixture_maximum_stays()
     log.info("fixture garages: %d garages from %s (sha256 %s), %d with a maximum stay", len(frame), source["path"],
-             source["sha256"], len(FIXTURE_GARAGE_MAX_STAY_MIN))
-    return with_fixture_maximum_stays(frame), source
+             source["sha256"], len(stays))
+    return with_fixture_maximum_stays(frame, stays), source
 
 
 def build_fixture_tariff_model(table: pd.DataFrame, sources: list[dict], districts_geojson_path=None,

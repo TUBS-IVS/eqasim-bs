@@ -46,7 +46,7 @@ FIXTURE_GARAGES_PATH = FIXTURE_DIRECTORY / "parking_garages_fixture.geojson"
 PARKING_STAGE = "braunschweig.parking.zones_stage"
 PREFIX = "bs_"
 CONFIG_NAME = f"{PREFIX}config.xml"
-TARIFFS_NAME = f"{PREFIX}parking_tariffs_2026-09-29.json"
+TARIFFS_NAME = f"{PREFIX}parking_tariffs_2026-10-14.json"
 REPORT_NAME = f"{PREFIX}parking_inputs_report.json"
 #: The scenario files other than the config that matsim.output copies from the prepared stage.
 SCENARIO_FILES = tuple(f"{PREFIX}{name}" for name in (
@@ -166,7 +166,7 @@ def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkey
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
-        "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
+        "parking_tariff_snapshot_date": "2026-10-14", "parking_terminal_stay_rule": "until_fee_end",
         "parking_minimum_stay_min": 15, "parking_garage_decay_m": 0.0, "parking_garage_decay_commute_m": None,
         "parking_garage_max_distance_m": 1000.0,
         "parking_garage_monthly_imputation": True, "parking_cost_utility_factor": 1.0,
@@ -237,7 +237,7 @@ def test_on_configure_names_the_fix_that_matches_the_bad_snapshot_date(tmp_path,
                                               "parking_tariff_snapshot_date": snapshot_date})
     with pytest.raises(ValueError, match="parking_tariff_snapshot_date") as error:
         prepare.configure(context)
-    assert fix in str(error.value) and "'2026-09-29'" in str(error.value)
+    assert fix in str(error.value) and "'2026-10-14'" in str(error.value)
     if wrong_fix is not None:
         assert wrong_fix not in str(error.value)
 
@@ -249,7 +249,7 @@ def test_the_configure_check_uses_the_public_snapshot_date_validator(tmp_path, m
     monkeypatch.setattr(prepare.tariff_export, "check_snapshot_date",
                         lambda value: calls.append(value) or real_check(value))
     _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
-    assert calls == ["2026-09-29"]
+    assert calls == ["2026-10-14"]
 
 
 def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monkeypatch):
@@ -270,7 +270,7 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     assert model["resident_districts"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["resident_districts"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        5, "2026-09-29", "until_fee_end")
+        5, "2026-10-14", "until_fee_end")
     # spec v3 A2: the configured money coefficient of the option weights reaches the model (the default of the stage)
     assert model["option_price_beta_u_per_eur"] == 0.310998
     # The garages of the release reach the model; the default decay is 0 (the garage options off), the default maximum

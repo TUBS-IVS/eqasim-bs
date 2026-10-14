@@ -399,8 +399,8 @@ def test_the_tariff_rows_carry_the_evidence_and_the_named_assumptions(sl, inputs
     assert tuple(p2[column] for column in figures) == ("1.80", "30", "9.50", "3.14")
     assert p1["resident_permits_valid"] == "false" and p1["workplace_class"] == "bs_outer" and p1["zone_type"] == "street_paid"
     # spec v3 B1: the window 0-24 h is sourced from the DB BahnPark station page (source id db_hbf), the earlier assumption F1 of
-    # ruling R-4g-2 is replaced; the table's vocabulary has no operator value, so the source is municipal_page
-    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "municipal_page")
+    # ruling R-4g-2 is replaced; the source is operator_page (ruling R-B-4)
+    assert (p1["fee_start_h"], p1["fee_end_h"], p1["fee_window_source"]) == ("0.0", "24.0", "operator_page")
     assert p1["ev_free_minutes"] == "" and p1["ev_rule_valid_until"] == ""
     assert p1["max_stay_min"] == "" and p1["long_stay_product_eur"] == "" and p1["source_date"] == "2026-10-08"
     for assumption in ("ASSUMPTION C-a", "ASSUMPTION G-a", "ASSUMPTION G-b", "ASSUMPTION R2-a", "ASSUMPTION P2"):
@@ -451,7 +451,7 @@ def test_a_consistent_tariff_table_passes_the_check_and_reports_it(sl, inputs, t
     (lambda frame: frame.__setitem__("resident_permits_valid", True), "must be false"),
     (lambda frame: frame.__setitem__("workplace_class", "bs_zentrum"), "workplace_class"),
     (lambda frame: frame.__setitem__("max_stay_min", 60.0), "must stay empty"),
-    (lambda frame: frame.__setitem__("fee_window_source", "assumption"), "fee_window_source must be 'municipal_page'"),
+    (lambda frame: frame.__setitem__("fee_window_source", "assumption"), "fee_window_source must be 'operator_page'"),
     (lambda frame: frame.__setitem__("notes", frame["notes"].str.replace("db_hbf", "db_x")),
      "the note must hold 'db_hbf'"),
     (lambda frame: frame.__setitem__("notes", frame["notes"] + " ASSUMPTION F1"), "must not name ASSUMPTION F1 any more"),
@@ -600,7 +600,7 @@ def test_the_committed_station_rows_carry_the_published_tariffs_and_the_commuter
         assert (row["hourly_rate_eur"], row["billing_unit_min"], row["daily_cap_eur"], row["commuter_day_eur"]) == (
             rate, unit, day, commuter), zone_id
         assert (row["zone_type"], row["municipality_ags"], row["workplace_class"]) == ("street_paid", "03101000", "bs_outer")
-        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "municipal_page")
+        assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "operator_page")
         assert row["resident_permits_valid"] == False and row["resident_exempt"] == False, zone_id  # noqa: E712
         assert pd.isna(row["ev_free_minutes"]) and pd.isna(row["ev_rule_valid_until"]), zone_id
         assert pd.isna(row["max_stay_min"]) and pd.isna(row["first_period_eur"]) and pd.isna(row["long_stay_product_eur"]), zone_id

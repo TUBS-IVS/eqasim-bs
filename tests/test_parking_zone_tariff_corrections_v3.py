@@ -34,6 +34,8 @@ GOSLAR = ("gs_altstadt_zone1", "gs_parkplatz_baeringerstrasse", "gs_parkplatz_kl
 STATIONS = ("bs_hbf_p1_nord", "bs_hbf_p2_sued", "bs_hbf_p3_west")
 WOLFSBURG = ("wob_tarifzone_1", "wob_tarifzone_2", "wob_tarifzone_3")
 HOUR_S = 3600
+#: The tariff state of the release (ruling R-B-7): the date of the 2026-10-14 research packages.
+SNAPSHOT_DATE = "2026-10-14"
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +56,8 @@ def _base_table() -> pd.DataFrame:
 def _price(zone: pd.Series, zone_id: str, start_h: float, minutes: int, purpose: str = "shop") -> int:
     start_s = int(start_h * HOUR_S)
     row = {**zone.to_dict(), "zone_id": zone_id}
-    return cost.parking_cost_cents(tariff_row_to_zone(row), start_s, start_s + minutes * 60, purpose=purpose,
+    return cost.parking_cost_cents(tariff_row_to_zone(row, snapshot_date=SNAPSHOT_DATE), start_s, start_s + minutes * 60,
+                                   purpose=purpose,
                                    parking_free=False, resident_of_zone=False)[0]
 
 
@@ -81,9 +84,9 @@ EXPECTED_CHANGES = {
     "gs_parkplatz_baeringerstrasse": {"ev_free_minutes": 240, "ev_rule_valid_until": "2026-12-31"},
     "gs_parkplatz_klubgartenstrasse_zob": {"ev_free_minutes": 240, "ev_rule_valid_until": "2026-12-31"},
     "gs_parkplatz_glockengiesserstrasse": {"ev_free_minutes": 240, "ev_rule_valid_until": "2026-12-31"},
-    "bs_hbf_p1_nord": {"fee_window_source": "municipal_page"},                                 # db_hbf
-    "bs_hbf_p2_sued": {"fee_window_source": "municipal_page"},
-    "bs_hbf_p3_west": {"fee_window_source": "municipal_page"},
+    "bs_hbf_p1_nord": {"fee_window_source": "operator_page"},                                  # db_hbf, ruling R-B-4
+    "bs_hbf_p2_sued": {"fee_window_source": "operator_page"},
+    "bs_hbf_p3_west": {"fee_window_source": "operator_page"},
     "wob_tarifzone_1": {},                                                                     # W-max: notes only
     "wob_tarifzone_2": {},
     "wob_tarifzone_3": {},
@@ -145,6 +148,30 @@ def test_the_ev_columns_are_whole_minutes_and_iso_dates_on_street_rows_only(tari
     dated = tariffs[tariffs["ev_rule_valid_until"].notna()]
     assert sorted(dated.index) == sorted(stated.index) and all(pz._is_iso_date(value) for value in dated["ev_rule_valid_until"])
     pz.validate_tariffs(tariffs.reset_index(), allow_fixture_marker=False)
+
+
+def test_the_fee_window_vocabulary_has_the_operator_page_value_and_the_station_rows_use_it():
+    # ruling R-B-4: the published page of a car park's operator is its own value; Bad Harzburg stays municipal_page
+    assert pz.FEE_WINDOW_SOURCES == ("ordinance", "signage", "municipal_page", "operator_page", "assumption")
+    header = TARIFFS_PATH.read_text(encoding="utf-8")
+    assert "{ordinance, signage, municipal_page, operator_page, assumption}" in header
+    frame = pz.load_tariffs(TARIFFS_PATH).set_index("zone_id")
+    assert sorted(frame.index[frame["fee_window_source"] == "operator_page"]) == sorted(STATIONS)
+    assert (frame.loc[list(BAD_HARZBURG), "fee_window_source"] == "municipal_page").all()
+
+
+def test_every_ev_exemption_is_in_force_at_the_tariff_state_of_the_release(tariffs):
+    # ruling R-B-7: parking_tariff_snapshot_date is 2026-10-14 (config default, release config and both popsim fixtures), and every
+    # exemption of the table (the earliest ends 2026-12-31) is exported at that date, none is switched off as expired
+    for zone_id in tariffs.index[tariffs["ev_free_minutes"].notna()]:
+        row = {**tariffs.loc[zone_id].to_dict(), "zone_id": zone_id}
+        assert tariff_row_to_zone(row, snapshot_date=SNAPSHOT_DATE).ev_free_minutes == tariffs.loc[zone_id, "ev_free_minutes"]
+    from braunschweig.matsim.simulation import prepare
+
+    assert prepare.PARKING_DEFAULTS["parking_tariff_snapshot_date"] == SNAPSHOT_DATE
+    for relative in ("configs/base_bs.yml", "configs/fixtures/config_popsim_mid_braunschweig.yml",
+                     "configs/fixtures/config_popsim_open_braunschweig.yml"):
+        assert f'parking_tariff_snapshot_date: "{SNAPSHOT_DATE}"' in (REPO_ROOT / relative).read_text(encoding="utf-8"), relative
 
 
 def test_the_loaded_columns_end_with_the_ev_columns_in_the_committed_header():
@@ -270,7 +297,7 @@ def test_the_station_fee_window_is_sourced_from_the_db_bahnpark_page(tariffs, zo
     # db_hbf (bahnhof.de/braunschweig-hbf/parkplaetze, package Grossparkplaetze_ZGB8_2026-10-12.zip): Mo-So incl. holidays
     # 00:00-00:00 for Nord, West and Ackerstrasse (= P2 Sued); the earlier ASSUMPTION F1 is gone
     row = tariffs.loc[zone_id]
-    assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "municipal_page")
+    assert (row["fee_start_h"], row["fee_end_h"], row["fee_window_source"]) == (0.0, 24.0, "operator_page")
     notes = row["notes"]
     assert "db_hbf" in notes and "Grossparkplaetze_ZGB8_2026-10-12.zip" in notes and "ASSUMPTION F1" not in notes
     assert "ASSUMPTION G-a" in notes and "ASSUMPTION C-a" in notes

@@ -76,7 +76,7 @@ PARKING_KEY = "parking_zones_enabled"
 #: (spec 5.5).
 PARKING_DEFAULTS = {
     # Tariff state the committed tariff table records; it names the tariff model file.
-    "parking_tariff_snapshot_date": "2026-09-29",
+    "parking_tariff_snapshot_date": "2026-10-14",
     # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends (the only implemented rule).
     "parking_terminal_stay_rule": "until_fee_end",
     # ASSUMPTION L1 (ADR-0139): every priced car stay lasts at least this many minutes (the module parameter

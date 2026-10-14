@@ -234,7 +234,7 @@ config:
   parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
   parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
   parking_garages_path: braunschweig/parking/parking_garages_2026.geojson
-  parking_tariff_snapshot_date: "2026-09-29"
+  parking_tariff_snapshot_date: "2026-10-14"
   parking_workplace_free_share_shift: 0.0
   parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
   parking_campus_free_share: 0.2

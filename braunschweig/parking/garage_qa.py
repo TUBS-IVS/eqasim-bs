@@ -349,6 +349,10 @@ def lot_street_equivalent(row) -> dict:
     equivalent["daily_cap_eur"] = _cell(row["garage_daily_cap_eur"])
     equivalent["fee_start_h"] = _cell(row["garage_fee_start_h"])
     equivalent["fee_end_h"] = _cell(row["garage_fee_end_h"])
+    # ruling R-B-2: a lot that carries the street product of a zone with a maximum stay and no long-stay product holds the zone's
+    # maximum in its own column (the rate form has no bands to carry it)
+    if "max_stay_min" in row and _cell(row["max_stay_min"]) is not None:
+        equivalent["max_stay_min"] = int(_cell(row["max_stay_min"]))
     bands_text = row["tariff_duration_bands"]
     if isinstance(bands_text, str) and bands_text.strip():
         bands = pg.parse_duration_bands(bands_text)

@@ -299,7 +299,9 @@ large surface lots of the eight towns (`braunschweig/parking/parking_garages_202
 garage options of a stay), because their sources are not cleared for redistribution (data records
 `parking_zones_2026`, `parking_resident_districts_2026`, `parking_garages_2026`; every source stays named there). They
 are **available on request: open an issue in TUBS-IVS/eqasim-bs**; place them at the paths above (the folder is ignored
-by git, like the other raw data) and verify them against the SHA-256 that each record states. Without them the tests that
+by git, like the other raw data) and verify them against the SHA-256 that each record states (the garage dataset gained the
+column `max_stay_min` on 2026-10-14, spec v3 B: the loader refuses a copy from before that date with the command that
+regenerates it, so request the current one). Without them the tests that
 read them skip and the pipeline stops with a message that names the file and this route. All six files are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
 D11 (D5, D10 and D11 as `[RESTRICTED]` when absent), and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The
