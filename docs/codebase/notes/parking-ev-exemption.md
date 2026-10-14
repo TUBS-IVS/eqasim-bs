@@ -3,7 +3,7 @@
 Mechanism of spec A5 of the parking cost zones v3 design (issue #436, Part A, tasks A3, A4, A6 and A7). The decision, its
 assumptions (E1, E2) and the rejected alternatives live in ADR-0142 (decision 5); this note says where the code is and which
 rules a maintainer must keep. The zone-based pricing around it is in [parking-cost-zones.md](parking-cost-zones.md), the zone
-values (the data of Part B) in the data record `parking_tariffs_2026`.
+values (filled by Part B, spec v3 B1) in the data record `parking_tariffs_2026`.
 
 ## What it does
 
@@ -14,7 +14,8 @@ separately and meet in the pricing of one stay:
    and `ev_rule_valid_until` (ISO date, empty = open-ended, only together with `ev_free_minutes`), defined in
    `braunschweig/parking/zones.py` (`EV_COLUMNS`, validated per row; they exist on street_paid rows only, a campus zone and a
    resident zone refuse them) and read into `cost.ZoneTariff.ev_free_minutes` by `tariff_export.tariff_row_to_zone`. The
-   committed table has no value yet: Part B fills them from the 2026-10-14 packages and does not redefine the columns.
+   committed table carries the values that Part B filled from the 2026-10-14 packages (seven rows; the data record
+   `parking_tariffs_2026` lists them with their sources); Part B did not redefine the columns.
 2. **The export applies the validity date.** `tariff_export` writes `ev_free_minutes` into the model (schema 5, every zone
    entry, null = none) only while the rule is in force on the tariff snapshot date (`parking_tariff_snapshot_date`); an
    expired rule is exported as no exemption with an info line that names the zone and the expiry (the switch is never
@@ -81,7 +82,7 @@ is in `_ev_exempt_street` and in its Java counterpart and is pinned by the golde
   has no plates.
 - The mixed-fleet over-assignment above, and that the owner of a placeholder car is never exempt.
 - Goslar's exemption holds at marked machines only (not modelled); the charging-only regime of Wolfenbuettel and the unverified
-  rules of Wolfsburg, Bad Harzburg, Braunlage, Helmstedt and Gifhorn are not modelled (spec A5; Part B states the values).
+  rules of Wolfsburg, Bad Harzburg, Braunlage, Helmstedt and Gifhorn are not modelled (spec A5; the table states no value for them).
 - A rule with a validity date before the snapshot date is exported as no exemption: a run with an older snapshot date prices
   differently from one with a newer one.
 - An exempt stay is free as a whole: the street option costs 0, so E4 applies and the garage and lot options carry no weight

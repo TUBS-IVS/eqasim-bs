@@ -334,7 +334,15 @@ and the archived evidence pages of the free Wolfsburg car parks) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/` (not distributed; `--large-lots-zip`,
 `--lot-threshold` with the default 50 spaces and `--wob-free-evidence-dir`), for the free status of four Wolfsburg lots the
 owner's package `Parkdaten_Restluecken_2026-10-14.zip` in
-`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/` (not distributed; read in place, `--wob-evidence-zip`),
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/` (not distributed; read in place, `--wob-evidence-zip`;
+the same folder holds `Parkdaten_Nachrecherche_2026-10-14.zip`, which the resident districts of Wolfsburg, Peine, Helmstedt and
+Wolfenbuettel are rebuilt from, `resident_districts.py --research-package`, and from which the tariff corrections of
+2026-10-14 were entered), for the Wolfsburg zones and the 15 area zones the owner's package `Wolfsburg_Parkdaten.zip` in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/` (not distributed; `--municipal-dir`; the three
+research packages have a data record each, `parking_package_nachrecherche_2026_10_14`,
+`parking_package_restluecken_2026_10_14` and `parking_package_wolfsburg_parkdaten_2026_10_01`, with their SHA-256, and the
+preflight lists them as the optional curation inputs D12 to D14, `[RESTRICTED]` when absent: no stage and no run needs
+them),
 for the monthly products of the
 Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
 `contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in

@@ -362,6 +362,52 @@ INPUTS: List[Input] = [
         matsim_only=True,
         restricted=True,
     ),
+    # D12-D14: the owner's raw research packages behind the parking v3 data (spec v3 B6, issue #436). Only the curation chain
+    # (scripts/curation/parking_zones_2026/) reads them; no stage and no run needs them, hence optional. Restricted and local
+    # like D5, D10 and D11 (the archived originals are third-party documents); each has a data record of its own.
+    Input(
+        name="D12 Parking research package Nachrecherche 2026-10-14 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_nachrecherche_2026_10_14, docs/registry/data/parking_package_nachrecherche_2026_10_14.yml"),
+        notes=(
+            "Curation input only: rebuilding the resident districts of Wolfsburg, Peine, Helmstedt and Wolfenbuettel "
+            "(resident_districts.py --research-package) and re-checking the v3 tariff corrections need it; the pipeline "
+            "and the runs do not. Never extracted; the curation code checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D13 Parking research package Restluecken 2026-10-14 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Restluecken_2026-10-14.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_restluecken_2026_10_14, docs/registry/data/parking_package_restluecken_2026_10_14.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --wob-evidence-zip reads the archived pages of the free Wolfsburg "
+            "car parks from it in place; the pipeline and the runs do not need it. Never extracted; the curation code "
+            "checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D14 Parking research package Wolfsburg_Parkdaten 2026-10-01 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-01/Wolfsburg_Parkdaten.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_wolfsburg_parkdaten_2026_10_01, "
+                   "docs/registry/data/parking_package_wolfsburg_parkdaten_2026_10_01.yml"),
+        notes=(
+            "Curation input only: assemble_parking_zones.py --municipal-dir and wolfsburg_area_release.py read the layer "
+            "mobile_parking_areas (73 areas, 15 with a recorded maximum stay) from it; the pipeline and the runs do not "
+            "need it. Never extracted; the curation code checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
 ]
 
 

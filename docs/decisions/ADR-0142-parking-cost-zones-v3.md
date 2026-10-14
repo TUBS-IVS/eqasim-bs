@@ -1,9 +1,9 @@
-# ADR-0142 · 2026-10-14 · Parking cost zones v3, Part A: stay feasibility, option prices, cost factor, EV exemption, report v4
+# ADR-0142 · 2026-10-14 · Parking cost zones v3: mechanics (Part A) and data (Part B)
 
-- **Status:** accepted pending owner review at the PR (Part A, mechanics ON by default, no model run). The production flag
-  `parking_zones_enabled` is unchanged; the three keys below have defaults that apply when the flag is on. At the time of
-  writing (2026-10-14) no model run of v3 exists; the current state is held by the feature record `parking_cost_zones`,
-  not by this record.
+- **Status:** accepted pending owner review at the PR (Part A, mechanics ON by default; Part B, data; no model run). The
+  production flag `parking_zones_enabled` is unchanged; the three keys below have defaults that apply when the flag is on.
+  At the time of writing (2026-10-14) no model run of v3 exists; the current state is held by the feature record
+  `parking_cost_zones`, not by this record.
 - **Numbering:** ADR-0142 is the next free id after ADR-0140 for this branch. The design spec and the plans said ADR-0141;
   on 2026-10-14, checked across all local and remote branches, ADR-0141 is taken by `feature/i442-portal-trips`
   (`ADR-0141-portal-trips-through-the-cordon-gates.md`, pushed), so the v3 record is ADR-0142 (ruling R-ADR). No other branch
@@ -13,9 +13,10 @@
   with a maximum stay needs a long-stay product or a garage (assumption M1 stays for the zones that have the product), and the
   limitation of ADR-0140 decision 14 that the run comparison cannot split paid from free off-street options (closed for the
   two paid-only rows by decision 4 below).
-- **Scope of this record:** Part A (model mechanics: Python reference, Java port, golden file, report). Part B (data: zone-table
-  corrections, Wolfsburg area zones, resident districts, free-lot evidence, recalibration of the decay lengths) and Part C
-  (runs) append their own sections when they are built. This record states NO model result.
+- **Scope of this record:** Part A (stay feasibility, option prices, cost factor, EV exemption, report v4: Python reference,
+  Java port, golden file, report; decisions 1 to 7) and Part B (data: zone-table corrections, Wolfsburg area zones, resident
+  districts, free-lot evidence, recalibration of the decay lengths; decisions 8 to 13, from the heading "Part B: data" on).
+  Part C (runs) appends its own section when it is built. This record states NO model result.
 
 ## Context
 
@@ -91,14 +92,15 @@ shared golden file.
    - **All option weights underflow (review minor).** A stay whose weights all underflow to 0 raises a named
      `ValueError` in Python and the same refusal in Java; real tariffs cannot reach it (the street always carries a finite
      price), and v2 had the same hole for distances alone.
-   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 were fitted WITHOUT the price
-     term, on the price-independent weights, so with beta > 0 the garage shares they reproduced differed. They were
-     recalibrated with the price term (beta 0.310998, fixed during the calibration) on 2026-10-14 in Part B (B5), with every
-     stay priced and weighted by the production code (feasibility of decision 1, price term of this decision), on the final
-     option set, the commuter measure and the Wolfsburg check conditional on the paying stays (ruling R-B-16); see the calibration record `parking_garage_decay_calibration_2026` for the values, the superseded v2 values,
-     the sensitivities (large-lot thresholds 30 and 100, beta 0) and the limitations. The preparation warns when a run's
-     coefficient differs from the one the committed lengths were calibrated with (`matsim.simulation.prepare`, the constant
-     `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`, pinned to the table by a test).
+   - **State of the calibration.** The decay lengths lambda and lambda_c of ADR-0140 decision 14 were fitted WITHOUT the
+     price term, on the price-independent weights, so with beta > 0 the garage shares they reproduced differed. They were
+     recalibrated with the price term (beta 0.310998, fixed during the calibration) on 2026-10-14 in Part B (B5), with
+     every stay priced and weighted by the production code (feasibility of decision 1, price term of this decision), on
+     the final option set, the commuter measure and the Wolfsburg check conditional on the paying stays (ruling R-B-16);
+     see the calibration record `parking_garage_decay_calibration_2026` for the values, the superseded v2 values, the
+     sensitivities (large-lot thresholds 30 and 100, beta 0) and the limitations. The preparation warns when a run's
+     coefficient differs from the one the committed lengths were calibrated with (`matsim.simulation.prepare`, the
+     constant `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`, pinned to the table by a test).
 3. **Parking cost factor (spec A3, ASSUMPTION CF; owner item 2).** The config key `parking_cost_utility_factor` (Java module
    parameter `costFactor` of `braunschweigParking`) multiplies the parking cost of a car trip before it is added to the car
    cost that enters the utility. Default 1.0, finite, in [0, 10] (ruling R-A-15: the spec's "finite, >= 0" gives the lower
@@ -266,3 +268,233 @@ clipped to the maximum stay (E2). R-A-13: the powertrain is a per-vehicle column
 equality test. R-A-15: `costFactor` is written only when it differs from 1.0, range [0, 10]. R-A-17: beta 0 is refused in a
 schema-5 run model, and `street_feasible` follows its documented meaning. R-A-18: only the two `*_paid_calls` rows become
 exact in report v4. R-ADR: the record is ADR-0142.
+
+## Part B: data (2026-10-14)
+
+Part B makes the committed data give the Part A mechanics something to act on: the corrected zone tariffs, the Wolfsburg area
+zones, the resident districts of four more towns, three free lots and the recalibrated decay lengths. It changes data and the
+curation chain, and only the following model-side code: the garage column `max_stay_min` and the lot rule of decision 9, the
+Wolfsburg zone selection of the calibration and the comparison, and the routing of the calibration through the production
+pricing (decision 13). The decisions are numbered on from Part A; every value, source and hash is held by the data record
+named for it, not repeated here. The three raw research packages are registered records of their own
+(`parking_package_nachrecherche_2026_10_14`, `parking_package_restluecken_2026_10_14`,
+`parking_package_wolfsburg_parkdaten_2026_10_01`; restricted, local, listed as D12 to D14 in the input preflight). The
+mechanisms and the rules a maintainer must keep are in `docs/codebase/notes/parking-zones-curation.md`. This part states NO
+model result.
+
+## Part B context
+
+On 2026-10-14 the committed tariff table had three zones with a maximum stay (the v2 zones `bs_zone_ia`,
+`bs_resident_stadthalle_132`, `pe_innenstadt`, each with a long-stay product) and no EV exemption, so the Part A rules had no
+case to act on. The owner's research packages of that day supplied ordinances, gazettes, brochures, resident street lists and
+maps, and the archived pages of the free lots. Every changed cell cites the source id of a pinned package, or the id of an
+assumption (M3, W-max, E2, R3, CF) of the table header; fee windows and maximum stays are separate columns and nothing is
+inferred from the other.
+
+## Part B decisions
+
+8. **Zone table corrections (spec B1; owner decisions 2026-10-14).** The tariff table (`parking_tariffs_2026`) is corrected
+   from the 2026-10-14 packages; the changed cells with their source ids are in the data record and in the note of each row.
+   In substance:
+   - Braunschweig Ia loses `long_stay_product_eur`: the 9.00 EUR ticket is zone Ib's, so assumption M1 is WITHDRAWN for Ia
+     (the product does not exist there) and the 180 min maximum acts through decision 1. Ib is unchanged.
+   - Peine `pe_innenstadt` is 0.50 EUR per started 30 min without cap, zone-wide maximum or long-stay product (the day and
+     4 h tickets and the 180 min limits belong to lots); Wolfenbuettel `wf_innenstadt` takes the tariff of 2026-01-01 (0.25
+     EUR for the first 15 min, then 0.05 EUR per started 3 min). Salzgitter `sz_lebenstedt` gets a maximum stay of 150 min,
+     Helmstedt `he_innenstadt` 180 min, the Bad Harzburg zones 360 or 600 min, Seesen `se_am_markt` 360 min (the 10 h of the
+     city page is a named conflict and not applied).
+   - EV exemptions (Part A decision 5) are filled on seven rows: Salzgitter 240 min and Seesen 360 min to 2026-12-31 (E2:
+     within the maximum stay), Peine 180 min to 2028-04-30 and the four Goslar rows 240 min to 2026-12-31. The Goslar
+     exemption holds at marked machines only, which the model does not know, so it is an UPPER BOUND.
+   - Source of the fee windows: the three Braunschweig Hauptbahnhof rows (the DB page, Mo-So 0-24 h) take the new value
+     `operator_page` of `zones.FEE_WINDOW_SOURCES`, because labelling an operator page as municipal would be a provenance error
+     (ruling R-B-4); Bad Harzburg keeps `municipal_page` (the dated municipal brochure). Peine Echternplatz (zone I, 1.70 EUR
+     per 30 min, maximum 60 min) is a single lot and is NOT zoned: it is an excluded row of the coverage register with its
+     reason.
+   - ASSUMPTION W-max (owner decision): the 58 Wolfsburg mobile-parking areas without a recorded maximum stay allow long
+     parking, so the three tariff zones carry no zone-wide maximum. The research package says that an empty field does NOT mean
+     unlimited; W-max is the owner's decision against that wording and stays a named assumption, not a finding.
+   - The tariff snapshot date `parking_tariff_snapshot_date` moves from 2026-09-29 to 2026-10-14 (ruling R-B-7): the tariff
+     state is now that of the 2026-10-14 packages, and EV validity is judged against it (the earliest end, 2026-12-31, lies
+     after it, so every exemption is exported).
+   - Part A defines the two EV columns; B1 fills values and does not redefine them (ruling R-B-1).
+   Accepted as reported and noted in the records (ruling R-B-5): the weekday window of Bad Harzburg Burgberg and Berliner Platz
+   is the Mo-Fr 8-18 h machine statement of a 2021/22 brochure that does not name the two places in its daily window; the
+   Seesen EV exemption has no stated duration (the maximum stay bounds it, E2); the Goslar exemption is an upper bound; whether
+   Echternplatz lies inside the `pe_innenstadt` polygon is not established (the package gives no coordinates), and the register
+   note says so.
+9. **A lot with a zone product carries its zone's maximum stay (ruling R-B-2; owner: simple solutions).** Lots keep the tariff of
+   their zone (decision 13 of ADR-0140). A lot that takes a zone product with a maximum stay and no long-stay product - the
+   three Braunschweig Ia lots (Wendenstrasse/Werder, Grosser Hof, Buergerpark) after decision 8 - has the zone's maximum
+   stay as its OWN maximum stay, in the new nullable integer column `max_stay_min` of the garage dataset (the column the
+   tariff model schema 5 already carries), and the plain rate form; `large_lots.zone_product_rules` returns it instead of
+   refusing. The maximum is compared with the ELAPSED stay (decision 1), so a lot is never less restrictive than its street
+   but can be stricter (ruling R-B-11): a stay from 07:00 to 11:00 is feasible on the Ia street (120 chargeable minutes inside
+   the fee window 09:00-20:00) and not at the lot (240 elapsed minutes). The price is unaffected; only the option weights
+   shift. The maximum is reproduced in the exported JSON, so the Java model carries it; the Java-pinned fixture JSON stays
+   byte-identical because the fixture's own maximum stays are held in a sidecar file (ruling R-B-9).
+10. **Wolfsburg area zones (spec B2).** The 15 mobile-parking areas with a recorded maximum stay (the layer of the package
+    `Wolfsburg_Parkdaten.zip`: one with 30 min, one with 60 min and thirteen with 120 min; two areas in tariff zone 1 and thirteen
+    in zone 3) become the zones `wob_area_<source id>`, so the zone table has 55 zones. A zone takes the tariff values of its
+    parent tariff zone and its OWN maximum stay; the raw paid-hours text of the area is compared with the parent's window and a
+    difference would be named in the note (the comparison found none). The geometry is NOT the raw section polygon (ruling
+    R-B-12): an area zone is the part of its parent tariff zone's buffered section region (ASSUMPTION C-a, 50 m) that is nearer to
+    that area's street section than to any other section of the parent, the generalised Voronoi split that `municipal_zones`
+    already uses between tariff zones; the parents lose the areas, so zones never overlap. Section polygons are thin, activity
+    points sit beside them, and a raw section would almost never contain one, so its maximum stay would never act. Two
+    garage-dataset lots change zone with it: the Cinemaxx lot lies in area 680 (60 min; the section lies 100 % inside the lot
+    outline, and the package rule states 60 min, so the maximum is supported by the source and not a Voronoi artefact) and the
+    Hoffmannstrasse triangle lot in area 736 (120 min; 89.1 % of its outline in the section). The 58 areas without a recorded
+    maximum are not zones (W-max, decision 8). Ruling R-B-13: the Wolfsburg universe of the decay calibration and of the run
+    comparison is selected by `municipality_ags` 03103000 from the tariff table (`calibrate_garage_decay.wolfsburg_zone_ids`),
+    so the area zones count; a fixed list of the three tariff zones would have dropped them silently.
+11. **Resident districts of four more towns (spec B3; owner: the streets are assigned by the addresses and the area is computed
+    with a small buffer).** The layer has 29 districts in six municipalities (Braunschweig 3, Goslar 7, Wolfsburg 10, Peine 7,
+    Helmstedt 1, Wolfenbuettel 1).
+    - Wolfsburg (the 67 rows of the official street list of 2023-07-20, zones A-G, K, VO, FA, with house-number ranges) and
+      Peine (the 29 street entries of the official table, zones A-G): each street is matched to the OSM street geometry of the
+      pipeline's Niedersachsen extract (names folded by one function, matched inside the zone's locality), a house-number range
+      is cut at the OSM house numbers, every piece is buffered by 25 m (ASSUMPTION R3, the width of a street with both kerbs) and
+      the pieces of a zone are united. A street that cannot be matched stops the step with the list of all of them; mixed-zone
+      streets carry a flag. ASSUMPTION R3-b (Wolfsburg only): a range whose two ends have the same parity lies on one side of
+      the street, because the list interleaves zones this way, and is buffered on that side only.
+    - Helmstedt (the zone inside the ring road) and Wolfenbuettel (a schematic map) are constructed from the OSM geometry of
+      the streets the maps name, never from hand-set vertices: the Helmstedt face enclosed by the ring streets, closed at the
+      north-western corner by Walbecker Strasse (ASSUMPTION HE-a: the two ring streets end about 100 m apart there), and the
+      46 streets labelled inside the Wolfenbuettel area, buffered by 25 m with the holes filled because the map colours whole
+      blocks. Ruling R-B-14: the Helmstedt face is NOT widened to the road edge: it already ends at the road centrelines where
+      the dotted line of the brochure runs, and the brochure counts the spaces of the ring roads themselves as outside the ring.
+    - Salzgitter has resident permits but neither a street list nor an area map (a bounded finding of the package), and the
+      Gifhorn scheme ended in 2025/26 (council minutes): no district for either, named in the coverage register.
+    - Permit possession is residence (R2 stays); the owner decided not to pursue permit counts, and the MiD 2023 home-parking
+      quantity is orientation only.
+    - A list or table names eligible resident ADDRESSES, not legal parking areas, so a district is the envelope of the listed
+      streets with a buffer and includes buildings and land without parking. Fallbacks and rates per town (qualifiers that
+      cannot be applied, ranges without a side, the one area-boundary match) are counted and logged and stated in the data
+      record.
+12. **Free lots and the Arena (spec B4; owner decisions 2026-10-14).** From the archived pages of the Restluecken package
+    three Wolfsburg lots become free options (the dataset has 94 rows after 91): Allersee Suedufer and Freibad Fallersleben, and
+    the Volkswagen Arena car park P1 (the club page: free outside match days; ASSUMPTION W-match: match days are not modelled,
+    the lot is free on the simulated weekday; owner decision YES). The page of the Suedufer states that its claim holds for the
+    named point only; the extension to the lot is the owner's decision and the note of the row says so, as it says that the
+    free schedule of the Freibad lot is the owner's decision (the page gives no hours or stay rule). The Arena P1 position is the
+    package's prior municipal point, which the package keeps as no verified entrance (a counted fallback, 1 of 58, with its own
+    geometry method). Arena P2 has NO position in the large-lot package and stays a QA row with the reason `lot_no_position`: a
+    car park without a position has no option, and a guessed point would invent data (ruling R-B-15; the owner is asked for a
+    position). VW-Bad stays a QA row (no source); BadeLand stays a paid option at the zone I tariff (the visitor validation is
+    not modelled). The pages are read in place from the package (hash checked); the pipeline downloads nothing.
+13. **Recalibration of the decay lengths (spec B5).** lambda (visitors) and lambda_c (commuters) are refitted on the 25 %
+    reference plans with the final option set of this part and the Part A rules; the values, the superseded v2 values, the
+    sensitivities (large-lot thresholds 30 and 100, beta 0, the visitor measure over in-window stays only, the commuter
+    target shifted by one standard error) and the limitations are in the calibration record
+    `parking_garage_decay_calibration_2026`, and the values are those of `configs/base_bs.yml`. The option price
+    coefficient beta (0.310998, decision 2) is fixed during the calibration, written into the table header and pinned to
+    the config and to `prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR` by a test. The calibration prices and
+    weights every stay through the production code (`cost.parking_cost_with_garages_detail`; no second weight
+    implementation), so feasibility, the fee window, E4 and the price term act in it as in a run. The commuter and
+    Wolfsburg-check measures are conditional on the paying stays (ruling R-B-16): the SrV target is the paid-only garage
+    share (R-4h-1, ADR-0140 decision 12), so a stay that the model prices at 0 (outside the street fee window, a free
+    street, only free options) is no payer and leaves numerator and denominator, counted and logged per universe; the
+    visitor measure stays payment-inclusive because the SrV street category contains free parkers. The first computation
+    that counted these stays as share 0 gave another lambda_c and was superseded within Part B before any config of a
+    merged branch used it. lambda_c is reported as an ORDER OF MAGNITUDE (the target rests on 42 unweighted paid
+    respondents, 84 % of the commuter universe lies in the zone whose street is infeasible for long stays, and within one
+    standard error of the target lambda_c spans from below the search floor to about 130 m), and its transfer to a town
+    with a feasible street is UNSUPPORTED. The Wolfsburg check is a number without a pre-registered bound, never a pass or
+    a fail. A calibration is no validation. Ruling R-B-8: until this recalibration the four tie tests that tie the
+    calibration to the pins of the garage dataset, the sensitivity datasets and the zone file stayed red on purpose (a
+    stale table is a true signal), and they are green only because the table is regenerated.
+## Part B rejected alternatives
+
+- **Keep assumption M1 for Ia** (decision 8): rejected in Part A; Part B removes the product from the table.
+- **A zone-wide maximum for the Wolfsburg tariff zones** (decision 8): no source gives one; W-max applies to the 58 areas
+  without a recorded maximum, and the 15 with one are zones of their own.
+- **Infer the fee window from the maximum stay, or the maximum stay from the window** (decision 8): they are separate columns.
+- **Apply the 10 h of the Seesen city page, or zone Peine Echternplatz as a zone** (decision 8): a named source conflict and a
+  single lot, respectively.
+- **Per-lot components for the three Ia lots, or dropping the lots from the dataset** (decision 9): per-lot components would
+  invent a tariff structure the lot does not publish, and dropping priced lots removes real options; the zone's maximum stay as
+  the lot's own column is what the source supports.
+- **A city-wide median for lot tariffs** (decision 9): a lot inside a zone takes its zone's tariff row; the median product of
+  ADR-0140 decision 13 is for lots whose tariff is not stated, the same zone first, then the municipality.
+- **Split every zone by every mobile-parking area, or use the raw section polygons as area zones** (decision 10): the 58
+  areas without a recorded maximum would add 58 zones with the parent's rule, and a thin section would almost never contain an
+  activity, so its maximum stay would never act; the Voronoi cell of the parent's buffered region is the zone.
+- **A fixed list of the three Wolfsburg tariff zones in the calibration and the comparison** (decision 10): it drops the area
+  zones silently; the selection is by municipality.
+- **Hand-digitised vertices for the Helmstedt and Wolfenbuettel areas** (decision 11): the maps follow named streets, so the
+  area is built from OSM geometry and is reproducible.
+- **Widen the Helmstedt face to the road edge** (decision 11): the brochure counts the spaces of the ring roads as outside.
+- **A district for Salzgitter or Gifhorn** (decision 11): there is no list or map for Salzgitter, and the Gifhorn scheme ended.
+- **Guess a position for Arena P2, or extend the Suedufer claim to neighbouring lots without saying so** (decision 12): both
+  would invent a source statement; the first is a QA row, the second is an owner decision named in the note.
+- **Model the match days of the Arena** (decision 12): no occupancy or event data; named as W-match.
+- **Count the commuter non-payers as share 0** (decision 13): the target is conditional on payers; mixing the two measures
+  is not like-for-like.
+- **A second weight implementation inside the calibration script** (decision 13): the Part A review required one; the old closed
+  form is a tested special case (beta 0).
+- **Calibrate beta together with lambda** (decision 13): one share cannot identify two parameters (Part A, decision 2).
+
+## Part B consequences
+
+- Scientific results change when the zones are on. Against Part A the prices change through the data: stays above a maximum
+  stay leave the street in Braunschweig Ia, Salzgitter, Helmstedt, Bad Harzburg, Seesen and the 15 Wolfsburg area zones, a
+  stay in Ia no longer buys Ib's ticket, the Peine and Wolfenbuettel tariffs change, electric cars park free in Salzgitter,
+  Peine, Goslar and Seesen within the exemption, three more free options enter the Wolfsburg option sets, and the garage
+  choice uses the recalibrated lengths. The size is not established: no v3 run exists. The expected effect of each change is
+  stated once, in the data record of the file that changed (`parking_tariffs_2026`, `parking_zones_2026`,
+  `parking_garages_2026`, `parking_resident_districts_2026`).
+- The resident districts add the R2 exemption in Wolfsburg, Peine, Helmstedt and Wolfenbuettel wherever a zone honours permits;
+  Wolfsburg zone K lies 52.5 m from a paid street zone, so R2 is inert there.
+- Limitations to state with every v3 result, additional to Part A: W-max is an owner decision against the package's wording
+  for 58 areas; the Goslar exemption is an upper bound; the districts are envelopes of listed streets, not permit areas
+  (R3, R3-b, HE-a); the Arena has one free lot instead of two until a position for P2 arrives, and the Arena P1 position is a
+  prior municipal point; match days are not modelled; lambda_c is an order of magnitude and does not transfer to a town with a
+  feasible street; the calibration universe has a sampling uncertainty that is not quantified and the plans predate the EV
+  attribute (the calibration treats every stay as not exempt); the Wolfsburg check differs from its SrV reference by a number
+  whose cause is not established.
+- The jar must read `max_stay_min` of the garage dataset (Part A exports it); the Python garage loader refuses a dataset from
+  before this column and names the command that regenerates it.
+- The three restricted geometry files and the calibration inputs regenerated by Part B exist on the build machine; installing
+  them into the main checkout is part of the Part B integration (ruling R-B-10), and a stale local copy fails the pin and tie
+  tests instead of running silently.
+- Changing `parking_tariff_snapshot_date` and the decay lengths of the configuration changes the stage inputs, so the stages
+  that read them re-run for v3 (expected).
+- The curation-time dependency `pdfplumber` (it reads the Peine list) is not pinned in `environment.yml`; the real-list test
+  skips without it, and the district file is a pinned artefact, so the pipeline does not need it.
+- Follow-ups, not part of this decision: Part C (runs; the run manifests will be linked from the feature record); a position
+  for Arena P2; pinning `pdfplumber`.
+
+## Part B evidence
+
+- Commits of Part B on `feature/i436-v3-b-data` (merging Part A three times, `048ba367`, `4f2ffc05`, `6984c127`): the zone
+  table and the maximum stays `9d51bbf1`, `3d4682cc`, `6a1e3524`, `e77cef7b`; the area zones `d87aaed9`, `e0bb81e6`, `f276759a`,
+  `943aeb79`; the districts `07f8811d`, `a09cb60d`; the free lots `c0d888f3`, `30b6c056`; the recalibration `b31406c6`,
+  `7ec5510b`, `c573533e`, `164b4b74`, `0999f2da`; the records `parking_package_*` and the curation note with this section.
+- Tests: `tests/test_parking_zone_tariff_corrections_v3.py` (every changed cell against its source id, the unchanged rows pinned),
+  `tests/test_parking_wolfsburg_area_zones.py`, `tests/test_resident_districts_from_streets.py`,
+  `tests/test_resident_districts_from_maps.py`, `tests/test_parking_large_lots.py` and `tests/test_parking_regional_garages.py`
+  (the lot maximum stay, the free-lot evidence and the Arena), `tests/test_parking_garage_calibration.py` and
+  `tests/test_parking_garage_decay_config.py` (the production routing, the payer-conditional measure, the ties of the table to
+  the pins and the configs), `tests/test_parking_raw_package_records.py` (the package records, the code pins, the preflight
+  entries). These are consistency and regression checks; none compares a model output with observed behaviour.
+- Records: the data records named above, `parking_coverage_register_2026` (the Echternplatz, Salzgitter and Gifhorn rows), the
+  feature record `parking_cost_zones` (state: validation.note), the contributor notes `parking-zones-curation.md`,
+  `parking-large-lots.md` and `parking-garage-options.md`.
+- The values of the calibration are in `parking_garage_decay_calibration_2026`; results of runs: none yet, the run manifest of
+  Part C (to come) will be linked from the feature record.
+
+## Part B ruling ids cited in the code and records
+
+The ids are historical labels of a local working ledger; the sentences state the rule. R-B-1: Part B fills the EV columns
+and does not redefine them. R-B-2: a lot with a zone product and a maximum stay carries the zone's maximum stay as its own
+column `max_stay_min` and the plain rate form. R-B-3: the report-only zone-consistency notes that changed with the
+corrected table (Helmstedt, Salzgitter, the Wolfenbuettel lot Lessingtheater) are the intended consequence and were
+re-pinned. R-B-4: the window source `operator_page` for an operator page. R-B-5: the accepted, noted data caveats of
+decision 8. R-B-9: the fixture's maximum stays are held in a sidecar file so that the Java-pinned fixture JSON stays
+byte-identical. R-B-7: the tariff snapshot date is 2026-10-14. R-B-8: the stale-calibration tie tests stay red until the
+recalibration. R-B-10: the regenerated restricted files are installed with the Part B integration. R-B-11: the lot maximum
+is the simple elapsed-stay comparison. R-B-12: an area zone is the Voronoi cell of its section inside the parent zone.
+R-B-13: the Wolfsburg universe of the calibration and the comparison is selected by municipality. R-B-14: the Helmstedt
+ring is not widened. R-B-15: Arena P2 stays a QA row without a position. R-B-16: the commuter and Wolfsburg-check measures
+are payer-conditional.

@@ -1,0 +1,82 @@
+dataset: parking_package_restluecken_2026_10_14
+title: >-
+  Owner research package Parkdaten_Restluecken_2026-10-14.zip (the remaining parking data gaps: archived Wolfsburg free-lot
+  pages, Bad Harzburg fee windows, resident-map findings), raw source of the free lots and the fee-window evidence of the v3
+  data
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) targeted addendum of 2026-10-14 to the research package Parkdaten_Nachrecherche_2026-10-14
+  (issue #436): archived pages of the Wirtschaftsgesellschaft Wolfsburg (WMG) and of the VfB Fallersleben and VfL Wolfsburg
+  clubs for the free status of four Wolfsburg car parks, the Bad Harzburg fee-window sources, the Salzgitter and Goslar
+  resident-parking findings, the TU Braunschweig parking regulation, the BadeLand fee rule and the Gifhorn council minutes.
+  The addendum states of itself that it implements nothing in the model
+vintage: >-
+  Status 2026-10-14 (the package README states the date); every archived page carries its own retrieval date and SHA-256 in
+  the package
+geography: >-
+  Wolfsburg (Allersee Suedufer, Freibad Fallersleben, Volkswagen Arena, BadeLand, VW-Bad), Bad Harzburg, Salzgitter, Goslar,
+  Gifhorn, Braunschweig (TU campus regulation, Braunschweig monthly products)
+crs: null
+roles:
+- supply_input
+- assumption_basis
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied file, not downloaded by the pipeline. The pages it archives are public pages (their URLs and retrieval
+    dates are in evidence/*/findings.json and the file manifests of the package). Obtain it from the owner (open an issue in
+    TUBS-IVS/eqasim-bs) and verify it against the SHA-256 in storage.notes.
+  notes: >-
+    114 files below the root directory Parkdaten_Restluecken_2026-10-14/: README.md (German; the findings per topic),
+    FILE_LOCATIONS.json, FILE_MANIFEST.json, OMITTED_ORIGINALS.json and VALIDATION.json, data/ (already_present_wmg_vfb.json,
+    gap_status.json, permit_counts_check.json, previous_source_reference_audit.json) and evidence/ (105 files in the
+    sub-folders wob_belege, wob_durations, harz_windows, resident_maps, tu_pulp and bs_six_monthly, each with its
+    manifest or findings file).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Restluecken_2026-10-14.zip
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the archived pages are third-party documents whose redistribution is not cleared;
+    eqasim-data/ is ignored by design). SHA-256 of the zip: 80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c
+    (3,265,424 bytes, verified on 2026-10-15 against the file in the main checkout). The curation code pins the same value
+    (large_lots.WOB_EVIDENCE_SHA256, checked against the file by the large-lots reader) and a test ties the pin to this
+    record (tests/test_parking_raw_package_records.py). Read from the zip and never extracted: the pages of
+    evidence/wob_belege with their file_manifest.json and findings.json (large_lots.load_package_free_evidence; the pages of the
+    three free lots and their member hashes are named in the data record parking_garages_2026), evidence/harz_windows (the Bad
+    Harzburg fee windows, read by hand for the zone table and quoted by the check in regional_zones, data record
+    parking_tariffs_2026) and evidence/resident_maps/findings.json
+    (SHA-256 9c7f4b92ffa5446453b2382e37ddc3d35e626d0e277232bc69cf065579f3d8b9; the bounded Salzgitter finding that no street
+    list or area map exists, data record parking_coverage_register_2026). No committed code reads any other member.
+verification:
+  verifier_entry: D13
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D13 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py: only the curation chain
+    (scripts/curation/parking_zones_2026/regional_garages.py with --wob-evidence-zip) needs it. A missing file is reported as
+    [RESTRICTED]; the SHA-256 is checked by the code that reads the package.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner research product; the archived pages keep the terms of their publishers (the WMG, the clubs, the city of Bad
+    Harzburg and others; the facts of public pages, no reuse licence verified). Used by owner decision 2026-10-14.
+  notes: >-
+    The free status of the three released lots rests on the quotations of their archived pages, which the dataset note of each
+    row names (data record parking_garages_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  A research package, not an official data set. It states its own scope limits, which the v3 records carry: the VfB statement
+  names free spaces next to the pool and gives no hours, stay rule or unrestricted 24/7 claim; the WMG map points are not equal
+  to model polygons; the Volkswagen Arena lots are free outside match days only (the match-day condition is named by the
+  package and not modelled, ASSUMPTION W-match); the BadeLand fee rule refers to the Zone I tariff and the later practice of
+  ticket validation is unconfirmed; the Bad Harzburg brochure of 2021/22 is not a complete 2026 proof; the Gifhorn end date of
+  the resident scheme and the last permit stock are unknown; the Salzgitter resident areas are not available at all. The
+  package gives no position for the Arena car park P2, so P2 has no option in the garage dataset (QA row lot_no_position).
+notes: >-
+  Used by the parking v3 Part B of issue #436 (ADR-0142): the free-lot evidence and the Arena (B4), the Bad Harzburg fee windows
+  of the zone table (B1) and the Salzgitter and Gifhorn findings of the coverage register (B3). Registered as a raw source of
+  its own on 2026-10-15; the data record parking_garages_2026 documents how each page enters the dataset.

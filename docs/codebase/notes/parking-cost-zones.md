@@ -123,7 +123,9 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
   source of free parking without a record: the draw is the only writer of `parkingFree`.
 - The resident districts are data of their own, not zones: `parking_resident_districts_2026.geojson` is built by
   the curation step `scripts/curation/parking_zones_2026/resident_districts.py` from the owner's packages (ids
-  prefixed per town, the Goslar feature without a code joined to C, an overlap cut from the later district), must
+  prefixed per town, the Goslar feature without a code joined to C, an overlap cut from the later district; the districts
+  of Wolfsburg, Peine, Helmstedt and Wolfenbuettel come from street lists and maps, see
+  [parking-zones-curation.md](parking-zones-curation.md)), must
   stay valid as stored (`load_resident_districts` raises, it never repairs) and is validated with
   `scripts/validate_parking_zones.py`. Rule R2 (`parking_cost_cents(..., resident_of_district=...)`, outcome
   `RESIDENT_FREE`) takes only the boolean "the activity lies in the district of the person's home"; the caller
