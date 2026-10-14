@@ -551,4 +551,391 @@ def test_the_table_header_names_the_option_set_and_that_the_target_contains_surf
 def test_the_facility_kind_option_says_it_matters_only_where_surface_lots_lie_within_the_maximum_distance(cal):
     text = SCRIPT.read_text(encoding="utf-8")
     assert "matters only where surface lots lie within" in text.split("def main", 1)[1]
-    assert "vacuous" in text.split("def main", 1)[0]
+    documentation = text.split("def main", 1)[0]
+    # before Task 4j the Braunschweig option set held no surface lot, so the garages-only run was vacuous there; since
+    # Task 4j (spec Amendment I) it holds the large lots, which the text must not deny any more
+    assert "vacuous" in documentation and "since Task 4j" in documentation
+    assert "holds 12 garages and no surface lot" not in documentation
+    assert "'garage' is vacuous there" not in text.split("def main", 1)[1]
+
+
+# ------------------------------------------------------------------ the free option and the paid-only measure (I6)
+
+
+def _fixture_garages():
+    """The 19 rows of the garage fixture of the golden parking cases (one of them, fx_g17_free, is the free schedule)."""
+    return pg.load_garages(FIXTURES / "parking_garages_fixture.geojson", allow_legacy_columns=True)
+
+
+@pytest.mark.parametrize("tiers, bands, expected", [
+    (None, "0- free", True),                                     # the free schedule: one open free band, no tiers
+    (None, None, False),                                         # the single-window form
+    (None, "0-20 free; 20-120 total 1.00; 120- 5.00/60", False),    # a free first band that something follows
+    (None, "0-30 free", False),                                  # a closed free band is a grace period, not a car park
+    ("06:00-18:00 1.00/60", "0-30 free", False),                 # tiers with a grace period
+    ("06:00-18:00 1.00/60", "0- free", False),                   # tiers are never free (and the validator refuses this)
+    (None, "", False), (float("nan"), None, False),
+    (float("nan"), "0- free", True), ("", "0- free", True),      # an empty tiers cell is no tiers
+])
+def test_a_free_option_is_the_free_schedule_and_nothing_else(cal, tiers, bands, expected):
+    assert cal.is_free_option(tiers, bands) is expected
+
+
+def test_the_free_marker_reads_the_schedule_of_the_rows_and_never_the_name_or_the_rate(cal):
+    frame = _fixture_garages()
+    paid = cal.paid_option_flags(frame)
+    assert paid.dtype == bool and len(paid) == len(frame) == 19
+    # of the 19 fixture rows only fx_g17_free is the free schedule; the grace periods, the free first band of fx_g08_bands
+    # and the tiers with a grace period are PAID options
+    assert frame.loc[~paid, "garage_id"].tolist() == ["fx_g17_free"]
+    # a name that says free does not free a paid option; a name that says paid does not charge a free one
+    renamed = frame.copy()
+    renamed.loc[renamed["garage_id"] == "fx_g01_core", "name"] = "Kostenlos free gratis"
+    renamed.loc[renamed["garage_id"] == "fx_g17_free", "name"] = "Teures Parkhaus 99 EUR"
+    assert cal.paid_option_flags(renamed).tolist() == paid.tolist()
+    # a rate of zero does not free an option either: only the schedule does (the validator refuses a zero rate anyway)
+    zero_rate = frame.copy()
+    zero_rate.loc[zero_rate["garage_id"] == "fx_g01_core", "garage_hourly_rate_eur"] = 0.0
+    assert cal.paid_option_flags(zero_rate).tolist() == paid.tolist()
+
+
+def test_the_free_marker_is_the_one_the_garage_module_counts_as_priced_free(cal):
+    # garages.coverage counts priced_free with is_free_schedule(parse_duration_bands(...)): the script marks the same rows
+    frame = _fixture_garages()
+    assert int((~cal.paid_option_flags(frame)).sum()) == pg.coverage(frame)["priced_free"] == 1
+
+
+def test_the_paid_only_share_is_the_choice_share_of_the_paid_options_among_paid_options_and_the_street(cal):
+    # One destination; two paid options at 300 m and 700 m and one free option at 200 m; lambda 400 m:
+    # w = exp(-0.75) = 0.4723665527 (paid), exp(-1.75) = 0.1737739435 (paid), exp(-0.5) = 0.6065306597 (free);
+    # W (all options) = 1.2526711559, W_paid = 0.6461404962.
+    distances = np.array([[300.0, 700.0, 200.0]])
+    paid = np.array([True, True, False])
+    weights = np.exp(-distances[0] / 400.0)
+    # the model's choice probabilities: street 1 / (1 + W), option i w_i / (1 + W)
+    p_street, p_option = 1.0 / (1.0 + weights.sum()), weights / (1.0 + weights.sum())
+    # the SrV quantity: paid garage / (paid garage + paid street); the free option is a free parker and leaves both
+    paid_share_from_probabilities = p_option[paid].sum() / (p_option[paid].sum() + p_street)
+    assert paid_share_from_probabilities == pytest.approx(0.6461404962 / 1.6461404962, abs=1e-9)
+    # the form of the script: the same share, W_paid / (1 + W_paid), reached by dropping the free option (1 + W cancels)
+    paid_measure = cal.measure_distances(distances, paid, cal.MEASURE_PAID_OPTIONS)
+    assert paid_measure.shape == (1, 2)
+    assert cal.mean_garage_probability(paid_measure, 400.0) == pytest.approx(paid_share_from_probabilities, abs=1e-12)
+    assert cal.mean_garage_probability(paid_measure, 400.0) == pytest.approx(0.39251844, abs=1e-8)
+    # the payment-inclusive measure counts every option: W / (1 + W) = 1.2526711559 / 2.2526711559 = 0.55610
+    every = cal.measure_distances(distances, paid, cal.MEASURE_ALL_OPTIONS)
+    assert every.shape == (1, 3)
+    assert cal.mean_garage_probability(every, 400.0) == pytest.approx(1.2526711559 / 2.2526711559, abs=1e-9)
+    assert cal.mean_garage_probability(every, 400.0) > cal.mean_garage_probability(paid_measure, 400.0)
+    with pytest.raises(ValueError, match="measure"):
+        cal.measure_distances(distances, paid, "free_only")
+
+
+def test_the_paid_only_measure_without_a_paid_option_has_no_probability_instead_of_a_silent_one(cal):
+    # only a free option exists: the paid-only share is 0 / (0 + street) = 0 and no target above 0 is reachable
+    distances = np.array([[200.0], [300.0]])
+    paid = np.array([False])
+    measure = cal.measure_distances(distances, paid, cal.MEASURE_PAID_OPTIONS)
+    assert measure.shape == (2, 0) and cal.mean_garage_probability(measure, 400.0) == 0.0
+    with pytest.raises(ValueError, match="unreachable"):
+        cal.calibrate_decay(measure, 0.3)
+
+
+def test_the_option_reach_counts_the_free_options_within_the_maximum_distance_of_a_universe(cal):
+    # columns: paid, paid, free; D_max 1000 m
+    distances = np.array([[300.0, 1500.0, 900.0],      # a paid and the free option in range
+                          [1200.0, 1100.0, 1001.0],    # nothing in range (1001 m is beyond D_max)
+                          [1500.0, 400.0, 1500.0],     # one paid option in range
+                          [1500.0, 1500.0, 500.0],     # only the free option in range
+                          [1000.0, 1500.0, 1500.0]])   # exactly at D_max counts
+    paid = np.array([True, True, False])
+    reach = cal.option_reach(distances, paid, 1000.0)
+    assert reach.activities == 5
+    assert reach.with_option_in_range == 4            # rows 0, 2, 3, 4
+    assert reach.with_paid_option_in_range == 3       # rows 0, 2, 4
+    assert reach.free_options_in_range == 1           # the one free option (column 2) reaches rows 0 and 3
+    assert reach.with_free_option_in_range == 2
+    # no free option at all and an empty option set are zeros, not errors
+    none_free = cal.option_reach(distances[:, :2], paid[:2], 1000.0)
+    assert (none_free.free_options_in_range, none_free.with_free_option_in_range) == (0, 0)
+    assert none_free.with_paid_option_in_range == 3
+    empty = cal.option_reach(np.zeros((3, 0)), np.zeros(0, dtype=bool), 1000.0)
+    assert (empty.activities, empty.with_option_in_range, empty.free_options_in_range) == (3, 0, 0)
+
+
+def _option_set(inputs, tmp_path, rows, points, kinds=None, name="options.geojson"):
+    """The synthetic garages of ``inputs`` replaced by the given rows of the garage fixture, moved to ``points``."""
+    frame = _fixture_garages().iloc[rows].copy()
+    frame["geometry"] = [Point(*point) for point in points]
+    if kinds is not None:
+        frame["facility_kind"] = kinds
+    path = tmp_path / name
+    pg.write_garages(gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:25832"), path)
+    return {**inputs, "garages_path": path}
+
+
+#: The near paid garage (300 m from the Ia activities, 500 m from the Ib ones), the far paid garage (out of range of every
+#: activity) and a FREE lot 200 m south of the Ia activities (fixture rows 0, 1 and 17).
+NEAR_GARAGE, FAR_GARAGE, FREE_LOT = (603100.0, 5790400.0), (603100.0, 5792000.0), (603100.0, 5789900.0)
+
+
+def _share(distances_m, decay_m):
+    """W / (1 + W) with W the sum of exp(-d / decay) over the distances of one activity (all options counted)."""
+    weights = sum(math.exp(-distance / decay_m) for distance in distances_m)
+    return weights / (1.0 + weights)
+
+
+def test_a_free_option_changes_lambda_but_not_lambda_c_nor_the_wolfsburg_check(cal, inputs, tmp_path, caplog):
+    plain = cal.run(out_path=None, **inputs)
+    with_free = _option_set(inputs, tmp_path, [0, 1, 17], [NEAR_GARAGE, FAR_GARAGE, FREE_LOT], ["garage", "garage",
+                                                                                              "surface_lot"])
+    with caplog.at_level("INFO", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, **with_free)
+    # E5 (payment-inclusive): the free lot is one more option, so the same target needs a SHORTER decay. Independent check at
+    # the result: Ia activities 300 m (near) and 200 m (free lot) away, Ib activities 500 m and sqrt(400^2 + 200^2) = 447.21 m;
+    # the mean over the four activities (two each) is the target 0.2718 within the tolerance
+    assert result["decay_length_m"] < plain["decay_length_m"] - 20.0
+    decay = result["decay_length_m"]
+    mean = 0.5 * _share([300.0, 200.0], decay) + 0.5 * _share([500.0, math.hypot(400.0, 200.0)], decay)
+    assert mean == pytest.approx(0.2718, abs=0.0006)
+    # H2 and H3b (paid-only): the free option leaves numerator and denominator, so nothing changes
+    assert result["decay_commute_length_m"] == plain["decay_commute_length_m"]
+    assert result["commuter_achieved"] == plain["commuter_achieved"]
+    assert result["wolfsburg_mean"] == plain["wolfsburg_mean"]
+    # the free lot lies within D_max of every universe and is counted per universe (fallback transparency)
+    assert (result["free_options_used"], result["priced_options_used"]) == (1, 3)
+    assert (result["universe_free_options_in_range"], result["universe_activities_with_free_option"]) == (1, 4)
+    assert (result["commuter_free_options_in_range"], result["commuter_activities_with_free_option"]) == (1, 2)
+    assert (result["wolfsburg_free_options_in_range"], result["wolfsburg_activities_with_free_option"]) == (1, 2)
+    assert (result["commuter_with_paid_option_in_range"], result["wolfsburg_with_paid_option_in_range"]) == (2, 2)
+    assert (plain["free_options_used"], plain["universe_free_options_in_range"]) == (0, 0)
+    messages = " | ".join(caplog.messages)
+    assert "free options within 1000 m: 1 distinct" in messages and "reach 4/4" in messages
+    assert "paid options within 1000 m" in messages
+
+
+def test_the_paid_only_measure_is_not_vacuous_a_paid_option_at_the_same_place_does_change_lambda_c(cal, inputs, tmp_path):
+    plain = cal.run(out_path=None, **inputs)
+    # fixture row 8 is a PAID banded schedule (it starts with a free band, which is no free car park)
+    control = _option_set(inputs, tmp_path, [0, 1, 8], [NEAR_GARAGE, FAR_GARAGE, FREE_LOT])
+    result = cal.run(out_path=None, **control)
+    assert result["free_options_used"] == 0 and result["universe_free_options_in_range"] == 0
+    assert result["decay_commute_length_m"] < plain["decay_commute_length_m"] - 20.0
+    assert result["decay_length_m"] < plain["decay_length_m"] - 20.0
+    # independent check of the paid-only measure at the result: both options of the commuters count (300 m and 200 m for the
+    # Ia commuter, 500 m and 447.21 m for the Ib commuter), the mean equals the target 0.4 (read from the paid columns)
+    decay = result["decay_commute_length_m"]
+    mean = 0.5 * _share([300.0, 200.0], decay) + 0.5 * _share([500.0, math.hypot(400.0, 200.0)], decay)
+    assert mean == pytest.approx(0.4, abs=0.0006)
+
+
+def test_a_commuter_universe_without_any_paid_option_fails_naming_the_measure(cal, inputs, tmp_path):
+    only_free = _option_set(inputs, tmp_path, [17], [FREE_LOT], ["surface_lot"])
+    with pytest.raises(ValueError, match="lambda_c.*PAID-only.*unreachable"):
+        cal.run(out_path=None, **only_free)
+
+
+def test_a_commuter_without_a_paid_option_in_range_counts_zero_and_is_reported_separately(cal, inputs, tmp_path):
+    # a paid garage 950 m north of the Ia activities (1,030.8 m from the Ib ones, out of range) and the free lot in reach of
+    # both: the Ib commuter has a free option in range but no PAID one, which the paid-only measure counts as probability 0.
+    # One commuter in reach of one option reaches a mean of at most 0.25, so the commuter target of this test is lowered to
+    # 0.01 / (0.01 + 0.09) = 0.1 (the share of the Ia commuter alone: 0.5 * w / (1 + w) = 0.1 for w = 0.25).
+    inputs["commute_path"].write_text(
+        "# synthetic\nworkplace_class,level,n_unweighted,n_eff,share_garage_large_lot_paid,share_street_paid\n"
+        "bs_zentrum,class,221,104.4,0.01,0.09\n03103,class,691,162.7,0.06,0.04\n", encoding="utf-8")
+    options = _option_set(inputs, tmp_path, [0, 17], [(603100.0, 5791050.0), FREE_LOT], ["garage", "surface_lot"])
+    result = cal.run(out_path=None, **options)
+    assert result["commuter_target"] == pytest.approx(0.1, abs=1e-12)
+    assert result["commuter_universe_activities"] == 2
+    assert result["commuter_with_paid_option_in_range"] == 1       # only the Ia commuter has a paid option in range
+    assert result["commuter_with_garage_in_range"] == 2            # but both have an option (the free lot)
+    assert result["commuter_activities_with_free_option"] == 2
+    # the paid-only mean is 0.5 * w / (1 + w) with w = exp(-950 / lambda_c): independent check at the result
+    weight = math.exp(-950.0 / result["decay_commute_length_m"])
+    assert 0.5 * weight / (1.0 + weight) == pytest.approx(0.1, abs=0.0006)
+    # w = 0.25 at 685.3 m; the tolerance 0.0005 of the mean allows about 3 m at the slope of 0.00016 per metre
+    assert result["decay_commute_length_m"] == pytest.approx(950.0 / math.log(4.0), abs=4.0)
+    # the Wolfsburg activities (1,180 m and 1,140 m from the paid garage, 728 m and 743 m from the free lot) have no paid
+    # option in range: the paid-only check reads 0, a number and no error (the check is no calibration)
+    assert result["wolfsburg_with_paid_option_in_range"] == 0 and result["wolfsburg_mean"] == 0.0
+    assert result["wolfsburg_activities_with_free_option"] == 2
+
+
+# ----------------------------------------------------------------- the table says which measure each target uses (I6)
+
+
+def test_the_table_header_and_rows_say_which_measure_each_target_uses_and_count_the_free_options(cal, inputs, tmp_path):
+    with_free = _option_set(inputs, tmp_path, [0, 1, 17], [NEAR_GARAGE, FAR_GARAGE, FREE_LOT], ["garage", "garage",
+                                                                                              "surface_lot"])
+    out = tmp_path / "parking_garage_decay_calibration_2026.csv"
+    result = cal.run(out_path=out, generated_on="2026-10-14", **with_free)
+    text = out.read_bytes().decode("ascii")
+    header = [line for line in text.splitlines() if line.startswith("#")]
+    measures = next(line for line in header if line.startswith("# Measures"))
+    for needle in ("spec Amendment I6", "lambda: payment-inclusive", "counts EVERY off-street option", "sum(w) / (1 + sum(w))",
+                   "lambda_c and the Wolfsburg check: PAID-only", "sum(w_paid) / (1 + sum(w_paid))",
+                   "free option", "free schedule", "cost 0 at every stay duration", "free parker",
+                   "leaves numerator and denominator", "(1 + W) cancels", "never a name or a rate"):
+        assert needle in measures, needle
+    assert "I6" in header[1]
+    # every target line names its measure
+    target_lambda = next(line for line in header if line.startswith("# Target of lambda:"))
+    target_commuter = next(line for line in header if line.startswith("# Target of lambda_c:"))
+    assert "payment-inclusive measure (every option counts)" in target_lambda
+    assert "PAID-only measure (the free option leaves numerator and denominator)" in target_commuter
+    wolfsburg = next(line for line in header if "Wolfsburg: mean" in line)
+    assert "PAID-only measure" in wolfsburg
+    # the free options within D_max are stated per universe
+    universe_line = next(line for line in header if line.startswith("# Universe of lambda:"))
+    commuter_line = next(line for line in header if line.startswith("# Commuter universe:"))
+    assert "Free options within 1000 m of this universe: 1 distinct, reaching 4 of its 4 activities" in universe_line
+    assert "Free options within 1000 m of this universe: 1 distinct, reaching 2 of its 2 activities" in commuter_line
+    assert "2 of 2 activities with at least one PAID option within 1000 m" in commuter_line
+    assert "reaching 2 of its 2 activities" in wolfsburg and "1 distinct" in wolfsburg
+    option_line = next(line for line in header if line.startswith("# Option set:"))
+    assert "2 garage, 1 surface_lot" in option_line and "1 of the 3 options is free" in option_line
+    values = cal.read_calibration_table(out)
+    assert values["priced_free_options_used"] == 1 and values["priced_garages_used"] == 3
+    assert values["universe_free_options_within_d_max"] == 1 and values["universe_activities_with_free_option_in_range"] == 4
+    assert values["commuter_universe_free_options_within_d_max"] == 1
+    assert values["commuter_universe_activities_with_free_option_in_range"] == 2
+    assert values["commuter_universe_activities_with_paid_option_in_range"] == 2
+    assert values["check_wolfsburg_free_options_within_d_max"] == 1
+    assert values["check_wolfsburg_activities_with_free_option_in_range"] == 2
+    assert values["check_wolfsburg_commuter_activities_with_paid_option_in_range"] == 2
+    # the rows of the earlier tables keep their name and meaning (all options)
+    assert values["universe_activities_with_garage_in_range"] == 4 == result["with_garage_in_range"]
+    assert values["commuter_universe_activities_with_garage_in_range"] == 2
+    notes = {line.split(",")[0]: line for line in text.splitlines() if not line.startswith("#")}
+    assert "every option" in notes["target_garage_probability"]
+    assert "paid-only" in notes["target_commuter_garage_probability"]
+    assert "paid-only" in notes["achieved_mean_commuter_garage_probability"]
+    assert "paid-only" in notes["check_wolfsburg_commuter_mean_garage_probability"]
+
+
+def test_a_universe_that_the_options_barely_reach_is_warned_about_and_a_covered_one_is_not(cal, inputs, tmp_path, caplog):
+    # primary-method coverage (fallback transparency): a universe in which fewer than MINIMUM_REACH_SHARE_WARNING of the
+    # activities have an option of the measure within D_max warns, with its name and the numbers
+    assert cal.MINIMUM_REACH_SHARE_WARNING == 0.5
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        cal.run(out_path=None, **inputs)   # the near garage reaches every activity of every universe
+    assert not [message for message in caplog.messages if "within reach" in message]
+    # a garage 400 m west of the Ia activities: 800 m from the Ib ones, 1,100 m from the Wolfsburg activities (out of range),
+    # so the Wolfsburg universe (2 activities) has no paid option in reach, while the calibrated universes are covered
+    west = _option_set(inputs, tmp_path, [0, 1], [(602700.0, 5790100.0), FAR_GARAGE], name="west.geojson")
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="calibrate_garage_decay"):
+        result = cal.run(out_path=None, **west)
+    warned = [message for message in caplog.messages if "within reach" in message]
+    assert len(warned) == 1 and "Wolfsburg" in warned[0] and "0/2" in warned[0] and "50 %" in warned[0]
+    assert result["wolfsburg_with_paid_option_in_range"] == 0
+
+
+# ---------------------------------------------------------------- the sensitivities of the option set (I6, no release value)
+
+
+def _dataset_files(inputs, tmp_path):
+    """The release dataset of ``inputs`` and two other option sets: with a FREE lot (3 options) and with a PAID lot."""
+    free_lot = _option_set(inputs, tmp_path, [0, 1, 17], [NEAR_GARAGE, FAR_GARAGE, FREE_LOT],
+                           ["garage", "garage", "surface_lot"], name="with_free_lot.geojson")["garages_path"]
+    paid_lot = _option_set(inputs, tmp_path, [0, 1, 8], [NEAR_GARAGE, FAR_GARAGE, FREE_LOT],
+                           ["garage", "garage", "surface_lot"], name="with_paid_lot.geojson")["garages_path"]
+    return free_lot, paid_lot
+
+
+def test_the_sensitivities_run_the_same_calibration_on_another_option_set_and_go_into_the_header_only(cal, inputs, tmp_path):
+    free_lot, paid_lot = _dataset_files(inputs, tmp_path)
+    out = tmp_path / "parking_garage_decay_calibration_2026.csv"
+    result = cal.run(out_path=out, generated_on="2026-10-14",
+                     sensitivity_garages={"lot_threshold_30": free_lot, "lot_threshold_100": paid_lot}, **inputs)
+    release = cal.run(out_path=None, **inputs)
+    # the release values are those of the release dataset, whatever the sensitivities say
+    assert result["decay_length_m"] == release["decay_length_m"]
+    assert result["decay_commute_length_m"] == release["decay_commute_length_m"]
+    # each sensitivity equals the direct calibration on its dataset (same plans, targets, D_max and tolerance)
+    by_label = {entry["label"]: entry for entry in result["sensitivities"]}
+    assert list(by_label) == ["lot_threshold_30", "lot_threshold_100"]
+    for label, path in (("lot_threshold_30", free_lot), ("lot_threshold_100", paid_lot)):
+        direct = cal.run(out_path=None, **{**inputs, "garages_path": path})
+        entry = by_label[label]
+        assert entry["decay_length_m"] == direct["decay_length_m"]
+        assert entry["decay_commute_length_m"] == direct["decay_commute_length_m"]
+        assert entry["achieved"] == direct["achieved"] and entry["commuter_achieved"] == direct["commuter_achieved"]
+        assert entry["options"] == 3 and entry["sha256"] == cal.file_sha256(path)
+    assert by_label["lot_threshold_30"]["free_options"] == 1 and by_label["lot_threshold_100"]["free_options"] == 0
+    assert by_label["lot_threshold_30"]["decay_length_m"] != release["decay_length_m"]
+    # the table: header lines labelled sensitivity (never a release value) with the dataset hash; the rows are the release's
+    text = out.read_bytes().decode("ascii")
+    lines = [line for line in text.splitlines() if line.startswith("# Sensitivity")]
+    assert len(lines) == 2
+    for line, label, path in zip(lines, ("lot_threshold_30", "lot_threshold_100"), (free_lot, paid_lot)):
+        entry = by_label[label]
+        assert f"# Sensitivity of the option set (spec Amendment I6; NOT a release value) {label}:" in line
+        assert f"sha256={cal.file_sha256(path)}" in line
+        assert f"lambda = {entry['decay_length_m']:.2f} m" in line and f"lambda_c = {entry['decay_commute_length_m']:.2f} m" in line
+        assert "3 options (2 garage + 1 surface_lot" in line
+    assert "1 free" in lines[0] and "0 free" in lines[1]
+    assert len(re.findall(r"sha256=[0-9a-f]{64}", text)) == 7   # the five inputs and the two sensitivity datasets
+    values = cal.read_calibration_table(out)
+    assert values["decay_length_m"] == release["decay_length_m"]
+    assert not [name for name in values if "sensitivity" in name or "threshold" in name]
+    assert "Sensitivity" not in "\n".join(line for line in text.splitlines() if not line.startswith("#"))
+
+
+def test_a_run_without_sensitivities_writes_no_sensitivity_line_and_keeps_its_bytes(cal, inputs, tmp_path):
+    first = cal.run(out_path=None, generated_on="2026-10-14", **inputs)
+    again = cal.run(out_path=None, generated_on="2026-10-14", sensitivity_garages={}, **inputs)
+    assert first["text"] == again["text"] and "# Sensitivity" not in first["text"] and first["sensitivities"] == []
+
+
+def test_a_sensitivity_that_is_the_release_dataset_or_is_badly_named_or_missing_is_refused(cal, inputs, tmp_path):
+    release = inputs["garages_path"]
+    copy = tmp_path / "copy_of_release.geojson"
+    copy.write_bytes(release.read_bytes())
+    free_lot, _ = _dataset_files(inputs, tmp_path)
+    with pytest.raises(ValueError, match="same SHA-256 as the release dataset"):
+        cal.run(out_path=None, sensitivity_garages={"same": copy}, **inputs)
+    with pytest.raises(ValueError, match="label"):
+        cal.run(out_path=None, sensitivity_garages={"two words": free_lot}, **inputs)
+    with pytest.raises(ValueError, match="label"):
+        cal.run(out_path=None, sensitivity_garages={"": free_lot}, **inputs)
+    with pytest.raises(FileNotFoundError, match="sensitivity dataset lot_threshold_30"):
+        cal.run(out_path=None, sensitivity_garages={"lot_threshold_30": tmp_path / "nope.geojson"}, **inputs)
+    out = tmp_path / "table.csv"
+    with pytest.raises(ValueError):
+        cal.run(out_path=out, sensitivity_garages={"same": copy}, **inputs)
+    assert not out.exists()   # nothing is written when a sensitivity fails
+
+
+def test_a_sensitivity_whose_target_is_unreachable_fails_naming_its_label(cal, inputs, tmp_path):
+    # a sensitivity option set with the far garage only: nothing within D_max of any activity
+    far = _option_set(inputs, tmp_path, [1], [FAR_GARAGE], name="far_only.geojson")["garages_path"]
+    with pytest.raises(ValueError, match="sensitivity far_only.*unreachable"):
+        cal.run(out_path=None, sensitivity_garages={"far_only": far}, **inputs)
+
+
+def test_the_command_line_takes_labelled_sensitivity_datasets(cal, monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr(cal, "run", lambda **options: captured.update(options))
+    base = ["--plans", str(tmp_path / "plans.xml"), "--data-path", str(tmp_path / "data")]
+    cal.main(base)
+    assert captured["sensitivity_garages"] is None   # no sensitivity unless asked for
+    cal.main(base + ["--sensitivity-garages", f"lot_threshold_30={tmp_path / 'a.geojson'}",
+                     "--sensitivity-garages", f"lot_threshold_100={tmp_path / 'b.geojson'}"])
+    assert captured["sensitivity_garages"] == {"lot_threshold_30": tmp_path / "a.geojson",
+                                               "lot_threshold_100": tmp_path / "b.geojson"}
+    for bad in (["--sensitivity-garages", "no_equals_sign"], ["--sensitivity-garages", "=path.geojson"],
+                ["--sensitivity-garages", "label="],
+                ["--sensitivity-garages", f"a={tmp_path / 'a'}", "--sensitivity-garages", f"a={tmp_path / 'b'}"]):
+        with pytest.raises(SystemExit) as refused:
+            cal.main(base + bad)
+        assert refused.value.code == 2
+
+
+def test_the_release_path_guard_of_a_filtered_run_stays_with_sensitivities(cal, inputs, tmp_path):
+    free_lot, _ = _dataset_files(inputs, tmp_path)
+    mixed = _with_kinds(inputs, tmp_path, ["surface_lot", "garage"])
+    release_name = Path(cal.TABLE_RELATIVE).name
+    with pytest.raises(ValueError, match="sensitivity number"):
+        cal.run(out_path=tmp_path / release_name, facility_kinds=("surface_lot",), sensitivity_garages={"x": free_lot}, **mixed)
+    assert not (tmp_path / release_name).exists()
