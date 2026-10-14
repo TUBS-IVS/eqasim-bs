@@ -733,6 +733,83 @@ def test_archived_evidence_that_the_manifest_lists_but_the_folder_lacks_is_refus
         ll.load_free_evidence(folder)
 
 
+# --------------------------------------------------------------------------- the pages of the Restluecken package (spec v3 B4)
+
+RESTLUECKEN_NAME = "Parkdaten_Restluecken_2026-10-14"
+RESTLUECKEN_SHA256 = "80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c"
+SOURCE_POINT = {"latitude": 52.0, "longitude": 10.0}
+
+
+def _restluecken_package(directory: Path, *, pages=None, sources="default", mutate=None) -> tuple:
+    """Write a synthetic package shaped like the owner's Restluecken package: ``evidence/wob_belege/`` with original pages, a
+    ``findings.json`` of their sources and a ``file_manifest.json`` whose paths are those of the machine that wrote it (the reader
+    matches by file name). ``mutate`` is called with the members ({name: bytes}) after the manifest is computed. Returns
+    (path, SHA-256)."""
+    pages = pages or {"page_a.html": "Der Parkplatz ist kostenlos.", "page_b.html": "Auch dieser ist kostenlos."}
+    members = {name: text.encode("utf-8") for name, text in pages.items()}
+    if sources == "default":
+        sources = [{"source_id": Path(name).stem, "publisher": "Publisher A", "url": f"https://example.org/{Path(name).stem}",
+                    "title": f"Title of {name}", "retrieved_date": "2026-10-14", "price_status": "free",
+                    **({"source_point_wgs84": SOURCE_POINT} if name == "page_a.html" else {})} for name in pages]
+    members["findings.json"] = json.dumps({"sources": sources}).encode("utf-8")
+    entries = [{"path": f"/elsewhere/wob_belege/{name}", "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest(),
+                "role": "derived_research" if name == "findings.json" else "original_response"}
+               for name, content in members.items()]
+    members["file_manifest.json"] = json.dumps(entries).encode("utf-8")
+    if mutate is not None:
+        mutate(members)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{RESTLUECKEN_NAME}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in members.items():
+            archive.writestr(f"{RESTLUECKEN_NAME}/evidence/wob_belege/{name}", content)
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_the_pages_of_the_restluecken_package_are_read_from_the_zip_against_its_file_manifest(ll, tmp_path):
+    path, sha256 = _restluecken_package(tmp_path / "ok")
+    evidence = ll.load_package_free_evidence(path, sha256)
+    assert sorted(evidence) == ["page_a.html", "page_b.html"]      # the original responses, not findings.json or the manifest
+    entry = evidence["page_a.html"]
+    assert entry["sha256"] == hashlib.sha256(b"Der Parkplatz ist kostenlos.").hexdigest()
+    assert entry["url"] == "https://example.org/page_a" and entry["retrieved"] == "2026-10-14"
+    assert entry["member"] == f"{RESTLUECKEN_NAME}/evidence/wob_belege/page_a.html" and entry["package_sha256"] == sha256
+    assert "Publisher A" in entry["statement"] and "Title of page_a.html" in entry["statement"]
+    assert entry["text"] == "Der Parkplatz ist kostenlos." and entry["source_point_wgs84"] == SOURCE_POINT
+    assert "source_point_wgs84" not in evidence["page_b.html"]
+    assert ll.load_package_free_evidence(None) == {}       # no package given: no evidence, the lots stay QA rows
+    assert ll.WOB_EVIDENCE_SHA256 == RESTLUECKEN_SHA256
+
+
+def test_a_changed_or_missing_restluecken_package_is_refused(ll, tmp_path):
+    path, sha256 = _restluecken_package(tmp_path / "a")
+    with pytest.raises(SystemExit, match="a changed package is never read"):
+        ll.load_package_free_evidence(path, "0" * 64)
+    with pytest.raises(SystemExit, match="missing"):
+        ll.load_package_free_evidence(tmp_path / "absent.zip", sha256)
+
+
+def test_a_page_that_differs_from_the_file_manifest_is_missing_or_has_no_source_is_refused(ll, tmp_path):
+    def change(members):
+        members["page_a.html"] = b"changed"
+
+    path, sha256 = _restluecken_package(tmp_path / "c", mutate=change)
+    with pytest.raises(SystemExit, match=r"page_a.html .*does not have the SHA-256 .*file_manifest.json"):
+        ll.load_package_free_evidence(path, sha256)
+
+    def drop(members):
+        del members["page_b.html"]
+
+    path, sha256 = _restluecken_package(tmp_path / "d", mutate=drop)
+    with pytest.raises(SystemExit, match="file_manifest.json lists page_b.html, which is not in the zip"):
+        ll.load_package_free_evidence(path, sha256)
+    only_a = [{"source_id": "page_a", "publisher": "P", "url": "https://example.org/a", "title": "T",
+               "retrieved_date": "2026-10-14"}]
+    path, sha256 = _restluecken_package(tmp_path / "e", sources=only_a)
+    with pytest.raises(SystemExit, match="findings.json holds no source for the archived page page_b.html"):
+        ll.load_package_free_evidence(path, sha256)
+
+
 # --------------------------------------------------------------------------- the rows of the dataset
 
 
@@ -776,10 +853,10 @@ SPECS = {
     "t_gap": {"zone_product": "t_gap_zone", "check": "t_gap__1"},
 }
 EVIDENCE_SPECS = {
-    "WOB_PARK_E1": {"name": "Freibad test", "evidence": "page.html", "quotation": "kostenlosen Parkplaetzen",
+    "WOB_PARK_E1": {"name": "Freibad test", "pages": (("page.html", "kostenlosen Parkplaetzen"),),
                     "not_found": "the page is not archived"},
-    "WOB_PARK_E2": {"name": "Seeufer test", "evidence": None, "not_found": "no page found on 2026-10-14"},
-    "WOB_PARK_E3": {"name": "Bad test", "evidence": None, "not_found": "no page found on 2026-10-14"},
+    "WOB_PARK_E2": {"name": "Seeufer test", "pages": (), "not_found": "no page found on 2026-10-14"},
+    "WOB_PARK_E3": {"name": "Bad test", "pages": (), "not_found": "no page found on 2026-10-14"},
 }
 
 
@@ -1062,6 +1139,49 @@ def test_a_free_wolfsburg_lot_is_free_only_on_archived_evidence_and_never_by_def
         step.build_large_lots(_inputs(step, package_file, evidence=step.ll.load_free_evidence(folder)))
 
 
+def test_a_free_lot_names_every_page_with_its_hash_and_the_condition_that_is_not_modelled(step, package_file, tmp_path,
+                                                                                          monkeypatch):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    condition = ("ASSUMPTION W-match (owner decision 2026-10-14): the lot is free outside match days; match days are not "
+                 "modelled")
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Arena test", "pages": (("page_a.html", "kostenlos"), ("page_b.html", "Auch dieser")),
+        "condition": condition, "not_found": "x"}})
+    row = _by_id(step.build_large_lots(_inputs(step, package_file, evidence=evidence)))["lot_wob_park_e1"]
+    assert row["tariff_duration_bands"] == "0- free" and row["assumptions"] is None and row["max_stay_min"] is None
+    assert row["tariff_rule_ids"] == "evidence:page_a.html;evidence:page_b.html"
+    assert row["source_url"] == "https://example.org/page_a" and row["source_date"] == "2026-10-14"
+    for name, content in (("page_a.html", b"Der Parkplatz ist kostenlos."), ("page_b.html", b"Auch dieser ist kostenlos.")):
+        assert name in row["notes"] and hashlib.sha256(content).hexdigest() in row["notes"]
+    assert sha256 in row["notes"] and RESTLUECKEN_NAME in row["notes"]
+    assert condition in row["notes"]
+    # the point of the page is named with its distance to the research point of the lot (a plausibility figure, no polygon match)
+    assert "m from the research point of the lot" in row["notes"]
+    # a second page without its quotation stops the step, and names the page
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {**EVIDENCE_SPECS, "WOB_PARK_E1": {
+        "name": "Arena test", "pages": (("page_a.html", "kostenlos"), ("page_b.html", "nowhere in the page")),
+        "not_found": "x"}})
+    with pytest.raises(SystemExit, match="page_b.html does not hold the quotation 'nowhere in the page' that the free status "
+                                         "of WOB_PARK_E1 rests on"):
+        step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+
+
+def test_an_owner_decided_free_lot_without_a_position_is_a_qa_row_that_names_the_decision(step, package_file, tmp_path,
+                                                                                         monkeypatch):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {
+        **EVIDENCE_SPECS, "WOB_PARK_E1": {**EVIDENCE_SPECS["WOB_PARK_E2"]}, "t_nopos": {
+            "name": "Lot without a position", "pages": (("page_a.html", "kostenlos"),), "not_found": "x"}})
+    monkeypatch.setattr(step.specs, "LARGE_LOT_QA_DETAILS", {"t_nopos": "the owner decides the lot free on its page"})
+    result = step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    assert "lot_t_nopos" not in _by_id(result)
+    entry = next(item for item in result["qa"] if item["record_id"] == "candidate_lot_t_nopos")
+    assert entry["reason"] == "lot_no_position" and "none is invented" in entry["note"]
+    assert "the owner decides the lot free on its page" in entry["note"]
+
+
 def test_the_subpoint_of_a_lot_is_a_qa_row_and_every_municipal_point_is_accounted_for(step, package_file, tmp_path):
     result = step.build_large_lots(_inputs(step, package_file))
     entry = next(item for item in result["qa"] if item["record_id"] == "candidate_lot_wob_park_sub")
@@ -1252,6 +1372,7 @@ REAL_ZONES = COMMITTED_PARKING_DIR / "parking_zones_2026.geojson"
 REAL_TARIFFS = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
 REAL_MONTHLY = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08" / "Braunschweig_Monatstarife_2026-10-08.zip"
 REAL_MONTHLY_EVIDENCE = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-08" / "contipark_configurator_2026-10-08"
+REAL_WOB_EVIDENCE = COMMITTED_PARKING_DIR / "raw_sources" / "municipal_2026-10-14" / f"{RESTLUECKEN_NAME}.zip"
 #: The counts of spec Amendment I and of the package's README, written from the package's own tables (its summary and
 #: facilities.json), not read back from the code: 152 reviewed records, 57 / 72 / 40 public size candidates at 50 / 30 / 100.
 PACKAGE_RECORDS, SHORTLIST_COUNTS = 152, {30: 72, 50: 57, 100: 40}
@@ -1281,6 +1402,9 @@ def test_the_real_package_verifies_and_the_policy_reproduces_its_shortlists(ll, 
 def real_inputs(garages_step, real_package):
     if not (REAL_MONTHLY.is_file() and REAL_MONTHLY_EVIDENCE.is_dir()):
         pytest.skip("the Braunschweig monthly package (the commuter products of decision A) is gitignored and absent here")
+    if not REAL_WOB_EVIDENCE.is_file():
+        pytest.skip("the owner's Restluecken package (the archived pages of the free Wolfsburg lots) is gitignored and absent")
+    evidence = garages_step.ll.load_package_free_evidence(REAL_WOB_EVIDENCE)
     zones = gpd.read_file(REAL_ZONES).to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(REAL_TARIFFS)
     census = {"rate_rules": 54, "stated": 25, "started_unit": 25}   # the regional package's census, as the step prints it
@@ -1288,7 +1412,8 @@ def real_inputs(garages_step, real_package):
     recorded = garages_step.bsm.read_recorded_products(monthly, garages_step.specs.BS_RECORDED_SPECS)
 
     def inputs(threshold):
-        return {"large": {"package": real_package, "threshold": threshold, "zones": zones, "tariffs": tariffs, "evidence": {}},
+        return {"large": {"package": real_package, "threshold": threshold, "zones": zones, "tariffs": tariffs,
+                          "evidence": evidence},
                 "rounding_census": census, "bs_recorded": recorded}
 
     return inputs
@@ -1297,30 +1422,38 @@ def real_inputs(garages_step, real_package):
 def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(garages_step, real_inputs, capsys):
     result = garages_step.build_large_lots(real_inputs(50))
     counts = result["counts"]
-    assert counts["options"] == 55 and counts["failures"] == 0 and result["failures"] == []
-    # the primary path: 13 + 11 + 29 + 2 = 55; the imputed lots are the two without a stated tariff
-    assert (counts["zone_products"], counts["free"], counts["imputed"]) == (11, 29, 2)
+    assert counts["options"] == 58 and counts["failures"] == 0 and result["failures"] == []
+    # the primary path: 13 + 11 + 32 + 2 = 58 (spec v3 B4 adds the three owner-decided free Wolfsburg lots to the 29 free ones);
+    # the imputed lots are the two without a stated tariff
+    assert (counts["zone_products"], counts["free"], counts["imputed"]) == (11, 32, 2)
     assert counts["by_town"] == {"Braunschweig": 11, "Gifhorn": 3, "Goslar": 9, "Helmstedt": 5, "Peine": 4, "Salzgitter": 9,
-                                 "Wolfenbuettel": 7, "Wolfsburg": 7}
+                                 "Wolfenbuettel": 7, "Wolfsburg": 10}
+    # the five owner-decided Wolfsburg sites at the threshold 50: the Suedufer, the Freibad and Arena P1 are options (three free
+    # pages), P2 has no position, VW-Bad no page; so lot_access_not_public falls by the two Arena lots, lot_free_evidence_missing
+    # by the Suedufer and the Freibad, and lot_no_position appears once
     assert counts["qa_by_reason"] == {
-        "lot_access_not_public": 48, "lot_alias": 2, "lot_below_threshold": 23, "lot_capacity_unknown": 3,
-        "lot_free_evidence_missing": 3, "lot_mixed_tariff_unseparated": 2, "lot_not_open": 2, "lot_not_surface_lot": 6,
-        "lot_unconfirmed_candidate": 9}
+        "lot_access_not_public": 46, "lot_alias": 2, "lot_below_threshold": 23, "lot_capacity_unknown": 3,
+        "lot_free_evidence_missing": 1, "lot_mixed_tariff_unseparated": 2, "lot_no_position": 1, "lot_not_open": 2,
+        "lot_not_surface_lot": 6, "lot_unconfirmed_candidate": 9}
     printed = capsys.readouterr().out
-    assert "tariff from the site's own components 13/55, zone street product 11/55, free 29/55, imputed (ASSUMPTION P14) 2/55 " \
-           "(3.6 %)" in printed and "WARNING" not in printed
-    # the primary source of each provenance column and no fallback (the counts are the ones of the data record)
+    assert "tariff from the site's own components 13/58, zone street product 11/58, free 32/58, imputed (ASSUMPTION P14) 2/58 " \
+           "(3.4 %)" in printed
+    assert "free options on archived pages 3/5 (60.0 %), QA rows 2 {'WOB_ARENA_P2': 'lot_no_position', " \
+           "'WOB_PARK_327697': 'lot_free_evidence_missing'}" in printed
+    # the primary source of each provenance column; the one fallback is Arena P1, whose position is the prior municipal point
+    # that the package keeps as 'not a verified entrance' without an OpenStreetMap object or coordinate source (counted, warned)
     assert counts["tariff_source_web_service"] == 0 and counts["limited"] == 18
-    assert counts["position_origin"] == {"osm_object": 51, "coordinate_source": 4, "tariff_source_fallback": 0}
-    assert counts["capacity_origin"] == {"reported": 33, "osm_tag": 5, "area_estimate": 16, "derived": 1, "other": 0}
-    assert "capacity origin: reported 33/55 (60.0 %), OSM tag 5/55 (9.1 %), area estimate 16/55 (29.1 %), derived 1/55 (1.8 %)" \
+    assert counts["position_origin"] == {"osm_object": 53, "coordinate_source": 4, "tariff_source_fallback": 1}
+    assert printed.count("WARNING") == 1 and "WOB_ARENA_P1 has no source in the package" in printed
+    assert counts["capacity_origin"] == {"reported": 34, "osm_tag": 5, "area_estimate": 18, "derived": 1, "other": 0}
+    assert "capacity origin: reported 34/58 (58.6 %), OSM tag 5/58 (8.6 %), area estimate 18/58 (31.0 %), derived 1/58 (1.7 %)" \
         in printed
     # 22 lots inside a zone polygon; 9 differ from their zone row (the six of the release at 50 and, since spec v3 B1 and ruling
     # R-B-3,
     # the Salzgitter and Helmstedt lots against the new maximum stays and the Wolfenbuettel Lessingtheater against the new rate)
     assert (counts["in_zone"], len(counts["in_zone_differing"])) == (22, 9)
     ids = [row["garage_id"] for row in result["rows"]]
-    assert len(set(ids)) == 55 and all(garage_id.startswith("lot_") for garage_id in ids)
+    assert len(set(ids)) == 58 and all(garage_id.startswith("lot_") for garage_id in ids)
     assert not any("P12" in str(row["assumptions"]) for row in result["rows"])     # the municipal free default is withdrawn
     # every record of the package is an option or exactly one QA row (the 24th point of Wolfsburg, a subpoint, is a QA row too)
     accounted = [row["package_facility_id"] for row in result["rows"]] + [
@@ -1329,11 +1462,14 @@ def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(ga
 
 
 def test_the_sensitivities_at_30_and_100_stop_at_no_tariff_and_have_the_counts_of_the_package(garages_step, real_inputs):
-    # the package's own shortlists are 72 and 40; two mixed Peine sites (and, at 30, three sites without a position) are no row
+    # the package's own shortlists are 72 and 40; two mixed Peine sites (and, at 30, three sites without a position) are no row;
+    # spec v3 B4 adds the owner-decided free lots that reach the threshold: the Suedufer (68 spaces), the Freibad (71) and Arena P1
+    # (494) at 30 (70 options), Arena P1 alone at 100 (39 options); Arena P2 (380 spaces) has no position at any threshold
     low = garages_step.build_large_lots(real_inputs(30))["counts"]
     high = garages_step.build_large_lots(real_inputs(100))["counts"]
-    assert low["options"] == 67 and low["failures"] == 0 and low["qa_by_reason"]["lot_no_position"] == 3
-    assert high["options"] == 38 and high["failures"] == 0 and high["imputed"] == 0
+    assert low["options"] == 70 and low["failures"] == 0 and low["qa_by_reason"]["lot_no_position"] == 4
+    assert high["options"] == 39 and high["failures"] == 0 and high["imputed"] == 0
+    assert high["qa_by_reason"]["lot_no_position"] == 1
 
 
 def test_the_imputed_lots_carry_the_median_product_of_their_zone(garages_step, real_inputs):
@@ -1378,12 +1514,14 @@ def test_decision_a_the_station_lots_and_the_markthalle_carry_exactly_the_produc
     assert "lot_braunschweig_hbf_nord" in rows and rows["lot_braunschweig_hbf_nord"]["garage_daily_cap_eur"] == 17.0
 
 
-def test_the_wolfsburg_withdrawal_leaves_no_free_default_and_the_three_free_sites_are_qa_rows_without_archived_evidence(
+def test_the_wolfsburg_withdrawal_leaves_no_free_default_and_a_free_site_is_free_only_on_its_archived_page(
         garages_step, real_inputs):
     result = garages_step.build_large_lots(real_inputs(50))
     reasons = {entry["record_id"]: entry["reason"] for entry in result["qa"]}
-    for number in (720902, 1703940, 327697):
-        assert reasons[f"candidate_lot_wob_park_{number}"] == "lot_free_evidence_missing"
+    # spec v3 B4: the Suedufer and the Freibad are free options on the pages of the Restluecken package (no QA row any more);
+    # VW-Bad has no page and stays the one QA row of the owner-decided sites that is no position problem
+    assert "candidate_lot_wob_park_720902" not in reasons and "candidate_lot_wob_park_1703940" not in reasons
+    assert reasons["candidate_lot_wob_park_327697"] == "lot_free_evidence_missing"
     for number in (327689, 524301, 589853, 262165, 1703946):
         assert reasons[f"candidate_lot_wob_park_{number}"] == "lot_access_not_public"
     notes = {entry["record_id"]: entry["note"] for entry in result["qa"]}
@@ -1392,8 +1530,63 @@ def test_the_wolfsburg_withdrawal_leaves_no_free_default_and_the_three_free_site
     assert "the figure 48 is not traceable in the package" in notes["candidate_lot_wob_park_589853"]
     # the Autostadt and the Klinikum are no public option (access conflict, customers only); the Arena is an event regime
     assert reasons["candidate_lot_wob_park_1900571"] == reasons["candidate_lot_wob_park_1966086"] == "lot_access_not_public"
-    assert reasons["candidate_lot_wob_arena_p1"] == "lot_access_not_public"
     assert reasons["candidate_lot_wob_park_1048584"] == "lot_alias"
+    # the Arena (spec v3 B4): P1 is a free option outside match days; P2 has no position in the package and is no option
+    assert "candidate_lot_wob_arena_p1" not in reasons and reasons["candidate_lot_wob_arena_p2"] == "lot_no_position"
+    notes = {entry["record_id"]: entry["note"] for entry in result["qa"]}
+    assert "owner decision 2026-10-14" in notes["candidate_lot_wob_arena_p2"] and "none is invented" in notes[
+        "candidate_lot_wob_arena_p2"]
+
+
+# the SHA-256 of the pages in the file_manifest.json of the Restluecken package, written from that manifest (not from the code)
+PAGE_SHA256 = {"wmg_schotter_suedufer.html": "913948d7e76e8557b8ded1d05dda81ef571f6877491e10a106a831fe78f683d2",
+               "wmg_befestigt_suedufer.html": "c3c69b58f1c42ee836137461a8fc9fcca17826915b32d67ff753c219af610227",
+               "vfb_geschaeftsstelle.html": "a3fc98c9bddc0de859595fb14e71b8a75b64bdbeb49f8a4350321ac3de1051ab",
+               "vfl_anreise.html": "096e2054a8e933ea31d335b1c31752ffdc0eb9776c6abf88675ca7b53fd7c2b4"}
+
+
+def test_the_pages_of_the_real_restluecken_package_verify_and_hold_the_quotations(ll, real_inputs):
+    evidence = ll.load_package_free_evidence(REAL_WOB_EVIDENCE)
+    for name, digest in PAGE_SHA256.items():
+        assert evidence[name]["sha256"] == digest and evidence[name]["package_sha256"] == RESTLUECKEN_SHA256, name
+    assert len(evidence) == 8 and "findings.json" not in evidence          # the original responses only
+    assert evidence["vfl_anreise.html"]["url"] == "https://www.vfl-wolfsburg.de/stadien/volkswagen-arena/anreise"
+    assert evidence["wmg_schotter_suedufer.html"]["retrieved"] == "2026-10-14"
+
+
+def test_the_free_wolfsburg_lots_of_spec_v3_b4_rest_on_their_archived_pages_and_carry_no_maximum_stay(garages_step, real_inputs):
+    rows = {row["garage_id"]: row for row in garages_step.build_large_lots(real_inputs(50))["rows"]}
+    package_hashes = f"{REAL_PACKAGE_SHA256};{RESTLUECKEN_SHA256}"
+    for garage_id, pages, url in (
+            ("lot_wob_park_720902", ("wmg_schotter_suedufer.html", "wmg_befestigt_suedufer.html"),
+             "https://www.wolfsburg-erleben.de/poi/schotter-parkplatz-suedufer-am-allersee"),
+            ("lot_wob_park_1703940", ("vfb_geschaeftsstelle.html",), "https://www.vfb-fallersleben.de/dein-vfb/geschaeftsstelle/"),
+            ("lot_wob_arena_p1", ("vfl_anreise.html",), "https://www.vfl-wolfsburg.de/stadien/volkswagen-arena/anreise")):
+        row = rows[garage_id]
+        assert row["facility_kind"] == "surface_lot" and row["priced"] and row["assumptions"] is None, garage_id
+        assert row["tariff_duration_bands"] == "0- free" and row["max_stay_min"] is None, garage_id
+        assert row["tariff_rule_ids"] == ";".join(f"evidence:{page}" for page in pages), garage_id
+        assert row["source_url"] == url and row["source_date"] == "2026-10-14" and row["package_sha256"] == package_hashes
+        for page in pages:
+            assert page in row["notes"] and PAGE_SHA256[page] in row["notes"], (garage_id, page)
+        assert "carries no maximum stay" in row["notes"] and "owner decision" in row["notes"]
+        assert "Priced from the package components" not in row["notes"] and "Tariff: free of charge" in row["notes"]
+    # the Suedufer: the nearest WMG point (Schotter-Parkplatz) lies 162 m, the other 443 m from the research point; no polygon match
+    note = rows["lot_wob_park_720902"]["notes"]
+    assert "lies 162 m from the research point" in note and "lies 443 m from the research point" in note
+    assert "polygon match not_established" in note
+    assert rows["lot_wob_park_720902"]["capacity_reported"] is None       # an area estimate (68 spaces), never reported
+    # the Freibad: the VfB page names its car parks relatively and has no point of its own
+    assert "from the research point" not in rows["lot_wob_park_1703940"]["notes"]
+    assert "next to the Freibad or opposite the school" in rows["lot_wob_park_1703940"]["notes"]
+    # the Arena: the match-day condition is named as an assumption and not modelled; the package reports 494 spaces
+    arena = rows["lot_wob_arena_p1"]
+    assert "ASSUMPTION W-match" in arena["notes"] and "Match days and event closures are NOT modelled" in arena["notes"]
+    assert arena["capacity_reported"] == 494 and "WOB_PARK_1441813" in arena["notes"]
+    assert "the point is no verified position inside the parking area" in arena["notes"]
+    assert arena["geometry_source_url"] == "https://www.vfl-wolfsburg.de/stadien/volkswagen-arena/anreise/"   # the counted stand-in
+    # BadeLand stays a paid option and VW-Bad is no option
+    assert rows["lot_wob_park_1114127"]["tariff_duration_bands"] is None and "lot_wob_park_327697" not in rows
 
 
 # --------------------------------------------------------------------------- the committed release (spec Amendment I)
@@ -1433,13 +1626,19 @@ def _site_of(row) -> str:
 def test_the_option_set_of_the_release_is_the_package_shortlist_less_the_two_mixed_peine_sites(committed, real_package):
     shortlist = {key for key, record in real_package["facilities"].items() if record["public_candidate_50"]}
     lots = committed[committed["facility_kind"] == "surface_lot"]
-    assert len(shortlist) == 57 and len(lots) == 55
-    # the package's own shortlist (written by its author, not by the policy of ``large_lots``) less the two mixed Peine sites
-    assert set(lots["package_facility_id"]) == shortlist - {"peine_friedrich_ebert_platz", "peine_schuetzenplatz_sued"}
+    assert len(shortlist) == 57 and len(lots) == 58
+    # the package's own shortlist (written by its author, not by the policy of ``large_lots``) less the two mixed Peine sites, plus
+    # the three owner-decided free Wolfsburg lots of spec v3 B4 (the package keeps their access unknown or event-conditional)
+    assert set(lots["package_facility_id"]) == shortlist - {"peine_friedrich_ebert_platz", "peine_schuetzenplatz_sued"} | {
+        "WOB_PARK_720902", "WOB_PARK_1703940", "WOB_ARENA_P1"}
     # no site of the dataset has the withdrawn municipal free default and none is free without a statement of its source
     assert not committed["assumptions"].fillna("").str.contains("P12").any()
     free = lots[lots["tariff_duration_bands"] == "0- free"]
     for garage_id, row in free.iterrows():
+        if row["tariff_rule_ids"].startswith("evidence:"):       # spec v3 B4: the archived pages of the Restluecken package
+            assert garage_id in ("lot_wob_park_720902", "lot_wob_park_1703940", "lot_wob_arena_p1"), garage_id
+            assert row["package_sha256"].endswith(";80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c")
+            continue
         components = [rule_id for rule_id in row["tariff_rule_ids"].split(";") if rule_id in real_package["rules"]]
         assert components and all(real_package["rules"][rule_id].get("amount_eur") == 0 for rule_id in components), garage_id
 
@@ -1455,8 +1654,8 @@ def test_every_record_of_the_package_is_exactly_once_a_row_or_a_qa_row_with_the_
     # the reason of every record, from the package's own fields in the order of its shortlist rule (a second implementation of
     # the policy; the three Wolfsburg lots that are free only on a per-site source and the two mixed sites are the owner's)
     public = ("public", "public_with_customer_discount", "mixed_public_and_customers")
-    owner = {"WOB_PARK_720902": "lot_free_evidence_missing", "WOB_PARK_1703940": "lot_free_evidence_missing",
-             "WOB_PARK_327697": "lot_free_evidence_missing", "peine_friedrich_ebert_platz": "lot_mixed_tariff_unseparated",
+    owner = {"WOB_ARENA_P2": "lot_no_position", "WOB_PARK_327697": "lot_free_evidence_missing",
+             "peine_friedrich_ebert_platz": "lot_mixed_tariff_unseparated",
              "peine_schuetzenplatz_sued": "lot_mixed_tariff_unseparated"}
     for _, row in qa.iterrows():
         site = _site_of(row)
@@ -1486,33 +1685,37 @@ def test_every_record_of_the_package_is_exactly_once_a_row_or_a_qa_row_with_the_
             assert capacity < 50, site
         assert row["reason_code"] == expected, site
     assert qa["reason_code"].value_counts().sort_index().to_dict() == {
-        "lot_access_not_public": 48, "lot_alias": 2, "lot_below_threshold": 23, "lot_capacity_unknown": 3,
-        "lot_free_evidence_missing": 3, "lot_mixed_tariff_unseparated": 2, "lot_not_open": 2, "lot_not_surface_lot": 6,
-        "lot_unconfirmed_candidate": 9}
+        "lot_access_not_public": 46, "lot_alias": 2, "lot_below_threshold": 23, "lot_capacity_unknown": 3,
+        "lot_free_evidence_missing": 1, "lot_mixed_tariff_unseparated": 2, "lot_no_position": 1, "lot_not_open": 2,
+        "lot_not_surface_lot": 6, "lot_unconfirmed_candidate": 9}
 
 
-def test_the_five_withdrawn_wolfsburg_defaults_and_the_three_free_sites_are_qa_rows_with_the_owners_reasons(committed_qa):
+def test_the_five_withdrawn_wolfsburg_defaults_are_qa_rows_and_the_owner_decided_sites_follow_their_evidence(committed_qa):
     for number, phrase in ((327689, "only wedding guests are evidenced"), (524301, "8-year-old press note"),
                            (262165, "about 17 spaces"), (1703946, "neither a fee nor an access evidence"),
                            (589853, "the figure 48 is not traceable in the package")):
         row = committed_qa.loc[f"candidate_lot_wob_park_{number}"]
         assert row["reason_code"] == "lot_access_not_public" and phrase in row["note"], number
-    for number in (720902, 1703940, 327697):
-        row = committed_qa.loc[f"candidate_lot_wob_park_{number}"]
-        assert row["reason_code"] == "lot_free_evidence_missing" and "never free without a source" in row["note"], number
-    # what was searched and what was found is in the note: the VfB page states it but is not archived, the other two were not found
-    assert "https://www.vfb-fallersleben.de/dein-vfb/geschaeftsstelle/" in committed_qa.loc[
-        "candidate_lot_wob_park_1703940", "note"]
-    assert "was not found" in committed_qa.loc["candidate_lot_wob_park_720902", "note"]
-    assert "HTTP 404" in committed_qa.loc["candidate_lot_wob_park_327697", "note"]
-    # the folder of the archived evidence exists with its MANIFEST.md (local data): no page is archived yet
+    # spec v3 B4: the Suedufer and the Freibad are free options on the pages of the Restluecken package (their QA rows are the
+    # garage rows now), VW-Bad has no page and stays a QA row with what was searched
+    for number in (720902, 1703940):
+        assert f"candidate_lot_wob_park_{number}" not in committed_qa.index
+        assert committed_qa.loc[f"garage_lot_wob_park_{number}", "decision"] == "priced"
+    row = committed_qa.loc["candidate_lot_wob_park_327697"]
+    assert row["reason_code"] == "lot_free_evidence_missing" and "never free without a source" in row["note"]
+    assert "HTTP 404" in row["note"]
+    # the folder of the (older) archived evidence exists with its MANIFEST.md (local data): no page is archived in it; the pages of
+    # spec v3 B4 are read in place from the Restluecken package
     if EVIDENCE_FOLDER.is_dir():
         manifest = (EVIDENCE_FOLDER / "MANIFEST.md").read_text(encoding="utf-8")
         assert "NO PAGE IS ARCHIVED YET" in manifest and "never free by a default" in manifest
     # Autostadt, Klinikum and the Volkswagen Arena are no public options (spec I2: customer, event and conflicting access)
     for number in (1900571, 1966086):
         assert committed_qa.loc[f"candidate_lot_wob_park_{number}", "reason_code"] == "lot_access_not_public"
-    assert committed_qa.loc["candidate_lot_wob_arena_p1", "reason_code"] == "lot_access_not_public"
+    # the Arena (spec v3 B4): P1 is a free option outside match days, P2 has no position in the package
+    assert "candidate_lot_wob_arena_p1" not in committed_qa.index
+    assert committed_qa.loc["garage_lot_wob_arena_p1", "decision"] == "priced"
+    assert committed_qa.loc["candidate_lot_wob_arena_p2", "reason_code"] == "lot_no_position"
     assert "candidate_lot_wob_park_1900551" not in committed_qa.index     # the Theater point is the Theaterparkplatz row
     assert committed_qa.loc["candidate_lot_wob_park_1048584", "reason_code"] == "lot_alias"
 
@@ -1580,7 +1783,7 @@ def test_the_imputed_lots_are_named_with_their_donors_and_carry_the_donors_sched
 def test_the_free_lots_price_every_stay_at_zero_through_the_same_code_without_a_special_case(committed):
     from braunschweig.parking import cost
     free = [garage_id for garage_id, row in committed.iterrows() if row["tariff_duration_bands"] == "0- free"]
-    assert len(free) == 29 and all(garage_id.startswith("lot_") for garage_id in free)
+    assert len(free) == 32 and all(garage_id.startswith("lot_") for garage_id in free)
     for garage_id in free:
         garage = _tariff(committed, garage_id)
         assert garage.form == "bands" and garage.hourly_rate_cents is None and garage.daily_cap_cents is None
@@ -1694,10 +1897,10 @@ def test_a_committed_free_option_alone_never_makes_a_street_free_stay_cost_anyth
 def test_the_tariff_model_export_converts_every_lot_of_the_release_with_its_form(committed):
     lots = [garage_id for garage_id in committed.index if garage_id.startswith("lot_")]
     entries = [_tariff(committed, garage_id).to_json() for garage_id in lots]
-    assert len(entries) == 55 and {entry["garage_id"] for entry in entries} == set(lots)
+    assert len(entries) == 58 and {entry["garage_id"] for entry in entries} == set(lots)
     free = [entry for entry in entries
             if entry["bands"] and entry["bands"][0]["kind"] == "free" and entry["bands"][0]["to_min"] is None]
-    assert len(free) == 29
+    assert len(free) == 32
 
 
 # --------------------------------------------------------------------------- the zone product is exact to the cent (R-4j-6)
@@ -2264,7 +2467,7 @@ def test_the_pass_over_every_released_lot_inside_a_zone_polygon_finds_13_equal_a
     # the garages of the regional packages are no lots: no zone ids, whatever zone they lie in
     garage_rows = qa[qa["record_type"] == "garage"]
     kinds = garages.set_index("garage_id")["facility_kind"].reindex(garage_rows["garage_id"]).to_numpy()
-    assert len(garage_rows) == 91 and (garage_rows.loc[kinds == "garage", "zone_ids"] == "").all()
+    assert len(garage_rows) == 94 and (garage_rows.loc[kinds == "garage", "zone_ids"] == "").all()
 
 
 def test_the_released_rows_cite_a_page_for_the_tariff_and_the_position_by_the_primary_method(ll, committed):
@@ -2276,10 +2479,11 @@ def test_the_released_rows_cite_a_page_for_the_tariff_and_the_position_by_the_pr
     assert committed.loc["lot_wob_park_1114127", "source_url"] == wmg + "parkplatz-badeland-wolfsburg"
     for garage_id in ("lot_wob_park_1638410", "lot_wob_park_1769502", "lot_wob_park_1835014"):
         assert committed.loc[garage_id, "source_url"].endswith("/parkgebuehrenordnung_20200721.pdf"), garage_id
-    # finding L3: a position source is the OpenStreetMap object of the package (51 lots) or a source that the package names for the
-    # coordinates (the other four); the count of the tariff source standing in as a fallback is pinned on the real package
+    # finding L3: a position source is the OpenStreetMap object of the package (53 lots) or a source that the package names for the
+    # coordinates (four lots; Arena P1 has neither, its tariff source stands in, counted and warned); the count of that fallback
+    # is pinned on the real package
     # (counts["position_origin"] of the primary-method test), because the same page can be both sources of a lot
-    assert int(lots["geometry_source_url"].str.startswith("https://www.openstreetmap.org/").sum()) == 51
+    assert int(lots["geometry_source_url"].str.startswith("https://www.openstreetmap.org/").sum()) == 53
     assert lots["geometry_source_url"].str.startswith("https://").all()
 
 

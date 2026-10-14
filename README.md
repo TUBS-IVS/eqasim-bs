@@ -332,7 +332,10 @@ dataset needs the owner's regional evidence package and its two supplement packa
 owner's research package `Grossparkplaetze_ZGB8_2026-10-12.zip` and the folder `wob_free_lots_evidence/` (its `MANIFEST.md`
 and the archived evidence pages of the free Wolfsburg car parks) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/` (not distributed; `--large-lots-zip`,
-`--lot-threshold` with the default 50 spaces and `--wob-free-evidence-dir`), for the monthly products of the
+`--lot-threshold` with the default 50 spaces and `--wob-free-evidence-dir`), for the free status of four Wolfsburg lots the
+owner's package `Parkdaten_Restluecken_2026-10-14.zip` in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/` (not distributed; read in place, `--wob-evidence-zip`),
+for the monthly products of the
 Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
 `contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and

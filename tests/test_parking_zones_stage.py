@@ -436,8 +436,9 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     context = _context(COMMITTED_DATA, paths={})
     with caplog.at_level(logging.WARNING, logger=STAGE_LOGGER):
         release = zones_stage.execute(context)
-    # No warning: since the 29 free lots of spec Amendment I rest on no assumption, 50 of the 91 priced rows (54.9 %) rest on at
-    # least one assumption and 39 of 91 (42.9 %) on P4 or P5, both below the 75 % threshold of the garage loader (it warned about
+    # No warning: since the 32 free lots of spec Amendment I and spec v3 B4 rest on no assumption, 48 of the 94 priced rows
+    # (51.1 %) rest on at least one assumption and 39 of 94 (41.5 %) on P4 or P5, both below the 75 % threshold of the garage
+    # loader (it warned about
     # 45 of 49 rows, 91.8 %, before). No marker and no other problem either; the rates themselves are in the loader's log line.
     warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
     assert [record.getMessage() for record in warnings] == []
@@ -450,15 +451,16 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     assert len(release["districts"]) == 29
     assert set(release["districts"]["municipality_ags"]) == {"03101000", "03103000", "03153017", "03154028", "03157006",
                                                             "03158037"}
-    # The committed garage dataset: 91 rows (36 garages, 55 surface lots), every one priced (specs E13, E14 and I), in EPSG:25832.
-    assert len(release["garages"]) == 91 and release["garages"]["priced"].all()
+    # The committed garage dataset: 94 rows (36 garages, 58 surface lots), every one priced (specs E13, E14 and I, spec v3 B4), in
+    # EPSG:25832.
+    assert len(release["garages"]) == 94 and release["garages"]["priced"].all()
     assert len(zones_stage.validate(context)) == 64
     # The committed release exports as the schema-5 tariff model the preparation writes: with the decay 0 (the garage
-    # options off) and with a decay value, both list the 91 priced rows.
+    # options off) and with a decay value, both list the 94 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],
                                              garages=release["garages"])
     assert model["schema_version"] == 5 and set(model["zones"]) == set(release["tariffs"]["zone_id"])
-    assert len(model["garages"]) == 91 and model["garage_decay_m"] == 0.0
+    assert len(model["garages"]) == 94 and model["garage_decay_m"] == 0.0
 
 
 def test_a_legacy_garage_dataset_without_the_imputed_column_is_refused_unless_every_row_is_a_marked_fixture(fixture_data):

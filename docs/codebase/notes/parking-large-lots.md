@@ -76,9 +76,14 @@ its reason. The steps, the rule of each and the code that carries it:
 - **P14 never invents a price.** The median is a donor's complete schedule; an even number of donors needs identical schedules in
   the middle, else the step stops; a free lot is no donor; fewer than two donors on both levels is the QA row
   `lot_tariff_unknown`.
-- **A free Wolfsburg lot needs its page.** The sites of `WOB_FREE_LOT_EVIDENCE` are rows only when
-  `wob_free_lots_evidence/MANIFEST.md` lists an archived page with its SHA-256 and the file holds the quotation; otherwise they are
-  QA rows with what was searched. ASSUMPTION P12 is withdrawn: no default makes a lot free.
+- **A free Wolfsburg lot needs its page.** The sites of `WOB_FREE_LOT_EVIDENCE` are rows only when every page the table names for
+  them is given (read in place from `Parkdaten_Restluecken_2026-10-14.zip` with `--wob-evidence-zip`, each page against the
+  package's `file_manifest.json`, or listed with its SHA-256 in `wob_free_lots_evidence/MANIFEST.md`) and holds its quotation;
+  otherwise they are QA rows with what was searched, and a named page that a given archive lacks stops the step. A site that the
+  package gives no position stays a QA row (`lot_no_position`) whatever its pages state (Volkswagen Arena P2). The row names every
+  page with its SHA-256, carries no maximum stay (a free lot does not inherit the product of a zone) and, for the Arena, the
+  match-day condition that is not modelled (ASSUMPTION W-match, owner decision 2026-10-14). ASSUMPTION P12 is withdrawn: no default
+  makes a lot free.
 - **Restrictions are named, not modelled.** A maximum stay that the bands do not carry, a Saturday or Sunday window, a customer
   discount, a vehicle-group exemption and a purchase-bound free period are listed per row in the notes ("Not modelled", "Not
   used") and never change a price.

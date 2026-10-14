@@ -29,7 +29,9 @@ supplement packages are read (``garage_supplement``):
   of the capacity that the threshold uses (reported, OSM tag, area estimate, derived), both counted and logged by the step.
 * ``median_schedule`` is ASSUMPTION P14 (spec Amendment I4): the median product of the priced lots of the same zone.
 * ``load_free_evidence`` checks the archived evidence pages of the free Wolfsburg lots (spec Amendment I5a) against their
-  ``MANIFEST.md``.
+  ``MANIFEST.md``; ``load_package_free_evidence`` reads the pages of the owner's Restluecken package
+  (``Parkdaten_Restluecken_2026-10-14.zip``, spec v3 B4) in place from the zip, every page against its entry in the package's
+  ``evidence/wob_belege/file_manifest.json`` and its source in ``findings.json`` (nothing is extracted, nothing is downloaded).
 
 CRS: EPSG:25832 throughout, money in EUR, distances in m, capacities in parking spaces.
 """
@@ -39,7 +41,7 @@ import hashlib
 import json
 import re
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 import geopandas as gpd
@@ -92,6 +94,19 @@ FREE_SHORT_STAY_BILLING_PERIODS = ("free_short_stay", "short_stay")
 #: Billing periods of a rate whose package text states the rounding (a started interval, ``je angefangene ...``).
 STARTED_UNIT_BILLING_PERIODS = ("started_interval", "started_hour", "started_half_hour")
 EVIDENCE_COLUMNS = ("file", "url", "retrieved", "sha256", "statement")
+#: The owner's package of the remaining Wolfsburg evidence (spec v3 B4, issue #436): original responses of the pages the free
+#: status of four car parks rests on, under ``WOB_EVIDENCE_DIRECTORY`` with a ``file_manifest.json`` (SHA-256 and size of every
+#: file; its paths are those of the machine that wrote it, so the files are matched by name) and the ``findings.json`` that gives
+#: the source (publisher, title, URL, retrieval date, the page's own point) of every page by the stem of its file name.
+WOB_EVIDENCE_NAME = "Parkdaten_Restluecken_2026-10-14"
+WOB_EVIDENCE_FILE = f"{WOB_EVIDENCE_NAME}.zip"
+#: SHA-256 of the package (also in the data record parking_garages_2026).
+WOB_EVIDENCE_SHA256 = "80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c"
+WOB_EVIDENCE_DIRECTORY = "evidence/wob_belege"
+WOB_EVIDENCE_MANIFEST = "file_manifest.json"
+WOB_EVIDENCE_FINDINGS = "findings.json"
+#: The role that ``file_manifest.json`` gives an unchanged response of the web (a page); the other roles are derived research.
+WOB_EVIDENCE_PAGE_ROLE = "original_response"
 
 
 # ---------------------------------------------------------------- the package
@@ -674,4 +689,74 @@ def load_free_evidence(directory) -> dict:
         if not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) or mz.file_sha256(path) != entry["sha256"]:
             raise SystemExit(f"the archived evidence {path} does not have the SHA-256 {entry['sha256']} of its MANIFEST.md entry")
         evidence[entry["file"]] = {**entry, "path": path}
+    return evidence
+
+
+def evidence_text(entry: dict) -> str:
+    """The text of one archived evidence page of ``load_free_evidence`` (read from its file) or ``load_package_free_evidence``
+    (read from the zip), UTF-8 with undecodable bytes replaced (a quotation is looked up in it, nothing else is read)."""
+    if "text" in entry:
+        return entry["text"]
+    return Path(entry["path"]).read_bytes().decode("utf-8", errors="replace")
+
+
+def load_package_free_evidence(path, expected_sha256: Optional[str] = None) -> dict:
+    """{file name: {"file", "url", "retrieved", "sha256", "statement", "text", "member", "package_file", "package_sha256",
+    "polygon_match" (None where the source states none), and "source_point_wgs84" where the source states the page's own point}}
+    of the pages of the Restluecken package at ``path`` (the zip itself; ``None`` is no evidence: the lots that rest on it are then
+    QA rows, never free without a source).
+
+    The zip must exist with exactly ``WOB_EVIDENCE_SHA256`` (or ``expected_sha256``, for a synthetic package), else ``SystemExit``.
+    Every file that ``file_manifest.json`` lists (matched by its file name) must be in the zip under ``evidence/wob_belege/`` with
+    exactly the recorded SHA-256 and size; the pages are the files of the role ``original_response`` and each needs its source in
+    ``findings.json`` (by the stem of the file name), else ``SystemExit``. Nothing is extracted or downloaded."""
+    if path is None:
+        return {}
+    path = Path(path)
+    if not path.is_file():
+        raise SystemExit(f"{path} missing: pass the owner's package {WOB_EVIDENCE_FILE} (--wob-evidence-zip) unchanged")
+    sha256 = expected_sha256 or WOB_EVIDENCE_SHA256
+    actual = mz.file_sha256(path)
+    if actual != sha256:
+        raise SystemExit(f"{path}: SHA-256 {actual} is not the recorded {sha256} (data record parking_garages_2026); a changed "
+                         "package is never read")
+    prefix = f"{WOB_EVIDENCE_NAME}/{WOB_EVIDENCE_DIRECTORY}/"
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        if prefix + WOB_EVIDENCE_MANIFEST not in names:
+            raise SystemExit(f"the package {WOB_EVIDENCE_FILE} holds no {prefix}{WOB_EVIDENCE_MANIFEST}; its pages cannot be "
+                             "verified")
+        manifest = json.loads(archive.read(prefix + WOB_EVIDENCE_MANIFEST).decode("utf-8"))
+        verified, roles = {}, {}
+        for entry in manifest:
+            name = PurePosixPath(entry["path"].replace("\\", "/")).name
+            if name in verified:
+                raise SystemExit(f"{WOB_EVIDENCE_MANIFEST} lists {name} twice")
+            if prefix + name not in names:
+                raise SystemExit(f"{WOB_EVIDENCE_MANIFEST} lists {name}, which is not in the zip under {prefix}")
+            content = archive.read(prefix + name)
+            if _sha256(content) != entry["sha256"] or len(content) != entry["bytes"]:
+                raise SystemExit(f"the archived page {name} ({prefix}{name}) does not have the SHA-256 {entry['sha256']} and "
+                                 f"the {entry['bytes']} bytes that {WOB_EVIDENCE_MANIFEST} states (found {_sha256(content)}, "
+                                 f"{len(content)} bytes)")
+            verified[name], roles[name] = content, entry.get("role")
+    if WOB_EVIDENCE_FINDINGS not in verified:
+        raise SystemExit(f"{WOB_EVIDENCE_MANIFEST} does not list {WOB_EVIDENCE_FINDINGS}, the source of every page")
+    sources = {source["source_id"]: source for source in json.loads(verified[WOB_EVIDENCE_FINDINGS].decode("utf-8"))["sources"]}
+    evidence = {}
+    for name, content in verified.items():
+        if roles[name] != WOB_EVIDENCE_PAGE_ROLE:
+            continue
+        source = sources.get(PurePosixPath(name).stem)
+        if source is None:
+            raise SystemExit(f"{WOB_EVIDENCE_FINDINGS} holds no source for the archived page {name}: a page without a source "
+                             "is never evidence")
+        evidence[name] = {
+            "file": name, "url": source["url"], "retrieved": source["retrieved_date"], "sha256": _sha256(content),
+            "statement": f"{source['publisher'].strip()}, '{source['title'].strip()}'",
+            "text": content.decode("utf-8", errors="replace"), "member": prefix + name, "package_file": WOB_EVIDENCE_FILE,
+            "package_sha256": sha256, "polygon_match": source.get("polygon_match"),
+            **({"source_point_wgs84": source["source_point_wgs84"]} if source.get("source_point_wgs84") else {})}
+    print(f"[free evidence] {WOB_EVIDENCE_FILE} verified (SHA-256 {sha256}): {len(evidence)} pages of {prefix} against "
+          f"{WOB_EVIDENCE_MANIFEST}, each with its source in {WOB_EVIDENCE_FINDINGS}")
     return evidence

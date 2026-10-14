@@ -1129,6 +1129,10 @@ SUPPLEMENT_PACKAGE_SHA256 = "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c
 FOLLOWUP_PACKAGE_SHA256 = "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8"
 LOTS_PACKAGE_SHA256 = "650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0"   # the Wolfsburg car-park package (E14)
 LARGE_LOT_PACKAGE_SHA256 = "d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4"  # the large-lot package (spec I)
+#: The Restluecken package (spec v3 B4) whose archived pages the free status of three Wolfsburg lots rests on; a lot that cites
+#: it names it after the large-lot package.
+RESTLUECKEN_PACKAGE_SHA256 = "80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c"
+FREE_LOTS_ON_ARCHIVED_PAGES = ("lot_wob_park_720902", "lot_wob_park_1703940", "lot_wob_arena_p1")
 GARAGES_QA_PATH = COMMITTED_PARKING_DIR / "parking_garages_2026_qa.csv"
 TARIFFS_PATH = COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv"
 
@@ -1261,17 +1265,18 @@ BS_MONTHLY_EVIDENCE_SUMS_SHA256 = "2617d497bddfaadced2ff433cd4b675122570a58ca7b6
 #: The garages whose window of 0-24 h is stated by the source (no assumption P5): the operator page of Contipark and the
 #: city brochures (the ordinance of 2018 states opening hours only).
 STATED_FULL_DAY_WINDOWS = ("bs_wallstrasse", "he_edelhoefe", "he_groepern_tiefgarage")
-#: The 55 surface lots of the large-lot research package at the threshold of 50 spaces (spec Amendment I, Task 4j; written by hand
+#: The 58 surface lots of the large-lot research package at the threshold of 50 spaces (spec Amendment I, Task 4j and, for the three
+#: owner-decided free Wolfsburg lots on archived pages, spec v3 B4; written by hand
 #: from the package's documented components and the zone products, not read back from the dataset): the EIGHT lots with the street
 #: product of the zone of the owner decisions (Wendenstrasse/Werder and Grosser Hof with the bands of the maximum stay of zone Ia,
 #: the Markthalle, the three Hbf lots with the daily cap and the commuter product of their zone, and the two single-site zones of
 #: Goslar, Baeringerstrasse and Klubgartenstrasse, one rate per started billing unit of the table row with its fee window) and the
-#: three Wolfsburg lots inside a tariff zone, 29 lots that are free of charge by an explicit statement of their source (the free
+#: three Wolfsburg lots inside a tariff zone, 32 lots that are free of charge by an explicit statement of their source (the free
 #: schedule '0- free', no assumption), 13 lots priced from their own components (a rate with a window and cap, the Broetchentaste
 #: of Helmstedt and Salzgitter as a grace band under ASSUMPTION P10, the cheapest product for a stay at the Peine Schlosswall, the
 #: three minimum and day tariffs of Wolfenbuettel) and the two lots without a stated tariff that take the median product of
 #: their zone (ASSUMPTION P14: Buergerpark, Buechereivorplatz). A capacity is held only where the package REPORTS it. Per town
-#: (Braunschweig 11, Wolfsburg 7, Wolfenbuettel 7, Gifhorn 3, Helmstedt 5, Peine 4, Salzgitter 9, Goslar 9).
+#: (Braunschweig 11, Wolfsburg 10, Wolfenbuettel 7, Gifhorn 3, Helmstedt 5, Peine 4, Salzgitter 9, Goslar 9).
 SZ_BANDS = "0-30 free; 30-60 total 0.70; 60- 0.10/6"
 #: Zone Ia (spec v3 B1, ruling R-B-2): 1.80 EUR per hour per started minute, 9-20 h; the 180 min maximum has NO long-stay product
 #: (the 9.00 EUR ticket is zone Ib's), so the lots that carry the product have the plain rate form and max_stay_min 180.
@@ -1313,6 +1318,12 @@ PRICED_LOTS = {
     "lot_wob_park_1769502": _lot(WOB, rate=2.0, unit=30, start=7.0, end=18.0),
     "lot_wob_park_1835014": _lot(WOB, rate=1.2, unit=30, start=7.0, end=18.0),
     "lot_wob_park_1835028": _free_lot(WOB),
+    # spec v3 B4: three owner-decided free lots on the archived pages of the Restluecken package: the Allersee Suedufer and the
+    # Freibad Fallersleben (area estimates of the capacity, none reported) and Volkswagen Arena P1 (494 spaces reported by the event
+    # operator; free outside match days, match days not modelled)
+    "lot_wob_park_720902": _free_lot(WOB),
+    "lot_wob_park_1703940": _free_lot(WOB),
+    "lot_wob_arena_p1": _free_lot(WOB, 494),
     # Wolfenbuettel: five free lots, the Lessingtheater (0.25 EUR for the first 15 min, 0.05 EUR per started 3 min up to 2 h =
     # 2.00 EUR, then the day ticket of 2.00 EUR) and the Stadtbad Okeraue (2.00 EUR per started hour for outside users)
     "lot_wf_bahnhof_checkin": _free_lot(WF),
@@ -1396,11 +1407,11 @@ def _plain(value):
 
 def test_the_committed_dataset_lists_exactly_the_garages_the_sources_name_and_prices_every_one():
     garages = _committed_garages()
-    assert len(garages) == 91 and len(PRICED_GARAGES) == 36 and len(PRICED_LOTS) == 55
+    assert len(garages) == 94 and len(PRICED_GARAGES) == 36 and len(PRICED_LOTS) == 58
     # spec Amendment G2: the station deck of DB BahnPark is a garage option now (rulings R-4b-4 and R-4b-9 are revoked for it)
     assert garages.loc["wob_hauptbahnhof", "facility_kind"] == "garage"
     assert set(garages.index) == set(PRICED_GARAGES) | set(PRICED_LOTS)
-    # ruling R-4b3-0: the 36 garages are garages; spec Amendment I: the 55 large public surface lots of the eight towns (the 13
+    # ruling R-4b3-0: the 36 garages are garages; spec Amendment I: the 58 large public surface lots of the eight towns (the 13
     # car parks of the Wolfsburg city layer of spec E14 are replaced by the sites of the research package under its policy)
     assert garages.loc[sorted(PRICED_LOTS), "package_facility_id"].is_unique
     assert set(garages.index[garages["facility_kind"] == "garage"]) == set(PRICED_GARAGES)
@@ -1466,10 +1477,12 @@ def test_a_committed_large_lot_carries_the_documented_tariff(garage_id):
     assert (_plain(row["tariff_duration_bands"]), _plain(row["capacity_reported"]), _plain(row["assumptions"])) == (
         expected.bands, expected.capacity, expected.assumptions)
     # only a lot that is a zone too (owner decision A) has a monthly product, the commuter product of its zone (ruling R-4j-6);
-    # a lot never imputes one (spec F2); it cites the large-lot package alone
+    # a lot never imputes one (spec F2); it cites the large-lot package alone, and the free lots on archived pages (spec v3 B4) the
+    # package of their pages after it
     assert _plain(row["monthly_eur"]) == expected.monthly and _plain(row["monthly_imputed_eur"]) is None
     assert (_plain(row["monthly_source_url"]) is None) == (expected.monthly is None)
-    assert row["package_sha256"] == LARGE_LOT_PACKAGE_SHA256
+    assert row["package_sha256"] == (f"{LARGE_LOT_PACKAGE_SHA256};{RESTLUECKEN_PACKAGE_SHA256}"
+                                     if garage_id in FREE_LOTS_ON_ARCHIVED_PAGES else LARGE_LOT_PACKAGE_SHA256)
     assert row["geometry_method"] == "package_research_point_in_parking_area" and row["geometry_source_url"].startswith("https://")
     # the key of the site: the package's facility key in lower case, the municipal point of the city layer is no key
     assert garage_id == "lot_" + re.sub(r"[^a-z0-9]+", "_", row["package_facility_id"].lower()).strip("_")
@@ -1516,23 +1529,23 @@ def test_exactly_the_lots_of_zones_with_a_maximum_stay_carry_it_ruling_r_b_2():
 
 def test_the_committed_coverage_is_the_one_the_task_reports():
     coverage = pg.coverage(pg.load_garages(_garages_path()))
-    assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (91, 91, 0)
+    assert (coverage["listed"], coverage["priced"], coverage["not_priced"]) == (94, 94, 0)
     assert coverage["not_priced_by_reason"] == {}
     assert coverage["by_municipality"] == {
         BS: {"listed": 23, "priced": 23, "not_priced": 0}, SZ: {"listed": 10, "priced": 10, "not_priced": 0},
-        WOB: {"listed": 17, "priced": 17, "not_priced": 0}, GF: {"listed": 4, "priced": 4, "not_priced": 0},
+        WOB: {"listed": 20, "priced": 20, "not_priced": 0}, GF: {"listed": 4, "priced": 4, "not_priced": 0},
         GS: {"listed": 13, "priced": 13, "not_priced": 0}, HE: {"listed": 9, "priced": 9, "not_priced": 0},
         PE: {"listed": 6, "priced": 6, "not_priced": 0}, WF: {"listed": 9, "priced": 9, "not_priced": 0}}
     assert coverage["by_facility_kind"] == {"garage": {"listed": 36, "priced": 36, "not_priced": 0},
-                                            "surface_lot": {"listed": 55, "priced": 55, "not_priced": 0}}
+                                            "surface_lot": {"listed": 58, "priced": 58, "not_priced": 0}}
     # the assumption rates (fallback transparency; counted from the hand-written pins below as well): no row rests on P3 any more,
     # P4 29 of 91, P5 27, P6 7 (every tiered row), P7 5, P8 18 (every row with a priced duration schedule; the three lots of zone Ia
     # left it with ruling R-B-2: they carry the plain rate and max_stay_min 180), P10 8 (Forschungsflughafen, Suedkopf-Center,
     # the five Broetchentaste
     # lots of Helmstedt and Salzgitter and the Buechereivorplatz that takes their product), P11 4, P12 on none (withdrawn, spec
-    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 48 of 91 on at least one assumption and 39 of 91
-    # on P4 or P5 (both below the 75 % warning threshold now that 29 free lots rest on no assumption), 7 rows in the tiered form,
-    # 18 in the banded form and 29 with the free schedule, 12 monthly products at a garage and 3 at a lot
+    # Amendment I5a), P13 15 and P14 2 (the imputed lot tariffs); the union rates 48 of 94 on at least one assumption and 39 of 94
+    # on P4 or P5 (both below the 75 % warning threshold now that 32 free lots rest on no assumption), 7 rows in the tiered form,
+    # 18 in the banded form and 32 with the free schedule, 12 monthly products at a garage and 3 at a lot
     assert coverage["priced_by_assumption"] == {"P10": 8, "P11": 4, "P13": 15, "P14": 2, "P4": 29, "P5": 27, "P6": 7, "P7": 5,
                                                 "P8": 18}
     # spec Amendment F: 12 published monthly products at a garage (the nine of Amendment D2, the Braunschweig Steinstrasse and
@@ -1540,7 +1553,7 @@ def test_the_committed_coverage_is_the_one_the_task_reports():
     # Braunschweig, 5 in Wolfsburg; P13 changes no union rate; a surface lot never gets one)
     assert (coverage["with_monthly_product"], coverage["with_monthly_imputed"]) == (12, 15)
     assert (coverage["priced_with_assumption"], coverage["priced_with_p4_or_p5"], coverage["priced_tiered"],
-            coverage["priced_banded"], coverage["priced_free"]) == (48, 39, 7, 18, 29)
+            coverage["priced_banded"], coverage["priced_free"]) == (48, 39, 7, 18, 32)
     # the monthly products of the garages and, apart, those of the three decision-A lots (ruling R-4j-6: the commuter product of the
     # zone that the lot is too; a garage count that included them would blur the 12 published products of spec Amendment F)
     assert coverage["lots_with_monthly_product"] == 3
@@ -1713,8 +1726,8 @@ def test_no_garage_is_left_unpriced_the_reason_vocabulary_stays_and_the_forms_ar
     assert bool(garages["priced"].all())
     # bands: the 10 banded garages and the 11 banded lots (Lessingtheater, Schlosswall, the three Broetchentaste lots of Helmstedt,
     # the Konrad-Adenauer-Strasse, the Rathausvorplatz, the Buechereivorplatz and the three lots with the bands of the maximum stay
-    # of zone Ia) and the 29 free lots; tiers: the 7 tiered garages
-    assert garages["tariff_duration_bands"].notna().sum() == 47 and garages["tariff_tiers"].notna().sum() == 7
+    # of zone Ia) and the 32 free lots; tiers: the 7 tiered garages
+    assert garages["tariff_duration_bands"].notna().sum() == 50 and garages["tariff_tiers"].notna().sum() == 7
 
 
 def test_the_four_garages_without_coordinates_are_listed_at_the_main_points_of_the_supplement():
@@ -1844,10 +1857,13 @@ def test_every_committed_garage_cites_its_packages_and_a_source_and_every_assump
     regional = REGIONAL_PACKAGE_SHA256
     both, three = f"{regional};{SUPPLEMENT_PACKAGE_SHA256}", f"{regional};{SUPPLEMENT_PACKAGE_SHA256};{FOLLOWUP_PACKAGE_SHA256}"
     lots = LARGE_LOT_PACKAGE_SHA256  # a large surface lot (spec Amendment I) cites the research package alone
-    assert set(garages["package_sha256"]) == {regional, both, three, lots}
+    # ... and a free lot on archived pages (spec v3 B4) cites the package of its pages after it
+    lots_on_pages = f"{lots};{RESTLUECKEN_PACKAGE_SHA256}"
+    assert set(garages["package_sha256"]) == {regional, both, three, lots, lots_on_pages}
     assert sorted(garages.index[garages["package_sha256"] == both]) == sorted(TOUCHED_BY_SUPPLEMENT_ONLY)
     assert sorted(garages.index[garages["package_sha256"] == three]) == sorted(TOUCHED_BY_BOTH)
-    assert sorted(garages.index[garages["package_sha256"] == lots]) == sorted(PRICED_LOTS)
+    assert sorted(garages.index[garages["package_sha256"] == lots_on_pages]) == sorted(FREE_LOTS_ON_ARCHIVED_PAGES)
+    assert sorted(garages.index[garages["package_sha256"] == lots]) == sorted(set(PRICED_LOTS) - set(FREE_LOTS_ON_ARCHIVED_PAGES))
     assert (garages["package_sha256"] == regional).sum() == 36 - 10  # the other 26 garages cite the regional package only
     for column in ("source_url", "geometry_source_url"):
         assert garages[column].str.startswith("https://").all(), column
@@ -1945,7 +1961,7 @@ def test_the_committed_qa_table_is_pinned_in_the_record_ascii_and_documents_ever
 def test_the_local_garage_dataset_is_ascii_documented_and_every_row_carries_a_tariff():
     assert _garages_path().read_bytes().isascii()
     document = json.loads(_garages_path().read_text(encoding="utf-8"))
-    assert document["type"] == "FeatureCollection" and len(document["features"]) == 91
+    assert document["type"] == "FeatureCollection" and len(document["features"]) == 94
     assert "ODbL 1.0" in document["license"] and "OpenStreetMap" in document["attribution"]
     assert "Parkhaus_Ergaenzungen_2026-10-07.zip" in document["attribution"] and "Parkhaus_Nachrecherche_2026-10-07.zip" in (
         document["attribution"])
@@ -1961,7 +1977,7 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     garages = pg.load_garages(_garages_path())
     qa = pq.load_garage_qa(GARAGES_QA_PATH)
     pq.validate_garage_qa(qa, garages, pz.load_tariffs(TARIFFS_PATH))
-    assert qa["record_type"].value_counts().to_dict() == {"garage": 91, "monthly_product": 49, "candidate": 105}
+    assert qa["record_type"].value_counts().to_dict() == {"garage": 94, "monthly_product": 49, "candidate": 102}
     assert len(qa) == 245
     coverage = pq.qa_coverage(qa)
     # 23 monthly or 30-day products: 11 used (nine at a garage, the zone Ib ticket and the TU member ticket), 12 recorded and
@@ -1984,16 +2000,18 @@ def test_the_committed_qa_table_accounts_for_every_garage_product_and_candidate(
     # the candidates that are no row of the dataset (counts of package or directory entries, with the reason): the four
     # garages without coordinates are garages now, only the Clausthal-Zellerfeld garage has none; the airport short-stay car park
     # (customer regime), the two lots of long-term renters and the Seesen garage stay as before; since spec Amendment I every
-    # record of the large-lot research package that is no option is ONE candidate row with its reason (97 records = 152 less the
-    # 55 options, and the Theater's disabled-parking point of the Wolfsburg layer, a subpoint of a site, as an alias): 48 without
+    # record of the large-lot research package that is no option is ONE candidate row with its reason (94 records = 152 less the
+    # 58 options, and the Theater's disabled-parking point of the Wolfsburg layer, a subpoint of a site, as an alias): 46 without
     # evidenced public access, 23 below the 50 spaces, 9 unconfirmed, 6 no single surface lot, 5 without a capacity (three records
-    # of the package and the two ParkGO car parks of the directory), 3 Wolfsburg lots that are free only on a per-site source that
-    # is not archived, 2 mixed Peine sites, 2 closed and 2 aliases; the ParkGO and BgA candidates of rulings R-E1 and R-4b-9 are
-    # sites of the package now (spec I1, owner decision A) and no candidate row of their own
-    assert coverage["candidates"] == 105 and coverage["candidates_by_reason"] == {
-        "customer_regime": 1, "dauerparker_only": 2, "lot_access_not_public": 48, "lot_alias": 2, "lot_below_threshold": 23,
-        "lot_capacity_unknown": 5, "lot_free_evidence_missing": 3, "lot_mixed_tariff_unseparated": 2, "lot_not_open": 2,
-        "lot_not_surface_lot": 6, "lot_unconfirmed_candidate": 9, "no_coordinates": 1, "outside_source_list": 1}
+    # of the package and the two ParkGO car parks of the directory), 1 Wolfsburg lot (VW-Bad) that is free only on a per-site source
+    # that is not archived, 1 Wolfsburg lot (Arena P2) that the owner decides free outside match days but to which the package
+    # gives no position (spec v3 B4), 2 mixed Peine sites, 2 closed and 2 aliases; the ParkGO and BgA candidates of rulings R-E1
+    # and R-4b-9 are sites of the package now (spec I1, owner decision A) and no candidate row of their own
+    assert coverage["candidates"] == 102 and coverage["candidates_by_reason"] == {
+        "customer_regime": 1, "dauerparker_only": 2, "lot_access_not_public": 46, "lot_alias": 2, "lot_below_threshold": 23,
+        "lot_capacity_unknown": 5, "lot_free_evidence_missing": 1, "lot_mixed_tariff_unseparated": 2, "lot_no_position": 1,
+        "lot_not_open": 2, "lot_not_surface_lot": 6, "lot_unconfirmed_candidate": 9, "no_coordinates": 1,
+        "outside_source_list": 1}
     rows = qa.set_index("record_id")
     # spec Amendment G: the Wolfsburg deck is a garage with its monthly product USED (the public-transport product stays
     # restricted) and no candidate any more; the two directory entries of the Braunschweig station lots are zones
@@ -2061,21 +2079,23 @@ def test_the_committed_files_are_reproduced_from_the_local_packages(garages_step
     followup = regional / step.sup.FOLLOWUP_FILE
     large = raw_sources / "municipal_2026-10-13" / step.ll.LOTS_FILE
     free_evidence = raw_sources / "municipal_2026-10-13" / "wob_free_lots_evidence"
+    free_evidence_zip = raw_sources / "municipal_2026-10-14" / step.ll.WOB_EVIDENCE_FILE
     monthly_directory = raw_sources / "municipal_2026-10-08"
     monthly, evidence = monthly_directory / step.bsm.PACKAGE_FILE, monthly_directory / step.bsm.EVIDENCE_DIRECTORY_NAME
-    if not all(path.is_file() for path in (regional / f"{PACKAGE}.zip", directory, supplement, followup, large, monthly)) \
-            or not evidence.is_dir():
+    if not all(path.is_file() for path in (regional / f"{PACKAGE}.zip", directory, supplement, followup, large, monthly,
+                                           free_evidence_zip)) or not evidence.is_dir():
         pytest.skip("the owner's packages and the city car-park directory are gitignored and absent here")
     import geopandas as gpd
 
     zones = gpd.read_file(parking_data_path("parking_zones_2026.geojson")).to_crs(METRIC_CRS)
     tariffs = pz.load_tariffs(TARIFFS_PATH)
     # the release command of the data record: the large-lot package at the threshold of 50 (the Wolfsburg car-park package of
-    # spec E14 is superseded for the rows), the folder of the archived free-lot evidence (it may hold no page: the lots are then
-    # QA rows)
+    # spec E14 is superseded for the rows), the folder of the archived free-lot evidence (it may hold no page) and the Restluecken
+    # package whose archived pages the three free Wolfsburg lots rest on (spec v3 B4; without it they are QA rows)
     inputs = step.load_garage_inputs(regional, supplement_path=supplement, followup_path=followup, zones=zones, tariffs=tariffs,
                                      bs_monthly_path=monthly, evidence_directory=evidence, large_lots_path=large,
-                                     lot_threshold=50, free_evidence_directory=free_evidence)
+                                     lot_threshold=50, free_evidence_directory=free_evidence,
+                                     free_evidence_zip=free_evidence_zip)
     frame = step.build_garages(inputs)
     rows = step.qa_rows(inputs, frame, step.load_directory(directory), tariffs)
     frame = step.apply_monthly_imputation(frame, rows)

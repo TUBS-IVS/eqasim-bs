@@ -44,7 +44,10 @@ full_cost_calculation_ready=false) are released only by the owner decisions of `
 package's field decision has the status the decision relied on. A row that a package touches cites its SHA-256 as well in
 ``package_sha256`` (regional, supplement, follow-up, ';'-separated; a large surface lot cites the large-lot package alone).
 Every surface lot is read by ``large_lots.py`` from the research package ``Grossparkplaetze_ZGB8_2026-10-12.zip``
-(``--large-lots-zip``, spec Amendment I; it needs ``--zones``, the committed zone polygons, and ``--tariffs``). The earlier
+(``--large-lots-zip``, spec Amendment I; it needs ``--zones``, the committed zone polygons, and ``--tariffs``); the free
+status of four of its Wolfsburg lots rests on archived pages that ``large_lots.load_package_free_evidence`` reads in place from the
+owner's ``Parkdaten_Restluecken_2026-10-14.zip`` (``--wob-evidence-zip``, spec v3 B4; every page against the package's own
+file manifest). The earlier
 owner package of the 24 Wolfsburg car parks, ``Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`` (spec E14), is SUPERSEDED and no
 code reads it any more (its reader was removed in Task 4l, issue #436; the history is in
 docs/codebase/notes/parking-wolfsburg-lots.md and the data record parking_garages_2026). A free period at the start of a stay
@@ -65,6 +68,8 @@ Usage (from the repository root)::
         [--large-lots-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/\
 Grossparkplaetze_ZGB8_2026-10-12.zip --lot-threshold 50 \
          --wob-free-evidence-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/wob_free_lots_evidence \
+         --wob-evidence-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/\
+Parkdaten_Restluecken_2026-10-14.zip \
          --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson] \
         [--bs-monthly-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/\
 Braunschweig_Monatstarife_2026-10-08.zip \
@@ -85,6 +90,8 @@ from urllib.parse import urlparse
 
 import geopandas as gpd
 import pandas as pd
+from pyproj import Transformer
+from shapely.geometry import Point
 
 import curation_common as cc
 import bs_monthly_products as bsm
@@ -188,6 +195,8 @@ ATTRIBUTION = (
     "Braunschweig garages after the operators' pages, with the Contipark configurator capture of the evidence directory "
     + bsm.EVIDENCE_DIRECTORY_NAME + ", SHA256SUMS SHA-256 " + bsm.EVIDENCE_SUMS_SHA256 + ") and large-lot research package "
     + ll.LOTS_FILE + " (SHA-256 " + ll.LOTS_SHA256 + "; the large public surface lots of the eight towns, spec Amendment I; "
+    "the free status of four Wolfsburg lots after the archived pages of the package " + ll.WOB_EVIDENCE_FILE + ", SHA-256 "
+    + ll.WOB_EVIDENCE_SHA256 + ", spec v3 B4; "
     "(c) OpenStreetMap contributors for the capacities, areas and positions taken from OpenStreetMap: the position of a lot is "
     "the research point of the package inside the parking area that geometry_source_url names, an OpenStreetMap object for most "
     "lots).")
@@ -305,7 +314,8 @@ QA_INTRO = (
     "the eight towns, which supersedes the Wolfsburg car-park package of 2026-10-07 for them) read under the size and access "
     "policy of spec Amendment I2 (ASSUMPTION L50: a public surface lot is an option from the capacity threshold of the run, 50 "
     "spaces for the release; the sensitivity runs at 30 and 100 spaces are written under other names), the archived evidence "
-    "pages of the free Wolfsburg lots (the folder wob_free_lots_evidence/ next to that package, spec Amendment I5a) and the "
+    "pages of the free Wolfsburg lots (the folder wob_free_lots_evidence/ next to that package, spec Amendment I5a, and the "
+    "package " + ll.WOB_EVIDENCE_FILE + " of 2026-10-14, SHA-256 " + ll.WOB_EVIDENCE_SHA256 + ", spec v3 B4) and the "
     "car-park directory of Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
     + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "), and, for the monthly products of the Braunschweig garages "
     "(spec Amendment F1), the owner's package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + ") with the Contipark "
@@ -441,6 +451,19 @@ def describe_rule(rule: dict) -> str:
 
 
 # ---------------------------------------------------------------- the package
+def _merge_evidence(*sources: dict) -> dict:
+    """The archived evidence pages of several sources in one dict; a page name that two sources hold is refused (a page is
+    evidence from one place only)."""
+    merged = {}
+    for source in sources:
+        twice = sorted(set(merged) & set(source))
+        if twice:
+            raise SystemExit(f"the archived evidence pages {twice} are held by two sources; a page is evidence from one place "
+                             "only")
+        merged.update(source)
+    return merged
+
+
 def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplement_path=None,
                         expected_supplement_sha256: Optional[str] = None, followup_path=None,
                         expected_followup_sha256: Optional[str] = None, zones=None,
@@ -448,7 +471,7 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
                         evidence_directory=None, expected_bs_monthly_sha256: Optional[str] = None,
                         expected_evidence_sums_sha256: Optional[str] = None, large_lots_path=None,
                         expected_large_lots_sha256: Optional[str] = None, lot_threshold: int = ll.DEFAULT_THRESHOLD,
-                        tariffs=None, free_evidence_directory=None) -> dict:
+                        tariffs=None, free_evidence_directory=None, free_evidence_zip=None) -> dict:
     """The verified garage layers, facility records, tariff rules and sources of the owner's package in ``directory``, and, where
     given, the supplement package (``supplement_path``, spec E12) and the follow-up package (``followup_path``, spec E13) merged
     into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to) and the
@@ -459,7 +482,8 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
     ``large_lots``: every record is an option or a QA row under the size and access policy at ``lot_threshold``; it needs the
     committed zone polygons ``zones`` (a GeoDataFrame in EPSG:25832 with ``zone_id``), the tariff table ``tariffs`` (a DataFrame
     of ``parking_tariffs_2026.csv``) and, for the free Wolfsburg lots, the folder ``free_evidence_directory`` with the archived
-    evidence pages). The earlier Wolfsburg car-park package (spec E14) is superseded and not read (Task 4l).
+    evidence pages and the Restluecken package ``free_evidence_zip`` whose pages are read in place). The earlier Wolfsburg
+    car-park package (spec E14) is superseded and not read (Task 4l).
 
     The regional package must exist as ``regional_zones.PACKAGE_FILE`` with exactly the pinned SHA-256 (or ``expected_sha256``,
     for a synthetic test package), else ``SystemExit``; so must the other zips. Returns {"file": {"file", "sha256",
@@ -499,7 +523,9 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
             raise SystemExit(f"the size threshold {lot_threshold} is none of the release value {ll.DEFAULT_THRESHOLD} and the "
                              f"sensitivities {list(ll.SENSITIVITY_THRESHOLDS)} (spec Amendment I2)")
         inputs["large"] = {"package": ll.load_package(large_lots_path, expected_large_lots_sha256), "threshold": lot_threshold,
-                           "zones": zones, "tariffs": tariffs, "evidence": ll.load_free_evidence(free_evidence_directory)}
+                           "zones": zones, "tariffs": tariffs,
+                           "evidence": _merge_evidence(ll.load_free_evidence(free_evidence_directory),
+                                                       ll.load_package_free_evidence(free_evidence_zip))}
     if (bs_monthly_path is None) != (evidence_directory is None):
         raise SystemExit("the Braunschweig monthly package (--bs-monthly-zip) and its evidence directory "
                          "(--contipark-evidence-dir) belong together: pass both or neither")
@@ -1839,7 +1865,7 @@ def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumpti
         notes.append(f"Tariff: the street product of the zone {spec['zone_product']} (spec Amendment I1"
                      + (", owner decision A" if spec.get("decision_a") else "")
                      + f"): {encoded['sentence']}. {lot['zone_sentence']}.")
-    elif "p14" in spec:
+    elif "p14" in spec or spec.get("evidence_pages"):
         notes.append("Tariff: " + encoded["sentence"] + ".")
     else:
         notes.append(f"Priced from the package components {', '.join(lot['tariff_rule_ids'])} (owner decision of spec "
@@ -1952,17 +1978,26 @@ def _zone_consistency_pass(options: dict, zones: gpd.GeoDataFrame, tariffs: pd.D
 
 
 def _free_evidence(key: str, evidence: dict) -> tuple:
-    """("ok", entry) where the free status of one of the Wolfsburg lots of ``WOB_FREE_LOT_EVIDENCE`` rests on an archived page that
-    holds the quotation, else ("missing", the sentence of what was searched or still needs archiving)."""
+    """("ok", [entries]) where the free status of one of the Wolfsburg lots of ``WOB_FREE_LOT_EVIDENCE`` rests on archived pages
+    that all hold their quotation (one entry per page, in the order of the specification), else ("missing", the sentence of
+    what was searched or still needs archiving): a lot without a named page, or a run that was given no archived evidence at all,
+    is "missing". A page that the specification names and a given archive does not hold is ``SystemExit`` (a renamed page or a
+    changed package must never turn into a silent QA row), and so is a page without its quotation."""
     wanted = specs.WOB_FREE_LOT_EVIDENCE[key]
-    if wanted.get("evidence") and wanted["evidence"] in evidence:
-        entry = evidence[wanted["evidence"]]
-        text = Path(entry["path"]).read_bytes().decode("utf-8", errors="replace")
-        if wanted["quotation"] in text:
-            return "ok", entry
-        raise SystemExit(f"the archived evidence {entry['path']} does not hold the quotation {wanted['quotation']!r} that the "
-                         f"free status of {key} rests on")
-    return "missing", wanted["not_found"]
+    pages = wanted.get("pages") or ()
+    if not pages or not evidence:
+        return "missing", wanted["not_found"]
+    absent = [file for file, _ in pages if file not in evidence]
+    if absent:
+        raise SystemExit(f"WOB_FREE_LOT_EVIDENCE names the page(s) {absent} for {key}, which the archived evidence does not hold "
+                         f"({sorted(evidence)}): a renamed page or a changed package")
+    entries = []
+    for file, quotation in pages:
+        if quotation not in ll.evidence_text(evidence[file]):
+            raise SystemExit(f"the archived evidence {file} does not hold the quotation {quotation!r} that the free status of "
+                             f"{key} rests on")
+        entries.append(evidence[file])
+    return "ok", entries
 
 
 def _qa_candidate(record: dict, reason: str, threshold: int, detail: str = "") -> dict:
@@ -2008,7 +2043,8 @@ def build_large_lots(inputs: dict) -> dict:
         reason, detail = ll.decide(record, threshold, owner_public), specs.LARGE_LOT_QA_DETAILS.get(key, "")
         spec = specs.LARGE_LOT_SPECS.get(key)
         if reason is None and key not in package["points"].index:
-            reason, detail = "lot_no_position", "the package states no position of the site, and none is invented"
+            reason, detail = "lot_no_position", ("the package states no position of the site, and none is invented"
+                                                 + (f"; {detail}" if detail else ""))
         if reason is None and key in specs.WOB_FREE_LOT_EVIDENCE:
             state, text = _free_evidence(key, evidence)
             if state == "missing":
@@ -2043,6 +2079,7 @@ def build_large_lots(inputs: dict) -> dict:
                 reason, detail = "lot_tariff_not_expressible", f"the named error: {error}"
         if reason is not None:
             qa.append(_qa_candidate(record, reason, threshold, detail))
+    _log_owner_free_lots(options, qa, evidence)
     imputed_rows = _impute_p14(inputs, options, pending, qa, zones)
     options.update(imputed_rows)
     for facility_id, row in _subpoint_rows(package, threshold):
@@ -2066,6 +2103,22 @@ def build_large_lots(inputs: dict) -> dict:
             "zone_consistency": zone_consistency}
 
 
+def _log_owner_free_lots(options: dict, qa: list, evidence: dict) -> None:
+    """Fallback transparency for the lots of ``WOB_FREE_LOT_EVIDENCE``: how many became free options on their archived pages and
+    which stayed QA rows with their reason. With archived evidence given and not one lot released, the pages are probably not read
+    (a format or name mismatch): a warning, never silence."""
+    owner = list(specs.WOB_FREE_LOT_EVIDENCE)
+    released = [key for key in owner if key in options]
+    reasons = {entry["record_id"]: entry["reason"] for entry in qa}
+    stayed = {key: reasons.get(LARGE_LOT_QA_PREFIX + large_lot_garage_id(key)[len(LARGE_LOT_ID_PREFIX):], "unknown")
+              for key in owner if key not in options}
+    print(f"[large lots] owner-decided free lots (spec I5a, v3 B4): free options on archived pages {len(released)}/{len(owner)} "
+          f"({100.0 * len(released) / len(owner):.1f} %), QA rows {len(stayed)} {stayed}")
+    if evidence and not released:
+        print("[large lots] WARNING: archived evidence was given but no owner-decided free lot was released; the pages are "
+              "probably not matched to the lots (check WOB_FREE_LOT_EVIDENCE against the evidence file names)")
+
+
 def _large_qa_note(row: dict, info: dict) -> str:
     """The note of the QA garage row of a large lot: the tariff in words with its assumptions and the zone consistency verdict."""
     lot = info["_lot"]
@@ -2078,23 +2131,56 @@ def _large_qa_note(row: dict, info: dict) -> str:
     return _lot_ascii(note)
 
 
+TO_METRIC = Transformer.from_crs("EPSG:4326", cc.METRIC_CRS, always_xy=True)
+
+
+def _evidence_page_sentence(entry: dict, quotation: str, lot_point) -> str:
+    """One archived page in the notes of a free lot: its file with URL, retrieval date and SHA-256 (and, for a page of a package,
+    the package with its SHA-256), what it is, the quotation the free status rests on and, where the source states the page's own
+    point, its distance in m (EPSG:25832) to the research point of the lot with the polygon match the source states (a plausibility
+    figure of the identification of the lot with the page, never a match)."""
+    sentence = f"{entry['file']} ({entry['url']}, retrieved {entry['retrieved']}, SHA-256 {entry['sha256']}"
+    if entry.get("package_sha256"):
+        sentence += f", member of {entry['package_file']} with the SHA-256 {entry['package_sha256']}"
+    sentence += f"): {entry['statement']}; the page states '{quotation}'"
+    point = entry.get("source_point_wgs84")
+    if point:
+        x, y = TO_METRIC.transform(point["longitude"], point["latitude"])
+        sentence += (f"; the point of the page lies {Point(x, y).distance(lot_point):.0f} m from the research point of the lot"
+                     f" (polygon match {entry.get('polygon_match') or 'not stated'})")
+    return sentence
+
+
 def _archived_free_row(inputs: dict, key: str) -> dict:
-    """The row of one of the free Wolfsburg lots of spec Amendment I5a on its archived evidence page: the free schedule
-    ``0- free`` (the page states the lot free; no assumption), the page as the source, the owner decision that the lot is general
-    public named in the notes."""
-    state, entry = _free_evidence(key, inputs["large"]["evidence"])
+    """The row of one of the free Wolfsburg lots of spec Amendment I5a and spec v3 B4 on its archived evidence pages: the free
+    schedule ``0- free`` (the pages state the lot free; no assumption id), every page as a source (the first page is the
+    ``source_url``), the owner decision that the lot is general public named in the notes together with the remark on its position
+    and the condition of the specification that is not modelled (the Arena: match days). The lot carries no maximum stay: only
+    its own evidence could state one, and a free lot does not inherit the product of a tariff zone around it. The row cites the
+    package of the pages in ``package_sha256`` next to the large-lot package."""
+    state, entries = _free_evidence(key, inputs["large"]["evidence"])
     if state != "ok":
         raise SystemExit(f"large lot {key}: no archived evidence for its free status")
-    encoded = _free_encoding([f"evidence:{entry['file']}"], [], "free of charge for every stay (the free schedule 0- free, the "
-                                                                "fee window 0-24 h is formal)")
-    lot = {"encoded": encoded, "rules": {}, "used": [], "zone_sentence": None, "verdicts": [],
-           "tariff_rule_ids": [f"evidence:{entry['file']}"]}
-    spec = {"comment": f"free status and public access by owner decision (spec Amendment I5a, which withdraws ASSUMPTION "
-                       f"P12) on the archived evidence page {entry['file']} ({entry['url']}, retrieved "
-                       f"{entry['retrieved']}, SHA-256 "
-                       f"{entry['sha256']}): {entry['statement']}"}
+    wanted = specs.WOB_FREE_LOT_EVIDENCE[key]
+    quotations = dict(wanted["pages"])
+    lot_point = inputs["large"]["package"]["points"].loc[key, "geometry"]
+    rule_ids = [f"evidence:{entry['file']}" for entry in entries]
+    encoded = _free_encoding(rule_ids, [], "free of charge for every stay (the free schedule 0- free, the fee window 0-24 h is "
+                                           "formal)")
+    lot = {"encoded": encoded, "rules": {}, "used": [], "zone_sentence": None, "verdicts": [], "tariff_rule_ids": rule_ids}
+    pages = "; ".join(_evidence_page_sentence(entry, quotations[entry["file"]], lot_point) for entry in entries)
+    comment = (f"free status and public access by owner decision (spec Amendment I5a, which withdraws the municipal free "
+               f"default) on the archived evidence page{'s' if len(entries) > 1 else ''} {pages}. The lot carries no maximum "
+               "stay: its own evidence states none, and a free lot does not inherit the product of a tariff zone around it")
+    for extra in ("position", "condition"):
+        if wanted.get(extra):
+            comment += ". " + wanted[extra]
+    spec = {"comment": comment, "evidence_pages": True}
     row = _large_lot_row(inputs, key, spec, lot)
-    row["source_url"], row["source_date"] = entry["url"], entry["retrieved"]
+    row["source_url"], row["source_date"] = entries[0]["url"], entries[0]["retrieved"]
+    package_hashes = [row["package_sha256"]] + sorted({entry["package_sha256"] for entry in entries
+                                                       if entry.get("package_sha256")})
+    row["package_sha256"] = ";".join(package_hashes)
     row["_lot"], row["_spec"] = lot, spec
     return row
 
@@ -2742,6 +2828,10 @@ def main(argv=None) -> int:
     parser.add_argument("--wob-free-evidence-dir", help="the folder wob_free_lots_evidence with the archived evidence pages and "
                                                         "their MANIFEST.md (spec Amendment I5a); without it the free Wolfsburg "
                                                         "lots are QA rows")
+    parser.add_argument("--wob-evidence-zip", help="the owner's package Parkdaten_Restluecken_2026-10-14.zip (spec v3 B4): its "
+                                                   "archived pages evidence/wob_belege/ are read in place, each against the "
+                                                   "package's file_manifest.json; without it the owner-decided free Wolfsburg "
+                                                   "lots are QA rows")
     parser.add_argument("--bs-monthly-zip", help="the owner's Braunschweig monthly package "
                                                  "Braunschweig_Monatstarife_2026-10-08.zip "
                                                  "(spec Amendment F1; needs --contipark-evidence-dir; required where the monthly "
@@ -2763,7 +2853,7 @@ def main(argv=None) -> int:
                                 zones=zones, bs_monthly_path=args.bs_monthly_zip,
                                 evidence_directory=args.contipark_evidence_dir, large_lots_path=args.large_lots_zip,
                                 lot_threshold=args.lot_threshold, tariffs=tariffs,
-                                free_evidence_directory=args.wob_free_evidence_dir)
+                                free_evidence_directory=args.wob_free_evidence_dir, free_evidence_zip=args.wob_evidence_zip)
     frame = build_garages(inputs)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
