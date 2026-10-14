@@ -3,8 +3,10 @@
 ``parking_garage_decay_m`` and ``parking_garage_decay_commute_m`` are release values, not free run parameters: they equal the
 ``decay_length_m`` and the ``decay_commute_length_m`` of the committed calibration table
 ``parking_garage_decay_calibration_2026.csv`` (written by ``scripts/parking/calibrate_garage_decay.py``).
-The table is committed (the calibration of the 1 % reference plans of 2026-10-08, issue #436) and the value equals
-it. The 0 branch below remains for a checkout without the table: the value must
+The table is committed (the calibration of the 25 % reference plans on the option set of the garage dataset named in its
+header, spec Amendment I6, issue #436) and the value equals it. The table belongs to that garage dataset exactly: the
+SHA-256 in its header must be the pin of the data record ``parking_garages_2026`` (a test below), so a regenerated
+dataset with a stale table fails here. The 0 branch below remains for a checkout without the table: the value must
 then be 0 (the garage options are off, E6); with the table the value must equal it, and the first of these two tests
 that fits the repository state decides. Writing the table without setting the config value, or setting a value without
 the table, fails here.
@@ -12,6 +14,7 @@ the table, fails here.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -26,6 +29,7 @@ CONFIGS = {"base": REPO / "configs" / "base_bs.yml",
            "popsim_mid": REPO / "configs" / "fixtures" / "config_popsim_mid_braunschweig.yml",
            "popsim_open": REPO / "configs" / "fixtures" / "config_popsim_open_braunschweig.yml"}
 SCRIPT = REPO / "scripts" / "parking" / "calibrate_garage_decay.py"
+GARAGE_RECORD = REPO / "docs" / "registry" / "data" / "parking_garages_2026.yml"
 
 
 def _config(name: str) -> dict:
@@ -57,6 +61,26 @@ def test_the_decay_lengths_equal_the_calibration_table_or_are_zero_while_the_tab
         assert value == 0, (f"{name}: {TABLE.name} does not exist, so {key} must be 0 (garage options "
                             "off); a value needs its calibration table")
 
+
+
+def _table_input_hash(name: str) -> str:
+    """The SHA-256 that the header of the committed table records for an input (the line ``#   <name>: <path> sha256=<hash>``)."""
+    found = re.findall(rf"^#\s+{re.escape(name)}: \S+ sha256=([0-9a-f]{{64}})", TABLE.read_text(encoding="utf-8"), flags=re.M)
+    assert len(found) == 1, f"{TABLE.name}: expected exactly one header line for the input {name!r}, found {len(found)}"
+    return found[0]
+
+
+def test_the_committed_table_belongs_to_the_garage_dataset_pinned_in_its_data_record():
+    # The decay lengths are calibrated on ONE option set: another garage dataset (a regenerated release, a lot that becomes
+    # a free option) needs a new calibration. The data record owns the pin of the restricted dataset (storage.notes, once),
+    # so the test runs without the dataset itself; a stale table fails here instead of silently pricing another option set.
+    if not TABLE.is_file():
+        pytest.skip("the calibration table does not exist yet")
+    record = yaml.safe_load(GARAGE_RECORD.read_text(encoding="utf-8"))
+    pinned = " ".join(record["storage"]["notes"].split())
+    assert _table_input_hash("garages") in pinned, (
+        f"{TABLE.name} was calibrated on a garage dataset that is not the pin of {GARAGE_RECORD.name}: "
+        "rerun scripts/parking/calibrate_garage_decay.py on the current dataset, or restore the pin")
 
 
 @pytest.mark.parametrize("name", CONFIGS)
