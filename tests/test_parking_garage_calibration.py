@@ -661,6 +661,19 @@ def test_the_option_reach_counts_the_free_options_within_the_maximum_distance_of
     assert none_free.with_paid_option_in_range == 3
     empty = cal.option_reach(np.zeros((3, 0)), np.zeros(0, dtype=bool), 1000.0)
     assert (empty.activities, empty.with_option_in_range, empty.free_options_in_range) == (3, 0, 0)
+    assert reach.free_option_ids == () and empty.free_option_ids == ()   # no ids given: none named
+
+
+def test_the_option_reach_names_the_free_options_in_range_sorted_by_id(cal):
+    # two paid options (columns 0 and 2) and two free ones (columns 1 and 3), each free option within reach of one activity
+    distances = np.array([[1500.0, 400.0, 300.0, 1500.0], [1500.0, 1500.0, 1500.0, 700.0]])
+    paid = np.array([True, False, True, False])
+    reach = cal.option_reach(distances, paid, 1000.0, option_ids=["p1", "f_b", "p2", "f_a"])
+    assert reach.free_options_in_range == 2 and reach.free_option_ids == ("f_a", "f_b")
+    out_of_range = cal.option_reach(distances + 2000.0, paid, 1000.0, option_ids=["p1", "f_b", "p2", "f_a"])
+    assert out_of_range.free_options_in_range == 0 and out_of_range.free_option_ids == ()
+    with pytest.raises(ValueError, match="option ids"):
+        cal.option_reach(distances, paid, 1000.0, option_ids=["only_one"])
 
 
 def _option_set(inputs, tmp_path, rows, points, kinds=None, name="options.geojson"):
@@ -704,6 +717,8 @@ def test_a_free_option_changes_lambda_but_not_lambda_c_nor_the_wolfsburg_check(c
     assert result["wolfsburg_mean"] == plain["wolfsburg_mean"]
     # the free lot lies within D_max of every universe and is counted per universe (fallback transparency)
     assert (result["free_options_used"], result["priced_options_used"]) == (1, 3)
+    assert result["universe_free_option_ids"] == result["commuter_free_option_ids"] == ("fx_g17_free",)
+    assert result["wolfsburg_free_option_ids"] == ("fx_g17_free",)
     assert (result["universe_free_options_in_range"], result["universe_activities_with_free_option"]) == (1, 4)
     assert (result["commuter_free_options_in_range"], result["commuter_activities_with_free_option"]) == (1, 2)
     assert (result["wolfsburg_free_options_in_range"], result["wolfsburg_activities_with_free_option"]) == (1, 2)
@@ -788,10 +803,14 @@ def test_the_table_header_and_rows_say_which_measure_each_target_uses_and_count_
     # the free options within D_max are stated per universe
     universe_line = next(line for line in header if line.startswith("# Universe of lambda:"))
     commuter_line = next(line for line in header if line.startswith("# Commuter universe:"))
-    assert "Free options within 1000 m of this universe: 1 distinct, reaching 4 of its 4 activities" in universe_line
-    assert "Free options within 1000 m of this universe: 1 distinct, reaching 2 of its 2 activities" in commuter_line
+    assert "Free options within 1000 m of this universe: 1 distinct (fx_g17_free), reaching 4 of its 4 activities" in universe_line
+    assert "Free options within 1000 m of this universe: 1 distinct (fx_g17_free), reaching 2 of its 2 activities" in commuter_line
+    # the composition of every universe by purpose is stated (a purpose that does not belong there would be visible)
+    assert "By purpose: leisure 1, other 1, shop 2." in universe_line
+    assert "By purpose: education 1, work 1." in commuter_line
     assert "2 of 2 activities with at least one PAID option within 1000 m" in commuter_line
-    assert "reaching 2 of its 2 activities" in wolfsburg and "1 distinct" in wolfsburg
+    assert "reaching 2 of its 2 activities" in wolfsburg and "1 distinct (fx_g17_free)" in wolfsburg
+    assert "By purpose: education 1, work 1." in wolfsburg
     option_line = next(line for line in header if line.startswith("# Option set:"))
     assert "2 garage, 1 surface_lot" in option_line and "1 of the 3 options is free" in option_line
     values = cal.read_calibration_table(out)
@@ -829,6 +848,35 @@ def test_a_universe_that_the_options_barely_reach_is_warned_about_and_a_covered_
     warned = [message for message in caplog.messages if "within reach" in message]
     assert len(warned) == 1 and "Wolfsburg" in warned[0] and "0/2" in warned[0] and "50 %" in warned[0]
     assert result["wolfsburg_with_paid_option_in_range"] == 0
+
+
+# ------------------------------------------------------- freight agents are no residents (the person-travel convention)
+
+
+FREIGHT_PERSON = (
+    '<person id="freight_internal_1"><plan selected="yes">'
+    '<activity type="freight_start" x="603100" y="5790100" end_time="08:00:00"/><leg mode="truck"/>'
+    '<activity type="freight_end" x="603500" y="5790100"/></plan></person>')
+
+
+def test_freight_agents_are_left_out_of_the_universes_and_counted_in_the_header(cal, inputs, tmp_path, caplog):
+    # braunschweig.analysis.freight_filter: freight agents (ids freight_*) are trip creators, not residents, and the SrV
+    # shares are about residents. A freight stop inside Ia or Ib would be a destination "other than home, work and education"
+    # of the E5 universe (two extra activities here: 4 -> 6) without the exclusion.
+    plans = tmp_path / "plans_with_freight.xml"
+    fixture = (FIXTURES / "calibration_plans_fixture.xml").read_text(encoding="utf-8")
+    plans.write_text(fixture.replace("</population>", FREIGHT_PERSON + "</population>"), encoding="utf-8")
+    plain = cal.run(out_path=None, generated_on="2026-10-14", **inputs)
+    with caplog.at_level("INFO"):
+        result = cal.run(out_path=None, generated_on="2026-10-14", **{**inputs, "plans": plans})
+    assert result["universe_activities"] == plain["universe_activities"] == 4
+    assert result["freight_agents_excluded"] == 1 and plain["freight_agents_excluded"] == 0
+    assert result["persons"] == plain["persons"] == 14      # the 14 persons of the fixture, the freight agent not counted
+    assert result["decay_length_m"] == plain["decay_length_m"]
+    assert "(14 persons; 1 freight agents with ids freight_* excluded" in result["text"]
+    assert "(14 persons; 0 freight agents with ids freight_* excluded" in plain["text"]
+    assert any("excluded 2 freight agents" in message for message in caplog.messages)   # the shared filter logs its rows
+    assert any("1 freight agents" in message and "14 persons" in message for message in caplog.messages)
 
 
 # ---------------------------------------------------------------- the sensitivities of the option set (I6, no release value)
