@@ -452,9 +452,13 @@ def _street_product(tariff: ZoneTariff, chargeable_s: int) -> tuple[int, str] | 
 def street_feasible(tariff: ZoneTariff, chargeable_s: int) -> bool:
     """Whether the street can serve a stay of ``chargeable_s`` chargeable seconds in the STREET fee window (spec v3 A1,
     ASSUMPTION M3): True without a maximum stay, within it (chargeable minutes, seconds rounded up, as the long-stay rule
-    M1 compares them) and, above it, where the zone sells a long-stay product. False means the street is no option of the
-    stay. It is exactly the condition under which ``_street_product`` returns a product: a stay within the free threshold
-    is served first, as there. Pure."""
+    M1 compares them) and, above it, where the zone sells a long-stay product. False means the street and long-stay
+    product cannot serve the stay. It is exactly the condition under which ``_street_product`` returns a product: a stay
+    within the free threshold is served first, as there. It covers the street and long-stay product ONLY: the zone
+    commuter product (work and education) keeps the street side of such a stay alive although this function returns
+    False, so the weighting of the options must use ``GarageStayPrice.street_feasible`` of
+    ``parking_cost_with_garages_detail``, never this function.
+    Pure."""
     chargeable_min = _ceil_div(_time_s("chargeable_s", chargeable_s), SECONDS_PER_MINUTE)
     if tariff.free_if_stay_at_most_min is not None and chargeable_min <= tariff.free_if_stay_at_most_min:
         return True
@@ -526,7 +530,11 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
           window, without free threshold and maximum stay; 0 ct is ``FREE_WITHIN_LIMIT``, else ``PAID_GARAGE``;
        c. the commuter product ``commuter_day_cents`` for work and education (P2), ``PAID_COMMUTER``.
 
-    A schema-1 tariff (no garage, no commuter product) has only the street product, so it prices exactly as in v1.
+    A schema-1 tariff (no garage, no commuter product) has only the street product, so it prices exactly as in v1. Spec v3
+    A1: a street zone with a maximum stay and nothing to sell above it (no long-stay product, no zone-level garage, no
+    commuter product for the purpose) prices a longer stay as the street's metered cents, the maximum ignored, with outcome
+    ``NO_FEASIBLE_OPTION``. This function has no counter: callers count the outcomes by name (the garage-option path counts
+    it in ``GarageOptionCounters.no_feasible_option``).
     Raises ``ValueError`` for a departure before the arrival or negative times and ``TypeError`` for
     non-integer times or non-bool flags (a text "false" must never count as true). Pure function.
     """
@@ -848,7 +856,8 @@ class GarageOptionCounters:
     options whose stay was longer than a closed duration schedule and was priced by repeating it per started 24 h (P9);
     ``options_infeasible`` the garage options of an eligible stay left out because the elapsed stay exceeds their maximum
     stay (spec v3 A1); ``no_feasible_option`` the stays without any feasible option (outcome ``NO_FEASIBLE_OPTION``, priced
-    as the street), the signal that the option set is incomplete.
+    as the street), with or without a garage in range, the signal that the option set is incomplete; its rate is over the
+    ``eligible`` stays.
     """
 
     stays: int = 0
@@ -873,7 +882,7 @@ class GarageOptionCounters:
                 f"garage options priced {self.option_evaluations}, closed schedule repeated (P9) "
                 f"{rate(self.closed_schedule_repeats, self.option_evaluations)}; garage options over their maximum stay "
                 f"{rate(self.options_infeasible, self.options_infeasible + self.option_evaluations)}; no feasible option "
-                f"(NO_FEASIBLE_OPTION) {rate(self.no_feasible_option, self.with_garages_in_range)}")
+                f"(NO_FEASIBLE_OPTION) {rate(self.no_feasible_option, self.eligible)}")
 
 
 def _first_period_applies(garage: GarageTariff, arrival_s: int) -> bool:
@@ -1089,6 +1098,11 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
                        if product is not None]
     street = min(street_products, key=lambda product: product[0]) if street_products else None
     if not options:
+        if outcome == NO_FEASIBLE_OPTION and counters is not None:
+            # No garage in range and no street product either (a street zone with a maximum stay and nothing to sell
+            # above it): the stay is priced by parking_cost_cents as the street and counted here like the other
+            # NO_FEASIBLE_OPTION stays, so that the rate is not blind to the zones without any garage.
+            counters.no_feasible_option += 1
         return GarageStayPrice(cents, outcome, 0.0, None, street is not None, ())
     if counters is not None:
         counters.with_garages_in_range += 1

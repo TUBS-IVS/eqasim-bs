@@ -227,7 +227,8 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
 
 def test_outcomes_are_fourteen_constants_named_as_their_values_with_the_v2_products_appended():
     # Appended at the END, so the position of the ten v1 outcomes in this tuple stays as it was; PAID_EXPECTED (schema 3,
-    # the garage expectation) follows them and NO_FEASIBLE_OPTION (spec v3 A1) comes last. The Java ParkingOutcome enum has another order (NO_ZONE first), so the tuple
+    # the garage expectation) follows them and NO_FEASIBLE_OPTION (spec v3 A1) comes last. The Java ParkingOutcome enum
+    # has another order (NO_ZONE first), so the tuple
     # order is no contract with Java: consumers of the outcome report key the rows by outcome name.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
@@ -884,3 +885,20 @@ def test_street_feasible_is_exactly_the_condition_under_which_the_street_product
         for chargeable_min in (1, 30, 31, 179, 180, 181, 600):
             chargeable_s = chargeable_min * 60
             assert cost.street_feasible(zone, chargeable_s) == (cost._street_product(zone, chargeable_s) is not None)
+
+
+def test_a_stay_without_a_feasible_option_and_without_a_garage_in_range_is_counted_too():
+    # Zone maximum 180 min, no long-stay product, no zone-level garage, no garage in range: 300 min have no option at all.
+    zone = _tariff(max_stay_min=180)
+    counters = cost.GarageOptionCounters()
+    detail = _detail(zone, 300, [], counters=counters)
+    assert (detail.cents, detail.outcome, detail.street_feasible) == (900, cost.NO_FEASIBLE_OPTION, False)
+    assert counters.no_feasible_option == 1 and counters.eligible == 1 and counters.with_garages_in_range == 0
+    # the rate is over the eligible stays, so these stays are inside its denominator
+    assert "(NO_FEASIBLE_OPTION) 1/1 (100.0 %)" in counters.summary()
+    # a stay within the maximum is no such case; a zone whose garage family serves the stay is none either
+    assert _detail(zone, 150, [], counters=counters).outcome == cost.PAID_METERED
+    assert counters.no_feasible_option == 1 and counters.eligible == 2
+    family = _tariff(**_MAX_STAY_ZONE)
+    assert _detail(family, 300, [], counters=counters).outcome == cost.PAID_GARAGE
+    assert counters.no_feasible_option == 1
