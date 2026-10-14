@@ -281,11 +281,15 @@ def _check_tariff(tariff: ZoneTariff) -> None:
         fail(f"garage fee window [{tariff.garage_fee_start_s}, {tariff.garage_fee_end_s}) s must satisfy "
              f"0 <= garage_fee_start_s < garage_fee_end_s <= {SECONDS_PER_DAY}")
     # A long-stay product is sold only above a maximum stay. A stay above the maximum stay loses the street product
-    # (spec 3.2 rule 7, v2 lever 2), so it needs the long-stay product or a garage; the commuter product alone does
+    # (spec 3.2 rule 7, v2 lever 2). Spec v3 A1 (deliberate change of the v2 rule): a STREET zone may state a maximum stay
+    # without a long-stay product and without a garage core; its stays above the maximum are then served by the garage
+    # and lot options within reach or, where there are none, priced as the street and named NO_FEASIBLE_OPTION. A resident
+    # zone keeps the v2 rule (its maximum stay needs the long-stay product or a garage): the commuter product alone does
     # not suffice, because it serves work and education only.
     if tariff.long_stay_product_cents is not None and tariff.max_stay_min is None:
         fail("long_stay_product_cents needs max_stay_min: a long-stay product without a maximum stay is never sold")
-    if tariff.max_stay_min is not None and tariff.long_stay_product_cents is None and not tariff.has_garage:
+    if (tariff.zone_type != STREET_PAID and tariff.max_stay_min is not None and tariff.long_stay_product_cents is None
+            and not tariff.has_garage):
         fail("max_stay_min is set but neither long_stay_product_cents nor the garage core is: a stay above the "
              "maximum stay would have no product")
     for name in _REQUIRED_FIELDS[tariff.zone_type]:
@@ -418,6 +422,14 @@ def _metered_cents(chargeable_s: int, *, hourly_rate_cents: int, billing_unit_mi
     return cents
 
 
+def _street_metered_cents(tariff: ZoneTariff, chargeable_s: int) -> int:
+    """The street columns' metered price of ``chargeable_s`` chargeable seconds, the maximum stay and the free threshold
+    ignored: the price of a stay without a feasible option (``NO_FEASIBLE_OPTION``, spec v3 A1, ASSUMPTION M3)."""
+    return _metered_cents(chargeable_s, hourly_rate_cents=tariff.hourly_rate_cents,
+                          billing_unit_min=tariff.billing_unit_min, first_period_min=tariff.first_period_min,
+                          first_period_cents=tariff.first_period_cents, daily_cap_cents=tariff.daily_cap_cents)
+
+
 def _street_product(tariff: ZoneTariff, chargeable_s: int) -> tuple[int, str] | None:
     """Spec 3.2 rules 6 to 8 on the street columns (v1), or None where the stay may not use the street.
 
@@ -433,9 +445,7 @@ def _street_product(tariff: ZoneTariff, chargeable_s: int) -> tuple[int, str] | 
         if tariff.long_stay_product_cents is None:
             return None
         return tariff.long_stay_product_cents, PAID_LONG_STAY
-    cents = _metered_cents(chargeable_s, hourly_rate_cents=tariff.hourly_rate_cents,
-                           billing_unit_min=tariff.billing_unit_min, first_period_min=tariff.first_period_min,
-                           first_period_cents=tariff.first_period_cents, daily_cap_cents=tariff.daily_cap_cents)
+    cents = _street_metered_cents(tariff, chargeable_s)
     return cents, (FREE_WITHIN_LIMIT if cents == 0 else PAID_METERED)
 
 
@@ -548,10 +558,16 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         if purpose in CAMPUS_MEMBER_PURPOSES:
             return _cheapest(((tariff.member_day_cents, PAID_CAMPUS_MEMBER), _commuter_product(tariff, purpose)))
         return tariff.guest_day_cents, PAID_CAMPUS_GUEST
-    # Never empty: where the street product is unavailable, ZoneTariff guarantees the garage. A resident zone has no
-    # commuter product (ZoneTariff rejects it), so the commuter product competes on street_paid rows only.
-    return _cheapest((_street_product(tariff, chargeable_s), _garage_product(tariff, arrival_s, departure_s),
-                      _commuter_product(tariff, purpose)))
+    # A resident zone has no commuter product (ZoneTariff rejects it), so the commuter product competes on street_paid
+    # rows only.
+    products = (_street_product(tariff, chargeable_s), _garage_product(tariff, arrival_s, departure_s),
+                _commuter_product(tariff, purpose))
+    if all(product is None for product in products):
+        # Spec v3 A1 (M3): a street zone with a maximum stay but no long-stay product, no zone-level garage and no
+        # commuter product for the purpose has nothing to sell above the maximum: the stay is priced as the street at its
+        # metered price (the maximum ignored, so that the cost stays finite) and named.
+        return _street_metered_cents(tariff, chargeable_s), NO_FEASIBLE_OPTION
+    return _cheapest(products)
 
 
 # --------------------------------------------------------------------------------------------------- garage options
@@ -1096,12 +1112,7 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
             # ignored, so that the cost stays finite; the outcome and the counter name the case.
             if counters is not None:
                 counters.no_feasible_option += 1
-            metered_cents = _metered_cents(chargeable_s, hourly_rate_cents=tariff.hourly_rate_cents,
-                                           billing_unit_min=tariff.billing_unit_min,
-                                           first_period_min=tariff.first_period_min,
-                                           first_period_cents=tariff.first_period_cents,
-                                           daily_cap_cents=tariff.daily_cap_cents)
-            return GarageStayPrice(metered_cents, NO_FEASIBLE_OPTION, 0.0, None, False, ())
+            return GarageStayPrice(_street_metered_cents(tariff, chargeable_s), NO_FEASIBLE_OPTION, 0.0, None, False, ())
         # The street is the only option left: it is not an expectation over a mixture, so it keeps its own outcome.
         return GarageStayPrice(street[0], street[1], 0.0, None, True, ())
     weights, costs = ([1.0], [street[0]]) if street is not None else ([], [])

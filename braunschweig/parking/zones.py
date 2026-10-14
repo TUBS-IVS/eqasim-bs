@@ -503,7 +503,10 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
         if _is_set(row["long_stay_product_eur"]) and not _is_set(row["max_stay_min"]):
             problem("max_stay_min", "max_stay_min and long_stay_product_eur are set together or not at all: a "
                                     "long-stay product without a maximum stay is never sold")
-        if _is_set(row["max_stay_min"]) and not _is_set(row["long_stay_product_eur"]) and not has_garage:
+        # Spec v3 A1: a street_paid zone may state a maximum stay without either (its stays above the maximum are served by
+        # the garage and lot options or named NO_FEASIBLE_OPTION by the pricing); a resident zone keeps the v2 rule.
+        if (_is_set(row["max_stay_min"]) and not _is_set(row["long_stay_product_eur"]) and not has_garage
+                and zone_type != "street_paid"):
             problem("long_stay_product_eur", "max_stay_min is set but neither long_stay_product_eur nor the garage "
                                              "columns are: a stay above the maximum stay would have no product")
 

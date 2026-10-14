@@ -113,6 +113,24 @@ _GARAGE_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_mi
                                "garage_fee_end_h"), float("nan"))
 
 
+def test_a_street_zone_may_state_a_maximum_stay_without_a_long_stay_product_or_a_garage():
+    # Spec v3 A1 (deliberate change of the v2 rule): fx_bs_ia_v2 has a maximum stay (180 min), a zone-level garage
+    # family and no product; without the garage family a stay above the maximum has no street product and is named
+    # NO_FEASIBLE_OPTION by the pricing instead of being refused at load time.
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    changed = tariffs.copy()
+    for column, value in _GARAGE_EMPTY.items():
+        changed.loc[changed["zone_id"] == "fx_bs_ia_v2", column] = value
+    row = changed[changed["zone_id"] == "fx_bs_ia_v2"].iloc[0]
+    assert row["max_stay_min"] == 180 and pd.isna(row["long_stay_product_eur"])
+    pz.validate_tariffs(changed, allow_fixture_marker=True)
+    # a long-stay product without a maximum stay stays refused
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_bs_ib", "long_stay_product_eur"] = 9.0
+    with pytest.raises(ValueError, match="max_stay_min"):
+        pz.validate_tariffs(broken)
+
+
 @pytest.mark.parametrize("zone_id, changes, field", [
     # Spec amendment A6: the garage core (rate, unit, fee window) is all-or-none; the day cap and the first-period
     # pair are optional, but only with the core.
@@ -124,8 +142,6 @@ _GARAGE_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_mi
     ("fx_bs_ib_v2", {"garage_fee_start_h": 20.0, "garage_fee_end_h": 9.0}, "garage_fee_start_h"),
     ("fx_bs_ib_v2", {"garage_billing_unit_min": 0}, "garage_billing_unit_min"),
     ("fx_bs_ib_v2", {"garage_daily_cap_eur": 0.0}, "garage_daily_cap_eur"),
-    # A maximum stay without a long-stay product needs the garage: otherwise a longer stay would have no product.
-    ("fx_bs_ia_v2", _GARAGE_EMPTY, "long_stay_product_eur"),
     # The commuter product exists on street_paid and campus rows only (A4) and is never negative.
     ("fx_res_a", {"commuter_day_eur": 3.76}, "commuter_day_eur"),
     ("fx_bs_ib_v2", {"commuter_day_eur": -1.0}, "commuter_day_eur"),
@@ -138,7 +154,7 @@ _GARAGE_EMPTY = dict.fromkeys(("garage_hourly_rate_eur", "garage_billing_unit_mi
     ("fx_campus", {"resident_permits_valid": True}, "resident_permits_valid"),
 ], ids=["garage_core_without_unit", "garage_core_without_window_end", "garage_cap_without_core",
         "garage_first_period_unpaired", "garage_first_period_without_core", "garage_window_reversed",
-        "garage_unit_zero", "garage_cap_zero", "max_stay_without_any_long_stay_product", "commuter_in_resident_zone",
+        "garage_unit_zero", "garage_cap_zero", "commuter_in_resident_zone",
         "commuter_negative", "garage_on_campus", "search_time_negative", "permits_valid_on_campus"])
 def test_the_schema_2_columns_are_validated_per_row(zone_id, changes, field):
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
@@ -185,7 +201,8 @@ def test_cross_validate_rejects_missing_and_orphan_rows(tmp_path):
 def test_required_fields_per_type_are_enforced(tmp_path):
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
     broken = tariffs.copy()
-    broken.loc[broken["zone_id"] == "fx_bs_ia", "long_stay_product_eur"] = float("nan")
+    # A resident zone needs its long-stay product (or a garage); a street zone does not (spec v3 A1, see the next test).
+    broken.loc[broken["zone_id"] == "fx_res_a", "long_stay_product_eur"] = float("nan")
     with pytest.raises(ValueError, match="long_stay_product_eur"):
         pz.validate_tariffs(broken)
     broken = tariffs.copy()

@@ -262,9 +262,32 @@ def test_departure_before_arrival_raises():
         cost.chargeable_seconds(37860, 36000, 32400, 72000)
 
 
-def test_street_paid_with_max_stay_but_without_long_stay_product_is_rejected_at_construction():
+def test_street_paid_with_max_stay_but_without_long_stay_product_or_garage_is_a_valid_zone():
+    # Spec v3 A1 (deliberate change of the v2 rule): a street zone may state a maximum stay without selling a long-stay
+    # product and without a zone-level garage; a stay above the maximum then has no street product (street_feasible).
+    zone = _tariff(max_stay_min=180)
+    assert zone.long_stay_product_cents is None and not zone.has_garage
+    assert cost.street_feasible(zone, 180 * 60) and not cost.street_feasible(zone, 180 * 60 + 1)
+    # within the maximum the street meters as always: 180 min x 180 ct/h = 540 ct
+    assert cost.parking_cost_cents(zone, 36000, 36000 + 10800, **_SHOP) == (540, cost.PAID_METERED)
+    # above it no product exists: the stay is priced as the street's metered price with the maximum ignored and named
+    assert cost.parking_cost_cents(zone, 36000, 36000 + 10860, **_SHOP) == (543, cost.NO_FEASIBLE_OPTION)
+    assert cost.parking_cost_cents(zone, 36000, 36000 + 36000, **_SHOP) == (1800, cost.NO_FEASIBLE_OPTION)
+    # the early rules still precede it
+    assert cost.parking_cost_cents(zone, 36000, 72000, **{**_SHOP, "parking_free": True}) == (0, cost.EMPLOYER_FREE)
+    assert cost.parking_cost_cents(zone, 36000, 72000, **{**_SHOP, "purpose": "home"}) == (0, cost.HOME)
+    # a zone with a long-stay product (Ib) is unchanged: the stay buys it
+    with_product = _tariff(max_stay_min=180, long_stay_product_cents=900)
+    assert cost.parking_cost_cents(with_product, 36000, 36000 + 10860, **_SHOP) == (900, cost.PAID_LONG_STAY)
+    # the free threshold is served first, as before
+    free_first = _tariff(max_stay_min=180, free_if_stay_at_most_min=30)
+    assert cost.parking_cost_cents(free_first, 36000, 36000 + 1500, **_SHOP) == (0, cost.FREE_WITHIN_LIMIT)
+    # a resident zone keeps the rule: its maximum stay needs a long-stay product or a garage
     with pytest.raises(ValueError, match="long_stay_product_cents"):
-        _tariff(max_stay_min=180)
+        _tariff("resident_zone", long_stay_product_cents=None)
+    # and a long-stay product without a maximum stay is still never sold
+    with pytest.raises(ValueError, match="needs max_stay_min"):
+        _tariff(long_stay_product_cents=900)
 
 
 @pytest.mark.parametrize("base_type, overrides, message", [
