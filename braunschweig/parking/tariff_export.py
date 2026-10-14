@@ -599,6 +599,13 @@ def zone_to_json(zone: ZoneTariff) -> dict:
     """The zone entry of the model JSON: every ``ZoneTariff`` field except ``zone_id``, which is its key."""
     fields = asdict(zone)
     del fields["zone_id"]
+    # Spec v3 A5, interim until Task A6 exports the EV exemption: ``ev_free_minutes`` is not part of tariff model schema 5,
+    # whose bytes (and LF SHA-256 of the committed fixture model) are pinned in both repositories. It is omitted while no
+    # zone states it, so that every model written today is byte-identical; a zone WITH an exemption is refused rather than
+    # silently dropped (a model that loses the rule would price the stay in full without saying so).
+    if fields.pop("ev_free_minutes") is not None:
+        raise ValueError(f"zone {zone.zone_id!r}: ev_free_minutes is set but the tariff model schema 5 cannot carry it; "
+                         "the EV exemption export arrives with the schema bump of Task A6 (spec v3 A5)")
     return fields
 
 

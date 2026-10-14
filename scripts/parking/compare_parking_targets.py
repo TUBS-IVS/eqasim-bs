@@ -143,8 +143,9 @@ HOME_PURPOSE = cost.HOME_PURPOSE
 #: is paid too: the model prices that stay as the street at its metered cents, so it adds to the same upper bound.
 PAID_OUTCOMES = (cost.PAID_METERED, cost.PAID_LONG_STAY, cost.PAID_CAMPUS_MEMBER, cost.PAID_CAMPUS_GUEST, cost.PAID_GARAGE,
                  cost.PAID_COMMUTER, cost.PAID_EXPECTED, cost.NO_FEASIBLE_OPTION)
-#: Outcomes that cost nothing by their own rule (a PAID_* call that happens to cost 0 ct is counted as paid).
-FREE_OUTCOMES = (cost.EMPLOYER_FREE, cost.RESIDENT_FREE, cost.OUTSIDE_FEE_HOURS, cost.FREE_WITHIN_LIMIT)
+#: Outcomes that cost nothing by their own rule (a PAID_* call that happens to cost 0 ct is counted as paid). EV_EXEMPT (spec
+#: v3 A5, R-A-9) is one of them: the town's ordinance frees the electric car's stay within its limit.
+FREE_OUTCOMES = (cost.EMPLOYER_FREE, cost.RESIDENT_FREE, cost.OUTSIDE_FEE_HOURS, cost.FREE_WITHIN_LIMIT, cost.EV_EXEMPT)
 OTHER_OUTCOMES = (cost.HOME, cost.NO_ZONE)
 
 REPORT_V2_COLUMNS = ("outcome", "zone_id", "purpose", "count", "share")
@@ -588,7 +589,7 @@ def _class_specs(references: References, zone_classes: pd.Series) -> list[Metric
         specs.append(MetricSpec(
             f"free_share_work_education_class_{workplace_class}", SHARE_UNIT,
             f"pricing_calls_work_education_zones_of_class_{workplace_class}", reference, source,
-            f"free = outcome EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS or FREE_WITHIN_LIMIT; {free_direction} {scope}", False,
+            f"free = outcome EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT or EV_EXEMPT; {free_direction} {scope}", False,
             lambda frame, selection=selection: _ratio(
                 _calls(frame, selection(frame) & frame["outcome"].isin(FREE_OUTCOMES).to_numpy()),
                 _calls(frame, selection(frame))),

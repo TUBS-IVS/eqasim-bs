@@ -1446,3 +1446,51 @@ def test_validator_checks_the_garage_dataset_against_itself_its_qa_table_and_the
         tariffs_file.write_text(text.replace('",3.76,', '",3.75,'), encoding="utf-8")
     assert main(["--data-path", str(tmp_path)]) == 1
     assert message in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ EV exemption columns (spec v3 A5, issue #436)
+
+
+def test_the_ev_columns_are_optional_and_a_table_without_them_reads_them_as_empty(tmp_path):
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    assert "ev_free_minutes" in pz.OPTIONAL_TARIFF_COLUMNS and "ev_rule_valid_until" in pz.OPTIONAL_TARIFF_COLUMNS
+    assert list(tariffs.columns) == list(pz.TARIFF_COLUMNS)
+    assert str(tariffs["ev_free_minutes"].dtype) == "Int64" and tariffs["ev_free_minutes"].isna().all()
+    assert tariffs["ev_rule_valid_until"].isna().all()
+    pz.validate_tariffs(tariffs)
+    # the values survive a round trip through the CSV
+    stated = tariffs.copy()
+    stated.loc[stated["zone_id"] == "fx_bs_ia", ["ev_free_minutes", "ev_rule_valid_until"]] = [240, "2026-12-31"]
+    stated.loc[stated["zone_id"] == "fx_sz", "ev_free_minutes"] = 180
+    loaded = pz.load_tariffs(_write_tariffs(tmp_path / "ev.csv", stated)).set_index("zone_id")
+    assert (loaded.loc["fx_bs_ia", "ev_free_minutes"], loaded.loc["fx_bs_ia", "ev_rule_valid_until"]) == (240, "2026-12-31")
+    assert loaded.loc["fx_sz", "ev_free_minutes"] == 180 and loaded.loc["fx_sz", "ev_rule_valid_until"] is pd.NA
+    pz.validate_tariffs(loaded.reset_index())
+
+
+@pytest.mark.parametrize("zone_id, changes, field, message", [
+    ("fx_bs_ia", {"ev_free_minutes": 0}, "ev_free_minutes", "must be a positive number of minutes"),
+    ("fx_bs_ia", {"ev_free_minutes": -30}, "ev_free_minutes", "must be a positive number of minutes"),
+    ("fx_bs_ia", {"ev_rule_valid_until": "2026-12-31"}, "ev_rule_valid_until", "needs ev_free_minutes"),
+    ("fx_bs_ia", {"ev_free_minutes": 240, "ev_rule_valid_until": "31.12.2026"}, "ev_rule_valid_until",
+     "is not an ISO date"),
+    ("fx_bs_ia", {"ev_free_minutes": 240, "ev_rule_valid_until": "2026-02-30"}, "ev_rule_valid_until",
+     "is not an ISO date"),
+    ("fx_campus", {"ev_free_minutes": 240}, "ev_free_minutes", "not applicable to zone_type 'campus'"),
+    ("fx_res_a", {"ev_free_minutes": 240}, "ev_free_minutes", "not applicable to zone_type 'resident_zone'"),
+], ids=["zero_minutes", "negative_minutes", "valid_until_without_minutes", "date_not_iso", "date_not_a_calendar_day",
+        "on_campus", "on_resident_zone"])
+def test_the_ev_columns_are_validated_per_row(zone_id, changes, field, message):
+    broken = pz.load_tariffs(TARIFF_FIXTURE)
+    for column, value in changes.items():
+        broken.loc[broken["zone_id"] == zone_id, column] = value
+    with pytest.raises(ValueError, match=rf"zone '{zone_id}': {field}: .*{message}"):
+        pz.validate_tariffs(broken)
+
+
+def test_an_open_ended_ev_rule_needs_no_date():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    tariffs.loc[tariffs["zone_id"] == "fx_bs_ia", "ev_free_minutes"] = 240
+    pz.validate_tariffs(tariffs)
+    row = tariffs.set_index("zone_id").loc["fx_bs_ia"]
+    assert pd.isna(row["ev_rule_valid_until"]) and row["ev_free_minutes"] == 240

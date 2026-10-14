@@ -4,6 +4,7 @@ list of resident districts of spec Amendment C3 and the garages of spec Amendmen
 from __future__ import annotations
 
 import csv
+import dataclasses
 import datetime
 import hashlib
 import io
@@ -814,3 +815,15 @@ def test_the_export_warns_per_municipality_when_the_imputed_products_are_a_major
         te.build_tariff_model(table, snapshot_date=SNAPSHOT_DATE, sources=sources, garages=many,
                               garage_monthly_imputation=False)
         assert not [record for record in caplog.records if record.name == logger]
+
+
+def test_the_interim_export_keeps_schema_5_free_of_the_ev_exemption_and_refuses_to_drop_a_stated_one():
+    # Spec v3 A5, until Task A6 exports the rule: no key while no zone states it, an error (never a silent drop) otherwise.
+    from braunschweig.parking import cost
+    plain = cost.ZoneTariff(zone_id="z", zone_type="street_paid", hourly_rate_cents=180, billing_unit_min=1,
+                            free_if_stay_at_most_min=None, first_period_min=None, first_period_cents=None,
+                            daily_cap_cents=None, max_stay_min=None, long_stay_product_cents=None, member_day_cents=None,
+                            guest_day_cents=None, fee_start_s=32400, fee_end_s=72000, resident_exempt=False)
+    assert "ev_free_minutes" not in te.zone_to_json(plain)
+    with pytest.raises(ValueError, match="ev_free_minutes is set but the tariff model schema 5 cannot carry it"):
+        te.zone_to_json(dataclasses.replace(plain, ev_free_minutes=240))

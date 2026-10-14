@@ -225,14 +225,14 @@ def test_an_error_case_must_fail_the_stay_check_not_just_any_check(fixture_zones
     assert problem.startswith("G26:") and "departure before arrival" in problem and "unknown zone id" in problem
 
 
-def test_outcomes_are_fourteen_constants_named_as_their_values_with_the_v2_products_appended():
+def test_outcomes_are_fifteen_constants_named_as_their_values_with_the_v2_products_appended():
     # Appended at the END, so the position of the ten v1 outcomes in this tuple stays as it was; PAID_EXPECTED (schema 3,
     # the garage expectation) follows them and NO_FEASIBLE_OPTION (spec v3 A1) comes last. The Java ParkingOutcome enum
     # has another order (NO_ZONE first), so the tuple
     # order is no contract with Java: consumers of the outcome report key the rows by outcome name.
     assert cost.OUTCOMES == ("HOME", "EMPLOYER_FREE", "RESIDENT_FREE", "OUTSIDE_FEE_HOURS", "FREE_WITHIN_LIMIT",
                              "PAID_METERED", "PAID_LONG_STAY", "PAID_CAMPUS_MEMBER", "PAID_CAMPUS_GUEST", "NO_ZONE",
-                             "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED", "NO_FEASIBLE_OPTION")
+                             "PAID_GARAGE", "PAID_COMMUTER", "PAID_EXPECTED", "NO_FEASIBLE_OPTION", "EV_EXEMPT")
     assert all(getattr(cost, outcome) == outcome for outcome in cost.OUTCOMES)
     assert cost.CAMPUS_MEMBER_PURPOSES == frozenset({"work", "education"})
     assert cost.COMMUTER_PURPOSES == frozenset({"work", "education"})
@@ -755,8 +755,8 @@ def _detail(zone, minutes, options, *, purpose="shop", counters=None, **flags):
 
 def test_the_no_feasible_option_outcome_is_appended_after_paid_expected():
     assert cost.NO_FEASIBLE_OPTION == "NO_FEASIBLE_OPTION"
-    assert cost.OUTCOMES[-1] == cost.NO_FEASIBLE_OPTION and cost.OUTCOMES[-2] == cost.PAID_EXPECTED
-    assert len(cost.OUTCOMES) == len(set(cost.OUTCOMES)) == 14
+    assert cost.OUTCOMES[-2] == cost.NO_FEASIBLE_OPTION and cost.OUTCOMES[-3] == cost.PAID_EXPECTED
+    assert len(cost.OUTCOMES) == len(set(cost.OUTCOMES)) == 15
 
 
 def test_street_is_infeasible_above_the_maximum_stay_without_a_product():
@@ -1051,3 +1051,112 @@ def test_the_wrapper_passes_the_price_coefficient_through():
                                                  resident_of_zone=False, garage_options=options, decay_m=_DECAY_M,
                                                  decay_commute_m=_DECAY_M, option_price_beta_u_per_eur=beta)
         assert wrapped == (detail.cents, detail.outcome, detail.garage_probability)
+
+
+# ------------------------------------------------------------------------------- EV exemption (spec v3 A5, issue #436)
+# ASSUMPTION E1 (owner): every BEV/PHEV counts as an E-plate holder; ASSUMPTION E2: the exemption applies within the maximum
+# stay of the zone. The street zone of _tariff() charges 180 ct per hour in 1-minute units (3 ct per minute) from 09:00
+# to 20:00, so a stay from 09:00 of m minutes costs 3 * m ct.
+_EV_STAY_START_S = 32400
+
+
+def _ev_price(zone, minutes, *, ev_exempt=True, **flags):
+    flags = {**_SHOP, **flags}
+    return cost.parking_cost_cents(zone, _EV_STAY_START_S, _EV_STAY_START_S + minutes * 60, ev_exempt=ev_exempt, **flags)
+
+
+def test_ev_exempt_is_a_free_outcome_appended_at_the_end_of_the_outcomes():
+    assert cost.EV_EXEMPT == "EV_EXEMPT"
+    assert cost.OUTCOMES[-1] == cost.EV_EXEMPT and cost.OUTCOMES[-2] == cost.NO_FEASIBLE_OPTION
+    assert len(cost.OUTCOMES) == len(set(cost.OUTCOMES)) == 15
+
+
+def test_ev_exempt_stay_within_the_limit_costs_nothing():
+    zone = _tariff(ev_free_minutes=240)
+    assert _ev_price(zone, 90) == (0, cost.EV_EXEMPT)
+    assert _ev_price(zone, 240) == (0, cost.EV_EXEMPT)          # the limit itself is inside
+    assert _ev_price(zone, 1) == (0, cost.EV_EXEMPT)
+    # chargeable minutes, seconds rounded up: 240 min and one second is 241 started minutes
+    assert cost.parking_cost_cents(zone, _EV_STAY_START_S, _EV_STAY_START_S + 240 * 60 + 1, ev_exempt=True,
+                                   **_SHOP) == (723, cost.PAID_METERED)
+
+
+def test_ev_exemption_is_not_a_deduction():
+    zone = _tariff(ev_free_minutes=240)
+    # 241 min: the full metered price (3 ct per minute), not the price of the minutes above the limit
+    assert _ev_price(zone, 241) == (723, cost.PAID_METERED)
+    assert _ev_price(zone, 241) == _ev_price(zone, 241, ev_exempt=False)
+
+
+def test_a_non_exempt_person_is_unchanged():
+    with_rule, without_rule = _tariff(ev_free_minutes=240), _tariff()
+    assert _ev_price(with_rule, 90, ev_exempt=False) == (270, cost.PAID_METERED)
+    # an exempt person in a zone without the rule pays as everybody does; so does the default of the keyword
+    assert _ev_price(without_rule, 90, ev_exempt=True) == (270, cost.PAID_METERED)
+    assert cost.parking_cost_cents(with_rule, _EV_STAY_START_S, _EV_STAY_START_S + 90 * 60,
+                                   **_SHOP) == (270, cost.PAID_METERED)
+
+
+def test_the_ev_exemption_comes_after_the_early_rules_and_before_the_street_product():
+    zone = _tariff(ev_free_minutes=240, free_if_stay_at_most_min=30, resident_exempt=True)
+    assert _ev_price(zone, 20) == (0, cost.EV_EXEMPT)                                   # before the free threshold
+    assert _ev_price(zone, 20, ev_exempt=False) == (0, cost.FREE_WITHIN_LIMIT)
+    assert _ev_price(zone, 90, parking_free=True) == (0, cost.EMPLOYER_FREE)
+    assert _ev_price(zone, 90, resident_of_zone=True) == (0, cost.RESIDENT_FREE)
+    assert _ev_price(zone, 90, purpose="home") == (0, cost.HOME)
+    assert _ev_price(None, 90) == (0, cost.NO_ZONE)
+    # no chargeable second in the street fee window: the early rule names it, not the exemption
+    assert cost.parking_cost_cents(zone, 3600, 7200, ev_exempt=True, **_SHOP) == (0, cost.OUTSIDE_FEE_HOURS)
+
+
+def test_the_ev_exemption_applies_within_the_maximum_stay_only_assumption_e2():
+    # Salzgitter: the exemption (240 min) exceeds the maximum stay (150 min); ASSUMPTION E2 limits it to the maximum.
+    zone = _tariff(ev_free_minutes=240, max_stay_min=150, long_stay_product_cents=900)
+    assert _ev_price(zone, 150) == (0, cost.EV_EXEMPT)
+    assert _ev_price(zone, 151) == (900, cost.PAID_LONG_STAY)
+    assert _ev_price(zone, 200) == _ev_price(zone, 200, ev_exempt=False) == (900, cost.PAID_LONG_STAY)
+
+
+def test_ev_exempt_must_be_a_bool_and_ev_free_minutes_a_positive_integer_on_a_street_zone():
+    zone = _tariff(ev_free_minutes=240)
+    for bad in ("true", 1, None):
+        with pytest.raises(TypeError, match="ev_exempt must be a bool"):
+            _ev_price(zone, 90, ev_exempt=bad)
+    for bad in (0, -5, 2.5, True, "240"):
+        with pytest.raises(ValueError, match="ev_free_minutes"):
+            _tariff(ev_free_minutes=bad)
+    for zone_type in ("resident_zone", "campus"):
+        with pytest.raises(ValueError, match="ev_free_minutes does not apply to zone_type"):
+            _tariff(zone_type, ev_free_minutes=240)
+    assert _tariff().ev_free_minutes is None
+
+
+def test_the_ev_exemption_is_free_on_the_street_side_with_garage_options_and_counts_like_e4():
+    zone = _tariff(ev_free_minutes=240)
+    options = [(_option_garage("g_a", hourly_rate_cents=100), 300.0)]
+    counters = cost.GarageOptionCounters()
+    detail = _detail(zone, 200, options, counters=counters, ev_exempt=True)
+    assert (detail.cents, detail.outcome, detail.garage_probability) == (0, cost.EV_EXEMPT, 0.0)
+    assert detail.expected_cents is None and detail.street_feasible is True
+    assert detail.feasible_option_ids == ("g_a",)
+    assert counters.street_free == 1 and counters.expected == 0
+    # a longer stay prices as today, as an expectation over the street and the garage
+    longer = _detail(zone, 241, options, ev_exempt=True)
+    assert longer == _detail(zone, 241, options, ev_exempt=False) and longer.outcome == cost.PAID_EXPECTED
+    # the person who is not exempt pays the expectation also within the limit
+    assert _detail(zone, 200, options, ev_exempt=False).outcome == cost.PAID_EXPECTED
+    wrapped = cost.parking_cost_with_garages(zone, _EV_STAY_START_S, _EV_STAY_START_S + 200 * 60, purpose="shop",
+                                             parking_free=False, resident_of_zone=False, garage_options=options,
+                                             decay_m=_DECAY_M, decay_commute_m=_DECAY_M, ev_exempt=True)
+    assert wrapped == (0, cost.EV_EXEMPT, 0.0)
+
+
+def test_the_ev_exemption_without_garage_options_and_with_decay_zero_prices_as_the_street_function():
+    zone = _tariff(ev_free_minutes=240)
+    assert _detail(zone, 200, [], ev_exempt=True)[:2] == (0, cost.EV_EXEMPT)
+    detail = cost.parking_cost_with_garages_detail(zone, _EV_STAY_START_S, _EV_STAY_START_S + 200 * 60, purpose="shop",
+                                                   parking_free=False, resident_of_zone=False, decay_m=0.0,
+                                                   decay_commute_m=0.0, ev_exempt=True)
+    assert (detail.cents, detail.outcome) == (0, cost.EV_EXEMPT)
+    with pytest.raises(TypeError, match="ev_exempt must be a bool"):
+        _detail(zone, 200, [], ev_exempt="yes")

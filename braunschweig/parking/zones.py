@@ -13,7 +13,8 @@ The zone-based parking cost model (design spec ``2026-09-28-parking-cost-zones-d
   Empty means "not applicable". Schema 2 (parking cost zones v2, issue #436, levers 2 and 4) appends the optional
   columns ``OPTIONAL_TARIFF_COLUMNS``: the garage product, ``commuter_day_eur``, ``search_time_min`` and, since spec
   Amendment C3, ``resident_permits_valid`` (whether the parking honours resident permits, i.e. whether rule R2 applies;
-  empty = the default of the zone type, ASSUMPTION R2-a). A table without them (schema 1,
+  empty = the default of the zone type, ASSUMPTION R2-a) and, since spec v3 A5, the EV exemption ``ev_free_minutes`` /
+  ``ev_rule_valid_until`` (street_paid rows only; the date is applied at the tariff export). A table without them (schema 1,
   ``SCHEMA_1_TARIFF_COLUMNS``) loads with every one of them empty, which prices as v1.
 * **coverage register** -- one row per municipality of the eight ZGB counties with a status in
   ``REGISTER_STATUSES``, plus one ``excluded`` row per paid-parking area deliberately left out.
@@ -100,7 +101,13 @@ GARAGE_FIRST_PERIOD_COLUMNS = ("garage_first_period_min", "garage_first_period_e
 #: Amendment C3, ``resident_permits_valid``: whether the parking honours resident parking permits (ASSUMPTION R2-a;
 #: ``true``/``false``, empty = valid on street_paid and resident_zone rows, not valid on a campus, where only false or
 #: empty is allowed).
-OPTIONAL_TARIFF_COLUMNS = GARAGE_COLUMNS + ("commuter_day_eur", "search_time_min", "resident_permits_valid")
+#: Spec v3 A5 (EV exemption, ASSUMPTIONS E1/E2): ``ev_free_minutes`` is the longest chargeable stay in whole minutes >= 1 that
+#: an electric car parks free on the street (empty = no exemption), ``ev_rule_valid_until`` the last day (ISO date, text) on
+#: which the ordinance's rule is in force (empty = open-ended; only with ``ev_free_minutes``). The tariff export compares it
+#: with the tariff snapshot date. Both exist on street_paid rows only: a campus car park and a resident zone do not price it.
+EV_COLUMNS = ("ev_free_minutes", "ev_rule_valid_until")
+OPTIONAL_TARIFF_COLUMNS = (GARAGE_COLUMNS + ("commuter_day_eur", "search_time_min", "resident_permits_valid")
+                           + EV_COLUMNS)
 #: The loaded layout: schema 1 followed by the schema-2 columns ("schema 2 = schema 1 plus optional columns").
 TARIFF_COLUMNS = SCHEMA_1_TARIFF_COLUMNS + OPTIONAL_TARIFF_COLUMNS
 MONEY_COLUMNS = ("hourly_rate_eur", "first_period_eur", "daily_cap_eur", "long_stay_product_eur",
@@ -108,7 +115,7 @@ MONEY_COLUMNS = ("hourly_rate_eur", "first_period_eur", "daily_cap_eur", "long_s
                  "garage_daily_cap_eur", "commuter_day_eur")
 #: Whole minutes (``Int64``); all positive except ``search_time_min``, where 0 means "no search time".
 MINUTE_COLUMNS = ("billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "max_stay_min",
-                  "garage_billing_unit_min", "garage_first_period_min", "search_time_min")
+                  "garage_billing_unit_min", "garage_first_period_min", "search_time_min", "ev_free_minutes")
 NON_NEGATIVE_MINUTE_COLUMNS = ("search_time_min",)
 HOUR_COLUMNS = ("fee_start_h", "fee_end_h", "garage_fee_start_h", "garage_fee_end_h")
 BOOLEAN_COLUMNS = ("resident_exempt",)
@@ -135,12 +142,15 @@ FORBIDDEN_FIELDS_BY_TYPE = {
     # spec 3.2, so it would change the price. A day cap has no element to cap (the rate is 0 and PAID_LONG_STAY
     # returns before the metered block applies a cap), so it would be silently ignored. The cost reference
     # (braunschweig.parking.cost.ZoneTariff) rejects both as well. The commuter product exists on street_paid and
-    # campus rows only (v2 spec amendment A4).
+    # campus rows only (v2 spec amendment A4). The EV exemption (spec v3 A5) is a rule of the town's paid street: a
+    # resident zone charges visitors by disc, not by the fee ordinance.
     "resident_zone": ("member_day_eur", "guest_day_eur", "first_period_min", "first_period_eur",
-                      "free_if_stay_at_most_min", "daily_cap_eur", "commuter_day_eur"),
-    # A campus stay pays a day product, so a garage would be ignored.
+                      "free_if_stay_at_most_min", "daily_cap_eur", "commuter_day_eur") + EV_COLUMNS,
+    # A campus stay pays a day product, so a garage would be ignored; the campus branch of the pricing returns before the
+    # EV rule, so an exemption there would be dead data.
     "campus": ("hourly_rate_eur", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
-               "first_period_eur", "daily_cap_eur", "max_stay_min", "long_stay_product_eur") + GARAGE_COLUMNS,
+               "first_period_eur", "daily_cap_eur", "max_stay_min", "long_stay_product_eur") + GARAGE_COLUMNS
+              + EV_COLUMNS,
 }
 #: Fields that are only meaningful together (spec 3.1: "first_period_min + first_period_eur"; v2: the garage first
 #: period). ``max_stay_min`` and ``long_stay_product_eur`` follow the maximum-stay rule of ``validate_tariffs``.
@@ -362,6 +372,10 @@ def _log_schema_2_products(tariffs: pd.DataFrame, absent: list, path) -> None:
              rows_with(("search_time_min",)), len(tariffs))
     # R2-a: say how many rows state the permit flag; the others take the default of their zone type, so the default
     # is visible instead of silent.
+    # Spec v3 A5: the EV exemption rows, so that a table without any is visibly priced without the exemption.
+    ev_rows = int(tariffs["ev_free_minutes"].notna().sum())
+    log.info("[parking-zones] EV exemption (spec v3 A5): stated on %d/%d rows (%d with a validity date)", ev_rows,
+             len(tariffs), int(tariffs["ev_rule_valid_until"].notna().sum()))
     permits = tariffs["resident_permits_valid"]
     stated_false, stated_true = int(permits.eq(False).sum()), int(permits.eq(True).sum())
     log.info("[parking-zones] resident permits (rule R2, ASSUMPTION R2-a): stated not valid on %d/%d rows, stated valid "
@@ -498,6 +512,14 @@ def validate_tariffs(tariffs: pd.DataFrame, *, allow_fixture_marker: bool = True
         if not core_set and any(_is_set(row[field]) for field in GARAGE_FIRST_PERIOD_COLUMNS):
             problem(GARAGE_FIRST_PERIOD_COLUMNS[0], f"a garage first period needs the garage core "
                                                     f"{list(GARAGE_CORE_COLUMNS)}; it is never priced without it")
+        # Spec v3 A5: a validity date belongs to a stated exemption; a date alone would say nothing (and the export would
+        # have nothing to switch off).
+        if _is_set(row["ev_rule_valid_until"]):
+            if not _is_set(row["ev_free_minutes"]):
+                problem("ev_rule_valid_until", "needs ev_free_minutes: a validity date without an exemption states "
+                                               "nothing")
+            if not _is_iso_date(row["ev_rule_valid_until"]):
+                problem("ev_rule_valid_until", f"{row['ev_rule_valid_until']!r} is not an ISO date YYYY-MM-DD")
         # A long-stay product is sold only above a maximum stay, and a longer stay loses the street product (v2): it
         # needs the long-stay product or a garage (the commuter product serves work and education only).
         if _is_set(row["long_stay_product_eur"]) and not _is_set(row["max_stay_min"]):

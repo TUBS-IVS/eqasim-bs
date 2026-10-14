@@ -742,3 +742,10 @@ def test_the_reader_parses_the_literal_reports_of_the_java_listener_test(cmp, tm
         assert (expected["count"], expected["garage_probability_sum"], expected["stays_with_garages_in_range"]) == (2, 0.75, 2)
     if name == "it2_quoted_zone_id":
         assert frame["zone_id"].tolist() == ["fx,zone"]
+
+
+def test_ev_exempt_is_classified_as_a_free_outcome_because_the_street_costs_nothing_by_the_ordinance(cmp):
+    # Spec v3 A5 / R-A-9: an EV-exempt stay pays 0 by its own rule (like RESIDENT_FREE), so it belongs to the free outcomes.
+    from braunschweig.parking import cost
+    assert cost.EV_EXEMPT in cmp.FREE_OUTCOMES
+    assert cost.EV_EXEMPT not in (*cmp.PAID_OUTCOMES, *cmp.OTHER_OUTCOMES)

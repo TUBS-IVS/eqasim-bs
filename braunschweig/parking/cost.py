@@ -96,12 +96,16 @@ PAID_EXPECTED = "PAID_EXPECTED"
 #: no option can serve it; it is priced as the street at its metered price (the maximum ignored, so that the cost stays
 #: finite) and counted under this name, because it is the signal that the option set is incomplete, never a silent fallback.
 NO_FEASIBLE_OPTION = "NO_FEASIBLE_OPTION"
+#: Spec v3 A5 (ASSUMPTIONS E1, E2): an electric car (BEV or PHEV, every one counted as an E-plate holder) parks on the street
+#: within the zone's ``ev_free_minutes`` (and within its maximum stay) for free by the town's ordinance. Free by its own rule,
+#: like ``RESIDENT_FREE``.
+EV_EXEMPT = "EV_EXEMPT"
 # The v2 outcomes are appended at the END of this tuple, which keeps the position of every v1 outcome here. The Java
 # ParkingOutcome enum has another order (NO_ZONE comes first there, HOME here), so the order of this tuple is not a
 # contract: consumers of the outcome report key the rows by outcome NAME, never by position.
 OUTCOMES = (HOME, EMPLOYER_FREE, RESIDENT_FREE, OUTSIDE_FEE_HOURS, FREE_WITHIN_LIMIT, PAID_METERED,
             PAID_LONG_STAY, PAID_CAMPUS_MEMBER, PAID_CAMPUS_GUEST, NO_ZONE, PAID_GARAGE, PAID_COMMUTER, PAID_EXPECTED,
-            NO_FEASIBLE_OPTION)
+            NO_FEASIBLE_OPTION, EV_EXEMPT)
 
 #: Schema 2 (spec amendment A6): the garage core, given completely or not at all. The garage day cap
 #: (``garage_daily_cap_cents``, None = no cap) and the first-period pair (``GARAGE_FIRST_PERIOD_FIELDS``) are optional,
@@ -121,14 +125,14 @@ _DEFAULT_RESIDENT_PERMITS_VALID = {STREET_PAID: True, RESIDENT_ZONE: True, CAMPU
 # Tariff fields that may be None ("not applicable", an empty tariff-table cell).
 _OPTIONAL_FIELDS = ("hourly_rate_cents", "billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                     "first_period_cents", "daily_cap_cents", "max_stay_min", "long_stay_product_cents",
-                    "member_day_cents", "guest_day_cents", *SCHEMA_2_FIELDS)
+                    "member_day_cents", "guest_day_cents", *SCHEMA_2_FIELDS, "ev_free_minutes")
 # Spec 3.2 tests these fields for truthiness ("if t.daily_cap_cents: ..."), so a 0 would silently mean
 # "not set" (a zero cap would be ignored, not applied). Requiring them to be positive when set makes
 # "is set" and "is truthy" the same and keeps the Python and Java readings identical. The garage product reuses the
 # primitives, so its billing unit (a divisor), first period and cap are positive for the same reasons.
 _POSITIVE_FIELDS = frozenset({"billing_unit_min", "free_if_stay_at_most_min", "first_period_min",
                               "daily_cap_cents", "max_stay_min", "garage_billing_unit_min", "garage_first_period_min",
-                              "garage_daily_cap_cents"})
+                              "garage_daily_cap_cents", "ev_free_minutes"})
 _PAIRED_FIELDS = (("first_period_min", "first_period_cents"), GARAGE_FIRST_PERIOD_FIELDS)
 # Spec 3.1 required fields per zone type. billing_unit_min is also required for resident zones although
 # spec 3.1 does not list it: the metered step of spec 3.2 divides by it for every non-campus zone. The long-stay
@@ -178,6 +182,13 @@ class ZoneTariff:
     permits, i.e. whether the district rule R2 frees a stay there. Constructed without it (None) it resolves to True for
     a street_paid or resident_zone row and to False for a campus, so it is always a bool afterwards and the table, the
     model JSON and the Java port carry the same resolved value; True on a campus is rejected. It gates R2 only.
+
+    Spec v3 A5: ``ev_free_minutes`` (minutes >= 1, None = no exemption) is the longest chargeable stay of an electric car
+    that parks free on the street of the zone (``parking_cost_cents``, ``ev_exempt``). It exists on street_paid rows only:
+    a campus car park is the university's, not the town's paid street (the campus branch returns before the rule), and a
+    resident zone charges visitors by disc, not by the town's fee ordinance. The validity date of the rule
+    (``ev_rule_valid_until`` of the zone table) is NOT a tariff field: the export (Task A6) compares it with the tariff
+    snapshot date and leaves the field None for an expired rule, so the pricing sees only rules in force.
     """
 
     zone_id: str
@@ -205,6 +216,7 @@ class ZoneTariff:
     commuter_day_cents: int | None = None
     search_time_min: int | None = None
     resident_permits_valid: bool | None = None
+    ev_free_minutes: int | None = None
 
     def __post_init__(self) -> None:
         if self.resident_permits_valid is None and self.zone_type in ZONE_TYPES:
@@ -298,6 +310,11 @@ def _check_tariff(tariff: ZoneTariff) -> None:
     for name in _NOT_APPLICABLE_FIELDS[tariff.zone_type]:
         if getattr(tariff, name) is not None:
             fail(f"{name} does not apply to zone_type {tariff.zone_type!r} and must be empty")
+    # Spec v3 A5: the EV exemption is a rule of the town's paid street. It is checked here and not listed in
+    # _NOT_APPLICABLE_FIELDS, whose entries the export names by their table column (Task A6 wires this one).
+    if tariff.ev_free_minutes is not None and tariff.zone_type != STREET_PAID:
+        fail(f"ev_free_minutes does not apply to zone_type {tariff.zone_type!r} and must be empty: the EV exemption is "
+             f"a rule of the paid street, a {tariff.zone_type} would never price it")
     # The first period is charged in full for any use, so a lower cap would replace its price on every metered
     # stay: the tariff contradicts itself. The same holds for an optional garage cap and first period.
     for prefix in ("", "garage_"):
@@ -466,6 +483,22 @@ def street_feasible(tariff: ZoneTariff, chargeable_s: int) -> bool:
             or tariff.long_stay_product_cents is not None)
 
 
+def _ev_exempt_street(tariff: ZoneTariff, chargeable_s: int, ev_exempt: bool) -> tuple[int, str] | None:
+    """The EV exemption (spec v3 A5) as a street product: ``(0, EV_EXEMPT)`` for an exempt person whose chargeable stay
+    (STREET fee window, seconds rounded up to minutes) is within the zone's ``ev_free_minutes`` AND within its maximum stay
+    (ASSUMPTION E2: the exemption never extends a stay beyond the maximum), else None. None also where the person is not
+    exempt or the zone has no exemption (``ev_free_minutes`` None: the rule was never stated, or the export switched an
+    expired one off). A longer stay is not deducted from: it prices as everybody's stay."""
+    if not ev_exempt or tariff.ev_free_minutes is None:
+        return None
+    chargeable_min = _ceil_div(chargeable_s, SECONDS_PER_MINUTE)
+    if chargeable_min > tariff.ev_free_minutes:
+        return None
+    if tariff.max_stay_min is not None and chargeable_min > tariff.max_stay_min:
+        return None
+    return 0, EV_EXEMPT
+
+
 def _garage_product(tariff: ZoneTariff, arrival_s: int, departure_s: int) -> tuple[int, str] | None:
     """The garage product (v2 lever 2), or None without a garage core.
 
@@ -498,7 +531,8 @@ def _cheapest(products) -> tuple[int, str]:
 
 
 def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
-                       parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False) -> tuple[int, str]:
+                       parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
+                       ev_exempt: bool = False) -> tuple[int, str]:
     """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2, v2 lever 2).
 
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
@@ -509,7 +543,9 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     ``purpose`` is the MATSim activity type, ``parking_free`` the activity attribute ``parkingFree``,
     ``resident_of_zone`` whether the person lives in this zone (R1), ``resident_of_district`` whether the activity lies
     in the resident parking district of the person's home (R2, spec Amendment C3; the caller compares the district ids
-    of the activity and of the home, both set; ``False`` is the default, so every call that predates R2 is unchanged).
+    of the activity and of the home, both set; ``False`` is the default, so every call that predates R2 is unchanged),
+    ``ev_exempt`` (spec v3 A5, ASSUMPTION E1) whether the person's car is an electric car that the town's ordinance exempts
+    from the street fee (``False`` is the default, so every call that predates A5 is unchanged).
     The checks run in the order of spec 3.2; the first that applies decides:
 
     1. home purpose -> 0, ``HOME`` (H1);
@@ -520,6 +556,12 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     4. no chargeable second in the STREET fee window -> 0, ``OUTSIDE_FEE_HOURS``: a free street beats every garage;
     5. campus -> for work and education the cheaper of the member day product (C1) and the commuter product (A4,
        when set; a tie keeps the member day product), else the guest day product;
+    5a. spec v3 A5: ``ev_exempt`` and the zone states ``ev_free_minutes`` and the chargeable minutes (seconds rounded up) are
+       within it and within the maximum stay (ASSUMPTION E2) -> 0, ``EV_EXEMPT``, before the street product (so before the
+       free threshold too). A longer stay pays the full schedule of rule 6, never a deduction. The rule belongs to the
+       street zone only (``ZoneTariff`` refuses ``ev_free_minutes`` elsewhere) and is evaluated on the zone's snapshot: the
+       validity date of the rule is applied at the export (Task A6), which leaves ``ev_free_minutes`` empty for an expired
+       rule, so this function sees only rules in force;
     6. street_paid and resident_zone: the cheapest product the driver can use (P1), a tie going to the first of
        a. the street product, spec 3.2 rules 6 to 8: chargeable minutes (seconds rounded up) within the free
           threshold -> 0, ``FREE_WITHIN_LIMIT``; above the maximum stay the long-stay product, ``PAID_LONG_STAY``
@@ -545,7 +587,7 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     if not isinstance(purpose, str) or not purpose:
         raise TypeError(f"purpose must be a non-empty activity type string, got {purpose!r}")
     for name, flag in (("parking_free", parking_free), ("resident_of_zone", resident_of_zone),
-                       ("resident_of_district", resident_of_district)):
+                       ("resident_of_district", resident_of_district), ("ev_exempt", ev_exempt)):
         if not isinstance(flag, bool):
             raise TypeError(f"{name} must be a bool, got {flag!r}")
     if tariff is None:
@@ -566,6 +608,10 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
         if purpose in CAMPUS_MEMBER_PURPOSES:
             return _cheapest(((tariff.member_day_cents, PAID_CAMPUS_MEMBER), _commuter_product(tariff, purpose)))
         return tariff.guest_day_cents, PAID_CAMPUS_GUEST
+    # Spec v3 A5: after the early rules and the campus branch, before the street product.
+    ev_street = _ev_exempt_street(tariff, chargeable_s, ev_exempt)
+    if ev_street is not None:
+        return ev_street
     # A resident zone has no commuter product (ZoneTariff rejects it), so the commuter product competes on street_paid
     # rows only.
     products = (_street_product(tariff, chargeable_s), _garage_product(tariff, arrival_s, departure_s),
@@ -1092,12 +1138,14 @@ def option_weight(distance_m: float, decay_m: float, cost_cents: float, beta_u_p
 
 def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                                      parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
-                                     garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
+                                     ev_exempt: bool = False, garage_options=(), decay_m: float = 0.0,
+                                     decay_commute_m: float,
                                      option_price_beta_u_per_eur: float = 0.0,
                                      counters: GarageOptionCounters | None = None) -> GarageStayPrice:
     """``parking_cost_with_garages`` with the unrounded expectation and the option weights; see there for the rules."""
     cents, outcome = parking_cost_cents(tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free,
-                                        resident_of_zone=resident_of_zone, resident_of_district=resident_of_district)
+                                        resident_of_zone=resident_of_zone, resident_of_district=resident_of_district,
+                                        ev_exempt=ev_exempt)
     if counters is not None:
         counters.stays += 1
     check_decay_lengths(decay_m=decay_m, decay_commute_m=decay_commute_m)
@@ -1123,7 +1171,10 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
     # E8: with garage options the zone-level garage family is superseded; the street option is the street or long-stay
     # product or the zone commuter product, or unavailable (maximum stay exceeded without a long-stay product).
     chargeable_s = chargeable_seconds(arrival_s, departure_s, tariff.fee_start_s, tariff.fee_end_s)
-    street_products = [product for product in (_street_product(tariff, chargeable_s), _commuter_product(tariff, purpose))
+    # Spec v3 A5: an EV-exempt stay within the limit has a free street side (the exemption listed first, so that it names
+    # the outcome of a tie with another free street product, as in parking_cost_cents); E4 then applies below.
+    street_products = [product for product in (_ev_exempt_street(tariff, chargeable_s, ev_exempt),
+                                               _street_product(tariff, chargeable_s), _commuter_product(tariff, purpose))
                        if product is not None]
     street = min(street_products, key=lambda product: product[0]) if street_products else None
     if not options:
@@ -1189,7 +1240,7 @@ def parking_cost_with_garages_detail(tariff: ZoneTariff | None, arrival_s: int, 
 
 def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                               parking_free: bool, resident_of_zone: bool, resident_of_district: bool = False,
-                              garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
+                              ev_exempt: bool = False, garage_options=(), decay_m: float = 0.0, decay_commute_m: float,
                               option_price_beta_u_per_eur: float = 0.0,
                               counters: GarageOptionCounters | None = None) -> tuple[int, str, float]:
     """Parking cost of one car stay with garage options (spec Amendment E): ``(cents, outcome, garage_probability)``.
@@ -1199,7 +1250,8 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
     of every purpose but work and education, whose stays use ``decay_commute_m`` (lambda_c, ASSUMPTION G1-c, spec Amendment
     H1; required, never defaulted to lambda; ``garage_decay_m_for_purpose`` decides which one governs a stay).
     ``option_price_beta_u_per_eur`` (spec v3 A2) is the money coefficient of the option weights in utility per EUR (finite,
-    >= 0; default 0 = the price-independent weights of v2, bit for bit).
+    >= 0; default 0 = the price-independent weights of v2, bit for bit). ``ev_exempt`` (spec v3 A5, a bool, default False =
+    every call that predates A5 is unchanged) is passed to ``parking_cost_cents`` and to the street option, see rule 3.
     The early rules, the campus zones and the street option are those of ``parking_cost_cents`` (called, not copied):
 
     1. a stay that ``parking_cost_cents`` decides before any product (no zone, home, employer-free, resident, outside the
@@ -1214,7 +1266,10 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
        a garage option costs its metered or day product, for work and education also its monthly product per working day
        (P2), whichever is cheaper (0 ct is a valid option; tiers, bands and first periods: ``garage_metered_cents``);
     3. a street option that costs 0 means the stay pays 0 (E4): outcome of the street product, probability 0.0; an
-       unavailable street renormalises the weights over the garages;
+       unavailable street renormalises the weights over the garages. Spec v3 A5: an ``ev_exempt`` stay within the zone's
+       ``ev_free_minutes`` (and its maximum stay, ASSUMPTION E2) has a free street option and pays 0 with outcome
+       ``EV_EXEMPT`` (the stay is then counted in ``GarageOptionCounters.street_free`` like every E4 stay); a longer stay
+       prices as without the exemption;
     3a. spec v3 A1 (M3), before the weights: a garage whose ``max_stay_min`` the elapsed stay (``departure_s - arrival_s``,
        rounded up to minutes) exceeds is no option (``option_feasible``); the street is no option above its maximum stay
        without a long-stay product (``street_feasible``); the weights are formed over the remaining options only, and the
@@ -1232,6 +1287,6 @@ def parking_cost_with_garages(tariff: ZoneTariff | None, arrival_s: int, departu
     """
     detail = parking_cost_with_garages_detail(
         tariff, arrival_s, departure_s, purpose=purpose, parking_free=parking_free, resident_of_zone=resident_of_zone,
-        resident_of_district=resident_of_district, garage_options=garage_options, decay_m=decay_m,
+        resident_of_district=resident_of_district, ev_exempt=ev_exempt, garage_options=garage_options, decay_m=decay_m,
         decay_commute_m=decay_commute_m, option_price_beta_u_per_eur=option_price_beta_u_per_eur, counters=counters)
     return detail.cents, detail.outcome, detail.garage_probability
