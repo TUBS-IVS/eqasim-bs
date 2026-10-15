@@ -27,12 +27,18 @@ def test_every_group_band_cell_has_all_five_modes_summing_to_one(table):
     assert set(table["purpose_group"]) == set(M.PURPOSE_GROUPS) | {M.ALL_GROUP}
 
 
-def test_walk_share_is_zero_from_five_kilometres_for_work_and_education(table):
-    # The 2026-10-15 probe (n 1,173 walk trips to work/education) found no walk trip beyond 5 km straight-line;
-    # ADR-0145 states it. The other and all groups (leisure walks, hikes) are pinned by value below instead.
+def test_walk_share_is_below_one_percent_from_five_kilometres_for_work_and_education(table):
+    # Walk must be IMPLAUSIBLE (share below the stage's 1 % min_share default) from 5 km for work and education,
+    # not exactly zero: an earlier probe claimed zero because it counted only trips TO work/education, while the
+    # table also counts home returns and business / other-education trips. Measured maximum is 0.0016 (5 unweighted
+    # walk trips in total beyond 5 km); the three non-zero cells are pinned exactly. The other and all groups
+    # (leisure walks, hikes) are pinned by value below.
     far = table[(table["mode"] == "walk") & (table["band_lower_km"] >= 5.0)
                 & table["purpose_group"].isin(["work", "education"])]
-    assert len(far) > 0 and (far["share"] == 0.0).all()
+    assert len(far) > 0 and (far["share"] < 0.01).all()
+    nonzero = far[far["share"] > 0].set_index(["purpose_group", "band"])["share"]
+    assert nonzero.round(6).to_dict() == {("work", "5_10"): 0.001604, ("work", "45_plus"): 0.001412,
+                                          ("education", "5_10"): 0.000792}
 
 
 def test_walk_shares_beyond_five_kilometres_for_other_and_all_pin(table):
