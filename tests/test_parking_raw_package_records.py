@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.util
-import os
+import re
 import sys
 from pathlib import Path
 
@@ -36,8 +36,8 @@ PACKAGES = {
 }
 
 
-def _record(dataset: str) -> dict:
-    with open(DATA_DIRECTORY / f"{dataset}.yml", encoding="utf-8") as handle:
+def _record(dataset: str, directory: Path = DATA_DIRECTORY) -> dict:
+    with open(directory / f"{dataset}.yml", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
 
@@ -60,15 +60,40 @@ def _preflight():
     return {entry.name.split()[0]: entry for entry in module.INPUTS}
 
 
-@pytest.mark.parametrize("dataset", sorted(PACKAGES))
-def test_the_record_pins_the_sha256_that_the_curation_code_checks(dataset):
-    _, _, module_name, constant = PACKAGES[dataset]
+def _recorded_size_bytes(record: dict) -> int | None:
+    """The byte size a record states in storage.notes as ``(N bytes``, with thousands separators; None when absent."""
+    match = re.search(r"\(([\d,]+) bytes", record["storage"]["notes"])
+    return int(match.group(1).replace(",", "")) if match else None
+
+
+def _assert_record_matches_pin(dataset: str, directory: Path = DATA_DIRECTORY) -> None:
+    """The record states the SHA-256 that the curation code verifies, and the expected path of the package."""
+    _, relative_path, module_name, constant = PACKAGES[dataset]
     pin = _code_pin(module_name, constant)
     assert len(pin) == 64
-    record = _record(dataset)
+    record = _record(dataset, directory)
     assert pin in record["storage"]["notes"], (
         f"{dataset}: storage.notes must state the SHA-256 {pin} that {module_name}.{constant} verifies")
-    assert record["storage"]["expected_path"] == "eqasim-data/data/" + PACKAGES[dataset][1]
+    assert record["storage"]["expected_path"] == "eqasim-data/data/" + relative_path
+
+
+def _assert_file_matches_record(path: Path, record: dict, pinned_sha256: str) -> None:
+    """The file's bytes have the pinned SHA-256 and the byte size that the record states."""
+    content = path.read_bytes()
+    assert hashlib.sha256(content).hexdigest() == pinned_sha256, f"{path}: SHA-256 differs from the pin"
+    recorded_size = _recorded_size_bytes(record)
+    assert recorded_size is not None, "the record states no byte size in storage.notes"
+    assert len(content) == recorded_size, f"{path}: size {len(content)} bytes, the record states {recorded_size}"
+
+
+@pytest.mark.parametrize("dataset", sorted(PACKAGES))
+def test_the_record_pins_the_sha256_that_the_curation_code_checks(dataset):
+    _assert_record_matches_pin(dataset)
+
+
+@pytest.mark.parametrize("dataset", sorted(PACKAGES))
+def test_the_record_states_the_byte_size_of_the_package(dataset):
+    assert _recorded_size_bytes(_record(dataset)) is not None
 
 
 @pytest.mark.parametrize("dataset", sorted(PACKAGES))
@@ -94,15 +119,13 @@ def test_the_preflight_lists_the_package_as_an_optional_restricted_curation_inpu
 
 
 def test_the_preflight_prefixes_of_the_packages_follow_the_garage_dataset_entry():
-    entries = _preflight()
-    assert [entries[prefix].name.split()[0] for prefix in ("D11", "D12", "D13", "D14")] == ["D11", "D12", "D13", "D14"]
-    names = list(entries)
+    names = list(_preflight())
     assert names.index("D11") < names.index("D12") < names.index("D13") < names.index("D14")
 
 
 @pytest.mark.parametrize("dataset", sorted(PACKAGES))
 def test_a_local_package_is_the_pinned_file(dataset):
-    """Where the owner's package lies in the main checkout (or this worktree's data), its bytes are the recorded ones."""
+    """Where the owner's package lies in the main checkout (or this worktree's data), its hash and size are the recorded ones."""
     _, relative_path, module_name, constant = PACKAGES[dataset]
     candidates = [
         REPO_ROOT / "eqasim-data" / "data" / relative_path,
@@ -112,5 +135,36 @@ def test_a_local_package_is_the_pinned_file(dataset):
     path = next((candidate for candidate in candidates if candidate.is_file()), None)
     if path is None:
         pytest.skip(f"package {relative_path} is not available locally (restricted, not in the repository)")
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert digest == _code_pin(module_name, constant)
+    _assert_file_matches_record(path, _record(dataset), _code_pin(module_name, constant))
+
+
+def test_a_wrong_hash_in_a_copy_of_a_record_fails_the_pin_check(tmp_path):
+    """Mutation check: the pin check is able to fail, so a green run of it says something."""
+    dataset = "parking_package_wolfsburg_parkdaten_2026_10_01"
+    _assert_record_matches_pin(dataset)   # the committed record passes
+    record = _record(dataset)
+    pin = _code_pin(PACKAGES[dataset][2], PACKAGES[dataset][3])
+    record["storage"]["notes"] = record["storage"]["notes"].replace(pin, "0" * 64)
+    with open(tmp_path / f"{dataset}.yml", "w", encoding="utf-8") as handle:
+        yaml.safe_dump(record, handle)
+    with pytest.raises(AssertionError, match="storage.notes must state the SHA-256"):
+        _assert_record_matches_pin(dataset, directory=tmp_path)
+
+
+def test_a_wrong_hash_or_size_in_a_record_fails_the_file_check(tmp_path):
+    """Mutation check of the file check on a synthetic package: the recorded hash and the recorded size both bite."""
+    package = tmp_path / "package.zip"
+    package.write_bytes(b"synthetic package content")
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    size = package.stat().st_size
+    good = {"storage": {"notes": f"SHA-256 of the zip: {digest} ({size:,} bytes, verified)."}}
+    _assert_file_matches_record(package, good, digest)
+    wrong_size = {"storage": {"notes": f"SHA-256 of the zip: {digest} ({size + 1:,} bytes, verified)."}}
+    with pytest.raises(AssertionError, match="size"):
+        _assert_file_matches_record(package, wrong_size, digest)
+    with pytest.raises(AssertionError, match="SHA-256"):
+        _assert_file_matches_record(package, good, "0" * 64)
+    no_size = {"storage": {"notes": f"SHA-256 of the zip: {digest}."}}
+    with pytest.raises(AssertionError, match="byte size"):
+        _assert_file_matches_record(package, no_size, digest)
+

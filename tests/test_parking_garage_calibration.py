@@ -1758,10 +1758,10 @@ def test_the_commuter_measure_leaves_the_non_payers_out_of_numerator_and_denomin
     assert (commuters.stays, commuters.non_payers, commuters.outside_fee_hours) == (2, 1, 1)
     assert (visitors.stays, visitors.non_payers, visitors.outside_fee_hours) == (4, 2, 2)
     messages = [message for message in caplog.messages if "non-payers" in message]
-    assert any("commuter universe" in message and "non-payers (priced 0 ct) 1/2 (50.0 %)" in message and "payer-conditional" in message
-               for message in messages)
-    assert any("destination universe" in message and "non-payers (priced 0 ct) 2/4 (50.0 %)" in message and "payment-inclusive" in message
-               for message in messages)
+    assert any("commuter universe" in message and "non-payers (priced 0 ct) 1/2 (50.0 %)" in message
+               and "payer-conditional" in message for message in messages)
+    assert any("destination universe" in message and "non-payers (priced 0 ct) 2/4 (50.0 %)" in message
+               and "payment-inclusive" in message for message in messages)
     table = tmp_path / "payer_table.csv"
     cal.run(out_path=table, generated_on="2026-10-14", **inputs)
     rows = cal.read_calibration_table(table)
