@@ -15,11 +15,13 @@ Arm kinds (``--arm-kind``, default ``v3``)
     model, which must prove that it did NOT act (see the last section). Same exit codes and line format for every kind.
 
 Where the evidence lives (the stages are cached, so a log only holds the lines of the stages that EXECUTED in its run)
-    * ``--log`` is repeatable. All given logs are searched, the NEWEST log (file modification time) first, and every output
-      line names the log that supplied the matched line. A log of an EARLIER arm is a legitimate supplier for a stage that this
-      arm reused from the cache: the population stage (EV lines, free-parking draw line, shared by the cost arms of v3) and the
-      zones stage (zone release line, shared by all arms and executed once). The caller is responsible for passing only logs of
-      runs whose cached stage is the one this arm used.
+    * ``--log`` is repeatable and its ORDER MATTERS: the first ``--log`` is the arm's own log, every further ``--log`` is the log
+      of an EARLIER arm. The arm's own log alone supplies the run-time evidence of THIS run: the run check line (check 1), the
+      Java startup lines (check 2; ``--java-log``, if given, supplies them instead) and the NO_FEASIBLE_OPTION warning line.
+      All given logs, the NEWEST (file modification time) first, supply only the CACHED-stage evidence: the EV lines, the
+      free-parking draw line and the log fallback of the zone release / prepared inputs lines (population, zones and prepare
+      stage, executed once and shared by several arms). Every output line names the log that supplied the matched line. The
+      caller is responsible for passing only earlier logs of runs whose cached stage is the one this arm used.
     * ``--inputs-report`` is the PERSISTENT record of the prepare stage: ``<output_prefix>parking_inputs_report.json``, written
       by ``_write_parking_inputs`` of ``braunschweig/matsim/simulation/prepare.py`` into the stage directory
       ``<working_directory>/matsim.simulation.prepare__<hash>.cache/`` and copied by ``matsim.output.copy_parking_inputs`` to
@@ -39,7 +41,7 @@ Checks of the kind ``v3`` (in this order; each keys on the exact production log 
        tariff_model_file_name``; the prepare stage is cached too, so this line can be missing in a log). Java side (always a log
        line, written at every MATSim start): ``ParkingOutcomeReportListener.notifyStartup`` ("[parking] parking cost factor X
        (braunschweigParking.costFactor ...") and ``ParkingOptionPriceBetaCheck.notifyStartup`` ("[parking] option price coefficient
-       X per EUR equals ..."), searched in ``--java-log`` or, without it, in the pipeline logs. An absent
+       X per EUR equals ..."), searched in ``--java-log`` or, without it, in the first (own) ``--log`` only. An absent
        ``parking_cost_utility_factor`` in the config means 1.0, the pipeline default (``PARKING_DEFAULTS`` of prepare.py); every
        other key must be present.
     3. ``sources``: the 12-character prefixes of the sources equal ``--expected-sources`` (JSON: dataset -> 12 hex characters,
@@ -50,8 +52,9 @@ Checks of the kind ``v3`` (in this order; each keys on the exact production log 
        an earlier arm that executed the stage this arm reuses). The log that supplies the line must be ONE log: with
        ``parking_ev_exemption_enabled`` true it has the headline ("EV exemption: N of M car owners ...") with N > 0 and the
        basis line, and NOT the warning "has no 'powertrain' column"; with false it has "EV exemption is disabled" and no
-       headline. The evidence for a working powertrain column is N > 0 together with the ABSENCE of that warning: the basis line
-       is printed regardless and only shows that the attach ran to its end.
+       headline. Any OTHER supplied log that has the line of the opposite setting is named in a NOTE; it is a FAIL only when
+       that log is the arm's own (first) log. The evidence for a working powertrain column is N > 0 together with the
+       ABSENCE of that warning: the basis line is printed regardless and only shows that the attach ran to its end.
     5. ``no_feasible_option``: from the v4 report, per zone group, ``no_feasible_option_count`` over the priced stays (every
        row but NO_ZONE, as ``ParkingOutcomeReportListener.pricedStays`` counts them). The two city-centre zones ``bs_zone_ia``
        and ``bs_zone_ib`` are judged one by one and FAIL above 1 % (exactly 1 % passes). bh_*, se_am_markt, wob_area_*,
@@ -74,8 +77,9 @@ required and not used)
       no "[parking] parking cost factor" and no "[parking] option price coefficient" line. Pass only logs of THIS arm: a log of
       a zone arm contains these lines by design.
     * ``no_parking_outputs`` (only with ``--simulation-output``, the MATSim ``simulation_output`` directory): no
-      ``ITERS/it.N/N.parking_outcomes.csv`` and the ``output_config.xml`` of the run (the file MATSim's ControllerConfigGroup
-      names; ``.gz`` accepted) does not ENABLE the module ``braunschweigParking``. The module may be PRESENT with
+      ``ITERS/it.N/N.parking_outcomes.csv`` and the ``output_config.xml`` of the run (written by MATSim as OUTPUT_PREFIX
+      "output_" + ``Controler.DefaultFiles.config`` "config.xml"; ``.gz`` accepted) does not ENABLE the module
+      ``braunschweigParking``. The module may be PRESENT with
       ``enabled=false``: the typed Java group is registered for every run by ``BraunschweigConfigurator``.
 
 ``--zone-groups`` (YAML or JSON) maps zone-id patterns (``fnmatch``, first match in file order) to group names and replaces the
@@ -155,7 +159,8 @@ COST_FACTOR_DEFAULT = 1.0
 #: The outcome report of iteration N is ``N.parking_outcomes.csv`` (ParkingOutcomeReportListener.FILE_NAME with the iteration
 #: prefix of OutputDirectoryHierarchy.getIterationFilename).
 REPORT_FILE_NAME = re.compile(r"(\d+)\.parking_outcomes\.csv")
-#: The MATSim config of a finished run (constant of org.matsim.core.config.groups.ControllerConfigGroup, MATSim 2026.0).
+#: The MATSim config of a finished run: ``Controler.OUTPUT_PREFIX`` ("output_") + ``Controler.DefaultFiles.config`` ("config.xml"),
+#: MATSim 2026.0 (org.matsim.core.controler.Controler).
 OUTPUT_CONFIG_FILE_NAME = "output_config.xml"
 
 # The production log formats this script keys on; tests/test_arm_sanity.py pins every fragment to the source that writes it.
@@ -264,10 +269,13 @@ def read_log_lines(path) -> list[str]:
 
 
 def load_logs(paths: Sequence) -> list[LogSource]:
-    """The logs, NEWEST first by file modification time (stable: equal times keep the order given)."""
-    checked = [_require_file(path, "log") for path in paths]
-    ordered = sorted(checked, key=lambda path: path.stat().st_mtime, reverse=True)
-    return [LogSource(str(path), read_log_lines(path)) for path in ordered]
+    """The logs in the ORDER GIVEN: the first is the arm's own log, the others are logs of earlier arms."""
+    return [LogSource(str(path), read_log_lines(path)) for path in (_require_file(path, "log") for path in paths)]
+
+
+def newest_first(logs: Sequence[LogSource]) -> list[LogSource]:
+    """The logs NEWEST first by file modification time (stable: equal times keep the order given)."""
+    return sorted(logs, key=lambda log: Path(log.name).stat().st_mtime, reverse=True)
 
 
 def find_last(logs: Sequence[LogSource], pattern: re.Pattern):
@@ -595,40 +603,51 @@ def _lines_matching(log: LogSource, pattern: re.Pattern) -> bool:
     return any(pattern.search(line) for line in log.lines)
 
 
-def check_ev_exemption(logs: Sequence[LogSource], enabled: bool) -> CheckResult:
-    """Check 4: the EV attach lines of ONE log agree with ``parking_ev_exemption_enabled`` (see the module doc)."""
-    wanted = EV_HEADLINE if enabled else EV_DISABLED
+def check_ev_exemption(logs: Sequence[LogSource], enabled: bool, own: str | None = None) -> CheckResult:
+    """Check 4: the EV attach lines of ONE log agree with ``parking_ev_exemption_enabled`` (see the module doc).
+
+    ``own`` is the name of the arm's own log. A supplied log other than the supplier that has the line of the OPPOSITE setting
+    is named in a NOTE, and fails the check when it is the arm's own log (a log of an earlier arm may legitimately show the
+    other setting)."""
+    wanted, opposite = (EV_HEADLINE, EV_DISABLED) if enabled else (EV_DISABLED, EV_HEADLINE)
+    opposite_text = "'EV exemption is disabled' line" if enabled else "exemption headline"
     supplier = next((log for log in logs if _lines_matching(log, wanted)), None)
     if supplier is None:
-        found_other = any(_lines_matching(log, EV_DISABLED if enabled else EV_HEADLINE) for log in logs)
+        found_other = any(_lines_matching(log, opposite) for log in logs)
         what = ("the '[parking] EV exemption: N of M car owners' headline" if enabled
                 else "the '[parking] EV exemption is disabled' line")
         return CheckResult("ev_exemption", FAIL, f"no log has {what}"
                            + (" but a log has the line of the OTHER setting: the overlay did not arrive" if found_other else
                               " (the population stage was cached: pass the log of the arm that executed the stage this arm "
                               "reuses)") + f"; logs: {_log_names(logs)}")
-    if not enabled:
-        if _lines_matching(supplier, EV_HEADLINE):
-            return CheckResult("ev_exemption", FAIL, f"the config disables the EV exemption but {supplier.name} has both the "
-                               "disabled line and the exemption headline")
-        return CheckResult("ev_exemption", PASS, f"EV exemption disabled in the config and logged as disabled [from "
-                           f"{supplier.name}]")
-    headline = find_last([supplier], EV_HEADLINE).match
-    problems = []
-    if _lines_matching(supplier, EV_DISABLED):
-        problems.append(f"the config enables the EV exemption but {supplier.name} also says 'EV exemption is disabled'")
-    exempt = int(headline.group(1))
-    if exempt == 0:
-        problems.append(f"no exempt car owner: {headline.group(0)}")
-    if not _lines_matching(supplier, EV_BASIS):
-        problems.append("the log has no '[parking] EV exemption basis ... powertrains of the car vehicles:' line (the attach did "
-                        "not run to its end)")
-    if _lines_matching(supplier, EV_NO_POWERTRAIN_COLUMN):
-        problems.append("the log warns that the vehicles frame has no 'powertrain' column, so nobody can be exempt")
+    problems, notes = [], []
+    if _lines_matching(supplier, opposite):
+        problems.append(f"the config {'enables' if enabled else 'disables'} the EV exemption but {supplier.name} has both the "
+                        f"disabled line and the exemption headline")
+    for log in logs:
+        if log is supplier or not _lines_matching(log, opposite):
+            continue
+        if log.name == own:
+            problems.append(f"the arm's own log {log.name} has the line of the OTHER setting ({opposite_text}): the overlay "
+                            "did not arrive in this run")
+        else:
+            notes.append(f"NOTE: {log.name} (an earlier arm) has the {opposite_text} of the other setting")
+    if enabled:
+        headline = find_last([supplier], EV_HEADLINE).match
+        if int(headline.group(1)) == 0:
+            problems.append(f"no exempt car owner: {headline.group(0)}")
+        if not _lines_matching(supplier, EV_BASIS):
+            problems.append("the log has no '[parking] EV exemption basis ... powertrains of the car vehicles:' line (the "
+                            "attach did not run to its end)")
+        if _lines_matching(supplier, EV_NO_POWERTRAIN_COLUMN):
+            problems.append("the log warns that the vehicles frame has no 'powertrain' column, so nobody can be exempt")
+        evidence = (f"{headline.group(0)} (exempt > 0) and no warning that the vehicles frame lacks the powertrain column "
+                    f"[from {supplier.name}]")
+    else:
+        evidence = f"EV exemption disabled in the config and logged as disabled [from {supplier.name}]"
     if problems:
-        return CheckResult("ev_exemption", FAIL, "; ".join(problems))
-    return CheckResult("ev_exemption", PASS, f"{headline.group(0)} (exempt > 0) and no warning that the vehicles frame lacks "
-                       f"the powertrain column [from {supplier.name}]")
+        return CheckResult("ev_exemption", FAIL, "; ".join([*problems, *notes]))
+    return CheckResult("ev_exemption", PASS, "; ".join([evidence, *notes]))
 
 
 def read_report(path):
@@ -699,12 +718,15 @@ def report_free_share(frame, shift: float, logs: Sequence[LogSource] = ()) -> Ch
 
 def run_checks(config: ArmConfig, logs: Sequence[LogSource], java_logs: Sequence[LogSource] | None, report_path,
                expected_sources, zone_groups, inputs_report: InputsReport | None = None) -> list[CheckResult]:
-    """All six checks in order. A report that is no usable v4 report fails check 5 and leaves check 6 not evaluated."""
-    java_logs = java_logs if java_logs else logs
-    results = [check_module_active(logs, report_path),
-               check_config_echo(logs, java_logs, config, inputs_report),
-               check_sources(logs, expected_sources, inputs_report),
-               check_ev_exemption(logs, config.ev_exemption_enabled)]
+    """All six checks in order. ``logs`` is in the order given: the first is the arm's own log (run check, Java lines), all
+    of them supply the cached-stage evidence. A report that is no usable v4 report fails check 5 and leaves check 6 not
+    evaluated."""
+    own, cached = logs[:1], newest_first(logs)
+    java_logs = java_logs if java_logs else own
+    results = [check_module_active(own, report_path),
+               check_config_echo(cached, java_logs, config, inputs_report),
+               check_sources(cached, expected_sources, inputs_report),
+               check_ev_exemption(cached, config.ev_exemption_enabled, own=own[0].name)]
     try:
         frame = read_report(report_path)
     except (ValueError, FileNotFoundError) as error:
@@ -712,7 +734,7 @@ def run_checks(config: ArmConfig, logs: Sequence[LogSource], java_logs: Sequence
         results.append(CheckResult("free_share", INFO, "not evaluated, the report is unusable (see no_feasible_option)"))
         return results
     results.append(check_no_feasible_option(frame, zone_groups, java_logs))
-    results.append(report_free_share(frame, config.workplace_free_share_shift, logs))
+    results.append(report_free_share(frame, config.workplace_free_share_shift, cached))
     return results
 
 
@@ -811,9 +833,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="v3 (zone model, default), or off / legacy (no zone model)")
     parser.add_argument("--arm-config", required=True, help="the arm's resolved config (.merged_config.yml)")
     parser.add_argument("--log", action="append", required=True,
-                        help="a pipeline log of the arm; repeatable, searched newest first (a log of an earlier arm may supply "
-                             "the lines of a stage this arm reused from the cache)")
-    parser.add_argument("--java-log", help="the MATSim log; without it the Java lines are searched in the --log files")
+                        help="a pipeline log; repeatable and ORDER MATTERS: the FIRST --log is the arm's own log (run check "
+                             "line, Java lines), every further --log is the log of an earlier arm that may supply only the "
+                             "cached-stage evidence (EV lines, free draw, zone release / prepared inputs fallback)")
+    parser.add_argument("--java-log", help="the MATSim log of the arm; without it the Java lines are read from the first --log")
     parser.add_argument("--inputs-report", help="<prefix>parking_inputs_report.json of the prepare stage (full SHA-256 sources, "
                                                 "cost factor, beta, decays): the persistent evidence of checks 2 and 3")
     parser.add_argument("--report", help="kind v3: the v4 outcome report of one iteration (N.parking_outcomes.csv)")

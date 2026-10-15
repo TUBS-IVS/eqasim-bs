@@ -779,12 +779,49 @@ def test_logs_are_searched_newest_first_and_the_supplying_log_is_named(arm, tmp_
     assert code == 0 and "7 of 5000" in result_of(out, "ev_exemption") and "older.log" in result_of(out, "ev_exemption")
 
 
-def test_the_run_check_line_of_an_earlier_log_is_found_too_but_the_log_is_named(arm, tmp_path):
+def test_the_run_check_line_is_read_from_the_arms_own_log_only(arm, tmp_path):
+    # The first --log is the arm's own log. An earlier arm's log may supply cached-stage evidence, never the run check.
     earlier = write_lines(tmp_path / "earlier_arm.log", pipeline_lines()[-1:])
     write_lines(arm.log, pipeline_lines(run_check=False))
     arm.extra_logs = [earlier]
     code, out, _ = arm.run()
-    assert code == 0 and "earlier_arm.log" in result_of(out, "module_active")
+    line = result_of(out, "module_active")
+    assert code == 1 and line.startswith("[FAIL]") and "run check" in line
+
+
+def test_the_first_log_is_the_arms_own_log_whatever_its_modification_time(arm, tmp_path):
+    earlier_run_check = pipeline_lines()[-1].replace("iteration 60", "iteration 55")
+    earlier = write_lines(tmp_path / "earlier_arm.log", [earlier_run_check])
+    arm.extra_logs = [earlier]
+    set_age(arm.log, 900)                                    # the own log is OLDER than the earlier arm's log
+    code, out, _ = arm.run()
+    line = result_of(out, "module_active")
+    assert code == 0, out
+    assert "iteration 60" in line and "pipeline.log" in line and "earlier_arm.log" not in line
+
+
+def test_the_java_lines_come_from_the_java_log_or_the_first_log_never_from_an_earlier_arms_log(arm, tmp_path):
+    earlier = write_lines(tmp_path / "earlier_arm.log", java_lines())
+    arguments = ["--arm-config", str(arm.config), "--log", str(arm.log), "--log", str(earlier),
+                 "--report", str(arm.report), "--expected-sources", str(arm.sources)]
+    assert arm.sanity.main(arguments) == 1                   # no --java-log and the own log has no Java line
+    out = arm.capsys.readouterr().out
+    assert result_of(out, "config_echo").startswith("[FAIL]") and "costFactor" in result_of(out, "config_echo")
+    write_lines(arm.log, pipeline_lines() + java_lines())    # now the own log carries them
+    assert arm.sanity.main(arguments) == 0
+
+
+def test_the_no_feasible_option_warning_is_quoted_from_the_java_log_not_from_an_earlier_arm(arm, tmp_path):
+    warning = ("[parking] it 60: 12 of 1000 priced stays (1.2 %) have no feasible parking option (NO_FEASIBLE_OPTION: the stay "
+               "exceeds the maximum stay of the street and of every garage within reach)")
+    arm.extra_logs = [write_lines(tmp_path / "earlier_arm.log", [warning])]
+    code, out, _ = arm.run()
+    assert code == 0 and "it 60: 12 of 1000" not in result_of(out, "no_feasible_option")
+
+
+def test_the_help_and_the_docstring_say_that_the_first_log_is_the_arms_own(sanity):
+    assert "FIRST --log" in " ".join(sanity.build_parser().format_help().split())
+    assert "first ``--log`` is the arm's own log" in " ".join(sanity.__doc__.split())
 
 
 def test_the_ev_headline_and_the_warning_must_come_from_one_log(arm, tmp_path):
@@ -802,12 +839,14 @@ def test_the_ev_headline_and_the_warning_must_come_from_one_log(arm, tmp_path):
     assert code == 1 and "powertrain" in result_of(out, "ev_exemption")
 
 
-def test_load_logs_orders_by_modification_time_newest_first(sanity, tmp_path):
+def test_load_logs_keeps_the_given_order_and_newest_first_orders_by_modification_time(sanity, tmp_path):
     first, second, third = (write_lines(tmp_path / f"{name}.log", [name]) for name in ("a", "b", "c"))
     set_age(first, 300)
     set_age(second, 100)
     set_age(third, 200)
-    assert [Path(log.name).name for log in sanity.load_logs([first, second, third])] == ["b.log", "c.log", "a.log"]
+    logs = sanity.load_logs([first, second, third])
+    assert [Path(log.name).name for log in logs] == ["a.log", "b.log", "c.log"]
+    assert [Path(log.name).name for log in sanity.newest_first(logs)] == ["b.log", "c.log", "a.log"]
 
 
 # -------------------------------------------------------------------------------------------------------- M1: bad input
@@ -1087,6 +1126,56 @@ def test_the_output_config_file_name_is_the_one_matsim_names():
     if not jar.is_file():
         pytest.skip("matsim-2026.0.jar is not in the local Maven repository")
     with zipfile.ZipFile(jar) as archive:
-        content = archive.read("org/matsim/core/config/groups/ControllerConfigGroup.class")
-    assert b"output_config.xml" in content
+        # The name is composed, not a literal: Controler.OUTPUT_PREFIX "output_" + Controler.DefaultFiles.config "config.xml".
+        controler = archive.read("org/matsim/core/controler/Controler.class")
+        default_files = archive.read("org/matsim/core/controler/Controler$DefaultFiles.class")
+    assert b"output_" in controler
+    assert b"config.xml" in default_files
     assert 'OUTPUT_CONFIG_FILE_NAME = "output_config.xml"' in SCRIPT.read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------------ fix round 2: the opposite EV line in any supplied log
+
+
+def ev_arm(arm, tmp_path, own_ev: str, earlier_ev: str):
+    """The own log carries the EV lines of ``own_ev`` (on/off/none), an earlier arm's log those of ``earlier_ev``."""
+    write_lines(arm.log, pipeline_lines(ev=own_ev))
+    earlier = write_lines(tmp_path / "earlier_arm.log", pipeline_lines(ev=earlier_ev)[2:])
+    arm.extra_logs = [earlier]
+    return earlier
+
+
+def test_the_opposite_ev_line_in_an_earlier_arms_log_is_a_note_not_a_failure(arm, tmp_path):
+    ev_arm(arm, tmp_path, "on", "off")
+    code, out, _ = arm.run()
+    line = result_of(out, "ev_exemption")
+    assert code == 0 and line.startswith("[PASS]") and "NOTE" in line and "earlier_arm.log" in line and "disabled" in line
+
+
+def test_the_opposite_ev_line_in_the_arms_own_log_fails_even_when_an_earlier_log_supplies_the_wanted_line(arm, tmp_path):
+    ev_arm(arm, tmp_path, "off", "on")
+    code, out, _ = arm.run()
+    line = result_of(out, "ev_exemption")
+    assert code == 1 and line.startswith("[FAIL]") and "pipeline.log" in line and "OTHER setting" in line
+
+
+def test_a_disabled_arm_notes_an_earlier_arms_headline_and_fails_on_its_own(arm, tmp_path):
+    write_config(arm.config, parking_ev_exemption_enabled=False)
+    ev_arm(arm, tmp_path, "off", "on")
+    code, out, _ = arm.run()
+    line = result_of(out, "ev_exemption")
+    assert code == 0 and "NOTE" in line and "earlier_arm.log" in line and "headline" in line
+    ev_arm(arm, tmp_path, "on", "off")                       # now the arm's OWN log shows the headline although disabled
+    code, out, _ = arm.run()
+    line = result_of(out, "ev_exemption")
+    assert code == 1 and line.startswith("[FAIL]") and "pipeline.log" in line and "OTHER setting" in line
+
+
+def test_a_log_with_both_settings_is_judged_inside_the_supplying_log_and_the_others_are_noted(sanity, tmp_path):
+    own = sanity.LogSource("own.log", pipeline_lines()[2:4])
+    earlier = sanity.LogSource("earlier.log", pipeline_lines(ev="off")[2:3])
+    noted = sanity.check_ev_exemption([own, earlier], True, own="own.log")
+    assert noted.ok and "earlier.log" in noted.evidence and "NOTE" in noted.evidence
+    # without knowing the own log (direct call) the rule cannot fail the check, only note
+    assert sanity.check_ev_exemption([earlier, own], True).ok
+    assert not sanity.check_ev_exemption([earlier, own], True, own="earlier.log").ok
