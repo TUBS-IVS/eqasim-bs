@@ -39,7 +39,15 @@ licensing:
   redistribution: allowed
 limitations: |
   Unit is the trip (GEWICHT_W_ZENSUS-weighted), GIS-routed length only (GIS-invalid trips excluded and
-  counted in the header: 12,174 of 58,148; 45,942 trips selected), modes E_HVM_5 only; the straight-line
+  counted in the header: 12,174 of 58,148, i.e. 21 %; 45,942 trips selected). The excluded trips are not a
+  random subset: among the 12,119 GIS-invalid trips that pass the extractor's other criteria (non-negative
+  weight, known E_HVM_5 mode, known purpose) the GEWICHT_W_ZENSUS-weighted mode shares are walk 32.6 %,
+  bicycle 11.0 %, car 38.1 %, car passenger 10.8 %, pt 7.4 %, against walk 24.1 %, bicycle 17.1 %, car
+  42.1 %, car passenger 10.3 %, pt 6.4 % among the 45,942 selected GIS-valid trips (unweighted: walk 32.8 %
+  against 23.1 %, bicycle 10.5 % against 15.8 %). Recomputed on 2026-10-16 from SrV2023_Wege.csv with the
+  selection of braunschweig.calibration.srv_mode_by_distance_band.select_trips minus its GIS criterion; the
+  cause of the missing GIS length was not investigated, so whether the table's shares carry a selection bias
+  for walk and bicycle is open. Modes E_HVM_5 only; the straight-line
   equivalent divides the routed length by 1.3 (the pipeline's detour convention, not a measured per-trip
   detour). Purpose groups follow braunschweig.calibration.srv_plan_structure.PURPOSE_BY_V_ZWECK (business
   trips count as work, other education as education, as the pipeline maps MiD W_ZWECK 2 to work); a trip to
