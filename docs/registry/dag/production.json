@@ -553,6 +553,10 @@
    "synthesis.locations.education"
   ],
   [
+   "data.spatial.municipalities",
+   "synthesis.population.trips.simulated"
+  ],
+  [
    "documentation.meta_output",
    "matsim.output"
   ],
@@ -882,6 +886,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "synthesis.population.trips.simulated"
+  ],
+  [
+   "synthesis.population.enriched",
    "synthesis.vehicles.passengers.default"
   ],
   [
@@ -981,6 +989,10 @@
    "synthesis.output"
   ],
   [
+   "synthesis.population.spatial.locations",
+   "synthesis.population.trips.simulated"
+  ],
+  [
    "synthesis.population.spatial.primary.candidates",
    "braunschweig.analysis.verbindungen_validation"
   ],
@@ -1078,19 +1090,23 @@
   ],
   [
    "synthesis.population.trips.final",
-   "matsim.scenario.population"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "synthesis.output"
-  ],
-  [
-   "synthesis.population.trips.final",
    "synthesis.population.activities.final"
   ],
   [
    "synthesis.population.trips.final",
    "synthesis.population.spatial.secondary.locations"
+  ],
+  [
+   "synthesis.population.trips.final",
+   "synthesis.population.trips.simulated"
+  ],
+  [
+   "synthesis.population.trips.simulated",
+   "matsim.scenario.population"
+  ],
+  [
+   "synthesis.population.trips.simulated",
+   "synthesis.output"
   ],
   [
    "synthesis.vehicles.passengers.default",
@@ -1212,6 +1228,7 @@
   "synthesis.population.spatial.secondary.locations",
   "synthesis.population.trips",
   "synthesis.population.trips.final",
+  "synthesis.population.trips.simulated",
   "synthesis.vehicles.passengers.default",
   "synthesis.vehicles.vehicles"
  ],

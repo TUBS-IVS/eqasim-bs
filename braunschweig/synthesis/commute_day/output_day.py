@@ -67,8 +67,14 @@ _LOG_TAG = "[commute day output]"
 ENRICHED_STAGE = "synthesis.population.enriched"
 TRIPS_STAGE = "synthesis.population.trips"
 ACTIVITIES_STAGE = "synthesis.population.activities"
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+#: The simulated day (trips.final with the outside-tour modes judged against SrV, ADR-0145).
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
+
+#: The vendored configure declares the pre-assignment names; they are substituted by the simulated trips and the
+#: reporting-day activities, so the DAG edge and execute() read the same stages (the default map of
+#: ConfigureDayViewContext would declare trips.final and leave the simulated alias undeclared).
+_STAGE_MAP = {TRIPS_STAGE: DAY_TRIPS_STAGE, ACTIVITIES_STAGE: DAY_ACTIVITIES_STAGE}
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 
 KEY_ENABLED = "commute_day_state_enabled"
@@ -126,7 +132,7 @@ def validate(context):
 
 
 def configure(context):
-    base.configure(ConfigureDayViewContext(context))
+    base.configure(ConfigureDayViewContext(context, _STAGE_MAP))
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
     # Declared only when the model is on -- the same gate every other consumer of the state
     # stage uses (braunschweig.matsim.scenario.population,

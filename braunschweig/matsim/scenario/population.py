@@ -71,7 +71,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads
 #: are replaced by these before the frames are prepared. Pass-throughs when
 #: ``commute_day_state_enabled`` is false.
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+#: The trips are the simulated day (trips.final with the outside-tour modes judged against SrV,
+#: ADR-0145); activities.final is unchanged because modes do not enter it.
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 

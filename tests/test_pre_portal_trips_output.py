@@ -43,7 +43,8 @@ from braunschweig.synthesis.portal_trips import config_keys as PORTAL  # noqa: E
 from braunschweig.synthesis.portal_trips import rewrite as rw  # noqa: E402
 
 PRE_PORTAL_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+# The synthesis output reads the simulated day (trips.final with the outside-tour modes, ADR-0145).
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 VENDORED_TRIP_COLUMNS = [
     "person_id", "trip_index", "preceding_activity_index", "following_activity_index",
     "departure_time", "arrival_time", "preceding_purpose", "following_purpose", "is_first", "is_last",

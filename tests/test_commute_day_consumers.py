@@ -46,7 +46,8 @@ from synthesis.output import select_person_output_columns  # noqa: E402
 TRIPS_STAGE = "synthesis.population.trips"
 ACTIVITIES_STAGE = "synthesis.population.activities"
 ENRICHED_STAGE = "synthesis.population.enriched"
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+# The synthesis output reads the simulated day (trips.final with the outside-tour modes, ADR-0145).
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 
@@ -339,11 +340,17 @@ def test_attach_day_absence_state_covers_every_person():
 #: Modules that only swap the trips stage name; checked on the SOURCE (see the module docstring).
 _FINAL_TRIPS_CONSUMERS = (
     "braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py",
-    "braunschweig/matsim/scenario/population.py",
     "braunschweig/analysis/synthesis/work_participation_by_kreis.py",
 )
 
 _PRE_ASSIGNMENT_READ = re.compile(r"""context\.stage\(\s*["']synthesis\.population\.trips["']""")
+
+
+def test_population_writer_reads_the_simulated_day_trips():
+    source = (REPO / "braunschweig/matsim/scenario/population.py").read_text(encoding="utf-8")
+    assert 'DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"' in source, (
+        "the population writer must read the simulated day (ADR-0145)")
+    assert not _PRE_ASSIGNMENT_READ.search(source)
 
 
 @pytest.mark.parametrize("relative_path", _FINAL_TRIPS_CONSUMERS)

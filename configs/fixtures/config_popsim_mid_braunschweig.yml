@@ -36,6 +36,7 @@ config:
   # and it needs the cordon; with the default (true) the chain solver would pull the portal stage
   # into this DAG.
   braunschweig.portal.enabled: false
+  braunschweig.outside_tour_modes.enabled: false
   # General day absence (issue #370, ADR-0110): OFF for this FIXTURE, for the same reason as
   # commute_day_state_enabled above but through a DIFFERENT mechanism (final-review fix wave,
   # Important finding 1): matsim.scenario.population IS aliased below to the braunschweig
@@ -357,6 +358,7 @@ aliases:
   # this pipeline at all. NOTE synpp substitutes an alias ONE step only, which is why the
   # target below is the stage THIS config actually uses, not the seam name.
   synthesis.population.trips.final: braunschweig.popsim.trips_stage
+  synthesis.population.trips.simulated: braunschweig.popsim.trips_stage
   synthesis.population.activities.final: synthesis.population.activities
 
   # Cross-cordon einpendler injection: terminal injection at the MATSim writers
