@@ -56,7 +56,8 @@ acquisition:
     Spec v3 B1 (2026-10-14) adds the excluded row 'Peine: Parkplatz Echternplatz (zone I of the Parkgebuehrenordnung)': a
     single lot (1.70 EUR per started 30 min, Mo-Fr 9-17 h, maximum stay 60 min of the city's lot page), sources pe_current and
     pe_echtern of the package Parkdaten_Nachrecherche_2026-10-14.zip; it is not part of the Peine zone II row. Status counts:
-    zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131 rows). SHA-256 of the file (LF): 8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c
+    zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8 (131 rows). SHA-256 of the file (LF):
+    8cf18449254f23b6cffc41e31e072019fe7391ecc55257778559d6f2b9a4240c
     (before: 7e25d6051f85416ca3193e57c6671cd14a776d98ade181a64d22729322814af3).
     Spec v3 B2 (2026-10-14): the zoned row of Wolfsburg names the 15 area zones wob_area_<id> (the mobile-parking areas with a
     recorded maximum stay, carved out of tariff zones 1 and 3; data record parking_zones_2026) next to the three tariff zones;
@@ -72,7 +73,8 @@ acquisition:
     by 2026-06-02 at the latest as a conditional inference; the exact end date and the last permit stock are unknown). The
     districts of Wolfsburg, Peine, Helmstedt and Wolfenbuettel are in parking_resident_districts_2026 (their municipalities
     are zoned here). Status counts unchanged (zoned 11, no_paid_parking_known 1, not_audited 111, excluded 8, 131 rows).
-    SHA-256 of the file (LF): bcca0a0fe84e27b815ccbcc112c06ec16c87c35b20c6fbbc8308f046edc0c44f (before: c4edfa0390730281430d2e2a50fcbf9a109a1170eba5e12cfc0b68827f7e403e).
+    SHA-256 of the file (LF): bcca0a0fe84e27b815ccbcc112c06ec16c87c35b20c6fbbc8308f046edc0c44f (before:
+    c4edfa0390730281430d2e2a50fcbf9a109a1170eba5e12cfc0b68827f7e403e).
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
   committed: true

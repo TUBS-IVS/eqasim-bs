@@ -298,14 +298,12 @@ inferred from the other.
    In substance:
    - Braunschweig Ia loses `long_stay_product_eur`: the 9.00 EUR ticket is zone Ib's, so assumption M1 is WITHDRAWN for Ia
      (the product does not exist there) and the 180 min maximum acts through decision 1. Ib is unchanged.
-   - Peine `pe_innenstadt` is 0.50 EUR per started 30 min without cap, zone-wide maximum or long-stay product (the day and
-     4 h tickets and the 180 min limits belong to lots); Wolfenbuettel `wf_innenstadt` takes the tariff of 2026-01-01 (0.25
-     EUR for the first 15 min, then 0.05 EUR per started 3 min). Salzgitter `sz_lebenstedt` gets a maximum stay of 150 min,
-     Helmstedt `he_innenstadt` 180 min, the Bad Harzburg zones 360 or 600 min, Seesen `se_am_markt` 360 min (the 10 h of the
-     city page is a named conflict and not applied).
-   - EV exemptions (Part A decision 5) are filled on seven rows: Salzgitter 240 min and Seesen 360 min to 2026-12-31 (E2:
-     within the maximum stay), Peine 180 min to 2028-04-30 and the four Goslar rows 240 min to 2026-12-31. The Goslar
-     exemption holds at marked machines only, which the model does not know, so it is an UPPER BOUND.
+   - The per-row corrections (Peine, Wolfenbuettel, Salzgitter, Helmstedt, Bad Harzburg, Seesen: tariff cells and maximum
+     stays), each with the source id of its cell, are in `parking_tariffs_2026`. The 10 h of the Seesen city page is a named
+     conflict and is NOT applied.
+   - EV exemptions (Part A decision 5) are filled on seven rows (values, dates and source ids in `parking_tariffs_2026`;
+     E2: an exemption lies within the maximum stay). The Goslar exemption holds at marked machines only, which the model
+     does not know, so it is an UPPER BOUND.
    - Source of the fee windows: the three Braunschweig Hauptbahnhof rows (the DB page, Mo-So 0-24 h) take the new value
      `operator_page` of `zones.FEE_WINDOW_SOURCES`, because labelling an operator page as municipal would be a provenance error
      (ruling R-B-4); Bad Harzburg keeps `municipal_page` (the dated municipal brochure). Peine Echternplatz (zone I, 1.70 EUR
@@ -334,17 +332,18 @@ inferred from the other.
    shift. The maximum is reproduced in the exported JSON, so the Java model carries it; the Java-pinned fixture JSON stays
    byte-identical because the fixture's own maximum stays are held in a sidecar file (ruling R-B-9).
 10. **Wolfsburg area zones (spec B2).** The 15 mobile-parking areas with a recorded maximum stay (the layer of the package
-    `Wolfsburg_Parkdaten.zip`: one with 30 min, one with 60 min and thirteen with 120 min; two areas in tariff zone 1 and thirteen
-    in zone 3) become the zones `wob_area_<source id>`, so the zone table has 55 zones. A zone takes the tariff values of its
+    `Wolfsburg_Parkdaten.zip`; the areas and their stays are listed in `parking_zones_2026` and `parking_tariffs_2026`) become
+    the zones `wob_area_<source id>`. A zone takes the tariff values of its
     parent tariff zone and its OWN maximum stay; the raw paid-hours text of the area is compared with the parent's window and a
     difference would be named in the note (the comparison found none). The geometry is NOT the raw section polygon (ruling
     R-B-12): an area zone is the part of its parent tariff zone's buffered section region (ASSUMPTION C-a, 50 m) that is nearer to
     that area's street section than to any other section of the parent, the generalised Voronoi split that `municipal_zones`
     already uses between tariff zones; the parents lose the areas, so zones never overlap. Section polygons are thin, activity
     points sit beside them, and a raw section would almost never contain one, so its maximum stay would never act. Two
-    garage-dataset lots change zone with it: the Cinemaxx lot lies in area 680 (60 min; the section lies 100 % inside the lot
+    garage-dataset lots change zone with it: the Cinemaxx lot lies in a 60 min area (the section lies 100 % inside the lot
     outline, and the package rule states 60 min, so the maximum is supported by the source and not a Voronoi artefact) and the
-    Hoffmannstrasse triangle lot in area 736 (120 min; 89.1 % of its outline in the section). The 58 areas without a recorded
+    Hoffmannstrasse triangle lot in a 120 min area (the overlap with its outline is in `parking_garages_2026`). The 58 areas without
+    a recorded
     maximum are not zones (W-max, decision 8). Ruling R-B-13: the Wolfsburg universe of the decay calibration and of the run
     comparison is selected by `municipality_ags` 03103000 from the tariff table (`calibrate_garage_decay.wolfsburg_zone_ids`),
     so the area zones count; a fixed list of the three tariff zones would have dropped them silently.
@@ -397,13 +396,14 @@ inferred from the other.
     street, only free options) is no payer and leaves numerator and denominator, counted and logged per universe; the
     visitor measure stays payment-inclusive because the SrV street category contains free parkers. The first computation
     that counted these stays as share 0 gave another lambda_c and was superseded within Part B before any config of a
-    merged branch used it. lambda_c is reported as an ORDER OF MAGNITUDE (the target rests on 42 unweighted paid
-    respondents, 84 % of the commuter universe lies in the zone whose street is infeasible for long stays, and within one
-    standard error of the target lambda_c spans from below the search floor to about 130 m), and its transfer to a town
-    with a feasible street is UNSUPPORTED. The Wolfsburg check is a number without a pre-registered bound, never a pass or
+    merged branch used it. lambda_c is reported as an ORDER OF MAGNITUDE, weakly identified (a small paid-respondent
+    target and a commuter universe concentrated in the zone whose street is infeasible for long stays; the numbers are in the
+    calibration record), and its transfer to a town with a feasible street is UNSUPPORTED. The Wolfsburg check is a number without a
+    pre-registered bound, never a pass or
     a fail. A calibration is no validation. Ruling R-B-8: until this recalibration the four tie tests that tie the
     calibration to the pins of the garage dataset, the sensitivity datasets and the zone file stayed red on purpose (a
     stale table is a true signal), and they are green only because the table is regenerated.
+
 ## Part B rejected alternatives
 
 - **Keep assumption M1 for Ia** (decision 8): rejected in Part A; Part B removes the product from the table.
@@ -415,6 +415,9 @@ inferred from the other.
 - **Per-lot components for the three Ia lots, or dropping the lots from the dataset** (decision 9): per-lot components would
   invent a tariff structure the lot does not publish, and dropping priced lots removes real options; the zone's maximum stay as
   the lot's own column is what the source supports.
+- **Compare the lot's maximum stay with the street's chargeable minutes instead of the elapsed stay** (decision 9): rejected
+  by the owner (simple rules). Cost: an Ia lot drops out of an early-morning long stay that the street still serves, because
+  the hours before the fee window start do not count at the street.
 - **A city-wide median for lot tariffs** (decision 9): a lot inside a zone takes its zone's tariff row; the median product of
   ADR-0140 decision 13 is for lots whose tariff is not stated, the same zone first, then the municipality.
 - **Split every zone by every mobile-parking area, or use the raw section polygons as area zones** (decision 10): the 58
@@ -445,7 +448,12 @@ inferred from the other.
   stated once, in the data record of the file that changed (`parking_tariffs_2026`, `parking_zones_2026`,
   `parking_garages_2026`, `parking_resident_districts_2026`).
 - The resident districts add the R2 exemption in Wolfsburg, Peine, Helmstedt and Wolfenbuettel wherever a zone honours permits;
-  Wolfsburg zone K lies 52.5 m from a paid street zone, so R2 is inert there.
+  Wolfsburg zone K lies clear of every paid street zone (distance in `parking_resident_districts_2026`), so R2 is inert there.
+- Bad Harzburg (`bh_*` zones) and Seesen (`se_am_markt`) lie outside the eight towns of the garage and lot inventory (research
+  package Grossparkplaetze_ZGB8), so the model has no garage or lot there; this says nothing about whether car parks exist
+  there. A stay above the maximum stay of these zones therefore has no option left: it is priced at the metered street rate
+  with the maximum ignored and is flagged `NO_FEASIBLE_OPTION` in the outcome report (expected by construction, not an error).
+  The Wolfsburg area zones 730 to 734 have only one or two options.
 - Limitations to state with every v3 result, additional to Part A: W-max is an owner decision against the package's wording
   for 58 areas; the Goslar exemption is an upper bound; the districts are envelopes of listed streets, not permit areas
   (R3, R3-b, HE-a); the Arena has one free lot instead of two until a position for P2 arrives, and the Arena P1 position is a

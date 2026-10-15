@@ -41,7 +41,8 @@ changes a file that a later step pins:
   maximum are not zones (ASSUMPTION W-max).
 - **District builders** (`resident_districts_from_streets`, `resident_districts_from_maps`): street names go through ONE
   folding function (`normalise_street_name`); an unmatched street stops the step with the list; a house-number range is cut
-  at the OSM house numbers; the buffer is `MatchSettings.buffer_m` (default `DEFAULT_BUFFER_M`, ASSUMPTION R3); overlaps between zones are
+  at the OSM house numbers; the buffer is `MatchSettings.buffer_m` (default `DEFAULT_BUFFER_M`, ASSUMPTION R3); overlaps between
+  zones are
   resolved by `resolve_claims`. Every fallback (a qualifier that cannot be applied, a range without a side, the area-boundary
   match of a square) is counted per town and logged as a rate; the rates are in the district record. The map towns build from
   OSM street geometry (`build_ring_district`, `build_street_map_district`), never from hand-set vertices; a constant that

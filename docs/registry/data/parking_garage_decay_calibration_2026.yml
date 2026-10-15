@@ -6,14 +6,17 @@ provider: >-
   with scripts/parking/calibrate_garage_decay.py on the plans of the reference scenario: lambda against the SrV 2023 city-centre
   parking shares (srv2023_city_center_parking, payment-inclusive measure), lambda_c against the PAID-only SrV commuter garage
   share of the class bs_zentrum (srv2023_commute_parking_by_workplace_class, ruling R-4h-1, paid-only measure); since Task B5
-  every stay is priced and weighted by the production pricing code (feasibility of spec v3 A1, price term of spec v3 A2)
+  every stay is priced and weighted by the production pricing code (feasibility of spec v3 A1 with the maximum stays of ASSUMPTION
+  M3, price term of spec v3 A2)
 vintage: >-
   generated 2026-10-14 (the header of the table states the date) at the code state 164b4b74 on the 25 % reference plans (run
   manifest parking-v2-plans-25pct-2026-10-12: the v2 plans run of 2026-10-12 on the server, parking zones on, both decay
   lengths 0.0, no MATSim run), the garage dataset after Task B4 (options: garages and large public surface lots, 94 priced
   options), the zone table and the tariff table after Tasks B1 and B2 (55 zones incl. 15 Wolfsburg area zones), and the option
   price coefficient 0.310998
-geography: The Braunschweig city centre (the fee zones bs_zone_ia and bs_zone_ib) for the calibration of both values, the Wolfsburg zones (every zone of the tariff table with municipality_ags 03103000, the tariff zones and the area zones) for the check; the values apply in every ZGB town (transfer assumption G3)
+geography: The Braunschweig city centre (the fee zones bs_zone_ia and bs_zone_ib) for the calibration of both values, the Wolfsburg
+  zones (every zone of the tariff table with municipality_ags 03103000, the tariff zones and the area zones) for the check; the
+  values apply in every ZGB town (transfer assumption G3)
 crs: EPSG:25832 (distances in metres)
 roles:
 - derived_input
@@ -27,13 +30,16 @@ acquisition:
       python scripts/parking/calibrate_garage_decay.py --plans
         eqasim-data/output_bs_25pct_parking_v2_plans/braunschweig_25pct_parking_v2_plans_population.xml.gz
         --data-path eqasim-data/data --overwrite
-        --sensitivity-garages lot_threshold_30=eqasim-data/output_parking_lot_threshold_sensitivity/parking_garages_2026_lot_threshold_30.geojson
-        --sensitivity-garages lot_threshold_100=eqasim-data/output_parking_lot_threshold_sensitivity/parking_garages_2026_lot_threshold_100.geojson
+        --sensitivity-garages
+        lot_threshold_30=eqasim-data/output_parking_lot_threshold_sensitivity/parking_garages_2026_lot_threshold_30.geojson
+        --sensitivity-garages
+        lot_threshold_100=eqasim-data/output_parking_lot_threshold_sensitivity/parking_garages_2026_lot_threshold_100.geojson
         --sensitivity-beta 0 --sensitivity-visitors-in-window --commuter-target-respondents 42
         --sensitivity-commuter-target-se -1 --sensitivity-commuter-target-se -0.5
         --sensitivity-commuter-target-se 0.5 --sensitivity-commuter-target-se 1
     (42 = the 29 paid garage and 13 paid street respondents of bs_zentrum, as stated in the limitations of this record
-    since Task 4h; the SrV table has no column for them. The two sensitivity datasets are the outputs of Task 4j regenerated in Tasks B2 and B4 in
+    since Task 4h; the SrV table has no column for them. The two sensitivity datasets are the outputs of Task 4j regenerated in
+    Tasks B2 and B4 in
     eqasim-data/output_parking_lot_threshold_sensitivity/, local and restricted like the release dataset; the table header names
     them with their SHA-256). The plans file is the population of the run manifest parking-v2-plans-25pct-2026-10-12; its SHA-256
     was verified against the manifest before use (43607798e1cbe9d7c7223776516db4f1750a241dc5e2d602246f350aac0a595a, 238,263,887
@@ -43,7 +49,8 @@ acquisition:
     every zone with municipality_ags 03103000, the tariff zones and the area zones wob_area_<id>), parking_garages_2026 (the
     options), srv2023_city_center_parking (the target of lambda is READ from its rows garage_large_lot and street) and
     srv2023_commute_parking_by_workplace_class (the target of lambda_c is READ from the paid columns of its row bs_zentrum, the
-    Wolfsburg check from those of its row 03103). The pricing parameters come from configs/base_bs.yml: parking_garage_max_distance_m,
+    Wolfsburg check from those of its row 03103). The pricing parameters come from configs/base_bs.yml:
+    parking_garage_max_distance_m,
     parking_minimum_stay_min, parking_garage_monthly_imputation, parking_tariff_snapshot_date, parking_terminal_stay_rule and
     parking_option_price_beta_u_per_eur (a key the config does not carry takes the default of prepare.PARKING_DEFAULTS).
     The header of the table names every input with its SHA-256, the measures, the option price coefficient, the stay
@@ -63,7 +70,8 @@ storage:
     164b4b74, Task B5); the header names the plans by a repo-relative path. Two runs on the same inputs and the same clean code
     state gave byte-identical files (cmp, same SHA-256), so the generation date in the header and the code-state line are the only
     run-dependent content; the code-state line names the commit of the producing code, and a rerun at a later commit changes
-    only that line and the date (the header says so). THE TABLE BELONGS TO THE GARAGE DATASET, THE ZONE FILE AND THE TARIFF TABLE NAMED IN ITS HEADER EXACTLY
+    only that line and the date (the header says so). THE TABLE BELONGS TO THE GARAGE DATASET, THE ZONE FILE AND THE TARIFF TABLE
+    NAMED IN ITS HEADER EXACTLY
     (garage dataset SHA-256 0a7af9cf3a56b3c84c16480875c22d881fe4b3c4a6f4f6c4a3ed8187fd09d218, the release dataset of the data
     record parking_garages_2026; zones 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504, record
     parking_zones_2026; tariffs 7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82, record parking_tariffs_2026):
@@ -125,7 +133,8 @@ limitations: |
   magnitude of the mode-choice cost coefficient, fixed during the calibration and never fitted); the share of a stay is read
   from the detail object (garage_probability for lambda, W_paid / (W_paid + w_street) for lambda_c and the check). The old closed
   form exp(-d / lambda) with street weight 1 is gone from the script; beta 0 reproduces it bit for bit (tested). What this
-  changes against the v2 table: the maximum-stay feasibility acts (zone Ia: 180 min, no long-stay product), the early rule of
+  changes against the v2 table: the maximum-stay feasibility (ASSUMPTION M3) acts (zone Ia: 180 min, no long-stay product), the
+  early rule of
   the street fee window and E4 act (a stay outside the street fee window or with a free street has the off-street share 0), the
   price term acts, and the tariff table, the zone table and the garage dataset are those after Tasks B1 to B4.
   PAYER-CONDITIONAL commuter measure and Wolfsburg check (ruling R-B-16, fix round 1 of Task B5): the lambda_c target is the
@@ -133,7 +142,8 @@ limitations: |
   leaves numerator AND denominator: a stay outside the street fee window, with a free street (E4), or with an infeasible
   street and only free options feasible (expected cost exactly 0). The non-payers are counted per universe (table rows
   *_stays_non_payer and *_payer_stays, header, log). The first Task B5 table (commit c573533e) counted them as share 0 and
-  gave lambda_c = 112.33 m: that value is SUPERSEDED within Task B5 (it was in the configs of commit c573533e of the unmerged branch only). The visitor measure
+  gave lambda_c = 112.33 m: that value is SUPERSEDED within Task B5 (it was in the configs of commit c573533e of the unmerged branch
+  only). The visitor measure
   (lambda) stays payment-INCLUSIVE and keeps every stay, because the SrV street category contains free parkers.
   Stay outcomes of the release run (table rows *_stays_*, header): destination universe 8,226 stays: 7,392 priced as an
   expectation over the street and the options, of which 584 have no street option (Ia, stays above 180 min: forced off-street,
@@ -214,7 +224,8 @@ limitations: |
   rule in one sentence). The same two decay lengths for every town are a transfer assumption (G3). The values depend on the
   plans file they were calibrated on: another scenario gives other values. Both universes are samples of a 25 % population
   (300,855 persons), so lambda and lambda_c are estimates whose sampling uncertainty is not quantified. The table header gives
-  the mean at the two ends of both searches (lambda: 0.0742 at 10 m, 0.8147 at 5,000 m; lambda_c, payer-conditional: 0.6318 at 10 m, 0.9535
+  the mean at the two ends of both searches (lambda: 0.0742 at 10 m, 0.8147 at 5,000 m; lambda_c, payer-conditional: 0.6318 at 10 m,
+  0.9535
   at 5,000 m), which bracket the targets; the mean is non-decreasing in the decay by construction of the weights (every option
   weight rises with the decay while the street weight does not depend on it), which makes the bisection well posed; no local
   sensitivity around the results is stated. SrV asks residents about their usual place, the model averages over the
@@ -222,7 +233,8 @@ limitations: |
   Oberbezirk Zentrum, wider than the two zones. Option weights ignore capacity (decision 13 of ADR-0140). SUPERSEDED values, none
   used by any config: lambda = 324.31 m and lambda_c = 261.57 m (the table committed 2026-10-14 at the code state bb5fecc1, table
   SHA-256 58a206f51b47f518e692122e5060f5dbac8c35180a0c6f3c7b93df1b168078d3, on the same 25 % plans, the 91-option dataset of
-  Task 4j (29 of them free) with SHA-256 724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81 and the price-independent closed-form
+  Task 4j (29 of them free) with SHA-256 724d993175370a94fefd583f6db1bbface7d1ccb8e61d3e1466a614b437f1d81 and the price-independent
+  closed-form
   weights; it was the value of the configs until Task B5); lambda = 396.19 m and lambda_c = 359.64 m (the committed table of
   2026-10-09 on the 1 % plans of 2026-10-08, plans SHA-256 a052270838a198c4450c992166133d371bc592e994e8047777555fdd1cfa02bc, the
   49-row option set of Task 4g and the all-options measure); lambda = 412.03 m and lambda_c = 320.66 m (the same 25 % plans, the

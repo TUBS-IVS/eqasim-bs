@@ -207,7 +207,8 @@ validation:
     parking_garage_decay_commute_m (work and education), whose values are those of configs/base_bs.yml and of the committed
     table parking_garage_decay_calibration_2026 (ADR-0140 decision 14, spec Amendment I6): calibrated on 2026-10-14 on the
     25 % reference plans (since Part B, B5, on the option set, the rules and the measures of v3, see the next paragraph; the
-    option counts are in the data record parking_garages_2026), lambda on the payment-inclusive measure and lambda_c on the paid-only share of bs_zentrum (a free
+    option counts are in the data record parking_garages_2026), lambda on the payment-inclusive measure and lambda_c on the
+    paid-only share of bs_zentrum (a free
     option leaves numerator and denominator, like-for-like with a universe of payers); calibrations to SrV shares, no
     validation; the independent paid-only Wolfsburg commuter check is a number without a pre-registered bound whose
     difference is not explained (ADR-0140 decisions 12 and 14; the data record states the number and its universe); the
@@ -216,7 +217,8 @@ validation:
     free ones included, and are labelled so (the outcome report v3 has no paid/free split; pointer: report v4 makes the two
     *_paid_calls rows paid-only ratios, ADR-0142 decision 4); the Java side of the commuter decay
     (schema 4) is merged (Task 4i, eqasim-java-bs 0bda7137f); the parking search time is
-    off (searchTimeFactor 0.0, no zone carries a search time). STATE OF THE V3 MECHANICS AND DATA (ADR-0142 decisions 1 to 13, Parts A and B; this is the one place that states it): the
+    off (searchTimeFactor 0.0, no zone carries a search time). STATE OF THE V3 MECHANICS AND DATA (ADR-0142 decisions 1 to 13, Parts
+    A and B; this is the one place that states it): the
     mechanics are implemented in the Python reference and the Java port (eqasim-java-bs 24b5fea42 to ea74c1f26, tariff model
     schema 5, golden file schema 6, jar marker ParkingOptionPriceBetaCheck) and ON by default (parking_ev_exemption_enabled
     true, parking_option_price_beta_u_per_eur 0.310998, parking_cost_utility_factor 1.0). Since Part B the committed data give

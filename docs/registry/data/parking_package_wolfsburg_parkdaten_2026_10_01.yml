@@ -40,7 +40,8 @@ storage:
     Wolfsburg_Parkdaten) and a test ties the pin to this record (tests/test_parking_raw_package_records.py). Read from the
     zip and never extracted: the layer mobile_parking_areas of Wolfsburg_Parkdaten.gpkg (municipal_zones, and
     wolfsburg_area_zones for the areas with a recorded maximum stay: 15 of the 73, field max_duration_minutes; the 58 others
-    carry no value, which means unknown and not unlimited, ASSUMPTION W-max of the data record parking_tariffs_2026). The
+    carry no value, which means unknown and not unlimited; the owner treats them as allowing long parking, ASSUMPTION W-max of
+    the data record parking_tariffs_2026). The
     layer is also compared with the lot outlines of the large-lot package when the garage notes of the Cinemaxx and
     Hoffmannstrasse lots are written (data record parking_garages_2026).
 verification:
@@ -67,8 +68,9 @@ limitations: >-
   The layer carries the maximum stay of 15 of its 73 areas; the raw paid-hours text of an area is not a full weekly calendar
   (the research package notes this for the Fallersleben areas). The street-section polygons are thin, which is why the area
   zones are a Voronoi cell of the buffered section inside the parent zone and not the section itself (data record
-  parking_zones_2026). The model's Wolfsburg tariff (tariff zones 1 to 3) comes from the ParkGO of 2020 and not from this
-  package.
+  parking_zones_2026). The tariff rows of zones 1 to 3 are derived from this layer's attributes (the fee window is the
+  dominant weekday regime of ASSUMPTION S1, the billing unit the started half hour of ASSUMPTION C-b; see
+  parking_tariffs_2026).
 notes: >-
   Registered as a raw source of its own on 2026-10-15, when spec v3 B2 made it the source of 15 further zones; its SHA-256
   was already named in the records parking_zones_2026 and parking_tariffs_2026, which keep describing how the layer enters

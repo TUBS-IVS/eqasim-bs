@@ -212,6 +212,11 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: >-
+  Bad Harzburg (the bh_* zones) and Seesen (se_am_markt) lie outside the eight towns of the garage and lot inventory
+  (research package Grossparkplaetze_ZGB8), so the model has no garage or lot there; this says nothing about whether car parks
+  exist there. A stay above the maximum stay of these zones therefore has no option left: it is priced at the metered street
+  rate with the maximum ignored and is flagged NO_FEASIBLE_OPTION in the outcome report (expected by construction, not an
+  error). The Wolfsburg area zones 730 to 734 have only one or two options.
   Assumption-labelled fee windows (fee_window_source assumption, F1): bs_bga_an_der_martinikirche,
   bs_bga_jodutenstrasse_klint and bs_bga_willy_brandt_platz (Mo-Sa 9-20 as at the directory-listed BgA car parks),
   the three Parkscheininseln of the Stadthalle concept (8-18 h, the concept's
@@ -239,7 +244,8 @@ limitations: >-
   he_innenstadt (9-16 h) and gs_altstadt_zone1 (10-18 h) are sourced since Task 4b (spec Amendment D1), but they are
   readings of pages that list places, not of the meters: the Helmstedt brochure states Mo-Fr 09:00-16:00 at 10 of its 11
   places and Mo-Fr 09:00-18:00 at the Wallplatz (the window is the common one, not a per-meter window; the maximum stay of
-  180 min at 10 places is modelled since spec v3 B1, ASSUMPTION M3), and the Goslar page lists car parks (the car park Kornstrasse and the three
+  180 min at 10 places is modelled since spec v3 B1, ASSUMPTION M3), and the Goslar page lists car parks (the car park Kornstrasse
+  and the three
   other 2 EUR/h car parks state 10-18 h) and no street meters, so the zone 1 window is an inference from the car parks of
   the same rate; the Saturday parts of both are not modelled (D1).
   Long-stay products chosen by assumption M1: the Stadthalle (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of
@@ -354,7 +360,8 @@ notes: >-
   the resident zones. Counts: street_paid 33, resident_zone 1, campus 6 (40 rows); fee_window_source municipal_page 22,
   operator_page 3, ordinance 7, assumption 8; EV exemption on seven rows (sz_lebenstedt, pe_innenstadt, se_am_markt, four
   Goslar rows). The
-  zone geometries are unchanged (parking_zones_2026.geojson SHA-256 4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490).
+  zone geometries are unchanged (parking_zones_2026.geojson SHA-256
+  4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490).
   History of the file (LF SHA-256): 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc before Task B1; then
   c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2 (commit 9d51bbf1, Task B1); then
   1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19 (commit 3d4682cc: the station windows say operator_page and the
