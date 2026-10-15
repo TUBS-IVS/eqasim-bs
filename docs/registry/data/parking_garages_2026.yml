@@ -577,9 +577,9 @@ acquisition:
     position of the package are lot_no_position, none is invented: three of the package and Arena P2) and at 100 spaces 77 rows
     (37 garages, 40 lots; Arena P2 is lot_no_position; the Galopprennbahn car park of 100 spaces is in both); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    dcf45873d7f66531571ed28978b43ef255044cad46972585b2cae19deda1b995, parking_garages_2026_qa_lot_threshold_30.csv
+    46d97802f0a6021f4ff1df9bfc0aa36f86b7404dca79a7dbf05030ef73db4359, parking_garages_2026_qa_lot_threshold_30.csv
     809c5869b096ddfc2c72ad0367975a1ec0587abfdd419e54a3eae44cdd6d01ed, parking_garages_2026_lot_threshold_100.geojson
-    c6d8938a49b132ab59bd9e7475440161b18a14b0d4eff1d47634f3447236ec36 and parking_garages_2026_qa_lot_threshold_100.csv
+    58bc511e17ccbcc6bfcb3c9b090ed5feb59b8c99c34744f9e2caad41758fdbb6 and parking_garages_2026_qa_lot_threshold_100.csv
     c4e97f868d98025ea54d2c3d63b5628f2d849e9b5a4fd1b16349010643545d91 (the files regenerated in Task B7 of spec v3;
     the earlier hashes are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
@@ -767,7 +767,7 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    ca9f41fc8e4d8bfb9988c5fe6d7e70601d8acc14f56387dec98e281349e45cf9 (the earlier pins are in the history of the field notes:
+    84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41 (the earlier pins are in the history of the field notes:
     storage.notes holds exactly one, the test of the calibration table reads it). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
@@ -1346,7 +1346,8 @@ notes: >-
   spaces: 108 rows; 100 spaces: 77 rows). The Seesen garage is 230 m from the zone se_am_markt and so an option of its stays within
   the option distance (a stay above the zone's 6 h maximum no longer has no option there); the Galopprennbahn car park lies 2.9 km
   from the nearest Bad Harzburg zone and is inert. Two runs of the command write identical bytes. Hashes (LF):
-  parking_garages_2026.geojson ca9f41fc8e4d8bfb9988c5fe6d7e70601d8acc14f56387dec98e281349e45cf9 (in storage.notes),
+  parking_garages_2026.geojson 84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41
+  (in storage.notes; the dataset of the first B7 commit had ca9f41fc, see B7 fix round 2 below),
   parking_garages_2026_qa.csv d21283934ef44abbf9fed891add82dd20b7b6e8bed37179fceb0348175ff77d2; the sensitivity hashes are in
   the acquisition notes; the earlier pins were 0a7af9cf3a56b3c84c16480875c22d881fe4b3c4a6f4f6c4a3ed8187fd09d218 and
   930603bd93d761bc77fae25c909ba71f3dce5c07099a89be56e01b085a01b134. SHA-256 (LF) of the QA table: parking_garages_2026_qa.csv
@@ -1356,4 +1357,11 @@ notes: >-
   7703aac614130f21a8cd6d9891e3c647f96dc860625f5e1d5f70748047ababea); the pins of the sensitivity datasets are in the acquisition
   notes. Every hash of the first B4 paragraph that differs is superseded by these. The QA tables were regenerated in B7 fix round 1
   (the GALERIA qa_comment wording only; the three datasets are unchanged): the QA tables of the first B7 commit were 3cff031a,
-  6efe49b3 and 975d26e2 (release, 30 and 100 spaces).
+  6efe49b3 and 975d26e2 (release, 30 and 100 spaces). B7 fix round 2: the GALERIA comment of the specs now says that the business
+  directory is not shown to be independent of the operator locator, so its 8 EUR is a secondary repeat, not a second independent
+  source. That changes the notes of the GALERIA row only (one feature per dataset; every other feature, geometry and the foreign
+  members are unchanged, the three QA tables are byte-identical to the round 1 ones). New LF hashes: release
+  84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41,
+  30 spaces 46d97802f0a6021f4ff1df9bfc0aa36f86b7404dca79a7dbf05030ef73db4359,
+  100 spaces 58bc511e17ccbcc6bfcb3c9b090ed5feb59b8c99c34744f9e2caad41758fdbb6;
+  the round 1 hashes were ca9f41fc, dcf45873 and c6d8938a. Two runs of the command wrote identical bytes in all six files.

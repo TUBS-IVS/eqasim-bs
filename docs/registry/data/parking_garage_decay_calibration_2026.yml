@@ -73,7 +73,7 @@ storage:
     byte-identical files (cmp, same SHA-256), so the generation date in the header and the code-state line are the only
     run-dependent content; the code-state line names the commit of the producing code, and a rerun at a later commit changes only
     that line and the date (the header says so). THE TABLE BELONGS TO THE GARAGE DATASET, THE ZONE FILE AND THE TARIFF TABLE NAMED
-    IN ITS HEADER EXACTLY (garage dataset SHA-256 ca9f41fc8e4d8bfb9988c5fe6d7e70601d8acc14f56387dec98e281349e45cf9, the release
+    IN ITS HEADER EXACTLY (garage dataset SHA-256 84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41, the release
     dataset of the data record parking_garages_2026; zones 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504, record
     parking_zones_2026; tariffs 7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82, record parking_tariffs_2026):
     another option set, zone table or tariff table needs a new calibration (a fee window, a maximum stay or a long-stay product
