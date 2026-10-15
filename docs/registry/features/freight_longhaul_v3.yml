@@ -37,7 +37,7 @@ evidence:
       freight_enabled is true in the base config; no byte-identity test for the OFF path is declared. The OFF path removes the injected carriers entirely, so byte-identity is meaningful and currently unproven.
   fallback_rate:
     instrumented: false
-    note: No primary-vs-fallback rate log was found in the freight injection path.
+    note: No primary-vs-fallback rate log for the extraction and trips stages. The boundary-link step of the injection is instrumented separately (feature freight_boundary_links, ADR-0144).
   reference:
     kind: assumption
     note: |

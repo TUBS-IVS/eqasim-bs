@@ -1,0 +1,57 @@
+feature: freight_boundary_links
+title: Freight boundary endpoints linked by capacity and trip direction
+area: freight
+description: 'Every freight endpoint on the study-area boundary (the start of incoming and transit trips,
+  the end of outgoing and transit trips) gets an explicit link: the closest car link of at least
+  1,000 veh/h, by perpendicular distance, that heads in the trip direction, within 300 m. This replaces
+  MATSim''s nearest-node snapping, which put the A2-west entries on a 600 veh/h residential street
+  (issue #444, ADR-0144).'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - freight_enabled
+introduced:
+  issue: '#444'
+  pr: null
+  adr: ADR-0144
+detail_doc: docs/features/freight.md
+code_paths:
+- braunschweig/matsim/simulation/prepare.py
+- scripts/measure_freight_boundary_links.py
+evidence:
+  tests:
+  - tests/test_freight_injection_wiring.py
+  - tests/test_measure_freight_boundary_links.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      There is no OFF switch: the rule always applies when freight_enabled is true. With freight_enabled false the injection, and with it this rule, does not run. The Java side (eqasim-java-bs FreightBoundaryLinkSelectorTest, RunInjectFreightBoundaryLinkTest) is tested in its own repository.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[freight.injection] boundary links: selected'
+    note: |
+      RunInjectFreight logs selected vs nearest-node fallback endpoints per role (start/end), writes them to freight_boundary_link_summary.csv in the prepare stage directory (printed by _inject_freight), and fails above freight_boundary_link_maximum_fallback_share (0.05). Measured on prod100_20260925 with the same rule: 0.05 % fallback at 300 m (run freight-boundary-links-prod100-2026-10-15).
+  reference:
+    kind: none
+    note: |
+      No observed reference applies. The rule is a network-assignment correction. Its parameters (1,000 veh/h, 300 m) are measured on the 100 % network (smallest swept distance at the fallback floor; every selected link has >= 1,500 veh/h), not calibrated against data.
+validation:
+  state: unvalidated
+  runs:
+  - freight-boundary-links-prod100-2026-10-15
+  metric: null
+  note: The recorded run diagnoses the old snapping and sweeps the new rule on the same network. That the stuck-truck queue at link 501844 disappears in a simulation is not shown yet and needs a re-run (#444).
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Fix implemented and measured statically; no simulation with the rule has been run yet.
+  source: ADR-0144

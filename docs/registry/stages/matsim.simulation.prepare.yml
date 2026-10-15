@@ -6,7 +6,8 @@ description: Prepares the MATSim run (config, freight injection, urban parking, 
   the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133). With
   cordon_enabled it cuts the scenario to the cordon extent with eqasim's RunScenarioCutter; the fork's
   TransitScheduleCutter keeps the last inside stop and the scheduled times of every cut transit route
-  (docs/codebase/notes/eqasim-transit-schedule-cutter.md).
+  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). The freight injection links every boundary
+  endpoint to a high-capacity link in the trip direction (ADR-0144).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -28,6 +29,7 @@ features:
 - mid_passenger_availability
 - cordon_network_ring
 - freight_assumptions
+- freight_boundary_links
 - mode_choice
 - vrb_zone_fare_model
 decisions:
@@ -35,3 +37,4 @@ decisions:
 - ADR-0030
 - ADR-0039
 - ADR-0133
+- ADR-0144

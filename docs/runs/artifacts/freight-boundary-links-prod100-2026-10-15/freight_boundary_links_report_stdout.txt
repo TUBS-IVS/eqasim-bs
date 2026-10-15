@@ -1,0 +1,15 @@
+car links 214807, distinct boundary endpoint rows 13927, boundary endpoints 81740
+before (nearest-node snapping): 13153 endpoints on a non-major class (16.09 %), 13147 on a link below 1000 veh/h (16.08 %)
+highway_classes      100 m: fallback  29809 (36.47 %), link changed  39149, min selected capacity 1500.0
+highway_classes      200 m: fallback    550 (0.67 %), link changed  55599, min selected capacity 1500.0
+highway_classes      300 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+highway_classes      500 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+capacity_ge_1000     100 m: fallback  29809 (36.47 %), link changed  39149, min selected capacity 1500.0
+capacity_ge_1000     200 m: fallback    550 (0.67 %), link changed  55599, min selected capacity 1500.0
+capacity_ge_1000     300 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+capacity_ge_1000     500 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+capacity_ge_1500     100 m: fallback  29809 (36.47 %), link changed  39149, min selected capacity 1500.0
+capacity_ge_1500     200 m: fallback    550 (0.67 %), link changed  55599, min selected capacity 1500.0
+capacity_ge_1500     300 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+capacity_ge_1500     500 m: fallback     39 (0.05 %), link changed  55887, min selected capacity 1500.0
+written stuck_analysis/freight_boundary_links_report.json
