@@ -79,9 +79,11 @@ CANDIDATE_REASONS = {
     "bga_zone": "a BgA car park is a zone of its own (ruling R-E1: no double role; spec Amendment I1 revises the rule for large "
                 "surface lots: such a lot is a zone AND an option, so a BgA car park is a candidate of this reason only where no "
                 "lot of the research package covers it)",
-    "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff (ruling R-E1; no "
-                           "row of the current dataset has this reason: spec Amendment I1 makes such a car park an option when it "
-                           "passes the size policy, so the reason stays in the vocabulary for tables written before)",
+    "zone_street_product": "a car park under the ParkGO of its zone: the zone's street product is its tariff (ruling R-E1; spec "
+                           "Amendment I1 makes such a car park an option when it passes the size policy and its package gives it "
+                           "a tariff of its own; since spec v3 B7 the reason also names a documented lot of Bad Harzburg whose "
+                           "position is the OpenStreetMap outline of a zone car park: it is not duplicated as an option, and its "
+                           "row compares the page with the zone row)",
     "station_zone": "a station car park of DB BahnPark (Contipark) that is a single paid-site zone of its own (spec Amendment "
                     "G1; the owner decision of 2026-10-08 revokes rulings R-4b-4 and R-4b-9 for the Braunschweig Hbf car parks)",
     "customer_regime": "a hospital, shopping-centre or airport short-stay regime (ruling R-4b-4)",
@@ -113,7 +115,9 @@ CANDIDATE_REASONS = {
                                   "Java extension is a separate task)",
     "lot_tariff_unknown": "a public lot of at least the threshold whose tariff is not stated and for which ASSUMPTION P14 has "
                           "fewer than two priced lots in its zone and in its municipality",
-    "lot_no_position": "a site without a position in the package; none is invented",
+    "lot_no_position": "a site without a position in the package, or a documented option (spec v3 B7) that the OpenStreetMap "
+                       "extract does not place by one unambiguous object (no key, no match, or two equally near areas); none is "
+                       "invented",
     "lot_free_evidence_missing": "a Wolfsburg lot that is free only on a per-site source (spec Amendment I5a, ASSUMPTION P12 "
                                  "withdrawn) whose evidence page is not archived: never free without a source",
 }

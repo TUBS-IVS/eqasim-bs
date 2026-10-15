@@ -31,9 +31,9 @@ description: >-
   (G1-d, config parking_option_price_beta_u_per_eur, the magnitude of the mode-choice cost coefficient), owners of a BEV or
   PHEV are exempt from the street fee where a zone states an EV exemption (E1, E2; config parking_ev_exemption_enabled), the
   parking cost enters the car utility multiplied by parking_cost_utility_factor (CF, default 1.0, a sensitivity) and the
-  Java outcome report is CSV v4. The v3 data (ADR-0142 decisions 8 to 13, Part B): the corrected zone tariffs with
+  Java outcome report is CSV v4. The v3 data (ADR-0142 decisions 8 to 14, Part B): the corrected zone tariffs with
   maximum stays and EV exemptions, the Wolfsburg area zones, the resident districts of Wolfsburg, Peine, Helmstedt and
-  Wolfenbuettel, three free lots and the recalibrated decay lengths; the curation is described in
+  Wolfenbuettel, three free lots, two documented options of Bad Harzburg and Seesen and the recalibrated decay lengths; the curation is described in
   docs/codebase/notes/parking-zones-curation.md; state: validation.note.
 stages:
 - braunschweig.parking.zones_stage
@@ -225,9 +225,10 @@ validation:
     them cases to act on: the corrected zone tariffs with maximum stays and EV exemptions (data record parking_tariffs_2026;
     Braunschweig Ia without the withdrawn long-stay product), the Wolfsburg area zones with their own maximum stay
     (parking_zones_2026), the resident districts of six municipalities (parking_resident_districts_2026), the garage dataset with
-    the maximum stay of three Ia lots and three more free lots, Arena P2 without a position (parking_garages_2026), and the two
-    decay lengths recalibrated on that option set with the price term, the feasibility rule and the payer-conditional commuter
-    measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). No MATSim run of v3 exists
+    the maximum stay of three Ia lots, three more free lots and the two documented options of Bad Harzburg and Seesen (a free
+    Seesen garage, a free Bad Harzburg car park out of reach of every zone), Arena P2 without a position (parking_garages_2026),
+    and the two decay lengths recalibrated on that option set with the price term, the feasibility rule and the
+    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). No MATSim run of v3 exists
     and nothing of v3 is validated: the calibration compares model shares with SrV shares (a calibration, and the Wolfsburg
     check is a number without a pre-registered bound), the tests are consistency and regression checks, and neither the size
     nor the direction of the effect on the mode shares is established. The regenerated restricted files (zones, districts,

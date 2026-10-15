@@ -362,9 +362,10 @@ INPUTS: List[Input] = [
         matsim_only=True,
         restricted=True,
     ),
-    # D12-D14: the owner's raw research packages behind the parking v3 data (spec v3 B6, issue #436). Only the curation chain
-    # (scripts/curation/parking_zones_2026/) reads them; no stage and no run needs them, hence optional. Restricted and local
-    # like D5, D10 and D11 (the archived originals are third-party documents); each has a data record of its own.
+    # D12-D15: the owner's raw research packages (D12-D14, spec v3 B6) and the owner's transcription of the city page of Seesen
+    # (D15, spec v3 B7) behind the parking v3 data (issue #436). Only the curation chain (scripts/curation/parking_zones_2026/) reads
+    # them; no stage and no run needs them, hence optional. Restricted and local like D5, D10 and D11 (the archived originals are
+    # third-party documents); each has a data record of its own.
     Input(
         name="D12 Parking research package Nachrecherche 2026-10-14 (curation only, restricted, local)",
         rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip",
@@ -403,6 +404,21 @@ INPUTS: List[Input] = [
             "Curation input only: assemble_parking_zones.py --municipal-dir and wolfsburg_area_release.py read the layer "
             "mobile_parking_areas (73 areas, 15 with a recorded maximum stay) from it; the pipeline and the runs do not "
             "need it. Never extracted; the curation code checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D15 Parking owner transcription Seesen city page 2026-10-15 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-15/seesen_parken_in_seesen_city_page.txt",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_owner_transcriptions_2026_10_15, docs/registry/data/parking_owner_transcriptions_2026_10_15.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --owner-transcriptions-dir reads this one transcription of the city page "
+            "'Parken in Seesen' (the free garage Bahnhofstrasse, spec v3 B7); the pipeline and the runs do not need it. The "
+            "folder holds two more transcriptions (the Goslar GALERIA directory entry, cited only, and the Northeim Q-Park "
+            "tariff, unused), which the data record lists. The curation code checks the SHA-256."
         ),
         matsim_only=True,
         optional=True,

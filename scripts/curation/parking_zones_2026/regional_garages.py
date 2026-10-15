@@ -47,7 +47,11 @@ Every surface lot is read by ``large_lots.py`` from the research package ``Gross
 (``--large-lots-zip``, spec Amendment I; it needs ``--zones``, the committed zone polygons, and ``--tariffs``); the free
 status of four of its Wolfsburg lots rests on archived pages that ``large_lots.load_package_free_evidence`` reads in place from the
 owner's ``Parkdaten_Restluecken_2026-10-14.zip`` (``--wob-evidence-zip``, spec v3 B4; every page against the package's own
-file manifest). The earlier
+file manifest). The documented options of Bad Harzburg and Seesen (spec v3 B7: the free garage Bahnhofstrasse of Seesen on the
+owner's transcription of the city page, the free car parks at the Galopprennbahn on the town's brochure, the three HarzVenture
+lots) are located in the pinned OpenStreetMap extract by ``documented_lots.match_locator`` (``--osm-extract``,
+``--owner-transcriptions-dir``; the rates of the matching methods are logged, a lot without a unique position or that is one of
+the zone car parks is a QA row). The earlier
 owner package of the 24 Wolfsburg car parks, ``Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip`` (spec E14), is SUPERSEDED and no
 code reads it any more (its reader was removed in Task 4l, issue #436; the history is in
 docs/codebase/notes/parking-wolfsburg-lots.md and the data record parking_garages_2026). A free period at the start of a stay
@@ -70,7 +74,9 @@ Grossparkplaetze_ZGB8_2026-10-12.zip --lot-threshold 50 \
          --wob-free-evidence-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/wob_free_lots_evidence \
          --wob-evidence-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/\
 Parkdaten_Restluecken_2026-10-14.zip \
-         --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson] \
+         --zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson \
+         --osm-extract eqasim-data/data/braunschweig/parking/raw_osm/niedersachsen-260929.osm.pbf \
+         --owner-transcriptions-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-15] \
         [--bs-monthly-zip eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/\
 Braunschweig_Monatstarife_2026-10-08.zip \
          --contipark-evidence-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/\
@@ -96,6 +102,7 @@ from shapely.geometry import Point
 import curation_common as cc
 import bs_monthly_products as bsm
 import garage_supplement as sup
+import documented_lots as dl
 import large_lots as ll
 import municipal_zones as mz
 import regional_garage_specs as specs
@@ -179,7 +186,12 @@ LICENSE = (
     "of the eight towns: capacities from the cities, operators, tourism pages, OpenStreetMap tags and area estimates, positions "
     "inside OpenStreetMap parking areas (the research point of a lot lies inside the area that geometry_source_url names), tariff "
     "facts from the pages of the cities and operators; OpenStreetMap-derived values are under the ODbL 1.0, (c) OpenStreetMap "
-    "contributors; the package states that it claims no additional release by the cities or operators)")
+    "contributors; the package states that it claims no additional release by the cities or operators); and the documented "
+    "options of Bad Harzburg and Seesen of spec v3 B7 (positions of the OpenStreetMap parking areas of the Geofabrik extract "
+    "niedersachsen-260929, ODbL 1.0, (c) OpenStreetMap contributors; the free status of the garage Bahnhofstrasse of Seesen after "
+    "the owner's transcription of the city page of Seesen of 2026-10-15, and of the car park at the Galopprennbahn after the "
+    "town's citizen-information brochure of 2021/22 as archived in the owner's Restluecken package; both are facts of public pages "
+    "whose licences are not verified)")
 ATTRIBUTION = (
     "Tariffs and capacities after the garage operators and the cities of Braunschweig, Wolfsburg, Wolfenbuettel, Gifhorn, "
     "Helmstedt, Peine, Salzgitter and Goslar (source_url per feature); positions after the city feeds, the operators' map "
@@ -199,7 +211,11 @@ ATTRIBUTION = (
     + ll.WOB_EVIDENCE_SHA256 + ", spec v3 B4; "
     "(c) OpenStreetMap contributors for the capacities, areas and positions taken from OpenStreetMap: the position of a lot is "
     "the research point of the package inside the parking area that geometry_source_url names, an OpenStreetMap object for most "
-    "lots).")
+    "lots); the documented options of spec v3 B7 (the free garage Bahnhofstrasse of Seesen on the owner's transcription "
+    + dl.SEESEN_PAGE_FILE + ", SHA-256 " + dl.SEESEN_PAGE_SHA256 + ", and the free car park at the Galopprennbahn of Bad Harzburg "
+    "on the brochure text of the package " + ll.WOB_EVIDENCE_FILE + "), positioned at the OpenStreetMap parking areas that "
+    "documented_lots.match_locator finds in the extract " + dl.OSM_EXTRACT_FILE + " (SHA-256 " + dl.OSM_EXTRACT_SHA256 + "; (c) "
+    "OpenStreetMap contributors).")
 
 #: The definition of every column of the dataset (the foreign member ``documentation`` of the file and the data record).
 COLUMN_GLOSSARY = {
@@ -288,11 +304,15 @@ COLUMN_GLOSSARY = {
                   "reason)",
     "source_date": "retrieval date of source_url (ISO)",
     "tariff_rule_ids": "';'-separated package rule ids the values (or the reason) rest on; for a car park that is free by "
-                       "ASSUMPTION P12 the field decision of its fee status",
+                       "ASSUMPTION P12 the field decision of its fee status; evidence:<file> for a free car park that rests on an "
+                       "archived or transcribed page (the file named in the notes with its SHA-256)",
     "geometry_method": "how the position was found, as the package states it (a large surface lot: the research point of the "
                        "package inside the parking area, no entrance; package_prior_municipal_point: the prior municipal "
                        "point that the package keeps as no verified entrance where it names no source of a position; "
-                       "package_point_without_source: a point of which the package names no source at all)",
+                       "package_point_without_source: a point of which the package names no source at all; "
+                       "osm_parking_area_representative_point: a documented option of spec v3 B7, the representative point "
+                       "inside the OpenStreetMap parking area that documented_lots.match_locator matched, the notes name the "
+                       "matching method and its distance)",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
@@ -301,7 +321,9 @@ COLUMN_GLOSSARY = {
                       "follow-up, Wolfsburg car-park package, joined by ';'; "
                       "a Braunschweig row cites the monthly package " + bsm.PACKAGE_FILE + " (spec Amendment F1; its monthly "
                       "status or product is read from it) as its last hash; a large surface lot (spec Amendment I) cites the "
-                      "research package " + ll.LOTS_FILE + " alone; a row has at most five",
+                      "research package " + ll.LOTS_FILE + " alone; a documented option of spec v3 B7 cites the regional package "
+                      "and, where it rests on the brochure text, the package " + ll.WOB_EVIDENCE_FILE + " after it; a row has at "
+                      "most five",
     "notes": "the tariff in words, every assumption and reading by name, what the columns do not express (other tiers, "
              "caps not applied, ignored rules, conflicts), the rules that are not preferred and not used, and the other "
              "capacity observations",
@@ -317,7 +339,10 @@ QA_INTRO = (
     "policy of spec Amendment I2 (ASSUMPTION L50: a public surface lot is an option from the capacity threshold of the run, 50 "
     "spaces for the release; the sensitivity runs at 30 and 100 spaces are written under other names), the archived evidence "
     "pages of the free Wolfsburg lots (the folder wob_free_lots_evidence/ next to that package, spec Amendment I5a, and the "
-    "package " + ll.WOB_EVIDENCE_FILE + " of 2026-10-14, SHA-256 " + ll.WOB_EVIDENCE_SHA256 + ", spec v3 B4) and the "
+    "package " + ll.WOB_EVIDENCE_FILE + " of 2026-10-14, SHA-256 " + ll.WOB_EVIDENCE_SHA256 + ", spec v3 B4; it also holds the "
+    "HarzVenture page and the brochure text of Bad Harzburg that the documented options of spec v3 B7 rest on, located in the "
+    "OpenStreetMap extract " + dl.OSM_EXTRACT_FILE + ", SHA-256 " + dl.OSM_EXTRACT_SHA256 + ", with the owner's transcription " +
+    dl.SEESEN_PAGE_FILE + " of the city page of Seesen, SHA-256 " + dl.SEESEN_PAGE_SHA256 + ") and the "
     "car-park directory of Braunschweig (" + DIRECTORY_FILE + ", SHA-256 "
     + DIRECTORY_SHA256 + ", retrieved " + DIRECTORY_RETRIEVED + "), and, for the monthly products of the Braunschweig garages "
     "(spec Amendment F1), the owner's package " + bsm.PACKAGE_FILE + " (SHA-256 " + bsm.PACKAGE_SHA256 + ") with the Contipark "
@@ -342,7 +367,8 @@ QA_COLUMN_GLOSSARY = {
     "subject": "the garage, product or car park",
     "garage_id": "garage_id in parking_garages_2026.geojson (garage rows and the monthly products of a garage); empty otherwise",
     "zone_ids": "';'-separated zone ids of parking_tariffs_2026.csv whose commuter_day_eur a used zone product sets; for a "
-                "candidate of the reason zone_street_product that is a Wolfsburg car park inside a zone (spec E14) the one zone "
+                "candidate of the reason zone_street_product that is a Wolfsburg car park inside a zone (spec E14) or a "
+                "HarzVenture lot of Bad Harzburg at a zone car park (spec v3 B7) the one zone "
                 "whose street product is its tariff; for the garage row of a surface lot inside a zone polygon the zone(s) that "
                 "contain it, which the report-only pass of ruling R-4j-7 compares with the row (garage_qa."
                 "zone_consistency_check); empty otherwise",
@@ -350,11 +376,13 @@ QA_COLUMN_GLOSSARY = {
     "reason_code": "not_priced: a code of garages.NOT_PRICED_REASONS; not_used: garage_qa.MONTHLY_NOT_USED_REASONS; not_listed: "
                    "garage_qa.CANDIDATE_REASONS; empty for priced and used rows",
     "amount_eur": "monthly_product: the amount in EUR per month (or 30 days) as published; candidate zone_street_product of a "
-                  "Wolfsburg car park inside a zone: the published hourly reference of its tariff area in EUR per hour (the "
+                  "Wolfsburg car park inside a zone or of a HarzVenture lot at a zone car park of Bad Harzburg: the published "
+                  "hourly reference of its tariff area in EUR per hour (the "
                   "consistency check against the street rate of the zone, garage_qa.zone_reference_check); empty for the "
                   "others and for a product without a fixed amount",
     "count": "number of records the row stands for (1)",
-    "evidence": "';'-separated package rule ids, layer references or documents the row rests on",
+    "evidence": "';'-separated package rule ids, layer references or documents the row rests on (a documented option of spec "
+                "v3 B7 names its key and its package facility)",
     "note": "what is published and why the decision follows",
 }
 
@@ -473,7 +501,9 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
                         evidence_directory=None, expected_bs_monthly_sha256: Optional[str] = None,
                         expected_evidence_sums_sha256: Optional[str] = None, large_lots_path=None,
                         expected_large_lots_sha256: Optional[str] = None, lot_threshold: int = ll.DEFAULT_THRESHOLD,
-                        tariffs=None, free_evidence_directory=None, free_evidence_zip=None) -> dict:
+                        tariffs=None, free_evidence_directory=None, free_evidence_zip=None, osm_extract_path=None,
+                        owner_transcriptions_directory=None, municipality_polygons=None, expected_osm_sha256=None,
+                        expected_seesen_sha256=None) -> dict:
     """The verified garage layers, facility records, tariff rules and sources of the owner's package in ``directory``, and, where
     given, the supplement package (``supplement_path``, spec E12) and the follow-up package (``followup_path``, spec E13) merged
     into them (``garage_supplement``: their rules, released by owner decisions, join the facilities they belong to) and the
@@ -492,6 +522,9 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
     "bytes"}, "layers" (layer -> GeoDataFrame in EPSG:25832), "facilities" (facility_id -> record), "rules" (rule_id ->
     rule), "sources" (source_id -> record), "wob_lots" (the GeoDataFrame of the Wolfsburg car parks), "ledger" (the per-layer
     accounting)}."""
+    if owner_transcriptions_directory is not None and osm_extract_path is None:
+        raise SystemExit("the owner's transcriptions (--owner-transcriptions-dir) are read for the documented options, which "
+                         f"are placed in the OpenStreetMap extract: pass {dl.OSM_EXTRACT_FILE} (--osm-extract) too")
     path, sha256 = rz.verify_package_file(directory, expected_sha256)
     layers = {layer: rz.read_zip_layer(path, layer) for layer in GARAGE_LAYERS}
     facilities = {}
@@ -528,6 +561,10 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
                            "zones": zones, "tariffs": tariffs,
                            "evidence": _merge_evidence(ll.load_free_evidence(free_evidence_directory),
                                                        ll.load_package_free_evidence(free_evidence_zip))}
+    if osm_extract_path is not None:
+        inputs["documented"] = _load_documented_inputs(
+            inputs, osm_extract_path, owner_transcriptions_directory, free_evidence_zip, zones, tariffs, municipality_polygons,
+            lot_threshold, expected_osm_sha256, expected_seesen_sha256)
     if (bs_monthly_path is None) != (evidence_directory is None):
         raise SystemExit("the Braunschweig monthly package (--bs-monthly-zip) and its evidence directory "
                          "(--contipark-evidence-dir) belong together: pass both or neither")
@@ -537,6 +574,36 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
         inputs["bs_monthly_products"] = bsm.read_garage_products(inputs["bs_monthly"], specs.BS_MONTHLY_SPECS)
         inputs["bs_recorded"] = bsm.read_recorded_products(inputs["bs_monthly"], specs.BS_RECORDED_SPECS)
     return inputs
+
+
+def _load_documented_inputs(inputs: dict, osm_path, transcriptions_directory, evidence_zip, zones, tariffs, municipality_polygons,
+                            threshold: int, expected_osm_sha256, expected_seesen_sha256) -> dict:
+    """The inputs of the documented options (spec v3 B7): the OpenStreetMap objects inside the municipalities of
+    ``DOCUMENTED_OPTIONS`` (``documented_lots.read_osm_extract``, the file against its pinned SHA-256), the HarzVenture page and the
+    brochure text from the owner's Restluecken package, the owner's transcription of the city page of Seesen, the committed zone
+    polygons and the tariff table (the zone car parks of Bad Harzburg are told by them) and the size threshold. All of them are
+    required together; ``SystemExit`` names what is missing."""
+    missing = [name for name, value in (("--owner-transcriptions-dir", transcriptions_directory),
+                                        ("--wob-evidence-zip", evidence_zip), ("--zones", zones), ("--tariffs", tariffs),
+                                        ("the municipality polygons (--municipalities)", municipality_polygons))
+               if value is None]
+    if missing:
+        raise SystemExit(f"the documented options (--osm-extract) need {', '.join(missing)} as well")
+    ags_of_options = sorted({({**specs.TOWNS, **specs.OTHER_TOWNS}[option["town"]][0]) for option in specs.DOCUMENTED_OPTIONS})
+    absent = [ags for ags in ags_of_options if ags not in municipality_polygons.index]
+    if absent:
+        raise SystemExit(f"the municipality polygons hold no municipality {absent}; the documented options lie there")
+    objects = dl.read_osm_extract(osm_path, dl.read_clip_area(municipality_polygons.loc[ags_of_options, "geometry"]),
+                                  expected_sha256=expected_osm_sha256)
+    package = ll.WOB_EVIDENCE_NAME
+    evidence_sha256 = ll.WOB_EVIDENCE_SHA256
+    return {"objects": objects, "zones": zones, "tariffs": tariffs, "threshold": threshold,
+            "harzventure": dl.read_harzventure_lots(evidence_zip, evidence_sha256, package),
+            "brochure": dl.read_brochure_free_parking(evidence_zip, evidence_sha256, package),
+            "seesen": dl.read_seesen_garage_evidence(Path(transcriptions_directory) / dl.SEESEN_PAGE_FILE,
+                                                     expected_seesen_sha256),
+            "evidence_package_sha256": evidence_sha256,
+            "extract_sha256": expected_osm_sha256 or dl.OSM_EXTRACT_SHA256}
 
 
 def _feature(inputs: dict, layer: str, match: tuple) -> pd.Series:
@@ -2221,6 +2288,262 @@ def _archived_free_row(inputs: dict, key: str) -> dict:
     return row
 
 
+# ---------------------------------------------------------------- documented options (spec v3 B7, issue #436)
+#: How the position of a documented option was found: the representative point (inside the area) of the OpenStreetMap parking
+#: object that ``documented_lots.match_locator`` matched; the notes name the method and the distance.
+DOCUMENTED_GEOMETRY_METHOD = "osm_parking_area_representative_point"
+#: The QA record of a documented option that is no option, and the date the owner pasted the city page of Seesen (the pipeline
+#: downloads nothing).
+DOCUMENTED_QA_PREFIX = "candidate_"
+OWNER_TRANSCRIPTION_DATE = "2026-10-15"
+#: Warn when more than this share (0 to 1) of the documented options has no position: then the matching is probably broken (a
+#: changed extract, a renamed object) and not only a lot that cannot be told apart.
+DOCUMENTED_UNMATCHED_WARNING_SHARE = 0.5
+
+
+def _address_locator(address: str) -> dict:
+    """The locator keys of the address of a HarzVenture heading ('Nordhaeuser Str. 4': the street and the house number)."""
+    found = re.fullmatch(r"(.+?)\s+(\d+\s*[A-Za-z]?)", str(address).strip())
+    if found is None:
+        raise SystemExit(f"the address {address!r} of the HarzVenture page is no street with a house number")
+    return {"street": found.group(1), "house_number": found.group(2)}
+
+
+def _zone_car_park_ways(inputs: dict) -> dict:
+    """{OpenStreetMap way key: zone id} of the zone car parks of ``DOCUMENTED_ZONE_CAR_PARKS``: the way that the regional package
+    names for the facility (``osm_way_ids``, one way) is the outline of the zone of the same id in the tariff table."""
+    ways = {}
+    for facility_id in specs.ZONE_CAR_PARK_FACILITIES:
+        listed = str((_facility(inputs, facility_id).get("attributes") or {}).get("osm_way_ids") or "").split(";")
+        if len(listed) != 1 or not listed[0].isdigit():
+            raise SystemExit(f"the facility {facility_id} of the regional package names no single OpenStreetMap way "
+                             f"(osm_way_ids {listed}); the zone car parks cannot be told from other parking areas")
+        ways[f"way/{listed[0]}"] = facility_id
+    return ways
+
+
+def _page_facts_sentence(facts: dict) -> str:
+    """The values of a HarzVenture lot in words, every one parsed from the page (no value typed here)."""
+    parts = [f"{_money(facts['rate_eur'])} per {facts['unit_min']} min", f"a maximum stay of {facts['max_stay_min'] // 60} h",
+             f"a minimum fee of {_money(facts['minimum_fee_eur'])}", f"a maximum fee of {_money(facts['maximum_fee_eur'])}",
+             f"fees until {_clock(facts['fee_until_h'])} (the page states no start of the fee time)"]
+    parts.append(f"{facts['free_min']} min free" if facts["free_min"] is not None else "no free minutes stated")
+    return ", ".join(parts)
+
+
+def _zone_comparison(facts: dict, zone: pd.Series) -> str:
+    """The page of a HarzVenture lot against the table row of the zone whose car park it is matched to, every value compared and
+    the differences named (report only: the zone row is never changed by the page)."""
+    equal, different = [], []
+
+    def compare(label, page_value, zone_value, unit=""):
+        def text(value):
+            if value is None or pd.isna(value):
+                return "none"
+            return f"{float(value):.2f}{unit}" if unit == " EUR" else f"{float(value):g}{unit}"
+
+        same = (page_value is None and pd.isna(zone_value)) or (
+            page_value is not None and not pd.isna(zone_value) and abs(float(page_value) - float(zone_value)) < 1e-9)
+        (equal if same else different).append(f"{label} {text(page_value)}" if same else f"{label} {text(page_value)} on the "
+                                              f"page against {text(zone_value)} in the zone row")
+
+    compare("rate per hour", facts["rate_eur"] / facts["unit_min"] * 60.0, zone["hourly_rate_eur"], " EUR")
+    compare("billing unit", facts["unit_min"], zone["billing_unit_min"], " min")
+    compare("maximum stay", facts["max_stay_min"], zone["max_stay_min"], " min")
+    compare("end of the fee time", facts["fee_until_h"], zone["fee_end_h"], " h")
+    compare("free minutes", facts["free_min"], zone["free_if_stay_at_most_min"], " min")
+    compare("maximum fee", facts["maximum_fee_eur"], zone["daily_cap_eur"], " EUR")
+    return ("equal: " + ("; ".join(equal) or "nothing") + ". DIFFERENT: " + ("; ".join(different) or "nothing")
+            + f". The zone row stands as it is; the page states the end of the fee time only, the fee window of the zone row is "
+              f"{float(zone['fee_start_h']):g}-{float(zone['fee_end_h']):g} h (its own source, see the tariff table)")
+
+
+def _documented_qa(option: dict, ags: str, reason: str, evidence: str, note: str, zone_id: str = "", amount=None) -> dict:
+    """The QA row of a documented option that is no option of the dataset (the reason of ``garage_qa.CANDIDATE_REASONS``)."""
+    return {"record_id": DOCUMENTED_QA_PREFIX + option["key"], "municipality_ags": ags, "subject": _lot_ascii(option["name"]),
+            "reason": reason, "evidence": _lot_ascii(evidence), "note": _lot_ascii(note), "zone_ids": zone_id,
+            "amount_eur": "" if amount is None else f"{float(amount):.2f}"}
+
+
+def _documented_free_row(inputs: dict, option: dict, parking: pd.Series, match, evidence: dict, capacity) -> dict:
+    """The dataset row of a documented option that is free of charge: the free schedule ``0- free`` (no assumption id; the
+    evidence page states the free use), the position at the representative point of the matched OpenStreetMap parking object, no
+    reported capacity (an OpenStreetMap value or the area estimate is named in the notes only), every source with its quotation
+    and SHA-256 in the notes. A free garage or lot carries no maximum stay: no source of it states one."""
+    documented = inputs["documented"]
+    ags, municipality = {**specs.TOWNS, **specs.OTHER_TOWNS}[option["town"]]
+    point = parking.geometry.representative_point() if parking.geometry.geom_type != "Point" else parking.geometry
+    if option["evidence"] == "seesen_city_page":
+        file, digest = evidence["file"], evidence["sha256"]
+        source_url, source_date = evidence["url"], OWNER_TRANSCRIPTION_DATE
+        what = (f"the owner's transcription {file} (SHA-256 {digest}) of the city page 'Parken in Seesen' ({evidence['url']}, "
+                f"pasted by the project owner on {OWNER_TRANSCRIPTION_DATE}; the pipeline downloaded nothing); the page states "
+                + "; ".join(f"'{quotation}'" for quotation in evidence["quotations"]))
+        packages = inputs["file"]["sha256"]
+    else:
+        file, digest = evidence["file"], evidence["member_sha256"]
+        source_url, source_date = evidence["url"], evidence["retrieved"]
+        what = (f"the text {file} (member SHA-256 {digest}) of the brochure of the town of Bad Harzburg that the package "
+                f"{ll.WOB_EVIDENCE_FILE} archives ({evidence['url']}, retrieved {evidence['retrieved']}, publication "
+                f"{evidence['publication_date']}); the brochure states '{evidence['quotation']}'. HISTORICAL: "
+                f"{evidence['currentness']}")
+        packages = f"{inputs['file']['sha256']};{documented['evidence_package_sha256']}"
+    rule_ids = [f"evidence:{file}"]
+    encoded = _free_encoding(rule_ids, [], "free of charge for every stay (the free schedule 0- free, the fee window 0-24 h is "
+                                           "formal)")
+    notes = [f"Documented option (spec v3 B7, owner decisions of 2026-10-15): {option['name']}. Free status: {what}.",
+             f"Position: {DOCUMENTED_GEOMETRY_METHOD}, the representative point (inside the area) of the OpenStreetMap parking "
+             f"object {match.osm_key} of the extract {dl.OSM_EXTRACT_FILE} (SHA-256 {documented['extract_sha256']}), matched by "
+             f"{match.method}: {match.detail}; no entrance and no tariff extent.",
+             "Tariff: " + encoded["sentence"] + "."]
+    capacity_value, capacity_method = capacity
+    if capacity_value is not None:
+        notes.append(f"OpenStreetMap capacity of the object: {capacity_value} spaces ({capacity_method}; area "
+                     f"{parking['area_m2']:.0f} m2); not a reported capacity, so capacity_reported stays empty.")
+    else:
+        notes.append("No capacity is documented or estimated (a garage has no size rule); capacity_reported stays empty.")
+    tags = {key: value for key, value in parking["tags"].items() if key in ("access", "fee", "parking", "name", "operator")}
+    if tags:
+        notes.append("OpenStreetMap tags of the object (not used for a value): "
+                     + ", ".join(f"{key}={value}" for key, value in sorted(tags.items())) + ".")
+    if option.get("comment"):
+        notes.append(option["comment"][:1].upper() + option["comment"][1:] + ".")
+    if option["evidence"] == "brochure_free":
+        notes.append("The brochure names an AREA with several car parks ('Parkplaetze im Bereich'), not one lot: the row stands "
+                     "for the one parking area nearest to the named place, and the other lots of the area are not modelled.")
+    row = {"garage_id": option["key"], "package_facility_id": option["facility"], "name": _lot_ascii(option["name"]),
+           "facility_kind": option["kind"], "operator": None, "municipality": municipality, "municipality_ags": ags,
+           "capacity_reported": None, "capacity_scope": None, "monthly_eur": None, "monthly_source_url": None,
+           "monthly_product": None, "priced": True, "not_priced_reason": None, "assumptions": None, "source_url": source_url,
+           "source_date": source_date, "tariff_rule_ids": ";".join(rule_ids), "geometry_method": DOCUMENTED_GEOMETRY_METHOD,
+           "geometry_source_url": f"https://www.openstreetmap.org/{match.osm_key}", "package_sha256": packages,
+           "geometry": point, "max_stay_min": None}
+    for column in pg.TARIFF_COLUMNS + pg.FIRST_PERIOD_WINDOW_COLUMNS + pg.TIER_COLUMNS + pg.BAND_COLUMNS:
+        row[column] = encoded["values"][column]
+    row["notes"] = _lot_ascii(" ".join(notes))
+    row["_facts"] = {"tiered": False, "banded": False, "cap": False, "readings": [], "supplement": False, "followup": False,
+                     "point": False, "priced": True, "followup_values": False, "documented": True}
+    return row
+
+
+def build_documented_options(inputs: dict) -> dict:
+    """Locate the documented options of ``DOCUMENTED_OPTIONS`` in the OpenStreetMap extract (``documented_lots.match_locator``) and
+    build the rows of the options and the QA rows of the others (spec v3 B7). Per option: no position (unmatched or ambiguous) is
+    the QA reason ``lot_no_position``; a match that is one of the zone car parks of Bad Harzburg is no new option (the zone is
+    the tariff there) and a QA row of the reason ``zone_street_product`` that names the zone and compares the HarzVenture page with
+    its row; a surface lot needs the capacity of the size threshold (``documented_lots.osm_capacity``: the OpenStreetMap tag, else
+    floor(area / 25); ``lot_capacity_unknown`` and ``lot_below_threshold`` otherwise), a garage none. The free options (the garage
+    of Seesen on the owner's transcription of the city page, the car parks at the Galopprennbahn on the town's brochure of
+    2021/22) carry the free schedule; a paid HarzVenture lot that is no zone car park would need the grace and cap form with a fee
+    time of a stated end and no stated start, which this step does not build: it stops instead of approximating (no such lot
+    exists in the pinned extract). Returns {"rows", "qa" (QA candidate rows with ``zone_ids`` and ``amount_eur``), "notes"
+    (garage_id -> the QA note of an option row), "matches", "counts"}; the rates are logged."""
+    documented = inputs["documented"]
+    objects, zones, tariffs = documented["objects"], documented["zones"], documented["tariffs"]
+    threshold, harzventure = documented["threshold"], documented["harzventure"]
+    table = tariffs.set_index("zone_id") if "zone_id" in tariffs.columns else tariffs
+    zone_ways = _zone_car_park_ways(inputs)
+    locators = {}
+    for option in specs.DOCUMENTED_OPTIONS:
+        locator = option["locator"]
+        if locator is None:
+            locator = {"unlocatable": option["no_locator_reason"]}
+        elif locator == "page_address":
+            address = harzventure[option["harzventure"]]["address"]
+            if address is None:
+                raise SystemExit(f"the option {option['key']} is located by the address of the HarzVenture page, which states "
+                                 "none for this lot")
+            locator = _address_locator(address)
+        locators[option["key"]] = locator
+    matches = dl.locate_all(locators, objects)
+    rows, qa, notes, by_reason = [], [], {}, {}
+    parking = objects.parking.set_index("osm_key")
+
+    def refuse(option, ags, reason, evidence, note, **fields):
+        qa.append(_documented_qa(option, ags, reason, evidence, note, **fields))
+        by_reason[reason] = by_reason.get(reason, 0) + 1
+
+    for option in specs.DOCUMENTED_OPTIONS:
+        ags = {**specs.TOWNS, **specs.OTHER_TOWNS}[option["town"]][0]
+        match = matches[option["key"]]
+        facts = harzventure.get(option.get("harzventure"))
+        page = (f"; the HarzVenture page states {_page_facts_sentence(facts)} ({facts['url']}, retrieved {facts['retrieved']}, "
+                f"member SHA-256 {facts['member_sha256']})" if facts else "")
+        evidence = f"documented option {option['key']}; facilities.json {option['facility']}" if facts else \
+            f"documented option {option['key']}"
+        if match.status != "matched":
+            why = match.detail if option["locator"] is None else (
+                f"the locator {locators[option['key']]!r} gives {match.status}: {match.detail}")
+            free = ""
+            if option["evidence"] == "brochure_free":
+                brochure = documented["brochure"]
+                candidates = [f"{key} ({dl.osm_capacity(parking.loc[key, 'tags'], parking.loc[key, 'area_m2'])[0]} spaces by "
+                              "the OpenStreetMap capacity rule)" for key in match.candidates]
+                free = (f"; the free status would rest on the brochure sentence '{brochure['quotation']}' "
+                        f"({brochure['file']}, member SHA-256 {brochure['member_sha256']}, HISTORICAL: "
+                        f"{brochure['currentness']})" + (f"; the parking areas that could not be told apart: "
+                                                         f"{', '.join(candidates)}" if candidates else ""))
+            refuse(option, ags, "lot_no_position", evidence,
+                   f"{option['name']}: no position is invented; {why}{page}{free}")
+            continue
+        zone_id = zone_ways.get(match.osm_key)
+        if zone_id is not None:
+            zone_polygon = zones.set_index("zone_id").geometry.get(zone_id)
+            if zone_polygon is None or not zone_polygon.intersects(parking.loc[match.osm_key, "geometry"]):
+                raise SystemExit(f"the matched parking object {match.osm_key} is the OpenStreetMap way of the zone {zone_id}, but "
+                                 "the committed zone polygons hold no zone that touches it")
+            if zone_id not in table.index:
+                raise SystemExit(f"the zone {zone_id} of the matched zone car park {match.osm_key} is not in the tariff table")
+            zone_row = table.loc[zone_id]
+            reference = facts["rate_eur"] / facts["unit_min"] * 60.0 if facts else None
+            refuse(option, ags, "zone_street_product", evidence,
+                   f"{option['name']}: the position ({match.method}, {match.detail}) is the OpenStreetMap outline of the zone car "
+                   f"park {zone_id}, so the lot is not a new option: the zone is its tariff{page}. Comparison with the zone row "
+                   f"{zone_id}: " + (_zone_comparison(facts, zone_row) if facts else "no page values to compare"),
+                   zone_id=zone_id, amount=reference)
+            continue
+        osm = parking.loc[match.osm_key]
+        capacity = dl.osm_capacity(osm["tags"], osm["area_m2"])
+        if option["kind"] == "surface_lot":
+            if capacity[0] is None:
+                refuse(option, ags, "lot_capacity_unknown", evidence,
+                       f"{option['name']}: the position is {match.osm_key} ({match.method}, {match.detail}), but the object has "
+                       f"no capacity tag and no area estimate applies ({osm['tags']!r}); unknown, never 0{page}")
+                continue
+            if capacity[0] < threshold:
+                refuse(option, ags, "lot_below_threshold", evidence,
+                       f"{option['name']}: the position is {match.osm_key} ({match.method}, {match.detail}), capacity "
+                       f"{capacity[0]} ({capacity[1]}) is below the threshold {threshold}{page}")
+                continue
+        if option["evidence"] == "harzventure":
+            raise SystemExit(f"the HarzVenture lot {option['key']} is matched to {match.osm_key}, which is no zone car park: a "
+                             "paid lot of its own (15 free minutes as a grace period, a maximum fee, a fee time with a stated "
+                             "end and no stated start) needs an encoding that this step does not build; it is not approximated")
+        evidence_record = documented["seesen"] if option["evidence"] == "seesen_city_page" else documented["brochure"]
+        row = _documented_free_row(inputs, option, osm, match, evidence_record, capacity)
+        if option["evidence"] == "seesen_city_page":
+            package_point = (_facility(inputs, option["facility"]).get("attributes") or {})
+            if package_point.get("longitude") is not None:
+                x, y = TO_METRIC.transform(package_point["longitude"], package_point["latitude"])
+                distance = float(Point(x, y).distance(row["geometry"]))
+                row["notes"] = _lot_ascii(
+                    f"{row['notes']} Cross-check: the regional package gives the point of the same OpenStreetMap "
+                    f"way (point_role {package_point.get('point_role')}), {distance:.1f} m from this point.")
+        rows.append(row)
+        notes[row["garage_id"]] = _lot_ascii(
+            f"free of charge for every stay (the free schedule 0- free); {option['evidence']} evidence, position {match.osm_key} "
+            f"({match.method}, {match.distance_m:g} m)")
+    total = len(specs.DOCUMENTED_OPTIONS)
+    print(f"[documented options] options {len(rows)}/{total} ({100.0 * len(rows) / max(total, 1):.1f} %), QA rows {len(qa)} by "
+          f"reason {dict(sorted(by_reason.items()))}")
+    unplaced = sum(match.status != "matched" for match in matches.values())
+    if unplaced / max(total, 1) > DOCUMENTED_UNMATCHED_WARNING_SHARE:
+        print(f"[documented options] WARNING: more than {100.0 * DOCUMENTED_UNMATCHED_WARNING_SHARE:.0f} % of the documented "
+              "options have no position: the matching is probably broken (a changed extract or renamed objects)")
+    return {"rows": rows, "qa": qa, "notes": notes, "matches": matches,
+            "counts": {"options": len(rows), "qa_by_reason": by_reason, "unplaced": unplaced}}
+
+
 def _zone_ids_of(zones: gpd.GeoDataFrame, point) -> list:
     """The ids of the committed zone polygons that contain ``point``, sorted."""
     return sorted(zone for zone, polygon in zip(zones["zone_id"], zones.geometry) if polygon.contains(point))
@@ -2445,6 +2768,12 @@ def build_garages(inputs: dict) -> gpd.GeoDataFrame:
     if "large" in inputs:
         inputs["large"]["result"] = build_large_lots(inputs)
         rows.extend(inputs["large"]["result"]["rows"])
+    if "documented" in inputs:
+        inputs["documented"]["result"] = build_documented_options(inputs)
+        rows.extend(inputs["documented"]["result"]["rows"])
+    else:
+        print("[garages] documented options (Bad Harzburg, Seesen): not built, no --osm-extract; the candidate of the Seesen "
+              "garage stays a QA row")
     facts = [row.pop("_facts") for row in rows]
     ids = [row["garage_id"] for row in rows]
     if len(set(ids)) != len(ids):
@@ -2629,7 +2958,13 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
 
     specs_by_id = {spec["garage_id"]: spec for spec in specs.GARAGE_SPECS}
     large = inputs.get("large")
+    documented = inputs.get("documented")
     for _, garage in frame.iterrows():
+        if documented is not None and garage["garage_id"] in documented["result"]["notes"]:
+            row(record_id=f"garage_{garage['garage_id']}", record_type="garage", municipality_ags=garage["municipality_ags"],
+                subject=garage["name"], garage_id=garage["garage_id"], decision="priced", count=1,
+                evidence=garage["tariff_rule_ids"], note=documented["result"]["notes"][garage["garage_id"]])
+            continue
         if large is not None and garage["garage_id"] in large["result"]["notes"]:
             row(record_id=f"garage_{garage['garage_id']}", record_type="garage", municipality_ags=garage["municipality_ags"],
                 subject=garage["name"], garage_id=garage["garage_id"], decision="priced", count=1,
@@ -2705,7 +3040,13 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
             subject=entry["name"], decision="not_listed", reason_code=reason, count=1,
             evidence=f"{DIRECTORY_FILE} id {entry['id']}",
             note=_ascii(f"{why}; directory text: {entry['text']}"))
+    released = set()
+    if documented is not None:
+        built = {row_["garage_id"] for row_ in documented["result"]["rows"]}
+        released = {record for record, key in specs.DOCUMENTED_CANDIDATE_RELEASES.items() if key in built}
     for candidate in specs.PACKAGE_CANDIDATES:
+        if candidate["record_id"] in released:
+            continue  # the option of spec v3 B7 replaces the candidate: its row is the garage row above
         ags = (specs.TOWNS.get(candidate["town"]) or specs.OTHER_TOWNS[candidate["town"]])[0]
         facility_id, tariff, evidence = candidate.get("facility"), "", candidate.get("evidence") or ""
         if facility_id:
@@ -2717,6 +3058,13 @@ def qa_rows(inputs: dict, frame: gpd.GeoDataFrame, directory: list, tariffs: Opt
         row(record_id=candidate["record_id"], record_type="candidate", municipality_ags=ags, subject=candidate["subject"],
             decision="not_listed", reason_code=candidate["reason"], count=1, evidence=_ascii(evidence),
             note=_ascii(candidate["note"] + (f"; package rules: {tariff}" if tariff else "")))
+    if documented is not None:
+        # spec v3 B7: the documented options that are no option have a candidate row with their reason, the zone and the hourly
+        # reference of a zone car park (the consistency check of garage_qa.zone_reference_check)
+        for entry in documented["result"]["qa"]:
+            row(record_id=entry["record_id"], record_type="candidate", municipality_ags=entry["municipality_ags"],
+                subject=entry["subject"], decision="not_listed", reason_code=entry["reason"], count=1,
+                zone_ids=entry["zone_ids"], amount_eur=entry["amount_eur"], evidence=entry["evidence"], note=entry["note"])
     if large is not None:
         # spec Amendment I2: one QA row per package record that is no option (a site is one record: an option has its own garage
         # row above, a record that fails the policy is a candidate row with its reason)
@@ -2868,6 +3216,15 @@ def main(argv=None) -> int:
                                                    "archived pages evidence/wob_belege/ are read in place, each against the "
                                                    "package's file_manifest.json; without it the owner-decided free Wolfsburg "
                                                    "lots are QA rows")
+    parser.add_argument("--osm-extract", help=f"the Geofabrik extract {dl.OSM_EXTRACT_FILE} (checked against its pinned "
+                                              "SHA-256): the documented options of Bad Harzburg and Seesen (spec v3 B7) are "
+                                              "located in it; needs --owner-transcriptions-dir, --wob-evidence-zip (the "
+                                              "HarzVenture page and the brochure text), --zones and --tariffs; without it the "
+                                              "candidate of the Seesen garage stays a QA row and Bad Harzburg has no documented "
+                                              "option")
+    parser.add_argument("--owner-transcriptions-dir", help="the folder municipal_2026-10-15 with the owner's transcription of the "
+                                                           f"city page of Seesen ({dl.SEESEN_PAGE_FILE}, checked against its "
+                                                           "pinned SHA-256; spec v3 B7); needs --osm-extract")
     parser.add_argument("--bs-monthly-zip", help="the owner's Braunschweig monthly package "
                                                  "Braunschweig_Monatstarife_2026-10-08.zip "
                                                  "(spec Amendment F1; needs --contipark-evidence-dir; required where the monthly "
@@ -2885,17 +3242,20 @@ def main(argv=None) -> int:
     if args.zones:
         zones = gpd.read_file(args.zones).to_crs(cc.METRIC_CRS)
     tariffs = pz.load_tariffs(args.tariffs) if args.tariffs else None
-    inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip,
-                                zones=zones, bs_monthly_path=args.bs_monthly_zip,
-                                evidence_directory=args.contipark_evidence_dir, large_lots_path=args.large_lots_zip,
-                                lot_threshold=args.lot_threshold, tariffs=tariffs,
-                                free_evidence_directory=args.wob_free_evidence_dir, free_evidence_zip=args.wob_evidence_zip)
-    frame = build_garages(inputs)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
     ars = municipalities["commune_id"].astype(str)
     municipalities["ags"] = ars.str[:5] + ars.str[-3:]
-    check_positions(frame, municipalities.set_index("ags").to_crs(cc.METRIC_CRS))
+    municipalities = municipalities.set_index("ags").to_crs(cc.METRIC_CRS)
+    inputs = load_garage_inputs(args.regional_dir, supplement_path=args.supplement_zip, followup_path=args.followup_zip,
+                                zones=zones, bs_monthly_path=args.bs_monthly_zip,
+                                evidence_directory=args.contipark_evidence_dir, large_lots_path=args.large_lots_zip,
+                                lot_threshold=args.lot_threshold, tariffs=tariffs,
+                                free_evidence_directory=args.wob_free_evidence_dir, free_evidence_zip=args.wob_evidence_zip,
+                                osm_extract_path=args.osm_extract, owner_transcriptions_directory=args.owner_transcriptions_dir,
+                                municipality_polygons=municipalities)
+    frame = build_garages(inputs)
+    check_positions(frame, municipalities)
     rows = qa_rows(inputs, frame, load_directory(args.directory), tariffs)
     frame = apply_monthly_imputation(frame, rows)
     try:

@@ -342,8 +342,12 @@ Wolfenbuettel are rebuilt from, `resident_districts.py --research-package`, and 
 research packages have a data record each, `parking_package_nachrecherche_2026_10_14`,
 `parking_package_restluecken_2026_10_14` and `parking_package_wolfsburg_parkdaten_2026_10_01`, with their SHA-256, and the
 preflight lists them as the optional curation inputs D12 to D14, `[RESTRICTED]` when absent: no stage and no run needs
-them),
-for the monthly products of the
+them), for the documented options of Bad Harzburg and Seesen (spec v3 B7) the pinned Geofabrik extract
+`niedersachsen-260929.osm.pbf` in `eqasim-data/data/braunschweig/parking/raw_osm/` (`--osm-extract`, checked against its
+SHA-256; the extract the paid-share cells are derived from) and the owner's transcription folder
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-15/` (not distributed; `--owner-transcriptions-dir`; data
+record `parking_owner_transcriptions_2026_10_15`, preflight D15; the HarzVenture page and the brochure text of Bad Harzburg
+come from the Restluecken package above), for the monthly products of the
 Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
 `contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
 `eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and

@@ -1687,17 +1687,26 @@ def _hms(hours: int, minutes: int = 0, seconds: int = 0) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+#: The documented options of spec v3 B7 (the free garage of Seesen, the free car park of Bad Harzburg) are located in the
+#: OpenStreetMap extract and are no sites of the large-lot research package: the tests of this file, which pin the package's lots
+#: against the package, leave them out (their pins are in tests/test_parking_documented_options.py).
+DOCUMENTED_OPTION_IDS = ("se_parkhaus_bahnhofstrasse", "bh_galopprennbahn")
+
+
 @pytest.fixture(scope="module")
 def committed():
-    """The committed garage dataset (a restricted local file: skips when absent), loaded and validated."""
+    """The committed garage dataset (a restricted local file: skips when absent), loaded and validated, without the documented
+    options of spec v3 B7."""
     garages = pg.load_garages(parking_data_path("parking_garages_2026.geojson"))
     pg.validate_garages(garages)
+    garages = garages[~garages["garage_id"].isin(DOCUMENTED_OPTION_IDS)]
     return garages.set_index("garage_id", drop=False)
 
 
 @pytest.fixture(scope="module")
 def committed_qa():
-    return pq.load_garage_qa(COMMITTED_QA).set_index("record_id", drop=False)
+    qa = pq.load_garage_qa(COMMITTED_QA)
+    return qa[~qa["garage_id"].isin(DOCUMENTED_OPTION_IDS)].set_index("record_id", drop=False)
 
 
 def _tariff(committed, garage_id):

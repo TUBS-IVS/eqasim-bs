@@ -901,14 +901,15 @@ def test_committed_parking_data_is_valid(capsys):
             "tu_forschungsflughafen, tu_zentralcampus); zone-level garage product on 0 rows (spec Amendment E8: garages enter "
             "through the dataset); search time on 0 rows (decision D4)") in out
     # the garage dataset (spec Amendment E1): one more summary line with the coverage and the assumption rates
-    # specs E12, E13, G2 and I: every listed row is priced (94 of 94: 36 garages, among them the Parkdeck Hauptbahnhof of Wolfsburg
-    # since Amendment G2, and the 58 large public surface lots of the research package at the threshold of 50 spaces, three of them
-    # the free Wolfsburg lots on archived pages of spec v3 B4)
-    assert ("garages: 94 listed, 94 priced, 0 not priced (none); per municipality 03101000 23 listed 23 priced") in out
-    assert "03103000 20 listed 20 priced" in out
+    # specs E12, E13, G2, I and v3 B7: every listed row is priced (96 of 96: 37 garages, among them the Parkdeck Hauptbahnhof of
+    # Wolfsburg since Amendment G2 and the free garage of Seesen of spec v3 B7, and the 59 surface lots: the 58 large public lots of
+    # the research package at the threshold of 50 spaces, three of them the free Wolfsburg lots on archived pages of spec v3 B4, and
+    # the free car park of Bad Harzburg of spec v3 B7)
+    assert ("garages: 96 listed, 96 priced, 0 not priced (none); per municipality 03101000 23 listed 23 priced") in out
+    assert "03103000 20 listed 20 priced" in out and "03153002 1 listed 1 priced, 03153012 1 listed 1 priced" in out
     assert ("priced garages resting on an assumption: P10 8, P11 4, P13 15, P14 2, P4 29, P5 27, P6 7, P7 5, P8 18, "
-            "W-match 1 of 94 (at least one assumption 49, P4 or P5 39; in the tiered form 7, in the banded form 18, with the free "
-            "schedule 32); by facility kind garage 36 listed 36 priced, surface_lot 58 listed 58 priced; "
+            "W-match 1 of 96 (at least one assumption 49, P4 or P5 39; in the tiered form 7, in the banded form 18, with the free "
+            "schedule 34); by facility kind garage 37 listed 37 priced, surface_lot 59 listed 59 priced; "
             "monthly product on 12 garages") in out
     # the three Braunschweig station products and the Wolfsburg deck product are used (G1, G2): 13 + 4 used, 36 - 4 recorded
     assert "QA: monthly products used 17, recorded and not used 32 (capacity_limited_permits 1, excluded_by_package 1, " in out
@@ -918,19 +919,25 @@ def test_committed_parking_data_is_valid(capsys):
     # the Wolfsburg median is 60.00 EUR of five published products since the deck (100.00 EUR) came in (was 57.50 of four)
     assert "Wolfsburg (03103000) published 5, imputed 5, P13 median 60.00 EUR, none 0;" in out
     assert "Goslar (03153017) published 1, imputed 0, none 3;" in out
-    assert "total published 12, imputed 15, none 9 (surface lots 58, never imputed)" in out
+    assert "Bad Harzburg (03153002) published 0, imputed 0, none 0;" in out
+    assert "Seesen (03153012) published 0, imputed 0, none 1;" in out
+    assert "total published 12, imputed 15, none 10 (surface lots 59, never imputed)" in out
     assert "medians in EUR: 03101000 107.48, 03103000 60.00, 03157006 48.00" in out
     # spec Amendment I: one QA row per record of the research package that is no option (94 records and the Theater's disabled
     # point), the ParkGO and BgA candidates of rulings R-E1 and R-4b-9 are sites of the package now
-    assert ("candidates that are no garage 102 (customer_regime 1, dauerparker_only 2, lot_access_not_public 46, lot_alias 2, "
+    # spec v3 B7: the candidate of the Seesen garage is a garage row now; the documented options of Bad Harzburg add two lots without
+    # a position and two HarzVenture lots at zone car parks (102 - 1 + 4 = 105)
+    assert ("candidates that are no garage 105 (customer_regime 1, dauerparker_only 2, lot_access_not_public 46, lot_alias 2, "
             "lot_below_threshold 23, lot_capacity_unknown 5, lot_free_evidence_missing 1, lot_mixed_tariff_unseparated 2, "
-            "lot_no_position 1, lot_not_open 2, lot_not_surface_lot 6, lot_unconfirmed_candidate 9, no_coordinates 1, "
-            "outside_source_list 1)") in out
-    # no car park inside a zone is a candidate of the reason zone_street_product any more (spec Amendment I1); the eleven lots with
-    # the street product of their zone (two of them the single-site zones of Goslar) and the Buergerpark with the median product of
+            "lot_no_position 3, lot_not_open 2, lot_not_surface_lot 6, lot_unconfirmed_candidate 9, no_coordinates 1, "
+            "zone_street_product 2)") in out
+    # no car park of the Wolfsburg layer inside a zone is a candidate of the reason zone_street_product any more (spec Amendment I1);
+    # the two HarzVenture lots of Bad Harzburg that are the zone car parks Sole-Therme and Grossparkplatz are (spec v3 B7): their
+    # hourly reference (0.50 EUR per 30 min) equals the street rate of their zone; the eleven lots with the street product of their
+    # zone (two of them the single-site zones of Goslar) and the Buergerpark with the median product of
     # bs_zone_ia are compared with the table row, and every lot inside a zone polygon is compared in a report-only pass (R-4j-7)
-    assert ("car parks inside a zone (spec E14): 0 checked, the published hourly reference of the tariff area against the "
-            "street rate of the zone: 0 equal, 0 differ (none)") in out
+    assert ("car parks inside a zone (spec E14): 2 checked, the published hourly reference of the tariff area against the "
+            "street rate of the zone: 2 equal, 0 differ (none)") in out
     assert ("lots with the street product of their zone (spec Amendment I1): 12 checked, the dataset row against the row of "
             "the tariff table (rate, unit, grace, cap, fee window, maximum stay, commuter product): 12 equal, 0 differ "
             "(none)") in out

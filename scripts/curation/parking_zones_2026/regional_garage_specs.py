@@ -63,6 +63,12 @@ def _bs(name: str, *numbers: int) -> tuple:
     return tuple(f"{_BS[name]}-{number}" for number in numbers)
 
 
+#: The owner's transcription of the meinestadt.de directory entry of the Goslar garage GALERIA (2026-10-15; secondary evidence of
+#: the recorded 8 EUR day maximum, never a value of the row): its file name and SHA-256 (data record
+#: parking_owner_transcriptions_2026_10_15; the file is no input of the step, only cited).
+GALERIA_DIRECTORY_FILE = "goslar_galeria_meinestadt_tariff.txt"
+GALERIA_DIRECTORY_SHA256 = "e84d9312589341d29e9b3da3a329483f2aabb62534635a4726289178b605b76e"
+
 #: One entry per garage, in the order of the dataset. Keys: ``garage_id``; ``town``; ``layer`` and ``feature`` (the
 #: layer feature that gives name and position: (column, value)); ``attributes`` (a second layer feature of the same
 #: garage, whose attributes complete the first: operator, geometry method); ``facility`` (the package facility record
@@ -432,13 +438,20 @@ GARAGE_SPECS = (
                                         "hour and no rounding; search hits that state 'je angefangene Stunde' belong to other "
                                         "garages"},
      "qa_comment": "the daily maximum 15.00 EUR per calendar day (WVV, owner decision of spec E12) is used; the direct operator "
-                   "locator states 8.00 EUR (the conflicting variant, not used); the Dauerstellplatz 39.00 EUR per month is the "
-                   "used monthly product",
+                   "locator states 8.00 EUR (the conflicting variant, not used; the owner's transcription of the meinestadt.de "
+                   "directory of 2026-10-15 repeats it, " + GALERIA_DIRECTORY_FILE + ", SHA-256 " + GALERIA_DIRECTORY_SHA256
+                   + "); the Dauerstellplatz 39.00 EUR per month is the used monthly product",
      "comment": "PRICED (rulings R-4b2-4 and R-4b2-2 of spec E12). The first and every further hour cost 1.50 EUR (two operator "
                 "sources and a third provider page), the rounding of a started hour is not stated (ASSUMPTION P4). The daily "
                 "maximum is 15.00 EUR per calendar day (WVV, the service provider; the tourism page also states 15 EUR for "
                 "24 h) by the owner decision of spec E12; the direct locator's 8.00 EUR is the conflicting variant, named here "
-                "and in the QA table. The cap is stated per calendar day and the dataset can only hold a maximum per stay: for "
+                "and in the QA table. Further evidence of that conflict (spec v3 B7, owner decision of 2026-10-15: the 15 EUR "
+                "stay): the owner's transcription of the meinestadt.de business directory (" + GALERIA_DIRECTORY_FILE + ", "
+                "SHA-256 " + GALERIA_DIRECTORY_SHA256 + "; a secondary directory source, pasted on 2026-10-15) states 1.50 EUR "
+                "for the first and for every further hour, a daily maximum of 8 EUR and a Dauerstellplatz of 39 EUR per month: "
+                "it repeats the 8 EUR of the direct locator and the 39 EUR monthly price, so the 8 EUR now stands on two "
+                "secondary sources against the service provider's 15 EUR, and the owner decision keeps 15 EUR (not used). The "
+                "cap is stated per calendar day and the dataset can only hold a maximum per stay: for "
                 "the garage's opening hours (Mo-Sa 08:30-19:00, no charging hours) a stay inside one day pays what is "
                 "published and a stay across midnight is capped once (the reading is counted). Monthly product (spec D2): the "
                 "direct operator publishes a fixed Dauerstellplatz of 39.00 EUR per month with an online contract booking and "
@@ -595,7 +608,7 @@ PACKAGE_CANDIDATES = (
              "or contract parking is covered by the model's averaged free-parking share"},
 )
 #: AGS of the towns of ``PACKAGE_CANDIDATES`` that are not in ``TOWNS``.
-OTHER_TOWNS = {"cl": ("03153018", "Clausthal-Zellerfeld"), "se": ("03153012", "Seesen")}
+OTHER_TOWNS = {"cl": ("03153018", "Clausthal-Zellerfeld"), "se": ("03153012", "Seesen"), "bh": ("03153002", "Bad Harzburg")}
 
 #: The decisions on the entries of the Braunschweig car-park directory (ASCII names as ``regional_garages`` transliterates
 #: them): reason code of ``garage_qa.CANDIDATE_REASONS`` and a note. A directory entry that is not listed stops the step.
@@ -1084,3 +1097,57 @@ LARGE_LOT_QA_DETAILS = {
                     "(coordinate_role unresolved; the event operator's page of the package names only 'northwest behind the "
                     "training grounds'), so P2 cannot be an option until a position is supplied: none is invented",
 }
+
+#: Spec v3 B7 (issue #436, ruling R-B-18, owner decisions of 2026-10-15): the facilities that a source DOCUMENTS and no package
+#: locates, located in the pinned OpenStreetMap extract by ``documented_lots.match_locator``. Per entry: ``key`` (the garage_id of
+#: the option and the key of its QA rows), ``town`` (a key of ``OTHER_TOWNS``), ``kind`` (garage or surface_lot), ``name``,
+#: ``facility`` (the facility id of the regional package, or a stable id of the source where the package holds none),
+#: ``evidence`` (which reader and tariff the row rests on: ``seesen_city_page`` is the free garage on the owner's transcription of
+#: the city page, ``harzventure`` a lot of the HarzVenture page with its own tariff, ``brochure_free`` a car park area that the
+#: town's brochure of 2021/22 names free), ``locator`` (the keys of ``documented_lots.match_locator``; ``"page_address"`` takes the
+#: address from the page's heading; None where the source gives no way to locate it, with ``no_locator_reason``), ``harzventure``
+#: (the lot of ``documented_lots.HARZVENTURE_LOT_KEYS``) and ``rate_rule`` (the rule of the regional package that states the rate).
+#: Rules of the release (unchanged by B7): a surface lot is an option when its OSM capacity (``documented_lots.osm_capacity``: the
+#: tag, else the area estimate of the large-lot package) reaches the size threshold (ASSUMPTION L50), else a QA row with the
+#: existing reasons; a garage has no size rule; no position (unmatched, ambiguous) is the QA reason lot_no_position; a match that is one of
+#: the zone car parks (``ZONE_CAR_PARK_FACILITIES``) is no new option (its zone is the tariff there) and a QA row of the reason
+#: zone_street_product that names the zone and compares the page with its row.
+DOCUMENTED_OPTIONS = (
+    {"key": "se_parkhaus_bahnhofstrasse", "town": "se", "kind": "garage", "name": "Parkhaus Bahnhofstrasse",
+     "facility": "se_parkhaus", "evidence": "seesen_city_page",
+     "locator": {"osm_id": "way/91181792", "names": ("Parkhaus Bahnhofstrasse",)},
+     "comment": "the private garage Bahnhofstrasse of Seesen: the city page 'Parken in Seesen' states the upper levels free all "
+                "day for long-stay parkers and the lower levels free up to 2 h, and the owner accepted that page as the free "
+                "evidence (decision 2026-10-15); the row is free for every stay (the free schedule '0- free'), the 2 h limit of "
+                "the lower levels is not modelled, the garage is private (the page names no operator) and no capacity is "
+                "documented (a garage has no size rule)"},
+    {"key": "bh_harzventure_tourist_information", "town": "bh", "kind": "surface_lot",
+     "name": "Parkplatz Tourist-Information (HarzVenture)", "facility": "badharzburg_tourist_information_harzventure",
+     "evidence": "harzventure", "harzventure": "parkplatz_tourist_information", "locator": "page_address",
+     "rate_rule": "badharzburg_tourist_information_harzventure_REV_01"},
+    {"key": "bh_harzventure_hotel_seela", "town": "bh", "kind": "surface_lot",
+     "name": "Parkplatz gegenueber Hotel Seela (HarzVenture)", "facility": "badharzburg_opposite_hotel_seela",
+     "evidence": "harzventure", "harzventure": "parkplatz_gegenueber_hotel_seela", "locator": "page_address",
+     "rate_rule": "badharzburg_opposite_hotel_seela_REV_01"},
+    {"key": "bh_harzventure_seela_tankstelle", "town": "bh", "kind": "surface_lot",
+     "name": "Parkplatz zwischen Hotel Seela und Tankstelle (HarzVenture)",
+     "facility": "badharzburg_between_seela_petrol_station", "evidence": "harzventure",
+     "harzventure": "parkplatz_zwischen_hotel_seela_und_tankstelle", "locator": None,
+     "no_locator_reason": "the page gives no address and describes the lot only relative to two places ('between Hotel Seela and "
+                          "the petrol station'); the matching function has keys for an object, a name, an address and ONE named "
+                          "place, and no rule for a position between two, which no nearest-to-one-place search can replace "
+                          "without taking the lot of the hotel for the lot of the petrol station",
+     "rate_rule": "badharzburg_between_seela_petrol_station_REV_01"},
+    {"key": "bh_galopprennbahn", "town": "bh", "kind": "surface_lot", "name": "Parkplatz Galopprennbahn (Bad Harzburg)",
+     "facility": "bad_harzburg_brochure_2022:galopprennbahn", "evidence": "brochure_free",
+     "locator": {"anchor_names": ("Galopprennbahn Bad Harzburg",)}},
+    {"key": "bh_silberbornbad", "town": "bh", "kind": "surface_lot", "name": "Parkplatz Silberbornbad (Bad Harzburg)",
+     "facility": "bad_harzburg_brochure_2022:silberbornbad", "evidence": "brochure_free",
+     "locator": {"anchor_names": ("Silberbornbad",)}},
+)
+#: The candidate record of ``PACKAGE_CANDIDATES`` that an option of ``DOCUMENTED_OPTIONS`` replaces when the run builds the
+#: documented options (key of the option): the QA row of the candidate is then the garage row of the option.
+DOCUMENTED_CANDIDATE_RELEASES = {"candidate_se_parkhaus": "se_parkhaus_bahnhofstrasse"}
+#: The zone car parks of Bad Harzburg: the facility ids of the regional package whose OpenStreetMap ways (the package's
+#: ``osm_way_ids``) are the outlines of the five zones of the tariff table; the zone id of the table is the facility id.
+ZONE_CAR_PARK_FACILITIES = ("bh_sole_therme", "bh_kurpark", "bh_grossparkplatz", "bh_burgberg", "bh_berliner_platz")

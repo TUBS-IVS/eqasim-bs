@@ -307,8 +307,7 @@ inferred from the other.
    - Source of the fee windows: the three Braunschweig Hauptbahnhof rows (the DB page, Mo-So 0-24 h) take the new value
      `operator_page` of `zones.FEE_WINDOW_SOURCES`, because labelling an operator page as municipal would be a provenance error
      (ruling R-B-4); Bad Harzburg keeps `municipal_page` (the dated municipal brochure). Peine Echternplatz (zone I, 1.70 EUR
-     per 30 min, maximum 60 min) is a single lot and is NOT zoned: it is an excluded row of the coverage register with its
-     reason.
+     per 30 min, maximum 60 min) is a single lot and is NOT zoned: it is an excluded row of the coverage register with its reason.
    - ASSUMPTION W-max (owner decision): the 58 Wolfsburg mobile-parking areas without a recorded maximum stay allow long
      parking, so the three tariff zones carry no zone-wide maximum. The research package says that an empty field does NOT mean
      unlimited; W-max is the owner's decision against that wording and stays a named assumption, not a finding.
@@ -342,11 +341,11 @@ inferred from the other.
     points sit beside them, and a raw section would almost never contain one, so its maximum stay would never act. Two
     garage-dataset lots change zone with it: the Cinemaxx lot lies in a 60 min area (the section lies 100 % inside the lot
     outline, and the package rule states 60 min, so the maximum is supported by the source and not a Voronoi artefact) and the
-    Hoffmannstrasse triangle lot in a 120 min area (the overlap with its outline is in `parking_garages_2026`). The 58 areas without
-    a recorded
-    maximum are not zones (W-max, decision 8). Ruling R-B-13: the Wolfsburg universe of the decay calibration and of the run
-    comparison is selected by `municipality_ags` 03103000 from the tariff table (`calibrate_garage_decay.wolfsburg_zone_ids`),
-    so the area zones count; a fixed list of the three tariff zones would have dropped them silently.
+    Hoffmannstrasse triangle lot in a 120 min area (the overlap with its outline is in `parking_garages_2026`). The 58 areas
+    without a recorded maximum are not zones (W-max, decision 8). Ruling R-B-13: the Wolfsburg universe of the decay calibration
+    and of the run comparison is selected by `municipality_ags` 03103000 from the tariff table
+    (`calibrate_garage_decay.wolfsburg_zone_ids`), so the area zones count; a fixed list of the three tariff zones would have
+    dropped them silently.
 11. **Resident districts of four more towns (spec B3; owner: the streets are assigned by the addresses and the area is computed
     with a small buffer).** The layer has 29 districts in six municipalities (Braunschweig 3, Goslar 7, Wolfsburg 10, Peine 7,
     Helmstedt 1, Wolfenbuettel 1).
@@ -369,8 +368,7 @@ inferred from the other.
       quantity is orientation only.
     - A list or table names eligible resident ADDRESSES, not legal parking areas, so a district is the envelope of the listed
       streets with a buffer and includes buildings and land without parking. Fallbacks and rates per town (qualifiers that
-      cannot be applied, ranges without a side, the one area-boundary match) are counted and logged and stated in the data
-      record.
+      cannot be applied, ranges without a side, the one area-boundary match) are counted and logged and stated in the data record.
 12. **Free lots and the Arena (spec B4; owner decisions 2026-10-14).** From the archived pages of the Restluecken package
     three Wolfsburg lots become free options (the dataset has 94 rows after 91): Allersee Suedufer and Freibad Fallersleben, and
     the Volkswagen Arena car park P1 (the club page: free outside match days; ASSUMPTION W-match: match days are not modelled,
@@ -403,6 +401,30 @@ inferred from the other.
     a fail. A calibration is no validation. Ruling R-B-8: until this recalibration the four tie tests that tie the
     calibration to the pins of the garage dataset, the sensitivity datasets and the zone file stayed red on purpose (a
     stale table is a true signal), and they are green only because the table is regenerated.
+14. **Documented options of Bad Harzburg and Seesen (spec B7; owner decisions 2026-10-15).** The package audit found facilities
+    that a source documents and no package locates. Seesen: the private garage Bahnhofstrasse becomes a FREE garage option (the
+    free schedule `0- free`) on the owner's transcription of the city page "Parken in Seesen", which the owner accepted as the
+    evidence: the upper levels are free all day for long-stay parkers, the lower levels free up to 2 h; the 2 h limit is not
+    modelled, the page names no operator and no capacity (a garage has no size rule). Bad Harzburg: the three HarzVenture lots
+    (page values parsed from the archived page, none typed) and the free car parks "im Bereich Galopprennbahn und Silberbornbad"
+    (brochure of 2021/22, stated as historical) are located in the pinned OpenStreetMap extract by ONE function
+    (`documented_lots.match_locator`: the named object, the name tag, the address tags, the parking area nearest to an object
+    that carries the address, the nearest to a named place; at most 75 m and a lead of 10 m over the second candidate, both
+    ASSUMPTIONS because nothing committed fixes them; kerbside types are never a candidate; no geocoding service; the rates of the
+    methods are logged). A match at one of the five zone car parks is no new option: two HarzVenture lots (Nordhaeuser Strasse 4
+    and 12) are the OpenStreetMap outlines of the zone car parks Sole-Therme and Grossparkplatz (QA row `zone_street_product`;
+    the page equals the zone rows in rate, billing unit, maximum stay and end of the fee time, and its 15 free minutes and
+    maximum fee are not in the zone rows); the third has no address and no position (`lot_no_position`); the Silberbornbad has
+    two touching parking areas and no unique position (`lot_no_position`); the car park at the Galopprennbahn is a free option
+    (the brochure names an area, so the row stands for the nearest lot; capacity 100 by the area estimate of the large-lot
+    package; it lies 2.9 km from the nearest Bad Harzburg zone, so no stay reaches it within the option distance of 1 km, which
+    the data record states). No paid HarzVenture lot is left, so no paid encoding is built; the step stops if one appears. The
+    dataset has 96 rows after 94. Braunlage stays unchanged (its two zones are the car parks); the free car parks of
+    Koenigslutter and Schoeningen get no option (no position, no paid zone, so an option would be inert), and the Goslar GALERIA
+    keeps its 15 EUR day maximum (owner decision of spec E12; the 8 EUR of the directory transcription of 2026-10-15 is further
+    evidence of the recorded conflict, not a value). The Northeim Q-Park transcription is archived and unused (outside the study
+    area). The garage dataset changed, so the calibration was rerun (decision 13 values unchanged: the Braunschweig and
+    Wolfsburg universes do not reach the new options).
 
 ## Part B rejected alternatives
 
@@ -437,6 +459,15 @@ inferred from the other.
 - **A second weight implementation inside the calibration script** (decision 13): the Part A review required one; the old closed
   form is a tested special case (beta 0).
 - **Calibrate beta together with lambda** (decision 13): one share cannot identify two parameters (Part A, decision 2).
+- **Place the documented lots by geocoding without OpenStreetMap objects** (decision 14): a web geocoder or a typed coordinate is
+  no pinned, reproducible source; the owner's decision was to locate the missing positions in the extract.
+- **Duplicate the zone car parks as options** (decision 14): a HarzVenture lot that is the outline of a zone car park would be
+  counted twice (street and option) with the tariff of the zone; it is a QA row that compares the page with the zone row.
+- **Guess a position for an ambiguous or unlocatable lot** (decision 14): taking one of the two touching Silberbornbad areas, or
+  the lot nearest to the hotel for "between Hotel Seela and the petrol station", would invent a source statement; both are QA
+  rows with the reason `lot_no_position`.
+- **A garage option for the free lots of Koenigslutter and Schoeningen** (decision 14): they have no position and the towns no
+  paid zone, so the option could never be reached from a paid stay.
 
 ## Part B consequences
 
@@ -450,9 +481,11 @@ inferred from the other.
 - The resident districts add the R2 exemption in Wolfsburg, Peine, Helmstedt and Wolfenbuettel wherever a zone honours permits;
   Wolfsburg zone K lies clear of every paid street zone (distance in `parking_resident_districts_2026`), so R2 is inert there.
 - Bad Harzburg (`bh_*` zones) and Seesen (`se_am_markt`) lie outside the eight towns of the garage and lot inventory (research
-  package Grossparkplaetze_ZGB8), so the model has no garage or lot there; this says nothing about whether car parks exist
-  there. A stay above the maximum stay of these zones therefore has no option left: it is priced at the metered street rate
-  with the maximum ignored and is flagged `NO_FEASIBLE_OPTION` in the outcome report (expected by construction, not an error).
+  package Grossparkplaetze_ZGB8), so the model has no research-package lot there; since decision 14 Seesen has the free garage
+  Bahnhofstrasse (230 m from the zone) and Bad Harzburg one free car park (2.9 km from its nearest zone, out of reach of every
+  zone stay). A stay above the maximum stay of a Bad Harzburg zone therefore has no option left: it is priced at the metered
+  street rate with the maximum ignored and is flagged `NO_FEASIBLE_OPTION` in the outcome report (expected by construction,
+  not an error); in Seesen the free garage is such an option within 1 km.
   The Wolfsburg area zones 730 to 734 have only one or two options.
 - Limitations to state with every v3 result, additional to Part A: W-max is an owner decision against the package's wording
   for 58 areas; the Goslar exemption is an upper bound; the districts are envelopes of listed streets, not permit areas
@@ -470,8 +503,11 @@ inferred from the other.
   that read them re-run for v3 (expected).
 - The curation-time dependency `pdfplumber` (it reads the Peine list) is not pinned in `environment.yml`; the real-list test
   skips without it, and the district file is a pinned artefact, so the pipeline does not need it.
+- The free Seesen garage is a private garage whose upper levels the page frees for long-stay parkers: the model offers it free to
+  every stay of the zone within reach, which overstates the free supply for a short visitor stay on the lower levels beyond 2 h
+  (named in the note of the row). The documented options use the 75 m limit and the 10 m lead as assumptions (decision 14).
 - Follow-ups, not part of this decision: Part C (runs; the run manifests will be linked from the feature record); a position
-  for Arena P2; pinning `pdfplumber`.
+  for Arena P2; pinning `pdfplumber`; a rule for a position between two named places (the third HarzVenture lot).
 
 ## Part B evidence
 
@@ -486,6 +522,11 @@ inferred from the other.
   `tests/test_parking_garage_decay_config.py` (the production routing, the payer-conditional measure, the ties of the table to
   the pins and the configs), `tests/test_parking_raw_package_records.py` (the package records, the code pins, the preflight
   entries). These are consistency and regression checks; none compares a model output with observed behaviour.
+- Task B7 (decision 14; commits after `20ec71de` on the same branch): `tests/test_parking_documented_lots.py` (the reader of the
+  OpenStreetMap layers, the matching function on synthetic rows, the capacity rule, the evidence gates),
+  `tests/test_parking_documented_options.py` (the rows and QA rows), the committed-dataset pins in
+  `tests/test_parking_regional_garages.py`, and `tests/test_parking_raw_package_records.py` (the transcription record and its
+  pins); the contributor note `parking-documented-options.md`.
 - Records: the data records named above, `parking_coverage_register_2026` (the Echternplatz, Salzgitter and Gifhorn rows), the
   feature record `parking_cost_zones` (state: validation.note), the contributor notes `parking-zones-curation.md`,
   `parking-large-lots.md` and `parking-garage-options.md`.
@@ -505,4 +546,4 @@ recalibration. R-B-10: the regenerated restricted files are installed with the P
 is the simple elapsed-stay comparison. R-B-12: an area zone is the Voronoi cell of its section inside the parent zone.
 R-B-13: the Wolfsburg universe of the calibration and the comparison is selected by municipality. R-B-14: the Helmstedt
 ring is not widened. R-B-15: Arena P2 stays a QA row without a position. R-B-16: the commuter and Wolfsburg-check measures
-are payer-conditional.
+are payer-conditional. R-B-18: the documented options of Bad Harzburg and Seesen of decision 14.

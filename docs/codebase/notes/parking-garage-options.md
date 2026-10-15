@@ -120,28 +120,28 @@ are release values with their calibration table `parking_garage_decay_calibratio
 every stay of its universes through the production pricing: `cost.parking_cost_with_garages_detail` with the tariff row of the
 zone, the activity times of the plans (arrival `start_time`, departure `end_time`, rule T1 for a missing end, minimum stay L1)
 and the weights `cost.option_weight` at the config's option price coefficient; the share of a stay is read from the detail
-object (`garage_probability`, or `W_paid / (W_paid + w_street)` for the paid-only measure). The commuter measure and the Wolfsburg check are payer-conditional (ruling R-B-16: a stay the pricing prices at 0 ct leaves
-numerator and denominator, counted per universe), the visitor measure keeps every stay. A stay without any feasible option
-(NO FEASIBLE OPTION) counts an off-street share of 0, is counted and logged as a rate per universe, and a stay whose street is
-infeasible but that has a feasible option is forced off-street (share 1). The beta of the table is pinned by tests to
-`PARKING_DEFAULTS`, every config and the module constant `PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`; `--beta` and
-`--sensitivity-beta` give the beta sensitivities (0 is the v2 form), `--sensitivity-visitors-in-window` the in-window visitor
-lambda and `--commuter-target-respondents` with `--sensitivity-commuter-target-se` lambda_c at shifted targets. The values, the old values, the sensitivities and the
-limitations (no `parkingEvExempt` in the reference plans, the arrival is the activity start) are in the data record. Targets, all READ from the committed SrV
-tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of `srv2023_city_center_parking`
-(E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the PAID-only commuter
-garage share `share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)` of the row `bs_zentrum` of
-`srv2023_commute_parking_by_workplace_class` (H2 as revised by ruling R-4h-1: the work and education activities in Ia and Ib
-that do NOT carry `parkingFree` are the payers only, because the free-parking draw frees everyone who parks free, so the
+object (`garage_probability`, or `W_paid / (W_paid + w_street)` for the paid-only measure). The commuter measure and the Wolfsburg
+check are payer-conditional (ruling R-B-16: a stay the pricing prices at 0 ct leaves numerator and denominator, counted per
+universe), the visitor measure keeps every stay. A stay without any feasible option (NO FEASIBLE OPTION) counts an off-street share
+of 0, is counted and logged as a rate per universe, and a stay whose street is infeasible but that has a feasible option is forced
+off-street (share 1). The beta of the table is pinned by tests to `PARKING_DEFAULTS`, every config and the module constant
+`PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`; `--beta` and `--sensitivity-beta` give the beta sensitivities (0 is the v2 form),
+`--sensitivity-visitors-in-window` the in-window visitor lambda and `--commuter-target-respondents` with
+`--sensitivity-commuter-target-se` lambda_c at shifted targets. The values, the old values, the sensitivities and the limitations
+(no `parkingEvExempt` in the reference plans, the arrival is the activity start) are in the data record. Targets, all READ from the
+committed SrV tables and never typed: lambda against the SrV garage share `0.708 / (0.708 + 0.2537)` of
+`srv2023_city_center_parking` (E5, the destination universe outside home, work and education in Ia and Ib), lambda_c against the
+PAID-only commuter garage share `share_garage_large_lot_paid / (share_garage_large_lot_paid + share_street_paid)` of the row
+`bs_zentrum` of `srv2023_commute_parking_by_workplace_class` (H2 as revised by ruling R-4h-1: the work and education activities in
+Ia and Ib that do NOT carry `parkingFree` are the payers only, because the free-parking draw frees everyone who parks free, so the
 reference must be the paid-only share; the free-inclusive share has free parkers in its denominator and is not used; the plans
 reader `count_zone_exposure.read_main_activities` provides the attribute as the column `parking_free`). Both are CALIBRATION TARGETS
 and no validation. The independent check the table reports (H3b) is the paid-only Wolfsburg commuter garage share: the mean garage
-share at lambda_c of the work and education activities without `parkingFree` in the Wolfsburg zones (every zone of the tariff
-table with `municipality_ags` 03103000)
-against the row `03103`, a number with its universe size and never validation. The script is tested on a synthetic fixture
-(`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the 1 % server run of
-2026-10-08 and again, on the 25 % reference plans and the enlarged option set, on 2026-10-14 (the table is committed and the two
-config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
+share at lambda_c of the work and education activities without `parkingFree` in the Wolfsburg zones (every zone of the tariff table
+with `municipality_ags` 03103000) against the row `03103`, a number with its universe size and never validation. The script is
+tested on a synthetic fixture (`tests/fixtures/parking/calibration_plans_fixture.xml`) and was run on 2026-10-09 on the plans of the
+1 % server run of 2026-10-08 and again, on the 25 % reference plans and the enlarged option set, on 2026-10-14 (the table is
+committed and the two config keys equal its rows `decay_length_m` and `decay_commute_length_m` in
 `configs/base_bs.yml` and the two popsim fixture configs; `tests/test_parking_garage_decay_config.py` requires both
 equalities and that the header pins of the garage dataset, the zone file and the two SrV tables are the pins of their data
 records and the committed files; the results, universes and provenance are in ADR-0140 decision 14 and the data record
@@ -154,7 +154,8 @@ The measure of each target has the universe of its SrV quantity (spec Amendment 
 (payment-inclusive, the SrV shares contain free and paying parkers), lambda_c and the Wolfsburg check count the PAID options only
 (a free option, the free schedule `0- free` read from the schedule of the row and never from a name or a rate, is a free
 parker in SrV terms and leaves numerator and denominator: `W_paid / (W_paid + w_street)`, which is `sum(w_paid) / (1 +
-sum(w_paid))` at beta 0, derived in the script documentation). The table header and rows name the measure of each target and the free options within D_max per universe (by id,
+sum(w_paid))` at beta 0, derived in the script documentation).
+The table header and rows name the measure of each target and the free options within D_max per universe (by id,
 with the activities reached), and the freight agents of the plans (ids `freight_*`, no residents) are excluded. A universe that
 the options barely reach (fewer than the share of `--minimum-reach-share-warning`, default one half, of its activities have an
 option of its measure within D_max; a log-only plausibility threshold and no scientific parameter) is warned about.

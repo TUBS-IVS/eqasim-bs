@@ -148,3 +148,11 @@ notes: >-
   are unchanged. The row of the unincorporated area Harz (03153504, not_audited) names the declared containment
   exception of the Bad Harzburg car park bh_grossparkplatz, whose 50 m area lies 85.3 % in that area of the pipeline's
   municipality polygons (parking_zones_2026_municipal_qa.csv); the area itself stays without a zone.
+  Spec v3 B7 (2026-10-15, ruling R-B-18; statuses and counts unchanged): the notes of five rows were extended. Bad Harzburg: the
+  three HarzVenture lots were located in the OpenStreetMap extract by address (two are the OpenStreetMap outlines of the zone car
+  parks Sole-Therme and Grossparkplatz, no new option; the third has no address and no position), the free car park at the
+  Galopprennbahn is an option of the garage dataset and the one at the Silberbornbad has no unique position (parking_garages_2026
+  and its QA table); Seesen: the private garage Bahnhofstrasse is a free option of the garage dataset; Braunlage: its two zones ARE
+  the car parks Hexenritt and Wurmberg-Seilbahn/Eisstadion, so there is no separate option; Koenigslutter am Elm and Schoeningen:
+  the documented free car parks have no position and the towns no paid zone, so an option would be inert (an option competes only
+  with a paid street product) and none is added.

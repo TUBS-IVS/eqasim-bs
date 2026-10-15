@@ -1,0 +1,84 @@
+dataset: parking_owner_transcriptions_2026_10_15
+title: >-
+  Owner transcriptions of 2026-10-15 (three text files: the city page "Parken in Seesen", the meinestadt.de tariff of the Goslar
+  garage GALERIA, the Q-Park tariff of Northeim), raw source of the free garage Bahnhofstrasse of Seesen and secondary evidence of
+  the recorded GALERIA day-maximum conflict
+inventory_id: null
+provider: >-
+  The project owner (L. Bienzeisler), who pasted the page texts in the session of 2026-10-15 (issue #436, owner decisions of the
+  same day on the package audit of Bad Harzburg and Seesen); each file states its own source (publisher, URL) in its head. The
+  pipeline downloaded nothing: the files are transcriptions, not original responses of the web
+vintage: >-
+  Pasted 2026-10-15; the pages themselves are undated (the city page of Seesen, the two directory entries); the Q-Park tariff
+  states no date either
+geography: >-
+  Seesen (Stadt, AGS 03153012; the city page and its private garage Bahnhofstrasse), Goslar (the garage GALERIA,
+  Wohldenbergerstrasse 19) and Northeim (the Q-Park garage City-Center, outside the study area)
+crs: null
+roles:
+- supply_input
+- assumption_basis
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied text files, not downloaded by the pipeline. The public pages they transcribe are
+    https://www.stadtverwaltung-seesen.de/B%C3%BCrger/Rathaus/A-Z-Dienstleistungen/Parken-in-Seesen.php?ModID=10&FID=235.166.1
+    (Stadtverwaltung Seesen), https://branchenbuch.meinestadt.de/goslar/company/14668042 (a business directory) and
+    https://branchenbuch.meinestadt.de/northeim/company/16293033 with https://www.q-park.de/de-de/staedte/northeim/citycenter/.
+    Obtain the files from the owner (open an issue in TUBS-IVS/eqasim-bs) and verify them against the SHA-256 values in
+    storage.notes.
+  notes: >-
+    Three UTF-8 text files in the folder municipal_2026-10-15/ (no archive, no manifest). seesen_parken_in_seesen_city_page.txt is
+    USED: the free status of the Seesen garage Bahnhofstrasse (a free garage option of the garage dataset, spec v3 B7) rests on
+    two of its sentences, which the curation step quotes in the notes of the row (data record parking_garages_2026).
+    goslar_galeria_meinestadt_tariff.txt is CITED, never read by code: it states 1.50 EUR per hour, a daily maximum of 8 EUR and a
+    Dauerstellplatz of 39 EUR per month, so the 8 EUR of the recorded conflict of the GALERIA day maximum (the direct operator
+    locator) stands on a second secondary source; the owner decision of spec E12 keeps the 15 EUR of the WVV service provider
+    (R-4b2-2). northeim_qpark_city_center.txt is NOT USED: Northeim lies outside the study area and has no zone, so its tariff
+    (528 spaces, 2.00 EUR for the first started 60 min, 1.00 EUR per further started 30 min, 10.00 EUR day maximum) enters no
+    dataset; it is archived only.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-15/
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the pages are third-party documents whose redistribution is not cleared; eqasim-data/ is
+    ignored by design). SHA-256 of the files (verified on 2026-10-15 against the files in the main checkout):
+    seesen_parken_in_seesen_city_page.txt e0bee423a5a7ec73b26a2da44af3009b0fe1dee9332a578a175acf3b49b0a123 (the curation code pins
+    the same value, documented_lots.SEESEN_PAGE_SHA256, and checks it before it reads the file);
+    goslar_galeria_meinestadt_tariff.txt e84d9312589341d29e9b3da3a329483f2aabb62534635a4726289178b605b76e (cited by
+    regional_garage_specs.GALERIA_DIRECTORY_SHA256, not read); northeim_qpark_city_center.txt
+    82dc47451fd6f9e7ba05490f5e840ce02d72acc40e9a2d9542f3f8ec264aa480 (not used). A test ties the pins to this record
+    (tests/test_parking_raw_package_records.py).
+verification:
+  verifier_entry: D15
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D15 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py with the one file the curation code
+    reads (seesen_parken_in_seesen_city_page.txt): only the curation chain (scripts/curation/parking_zones_2026/regional_garages.py
+    with --owner-transcriptions-dir) needs it. A missing file is reported as [RESTRICTED]; the SHA-256 is checked by the code that
+    reads it.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner transcriptions of the texts of public pages; the pages keep the terms of their publishers (the Stadtverwaltung Seesen,
+    the directory and the garage operator). Used by owner decision 2026-10-15.
+  notes: >-
+    The free status of the Seesen garage rests on the quoted sentences of the city page, which the dataset note of the row names
+    with the SHA-256 of the file (data record parking_garages_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  Transcriptions, not original responses: the files carry no retrieval timestamp or response hash of the page, only the owner's
+  statement that they were pasted on 2026-10-15. The city page states the upper levels of the private garage free for long-stay
+  parkers (Dauerparker) all day and the lower levels free up to 2 h, names no operator and no capacity; the owner accepted it as
+  the evidence of a free garage option (decision 2026-10-15). The GALERIA directory entry is a secondary source of unknown date
+  and does not change the model (the 15 EUR day maximum stays by owner decision R-4b2-2). Nothing here is a reference value of the
+  model.
+notes: >-
+  Used by the parking v3 Part B of issue #436 (ADR-0142, task B7): the free garage Bahnhofstrasse of Seesen and the GALERIA note.
+  Registered as a raw source of its own on 2026-10-15; the data record parking_garages_2026 documents how the Seesen page enters
+  the dataset.

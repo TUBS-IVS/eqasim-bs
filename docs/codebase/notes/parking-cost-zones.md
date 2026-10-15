@@ -86,15 +86,16 @@ ADR-0140, which holds the decisions and the rejected options; issue #436). The f
    the one-off curation chain `scripts/curation/parking_zones_2026/assemble_parking_zones.py` (its steps
    `municipal_zones.py` for `--municipal-dir`, `wolfsburg_area_zones.py` for the Wolfsburg areas with a recorded maximum stay
    and `regional_zones.py` for `--regional-dir`; `wolfsburg_area_release.py` applies the area step to a finished release where
-   the full chain's inputs are missing; the raw inputs are gitignored), so a change is made in the curation and the file regenerated, never edited by hand; the data record
-   `parking_zones_2026` holds the command line and the inputs. The geometry source is one of `GEOMETRY_SOURCES`; a
-   source that implies a zone type (`GEOMETRY_SOURCE_ZONE_TYPES`: `campus_outline_and_detection_zones` and
-   `campus_detection_zones` are campus zones, `single_site_buffered` and `municipal_mobile_parking_area` street zones) must match the tariff row
-   (`validate_geometry_source_zone_types`), and the municipal QA table needs rows for every
-   `municipal_street_sections_buffered`, `municipal_mobile_parking_area`, `campus_outline_and_detection_zones`,
-   `campus_detection_zones` and `single_site_buffered` zone (`municipal_zone_qa.municipal_zone_ids`). A TU campus zone is the union of its campus
-   grounds (the v1 release polygon of the OSM university outline: the destination area, where the buildings are) and
-   its camera detection zones (the paid car parks); the detection zones do not contain the buildings.
+   the full chain's inputs are missing; the raw inputs are gitignored), so a change is made in the curation and the file
+   regenerated, never edited by hand; the data record `parking_zones_2026` holds the command line and the inputs. The geometry
+   source is one of `GEOMETRY_SOURCES`; a source that implies a zone type (`GEOMETRY_SOURCE_ZONE_TYPES`:
+   `campus_outline_and_detection_zones` and `campus_detection_zones` are campus zones, `single_site_buffered` and
+   `municipal_mobile_parking_area` street zones) must match the tariff row (`validate_geometry_source_zone_types`), and the
+   municipal QA table needs rows for every `municipal_street_sections_buffered`, `municipal_mobile_parking_area`,
+   `campus_outline_and_detection_zones`, `campus_detection_zones` and `single_site_buffered` zone
+   (`municipal_zone_qa.municipal_zone_ids`). A TU campus zone is the union of its campus grounds (the v1 release polygon of the OSM
+   university outline: the destination area, where the buildings are) and its camera detection zones (the paid car parks); the
+   detection zones do not contain the buildings.
 2. Add its row to `parking_tariffs_2026.csv` (`TARIFF_COLUMNS`; the required and forbidden fields per zone type are
    `REQUIRED_FIELDS_BY_TYPE` and `FORBIDDEN_FIELDS_BY_TYPE`), with `source_url`, `source_date`, `valid_from` and a
    `fee_window_source` (`assumption` where no ordinance or signage gives the window, F1). A value no source gives
