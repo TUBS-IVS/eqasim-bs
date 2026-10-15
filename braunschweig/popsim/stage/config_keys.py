@@ -104,6 +104,17 @@ KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
+# The age shape the employment grid splits each Kreis x sex Erwerbstaetige level with (ADR-0137):
+# "zensus2022_kreis_by_sex" (default) = the Zensus 2022 Regionaltabelle's employed persons by age
+# class per Kreis AND sex (zensus2022_employed_by_age_kreis.csv), exact for every ZGB Kreis;
+# "zensus2022_2000S_2001" = the previous reference (zensus2022_employment_by_age_ref.csv), exact for
+# the kreisfreie Staedte only and one shape for both sexes -- byte-identical to before ADR-0137.
+# Read only while the employment grid is on.
+KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE = "braunschweig.population.popsim.employment_grid_age_shape_source"
+EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX = "zensus2022_kreis_by_sex"
+EMPLOYMENT_GRID_AGE_SHAPE_ZENSUS_2000S_2001 = "zensus2022_2000S_2001"
+EMPLOYMENT_GRID_AGE_SHAPE_SOURCES = (EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX,
+                                     EMPLOYMENT_GRID_AGE_SHAPE_ZENSUS_2000S_2001)
 # Ownership grid (issue #240): when "on", injects 9 per-100m-cell ownership target
 # columns (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg) and adds the
 # corresponding ZENSUS1km catalog controls. SHAPE from the committed MiD B1
