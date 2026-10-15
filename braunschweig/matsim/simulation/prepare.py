@@ -32,13 +32,15 @@ from pathlib import Path
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
+from braunschweig.matsim.simulation import plan_check
 
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
 #: arguments, so a change there changes the prepared scenario without touching this file
 #: (#327 gate). The three ``braunschweig.data.vrb`` helpers write the VRB zone fare inputs
-#: (ADR-0133) and are hashed unconditionally, like the deferred cordon helpers below.
-_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes)
+#: (ADR-0133) and are hashed unconditionally, like the deferred cordon helpers below. ``plan_check``
+#: runs the plan feasibility check as the last step of ``execute`` (#443).
+_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, plan_check)
 
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
@@ -81,6 +83,11 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.runtime.java",
     "matsim.runtime.maven",
     "matsim.runtime.process_watchdog",
+    # plan_check reads MAX_PLAN_TIME_SECONDS from braunschweig.popsim.plan_validation, whose own
+    # imports (closure_dwell, data.hts.hts) are part of the check's import closure (#443).
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.plan_validation",
+    "data.hts.hts",
 )
 
 
@@ -160,6 +167,15 @@ def configure(context):
         context.config("freight_boundary_link_maximum_fallback_share", 0.05)
         context.config("random_seed")
 
+    # Plan feasibility check on the written population (ADR-0146, #443): runs after the cut and the
+    # freight injection, reports per subpopulation and frozen/in-region class, raises above the
+    # frozen-resident defect share. Thresholds are ASSUMPTIONS until the A/B of #443 calibrates them.
+    context.config(plan_check.KEY_ENABLED, plan_check.DEFAULT_ENABLED)
+    context.config(plan_check.KEY_WALK_MAX_DISTANCE_M, plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+    context.config(plan_check.KEY_BICYCLE_MAX_DISTANCE_M, plan_check.DEFAULT_BICYCLE_MAX_DISTANCE_M)
+    context.config(plan_check.KEY_LEG_MAX_DURATION_S, plan_check.DEFAULT_LEG_MAX_DURATION_S)
+    context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
+
 def execute(context):
     result = delegate.execute(context)
 
@@ -191,6 +207,10 @@ def execute(context):
     # and the freight injection.
     if context.config(VRB_FARES_KEY):
         _write_vrb_fare_inputs(context, result)
+
+    # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
+    if context.config(plan_check.KEY_ENABLED):
+        plan_check.run(context, result)
 
     return result
 
