@@ -3,12 +3,14 @@
 Nothing between the population writer and MATSim used to check whether a plan can be lived in one simulated
 day. This module streams the prepared population file (the file MATSim reads, after the cut and the freight
 injection; located through the written config's ``plans.inputPlansFile``) and reports, per subpopulation and
-per class, plans ending after the simulated day, plans with non-monotonic activity end times, walk and
-bicycle legs over a straight-line distance and legs over a duration. The class ``frozen`` holds the plans
-(person level) and legs (tour level) whose tour touches an ``outside`` activity -- the tours the discrete
-mode choice never re-chooses (``OutsideFilter``); ``in_region`` is informational, because the mode choice
-repairs it. Failure thresholds apply to the frozen residents only; freight is reported, never failed on
-(#444 owns its defects).
+per class, plans with an activity end time after the simulated day, plans whose last planned arrival (the last
+leg's departure plus its travel time) is after the simulated day (report only), plans with non-monotonic
+activity end times, walk and bicycle legs over a straight-line distance and legs over a duration. The class
+``frozen`` holds the plans (person level) and legs (tour level) whose tour touches an ``outside`` activity --
+the tours the discrete mode choice never re-chooses (``OutsideFilter``); ``in_region`` is informational,
+because the mode choice repairs it. The threshold (late or non-monotonic share of the frozen residents) is
+reported always and fails the stage only when ``braunschweig.plan_check.fail_on_threshold`` is true; freight is
+reported, never failed on (#444 owns its defects).
 
 The simulated day is ``braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS``; ``assert_qsim_end_time``
 fails early when the written config's ``qsim.endTime`` disagrees with it (one constant, no silent drift).
@@ -37,10 +39,14 @@ FROZEN, IN_REGION = "frozen", "in_region"
 
 KEY_ENABLED = "braunschweig.plan_check.enabled"
 DEFAULT_ENABLED = True
-#: ASSUMPTION (ADR-0146): anchored in the SrV table, 0.0 % walk share from 5 km straight-line.
+#: ASSUMPTION (ADR-0146): anchored in the SrV table (srv2023_mode_by_distance_band.csv): the walk share is
+#: below 1 % in every group beyond 5 km straight-line except ``other`` at 5-10 km (1.05 %); work at 5-10 km is
+#: 0.16 %. Not 0 %: it is a threshold for counting legs, not a reference value.
 KEY_WALK_MAX_DISTANCE_M = "braunschweig.plan_check.walk_max_distance_m"
 DEFAULT_WALK_MAX_DISTANCE_M = 5000.0
-#: ASSUMPTION (ADR-0146): SrV work bicycle share 0.1 % at 30-45 km.
+#: ASSUMPTION (ADR-0146): rests on thin SrV evidence. The work bicycle share at 30-45 km is 0.064 %, which is
+#: ONE unweighted trip (n_cell = 1 of 666); ``other`` at 20-30 km is 0.68 % (7 of 603 trips). 30 km is a choice
+#: that counts legs, not a measured limit.
 KEY_BICYCLE_MAX_DISTANCE_M = "braunschweig.plan_check.bicycle_max_distance_m"
 DEFAULT_BICYCLE_MAX_DISTANCE_M = 30000.0
 KEY_LEG_MAX_DURATION_S = "braunschweig.plan_check.leg_max_duration_s"
@@ -48,6 +54,10 @@ DEFAULT_LEG_MAX_DURATION_S = 10800.0
 #: ASSUMPTION (ADR-0146): the share of frozen resident plans that may be late or non-monotonic; the A/B calibrates it.
 KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
+#: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
+#: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
+KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
+DEFAULT_FAIL_ON_THRESHOLD = False
 
 
 @dataclass
@@ -71,9 +81,18 @@ def _open(path):
 
 
 def iter_person_plans(population_path) -> Iterator[PersonPlan]:
-    """Stream the selected plan of every person; memory stays bounded (elements are cleared)."""
+    """Stream the selected plan of every person; memory stays bounded.
+
+    Each finished person is cleared AND detached from the root (``root.clear()``): clearing only the person
+    leaves one empty element per person attached to the root, which grows with the population.
+    """
+    root = None
     with _open(population_path) as handle:
-        for _, element in ET.iterparse(handle, events=("end",)):
+        for event, element in ET.iterparse(handle, events=("start", "end")):
+            if event == "start":
+                if root is None:
+                    root = element
+                continue
             if element.tag != "person":
                 continue
             subpopulation = RESIDENTS
@@ -94,6 +113,7 @@ def iter_person_plans(population_path) -> Iterator[PersonPlan]:
                         travel = child.get("trav_time")
                         person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None))
             element.clear()
+            root.clear()
             yield person
 
 
@@ -115,15 +135,25 @@ def leg_tour_frozen(activities: list) -> list:
 
 
 def _empty_block() -> dict:
-    return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_non_monotonic": 0, "n_walk_legs_over": 0,
-            "n_bicycle_legs_over": 0, "n_legs_over_duration": 0}
+    return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_arrival_late": 0, "n_plans_non_monotonic": 0,
+            "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0}
 
 
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
               leg_max_duration_s: float) -> dict:
-    """Count plan and leg defects per subpopulation and per class (frozen / in_region)."""
+    """Count plan and leg defects per subpopulation and per class (frozen / in_region).
+
+    ``n_plans_late`` counts plans with an activity END time after the simulated day. ``n_plans_arrival_late``
+    counts plans whose last planned arrival (end time of the last leg's origin activity plus the leg's travel
+    time) is after the simulated day; a plan whose last leg lacks the end time or the travel time cannot be
+    evaluated and is not counted. The latter is report only (it is not part of the failure rule).
+    """
     blocks: dict = {}
     for person in plans:
+        if len(person.legs) > max(len(person.activities) - 1, 0):
+            raise ValueError(f"{_LOG_TAG} person {person.person_id}: {len(person.legs)} legs for "
+                             f"{len(person.activities)} activities; a plan has at most activities - 1 legs "
+                             "(corrupt written population)")
         frozen_legs = leg_tour_frozen(person.activities)
         person_class = FROZEN if any(frozen_legs) else IN_REGION
         sub = blocks.setdefault(person.subpopulation, {FROZEN: _empty_block(), IN_REGION: _empty_block()})
@@ -132,6 +162,12 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
         ends = [end for _, end, _, _ in person.activities if end is not None]
         if ends and max(ends) > simulation_end_s:
             block["n_plans_late"] += 1
+        if person.legs:
+            last_departure = person.activities[len(person.legs) - 1][1]
+            last_travel = person.legs[-1][1]
+            if last_departure is not None and last_travel is not None \
+                    and last_departure + last_travel > simulation_end_s:
+                block["n_plans_arrival_late"] += 1
         if any(later < earlier for earlier, later in zip(ends, ends[1:])):
             block["n_plans_non_monotonic"] += 1
         for index, (mode, travel) in enumerate(person.legs):
@@ -150,6 +186,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
         for block in sub.values():
             n = block["n_persons"]
             block["share_plans_late"] = block["n_plans_late"] / n if n else 0.0
+            block["share_plans_arrival_late"] = block["n_plans_arrival_late"] / n if n else 0.0
             block["share_plans_non_monotonic"] = block["n_plans_non_monotonic"] / n if n else 0.0
     return {"simulation_end_s": float(simulation_end_s),
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
@@ -201,29 +238,51 @@ def resolve_population_path(config_path) -> str:
     return population_path
 
 
-def check_thresholds(summary: dict, max_frozen_defect_share: float) -> None:
-    """Raise when the frozen resident plans exceed the allowed late / non-monotonic share."""
+def find_threshold_violations(summary: dict, max_frozen_defect_share: float) -> list:
+    """Names of the failure-rule shares of the frozen resident plans that exceed the allowed share."""
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    for key in ("share_plans_late", "share_plans_non_monotonic"):
-        if frozen.get(key, 0.0) > max_frozen_defect_share:
-            raise ValueError(f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
-                             f"{frozen.get('n_persons', 0)} exceeds {100.0 * max_frozen_defect_share:.2f}%; the "
-                             "tours the mode choice never re-chooses cannot be lived in the simulated day")
+    return [key for key in ("share_plans_late", "share_plans_non_monotonic")
+            if frozen.get(key, 0.0) > max_frozen_defect_share]
+
+
+def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_threshold: bool) -> list:
+    """Apply the failure rule to the frozen resident plans and return the violated share names.
+
+    Above the allowed late / non-monotonic share the check raises when ``fail_on_threshold`` is true, and logs
+    at ERROR (naming the shares) and continues otherwise: the threshold is an ASSUMPTION until the A/B of #443
+    calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
+    """
+    frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
+    violations = find_threshold_violations(summary, max_frozen_defect_share)
+    for key in violations:
+        message = (f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
+                   f"{frozen.get('n_persons', 0)} exceeds {100.0 * max_frozen_defect_share:.2f}%; the "
+                   "tours the mode choice never re-chooses cannot be lived in the simulated day")
+        if fail_on_threshold:
+            raise ValueError(message)
+        logger.error("%s (%s=false: continuing)", message, KEY_FAIL_ON_THRESHOLD)
+    return violations
 
 
 def _log_summary(summary: dict) -> None:
     for subpopulation, classes in summary["subpopulations"].items():
         for name, block in classes.items():
-            logger.info("%s %s/%s: persons %d, late %d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
+            logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
+                        "%d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
                         "bicycle legs over %d, legs over duration %d of %d", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
+                        block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"])
 
 
 def run(context, config_name: str) -> dict:
-    """Check the written population of the prepare stage; write plan_check.json; raise above the thresholds."""
+    """Check the written population of the prepare stage and write plan_check.json.
+
+    The frozen-resident threshold raises only when ``braunschweig.plan_check.fail_on_threshold`` is true; the
+    report is written first in either case, so it exists when the check raises.
+    """
     directory = context.path()
     config_path = os.path.join(directory, config_name)
     if not os.path.exists(config_path):
@@ -235,7 +294,12 @@ def run(context, config_name: str) -> dict:
                         bicycle_max_distance_m=float(context.config(KEY_BICYCLE_MAX_DISTANCE_M)),
                         leg_max_duration_s=float(context.config(KEY_LEG_MAX_DURATION_S)))
     _log_summary(summary)
+    max_frozen_defect_share = float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE))
+    fail_on_threshold = bool(context.config(KEY_FAIL_ON_THRESHOLD))
+    summary["threshold"] = {"max_frozen_defect_share": max_frozen_defect_share,
+                            "fail_on_threshold": fail_on_threshold,
+                            "exceeded": find_threshold_violations(summary, max_frozen_defect_share)}
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
-    check_thresholds(summary, float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE)))
+    check_thresholds(summary, max_frozen_defect_share, fail_on_threshold=fail_on_threshold)
     return summary
