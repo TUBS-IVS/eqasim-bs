@@ -30,7 +30,10 @@ from braunschweig.synthesis.outside_tour_modes.config_keys import (
     KEY_WARN_SHARE, LOCATIONS_STAGE, MUNICIPALITIES_STAGE, PERSONS_STAGE, REPORT_FILE_NAME, RNG_OFFSET,
     validate_settings)
 from braunschweig.synthesis.outside_tour_modes.srv_table import ModeShareTable
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 from braunschweig.synthesis.portal_trips import modes as _portal_modes
+from braunschweig.synthesis.portal_trips import rewrite as _portal_rewrite
+from braunschweig.synthesis.portal_trips.rewrite import PORTAL_LEG_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +42,8 @@ SRV_SUBDIR = ("braunschweig", "srv")
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode")
 
 #: Own-package helpers and the shared modules whose source shapes this stage's output (hashed by validate()).
-_HELPER_MODULES = (_config_keys, _rule, _srv_table, _tours, _srv_table_module, _portal_modes)
+_HELPER_MODULES = (_config_keys, _rule, _srv_table, _tours, _srv_table_module, _portal_modes, _portal_rewrite,
+                   _portal_config_keys)
 #: Cross-package modules imported inside execute() (hashed by dotted name).
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon",)
 
@@ -120,6 +124,7 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     if municipalities_crs is not None and locations.crs != municipalities_crs:
         raise ValueError(f"{_LOG_TAG} CRS mismatch: locations {locations.crs} versus municipalities "
                          f"{municipalities_crs}; both must be in the pipeline CRS")
+    _rule.require_plain_mode_column(trips)
     table.assert_always_available_mode_plausible(min_share)
     ordered = trips.sort_values(["person_id", "trip_index"], kind="mergesort")
     tour_ids = _tours.home_based_tour_ids(ordered)
@@ -136,9 +141,21 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     availability = _portal_modes.mode_availability(persons)
     allowed = _rule.allowed_modes(availability.loc[availability.index.isin(np.unique(affected_persons))])
     rng = np.random.RandomState(int(seed) + RNG_OFFSET)
+    # A trips frame without the portal flag column is treated as having no portal legs; the report states which
+    # case applied and the log warns when outside activities exist although the flag is absent.
+    portal_column_present = PORTAL_LEG_COLUMN in ordered.columns
+    portal_leg = (ordered[PORTAL_LEG_COLUMN].eq(True).to_numpy(dtype=bool) if portal_column_present
+                  else np.zeros(len(ordered), dtype=bool))
     substitutes = _rule.tour_substitutes(ordered, tour_ids, outside, implausible, leg_km, cells, allowed, min_share,
-                                         rng)
+                                         rng, portal_leg=portal_leg)
+    unchanged = substitutes[substitutes["unchanged_reason"] != ""]
+    substitutes = substitutes[substitutes["unchanged_reason"] == ""]
     remoded, n_remoded, n_swept = _rule.apply_tour_modes(ordered, tour_ids, substitutes, implausible)
+    # Post-condition: outside legs whose FINAL mode is still below min_share in their cell (only the relaxed draws
+    # and the legs of tours the draw could not make plausible everywhere can remain).
+    implausible_after = _rule.implausible_legs(remoded, cells, min_share)
+    donor_modes = ordered["mode"].astype(str)
+    unknown_donor = outside & ~donor_modes.isin(_srv_table_module.MODES).to_numpy()
     out = trips.copy()
     out.loc[remoded.index, "mode"] = remoded["mode"]
 
@@ -151,6 +168,7 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     matrix = collections.Counter(f"{row.donor_modes}->{row.substitute}" for row in substitutes.itertuples())
     removed_by_mode = collections.Counter(mode for removed in substitutes["removed_modes"]
                                           for mode in str(removed).split(",") if mode)
+    n_relaxed = int(substitutes["relaxed_to_longest_leg"].sum())
     report = {
         "enabled": True, "min_share": float(min_share), "warn_share": float(warn_share),
         "n_persons": int(ordered["person_id"].nunique()), "n_legs": int(len(ordered)), "n_tours": n_tours,
@@ -162,6 +180,21 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
         "n_portal_legs_as_all_group": int((groups.to_numpy() == _srv_table_module.ALL_GROUP).sum()),
         "n_draws_restricted_by_availability": int((substitutes["n_removed_by_availability"] > 0).sum()),
         "n_removed_by_availability_by_mode": dict(removed_by_mode),
+        "n_outside_legs": int(outside.sum()),
+        "n_draws_relaxed_to_longest_leg": n_relaxed,
+        "share_draws_relaxed_to_longest_leg": float(n_relaxed / len(substitutes)) if len(substitutes) else 0.0,
+        "n_outside_legs_implausible_after": int(implausible_after.sum()),
+        "portal_leg_column_present": bool(portal_column_present),
+        "n_portal_tours_remoded": int(substitutes["portal_tour"].sum()),
+        "n_portal_tours_class_restricted": int((substitutes["portal_tour"]
+                                                & (substitutes["n_removed_by_portal_class"] > 0)).sum()),
+        "n_portal_tours_left_unchanged": int(len(unchanged)),
+        "portal_tours_left_unchanged_by_reason": {
+            reason: int((unchanged["unchanged_reason"] == reason).sum()) for reason in _rule.UNCHANGED_REASONS},
+        "share_portal_tours_left_unchanged": float(
+            len(unchanged) / (len(unchanged) + int(substitutes["portal_tour"].sum()))) if len(unchanged) else 0.0,
+        "n_unknown_donor_mode": int(unknown_donor.sum()),
+        "unknown_donor_modes": {str(k): int(v) for k, v in donor_modes[unknown_donor].value_counts().items()},
         "cells_used": {str(k): int(v) for k, v in substitutes["cell"].value_counts().items()},
     }
     _log_report(report)
@@ -180,6 +213,27 @@ def _log_report(report: dict) -> None:
                 "restricted by availability %d (removed by mode %s)", _LOG_TAG, report["n_outside_tours_by_group"],
                 report["n_portal_legs_as_all_group"], report["n_draws_restricted_by_availability"],
                 report["n_removed_by_availability_by_mode"])
+    logger.info("%s portal tours re-moded %d (gate class restricted the candidates in %d); draws relaxed to the cell "
+                "of the longest leg %d (%.2f%% of the draws)", _LOG_TAG, report["n_portal_tours_remoded"],
+                report["n_portal_tours_class_restricted"], report["n_draws_relaxed_to_longest_leg"],
+                100.0 * report["share_draws_relaxed_to_longest_leg"])
+    if report["n_portal_tours_left_unchanged"]:
+        logger.warning("%s %d portal tours left unchanged (%.2f%% of the portal tours with an implausible leg; the "
+                       "gate class left no admissible mode or the tour has portal legs at both gate classes): %s",
+                       _LOG_TAG, report["n_portal_tours_left_unchanged"],
+                       100.0 * report["share_portal_tours_left_unchanged"],
+                       report["portal_tours_left_unchanged_by_reason"])
+    if report["n_outside_legs_implausible_after"]:
+        logger.warning("%s %d of %d outside legs are still implausible after the draw (relaxed draws judged in the "
+                       "cell of the longest leg only)", _LOG_TAG, report["n_outside_legs_implausible_after"],
+                       report["n_outside_legs"])
+    if report["n_unknown_donor_mode"]:
+        logger.warning("%s %d outside legs carry a donor mode unknown to the SrV table (judged implausible and "
+                       "re-moded): %s", _LOG_TAG, report["n_unknown_donor_mode"], report["unknown_donor_modes"])
+    if not report["portal_leg_column_present"] and report["n_portal_legs_as_all_group"]:
+        logger.warning("%s the trips frame has no %s column although %d legs touch an outside activity: the portal "
+                       "gate class cannot be respected", _LOG_TAG, PORTAL_LEG_COLUMN,
+                       report["n_portal_legs_as_all_group"])
 
 
 def execute(context):

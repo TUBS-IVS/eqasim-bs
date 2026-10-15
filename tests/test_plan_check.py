@@ -129,9 +129,9 @@ def test_check_thresholds_fails_on_the_frozen_resident_class_only():
         "freight": {"frozen": {"n_persons": 0, "share_plans_late": 0.0, "share_plans_non_monotonic": 0.0},
                     "in_region": {"n_persons": 10, "share_plans_late": 1.0, "share_plans_non_monotonic": 0.0}}}}
     with pytest.raises(ValueError, match="frozen"):
-        C.check_thresholds(summary, 0.005)
+        C.check_thresholds(summary, 0.005, fail_on_threshold=True)
     summary["subpopulations"][C.RESIDENTS]["frozen"]["share_plans_late"] = 0.004
-    C.check_thresholds(summary, 0.005)
+    assert C.check_thresholds(summary, 0.005, fail_on_threshold=True) == []
 
 
 def test_resolve_population_path_resolves_a_relative_input_plans_file_next_to_the_config(tmp_path):
@@ -155,3 +155,154 @@ def test_resolve_population_path_raises_when_the_population_file_is_missing(tmp_
     config.write_text(CONFIG_WITH_PLANS.format(plans="absent.xml.gz"), encoding="utf-8")
     with pytest.raises(FileNotFoundError, match="absent.xml.gz"):
         C.resolve_population_path(config)
+
+
+def _plan(person_id, activities, legs, subpopulation=C.RESIDENTS):
+    return C.PersonPlan(person_id=person_id, subpopulation=subpopulation, activities=activities, legs=legs)
+
+
+def _summarise(plans):
+    return C.summarise(plans, simulation_end_s=30 * 3600.0, walk_max_distance_m=5000.0,
+                       bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0)
+
+
+def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulated_day_per_class():
+    h = 3600.0
+    # Every activity END time is inside the day; only the last leg (departs 29:00, travels 1:30) arrives at 30:30.
+    late_arrival_frozen = _plan("a", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
+                                [("car", 0.5 * h), ("car", 1.5 * h)])
+    on_time_frozen = _plan("b", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
+                           [("car", 0.5 * h), ("car", 0.5 * h)])
+    late_arrival_inside = _plan("c", [("home", 8 * h, 0, 0), ("work", 29.5 * h, 1, 0), ("home", None, 0, 0)],
+                                [("car", 0.5 * h), ("car", 1.0 * h)])
+    no_travel_time = _plan("d", [("home", 8 * h, 0, 0), ("work", None, 1, 0)], [("car", None)])
+    summary = _summarise([late_arrival_frozen, on_time_frozen, late_arrival_inside, no_travel_time])
+    residents = summary["subpopulations"][C.RESIDENTS]
+    assert residents["frozen"]["n_plans_late"] == 0 and residents["in_region"]["n_plans_late"] == 0
+    assert residents["frozen"]["n_plans_arrival_late"] == 1
+    assert residents["frozen"]["share_plans_arrival_late"] == 0.5
+    assert residents["in_region"]["n_plans_arrival_late"] == 1
+    # A plan whose last leg carries no trav_time cannot be evaluated: it is not counted as late.
+    assert residents["in_region"]["share_plans_arrival_late"] == 0.5
+
+
+def test_arrival_late_is_report_only_and_never_fails_the_thresholds():
+    summary = {"subpopulations": {C.RESIDENTS: {"frozen": {
+        "n_persons": 10, "share_plans_late": 0.0, "share_plans_non_monotonic": 0.0, "share_plans_arrival_late": 0.9}}}}
+    assert C.check_thresholds(summary, 0.005, fail_on_threshold=True) == []
+
+
+def test_summarise_raises_naming_the_person_when_a_plan_has_more_legs_than_activities_minus_one():
+    broken = _plan("broken_42", [("home", 1.0, 0, 0), ("work", None, 1, 0)], [("car", 10.0), ("car", 10.0)])
+    with pytest.raises(ValueError, match="broken_42"):
+        _summarise([broken])
+
+
+def test_summarise_accepts_a_plan_without_activities_and_legs():
+    summary = _summarise([_plan("empty", [], [])])
+    assert summary["subpopulations"][C.RESIDENTS][C.IN_REGION]["n_persons"] == 1
+
+
+def test_iter_person_plans_keeps_the_root_element_empty_while_streaming(population_path, monkeypatch):
+    seen = []
+    real_iterparse = C.ET.iterparse
+
+    def spying_iterparse(*args, **kwargs):
+        iterator = real_iterparse(*args, **kwargs)
+        seen.append(iterator)
+        return iterator
+
+    monkeypatch.setattr(C.ET, "iterparse", spying_iterparse)
+    assert len(list(C.iter_person_plans(population_path))) == 3
+    # The cleared person elements must not stay attached to the root (memory stays bounded at 100 % scale).
+    assert len(seen[0].root) == 0
+
+
+def _frozen_summary(share_late):
+    return {"subpopulations": {C.RESIDENTS: {"frozen": {
+        "n_persons": 200, "share_plans_late": share_late, "share_plans_non_monotonic": 0.0}}}}
+
+
+def test_check_thresholds_logs_an_error_and_continues_when_failing_is_off(caplog):
+    with caplog.at_level("ERROR", logger=C.logger.name):
+        violations = C.check_thresholds(_frozen_summary(0.02), 0.005, fail_on_threshold=False)
+    assert violations == ["share_plans_late"]
+    assert any(record.levelname == "ERROR" and "share_plans_late" in record.getMessage() and "2.00%" in
+               record.getMessage() for record in caplog.records)
+
+
+def test_check_thresholds_raises_when_failing_is_on():
+    with pytest.raises(ValueError, match="share_plans_late"):
+        C.check_thresholds(_frozen_summary(0.02), 0.005, fail_on_threshold=True)
+
+
+# --- run(): the whole check against a written config and population (reviewer probe of the final review) ---
+
+RUN_CONFIG = """<?xml version="1.0" ?>
+<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">
+<config>
+  <module name="plans"><param name="inputPlansFile" value="test_population.xml.gz" /></module>
+  <module name="qsim"><param name="endTime" value="30:00:00" /></module>
+</config>
+"""
+
+RUN_POPULATION = """<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE population SYSTEM "http://www.matsim.org/files/dtd/population_v6.dtd">
+<population>
+  <person id="late"><plan selected="yes">
+    <activity type="home" x="0" y="0" end_time="07:00:00"/><leg mode="walk" trav_time="08:00:00"/>
+    <activity type="outside" x="9000" y="0" end_time="31:00:00"/><leg mode="walk" trav_time="01:00:00"/>
+    <activity type="home" x="0" y="0"/></plan></person>
+  <person id="fine"><plan selected="yes">
+    <activity type="home" x="0" y="0" end_time="08:00:00"/><leg mode="car" trav_time="00:40:00"/>
+    <activity type="work" x="1000" y="0"/></plan></person>
+</population>
+"""
+
+
+class _RunContext:
+    def __init__(self, directory, fail_on_threshold, max_share=0.1):
+        self._directory = directory
+        self._values = {C.KEY_WALK_MAX_DISTANCE_M: 5000.0, C.KEY_BICYCLE_MAX_DISTANCE_M: 30000.0,
+                        C.KEY_LEG_MAX_DURATION_S: 10800.0, C.KEY_MAX_FROZEN_DEFECT_SHARE: max_share,
+                        C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold}
+
+    def path(self):
+        return str(self._directory)
+
+    def config(self, key):
+        return self._values[key]
+
+
+def _write_run_inputs(directory):
+    (directory / "bs_config.xml").write_text(RUN_CONFIG, encoding="utf-8")
+    with gzip.open(directory / "test_population.xml.gz", "wt", encoding="utf-8") as handle:
+        handle.write(RUN_POPULATION)
+
+
+def test_run_writes_plan_check_json_with_the_counts_and_the_threshold_decision(tmp_path):
+    import json
+    _write_run_inputs(tmp_path)
+    summary = C.run(_RunContext(tmp_path, fail_on_threshold=False), "bs_config.xml")
+    written = json.loads((tmp_path / C.PLAN_CHECK_FILE_NAME).read_text(encoding="utf-8"))
+    frozen = written["subpopulations"][C.RESIDENTS][C.FROZEN]
+    assert frozen["n_persons"] == 1 and frozen["n_plans_late"] == 1 and frozen["n_walk_legs_over"] == 2
+    assert frozen["n_plans_arrival_late"] == 1
+    assert written["subpopulations"][C.RESIDENTS][C.IN_REGION]["n_persons"] == 1
+    assert written["simulation_end_s"] == 30 * 3600.0
+    assert written["threshold"]["fail_on_threshold"] is False
+    assert written["threshold"]["exceeded"] == ["share_plans_late"]
+    assert summary["subpopulations"][C.RESIDENTS][C.FROZEN]["n_plans_late"] == 1
+
+
+def test_run_raises_after_writing_the_json_when_failing_is_on_and_the_frozen_defect_is_above_the_share(tmp_path):
+    _write_run_inputs(tmp_path)
+    with pytest.raises(ValueError, match="share_plans_late"):
+        C.run(_RunContext(tmp_path, fail_on_threshold=True), "bs_config.xml")
+    assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
+
+
+def test_run_does_not_raise_when_the_frozen_defect_is_inside_the_share(tmp_path):
+    _write_run_inputs(tmp_path)
+    C.run(_RunContext(tmp_path, fail_on_threshold=True, max_share=1.0), "bs_config.xml")
+    assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()

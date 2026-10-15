@@ -739,15 +739,17 @@ config:
   braunschweig.outside_tour_modes.min_share: 0.01
   braunschweig.outside_tour_modes.warn_share: 0.5
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
-  # stage counts plans ending after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
+  # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen
-  # (tour touches outside) and in_region; it raises only when the share of late or non-monotonic plans
-  # of the FROZEN residents exceeds max_frozen_defect_share. All thresholds are ASSUMPTIONS (ADR-0146).
+  # (tour touches outside) and in_region. Above max_frozen_defect_share (late or non-monotonic plans of the
+  # FROZEN residents) it logs at ERROR and continues; fail_on_threshold: true makes it raise instead. All
+  # thresholds are ASSUMPTIONS (ADR-0146); fail_on_threshold stays false until the A/B has calibrated them.
   braunschweig.plan_check.enabled: true
   braunschweig.plan_check.walk_max_distance_m: 5000
   braunschweig.plan_check.bicycle_max_distance_m: 30000
   braunschweig.plan_check.leg_max_duration_s: 10800
   braunschweig.plan_check.max_frozen_defect_share: 0.005
+  braunschweig.plan_check.fail_on_threshold: false
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1

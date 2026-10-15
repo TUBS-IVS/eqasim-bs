@@ -117,6 +117,7 @@ def validate(context):
         digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
+
 def configure(context):
     delegate.configure(context)
     # VRB zone fare model (ADR-0133): official zone polygons instead of the legacy concentric rings.
@@ -168,13 +169,16 @@ def configure(context):
         context.config("random_seed")
 
     # Plan feasibility check on the written population (ADR-0146, #443): runs after the cut and the
-    # freight injection, reports per subpopulation and frozen/in-region class, raises above the
-    # frozen-resident defect share. Thresholds are ASSUMPTIONS until the A/B of #443 calibrates them.
+    # freight injection and reports per subpopulation and frozen/in-region class; above the frozen-resident
+    # defect share it logs at ERROR, or raises when fail_on_threshold is true (default false: the thresholds
+    # are ASSUMPTIONS until the A/B of #443 calibrates them).
     context.config(plan_check.KEY_ENABLED, plan_check.DEFAULT_ENABLED)
     context.config(plan_check.KEY_WALK_MAX_DISTANCE_M, plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
     context.config(plan_check.KEY_BICYCLE_MAX_DISTANCE_M, plan_check.DEFAULT_BICYCLE_MAX_DISTANCE_M)
     context.config(plan_check.KEY_LEG_MAX_DURATION_S, plan_check.DEFAULT_LEG_MAX_DURATION_S)
     context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
+    context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
+
 
 def execute(context):
     result = delegate.execute(context)

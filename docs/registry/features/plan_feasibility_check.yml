@@ -10,14 +10,16 @@ description: >-
   from a same-cell donor, with a WARN above the module constant BOUND_RESAMPLE_WARN_RATE. (2) As the last step
   of matsim.simulation.prepare, after the cut, the freight injection and the fare inputs,
   braunschweig.matsim.simulation.plan_check streams the written population (found through the written
-  config's plans.inputPlansFile) and counts, per subpopulation and per class, plans ending after the
-  simulated day, plans with non-monotonic end times, walk and bicycle legs over a straight-line distance and
-  legs over a duration. The class frozen holds the plans (and, for leg metrics, the home-based tours) that
+  config's plans.inputPlansFile) and counts, per subpopulation and per class, plans with an activity end
+  time after the simulated day, plans whose last planned arrival is after the simulated day (report only),
+  plans with non-monotonic end times, walk and bicycle legs over a straight-line distance and legs over a
+  duration. The class frozen holds the plans (and, for leg metrics, the home-based tours) that
   touch an outside activity, the tours the discrete mode choice never re-chooses (OutsideFilter, ADR-0145);
   in_region is informational. The check writes plan_check.json into the stage directory, asserts that
-  qsim.endTime of the written config equals the bound, and raises when the share of late or non-monotonic
-  plans of the FROZEN residents exceeds braunschweig.plan_check.max_frozen_defect_share. Freight is reported,
-  never failed on. (3) The stuck-agent KPI of ADR-0146 (the stuckAndAbort events of the final iteration, by
+  qsim.endTime of the written config equals the bound, and, when the share of late or non-monotonic plans of
+  the FROZEN residents exceeds braunschweig.plan_check.max_frozen_defect_share, logs at ERROR and continues
+  (braunschweig.plan_check.fail_on_threshold false, the production value until the A/B has calibrated the
+  threshold) or raises (true). Freight is reported, never failed on. (3) The stuck-agent KPI of ADR-0146 (the stuckAndAbort events of the final iteration, by
   subpopulation, mode, frozen flag and end-of-day versus during-day) is decided in the same record and
   implemented in the stuck-agent analysis of issue #443, part 2; it is NOT part of this record's stages or
   evidence yet. The bound changes results by decision.
@@ -69,17 +71,20 @@ evidence:
     log_marker: '[plan_check]'
     note: >-
       The check has no fallback path; it reports the defect counts and shares per subpopulation and class
-      under the log marker and in plan_check.json, and raises on a qsim.endTime that differs from the bound,
-      on a config without plans.inputPlansFile, on a missing population file and above
-      max_frozen_defect_share for the frozen residents. The resample caused by the bound is logged as a rate
+      under the log marker and in plan_check.json (with a threshold block naming the exceeded shares), and
+      raises on a qsim.endTime that differs from the bound, on a config without plans.inputPlansFile, on a
+      missing population file, on a plan with more legs than activities - 1 and, only when
+      braunschweig.plan_check.fail_on_threshold is true, above max_frozen_defect_share for the frozen
+      residents (false: ERROR log and the run continues). The resample caused by the bound is logged as a rate
       by braunschweig.popsim.plan_validation under the marker [popsim.plan_validation] and WARNS above
       BOUND_RESAMPLE_WARN_RATE (0.01).
   reference:
     kind: assumption
     note: >-
       No observed reference exists for feasible plans or stuck agents. Every threshold is an ASSUMPTION
-      (ADR-0146): walk 5,000 m anchored in the SrV table of ADR-0145, bicycle 30,000 m, leg duration
-      10,800 s, max_frozen_defect_share 0.005, BOUND_RESAMPLE_WARN_RATE 0.01. The check counts defects in the
+      (ADR-0146): walk 5,000 m anchored in the SrV table of ADR-0145 (below 1 % beyond 5 km except the group
+      other at 5-10 km, 1.05 %), bicycle 30,000 m (thin SrV evidence: one unweighted work trip at 30-45 km),
+      leg duration 10,800 s, max_frozen_defect_share 0.005, BOUND_RESAMPLE_WARN_RATE 0.01. The check counts defects in the
       simulation input; it compares nothing with observed behaviour.
 validation:
   state: unvalidated

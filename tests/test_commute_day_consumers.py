@@ -346,11 +346,21 @@ _FINAL_TRIPS_CONSUMERS = (
 _PRE_ASSIGNMENT_READ = re.compile(r"""context\.stage\(\s*["']synthesis\.population\.trips["']""")
 
 
-def test_population_writer_reads_the_simulated_day_trips():
-    source = (REPO / "braunschweig/matsim/scenario/population.py").read_text(encoding="utf-8")
-    assert 'DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"' in source, (
-        "the population writer must read the simulated day (ADR-0145)")
-    assert not _PRE_ASSIGNMENT_READ.search(source)
+def test_population_writer_declares_the_simulated_day_trips_and_not_trips_final():
+    """Configure-level check (ADR-0145): the writer's DAG edge goes to the simulated alias.
+
+    The recording context sees every stage the writer's ``configure`` declares, so a regression that
+    points the writer back at ``trips.final`` fails here without reading source text. The vendored
+    ``configure`` still declares the pre-assignment ``synthesis.population.trips``; ``execute`` answers
+    it with the simulated day through ``StageOverrideContext`` (covered further below).
+    """
+    from braunschweig.matsim.scenario import population as POP
+
+    recorder = _ConfigureRecorder(config={"cordon_enabled": False})
+    POP.configure(recorder)
+    assert POP.DAY_TRIPS_STAGE == "synthesis.population.trips.simulated"
+    assert "synthesis.population.trips.simulated" in recorder.stages
+    assert "synthesis.population.trips.final" not in recorder.stages
 
 
 @pytest.mark.parametrize("relative_path", _FINAL_TRIPS_CONSUMERS)
