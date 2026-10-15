@@ -250,7 +250,8 @@ notes: |
   configs carry the new values. Result (calibration run 2026-10-15, code state 007b56ad; a calibration, no validation; Task B7
   reran the calibration after the two documented options of Bad Harzburg and Seesen entered the garage dataset, 94 -> 96 options,
   and EVERY VALUE IS UNCHANGED, as expected: the Braunschweig and Wolfsburg universes do not reach the Seesen garage or the
-  Bad Harzburg car park, so only the header pins, the option counts and the code-state line differ from the table of Task B5):
+  Bad Harzburg car park, so only the header pins, the option counts and the code-state line differ from the table of Task B5; of the
+  34 free options bh_galopprennbahn lies outside the option distance of every zone and is inert in every universe):
   lambda = 575.27 m (decay_length_m; target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736175 after 8
   halvings, 8,226 of 8,226 universe activities with an option within 1,000 m, payment-inclusive) and lambda_c = 69.69 m
   (decay_commute_length_m; target 0.679099 read from the paid columns share_garage_large_lot_paid and share_street_paid of the

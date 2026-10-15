@@ -925,16 +925,16 @@ def test_committed_parking_data_is_valid(capsys):
     assert "medians in EUR: 03101000 107.48, 03103000 60.00, 03157006 48.00" in out
     # spec Amendment I: one QA row per record of the research package that is no option (94 records and the Theater's disabled
     # point), the ParkGO and BgA candidates of rulings R-E1 and R-4b-9 are sites of the package now
-    # spec v3 B7: the candidate of the Seesen garage is a garage row now; the documented options of Bad Harzburg add two lots without
-    # a position and two HarzVenture lots at zone car parks (102 - 1 + 4 = 105)
+    # spec v3 B7: the candidate of the Seesen garage is a garage row now; the documented options of Bad Harzburg add two lots
+    # without a position and two HarzVenture lots at zone car parks (102 - 1 + 4 = 105)
     assert ("candidates that are no garage 105 (customer_regime 1, dauerparker_only 2, lot_access_not_public 46, lot_alias 2, "
             "lot_below_threshold 23, lot_capacity_unknown 5, lot_free_evidence_missing 1, lot_mixed_tariff_unseparated 2, "
             "lot_no_position 3, lot_not_open 2, lot_not_surface_lot 6, lot_unconfirmed_candidate 9, no_coordinates 1, "
             "zone_street_product 2)") in out
-    # no car park of the Wolfsburg layer inside a zone is a candidate of the reason zone_street_product any more (spec Amendment I1);
-    # the two HarzVenture lots of Bad Harzburg that are the zone car parks Sole-Therme and Grossparkplatz are (spec v3 B7): their
-    # hourly reference (0.50 EUR per 30 min) equals the street rate of their zone; the eleven lots with the street product of their
-    # zone (two of them the single-site zones of Goslar) and the Buergerpark with the median product of
+    # no car park of the Wolfsburg layer inside a zone is a candidate of the reason zone_street_product any more (spec Amendment
+    # I1); the two HarzVenture lots of Bad Harzburg that are the zone car parks Sole-Therme and Grossparkplatz are (spec v3 B7):
+    # their hourly reference (0.50 EUR per 30 min) equals the street rate of their zone; the eleven lots with the street product of
+    # their zone (two of them the single-site zones of Goslar) and the Buergerpark with the median product of
     # bs_zone_ia are compared with the table row, and every lot inside a zone polygon is compared in a report-only pass (R-4j-7)
     assert ("car parks inside a zone (spec E14): 2 checked, the published hourly reference of the tariff area against the "
             "street rate of the zone: 2 equal, 0 differ (none)") in out

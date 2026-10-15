@@ -2310,8 +2310,8 @@ def _address_locator(address: str) -> dict:
 
 
 def _zone_car_park_ways(inputs: dict) -> dict:
-    """{OpenStreetMap way key: zone id} of the zone car parks of ``DOCUMENTED_ZONE_CAR_PARKS``: the way that the regional package
-    names for the facility (``osm_way_ids``, one way) is the outline of the zone of the same id in the tariff table."""
+    """{OpenStreetMap way key: zone id} of the zone car parks of ``specs.ZONE_CAR_PARK_FACILITIES``: the way that the regional
+    package names for the facility (``osm_way_ids``, one way) is the outline of the zone of the same id in the tariff table."""
     ways = {}
     for facility_id in specs.ZONE_CAR_PARK_FACILITIES:
         listed = str((_facility(inputs, facility_id).get("attributes") or {}).get("osm_way_ids") or "").split(";")

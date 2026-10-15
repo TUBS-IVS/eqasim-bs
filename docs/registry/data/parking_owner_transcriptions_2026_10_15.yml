@@ -33,10 +33,10 @@ acquisition:
     two of its sentences, which the curation step quotes in the notes of the row (data record parking_garages_2026).
     goslar_galeria_meinestadt_tariff.txt is CITED, never read by code: it states 1.50 EUR per hour, a daily maximum of 8 EUR and a
     Dauerstellplatz of 39 EUR per month, so the 8 EUR of the recorded conflict of the GALERIA day maximum (the direct operator
-    locator) stands on a second secondary source; the owner decision of spec E12 keeps the 15 EUR of the WVV service provider
-    (R-4b2-2). northeim_qpark_city_center.txt is NOT USED: Northeim lies outside the study area and has no zone, so its tariff
-    (528 spaces, 2.00 EUR for the first started 60 min, 1.00 EUR per further started 30 min, 10.00 EUR day maximum) enters no
-    dataset; it is archived only.
+    locator) is repeated by a business directory that is not shown to be independent of the operator locator (secondary); the owner
+    decision of spec E12 keeps the 15 EUR of the WVV service provider (R-4b2-2). northeim_qpark_city_center.txt is NOT USED:
+    Northeim lies outside the study area and has no zone, so its tariff (528 spaces, 2.00 EUR for the first started 60 min, 1.00 EUR
+    per further started 30 min, 10.00 EUR day maximum) enters no dataset; it is archived only.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-15/
   committed: false

@@ -421,10 +421,10 @@ inferred from the other.
     the data record states). No paid HarzVenture lot is left, so no paid encoding is built; the step stops if one appears. The
     dataset has 96 rows after 94. Braunlage stays unchanged (its two zones are the car parks); the free car parks of
     Koenigslutter and Schoeningen get no option (no position, no paid zone, so an option would be inert), and the Goslar GALERIA
-    keeps its 15 EUR day maximum (owner decision of spec E12; the 8 EUR of the directory transcription of 2026-10-15 is further
-    evidence of the recorded conflict, not a value). The Northeim Q-Park transcription is archived and unused (outside the study
-    area). The garage dataset changed, so the calibration was rerun (decision 13 values unchanged: the Braunschweig and
-    Wolfsburg universes do not reach the new options).
+    keeps its 15 EUR day maximum (owner decision of spec E12; a business directory not shown to be independent of the operator
+    locator repeats its 8 EUR in the transcription of 2026-10-15: secondary, not a value). The Northeim Q-Park transcription is
+    archived and unused (outside the study area). The garage dataset changed, so the calibration was rerun (decision 13 values
+    unchanged: the Braunschweig and Wolfsburg universes do not reach the new options).
 
 ## Part B rejected alternatives
 

@@ -578,9 +578,9 @@ acquisition:
     (37 garages, 40 lots; Arena P2 is lot_no_position; the Galopprennbahn car park of 100 spaces is in both); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
     dcf45873d7f66531571ed28978b43ef255044cad46972585b2cae19deda1b995, parking_garages_2026_qa_lot_threshold_30.csv
-    6efe49b331dd8c72d528e9565d15e92d3f4197213e2612cdba54e9997b18891f, parking_garages_2026_lot_threshold_100.geojson
+    809c5869b096ddfc2c72ad0367975a1ec0587abfdd419e54a3eae44cdd6d01ed, parking_garages_2026_lot_threshold_100.geojson
     c6d8938a49b132ab59bd9e7475440161b18a14b0d4eff1d47634f3447236ec36 and parking_garages_2026_qa_lot_threshold_100.csv
-    975d26e28fe2fe2c2c2687683d1311a0fd33205624d0f2ec8baf18e4053af39e (the files regenerated in Task B7 of spec v3;
+    c4e97f868d98025ea54d2c3d63b5628f2d849e9b5a4fd1b16349010643545d91 (the files regenerated in Task B7 of spec v3;
     the earlier hashes are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
     Christian-Dohm and Glockengiesser and Helmstedt Wallplatz) and 12 at 100 spaces (8 equal, 4 differing: Goslar
@@ -1337,7 +1337,8 @@ notes: >-
   Braunlage: its two zones ARE the car parks, no separate option; Koenigslutter, Schoeningen: the documented free car parks have no
   position and the towns no paid zone, so an option would be inert); the Goslar GALERIA keeps its 15 EUR day maximum (owner decision
   of spec E12) and its notes cite the directory transcription goslar_galeria_meinestadt_tariff.txt (SHA-256
-  e84d9312589341d29e9b3da3a329483f2aabb62534635a4726289178b605b76e) as a second secondary source of the recorded 8 EUR; the Northeim
+  e84d9312589341d29e9b3da3a329483f2aabb62534635a4726289178b605b76e) as a secondary source (a business directory not shown to be
+  independent of the operator locator) that repeats the recorded 8 EUR of the operator locator; the Northeim
   Q-Park transcription is outside the study area and unused (data record parking_owner_transcriptions_2026_10_15). EFFECT: 96 rows
   (37 garages, 59 lots), the QA table 250 rows (96 garages, 49 monthly products, 105 candidates); no other row, point or value
   changed (the notes of the GALERIA row gained the transcription sentence, the QA table lost the candidate candidate_se_parkhaus and
@@ -1346,11 +1347,13 @@ notes: >-
   the option distance (a stay above the zone's 6 h maximum no longer has no option there); the Galopprennbahn car park lies 2.9 km
   from the nearest Bad Harzburg zone and is inert. Two runs of the command write identical bytes. Hashes (LF):
   parking_garages_2026.geojson ca9f41fc8e4d8bfb9988c5fe6d7e70601d8acc14f56387dec98e281349e45cf9 (in storage.notes),
-  parking_garages_2026_qa.csv 3cff031aee74377a3feff2b167625bad28440e0acad750c59636ef0085dec97b; the sensitivity hashes are in
+  parking_garages_2026_qa.csv d21283934ef44abbf9fed891add82dd20b7b6e8bed37179fceb0348175ff77d2; the sensitivity hashes are in
   the acquisition notes; the earlier pins were 0a7af9cf3a56b3c84c16480875c22d881fe4b3c4a6f4f6c4a3ed8187fd09d218 and
   930603bd93d761bc77fae25c909ba71f3dce5c07099a89be56e01b085a01b134. SHA-256 (LF) of the QA table: parking_garages_2026_qa.csv
-  3cff031aee74377a3feff2b167625bad28440e0acad750c59636ef0085dec97b (before Task B7
+  d21283934ef44abbf9fed891add82dd20b7b6e8bed37179fceb0348175ff77d2 (before Task B7
   930603bd93d761bc77fae25c909ba71f3dce5c07099a89be56e01b085a01b134; the QA table of the first B4 commit was
   54d95723250f8ca7c0e30b0c2871a911bb67efe6f1f38bc26dec179e4015ed99); the dataset pin is in storage.notes (the first B4 commit:
   7703aac614130f21a8cd6d9891e3c647f96dc860625f5e1d5f70748047ababea); the pins of the sensitivity datasets are in the acquisition
-  notes. Every hash of the first B4 paragraph that differs is superseded by these.
+  notes. Every hash of the first B4 paragraph that differs is superseded by these. The QA tables were regenerated in B7 fix round 1
+  (the GALERIA qa_comment wording only; the three datasets are unchanged): the QA tables of the first B7 commit were 3cff031a,
+  6efe49b3 and 975d26e2 (release, 30 and 100 spaces).

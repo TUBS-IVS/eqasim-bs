@@ -29,7 +29,8 @@ the run says so.
 
 - **One matching function.** The keys of a locator are tried in a fixed order (`MATCH_METHODS`: the named OpenStreetMap object,
   the name tag, the address tags of the parking area, the nearest parking area to an object that carries the address, the nearest
-  to a named place) and the first key that finds a candidate decides. A nearest match needs `MATCH_DISTANCE_LIMIT_M` and a lead of
+  to a named place) and the first key that finds a candidate decides; an AMBIGUOUS result is final too (the later keys are not
+  tried, so a second key never breaks the tie). A nearest match needs `MATCH_DISTANCE_LIMIT_M` and a lead of
   `AMBIGUITY_MARGIN_M` over the second candidate; kerbside parking types are the street and never a candidate. Both numbers are
   ASSUMPTIONS (nothing committed fixes them); change them only with the data record and a rerun.
 - **No geocoding service, no typed coordinate.** An address is located by an OpenStreetMap object that carries it. A locator that

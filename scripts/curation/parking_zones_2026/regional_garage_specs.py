@@ -438,8 +438,9 @@ GARAGE_SPECS = (
                                         "hour and no rounding; search hits that state 'je angefangene Stunde' belong to other "
                                         "garages"},
      "qa_comment": "the daily maximum 15.00 EUR per calendar day (WVV, owner decision of spec E12) is used; the direct operator "
-                   "locator states 8.00 EUR (the conflicting variant, not used; the owner's transcription of the meinestadt.de "
-                   "directory of 2026-10-15 repeats it, " + GALERIA_DIRECTORY_FILE + ", SHA-256 " + GALERIA_DIRECTORY_SHA256
+                   "locator states 8.00 EUR (the conflicting variant, not used; a business directory that is not shown to be "
+                   "independent of the operator locator repeats it, owner's transcription of 2026-10-15, "
+                   + GALERIA_DIRECTORY_FILE + ", SHA-256 " + GALERIA_DIRECTORY_SHA256
                    + "); the Dauerstellplatz 39.00 EUR per month is the used monthly product",
      "comment": "PRICED (rulings R-4b2-4 and R-4b2-2 of spec E12). The first and every further hour cost 1.50 EUR (two operator "
                 "sources and a third provider page), the rounding of a started hour is not stated (ASSUMPTION P4). The daily "
@@ -1109,9 +1110,9 @@ LARGE_LOT_QA_DETAILS = {
 #: (the lot of ``documented_lots.HARZVENTURE_LOT_KEYS``) and ``rate_rule`` (the rule of the regional package that states the rate).
 #: Rules of the release (unchanged by B7): a surface lot is an option when its OSM capacity (``documented_lots.osm_capacity``: the
 #: tag, else the area estimate of the large-lot package) reaches the size threshold (ASSUMPTION L50), else a QA row with the
-#: existing reasons; a garage has no size rule; no position (unmatched, ambiguous) is the QA reason lot_no_position; a match that is one of
-#: the zone car parks (``ZONE_CAR_PARK_FACILITIES``) is no new option (its zone is the tariff there) and a QA row of the reason
-#: zone_street_product that names the zone and compares the page with its row.
+#: existing reasons; a garage has no size rule; no position (unmatched, ambiguous) is the QA reason lot_no_position; a match that
+#: is one of the zone car parks (``ZONE_CAR_PARK_FACILITIES``) is no new option (its zone is the tariff there) and a QA row of the
+#: reason zone_street_product that names the zone and compares the page with its row.
 DOCUMENTED_OPTIONS = (
     {"key": "se_parkhaus_bahnhofstrasse", "town": "se", "kind": "garage", "name": "Parkhaus Bahnhofstrasse",
      "facility": "se_parkhaus", "evidence": "seesen_city_page",

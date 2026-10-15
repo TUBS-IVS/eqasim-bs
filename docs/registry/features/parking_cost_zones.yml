@@ -33,8 +33,8 @@ description: >-
   parking cost enters the car utility multiplied by parking_cost_utility_factor (CF, default 1.0, a sensitivity) and the
   Java outcome report is CSV v4. The v3 data (ADR-0142 decisions 8 to 14, Part B): the corrected zone tariffs with
   maximum stays and EV exemptions, the Wolfsburg area zones, the resident districts of Wolfsburg, Peine, Helmstedt and
-  Wolfenbuettel, three free lots, two documented options of Bad Harzburg and Seesen and the recalibrated decay lengths; the curation is described in
-  docs/codebase/notes/parking-zones-curation.md; state: validation.note.
+  Wolfenbuettel, three free lots, two documented options of Bad Harzburg and Seesen and the recalibrated decay lengths; the
+  curation is described in docs/codebase/notes/parking-zones-curation.md; state: validation.note.
 stages:
 - braunschweig.parking.zones_stage
 - matsim.scenario.population
@@ -228,12 +228,12 @@ validation:
     the maximum stay of three Ia lots, three more free lots and the two documented options of Bad Harzburg and Seesen (a free
     Seesen garage, a free Bad Harzburg car park out of reach of every zone), Arena P2 without a position (parking_garages_2026),
     and the two decay lengths recalibrated on that option set with the price term, the feasibility rule and the
-    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). No MATSim run of v3 exists
-    and nothing of v3 is validated: the calibration compares model shares with SrV shares (a calibration, and the Wolfsburg
-    check is a number without a pre-registered bound), the tests are consistency and regression checks, and neither the size
-    nor the direction of the effect on the mode shares is established. The regenerated restricted files (zones, districts,
-    garages) are installed with the Part B integration. Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the server
-    (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
+    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). No
+    MATSim run of v3 exists and nothing of v3 is validated: the calibration compares model shares with SrV shares (a calibration,
+    and the Wolfsburg check is a number without a pre-registered bound), the tests are consistency and regression checks, and
+    neither the size nor the direction of the effect on the mode shares is established. The regenerated restricted files (zones,
+    districts, garages) are installed with the Part B integration. Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the
+    server (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
 assessment:
   status: pending
   by: null

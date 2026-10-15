@@ -363,9 +363,9 @@ INPUTS: List[Input] = [
         restricted=True,
     ),
     # D12-D15: the owner's raw research packages (D12-D14, spec v3 B6) and the owner's transcription of the city page of Seesen
-    # (D15, spec v3 B7) behind the parking v3 data (issue #436). Only the curation chain (scripts/curation/parking_zones_2026/) reads
-    # them; no stage and no run needs them, hence optional. Restricted and local like D5, D10 and D11 (the archived originals are
-    # third-party documents); each has a data record of its own.
+    # (D15, spec v3 B7) behind the parking v3 data (issue #436). Only the curation chain (scripts/curation/parking_zones_2026/)
+    # reads them; no stage and no run needs them, hence optional. Restricted and local like D5, D10 and D11 (the archived originals
+    # are third-party documents); each has a data record of its own.
     Input(
         name="D12 Parking research package Nachrecherche 2026-10-14 (curation only, restricted, local)",
         rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip",
