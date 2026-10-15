@@ -1,0 +1,100 @@
+feature: plan_feasibility_check
+title: Plan feasibility check on the written population and the 30 h plan-time bound
+area: matsim
+description: >-
+  The synthetic day is capped at the simulated day and the written population is checked against it
+  (ADR-0146, issue #443). (1) The plan-time bound braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS
+  is 30 h, equal to the qsim.endTime that eqasim's GenerateConfig writes (it was 36 h); the existing
+  consumers of the constant (the repair and its empirical home-closure cap, the trip-table backstop, the
+  time-imputation pools, the departure-time model guards) follow, and a chain beyond the bound is resampled
+  from a same-cell donor, with a WARN above the module constant BOUND_RESAMPLE_WARN_RATE. (2) As the last step
+  of matsim.simulation.prepare, after the cut, the freight injection and the fare inputs,
+  braunschweig.matsim.simulation.plan_check streams the written population (found through the written
+  config's plans.inputPlansFile) and counts, per subpopulation and per class, plans ending after the
+  simulated day, plans with non-monotonic end times, walk and bicycle legs over a straight-line distance and
+  legs over a duration. The class frozen holds the plans (and, for leg metrics, the home-based tours) that
+  touch an outside activity, the tours the discrete mode choice never re-chooses (OutsideFilter, ADR-0145);
+  in_region is informational. The check writes plan_check.json into the stage directory, asserts that
+  qsim.endTime of the written config equals the bound, and raises when the share of late or non-monotonic
+  plans of the FROZEN residents exceeds braunschweig.plan_check.max_frozen_defect_share. Freight is reported,
+  never failed on. (3) The stuck-agent KPI of ADR-0146 (the stuckAndAbort events of the final iteration, by
+  subpopulation, mode, frozen flag and end-of-day versus during-day) is decided in the same record and
+  implemented in the stuck-agent analysis of issue #443, part 2; it is NOT part of this record's stages or
+  evidence yet. The bound changes results by decision.
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.plan_check.enabled
+  - braunschweig.plan_check.walk_max_distance_m
+  - braunschweig.plan_check.bicycle_max_distance_m
+  - braunschweig.plan_check.leg_max_duration_s
+  - braunschweig.plan_check.max_frozen_defect_share
+introduced:
+  issue: 443
+  pr: null
+  adr: ADR-0146
+detail_doc: docs/codebase/notes/plan-check.md
+code_paths:
+- braunschweig/matsim/simulation/plan_check.py
+- braunschweig/matsim/simulation/prepare.py
+- braunschweig/popsim/plan_validation.py
+- configs/base_bs.yml
+evidence:
+  tests:
+  - tests/test_plan_check.py
+  - tests/test_prepare_plan_check_wiring.py
+  - tests/test_popsim_plan_validation.py
+  - tests/test_performance_plan_validation.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: >-
+      A check: no output of the pipeline changes (it reads the written population and writes plan_check.json
+      next to it), and braunschweig.plan_check.enabled false skips it. The 30 h plan-time bound is a
+      behaviour change by decision (ADR-0146), not a flag with an OFF path.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[plan_check]'
+    note: >-
+      The check has no fallback path; it reports the defect counts and shares per subpopulation and class
+      under the log marker and in plan_check.json, and raises on a qsim.endTime that differs from the bound,
+      on a config without plans.inputPlansFile, on a missing population file and above
+      max_frozen_defect_share for the frozen residents. The resample caused by the bound is logged as a rate
+      by braunschweig.popsim.plan_validation under the marker [popsim.plan_validation] and WARNS above
+      BOUND_RESAMPLE_WARN_RATE (0.01).
+  reference:
+    kind: assumption
+    note: >-
+      No observed reference exists for feasible plans or stuck agents. Every threshold is an ASSUMPTION
+      (ADR-0146): walk 5,000 m anchored in the SrV table of ADR-0145, bicycle 30,000 m, leg duration
+      10,800 s, max_frozen_defect_share 0.005, BOUND_RESAMPLE_WARN_RATE 0.01. The check counts defects in the
+      simulation input; it compares nothing with observed behaviour.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    Not run yet; the 1 % A/B with iterations of the plan's task 14 measures the direction (plan-check figures
+    and stuck categories from the last iteration), never a validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Implemented and unit-tested; no run has used it yet. The thresholds are ASSUMPTIONS until the A/B run of
+    ADR-0146 (eqasim-bs#443) and the stuck-agent KPI is not implemented yet.
+  source: ADR-0146
+notes: >-
+  The 30 h bound changes results by design: every stage from braunschweig.popsim.trips_stage downstream
+  recomputes, the closures that would end between 30 and 36 h are capped and the diaries beyond 30 h are
+  resampled (measured 7,924 plans between 30 and 36 h and 2,446 midnight-shifted diaries at 100 % in
+  prod100_20260925, issue #443). The prepare validate token also hashes braunschweig.popsim.plan_validation,
+  braunschweig.popsim.closure_dwell and data.hts.hts, the import closure of plan_check (ADR-0136). The
+  upstream neighbour is outside_tour_modes: its re-moded tours are what makes the late and non-monotonic
+  frozen plans disappear.
