@@ -408,6 +408,20 @@ class TestPurposeToMode:
         result = _purpose_to_mode(df)
         assert "outside" not in result["to"].values
 
+    def test_drops_trips_touching_an_outside_activity(self):
+        # Portal trips of residents and in-commuter trips keep a real mode (car, pt, ...) but touch an
+        # "outside" activity; they are cross-boundary trips (#442), not part of the in-region flow.
+        df = pd.DataFrame({
+            "preceding_purpose": ["home", "outside", "work", "home"],
+            "following_purpose": ["work", "work", "outside", "shop"],
+            "mode": ["car", "car", "pt", "walk"],
+        })
+        result = _purpose_to_mode(df)
+        assert result["value"].sum() == 2
+        assert set(result["from"]) == {"work", "shop"}
+        assert "outside" not in set(result["from"])
+        assert dict(zip(result["to"], result["value"])) == {"car": 1, "walk": 1}
+
 
 class TestEconomicStatusOrdinal:
     def test_returns_series(self):

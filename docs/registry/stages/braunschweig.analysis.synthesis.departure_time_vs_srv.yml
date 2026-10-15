@@ -42,8 +42,10 @@ inputs:
 - srv2023_activity_duration_reference
 features:
 - departure_time_model
+- portal_trips
 decisions:
 - ADR-0114
+- ADR-0141
 notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
   decomposition.csv (segment, purpose, position, hour, share_raw, share_pre_offset,
   share_realised, n_raw, n -- dense over hours 0..27 for all 144 cells), comparison.csv
@@ -88,6 +90,13 @@ notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
   PIPELINES: popsim_mid only. The default trips view is synthesis.population.trips.final, which
   the record of that stage marks not_used in popsim_open and simple_ipf_open (it is absent from
   both DAG snapshots), so this comparison cannot run there either.
+
+  PORTAL LAYER (ADR-0141, issue #442): with braunschweig.portal.enabled true the final view reads the
+  PRE-PORTAL trips (braunschweig.synthesis.commute_day.trips_day_stage, chosen by
+  braunschweig.synthesis.portal_trips.config_keys.final_view_trips_stage) instead of
+  synthesis.population.trips.final, because this stage validates the donor-based departure times, not the
+  portal rewrite; the pre_assignment view and the flag-off path are unchanged. provenance.json records
+  portal_layer_enabled in its parameters block.
 
   TWO CLOCKS (fix-round finding): braunschweig.popsim.trips.mid_time_seconds decodes the MiD
   report on a 0..23 h clock (anything outside is a design code, not a time), while the trip

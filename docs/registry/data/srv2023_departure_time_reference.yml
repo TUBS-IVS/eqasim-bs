@@ -13,7 +13,7 @@ roles:
 - reference_table
 used_by:
 - synthesis.population.trips
-- synthesis.population.trips.final
+- braunschweig.synthesis.commute_day.trips_day_stage
 - braunschweig.analysis.synthesis.departure_time_vs_srv
 acquisition:
   method: committed
