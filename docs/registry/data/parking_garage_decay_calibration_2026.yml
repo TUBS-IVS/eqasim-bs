@@ -9,8 +9,8 @@ provider: >-
   every stay is priced and weighted by the production pricing code (feasibility of spec v3 A1 with the maximum stays of ASSUMPTION
   M3, price term of spec v3 A2)
 vintage: >-
-  generated 2026-10-15 (the header of the table states the date) at the code state 007b56ad (Task B7; the first table of Task B5
-  was generated at 164b4b74) on the 25 % reference plans (run
+  generated 2026-10-15 (the header of the table states the date) at the code state bb6ed114 (Task B7 fix round 2; the table of
+  the first B7 commit was generated at 007b56ad, the first table of Task B5 at 164b4b74) on the 25 % reference plans (run
   manifest parking-v2-plans-25pct-2026-10-12: the v2 plans run of 2026-10-12 on the server, parking zones on, both decay
   lengths 0.0, no MATSim run), the garage dataset after Task B7 (options: garages and large public surface lots and the two
   documented options of Bad Harzburg and Seesen, 96 priced options, 34 of them free), the zone table and the tariff table after
@@ -65,10 +65,12 @@ storage:
   local_only: false
   notes: >-
     Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
-    ec7d972633df7da9c1104be5b86347f3419cc87779bcb5fac3325fd22be6e75d. Long format quantity,value,unit,note under a '#'
+    5b7ef225883d030819ea4b863ac03bf3504bbe4edab5495dc3620c4205fef932. Long format quantity,value,unit,note under a '#'
     header; read by calibrate_garage_decay.read_calibration_table (which refuses a table without decay_commute_length_m, i.e.
     one written before Amendment H). Produced by the script on a clean tree at the code state named in its header (commit
-    007b56ad, Task B7; the table of Task B5 had 4f8dbc59fc364e06c7015b239a378287eb3d17ab79bd6613da97df7eaa3fe120 at commit
+    bb6ed114, Task B7 fix round 2; the table of the first B7 commit had
+    ec7d972633df7da9c1104be5b86347f3419cc87779bcb5fac3325fd22be6e75d at commit
+    007b56ad, the table of Task B5 had 4f8dbc59fc364e06c7015b239a378287eb3d17ab79bd6613da97df7eaa3fe120 at commit
     164b4b74); the header names the plans by a repo-relative path. Two runs on the same inputs and the same clean code state gave
     byte-identical files (cmp, same SHA-256), so the generation date in the header and the code-state line are the only
     run-dependent content; the code-state line names the commit of the producing code, and a rerun at a later commit changes only
@@ -247,11 +249,13 @@ limitations: |
 notes: |
   Recalibrated with the price term (beta 0.310998) on 2026-10-14 (Task B5, issue #436) and corrected by the payer-conditional
   commuter measure on 2026-10-15 (fix round 1, ruling R-B-16), replacing the v2 values fitted without the price term; the
-  configs carry the new values. Result (calibration run 2026-10-15, code state 007b56ad; a calibration, no validation; Task B7
+  configs carry the new values. Result (calibration run 2026-10-15, code state bb6ed114; a calibration, no validation; Task B7
   reran the calibration after the two documented options of Bad Harzburg and Seesen entered the garage dataset, 94 -> 96 options,
   and EVERY VALUE IS UNCHANGED, as expected: the Braunschweig and Wolfsburg universes do not reach the Seesen garage or the
-  Bad Harzburg car park, so only the header pins, the option counts and the code-state line differ from the table of Task B5; of the
-  34 free options bh_galopprennbahn lies outside the option distance of every zone and is inert in every universe):
+  Bad Harzburg car park, so only the header pins, the option counts and the code-state line differ from the table of Task B5;
+  the rerun of B7 fix round 2, on the dataset whose GALERIA comment was reworded (a new dataset hash, no new option), again
+  changed only the header pins and the code-state line; of the 34 free options bh_galopprennbahn lies outside the option
+  distance of every zone and is inert in every universe):
   lambda = 575.27 m (decay_length_m; target 0.736196 read from srv2023_city_center_parking, achieved mean 0.736175 after 8
   halvings, 8,226 of 8,226 universe activities with an option within 1,000 m, payment-inclusive) and lambda_c = 69.69 m
   (decay_commute_length_m; target 0.679099 read from the paid columns share_garage_large_lot_paid and share_street_paid of the
