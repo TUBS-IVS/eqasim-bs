@@ -1,0 +1,80 @@
+feature: employment_grid_control
+title: 100m employment grid control (employed persons per cell by sex and age group)
+area: attributes
+description: 'Ten ZENSUS100m PopulationSim controls EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg
+  (ADR-0016) that bind employment where the household weights are set, not only at KREIS. Per
+  Kreis, sex and age group the target is the census Erwerbstaetige LEVEL of the Kreis and sex
+  (cleancensus kreis_erwerbsstatus, ERWERBSTAT_KURZ_STP__11_{M,W}) times the Kreis''s AGE SHAPE,
+  distributed to the cells in proportion to their residents of that sex and age group. Since
+  ADR-0137 the age shape is the Zensus 2022 Regionaltabelle''s employed persons by age class, exact
+  per Kreis AND sex for all 8 ZGB Kreise (zensus2022_employed_by_age_kreis.csv); before, it was
+  exact for the 3 kreisfreie Staedte only and the 5 Landkreise took the national shape, the same
+  for both sexes (still selectable via employment_grid_age_shape_source: zensus2022_2000S_2001).'
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.employment_grid
+  - braunschweig.population.popsim.employment_grid_age_shape_source
+introduced:
+  issue: null
+  pr: '#9'
+  adr: ADR-0016
+detail_doc: null
+code_paths:
+- braunschweig/popsim/employment_grid.py
+- braunschweig/popsim/zensus_employment_age.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/stage/config_keys.py
+- scripts/extract_zensus2022_employed_by_age.py
+evidence:
+  tests:
+  - tests/test_popsim_employment_grid.py
+  - tests/test_popsim_employment_grid_age_shape_source.py
+  - tests/test_zensus_employment_age.py
+  - tests/test_extract_zensus2022_employed_by_age.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_popsim_employment_grid_age_shape_source.py::test_the_previous_source_keeps_its_results_exactly
+    note: |
+      With employment_grid_age_shape_source: zensus2022_2000S_2001 the injected targets equal
+      what the previous code computes from the same inputs (load_age_shares +
+      add_employment_grid_columns), frame for frame; and a sex-independent shape passed in the
+      per-sex form gives the same targets as the flat form
+      (tests/test_popsim_employment_grid.py::test_a_sex_independent_shape_gives_the_same_targets_as_the_same_shape_per_sex).
+      The employment_grid flag itself (off) skips the whole injection, as before.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.stage] employment grid age-shape'
+    note: |
+      The stage logs how many Kreise got an exact shape and which fell back to the national
+      one -- INFO when none did, WARNING (naming the Kreise) when any did under the new source,
+      where a fallback is a data gap. Under the previous source the Landkreis fallback is by
+      design and INFO; a kreisfreie Stadt falling back is a WARNING there.
+      per_cell_employment_targets separately logs cells whose Kreis has no census level and
+      raises when all of them do.
+  reference:
+    kind: none
+    note: The age shape and the level ARE the census; the feature has no separate observed
+      reference to compare its result with beyond PopulationSim's fit to these targets, which is
+      convergence, not validation.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No run has yet compared the synthetic population's employed persons by Kreis, sex and age
+    group with the census after ADR-0137; the next PopulationSim run is the first with the new shape.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0016 records the control itself; ADR-0137 the age-shape source. No owner verdict on the
+    realised fit per Kreis, sex and age group has been recorded yet.
+  source: ADR-0137
