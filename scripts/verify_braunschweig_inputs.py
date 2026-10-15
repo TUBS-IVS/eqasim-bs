@@ -190,6 +190,17 @@ INPUTS: List[Input] = [
         required_files=["population_100m.parquet", "grid_100m.parquet"],
         optional=True,
     ),
+    Input(
+        name="B13 Zensus 2022 employed by age x sex per Kreis (employment-grid age shape)",
+        generated=True,
+        rel_path="braunschweig/popsim/zensus2022_employed_by_age_kreis.csv",
+        source="Run python scripts/extract_zensus2022_employed_by_age.py --regionaltabelle "
+               "<Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx> --out <this path> (raw input: the "
+               "Zensus 2022 Regionaltabelle 'Bildung und Erwerbstaetigkeit' from https://www.zensus2022.de; "
+               "the cleancensus repo keeps a copy under data/raw/regionaltabellen/)",
+        notes="dl-de/by-2-0 (Statistische Aemter). Read by the popsim employment grid "
+              "(ADR-0137) while employment_grid_age_shape_source is zensus2022_kreis_by_sex.",
+    ),
 
     # --- C: Preprocessed ALKIS / ATKIS / OSM parquets ---------------------
     Input(

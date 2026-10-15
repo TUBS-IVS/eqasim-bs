@@ -117,6 +117,43 @@ def test_per_cell_targets_5groups_sum_to_kreis_level_times_ageshare():
     assert out["EMPLOYED_F_40_49_agg"].sum() == 0.0
 
 
+def test_per_cell_targets_take_a_separate_age_shape_per_sex():
+    """ADR-0137: the Zensus 2022 Regionaltabelle gives each Kreis an age shape PER SEX, so a
+    Kreis maps to {"M": shares, "F": shares} and each sex's level is split by its own shape."""
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1"], "KREIS": ["03151"],
+        "M_AGE_40": [100], "M_AGE_55": [100], "F_AGE_40": [100], "F_AGE_55": [100],
+    })
+    census = pd.DataFrame({"ARS_kreis": ["03151"],
+                           "ERWERBSTAT_KURZ_STP__11_M": [100.0], "ERWERBSTAT_KURZ_STP__11_W": [100.0]})
+    shares = {"03151": {
+        "M": {"16_29": 0.0, "30_39": 0.0, "40_49": 0.25, "50_59": 0.75, "60plus": 0.0},
+        "F": {"16_29": 0.0, "30_39": 0.0, "40_49": 0.60, "50_59": 0.40, "60plus": 0.0},
+    }}
+    out = eg.per_cell_employment_targets(cells, census, shares)
+
+    assert out["EMPLOYED_M_40_49_agg"].sum() == 25.0
+    assert out["EMPLOYED_M_50_59_agg"].sum() == 75.0
+    assert out["EMPLOYED_F_40_49_agg"].sum() == 60.0
+    assert out["EMPLOYED_F_50_59_agg"].sum() == 40.0
+
+
+def test_a_sex_independent_shape_gives_the_same_targets_as_the_same_shape_per_sex():
+    """The pre-ADR-0137 input form (one shape for both sexes) keeps its exact results."""
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2"], "KREIS": ["03102", "03102"],
+        "M_AGE_20": [10, 30], "M_AGE_45": [50, 20], "F_AGE_20": [5, 5], "F_AGE_62": [40, 10],
+    })
+    census = pd.DataFrame({"ARS_kreis": ["03102"],
+                           "ERWERBSTAT_KURZ_STP__11_M": [90.0], "ERWERBSTAT_KURZ_STP__11_W": [70.0]})
+    shape = {"16_29": 0.3, "30_39": 0.1, "40_49": 0.3, "50_59": 0.2, "60plus": 0.1}
+
+    flat = eg.per_cell_employment_targets(cells, census, {"03102": shape})
+    per_sex = eg.per_cell_employment_targets(cells, census, {"03102": {"M": shape, "F": shape}})
+
+    pd.testing.assert_frame_equal(flat, per_sex)
+
+
 def test_per_cell_targets_ten_columns_present():
     cells = pd.DataFrame({
         "ZENSUS100m": ["c1"], "KREIS": ["03102"],
