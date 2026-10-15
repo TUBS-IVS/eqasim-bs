@@ -1,0 +1,82 @@
+id: freight-boundary-links-prod100-2026-10-15
+date: '2026-10-15'
+repository:
+  commit: unknown
+  branch: unknown
+  notes: 'The measured outputs belong to the 100 % production run prod100_20260925 on felix
+    (~/prod100_20260925), which has no run manifest of its own. Its two committed sources disagree on the
+    commit: output/braunschweig_100pct_prod20260925_meta.json says 46246109 (merge of PR #432,
+    created 2026-09-25T18:15:24Z), issue #444 says 1502e88e. The run driver (prod100_driver.sh,
+    "throwaway, not committed") does not record a commit, so the commit stays unknown here. The
+    measurement scripts are those of this record (eqasim-bs branch fix/i444-a2-gate-connector).'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/prod100_20260925/overlay_B_matsim.yml'
+  notes: 'Overlay name as found in the run directory; its contents were not re-read for this record.
+    meta.json: sampling_rate 1.0, random_seed 1234, hts entd. freight_enabled and cordon_enabled are
+    true in the base configuration.'
+sampling:
+  rate: 100% (sampling_rate 1.0)
+  scope: ZGB-8, full region, cordon on, freight on
+  notes: 'All counts are 100 % counts: 81,740 freight boundary endpoints (40,417 starts of incoming and
+    transit trips, 41,323 ends of outgoing and transit trips) in output_plans.xml.gz.'
+pipeline:
+  targets:
+  - matsim.output
+  notes: 'No new simulation was run. The scripts read output/matsim_output/output_network.xml.gz and
+    output/matsim_output/output_plans.xml.gz (final iteration 92) of prod100_20260925 on 2026-10-15.'
+classification:
+- production
+status:
+  execution: completed
+  notes: 'Root-cause evidence for issue #444 and the parameter choice of ADR-0144. It shows how MATSim linked
+    the freight boundary endpoints and which links the new rule picks on the same network. It does not show
+    the simulated effect of the rule: that needs a re-run, which is not part of this record.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), system python3 for i444_probe*.py, conda eqasim (Python 3.10)
+  for scripts/measure_freight_boundary_links.py'
+validation:
+- metric: links of the freight start activities by trip type, and the network around link 501844
+  reference: 'none; a diagnosis of the MATSim output, no observed data'
+  result: 'Link 501844 (residential, one-way, 209 m, 600 veh/h, 30 km/h) is the start link of 10,179 of 31,792
+    transit and 1,743 of 8,625 incoming trucks, and the end link of none. All 11,922 share one start
+    coordinate (567989.4, 5804588.6), the A2-west crossing. The A2 carriageways 199731 (6,000 veh/h) and
+    199736 run 122 m and 170 m from the link midpoint, so the motorway reaches the boundary.'
+  artifact: 'docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe.txt'
+- metric: link chosen by MATSim (nearest node) for every distinct boundary endpoint with at least 50 trucks,
+    against the nearest major-class link by perpendicular distance
+  reference: 'none; a diagnosis of the MATSim output'
+  result: 'The A2-west entry point lies 89 m from its snapped link 501844 and 1 m from motorway 199731. The
+    A2-west exit point is snapped to the eastbound carriageway 199731, while the westbound 224246 lies 0.2 m
+    away. At A2-east, entries and exits are both snapped to 450785. Overall, 12,514 of 40,417 starts
+    (31.0 %) and 639 of 41,323 ends (1.5 %) sit on a link outside motorway, motorway_link, trunk,
+    trunk_link and primary.'
+  artifact: 'docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe2.txt'
+- metric: fallback share of the ADR-0144 rule by eligibility filter and maximum distance
+  reference: 'none; a sweep of the rule on this network, not a comparison with observed data'
+  result: 'Before: 13,147 of 81,740 boundary endpoints (16.08 %) on a link below 1,000 veh/h. Rule fallback
+    share at 100/200/300/500 m: 36.47 / 0.67 / 0.05 / 0.05 %. The value is identical for the highway-class
+    allowlist and for capacity >= 1,000 and >= 1,500 veh/h. The lowest selected capacity is 1,500 veh/h.
+    At 300 m, 55,887 endpoints change link. A2-west entries go to 199731 (1.4 m) and exits to 224246 (0.2 m);
+    A2-east entries go to 430866 and exits to 450785.'
+  artifact: 'docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.json,
+    docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.log'
+features:
+- freight_boundary_links
+- freight_longhaul_v3
+artifacts:
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe.py
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe.txt
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe2.py
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe2.txt
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.json
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.log
+- scripts/measure_freight_boundary_links.py
+issues:
+- '#444'
+decisions:
+- ADR-0144
+source: 'i444_probe.py <output_network.xml.gz> <output_plans.xml.gz> and i444_probe2.py with the same inputs
+  (system python3 on felix); scripts/measure_freight_boundary_links.py --network <output_network.xml.gz>
+  --plans <output_plans.xml.gz> --output freight_boundary_links_report.json (conda eqasim on felix), all
+  three run in felix:~/prod100_20260925 on 2026-10-15.'

@@ -149,6 +149,15 @@ def configure(context):
         # statutory German HGV limit (StVO 3). Both configurable, not calibrated.
         context.config("freight_truck_pce", 3.5)
         context.config("freight_truck_max_velocity_kmh", 80.0)
+        # Boundary endpoints (start of incoming/transit, end of outgoing/transit trips) are linked
+        # explicitly instead of by MATSim's nearest-node snapping (issue #444, ADR-0144): the
+        # closest car link of at least this capacity (veh/h, per hour of the network capacity
+        # period) whose heading agrees with the trip direction, within this distance (m). The
+        # injection fails when more than the fallback share of boundary endpoints finds no such
+        # link. Defaults measured on the 100 % network (0.05 % fallback at 300 m), see the ADR.
+        context.config("freight_boundary_link_minimum_capacity_veh_per_h", 1000.0)
+        context.config("freight_boundary_link_maximum_distance_m", 300.0)
+        context.config("freight_boundary_link_maximum_fallback_share", 0.05)
         context.config("random_seed")
 
 def execute(context):
@@ -361,16 +370,33 @@ def _inject_freight(context, config_name):
     sampled[list(TRIP_COLUMNS)].to_csv("%s/%s" % (context.path(), csv_name), sep=";", index=False)
 
     summary_name = "freight_injection_summary.csv"
+    boundary_summary_name = "freight_boundary_link_summary.csv"
     eqasim.run(context, "org.eqasim.braunschweig.scenario.RunInjectFreight", [
         "--config-path", config_name,
         "--freight-csv-path", csv_name,
         "--truck-pce", context.config("freight_truck_pce"),
         "--truck-max-velocity-kmh", context.config("freight_truck_max_velocity_kmh"),
+        "--boundary-link-minimum-capacity-veh-per-h",
+        context.config("freight_boundary_link_minimum_capacity_veh_per_h"),
+        "--boundary-link-maximum-distance-m", context.config("freight_boundary_link_maximum_distance_m"),
+        "--boundary-link-maximum-fallback-share", context.config("freight_boundary_link_maximum_fallback_share"),
+        "--boundary-link-summary-path", boundary_summary_name,
         "--summary-path", summary_name,
     ])
 
-    summary_path = "%s/%s" % (context.path(), summary_name)
-    assert os.path.exists(summary_path), "freight injection did not write its summary"
-    with open(summary_path, encoding="utf-8") as f:
-        for line in f.read().strip().splitlines():
-            print("[freight.injection] %s" % line)
+    for name, label in ((summary_name, "summary"), (boundary_summary_name, "boundary-link summary")):
+        path = "%s/%s" % (context.path(), name)
+        assert os.path.exists(path), "freight injection did not write its %s" % label
+        with open(path, encoding="utf-8") as f:
+            for line in f.read().strip().splitlines():
+                print("[freight.injection] %s" % line)
+
+    # No-silent-fallback rate of the boundary-link rule (ADR-0144); the Java injector already
+    # failed if the share exceeds freight_boundary_link_maximum_fallback_share.
+    import pandas as pd
+    boundary = pd.read_csv("%s/%s" % (context.path(), boundary_summary_name), sep=";")
+    selected = int(boundary["selected_link_endpoints"].sum())
+    fallback = int(boundary["nearest_node_fallback_endpoints"].sum())
+    total = selected + fallback
+    print("[freight.injection] boundary links: selected %d / %d, nearest-node fallback %d (%.2f %%)"
+          % (selected, total, fallback, 100.0 * fallback / total if total else 0.0))
