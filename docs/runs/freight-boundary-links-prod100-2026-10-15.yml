@@ -60,7 +60,7 @@ validation:
     At 300 m, 55,887 endpoints change link. A2-west entries go to 199731 (1.4 m) and exits to 224246 (0.2 m);
     A2-east entries go to 430866 and exits to 450785.'
   artifact: 'docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.json,
-    docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.log'
+    docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report_stdout.txt'
 features:
 - freight_boundary_links
 - freight_longhaul_v3
@@ -70,7 +70,7 @@ artifacts:
 - docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe2.py
 - docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/i444_probe2.txt
 - docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.json
-- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report.log
+- docs/runs/artifacts/freight-boundary-links-prod100-2026-10-15/freight_boundary_links_report_stdout.txt
 - scripts/measure_freight_boundary_links.py
 issues:
 - '#444'
