@@ -47,16 +47,18 @@ notes: >-
   inputs, calls braunschweig.matsim.simulation.plan_check.run when braunschweig.plan_check.enabled is
   true (default true). It reads the population file that the written config names in
   plans.inputPlansFile (resolve_population_path, resolved against the config's directory, never an
-  assumed file name), reports per subpopulation and per class frozen / in_region the plans ending after
-  the simulated day, the plans with non-monotonic end times and the walk, bicycle and long legs, and
-  writes plan_check.json into the stage directory. Keys: braunschweig.plan_check.enabled,
-  .walk_max_distance_m (5000), .bicycle_max_distance_m (30000), .leg_max_duration_s (10800) and
-  .max_frozen_defect_share (0.005), declared in configure() from the constants of plan_check and set
-  in configs/base_bs.yml; the thresholds are ASSUMPTIONS. It raises on a qsim.endTime of the written
-  config that differs from braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS (30 h), on a
-  config without plans.inputPlansFile or with a population path that does not exist, and when the
-  share of late or non-monotonic plans of the frozen residents exceeds max_frozen_defect_share;
-  in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
+  assumed file name), reports per subpopulation and per class frozen / in_region the plans with an
+  activity end time after the simulated day, the plans whose last planned arrival is after it (report
+  only), the plans with non-monotonic end times and the walk, bicycle and long legs, and writes
+  plan_check.json into the stage directory. Keys: braunschweig.plan_check.enabled,
+  .walk_max_distance_m (5000), .bicycle_max_distance_m (30000), .leg_max_duration_s (10800),
+  .max_frozen_defect_share (0.005) and .fail_on_threshold (false), declared in configure() from the
+  constants of plan_check and set in configs/base_bs.yml; the thresholds are ASSUMPTIONS. It raises on a
+  qsim.endTime of the written config that differs from
+  braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS (30 h), on a config without
+  plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
+  true, when the share of late or non-monotonic plans of the frozen residents exceeds
+  max_frozen_defect_share (false: ERROR log, the stage continues); in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
   _HELPER_MODULES, and braunschweig.popsim.plan_validation, braunschweig.popsim.closure_dwell and
   data.hts.hts (its import closure) are in the deferred helper names, so the validate token covers
   the check (ADR-0136). Contributor note docs/codebase/notes/plan-check.md.
