@@ -43,6 +43,10 @@ import pandas as pd
 
 from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
+from braunschweig.analysis.pipeline_trips_file import (
+    is_pre_portal_trips_path, pre_portal_commutes_work_layer, resolve_pipeline_trips_path,
+    resolve_pre_portal_commutes_path)
+from braunschweig.synthesis.portal_trips.config_keys import PRE_PORTAL_EDUCATION_LAYER
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
@@ -67,6 +71,10 @@ BANDS: list[tuple[float, float, str]] = [
 ]
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
+
+#: CRS of every coordinate the pipeline writes (metres). The vendored ``commutes.gpkg`` carries no CRS metadata, so
+#: line lengths read from it are interpreted in this CRS (see ``_line_lengths_km``).
+PIPELINE_CRS = "EPSG:25832"
 
 # eqasim main mode -> MiD P12_1 category. Deliberately NOT the same mapping as
 # braunschweig.analysis.dashboard.comparisons.MODE_LABEL (which the dashboard
@@ -266,6 +274,146 @@ def _load_mid() -> dict[str, pd.DataFrame]:
 
 def _read_csv(output_dir: Path, prefix: str, name: str) -> pd.DataFrame:
     return pd.read_csv(output_dir / f"{prefix}{name}.csv", sep=";")
+
+
+def _read_pipeline_trips(output_dir: Path, prefix: str) -> tuple[pd.DataFrame, bool]:
+    """The pipeline trips the report counts and whether they are the pre-portal trips.
+
+    Returns ``(trips, is_pre_portal)``: ``<prefix>trips_pre_portal.csv`` when it exists and is current, else
+    ``<prefix>trips.csv``. The report compares the written diary with MiD, so while the portal layer is on it
+    reads the donor day before the outside stays (eqasim-bs#442); the choice is logged by
+    ``resolve_pipeline_trips_path``. Raises ``FileNotFoundError`` naming ``<prefix>trips.csv`` when neither file
+    exists.
+    """
+    path = resolve_pipeline_trips_path(output_dir, prefix)
+    if path is None:
+        raise FileNotFoundError(f"No {prefix}trips.csv (and no {prefix}trips_pre_portal.csv) in {output_dir}.")
+    return pd.read_csv(path, sep=";"), is_pre_portal_trips_path(path)
+
+
+def _activity_purpose_counts_from_trips(trips: pd.DataFrame, person_ids) -> pd.Series:
+    """Activity counts per purpose derived from a written trips table, with the activities file's definition.
+
+    The vendored activities stage (``synthesis.population.activities``) writes one activity per trip start (the
+    ``preceding_purpose`` of every trip), one closing activity per person (the ``following_purpose`` of the last
+    trip) and a single ``home`` activity for every person without a trip; the output stage then keeps only the
+    activities of persons in ``persons.csv``. This reproduces exactly that count from the trip table, so that on a
+    run without portal stays it equals ``activities['purpose'].value_counts()`` of ``<prefix>activities.gpkg``
+    (tests/test_pre_portal_trips_output.py pins that against the vendored stage). Fed with the pre-portal trips it
+    gives the activity mix of the donor day, which the post-portal activities file cannot.
+    """
+    person_ids = pd.Index(pd.unique(pd.Series(list(person_ids))))
+    in_persons = trips[trips["person_id"].isin(person_ids)]
+    closing = in_persons.loc[in_persons["is_last"].astype(bool), "following_purpose"]
+    n_without_trip = int((~person_ids.isin(in_persons["person_id"].unique())).sum())
+    without_trip = pd.Series(["home"] * n_without_trip, dtype=object)
+    purposes = pd.concat([in_persons["preceding_purpose"].astype(object), closing.astype(object), without_trip])
+    return purposes.value_counts()
+
+
+def _activity_purpose_counts(
+    activities: gpd.GeoDataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool, person_ids
+) -> tuple[pd.Series, str]:
+    """Activity counts per purpose for ``03_activity_purposes.png`` and which source they came from.
+
+    With the pre-portal trips in use the counts are derived from them (the activities file is the post-portal day,
+    where a far workplace is an ``outside`` activity); otherwise they are those of ``<prefix>activities.gpkg``,
+    unchanged. The source is logged.
+    """
+    if trips_are_pre_portal:
+        LOGGER.info(
+            "03_activity_purposes: activity counts derived from the pre-portal trips (the written activities file "
+            "is the post-portal day and would count far workplaces as 'outside', eqasim-bs#442)")
+        return _activity_purpose_counts_from_trips(trips, person_ids), "pre_portal_trips"
+    LOGGER.info("03_activity_purposes: activity counts read from the activities geopackage")
+    return activities["purpose"].value_counts(), "activities_gpkg"
+
+
+def _read_pre_portal_commute_lines(output_dir: Path, prefix: str):
+    """``(work_lines, education_lines)`` of ``<prefix>commutes_pre_portal.gpkg``, or ``None`` when it is absent/stale.
+
+    The file (written by the output stage while the portal layer is on) holds the home -> work lines as its first
+    layer and the home -> education lines as the layer ``education``, both built from the assigned primary
+    locations, so they include the workers whose workplace the portal layer turned into an ``outside`` stay. The
+    resolver ignores a file older than ``<prefix>commutes.gpkg`` and logs the choice.
+    """
+    path = resolve_pre_portal_commutes_path(output_dir, prefix)
+    if path is None:
+        return None
+    # The GeoPackage has two layers, so both are named explicitly (the default layer is not guessed).
+    return (gpd.read_file(path, layer=pre_portal_commutes_work_layer(path)),
+            gpd.read_file(path, layer=PRE_PORTAL_EDUCATION_LAYER))
+
+
+def _line_lengths_km(lines: gpd.GeoDataFrame) -> pd.Series:
+    """Length of each line in kilometres, in the pipeline CRS (EPSG:25832, metres).
+
+    The vendored ``commutes.gpkg`` is CRS-less (``clean_gpkg`` drops the CRS metadata) and the pre-portal commutes
+    keep that schema, so a file without a CRS is read as EPSG:25832, the CRS every coordinate of the pipeline is in
+    (ASSUMPTION, the same one ``braunschweig.analysis.simwrapper.commuter_tabs`` makes for this file). A file that
+    does carry a CRS is converted to EPSG:25832 first, so the lengths are metres in either case and never degrees.
+    """
+    lines = lines.set_crs(PIPELINE_CRS) if lines.crs is None else lines.to_crs(PIPELINE_CRS)
+    return lines.geometry.length / 1000.0
+
+
+def _commute_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
+    """Commute table rows from home -> work lines, with the same distance definition as ``_commute_distances``.
+
+    The Euclidean home -> work distance is the length of the line (metres, see ``_line_lengths_km``), then the project's constant detour factor is
+    applied exactly as in ``_commute_distances`` (tests/test_pre_portal_trips_output.py pins that both agree on a
+    run without portal stays). Columns: ``person_id``, ``distance_km``, ``ars5``, ``kreis_name``.
+    """
+    commute = pd.DataFrame({"person_id": lines["person_id"].to_numpy()})
+    if commute.empty:
+        return commute.assign(distance_km=[], ars5=[], kreis_name=[])
+    from braunschweig.calibration.metrics import apply_detour
+    commute["distance_km"] = apply_detour(_line_lengths_km(lines).to_numpy())
+    return commute.merge(persons_kreis[["person_id", "ars5", "kreis_name"]], on="person_id", how="left")
+
+
+def _education_distances_from_lines(lines: gpd.GeoDataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
+    """Education table rows from home -> education lines, as ``_education_distances`` (straight-line km)."""
+    education = pd.DataFrame({"person_id": lines["person_id"].to_numpy()})
+    if education.empty:
+        return education.assign(distance_km=[], regiostar7=[], age=[], level=[])
+    education["distance_km"] = _line_lengths_km(lines).to_numpy()
+    education = education.merge(persons_kreis[["person_id", "age", "regiostar7"]], on="person_id", how="left")
+    education["level"] = education["age"].map(education_level_for_age)
+    return education
+
+
+def _commute_table_scope(
+    commute: pd.DataFrame, trips: pd.DataFrame, trips_are_pre_portal: bool, commute_source: str = "activities_gpkg"
+) -> dict[str, Any]:
+    """Source and coverage of the commute tables, logged.
+
+    ``commute_source`` is ``"pre_portal_commutes"`` when the lines come from ``<prefix>commutes_pre_portal.gpkg``
+    (built from the assigned primary locations, so far commuters are included) and ``"activities_gpkg"`` when they
+    come from the written activities, where the workplace of a far commuter is an ``outside`` activity. With the
+    pre-portal trips in use the persons with a ``work`` trip but no commute row are counted: zero is expected for the
+    pre-portal commutes, and a positive count on the activities source is the warned-about scope limit.
+    """
+    scope: dict[str, Any] = {"source": commute_source, "n_commute_rows": int(len(commute))}
+    if not trips_are_pre_portal:
+        LOGGER.info("Commute tables: home->work distances from %s", commute_source)
+        return scope
+    work_persons = set(
+        trips.loc[(trips["following_purpose"] == "work") | (trips["preceding_purpose"] == "work"), "person_id"])
+    missing = work_persons - set(commute["person_id"])
+    scope["n_work_persons_pre_portal_trips"] = int(len(work_persons))
+    scope["n_work_persons_without_commute_row"] = int(len(missing))
+    if commute_source == "pre_portal_commutes":
+        log = LOGGER.info if not missing else LOGGER.warning
+        log("Commute tables: home->work distances from the pre-portal commutes; %d of %d persons with a work trip in "
+            "the pre-portal trips have no row.", len(missing), len(work_persons))
+        return scope
+    LOGGER.warning(
+        "Commute tables: home->work distances from the activities geopackage, the post-portal day; %d of %d persons "
+        "with a work trip in the pre-portal trips have no row (their workplace lies beyond the portal threshold and "
+        "is an 'outside' activity there). The tables describe workplaces inside the threshold only (eqasim-bs#442).",
+        len(missing), len(work_persons))
+    return scope
 
 
 def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
@@ -511,6 +659,79 @@ def _mode_share_table(
             )
 
     return all_tbl, by_purpose, commute_cmp
+
+
+# ---------------------------------------------------------------------------
+# Cross-boundary / long-distance trips (eqasim-bs#442)
+# ---------------------------------------------------------------------------
+
+
+def _long_distance_trip_block(trips: pd.DataFrame) -> dict[str, Any]:
+    """Describe the simulated trips that touch an ``outside`` activity.
+
+    Portal stays of residents (cordon gates) and in-commuter trips (home outside
+    the scenario) carry an ``outside`` activity at one end; they form a
+    cross-boundary / long-distance category of their own (eqasim-bs#442).  The
+    block is purely additive: it reads the same ``trips`` frame as
+    :func:`_mode_share_table` but does not change any existing comparison (the
+    MiD reference side is not filtered, so those comparisons stay
+    apples-to-apples).  No reference value exists for this category, so it is
+    reported for measurement only.
+
+    The inside end of a long-distance trip is the purpose at the end that is not
+    ``outside``; a trip whose both ends are ``outside`` has no inside end and is
+    counted under the purpose ``outside``.  Cutter legs with the pseudo-mode
+    ``outside`` are dropped first (as :func:`_mode_share_table` does, and the
+    dropped count is logged), so ``n_trips_total`` equals the denominator of the
+    neighbouring modal-split tables.
+
+    Returns ``{}`` when ``preceding_purpose`` / ``following_purpose`` / ``mode``
+    are missing (logged), otherwise a dict with ``n_trips_total``,
+    ``n_long_distance_trips``, ``share_pct`` (of all trips), ``n_trips_by_mode``,
+    ``mode_share_pct``, ``n_trips_by_inside_purpose`` and
+    ``inside_purpose_share_pct`` (shares in percent of the long-distance trips).
+    """
+    required = ("preceding_purpose", "following_purpose", "mode")
+    missing = [column for column in required if column not in trips.columns]
+    if missing:
+        LOGGER.warning(
+            "Long-distance trip block skipped: simulated trips lack columns %s "
+            "(cross-boundary trips cannot be identified).", missing)
+        return {}
+
+    n_pseudo_mode = int((trips["mode"] == "outside").sum())
+    trips = trips[trips["mode"] != "outside"]
+    LOGGER.info(
+        "Long-distance trip block: dropped %d cutter legs with pseudo-mode 'outside' "
+        "(same filter as the modal-split tables)", n_pseudo_mode)
+    preceding_is_outside = trips["preceding_purpose"] == "outside"
+    following_is_outside = trips["following_purpose"] == "outside"
+    long_distance = trips[preceding_is_outside | following_is_outside]
+    # Inside end = the end that is not "outside"; both ends outside -> "outside".
+    inside_purpose = long_distance["following_purpose"].where(
+        long_distance["preceding_purpose"] == "outside", long_distance["preceding_purpose"]
+    )
+    n_total = int(len(trips))
+    n_long = int(len(long_distance))
+    share_pct = round(100.0 * n_long / n_total, 2) if n_total else 0.0
+    LOGGER.info(
+        "Long-distance trips (touch an outside activity): %d of %d (%.2f%%)",
+        n_long, n_total, share_pct)
+    return {
+        "n_trips_total": n_total,
+        "n_long_distance_trips": n_long,
+        "share_pct": share_pct,
+        "n_trips_by_mode": {
+            str(k): int(v) for k, v in long_distance["mode"].dropna().value_counts().items()
+        },
+        "mode_share_pct": {k: round(v, 2) for k, v in mode_share(long_distance["mode"]).items()},
+        "n_trips_by_inside_purpose": {
+            str(k): int(v) for k, v in inside_purpose.dropna().value_counts().items()
+        },
+        "inside_purpose_share_pct": {
+            k: round(v, 2) for k, v in mode_share(inside_purpose).items()
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -775,11 +996,9 @@ def _plot_trips(trips: pd.DataFrame, path: Path) -> None:
     _save_fig(fig, path)
 
 
-def _plot_purposes(activities: gpd.GeoDataFrame, path: Path) -> None:
+def _plot_purposes(purpose_counts: pd.Series, path: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 3.5))
-    activities["purpose"].value_counts().plot.bar(
-        ax=ax, title="Activity purposes (count)"
-    )
+    purpose_counts.plot.bar(ax=ax, title="Activity purposes (count)")
     _save_fig(fig, path)
 
 
@@ -990,7 +1209,7 @@ def run(args: _Args) -> dict[str, Any]:
 
     persons = _read_csv(args.output_dir, args.prefix, "persons")
     households = _read_csv(args.output_dir, args.prefix, "households")
-    trips = _read_csv(args.output_dir, args.prefix, "trips")
+    trips, trips_are_pre_portal = _read_pipeline_trips(args.output_dir, args.prefix)
     homes = _read_gpkg(args.output_dir, args.prefix, "homes")
     activities = _read_gpkg(args.output_dir, args.prefix, "activities")
 
@@ -1020,12 +1239,24 @@ def run(args: _Args) -> dict[str, Any]:
     # --- Demographics + trips + purposes plots (no MiD reference rows). ---
     _plot_demographics(persons_kreis, households, out / "01_demographics.png")
     _plot_trips(trips, out / "02_trips.png")
-    _plot_purposes(activities, out / "03_activity_purposes.png")
+    activity_purpose_counts, activity_purpose_source = _activity_purpose_counts(
+        activities, trips, trips_are_pre_portal, persons["person_id"])
+    _plot_purposes(activity_purpose_counts, out / "03_activity_purposes.png")
     _plot_homes_map(homes, activities, kreise, out / "04_homes_map.png")
 
     # --- Commute distance vs MiD P13. ---
     LOGGER.info("Computing commute distances vs MiD P13")
-    commute = _commute_distances(activities, homes_kreis, persons_kreis)
+    # While the portal layer is on, the commute lines come from the pre-portal commutes file (assigned primary
+    # locations, far commuters included) when it exists; the activities file lacks the workers whose workplace is
+    # an 'outside' stay.
+    pre_portal_commute_lines = _read_pre_portal_commute_lines(args.output_dir, args.prefix)
+    if pre_portal_commute_lines is not None:
+        commute = _commute_distances_from_lines(pre_portal_commute_lines[0], persons_kreis)
+        commute_source = "pre_portal_commutes"
+    else:
+        commute = _commute_distances(activities, homes_kreis, persons_kreis)
+        commute_source = "activities_gpkg"
+    commute_table_scope = _commute_table_scope(commute, trips, trips_are_pre_portal, commute_source)
     commute_band = _commute_band_table(commute, mid["P13"])
     commute_band.to_csv(out / "commute_bands_vs_p13.csv", index=False)
     _plot_commute_bands(commute_band, out / "05_commute_distance_p13.png")
@@ -1052,7 +1283,12 @@ def run(args: _Args) -> dict[str, Any]:
     LOGGER.info("Computing education-trip distances vs MiD Tabelle 43")
     t43_raw = _load_t43()
     if t43_raw is not None:
-        education = _education_distances(activities, homes_kreis, persons_kreis)
+        if pre_portal_commute_lines is not None:
+            education = _education_distances_from_lines(pre_portal_commute_lines[1], persons_kreis)
+            LOGGER.info("Education tables: home->education distances from the pre-portal commutes")
+        else:
+            education = _education_distances(activities, homes_kreis, persons_kreis)
+            LOGGER.info("Education tables: home->education distances from the activities geopackage")
         # Use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3) so the
         # validation report is byte-identical to the pre-Tier-3 legacy.
         # The distance-dependent circuity curve is opt-in only (mode="curve").
@@ -1194,7 +1430,9 @@ def run(args: _Args) -> dict[str, Any]:
     mode_all_tbl = pd.DataFrame()
     mode_by_purpose_tbl = pd.DataFrame()
     mode_commute_cmp = pd.DataFrame()
+    long_distance_block: dict[str, Any] = {}
     if sim_trips is not None:
+        long_distance_block = _long_distance_trip_block(sim_trips)
         mode_all_tbl, mode_by_purpose_tbl, mode_commute_cmp = _mode_share_table(
             sim_trips, mid.get("P12_1")
         )
@@ -1213,7 +1451,11 @@ def run(args: _Args) -> dict[str, Any]:
         "n_persons": int(len(persons)),
         "n_households": int(len(households)),
         "n_trips": int(len(trips)),
-        "n_activities": int(len(activities)),
+        # With the pre-portal trips in use the activity count is the one derived from them (same definition).
+        "n_activities": int(activity_purpose_counts.sum() if trips_are_pre_portal else len(activities)),
+        "trips_source": "pre_portal_trips" if trips_are_pre_portal else "trips_csv",
+        "activity_purpose_source": activity_purpose_source,
+        "commute_table_scope": commute_table_scope,
         "unassigned_homes": int(persons_kreis["ars5"].isna().sum()),
         "trips_per_person": float(round(len(trips) / max(len(persons), 1), 4)),
         "commute_mean_km_synth": dict(
@@ -1250,6 +1492,9 @@ def run(args: _Args) -> dict[str, Any]:
             mode_commute_cmp.to_dict(orient="records")
             if not mode_commute_cmp.empty else []
         ),
+        # Cross-boundary / long-distance trips (touch an outside activity, #442);
+        # additive, measurement only (no reference). Empty without a --sim-cache.
+        "long_distance_trips": long_distance_block,
     }
 
     # --- Optional Monte-Carlo noise-band annotation (issue #126, task 4). ---
@@ -1343,6 +1588,26 @@ def run(args: _Args) -> dict[str, Any]:
                 _df_to_markdown(mode_commute_cmp),
                 "",
             ]
+    if long_distance_block:
+        md_lines += [
+            "## Cross-boundary / long-distance trips — measurement only",
+            "",
+            "_Simulated trips with an `outside` activity at one end (portal stays "
+            "of residents and in-commuter trips; eqasim-bs#442), counted over the "
+            "same trips as the modal-split tables (cutter legs with the pseudo-mode "
+            "`outside` are dropped). No reference table exists for this category. "
+            "The modal-split tables above are unchanged and still include these "
+            "trips._",
+            "",
+            f"- Trips touching an outside activity: "
+            f"{long_distance_block['n_long_distance_trips']:,} of "
+            f"{long_distance_block['n_trips_total']:,} "
+            f"({long_distance_block['share_pct']} %)",
+            f"- Mode share (% of these trips): {long_distance_block['mode_share_pct']}",
+            f"- Purpose of the inside end (% of these trips): "
+            f"{long_distance_block['inside_purpose_share_pct']}",
+            "",
+        ]
     (out / "summary.md").write_text("\n".join(md_lines), encoding="utf-8")
 
     LOGGER.info("Done. Wrote %d files to %s", len(list(out.iterdir())), out)

@@ -1,0 +1,66 @@
+stage: braunschweig.synthesis.portal_trips.stage
+title: Portal trips (core stage)
+layer: cordon
+description: >-
+  Rewrites the reporting-day trip table so that every leg beyond the portal threshold
+  (braunschweig.portal.max_routable_distance_m) becomes one outside stay at a cordon gate
+  (ADR-0141, issue #442). Per stay it classifies the legs, merges consecutive far destinations,
+  chooses an external point and a gate (road gate or schedule-derived rail exit station, both
+  inside the cut extent), derives the re-entry time from the donor's diary, fixes the donor's
+  outbound mode for both portal legs against the synthetic person, times the outbound arrival at
+  the gate (the diary duration split by the synthetic geometry, no reported distance) and the re-entry, and rewrites
+  the trip table and the anchors frame. Returns one dict {trips, anchors, report}; the two thin stages
+  trips_final and anchors hand one frame each to their consumers. With
+  braunschweig.portal.enabled false the trips frame is the input frame itself and the anchors
+  frame is empty.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    No eqasim precedent. eqasim France drops every donor with a trip outside the region; this
+    model keeps nationwide MiD donors and handles the far legs as portal trips at the cordon
+    gates, in the same cut form the in-commuters already have.
+code:
+- braunschweig/synthesis/portal_trips/stage.py
+- braunschweig/synthesis/portal_trips/config_keys.py
+- braunschweig/synthesis/portal_trips/classification.py
+- braunschweig/synthesis/portal_trips/gates.py
+- braunschweig/synthesis/portal_trips/timing.py
+- braunschweig/synthesis/portal_trips/modes.py
+- braunschweig/synthesis/portal_trips/rewrite.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs: []
+features:
+- portal_trips
+decisions:
+- ADR-0141
+- ADR-0027
+- ADR-0104
+notes: >-
+  Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
+  synthesis.population.enriched (persons with the availability columns the mode check needs),
+  the home and primary locations, braunschweig.synthesis.cordon_gates, braunschweig.data.cordon_network,
+  braunschweig.data.external_secondary_points, data.spatial.municipalities (cordon polygon) and
+  matsim.scenario.supply.processed (timetable for the rail exit stations); no dataset ids, the
+  gates and points are stages. Requires cordon_enabled (configure raises otherwise). Config keys,
+  all in configs/base_bs.yml: braunschweig.portal.enabled, max_routable_distance_m,
+  external_point_distance_tolerance, mode_substitution_warn_share and fallback_warn_share
+  (ranges and defaults in portal_trips/config_keys.py). The external-point draw is seeded
+  from random_seed plus a stage-specific offset.
+  Fallback transparency: the stage logs, tagged [portal_trips] and in its report, the share of
+  work/education legs classified by the reported distance instead of the assigned location
+  (raises when ALL fall back), the external-point band misses, the origins proxied by home, the
+  re-entry clamps, the degenerate re-entry and outbound shares (all distances zero), the mode substitutions by reason, persons without a licence value and donor
+  modes the mode check does not know; rates above the configured warn shares log at WARNING.
+  The stage asserts that municipalities, home locations, gates, links and external points share one
+  CRS (ValueError otherwise, before the first spatial step). With the flag on it also writes its report
+  as portal_trips_report.json into its own cache directory (the OFF run writes none), so a run manifest
+  can cite the counts without the log. The analyses that validate the donor-based day (SrV plan
+  structure, SrV departure times, work participation) read the pre-portal trips_day_stage frame while
+  the flag is on, see their records.
+  Reading guide and maintenance rules: docs/codebase/notes/portal-trips.md. The validate() token
+  hashes the helper modules and the cordon helper modules the stage imports inside execute.

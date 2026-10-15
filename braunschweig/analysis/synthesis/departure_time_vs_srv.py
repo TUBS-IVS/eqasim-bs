@@ -73,6 +73,7 @@ from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim.departure_time_model import (
     OFFSET_COLUMN, person_groups, persons_from_synthetic_schema)
 from braunschweig.popsim.stage import config_keys as _config_keys
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.departure_time_vs_srv")
 
@@ -86,6 +87,11 @@ DEFAULT_SUBDIR = "analysis/departure_time_vs_srv"
 #: be produced for different views in one run.
 KEY_TRIPS_VIEW = "departure_time_trips_view"
 DEFAULT_TRIPS_VIEW = "final"
+#: The portal layer flag (eqasim-bs#442, ADR-0141), re-exported from its single home. While it is on, the
+#: ``"final"`` view reads the PRE-portal reporting-day trips: SrV has no ``outside`` stays, so the unchanged
+#: reference must not be compared with the portal-rewritten day.
+KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
+DEFAULT_PORTAL_ENABLED = _portal_config_keys.DEFAULT_ENABLED
 
 #: The departure-time model a run used. Re-exported from
 #: ``braunschweig.popsim.stage.config_keys`` rather than re-typed: this stage only RECORDS the
@@ -136,8 +142,10 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: ``run_provenance`` writes the provenance record the output is judged from. Both are
 #: module-level imports that sat outside the token until the #327 gate was re-run against a
 #: ``main`` that had meanwhile given this stage a ``validate()``.
+#: ``_portal_config_keys`` owns the portal flag key, its default and the pre-portal stage name that
+#: decide which trips the "final" view reads (eqasim-bs#442, ADR-0141).
 _HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
-                   _metrics, _popsim_trips, _config_keys, run_provenance)
+                   _metrics, _popsim_trips, _config_keys, run_provenance, _portal_config_keys)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
@@ -197,8 +205,10 @@ def configure(context):
     # The trips view is aliased to the LOCAL name "trips" so execute() need not branch on the
     # view again, exactly as plan_structure_vs_srv does.
     trips_view = context.config(KEY_TRIPS_VIEW, DEFAULT_TRIPS_VIEW)
+    # eqasim-bs#442, ADR-0141: declared in every view because execute() records it in the provenance.
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED, DEFAULT_PORTAL_ENABLED))
     if trips_view == "final":
-        context.stage("synthesis.population.trips.final", alias="trips")
+        context.stage(_portal_config_keys.final_view_trips_stage(portal_on), alias="trips")
     elif trips_view == "pre_assignment":
         context.stage("synthesis.population.trips", alias="trips")
     else:
@@ -520,6 +530,7 @@ def execute(context):
     output_path = context.config("output_path")
     sampling_rate = float(context.config("sampling_rate"))
     trips_view = context.config(KEY_TRIPS_VIEW)
+    portal_on = bool(context.config(KEY_PORTAL_ENABLED))
     model_name = context.config(KEY_DEPARTURE_TIME_MODEL)
     out_dir = os.path.join(output_path, subdir)
 
@@ -555,6 +566,8 @@ def execute(context):
         "pipeline_commit": run_provenance.git_commit(_REPO_ROOT),
         "parameters": {
             "trips_view": trips_view,
+            # eqasim-bs#442, ADR-0141: with the portal layer on, the "final" view is the pre-portal day.
+            "portal_layer_enabled": portal_on,
             KEY_DEPARTURE_TIME_MODEL: model_name,
             "output_subdir": subdir,
             "sampling_rate": sampling_rate,

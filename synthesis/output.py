@@ -76,6 +76,55 @@ def select_household_output_columns(available_columns):
     return columns
 
 
+def prepare_trip_output_frame(df_trips):
+    """Trips frame in the column set and order of the trips output file (``<prefix>trips.csv``).
+
+    Renames the chain flags, derives the preceding/following activity indices from ``trip_index`` and selects the
+    ten output columns. Pure: the input frame is not modified. Factored out of ``execute`` unchanged so that
+    ``braunschweig.synthesis.commute_day.output_day`` writes the pre-portal trips file (eqasim-bs#442) with exactly
+    the same derivation instead of a second copy of it.
+    """
+    df_trips = df_trips.rename(
+        columns = {
+            "is_first_trip": "is_first",
+            "is_last_trip": "is_last"
+        }
+    )
+
+    df_trips["preceding_activity_index"] = df_trips["trip_index"]
+    df_trips["following_activity_index"] = df_trips["trip_index"] + 1
+
+    return df_trips[[
+        "person_id", "trip_index",
+        "preceding_activity_index", "following_activity_index",
+        "departure_time", "arrival_time",
+        "preceding_purpose", "following_purpose",
+        "is_first", "is_last"
+    ]]
+
+
+def build_commute_frame(df_activities, destination_purpose = "work"):
+    """Home -> destination line per person: the ``person_id`` + ``geometry`` frame of ``<prefix>commutes.gpkg``.
+
+    ``df_activities`` carries one row per located activity (``person_id``, ``purpose``, ``geometry``). Each
+    person's FIRST ``home`` activity and FIRST ``destination_purpose`` activity are paired (inner join, so a person
+    without either is absent) and joined by a straight line. Factored out of ``execute`` unchanged (it is called
+    with ``"work"`` there) so that ``braunschweig.synthesis.commute_day.output_day`` builds the pre-portal
+    commutes file (eqasim-bs#442) with exactly the same selection and schema instead of a second copy of it.
+    """
+    df_commutes = pd.merge(
+        df_activities[df_activities["purpose"] == "home"].drop_duplicates("person_id")[["person_id", "geometry"]].rename(columns = { "geometry": "home_geometry" }),
+        df_activities[df_activities["purpose"] == destination_purpose].drop_duplicates("person_id")[["person_id", "geometry"]].rename(columns = { "geometry": "destination_geometry" })
+    )
+
+    df_commutes["geometry"] = [
+        geo.LineString(od)
+        for od in zip(df_commutes["home_geometry"], df_commutes["destination_geometry"])
+    ]
+
+    return df_commutes.drop(columns = ["home_geometry", "destination_geometry"])
+
+
 def configure(context):
     context.stage("synthesis.population.enriched")
 
@@ -218,23 +267,7 @@ def execute(context):
         df_households.to_parquet("%s/%shouseholds.parquet" % (output_path, output_prefix))
 
     # Prepare trips
-    df_trips = context.stage("synthesis.population.trips").rename(
-        columns = {
-            "is_first_trip": "is_first",
-            "is_last_trip": "is_last"
-        }
-    )
-
-    df_trips["preceding_activity_index"] = df_trips["trip_index"]
-    df_trips["following_activity_index"] = df_trips["trip_index"] + 1
-
-    df_trips = df_trips[[
-        "person_id", "trip_index",
-        "preceding_activity_index", "following_activity_index",
-        "departure_time", "arrival_time",
-        "preceding_purpose", "following_purpose",
-        "is_first", "is_last"
-    ]]
+    df_trips = prepare_trip_output_frame(context.stage("synthesis.population.trips"))
 
     if context.config("mode_choice"):
         df_mode_choice = pd.read_csv(
@@ -292,17 +325,7 @@ def execute(context):
         df_spatial_homes.to_parquet(path)
 
     # Write spatial commutes
-    df_spatial = pd.merge(
-        df_spatial[df_spatial["purpose"] == "home"].drop_duplicates("person_id")[["person_id", "geometry"]].rename(columns = { "geometry": "home_geometry" }),
-        df_spatial[df_spatial["purpose"] == "work"].drop_duplicates("person_id")[["person_id", "geometry"]].rename(columns = { "geometry": "work_geometry" })
-    )
-
-    df_spatial["geometry"] = [
-        geo.LineString(od)
-        for od in zip(df_spatial["home_geometry"], df_spatial["work_geometry"])
-    ]
-
-    df_spatial = df_spatial.drop(columns = ["home_geometry", "work_geometry"])
+    df_spatial = build_commute_frame(df_spatial)
     if "gpkg" in output_formats:
         path = "%s/%scommutes.gpkg" % (output_path, output_prefix)
         df_spatial.to_file(path, driver = "GPKG")

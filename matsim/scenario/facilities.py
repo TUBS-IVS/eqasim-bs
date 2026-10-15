@@ -25,6 +25,13 @@ SECONDARY_FIELDS = [
     "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other", "offers_escort"
 ]
 
+# eqasim-bs#442: one facility per portal gate (activity type "outside"), at the gate coordinate.
+PORTAL_FIELDS = [
+    "location_id", "geometry"
+]
+
+PORTAL_ACTIVITY_TYPE = "outside"
+
 def load_facility_frames(context):
     """Load the (homes, primary, secondary) facility frames. Factored out so a
     regional override can append injected in-commuter facilities before writing.
@@ -42,8 +49,12 @@ def load_facility_frames(context):
     return df_homes, df_primary, df_secondary
 
 
-def write_facilities(output_path, df_homes, df_primary, df_secondary, context):
-    """Write the facilities XML from prepared (homes, primary, secondary) frames."""
+def write_facilities(output_path, df_homes, df_primary, df_secondary, context, df_portal = None):
+    """Write the facilities XML from prepared (homes, primary, secondary) frames.
+
+    ``df_portal`` (eqasim-bs#442, optional, PORTAL_FIELDS) holds one row per portal gate; each is written
+    as a facility offering the single activity type "outside". None or empty writes nothing (unchanged output).
+    """
     escort_enabled = bool(context.config("escort_purpose"))
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
@@ -85,6 +96,18 @@ def write_facilities(output_path, df_homes, df_primary, df_secondary, context):
                             writer.add_activity(purpose)
                     writer.end_facility()
                     progress.update()
+
+            if df_portal is not None and len(df_portal) > 0:
+                with context.progress(total = len(df_portal), label = "Writing portal gate facilities ...") as progress:
+                    for item in df_portal[PORTAL_FIELDS].itertuples(index = False):
+                        geometry = item[PORTAL_FIELDS.index("geometry")]
+                        writer.start_facility(
+                            str(item[PORTAL_FIELDS.index("location_id")]),
+                            geometry.x, geometry.y
+                        )
+                        writer.add_activity(PORTAL_ACTIVITY_TYPE)
+                        writer.end_facility()
+                        progress.update()
 
             writer.end_facilities()
 

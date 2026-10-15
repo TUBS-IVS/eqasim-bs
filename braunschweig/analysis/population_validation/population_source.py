@@ -11,6 +11,8 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig.analysis.pipeline_trips_file import resolve_pipeline_trips_path
+
 LOGGER = logging.getLogger("braunschweig.analysis.population_source")
 
 
@@ -25,7 +27,9 @@ class PopulationFrames:
     prefix: str
     # Donor-derived activity chains (purpose + times). Present when a
     # ``<prefix>trips.csv`` exists next to the population CSVs; consumed by the
-    # trip-coherence check (optimization step 2). None when absent.
+    # trip-coherence check (optimization step 2). None when absent. While the portal
+    # layer is on, ``<prefix>trips_pre_portal.csv`` (the donor day before the outside
+    # stays, eqasim-bs#442) is read instead when it exists.
     trips: pd.DataFrame | None = None
 
 
@@ -70,8 +74,10 @@ def _read_dir(directory: Path, prefix: str, kind: str) -> PopulationFrames:
     homes = gpd.read_file(homes_path)
     vehicles_path = directory / f"{prefix}vehicles.csv"
     vehicles = pd.read_csv(vehicles_path, sep=";") if vehicles_path.exists() else None
-    trips_path = directory / f"{prefix}trips.csv"
-    trips = pd.read_csv(trips_path, sep=";") if trips_path.exists() else None
+    # The diary validators compare these trips with a survey, so the pre-portal file wins when it exists
+    # (resolve_pipeline_trips_path logs the choice); otherwise this is the plain <prefix>trips.csv read.
+    trips_path = resolve_pipeline_trips_path(directory, prefix)
+    trips = pd.read_csv(trips_path, sep=";") if trips_path is not None else None
     LOGGER.info(
         "Loaded population from %s (%s): persons=%d households=%d homes=%d vehicles=%s trips=%s",
         directory, kind, len(persons), len(households), len(homes),

@@ -637,7 +637,9 @@ def _kreis_polygons():
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():
-    recorder = _ConfigureRecorder()
+    # Portal layer OFF: the finished day is synthesis.population.trips.final; with it on the stage reads the
+    # pre-portal trips (the portal tests below).
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(recorder)
     assert "braunschweig.locations.work" in recorder.stages
     assert "braunschweig.data.census.pendler" in recorder.stages
@@ -701,7 +703,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
         geometry=[Point(0.0, 0.0), Point(60_000.0, 0.0)], crs="EPSG:25832")
     persons = pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2],
                             "employed": [True, True]})
-    recorder = _ConfigureRecorder()
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
     S.configure(recorder)
     context = _StubExecuteContext(
         recorder,
@@ -726,6 +728,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
             S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
             S.KEY_DAY_ABSENCE_ENABLED: True,
+            S.KEY_PORTAL_ENABLED: False,
         })
 
     result = S.execute(context)
@@ -804,7 +807,7 @@ def test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_whe
         geometry=[Point(0.0, 0.0), Point(60_000.0, 0.0)], crs="EPSG:25832")
     persons = pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2],
                             "employed": [True, True]})
-    recorder = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False})
+    recorder = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False, S.KEY_PORTAL_ENABLED: False})
     S.configure(recorder)
     assert S.ABSENCE_STAGE not in recorder.stages
 
@@ -828,6 +831,7 @@ def test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_whe
             S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
             S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
             S.KEY_DAY_ABSENCE_ENABLED: False,
+            S.KEY_PORTAL_ENABLED: False,
         })
 
     S.execute(context)
@@ -966,3 +970,98 @@ def test_summary_never_guesses_a_sampling_rate():
     ext = S.ext_destination_distances(_ext_workers(), _centroids(), _ba_flows(), detour_factor=1.0)
     text = S.summary_markdown(participation, classes, ext, near_edge_share=0.25)
     assert "sampling_rate = unknown" in text
+
+
+# --------------------------------------------------------------------------- portal layer (eqasim-bs#442, R35)
+
+PRE_PORTAL_STAGE = "braunschweig.synthesis.commute_day.trips_day_stage"
+
+
+def test_the_portal_flag_is_the_single_home_key_and_its_default_is_shared():
+    from braunschweig.synthesis.portal_trips import config_keys
+    assert S.KEY_PORTAL_ENABLED == config_keys.KEY_ENABLED
+    assert S.DEFAULT_PORTAL_ENABLED == config_keys.DEFAULT_ENABLED
+
+
+def test_configure_reads_the_pre_portal_trips_while_the_portal_layer_is_on():
+    """R35: with the portal on, far work trips are outside stays in trips.final, so the participation
+    share would drop artificially; the stage reads the reporting-day trips BEFORE the portal rewrite."""
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: True})
+    S.configure(recorder)
+    assert PRE_PORTAL_STAGE in recorder.stages
+    assert "synthesis.population.trips.final" not in recorder.stages
+
+
+def test_configure_reads_trips_final_with_the_portal_layer_off_and_declares_the_flag():
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: False})
+    S.configure(recorder)
+    assert "synthesis.population.trips.final" in recorder.stages
+    assert PRE_PORTAL_STAGE not in recorder.stages
+    unset = _ConfigureRecorder()
+    S.configure(unset)
+    assert unset.config_keys[S.KEY_PORTAL_ENABLED] == S.DEFAULT_PORTAL_ENABLED
+
+
+def _run_execute_with_portal(tmp_path, monkeypatch, portal_on):
+    """Run ``execute`` with a portal-rewritten ``trips.final`` (persons 1 and 3 only have an outside stay) and the
+    pre-portal frame ``_trips()`` (they work); the stub fails loudly on the stage that was not declared."""
+    from braunschweig.analysis import spatial
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = os.path.join(repo_root, "eqasim-data", "data")
+    monkeypatch.setattr(spatial, "load_vg250_layer", lambda layer, strict=True: _kreis_polygons())
+    monkeypatch.setattr(spatial, "assign_geographies", lambda homes, kreise=None: homes.assign(ars5=["03101", "03151"]))
+    home_locations = gpd.GeoDataFrame({"household_id": [1, 2]},
+                                      geometry=[Point(0.0, 0.0), Point(60_000.0, 0.0)], crs="EPSG:25832")
+    persons = pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2], "employed": [True, True]})
+    rewritten = pd.DataFrame({"person_id": [1, 1, 3, 3],
+                              "preceding_purpose": ["home", "outside", "home", "outside"],
+                              "following_purpose": ["outside", "home", "outside", "home"]})
+    recorder = _ConfigureRecorder(config={S.KEY_PORTAL_ENABLED: portal_on, S.KEY_DAY_ABSENCE_ENABLED: False})
+    S.configure(recorder)
+    context = _StubExecuteContext(
+        recorder,
+        stages={
+            "synthesis.population.spatial.home.locations": home_locations,
+            "synthesis.population.spatial.primary.locations": (_work_points(), None),
+            "synthesis.population.enriched": persons,
+            "synthesis.population.trips.final": rewritten,
+            PRE_PORTAL_STAGE: _trips(),
+            "braunschweig.synthesis.commute_day.state_stage": {"states": _states()},
+            "braunschweig.locations.work": _work_locations(),
+            "data.spatial.municipalities": pd.DataFrame({"commune_id": ["03101000"]}),
+            "braunschweig.data.census.pendler": _ba_flows(),
+        },
+        config={
+            "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
+            S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
+            S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
+            S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
+            S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
+            S.KEY_DAY_ABSENCE_ENABLED: False,
+            S.KEY_PORTAL_ENABLED: portal_on,
+        })
+    S.execute(context)
+    out_dir = tmp_path / "analysis" / "cds"
+    participation = pd.read_csv(out_dir / "work_participation_by_kreis.csv", dtype={"code": str})
+    with open(out_dir / "provenance.json", encoding="utf-8") as handle:
+        provenance = json.load(handle)
+    return participation[participation["code"] == "zgb"].iloc[0], provenance
+
+
+def test_execute_with_the_portal_on_counts_the_work_trips_of_the_pre_portal_day(tmp_path, monkeypatch):
+    zgb, provenance = _run_execute_with_portal(tmp_path, monkeypatch, portal_on=True)
+    # Both employed persons work in the pre-portal day; the rewritten day has only outside stays.
+    assert zgb["n_employed"] == 2 and zgb["share_work_trip"] == pytest.approx(1.0)
+    assert provenance["parameters"]["portal_layer_enabled"] is True
+    assert PRE_PORTAL_STAGE in provenance["inputs"]["stages"]
+    assert "synthesis.population.trips.final" not in provenance["inputs"]["stages"]
+
+
+def test_execute_with_the_portal_off_counts_the_work_trips_of_trips_final(tmp_path, monkeypatch):
+    zgb, provenance = _run_execute_with_portal(tmp_path, monkeypatch, portal_on=False)
+    # The portal-rewritten frame stands in for trips.final: nobody has a work trip in it.
+    assert zgb["n_employed"] == 2 and zgb["share_work_trip"] == pytest.approx(0.0)
+    assert provenance["parameters"]["portal_layer_enabled"] is False
+    assert "synthesis.population.trips.final" in provenance["inputs"]["stages"]
+    assert PRE_PORTAL_STAGE not in provenance["inputs"]["stages"]

@@ -59,18 +59,34 @@ def _purpose_to_mode(df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate trip counts by (following_purpose, mode) for the sankey.
 
     Drops rows where ``mode == "outside"`` so external cordon trips do not
-    appear in the flow diagram.
+    appear in the flow diagram. Also drops trips whose ``preceding_purpose``
+    or ``following_purpose`` is ``"outside"``: portal trips of residents and
+    in-commuter trips keep a real mode but are cross-boundary trips, reported
+    as a category of their own (eqasim-bs#442), not part of the in-region flow.
 
     Args:
         df: Full eqasim_trips DataFrame (sep=";").  Must contain columns
-            ``following_purpose`` and ``mode``.
+            ``following_purpose`` and ``mode``; ``preceding_purpose`` is used
+            when present (a warning is logged when it is absent).
 
     Returns:
         DataFrame with columns ``from``, ``to``, ``value`` (trip count),
         one row per (following_purpose, mode) pair present in the data.
         Sorted descending by ``value`` for stable output.
     """
-    filtered = df[df["mode"].ne("outside")].copy()
+    touches_outside = df["following_purpose"].eq("outside")
+    if "preceding_purpose" in df.columns:
+        touches_outside = touches_outside | df["preceding_purpose"].eq("outside")
+    else:
+        LOGGER.warning(
+            "[behaviour] eqasim_trips lacks preceding_purpose -- trips leaving an outside "
+            "activity cannot be excluded from the sankey"
+        )
+    filtered = df[df["mode"].ne("outside") & ~touches_outside].copy()
+    LOGGER.info(
+        "[behaviour] sankey excludes %d of %d trips touching the cordon (mode or activity 'outside')",
+        len(df) - len(filtered), len(df),
+    )
     counts = (
         filtered.groupby(["following_purpose", "mode"], sort=True)
         .size()
