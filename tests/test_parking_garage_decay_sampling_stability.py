@@ -228,3 +228,23 @@ def test_the_calibration_record_states_the_measured_sampling_sds():
     for symbol in ("lambda", "lambda_c"):
         for quantity in (f"split_half_sd_25_pct_{symbol}", f"split_half_sd_100_pct_{symbol}", f"bootstrap_sd_25_pct_{symbol}"):
             assert f"{rows[quantity]:.2f}" in text, quantity
+
+
+def test_the_sampling_table_pins_exactly_the_committed_calibration_table():
+    # The measurement belongs to ONE calibration table: its header pin must be the LF hash of the committed file, not of an
+    # earlier or an edited one (the calibration table and this table were once committed with disagreeing pins).
+    assert _header_hash("calibration_table") == config_tests._lf_sha256(config_tests.TABLE)
+
+
+def test_the_sampling_table_was_produced_on_a_clean_tree_at_a_full_commit():
+    line = config_tests._code_state_line(TABLE)
+    assert "uncommitted" not in line, f"{TABLE.name} was produced on a dirty working tree: rerun on a clean committed tree"
+    assert re.search(r"; code state [0-9a-f]{40}\.$", line), f"{TABLE.name}: the code-state line names no full commit: {line!r}"
+
+
+def test_the_calibration_record_pins_the_committed_sampling_table():
+    record = yaml.safe_load(CALIBRATION_RECORD.read_text(encoding="utf-8"))
+    text = " ".join(record["limitations"].split())
+    pins = re.findall(r"SHA-256 with LF line endings ([0-9a-f]{64})", text)
+    assert len(pins) == 1, f"{CALIBRATION_RECORD.name}: limitations must pin the sampling table exactly once, found {len(pins)}"
+    assert pins[0] == config_tests._lf_sha256(TABLE)
