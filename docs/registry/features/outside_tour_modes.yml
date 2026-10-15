@@ -1,0 +1,121 @@
+feature: outside_tour_modes
+title: Outside-tour modes judged against the regional survey
+area: cordon
+description: >-
+  The production discrete mode choice keeps the diary mode of every tour that touches an outside activity
+  for the whole run (OutsideFilter), so the mode a donor reported at some distance survives even where the
+  realised distance makes it implausible for the region. After the location choice this feature judges the
+  mode of each such tour against the SrV 2023 mode shares by straight-line distance band and purpose group
+  (data record srv2023_mode_by_distance_band) at the realised leg distance, and re-modes the whole tour
+  where the survey share of the mode is below braunschweig.outside_tour_modes.min_share (ADR-0145, issue
+  #453). One substitute per tour is drawn, seeded, from the cell of the tour's longest implausible leg among
+  the modes the person may use, weighted by their SrV shares, and applied to every leg of the tour so the
+  tour keeps one mode. A leg touching an outside activity (a portal stay, ADR-0141) is judged in the purpose
+  group all at the top band. The stage sits behind the alias synthesis.population.trips.simulated, which only
+  the MATSim population writer and the synthesis output read; the chain solver keeps reading
+  synthesis.population.trips.final. With the flag off the trips frame is returned unchanged. No Java change
+  is part of the feature. The feature changes results by design when enabled.
+stages:
+- synthesis.population.trips.simulated
+- matsim.scenario.population
+- synthesis.output
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.outside_tour_modes.enabled
+  - braunschweig.outside_tour_modes.min_share
+  - braunschweig.outside_tour_modes.warn_share
+introduced:
+  issue: 453
+  pr: null
+  adr: ADR-0145
+detail_doc: docs/codebase/notes/outside-tour-modes.md
+code_paths:
+- braunschweig/calibration/srv_mode_by_distance_band.py
+- braunschweig/calibration/srv_mode_by_distance_band_table.py
+- braunschweig/matsim/scenario/population.py
+- braunschweig/synthesis/commute_day/output_day.py
+- braunschweig/synthesis/outside_tour_modes/__init__.py
+- braunschweig/synthesis/outside_tour_modes/config_keys.py
+- braunschweig/synthesis/outside_tour_modes/rule.py
+- braunschweig/synthesis/outside_tour_modes/srv_table.py
+- braunschweig/synthesis/outside_tour_modes/stage.py
+- braunschweig/synthesis/outside_tour_modes/tours.py
+- configs/base_bs.yml
+- configs/fixtures/config_dryrun_braunschweig.yml
+- configs/fixtures/config_local_braunschweig.yml
+- configs/fixtures/config_local_braunschweig_10pct.yml
+- configs/fixtures/config_local_braunschweig_25pct.yml
+- configs/fixtures/config_popsim_mid_braunschweig.yml
+- configs/fixtures/config_popsim_open_braunschweig.yml
+- configs/fixtures/config_smoke_popsim_mid_mini.yml
+- configs/fixtures/config_smoke_popsim_open_mini.yml
+- configs/fixtures/config_smoke_simple_ipf.yml
+- scripts/extract_srv_mode_by_distance_band.py
+evidence:
+  tests:
+  - tests/test_outside_tour_modes_config_keys.py
+  - tests/test_outside_tour_modes_rule.py
+  - tests/test_outside_tour_modes_srv_table.py
+  - tests/test_outside_tour_modes_stage.py
+  - tests/test_outside_tour_modes_tours.py
+  - tests/test_outside_tour_modes_wiring.py
+  - tests/test_srv_mode_by_distance_band.py
+  - tests/test_srv_mode_by_distance_band_pins.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: >-
+      tests/test_outside_tour_modes_stage.py::test_execute_off_passes_the_frame_through_without_counters_or_warnings;
+      tests/test_outside_tour_modes_wiring.py::test_every_fixture_aliases_the_simulated_trips_to_its_final_target_and_disables_the_flag.
+    note: >-
+      braunschweig.outside_tour_modes.enabled defaults true in configs/base_bs.yml. The OFF claim is pinned at
+      the stage (the input frame is returned as is, no counters, no warning) and at the configs (every fixture
+      aliases the simulated alias to its own trips.final target and sets the flag false). A whole-pipeline OFF
+      run against the pre-feature state is not recorded, and a stage-level pass-through is not an end-to-end
+      proof.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[outside_tour_modes]'
+    note: >-
+      The stage logs, as rates and in its report, the outside tours re-moded out of all outside tours (WARNING
+      above braunschweig.outside_tour_modes.warn_share), the legs re-moded and swept along, the substitution
+      matrix, the cells used, the draws restricted by the person's availability and the modes removed. It raises
+      on a person without an availability row, on a leg without a realised location, on a CRS mismatch, on a
+      table cell where neither pt nor walk is plausible and on a draw with no candidate, instead of falling back.
+      The report is also written as outside_tour_modes_report.json in the stage's cache directory.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_mode_by_distance_band.csv
+    note: >-
+      The SrV 2023 mode-share table (data record srv2023_mode_by_distance_band): Zensus-weighted, GIS-routed
+      lengths divided by 1.3 for the straight-line equivalent, regional (no Kreis rows). It is the reference
+      the rule judges modes against, not a validation target of the model output; its limitations are in the
+      data record.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    Not run yet; the 1 % A/B with iterations of the plan's last task measures the direction, never a
+    validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Implemented and unit-tested; no run has used it yet. min_share (0.01) and warn_share (0.5) are ASSUMPTIONS
+    until the A/B run of ADR-0145 (eqasim-bs#453).
+  source: ADR-0145
+notes: >-
+  The feature changes results by design when enabled: the alias switch recomputes the stage behind it,
+  matsim.scenario.population, synthesis.output and everything downstream once. Not in scope: the plan
+  feasibility check and the 30 h bound (#443). The portal feature (portal_trips) is its upstream neighbour: a
+  portal stay's legs are judged here in the group all at the top band and may be re-moded, see its record.
+  Config invariant: any config that aliases synthesis.population.trips.final must also alias
+  synthesis.population.trips.simulated to the same target and set braunschweig.outside_tour_modes.enabled false
+  (the fixtures do; tests/test_outside_tour_modes_wiring.py).

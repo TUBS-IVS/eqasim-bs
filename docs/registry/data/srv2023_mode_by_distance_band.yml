@@ -7,7 +7,7 @@ crs: null
 roles:
 - calibration_target
 used_by:
-- braunschweig.synthesis.outside_tour_modes.stage
+- synthesis.population.trips.simulated
 acquisition:
   method: committed
   source: |

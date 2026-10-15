@@ -4,7 +4,9 @@ layer: infrastructure
 description: 'Writes the unified population/trips/locations output (CSV/parquet + meta); the terminal
   synthesis stage. In the production config it resolves to
   braunschweig.synthesis.commute_day.output_day (ADR-0104, issue #244), which runs the SAME
-  vendored writer on the REPORTING-DAY trips/activities (.final) and merges the drawn
+  vendored writer on the REPORTING-DAY activities (.final) and the simulated trips
+  (synthesis.population.trips.simulated: trips.final with the outside-tour modes judged against SrV,
+  ADR-0145) and merges the drawn
   commute_day_state into the persons frame so it is exported through the existing optional-column
   mechanism (PERSON_OPTIONAL_OUTPUT_COLUMNS, appended last; empty for persons without an assigned
   workplace). With commute_day_state_enabled false the enriched frame is passed through untouched
@@ -47,8 +49,10 @@ features:
 - rbw_leg_convention
 - general_day_absence
 - portal_trips
+- outside_tour_modes
 decisions:
 - ADR-0121
 - ADR-0104
 - ADR-0110
 - ADR-0141
+- ADR-0145

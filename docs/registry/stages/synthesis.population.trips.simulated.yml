@@ -1,0 +1,87 @@
+stage: synthesis.population.trips.simulated
+title: Simulated-day trips (outside-tour modes)
+layer: cordon
+description: >-
+  The reporting day as the simulation starts it: synthesis.population.trips.final with the modes of the tours
+  that touch the outside of the cut extent judged against the regional survey (ADR-0145, issue #453). The
+  production discrete mode choice runs ModelType.Tour with the OutsideFilter, so a tour with an outside
+  activity keeps its diary mode for the whole run; nothing else ever revises that mode. In the production
+  config the alias resolves to braunschweig.synthesis.outside_tour_modes.stage, which reads the day after the
+  portal rewrite, forms home-based tours, marks a tour as an outside tour when a leg ends outside the cordon
+  polygon or at an outside activity, and measures every leg of such a tour as the straight-line distance
+  between the realised activity locations. A leg is implausible when the SrV share of its mode in the cell of
+  its purpose group and distance band is below braunschweig.outside_tour_modes.min_share. Per tour with an
+  implausible leg ONE substitute is drawn, seeded, from the cell of the tour's longest implausible leg among
+  the modes whose share is at least min_share and that the person may use, weighted by their shares, and
+  applied to every leg of the tour so the tour keeps one mode. The returned frame keeps the rows, the index
+  and the columns of trips.final; only mode values change. The alias is read by exactly two consumers, the
+  MATSim population writer (matsim.scenario.population) and the synthesis output (synthesis.output). With
+  braunschweig.outside_tour_modes.enabled false the stage returns the synthesis.population.trips.final frame
+  unchanged (no counters, no warning), so the alias is then a pure pass-through. Every configs/fixtures/*
+  config aliases it to the same target as its synthesis.population.trips.final and switches the feature off.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    No eqasim precedent: eqasim France keeps every tour inside the region, so OutsideFilter never freezes a
+    diary mode there. This model keeps nationwide MiD donors and cuts the scenario at the cordon, so a diary
+    mode can be frozen at a distance where it is not plausible. The stage runs after the location choice
+    because it needs the realised locations, behind its own alias so that the chain solver keeps reading
+    synthesis.population.trips.final (no cycle). The DAG snapshots record the alias name, not the stage module,
+    the same pattern as synthesis.output and braunschweig.synthesis.commute_day.output_day.
+code:
+- braunschweig/synthesis/outside_tour_modes/__init__.py
+- braunschweig/synthesis/outside_tour_modes/config_keys.py
+- braunschweig/synthesis/outside_tour_modes/srv_table.py
+- braunschweig/synthesis/outside_tour_modes/tours.py
+- braunschweig/synthesis/outside_tour_modes/rule.py
+- braunschweig/synthesis/outside_tour_modes/stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.outside_tour_modes.stage
+inputs:
+- srv2023_mode_by_distance_band
+features:
+- outside_tour_modes
+decisions:
+- ADR-0145
+- ADR-0141
+notes: >-
+  Consumers: matsim.scenario.population (braunschweig/matsim/scenario/population.py, DAY_TRIPS_STAGE) and
+  synthesis.output (braunschweig/synthesis/commute_day/output_day.py, DAY_TRIPS_STAGE, declared through the
+  _STAGE_MAP of that module so the configure-time edge and the execute-time read agree). The chain solver, the
+  portal stage, synthesis.population.activities.final and the analyses keep reading
+  synthesis.population.trips.final; reading the simulated alias there would close a cycle through
+  synthesis.population.spatial.locations. activities.final is unchanged because modes do not enter the
+  activity table.
+  Stage inputs: synthesis.population.trips.final (the day after the portal rewrite),
+  synthesis.population.spatial.locations (realised activity locations), synthesis.population.enriched (the
+  availability flags), data.spatial.municipalities (cordon polygon) and the committed SrV table
+  (braunschweig/srv/srv2023_mode_by_distance_band.csv under data_path). Requires cordon_enabled (configure
+  raises otherwise when the flag is on). Config keys, all in configs/base_bs.yml, names and defaults in
+  braunschweig/synthesis/outside_tour_modes/config_keys.py: braunschweig.outside_tour_modes.enabled, min_share
+  (valid range (0, 1), 0.01) and warn_share (valid range (0, 1], 0.5); the 1 % and 50 % are ASSUMPTIONS until the
+  A/B run of ADR-0145 (see the feature record). The substitute draw is seeded from random_seed plus a
+  stage-specific offset (RNG_OFFSET in config_keys.py, disjoint from the in-commuter, student and portal
+  offsets).
+  Fallback transparency: the stage logs, tagged [outside_tour_modes] and in its report, the outside tours
+  re-moded out of all outside tours (with the share; WARNING above warn_share), the legs re-moded and the legs
+  swept along (plausible legs of a re-moded tour), the substitution matrix, the cells used, the outside tours
+  per purpose group, the portal legs judged in the group all, the draws whose candidate set the person's
+  availability restricted and the modes it removed. The stage raises instead of falling back: on a person
+  without an availability row, on a leg whose activity has no realised location, on a CRS mismatch between
+  locations and municipalities, on a table with a cell where neither pt nor walk is plausible and on a draw with
+  no candidate. With the flag on it writes its report as outside_tour_modes_report.json (REPORT_FILE_NAME in
+  config_keys.py) into its own cache directory; the OFF run writes none.
+  The validate() token hashes the helper modules, the shared SrV loader module, the portal mode helper module
+  and the cordon helper module imported inside execute, and with the flag on the bytes of the committed SrV
+  table, so a regenerated table recomputes this stage and everything downstream.
+  Fixture invariant: every config that aliases synthesis.population.trips.final must also alias this stage (to
+  the same target) and set braunschweig.outside_tour_modes.enabled false; the wiring test
+  tests/test_outside_tour_modes_wiring.py checks every fixture. Cache consequence (ADR-0145): the stage behind
+  the alias, matsim.scenario.population, synthesis.output and everything downstream of them recompute once.
+  Reading guide and maintenance rules: docs/codebase/notes/outside-tour-modes.md.
