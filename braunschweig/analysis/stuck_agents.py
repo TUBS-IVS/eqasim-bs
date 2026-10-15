@@ -7,6 +7,10 @@ a tour the discrete mode choice never re-chooses) and ``output_persons.csv.gz`` 
 reports the stuck agents by subpopulation x at the simulation end / during the day x mode x frozen. The
 dashboard block (``run_metrics.metrics_matsim``) and the analysis-suite outputs come from the same function.
 
+The simulation end that separates "stuck at the end" from "stuck during the day" is read from the run's own
+``output_config.xml`` (fallback ``output_config_reduced.xml``); the warn share is a parameter
+(``analysis_stuck_warn_share`` of the analysis suite, ``STUCK_WARN_SHARE`` is its default).
+
 Freight agents are a category of their own here (they are not dropped as in ``freight_filter``). Person ids
 are strings throughout because freight ids are not numeric.
 """
@@ -21,6 +25,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from braunschweig.matsim.simulation.plan_check import read_qsim_end_time_s
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -32,6 +37,9 @@ OUTSIDE_ACTIVITY_TYPE = "outside"
 STUCK_TYPE = 'type="stuckAndAbort"'
 #: ASSUMPTION (ADR-0146): WARN when more than this share of the residents is stuck in the final iteration.
 STUCK_WARN_SHARE = 0.01
+#: Files of a MATSim output directory that carry the run's qsim.endTime, in the order they are tried.
+OUTPUT_CONFIG_NAMES = ("output_config.xml", "output_config_reduced.xml")
+INPUT_FILE_NAMES = ("output_events.xml.gz", "output_persons.csv.gz", "output_plans.xml.gz")
 EVENT_COLUMNS = ["person", "time", "leg_mode", "link"]
 OUTPUT_COLUMNS = EVENT_COLUMNS + ["subpopulation", "frozen", "at_end"]
 _ATTRIBUTE = re.compile(r'(\w+)="([^"]*)"')
@@ -88,8 +96,12 @@ def frozen_persons(plans_path) -> set:
 
 def person_subpopulations(persons_csv_path) -> pd.Series:
     """Subpopulation per person id (str); the empty label of ``output_persons.csv.gz`` is named ``residents``."""
-    persons = pd.read_csv(persons_csv_path, sep=";", usecols=["person", "subpopulation"], dtype=str,
-                          keep_default_na=False)
+    try:
+        persons = pd.read_csv(persons_csv_path, sep=";", usecols=["person", "subpopulation"], dtype=str,
+                              keep_default_na=False)
+    except ValueError as exc:
+        raise ValueError(f"{persons_csv_path} must carry the columns person and subpopulation "
+                         f"(a run without subpopulations cannot be categorised): {exc}") from exc
     labels = persons["subpopulation"].where(persons["subpopulation"].str.strip() != "", RESIDENTS)
     return pd.Series(labels.to_numpy(), index=pd.Index(persons["person"].astype(str), name="person"))
 
@@ -103,8 +115,12 @@ def _categorised(events, subpopulations, frozen, simulation_end_s) -> pd.DataFra
     return table
 
 
-def summarise_stuck(events: pd.DataFrame, subpopulations: pd.Series, frozen: set, *, simulation_end_s: float) -> dict:
-    """Summarise the stuck events by subpopulation x time class x mode x frozen (layout: see ADR-0146)."""
+def summarise_stuck(events: pd.DataFrame, subpopulations: pd.Series, frozen: set, *, simulation_end_s: float,
+                    warn_share: float = STUCK_WARN_SHARE) -> dict:
+    """Summarise the stuck events by subpopulation x time class x mode x frozen (layout: see ADR-0146).
+
+    ``warning`` is set (and logged at WARNING) when the share of stuck residents exceeds ``warn_share``.
+    """
     table = _categorised(events, subpopulations, frozen, simulation_end_s)
     n_persons_by_subpopulation = subpopulations.value_counts().to_dict()
     for name in table["subpopulation"].unique():
@@ -124,27 +140,54 @@ def summarise_stuck(events: pd.DataFrame, subpopulations: pd.Series, frozen: set
             "by_mode": {str(mode): int(count) for mode, count in sorted(group["leg_mode"].value_counts().items())},
         }
     residents = by_subpopulation.get(RESIDENTS)
-    warning = residents is not None and residents["share_stuck"] > STUCK_WARN_SHARE
+    warning = residents is not None and residents["share_stuck"] > warn_share
     summary = {"available": True, "simulation_end_s": float(simulation_end_s), "n_stuck": int(len(table)),
-               "by_subpopulation": by_subpopulation, "warn_share": STUCK_WARN_SHARE, "warning": bool(warning)}
+               "by_subpopulation": by_subpopulation, "warn_share": float(warn_share), "warning": bool(warning)}
     if residents is None:
         logger.warning("%s no residents among the %d persons; the stuck share cannot be judged", _LOG_TAG,
                        len(subpopulations))
         return summary
     log = logger.warning if warning else logger.info
-    log("%s stuck agents %d; residents %d/%d (%.2f%%; warn above %.0f%%): at end frozen %d / in-region %d, during "
+    log("%s stuck agents %d; residents %d/%d (%.2f%%; warn above %.2f%%): at end frozen %d / in-region %d, during "
         "the day frozen %d / in-region %d", _LOG_TAG, len(table), residents["n_stuck"], residents["n_persons"],
-        100.0 * residents["share_stuck"], 100.0 * STUCK_WARN_SHARE,
+        100.0 * residents["share_stuck"], 100.0 * warn_share,
         residents["at_end"]["frozen"], residents["at_end"]["in_region"],
         residents["during_day"]["frozen"], residents["during_day"]["in_region"])
     return summary
 
 
+def simulation_end_seconds(sim_output) -> float:
+    """Simulation end (``qsim.endTime``, seconds) of the run that wrote ``sim_output``.
+
+    Read from ``output_config.xml``, else ``output_config_reduced.xml``. A config that is absent, unreadable or
+    carries no usable ``endTime`` is skipped and named in the log; when none yields a value the plan-time bound
+    ``MAX_PLAN_TIME_SECONDS`` is used (the simulated day equals it, ADR-0146) and a WARNING names the files.
+    """
+    sim_output = Path(sim_output)
+    problems = []
+    for name in OUTPUT_CONFIG_NAMES:
+        path = sim_output / name
+        if not path.is_file():
+            problems.append(f"{name}: not found")
+            continue
+        try:
+            end_s = read_qsim_end_time_s(path)
+        except (ValueError, ET.ParseError) as exc:
+            # A config that exists but cannot be used is a finding of its own, not just a missing file.
+            logger.warning("%s %s has no usable qsim.endTime (%s); trying the next config", _LOG_TAG, path, exc)
+            problems.append(f"{name}: {exc}")
+            continue
+        logger.info("%s simulation end %.2f h read from %s", _LOG_TAG, end_s / 3600.0, path)
+        return end_s
+    logger.warning("%s no qsim.endTime in the output config of %s (%s); using the plan-time bound %.2f h", _LOG_TAG,
+                   sim_output, "; ".join(problems), MAX_PLAN_TIME_SECONDS / 3600.0)
+    return float(MAX_PLAN_TIME_SECONDS)
+
+
 def _read_inputs(sim_output):
     """Read the three simulation outputs; fail early with the missing path named."""
     sim_output = Path(sim_output)
-    paths = {name: sim_output / name for name in
-             ("output_events.xml.gz", "output_persons.csv.gz", "output_plans.xml.gz")}
+    paths = {name: sim_output / name for name in INPUT_FILE_NAMES}
     for path in paths.values():
         if not path.is_file():
             raise FileNotFoundError(f"Stuck-agent analysis needs {path}; run the simulation to its final iteration first.")
@@ -153,16 +196,26 @@ def _read_inputs(sim_output):
             frozen_persons(paths["output_plans.xml.gz"]))
 
 
-def stuck_summary(sim_output, *, simulation_end_s: float = MAX_PLAN_TIME_SECONDS) -> dict:
-    """Stuck-agent summary of a simulation output directory (``simulation_end_s`` in seconds)."""
+def stuck_summary(sim_output, *, simulation_end_s: float | None = None, warn_share: float = STUCK_WARN_SHARE) -> dict:
+    """Stuck-agent summary of a simulation output directory.
+
+    ``simulation_end_s`` (seconds) defaults to the ``qsim.endTime`` of the run's output config
+    (:func:`simulation_end_seconds`).
+    """
     events, subpopulations, frozen = _read_inputs(sim_output)
-    return summarise_stuck(events, subpopulations, frozen, simulation_end_s=simulation_end_s)
+    if simulation_end_s is None:
+        simulation_end_s = simulation_end_seconds(sim_output)
+    return summarise_stuck(events, subpopulations, frozen, simulation_end_s=simulation_end_s, warn_share=warn_share)
 
 
-def write_stuck_outputs(sim_output, out_dir, *, simulation_end_s: float = MAX_PLAN_TIME_SECONDS) -> tuple:
+def write_stuck_outputs(sim_output, out_dir, *, simulation_end_s: float | None = None,
+                        warn_share: float = STUCK_WARN_SHARE) -> tuple:
     """Write ``stuck_agents.csv`` (one row per stuck event) and ``stuck_summary.json`` into ``out_dir``."""
     events, subpopulations, frozen = _read_inputs(sim_output)
-    summary = summarise_stuck(events, subpopulations, frozen, simulation_end_s=simulation_end_s)
+    if simulation_end_s is None:
+        simulation_end_s = simulation_end_seconds(sim_output)
+    summary = summarise_stuck(events, subpopulations, frozen, simulation_end_s=simulation_end_s,
+                              warn_share=warn_share)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     table = _categorised(events, subpopulations, frozen, simulation_end_s)
@@ -172,3 +225,33 @@ def write_stuck_outputs(sim_output, out_dir, *, simulation_end_s: float = MAX_PL
         json.dump(summary, handle, indent=2)
     logger.info("%s wrote %s and %s", _LOG_TAG, csv_path, json_path)
     return csv_path, json_path
+
+
+def reusable_stuck_summary(sim_output, summary_path) -> dict | None:
+    """Return the summary an earlier run of the analysis suite wrote, or ``None`` when it must be recomputed.
+
+    The file is reused only when it exists, parses, and is NEWER than ``output_events.xml.gz`` (a stale summary of
+    an earlier simulation must never describe this one). Every reason for not reusing it is logged.
+    """
+    if summary_path is None:
+        return None
+    summary_path = Path(summary_path)
+    events_path = Path(sim_output) / "output_events.xml.gz"
+    if not summary_path.is_file():
+        logger.info("%s no precomputed summary at %s", _LOG_TAG, summary_path)
+        return None
+    if not events_path.is_file():
+        return None
+    if summary_path.stat().st_mtime <= events_path.stat().st_mtime:
+        logger.warning("%s %s is not newer than %s (stale); recomputing", _LOG_TAG, summary_path, events_path)
+        return None
+    try:
+        with open(summary_path, encoding="utf-8") as handle:
+            summary = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("%s %s is unreadable (%s); recomputing", _LOG_TAG, summary_path, exc)
+        return None
+    if not isinstance(summary, dict) or "by_subpopulation" not in summary:
+        logger.warning("%s %s does not look like a stuck summary; recomputing", _LOG_TAG, summary_path)
+        return None
+    return summary

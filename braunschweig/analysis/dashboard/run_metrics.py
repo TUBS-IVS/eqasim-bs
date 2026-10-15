@@ -143,7 +143,12 @@ def _commute_block(trips: pd.DataFrame) -> dict[str, Any] | None:
     }
 
 
-def metrics_matsim(sim_output: Path) -> dict[str, Any]:
+def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None) -> dict[str, Any]:
+    """MATSim-side run metrics of the output directory ``sim_output``.
+
+    ``stuck_summary_path`` optionally names the ``stuck_summary.json`` the analysis suite already wrote
+    (``<output_path>/analysis/stuck/``); it is reused for the ``stuck`` block when newer than the events file.
+    """
     out: dict[str, Any] = {"available": False}
     if sim_output is None or not sim_output.exists():
         return out
@@ -312,14 +317,30 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
 
     # Stuck agents of the final iteration (eqasim-bs#443, ADR-0146): an additive block, independent of the
     # modestats / eqasim_trips blocks above; its absence is named, never silently empty.
-    from braunschweig.analysis import stuck_agents as _stuck
-    stuck_inputs = ("output_events.xml.gz", "output_plans.xml.gz", "output_persons.csv.gz")
-    if all((sim_output / name).exists() for name in stuck_inputs):
-        out["stuck"] = _stuck.stuck_summary(sim_output)
-    else:
-        out["stuck"] = {"available": False, "reason": ", ".join(stuck_inputs[:2]) + " or " + stuck_inputs[2] + " missing"}
+    out["stuck"] = _stuck_block(sim_output, stuck_summary_path)
 
     return out
+
+
+def _stuck_block(sim_output: Path, stuck_summary_path: Path | None) -> dict[str, Any]:
+    """The ``stuck`` block: the analysis suite's summary when it is fresh, else computed; never raises.
+
+    A failure of the stuck analysis (a missing input, a persons file without ``subpopulation``, a truncated events
+    file, ...) is logged at WARNING with the exception text and recorded as ``available: False`` with its reason,
+    so the remaining metrics of the run are never lost to it.
+    """
+    from braunschweig.analysis import stuck_agents as _stuck
+    try:
+        precomputed = _stuck.reusable_stuck_summary(sim_output, stuck_summary_path)
+        if precomputed is not None:
+            logger.info("[dashboard] stuck block reused from %s (newer than output_events.xml.gz)",
+                        stuck_summary_path)
+            return precomputed
+        logger.info("[dashboard] stuck block computed from the events of %s", sim_output)
+        return _stuck.stuck_summary(sim_output)
+    except Exception as exc:  # noqa: BLE001 - recorded with its reason; the other metrics must survive
+        logger.warning("[dashboard] stuck block not available for %s: %s: %s", sim_output, type(exc).__name__, exc)
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
 
 
 # ---------------------------------------------------------------------------
