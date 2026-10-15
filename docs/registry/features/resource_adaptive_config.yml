@@ -14,11 +14,12 @@ description: >
   amendment) braunschweig.chainsolvers.processes (braunschweig/synthesis/locations/
   secondary_chainsolvers/__init__.py's _solve_problem_set, bounded by BOTH the core
   budget and a measured per-worker memory footprint via
-  braunschweig.chainsolvers.worker_memory_gb, default 0.86 GB, against THIS process's
+  braunschweig.chainsolvers.worker_memory_gb (configs/base_bs.yml: 1.09 GB since ADR-0135;
+  code default 0.86 GB), against THIS process's
   own live RSS at stage start since the pool is forked from it: workers = max(1,
   min(core_budget, floor((memory_budget_gb - driver_rss_gb_live) / worker_memory_gb)))
-  -- see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml for the measured
-  basis) -- and a configured value is a CEILING: used verbatim when it fits, clamped
+  -- see docs/runs/chainsolver-pool-memory-2026-09-28.yml for the measured basis, which
+  replaced docs/runs/chainsolver-worker-private-memory-2026-09-17.yml) -- and a configured value is a CEILING: used verbatim when it fits, clamped
   down and logged when it does not. The resolved value never enters the config, so no
   synpp stage hash changes and no shared cache is invalidated by the CLAMPING itself
   (the chainsolver clamp's driver-RSS term is measured fresh every run, so it is a
@@ -207,6 +208,7 @@ validation:
   state: unvalidated
   runs:
   - chainsolver-worker-private-memory-2026-09-17
+  - chainsolver-pool-memory-2026-09-28
   metric: null
   note: >
     No real-machine smoke run has been recorded yet. The brief for this work names a
@@ -231,15 +233,18 @@ validation:
     expected line: "[resources] braunschweig.chainsolvers.processes: budget 62 cores /
     86.3 GB memory, driver RSS <measured> GB, worker_memory_gb 0.86 GB -> ceiling
     <n> workers", logged by effective_chainsolver_workers at
-    braunschweig.synthesis.locations.secondary_chainsolvers stage start -- also not
-    yet observed on a real server run. ("86.3" is 86.28 GB at the log line's one
+    braunschweig.synthesis.locations.secondary_chainsolvers stage start -- observed
+    on the 100 % production run of 2026-09-26/28 (driver RSS 37.55 and 36.37 GB ->
+    ceilings 56 and 58 workers, docs/runs/chainsolver-pool-memory-2026-09-28.yml). ("86.3" is 86.28 GB at the log line's one
     decimal place: 94.28 GB detected total minus the 8 GB reserve, the 94.28 figure
     being the run resource recorder's memory_total_kb recorded in the run manifest;
     "free -g" truncates the same machine to 94.) That <measured> driver RSS is the
     single most important number the smoke produces: it is the FORK-POINT quantity
     the bound divides into, which no recorded series has ever sampled, and on this
-    box the bound starts to bite from about 32.96 GB upwards. Until it is observed,
-    whether the chainsolver memory bound ever binds in practice is UNVERIFIED. The
+    box the bound starts to bite from about 32.96 GB upwards. That production run
+    showed that it binds (56-58 workers instead of 62 at 36-38 GB) and that with
+    0.86 GB/worker it still over-committed the machine: the kernel killed the driver;
+    ADR-0135 raised the configured value to 1.09 GB and added the pool protections. The
     chainsolver-worker-private-memory-2026-09-17 manifest listed in validation.runs
     is a POST-HOC RESOURCE MEASUREMENT establishing the 0.86 GB/worker constant's
     measured basis, over seven already-recorded production executions -- it is NOT a
