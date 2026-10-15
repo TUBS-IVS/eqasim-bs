@@ -16,7 +16,7 @@ Coding and data conventions in force for `eqasim-bs`. Verified from `CLAUDE.md`,
   requested, and German statistical field names (Zensus / BA / MiD column labels)
   are kept verbatim for traceability.
 - Source should be ASCII where possible; avoid non-ASCII in identifiers and string
-  constants (CLAUDE.md "MATSim and eqasim style").
+  constants (`.claude/rules/coding-standards.md` "MATSim and eqasim style").
 - Chat responses to the user are in German (CLAUDE.md "Language policy"). Note the
   config files contain German prose in comments (e.g. `configs/fixtures/config_local_braunschweig.yml`
   lines 100–124); this is the inherited fork state, not the stated target.
@@ -27,11 +27,11 @@ Coding and data conventions in force for `eqasim-bs`. Verified from `CLAUDE.md`,
   `UPPER_CASE_WITH_UNDERSCORES` (e.g. `_NDS_LEVELS`, `_SCHOOL_BANDS` in
   `braunschweig/synthesis/locations/education_gravity.py`).
 - CSV column names use `snake_case` with **explicit units in the name**
-  (CLAUDE.md "Output tables" / "Units"): e.g. `distance_meters`,
+  (`.claude/rules/coding-standards.md` "Output tables" / "Units"): e.g. `distance_meters`,
   `travel_time_seconds`, `departure_time_seconds`. Spatial thresholds carry the
   unit too (`maximumStopAccessDistanceMeters` style on the Java side).
 - Java side follows MATSim conventions: `UpperCamelCase` classes,
-  `lowerCamelCase` methods/vars (CLAUDE.md "MATSim and eqasim style").
+  `lowerCamelCase` methods/vars (`.claude/rules/coding-standards.md` "MATSim and eqasim style").
 
 ## synpp stage pattern
 
@@ -56,7 +56,7 @@ gravity model"). Each seeded value carries a provenance comment.
 ## Configuration over constants
 
 Paths, thresholds, seeds, slopes, and calibration parameters are config keys, not
-literals (CLAUDE.md "Configuration"; "Non negotiable rules"). Calibrated values
+literals (`.claude/rules/coding-standards.md` "Configuration"; CLAUDE.md "Non negotiable rules"). Calibrated values
 (`gravity_slope_by_regiostar7`, `education_gravity_slope_by_level_rs7`,
 `education_university_slope`) are pinned in the config and annotated "do not
 hand-edit; re-run the calibration script and paste its YAML".
@@ -66,7 +66,7 @@ hand-edit; re-run the calibration script and paste its YAML".
 - A single fixed `random_seed` (1234) drives all randomness; the education gravity
   assignment explicitly routes all sampling through it (CLAUDE.md "The model").
 - Tests must be deterministic and use small synthetic data, not large external
-  datasets (CLAUDE.md "Tests"). Example: `tests/test_education_gravity_stage.py`
+  datasets (`.claude/rules/tests.md` "Tests"). Example: `tests/test_education_gravity_stage.py`
   builds tiny in-memory GeoDataFrames with fixed coordinates.
 
 ## Inherited-code fencing
@@ -80,14 +80,15 @@ applies mainly to inline inherited blocks.
 ## Provenance and traceability
 
 Derived files must document inputs, filters, assumptions, CRS, and the generating
-step; output filenames must be explicit and stable (CLAUDE.md "Data provenance",
+step; output filenames must be explicit and stable (`.claude/rules/coding-standards.md` "Data provenance",
 "Output tables"). Geometric/distance work uses a metric projected CRS
-(EPSG:25832 / UTM 32N), never WGS84 lon/lat for distances (CLAUDE.md "Geospatial
+(EPSG:25832 / UTM 32N), never WGS84 lon/lat for distances (`.claude/rules/coding-standards.md` "Geospatial
 processing"; bounding box in DOWNLOAD_CHECKLIST_BS.md).
 
 ## Evidence
 
-- `CLAUDE.md` ("Language policy", "Configuration", "Output tables", "Units", "Tests", "Reference data")
+- `CLAUDE.md` ("Language policy", "Reference data"); `.claude/rules/coding-standards.md`
+  ("Configuration", "Output tables", "Units"); `.claude/rules/tests.md` ("Tests")
 - `AGENTS.md` ("Repository conventions enforced now")
 - `braunschweig/synthesis/locations/education_gravity.py` (configure/execute, constant naming)
 - `tests/test_education_gravity_stage.py` (deterministic synthetic data)
@@ -102,7 +103,7 @@ refactor must bring its code into line.
 
 - **No notebooks as production workflow.** popsimprep's entire pipeline is a
   Jupyter notebook (`PopSimPrep-StartHere-v2.ipynb`) with hidden state + in-place
-  YAML mutation. Per CLAUDE.md "prefer reproducible pipeline stages over one-off
+  YAML mutation. Per `.claude/rules/coding-standards.md` "prefer reproducible pipeline stages over one-off
   scripts" and the brief, the logic must move into small, testable Python modules
   exposed as synpp stages; the notebook may remain as documentation/example only.
 - **Config over constants** (already a hard eqasim-bs rule) is broadly broken in
@@ -128,20 +129,21 @@ refactor must bring its code into line.
 
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb`,
 `popsimprep/popsim/configs/_prep3_controls.csv`, `popsimprep/batch_run_popsim.py`,
-`CLAUDE.md` ("Fallback transparency", "Configuration", "eqasim specific rules").
+`CLAUDE.md` ("Fallback transparency"), `.claude/rules/coding-standards.md` ("Configuration",
+"eqasim specific rules").
 
 ---
 
 ## Example lists (moved from CLAUDE.md)
 
 Full good/bad example lists relocated from `CLAUDE.md` during the 2026-07 PM-layer
-compression. `CLAUDE.md` keeps one good + one bad example per topic and links here
-for the complete lists. These are illustrative examples; the binding rules remain in
-`CLAUDE.md`.
+compression. The binding rules (since ADR-0143 in `.claude/rules/coding-standards.md`,
+commit messages still in `CLAUDE.md`) keep one good + one bad example per topic and link
+here for the complete lists. These are illustrative examples, not rules.
 
 ### Configuration names
 
-Descriptive, unit-bearing (CLAUDE.md "Configuration"):
+Descriptive, unit-bearing (`.claude/rules/coding-standards.md` "Configuration"):
 
 ```java
 maximumTransferDistanceMeters
@@ -163,7 +165,7 @@ data
 
 ### Data-provenance filenames
 
-Prefer explicit, stable names (CLAUDE.md "Data provenance"):
+Prefer explicit, stable names (`.claude/rules/coding-standards.md` "Data provenance"):
 
 ```
 population_hanover_2025_sample_0.10.xml.gz
@@ -183,7 +185,7 @@ test.xml
 
 ### Units
 
-Explicit units in the name (CLAUDE.md "Units"):
+Explicit units in the name (`.claude/rules/coding-standards.md` "Units"):
 
 ```
 travelTimeSeconds
@@ -205,7 +207,7 @@ cost
 
 ### Output-table column names (snake_case)
 
-CLAUDE.md "Output tables":
+`.claude/rules/coding-standards.md` "Output tables":
 
 ```
 person_id
@@ -221,7 +223,7 @@ cost_euro
 
 ### Geospatial threshold names
 
-Distances/thresholds in meters (CLAUDE.md "Geospatial processing"):
+Distances/thresholds in meters (`.claude/rules/coding-standards.md` "Geospatial processing"):
 
 ```
 maximumStopAccessDistanceMeters
@@ -231,7 +233,7 @@ zoneAssignmentBufferMeters
 
 ### Class / component naming
 
-Descriptive (CLAUDE.md "Naming examples"):
+Descriptive (`.claude/rules/coding-standards.md` "Naming examples"):
 
 ```
 CarrierDemandReader

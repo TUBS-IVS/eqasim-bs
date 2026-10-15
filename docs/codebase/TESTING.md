@@ -126,7 +126,7 @@ runner; direct pytest does not satisfy the required agent gate.
 
 The binding rules (failure modes first, highest useful level, no reflex tests,
 behaviour over implementation, one contract per test, cheap by construction, what
-must always stay covered) live in [CLAUDE.md](../../CLAUDE.md#tests) and are not
+must always stay covered) live in [.claude/rules/tests.md](../../.claude/rules/tests.md) and are not
 repeated here. Operational notes:
 
 - Prefer small deterministic synthetic fixtures and real production helpers.
