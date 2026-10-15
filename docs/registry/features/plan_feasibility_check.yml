@@ -45,6 +45,9 @@ code_paths:
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/simulation/prepare.py
 - braunschweig/popsim/plan_validation.py
+- braunschweig/analysis/stuck_agents.py
+- braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/analysis_suite.py
 - configs/base_bs.yml
 evidence:
   tests:
@@ -52,6 +55,9 @@ evidence:
   - tests/test_prepare_plan_check_wiring.py
   - tests/test_popsim_plan_validation.py
   - tests/test_performance_plan_validation.py
+  - tests/test_stuck_agents.py
+  - tests/test_dashboard_stuck_block.py
+  - tests/test_analysis_suite_stuck.py
   off_path_byte_identical:
     claimed: not_applicable
     note: >-

@@ -501,6 +501,8 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.analysis.run_household_composition",
         "braunschweig.analysis.run_integerizer_quality",
         "braunschweig.analysis.run_mid_validation",
+        # stuck_agents joined with #443 (the stuck_agents sub-analysis); same no-token debt as the siblings.
+        "braunschweig.analysis.stuck_agents",
     ),
     "braunschweig.analysis.simwrapper_export": (
         # matsim_archive joined with #354 -- see the analysis_suite entry.

@@ -29,6 +29,7 @@ KEY_INTEGERIZER_QUALITY = "analysis_integerizer_quality"
 KEY_EDUCATION_VALIDATION = "analysis_education_validation"
 KEY_HOUSEHOLD_COMPOSITION = "analysis_household_composition"
 KEY_DASHBOARD = "analysis_dashboard"
+KEY_STUCK_AGENTS = "analysis_stuck_agents"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_METHOD = "braunschweig.population.method"
 # Issue #96 minor-employment plausibility guard (population_validation). The
@@ -47,6 +48,7 @@ def configure(context):
     context.config(KEY_EDUCATION_VALIDATION, True)
     context.config(KEY_HOUSEHOLD_COMPOSITION, True)
     context.config(KEY_DASHBOARD, True)
+    context.config(KEY_STUCK_AGENTS, True)
     context.config("output_path")
     context.config("sampling_rate")
     context.config("data_path")
@@ -194,6 +196,12 @@ def execute(context):
                 "--output-dir", str(output_path / "analysis" / "education_validation")])
     _run(summary, "education_validation",
          context.config(KEY_EDUCATION_VALIDATION), edu_ready, edu_reason, _edu)
+
+    def _stuck():
+        from braunschweig.analysis import stuck_agents as _stuck_module
+        _stuck_module.write_stuck_outputs(Path(sim_cache), output_path / "analysis" / "stuck")
+    _run(summary, "stuck_agents",
+         context.config(KEY_STUCK_AGENTS), bool(sim_cache), sim_missing_reason, _stuck)
 
     def _dash():
         import sys as _sys

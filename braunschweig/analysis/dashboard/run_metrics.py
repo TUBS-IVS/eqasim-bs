@@ -310,6 +310,15 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     # eqasim_termination presence -> early convergence
     out["terminated_early"] = (sim_output / "eqasim_termination.csv").exists()
 
+    # Stuck agents of the final iteration (eqasim-bs#443, ADR-0146): an additive block, independent of the
+    # modestats / eqasim_trips blocks above; its absence is named, never silently empty.
+    from braunschweig.analysis import stuck_agents as _stuck
+    stuck_inputs = ("output_events.xml.gz", "output_plans.xml.gz", "output_persons.csv.gz")
+    if all((sim_output / name).exists() for name in stuck_inputs):
+        out["stuck"] = _stuck.stuck_summary(sim_output)
+    else:
+        out["stuck"] = {"available": False, "reason": ", ".join(stuck_inputs[:2]) + " or " + stuck_inputs[2] + " missing"}
+
     return out
 
 
