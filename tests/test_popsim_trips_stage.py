@@ -923,3 +923,179 @@ def test_entd_source_rejects_the_departure_time_model():
             pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
             departure_time_model="srv_mapped",
         )
+
+
+def _with_unused_mid_wege_columns(wege):
+    """``wege`` plus the first five UNUSED_MID_WEGE_COLUMNS, filled with row-varying values."""
+    from braunschweig.popsim.unused_mid_wege_columns import UNUSED_MID_WEGE_COLUMNS
+    extended = wege.copy()
+    for offset, column in enumerate(UNUSED_MID_WEGE_COLUMNS[:5]):
+        extended[column] = np.arange(len(extended)) + 100 * offset
+    return extended
+
+
+def test_execute_hands_the_mid_trip_build_the_wege_without_the_unused_columns(tmp_path,
+                                                                            monkeypatch):
+    """ADR-0138: execute() drops the never-read MiD Wege columns BEFORE the trip build (and
+    its persons x Wege join) sees the donor Wege, and passes every other column through as
+    delivered -- values, dtypes and column order."""
+    from braunschweig.popsim.sources.mid import MidSource
+    from braunschweig.popsim.unused_mid_wege_columns import UNUSED_MID_WEGE_COLUMNS
+    persons, wege = _persons_and_wege_with_person_attributes()
+    delivered = _with_unused_mid_wege_columns(wege)
+    handed = {}
+
+    def load_donor(self, data_dir, **kwargs):
+        return pd.DataFrame({"H_ID": [10]}), pd.DataFrame({"P_ID": [1]}), delivered
+
+    def build_trips(self, persons_frame, donor_trips, **kwargs):
+        handed["donor_trips"] = donor_trips
+        return "built trip table"
+
+    monkeypatch.setattr(MidSource, "load_donor", load_donor)
+    monkeypatch.setattr(MidSource, "build_trips", build_trips)
+    configure_context = _RecordingConfigureContext()
+    trips_stage.configure(configure_context)
+    values = dict(configure_context.calls)
+    values.update({"random_seed": 1, "data_path": str(tmp_path),
+                   "braunschweig.population.popsim.mid_dir": str(tmp_path)})
+
+    class _ExecuteContext:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            assert name == "persons", name
+            return persons
+
+    assert trips_stage.execute(_ExecuteContext()) == "built trip table"
+    assert not set(UNUSED_MID_WEGE_COLUMNS) & set(handed["donor_trips"].columns)
+    pd.testing.assert_frame_equal(handed["donor_trips"], wege)
+
+
+def _production_like_persons_and_wege(seed=20260928):
+    """Synthetic donors and persons that reach every trip-build path extras pass through.
+
+    Built for ADR-0138's equivalence test: coded (701) times on some legs, so stage A (own
+    ``wegmin_imp1``) and stage B (``chain_donor_id``) both run; rbW legs and leading arrive-home
+    legs for the two drops; chains that do not end at home, so closures are synthesised with the
+    empirical dwell; children with passive escort legs (W_ZWECK 13) next to adults of their
+    household, so the pairing runs. The Wege frame carries EVERY listed column, interleaved with
+    the read ones the way the delivery orders them, in mixed dtypes (int, float with NaN, text
+    with blanks), as ``read_csv(low_memory=False)`` can produce them.
+    """
+    from braunschweig.popsim.unused_mid_wege_columns import UNUSED_MID_WEGE_COLUMNS
+    rng = np.random.RandomState(seed)
+    wege_rows, donors = [], []
+    for household_id in range(1, 61):
+        ages = [int(rng.randint(25, 70))] + [
+            int(rng.choice([int(rng.randint(3, 17)), int(rng.randint(18, 80))]))
+            for _ in range(rng.randint(0, 4))]
+        household_start_hour = int(rng.randint(6, 10))
+        for person_index, age in enumerate(ages, start=1):
+            donors.append((household_id, person_index, age))
+            n_legs = int(rng.choice([0, 2, 2, 3, 3, 4, 5]))
+            coded, leading_home, ends_home = rng.rand() < 0.15, rng.rand() < 0.05, rng.rand() < 0.8
+            minute = household_start_hour * 60 + int(rng.randint(0, 30))
+            for leg in range(1, n_legs + 1):
+                if (leg == 1 and leading_home) or (leg == n_legs and ends_home):
+                    zweck = 8
+                elif age < 18 and leg == 1:
+                    zweck = int(rng.choice([13, 11, 12, 13]))
+                else:
+                    zweck = int(rng.choice([1, 2, 3, 4, 5, 6, 7, 10, 14, 15, 16, 99]))
+                duration = int(rng.randint(5, 50))
+                start_hour, start_minute = divmod(minute, 60)
+                end_hour, end_minute = divmod(minute + duration, 60)
+                rbw, leg_minutes = 0, float(duration)
+                if coded and leg == 2:
+                    start_hour = start_minute = end_hour = end_minute = 701
+                    rbw = 1 if rng.rand() < 0.4 else 0
+                    if rbw == 0 and rng.rand() < 0.5:
+                        leg_minutes = np.nan
+                wege_rows.append({
+                    "H_ID": household_id, "P_ID": person_index, "W_ID": leg, "W_ZWECK": zweck,
+                    "hvm_imp": int(rng.randint(1, 6)), "W_SZS": start_hour, "W_SZM": start_minute,
+                    "W_AZS": end_hour, "W_AZM": end_minute,
+                    "wegkm_imp": float(rng.randint(1, 300)) / 10.0, "wegmin_imp1": leg_minutes,
+                    "W_RBW": rbw, "W_SO1": 2 if (leg == 1 and leading_home) else 1,
+                    "HP_ALTER": age, "W_GEW": float(rng.rand() + 0.5),
+                })
+                minute += duration + int(rng.randint(20, 240))
+    wege = pd.DataFrame(wege_rows)
+    listed_values = {}
+    for index, column in enumerate(UNUSED_MID_WEGE_COLUMNS):
+        if index % 3 == 0:
+            listed_values[column] = rng.randint(0, 1000, len(wege))
+        elif index % 3 == 1:
+            values = rng.rand(len(wege))
+            values[rng.rand(len(wege)) < 0.2] = np.nan
+            listed_values[column] = values
+        else:
+            listed_values[column] = pd.Series(rng.choice(["1", "2", " ", "x"], len(wege)),
+                                              dtype=object).to_numpy()
+    # One concat instead of one insert per column: a delivery read by read_csv is not fragmented
+    # either, and a fragmented frame would only add PerformanceWarnings downstream.
+    read = list(wege.columns)
+    wege = pd.concat([wege, pd.DataFrame(listed_values, index=wege.index)], axis=1)
+    listed = list(UNUSED_MID_WEGE_COLUMNS)
+    step = len(listed) // len(read) + 1
+    interleaved = []
+    for position, column in enumerate(read):
+        interleaved += [column] + listed[position * step:(position + 1) * step]
+    # .copy() consolidates the blocks, as a frame read by read_csv is consolidated.
+    wege = wege[interleaved].copy()
+
+    picks = (pd.DataFrame(donors, columns=["H_ID", "P_ID", "age"])
+             .sample(n=300, replace=True, random_state=7).reset_index(drop=True))
+    persons = pd.DataFrame({
+        "person_id": np.arange(len(picks)),
+        "H_ID": picks["H_ID"].to_numpy(), "P_ID": picks["P_ID"].to_numpy(),
+        "source_H_ID": picks["H_ID"].to_numpy(), "source_P_ID": picks["P_ID"].to_numpy(),
+        "age": picks["age"].to_numpy(), "HP_ALTER": picks["age"].to_numpy(),
+        "sex": rng.randint(1, 3, len(picks)),
+        "employed": (picks["age"].between(20, 65) & (rng.rand(len(picks)) < 0.7)).to_numpy(),
+        "P_TAET": rng.randint(1, 11, len(picks)),
+        "socioprofessional_class": rng.randint(1, 5, len(picks)),
+        "ZENSUS100m": rng.choice(["c1", "c2", "c3"], len(picks)),
+        "RegioStaR7": rng.choice([71, 72, 73], len(picks)),
+        "household_id": picks["H_ID"].to_numpy() * 10 + rng.randint(0, 3, len(picks)),
+    })
+    return persons, wege
+
+
+@pytest.mark.parametrize("vectorized_validation", [True, False])
+def test_run_output_does_not_depend_on_the_unused_mid_wege_columns(vectorized_validation):
+    """ADR-0138: under the production flag set, dropping every listed column before the trip
+    build changes nothing else in the trip table -- values, dtypes, row order and the relative
+    order of the remaining columns are what the build produces while the columns are still there
+    (it then only carries them as extras). Both plan-validation paths are checked."""
+    from braunschweig.popsim.departure_time_model import load_departure_time_reference
+    from braunschweig.popsim.unused_mid_wege_columns import (
+        UNUSED_MID_WEGE_COLUMNS, drop_unused_mid_wege_columns)
+    persons, wege = _production_like_persons_and_wege()
+    production_flags = dict(
+        random_seed=20260928, escort_purpose=True, escort_passive_education=True,
+        explicit_round_trip_purposes=True, exclude_rbw_legs=True,
+        drop_leading_arrive_home_leg=True, closure_dwell_model="empirical",
+        closure_dwell_min_obs=30, w_zweck_10_as_leisure=True, escort_passive_from_adult=True,
+        passive_pair_max_gap_minutes=15.0, passive_pair_adult_min_age_years=18,
+        departure_time_model="srv_mapped",
+        departure_time_reference=load_departure_time_reference(SRV_REFERENCE_DIR),
+        departure_time_min_reference_n=200, departure_time_min_model_n=50,
+        departure_time_max_median_shift_hours=2.0,
+        vectorized_validation=vectorized_validation,
+    )
+
+    full = trips_stage.run(persons, wege, **production_flags)
+    narrowed = trips_stage.run(
+        persons, drop_unused_mid_wege_columns(wege, log_tag="[test]"), **production_flags)
+
+    # The fixture reaches the paths extras travel through (else the equality proves little).
+    assert full["is_synthetic_closure"].sum() > 0
+    assert full["chain_donor_id"].notna().sum() > 0
+    assert (full["passive_pair_status"] == "paired").sum() > 0
+    assert set(full.columns) - set(narrowed.columns) == set(UNUSED_MID_WEGE_COLUMNS)
+    assert list(narrowed.columns) == [column for column in full.columns
+                                      if column in set(narrowed.columns)]
+    pd.testing.assert_frame_equal(narrowed, full[list(narrowed.columns)])
