@@ -172,7 +172,9 @@ def _process_gone(pid):
     try:
         with open(f"/proc/{pid}/stat", encoding="ascii") as handle:
             return handle.read().rsplit(")", 1)[1].split()[0] == "Z"
-    except FileNotFoundError:
+    # Reaped between the kill probe and the read: before open() Linux raises ENOENT
+    # (FileNotFoundError), after open() but before read() ESRCH (ProcessLookupError).
+    except (FileNotFoundError, ProcessLookupError):
         return True
 
 
@@ -195,7 +197,10 @@ def _worker_gone_after_its_driver_is_killed(watch_parent, wait_seconds):
     finally:
         # Never leak a process into the rest of the suite, whatever the outcome.
         if worker_pid is not None and not _process_gone(worker_pid):
-            os.kill(worker_pid, signal.SIGKILL)
+            try:
+                os.kill(worker_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass  # it exited and was reaped after the check above: nothing left to leak
         if driver.is_alive():
             driver.kill()
 
