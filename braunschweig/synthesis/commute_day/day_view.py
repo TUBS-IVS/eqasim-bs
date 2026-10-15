@@ -3,7 +3,10 @@
 ADR-0104's two-view trips architecture keeps the PRE-ASSIGNMENT day
 (``synthesis.population.trips`` / ``...activities``) feeding the commute distances and the
 primary location assignment, while everything that needs the FINISHED day reads the
-REPORTING-DAY view (``synthesis.population.trips.final`` / ``...activities.final``).
+REPORTING-DAY view (``synthesis.population.trips.final`` / ``...activities.final``). The synthesis
+output and the MATSim population take the trips from the downstream alias
+``synthesis.population.trips.simulated`` (the same day with the outside-tour modes, ADR-0145, #453) and
+pass their own stage map for it; the default mapping below serves the spatial-locations override.
 
 Two consumers of that finished day are vendored eqasim modules that must not be edited
 (``synthesis.population.spatial.locations`` and ``synthesis.output``). Each is therefore wrapped

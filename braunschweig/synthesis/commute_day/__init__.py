@@ -16,7 +16,10 @@ location assignment that produces that distance:
   locations.
 * ``synthesis.population.trips.final`` / ``synthesis.population.activities.final`` (the
   reporting-day view) feed everything that needs the finished day: secondary chainsolvers, the
-  MATSim population, and synthesis output.
+  MATSim population, and synthesis output. The MATSim population and the synthesis output read the
+  trips through ``synthesis.population.trips.simulated`` instead (``trips.final`` with the
+  outside-tour modes judged against SrV, ADR-0145, #453); the chain solver keeps ``trips.final``,
+  which has no outside-tour modes yet, so the alias creates no cycle.
 
 Pure modules (no file I/O, no synpp stage; each documents its own rules):
 

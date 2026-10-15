@@ -113,7 +113,7 @@ def test_execute_off_passes_the_frame_through_without_counters_or_warnings(caplo
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
-def _table():
+def _table(overrides=None):
     rows = []
     cells = {
         ("work", 0.0, 5.0): {"walk": 0.3, "bicycle": 0.3, "car": 0.3, "car_passenger": 0.05, "pt": 0.05},
@@ -123,6 +123,7 @@ def _table():
         ("all", 0.0, 45.0): {"walk": 0.3, "bicycle": 0.2, "car": 0.4, "car_passenger": 0.05, "pt": 0.05},
         ("all", 45.0, float("inf")): {"walk": 0.0, "bicycle": 0.0, "car": 0.7, "car_passenger": 0.05, "pt": 0.25},
     }
+    cells.update(overrides or {})
     for (group, lower, upper), shares in cells.items():
         for mode in M.MODES:
             rows.append((group, M.band_label(lower, upper), lower, upper, mode, shares[mode], 100,
@@ -143,6 +144,7 @@ def _fixture():
         "preceding_purpose": ["home", "work", "home", "shop", "home", "outside"],
         "following_purpose": ["work", "home", "shop", "home", "outside", "home"],
         "mode": ["walk", "walk", "walk", "walk", "car", "car"],
+        "portal_leg": [False, False, False, False, True, True],
     })
     points = {(1, 0): (5000.0, 5000.0), (1, 1): (25000.0, 5000.0), (1, 2): (5000.0, 5000.0),
               (2, 0): (5000.0, 5000.0), (2, 1): (5000.0, 6000.0), (2, 2): (5000.0, 5000.0),
@@ -234,3 +236,136 @@ def test_remode_outside_tours_without_an_implausible_leg_changes_nothing_and_rep
     assert report["share_outside_tours_remoded"] == 0.0 and report["substitution_matrix"] == {}
     assert report["cells_used"] == {} and report["n_legs_remoded"] == 0
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Final-review fixes (eqasim-bs#453): relaxation and post-condition (A1), portal gate class (A2), unknown donor
+# modes (A3), categorical mode column (A4).
+
+def _with_portal_person(portal_mode):
+    """The base fixture plus person 4: walks 8 km to a workplace inside the extent (implausible in work/5_plus),
+    then a portal stay (work -> outside -> home) whose gate mode is ``portal_mode``."""
+    fixture = _fixture()
+    extra = pd.DataFrame({
+        "person_id": [4, 4, 4], "trip_index": [0, 1, 2],
+        "preceding_purpose": ["home", "work", "outside"], "following_purpose": ["work", "outside", "home"],
+        "mode": ["walk", portal_mode, portal_mode], "portal_leg": [False, True, True]})
+    fixture["trips"] = pd.concat([fixture["trips"], extra], ignore_index=True)
+    points = {(4, 0): (1000.0, 5000.0), (4, 1): (9000.0, 5000.0), (4, 2): (9900.0, 5000.0),
+              (4, 3): (1000.0, 5000.0)}
+    more = gpd.GeoDataFrame({"person_id": [k[0] for k in points], "activity_index": [k[1] for k in points]},
+                            geometry=[Point(*xy) for xy in points.values()], crs=CRS)
+    fixture["locations"] = pd.concat([fixture["locations"], more], ignore_index=True)
+    fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
+        "person_id": [4], "car_availability": ["all"], "has_license": [True], "bicycle_availability": ["all"],
+        "car_passenger_availability": ["all"]})], ignore_index=True)
+    return fixture
+
+
+def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():
+    for seed in range(25):
+        fixture = _with_portal_person("car")
+        fixture["seed"] = seed
+        out, report = stage.remode_outside_tours(**fixture)
+        tour = out[out["person_id"] == 4]["mode"].tolist()
+        assert len(set(tour)) == 1 and tour[0] in {"car", "car_passenger"}
+        assert report["n_portal_tours_remoded"] == 1 and report["n_portal_tours_class_restricted"] == 1
+
+
+def test_portal_tour_at_a_rail_gate_stays_pt_and_is_reported():
+    fixture = _with_portal_person("pt")
+    out, report = stage.remode_outside_tours(**fixture)
+    assert out[out["person_id"] == 4]["mode"].tolist() == ["pt", "pt", "pt"]
+    assert report["n_portal_tours_remoded"] == 1 and report["n_portal_tours_class_restricted"] == 1
+
+
+def test_a_trips_frame_without_the_portal_leg_column_warns_when_outside_activities_exist(caplog):
+    fixture = _fixture()
+    fixture["trips"] = fixture["trips"].drop(columns=["portal_leg"])
+    with caplog.at_level(logging.INFO):
+        _, report = stage.remode_outside_tours(**fixture)
+    assert report["portal_leg_column_present"] is False and report["n_portal_tours_remoded"] == 0
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "portal_leg" in r.getMessage()]
+
+
+def test_the_report_carries_the_portal_flag_column_presence_and_no_warning_when_it_is_present(caplog):
+    with caplog.at_level(logging.INFO):
+        _, report = stage.remode_outside_tours(**_fixture())
+    assert report["portal_leg_column_present"] is True
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def _relaxation_fixture():
+    """Person 1: 20 km on foot to a workplace outside the extent (work/5_plus: walk 0.0), 1 km shop leg, 19 km back.
+
+    The shop cell (other) is plausible for walk and bicycle only, the work cell for car, car_passenger and pt:
+    the strict intersection is empty, so the draw relaxes to the cell of the longest leg (work/5_plus) and the
+    shop-cell legs end implausible after the draw (counted by the post-condition).
+    """
+    fixture = _fixture()
+    overrides = {("other", 0.0, float("inf")): {"walk": 0.5, "bicycle": 0.5, "car": 0.0, "car_passenger": 0.0,
+                                                "pt": 0.0}}
+    fixture["table"] = _table(overrides)
+    fixture["trips"] = pd.DataFrame({
+        "person_id": [1, 1, 1], "trip_index": [0, 1, 2],
+        "preceding_purpose": ["home", "work", "shop"], "following_purpose": ["work", "shop", "home"],
+        "mode": ["walk", "walk", "walk"], "portal_leg": [False, False, False]})
+    fixture["persons"] = fixture["persons"][fixture["persons"]["person_id"] == 1]
+    points = {(1, 0): (5000.0, 5000.0), (1, 1): (25000.0, 5000.0), (1, 2): (24000.0, 5000.0),
+              (1, 3): (5000.0, 5000.0)}
+    fixture["locations"] = gpd.GeoDataFrame(
+        {"person_id": [1] * 4, "activity_index": [0, 1, 2, 3]},
+        geometry=[Point(*points[(1, i)]) for i in range(4)], crs=CRS)
+    return fixture
+
+
+def test_relaxed_draws_and_the_post_condition_are_counted_and_logged(caplog):
+    with caplog.at_level(logging.INFO):
+        out, report = stage.remode_outside_tours(**_relaxation_fixture())
+    assert out["mode"].nunique() == 1 and out["mode"].iloc[0] in {"car", "car_passenger", "pt"}
+    assert report["n_draws_relaxed_to_longest_leg"] == 1
+    assert report["share_draws_relaxed_to_longest_leg"] == 1.0
+    # The substitute is plausible in work/5_plus (the cell of the longest leg) but not in the shop cell (walk,
+    # bicycle only): the 1 km shop leg and the 19 km home-bound leg (judged by its origin purpose, shop) remain.
+    assert report["n_outside_legs_implausible_after"] == 2
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "implausible after" in r.getMessage()]
+    assert any("relaxed" in r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
+
+
+def test_no_implausible_outside_leg_remains_when_the_strict_draw_succeeds(caplog):
+    with caplog.at_level(logging.INFO):
+        _, report = stage.remode_outside_tours(**_fixture())
+    assert report["n_outside_legs_implausible_after"] == 0 and report["n_draws_relaxed_to_longest_leg"] == 0
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_unknown_donor_modes_are_counted_by_mode_and_logged_at_warning(caplog):
+    fixture = _fixture()
+    fixture["trips"] = fixture["trips"].copy()
+    fixture["trips"].loc[fixture["trips"]["person_id"] == 1, "mode"] = "ride_hailing"
+    with caplog.at_level(logging.INFO):
+        out, report = stage.remode_outside_tours(**fixture)
+    assert report["n_unknown_donor_mode"] == 2 and report["unknown_donor_modes"] == {"ride_hailing": 2}
+    assert set(out.loc[out["person_id"] == 1, "mode"]) <= {"car", "car_passenger", "pt"}
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "ride_hailing" in r.getMessage()]
+
+
+def test_no_unknown_donor_mode_means_a_zero_count_and_no_warning(caplog):
+    with caplog.at_level(logging.INFO):
+        _, report = stage.remode_outside_tours(**_fixture())
+    assert report["n_unknown_donor_mode"] == 0 and report["unknown_donor_modes"] == {}
+
+
+def test_remode_outside_tours_refuses_a_categorical_mode_column_even_when_no_tour_is_re_moded():
+    fixture = _fixture()
+    fixture["trips"] = fixture["trips"][fixture["trips"]["person_id"] != 1].copy()   # nothing to re-mode
+    fixture["trips"]["mode"] = fixture["trips"]["mode"].astype("category")
+    with pytest.raises(ValueError, match="convert it to plain strings"):
+        stage.remode_outside_tours(**fixture)
+
+
+def test_the_validate_token_covers_the_module_that_defines_the_portal_flag_column():
+    from braunschweig.synthesis.portal_trips import rewrite
+
+    assert stage.PORTAL_LEG_COLUMN == rewrite.PORTAL_LEG_COLUMN == "portal_leg"
+    assert rewrite in stage._HELPER_MODULES
