@@ -55,16 +55,29 @@ LOGGER = logging.getLogger("braunschweig.analysis.simwrapper.spatial")
 def _load_commutes(run_output_dir: "str | None") -> "gpd.GeoDataFrame | None":
     """Load the synthesis home->work commute LineStrings (``*commutes.gpkg``).
 
+    While the portal layer is on, ``*commutes.gpkg`` is built from the written activities and lacks the commuters
+    whose workplace is an ``outside`` stay (eqasim-bs#442); the pre-portal commutes
+    ``<prefix>commutes_pre_portal.gpkg`` (assigned primary locations) are read instead when they exist and are
+    current (shared resolver, which logs the source and ignores a stale file). Without them this is the plain
+    ``*commutes.gpkg`` read.
+
     Returns None (logged) when the run dir or the file is absent, so the
     commuter tab can fall back / skip without a silent failure.
     """
     if run_output_dir is None:
         return None
     import geopandas as gpd
+    from braunschweig.analysis.pipeline_trips_file import (
+        pre_portal_commutes_work_layer, resolve_pre_portal_commutes_path)
     path = next(Path(run_output_dir).glob("*commutes.gpkg"), None)
     if path is None:
         LOGGER.info("[commuters] no *commutes.gpkg in %s", run_output_dir)
         return None
+    prefix = path.name[: -len("commutes.gpkg")]
+    pre_portal_path = resolve_pre_portal_commutes_path(run_output_dir, prefix)
+    if pre_portal_path is not None:
+        LOGGER.info("[commuters] using the pre-portal commutes %s", pre_portal_path.name)
+        return gpd.read_file(pre_portal_path, layer=pre_portal_commutes_work_layer(pre_portal_path))
     return gpd.read_file(path)
 
 

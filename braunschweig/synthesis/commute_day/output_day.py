@@ -19,6 +19,21 @@ Aliased to ``synthesis.output``. Two things distinguish it from the vendored
    ``absent_household`` / ``absent_individual`` for EVERY enriched person -- is merged in the
    same way, through the same optional-column mechanism.
 
+4. **The pre-portal trips file** (eqasim-bs#442, ADR-0141). With ``braunschweig.portal.enabled`` true the
+   ``trips.csv`` above is the day AFTER the portal rewrite (far destinations carry the purpose ``outside``, the
+   inner legs of a stay are dropped). The stage then additionally writes ``<prefix>trips_pre_portal.csv`` (and
+   ``.parquet`` when that output format is on) from ``braunschweig.synthesis.commute_day.trips_day_stage`` with
+   exactly the vendored trips column set, so file-based validators that compare the diary with a survey can read
+   the donor purposes. No mode is merged into it: the MATSim mode-choice trip indices refer to the post-portal
+   table. With the flag false nothing is written and every other output is untouched.
+5. **The pre-portal commutes file** (eqasim-bs#442, ADR-0141). ``commutes.gpkg`` is built by the vendored writer
+   from the written activities, where the workplace of a far commuter is an ``outside`` activity, so those persons
+   are missing from it. With the flag on the stage also writes ``<prefix>commutes_pre_portal.gpkg`` (and
+   ``.geoparquet`` when that format is on): the same home -> work lines (``person_id``, ``geometry``), selected with
+   the vendored rule (``synthesis.output.build_commute_frame``) for the persons whose pre-portal trips contain a work
+   activity, with the work location taken from ``synthesis.population.spatial.primary.locations``. The home ->
+   education lines are the second layer ``education`` of the same GeoPackage.
+
 The eqasim writer itself is NOT re-implemented: ``configure`` and ``execute`` are the vendored
 ones, run through the proxies of :mod:`braunschweig.synthesis.commute_day.day_view`.
 
@@ -32,6 +47,9 @@ from __future__ import annotations
 import hashlib
 import inspect
 import logging
+from pathlib import Path
+
+import geopandas as gpd
 
 import synthesis.output as base
 
@@ -40,6 +58,7 @@ from braunschweig.synthesis.commute_day.day_view import (
     ConfigureDayViewContext,
     StageOverrideContext,
 )
+from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +94,20 @@ ABSENCE_STATE_COLUMN = "day_absence_state"
 #: produces the output -- synpp hashes only this thin module, so an edit to synthesis/output.py
 #: (this very task added a column to its PERSON_OPTIONAL_OUTPUT_COLUMNS) would otherwise leave
 #: a stale CSV set in the cache.
-_HELPER_MODULES = (_day_view, base)
+#: ``_portal_config_keys`` carries the flag default, the pre-portal stage name and the file stem this stage declares
+#: and writes with (eqasim-bs#442).
+_HELPER_MODULES = (_day_view, base, _portal_config_keys)
+
+#: Stages the pre-portal commutes read (declared only while the portal layer is on): the assigned work/education
+#: locations (a pair of frames) and the household home locations. Both are upstream of ``trips.final``.
+PRIMARY_LOCATIONS_STAGE = "synthesis.population.spatial.primary.locations"
+HOME_LOCATIONS_STAGE = "synthesis.population.spatial.home.locations"
+
+#: Required columns of the pre-portal trips frame: the inputs of ``synthesis.output.prepare_trip_output_frame``.
+_PRE_PORTAL_REQUIRED_COLUMNS = (
+    "person_id", "trip_index", "departure_time", "arrival_time", "preceding_purpose", "following_purpose",
+    "is_first_trip", "is_last_trip",
+)
 
 
 def validate(context):
@@ -108,6 +140,143 @@ def configure(context):
     context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
     if context.config(KEY_DAY_ABSENCE_ENABLED):
         context.stage(ABSENCE_STAGE)
+    # eqasim-bs#442: the donor-purpose trips are written next to the post-portal ones only while the portal layer is
+    # on; with the flag off the stage is not even in this stage's DAG.
+    context.config(_portal_config_keys.KEY_ENABLED, _portal_config_keys.DEFAULT_ENABLED)
+    if context.config(_portal_config_keys.KEY_ENABLED):
+        context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE)
+        context.stage(PRIMARY_LOCATIONS_STAGE)
+        context.stage(HOME_LOCATIONS_STAGE)
+
+
+def _persons_with_activity(trips, purpose):
+    """Ids of the persons whose trips reach or leave an activity of ``purpose`` (the activities-file definition)."""
+    mask = (trips["preceding_purpose"] == purpose) | (trips["following_purpose"] == purpose)
+    return set(trips.loc[mask, "person_id"])
+
+
+def build_pre_portal_commutes(pre_portal_trips, persons, df_home, df_work, df_education):
+    """Home -> work and home -> education lines of the pre-portal day, as ``(work_lines, education_lines)``.
+
+    The vendored ``<prefix>commutes.gpkg`` pairs each person's first ``home`` and first ``work`` activity of the
+    WRITTEN activities. While the portal layer is on, the work activity of a far commuter is an ``outside`` activity
+    there, so this rebuilds the same pairing from what the portal layer does not change: a person qualifies when the
+    pre-portal trips contain a ``work`` (``education``) activity and a ``home`` activity (a person without any trip
+    has the single ``home`` activity), the home is the household location of ``df_home`` and the destination the
+    assigned location of ``df_work`` / ``df_education``. Only persons of ``persons`` (the persons file) are kept,
+    like the output stage's join. The selection and the line construction are those of
+    ``synthesis.output.build_commute_frame``, not a copy.
+
+    A qualifying person without an assigned primary location (or without a household location) is dropped and
+    counted in a warning: the upstream location stage asserts that every work/education activity has one, so any
+    count above zero means a broken join. All frames must share one CRS.
+    """
+    crs_by_name = {"home": df_home.crs, "work": df_work.crs, "education": df_education.crs}
+    # Compare with ``==``, never through a set: pyproj hashes EPSG:25832 with and without its datum ensemble
+    # differently although the two compare equal (a cached pickle may carry either spelling).
+    reference = crs_by_name["home"]
+    if reference is None or not all(crs is not None and crs == reference for crs in crs_by_name.values()):
+        raise ValueError(f"{_LOG_TAG} the pre-portal commutes need the home, work and education locations in one "
+                         f"CRS, got {crs_by_name}")
+    person_ids = set(persons["person_id"])
+    trips = pre_portal_trips[pre_portal_trips["person_id"].isin(person_ids)]
+    with_home = _persons_with_activity(trips, "home") | (person_ids - set(trips["person_id"]))
+    household_of = persons.drop_duplicates("person_id").set_index("person_id")["household_id"]
+    home_geometry = df_home.drop_duplicates("household_id").set_index("household_id")["geometry"]
+
+    lines = {}
+    for purpose, df_destination in (("work", df_work), ("education", df_education)):
+        wanted = _persons_with_activity(trips, purpose) & with_home
+        destination_geometry = df_destination.drop_duplicates("person_id").set_index("person_id")["geometry"]
+        located = sorted(person for person in wanted
+                         if person in destination_geometry.index and household_of[person] in home_geometry.index)
+        if len(located) < len(wanted):
+            logger.warning("%s %d of %d persons with a %s activity in the pre-portal trips have no primary location "
+                           "or no household location and are left out of the pre-portal commutes; the location "
+                           "stage asserts that every such activity is located, so this is a broken join.",
+                           _LOG_TAG, len(wanted) - len(located), len(wanted), purpose)
+        activities = gpd.GeoDataFrame(
+            {"person_id": located + located,
+             "purpose": ["home"] * len(located) + [purpose] * len(located),
+             "geometry": [home_geometry[household_of[person]] for person in located]
+                         + [destination_geometry[person] for person in located]},
+            geometry="geometry", crs=df_home.crs)
+        lines[purpose] = base.build_commute_frame(activities, purpose)
+        logger.info("%s pre-portal %s commutes: %d lines for %d persons with a %s activity in the pre-portal trips",
+                    _LOG_TAG, purpose, len(lines[purpose]), len(wanted), purpose)
+    return lines["work"], lines["education"]
+
+
+def write_pre_portal_commutes(work_lines, education_lines, output_path, output_prefix, output_formats):
+    """Write the pre-portal commute lines and return the paths written.
+
+    ``<output_path>/<output_prefix>commutes_pre_portal.gpkg`` (work lines as the first layer, education lines as
+    the layer ``education``) when ``"gpkg"`` is in ``output_formats``; ``.geoparquet`` (and the education file
+    ``education_commutes_pre_portal.geoparquet``) when ``"geoparquet"`` is, mirroring the vendored writer's handling
+    of the spatial formats. Logs every file with its row counts and warns when the formats select no file.
+    """
+    work_stem = f"{output_prefix}{_portal_config_keys.PRE_PORTAL_COMMUTES_FILE_STEM}"
+    education_stem = f"{output_prefix}{_portal_config_keys.PRE_PORTAL_EDUCATION_FILE_STEM}"
+    written = []
+    if "gpkg" in output_formats:
+        path = Path(output_path) / f"{work_stem}.gpkg"
+        work_lines.to_file(path, driver="GPKG")
+        education_lines.to_file(path, layer=_portal_config_keys.PRE_PORTAL_EDUCATION_LAYER, driver="GPKG")
+        # clean_gpkg rounds the layer extents and needs one for every layer; an empty layer has none.
+        if len(work_lines) and len(education_lines):
+            base.clean_gpkg(str(path))
+        written.append(path)
+    if "geoparquet" in output_formats:
+        work_path = Path(output_path) / f"{work_stem}.geoparquet"
+        education_path = Path(output_path) / f"{education_stem}.geoparquet"
+        work_lines.to_parquet(work_path)
+        education_lines.to_parquet(education_path)
+        written.extend([work_path, education_path])
+    if not written:
+        logger.warning("%s %s is true but output_formats %s contains neither 'gpkg' nor 'geoparquet': no pre-portal "
+                       "commutes file was written.", _LOG_TAG, _portal_config_keys.KEY_ENABLED, list(output_formats))
+    for path in written:
+        logger.info("%s wrote %s (work %d lines, education %d lines): the home -> work/education lines of the "
+                    "donor day before the portal rewrite; <prefix>commutes.gpkg misses the far commuters.",
+                    _LOG_TAG, path, len(work_lines), len(education_lines))
+    return written
+
+
+def write_pre_portal_trips(pre_portal_trips, output_path, output_prefix, output_formats):
+    """Write the pre-portal trips table and return the paths written.
+
+    ``pre_portal_trips`` is the frame of ``trips_day_stage`` (the eqasim trips schema). It is reduced to the
+    vendored trips column set by ``synthesis.output.prepare_trip_output_frame`` and written as
+    ``<output_path>/<output_prefix>trips_pre_portal.csv`` when ``"csv"`` is in ``output_formats`` and as ``.parquet``
+    when ``"parquet"`` is, mirroring the vendored writer's handling of the formats. Raises ``ValueError`` naming the
+    missing columns when the frame lacks an input of the derivation. Logs every file written with its row count and
+    warns when the output formats select no file at all.
+    """
+    missing = [column for column in _PRE_PORTAL_REQUIRED_COLUMNS if column not in pre_portal_trips.columns]
+    if missing:
+        raise ValueError(
+            f"{_LOG_TAG} the pre-portal trips frame is missing the column(s) {missing} that the trips output "
+            f"derives its columns from (present: {sorted(pre_portal_trips.columns)[:20]}). Check that "
+            f"{_portal_config_keys.PRE_PORTAL_TRIPS_STAGE} still returns the eqasim trips schema.")
+    frame = base.prepare_trip_output_frame(pre_portal_trips)
+    stem = f"{output_prefix}{_portal_config_keys.PRE_PORTAL_TRIPS_FILE_STEM}"
+    written = []
+    if "csv" in output_formats:
+        path = Path(output_path) / f"{stem}.csv"
+        frame.to_csv(path, sep=";", index=None, lineterminator="\n")
+        written.append(path)
+    if "parquet" in output_formats:
+        path = Path(output_path) / f"{stem}.parquet"
+        frame.to_parquet(path)
+        written.append(path)
+    if not written:
+        logger.warning("%s %s is true but output_formats %s contains neither 'csv' nor 'parquet': no pre-portal "
+                       "trips file was written.", _LOG_TAG, _portal_config_keys.KEY_ENABLED, list(output_formats))
+    for path in written:
+        logger.info("%s wrote %s (%d rows): the donor-purpose trips before the portal rewrite, for validators "
+                    "that compare the diary with a survey; <prefix>trips.csv holds the post-portal day.",
+                    _LOG_TAG, path, len(frame))
+    return written
 
 
 def attach_commute_day_state(persons, states):
@@ -216,8 +385,21 @@ def execute(context):
         logger.info("%s %s is false -- the persons output has no day_absence_state column.",
                     _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
 
-    return base.execute(StageOverrideContext(context, {
+    result = base.execute(StageOverrideContext(context, {
         TRIPS_STAGE: day_trips,
         ACTIVITIES_STAGE: day_activities,
         ENRICHED_STAGE: persons,
     }))
+
+    # After the vendored writer, whose validate() has already required the output directory to exist.
+    if bool(context.config(_portal_config_keys.KEY_ENABLED)):
+        write_pre_portal_trips(context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE),
+                               context.config("output_path"), context.config("output_prefix"),
+                               context.config("output_formats"))
+        df_work, df_education = context.stage(PRIMARY_LOCATIONS_STAGE)
+        work_lines, education_lines = build_pre_portal_commutes(
+            context.stage(_portal_config_keys.PRE_PORTAL_TRIPS_STAGE), persons,
+            context.stage(HOME_LOCATIONS_STAGE), df_work, df_education)
+        write_pre_portal_commutes(work_lines, education_lines, context.config("output_path"),
+                                  context.config("output_prefix"), context.config("output_formats"))
+    return result

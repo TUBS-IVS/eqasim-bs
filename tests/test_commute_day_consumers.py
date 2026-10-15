@@ -201,7 +201,10 @@ def _output_context(enabled, states=None, absence_enabled=False, absence=None):
     }
     return _StubContext(recorder, stages=stages,
                         config={OUTPUT.KEY_ENABLED: enabled, "mode_choice": False,
-                                OUTPUT.KEY_DAY_ABSENCE_ENABLED: absence_enabled})
+                                OUTPUT.KEY_DAY_ABSENCE_ENABLED: absence_enabled,
+                                # eqasim-bs#442: the portal layer is off here, so no pre-portal file is written
+                                # (tests/test_pre_portal_trips_output.py covers the file).
+                                OUTPUT._portal_config_keys.KEY_ENABLED: False})
 
 
 def test_output_day_declares_the_reporting_day_view_and_the_state_stage():

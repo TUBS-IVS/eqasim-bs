@@ -42,11 +42,13 @@ features:
 - diary_plan_match
 - rbw_leg_convention
 - general_day_absence
+- portal_trips
 decisions:
 - ADR-0106
 - ADR-0107
 - ADR-0108
 - ADR-0110
+- ADR-0141
 notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   comparison.csv (long: segment, metric, model, srv, delta_pp, n_srv), headline.csv (the "all"
   segment of the same table), by_kreis.csv (the kreis_* rows plus the model-only Kreise),
@@ -93,4 +95,12 @@ notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   n_persons_away_from_home regardless of universe. Evidence:
   tests/test_plan_structure_vs_srv.py::test_configure_declares_the_absence_stage_only_for_the_final_view_with_the_flag_on,
   ::test_warns_when_at_home_zero_is_compared_without_the_absence_model,
-  ::test_execute_excludes_absent_persons_from_the_model_side_under_at_home_only.'
+  ::test_execute_excludes_absent_persons_from_the_model_side_under_at_home_only.
+
+  PORTAL LAYER (ADR-0141, issue #442): with braunschweig.portal.enabled true the final view reads the
+  PRE-PORTAL trips (braunschweig.synthesis.commute_day.trips_day_stage, chosen by
+  braunschweig.synthesis.portal_trips.config_keys.final_view_trips_stage) instead of
+  synthesis.population.trips.final, because the comparison validates the donor-based plan structure, not the
+  portal rewrite (far legs that became outside stays would distort it); the pre_assignment view and the
+  flag-off path are unchanged. provenance.json records portal_layer_enabled in its parameters block.
+  Evidence: tests/test_srv_comparisons_portal_view.py.'

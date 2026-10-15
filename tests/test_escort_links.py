@@ -121,7 +121,8 @@ from braunschweig.synthesis.locations.passive_joint_links import PASSIVE_LINKED_
 
 def test_passive_linked_is_an_anchored_fixed_purpose():
     assert "passive_linked" in problems_mod.FIXED_PURPOSES
-    assert problems_mod.ANCHORED_PURPOSES == ("escort_linked", "passive_linked")
+    # "outside" (eqasim-bs#442) is the third anchored purpose, pinned in test_chainsolver_portal_anchors.py.
+    assert problems_mod.ANCHORED_PURPOSES == ("escort_linked", "passive_linked", "outside")
 
 
 def test_the_passive_linked_constant_is_pinned_to_the_splitters_tuple():

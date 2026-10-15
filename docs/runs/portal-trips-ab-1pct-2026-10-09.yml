@@ -1,0 +1,201 @@
+id: portal-trips-ab-1pct-2026-10-09
+date: '2026-10-09'
+repository:
+  commit: aa2726e5
+  branch: feature/i442-portal-trips
+  notes: >-
+    Both arms ran eqasim-bs aa2726e5 (run_provenance_20261009T065020Z.json for ON, run_provenance_20261009T073813Z.json
+    for OFF, both "pipeline_commit": "aa2726e5"; the provenance files are in the working directory of the run on
+    felix). The code reached felix as a git bundle (ce4c1f42..feature/i442-portal-trips) cloned to
+    ~/wt-i442 (branch i442-smoke), with a symlink farm of the gitignored data directory that excludes cache_*, output*
+    and the yml files. Java: eqasim_java_commit is unknown. The jar came from the cached matsim.runtime.eqasim stage of
+    the copied cache (built by another session from its eqasim-java-bs checkout) and was not rebuilt; its md5 is
+    0ff89d062181bf78e6f18924ef25f0f5 in both arms. It contains the braunschweig/parking classes (37 entries) and the
+    fares/zonal classes (22) and no PortalTripConstraint class, which is expected because the Java constraint is parked
+    (ADR-0141, decision 6). Parking is not configured in these overlays. A Java clone ~/wt-i442-java at 21c1045 was
+    prepared but not used.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/wt-i442/eqasim-data/i442_1pct_on.yml'
+  - 'felix:~/wt-i442/eqasim-data/i442_1pct_off.yml'
+  notes: >-
+    Throwaway server overlays (not committed) built from configs/overlays/test_1pct.yml: own working directory
+    ~/wt-i442/eqasim-data/cache_i442_1pct (shared by both arms), own output directory
+    ~/wt-i442/eqasim-data/output_i442_1pct_{on,off}, own output prefix (braunschweig_1pct_i442_{on,off}_),
+    braunschweig.portal.enabled true (ON) / false (OFF), chainsolvers.processes 8
+    (a resource budget for the concurrent run, not a model parameter), sampling_rate 0.01, matsim_last_iteration 0
+    (MATSim ran iteration 0 only), same random seed in both arms (base value random_seed 1234). The two arms differ
+    ONLY in the portal flag. processes, java_memory, eqasim_source_path and the MATSim thread count were deliberately
+    kept at their base values because they enter the stage hashes: a pre-check with
+    scripts/report_stage_hash_impact.py showed 94 stage misses (incl. OSM, GTFS and pt2matsim) when they were
+    changed. The aliased synthesis.population.trips.final follows the flag from configs/base_bs.yml. Freight on
+    (base default); the portal threshold braunschweig.portal.max_routable_distance_m is the base value 45000.
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: >-
+    Every count below is a sample count at sampling_rate 0.01, never expanded. The input population of both arms has
+    12,567 persons including freight agents (the portal stage works on 9,563 persons of the synthesis output). The
+    pipeline reporting-day trip files have 34,938 (OFF) and 34,823 (ON) trips, the simulated trips 36,398 (OFF)
+    and 37,509 (ON), all in iteration 0.
+pipeline:
+  targets:
+  - matsim.output
+  notes: >-
+    Stage recomputation per arm (lists in i442_devalidated_on.txt / i442_devalidated_off.txt): ON 28 stages
+    recomputed, OFF 26 (both exactly the stages the pre-check i442_hash_impact5_on.txt predicted for the
+    configuration; the rest are cache hits of the copied cache). Cache procedure: a physical copy (cp -a) of the
+    entries of ~/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim that were older than 08:40, plus pipeline.json
+    (08:43), into cache_i442_1pct (11 GB); an own empty cache_shared. ON 2026-10-09 08:50:20 -> 09:37:44 (server
+    clock as logged), OFF 09:38:12 -> 10:28:20, both exit 0, ON 28/28 stages with 0 errors, in the same working directory. The first launch at 08:47 devalidated all 99 stages because pipeline.json was missing from the copied
+    cache; it was killed by its own PIDs (494744, 494757) within two minutes, only cheap stages had run. The guarded
+    relaunch (launch_guarded.sh: kills the run when a protected stage such as popsim, home_cell, trips_stage,
+    osmosis, supply.processed, pt2matsim or cordon_network would recompute) started 08:50. Outputs include
+    trips_pre_portal.csv and commutes_pre_portal.gpkg in the ON arm.
+classification:
+- smoke
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Runtime ON about 47 min, OFF about 50 min. CAVEAT: another session (parking cost zones, ~/eqasim-bs, branch
+    feature/i436-parking-cost-zones-v2, started 08:40) ran concurrently on the same 64-core server, so the runtimes
+    are not a performance measurement. A smoke at 0 MATSim iterations on a 1 % sample: no observed reference is
+    compared, so this is NOT a validation, and it says nothing about the equilibrium. The modal split figures
+    are not compared with any survey here. A mode share of one iteration-0 simulation is a descriptive count.
+environment: 'server (felix, Linux, 64 cores), conda eqasim; JDK version of the run not recorded here'
+validation:
+- metric: portal stage wiring, ON arm (counts of the stage report and the downstream stage log lines)
+  reference: 'none -- descriptive smoke figures; the warn thresholds (0.1) are ASSUMPTIONS from ADR-0141, not accuracy targets'
+  result: >-
+    732 portal legs became 617 stays of 603 of 9,563 persons (6.31 %); 115 inner legs removed; stays by kind road 482
+    / rail 135; by mode car 340, pt 135, car_passenger 96, bicycle 35, walk 11; 57 gates used. Primary legs assigned
+    7,058 / 7,058 by the assigned location (reported-distance fallback 0); external points drawn 277, outside the
+    distance band 0; re-entry clamped 0; stays without return 0. Origins proxied by the home 107 / 617 (17.3 %,
+    WARN above 0.1); mode substituted 25 / 617 (4.1 %: no driving licence 12, no car availability 6, no bicycle
+    availability 4, no car_passenger availability 3); return mode differs from outbound 102. Downstream: the chain
+    solver logged "portal anchors: 617 outside stays fixed at their gates" (equal to the stage count); the facilities
+    stage logged "secondary coverage OK: 5794 realised ids, 757430 facility rows, 0 dangling; 57 portal gate
+    facilities registered" (equal to the gates used); the population writer re-moded car to car_passenger on
+    0 / 15,465 car legs with 0 portal legs; RunPreparation finished without a "Facility ... does not exist" error;
+    MATSim iteration 0 and matsim.output finished. In the prepared input population 617 gate activities of 603
+    persons all carry the portalGate marker; the gate facilities lie at a median 77 m (p90 277 m, max 1,071 m) from
+    their link midpoint (57 facilities).
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/portal_trips_report.json, docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json'
+  notes: 'Wiring and counting evidence only. The share warnings are findings, see the share_out entry below.'
+- metric: stuck agents of the simulation (stuckAndAbort events of iteration 0), OFF vs ON
+  reference: 'the OFF arm of the same run (same code, same population, same seed, same working directory)'
+  result: >-
+    662 -> 469 stuckAndAbort events (one per person). By last leg mode (OFF -> ON): truck 98 -> 97 (freight, unchanged,
+    separate issue #444), leg mode null (stuck at the simulation end) 217 -> 59, car 160 -> 146, pt 89 -> 83, walk
+    89 -> 82, bicycle 7 -> 1, car_passenger 2 -> 1. The difference is mainly the null (end of simulation) group.
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_off.json, docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json'
+  notes: >-
+    Measured with smoke_metrics_i442.py (unchanged, committed). One draw per arm at a 1 % sample, iteration 0; no
+    significance statement is possible and no stuck target exists. Truck stuck agents are not affected by the feature
+    and stay a separate defect (#444).
+- metric: plan feasibility of the written (cut) input plans, OFF vs ON
+  reference: 'the OFF arm of the same run'
+  result: >-
+    Persons with an activity end time after 30:00: 229 -> 68 (of 12,567); persons with non-monotonic activity end
+    times: 136 -> 42. Persons with a pipeline (diary time) trip arriving after 30:00: 80 in both arms (a property of
+    the donor diary times, not changed by the portal stage; plan feasibility issue #443). Input outside activities
+    3,628 -> 4,394, of which portal gate activities 0 -> 617.
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_off.json, docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json'
+  notes: 'Descriptive counts; the criterion "near zero" of the feature record is not met (68 and 42 remain), see the open findings.'
+- metric: long simulated walk trips (straight-line distance above 20 km) and trips touching an outside activity, OFF vs ON
+  reference: 'the OFF arm of the same run'
+  result: >-
+    Simulated walk trips above 20 km straight-line: 172 -> 134 (of 36,398 respectively 37,509 simulated trips). Simulated
+    trips touching an outside activity: 4,223 -> 5,304 (ON by mode: car 2,636, outside 1,420, pt 441, car_passenger
+    430, walk 266, bicycle 111; OFF: car 2,088, outside 1,244, pt 380, car_passenger 253, walk 177, bicycle 81).
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_off.json, docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json'
+  notes: 'The criterion "no long walk legs" of the feature record is not met (134 remain, other causes, #443).'
+- metric: mode shares of the simulated trips (iteration 0), OFF vs ON
+  reference: 'none -- a change between the arms, NOT a comparison with any survey or other observed reference'
+  result: >-
+    In-region trips (trips touching no outside activity, pseudo-mode outside excluded), OFF -> ON in percent: car
+    40.24 -> 40.25, walk 27.35 -> 27.47, bicycle 13.12 -> 13.08, car_passenger 12.80 -> 12.69, pt 6.49 -> 6.51.
+    All trips (including those touching an outside activity): car 42.77 -> 43.22, walk 25.54 -> 25.25, car_passenger
+    12.43 -> 12.52, bicycle 12.24 -> 11.98, pt 7.02 -> 7.03.
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_off.json, docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json'
+  notes: >-
+    The in-region shares move by 0.01 to 0.12 percentage points, which is within what a single 1 % draw at iteration 0 can
+    produce; the A/B supports "in-region shares did not visibly change", not "unchanged" and not a match with
+    observed behaviour. Only the in-region view of the dashboard is comparable between the arms.
+- metric: planned return time of the portal stays (share_out cap), ON arm
+  reference: 'none -- an open finding, no threshold'
+  result: >-
+    Of 617 stays, 440 (71.3 %, WARN) have a zero planned inside return duration because the outbound re-entry
+    equals the reported arrival (road 333, rail 107); 141 of them (22.9 % of all stays) are return legs without a
+    reported distance (all 2,192 legs without reported distance in the pre-portal table are home-bound synthetic
+    closure legs). The remaining about 299 are not decomposed: the drawn external point is not persisted;
+    candidates are an outside distance gate-to-destination above the reported return distance, and stays
+    whose return starts elsewhere. The outbound share capped 183 / 617 (29.7 %, WARN), none caused by a missing
+    reported distance. The inside part of the return legs has median 38.9 km, p90 63.6 km, max 119.5 km.
+  artifact: 'docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/portal_trips_report.json'
+  notes: >-
+    Not a defect of the run but an open question: whether a zero planned return duration is acceptable (MATSim
+    ignores planned arrivals, but the chain solver sees travel_time 0 for the next secondary leg). The cause split
+    comes from share_cap_probe2.py and its output (artifacts); the 141 and the 440 are in the report.
+    Root cause and fix: see ADR-0141 (timing). Partial verification re-run of the ON arm on 2026-10-09 at
+    commit e47fc268 in the same working directory (logs run_20261009T114045.log and run_20261009T115557.log on
+    felix): the portal stage reported return share degenerate 0/617, median share outside 0.58, outbound
+    degenerate 0/617, re-entry clamped 0/617 (same 617 stays). The first attempt then stopped in the output
+    stage on a CRS comparison through a set (pyproj hashes EPSG:25832 with and without the datum ensemble
+    differently; fixed in e47fc268); the second wrote both pre-portal files and was killed by the kernel OOM
+    killer at 61 GB anonymous RSS inside braunschweig.analysis.analysis_suite while another session's run used
+    the server. Preparation and MATSim were not re-run after the fix, so the A/B figures above stay those of
+    aa2726e5. Further partial re-run on 2026-10-09 (portal stage alone, 1 % sample, same working directory,
+    log run_20261009T125650.log on felix) at commit 33a6ae59 with the diary-consistency cap on the
+    classification distance of non-primary legs (ADR-0141): non-primary legs 13,387; bounded 672 (5.0 %); legs
+    that lose portal status through the cap 33; without a usable bound 3,177 (23.7 %, they keep the reported
+    distance); 699 portal legs -> 584 stays for 571/9,563 persons (5.97 %; the ON arm at aa2726e5 had 617 stays,
+    603 persons, 6.31 %); drawn stays 244 (was 277), primary stays 340 (unchanged); return share degenerate
+    0/584, median share outside 0.59. Preparation and MATSim were not re-run, so the A/B figures above stay
+    those of aa2726e5.
+features:
+- portal_trips
+artifacts:
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/smoke_metrics_i442.py
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_on.json
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_metrics_off.json
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/portal_trips_report.json
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_devalidated_on.txt
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_devalidated_off.txt
+- docs/runs/artifacts/portal-trips-ab-1pct-2026-10-09/i442_hash_impact5_on.txt
+- 'felix:~/wt-i442/eqasim-data/output_i442_1pct_on (outputs of the ON arm, incl. trips_pre_portal.csv and commutes_pre_portal.gpkg)'
+- 'felix:~/wt-i442/eqasim-data/output_i442_1pct_off (outputs of the OFF arm)'
+- 'felix:~/wt-i442/eqasim-data/cache_i442_1pct (working directory of both arms, 11 GB at the start)'
+issues:
+- '#442'
+- '#443'
+- '#444'
+decisions:
+- ADR-0141
+notes: >-
+  What this run is evidence for: the portal wiring works end to end at a 1 % sample (stage, chain solver anchors,
+  facilities, population writer and MATSim iteration 0 run through; counts of the stages agree), and the direction of
+  the plan-feasibility indicators (stuck agents, plans ending after 30:00, non-monotonic end times, long walk trips)
+  moves toward fewer problems with the flag on. What it does not show: (1) no validation of any kind (no observed
+  reference was compared; there is no committed reference for long-distance legs in the simulated population and
+  the donor diaries long-distance legs measured in the same run are not recorded here); (2) the OFF arm is the flag
+  switched off at aa2726e5, not a byte comparison with the pre-feature state, so the whole-pipeline byte identity of
+  the OFF path stays unproven beyond the component tests; (3) the run has 0 MATSim iterations, so convergence and
+  equilibrium behaviour are untested. Open findings, recorded as findings and not as defects of the run: share_out
+  capped for 440 / 617 stays (141 from synthetic home closure legs without reported distance, about 299 not
+  decomposed); 134 walk trips above 20 km and 68 plans ending after 30:00 remain with the portal on (other causes,
+  #443); trucks stuck unchanged (#444). Caveats: the run was concurrent with another session on the same server
+  (runtimes not comparable); the Java jar is a cached artifact of an unknown eqasim-java-bs commit (same md5 in both
+  arms, no portal class); the cache is a physical copy of a 1 % all-features popsim cache with entries older than
+  08:40 plus pipeline.json, and the first launch was killed after two minutes because pipeline.json was missing.
+  Server-only data: output_persons / output_plans of the two arms and the portal stage cache directory.
+source: >-
+  The figures come from the run notes of the controller session (felix:~/wt-i442/logs/run_20261009T085020.log for the
+  ON arm, felix:~/wt-i442/logs/run_20261009T093812.log for the OFF arm), the committed i442_metrics_{on,off}.json (output of
+  smoke_metrics_i442.py run against each arm, argument order <output_dir> <prefix> <cache_dir> <arm>), and
+  portal_trips_report.json (stage report copied from the stage cache directory of the ON arm). The share_out split (141 closure legs without a reported
+  distance) comes from share_cap_probe.py (committed artifact), run against the ON arm's cached
+  trips_day_stage and portal stage pickles.
