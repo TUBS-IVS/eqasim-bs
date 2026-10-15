@@ -14,7 +14,10 @@ along and counted). The candidates are the modes that
 
 The draw weights are the shares of the cell of the longest implausible leg of the tour. When no mode survives
 all three conditions the plausibility condition is relaxed to the cell of the LONGEST leg of the tour (counted
-per tour in ``relaxed_to_longest_leg``, never silent); when that is empty too the draw raises.
+per tour in ``relaxed_to_longest_leg``, never silent); when that is empty too the draw raises, except for a tour
+with a portal leg (ruling R26): a portal tour must never abort the run, so when the gate-class restriction leaves
+no candidate, or when its portal legs sit at both gate classes, the tour keeps its donor modes unchanged. Such a
+tour is returned as a row without a substitute and with ``unchanged_reason`` set, and the stage counts it.
 """
 from __future__ import annotations
 
@@ -28,11 +31,16 @@ from braunschweig.synthesis.outside_tour_modes.srv_table import ModeShareTable
 GROUP_BY_PURPOSE = {"work": "work", "education": "education"}
 SUBSTITUTE_COLUMNS = ["person_id", "tour", "cell", "donor_modes", "substitute", "n_legs", "n_legs_implausible",
                       "n_candidates", "n_removed_by_availability", "removed_modes", "relaxed_to_longest_leg",
-                      "portal_tour", "portal_class", "n_removed_by_portal_class"]
+                      "portal_tour", "portal_class", "n_removed_by_portal_class", "unchanged_reason"]
+#: ``unchanged_reason`` values of a portal tour that keeps its donor modes (empty for a drawn tour).
+UNCHANGED_MIXED_GATE_CLASS = "mixed_gate_class"
+UNCHANGED_NO_CANDIDATE_IN_GATE_CLASS = "no_candidate_in_gate_class"
+UNCHANGED_REASONS = (UNCHANGED_MIXED_GATE_CLASS, UNCHANGED_NO_CANDIDATE_IN_GATE_CLASS)
 #: ``portal_class`` values: no portal leg in the tour, a rail gate (pt stay) or a road gate (every other mode).
 PORTAL_CLASS_NONE = ""
 PORTAL_CLASS_RAIL = "pt"
 PORTAL_CLASS_ROAD = "road"
+PORTAL_CLASS_MIXED = "mixed"
 RAIL_GATE_MODE = "pt"
 AVAILABILITY_MODE_COLUMNS = {"car": "can_car", "bicycle": "can_bicycle", "car_passenger": "can_car_passenger"}
 
@@ -88,17 +96,24 @@ def require_plain_mode_column(trips: pd.DataFrame) -> None:
                          "strings upstream, the substitute modes are assigned as strings")
 
 
-def _portal_class(legs: pd.DataFrame, person_id, tour) -> str:
-    """Mode class of the portal gate of the tour: rail (pt), road (any other mode) or none; raises on a mix."""
+def _portal_class(legs: pd.DataFrame) -> str:
+    """Mode class of the portal gate of the tour: rail (pt), road (any other mode), none, or mixed."""
     portal_modes = set(legs.loc[legs["portal"], "mode"])
     if not portal_modes:
         return PORTAL_CLASS_NONE
     classes = {PORTAL_CLASS_RAIL if mode == RAIL_GATE_MODE else PORTAL_CLASS_ROAD for mode in portal_modes}
     if len(classes) > 1:
-        raise ValueError(f"[outside_tour_modes] person_id {person_id}, tour {tour} has portal legs at both gate "
-                         f"classes (portal leg modes {sorted(portal_modes)}); one mode per tour cannot serve a rail "
-                         "gate and a road gate")
+        return PORTAL_CLASS_MIXED
     return classes.pop()
+
+
+def _unchanged_row(person_id, tour, legs: pd.DataFrame, bad: pd.DataFrame, portal_class: str, reason: str) -> dict:
+    """The row of a portal tour that keeps its donor modes: no substitute, the reason set."""
+    return {"person_id": person_id, "tour": int(tour), "cell": "", "donor_modes": ",".join(sorted(set(legs["mode"]))),
+            "substitute": None, "n_legs": int(len(legs)), "n_legs_implausible": int(len(bad)), "n_candidates": 0,
+            "n_removed_by_availability": 0, "removed_modes": "", "relaxed_to_longest_leg": False,
+            "portal_tour": True, "portal_class": portal_class, "n_removed_by_portal_class": 0,
+            "unchanged_reason": reason}
 
 
 def _admissible(pool: tuple, person_allowed: frozenset, portal_class: str) -> tuple:
@@ -122,7 +137,9 @@ def tour_substitutes(trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndar
     the gate class of a tour is rail when the current mode of its portal legs is pt, road otherwise). Weights:
     the SrV shares of the cell of the longest implausible leg. When the candidate set is empty the plausibility
     is judged in the cell of the longest leg of the tour only (``relaxed_to_longest_leg`` True, weights from
-    that cell; the portal class and the availability still apply); when that is empty too this raises.
+    that cell; the portal class and the availability still apply); when that is empty too this raises for a tour without portal leg. A portal tour never raises (ruling R26): when the
+    gate-class restriction leaves no candidate (strict step and relaxation) or its portal legs sit at both gate
+    classes, the tour keeps its donor modes; its row has ``substitute`` None and ``unchanged_reason`` set.
 
     Only outside tours with at least one implausible leg are iterated (a vectorised pre-filter), so the Python
     loop runs over the tours that are re-moded, not over every tour of the population. An empty candidate set
@@ -157,7 +174,10 @@ def tour_substitutes(trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndar
         bad = legs[legs["implausible"]]
         longest_bad = int(bad.sort_values(["km", "position"], ascending=[False, True]).iloc[0]["position"])
         longest_leg = int(by_length.iloc[0]["position"])
-        portal_class = _portal_class(legs, person_id, tour)
+        portal_class = _portal_class(legs)
+        if portal_class == PORTAL_CLASS_MIXED:
+            rows.append(_unchanged_row(person_id, tour, legs, bad, portal_class, UNCHANGED_MIXED_GATE_CLASS))
+            continue
 
         positions = legs["position"].to_numpy()
         strict = set(plausible_in(int(positions[0])))
@@ -170,6 +190,10 @@ def tour_substitutes(trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndar
             relaxed_pool = plausible_in(longest_leg)
             candidates, removed, n_removed_by_portal_class = _admissible(relaxed_pool, person_allowed, portal_class)
             weight_position, relaxed = longest_leg, True
+            if not candidates and portal_class != PORTAL_CLASS_NONE:
+                rows.append(_unchanged_row(person_id, tour, legs, bad, portal_class,
+                                           UNCHANGED_NO_CANDIDATE_IN_GATE_CLASS))
+                continue
             if not candidates:
                 raise ValueError(
                     f"[outside_tour_modes] no substitute candidate for person_id {person_id}, tour {tour}: plausible "
@@ -183,7 +207,8 @@ def tour_substitutes(trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndar
                      "n_legs": int(len(legs)), "n_legs_implausible": int(len(bad)), "n_candidates": len(candidates),
                      "n_removed_by_availability": len(removed), "removed_modes": ",".join(removed),
                      "relaxed_to_longest_leg": relaxed, "portal_tour": portal_class != PORTAL_CLASS_NONE,
-                     "portal_class": portal_class, "n_removed_by_portal_class": int(n_removed_by_portal_class)})
+                     "portal_class": portal_class, "n_removed_by_portal_class": int(n_removed_by_portal_class),
+                     "unchanged_reason": ""})
     return pd.DataFrame(rows, columns=SUBSTITUTE_COLUMNS)
 
 

@@ -242,7 +242,7 @@ def test_remode_outside_tours_without_an_implausible_leg_changes_nothing_and_rep
 # Final-review fixes (eqasim-bs#453): relaxation and post-condition (A1), portal gate class (A2), unknown donor
 # modes (A3), categorical mode column (A4).
 
-def _with_portal_person(portal_mode):
+def _with_portal_person(portal_mode, availability="all"):
     """The base fixture plus person 4: walks 8 km to a workplace inside the extent (implausible in work/5_plus),
     then a portal stay (work -> outside -> home) whose gate mode is ``portal_mode``."""
     fixture = _fixture()
@@ -257,8 +257,9 @@ def _with_portal_person(portal_mode):
                             geometry=[Point(*xy) for xy in points.values()], crs=CRS)
     fixture["locations"] = pd.concat([fixture["locations"], more], ignore_index=True)
     fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
-        "person_id": [4], "car_availability": ["all"], "has_license": [True], "bicycle_availability": ["all"],
-        "car_passenger_availability": ["all"]})], ignore_index=True)
+        "person_id": [4], "car_availability": [availability], "has_license": [availability == "all"],
+        "bicycle_availability": [availability], "car_passenger_availability": [availability]})],
+        ignore_index=True)
     return fixture
 
 
@@ -369,3 +370,48 @@ def test_the_validate_token_covers_the_module_that_defines_the_portal_flag_colum
 
     assert stage.PORTAL_LEG_COLUMN == rewrite.PORTAL_LEG_COLUMN == "portal_leg"
     assert rewrite in stage._HELPER_MODULES
+
+
+def test_road_gate_walk_portal_tour_of_a_person_with_only_pt_and_walk_is_left_unchanged(caplog):
+    # Ruling R26: pt is removed by the road gate class, walk is implausible in every cell of the tour -> no
+    # candidate even after the relaxation; the portal tour keeps its donor modes and the run does not abort.
+    fixture = _with_portal_person("walk", availability="none")
+    with caplog.at_level(logging.INFO):
+        out, report = stage.remode_outside_tours(**fixture)
+    assert out[out["person_id"] == 4]["mode"].tolist() == ["walk", "walk", "walk"]
+    assert report["n_portal_tours_left_unchanged"] == 1
+    assert report["portal_tours_left_unchanged_by_reason"] == {"mixed_gate_class": 0, "no_candidate_in_gate_class": 1}
+    assert report["n_portal_tours_remoded"] == 0
+    assert report["n_outside_tours_remoded"] == 1                       # person 1 only
+    assert report["n_outside_legs_implausible_after"] == 3              # the unchanged tour's walk legs
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and "left unchanged" in r.getMessage()]
+
+
+def test_portal_tour_with_both_gate_classes_is_left_unchanged_at_stage_level():
+    fixture = _with_portal_person("pt")
+    trips = fixture["trips"]
+    extra = pd.DataFrame({
+        "person_id": [5] * 4, "trip_index": [0, 1, 2, 3],
+        "preceding_purpose": ["home", "work", "outside", "shop"],
+        "following_purpose": ["work", "outside", "shop", "home"],
+        "mode": ["walk", "pt", "car", "car"], "portal_leg": [False, True, True, False]})
+    fixture["trips"] = pd.concat([trips, extra], ignore_index=True)
+    points = {(5, 0): (1000.0, 5000.0), (5, 1): (9000.0, 5000.0), (5, 2): (9900.0, 5000.0),
+              (5, 3): (9500.0, 5000.0), (5, 4): (1000.0, 5000.0)}
+    more = gpd.GeoDataFrame({"person_id": [k[0] for k in points], "activity_index": [k[1] for k in points]},
+                            geometry=[Point(*xy) for xy in points.values()], crs=CRS)
+    fixture["locations"] = pd.concat([fixture["locations"], more], ignore_index=True)
+    fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
+        "person_id": [5], "car_availability": ["all"], "has_license": [True], "bicycle_availability": ["all"],
+        "car_passenger_availability": ["all"]})], ignore_index=True)
+    out, report = stage.remode_outside_tours(**fixture)
+    assert out[out["person_id"] == 5]["mode"].tolist() == ["walk", "pt", "car", "car"]
+    assert report["portal_tours_left_unchanged_by_reason"] == {"mixed_gate_class": 1, "no_candidate_in_gate_class": 0}
+    assert report["n_portal_tours_left_unchanged"] == 1
+
+
+def test_no_portal_tour_is_left_unchanged_in_the_plain_fixture(caplog):
+    with caplog.at_level(logging.INFO):
+        _, report = stage.remode_outside_tours(**_fixture())
+    assert report["n_portal_tours_left_unchanged"] == 0
+    assert report["portal_tours_left_unchanged_by_reason"] == {"mixed_gate_class": 0, "no_candidate_in_gate_class": 0}

@@ -148,6 +148,8 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
                   else np.zeros(len(ordered), dtype=bool))
     substitutes = _rule.tour_substitutes(ordered, tour_ids, outside, implausible, leg_km, cells, allowed, min_share,
                                          rng, portal_leg=portal_leg)
+    unchanged = substitutes[substitutes["unchanged_reason"] != ""]
+    substitutes = substitutes[substitutes["unchanged_reason"] == ""]
     remoded, n_remoded, n_swept = _rule.apply_tour_modes(ordered, tour_ids, substitutes, implausible)
     # Post-condition: outside legs whose FINAL mode is still below min_share in their cell (only the relaxed draws
     # and the legs of tours the draw could not make plausible everywhere can remain).
@@ -186,6 +188,11 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
         "n_portal_tours_remoded": int(substitutes["portal_tour"].sum()),
         "n_portal_tours_class_restricted": int((substitutes["portal_tour"]
                                                 & (substitutes["n_removed_by_portal_class"] > 0)).sum()),
+        "n_portal_tours_left_unchanged": int(len(unchanged)),
+        "portal_tours_left_unchanged_by_reason": {
+            reason: int((unchanged["unchanged_reason"] == reason).sum()) for reason in _rule.UNCHANGED_REASONS},
+        "share_portal_tours_left_unchanged": float(
+            len(unchanged) / (len(unchanged) + int(substitutes["portal_tour"].sum()))) if len(unchanged) else 0.0,
         "n_unknown_donor_mode": int(unknown_donor.sum()),
         "unknown_donor_modes": {str(k): int(v) for k, v in donor_modes[unknown_donor].value_counts().items()},
         "cells_used": {str(k): int(v) for k, v in substitutes["cell"].value_counts().items()},
@@ -210,6 +217,12 @@ def _log_report(report: dict) -> None:
                 "of the longest leg %d (%.2f%% of the draws)", _LOG_TAG, report["n_portal_tours_remoded"],
                 report["n_portal_tours_class_restricted"], report["n_draws_relaxed_to_longest_leg"],
                 100.0 * report["share_draws_relaxed_to_longest_leg"])
+    if report["n_portal_tours_left_unchanged"]:
+        logger.warning("%s %d portal tours left unchanged (%.2f%% of the portal tours with an implausible leg; the "
+                       "gate class left no admissible mode or the tour has portal legs at both gate classes): %s",
+                       _LOG_TAG, report["n_portal_tours_left_unchanged"],
+                       100.0 * report["share_portal_tours_left_unchanged"],
+                       report["portal_tours_left_unchanged_by_reason"])
     if report["n_outside_legs_implausible_after"]:
         logger.warning("%s %d of %d outside legs are still implausible after the draw (relaxed draws judged in the "
                        "cell of the longest leg only)", _LOG_TAG, report["n_outside_legs_implausible_after"],

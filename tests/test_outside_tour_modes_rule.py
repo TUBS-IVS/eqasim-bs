@@ -225,11 +225,35 @@ def test_portal_class_restriction_is_applied_before_the_relaxation():
     assert subs.loc[0, "substitute"] == "pt" and bool(subs.loc[0, "relaxed_to_longest_leg"])
 
 
-def test_portal_tour_with_both_gate_classes_raises():
+def test_portal_tour_with_both_gate_classes_is_left_unchanged_and_counted():
+    # Ruling R26: a portal tour must never abort the run. One mode per tour cannot serve a rail gate and a road gate,
+    # so the tour keeps its donor modes; the row carries the reason and no substitute.
     rows = [(1, 0, "home", "work", "walk"), (1, 1, "work", "outside", "pt"), (1, 2, "outside", "shop", "car"),
             (1, 3, "shop", "home", "car")]
-    with pytest.raises(ValueError, match="gate classes"):
-        _draw(rows, [6.0, 3.0, 3.0, 2.0], {1: EVERYTHING}, 0, portal=np.array([False, True, True, False]))
+    subs = _draw(rows, [6.0, 3.0, 3.0, 2.0], {1: EVERYTHING}, 0, portal=np.array([False, True, True, False]))
+    assert len(subs) == 1 and subs.loc[0, "unchanged_reason"] == "mixed_gate_class"
+    assert pd.isna(subs.loc[0, "substitute"]) and bool(subs.loc[0, "portal_tour"])
+
+
+def test_portal_tour_without_a_candidate_in_its_gate_class_is_left_unchanged_not_raised():
+    # Road gate, the person may use only pt and walk: pt is removed by the gate class, walk is implausible in the
+    # portal cell (all/45_plus) and in the work cell, so neither the strict step nor the relaxation has a candidate.
+    subs = _draw(PORTAL_ROWS, PORTAL_KM, {1: frozenset({"pt", "walk"})}, 0, portal=PORTAL_FLAGS)
+    assert len(subs) == 1 and subs.loc[0, "unchanged_reason"] == "no_candidate_in_gate_class"
+    assert pd.isna(subs.loc[0, "substitute"]) and subs.loc[0, "n_candidates"] == 0
+
+
+def test_a_drawn_tour_has_an_empty_unchanged_reason():
+    subs = _draw(PROBE_ROWS, PROBE_KM, {1: EVERYTHING}, 0)
+    assert subs.loc[0, "unchanged_reason"] == ""
+
+
+def test_apply_tour_modes_leaves_an_unchanged_tour_alone():
+    trips = _trips(PORTAL_ROWS)
+    tour_ids = T.home_based_tour_ids(trips)
+    subs = _draw(PORTAL_ROWS, PORTAL_KM, {1: frozenset({"pt", "walk"})}, 0, portal=PORTAL_FLAGS)
+    out, n_remoded, n_swept = R.apply_tour_modes(trips, tour_ids, subs, np.array([True, False, False]))
+    assert out["mode"].tolist() == trips["mode"].tolist() and n_remoded == 0 and n_swept == 0
 
 
 def test_a_portal_flag_vector_of_the_wrong_length_raises():
