@@ -8,9 +8,13 @@ description: >-
   mode of each such tour against the SrV 2023 mode shares by straight-line distance band and purpose group
   (data record srv2023_mode_by_distance_band) at the realised leg distance, and re-modes the whole tour
   where the survey share of the mode is below braunschweig.outside_tour_modes.min_share (ADR-0145, issue
-  #453). One substitute per tour is drawn, seeded, from the cell of the tour's longest implausible leg among
-  the modes the person may use, weighted by their SrV shares, and applied to every leg of the tour so the
-  tour keeps one mode. A leg touching an outside activity (a portal stay, ADR-0141) is judged in the purpose
+  #453). One substitute per tour is drawn, seeded, among the modes the person may use that are plausible in
+  the cell of every leg of the tour and keep the mode class of the tour's portal gate (pt at rail stations,
+  other modes at road gates), weighted by the SrV shares of the cell of the tour's longest implausible leg,
+  and applied to every leg of the tour so the tour keeps one mode. When no mode qualifies, plausibility is
+  judged in the cell of the tour's longest leg only; the relaxation is counted and reported. A portal tour
+  never aborts the run: with no admissible mode in its gate class, or with portal legs at both gate classes, it
+  keeps its donor modes and is counted by reason. A leg touching an outside activity (a portal stay, ADR-0141) is judged in the purpose
   group all at the top band. The stage sits behind the alias synthesis.population.trips.simulated, which only
   the MATSim population writer and the synthesis output read; the chain solver keeps reading
   synthesis.population.trips.final. With the flag off the trips frame is returned unchanged. No Java change
@@ -84,9 +88,15 @@ evidence:
     note: >-
       The stage logs, as rates and in its report, the outside tours re-moded out of all outside tours (WARNING
       above braunschweig.outside_tour_modes.warn_share), the legs re-moded and swept along, the substitution
-      matrix, the cells used, the draws restricted by the person's availability and the modes removed. It raises
-      on a person without an availability row, on a leg without a realised location, on a CRS mismatch, on a
-      table cell where neither pt nor walk is plausible and on a draw with no candidate, instead of falling back.
+      matrix, the cells used, the draws restricted by the person's availability and the modes removed, the
+      draws relaxed to the longest leg's cell (count and share), the outside legs still implausible after the
+      draw (WARNING when above zero), the portal tours re-moded and class-restricted, the presence of the
+      portal_leg column, the portal tours left unchanged by reason (WARNING) and the donor modes unknown to
+      the table (WARNING). It raises on a person without an
+      availability row, on a leg without a realised location, on a CRS mismatch, on a table cell where neither
+      pt nor walk is plausible, on a draw with no candidate for a tour without portal leg (also after the
+      relaxation) and on a categorical mode column, instead of falling back; a portal tour without an
+      admissible mode keeps its donor modes and is counted.
       The report is also written as outside_tour_modes_report.json in the stage's cache directory.
   reference:
     kind: committed

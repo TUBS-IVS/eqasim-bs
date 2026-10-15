@@ -11,9 +11,14 @@ description: >-
   polygon or at an outside activity, and measures every leg of such a tour as the straight-line distance
   between the realised activity locations. A leg is implausible when the SrV share of its mode in the cell of
   its purpose group and distance band is below braunschweig.outside_tour_modes.min_share. Per tour with an
-  implausible leg ONE substitute is drawn, seeded, from the cell of the tour's longest implausible leg among
-  the modes whose share is at least min_share and that the person may use, weighted by their shares, and
-  applied to every leg of the tour so the tour keeps one mode. The returned frame keeps the rows, the index
+  implausible leg ONE substitute is drawn, seeded, among the modes whose share is at least min_share in the
+  cell of EVERY leg of the tour, that the person may use and that keep the mode class of the tour's portal
+  gate (pt stays sit at rail exit stations, every other mode at road gates; a tour with a portal leg keeps
+  pt or loses pt accordingly), weighted by the shares of the cell of the tour's longest implausible leg, and
+  applied to every leg of the tour so the tour keeps one mode. When no mode qualifies the plausibility is
+  judged in the cell of the tour's longest leg only (counted and reported with its rate). A portal tour never
+  aborts the run (ruling R26 of the final review): when the gate class leaves no admissible mode or its portal
+  legs sit at both gate classes, the tour keeps its donor modes and is counted by reason. The returned frame keeps the rows, the index
   and the columns of trips.final; only mode values change. The alias is read by exactly two consumers, the
   MATSim population writer (matsim.scenario.population) and the synthesis output (synthesis.output). With
   braunschweig.outside_tour_modes.enabled false the stage returns the synthesis.population.trips.final frame
@@ -72,13 +77,20 @@ notes: >-
   re-moded out of all outside tours (with the share; WARNING above warn_share), the legs re-moded and the legs
   swept along (plausible legs of a re-moded tour), the substitution matrix, the cells used, the outside tours
   per purpose group, the portal legs judged in the group all, the draws whose candidate set the person's
-  availability restricted and the modes it removed. The stage raises instead of falling back: on a person
-  without an availability row, on a leg whose activity has no realised location, on a CRS mismatch between
-  locations and municipalities, on a table with a cell where neither pt nor walk is plausible and on a draw with
-  no candidate. With the flag on it writes its report as outside_tour_modes_report.json (REPORT_FILE_NAME in
+  availability restricted and the modes it removed, the draws relaxed to the longest leg's cell (count and
+  share, INFO), the outside legs still implausible after the draw (WARNING when above zero), the portal tours
+  re-moded and those whose candidates the gate class restricted, the portal tours left unchanged by reason
+  (n_portal_tours_left_unchanged, WARNING), whether the portal_leg column was present
+  (WARNING when absent although outside activities exist) and the outside legs with a donor mode unknown to
+  the table, by mode (WARNING). The stage raises instead of falling back: on a person without an availability
+  row, on a leg whose activity has no realised location, on a CRS mismatch between locations and
+  municipalities, on a table with a cell where neither pt nor walk is plausible, on a draw with no candidate
+  for a tour without portal leg (also after the relaxation) and on a categorical mode column; a portal tour
+  without an admissible mode is left unchanged and counted instead. With the flag on it writes its report as outside_tour_modes_report.json (REPORT_FILE_NAME in
   config_keys.py) into its own cache directory; the OFF run writes none.
-  The validate() token hashes the helper modules, the shared SrV loader module, the portal mode helper module
-  and the cordon helper module imported inside execute, and with the flag on the bytes of the committed SrV
+  The validate() token hashes the helper modules, the shared SrV loader module, the portal mode helper module,
+  the portal rewrite module (home of the portal_leg column name) with its config_keys, and the cordon helper
+  module imported inside execute, and with the flag on the bytes of the committed SrV
   table, so a regenerated table recomputes this stage and everything downstream.
   Fixture invariant: every config that aliases synthesis.population.trips.final must also alias this stage (to
   the same target) and set braunschweig.outside_tour_modes.enabled false; the wiring test

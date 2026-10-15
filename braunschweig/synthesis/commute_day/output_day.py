@@ -5,8 +5,10 @@ Aliased to ``synthesis.output``. Two things distinguish it from the vendored
 
 1. **The finished day.** ``persons.csv``, ``activities.csv``, ``trips.csv`` and the spatial
    exports must describe the day the simulation actually runs, so the trips and activities
-   frames come from ``synthesis.population.trips.final`` / ``...activities.final`` instead of
-   the pre-assignment views.
+   frames come from ``synthesis.population.trips.simulated`` (``trips.final`` with the
+   outside-tour modes judged against SrV, ADR-0145, #453; ``trips.final`` unchanged with
+   ``braunschweig.outside_tour_modes.enabled`` false) / ``...activities.final`` instead of
+   the pre-assignment views. ``trips.csv`` therefore carries the re-moded modes.
 2. **The ``commute_day_state`` person attribute.** The drawn reporting-day state
    (``at_workplace`` / ``home`` / ``absent``) is exported through the EXISTING optional-column
    mechanism of ``synthesis.output`` (``PERSON_OPTIONAL_OUTPUT_COLUMNS`` /
