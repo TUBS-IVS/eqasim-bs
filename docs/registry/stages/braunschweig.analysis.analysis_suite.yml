@@ -7,9 +7,13 @@ description: 'Post-run analysis driver: dashboard, MiD validation, population va
   stuck_agents (flag analysis_stuck_agents, default on, runs before the dashboard on the same MATSim
   readiness) writes <output_path>/analysis/stuck/stuck_agents.csv (one row per stuck event: person, time,
   leg_mode, link, subpopulation, frozen, at_end) and stuck_summary.json (the stuck agents of the final
-  iteration by subpopulation x at the simulation end / during the day x mode x frozen tour); the same
-  summary is the additive stuck block of the dashboard matsim metrics. It warns when more than
-  STUCK_WARN_SHARE (0.01, an ASSUMPTION, ADR-0146) of the residents is stuck; it has no reference value.'
+  iteration by subpopulation x at the simulation end / during the day x mode x frozen tour); the simulation
+  end is read from the run''s output_config.xml (else output_config_reduced.xml; the plan-time bound with a
+  WARNING otherwise). The dashboard''s additive stuck block reuses stuck_summary.json when it is newer than
+  output_events.xml.gz (so the events are streamed once per run) and is otherwise computed; a failing stuck
+  analysis is recorded there as available false with its reason. The sub-analysis warns when more than the
+  configurable share analysis_stuck_warn_share (default 0.01 = stuck_agents.STUCK_WARN_SHARE, an ASSUMPTION,
+  ADR-0146) of the residents is stuck; it has no reference value.'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -19,6 +23,7 @@ code:
 - braunschweig/analysis/matsim_archive.py
 - braunschweig/analysis/stuck_agents.py
 - braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/dashboard/run_records.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
