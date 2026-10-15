@@ -12,6 +12,7 @@ lineage:
 code:
 - synthesis/population/trips.py
 - braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/unused_mid_wege_columns.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -41,6 +42,7 @@ decisions:
 - ADR-0112
 - ADR-0114
 - ADR-0117
+- ADR-0138
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -135,3 +137,15 @@ notes: >-
   the last four are CROSS-package, which tests/test_synpp_helper_hash_invariant.py cannot police.
   The mechanism itself -- precision rule, mapping, ladder, guards, the second call site in the
   reporting-day view -- lives once in docs/codebase/notes/departure-time-model.md.
+
+
+  UNUSED MiD WEGE COLUMNS (ADR-0138): execute() drops the MiD Wege columns listed in
+  braunschweig.popsim.unused_mid_wege_columns (157 columns that no first-party code or
+  configuration reads) from the donor Wege before the trip build joins them onto the synthetic
+  persons, releasing the full-width frame and the unread MiD attribute tables at that point; the
+  ENTD path is untouched. The drop logs the dropped and kept column counts and the Wege frame's
+  size before and after, and warns when listed columns are missing from the delivery. The cached
+  trip table (and synthesis.population.trips.final) therefore no longer carries the listed
+  columns; trips.csv is unchanged (explicit column list). tests/test_unused_mid_wege_columns.py
+  fails as soon as code or configuration names a listed column; the maintainer rule is
+  docs/codebase/notes/unused-mid-wege-columns.md.
