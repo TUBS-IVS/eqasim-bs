@@ -12,7 +12,9 @@ description: >-
   the cell of every leg of the tour and keep the mode class of the tour's portal gate (pt at rail stations,
   other modes at road gates), weighted by the SrV shares of the cell of the tour's longest implausible leg,
   and applied to every leg of the tour so the tour keeps one mode. When no mode qualifies, plausibility is
-  judged in the cell of the tour's longest leg only; the relaxation is counted and reported. A leg touching an outside activity (a portal stay, ADR-0141) is judged in the purpose
+  judged in the cell of the tour's longest leg only; the relaxation is counted and reported. A portal tour
+  never aborts the run: with no admissible mode in its gate class, or with portal legs at both gate classes, it
+  keeps its donor modes and is counted by reason. A leg touching an outside activity (a portal stay, ADR-0141) is judged in the purpose
   group all at the top band. The stage sits behind the alias synthesis.population.trips.simulated, which only
   the MATSim population writer and the synthesis output read; the chain solver keeps reading
   synthesis.population.trips.final. With the flag off the trips frame is returned unchanged. No Java change
@@ -89,10 +91,12 @@ evidence:
       matrix, the cells used, the draws restricted by the person's availability and the modes removed, the
       draws relaxed to the longest leg's cell (count and share), the outside legs still implausible after the
       draw (WARNING when above zero), the portal tours re-moded and class-restricted, the presence of the
-      portal_leg column and the donor modes unknown to the table (WARNING). It raises on a person without an
+      portal_leg column, the portal tours left unchanged by reason (WARNING) and the donor modes unknown to
+      the table (WARNING). It raises on a person without an
       availability row, on a leg without a realised location, on a CRS mismatch, on a table cell where neither
-      pt nor walk is plausible, on a draw with no candidate (also after the relaxation), on a tour with portal
-      legs at both gate classes and on a categorical mode column, instead of falling back.
+      pt nor walk is plausible, on a draw with no candidate for a tour without portal leg (also after the
+      relaxation) and on a categorical mode column, instead of falling back; a portal tour without an
+      admissible mode keeps its donor modes and is counted.
       The report is also written as outside_tour_modes_report.json in the stage's cache directory.
   reference:
     kind: committed

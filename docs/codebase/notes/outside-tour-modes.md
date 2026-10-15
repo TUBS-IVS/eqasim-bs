@@ -50,15 +50,18 @@ qualifies, plausibility is judged in the cell of the longest leg only (counted).
 - **A portal tour keeps the class of its gate.** The portal stage puts pt stays at rail exit stations and every
   other mode at road gates (ADR-0141), so a tour with a portal leg (column `portal_leg`, imported from
   `portal_trips/rewrite.py`) is restricted to pt when its portal legs are pt, and loses pt otherwise. The
-  restriction is applied before the relaxation, never after it.
+  restriction is applied before the relaxation, never after it. A portal tour never aborts the run: with no
+  admissible mode in its gate class, or with portal legs at both classes, it keeps its donor modes
+  (`n_portal_tours_left_unchanged`, by reason, WARNING); only a non-portal tour raises on an empty set.
 - **The relaxation is counted, never silent.** `n_draws_relaxed_to_longest_leg` and its share are in the report;
   `n_outside_legs_implausible_after` is the post-condition and warns when above zero.
 - **The OFF path is byte-identical.** With the flag false `execute` returns the input frame, with no counter
   and no warning, and `configure` declares only the flag and `trips.final`.
 - **Fallbacks are counted, never silent.** The stage raises on a person without an availability row, on a leg
   without a location, on a CRS mismatch, on a table cell without a plausible always-available mode, on an
-  empty candidate set (also after the relaxation), on portal legs at both gate classes and on a categorical
-  `mode` column; the shares go to the log and the report.
+  empty candidate set of a non-portal tour (also after the relaxation) and on a categorical `mode` column; a
+  portal tour with no admissible mode is left unchanged and counted instead; the shares go to the log and the
+  report.
 - **The validate() token covers the data.** It hashes the helper modules (including the portal rewrite module
   and its `config_keys`, the home of the portal flag column) and, with the flag on, the bytes of the committed
   SrV table; a new helper module imported by the stage must be added to its module tuple (the
@@ -80,7 +83,9 @@ removed. The same numbers are in `outside_tour_modes_report.json` in the stage's
 `n_draws_restricted_by_availability`, `n_removed_by_availability_by_mode`, `cells_used`,
 `n_outside_tours_by_group`, `n_outside_legs`, `n_draws_relaxed_to_longest_leg`,
 `share_draws_relaxed_to_longest_leg`, `n_outside_legs_implausible_after`, `portal_leg_column_present`,
-`n_portal_tours_remoded`, `n_portal_tours_class_restricted`, `n_unknown_donor_mode` and `unknown_donor_modes`.
-A WARNING is logged for a positive `n_outside_legs_implausible_after`, for donor modes unknown to the table and
-for an absent `portal_leg` column with outside activities present. A high share of re-moded tours means the table and the population disagree
+`n_portal_tours_remoded`, `n_portal_tours_class_restricted`, `n_portal_tours_left_unchanged`,
+`portal_tours_left_unchanged_by_reason` (`mixed_gate_class`, `no_candidate_in_gate_class`),
+`share_portal_tours_left_unchanged`, `n_unknown_donor_mode` and `unknown_donor_modes`. A WARNING is logged for a
+positive `n_outside_legs_implausible_after`, for portal tours left unchanged, for donor modes unknown to the
+table and for an absent `portal_leg` column with outside activities present. A high share of re-moded tours means the table and the population disagree
 structurally and is a finding to investigate, not a calibration to accept.
