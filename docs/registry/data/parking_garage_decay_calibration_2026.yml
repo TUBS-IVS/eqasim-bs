@@ -246,6 +246,35 @@ limitations: |
   191.52 m with a Wolfsburg check of 0.3487 against 0.6387 (the first H2 on the free-inclusive target, committed once as
   160a4dc8); the commuter number 0.7142 over 245 activities at the single decay length (the pre-registered expected miss of
   ADR-0140 decision 7).
+  SAMPLING SENSITIVITY (Task B7 fix round 2; a measurement of how much a calibration on another sample of persons would move,
+  never a release value, no validation, no config key and no calibrated value changes).
+  scripts/parking/garage_decay_sampling_stability.py (committed; fixed seeds; the functions of calibrate_garage_decay.py,
+  with the weighting by person as the only addition, which
+  equals the module's mean_option_share at every weight 1 to 3.3e-16) wrote the committed table
+  eqasim-data/data/braunschweig/parking/parking_garage_decay_sampling_stability_2026.csv (git add -f; SHA-256 with LF line
+  endings 8c0d76d9e2f381e2c83b59225823d4a15715b58ee0fa4c4318954a383479dd40; its header pins the plans, zones, tariffs, garage
+  dataset, both SrV tables and the calibration table it belongs to, at the code state 4f921bf0 on a clean tree; runtime 379 s;
+  tests/test_parking_garage_decay_sampling_stability.py ties the header, the production values and the summary rows to the
+  committed files). It recomputes 575.27 and 69.69 m on the full sample and calibrates 20 person-level split-half pairs (seeds 0
+  to 19; SD of one half = SD(A - B) / sqrt(2), SD at 25 % = that / sqrt(2), SD at 100 % = half of the 25 % SD) and 50 person
+  bootstrap resamples (seeds 1000 to 1049), every one with a bisection tolerance of 2e-5 so that the spread is the sampling.
+  lambda: SD of one half 22.50 m, SD at 25 % 15.91 m (person bootstrap 14.41 m), extrapolated SD at 100 % 7.95 m (bootstrap 7.21
+  m). lambda_c: SD of one half 12.48 m, SD at 25 % 8.82 m (bootstrap 12.32 m), extrapolated SD at 100 % 4.41 m (bootstrap 6.16
+  m); no run had an unreachable target. Read as about 16 m (lambda) and 9 to 12 m (lambda_c) for the 25 % plans and about 8 m and
+  4 to 6 m for a 100 % population. READING: this is small against the target and option-set uncertainty of the same table
+  (lambda: 818.93 m with the 100-space option set, 463.19 m at beta 0, 345.02 m over the in-window stays; lambda_c: 33.15 to
+  100.15 m for a target of +- 0.5 SE of the SrV share, 133.04 m at +1 SE, the target -1 SE unreachable), so a calibration on a
+  100 % population would not change the values materially (an extrapolation by 1 / sqrt(n), not a measurement). PRECISION: the
+  two decimals of 575.27 and 69.69 are spurious. The bisection tolerance alone (0.0005 of the share, the first midpoint inside
+  it) allows lambda from 572.68 to 578.17 m (about +- 3 m) and lambda_c from 68.97 to 69.81 m (about +- 0.4 m), rows
+  production_tolerance_range_* of the sampling table, and the sampling SD above is larger still. Read the values as about 575 m
+  and about 70 m. The configs keep 575.27 and 69.69 (the reproducible output of the committed calibration); only this record
+  states the precision. LIMITATIONS of the measurement: persons are split or resampled one by one, so the members of a
+  household are split (the sampling unit of the plans is the household, so the SD is a lower bound where household members are
+  correlated); one synthetic population (the 25 % plans) is measured, with no synthesis uncertainty (controls, donor assignment
+  and draws are fixed); the target uncertainty is a separate source (the sensitivities of the calibration table); the 100 %
+  SD is an extrapolation; for lambda_c the bootstrap SD is about 1.4 times the split-half SD (the commuter universe has 1,091
+  persons and 20 seeds estimate an SD only to about 16 %), which is why the range 9 to 12 m is stated, not one number.
 notes: |
   Recalibrated with the price term (beta 0.310998) on 2026-10-14 (Task B5, issue #436) and corrected by the payer-conditional
   commuter measure on 2026-10-15 (fix round 1, ruling R-B-16), replacing the v2 values fitted without the price term; the

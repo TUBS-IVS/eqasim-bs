@@ -10,16 +10,22 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import re
 import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
+import yaml
 
 from tests import test_parking_garage_calibration as calibration_tests
+from tests import test_parking_garage_decay_config as config_tests
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "parking" / "garage_decay_sampling_stability.py"
+TABLE = REPO / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_garage_decay_sampling_stability_2026.csv"
+CALIBRATION_RECORD = REPO / "docs" / "registry" / "data" / "parking_garage_decay_calibration_2026.yml"
 
 
 @pytest.fixture(scope="module")
@@ -161,3 +167,64 @@ def test_an_existing_table_is_not_replaced_without_overwrite(ss, tmp_path):
     with pytest.raises(SystemExit, match="--overwrite"):
         ss.run(plans=tmp_path / "plans.xml", data=tmp_path, config_path=tmp_path / "c.yml", out_path=out, overwrite=False,
                seeds=2, resamples=2, tolerance=1e-4)
+
+
+# --------------------------------------------------------------------------- the committed table
+
+
+def _table_rows() -> dict:
+    assert TABLE.is_file(), f"{TABLE.name} must be committed next to the calibration table"
+    frame = pd.read_csv(TABLE, comment="#", dtype={"quantity": str, "value": str})
+    assert list(frame.columns) == ["quantity", "value", "unit", "note"] and not frame["quantity"].duplicated().any()
+    return {row.quantity: (float(row.value) if isinstance(row.value, str) and row.value else None) for row in frame.itertuples()}
+
+
+def _header_hash(name: str) -> str:
+    found = re.findall(rf"^#\s+{re.escape(name)}: \S+ sha256=([0-9a-f]{{64}})", TABLE.read_text(encoding="utf-8"), flags=re.M)
+    assert len(found) == 1, f"{TABLE.name}: expected one header line for {name!r}, found {len(found)}"
+    return found[0]
+
+
+def test_the_committed_table_names_the_inputs_that_their_records_and_files_pin():
+    assert _header_hash("garages") == config_tests._record_pin(config_tests.GARAGE_RECORD)
+    assert _header_hash("zones") == config_tests._record_pin(config_tests.ZONES_RECORD)
+    assert _header_hash("plans") == config_tests._manifest_population_pin(config_tests.PLANS_RUN_MANIFEST)
+    for name, path in config_tests.SRV_TABLES.items():
+        assert _header_hash(name) == config_tests._lf_sha256(path), name
+    assert _header_hash("tariffs") == config_tests._lf_sha256(
+        REPO / "eqasim-data" / "data" / "braunschweig" / "parking" / "parking_tariffs_2026.csv")
+    # the measurement belongs to THIS calibration table: another calibration needs another measurement
+    assert _header_hash("calibration_table") == config_tests._lf_sha256(config_tests.TABLE)
+
+
+def test_the_committed_table_reproduces_the_calibration_table_and_its_summary_rows_follow_from_its_runs(ss):
+    rows = _table_rows()
+    committed = ss.cgd.read_calibration_table(config_tests.TABLE)
+    assert rows["production_decay_length_m"] == committed["decay_length_m"]
+    assert rows["production_decay_commute_length_m"] == committed["decay_commute_length_m"]
+    seeds = int(re.search(r"SPLIT HALF: (\d+) fixed seeds", TABLE.read_text(encoding="utf-8")).group(1))
+    for symbol in ("lambda", "lambda_c"):
+        split_rows = [{"seed": seed, "half": half, "decay_m": rows[f"run_split_seed{seed:02d}_{half}_{symbol}"]}
+                      for seed in range(seeds) for half in ("A", "B")]
+        summary = ss.summarise_split_half(split_rows)
+        assert rows[f"split_half_sd_of_one_half_{symbol}"] == pytest.approx(summary["half_sd_m"], abs=0.006)
+        assert rows[f"split_half_sd_25_pct_{symbol}"] == pytest.approx(summary["sd_25_pct_m"], abs=0.006)
+        assert rows[f"split_half_sd_100_pct_{symbol}"] == pytest.approx(summary["sd_100_pct_m"], abs=0.006)
+        boot_rows = [{"resample": int(re.search(r"run_bootstrap_(\d+)_", name).group(1)), "decay_m": value}
+                     for name, value in rows.items() if name.startswith("run_bootstrap_") and name.endswith(f"_{symbol}")]
+        boot = ss.summarise_bootstrap(boot_rows)
+        assert rows[f"bootstrap_sd_25_pct_{symbol}"] == pytest.approx(boot["sd_25_pct_m"], abs=0.006)
+        assert rows[f"bootstrap_sd_100_pct_{symbol}"] == pytest.approx(boot["sd_100_pct_m"], abs=0.006)
+        assert rows[f"unreachable_runs_{symbol}"] == 0
+        # the SD at 100 % is half of the SD at 25 % (1 / sqrt(4))
+        assert rows[f"split_half_sd_100_pct_{symbol}"] == pytest.approx(rows[f"split_half_sd_25_pct_{symbol}"] / 2.0, abs=0.01)
+
+
+def test_the_calibration_record_states_the_measured_sampling_sds():
+    rows = _table_rows()
+    record = yaml.safe_load(CALIBRATION_RECORD.read_text(encoding="utf-8"))
+    text = " ".join((record["notes"] + " " + record["limitations"]).split())
+    assert "SAMPLING SENSITIVITY" in text and "never a release value" in text
+    for symbol in ("lambda", "lambda_c"):
+        for quantity in (f"split_half_sd_25_pct_{symbol}", f"split_half_sd_100_pct_{symbol}", f"bootstrap_sd_25_pct_{symbol}"):
+            assert f"{rows[quantity]:.2f}" in text, quantity
