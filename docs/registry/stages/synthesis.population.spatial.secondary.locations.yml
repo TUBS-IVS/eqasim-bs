@@ -108,12 +108,20 @@ notes: >-
   `validate()` token, alongside `purpose_subtype` / `trips` / `seed` /
   `escort_links` / `passive_joint_links` above. On the current 94.28 GB server
   (86.28 GB budget) the memory term drops the pool below the 62-worker core budget
-  from roughly 32.96 GB of driver RSS upwards; whether any real run sits above that
-  threshold is UNVERIFIED, because the recorder never sampled the fork-point RSS the
-  code reads (it captured a 19-36 GB before-stage baseline and a 19.6-30.1 GB
-  during-stage minimum). The stage logs the ceiling it used on every run, and the
-  server smoke is the outstanding evidence -- see ADR-0126 point 5 and the
-  sampling-point row of the run manifest.
+  from roughly 32.96 GB of driver RSS upwards. The 100 % production run of
+  2026-09-26/28 logged 37.55 and 36.37 GB at that point, so the bound binds; and
+  with 0.86 GB/worker its 56 workers still exhausted the machine and the kernel
+  killed the driver (docs/runs/chainsolver-pool-memory-2026-09-28.yml).
+
+  FORK-POOL MEMORY PROTECTION (ADR-0135): configs/base_bs.yml sets
+  `worker_memory_gb: 1.09` (the maximum measured in that run; the code default
+  stays 0.86 so that `braunschweig.resources`, which PopulationSim hashes too, is
+  not edited). The new submodule `pool_protection` (in `_HELPER_MODULES`) freezes
+  the driver heap while workers are forked (`gc.freeze`), makes every pool worker
+  the kernel OOM killer's first victim and ends it when the driver is gone; a
+  retry generation after a lost worker runs with half the workers. None of it
+  changes a result -- shards and seeds are untouched. Rules:
+  docs/codebase/notes/chainsolver-fork-pool-memory.md.
 
   EFFECTIVE SHARD COUNT IN THE LOG: `_make_person_shards` caps the shard count at the
   number of persons a pass actually solves, so a fixture, smoke or single-Kreis pass

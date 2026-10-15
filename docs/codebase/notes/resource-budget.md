@@ -73,23 +73,22 @@ injected from config, because the worker pool is FORKED from the driver and
 both compete for the same memory budget -- this is the run's OWN
 deterministic state, not other users' contention, so subtracting it is
 consistent with this module's "scale off the total allocation, not free
-capacity" rule (ADR-0126), not an exception to it. The new config key
-`braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
-`volatile=True`) carries the measured constant; it sizes the pool, never the
-partition, so it has no influence on any result.
+capacity" rule (ADR-0126), not an exception to it. The config key
+`braunschweig.chainsolvers.worker_memory_gb` (OPERATIONAL, `volatile=True`)
+carries the measured constant; it sizes the pool, never the partition, so it
+has no influence on any result. `configs/base_bs.yml` sets **1.09** (ADR-0135,
+the maximum measured by `docs/runs/chainsolver-pool-memory-2026-09-28.yml`);
+the code default here is still 0.86 because editing this module re-runs
+PopulationSim (see the cache paragraph below).
 
-**Where the bound bites, and what is NOT known.** On the current 94.28 GB
-server (86.28 GB budget, 0.86 GB/worker) the memory term drops the pool below
-the 62-worker core budget from a driver RSS of roughly **32.96 GB** upwards
-(`86.28 - 62 x 0.86`). Whether any real run sits above that threshold is
-**UNVERIFIED**: the code reads the driver's RSS at the FORK POINT inside
-`_solve_problem_set`, and the run resource recorder never sampled that instant
--- it captured a before-stage baseline of 19-36 GB and a during-stage minimum
-of 19.6-30.1 GB, and the ~33 GB threshold lies inside the first range. So do
-not read "typical runs are unaffected" as established; read it as "at the low
-end of what was recorded, the bound does not bind". The server smoke logs the
-fork-point value and the ceiling it produced, and is the outstanding evidence.
-See ADR-0126's point 5 amendment for
+**Where the bound bites.** The 100 % production run of 2026-09-25/28 logged
+the driver's RSS at the sizing point as 37.55 and 36.37 GB
+(`docs/runs/chainsolver-pool-memory-2026-09-28.yml`), so on the 94.28 GB server
+the MEMORY term decides the worker count, not the 62 cores: with 1.09 GB/worker
+a 36.4 GB driver gets floor((86.28 - 36.4) / 1.09) = 45 workers. With the old
+0.86 the same driver got 58, and 56 workers exhausted the machine -- the kernel
+killed the driver (ADR-0135 records the three protections added since). See
+ADR-0126's point 5 amendment for
 the full decision and its Consequences for the permanent cache-dependency
 cost this adds to the chainsolver stage (`resources.py` is now a helper
 module of BOTH the PopulationSim stage and the chainsolver stage, so any
