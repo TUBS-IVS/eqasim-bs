@@ -1,6 +1,8 @@
 """Which written trips file a diary validator reads (eqasim-bs#442, ADR-0141).
 
-The synthesis output writes ``<prefix>trips.csv`` from ``synthesis.population.trips.final``. With
+The synthesis output writes ``<prefix>trips.csv`` from ``synthesis.population.trips.simulated``, i.e. the
+``synthesis.population.trips.final`` day with the outside-tour modes judged against SrV (ADR-0145, #453): its
+``mode`` column carries the re-moded modes of the tours frozen at the cordon, not the donor modes. With
 ``braunschweig.portal.enabled`` true that table is the day AFTER the portal rewrite: a far destination carries the
 purpose ``outside`` and the inner legs of a stay are dropped. A validator that compares the written diary with a
 travel survey (purpose distribution, work/education participation, trips per person) must see the donor day instead,

@@ -29,6 +29,10 @@ KEY_INTEGERIZER_QUALITY = "analysis_integerizer_quality"
 KEY_EDUCATION_VALIDATION = "analysis_education_validation"
 KEY_HOUSEHOLD_COMPOSITION = "analysis_household_composition"
 KEY_DASHBOARD = "analysis_dashboard"
+KEY_STUCK_AGENTS = "analysis_stuck_agents"
+# Share of stuck residents (fraction, 0-1) above which the stuck analysis warns; default single-sourced from
+# stuck_agents.STUCK_WARN_SHARE (ADR-0146).
+KEY_STUCK_WARN_SHARE = "analysis_stuck_warn_share"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_METHOD = "braunschweig.population.method"
 # Issue #96 minor-employment plausibility guard (population_validation). The
@@ -47,6 +51,7 @@ def configure(context):
     context.config(KEY_EDUCATION_VALIDATION, True)
     context.config(KEY_HOUSEHOLD_COMPOSITION, True)
     context.config(KEY_DASHBOARD, True)
+    context.config(KEY_STUCK_AGENTS, True)
     context.config("output_path")
     context.config("sampling_rate")
     context.config("data_path")
@@ -59,6 +64,8 @@ def configure(context):
     )
     context.config(KEY_MINOR_EMP_MAX_RATE, DEFAULT_MINOR_EMPLOYMENT_MAX_RATE)
     context.config(KEY_MINOR_EMP_RAISE, False)
+    from braunschweig.analysis.stuck_agents import STUCK_WARN_SHARE
+    context.config(KEY_STUCK_WARN_SHARE, STUCK_WARN_SHARE)
     if not context.config(KEY_ENABLED):
         return
     context.stage("synthesis.output")
@@ -194,6 +201,15 @@ def execute(context):
                 "--output-dir", str(output_path / "analysis" / "education_validation")])
     _run(summary, "education_validation",
          context.config(KEY_EDUCATION_VALIDATION), edu_ready, edu_reason, _edu)
+
+    # The summary this writes under analysis/stuck/ is reused by the dashboard (run_records.assemble_run_record),
+    # so the multi-GB events file is streamed once per suite run; keep this sub-analysis BEFORE the dashboard.
+    def _stuck():
+        from braunschweig.analysis import stuck_agents as _stuck_module
+        _stuck_module.write_stuck_outputs(Path(sim_cache), output_path / "analysis" / "stuck",
+                                          warn_share=float(context.config(KEY_STUCK_WARN_SHARE)))
+    _run(summary, "stuck_agents",
+         context.config(KEY_STUCK_AGENTS), bool(sim_cache), sim_missing_reason, _stuck)
 
     def _dash():
         import sys as _sys

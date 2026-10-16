@@ -1,0 +1,62 @@
+dataset: srv2023_mode_by_distance_band
+title: SrV 2023 mode shares by straight-line distance band and purpose group (committed aggregate)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year (Tue-Thu reporting days)
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (the surveyed ~44 municipalities of 7 ZGB Kreise; no Kreis split)
+crs: null
+roles:
+- calibration_target
+used_by:
+- synthesis.population.trips.simulated
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_mode_by_distance_band.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv. Reads SrV2023_Wege.csv (V_ZWECK, E_START_ZWECK, E_HVM_5,
+    GIS_LAENGE, GIS_LAENGE_GUELTIG, GEWICHT_W_ZENSUS, STICHTAG_WTAG). The raw microdata is local-only and
+    never committed. Definitions: braunschweig.calibration.srv_mode_by_distance_band (builder) and
+    braunschweig.calibration.srv_mode_by_distance_band_table (loader the stage reads it with), ADR-0145.
+  script: scripts/extract_srv_mode_by_distance_band.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_mode_by_distance_band.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file; columns purpose_group, band, band_lower_km, band_upper_km, mode, share, n_band,
+    n_cell; one row per (group, band, mode) with all five modes (135 rows). Pin tests:
+    tests/test_srv_mode_by_distance_band_pins.py. verifier_entry stays null like every committed srv2023_*
+    aggregate (nothing to download); the loader raises FileNotFoundError when the file is absent and the
+    stage that reads it is on the production run list, hence requirements.production: required.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Unit is the trip (GEWICHT_W_ZENSUS-weighted), GIS-routed length only (GIS-invalid trips excluded and
+  counted in the header: 12,174 of 58,148, i.e. 21 %; 45,942 trips selected). The excluded trips are not a
+  random subset: among the 12,119 GIS-invalid trips that pass the extractor's other criteria (non-negative
+  weight, known E_HVM_5 mode, known purpose) the GEWICHT_W_ZENSUS-weighted mode shares are walk 32.6 %,
+  bicycle 11.0 %, car 38.1 %, car passenger 10.8 %, pt 7.4 %, against walk 24.1 %, bicycle 17.1 %, car
+  42.1 %, car passenger 10.3 %, pt 6.4 % among the 45,942 selected GIS-valid trips (unweighted: walk 32.8 %
+  against 23.1 %, bicycle 10.5 % against 15.8 %). Recomputed on 2026-10-16 from SrV2023_Wege.csv with the
+  selection of braunschweig.calibration.srv_mode_by_distance_band.select_trips minus its GIS criterion; the
+  cause of the missing GIS length was not investigated, so whether the table's shares carry a selection bias
+  for walk and bicycle is open. Modes E_HVM_5 only; the straight-line
+  equivalent divides the routed length by 1.3 (the pipeline's detour convention, not a measured per-trip
+  detour). Purpose groups follow braunschweig.calibration.srv_plan_structure.PURPOSE_BY_V_ZWECK (business
+  trips count as work, other education as education, as the pipeline maps MiD W_ZWECK 2 to work); a trip to
+  home takes the group of its origin purpose E_START_ZWECK (V_ZWECK code list plus -7; unknown origins and
+  home -> home trips are excluded and counted in the header). Thin bands (< 50 unweighted trips) are pooled
+  from the top, never into the 0-5 km band: education 30_plus (no other group pools). Wolfsburg is not
+  surveyed; the table is region-wide (no Kreis rows), so the Wolfsburg population uses the regional shares
+  (ASSUMPTION). A band share is a regional average over all person types; the stage restricts the draw to
+  the modes a person may use.
+notes: |
+  Reference for the outside-tour mode plausibility rule (issue #453, ADR-0145). Read by
+  braunschweig.synthesis.outside_tour_modes.stage through braunschweig.synthesis.outside_tour_modes.srv_table.

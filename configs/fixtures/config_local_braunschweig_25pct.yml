@@ -21,6 +21,7 @@ config:
   # and it needs the cordon; with the default (true) the chain solver would pull the portal stage
   # into this DAG.
   braunschweig.portal.enabled: false
+  braunschweig.outside_tour_modes.enabled: false
   processes: 8
 
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
@@ -334,6 +335,7 @@ aliases:
   # this pipeline at all. NOTE synpp substitutes an alias ONE step only, which is why the
   # target below is the stage THIS config actually uses, not the seam name.
   synthesis.population.trips.final: synthesis.population.trips
+  synthesis.population.trips.simulated: synthesis.population.trips
   synthesis.population.activities.final: synthesis.population.activities
 
   # Region-specific loader overrides: redirect selected eqasim_common.data.* stages

@@ -4,7 +4,8 @@ layer: matsim
 description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter injection and
   carless re-mode on top of the upstream writer. Since ADR-0104 (issue #244) the wrapper also
   replaces the pre-assignment trips/activities the upstream load_raw reads by the REPORTING-DAY
-  views (synthesis.population.trips.final / ...activities.final) and, when
+  views (synthesis.population.trips.simulated since ADR-0145, the trips.final day with the outside-tour
+  modes judged against SrV / synthesis.population.activities.final) and, when
   commute_day_state_enabled is on, merges the drawn commute_day_state into the resident persons
   frame so add_person emits it as the person attribute commuteDayState (java.lang.String,
   additive via OPTIONAL_PERSON_FIELDS). The attribute is written ONLY for persons that have a
@@ -43,6 +44,7 @@ features:
 - urban_parking
 - general_day_absence
 - portal_trips
+- outside_tour_modes
 decisions:
 - ADR-0121
 - ADR-0104
@@ -50,6 +52,7 @@ decisions:
 - ADR-0029
 - ADR-0110
 - ADR-0141
+- ADR-0145
 notes: >-
   PORTAL GATE MARKER (ADR-0141, issue #442, feature record portal_trips): the vendored writer
   matsim/scenario/population.py sets the Boolean (java.lang.Boolean) activity attribute portalGate=true on
@@ -59,3 +62,6 @@ notes: >-
   touch an outside activity (ADR-0141, decision 6). Without outside activities the
   output is byte-identical. The writer also logs the car to car_passenger re-mode rate (the carless
   re-mode shim, now counted, with the share of portal legs among the re-moded legs).
+  Input alias (ADR-0145, issue #453): the wrapper reads the trips from DAY_TRIPS_STAGE =
+  synthesis.population.trips.simulated (the record of that alias describes it); the activities stay on
+  synthesis.population.activities.final because modes do not enter them.

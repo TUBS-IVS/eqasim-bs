@@ -50,7 +50,10 @@ def assemble_run_record(
     # so the MATSim-dependent dashboard tabs skip (no silent failure).
     sim_output = _find_sim_output(sim_cache) if sim_cache is not None else None
     eqa = metrics_eqasim(output_dir, sample_rate)
-    ms = metrics_matsim(sim_output) if sim_output else {"available": False}
+    # The analysis suite writes the stuck summary below <output_path>/analysis/stuck before the dashboard runs; the
+    # dashboard reuses it when fresh instead of streaming the (multi-GB) events file a second time.
+    stuck_summary_path = Path(output_dir) / "analysis" / "stuck" / "stuck_summary.json"
+    ms = metrics_matsim(sim_output, stuck_summary_path) if sim_output else {"available": False}
     mid = load_mid_reference()
     cmp = build_comparisons(eqa, ms, mid)
 
