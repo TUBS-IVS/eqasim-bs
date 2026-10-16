@@ -37,7 +37,7 @@ evidence:
     instrumented: true
     log_marker: '[freight.injection] boundary links: selected'
     note: |
-      RunInjectFreight logs selected vs nearest-node fallback endpoints per role (start/end), writes them to freight_boundary_link_summary.csv in the prepare stage directory (printed by _inject_freight), and fails above freight_boundary_link_maximum_fallback_share (0.05). Measured on prod100_20260925 with the same rule: 0.05 % fallback at 300 m (run freight-boundary-links-prod100-2026-10-15).
+      RunInjectFreight logs selected vs nearest-node fallback endpoints per role (start/end), writes them to freight_boundary_link_summary.csv in the prepare stage directory (printed by _inject_freight), and fails above freight_boundary_link_maximum_fallback_share (0.05). Measured on prod100_20260925 with the same rule: 0.05 % fallback at 300 m (run freight-boundary-links-prod100-2026-10-15). In the pipeline, 1 % smoke: selected 725 / 725, fallback 0 (run freight-boundary-links-ab-1pct-2026-10-16).
   reference:
     kind: none
     note: |
@@ -46,12 +46,14 @@ validation:
   state: unvalidated
   runs:
   - freight-boundary-links-prod100-2026-10-15
+  - freight-boundary-links-ab-1pct-2026-10-16
   metric: null
-  note: The recorded run diagnoses the old snapping and sweeps the new rule on the same network. That the stuck-truck queue at link 501844 disappears in a simulation is not shown yet and needs a re-run (#444).
+  note: |
+    freight-boundary-links-prod100-2026-10-15 diagnoses the old snapping and sweeps the new rule on the 100 % network. freight-boundary-links-ab-1pct-2026-10-16 is a 1 % ON/OFF smoke at MATSim iteration 0 (same population, freight sample and seed): stuck trucks 98 -> 30, on residential link 501844 51 -> 0, freight plans starting on 501844 100 -> 0. That is a simulated effect in one draw, not a validation; no observed reference is compared. 27 of the 30 remaining stuck trucks sit on the motorway_link pair 182357 / 18416, unchanged against OFF (an open finding of that run, not caused by this rule).
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
-    Fix implemented and measured statically; no simulation with the rule has been run yet.
+    Fix implemented, measured statically on the 100 % network and shown in a 1 % iteration-0 smoke (freight-boundary-links-ab-1pct-2026-10-16). No review of the feature yet, and no multi-iteration or 100 % simulation with the rule.
   source: ADR-0144

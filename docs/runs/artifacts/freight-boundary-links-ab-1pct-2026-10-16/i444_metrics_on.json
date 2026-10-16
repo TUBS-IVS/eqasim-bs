@@ -1,0 +1,228 @@
+{
+ "arm": "on",
+ "watched_links": [
+  "501844"
+ ],
+ "simulation_output": "/home/felix/i444-smoke/on/eqasim-bs/eqasim-data/cache_i444_1pct_on/matsim.simulation.run__d99a2db9549cd4af72fcee70cc5767cf.cache/simulation_output",
+ "prepare_stage_dir": "/home/felix/i444-smoke/on/eqasim-bs/eqasim-data/cache_i444_1pct_on/braunschweig.matsim.simulation.prepare__aa02bf7f2a55ca2b7a8934a1f6044ace.cache",
+ "stuck_and_abort_events": 440,
+ "stuck_persons": 440,
+ "stuck_by_leg_mode": {
+  "car": 163,
+  "pt": 98,
+  "walk": 86,
+  "null": 60,
+  "truck": 30,
+  "bicycle": 3
+ },
+ "truck_stuck": 30,
+ "truck_stuck_on_watched_links": {
+  "501844": 0
+ },
+ "truck_stuck_top_links": [
+  {
+   "link": "182357",
+   "truck_stuck": 23,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "18416",
+   "truck_stuck": 4,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "562355",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "589405",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "615854",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  }
+ ],
+ "truck_stuck_distinct_links": 5,
+ "truck_departures": 521,
+ "truck_arrivals": 491,
+ "freight_plans": 521,
+ "freight_first_activity_on_watched_links": {
+  "501844": 0
+ },
+ "freight_last_activity_on_watched_links": {
+  "501844": 0
+ },
+ "freight_first_activity_top_links": [
+  [
+   "430866",
+   104
+  ],
+  [
+   "199731",
+   100
+  ],
+  [
+   "469845",
+   48
+  ],
+  [
+   "6555",
+   37
+  ],
+  [
+   "638483",
+   8
+  ],
+  [
+   "66920",
+   8
+  ],
+  [
+   "345115",
+   6
+  ],
+  [
+   "134716",
+   5
+  ],
+  [
+   "482145",
+   4
+  ],
+  [
+   "625384",
+   3
+  ]
+ ],
+ "freight_last_activity_top_links": [
+  [
+   "224246",
+   117
+  ],
+  [
+   "450785",
+   99
+  ],
+  [
+   "345118",
+   39
+  ],
+  [
+   "228576",
+   34
+  ],
+  [
+   "205528",
+   21
+  ],
+  [
+   "109507",
+   9
+  ],
+  [
+   "58544",
+   9
+  ],
+  [
+   "627432",
+   7
+  ],
+  [
+   "482144",
+   5
+  ],
+  [
+   "184321",
+   5
+  ]
+ ],
+ "link_attributes": {
+  "182357": {
+   "from": "21586769",
+   "to": "61868145",
+   "length": "224.6555807255989",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "30997945"
+  },
+  "18416": {
+   "from": "1386907932",
+   "to": "30027415",
+   "length": "93.23454733293615",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "270428389"
+  },
+  "501844": {
+   "from": "322530152",
+   "to": "299293713",
+   "length": "209.28326855091765",
+   "freespeed": "8.333333333333334",
+   "capacity": "600.0",
+   "permlanes": "1.0",
+   "modes": "car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "residential",
+   "osm:way:id": "27267197"
+  },
+  "562355": {
+   "from": "11933581253",
+   "to": "11933581261",
+   "length": "500.6355471417569",
+   "freespeed": "55.55555555555556",
+   "capacity": "6000.0",
+   "permlanes": "3.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "270442671"
+  },
+  "589405": {
+   "from": "291207546",
+   "to": "30430120",
+   "length": "284.44688881265535",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "29174494"
+  },
+  "615854": {
+   "from": "267232860",
+   "to": "5866592075",
+   "length": "963.1595034157624",
+   "freespeed": "55.55555555555556",
+   "capacity": "6000.0",
+   "permlanes": "3.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "24581331"
+  }
+ },
+ "freight_injection_summary.csv": [
+  "trip_type;injected_trips",
+  "incoming;65",
+  "internal;74",
+  "outgoing;104",
+  "transit;278"
+ ],
+ "freight_boundary_link_summary.csv": [
+  "endpoint_role;selected_link_endpoints;nearest_node_fallback_endpoints",
+  "start;343;0",
+  "end;382;0"
+ ]
+}

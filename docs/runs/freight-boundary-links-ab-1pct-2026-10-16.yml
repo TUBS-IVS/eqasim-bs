@@ -1,0 +1,173 @@
+id: freight-boundary-links-ab-1pct-2026-10-16
+date: '2026-10-16'
+repository:
+  commit: ef0c999e2f7f5bf27c1a275501fce4d8fbe83afa
+  branch: fix/i444-a2-gate-connector
+  notes: >-
+    ON arm: eqasim-bs ef0c999e (fix/i444-a2-gate-connector, a merge of main 6a5b696e into the fix) with
+    eqasim-java-bs b7d26eccf27bd6dae2b9ea4cafca4d9546616cc9 (fix/i444-freight-boundary-links, one commit on
+    main 21c1045). OFF arm: eqasim-bs main 6a5b696e71553d87766d5946981ea3dd3ad8cdd8 with eqasim-java-bs main
+    21c1045c4d6ffd55d362927cd485fd09f7cb1d0b. In eqasim-bs the arms differ in braunschweig/matsim/simulation/prepare.py
+    (the injection call and its three config keys) plus scripts and tests that the pipeline does not run
+    (`git diff --stat 6a5b696e ef0c999e`). Each arm ran from detached worktrees on felix,
+    ~/i444-smoke/<arm>/eqasim-bs and ~/i444-smoke/<arm>/eqasim-java-bs, so the base value
+    eqasim_source_path ../eqasim-java-bs resolved to the arm's own Java tree without changing the config
+    value. The commits come from the "[i444-smoke]" line at the top of each run log (i444_injection_log_*.txt).
+    run_provenance_*.json records the eqasim-bs commit but "eqasim_java_commit": "unknown": the provenance
+    helper did not resolve the commit of the Java worktree. The PR head moved on to 9251f50a after the run,
+    which differs from ef0c999e only in tests/test_chainsolver_pool_protection.py (main's #451).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_1pct_off.yml
+  - docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_1pct_on.yml
+  notes: >-
+    Throwaway server overlays (committed here as artifacts, written by make_overlay.sh) built from
+    configs/overlays/test_1pct.yml of the arm's own commit: sampling_rate 0.01, matsim_last_iteration 0
+    (MATSim ran iteration 0 only), random_seed 1234 (base value), freight_enabled and cordon_enabled true
+    (base), run target matsim.output only. Every scientific key keeps the base / test_1pct value. The ON
+    arm used the code defaults of the new rule: freight_boundary_link_minimum_capacity_veh_per_h 1000,
+    freight_boundary_link_maximum_distance_m 300, freight_boundary_link_maximum_fallback_share 0.05.
+    Own working directory per arm (cache_i444_1pct_off / cache_i444_1pct_on). output_path enters the synthesis
+    stage hashes, so the ON overlay keeps OFF's relative strings for output_path and
+    analysis_working_directory (eqasim-data/output_i444_1pct_off, eqasim-data/cache_i444_1pct_off). They
+    resolve inside the ON worktree, so the directories are physically separate; only working_directory and
+    output_prefix say "on". With that, the stage hashes of the two arms differ in exactly prepare, run,
+    output and meta_output (i444_stage_hash_diff_off_on.txt, scripts/report_stage_hash_impact.py). The
+    resource gate clamped java_memory 100G -> 86G and popsim num_workers 3 -> 2 in both arms (operational,
+    run_provenance_*.json).
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on, freight on (base configuration)
+  notes: >-
+    Every count below is a sample count at sampling_rate 0.01, never expanded. Both arms inject the same 521
+    freight trips (incoming 65, internal 74, outgoing 104, transit 278; sampled 521 / 56,364 at rate 0.01).
+    That gives 725 boundary endpoints: 343 starts (incoming + transit) and 382 ends (outgoing + transit). Both
+    arms share the same synthetic resident population (identical stage hashes, the ON working directory is a
+    physical copy of OFF's).
+pipeline:
+  targets:
+  - matsim.output
+  notes: >-
+    OFF: started 2026-10-15 16:23 from a physical copy (cp -a) of the entries of
+    felix:~/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim older than 14:42 plus its pipeline.json. 42
+    stages were devalidated: popsim and every synthesis stage after it, because main 986145f6 added
+    braunschweig.population.popsim.employment_grid_age_shape_source and no felix cache matched;
+    matsim.runtime.eqasim, freight extraction and trips (new Java tree); prepare, run and output. OSM, GTFS,
+    pt2matsim and the other network stages were cache hits. The first launch died at 17:05 in popsim with a
+    FileNotFoundError: the local-only, gitignored zensus2022_employed_by_age_kreis.csv (ADR-0137) is missing from
+    the shared felix data. It was copied from the controller machine (sha256 43d64e5d0f8bfb41..., 126 rows,
+    header records the source xlsx sha256 aad34940... that the Data Registry names) into BOTH arm worktrees
+    only. The relaunch at 17:07 recomputed the remaining 36 stages (i444_devalidated_off.txt) and finished
+    2026-10-16 05:24, exit 0. ON: started 05:33 from a cp -a of OFF's working directory; synpp devalidated exactly
+    7 stages (i444_devalidated_on.txt): matsim.runtime.eqasim (new Java source mtime), freight.extraction
+    (05:33 -> 06:48), freight.trips, braunschweig.matsim.simulation.prepare (06:48 -> 06:56), matsim.simulation.run
+    (06:56 -> 07:00), matsim.output and documentation.meta_output. Finished 07:01, exit 0. The SimWrapper
+    post-analysis inside the simulation stage logged errors (PublicTransitAnalysis, TripAnalysis: households
+    file not found); they did not stop the stage and do not touch the counts below.
+classification:
+- smoke
+- ab_test
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    OFF 12 h 17 min after the relaunch (popsim dominated), ON 88 min. Another session's parking runs (1 %, then
+    25 %) used felix at the same time, so the runtimes are not a performance measurement. A smoke at MATSim
+    iteration 0 on a 1 % sample: no observed reference is compared, so this is NOT a validation. It shows the
+    simulated effect of the rule on stuck trucks in one draw, not an equilibrium and not the 100 % behaviour.
+source: >-
+  felix:~/i444-smoke/logs/run_off_20261015T170720.log (OFF, relaunch), run_off_20261015T162341.log (OFF, failed
+  first launch) and run_on_20261016T053300.log (ON). The figures are the outputs of smoke_metrics_i444.py
+  <working_directory> <arm> 501844 (i444_metrics_{off,on}.json) and stuck_link_probe_i444.py <simulation_output>
+  501844 182357 97299 18416 (stuck_link_probe_{off,on}.json), both committed here and run with the conda eqasim
+  python on felix against each arm's matsim.simulation.run cache directory (iteration 0 output_events,
+  output_plans and output_network). freight_boundary_link_summary.csv was copied from the ON prepare stage
+  directory.
+environment: 'server (felix, Linux, 64 cores, 94 GB), conda eqasim (Python 3.10.10), JDK 25.0.3+9 (~/tools)'
+validation:
+- metric: boundary-link rule wiring and fallback rate, ON arm (prepare stage)
+  reference: 'none -- a wiring and fallback-rate check; the 5 % fail threshold is the ADR-0144 setting, not a target'
+  result: >-
+    The ON log prints "[freight.injection] boundary links: selected 725 / 725, nearest-node fallback 0 (0.00 %)",
+    and freight_boundary_link_summary.csv in the prepare stage directory holds start 343 / 0 and end 382 / 0
+    (selected / nearest-node fallback). 343 = incoming 65 + transit 278 and 382 = outgoing 104 + transit 278,
+    so every boundary endpoint was linked by the rule. The OFF arm prints no such line and writes no such file.
+  artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/freight_boundary_link_summary.csv, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_injection_log_on.txt'
+  notes: 'Primary-path coverage 100 % on this sample; the 100 % network sweep gave 0.05 % (freight-boundary-links-prod100-2026-10-15).'
+- metric: freight start and end links in the simulated plans, OFF vs ON (521 freight plans per arm)
+  reference: 'the OFF arm of the same run (same population, same freight sample, same seed)'
+  result: >-
+    Plans whose first activity is on residential link 501844: 100 -> 0. The A2-west entries now start on motorway
+    199731 (100 plans) and the A2-west exits end on the westbound carriageway 224246 (117 plans; OFF: eastbound
+    199731, 117). The A2-east entries move from 450785 to 430866 (104) and the exits stay on 450785 (99). This
+    matches the link choices the 100 % sweep predicted (freight-boundary-links-prod100-2026-10-15).
+  artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_off.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_on.json'
+- metric: stuck agents (stuckAndAbort events of iteration 0) by leg mode and stuck trucks by link, OFF vs ON
+  reference: 'the OFF arm of the same run'
+  result: >-
+    stuckAndAbort 508 -> 440. Truck 98 -> 30 (truck arrivals 423 -> 491 of 521 departures). Stuck trucks on
+    501844: 51 -> 0. Other modes OFF -> ON: car 164 -> 163, pt 97 -> 98, walk 85 -> 86, leg mode null (still
+    in an activity at the simulation end) 60 -> 60, bicycle 3 -> 3, car_passenger 1 -> 0. Truck stuck links ON:
+    182357 23, 18416 4, 562355 1, 589405 1, 615854 1 (OFF: 501844 51, 182357 23, 97299 13, 18416 4, 372881 2
+    and five links with 1). Every truck stuckAndAbort event in both arms is at 30:00:00, the simulation end
+    time: these trucks were still in the network when the simulation stopped.
+  artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_off.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_on.json'
+  notes: >-
+    One draw per arm at a 1 % sample and iteration 0; no significance statement is possible and no stuck
+    target exists. The OFF truck count (98) equals the OFF arm of portal-trips-ab-1pct-2026-10-09 (98).
+    Non-freight modes move by at most one agent.
+- metric: the remaining stuck-truck links of the ON arm (who is stuck there)
+  reference: 'none -- a diagnosis, recorded as an open finding'
+  result: >-
+    182357 and 18416 are adjacent single-lane motorway_link edges (1,500 veh/h, 80 km/h; OSM ways 30997945 and
+    270428389) at about (603.2 km E, 5797.2 km N), EPSG:25832, about 46 km west of the A2-east gate. In the ON
+    arm all 27 trucks stuck there end at the A2-west exit 224246; the 23 transit trucks start at the A2-east
+    entry 430866, the 4 outgoing ones inside the region. OFF has the same counts there (23 and 4; its 24
+    transit trucks start at the old A2-east link 450785, and all end at A2-west 199731). 97299 (13 in OFF, a motorway_link near the A2-west gate used by trucks
+    from 501844 and 450785) has no stuck truck in ON.
+  artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_off.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_on.json'
+  notes: >-
+    Not caused or changed by the boundary-link rule (identical count in both arms). Why westbound A2 through
+    traffic uses a single-lane motorway_link there is not diagnosed in this run.
+features:
+- freight_boundary_links
+artifacts:
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/smoke_metrics_i444.py
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_i444.py
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_off.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_metrics_on.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_off.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_on.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/freight_boundary_link_summary.csv
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_injection_log_off.txt
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_injection_log_on.txt
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_devalidated_off.txt
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_devalidated_on.txt
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_stage_hash_diff_off_on.txt
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_1pct_off.yml
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/i444_1pct_on.yml
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/run_provenance_off.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/run_provenance_on.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/setup_arm.sh
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/symlink_farm.py
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/make_overlay.sh
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/launch_arm.sh
+- 'felix:~/i444-smoke/off/eqasim-bs/eqasim-data/cache_i444_1pct_off (OFF working directory, about 16 GB)'
+- 'felix:~/i444-smoke/on/eqasim-bs/eqasim-data/cache_i444_1pct_on (ON working directory, about 16 GB)'
+- 'felix:~/i444-smoke/logs (run logs, hash-impact listings)'
+issues:
+- '#444'
+decisions:
+- ADR-0144
+notes: >-
+  What this run is evidence for: the rule is wired end to end at a 1 % sample (the Java injector linked all 725
+  boundary endpoints, 0 fallback; the prepare stage logged and wrote the summary), and in the simulation the
+  queue on residential link 501844 is gone (51 -> 0 stuck trucks, 100 -> 0 freight starts on that link), with
+  68 more trucks arriving. What it does not show: (1) no validation of any kind (no observed reference, e.g.
+  truck counts, was compared); (2) iteration 0 only, so no replanning and no equilibrium; (3) one 1 % draw, so
+  the 100 % queue size is not reproduced (prod100_20260925 had 6,907 of 7,595 stuck trucks on 501844).
+  30 trucks stay stuck in the ON arm, 27 of them on the motorway_link pair 182357 / 18416, unchanged against
+  OFF (see the open finding above). Caveats: the felix shared data lacks zensus2022_employed_by_age_kreis.csv
+  (copied into the arm worktrees only); run_provenance records eqasim_java_commit unknown for a worktree Java
+  tree (the commits are in the run logs).
