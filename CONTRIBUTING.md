@@ -1,8 +1,9 @@
 # Contributing to eqasim-bs
 
 This project is **research software**: correctness, reproducibility, traceability, and
-clarity outrank speed. Read [CLAUDE.md](CLAUDE.md) for the full binding rules — this file
-is the practical workflow contract for humans and AI agents alike.
+clarity outrank speed. Codex starts with [AGENTS.md](AGENTS.md); Claude continues
+to use [CLAUDE.md](CLAUDE.md). This file is the practical workflow contract for
+humans and AI agents alike.
 
 ## The one canonical feature workflow
 
@@ -78,7 +79,7 @@ opening this repository; everything technical follows under `## Details`. The fu
 [docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 Nothing incidental gets forgotten. Decisions graduate into an ADR under `docs/decisions/`.
 
-## Non-negotiable rules (summary — full text in CLAUDE.md)
+## Non-negotiable rules (summary — see AGENTS.md or CLAUDE.md)
 
 - **English** for all code/comments/docs/commit messages; German only in chat.
 - **No silent fallbacks**: every fallback logs its primary-vs-fallback rate, and the primary

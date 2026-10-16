@@ -1,82 +1,107 @@
-# Agent Bootstrap — eqasim-bs (Braunschweig)
+# Codex instructions — eqasim-bs
 
-> Read this file first. It is the single entry point for any AI session working
-> on this repository; it points at the longer-form docs rather than duplicating
-> them. Binding rules: [`CLAUDE.md`](CLAUDE.md). Ownership model:
-> [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md).
+This file is the entry point for Codex in this repository. Claude continues to use
+[`CLAUDE.md`](CLAUDE.md); do not replace or redirect Claude's instructions here.
+Both agents follow the same project and scientific rules. Keep this file concise:
+read the linked documentation when the task needs it, rather than loading every
+document before every edit.
 
-## Mission in one paragraph
+## Project and scientific boundaries
 
-`eqasim-bs` synthesises a Großraum-Braunschweig (ZGB-8) population and MATSim
-scenario. It is a fork of
-[eqasim-bavaria](https://github.com/eqasim-org/eqasim-bavaria) (`b20fbe6`,
-ADR-0000): a Python synpp pipeline (population synthesis from Zensus-2022 grid
-controls with MiD-2023 donors in production, plus open ENTD workflows),
-gravity-based location choice, cordon in-commuter and freight injection, and
-the Java simulation via the sibling `../eqasim-java-bs` fork. Research
-software: no silent fallbacks, no invented reference values, convergence is
-not validation.
+`eqasim-bs` builds a synthetic population and MATSim scenario for the
+Großraum Braunschweig (ZGB-8). It combines a Python synpp pipeline, Zensus 2022
+controls, MiD 2023 donors in production, location choice, cordon commuters and
+freight, and the sibling `../eqasim-java-bs` simulation fork. Treat it as research
+software: correctness, reproducibility, provenance and honest reporting are
+requirements.
 
-## Read order for any new session
+- Never invent observed targets or reference values. Cite a committed source or
+  publication; otherwise label a number as an assumption. A stable or converged
+  run is not evidence of agreement with observed behaviour.
+- Make every fallback visible: record primary and fallback counts/rates, flag a
+  scientifically implausible fallback rate, and test that representative data
+  actually takes the primary path. When touching a stage with an uninstrumented
+  fallback, add that instrumentation.
+- Validate required inputs and fail clearly on invalid data. Preserve data and
+  output provenance, including input sources, CRS, units, parameters and run ID.
+  Use EPSG:25832 for metric spatial calculations; never measure distance in
+  WGS84 longitude/latitude. Keep random seeds explicit (canonical seed: 1234;
+  gravity slope: -0.065).
+- Put relevant parameters in configuration rather than hard-coded paths,
+  thresholds or calibration values. New behaviour is flag-gated, default-ON,
+  with a tested, byte-identical OFF path. Preserve existing behaviour when a
+  change does not explicitly require different results.
+- Use MATSim and eqasim conventions and existing APIs. Keep stages and classes
+  focused; make units explicit in names and use snake_case for CSV columns.
+  Write code, comments, documentation, configuration descriptions and commit
+  messages in English. Chat with the maintainer in German.
 
-1. [`docs/MODEL_OVERVIEW.md`](docs/MODEL_OVERVIEW.md) — the 10-minute model.
-2. [`docs/generated/STATUS.md`](docs/generated/STATUS.md) — what is active NOW
-   (generated from registries + resolved config; never edit generated files).
-3. [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md) —
-   who owns which fact; maintenance duties.
-4. [`CONTRIBUTING.md`](CONTRIBUTING.md) — the canonical feature workflow
-   (brainstorm → plan → worktree → TDD → verify → review → `git pr` → record).
-5. [`docs/codebase/`](docs/codebase/) — STACK, STRUCTURE, ARCHITECTURE,
-   CONVENTIONS, INTEGRATIONS, TESTING, CONCERNS.
-6. Open work: [GitHub issues](https://github.com/TUBS-IVS/eqasim-bs/issues)
-   (the only backlog — `PROJECT_STATUS.md`/`PROJECT_BACKLOG.md` are retired
-   stubs).
+## Where to look and where to record changes
 
-## Environment
+Choose sources by task. [`docs/MODEL_OVERVIEW.md`](docs/MODEL_OVERVIEW.md)
+explains the model; [`docs/generated/STATUS.md`](docs/generated/STATUS.md)
+shows current configured state. Use [`docs/codebase/`](docs/codebase/) for
+architecture, conventions and testing details, and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the feature workflow. GitHub issues in
+`TUBS-IVS/eqasim-bs` are the only backlog.
 
-- OS: Windows 10/11 with PowerShell (user machine); production runs on a
-  64c/128GB Linux server (connection details in Claude memory, not committed).
-- Python 3.10, conda env **`eqasim`** (miniforge) runs the pipeline AND pytest:
-  ```powershell
-  & "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
-  conda activate eqasim
-  ```
-- Linux/WSL2 with the captured server environment is the canonical runtime;
-  native Windows is also checked for portability. Install from the platform's
-  committed lock files; see [environment setup](docs/codebase/notes/reproducible-environment.md).
-- Run `python scripts/run_tests.py --check` at session start. Fix interpreter,
-  dependency or `matsim` import errors before testing; never patch imports or
-  re-solve the trusted server environment to bypass a failed check.
-- Java: eqasim-java 2.2.0 needs JDK 25 (`java_home` / `java_binary` config).
-- `eqasim-data/` is gitignored/local-only (~13 GB) except small committed
-  aggregate reference tables; preflight:
-  `python scripts/verify_braunschweig_inputs.py`.
-- Project CRS: EPSG:25832; never compute metric distances in WGS84.
-- Seed 1234 and gravity slope -0.065 are fixed across configs.
+Follow [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md)
+when changing model facts. Code and the synpp DAG own implementation and stage
+dependencies; the resolved production config (`configs/base_bs.yml` plus
+`configs/overlays/test_100pct.yml`) owns active state. Put stage semantics in
+`docs/registry/stages/`, feature state in `docs/registry/features/`, data
+provenance in `docs/registry/data/`, decisions in `docs/decisions/ADR-*.md`,
+and significant runs and validation evidence in `docs/runs/*.yml`. Assess
+`README.md` when setup, dependencies, data paths, commands or outputs change.
+Never claim validation without an observed reference, run and comparison
+record. Never hand-edit `docs/generated/*`; regenerate it with the documentation
+build command. Keep each per-instance fact in one record; shared prose is an
+overview, not an append-only log. Do not revive retired status or backlog files.
 
-## The five standing commands
+## Working in this repository
 
-```bash
-python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml  # composed run
-python scripts/verify_braunschweig_inputs.py --matsim                            # data preflight
-python -m braunschweig.documentation check                                       # registry/docs check (0 FAIL required)
-python -m braunschweig.documentation build                                       # regenerate docs/generated/*
-python scripts/run_tests.py -q                                                  # regression suite (eqasim env)
+- Inspect the relevant code and current Git state before editing. Keep changes
+  scoped to the request and do not overwrite unrelated local work. For
+  substantial feature work, follow `CONTRIBUTING.md`: design, plan, isolated
+  worktree, implementation, verification, review and documentation. Parallel
+  agents use separate worktrees. Verify the branch before committing.
+- Run the checks that exercise the change, fix failures it caused, and rerun
+  affected checks without asking at every step. Use a real small smoke when
+  unit tests cannot show a scientific pipeline works. Run
+  `python scripts/run_tests.py --check` at session start and follow the
+  [required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate)
+  before handing off, pushing or opening a PR. Write a test only for a defect it
+  can plausibly catch ([.claude/rules/tests.md](.claude/rules/tests.md)). Do not
+  run an unrelated full suite for a documentation-only edit.
+- Update the applicable registries, ADRs and run manifests before declaring a
+  model change done; regenerate and check generated docs when those sources
+  change. Report what was verified and whether scientific outputs may change.
+- Stage explicit paths. Never run `git push` without explicit confirmation for
+  that push. Open PRs only with `git pr`, whose base is the fork
+  `TUBS-IVS/eqasim-bs`, and merge only when the maintainer asks. Newly
+  discovered work: fix a quick fix now (bugs root cause first, failing test
+  first); propose larger work before opening an issue for it (CLAUDE.md,
+  "Newly discovered work").
+
+## Environment and useful commands
+
+Local development uses Windows PowerShell and the Python 3.10 `eqasim` conda
+environment; the production simulation uses a Linux server. Java requirements
+come from the active `eqasim-java-bs` configuration. `eqasim-data/` is local and
+gitignored. Install from the platform's committed lock files
+([environment setup](docs/codebase/notes/reproducible-environment.md)) and
+consult [`docs/ONBOARDING.md`](docs/ONBOARDING.md) when setting up an
+environment or running a scenario.
+
+```powershell
+& "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
+conda activate eqasim
+python scripts/verify_braunschweig_inputs.py --matsim
+python -m braunschweig.documentation build
+python -m braunschweig.documentation check
+python scripts/run_tests.py --check
+python scripts/run_tests.py -q
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 ```
 
-## Non-negotiables for agents
-
-- English everywhere in the repo; chat with the maintainer in German.
-- Follow the [required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate)
-  before handing off, pushing or opening a PR: shared runner, final-tree Linux
-  regression evidence, documented skips, and Windows CI compatibility. Direct
-  pytest or an older checkout's results do not satisfy that gate.
-- Never `git push` without explicit per-push confirmation; PRs only via
-  `git pr` (base = fork `TUBS-IVS/eqasim-bs`).
-- New behaviour flag-gated, default-ON with a byte-identical, tested OFF path.
-- Write a test only for a defect it can plausibly catch, at the highest useful
-  level, and keep it cheap; the binding rules are in
-  [.claude/rules/tests.md](.claude/rules/tests.md) (ADR-0134, ADR-0143).
-- Update the registries/ADRs/run manifests with your change (PR checklist);
-  never edit `docs/generated/*` by hand.
-- Parallel agents get separate worktrees; verify the branch before committing.
+Select commands according to the task; the pipeline run needs local input data.
