@@ -1,0 +1,434 @@
+{
+  "arms": {
+    "legacy": {
+      "iterations": null,
+      "last_iteration": null,
+      "outcome_report_version": null,
+      "outcome_reports": null,
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_legacy/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_legacy/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37033,
+      "trips_sha256": "cb1e153c7202ef18f69cd565cf809a470bd4c822c5d53d5cce94ec2f5bc94964"
+    },
+    "off": {
+      "iterations": null,
+      "last_iteration": null,
+      "outcome_report_version": null,
+      "outcome_reports": null,
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_off/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_off/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37032,
+      "trips_sha256": "93548d24119c85cbc4fc5bac9e8b0a15b329fc21b691a2b4a533c52f1c3f7002"
+    },
+    "v3": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "ce25aafb17b1a69b2224bdc05bc224bcdd5ad12c805fd95d8261aebfb59e6c95"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "64a69707cf364cb67c570d7b07a53aae0e998aea5b7d7884141f9c5439f42dc8"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "95916f0559d6c7d635cdeb70d82110a72a53266e5af9a210ec634d00e84778b3"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "215361088c1bced09ab3598745addfacaab0283a0b7609643adac2d97c0eae23"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "9daa2c31fa188c7b3db0838e30b65949b2adbc71daf8a29b7a2149548371cffd"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "f3879b9c8232d0b559a0c02a4bfee0a5fea9fbdf3035aefd9470fde9ae0abf48"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "2ed4c793a64748c8cb460ead935a92b288d62c653a4e038ab5701450f37febf3"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "3f15ce8cb73895430483cd9b9e0f36047778974bd0f1532f1c02d87eef265f2a"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "6e07a8020c92d15ece1db92b065fd33d8b8a19aef7425794f8cebb57d396fefa"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "d35ff31c4638de1ab4f9dd05e3476eb348b0b06c4c155af3d2762cddcad8ac2f"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37032,
+      "trips_sha256": "2ca31efd1236463d24ae8a5b14bfcb8a0954c0adfe89182363e5c21579f495ed"
+    },
+    "v3_cost_0.5": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "ec08d3da7dba21b91ae9a6b7a3db911fa2427f5baa64943ec3d08a5e8bb8126a"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "88eef45b9c3e901588dae0160b52416113d1fff6012624c4dbdea354fce7e10a"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "f717c18db1f26188a007562723529e5a1299a655cb1f958ec19454d1351d09d3"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "a4dd08549f7c6dc7c49f14e5069ea2b005cf84f6652c9da0e034104d41dc53a9"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "1953198f26e91e8180f496ec5779368e3d475e48061705cea63985eee196626b"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "624c26fa314a154f7fb6b1045d1d331c528f1bb841586144dadaca6b2747c0d6"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "a8512900c022aff08f21ed038d14d1de4275bd1749962472ccfea8405e415fc5"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "d7285f0f5b77e3b475c4775ced7a38d480925298afedccee9c485a618cc38060"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "aa20dfa7e034a085380fb60739bc0d7bb70652cedd61728e8f49c4951ad65c96"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "cc0e3e2df2b89eefa1cbf809940569b23683eb09b1dc55bd24c13873865b1827"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37033,
+      "trips_sha256": "9cc58d15ec4ac8876e360f7cac5105a811bb658ee3a93187e4670ada548b843f"
+    },
+    "v3_cost_2.0": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "1534e878a14e8d1dcbfdc23f223c72c78710b460ddfc9ac5687ad41e10315e0d"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "239b862132406003a4d4cc4f9f6ff025691cb36ad0ce19adbf01a6d479be53e7"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "f21b4d36b935fc028e22d7950d0b77f812bbbab90afc4b061f8e7e795fb960e2"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "ff87721f0c1f2d65deaa5f36f538e2d0ee7a5bdbe2acc61726bcc126b115870b"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "8bb1cf40938ab772ad9f2c62c6742d4cdfb0106fbbe004bdf3e90ba7153a148f"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "a3392e9063412aa84f97914fc554b40c214f664ec0ac89f9bfae1ea38af98593"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "856e9d82650537ed652ff4cbcf165d19b84ae7d7d05fa07d60bdcd89e54e8b79"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "91fbcf043271124ab454bd33de522f7d8409be6b2e34da7b03f147edca4558cb"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "5e776d41ddd1ca0fece6c277143d41bede959a053f63310451028235f868ca33"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "892d0143ea1c604a60369c8af82e7d435e2c2ecc34a7a4654b1ea21d174c9205"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37033,
+      "trips_sha256": "a6f295a841fddc2c1ea124a77407e0eb52f8385633a55a04fca03d151e8e6a17"
+    },
+    "v3_ev_off": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "ce25aafb17b1a69b2224bdc05bc224bcdd5ad12c805fd95d8261aebfb59e6c95"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "64a69707cf364cb67c570d7b07a53aae0e998aea5b7d7884141f9c5439f42dc8"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "95916f0559d6c7d635cdeb70d82110a72a53266e5af9a210ec634d00e84778b3"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "215361088c1bced09ab3598745addfacaab0283a0b7609643adac2d97c0eae23"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "9daa2c31fa188c7b3db0838e30b65949b2adbc71daf8a29b7a2149548371cffd"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "f3879b9c8232d0b559a0c02a4bfee0a5fea9fbdf3035aefd9470fde9ae0abf48"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "2ed4c793a64748c8cb460ead935a92b288d62c653a4e038ab5701450f37febf3"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "3f15ce8cb73895430483cd9b9e0f36047778974bd0f1532f1c02d87eef265f2a"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "6e07a8020c92d15ece1db92b065fd33d8b8a19aef7425794f8cebb57d396fefa"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "d35ff31c4638de1ab4f9dd05e3476eb348b0b06c4c155af3d2762cddcad8ac2f"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37032,
+      "trips_sha256": "2ca31efd1236463d24ae8a5b14bfcb8a0954c0adfe89182363e5c21579f495ed"
+    },
+    "v3_free_shift_-0.1": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "ca6b7941c664fb692083dfa4e517cbce330309ad6c40006cd0ff78f9184226b0"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "edf2c529eff475e7252d4e3b03e3e5c9d6194c81a0581a5c83725e37ebffb700"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "d82d0eeeee9b7cf5e9487653408cdc852702ca81050359feb1943c10aa840ba1"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "5c3671d21a5a0f6899d4afced82a2ed3f74c056cd054928a4a5dd131a7fc1f89"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "c92f9dc458cce3867a7c04421ef113ef91eac50be90953b8d6fc3d814b47cfa7"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "5c87d2c555a6fec4fdcb2eda5496feee0e3818f90f3360282922d7182812ff84"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "5af8979d6e539865d971ab15a8fb8ceda267a45fa122e8dedff94a7cf1a42e72"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "b4a2f4529dba5465b9e958237f5934f8197b9093466f205868f61b9338f23d49"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "eea8116346a4050a73d8923ee65ab4e892d57b25911d5223652335a9b2cd8105"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "17a11a1ec88a5a211ff47ef08ee860aab77e434d7f199b6832909eb1ab2fdb3a"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37034,
+      "trips_sha256": "607398fb4ce99b675e64f3a9b7f056b9863aabd1cc7fbcd3fcb0d7bb45b8e376"
+    },
+    "v3_free_shift_-0.2": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "e4e3caacf2c9eda5e9fb6d2491786fd7b094f7f755f11edef8c96ac75237322c"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "4955564a57984a99d6268c412286445070a36a77552b64ee995260db980c20a8"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "07abcf9c29374b3eeb6619fa36a15b7c21a5ccba0bc6aa4fc81f8e6120fd64a5"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "d6e6bf12dac8fa4ff39c341b06ffb820fdc56672421f5d7823ef8ea98f81ac8e"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "246b9754ebf981810d772dbfc8b4df02f9fda657b1be50698d4cb02203526f60"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "45e5eaaea68b5b7bd4612a2fd313e6cf9f3f66dbab3fec55af49ef0e47eaf01b"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "8461d1f82ef294dcdff7d7e7829bf671d8b128a525b45c4cfb0343104f07a76e"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "e7aae11ddb3137f08ed05c015c0cef9c495393535d328bc6e17ee0ce95a34b77"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "7a420b829439e1d615056aaa44b0b60bbf37928473188629371e819c12b6488c"
+        },
+        {
+          "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "5f144e0052a95ec62e5999d6e4fa6f2297405d9cd50c5fce7bcd80ce9dca3261"
+        }
+      ],
+      "run_output": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output",
+      "trips_file": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 37032,
+      "trips_sha256": "ee8f181ad3db9e14deedf266faac7d05801801775dbbf0223d20c167473bef29"
+    }
+  },
+  "city_center_zone_ids": [
+    "bs_zone_ia",
+    "bs_zone_ib"
+  ],
+  "code_state": "0b5bea477cab761c873d145fae78841758146218",
+  "generated_on": "2026-10-16",
+  "inputs": {
+    "srv2023_city_center_parking": {
+      "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/.claude/worktrees/i436-v3-c/eqasim-data/data/braunschweig/srv/srv2023_city_center_parking.csv",
+      "sha256": "438419f18a38c3b729a541ccc2a90dfab5faf53de04dc28807fb39d4c109942b"
+    },
+    "srv2023_commute_parking_by_workplace_class": {
+      "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/.claude/worktrees/i436-v3-c/eqasim-data/data/braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv",
+      "sha256": "bff6aa4eade4c8617204adf01867d1591197f9399eb11ad749655e8037e4c8be"
+    },
+    "tariffs": {
+      "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/.claude/worktrees/i436-v3-c/eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv",
+      "sha256": "7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82"
+    },
+    "zones": {
+      "path": "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson",
+      "sha256": "7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504"
+    }
+  },
+  "iterations_option": [
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60
+  ],
+  "note": "a comparison of model output with SrV references, not a validation; every row of the table names its universe",
+  "script": "scripts/parking/compare_parking_targets.py"
+}
