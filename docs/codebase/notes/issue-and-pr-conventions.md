@@ -153,8 +153,8 @@ Good: `Survive a killed chainsolver shard worker instead of waiting forever (#34
 
 **PR body:** the template's sections, and the same `**Stages:**` line as the issue, so a
 reviewer sees which registry stages the diff touches without reading the diff. `Closes #NN`
-is mandatory whenever an issue exists — a PR without an issue is only for hygiene commits
-that the issue-first rule does not cover.
+is mandatory whenever an issue exists — a PR without an issue is for hygiene commits and for the quick fixes
+that the fix-now-or-issue triage (CLAUDE.md, "Newly discovered work") fixes without an issue.
 
 ```
 git pr --label step:generation --label area:behavior \

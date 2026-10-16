@@ -63,7 +63,7 @@ The registry loaders and checker are also exercised by the test suite
 | add/replace a dataset | add/update `docs/registry/data/`, `scripts/verify_braunschweig_inputs.py`, the README data setup, `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` |
 | make a substantive decision (incl. rejecting an approach) | add `docs/decisions/ADR-NNNN-*.md` (next free number; see `docs/decisions/README.md`) |
 | complete a significant run | add `docs/runs/<run_id>.yml`; point feature `validation.runs` at it — **no validation claim without a manifest + committed reference** |
-| discover open work | open a GitHub issue on the fork (issue-first rule; no parallel backlog files) |
+| discover open work | quick fix: fix it now (no issue); larger work: open a GitHub issue on the fork after proposing it (fix-now-or-issue triage, CLAUDE.md; no parallel backlog files) |
 | change repo dependencies, env, inputs, paths, downloaders, canonical config, run commands, or outputs | assess README impact (checker D2–D4 cover scripts/configs/data paths) |
 | finish any of the above | `python -m braunschweig.documentation build && … check` and commit the regenerated views |
 
