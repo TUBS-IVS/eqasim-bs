@@ -257,8 +257,8 @@ shared golden file.
   record `parking_tariffs_2026` (columns); contributor notes `docs/codebase/notes/parking-garage-options.md`,
   `parking-ev-exemption.md`, `parking-cost-zones.md` and `parking-target-comparison.md`; ADR-0140.
 - Design: the v3 design spec of 2026-10-14 (local, gitignored under `docs/superpowers/specs/`); the owner decisions quoted in
-  this record are those recorded there. Results: none yet; the run manifest of Part C (to come) will be linked from the feature
-  record.
+  this record are those recorded there. Results: none in this record; the comparison runs of Part C are recorded in the run manifest
+  `parking-v3-arms-2026-10-15` (section "Part C" below).
 
 ## Ruling ids cited in the code and records
 
@@ -530,8 +530,8 @@ inferred from the other.
 - Records: the data records named above, `parking_coverage_register_2026` (the Echternplatz, Salzgitter and Gifhorn rows), the
   feature record `parking_cost_zones` (state: validation.note), the contributor notes `parking-zones-curation.md`,
   `parking-large-lots.md` and `parking-garage-options.md`.
-- The values of the calibration are in `parking_garage_decay_calibration_2026`; results of runs: none yet, the run manifest of
-  Part C (to come) will be linked from the feature record.
+- The values of the calibration are in `parking_garage_decay_calibration_2026`; results of runs: none here, the comparison runs of
+  Part C are in the run manifest `parking-v3-arms-2026-10-15`.
 
 ## Part B ruling ids cited in the code and records
 
@@ -547,3 +547,26 @@ is the simple elapsed-stay comparison. R-B-12: an area zone is the Voronoi cell 
 R-B-13: the Wolfsburg universe of the calibration and the comparison is selected by municipality. R-B-14: the Helmstedt
 ring is not widened. R-B-15: Arena P2 stays a QA row without a position. R-B-16: the commuter and Wolfsburg-check measures
 are payer-conditional. R-B-18: the documented options of Bad Harzburg and Seesen of decision 14.
+
+## Part C: comparison runs (2026-10-15 to 2026-10-17)
+
+Ten MATSim runs of the Braunschweig scenario, one per arm, compare the zone model of this record with its levers: eight arms
+at 1 % (`off`, `legacy`, `v3`, two cost factors, two free-share shifts, `v3_ev_off`) and a `v3` / `off` pair at 25 %. All ten
+completed; every arm passed the mechanics check (ruling R-C-3). The code state, the overlay and resolved config of every arm,
+the jars, the times, the termination state, the comparison against the SrV tables, the non-fatal SimWrapper shutdown errors and
+their fix are recorded ONCE in the run manifest `docs/runs/parking-v3-arms-2026-10-15.yml`; its tables are in
+`docs/runs/artifacts/parking-v3-arms-2026-10-15/` (README with the commands). This section states no number.
+
+What the runs mean for this record:
+
+- They are a comparison of model arms, one run each, and not a validation. Where a table row names a calibration target
+  (the garage shares of decision 13) or an independent check (the Wolfsburg commuter share) it says so; neither is a validation
+  quantity. The state of the feature stays `unvalidated` (feature record `parking_cost_zones`, validation.note).
+- No arm stopped by the mode-share termination criterion: all ran to the iteration limit with the criterion above its threshold,
+  so the comparison tables pool a late-iteration window and say nothing about an equilibrium. Stable mode shares would be
+  convergence, not validation, and here they were not even stable by that criterion.
+- No decision of this record is changed by the runs and no parameter was tuned in Part C (ruling R-C-4: `configs/` unchanged).
+  The EV lever is not measurable at 1 % (the exemption never fired there); the 25 % pair has no EV-off arm, so its effect on the
+  mode shares is not isolated (the manifest states both).
+- The optional SimWrapper dashboard analyses threw at the end of every run (not fatal, not part of the model); the fix is
+  eqasim-java-bs PR #33 and was not deployed during the campaign so that every arm of a sample ran one jar.

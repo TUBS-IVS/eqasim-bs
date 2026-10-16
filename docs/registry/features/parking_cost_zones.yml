@@ -192,6 +192,7 @@ validation:
   state: unvalidated
   runs:
   - parking-zones-smoke-zgb-1pct-2026-09-30
+  - parking-v3-arms-2026-10-15
   metric: null
   note: >-
     The local 1 % OFF/LEGACY/ZONES smoke (run manifest parking-zones-smoke-zgb-1pct-2026-09-30) is a wiring
@@ -228,20 +229,27 @@ validation:
     the maximum stay of three Ia lots, three more free lots and the two documented options of Bad Harzburg and Seesen (a free
     Seesen garage, a free Bad Harzburg car park out of reach of every zone), Arena P2 without a position (parking_garages_2026),
     and the two decay lengths recalibrated on that option set with the price term, the feasibility rule and the
-    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). No
-    MATSim run of v3 exists and nothing of v3 is validated: the calibration compares model shares with SrV shares (a calibration,
-    and the Wolfsburg check is a number without a pre-registered bound), the tests are consistency and regression checks, and
-    neither the size nor the direction of the effect on the mode shares is established. The regenerated restricted files (zones,
-    districts, garages) are installed with the Part B integration. Planned: the 25 % legacy-vs-zones A/B and the v2 arms on the
-    server (task 5b of issue #436), whose run manifest will be linked here. Convergence of a run is not validation.
+    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). STATE
+    OF THE V3 COMPARISON RUNS (Part C; the run manifest parking-v3-arms-2026-10-15 is the one place that records them, with the
+    numbers): ten MATSim runs of v3 exist, eight 1 % arms (off, legacy ring, v3, two cost factors, two free-share shifts, EV
+    exemption off) and a v3 / off pair at 25 %. They are a COMPARISON of model arms, one run per arm, and a comparison of v3 with
+    the committed SrV tables in which the garage shares are calibration targets and the Wolfsburg check is an independent number
+    without a pre-registered bound; none of it is a validation, so the state stays unvalidated. No arm stopped by the mode-share
+    termination criterion (all ran to the iteration limit with the criterion above its threshold), so a stable late window is
+    not even established, and convergence would not be validation anyway. The effect of the zone model on the mode shares is an
+    arm difference of single runs without a between-run noise estimate, not an established effect; the EV exemption is not
+    measurable at 1 % and not isolated at 25 %. An OBSERVED garage quantity (a PULP occupancy series) does not exist yet: issue
+    #448; the garage shares compared with SrV are the calibration targets of the decay lengths. Nothing of v3 is validated: the
+    tests are consistency and regression checks. The regenerated restricted files (zones, districts, garages) are installed with
+    the Part B integration. Open: the 25 % legacy-vs-zones A/B and the L1 arms of the v2 plan (task 5b of issue #436), which have
+    no run. Convergence of a run is not validation.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Owner review of the v2 release (ADR-0140), of the v3 mechanics (Part A) and data (Part B) (ADR-0142) and of the runs that do
-    not exist yet
-    (validation.note states which).
+    Owner review of the v2 release (ADR-0140), of the v3 mechanics (Part A) and data (Part B) (ADR-0142) and of the v3 comparison runs
+    (manifest parking-v3-arms-2026-10-15; validation.note states which).
     Owner review of the 25 % legacy-vs-zones A/B (with the L1 arms parking_minimum_stay_min 0 and 30 next
     to the default 15), which is still to run on the server, and of the
     production flip of parking_zones_enabled to true, which is part of the reviewed branch although the

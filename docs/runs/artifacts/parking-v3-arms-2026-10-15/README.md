@@ -167,3 +167,14 @@ How to read the 25 % pair and the side-by-side table (caveats):
 - **Comparison, never validation.** The SrV reference columns of the comparison table are labelled there (comparison, calibration
   target or check). A small delta to a reference is not a validation of the model; `off_25pct` has the reference column only because
   the reference is read from the committed SrV tables, not because the arm prices anything.
+
+## Run records in this folder (added with the run manifest)
+
+The run manifest `docs/runs/parking-v3-arms-2026-10-15.yml` records the ten runs (code state, jars, times, termination, shutdown errors).
+Files that belong to it:
+
+| path | content |
+| --- | --- |
+| `overlays/parking_v3_<arm>.yml` | the ten overlays composed on `configs/base_bs.yml` (copies of the felix files; SHA-256 prefixes in the manifest) |
+| `resolved_configs/parking_v3_<arm>_resolved.yml` | the ten resolved (merged) configs of the runs, as copied from the output folders of the arms |
+| `arm_sanity_results_2026-10-15.txt` | output of `scripts/parking/arm_sanity.py` for the ten arms (paths relative to the main checkout) |
