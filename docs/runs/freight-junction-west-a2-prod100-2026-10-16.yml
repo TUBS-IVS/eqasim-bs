@@ -1,0 +1,63 @@
+id: freight-junction-west-a2-prod100-2026-10-16
+date: '2026-10-16'
+repository:
+  commit: unknown
+  branch: unknown
+  notes: 'Analysis of the outputs of the 100 % production run prod100_20260925 on felix (~/prod100_20260925),
+    which has no run manifest of its own; its commit is unknown for the reasons recorded in
+    freight-boundary-links-prod100-2026-10-15 (meta.json and issue #444 disagree). The run predates the
+    boundary-link rule of ADR-0144 (PRs #452 and eqasim-java-bs#32). The probe script of this record is
+    committed on branch runs/i460-junction-west-a2.'
+configuration:
+  base: configs/base_bs.yml
+  notes: 'As in freight-boundary-links-prod100-2026-10-15: sampling_rate 1.0, random_seed 1234, freight and
+    cordon on.'
+sampling:
+  rate: 100% (sampling_rate 1.0)
+  scope: ZGB-8, full region, cordon on, freight on
+  notes: 'All counts are 100 % counts from the final iteration 92.'
+pipeline:
+  targets:
+  - matsim.output
+  notes: 'No new simulation. i460_uturn_probe.py read output/matsim_output/output_events.xml.gz (truck
+    stuckAndAbort events on the focus links) and output_plans.xml.gz (the selected plan of every freight
+    agent: activity links, truck-leg route, departure and planned travel time) on 2026-10-16.'
+classification:
+- production
+status:
+  execution: completed
+  notes: 'Root cause of issue #460 in the run before the fix. It does not show the state with the fix: that
+    needs a 100 % run on main with ADR-0144, which is not part of this record.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), system python3'
+validation:
+- metric: origin of the trucks stuck on the junction links 508524, 118285, 183348, 97299, 97263 (about 2 km
+    west of the A2-west gate)
+  reference: 'none; a diagnosis of the MATSim output, no observed data'
+  result: 'All 356 trucks stuck there have an endpoint from the old nearest-node snapping. 277 transit and
+    incoming trucks end on the eastbound A2 carriageway 199731 at the A2-west gate. 226 of them travel west on
+    the A2 (224246/199736), leave at the junction, turn and come back via 687661, 275090, 199729 to 199731;
+    the other 51 reach the junction from another direction. 79 incoming trucks start on residential link
+    501844 (#444) and reach the A2 only through the same junction (183348, 118286, 121694, 97259, 508524). All
+    356 are stuck at 30:00 h, the simulation end; their truck departures are 21-23 h (277) and 10 h (79).'
+  artifact: 'docs/runs/artifacts/freight-junction-west-a2-prod100-2026-10-16/i460_uturn_probe.json'
+- metric: freight trips ending on the eastbound carriageway 199731 that route through the junction
+  reference: 'none; a count over the selected plans'
+  result: '7,584 of 11,484 (outgoing 1,056 of 1,809, transit 6,526 of 9,671, incoming 2 of 4). Under ADR-0144
+    the A2-west exits are linked to the westbound 224246 and the entries to the eastbound 199731 at the gate
+    (run freight-boundary-links-prod100-2026-10-15), so neither needs the junction. The 1 % smoke with the
+    rule (freight-boundary-links-ab-1pct-2026-10-16) has 0 stuck trucks on these links; that is one draw at
+    iteration 0, not a 100 % result.'
+  artifact: 'docs/runs/artifacts/freight-junction-west-a2-prod100-2026-10-16/i460_uturn_probe.json'
+features:
+- freight_boundary_links
+artifacts:
+- docs/runs/artifacts/freight-junction-west-a2-prod100-2026-10-16/i460_uturn_probe.py
+- docs/runs/artifacts/freight-junction-west-a2-prod100-2026-10-16/i460_uturn_probe.json
+issues:
+- '#460'
+- '#444'
+decisions:
+- ADR-0144
+source: 'python3 i460_uturn_probe.py <prod100_20260925/output/matsim_output> > i460_uturn_probe.json, run in
+  felix:~/prod100_20260925 on 2026-10-16. Two earlier versions of the probe read the walk access leg instead
+  of the truck leg and reported no U-turn; the committed version reads the truck leg.'

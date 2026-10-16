@@ -1,0 +1,662 @@
+{
+ "summary": {
+  "stuck_trucks_on_focus": 356,
+  "by_stuck_link": {
+   "508524": 160,
+   "183348": 48,
+   "97299": 6,
+   "118285": 134,
+   "97263": 8
+  },
+  "by_trip_type": {
+   "incoming": 14,
+   "transit": 342
+  },
+  "by_last_link": [
+   [
+    "199731",
+    277
+   ],
+   [
+    "450785",
+    65
+   ],
+   [
+    "346322",
+    1
+   ],
+   [
+    "571316",
+    1
+   ],
+   [
+    "130926",
+    1
+   ],
+   [
+    "640196",
+    1
+   ],
+   [
+    "592915",
+    1
+   ],
+   [
+    "146828",
+    1
+   ],
+   [
+    "554095",
+    1
+   ],
+   [
+    "236398",
+    1
+   ]
+  ],
+  "by_first_link": [
+   [
+    "450785",
+    277
+   ],
+   [
+    "501844",
+    79
+   ]
+  ],
+  "uturn_west_focus_east": {
+   "false": 130,
+   "true": 226
+  },
+  "starts_501844_via_focus": {
+   "true": 79,
+   "false": 277
+  },
+  "explained_by_old_snapping": 305,
+  "last_route_links_of_uturners": [
+   [
+    [
+     "687661",
+     "275090",
+     "199729",
+     "199731"
+    ],
+    226
+   ]
+  ],
+  "stuck_time_h": [
+   [
+    30.0,
+    356
+   ]
+  ],
+  "truck_departure_hour": [
+   [
+    22,
+    142
+   ],
+   [
+    23,
+    94
+   ],
+   [
+    10,
+    79
+   ],
+   [
+    21,
+    41
+   ]
+  ],
+  "all_freight_ending_on_eastbound_199731": {
+   "incoming|direct": 2,
+   "incoming|via_focus": 2,
+   "outgoing|via_focus": 1056,
+   "outgoing|direct": 753,
+   "transit|via_focus": 6526,
+   "transit|direct": 3145
+  }
+ },
+ "rows_sample": [
+  {
+   "person": "freight_incoming_3584",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "346322",
+   "route_links": 300,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:02:55",
+   "planned_travel": "01:44:01",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "530233",
+    "295555",
+    "240268",
+    "346322"
+   ]
+  },
+  {
+   "person": "freight_incoming_4457",
+   "trip_type": "incoming",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "571316",
+   "route_links": 211,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:07:54",
+   "planned_travel": "01:37:25",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "10908",
+    "331123",
+    "140409",
+    "571316"
+   ]
+  },
+  {
+   "person": "freight_incoming_4631",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "130926",
+   "route_links": 251,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:04:15",
+   "planned_travel": "01:22:05",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "518401",
+    "426047",
+    "130927",
+    "130926"
+   ]
+  },
+  {
+   "person": "freight_incoming_5771",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "640196",
+   "route_links": 342,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:02:04",
+   "planned_travel": "01:40:11",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "448516",
+    "640198",
+    "147517",
+    "640196"
+   ]
+  },
+  {
+   "person": "freight_incoming_5840",
+   "trip_type": "incoming",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "592915",
+   "route_links": 89,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:06:55",
+   "planned_travel": "00:42:25",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "592912",
+    "592913",
+    "592914",
+    "592915"
+   ]
+  },
+  {
+   "person": "freight_incoming_7459",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "146828",
+   "route_links": 231,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:03:49",
+   "planned_travel": "01:18:56",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "659691",
+    "659700",
+    "557818",
+    "146828"
+   ]
+  },
+  {
+   "person": "freight_incoming_7599",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "554095",
+   "route_links": 244,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:02:44",
+   "planned_travel": "01:13:10",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "231190",
+    "554109",
+    "554100",
+    "554095"
+   ]
+  },
+  {
+   "person": "freight_incoming_7693",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "236398",
+   "route_links": 226,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:03:06",
+   "planned_travel": "01:12:01",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "236425",
+    "398668",
+    "236416",
+    "236398"
+   ]
+  },
+  {
+   "person": "freight_incoming_7710",
+   "trip_type": "incoming",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "203850",
+   "route_links": 279,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:06:37",
+   "planned_travel": "01:18:16",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "292883",
+    "292881",
+    "203851",
+    "203850"
+   ]
+  },
+  {
+   "person": "freight_incoming_7727",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "113617",
+   "route_links": 391,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:02:27",
+   "planned_travel": "01:50:17",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "113625",
+    "113629",
+    "113621",
+    "113617"
+   ]
+  },
+  {
+   "person": "freight_incoming_7896",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "483056",
+   "route_links": 280,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:02:16",
+   "planned_travel": "01:19:37",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "292881",
+    "203851",
+    "483057",
+    "483056"
+   ]
+  },
+  {
+   "person": "freight_incoming_7998",
+   "trip_type": "incoming",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "164189",
+   "route_links": 394,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:05:59",
+   "planned_travel": "01:59:35",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "68211",
+    "304163",
+    "164190",
+    "164189"
+   ]
+  },
+  {
+   "person": "freight_incoming_8421",
+   "trip_type": "incoming",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "209976",
+   "route_links": 260,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:03:17",
+   "planned_travel": "01:36:00",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "336078",
+    "209981",
+    "209977",
+    "209976"
+   ]
+  },
+  {
+   "person": "freight_incoming_8496",
+   "trip_type": "incoming",
+   "stuck_link": "97299",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "220350",
+   "route_links": 104,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:01:16",
+   "planned_travel": "00:50:04",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "674822",
+    "421355",
+    "691186",
+    "220350"
+   ]
+  },
+  {
+   "person": "freight_transit_10282",
+   "trip_type": "transit",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "450785",
+   "last_link": "199731",
+   "route_links": 405,
+   "uturn_west_focus_east": false,
+   "truck_departure": "23:32:18",
+   "planned_travel": "03:03:00",
+   "starts_501844_via_focus": false,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "687661",
+    "275090",
+    "199729",
+    "199731"
+   ]
+  },
+  {
+   "person": "freight_transit_10631",
+   "trip_type": "transit",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "450785",
+   "route_links": 346,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:06:15",
+   "planned_travel": "02:16:11",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "450780",
+    "450783",
+    "450784",
+    "450785"
+   ]
+  },
+  {
+   "person": "freight_transit_10744",
+   "trip_type": "transit",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "450785",
+   "route_links": 353,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:04:20",
+   "planned_travel": "02:14:07",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "450780",
+    "450783",
+    "450784",
+    "450785"
+   ]
+  },
+  {
+   "person": "freight_transit_11488",
+   "trip_type": "transit",
+   "stuck_link": "118285",
+   "stuck_time_h": 30.0,
+   "first_link": "450785",
+   "last_link": "199731",
+   "route_links": 387,
+   "uturn_west_focus_east": true,
+   "truck_departure": "22:00:43",
+   "planned_travel": "02:58:49",
+   "starts_501844_via_focus": false,
+   "after_focus": [
+    "97263",
+    "118285",
+    "97299",
+    "506791",
+    "506789",
+    "430690"
+   ],
+   "last_route_links": [
+    "687661",
+    "275090",
+    "199729",
+    "199731"
+   ]
+  },
+  {
+   "person": "freight_transit_11527",
+   "trip_type": "transit",
+   "stuck_link": "508524",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "450785",
+   "route_links": 353,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:01:31",
+   "planned_travel": "02:16:34",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "450780",
+    "450783",
+    "450784",
+    "450785"
+   ]
+  },
+  {
+   "person": "freight_transit_11588",
+   "trip_type": "transit",
+   "stuck_link": "183348",
+   "stuck_time_h": 30.0,
+   "first_link": "501844",
+   "last_link": "450785",
+   "route_links": 346,
+   "uturn_west_focus_east": false,
+   "truck_departure": "10:07:48",
+   "planned_travel": "02:18:11",
+   "starts_501844_via_focus": true,
+   "after_focus": [
+    "183348",
+    "118286",
+    "121694",
+    "97259",
+    "508524",
+    "326"
+   ],
+   "last_route_links": [
+    "450780",
+    "450783",
+    "450784",
+    "450785"
+   ]
+  }
+ ]
+}
