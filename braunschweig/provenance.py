@@ -106,17 +106,19 @@ def collect_run_provenance(config_path: str, resource_report=None) -> dict:
     eqasim_source_path = cfg.get("eqasim_source_path")
     record["eqasim_source_path"] = eqasim_source_path
     if eqasim_source_path:
-        java_path = eqasim_source_path
-        if not os.path.isabs(java_path):
-            java_path = os.path.join(os.path.dirname(os.path.abspath(config_path)),
-                                     eqasim_source_path)
+        # Same base as matsim.runtime.eqasim, which resolves the path against the process
+        # working directory (the repository root synpp runs from). The config's own directory
+        # is wrong here: the composed form runs <working_directory>/.merged_config.yml, so
+        # ../eqasim-java-bs would point into eqasim-data/.
+        java_path = os.path.abspath(eqasim_source_path)
         record["eqasim_java_commit"] = (
             git_commit(java_path) if os.path.isdir(java_path) else "unknown"
         )
         if record["eqasim_java_commit"] == "unknown" and not os.path.isdir(java_path):
             logger.warning(
-                "[provenance] eqasim_source_path %r does not exist relative to "
-                "the config; recording eqasim_java_commit='unknown'.", eqasim_source_path,
+                "[provenance] eqasim_source_path %r does not exist (resolved to %r from the "
+                "working directory); recording eqasim_java_commit='unknown'.",
+                eqasim_source_path, java_path,
             )
     return record
 
