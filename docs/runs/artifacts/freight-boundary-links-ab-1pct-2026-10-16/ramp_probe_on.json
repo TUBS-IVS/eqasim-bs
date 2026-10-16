@@ -1,0 +1,2620 @@
+{
+ "topology": {
+  "182357": {
+   "self": {
+    "link": "182357",
+    "hw": "motorway_link",
+    "ref": null,
+    "name": null,
+    "cap": 1500.0,
+    "kmh": 80,
+    "lanes": 1.0,
+    "len": 225,
+    "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+    "osm": "30997945",
+    "bearing": 287,
+    "from_xy": [
+     603401,
+     5797137
+    ],
+    "to_xy": [
+     603187,
+     5797204
+    ]
+   },
+   "into_from_node": [
+    {
+     "link": "414929",
+     "hw": "motorway_link",
+     "ref": null,
+     "name": null,
+     "cap": 3000.0,
+     "kmh": 80,
+     "lanes": 2.0,
+     "len": 135,
+     "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+     "osm": "196269094",
+     "bearing": 284,
+     "from_xy": [
+      603532,
+      5797104
+     ],
+     "to_xy": [
+      603401,
+      5797137
+     ]
+    }
+   ],
+   "out_of_from_node": [
+    {
+     "link": "289496",
+     "hw": "motorway_link",
+     "ref": null,
+     "name": null,
+     "cap": 1500.0,
+     "kmh": 80,
+     "lanes": 1.0,
+     "len": 22,
+     "modes": "car,car_passenger,motorcycle,truck",
+     "osm": "18361875",
+     "bearing": 301,
+     "from_xy": [
+      603401,
+      5797137
+     ],
+     "to_xy": [
+      603388,
+      5797145
+     ]
+    }
+   ],
+   "into_to_node": [
+    {
+     "link": "289508",
+     "hw": "motorway_link",
+     "ref": null,
+     "name": null,
+     "cap": 1500.0,
+     "kmh": 60,
+     "lanes": 1.0,
+     "len": 423,
+     "modes": "car,car_passenger,motorcycle,truck",
+     "osm": "18361877",
+     "bearing": 255,
+     "from_xy": [
+      603564,
+      5797302
+     ],
+     "to_xy": [
+      603187,
+      5797204
+     ]
+    }
+   ],
+   "out_of_to_node": [
+    {
+     "link": "18419",
+     "hw": "motorway_link",
+     "ref": null,
+     "name": null,
+     "cap": 3000.0,
+     "kmh": 80,
+     "lanes": 2.0,
+     "len": 156,
+     "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+     "osm": "270428390",
+     "bearing": 289,
+     "from_xy": [
+      603187,
+      5797204
+     ],
+     "to_xy": [
+      603040,
+      5797256
+     ]
+    }
+   ]
+  },
+  "18416": {
+   "self": {
+    "link": "18416",
+    "hw": "motorway_link",
+    "ref": null,
+    "name": null,
+    "cap": 1500.0,
+    "kmh": 80,
+    "lanes": 1.0,
+    "len": 93,
+    "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+    "osm": "270428389",
+    "bearing": 284,
+    "from_xy": [
+     603040,
+     5797256
+    ],
+    "to_xy": [
+     602950,
+     5797279
+    ]
+   },
+   "into_from_node": [
+    {
+     "link": "18419",
+     "hw": "motorway_link",
+     "ref": null,
+     "name": null,
+     "cap": 3000.0,
+     "kmh": 80,
+     "lanes": 2.0,
+     "len": 156,
+     "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+     "osm": "270428390",
+     "bearing": 289,
+     "from_xy": [
+      603187,
+      5797204
+     ],
+     "to_xy": [
+      603040,
+      5797256
+     ]
+    }
+   ],
+   "out_of_from_node": [],
+   "into_to_node": [
+    {
+     "link": "415874",
+     "hw": "motorway",
+     "ref": null,
+     "name": null,
+     "cap": 6000.0,
+     "kmh": 100,
+     "lanes": 3.0,
+     "len": 574,
+     "modes": "car,car_passenger,motorcycle,truck",
+     "osm": "25228290",
+     "bearing": 288,
+     "from_xy": [
+      603494,
+      5797100
+     ],
+     "to_xy": [
+      602950,
+      5797279
+     ]
+    }
+   ],
+   "out_of_to_node": [
+    {
+     "link": "330485",
+     "hw": "motorway",
+     "ref": null,
+     "name": null,
+     "cap": 8000.0,
+     "kmh": 100,
+     "lanes": 4.0,
+     "len": 138,
+     "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+     "osm": "81646004",
+     "bearing": 290,
+     "from_xy": [
+      602950,
+      5797279
+     ],
+     "to_xy": [
+      602820,
+      5797327
+     ]
+    }
+   ]
+  }
+ },
+ "stuck_trucks": [
+  {
+   "person": "freight_outgoing_3850",
+   "stuck_link": "182357",
+   "departure_s": 63418.0,
+   "route_length_links": 271,
+   "position_in_route": 166,
+   "entered_stuck_link_s": 87274.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_outgoing_3899",
+   "stuck_link": "182357",
+   "departure_s": 81327.0,
+   "route_length_links": 287,
+   "position_in_route": 182,
+   "entered_stuck_link_s": 105514.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_outgoing_475",
+   "stuck_link": "182357",
+   "departure_s": 72168.0,
+   "route_length_links": 303,
+   "position_in_route": 198,
+   "entered_stuck_link_s": 98554.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_outgoing_941",
+   "stuck_link": "182357",
+   "departure_s": 79315.0,
+   "route_length_links": 272,
+   "position_in_route": 167,
+   "entered_stuck_link_s": 101914.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_15558",
+   "stuck_link": "182357",
+   "departure_s": 71385.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 96874.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_15634",
+   "stuck_link": "182357",
+   "departure_s": 67342.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 92194.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_16280",
+   "stuck_link": "182357",
+   "departure_s": 79159.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 102754.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_16740",
+   "stuck_link": "182357",
+   "departure_s": 62766.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 88114.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_16802",
+   "stuck_link": "182357",
+   "departure_s": 80724.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 104674.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_17005",
+   "stuck_link": "18416",
+   "departure_s": 61978.0,
+   "route_length_links": 296,
+   "position_in_route": 193,
+   "entered_stuck_link_s": 105656.0,
+   "route_window": [
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ],
+    [
+     "510882",
+     "motorway",
+     6000.0
+    ],
+    [
+     "207742",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_17187",
+   "stuck_link": "182357",
+   "departure_s": 62740.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 86194.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_17189",
+   "stuck_link": "182357",
+   "departure_s": 69281.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 93514.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_17475",
+   "stuck_link": "18416",
+   "departure_s": 62058.0,
+   "route_length_links": 296,
+   "position_in_route": 193,
+   "entered_stuck_link_s": 106496.0,
+   "route_window": [
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ],
+    [
+     "510882",
+     "motorway",
+     6000.0
+    ],
+    [
+     "207742",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_18265",
+   "stuck_link": "182357",
+   "departure_s": 76255.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 101074.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_18268",
+   "stuck_link": "182357",
+   "departure_s": 83396.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 107194.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_19092",
+   "stuck_link": "182357",
+   "departure_s": 75061.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 100234.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_19609",
+   "stuck_link": "182357",
+   "departure_s": 63310.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 88954.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_19795",
+   "stuck_link": "182357",
+   "departure_s": 80397.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 103834.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_2605",
+   "stuck_link": "182357",
+   "departure_s": 69721.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 95194.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_2677",
+   "stuck_link": "182357",
+   "departure_s": 69929.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 96034.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_3658",
+   "stuck_link": "182357",
+   "departure_s": 72944.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 99394.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_3915",
+   "stuck_link": "182357",
+   "departure_s": 64849.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 90874.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_5553",
+   "stuck_link": "182357",
+   "departure_s": 69367.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 94354.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_6713",
+   "stuck_link": "18416",
+   "departure_s": 62300.0,
+   "route_length_links": 296,
+   "position_in_route": 193,
+   "entered_stuck_link_s": 107336.0,
+   "route_window": [
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ],
+    [
+     "510882",
+     "motorway",
+     6000.0
+    ],
+    [
+     "207742",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_6976",
+   "stuck_link": "182357",
+   "departure_s": 71568.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 97714.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_7206",
+   "stuck_link": "182357",
+   "departure_s": 82525.0,
+   "route_length_links": 296,
+   "position_in_route": 191,
+   "entered_stuck_link_s": 106354.0,
+   "route_window": [
+    [
+     "625625",
+     "motorway",
+     8000.0
+    ],
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  {
+   "person": "freight_transit_9096",
+   "stuck_link": "18416",
+   "departure_s": 61474.0,
+   "route_length_links": 296,
+   "position_in_route": 193,
+   "entered_stuck_link_s": 104816.0,
+   "route_window": [
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "330485",
+     "motorway",
+     8000.0
+    ],
+    [
+     "18422",
+     "motorway",
+     6000.0
+    ],
+    [
+     "18423",
+     "motorway",
+     6000.0
+    ],
+    [
+     "510882",
+     "motorway",
+     6000.0
+    ],
+    [
+     "207742",
+     "motorway",
+     6000.0
+    ]
+   ]
+  }
+ ],
+ "enters_per_hour": {
+  "182357": [
+   [
+    "00",
+    "truck",
+    1
+   ],
+   [
+    "01",
+    "truck",
+    2
+   ],
+   [
+    "02",
+    "truck",
+    2
+   ],
+   [
+    "03",
+    "other",
+    2
+   ],
+   [
+    "03",
+    "truck",
+    2
+   ],
+   [
+    "04",
+    "truck",
+    3
+   ],
+   [
+    "05",
+    "other",
+    2
+   ],
+   [
+    "05",
+    "truck",
+    4
+   ],
+   [
+    "06",
+    "other",
+    8
+   ],
+   [
+    "06",
+    "truck",
+    2
+   ],
+   [
+    "07",
+    "other",
+    5
+   ],
+   [
+    "07",
+    "truck",
+    3
+   ],
+   [
+    "08",
+    "other",
+    9
+   ],
+   [
+    "08",
+    "truck",
+    2
+   ],
+   [
+    "09",
+    "other",
+    6
+   ],
+   [
+    "09",
+    "truck",
+    2
+   ],
+   [
+    "10",
+    "other",
+    3
+   ],
+   [
+    "10",
+    "truck",
+    4
+   ],
+   [
+    "11",
+    "other",
+    9
+   ],
+   [
+    "11",
+    "truck",
+    4
+   ],
+   [
+    "12",
+    "other",
+    11
+   ],
+   [
+    "12",
+    "truck",
+    3
+   ],
+   [
+    "13",
+    "other",
+    8
+   ],
+   [
+    "13",
+    "truck",
+    4
+   ],
+   [
+    "14",
+    "other",
+    6
+   ],
+   [
+    "14",
+    "truck",
+    4
+   ],
+   [
+    "15",
+    "other",
+    14
+   ],
+   [
+    "15",
+    "truck",
+    4
+   ],
+   [
+    "16",
+    "other",
+    12
+   ],
+   [
+    "16",
+    "truck",
+    5
+   ],
+   [
+    "17",
+    "other",
+    15
+   ],
+   [
+    "17",
+    "truck",
+    3
+   ],
+   [
+    "18",
+    "other",
+    14
+   ],
+   [
+    "18",
+    "truck",
+    3
+   ],
+   [
+    "19",
+    "other",
+    14
+   ],
+   [
+    "19",
+    "truck",
+    4
+   ],
+   [
+    "20",
+    "other",
+    7
+   ],
+   [
+    "20",
+    "truck",
+    4
+   ],
+   [
+    "21",
+    "other",
+    4
+   ],
+   [
+    "21",
+    "truck",
+    4
+   ],
+   [
+    "22",
+    "truck",
+    2
+   ],
+   [
+    "23",
+    "truck",
+    5
+   ],
+   [
+    "24",
+    "truck",
+    3
+   ],
+   [
+    "25",
+    "truck",
+    3
+   ],
+   [
+    "26",
+    "truck",
+    4
+   ],
+   [
+    "27",
+    "truck",
+    4
+   ],
+   [
+    "28",
+    "truck",
+    4
+   ],
+   [
+    "29",
+    "truck",
+    4
+   ]
+  ],
+  "18416": [
+   [
+    "00",
+    "truck",
+    1
+   ],
+   [
+    "01",
+    "truck",
+    2
+   ],
+   [
+    "02",
+    "truck",
+    2
+   ],
+   [
+    "03",
+    "other",
+    2
+   ],
+   [
+    "03",
+    "truck",
+    2
+   ],
+   [
+    "04",
+    "truck",
+    3
+   ],
+   [
+    "05",
+    "other",
+    3
+   ],
+   [
+    "05",
+    "truck",
+    4
+   ],
+   [
+    "06",
+    "other",
+    8
+   ],
+   [
+    "06",
+    "truck",
+    2
+   ],
+   [
+    "07",
+    "other",
+    7
+   ],
+   [
+    "07",
+    "truck",
+    3
+   ],
+   [
+    "08",
+    "other",
+    9
+   ],
+   [
+    "08",
+    "truck",
+    2
+   ],
+   [
+    "09",
+    "other",
+    9
+   ],
+   [
+    "09",
+    "truck",
+    2
+   ],
+   [
+    "10",
+    "other",
+    3
+   ],
+   [
+    "10",
+    "truck",
+    4
+   ],
+   [
+    "11",
+    "other",
+    7
+   ],
+   [
+    "11",
+    "truck",
+    2
+   ],
+   [
+    "12",
+    "other",
+    8
+   ],
+   [
+    "12",
+    "truck",
+    2
+   ],
+   [
+    "13",
+    "other",
+    8
+   ],
+   [
+    "13",
+    "truck",
+    3
+   ],
+   [
+    "14",
+    "other",
+    5
+   ],
+   [
+    "14",
+    "truck",
+    2
+   ],
+   [
+    "15",
+    "other",
+    5
+   ],
+   [
+    "15",
+    "truck",
+    3
+   ],
+   [
+    "16",
+    "other",
+    7
+   ],
+   [
+    "16",
+    "truck",
+    3
+   ],
+   [
+    "17",
+    "other",
+    8
+   ],
+   [
+    "17",
+    "truck",
+    3
+   ],
+   [
+    "18",
+    "other",
+    7
+   ],
+   [
+    "18",
+    "truck",
+    2
+   ],
+   [
+    "19",
+    "other",
+    7
+   ],
+   [
+    "19",
+    "truck",
+    2
+   ],
+   [
+    "20",
+    "other",
+    10
+   ],
+   [
+    "20",
+    "truck",
+    2
+   ],
+   [
+    "21",
+    "other",
+    8
+   ],
+   [
+    "21",
+    "truck",
+    2
+   ],
+   [
+    "22",
+    "other",
+    8
+   ],
+   [
+    "22",
+    "truck",
+    2
+   ],
+   [
+    "23",
+    "other",
+    8
+   ],
+   [
+    "23",
+    "truck",
+    2
+   ],
+   [
+    "24",
+    "other",
+    8
+   ],
+   [
+    "24",
+    "truck",
+    2
+   ],
+   [
+    "25",
+    "other",
+    8
+   ],
+   [
+    "25",
+    "truck",
+    2
+   ],
+   [
+    "26",
+    "other",
+    7
+   ],
+   [
+    "26",
+    "truck",
+    3
+   ],
+   [
+    "27",
+    "other",
+    4
+   ],
+   [
+    "27",
+    "truck",
+    3
+   ],
+   [
+    "28",
+    "truck",
+    4
+   ],
+   [
+    "29",
+    "truck",
+    4
+   ]
+  ]
+ }
+}

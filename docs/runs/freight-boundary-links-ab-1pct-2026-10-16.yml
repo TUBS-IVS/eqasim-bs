@@ -13,8 +13,11 @@ repository:
     ~/i444-smoke/<arm>/eqasim-bs and ~/i444-smoke/<arm>/eqasim-java-bs, so the base value
     eqasim_source_path ../eqasim-java-bs resolved to the arm's own Java tree without changing the config
     value. The commits come from the "[i444-smoke]" line at the top of each run log (i444_injection_log_*.txt).
-    run_provenance_*.json records the eqasim-bs commit but "eqasim_java_commit": "unknown": the provenance
-    helper did not resolve the commit of the Java worktree. The PR head moved on to 9251f50a after the run,
+    run_provenance_*.json records the eqasim-bs commit but "eqasim_java_commit": "unknown". Cause (found
+    after the run, not specific to worktrees): braunschweig.provenance resolved the relative
+    eqasim_source_path against the directory of <working_directory>/.merged_config.yml instead of the
+    process working directory that matsim.runtime.eqasim uses, so every composed run recorded unknown (all 13
+    records in felix's 1 % cache). Fixed on branch fix/provenance-java-commit-cwd. The PR head moved on to 9251f50a after the run,
     which differs from ef0c999e only in tests/test_chainsolver_pool_protection.py (main's #451).
 configuration:
   base: configs/base_bs.yml
@@ -128,8 +131,29 @@ validation:
     from 501844 and 450785) has no stuck truck in ON.
   artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_off.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/stuck_link_probe_on.json'
   notes: >-
-    Not caused or changed by the boundary-link rule (identical count in both arms). Why westbound A2 through
-    traffic uses a single-lane motorway_link there is not diagnosed in this run.
+    Not caused or changed by the boundary-link rule (identical count in both arms). Diagnosis in the next entry.
+- metric: why the westbound A2 trucks use the ramp chain through 182357 / 18416 (diagnosis after the run)
+  reference: 'none -- a network and routing diagnosis; prod100_20260925 is consulted for comparison, not as a reference'
+  result: >-
+    The stuck trucks leave motorway 625625 at node 275064874 and rejoin at node 30027415 (motorway 330485) through
+    eight motorway_link edges 372881, 425623, 372878, 589405, 414929, 182357, 18419, 18416 (1,500 or 3,000
+    veh/h, 80 km/h, one or two lanes). A three-lane main carriageway 415918, 425624, 415873, 415874 (6,000
+    veh/h, 100 km/h) connects the same two nodes. Lengths: ramp chain 1,301.8 m, main carriageway 1,303.4 m.
+    Free-flow time for a car: 58.6 s vs 46.9 s (main carriageway faster). For a truck capped at 80 km/h
+    (freight_truck_max_velocity_kmh): 58.6 s vs 58.7 s, so the free-flow truck route takes the ramp chain,
+    1.6 m shorter. At sampling_rate 0.01 the single-lane 182357 carries 15 PCE/h; in the ON arm 2 to 5 trucks
+    (3.5 PCE each) and up to 15 other vehicles enter it per hour, more than it can pass, and the queue still
+    holds 23 trucks at 30:00. In iteration 0 nobody reroutes; the freight subpopulation has ReRoute with
+    weight 0.05. prod100_20260925 (100 %, after 92 iterations) has no stuck truck on 182357 or 18416. 22,393
+    route lines of its output plans contain 182357 and 24,825 contain 415874. Its 688 trucks stuck outside
+    501844 sit mainly on 508524 (160, primary), 118285 (134, motorway_link) and 183348 (48, primary), all about
+    2 km west of the A2-west gate.
+  artifact: 'docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_paths_on.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_probe_on.json, docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/prod100_ramp_counts.txt'
+  notes: >-
+    Root cause of the residual stuck trucks of this smoke: a free-flow routing tie that the truck speed cap
+    creates, combined with no rerouting in iteration 0 and the 1 % capacity of a single-lane ramp. Not a defect
+    of the boundary-link rule and, judging by the 100 % run, not persistent after rerouting iterations. No model
+    change made. The prod100 counts are the run's final iteration and describe that run only.
 features:
 - freight_boundary_links
 artifacts:
@@ -153,9 +177,14 @@ artifacts:
 - docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/symlink_farm.py
 - docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/make_overlay.sh
 - docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/launch_arm.sh
-- 'felix:~/i444-smoke/off/eqasim-bs/eqasim-data/cache_i444_1pct_off (OFF working directory, about 16 GB)'
-- 'felix:~/i444-smoke/on/eqasim-bs/eqasim-data/cache_i444_1pct_on (ON working directory, about 16 GB)'
-- 'felix:~/i444-smoke/logs (run logs, hash-impact listings)'
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_probe_i444.py
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_paths_i444.py
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_probe_on.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/ramp_paths_on.json
+- docs/runs/artifacts/freight-boundary-links-ab-1pct-2026-10-16/prod100_ramp_counts.txt
+- 'felix:~/i444-smoke/logs (run logs, hash-impact listings and probe outputs, 1.5 MB). The arm worktrees and
+  working directories (about 52 GB) were deleted on 2026-10-16 after the analysis, so the simulation outputs
+  can no longer be re-read; the committed artifacts above are what remains.'
 issues:
 - '#444'
 decisions:
@@ -168,6 +197,8 @@ notes: >-
   truck counts, was compared); (2) iteration 0 only, so no replanning and no equilibrium; (3) one 1 % draw, so
   the 100 % queue size is not reproduced (prod100_20260925 had 6,907 of 7,595 stuck trucks on 501844).
   30 trucks stay stuck in the ON arm, 27 of them on the motorway_link pair 182357 / 18416, unchanged against
-  OFF (see the open finding above). Caveats: the felix shared data lacks zensus2022_employed_by_age_kreis.csv
-  (copied into the arm worktrees only); run_provenance records eqasim_java_commit unknown for a worktree Java
-  tree (the commits are in the run logs).
+  OFF: a free-flow routing tie between a ramp chain and the main carriageway for trucks at 80 km/h, at iteration
+  0 (see the diagnosis above). Caveats: the felix shared data lacked zensus2022_employed_by_age_kreis.csv; it
+  was copied into the arm worktrees for the run and into felix:~/eqasim-bs/eqasim-data on 2026-10-16
+  (sha256 43d64e5d...). run_provenance recorded eqasim_java_commit unknown (path-base bug, fixed on branch
+  fix/provenance-java-commit-cwd); the commits are in the run logs.

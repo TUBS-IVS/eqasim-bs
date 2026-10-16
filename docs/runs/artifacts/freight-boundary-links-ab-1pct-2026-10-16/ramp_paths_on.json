@@ -1,0 +1,213 @@
+{
+ "length_m": {
+  "ramp_path": 1301.8,
+  "cheapest": {
+   "cost": 1301.8,
+   "links": [
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ]
+   ]
+  },
+  "cheapest_avoiding_ramp": {
+   "cost": 1303.4,
+   "links": [
+    [
+     "415918",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "425624",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415873",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415874",
+     "motorway",
+     6000.0,
+     100
+    ]
+   ]
+  }
+ },
+ "car_time_s": {
+  "ramp_path": 58.6,
+  "cheapest": {
+   "cost": 46.9,
+   "links": [
+    [
+     "415918",
+     "motorway",
+     6000.0
+    ],
+    [
+     "425624",
+     "motorway",
+     6000.0
+    ],
+    [
+     "415873",
+     "motorway",
+     6000.0
+    ],
+    [
+     "415874",
+     "motorway",
+     6000.0
+    ]
+   ]
+  },
+  "cheapest_avoiding_ramp": {
+   "cost": 46.9,
+   "links": [
+    [
+     "415918",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "425624",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415873",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415874",
+     "motorway",
+     6000.0,
+     100
+    ]
+   ]
+  }
+ },
+ "truck_time_s": {
+  "ramp_path": 58.6,
+  "cheapest": {
+   "cost": 58.6,
+   "links": [
+    [
+     "372881",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "425623",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "372878",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "589405",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "414929",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "182357",
+     "motorway_link",
+     1500.0
+    ],
+    [
+     "18419",
+     "motorway_link",
+     3000.0
+    ],
+    [
+     "18416",
+     "motorway_link",
+     1500.0
+    ]
+   ]
+  },
+  "cheapest_avoiding_ramp": {
+   "cost": 58.7,
+   "links": [
+    [
+     "415918",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "425624",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415873",
+     "motorway",
+     6000.0,
+     100
+    ],
+    [
+     "415874",
+     "motorway",
+     6000.0,
+     100
+    ]
+   ]
+  }
+ }
+}
