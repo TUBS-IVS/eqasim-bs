@@ -76,12 +76,14 @@ may only name run manifests (no run, no claim).
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
+| [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 8 | proven | marker | committed | unvalidated | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |
+| [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 7 | -- | marker | assumption | unvalidated | pending |
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 24 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | pending |

@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 103 | stages: 129 | datasets: 86 | ADRs: 137 | run manifests: 58
+- Features: 105 | stages: 130 | datasets: 87 | ADRs: 139 | run manifests: 58
 
 ## Population synthesis
 
@@ -138,7 +138,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Cordon / external demand
 
-9 stage(s), 9 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `vg250_ew`
+10 stage(s), 10 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -148,6 +148,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
 | [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
+| [Outside-tour modes judged against the regional survey](../registry/features/outside_tour_modes.yml) | active | ON | A/-/- | unvalidated | [#453](https://github.com/TUBS-IVS/eqasim-bs/issues/453) |
 | [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
@@ -170,6 +171,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
+| [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
 | [Urban parking (BS inner ring)](../registry/features/urban_parking.yml) | active | ON | A/A/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 

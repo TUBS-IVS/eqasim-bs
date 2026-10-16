@@ -26,12 +26,21 @@ logger = logging.getLogger(__name__)
 # Represents the minimum dwell time at the last activity before heading home.
 HOME_CLOSURE_DWELL_S = 3600.0
 
-# Absolute plan-time bound (seconds).  Chains crossing midnight may legitimately
-# pass 24h via the +24h shift in hts.fix_trip_times, but beyond 36h a chain is
-# pathological (very late / multi-shift repaired chains) and is resampled from a
-# same-cell donor instead.  This is the authoritative constant; trips_stage
-# imports it for its final backstop assertion.
-MAX_PLAN_TIME_SECONDS = 36 * 3600
+# Absolute plan-time bound (seconds) = the simulated day. eqasim's GenerateConfig
+# ends the qsim at 30:00 and braunschweig.matsim.simulation.plan_check asserts that
+# the written config agrees with this constant (ADR-0146, issue #443). Chains
+# crossing midnight may legitimately pass 24h via the +24h shift in
+# hts.fix_trip_times; a chain beyond the simulated day cannot be lived in the
+# simulation and is resampled from a same-cell donor instead. This is the
+# authoritative constant; trips_stage imports it for its final backstop assertion,
+# time_imputation and departure_time_model for their guards.
+MAX_PLAN_TIME_SECONDS = 30 * 3600
+
+# Above this share of persons routed to the resample because their repaired chain
+# exceeds the bound, the bound and the donor pool disagree structurally (WARN);
+# below it the resample is a routine tail effect (INFO). ASSUMPTION (ADR-0146):
+# 1 % -- at 100 % the measured share was 0.2 % with the former 36 h bound.
+BOUND_RESAMPLE_WARN_RATE = 0.01
 
 # Above this share of appended closures needing the plan-time cap, the EMPIRICAL
 # dwell distribution and the chains it is asked to close disagree badly enough to
@@ -366,8 +375,8 @@ class PlanValidator:
     - ``trip_overlap``: a trip does not arrive after the next trip departs;
     - ``not_time_sorted``: departure times are non-decreasing;
     - ``time_exceeds_bound``: no departure/arrival time exceeds
-      ``max_plan_time_seconds`` (post-midnight-shift chains beyond ~36h are
-      pathological and routed to the resample);
+      ``max_plan_time_seconds`` (post-midnight-shift chains beyond the
+      simulated day, 30 h by default, are routed to the resample);
     - (optional) ``home_closure``: the day starts and ends at home (Task 4).
     """
 
@@ -519,8 +528,8 @@ class PlanValidator:
         if np.isnan(dep).any() or np.isnan(arr).any():
             out.append(self._issue(person_id, "nan_times"))
         # Times beyond the absolute plan bound: the +24h midnight shift in
-        # hts.fix_trip_times is legitimate, but a chain past 36h is pathological
-        # (very late / multi-shift) and must be resampled.  NaN compares False,
+        # hts.fix_trip_times is legitimate, but a chain past the simulated day
+        # (30 h) cannot be lived in the simulation and must be resampled.  NaN compares False,
         # so NaN-time persons are flagged by "nan_times" above, not here.
         if (dep > self.max_plan_time_seconds).any() or (arr > self.max_plan_time_seconds).any():
             out.append(self._issue(person_id, "time_exceeds_bound"))
@@ -605,10 +614,11 @@ class PlanValidator:
         # --- Step 2c: identify persons whose POST-repair times exceed the bound.
         # hts.fix_trip_times legitimately shifts midnight-crossing trips by +24h,
         # but very late / multi-shift chains can end beyond MAX_PLAN_TIME_SECONDS
-        # (~36h).  Such chains are pathological-but-real repaired chains, not
-        # coded-time leaks (those are NaN'd upstream).  Like NaN-time persons
-        # they are excluded from the home-closure append (a return-home trip
-        # anchored on a >36h arrival would only extend the broken timeline) and
+        # (the simulated day, 30 h).  Such chains are pathological-but-real repaired
+        # chains, not coded-time leaks (those are NaN'd upstream).  Like NaN-time
+        # persons they are excluded from the home-closure append (a return-home trip
+        # anchored on an arrival beyond the bound would only extend the broken
+        # timeline) and
         # flow to the unfixable set via the "time_exceeds_bound" validation
         # issue, which the caller replaces by the same-cell resample.
         bound_rows = (
@@ -718,6 +728,13 @@ class PlanValidator:
             100.0 * len(bound_persons) / n_persons if n_persons > 0 else 0.0,
             self.max_plan_time_seconds / 3600.0,
         )
+        bound_share = len(bound_persons) / n_persons if n_persons > 0 else 0.0
+        if bound_share > BOUND_RESAMPLE_WARN_RATE:
+            logger.warning(
+                "[popsim.plan_validation] %d/%d persons (%.2f%%) exceed the %.0fh plan-time bound after the "
+                "midnight-shift repair and are resampled; above the %.0f%% rate the bound and the donor pool "
+                "disagree structurally", len(bound_persons), n_persons, 100.0 * bound_share,
+                self.max_plan_time_seconds / 3600.0, 100.0 * BOUND_RESAMPLE_WARN_RATE)
 
         if dwell_model is not None:
             _log_closure_dwell_rates(dwell_model.report)

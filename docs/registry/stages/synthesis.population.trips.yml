@@ -43,6 +43,7 @@ decisions:
 - ADR-0114
 - ADR-0117
 - ADR-0138
+- ADR-0146
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -149,3 +150,14 @@ notes: >-
   columns; trips.csv is unchanged (explicit column list). tests/test_unused_mid_wege_columns.py
   fails as soon as code or configuration names a listed column; the maintainer rule is
   docs/codebase/notes/unused-mid-wege-columns.md.
+
+
+  PLAN-TIME BOUND (ADR-0146, issue #443, feature record plan_feasibility_check): the absolute
+  plan-time bound braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS is 30 h (it was 36 h),
+  equal to the simulated day (qsim.endTime 30:00 of eqasim's GenerateConfig; the plan check of
+  matsim.simulation.prepare asserts the equality on the written config). Through the one constant
+  the repair's empirical home-closure cap, _assert_time_bound (bound plus jitter), the
+  time-imputation pools and the departure-time model guards follow, and a chain that still exceeds
+  the bound after the midnight-shift repair is resampled from a same-cell donor. The resample share is
+  logged under [popsim.plan_validation] and WARNS above BOUND_RESAMPLE_WARN_RATE (0.01, an
+  ASSUMPTION). This changes results by decision; the stage and everything downstream recompute.
