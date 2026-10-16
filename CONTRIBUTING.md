@@ -60,9 +60,15 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
 - See open vs merged branches at a glance: `git branch-status`.
 - Auto-delete-on-merge is enabled; `main` requires a PR (admin override retained).
 
-## Issue-first for newly discovered work
+## Newly discovered work: fix it now, or issue it
 
-When a new feature/gap/idea surfaces mid-work, **propose it first**, then open a GitHub
+**Quick fixes are fixed immediately, without an issue**: small and self-contained (one concern, a few files, about an
+hour or less, no owner decision, no change to scientific results beyond correcting an evident bug). Bugs go through
+`superpowers:systematic-debugging` (root cause first, failing test first); the fix lands on the current branch when it
+belongs to the current work, otherwise on a small `fix/` or `chore/` branch whose PR needs no issue. When unsure, ask
+"fix now or issue?". **Larger work gets an issue** - multi-step work, a design or owner decision, a change of model
+behaviour or scientific results, missing data, or anything that cannot be done now:
+**propose it first**, then open a GitHub
 issue **in `TUBS-IVS/eqasim-bs`** with its native type (Bug / Feature / Analysis / Decision /
 Task), one `step:*` and one or two `area:*` labels, and a `Stages:` line naming the registry
 stage ids; the title reads `<stage or attribute>: <finding>`. The body opens with the

@@ -28,7 +28,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
 
-**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the issue-first rule for newly discovered work, and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check").
+**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check").
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). Recreate it on a new machine with
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
@@ -108,13 +108,19 @@ When generating analysis outputs, include enough information to reproduce the re
 every push to any branch or remote, `origin/main` included, needs an explicit "yes" /
 "push it" / equivalent asked for each time (a prior confirmation does not authorise later pushes).
 
-**Issue-first for newly discovered work.** When a new feature, gap, or idea surfaces
-mid-session, PROPOSE it to the user; only after explicit confirmation, open a GitHub
-issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the `eqasim-org/eqasim-bavaria`
-upstream) — typed, labelled, titled and opened with the plain-language head (`In short`,
-`## Problem`, `## Why it matters`, `## Done when`) exactly per
-`docs/codebase/notes/issue-and-pr-conventions.md`. This guarantees incidental findings are
-tracked, not forgotten. All issues, PRs, and the Project board live on the fork only.
+**Newly discovered work: fix it now, or issue it.** Triage every finding that surfaces mid-session:
+- **Quick fix -> fix it now, no issue.** Small and self-contained: one concern, a few files, about an hour or less, no
+  owner decision, no change to scientific results beyond correcting an evident bug. Bugs go through
+  `superpowers:systematic-debugging` (root cause first, failing test first). Fix it on the current branch if it belongs
+  to the current work, else on a small `fix/` or `chore/` branch with a PR that needs no issue. Say it in one line to the
+  user, update the record that owns any changed fact, and list it in `SESSION_LOG.md` at `/close`.
+- **Larger work -> issue, proposed first.** Multi-step or multi-hour work, a design or owner decision, a change of model
+  behaviour or scientific results, missing data or external input, or anything that cannot be done now: PROPOSE it; only
+  after explicit confirmation open a GitHub issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the
+  `eqasim-org/eqasim-bavaria` upstream) — typed, labelled, titled and opened with the plain-language head (`In short`,
+  `## Problem`, `## Why it matters`, `## Done when`) exactly per `docs/codebase/notes/issue-and-pr-conventions.md`.
+- **Unsure?** Ask in one line: "fix now or issue?". No issue for anything that was fixed in the same session.
+All issues, PRs, and the Project board live on the fork only.
 
 **Working hygiene (reasons and incidents: `docs/codebase/notes/git-working-hygiene.md`):**
 - **One worktree per TASK, not per session:** `git worktree add -b <branch> .claude/worktrees/<task> origin/main`.
