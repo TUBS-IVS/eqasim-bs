@@ -1,0 +1,58 @@
+{
+  "launched_utc": "2026-10-15T15:07:20.728873+00:00",
+  "config_path": "/home/felix/i444-smoke/off/eqasim-bs/eqasim-data/cache_i444_1pct_off/.merged_config.yml",
+  "python_version": "3.10.10",
+  "pipeline_commit": "6a5b696e",
+  "resources": {
+    "machine": {
+      "cores": 64,
+      "memory_gb": 94.28,
+      "cores_source": "sched_getaffinity",
+      "memory_source": "psutil"
+    },
+    "budget": {
+      "cores": 62,
+      "memory_gb": 86.28
+    },
+    "resolutions": {
+      "java_memory": {
+        "configured": "100G",
+        "effective": "86G",
+        "origin": "clamped",
+        "note": "configured 100G exceeds the memory budget; clamped to 86G"
+      },
+      "processes": {
+        "configured": 32,
+        "effective": 32,
+        "origin": "pinned",
+        "note": "configured value fits the resource budget (cores)"
+      },
+      "braunschweig.population.popsim.num_workers": {
+        "configured": 3,
+        "effective": 2,
+        "origin": "clamped",
+        "note": "configured 3 exceeds the resource budget; clamped to 2 workers at 30 GB each"
+      },
+      "braunschweig.chainsolvers.processes": {
+        "configured": 0,
+        "effective": 62,
+        "origin": "reported",
+        "note": "startup preview against the CORE budget only (62 cores); the auto sentinel takes the full core budget. The memory bound (braunschweig.chainsolvers.worker_memory_gb = 1.09 GB/worker, against this process's LIVE RSS) is applied at stage start, not here, so the final count can be LOWER than this preview; the stage's own '[resources] braunschweig.chainsolvers.processes: ... -> ceiling N workers' log line is the source of truth for the value actually used."
+      }
+    },
+    "violations": [
+      {
+        "key": "processes",
+        "severity": "warning",
+        "message": "processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately."
+      }
+    ]
+  },
+  "working_directory": "eqasim-data/cache_i444_1pct_off",
+  "sampling_rate": 0.01,
+  "hts": "entd",
+  "random_seed": 1234,
+  "braunschweig.population.method": "popsim_mid",
+  "eqasim_source_path": "../eqasim-java-bs",
+  "eqasim_java_commit": "unknown"
+}

@@ -1,0 +1,299 @@
+{
+ "arm": "off",
+ "watched_links": [
+  "501844"
+ ],
+ "simulation_output": "/home/felix/i444-smoke/off/eqasim-bs/eqasim-data/cache_i444_1pct_off/matsim.simulation.run__5f2df67f9b4976369175c142cf952b2b.cache/simulation_output",
+ "prepare_stage_dir": "/home/felix/i444-smoke/off/eqasim-bs/eqasim-data/cache_i444_1pct_off/braunschweig.matsim.simulation.prepare__444131ea0af05e6ab102d95e709f22f3.cache",
+ "stuck_and_abort_events": 508,
+ "stuck_persons": 508,
+ "stuck_by_leg_mode": {
+  "car": 164,
+  "truck": 98,
+  "pt": 97,
+  "walk": 85,
+  "null": 60,
+  "bicycle": 3,
+  "car_passenger": 1
+ },
+ "truck_stuck": 98,
+ "truck_stuck_on_watched_links": {
+  "501844": 51
+ },
+ "truck_stuck_top_links": [
+  {
+   "link": "501844",
+   "truck_stuck": 51,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "182357",
+   "truck_stuck": 23,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "97299",
+   "truck_stuck": 13,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "18416",
+   "truck_stuck": 4,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "372881",
+   "truck_stuck": 2,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "217081",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "256445",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "322380",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "449948",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  },
+  {
+   "link": "557536",
+   "truck_stuck": 1,
+   "first_stuck_time_s": 108000.0,
+   "last_stuck_time_s": 108000.0
+  }
+ ],
+ "truck_stuck_distinct_links": 10,
+ "truck_departures": 521,
+ "truck_arrivals": 423,
+ "freight_plans": 521,
+ "freight_first_activity_on_watched_links": {
+  "501844": 100
+ },
+ "freight_last_activity_on_watched_links": {
+  "501844": 0
+ },
+ "freight_first_activity_top_links": [
+  [
+   "450785",
+   104
+  ],
+  [
+   "501844",
+   100
+  ],
+  [
+   "469845",
+   48
+  ],
+  [
+   "35197",
+   37
+  ],
+  [
+   "219431",
+   8
+  ],
+  [
+   "66920",
+   8
+  ],
+  [
+   "345119",
+   6
+  ],
+  [
+   "134715",
+   5
+  ],
+  [
+   "482144",
+   4
+  ],
+  [
+   "625384",
+   3
+  ]
+ ],
+ "freight_last_activity_top_links": [
+  [
+   "199731",
+   117
+  ],
+  [
+   "450785",
+   99
+  ],
+  [
+   "345116",
+   41
+  ],
+  [
+   "442581",
+   34
+  ],
+  [
+   "205528",
+   22
+  ],
+  [
+   "109507",
+   10
+  ],
+  [
+   "58544",
+   9
+  ],
+  [
+   "627431",
+   7
+  ],
+  [
+   "482144",
+   5
+  ],
+  [
+   "184320",
+   5
+  ]
+ ],
+ "link_attributes": {
+  "182357": {
+   "from": "21586769",
+   "to": "61868145",
+   "length": "224.6555807255989",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "30997945"
+  },
+  "18416": {
+   "from": "1386907932",
+   "to": "30027415",
+   "length": "93.23454733293615",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "270428389"
+  },
+  "217081": {
+   "from": "1145369922",
+   "to": "283325240",
+   "length": "512.2452745945932",
+   "freespeed": "27.77777777777778",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "primary",
+   "osm:way:id": "99000760"
+  },
+  "256445": {
+   "from": "2754515316",
+   "to": "30430383",
+   "length": "288.47088571369756",
+   "freespeed": "55.55555555555556",
+   "capacity": "8000.0",
+   "permlanes": "4.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "270431048"
+  },
+  "322380": {
+   "from": "926655326",
+   "to": "926655345",
+   "length": "214.7861179295701",
+   "freespeed": "55.55555555555556",
+   "capacity": "6000.0",
+   "permlanes": "3.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "270398404"
+  },
+  "372881": {
+   "from": "275064874",
+   "to": "11940250045",
+   "length": "110.9574127924074",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "bus,car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "44166444"
+  },
+  "449948": {
+   "from": "299250896",
+   "to": "299250891",
+   "length": "159.8875856632009",
+   "freespeed": "55.55555555555556",
+   "capacity": "6000.0",
+   "permlanes": "3.0",
+   "modes": "car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "27263777"
+  },
+  "501844": {
+   "from": "322530152",
+   "to": "299293713",
+   "length": "209.28326855091765",
+   "freespeed": "8.333333333333334",
+   "capacity": "600.0",
+   "permlanes": "1.0",
+   "modes": "car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "residential",
+   "osm:way:id": "27267197"
+  },
+  "557536": {
+   "from": "9311034455",
+   "to": "30027642",
+   "length": "475.80712256569785",
+   "freespeed": "55.55555555555556",
+   "capacity": "6000.0",
+   "permlanes": "3.0",
+   "modes": "bus,car,car_passenger,motorcycle,pt,truck",
+   "osm:way:highway": "motorway",
+   "osm:way:id": "270206715"
+  },
+  "97299": {
+   "from": "776257175",
+   "to": "262471194",
+   "length": "133.76708627466556",
+   "freespeed": "22.22222222222222",
+   "capacity": "1500.0",
+   "permlanes": "1.0",
+   "modes": "car,car_passenger,motorcycle,truck",
+   "osm:way:highway": "motorway_link",
+   "osm:way:id": "104874949"
+  }
+ },
+ "freight_injection_summary.csv": [
+  "trip_type;injected_trips",
+  "incoming;65",
+  "internal;74",
+  "outgoing;104",
+  "transit;278"
+ ],
+ "freight_boundary_link_summary.csv": null
+}

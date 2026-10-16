@@ -1,0 +1,122 @@
+{
+ "501844": {
+  "from_xy": [
+   567951.1,
+   5804391.1
+  ],
+  "to_xy": [
+   567898.6,
+   5804583.9
+  ],
+  "truck_stuck": 0,
+  "stuck_times_s": [],
+  "person_id_prefixes": [],
+  "first_activity": [],
+  "last_activity": []
+ },
+ "182357": {
+  "from_xy": [
+   603401.1,
+   5797136.8
+  ],
+  "to_xy": [
+   603186.9,
+   5797204.1
+  ],
+  "truck_stuck": 23,
+  "stuck_times_s": [
+   [
+    108000.0,
+    23
+   ]
+  ],
+  "person_id_prefixes": [
+   [
+    "freight_transit_",
+    19
+   ],
+   [
+    "freight_outgoing_",
+    4
+   ]
+  ],
+  "first_activity": [
+   [
+    "freight_start@430866",
+    19
+   ],
+   [
+    "freight_start@329344",
+    1
+   ],
+   [
+    "freight_start@393245",
+    1
+   ],
+   [
+    "freight_start@701319",
+    1
+   ],
+   [
+    "freight_start@319604",
+    1
+   ]
+  ],
+  "last_activity": [
+   [
+    "freight_end@224246",
+    23
+   ]
+  ]
+ },
+ "97299": {
+  "from_xy": [
+   565738.6,
+   5804770.3
+  ],
+  "to_xy": [
+   565832.4,
+   5804836.9
+  ],
+  "truck_stuck": 0,
+  "stuck_times_s": [],
+  "person_id_prefixes": [],
+  "first_activity": [],
+  "last_activity": []
+ },
+ "18416": {
+  "from_xy": [
+   603039.9,
+   5797255.8
+  ],
+  "to_xy": [
+   602949.6,
+   5797279.1
+  ],
+  "truck_stuck": 4,
+  "stuck_times_s": [
+   [
+    108000.0,
+    4
+   ]
+  ],
+  "person_id_prefixes": [
+   [
+    "freight_transit_",
+    4
+   ]
+  ],
+  "first_activity": [
+   [
+    "freight_start@430866",
+    4
+   ]
+  ],
+  "last_activity": [
+   [
+    "freight_end@224246",
+    4
+   ]
+  ]
+ }
+}

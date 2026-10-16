@@ -1,0 +1,16 @@
+[i444-smoke] arm=on eqasim-bs=ef0c999e2f7f5bf27c1a275501fce4d8fbe83afa eqasim-java-bs=b7d26eccf27bd6dae2b9ea4cafca4d9546616cc9 start=2026-10-16T05:33:00+02:00
+[freight.injection] trip type incoming: total 8625, sampled 65
+[freight.injection] trip type internal: total 6416, sampled 74
+[freight.injection] trip type outgoing: total 9531, sampled 104
+[freight.injection] trip type transit: total 31792, sampled 278
+[freight.injection] sampled 521 / 56364 trips at rate 0.01
+[freight.injection] trip_type;injected_trips
+[freight.injection] incoming;65
+[freight.injection] internal;74
+[freight.injection] outgoing;104
+[freight.injection] transit;278
+[freight.injection] endpoint_role;selected_link_endpoints;nearest_node_fallback_endpoints
+[freight.injection] start;343;0
+[freight.injection] end;382;0
+[freight.injection] boundary links: selected 725 / 725, nearest-node fallback 0 (0.00 %)
+[i444-smoke] arm=on exit=0 end=2026-10-16T07:01:35+02:00

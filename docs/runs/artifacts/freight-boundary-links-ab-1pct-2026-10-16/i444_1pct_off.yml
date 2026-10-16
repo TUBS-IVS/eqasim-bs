@@ -1,0 +1,14 @@
+working_directory: eqasim-data/cache_i444_1pct_off
+run:
+- matsim.output
+config:
+  sampling_rate: 0.01
+  output_path: eqasim-data/output_i444_1pct_off
+  analysis_working_directory: eqasim-data/cache_i444_1pct_off
+  output_prefix: braunschweig_1pct_i444_off_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  cache_share_export: true
+  cache_share_recompute: []

@@ -1,0 +1,17 @@
+# prod100_20260925 (100 %, final iteration 92), felix:~/prod100_20260925/output/matsim_output, read 2026-10-16
+# truck stuckAndAbort events by link (top 12): zcat output_events.xml.gz | grep stuckAndAbort | grep legMode="truck"
+   6907 link="501844"
+    160 link="508524"
+    134 link="118285"
+     48 link="183348"
+      8 link="97263"
+      6 link="97299"
+      5 link="97259"
+      5 link="593928"
+      5 link="510146"
+      4 link="510141"
+      4 link="430691"
+      4 link="275090"
+# <route> lines in output_plans.xml.gz (all persons, all plans) containing link 182357 (ramp chain) / 415874 (main carriageway)
+182357 22393
+415874 24825

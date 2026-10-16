@@ -1,0 +1,14 @@
+[i444-smoke] arm=off eqasim-bs=6a5b696e71553d87766d5946981ea3dd3ad8cdd8 eqasim-java-bs=21c1045c4d6ffd55d362927cd485fd09f7cb1d0b start=2026-10-15T16:23:42+02:00
+[i444-smoke] arm=off exit=1 end=2026-10-15T17:05:06+02:00
+[i444-smoke] arm=off eqasim-bs=6a5b696e71553d87766d5946981ea3dd3ad8cdd8 eqasim-java-bs=21c1045c4d6ffd55d362927cd485fd09f7cb1d0b start=2026-10-15T17:07:20+02:00
+[freight.injection] trip type incoming: total 8625, sampled 65
+[freight.injection] trip type internal: total 6416, sampled 74
+[freight.injection] trip type outgoing: total 9531, sampled 104
+[freight.injection] trip type transit: total 31792, sampled 278
+[freight.injection] sampled 521 / 56364 trips at rate 0.01
+[freight.injection] trip_type;injected_trips
+[freight.injection] incoming;65
+[freight.injection] internal;74
+[freight.injection] outgoing;104
+[freight.injection] transit;278
+[i444-smoke] arm=off exit=0 end=2026-10-16T05:24:43+02:00
