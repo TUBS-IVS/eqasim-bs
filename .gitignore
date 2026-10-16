@@ -153,7 +153,10 @@ quality/
 /memories/
 SESSION_LOG.md
 docs/archive/SESSION_LOG_*.md
-.claude/
+# Claude Code: settings, skills and worktrees stay machine-local; the path-scoped
+# rules split out of CLAUDE.md are project guidance and tracked (ADR-0143).
+.claude/*
+!.claude/rules/
 
 # One-time school geocoder caches (not pipeline inputs, machine-local only).
 eqasim-data/data/braunschweig/schools/geocode_cache*.json

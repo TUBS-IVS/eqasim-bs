@@ -46,11 +46,11 @@ from .srv_location_types import (
 # Eqasim purposes that count as "secondary" (variable). The FIXED (anchor)
 # purposes are NOT restated here: their single home is
 # ``synthesis.population.spatial.secondary.problems.FIXED_PURPOSES``, the list
-# the problem splitter actually branches on (it carries the two boundary
-# purposes "escort_linked" (#201) and "passive_linked" (#385) this module has no
-# use for). "escort" (issue #201) is only realised when escort_purpose is ON;
-# membership here is inert while no escort legs exist, keeping the OFF path
-# byte-identical.
+# the problem splitter actually branches on (it carries the three boundary
+# purposes "escort_linked" (#201), "passive_linked" (#385) and "outside" (the portal
+# gate, #442) this module has no use for). "escort" (issue #201) is only realised
+# when escort_purpose is ON; membership here is inert while no escort legs exist,
+# keeping the OFF path byte-identical.
 SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
 
 # Helper column carrying a leisure/other leg's MiD distance LABEL (the subtype

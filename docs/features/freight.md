@@ -73,6 +73,24 @@ The injection is a **three-stage hybrid** (flag-gated; see below):
    adds `truck` to the car links' allowed modes, adapts the config, and writes
    the population / vehicles / network / config in place.
 
+   **Boundary links (ADR-0144, issue #444).** The trimmed endpoints carry only
+   the crossing coordinate. Left to MATSim's `XY2Links`, which snaps via the
+   nearest network *node*, a crossing point on a motorway lands on whatever
+   street has the nearest node: at the A2-west gate this put 11,922 trucks per
+   day on a 600 veh/h residential street. `RunInjectFreight` therefore sets the
+   link of every boundary endpoint (start of `incoming`/`transit`, end of
+   `outgoing`/`transit`) with `FreightBoundaryLinkSelector`. It picks the closest
+   car link (perpendicular distance) of at least
+   `freight_boundary_link_minimum_capacity_veh_per_h` (1,000) that heads in the
+   trip direction: towards the other trip end for an entry, away from it for an
+   exit, so the right carriageway is chosen. Only links within
+   `freight_boundary_link_maximum_distance_m` (300) count. Endpoints without such
+   a link keep MATSim's snapping. They are counted in
+   `freight_boundary_link_summary.csv`, and the injection fails above
+   `freight_boundary_link_maximum_fallback_share` (0.05). The parameters are
+   measured on the 100 % network (0.05 % fallback), not calibrated; see the run
+   manifest `freight-boundary-links-prod100-2026-10-15`.
+
 **Discrete-mode-choice isolation.** Freight agents must not participate in the
 person mode choice: `BraunschweigModeAvailability` returns only `{truck}` for
 subpopulation `freight`, and a constant-zero `FreightTruckUtilityEstimator` is

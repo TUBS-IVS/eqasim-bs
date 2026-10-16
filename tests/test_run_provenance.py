@@ -120,3 +120,32 @@ def test_log_and_write_persists_the_resource_report_to_disk(tmp_path) -> None:
     assert len(files) == 1
     on_disk = json.loads(files[0].read_text(encoding="utf-8"))
     assert on_disk["resources"] == report.as_dict()
+
+
+def _git_repo_with_one_commit(path: Path) -> str:
+    import subprocess
+    path.mkdir(parents=True)
+    git = ["git", "-C", str(path), "-c", "user.name=test", "-c", "user.email=test@example.org"]
+    subprocess.run(git + ["init", "-q"], check=True)
+    (path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    subprocess.run(git + ["add", "pom.xml"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
+    return subprocess.run(git + ["rev-parse", "--short", "HEAD"], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def test_relative_java_source_path_resolves_like_the_eqasim_stage(tmp_path, monkeypatch) -> None:
+    # The composed form runs <working_directory>/.merged_config.yml from the repository root, and
+    # matsim.runtime.eqasim resolves eqasim_source_path against the process working directory. The
+    # provenance must use the same base: resolving against the config's directory sent
+    # ../eqasim-java-bs into eqasim-data/ and recorded 'unknown' for every composed run.
+    expected = _git_repo_with_one_commit(tmp_path / "eqasim-java-bs")
+    repo = tmp_path / "eqasim-bs"
+    merged = repo / "eqasim-data" / "cache_run" / ".merged_config.yml"
+    merged.parent.mkdir(parents=True)
+    merged.write_text(yaml.safe_dump({"working_directory": "eqasim-data/cache_run",
+                                      "config": {"eqasim_source_path": "../eqasim-java-bs"}}),
+                      encoding="utf-8")
+    monkeypatch.chdir(repo)
+    record = provenance.collect_run_provenance(str(merged))
+    assert record["eqasim_java_commit"] == expected

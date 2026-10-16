@@ -16,11 +16,13 @@ empty -> byte-identical output.
 
 Reporting-day view (ADR-0104, issue #244): the plans written here must describe the day
 the simulation actually runs, so the pre-assignment trips/activities that the vendored
-``load_raw`` reads are replaced by ``synthesis.population.trips.final`` /
-``...activities.final``, and the drawn ``commute_day_state`` is merged into the resident
-persons frame so ``matsim.scenario.population.add_person`` emits it as the person
-attribute ``commuteDayState``. With ``commute_day_state_enabled`` false both ``.final``
-aliases are pass-throughs and no state column exists -> byte-identical plans.
+``load_raw`` reads are replaced by ``synthesis.population.trips.simulated`` (the
+``trips.final`` day with the outside-tour modes judged against SrV, ADR-0145, #453; with
+``braunschweig.outside_tour_modes.enabled`` false it is ``trips.final`` unchanged) and
+``synthesis.population.activities.final``, and the drawn ``commute_day_state`` is merged
+into the resident persons frame so ``matsim.scenario.population.add_person`` emits it as
+the person attribute ``commuteDayState``. With ``commute_day_state_enabled`` false both
+``.final`` aliases are pass-throughs and no state column exists -> byte-identical plans.
 
 General day absence (ADR-0110, issue #370), independent of the commute-day model above: the
 drawn ``day_absence_state`` (``braunschweig.synthesis.day_absence.absence_stage``, EXACTLY one
@@ -94,7 +96,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads
 #: are replaced by these before the frames are prepared. Pass-throughs when
 #: ``commute_day_state_enabled`` is false.
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+#: The trips are the simulated day (trips.final with the outside-tour modes judged against SrV,
+#: ADR-0145); activities.final is unchanged because modes do not enter it.
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 

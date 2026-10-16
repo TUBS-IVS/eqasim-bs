@@ -9,6 +9,8 @@
   distance-only proxy (ASSUMPTION, no secondary OD data); a warning is logged if on without cordon
   (CLAUDE.md "External secondary candidates").
 - **Consequences:** Matches the long desired-distance tail; OFF path byte-identical.
+- **Amended by ADR-0141:** external centroids are bounded to the supply ring; beyond it, long-distance
+  trips are portal trips through the cordon gates.
 - **Evidence:** PR #19 (merged 2026-06-26); commits `0cc2ad2`, `c4fcdda`, `d1aa17c`;
   CLAUDE.md "External secondary candidates".
 

@@ -20,6 +20,10 @@ ignored:
    short by up to one sampling interval at each end. The exact per-stage wall clock
    comes from the run log via ``braunschweig.analysis.runtime``; what this module
    adds is the resource dimension the log cannot carry.
+3. **A forked worker's RSS is not its cost.** It counts every page the worker shares
+   with the driver, so 16 chainsolver workers each read the driver's ~36 GiB. A
+   worker pool's real cost is what the MACHINE lost beyond the driver's own RSS since
+   the sample before the pool started (:func:`pool_memory_episodes`).
 
 Everything unreadable stays ``None``. A count of zero and "the counter could not be
 read" are different statements and are never merged (CLAUDE.md).
@@ -222,6 +226,145 @@ def _filesystem_minima(rows):
     return [minima[path] for path in order]
 
 
+#: A stage runs a worker pool while the root process has at least this many live children
+#: (one child is a subprocess such as the MATSim JVM, not a pool).
+MIN_POOL_WORKERS = 2
+
+# Tag fragments of multiprocessing's helper processes: children of the root that are no
+# workers and, once started, stay alive to the end of the run (a forkserver's own workers
+# are ITS children, not the root's).
+_HELPER_PROCESS_TAGS = ("multiprocessing.resource_tracker", "multiprocessing.forkserver")
+
+
+def _used_memory_kb(row):
+    """``MemTotal - MemAvailable + swap used``, or None when any of the three is unreadable."""
+    total = row.get("memory_total_kb")
+    available = row.get("memory_available_kb")
+    swap_used = row.get("swap_used_kb")
+    if total is None or available is None or swap_used is None:
+        return None
+    return total - available + swap_used
+
+
+def _root_and_pool_workers(row):
+    """``(root process row or None, live children of the root that are pool workers)``."""
+    processes = row.get("processes")
+    root_pid = row.get("root_pid")
+    if processes is None or root_pid is None:
+        return None, []
+    root = next((process for process in processes if process.get("pid") == root_pid), None)
+    workers = [process for process in processes
+               if process.get("ppid") == root_pid
+               and not any(fragment in (process.get("tag") or "")
+                           for fragment in _HELPER_PROCESS_TAGS)]
+    return root, workers
+
+
+def _other_memory_kb(row):
+    """Used memory beyond the root process's RSS, or None when unreadable."""
+    root, _workers = _root_and_pool_workers(row)
+    used_kb = _used_memory_kb(row)
+    if root is None or root.get("rss_kb") is None or used_kb is None:
+        return None
+    return used_kb - root["rss_kb"]
+
+
+def _pool_episode_record(before, episode_rows):
+    """Private-memory figures of one pool episode (see :func:`pool_memory_episodes`)."""
+    baseline_kb = None if before is None else _other_memory_kb(before)
+    measured = []
+    for row in episode_rows:
+        root, workers = _root_and_pool_workers(row)
+        other_kb = _other_memory_kb(row)
+        worker_rss_kb = [worker.get("rss_kb") for worker in workers]
+        if baseline_kb is None or other_kb is None or None in worker_rss_kb:
+            continue
+        pool_private_kb = other_kb - baseline_kb
+        measured.append({
+            "timestamp": row.get("timestamp"),
+            "workers": len(workers),
+            "driver_rss_kb": root["rss_kb"],
+            "pool_private_kb": pool_private_kb,
+            "private_per_worker_kb": pool_private_kb / len(workers),
+            "mean_worker_rss_kb": sum(worker_rss_kb) / len(worker_rss_kb),
+        })
+
+    record = {
+        "first_timestamp": episode_rows[0].get("timestamp"),
+        "last_timestamp": episode_rows[-1].get("timestamp"),
+        "sample_count": len(episode_rows),
+        "measured_sample_count": len(measured),
+        "max_workers": max(len(_root_and_pool_workers(row)[1]) for row in episode_rows),
+        "baseline_kb": baseline_kb,
+        "peak_private_per_worker_kb": None,
+        "peak_timestamp": None,
+        "workers_at_peak": None,
+        "driver_rss_at_peak_kb": None,
+        "peak_pool_private_kb": None,
+        "private_per_worker_growth_kb": None,
+        "mean_worker_rss_growth_kb": None,
+    }
+    if measured:
+        peak = max(measured, key=lambda sample: sample["private_per_worker_kb"])
+        first = measured[0]
+        record.update({
+            "peak_private_per_worker_kb": peak["private_per_worker_kb"],
+            "peak_timestamp": peak["timestamp"],
+            "workers_at_peak": peak["workers"],
+            "driver_rss_at_peak_kb": peak["driver_rss_kb"],
+            "peak_pool_private_kb": max(sample["pool_private_kb"] for sample in measured),
+            "private_per_worker_growth_kb":
+                peak["private_per_worker_kb"] - first["private_per_worker_kb"],
+            "mean_worker_rss_growth_kb": peak["mean_worker_rss_kb"] - first["mean_worker_rss_kb"],
+        })
+    return record
+
+
+def pool_memory_episodes(rows) -> list:
+    """Private memory of every worker pool in ``rows`` (samples of one stage, in order).
+
+    An episode is a maximal run of consecutive samples in which the root process has at
+    least one live child (multiprocessing's helper processes are none); it is a POOL
+    when at least :data:`MIN_POOL_WORKERS` children are alive in one of its samples. A
+    pool whose workers come and go (PopulationSim batches dip to one worker between two
+    batches) therefore stays one episode, and its baseline is always a sample with no
+    child alive. Its private memory at a sample is what the machine lost beyond the
+    root's own RSS since that last sample BEFORE the episode::
+
+        pool private = (used - root RSS) - (used - root RSS)[sample before the pool]
+        used         = MemTotal - MemAvailable + swap used
+
+    divided by the live worker count. Unlike a forked worker's RSS -- which counts
+    every page it shares with the driver -- this is the pool's real cost, including
+    pages copied on write in the DRIVER while the workers held the originals.
+    ``private_per_worker_growth_kb`` next to ``mean_worker_rss_growth_kb`` (both from
+    the first measured sample to the peak) tells copy-on-write from allocation: a
+    copied page replaces one the worker already mapped, so only an allocation grows
+    its RSS. Memory used by unrelated processes of the machine meanwhile is charged
+    to the pool as well, so a busy shared machine overstates it.
+
+    An episode without a readable sample before it (the pool was already running at
+    the first sample) keeps every figure ``None`` rather than guessing a baseline, and
+    a sample with an unreadable memory field is skipped, never read as zero.
+    """
+    episodes = []
+    before = None
+    current_rows = None
+    for row in rows:
+        _root, workers = _root_and_pool_workers(row)
+        if workers:
+            if current_rows is None:
+                current_rows = []
+                episodes.append((before, current_rows))
+            current_rows.append(row)
+        else:
+            current_rows = None
+            before = row
+    return [_pool_episode_record(before, episode_rows) for before, episode_rows in episodes
+            if max(len(_root_and_pool_workers(row)[1]) for row in episode_rows)
+            >= MIN_POOL_WORKERS]
+
+
 def _stage_spans(rows):
     """Consecutive runs of samples carrying the same stage tag, in order."""
     spans = []
@@ -272,6 +415,7 @@ def _summarize_stages(rows, accounting):
             "peak_thread_count": _maximum([row.get("thread_count") for row in flat]),
             "min_memory_available_kb": _minimum(
                 [row.get("memory_available_kb") for row in flat]),
+            "pool_memory": pool_memory_episodes(flat),
         })
     return stages
 
@@ -495,6 +639,32 @@ def render_markdown(record) -> str:
                         _format_memory_kb(stage["peak_process_rss_kb"]),
                         _format_count(stage["peak_process_count"]),
                         _format_count(stage["peak_thread_count"])))
+
+    pools = [(stage["stage"], episode) for stage in record["stages"]
+             for episode in stage.get("pool_memory") or []]
+    if pools:
+        lines.extend(["", "Worker pools (private memory = what the machine lost beyond the "
+                      "driver's own RSS since the sample before the pool, per live worker; a "
+                      "forked worker's RSS counts the pages it shares with the driver):"])
+    for stage_name, episode in pools:
+        if episode["peak_private_per_worker_kb"] is None:
+            lines.append("- `%s` %s -> %s, up to %d workers: no readable sample before the "
+                         "pool, so no private-memory figure"
+                         % (stage_name or "(no stage tag)", episode["first_timestamp"],
+                            episode["last_timestamp"], episode["max_workers"]))
+            continue
+        lines.append("- `%s` %s -> %s, up to %d workers: peak %.2f GiB private per worker "
+                     "(%d workers, %s; pool total peak %s; driver RSS %s); from the first "
+                     "pool sample to that peak the private memory per worker grew %.2f GiB "
+                     "while the mean worker RSS grew %.2f GiB"
+                     % (stage_name or "(no stage tag)", episode["first_timestamp"],
+                        episode["last_timestamp"], episode["max_workers"],
+                        episode["peak_private_per_worker_kb"] / _KIB_PER_GIB,
+                        episode["workers_at_peak"], episode["peak_timestamp"],
+                        _format_memory_kb(episode["peak_pool_private_kb"]),
+                        _format_memory_kb(episode["driver_rss_at_peak_kb"]),
+                        episode["private_per_worker_growth_kb"] / _KIB_PER_GIB,
+                        episode["mean_worker_rss_growth_kb"] / _KIB_PER_GIB))
 
     lines.append("")
     if record["stalls"]:

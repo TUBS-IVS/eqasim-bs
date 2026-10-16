@@ -46,7 +46,8 @@ from synthesis.output import select_person_output_columns  # noqa: E402
 TRIPS_STAGE = "synthesis.population.trips"
 ACTIVITIES_STAGE = "synthesis.population.activities"
 ENRICHED_STAGE = "synthesis.population.enriched"
-DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+# The synthesis output reads the simulated day (trips.final with the outside-tour modes, ADR-0145).
+DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 
@@ -201,7 +202,10 @@ def _output_context(enabled, states=None, absence_enabled=False, absence=None):
     }
     return _StubContext(recorder, stages=stages,
                         config={OUTPUT.KEY_ENABLED: enabled, "mode_choice": False,
-                                OUTPUT.KEY_DAY_ABSENCE_ENABLED: absence_enabled})
+                                OUTPUT.KEY_DAY_ABSENCE_ENABLED: absence_enabled,
+                                # eqasim-bs#442: the portal layer is off here, so no pre-portal file is written
+                                # (tests/test_pre_portal_trips_output.py covers the file).
+                                OUTPUT._portal_config_keys.KEY_ENABLED: False})
 
 
 def test_output_day_declares_the_reporting_day_view_and_the_state_stage():
@@ -336,11 +340,27 @@ def test_attach_day_absence_state_covers_every_person():
 #: Modules that only swap the trips stage name; checked on the SOURCE (see the module docstring).
 _FINAL_TRIPS_CONSUMERS = (
     "braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py",
-    "braunschweig/matsim/scenario/population.py",
     "braunschweig/analysis/synthesis/work_participation_by_kreis.py",
 )
 
 _PRE_ASSIGNMENT_READ = re.compile(r"""context\.stage\(\s*["']synthesis\.population\.trips["']""")
+
+
+def test_population_writer_declares_the_simulated_day_trips_and_not_trips_final():
+    """Configure-level check (ADR-0145): the writer's DAG edge goes to the simulated alias.
+
+    The recording context sees every stage the writer's ``configure`` declares, so a regression that
+    points the writer back at ``trips.final`` fails here without reading source text. The vendored
+    ``configure`` still declares the pre-assignment ``synthesis.population.trips``; ``execute`` answers
+    it with the simulated day through ``StageOverrideContext`` (covered further below).
+    """
+    from braunschweig.matsim.scenario import population as POP
+
+    recorder = _ConfigureRecorder(config={"cordon_enabled": False})
+    POP.configure(recorder)
+    assert POP.DAY_TRIPS_STAGE == "synthesis.population.trips.simulated"
+    assert "synthesis.population.trips.simulated" in recorder.stages
+    assert "synthesis.population.trips.final" not in recorder.stages
 
 
 @pytest.mark.parametrize("relative_path", _FINAL_TRIPS_CONSUMERS)

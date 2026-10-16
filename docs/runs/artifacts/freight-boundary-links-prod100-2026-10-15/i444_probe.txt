@@ -1,0 +1,258 @@
+FOCUS 501844 {'id': '501844', 'from': '322530152', 'to': '299293713', 'length': '209.28326855091765', 'freespeed': '8.333333333333334', 'capacity': '600.0', 'permlanes': '1.0', 'oneway': '1', 'modes': 'car,car_passenger,motorcycle,truck', 'osm_type': 'residential'} from (567951.1203162149, 5804391.068258899) to (567898.5786626948, 5804583.913075343)
+
+CAR LINKS WITHIN 1500 m OF FOCUS MIDPOINT (dist, id, from, to, highway, cap, vfree, lanes, len, modes)
+        0 501844       322530152      299293713      residential       600.0 8.333333333333334  1.0 209.28326855091765 car,car_passenger,motorcycle,truck
+      122 199731       280815020      1461679064     motorway         6000.0 55.55555555555556  3.0 368.97185004009503 bus,car,car_passenger,motorcycle,pt,truck
+      146 501842       299293721      322530152      residential       600.0 8.333333333333334  1.0 97.99408875943915 car,car_passenger,motorcycle,truck
+      147 501459       299293713      310539698      residential       600.0 8.333333333333334  1.0 216.6353560551835 car,car_passenger,motorcycle,truck
+      170 199736       2462773626     30027262       motorway         6000.0 55.55555555555556  3.0 537.3286069720186 car,car_passenger,motorcycle,truck
+      212 376923       300940697      322530152      residential       600.0 8.333333333333334  1.0 321.378498723434 car,car_passenger,motorcycle,truck
+      212 376924       322530152      300940697      residential       600.0 8.333333333333334  1.0 321.378498723434 car,car_passenger,motorcycle,truck
+      234 224246       30027267       2462773626     motorway         8000.0 55.55555555555556  4.0 75.05421295688055 car,car_passenger,motorcycle,truck
+      239 199729       2754735783     280815020      motorway         8000.0 55.55555555555556  4.0 112.2115608839905 bus,car,car_passenger,motorcycle,pt,truck
+      242 501461       310539698      310539505      residential       600.0 8.333333333333334  1.0 45.846218578912016 car,car_passenger,motorcycle,truck
+      250 199743       1461679064     21408861       motorway         8000.0 55.55555555555556  4.0 55.55555555555556 bus,car,car_passenger,motorcycle,pt,truck
+      267 224238       21408861       394053251      motorway         8000.0 55.55555555555556  4.0 55.55555555555556 bus,car,car_passenger,motorcycle,pt,truck
+      276 372513       394053201      30027267       motorway         8000.0 55.55555555555556  4.0 55.55555555555556 car,car_passenger,motorcycle,truck
+      310 501463       310539505      310799056      residential       600.0 8.333333333333334  1.0 144.09990642603015 car,car_passenger,motorcycle,truck
+      320 199744       2064875944     394053201      motorway         8000.0 55.55555555555556  4.0 74.92789441525531 car,car_passenger,motorcycle,truck
+      351 202575       300940688      300940697      residential       600.0 8.333333333333334  1.0 239.50631692242933 car,car_passenger,motorcycle,truck
+      351 202576       300940697      300940688      residential       600.0 8.333333333333334  1.0 239.50631692242933 car,car_passenger,motorcycle,truck
+      353 224239       394053251      1461679059     motorway         8000.0 55.55555555555556  4.0 161.30578589862068 bus,car,car_passenger,motorcycle,pt,truck
+      375 496187       310799056      300940688      residential       600.0 8.333333333333334  1.0 12.919081692201134 bus,car,car_passenger,motorcycle,pt,truck
+      396 255656       300940697      310540654      residential       600.0 8.333333333333334  1.0 68.46493669249143 car,car_passenger,motorcycle,truck
+      410 496184       304728151      300940688      residential       600.0 8.333333333333334  1.0 66.95154082887652 bus,car,car_passenger,motorcycle,pt,truck
+      410 496185       300940688      304728151      residential       600.0 8.333333333333334  1.0 66.95154082887652 bus,car,car_passenger,motorcycle,pt,truck
+      411 501840       322529500      299293721      residential       600.0 8.333333333333334  1.0 515.4873766761056 car,car_passenger,motorcycle,truck
+      411 501841       299293721      322529500      residential       600.0 8.333333333333334  1.0 515.4873766761056 car,car_passenger,motorcycle,truck
+      418 310473       304728151      310540654      residential       600.0 8.333333333333334  1.0 241.20583359802148 car,car_passenger,motorcycle,truck
+      418 310474       310540654      304728151      residential       600.0 8.333333333333334  1.0 241.20583359802148 car,car_passenger,motorcycle,truck
+      442 255658       310540654      310539848      residential       600.0 8.333333333333334  1.0 25.7651923050804 car,car_passenger,motorcycle,truck
+      442 255659       310539848      310540654      residential       600.0 8.333333333333334  1.0 25.7651923050804 car,car_passenger,motorcycle,truck
+      450 496182       2534043196     304728151      residential       600.0 8.333333333333334  1.0 22.3458808697006 bus,car,car_passenger,motorcycle,pt,truck
+      450 496183       304728151      2534043196     residential       600.0 8.333333333333334  1.0 22.3458808697006 bus,car,car_passenger,motorcycle,pt,truck
+      504 275090       310925710      2754735783     motorway         6000.0 55.55555555555556  3.0 473.2830063321132 bus,car,car_passenger,motorcycle,pt,truck
+      513 496180       963225241      2534043196     residential       600.0 8.333333333333334  1.0 114.44376714846473 bus,car,car_passenger,motorcycle,pt,truck
+      513 496181       2534043196     963225241      residential       600.0 8.333333333333334  1.0 114.44376714846473 bus,car,car_passenger,motorcycle,pt,truck
+      555 199737       30027262       256776243      motorway         6000.0 55.55555555555556  3.0 337.3993572756941 car,car_passenger,motorcycle,truck
+      607 496178       310800110      963225241      residential       600.0 8.333333333333334  1.0 85.97493589592499 bus,car,car_passenger,motorcycle,pt,truck
+      607 496179       963225241      310800110      residential       600.0 8.333333333333334  1.0 85.97493589592499 bus,car,car_passenger,motorcycle,pt,truck
+      639 312089       30027270       2064875944     motorway         6000.0 55.55555555555556  3.0 594.6266347524268 car,car_passenger,motorcycle,truck
+      680 199783       1461679059     21408863       motorway         6000.0 55.55555555555556  3.0 514.8283885699061 bus,car,car_passenger,motorcycle,pt,truck
+      734 496176       310800486      310800110      residential       600.0 8.333333333333334  1.0 177.9949795425066 bus,car,car_passenger,motorcycle,pt,truck
+      734 496177       310800110      310800486      residential       600.0 8.333333333333334  1.0 177.9949795425066 bus,car,car_passenger,motorcycle,pt,truck
+      780 199730       256776243      2754735789     motorway         8000.0 55.55555555555556  4.0 133.14036694625173 car,car_passenger,motorcycle,truck
+      829 280493       10282103657    310540878      tertiary          600.0 19.444444444444443  1.0 91.6836231848625 bus,car,car_passenger,motorcycle,pt,truck
+      829 280494       310540878      10282103657    tertiary          600.0 19.444444444444443  1.0 91.6836231848625 bus,car,car_passenger,motorcycle,pt,truck
+      849 24891        79477387       10282103657    tertiary          600.0 19.444444444444443  1.0 265.15935352434445 bus,car,car_passenger,motorcycle,pt,truck
+      849 24892        10282103657    79477387       tertiary          600.0 19.444444444444443  1.0 265.15935352434445 bus,car,car_passenger,motorcycle,pt,truck
+      853 501838       316978454      322529500      residential       600.0 8.333333333333334  1.0 534.0372032173424 car,car_passenger,motorcycle,truck
+      853 501839       322529500      316978454      residential       600.0 8.333333333333334  1.0 534.0372032173424 car,car_passenger,motorcycle,truck
+      855 351775       310540878      13285671391    tertiary          600.0 19.444444444444443  1.0 269.9486966140131 bus,car,car_passenger,motorcycle,pt,truck
+      855 351776       13285671391    310540878      tertiary          600.0 19.444444444444443  1.0 269.9486966140131 bus,car,car_passenger,motorcycle,pt,truck
+      864 205346       5034736302     310539849      residential       600.0 8.333333333333334  1.0 266.6246235450433 car,car_passenger,motorcycle,truck
+      864 205347       310539849      5034736302     residential       600.0 8.333333333333334  1.0 266.6246235450433 car,car_passenger,motorcycle,truck
+      872 115794       310540877      310540878      residential       600.0 4.166666666666667  1.0 85.42572119555295 bus,car,car_passenger,motorcycle,truck
+      872 115795       310540878      310540877      residential       600.0 4.166666666666667  1.0 85.42572119555295 bus,car,car_passenger,motorcycle,truck
+      877 496174       310800678      310800486      residential       600.0 8.333333333333334  1.0 118.42201398804285 bus,car,car_passenger,motorcycle,pt,truck
+      877 496175       310800486      310800678      residential       600.0 8.333333333333334  1.0 118.42201398804285 bus,car,car_passenger,motorcycle,pt,truck
+      903 199742       2754735789     30027258       motorway         6000.0 55.55555555555556  3.0 123.29648592445805 car,car_passenger,motorcycle,truck
+      909 24885        310540704      79477387       tertiary          600.0 19.444444444444443  1.0 92.46004314912705 bus,car,car_passenger,motorcycle,pt,truck
+      909 24886        79477387       310540704      tertiary          600.0 19.444444444444443  1.0 92.46004314912705 bus,car,car_passenger,motorcycle,pt,truck
+      914 687661       298112775      310925710      motorway         6000.0 55.55555555555556  3.0 374.01271440778044 bus,car,car_passenger,motorcycle,pt,truck
+      919 453167       310540877      310540879      residential       600.0 4.166666666666667  1.0 142.7338110030286 car,car_passenger,motorcycle,truck
+      919 453168       310540879      310540877      residential       600.0 4.166666666666667  1.0 142.7338110030286 car,car_passenger,motorcycle,truck
+      956 255328       310540704      9034022878     residential       600.0 13.88888888888889  1.0 608.8367054667522 car,car_passenger,motorcycle,truck
+      956 255329       9034022878     310540704      residential       600.0 13.88888888888889  1.0 608.8367054667522 car,car_passenger,motorcycle,truck
+      956 168228       13285671391    310540955      tertiary          600.0 13.88888888888889  1.0 241.69138510933107 bus,car,car_passenger,motorcycle,pt,truck
+      956 168229       310540955      13285671391    tertiary          600.0 13.88888888888889  1.0 241.69138510933107 bus,car,car_passenger,motorcycle,pt,truck
+      973 24887        308125399      310540704      tertiary          600.0 13.88888888888889  1.0 152.1531538125077 bus,car,car_passenger,motorcycle,pt,truck
+      973 24888        310540704      308125399      tertiary          600.0 13.88888888888889  1.0 152.1531538125077 bus,car,car_passenger,motorcycle,pt,truck
+      976 312091       21408863       310318045      motorway         6000.0 55.55555555555556  3.0 83.49723234814375 bus,car,car_passenger,motorcycle,pt,truck
+      979 312088       310318044      30027270       motorway         6000.0 55.55555555555556  3.0 93.69050412047694 car,car_passenger,motorcycle,truck
+      984 496172       310798714      310800678      residential       600.0 8.333333333333334  1.0 100.44408519385372 bus,car,car_passenger,motorcycle,pt,truck
+      984 496173       310800678      310798714      residential       600.0 8.333333333333334  1.0 100.44408519385372 bus,car,car_passenger,motorcycle,pt,truck
+      985 255281       310540835      310540877      residential       600.0 4.166666666666667  1.0 146.83571671062208 bus,car,car_passenger,motorcycle,truck
+      985 255282       310540877      310540835      residential       600.0 4.166666666666667  1.0 146.83571671062208 bus,car,car_passenger,motorcycle,truck
+     1022 351769       308125398      308125399      tertiary          600.0 13.88888888888889  1.0 14.826821624877514 bus,car,car_passenger,motorcycle,truck
+     1022 351770       308125399      308125398      tertiary          600.0 13.88888888888889  1.0 14.826821624877514 bus,car,car_passenger,motorcycle,truck
+     1038 255635       310539849      310540634      residential       600.0 8.333333333333334  1.0 81.45164655134374 car,car_passenger,motorcycle,truck
+     1038 255636       310540634      310539849      residential       600.0 8.333333333333334  1.0 81.45164655134374 car,car_passenger,motorcycle,truck
+     1051 496170       310540320      310798714      residential       600.0 8.333333333333334  1.0 34.79501237895243 bus,car,car_passenger,motorcycle,pt,truck
+     1051 496171       310798714      310540320      residential       600.0 8.333333333333334  1.0 34.79501237895243 bus,car,car_passenger,motorcycle,pt,truck
+     1051 94879        93576769       308125398      tertiary          600.0 13.88888888888889  1.0 77.31113443213697 bus,car,car_passenger,motorcycle,pt,truck
+     1051 94880        308125398      93576769       tertiary          600.0 13.88888888888889  1.0 77.31113443213697 bus,car,car_passenger,motorcycle,pt,truck
+     1056 255330       9034022878     310540835      residential       600.0 13.88888888888889  1.0 13.88888888888889 car,car_passenger,motorcycle,truck
+     1056 255331       310540835      9034022878     residential       600.0 13.88888888888889  1.0 13.88888888888889 car,car_passenger,motorcycle,truck
+     1067 255222       310540634      310540320      residential       600.0 8.333333333333334  1.0 238.33676921584572 car,car_passenger,motorcycle,truck
+     1089 284745       316978454      316978478      residential       600.0 4.166666666666667  1.0 119.00757017897672 car,car_passenger,motorcycle,truck
+     1089 284746       316978478      316978454      residential       600.0 4.166666666666667  1.0 119.00757017897672 car,car_passenger,motorcycle,truck
+     1101 94877        6437247108     93576769       tertiary          600.0 19.444444444444443  1.0 73.39205263798767 bus,car,car_passenger,motorcycle,pt,truck
+     1101 94878        93576769       6437247108     tertiary          600.0 19.444444444444443  1.0 73.39205263798767 bus,car,car_passenger,motorcycle,pt,truck
+     1105 496168       299293398      310540320      residential       600.0 8.333333333333334  1.0 76.49601017472403 bus,car,car_passenger,motorcycle,pt,truck
+     1105 496169       310540320      299293398      residential       600.0 8.333333333333334  1.0 76.49601017472403 bus,car,car_passenger,motorcycle,pt,truck
+     1114 255332       310540835      313160454      residential       600.0 13.88888888888889  1.0 410.9182514428236 bus,car,car_passenger,motorcycle,truck
+     1114 255333       313160454      310540835      residential       600.0 13.88888888888889  1.0 410.9182514428236 bus,car,car_passenger,motorcycle,truck
+     1115 255269       310540926      310540955      residential       600.0 4.166666666666667  1.0 223.6023163383096 car,car_passenger,motorcycle,truck
+     1115 255270       310540955      310540926      residential       600.0 4.166666666666667  1.0 223.6023163383096 car,car_passenger,motorcycle,truck
+     1135 138213       2754689603     310318044      motorway         6000.0 55.55555555555556  3.0 221.32597229213312 car,car_passenger,motorcycle,truck
+     1137 563534       699550529      6437247108     tertiary          600.0 19.444444444444443  1.0 28.098633144582546 bus,car,car_passenger,motorcycle,pt,truck
+     1137 563535       6437247108     699550529      tertiary          600.0 19.444444444444443  1.0 28.098633144582546 bus,car,car_passenger,motorcycle,pt,truck
+     1143 312090       310318045      79477399       motorway         6000.0 55.55555555555556  3.0 253.43317020869188 bus,car,car_passenger,motorcycle,pt,truck
+     1166 563536       699550528      699550529      tertiary          600.0 19.444444444444443  1.0 55.47881685872474 bus,car,car_passenger,motorcycle,pt,truck
+     1166 563537       699550529      699550528      tertiary          600.0 19.444444444444443  1.0 55.47881685872474 bus,car,car_passenger,motorcycle,pt,truck
+     1174 496160       299292472      299293398      residential       600.0 4.166666666666667  1.0 78.11362184735765 car,car_passenger,motorcycle,truck
+     1174 496161       299293398      299292472      residential       600.0 4.166666666666667  1.0 78.11362184735765 car,car_passenger,motorcycle,truck
+     1175 302987       699550529      699550525      tertiary          600.0 19.444444444444443  1.0 63.50615643722855 car,car_passenger,motorcycle,truck
+     1189 608351       699550526      699550528      tertiary         1200.0 19.444444444444443  2.0 19.444444444444443 bus,car,car_passenger,motorcycle,pt,truck
+     1189 608352       699550528      699550526      tertiary          600.0 19.444444444444443  1.0 19.444444444444443 bus,car,car_passenger,motorcycle,pt,truck
+     1192 255277       310540983      2554769274     residential       600.0 8.333333333333334  1.0 202.2993451000152 bus,car,car_passenger,motorcycle,truck
+     1192 255278       2554769274     310540983      residential       600.0 8.333333333333334  1.0 202.2993451000152 bus,car,car_passenger,motorcycle,truck
+     1195 302986       699550528      699550525      tertiary          600.0 19.444444444444443  1.0 25.906375683006324 car,car_passenger,motorcycle,truck
+     1205 392293       93576775       699550526      tertiary          600.0 19.444444444444443  1.0 40.49799377022646 car,car_passenger,motorcycle,truck
+     1206 255334       313160454      310540926      residential       600.0 13.88888888888889  1.0 13.88888888888889 bus,car,car_passenger,motorcycle,truck
+     1206 255335       310540926      313160454      residential       600.0 13.88888888888889  1.0 13.88888888888889 bus,car,car_passenger,motorcycle,truck
+     1211 411088       699550525      93576775       tertiary          600.0 19.444444444444443  1.0 19.444444444444443 car,car_passenger,motorcycle,truck
+     1212 621350       30027258       1673228266     motorway         6000.0 55.55555555555556  3.0 508.5332970545039 car,car_passenger,motorcycle,truck
+     1218 527318       308125393      3035889324     unclassified      600.0 27.77777777777778  1.0 506.44920252230014 bus,car,car_passenger,motorcycle,pt,truck
+     1218 527319       3035889324     308125393      unclassified      600.0 27.77777777777778  1.0 506.44920252230014 bus,car,car_passenger,motorcycle,pt,truck
+     1219 608349       6437247107     699550526      tertiary         1200.0 19.444444444444443  2.0 71.74958547578419 bus,car,car_passenger,motorcycle,pt,truck
+     1219 608350       699550526      6437247107     tertiary          600.0 19.444444444444443  1.0 71.74958547578419 bus,car,car_passenger,motorcycle,pt,truck
+     1221 168230       310540955      310541180      tertiary          600.0 13.88888888888889  1.0 576.3175271652277 bus,car,car_passenger,motorcycle,pt,truck
+     1221 168231       310541180      310540955      tertiary          600.0 13.88888888888889  1.0 576.3175271652277 bus,car,car_passenger,motorcycle,pt,truck
+     1236 501910       310797348      299292472      residential       600.0 8.333333333333334  1.0 93.1187068736703 bus,car,car_passenger,motorcycle,pt,truck
+     1236 501911       299292472      310797348      residential       600.0 8.333333333333334  1.0 93.1187068736703 bus,car,car_passenger,motorcycle,pt,truck
+     1240 103434       310540926      310540983      residential       600.0 13.88888888888889  1.0 115.2884148991487 bus,car,car_passenger,motorcycle,truck
+     1240 103435       310540983      310540926      residential       600.0 13.88888888888889  1.0 115.2884148991487 bus,car,car_passenger,motorcycle,truck
+     1260 94887        3404047507     6437247107     tertiary         1200.0 19.444444444444443  2.0 34.92841419627621 bus,car,car_passenger,motorcycle,pt,truck
+     1260 94888        6437247107     3404047507     tertiary          600.0 19.444444444444443  1.0 34.92841419627621 bus,car,car_passenger,motorcycle,pt,truck
+     1263 527316       2663066210     308125393      unclassified      600.0 27.77777777777778  1.0 597.2638144503667 bus,car,car_passenger,motorcycle,pt,truck
+     1263 527317       308125393      2663066210     unclassified      600.0 27.77777777777778  1.0 597.2638144503667 bus,car,car_passenger,motorcycle,pt,truck
+     1273 64892        1461679054     2754689603     motorway         8000.0 55.55555555555556  4.0 57.034186571680266 car,car_passenger,motorcycle,truck
+     1274 527320       3035889324     281171650      unclassified      600.0 27.77777777777778  1.0 382.9015386038055 bus,car,car_passenger,motorcycle,pt,truck
+     1274 527321       281171650      3035889324     unclassified      600.0 27.77777777777778  1.0 382.9015386038055 bus,car,car_passenger,motorcycle,pt,truck
+     1285 255638       8255524409     310540634      residential       600.0 8.333333333333334  1.0 423.14264298218313 car,car_passenger,motorcycle,truck
+     1288 501836       322528159      316978454      residential       600.0 8.333333333333334  1.0 410.02105634913914 car,car_passenger,motorcycle,truck
+     1288 501837       316978454      322528159      residential       600.0 8.333333333333334  1.0 410.02105634913914 car,car_passenger,motorcycle,truck
+     1294 501908       310797592      310797348      residential       600.0 8.333333333333334  1.0 85.72900741635134 bus,car,car_passenger,motorcycle,pt,truck
+     1294 501909       310797348      310797592      residential       600.0 8.333333333333334  1.0 85.72900741635134 bus,car,car_passenger,motorcycle,pt,truck
+     1298 64887        79477399       79477402       motorway         6000.0 55.55555555555556  3.0 58.94064999896569 bus,car,car_passenger,motorcycle,pt,truck
+     1329 337030       278191691      3404047507     tertiary          600.0 19.444444444444443  1.0 140.74592223905003 bus,car,car_passenger,motorcycle,pt,truck
+     1329 337031       3404047507     278191691      tertiary          600.0 19.444444444444443  1.0 140.74592223905003 bus,car,car_passenger,motorcycle,pt,truck
+     1332 64891        79477401       1461679054     motorway         8000.0 55.55555555555556  4.0 62.62289807433762 car,car_passenger,motorcycle,truck
+     1354 430691       299250895      298112775      motorway         4000.0 55.55555555555556  2.0 524.5679490245903 car,car_passenger,motorcycle,truck
+     1359 501906       309415154      310797592      residential       600.0 8.333333333333334  1.0 84.63474209952041 bus,car,car_passenger,motorcycle,pt,truck
+     1359 501907       310797592      309415154      residential       600.0 8.333333333333334  1.0 84.63474209952041 bus,car,car_passenger,motorcycle,pt,truck
+     1374 392294       93576775       322992650      tertiary          600.0 19.444444444444443  1.0 336.2596533527636 car,car_passenger,motorcycle,truck
+     1374 392295       322992650      93576775       tertiary          600.0 19.444444444444443  1.0 336.2596533527636 car,car_passenger,motorcycle,truck
+     1379 342065       278191691      2663066210     unclassified      600.0 27.77777777777778  1.0 28.93174975903183 bus,car,car_passenger,motorcycle,pt,truck
+     1379 342066       2663066210     278191691      unclassified      600.0 27.77777777777778  1.0 28.93174975903183 bus,car,car_passenger,motorcycle,pt,truck
+     1397 577424       281171650      305922561      unclassified      600.0 27.77777777777778  1.0 519.3032400814473 bus,car,car_passenger,motorcycle,pt,truck
+     1397 577425       305922561      281171650      unclassified      600.0 27.77777777777778  1.0 519.3032400814473 bus,car,car_passenger,motorcycle,pt,truck
+     1400 527315       2663066206     2663066210     unclassified      600.0 27.77777777777778  1.0 60.12917696357836 car,car_passenger,motorcycle,truck
+     1407 527334       2663066206     278191691      tertiary          600.0 19.444444444444443  1.0 52.0391598255941 bus,car,car_passenger,motorcycle,pt,truck
+     1407 527335       278191691      2663066206     tertiary          600.0 19.444444444444443  1.0 52.0391598255941 bus,car,car_passenger,motorcycle,pt,truck
+     1411 138212       2474524198     79477401       motorway         8000.0 55.55555555555556  4.0 97.99252830300921 car,car_passenger,motorcycle,truck
+     1420 103436       310540983      310541182      residential       600.0 13.88888888888889  1.0 462.4492371180382 bus,car,car_passenger,motorcycle,truck
+     1420 103437       310541182      310540983      residential       600.0 13.88888888888889  1.0 462.4492371180382 bus,car,car_passenger,motorcycle,truck
+     1434 310920       322528154      322528157      residential       600.0 4.166666666666667  1.0 88.55428924059524 car,car_passenger,motorcycle,truck
+     1438 376030       322528153      322528154      residential       600.0 4.166666666666667  1.0 45.07050111394613 car,car_passenger,motorcycle,truck
+     1438 643944       2474524204     2663066206     tertiary          600.0 19.444444444444443  1.0 22.609772828955887 bus,car,car_passenger,motorcycle,pt,truck
+     1438 643945       2663066206     2474524204     tertiary          600.0 19.444444444444443  1.0 22.609772828955887 bus,car,car_passenger,motorcycle,pt,truck
+     1451 184298       79477402       2754689592     motorway         6000.0 55.55555555555556  3.0 247.26955489825633 bus,car,car_passenger,motorcycle,pt,truck
+     1454 501904       2542026613     309415154      residential       600.0 8.333333333333334  1.0 121.43007011405537 bus,car,car_passenger,motorcycle,pt,truck
+     1454 501905       309415154      2542026613     residential       600.0 8.333333333333334  1.0 121.43007011405537 bus,car,car_passenger,motorcycle,pt,truck
+     1456 310922       322528157      322528153      residential       600.0 4.166666666666667  1.0 44.01580284617319 car,car_passenger,motorcycle,truck
+     1470 643946       2735199958     2474524204     tertiary          600.0 19.444444444444443  1.0 53.96845475295417 bus,car,car_passenger,motorcycle,pt,truck
+     1470 643947       2474524204     2735199958     tertiary          600.0 19.444444444444443  1.0 53.96845475295417 bus,car,car_passenger,motorcycle,pt,truck
+     1472 376028       322528152      322528153      residential       600.0 4.166666666666667  1.0 24.04594281479434 car,car_passenger,motorcycle,truck
+     1472 376029       322528153      322528152      residential       600.0 4.166666666666667  1.0 24.04594281479434 car,car_passenger,motorcycle,truck
+     1475 79444        2474524204     2474524184     motorway_link    1500.0 22.22222222222222  1.0 57.053535507547586 car,car_passenger,motorcycle,truck
+     1478 168232       310541180      299293855      tertiary          600.0 13.88888888888889  1.0 71.2380766495495 bus,car,car_passenger,motorcycle,pt,truck
+     1478 168233       299293855      310541180      tertiary          600.0 13.88888888888889  1.0 71.2380766495495 bus,car,car_passenger,motorcycle,pt,truck
+     1480 215790       2474524184     2474524198     motorway_link    1500.0 22.22222222222222  1.0 175.89453026458537 car,car_passenger,motorcycle,truck
+     1486 659366       322528152      3528745251     residential       600.0 4.166666666666667  1.0 26.81191920138192 car,car_passenger,motorcycle,truck
+     1488 310907       3528745251     322528159      residential       600.0 4.166666666666667  1.0 6.168823312929932 car,car_passenger,motorcycle,truck
+     1494 400598       79477397       2735199958     tertiary         1200.0 19.444444444444443  2.0 19.444444444444443 bus,car,car_passenger,motorcycle,pt,truck
+     1494 400599       2735199958     79477397       tertiary          600.0 19.444444444444443  1.0 19.444444444444443 bus,car,car_passenger,motorcycle,pt,truck
+     1497 602151       2735199958     2474524184     motorway_link    1500.0 22.22222222222222  1.0 25.68572782028967 car,car_passenger,motorcycle,truck
+
+FREIGHT START LINKS (top 8 per trip type)
+  incoming total 8625, focus 1743
+     501844         1743  residential    cap 600.0
+     450785         1397  motorway       cap 6000.0
+     35197          1208  motorway       cap 6000.0
+     469845          967  motorway       cap 6000.0
+     109513          542  motorway       cap 4000.0
+     37232           419  primary        cap 1500.0
+     134715          292  primary        cap 1500.0
+     482144          203  primary        cap 1500.0
+  internal total 6416, focus 0
+     319592           14  primary        cap 3000.0
+     185852           10  motorway_link  cap 1500.0
+     309533           10  motorway_link  cap 1500.0
+     709077           10  trunk          cap 4000.0
+     432878           10  primary        cap 1500.0
+     592190           10  primary        cap 1500.0
+     255934           10  motorway_link  cap 1500.0
+     528862            9  primary        cap 3000.0
+  outgoing total 9531, focus 0
+     502547           22  primary        cap 1500.0
+     241535           19  primary        cap 1500.0
+     685805           18  primary        cap 1500.0
+     557237           18  primary        cap 1500.0
+     284939           18  primary        cap 1500.0
+     134370           15  primary        cap 1500.0
+     134358           15  primary        cap 1500.0
+     84087            15  primary        cap 1500.0
+  transit total 31792, focus 10179
+     501844        10179  residential    cap 600.0
+     450785        10115  motorway       cap 6000.0
+     469845         3834  motorway       cap 6000.0
+     35197          3830  motorway       cap 6000.0
+     109513          634  motorway       cap 4000.0
+     66920           591  trunk          cap 4000.0
+     482144          323  primary        cap 1500.0
+     345119          244  motorway       cap 6000.0
+
+FREIGHT END LINKS (top 8 per trip type)
+  incoming total 8625, focus 0
+     284939           24  primary        cap 1500.0
+     241535           20  primary        cap 1500.0
+     502547           19  primary        cap 1500.0
+     685805           15  primary        cap 1500.0
+     199543           14  primary        cap 1500.0
+     134256           13  primary        cap 1500.0
+     15774            13  primary        cap 1500.0
+     20491            12  primary        cap 1500.0
+  internal total 6416, focus 0
+     582812           15  primary        cap 3000.0
+     319592           13  primary        cap 3000.0
+     270255           12  motorway_link  cap 1500.0
+     528862           11  primary        cap 3000.0
+     342858           11  primary        cap 1500.0
+     140385           11  primary        cap 1500.0
+     86711            10  primary        cap 3000.0
+     152848           10  motorway_link  cap 3000.0
+  outgoing total 9531, focus 0
+     199731         1809  motorway       cap 6000.0
+     450785         1492  motorway       cap 6000.0
+     345116         1239  motorway       cap 4000.0
+     205528         1150  motorway       cap 8000.0
+     109507          572  motorway       cap 6000.0
+     37232           353  primary        cap 1500.0
+     134715          282  primary        cap 1500.0
+     270399          259  tertiary       cap 600.0
+  transit total 31792, focus 0
+     450785        10816  motorway       cap 6000.0
+     199731         9671  motorway       cap 6000.0
+     442581         3553  motorway_link  cap 3000.0
+     345116         3425  motorway       cap 4000.0
+     205528          810  motorway       cap 8000.0
+     58544           629  trunk          cap 6000.0
+     109507          385  motorway       cap 6000.0
+     482144          375  primary        cap 1500.0
+
+SAMPLE COORDS OF FREIGHT WITH FOCUS AS START OR END
+  incoming 1743 [(('567989.40877809', '5804588.629767947'), 1743)] [(('585707.0423912328', '5809571.664289471'), 7), (('625577.8619964191', '5810993.031204274'), 5), (('585546.9818868904', '5810455.3561255'), 5)]
+  transit 10179 [(('567989.40877809', '5804588.629767947'), 10179)] [(('649269.9312803949', '5786045.75444914'), 9840), (('620896.6651854892', '5748313.527202632'), 191), (('568148.5917968419', '5804555.902261056'), 52)]

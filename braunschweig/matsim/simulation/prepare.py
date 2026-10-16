@@ -37,6 +37,7 @@ import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules
+from braunschweig.matsim.simulation import plan_check
 from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
@@ -46,8 +47,10 @@ log = logging.getLogger(__name__)
 #: arguments, so a change there changes the prepared scenario without touching this file
 #: (#327 gate). The three ``braunschweig.data.vrb`` helpers write the VRB zone fare inputs
 #: (ADR-0133), ``tariff_export`` and ``config_modules`` the parking inputs (issue #249); all are
-#: hashed unconditionally, like the deferred cordon helpers below.
-_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export, config_modules)
+#: hashed unconditionally, like the deferred cordon helpers below. ``plan_check`` runs the plan
+#: feasibility check as the last step of ``execute`` (#443).
+_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
+                   config_modules, plan_check)
 
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
@@ -159,6 +162,11 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.runtime.java",
     "matsim.runtime.maven",
     "matsim.runtime.process_watchdog",
+    # plan_check reads MAX_PLAN_TIME_SECONDS from braunschweig.popsim.plan_validation, whose own
+    # imports (closure_dwell, data.hts.hts) are part of the check's import closure (#443).
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.plan_validation",
+    "data.hts.hts",
 )
 
 
@@ -189,6 +197,7 @@ def validate(context):
             ) from error
         digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
+
 
 def configure(context):
     delegate.configure(context)
@@ -229,7 +238,27 @@ def configure(context):
         # statutory German HGV limit (StVO 3). Both configurable, not calibrated.
         context.config("freight_truck_pce", 3.5)
         context.config("freight_truck_max_velocity_kmh", 80.0)
+        # Boundary endpoints (start of incoming/transit, end of outgoing/transit trips) are linked
+        # explicitly instead of by MATSim's nearest-node snapping (issue #444, ADR-0144): the
+        # closest car link of at least this capacity (veh/h, per hour of the network capacity
+        # period) whose heading agrees with the trip direction, within this distance (m). The
+        # injection fails when more than the fallback share of boundary endpoints finds no such
+        # link. Defaults measured on the 100 % network (0.05 % fallback at 300 m), see the ADR.
+        context.config("freight_boundary_link_minimum_capacity_veh_per_h", 1000.0)
+        context.config("freight_boundary_link_maximum_distance_m", 300.0)
+        context.config("freight_boundary_link_maximum_fallback_share", 0.05)
         context.config("random_seed")
+
+    # Plan feasibility check on the written population (ADR-0146, #443): runs after the cut and the
+    # freight injection and reports per subpopulation and frozen/in-region class; above the frozen-resident
+    # defect share it logs at ERROR, or raises when fail_on_threshold is true (default false: the thresholds
+    # are ASSUMPTIONS until the A/B of #443 calibrates them).
+    context.config(plan_check.KEY_ENABLED, plan_check.DEFAULT_ENABLED)
+    context.config(plan_check.KEY_WALK_MAX_DISTANCE_M, plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+    context.config(plan_check.KEY_BICYCLE_MAX_DISTANCE_M, plan_check.DEFAULT_BICYCLE_MAX_DISTANCE_M)
+    context.config(plan_check.KEY_LEG_MAX_DURATION_S, plan_check.DEFAULT_LEG_MAX_DURATION_S)
+    context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
+    context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
     # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
     # car cost model reads. OFF declares nothing else and writes nothing.
@@ -341,6 +370,10 @@ def execute(context):
     # The parking module goes into the FINAL config too, and the tariff model next to it: written last.
     if context.config(PARKING_KEY):
         _write_parking_inputs(context, result)
+
+    # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
+    if context.config(plan_check.KEY_ENABLED):
+        plan_check.run(context, result)
 
     return result
 
@@ -614,16 +647,33 @@ def _inject_freight(context, config_name):
     sampled[list(TRIP_COLUMNS)].to_csv("%s/%s" % (context.path(), csv_name), sep=";", index=False)
 
     summary_name = "freight_injection_summary.csv"
+    boundary_summary_name = "freight_boundary_link_summary.csv"
     eqasim.run(context, "org.eqasim.braunschweig.scenario.RunInjectFreight", [
         "--config-path", config_name,
         "--freight-csv-path", csv_name,
         "--truck-pce", context.config("freight_truck_pce"),
         "--truck-max-velocity-kmh", context.config("freight_truck_max_velocity_kmh"),
+        "--boundary-link-minimum-capacity-veh-per-h",
+        context.config("freight_boundary_link_minimum_capacity_veh_per_h"),
+        "--boundary-link-maximum-distance-m", context.config("freight_boundary_link_maximum_distance_m"),
+        "--boundary-link-maximum-fallback-share", context.config("freight_boundary_link_maximum_fallback_share"),
+        "--boundary-link-summary-path", boundary_summary_name,
         "--summary-path", summary_name,
     ])
 
-    summary_path = "%s/%s" % (context.path(), summary_name)
-    assert os.path.exists(summary_path), "freight injection did not write its summary"
-    with open(summary_path, encoding="utf-8") as f:
-        for line in f.read().strip().splitlines():
-            print("[freight.injection] %s" % line)
+    for name, label in ((summary_name, "summary"), (boundary_summary_name, "boundary-link summary")):
+        path = "%s/%s" % (context.path(), name)
+        assert os.path.exists(path), "freight injection did not write its %s" % label
+        with open(path, encoding="utf-8") as f:
+            for line in f.read().strip().splitlines():
+                print("[freight.injection] %s" % line)
+
+    # No-silent-fallback rate of the boundary-link rule (ADR-0144); the Java injector already
+    # failed if the share exceeds freight_boundary_link_maximum_fallback_share.
+    import pandas as pd
+    boundary = pd.read_csv("%s/%s" % (context.path(), boundary_summary_name), sep=";")
+    selected = int(boundary["selected_link_endpoints"].sum())
+    fallback = int(boundary["nearest_node_fallback_endpoints"].sum())
+    total = selected + fallback
+    print("[freight.injection] boundary links: selected %d / %d, nearest-node fallback %d (%.2f %%)"
+          % (selected, total, fallback, 100.0 * fallback / total if total else 0.0))

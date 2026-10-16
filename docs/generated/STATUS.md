@@ -11,11 +11,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 101 | stages: 127 | datasets: 98 | ADRs: 134 | run manifests: 57
+- Features: 106 | stages: 131 | datasets: 100 | ADRs: 143 | run manifests: 62
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -39,6 +39,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Consistent car_availability](../registry/features/consistent_car_availability.yml) | active | off | -/-/A | unvalidated |  |
 | [Driving licence (P17.1, 3-margin IPF)](../registry/features/driving_licence_enrichment.yml) | active | off | -/-/A | unvalidated |  |
 | [Economic status (Bayes hhtype×region)](../registry/features/economic_status_bayes.yml) | active | off | -/-/A | unvalidated |  |
+| [100m employment grid control (employed persons per cell by sex and age group)](../registry/features/employment_grid_control.yml) | active | ON | A/s/- | unvalidated |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | PARKED | off | -/-/i | unvalidated |  |
 | [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
@@ -55,7 +56,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-16 stage(s), 9 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
+17 stage(s), 10 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -137,7 +138,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Cordon / external demand
 
-7 stage(s), 7 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `vg250_ew`
+10 stage(s), 10 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -147,6 +148,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
 | [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
+| [Outside-tour modes judged against the regional survey](../registry/features/outside_tour_modes.yml) | active | ON | A/-/- | unvalidated | [#453](https://github.com/TUBS-IVS/eqasim-bs/issues/453) |
+| [Portal trips (long-distance legs through the cordon gates)](../registry/features/portal_trips.yml) | active | ON | A/-/- | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | [#442](https://github.com/TUBS-IVS/eqasim-bs/issues/442) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Freight
@@ -157,6 +160,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Freight analysis exclusion](../registry/features/freight_analysis_exclusion.yml) | active | ON | A/-/- | unvalidated |  |
 | [Assumptions (truck PCE / max velocity)](../registry/features/freight_assumptions.yml) | active | ON | A/i/i | unvalidated |  |
+| [Freight boundary endpoints linked by capacity and trip direction](../registry/features/freight_boundary_links.yml) | active | ON | A/i/i | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`) | [#444](https://github.com/TUBS-IVS/eqasim-bs/issues/444) |
 | [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated |  |
 
 ## MATSim
@@ -168,6 +172,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
 | [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
+| [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
 | [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/i/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 
@@ -206,7 +211,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
 | [Result-preserving fleet, home, validation and donor kernels](../registry/features/performance_equivalence.yml) | active | ON | A/s/s | not_applicable (`performance-equivalence-2026-09-15`) |  |
-| [Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)](../registry/features/resource_adaptive_config.yml) | active | ON | A/A/A | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) |  |
+| [Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)](../registry/features/resource_adaptive_config.yml) | active | ON | A/A/A | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
 | [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
 | [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated |  |

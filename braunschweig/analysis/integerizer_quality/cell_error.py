@@ -124,7 +124,8 @@ def _load_targets(control_totals_path: Union[str, Path]) -> pd.DataFrame:
 def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_grid: bool,
                      weekend: bool) -> pd.DataFrame:
     """Long [zensus100m, control, realised, target, abs_error, batch, KREIS] over all batches."""
-    from braunschweig.popsim import control_spec, mid as midmod, seed as seedmod
+    from braunschweig.popsim import control_spec, seed as seedmod
+    from braunschweig.popsim.mid import donor as midmod
 
     from tqdm import tqdm
 

@@ -448,10 +448,10 @@ def test_nan_times_mixed_person_is_unfixable_and_gets_no_bogus_closure():
 
 
 def test_times_exceeding_bound_flagged_and_unfixable():
-    """Times beyond MAX_PLAN_TIME_SECONDS (36h) mark the person unfixable.
+    """Times beyond MAX_PLAN_TIME_SECONDS (30h) mark the person unfixable.
 
     Chains crossing midnight may legitimately pass 24h via the +24h shift in
-    hts.fix_trip_times, but beyond 36h a chain is pathological and must be
+    hts.fix_trip_times, but beyond 30h a chain is pathological and must be
     routed to the same-cell resample instead of surviving into the jitter."""
     import pandas as pd
     from braunschweig.popsim.plan_validation import PlanValidator
@@ -781,3 +781,50 @@ def test_resample_chains_raises_on_mismatched_weight_length():
             unfixable_trips, ["p1"], person_cells, donor_chains,
             rng=np.random.RandomState(0), donor_weights=donor_weights,
         )
+
+
+def test_plan_time_bound_equals_the_simulated_day():
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+    # ADR-0146: the synthetic day is capped at the simulated day (eqasim GenerateConfig: qsim.endTime 30:00).
+    assert MAX_PLAN_TIME_SECONDS == 30 * 3600
+
+
+def test_repair_trips_warns_when_the_bound_resample_share_exceeds_the_rate(caplog):
+    import logging
+    import pandas as pd
+    from braunschweig.popsim.plan_validation import BOUND_RESAMPLE_WARN_RATE, PlanValidator
+    assert BOUND_RESAMPLE_WARN_RATE == 0.01
+    # two persons, one beyond the bound (50 %): WARN; the message names the rate
+    df = pd.DataFrame({
+        "person_id": [1, 1, 2, 2],
+        "departure_time": [28800.0, 120000.0, 28800.0, 61200.0],   # person 1: 2nd trip at 33.3 h > 30 h
+        "arrival_time":   [30600.0, 121000.0, 30600.0, 63000.0],
+        "preceding_purpose": ["home", "work", "home", "work"],
+        "following_purpose": ["work", "home", "work", "home"],
+        "is_first_trip": [True, False, True, False],
+        "is_last_trip":  [False, True, False, True],
+        "mode": ["car"] * 4,
+    })
+    with caplog.at_level(logging.INFO):
+        PlanValidator(require_home_closure=True).repair_trips(df)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "plan-time bound" in r.getMessage()]
+    assert len(warnings) == 1 and "1/2" in warnings[0].getMessage()
+
+
+def test_repair_trips_does_not_warn_when_no_person_exceeds_the_bound(caplog):
+    import logging
+    import pandas as pd
+    from braunschweig.popsim.plan_validation import PlanValidator
+    df = pd.DataFrame({
+        "person_id": [1, 1],
+        "departure_time": [28800.0, 61200.0],
+        "arrival_time":   [30600.0, 63000.0],
+        "preceding_purpose": ["home", "work"],
+        "following_purpose": ["work", "home"],
+        "is_first_trip": [True, False],
+        "is_last_trip":  [False, True],
+        "mode": ["car"] * 2,
+    })
+    with caplog.at_level(logging.INFO):
+        PlanValidator(require_home_closure=True).repair_trips(df)
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING and "plan-time bound" in r.getMessage()]

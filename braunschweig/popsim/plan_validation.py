@@ -26,12 +26,21 @@ logger = logging.getLogger(__name__)
 # Represents the minimum dwell time at the last activity before heading home.
 HOME_CLOSURE_DWELL_S = 3600.0
 
-# Absolute plan-time bound (seconds).  Chains crossing midnight may legitimately
-# pass 24h via the +24h shift in hts.fix_trip_times, but beyond 36h a chain is
-# pathological (very late / multi-shift repaired chains) and is resampled from a
-# same-cell donor instead.  This is the authoritative constant; trips_stage
-# imports it for its final backstop assertion.
-MAX_PLAN_TIME_SECONDS = 36 * 3600
+# Absolute plan-time bound (seconds) = the simulated day. eqasim's GenerateConfig
+# ends the qsim at 30:00 and braunschweig.matsim.simulation.plan_check asserts that
+# the written config agrees with this constant (ADR-0146, issue #443). Chains
+# crossing midnight may legitimately pass 24h via the +24h shift in
+# hts.fix_trip_times; a chain beyond the simulated day cannot be lived in the
+# simulation and is resampled from a same-cell donor instead. This is the
+# authoritative constant; trips_stage imports it for its final backstop assertion,
+# time_imputation and departure_time_model for their guards.
+MAX_PLAN_TIME_SECONDS = 30 * 3600
+
+# Above this share of persons routed to the resample because their repaired chain
+# exceeds the bound, the bound and the donor pool disagree structurally (WARN);
+# below it the resample is a routine tail effect (INFO). ASSUMPTION (ADR-0146):
+# 1 % -- at 100 % the measured share was 0.2 % with the former 36 h bound.
+BOUND_RESAMPLE_WARN_RATE = 0.01
 
 # Above this share of appended closures needing the plan-time cap, the EMPIRICAL
 # dwell distribution and the chains it is asked to close disagree badly enough to
@@ -45,6 +54,14 @@ CLOSURE_CAP_WARN_RATE = 0.05
 # this leaf module so the public validator and its synpp callers cannot drift.
 KEY_VECTORIZED_PLAN_VALIDATION = "braunschweig.performance.plan_validation"
 DEFAULT_VECTORIZED_PLAN_VALIDATION = True
+
+# The only columns hts.fix_trip_times reads (it writes the two times), and the only
+# ones hts.compute_activity_duration reads. Both helpers shift the whole frame they
+# are given, so they run on these columns alone (ADR-0135);
+# tests/test_popsim_plan_validation_memory.py pins that the narrow call equals the
+# full-table one.
+_FIX_TRIP_TIMES_COLUMNS = ("departure_time", "arrival_time", "is_first_trip", "is_last_trip")
+_ACTIVITY_DURATION_COLUMNS = ("departure_time", "arrival_time", "is_last_trip")
 
 
 @dataclass(frozen=True)
@@ -94,25 +111,29 @@ def _eqasim_fix_trip_times(df_trips: pd.DataFrame) -> pd.DataFrame:
     must be sorted by ``(person_id, trip_id)`` before the call.  If only a
     string ``trip_key`` is available, a temporary integer order is derived from
     within-person rank to satisfy the sort requirement.
-    """
-    df = df_trips.copy()
 
+    Memory (ADR-0135): ``hts.fix_trip_times`` shifts the WHOLE frame it is given,
+    up to once per repair round, but reads only :data:`_FIX_TRIP_TIMES_COLUMNS`
+    and writes only the two times, without reordering rows. It therefore runs on a
+    copy of those four columns and the repaired times are written back; on the
+    wide MiD trip table every shift would otherwise copy all donor columns.
+    """
     # Ensure an integer trip_id exists for compute_first_last / fix_trip_times.
-    if "trip_id" not in df.columns:
+    # sort_values returns a new frame, so nothing below writes into the caller's table.
+    if "trip_id" not in df_trips.columns:
         # Derive a temporary integer order from within-person departure-time rank.
-        df = df.sort_values(["person_id", "departure_time"])
+        df = df_trips.sort_values(["person_id", "departure_time"])
         df["trip_id"] = df.groupby("person_id").cumcount()
     else:
-        df = df.sort_values(["person_id", "trip_id"])
+        df = df_trips.sort_values(["person_id", "trip_id"])
 
-    # Ensure is_first_trip / is_last_trip exist (fix_trip_times relies on them).
-    if "is_first_trip" not in df.columns or "is_last_trip" not in df.columns:
-        df = hts.compute_first_last(df)
-    else:
-        # Re-derive to guarantee consistency after any sort/append operations.
-        df = hts.compute_first_last(df)
+    # (Re-)derive is_first_trip / is_last_trip, which fix_trip_times relies on, so
+    # they are consistent after any sort/append operations.
+    df = hts.compute_first_last(df)
 
-    df = hts.fix_trip_times(df)
+    times = hts.fix_trip_times(df[list(_FIX_TRIP_TIMES_COLUMNS)].copy())
+    df["departure_time"] = times["departure_time"]
+    df["arrival_time"] = times["arrival_time"]
     return df
 
 
@@ -184,8 +205,10 @@ def _append_return_home(
             should not exceed on the EMPIRICAL path (see the capping rule above);
             normally the caller's ``PlanValidator.max_plan_time_seconds``.
     """
-    df = df_trips.copy()
-    df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+    # sort_values returns a new frame (the caller's table is never modified), and
+    # ignore_index gives the fresh RangeIndex that .reset_index(drop=True) did,
+    # without a further full copy of the table (ADR-0135).
+    df = df_trips.sort_values(["person_id", "departure_time"], ignore_index=True)
 
     # The column must exist on every path (including the early-return below) so
     # callers can rely on it regardless of whether any closure was appended.
@@ -298,8 +321,7 @@ def _append_return_home(
 
     new_df = pd.DataFrame(rows_to_append)
     df = pd.concat([df, new_df], ignore_index=True)
-    df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
-    return df
+    return df.sort_values(["person_id", "departure_time"], ignore_index=True)
 
 
 def _log_closure_dwell_rates(report: dict) -> None:
@@ -353,8 +375,8 @@ class PlanValidator:
     - ``trip_overlap``: a trip does not arrive after the next trip departs;
     - ``not_time_sorted``: departure times are non-decreasing;
     - ``time_exceeds_bound``: no departure/arrival time exceeds
-      ``max_plan_time_seconds`` (post-midnight-shift chains beyond ~36h are
-      pathological and routed to the resample);
+      ``max_plan_time_seconds`` (post-midnight-shift chains beyond the
+      simulated day, 30 h by default, are routed to the resample);
     - (optional) ``home_closure``: the day starts and ends at home (Task 4).
     """
 
@@ -506,8 +528,8 @@ class PlanValidator:
         if np.isnan(dep).any() or np.isnan(arr).any():
             out.append(self._issue(person_id, "nan_times"))
         # Times beyond the absolute plan bound: the +24h midnight shift in
-        # hts.fix_trip_times is legitimate, but a chain past 36h is pathological
-        # (very late / multi-shift) and must be resampled.  NaN compares False,
+        # hts.fix_trip_times is legitimate, but a chain past the simulated day
+        # (30 h) cannot be lived in the simulation and must be resampled.  NaN compares False,
         # so NaN-time persons are flagged by "nan_times" above, not here.
         if (dep > self.max_plan_time_seconds).any() or (arr > self.max_plan_time_seconds).any():
             out.append(self._issue(person_id, "time_exceeds_bound"))
@@ -592,10 +614,11 @@ class PlanValidator:
         # --- Step 2c: identify persons whose POST-repair times exceed the bound.
         # hts.fix_trip_times legitimately shifts midnight-crossing trips by +24h,
         # but very late / multi-shift chains can end beyond MAX_PLAN_TIME_SECONDS
-        # (~36h).  Such chains are pathological-but-real repaired chains, not
-        # coded-time leaks (those are NaN'd upstream).  Like NaN-time persons
-        # they are excluded from the home-closure append (a return-home trip
-        # anchored on a >36h arrival would only extend the broken timeline) and
+        # (the simulated day, 30 h).  Such chains are pathological-but-real repaired
+        # chains, not coded-time leaks (those are NaN'd upstream).  Like NaN-time
+        # persons they are excluded from the home-closure append (a return-home trip
+        # anchored on an arrival beyond the bound would only extend the broken
+        # timeline) and
         # flow to the unfixable set via the "time_exceeds_bound" validation
         # issue, which the caller replaces by the same-cell resample.
         bound_rows = (
@@ -608,13 +631,19 @@ class PlanValidator:
         # --- Step 3: home-end closure (NaN-time / out-of-bound persons excluded)
         n_closure_appended = 0
         if self.require_home_closure:
-            closable = fixed[~fixed["person_id"].isin(closure_excluded_persons)]
-            excluded = fixed[fixed["person_id"].isin(closure_excluded_persons)].copy()
+            excluded_rows = fixed["person_id"].isin(closure_excluded_persons)
+            closable = fixed[~excluded_rows]
+            excluded = fixed[excluded_rows].copy()
+            # Every frame released below is a full copy of the trip table; kept alive
+            # through the closure append they made it the trips_stage's memory peak
+            # (ADR-0135). The time-repaired frame is rebuilt by the concat below.
+            del fixed
             # Count persons that need closure before appending.
             df_sorted = closable.sort_values(["person_id", "departure_time"])
             last_rows = df_sorted.groupby("person_id", sort=False).last()
             needs_closure = (last_rows["following_purpose"] != "home").sum()
             n_closure_appended = int(needs_closure)
+            del df_sorted, last_rows
             closable = _append_return_home(
                 closable, dwell_s, dwell_model=dwell_model,
                 max_plan_time_seconds=self.max_plan_time_seconds,
@@ -629,6 +658,7 @@ class PlanValidator:
             else:
                 excluded["is_synthetic_closure"] = excluded["is_synthetic_closure"].fillna(False).astype(bool)
             fixed = pd.concat([closable, excluded], ignore_index=True)
+            del closable, excluded
         else:
             # No closure repair at all (require_home_closure=False): the
             # column must still exist on every returned frame, so callers can
@@ -643,7 +673,9 @@ class PlanValidator:
         # After _append_return_home the appended row has NaN trip_index and trip_duration,
         # and the per-person max+1 trip_id can collide across persons (ENTD's trip_id is
         # globally unique via arange(len)).  Re-derive everything on the final sorted frame.
-        fixed = fixed.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+        # ignore_index: the fresh RangeIndex of .reset_index(drop=True) without a
+        # further full copy of the table (ADR-0135).
+        fixed = fixed.sort_values(["person_id", "departure_time"], ignore_index=True)
         # Global trip_id: 0..n-1 (mirrors entd/cleaned.py and build_trip_table).
         fixed["trip_id"] = range(len(fixed))
         # compute_first_last re-derives is_first/last_trip from the integer trip_id.
@@ -651,7 +683,12 @@ class PlanValidator:
         # trip_duration: re-derived so the appended row gets a finite value.
         fixed["trip_duration"] = fixed["arrival_time"] - fixed["departure_time"]
         # activity_duration: NaN on the last trip of each person (correct and expected).
-        hts.compute_activity_duration(fixed)  # modifies in-place, no return
+        # The helper shifts the whole frame it is given, so it gets only the columns it
+        # reads (_ACTIVITY_DURATION_COLUMNS) and its result is written back.
+        durations = fixed[list(_ACTIVITY_DURATION_COLUMNS)].copy()
+        hts.compute_activity_duration(durations)  # modifies in-place, no return
+        fixed["activity_duration"] = durations["activity_duration"]
+        del durations
         # trip_index: per-person 0-based cumcount consumed by activities.py.
         # cumcount() yields int64, so no NaN and no float promotion.
         fixed["trip_index"] = fixed.groupby("person_id").cumcount()
@@ -691,6 +728,13 @@ class PlanValidator:
             100.0 * len(bound_persons) / n_persons if n_persons > 0 else 0.0,
             self.max_plan_time_seconds / 3600.0,
         )
+        bound_share = len(bound_persons) / n_persons if n_persons > 0 else 0.0
+        if bound_share > BOUND_RESAMPLE_WARN_RATE:
+            logger.warning(
+                "[popsim.plan_validation] %d/%d persons (%.2f%%) exceed the %.0fh plan-time bound after the "
+                "midnight-shift repair and are resampled; above the %.0f%% rate the bound and the donor pool "
+                "disagree structurally", len(bound_persons), n_persons, 100.0 * bound_share,
+                self.max_plan_time_seconds / 3600.0, 100.0 * BOUND_RESAMPLE_WARN_RATE)
 
         if dwell_model is not None:
             _log_closure_dwell_rates(dwell_model.report)

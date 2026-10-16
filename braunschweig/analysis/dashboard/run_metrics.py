@@ -28,6 +28,7 @@ import cycle between the facade and this module.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from braunschweig.analysis.dashboard.spatial_metrics import _load_zgb_kreise
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_od_matrix
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_per_kreis
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -116,7 +119,36 @@ def metrics_eqasim(output_dir: Path, sample_rate: float | None) -> dict[str, Any
 # ---------------------------------------------------------------------------
 
 
-def metrics_matsim(sim_output: Path) -> dict[str, Any]:
+def _mode_share_pct(trips: pd.DataFrame) -> dict[str, float]:
+    """Mode share in percent (2 decimals) over ``trips``; empty dict for no trips."""
+    share = trips["mode"].value_counts(normalize=True) * 100
+    return {k: float(round(v, 2)) for k, v in share.items()}
+
+
+def _commute_block(trips: pd.DataFrame) -> dict[str, Any] | None:
+    """Commute KPIs of the trips whose destination purpose is ``work`` (needs a ``km`` column).
+
+    Returns ``None`` when ``trips`` holds no work trip.
+    """
+    com = trips[trips["following_purpose"] == "work"]
+    if not len(com):
+        return None
+    return {
+        "n_trips": int(len(com)),
+        "mean_km": float(round(com["km"].mean(), 2)),
+        "median_km": float(round(com["km"].median(), 2)),
+        "p95_km": float(round(com["km"].quantile(0.95), 2)),
+        "dist_pct": _to_km_bands(com["km"].values),
+        "mode_share_pct": _mode_share_pct(com),
+    }
+
+
+def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None) -> dict[str, Any]:
+    """MATSim-side run metrics of the output directory ``sim_output``.
+
+    ``stuck_summary_path`` optionally names the ``stuck_summary.json`` the analysis suite already wrote
+    (``<output_path>/analysis/stuck/``); it is reused for the ``stuck`` block when newer than the events file.
+    """
     out: dict[str, Any] = {"available": False}
     if sim_output is None or not sim_output.exists():
         return out
@@ -185,6 +217,37 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
         et = et[et["mode"] != "outside"].copy()
         et["km"] = et["routed_distance"].astype(float) / 1000.0
 
+        # Cross-boundary trips (eqasim-bs#442): a portal stay of a resident or an in-commuter's home
+        # is an "outside" activity. They are reported as an ADDITIVE category (``cross_boundary``) next
+        # to an ``in_region`` view; every pre-#442 key below keeps its definition (all trips after the
+        # pseudo-mode drop above), so the MiD comparisons built on ``commute`` do not change.
+        missing_purpose_columns = [c for c in ("preceding_purpose", "following_purpose") if c not in et.columns]
+        if missing_purpose_columns:
+            logger.warning(
+                "[dashboard] eqasim_trips.csv lacks %s -- cross_boundary and in_region blocks skipped "
+                "(cross-boundary trips cannot be identified)", missing_purpose_columns)
+        else:
+            touches_outside = (et["preceding_purpose"] == "outside") | (et["following_purpose"] == "outside")
+            cross = et[touches_outside]
+            inside = et[~touches_outside]
+            out["cross_boundary"] = {
+                "n_trips": int(len(cross)),
+                "share_pct": float(round(100.0 * len(cross) / max(len(et), 1), 2)),
+                "mode_share_pct": _mode_share_pct(cross),
+                "mean_km": float(round(cross["km"].mean(), 2)) if len(cross) else None,
+            }
+            out["in_region"] = {
+                "n_trips": int(len(inside)),
+                "mode_share_pct": _mode_share_pct(inside),
+                "mean_trip_km": float(round(inside["km"].mean(), 2)) if len(inside) else None,
+                "median_trip_km": float(round(inside["km"].median(), 2)) if len(inside) else None,
+                "commute": _commute_block(inside),
+            }
+            logger.info(
+                "[dashboard] cross-boundary trips (touch an outside activity): %d of %d (%.2f%%); "
+                "in_region block uses the remaining %d",
+                len(cross), len(et), out["cross_boundary"]["share_pct"], len(inside))
+
         # Overall distance distribution (all trips)
         out["all_trip_dist_pct"] = _to_km_bands(et["km"].values)
         out["mean_trip_km"] = float(round(et["km"].mean(), 2))
@@ -204,19 +267,9 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
             out["dist_pct_by_mode"][mode] = _to_km_bands(sub["km"].values)
 
         # Commute = trips with destination = work
-        com = et[et["following_purpose"] == "work"]
-        if len(com):
-            out["commute"] = {
-                "n_trips": int(len(com)),
-                "mean_km": float(round(com["km"].mean(), 2)),
-                "median_km": float(round(com["km"].median(), 2)),
-                "p95_km": float(round(com["km"].quantile(0.95), 2)),
-                "dist_pct": _to_km_bands(com["km"].values),
-                "mode_share_pct": {
-                    k: float(round(v, 2))
-                    for k, v in (com["mode"].value_counts(normalize=True) * 100).items()
-                },
-            }
+        commute = _commute_block(et)
+        if commute is not None:
+            out["commute"] = commute
 
         # Per-purpose mean km
         out["mean_km_by_purpose"] = {
@@ -262,7 +315,32 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     # eqasim_termination presence -> early convergence
     out["terminated_early"] = (sim_output / "eqasim_termination.csv").exists()
 
+    # Stuck agents of the final iteration (eqasim-bs#443, ADR-0146): an additive block, independent of the
+    # modestats / eqasim_trips blocks above; its absence is named, never silently empty.
+    out["stuck"] = _stuck_block(sim_output, stuck_summary_path)
+
     return out
+
+
+def _stuck_block(sim_output: Path, stuck_summary_path: Path | None) -> dict[str, Any]:
+    """The ``stuck`` block: the analysis suite's summary when it is fresh, else computed; never raises.
+
+    A failure of the stuck analysis (a missing input, a persons file without ``subpopulation``, a truncated events
+    file, ...) is logged at WARNING with the exception text and recorded as ``available: False`` with its reason,
+    so the remaining metrics of the run are never lost to it.
+    """
+    from braunschweig.analysis import stuck_agents as _stuck
+    try:
+        precomputed = _stuck.reusable_stuck_summary(sim_output, stuck_summary_path)
+        if precomputed is not None:
+            logger.info("[dashboard] stuck block reused from %s (newer than output_events.xml.gz)",
+                        stuck_summary_path)
+            return precomputed
+        logger.info("[dashboard] stuck block computed from the events of %s", sim_output)
+        return _stuck.stuck_summary(sim_output)
+    except Exception as exc:  # noqa: BLE001 - recorded with its reason; the other metrics must survive
+        logger.warning("[dashboard] stuck block not available for %s: %s: %s", sim_output, type(exc).__name__, exc)
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
 
 
 # ---------------------------------------------------------------------------

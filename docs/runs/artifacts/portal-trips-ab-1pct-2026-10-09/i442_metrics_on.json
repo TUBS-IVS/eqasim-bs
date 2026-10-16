@@ -1,0 +1,60 @@
+{
+ "arm": "on",
+ "simulation_output": "eqasim-data/cache_i442_1pct/matsim.simulation.run__7a9f36f418f084920654e2c4dd2267d7.cache/simulation_output",
+ "stuck_and_abort_events": 469,
+ "stuck_by_leg_mode": {
+  "pt": 83,
+  "null": 59,
+  "car": 146,
+  "truck": 97,
+  "walk": 82,
+  "car_passenger": 1,
+  "bicycle": 1
+ },
+ "stuck_freight": 97,
+ "stuck_persons": 469,
+ "input_persons": 12567,
+ "input_plans_with_end_after_30h": 68,
+ "input_plans_nonmonotonic_end_times": 42,
+ "input_outside_activities": 4394,
+ "input_portal_gate_activities": 617,
+ "input_persons_with_portal_gate": 603,
+ "pipeline_trips": 34823,
+ "pipeline_persons_trip_after_30h": 80,
+ "sim_trips": 37509,
+ "sim_walk_trips_over_20km": 134,
+ "sim_trips_touching_outside": 5304,
+ "sim_trips_touching_outside_by_mode": {
+  "car": 2636,
+  "outside": 1420,
+  "pt": 441,
+  "car_passenger": 430,
+  "walk": 266,
+  "bicycle": 111
+ },
+ "sim_in_region_mode_share_pct": {
+  "car": 40.25,
+  "walk": 27.47,
+  "bicycle": 13.08,
+  "car_passenger": 12.69,
+  "pt": 6.51
+ },
+ "sim_all_trips_mode_share_pct": {
+  "car": 43.22,
+  "walk": 25.25,
+  "car_passenger": 12.52,
+  "bicycle": 11.98,
+  "pt": 7.03
+ },
+ "portal_facilities_prepared": 57,
+ "portal_facility_link_midpoint_distance_m": {
+  "n": 57,
+  "median": 77.3,
+  "p90": 277.1,
+  "max": 1071.4
+ },
+ "prepared_files": [
+  "eqasim-data/cache_i442_1pct/braunschweig.matsim.simulation.prepare__3e8173091cd1f4300cd19e9af87166ad.cache/braunschweig_1pct_i442_on_facilities.xml.gz",
+  "eqasim-data/cache_i442_1pct/braunschweig.matsim.simulation.prepare__3e8173091cd1f4300cd19e9af87166ad.cache/braunschweig_1pct_i442_on_network.xml.gz"
+ ]
+}

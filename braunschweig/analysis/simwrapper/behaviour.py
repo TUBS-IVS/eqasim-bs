@@ -94,7 +94,8 @@ def emit_behaviour(
                 width=2,
                 description=(
                     "Flow: following_purpose (from) -> mode (to). "
-                    "Width = trip count. Cordon 'outside' trips excluded."
+                    "Width = trip count. Cordon 'outside' trips and cross-boundary trips "
+                    "(preceding or following purpose 'outside') excluded."
                 ),
             )
         ]
@@ -165,7 +166,7 @@ def emit_behaviour(
         "Mode transitions & per-Kreis fit",
         rows,
         description=(
-            "Left: sankey of trip purpose -> mode (all trips, excl. cordon). "
+            "Left: sankey of trip purpose -> mode (in-region trips, excl. cordon and cross-boundary). "
             "Right: per-Kreis car share scatter (sim vs MiD P12.1 reference)."
         ),
     )

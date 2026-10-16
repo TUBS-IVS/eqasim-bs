@@ -12,6 +12,7 @@ lineage:
 code:
 - synthesis/population/spatial/secondary/distance_distributions.py
 - braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/portal_trips/config_keys.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -27,6 +28,7 @@ features:
 - secondary_distance_by_purpose
 - secondary_mid_weekday_universe
 - w_zwd_codeplan_sentinels
+- portal_trips
 decisions:
 - ADR-0026
 - ADR-0057
@@ -36,6 +38,7 @@ decisions:
 - ADR-0115
 - ADR-0116
 - ADR-0117
+- ADR-0141
 notes: >-
   PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
   production implementation braunschweig.popsim.distance_distributions declares and reads six keys
@@ -149,3 +152,15 @@ notes: >-
   non-positive length -- byte-identical on this delivery, which carries none -- and counts
   structural NaN. Cache: braunschweig.popsim.diary_facts was added to _HELPER_MODULES for that
   guard.
+
+  PORTAL THRESHOLD (ADR-0141, issue #442, feature record portal_trips): with
+  braunschweig.portal.enabled true (declared in configure with the shared constants of
+  braunschweig.synthesis.portal_trips.config_keys) run() receives max_distance_m, the key
+  braunschweig.portal.max_routable_distance_m (default 45000 m), and drops every donor trip whose
+  straight-line distance exceeds it BEFORE any layer is built, so the aggregate, per-purpose and subtype
+  layers share one bounded universe; the dropped share is logged per mode and in total, and a mode that
+  loses every trip raises ValueError naming the mode and the bound. With the flag off max_distance_m is
+  None and the output is unchanged (pinned by
+  tests/test_distance_distributions_portal_filter.py::test_no_bound_is_identical_to_the_default_call).
+  The distance CDFs therefore change with the flag, and this stage and everything downstream
+  recompute once.

@@ -52,7 +52,7 @@ def _mixed_trip_rows() -> pd.DataFrame:
             ("bad", "no_home_start", "the day does not start at home"),
             ("bad", "no_home_end", "the day does not end at home"),
             ("late", "time_exceeds_bound",
-             "a trip time exceeds the 129600s (~36h) plan bound"),
+             "a trip time exceeds the 108000s (~30h) plan bound"),
             ("nan", "nan_times",
              "a trip has a NaN departure or arrival time (MiD coded time 99/701)"),
             ("nan", "no_home_end", "the day does not end at home"),
@@ -63,7 +63,7 @@ def _mixed_trip_rows() -> pd.DataFrame:
         (False, [
             ("bad", "departure_after_arrival", "a trip arrives before it departs"),
             ("late", "time_exceeds_bound",
-             "a trip time exceeds the 129600s (~36h) plan bound"),
+             "a trip time exceeds the 108000s (~30h) plan bound"),
             ("nan", "nan_times",
              "a trip has a NaN departure or arrival time (MiD coded time 99/701)"),
             ("overlap", "negative_activity_duration",

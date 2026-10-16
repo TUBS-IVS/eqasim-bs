@@ -105,12 +105,20 @@
    "braunschweig.synthesis.cordon_gates"
   ],
   [
+   "braunschweig.data.cordon_network",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
    "braunschweig.data.cordon_pt_gates",
    "braunschweig.synthesis.incommuters"
   ],
   [
    "braunschweig.data.external_secondary_points",
    "braunschweig.synthesis.locations.secondary_candidates"
+  ],
+  [
+   "braunschweig.data.external_secondary_points",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "braunschweig.data.external_workplaces",
@@ -250,7 +258,7 @@
   ],
   [
    "braunschweig.synthesis.commute_day.home_office_donors_stage",
-   "synthesis.population.trips.final"
+   "braunschweig.synthesis.commute_day.trips_day_stage"
   ],
   [
    "braunschweig.synthesis.commute_day.state_stage",
@@ -266,6 +274,10 @@
   ],
   [
    "braunschweig.synthesis.commute_day.state_stage",
+   "braunschweig.synthesis.commute_day.trips_day_stage"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.state_stage",
    "matsim.scenario.population"
   ],
   [
@@ -273,8 +285,24 @@
    "synthesis.output"
   ],
   [
-   "braunschweig.synthesis.commute_day.state_stage",
-   "synthesis.population.trips.final"
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.departure_time_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.trips_day_stage",
+   "synthesis.output"
   ],
   [
    "braunschweig.synthesis.cordon_gates",
@@ -283,6 +311,10 @@
   [
    "braunschweig.synthesis.cordon_gates",
    "braunschweig.synthesis.incommuters"
+  ],
+  [
+   "braunschweig.synthesis.cordon_gates",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "braunschweig.synthesis.cordon_gates",
@@ -298,15 +330,15 @@
   ],
   [
    "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.synthesis.commute_day.trips_day_stage"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
    "matsim.scenario.population"
   ],
   [
    "braunschweig.synthesis.day_absence.absence_stage",
    "synthesis.output"
-  ],
-  [
-   "braunschweig.synthesis.day_absence.absence_stage",
-   "synthesis.population.trips.final"
   ],
   [
    "braunschweig.synthesis.incommuters",
@@ -339,6 +371,18 @@
   [
    "braunschweig.synthesis.locations.secondary_candidates",
    "synthesis.population.spatial.secondary.locations"
+  ],
+  [
+   "braunschweig.synthesis.portal_trips.anchors",
+   "synthesis.population.spatial.secondary.locations"
+  ],
+  [
+   "braunschweig.synthesis.portal_trips.stage",
+   "braunschweig.synthesis.portal_trips.anchors"
+  ],
+  [
+   "braunschweig.synthesis.portal_trips.stage",
+   "synthesis.population.trips.final"
   ],
   [
    "braunschweig.synthesis.student_incommuters",
@@ -482,6 +526,10 @@
   ],
   [
    "data.spatial.municipalities",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "data.spatial.municipalities",
    "braunschweig.synthesis.student_incommuters"
   ],
   [
@@ -511,6 +559,10 @@
   [
    "data.spatial.municipalities",
    "synthesis.locations.education"
+  ],
+  [
+   "data.spatial.municipalities",
+   "synthesis.population.trips.simulated"
   ],
   [
    "documentation.meta_output",
@@ -690,6 +742,10 @@
   ],
   [
    "matsim.scenario.supply.processed",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "matsim.scenario.supply.processed",
    "matsim.simulation.prepare"
   ],
   [
@@ -786,6 +842,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.synthesis.commute_day.trips_day_stage"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.synthesis.day_absence.absence_stage"
   ],
   [
@@ -795,6 +855,10 @@
   [
    "synthesis.population.enriched",
    "braunschweig.synthesis.locations.education_gravity"
+  ],
+  [
+   "synthesis.population.enriched",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "synthesis.population.enriched",
@@ -830,7 +894,7 @@
   ],
   [
    "synthesis.population.enriched",
-   "synthesis.population.trips.final"
+   "synthesis.population.trips.simulated"
   ],
   [
    "synthesis.population.enriched",
@@ -890,11 +954,19 @@
   ],
   [
    "synthesis.population.spatial.home.locations",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
    "braunschweig.synthesis.vehicles.cars.household"
   ],
   [
    "synthesis.population.spatial.home.locations",
    "matsim.scenario.facilities"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "synthesis.output"
   ],
   [
    "synthesis.population.spatial.home.locations",
@@ -923,6 +995,10 @@
   [
    "synthesis.population.spatial.locations",
    "synthesis.output"
+  ],
+  [
+   "synthesis.population.spatial.locations",
+   "synthesis.population.trips.simulated"
   ],
   [
    "synthesis.population.spatial.primary.candidates",
@@ -958,11 +1034,19 @@
   ],
   [
    "synthesis.population.spatial.primary.locations",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "synthesis.population.spatial.primary.locations",
    "braunschweig.synthesis.student_incommuters"
   ],
   [
    "synthesis.population.spatial.primary.locations",
    "matsim.scenario.facilities"
+  ],
+  [
+   "synthesis.population.spatial.primary.locations",
+   "synthesis.output"
   ],
   [
    "synthesis.population.spatial.primary.locations",
@@ -990,6 +1074,10 @@
   ],
   [
    "synthesis.population.trips",
+   "braunschweig.synthesis.commute_day.trips_day_stage"
+  ],
+  [
+   "synthesis.population.trips",
    "braunschweig.synthesis.day_absence.absence_stage"
   ],
   [
@@ -1009,36 +1097,24 @@
    "synthesis.population.spatial.primary.candidates"
   ],
   [
-   "synthesis.population.trips",
-   "synthesis.population.trips.final"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.departure_time_vs_srv"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "braunschweig.analysis.synthesis.work_participation_by_kreis"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "matsim.scenario.population"
-  ],
-  [
-   "synthesis.population.trips.final",
-   "synthesis.output"
-  ],
-  [
    "synthesis.population.trips.final",
    "synthesis.population.activities.final"
   ],
   [
    "synthesis.population.trips.final",
    "synthesis.population.spatial.secondary.locations"
+  ],
+  [
+   "synthesis.population.trips.final",
+   "synthesis.population.trips.simulated"
+  ],
+  [
+   "synthesis.population.trips.simulated",
+   "matsim.scenario.population"
+  ],
+  [
+   "synthesis.population.trips.simulated",
+   "synthesis.output"
   ],
   [
    "synthesis.vehicles.passengers.default",
@@ -1101,11 +1177,14 @@
   "braunschweig.popsim.completed_donor",
   "braunschweig.synthesis.commute_day.home_office_donors_stage",
   "braunschweig.synthesis.commute_day.state_stage",
+  "braunschweig.synthesis.commute_day.trips_day_stage",
   "braunschweig.synthesis.cordon_gates",
   "braunschweig.synthesis.day_absence.absence_stage",
   "braunschweig.synthesis.incommuters",
   "braunschweig.synthesis.locations.education_gravity",
   "braunschweig.synthesis.locations.secondary_candidates",
+  "braunschweig.synthesis.portal_trips.anchors",
+  "braunschweig.synthesis.portal_trips.stage",
   "braunschweig.synthesis.student_incommuters",
   "braunschweig.synthesis.vehicles.cars.household",
   "data.census.filtered",
@@ -1158,6 +1237,7 @@
   "synthesis.population.spatial.secondary.locations",
   "synthesis.population.trips",
   "synthesis.population.trips.final",
+  "synthesis.population.trips.simulated",
   "synthesis.vehicles.passengers.default",
   "synthesis.vehicles.vehicles"
  ],

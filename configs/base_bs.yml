@@ -294,6 +294,12 @@ config:
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
   braunschweig.population.popsim.employment_grid: "on"
+  # Its age shape (ADR-0137): the Zensus 2022 Regionaltabelle's employed persons by age class,
+  # exact per Kreis AND sex for all 8 ZGB Kreise (zensus2022_employed_by_age_kreis.csv, written
+  # by scripts/extract_zensus2022_employed_by_age.py). "zensus2022_2000S_2001" restores the
+  # previous shape: exact for the 3 kreisfreie Staedte only, the national shape for the 5
+  # Landkreise, one shape for both sexes.
+  braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_kreis_by_sex
   # Ownership grid (issue #240): 9 per-1km-cell car/bike ownership shape controls
   # (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg). Shape from the
   # committed MiD B1 RS7 x haustyp conditionals; level raked per Kreis to the SAME
@@ -789,22 +795,29 @@ config:
   # Worker processes for the parallel solve. OPERATIONAL, and one of the three
   # CLAMPED keys: auto = min(core budget, (memory budget - live driver RSS) /
   # worker_memory_gb below), applied at stage start against this process's OWN live
-  # RSS (ADR-0126 amendment; the pool is forked from it). On the run server the
-  # bound drops below the 62-worker core budget from roughly 33 GB of driver RSS
-  # upwards; what the driver actually weighs at that moment has not been measured
-  # yet, so the stage logs the ceiling it used on every run.
+  # RSS (ADR-0126 amendment; the pool is forked from it). The 100 % production run
+  # measured 36.4-37.6 GB of driver RSS at that point (the stage's own "[resources]"
+  # line, docs/runs/chainsolver-pool-memory-2026-09-28.yml), so on the 94.28 GB run
+  # server the MEMORY term decides the worker count, not the 62 cores.
   braunschweig.chainsolvers.processes: 0
-  # Measured MAXIMUM private per-worker memory footprint (ADR-0126 amendment),
-  # traceable to docs/runs/chainsolver-worker-private-memory-2026-09-17.yml (seven
-  # deduplicated 100% ZGB-8 executions on the felix server). OPERATIONAL, volatile:
-  # sizes the pool above, never the partition, so it has no influence on any result.
-  braunschweig.chainsolvers.worker_memory_gb: 0.86
+  # Measured MAXIMUM private per-worker memory footprint in GB (= GiB, the unit of
+  # braunschweig.resources), ADR-0135: 1.088 in the 100 % production run of 2026-09-28
+  # (16 workers; docs/runs/chainsolver-pool-memory-2026-09-28.yml), rounded up. It
+  # replaces 0.86 (docs/runs/chainsolver-worker-private-memory-2026-09-17.yml), measured
+  # next to smaller drivers: most of a worker's growth is driver pages it copies, so the
+  # figure grows with the driver. Sized with 0.86, 56 workers exhausted the box and the
+  # kernel killed the driver. The code
+  # default in braunschweig.resources stays 0.86 on purpose: editing that module
+  # re-runs PopulationSim (ADR-0135). OPERATIONAL, volatile: sizes the pool above,
+  # never the partition, so it has no influence on any result.
+  braunschweig.chainsolvers.worker_memory_gb: 1.09
   # Executor generations for the shard set before the stage gives up (ADR-0097).
   # A worker killed outright -- on 2026-08-20 the kernel OOM killer took one of 62
   # while a second heavy run competed for memory -- used to make the stage wait
   # forever; it now fails loudly and only the LOST shards are retried, so the cost
   # is ~7 min instead of 7.6 h of completed work. 1 disables the retry. Retried
-  # shards keep their slice and seed, so the result stays bit-identical.
+  # shards keep their slice and seed, so the result stays bit-identical. Each retry
+  # runs with half the workers of the attempt before it (ADR-0135).
   braunschweig.chainsolvers.shard_attempts: 3
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
@@ -817,6 +830,43 @@ config:
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
   cordon_network_source_buffer_m: 45000
+  # Portal trips (eqasim-bs#442, ADR-0141): a leg beyond max_routable_distance_m (straight-line
+  # metres) becomes one outside stay at a cordon gate with the donor's mode fixed and the diary's
+  # times. The distance is measured from home to the assigned location for work/education legs and
+  # is the donor's reported leg distance (route length / 1.3, a straight-line estimate) capped by the
+  # diary's own estimate (way out + way back; a consistency cap, not a proven bound) for every other
+  # purpose. The same threshold
+  # also bounds the secondary distance CDFs (braunschweig.popsim.distance_distributions) and the
+  # external Gemeinde candidates (braunschweig.synthesis.locations.secondary_candidates, which keeps
+  # only those inside the supply ring above). Default 45000 = the supply ring width above, kept as a
+  # separate key on purpose (distance from the trip's origin, not a buffer beyond the ZGB border).
+  braunschweig.portal.enabled: true
+  braunschweig.portal.max_routable_distance_m: 45000
+  braunschweig.portal.external_point_distance_tolerance: 0.2
+  braunschweig.portal.mode_substitution_warn_share: 0.1
+  # Outside-tour modes (ADR-0145, #453): a tour that touches an outside activity keeps its diary mode for
+  # the whole run (OutsideFilter), so its mode is judged against the SrV share at its realised distance
+  # before the plans are written; below min_share the whole tour gets a substitute drawn from the same
+  # SrV cell among the modes the person may use. warn_share: WARN when more outside tours than this are
+  # re-moded. Off is byte-identical.
+  braunschweig.outside_tour_modes.enabled: true
+  braunschweig.outside_tour_modes.min_share: 0.01
+  braunschweig.outside_tour_modes.warn_share: 0.5
+  # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
+  # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
+  # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen
+  # (tour touches outside) and in_region. Above max_frozen_defect_share (late or non-monotonic plans of the
+  # FROZEN residents) it logs at ERROR and continues; fail_on_threshold: true makes it raise instead. All
+  # thresholds are ASSUMPTIONS (ADR-0146); fail_on_threshold stays false until the A/B has calibrated them.
+  braunschweig.plan_check.enabled: true
+  braunschweig.plan_check.walk_max_distance_m: 5000
+  braunschweig.plan_check.bicycle_max_distance_m: 30000
+  braunschweig.plan_check.leg_max_duration_s: 10800
+  braunschweig.plan_check.max_frozen_defect_share: 0.005
+  braunschweig.plan_check.fail_on_threshold: false
+  # WARN when more than this share of the external points miss the distance band, or of the
+  # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
+  braunschweig.portal.fallback_warn_share: 0.1
   cordon_network_buffer_fraction: 0.10
   osm_path: osm/cordon
   osm_network_path: osm/germany-latest.zgb_ring.osm.pbf
@@ -876,7 +926,11 @@ aliases:
   # the FINISHED day (secondary locations, the MATSim population, synthesis
   # output) reads these .final stages instead. With commute_day_state_enabled
   # false both are pass-throughs of the pre-assignment views.
-  synthesis.population.trips.final: braunschweig.synthesis.commute_day.trips_day_stage
+  synthesis.population.trips.final: braunschweig.synthesis.portal_trips.trips_final
+  # The reporting day as the simulation starts it: trips.final with the modes of the tours that touch
+  # outside judged against SrV (ADR-0145, issue #453). Read by the population writer and the synthesis
+  # output only; the chain solver, the portal stage and the SrV comparisons keep reading trips.final.
+  synthesis.population.trips.simulated: braunschweig.synthesis.outside_tour_modes.stage
   synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
   # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
   synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day

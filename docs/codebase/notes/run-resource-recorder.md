@@ -26,6 +26,15 @@ attach to; ADR-0100 records why the one issue #350 asked for was removed again.
   otherwise sums only the POSITIVE increments, and states which in
   `cpu_accounting`. Anything new that consumes the series must make the same
   distinction.
+- **A forked worker's RSS is not its cost.** It counts every page the worker shares
+  with the driver (16 chainsolver workers each read the driver's ~36 GiB). A pool's
+  cost is what the machine lost beyond the driver's own RSS since the last sample
+  with no child alive: `summary.pool_memory_episodes`, reported per stage in every
+  summary, together with the worker-RSS growth that tells copy-on-write (RSS flat)
+  from allocation (RSS grows). multiprocessing's resource tracker and forkserver are
+  children of the root but no workers, and they live to the end of the run, so they
+  are excluded; a pool that dips to one worker between batches stays one episode
+  (ADR-0135).
 - **Count threads, never walk them.** `num_threads` comes from each process' own
   `stat` line. Adding `/proc/<pid>/task/*` CPU times to the process' own
   double-counts the same work. The thread total stays a separate signal because
@@ -67,8 +76,9 @@ long run), `monitoring_kernel_events` (true -- false skips the `dmesg` probe),
 
 The run writes its own summary when it ends: `resource_series_<ts>.summary.md` next to
 the series is the block a run manifest wants -- peak per-worker RSS with its pid and
-cmdline tag, per-stage wall/CPU/efficiency, disk high-water mark, kernel events,
-measured no-progress spans -- with the same record as `.summary.json`.
+cmdline tag, per-stage wall/CPU/efficiency, the private memory of every worker pool,
+disk high-water mark, kernel events, measured no-progress spans -- with the same
+record as `.summary.json`.
 
 To re-summarise an existing series (for example with a different stall threshold),
 call the library directly:

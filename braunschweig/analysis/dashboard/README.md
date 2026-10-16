@@ -31,11 +31,16 @@ in a browser — no web-server needed.
 | Persons / Households / Trips | `output_bs_*/braunschweig_*_persons.csv`, `..._trips.csv` | — |
 | Beschäftigt / Führerschein / ÖV-Abo | `..._persons.csv` | MiD P9 / P17 / P24.1 |
 | Mode share (final + evolution) | `simulation_output/modestats.csv` | MiD P12_1 (work) |
-| Trip distance bands | `simulation_output/eqasim_trips.csv` | MiD P13 ZGB |
+| Trip distance bands | `simulation_output/eqasim_trips.csv` (all trips) | MiD P13 ZGB |
+| Cross-boundary trips (`cross_boundary`: `n_trips`, `share_pct`, `mode_share_pct`, `mean_km`) | `eqasim_trips.csv` trips with an `outside` purpose at either end: portal stays of residents and in-commuter trips (eqasim-bs#442) | — (measurement only) |
+| In-region view (`in_region`: `n_trips`, `mode_share_pct`, `mean_trip_km`, `median_trip_km`, `commute`) | `eqasim_trips.csv` trips touching no `outside` activity | — (measurement only) |
+| Stuck agents of the final iteration (`stuck`: `n_stuck`, `by_subpopulation` with `n_persons`, `share_stuck`, `at_end` / `during_day` x `frozen` / `in_region`, `by_mode`; `warn_share`, `warning`) | `output_events.xml.gz` (`stuckAndAbort`), `output_plans.xml.gz` (frozen = selected plan has an `outside` activity), `output_persons.csv.gz` (eqasim-bs#443, ADR-0146) | — (measurement only; `warn_share` is an ASSUMPTION) |
 | Pendelweg ⌀ (km) | `eqasim_trips` `following_purpose=='work'` | MiD P13 = 20.7 km |
 | Distanz-EMD vs MiD | computed | Quality-Schwelle 0.08 |
 | Score / Distanz-Verlauf | `scorestats.csv`, `traveldistancestats.csv` | — |
 | Per-Kreis MiD-Referenz-Tabelle | `mid2023_P12_1.csv`, `mid2023_P13.csv` | — |
+
+All pre-existing `eqasim_trips` keys (`all_trip_dist_pct`, `mean_trip_km`, `median_trip_km`, `sim_trip_mode_share_pct`, `mean_km_by_mode`, `dist_pct_by_mode`, `commute`, `mean_km_by_purpose`, ...) are unchanged: they are computed over all trips after dropping the cordon pseudo-mode `outside`, so the MiD comparisons built on `commute` do not change. `cross_boundary` and `in_region` are additive blocks; both are skipped with a warning if `eqasim_trips.csv` lacks `preceding_purpose` or `following_purpose`. `stuck` is an additive block independent of those files; when one of the three simulation outputs it reads is missing it reads `{"available": false, "reason": ...}`.
 
 ## Run storage
 

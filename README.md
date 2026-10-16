@@ -220,7 +220,8 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 | **Zensus 2022 5000H-2001** households by size | [ergebnisse.zensus2022.de](https://ergebnisse.zensus2022.de) flat file | `braunschweig/5000H-2001_de_flat.csv` |
 | **Zensus 2022 1000A-2081** households size×type (optional IPF margin) | ergebnisse.zensus2022.de | `braunschweig/1000A-2081_de_flat.zip` |
 | **Zensus 2022 1000A-3082** persons age×sex×size (optional) | ergebnisse.zensus2022.de | `braunschweig/1000A-3082_de_flat.zip` |
-| **Zensus 2022 2000S-2001** employed by age | ergebnisse.zensus2022.de | `braunschweig/popsim/zensus2022_employment_by_age_ref.csv` |
+| **Zensus 2022 2000S-2001** employed by age (previous employment-grid age shape; only with `employment_grid_age_shape_source: zensus2022_2000S_2001`) | ergebnisse.zensus2022.de | `braunschweig/popsim/zensus2022_employment_by_age_ref.csv` |
+| **Zensus 2022 Regionaltabelle "Bildung und Erwerbstätigkeit"** (employed by age × sex for every Kreis) | zensus2022.de — Regionaltabelle xlsx (the cleancensus repo keeps a copy under `data/raw/regionaltabellen/`) | processed below into `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
 | **BBSR INKAR** household income (+ optional panel) | [inkar.de](https://www.inkar.de) | `braunschweig/E_Haushaltseinkommen.xls` (+ `braunschweig/E_*.xls`) |
 | **KBA FZ 27 / FZ 12.1 / EV series / 46251** fleet sources | kba.de + regionalstatistik.de | `braunschweig/kba/{fz27_202501.xlsx,fz12_2025.xlsx,raw/}` |
 | **ALKIS Hausumringe NI** (~1.7 GB) | [opengeodata.lgln.niedersachsen.de](https://opengeodata.lgln.niedersachsen.de) | `braunschweig/buildings/gebaeude-ni.zip` |
@@ -258,6 +259,7 @@ tables keep all reference comparisons working.
 | Cordon ring network extract | `python scripts/clip_osm_to_cordon_ring.py` | `osm/germany-latest.zgb_ring.osm.pbf` + `osm/cordon/` |
 | **cleancensus grid cells** (PopulationSim control totals) | [cleancensus](https://github.com/TUBS-IVS/cleancensus) pipeline (separate repo) | `braunschweig/popsim/cells/zensus2022_grid_{100m_de_prepared,1km_de_binned}.parquet` |
 | cleancensus Kreis control tables | cleancensus pipeline | `braunschweig/popsim/kreis_controls/` |
+| Employed by age × sex per Kreis (employment-grid age shape, ADR-0137) | `python scripts/extract_zensus2022_employed_by_age.py --regionaltabelle <Regionaltabelle_Bildung_Erwerbstaetigkeit.xlsx> --out eqasim-data/data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | `braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` |
 | Buildings-with-households (cell-linked) | popsimprep preprocessing step 5 | `braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` |
 | Building activity potentials | TUBS-IVS potentials pipeline → `python scripts/import_building_activity_potentials.py` | `braunschweig/buildings/building_activity_potentials.parquet` |
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |
@@ -265,6 +267,7 @@ tables keep all reference comparisons working.
 | MiD fleet cross tables (committed) | `python scripts/build_mid_age_by_segment_status.py` and `python scripts/build_mid_antrieb_by_status.py` (both accept `--mid-path`) | `braunschweig/kba/derived/mid2023_{age_by_segment_status,antrieb_by_status}.csv` |
 | MiD ownership cross tables (committed) | `python scripts/extract_mid_ownership_by_rs7_haustyp.py` (accepts `--raw` / `--out-dir`) | `braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv`, `braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` |
 | SrV primary-distance targets (committed) | `python scripts/extract_srv_primary_distance_targets.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_commute_distance_by_kreis.csv`, `braunschweig/srv/srv2023_education_distance_by_kreis_level.csv`, `braunschweig/srv/srv2023_commute_distance_quantiles_by_kreis.csv`, `braunschweig/srv/srv2023_commute_distance_sensitivity_by_kreis.csv` (sensitivity variants, not a target) |
+| SrV mode shares by distance band (committed) | `python scripts/extract_srv_mode_by_distance_band.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_mode_by_distance_band.csv` -- read by the `braunschweig.synthesis.outside_tour_modes.stage` stage, which aborts if it is missing |
 | SrV work-participation reference (committed) | `python scripts/extract_srv_work_participation.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_work_participation_by_kreis.csv` |
 | SrV plan-structure reference (committed) | `python scripts/extract_srv_plan_structure.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_plan_structure_reference.csv` — read by the `plan_structure_vs_srv` analysis stage, which aborts if it is missing |
 | SrV participation-universe aggregates (committed) | `python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run | `braunschweig/srv/srv2023_work_by_employment_by_kreis.csv`, `braunschweig/srv/srv2023_education_by_age_by_kreis.csv` — build-time inputs of the participation-universe targets below, not read at run time |
@@ -602,7 +605,8 @@ general day-absence draw and how it composes with the commute-day state.
 - `<working_directory>/monitoring/` — this run's own resource time series
   (`resource_series_<timestamp>.jsonl`, one sample every 30 s) plus the
   `.summary.md` / `.summary.json` written when the run ends: peak per-worker RSS,
-  per-stage wall/CPU split, disk high-water mark, kernel OOM/segfault counts
+  per-stage wall/CPU split, the private memory of every worker pool (ADR-0135),
+  disk high-water mark, kernel OOM/segfault counts
   (ADR-0100). Produced for every run, including one that fails; the markdown block
   is meant to be pasted into the run manifest. `monitoring_enabled: false` switches
   it off.

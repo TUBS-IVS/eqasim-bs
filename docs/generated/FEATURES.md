@@ -31,6 +31,7 @@ may only name run manifests (no run, no claim).
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [education_gravity](../registry/features/education_gravity.yml) | education | active | ON | A/A/- | 4 | not claimed | none | committed | unvalidated | pending |
 | [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 5 | -- | none | none | unvalidated | pending |
+| [employment_grid_control](../registry/features/employment_grid_control.yml) | attributes | active | ON | A/s/- | 4 | proven | marker | none | unvalidated | pending |
 | [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_passive_from_adult](../registry/features/escort_passive_from_adult.yml) | behavior | active | ON | A/i/- | 10 | proven | marker | committed | unvalidated | pending |
@@ -48,6 +49,7 @@ may only name run manifests (no run, no claim).
 | [fleet_wohnmobile_age_tilt](../registry/features/fleet_wohnmobile_age_tilt.yml) | fleet | active | ON | A/A/- | 1 | proven | marker | committed | unvalidated | pending |
 | [freight_analysis_exclusion](../registry/features/freight_analysis_exclusion.yml) | freight | active | ON | A/-/- | 1 | -- | marker | none | unvalidated | pending |
 | [freight_assumptions](../registry/features/freight_assumptions.yml) | freight | active | ON | A/i/i | 0 | -- | none | assumption | unvalidated | pending |
+| [freight_boundary_links](../registry/features/freight_boundary_links.yml) | freight | active | ON | A/i/i | 2 | -- | marker | none | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`) | pending |
 | [freight_longhaul_v3](../registry/features/freight_longhaul_v3.yml) | freight | active | ON | A/-/- | 4 | not claimed | none | assumption | unvalidated | pending |
 | [full_analysis](../registry/features/full_analysis.yml) | analysis | active | ON | A/s/s | 1 | -- | none | none | unvalidated | pending |
 | [general_day_absence](../registry/features/general_day_absence.yml) | behavior | active | ON | A/-/- | 10 | proven | marker | committed | measured_vs_reference (`general-day-absence-arm0-100pct-2026-09-09`, `general-day-absence-arm1-100pct-2026-09-09`, `general-day-absence-arm2-100pct-2026-09-09`, `general-day-absence-arm3-100pct-2026-09-18`, `general-day-absence-arm4-100pct-2026-09-18`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-23 |
@@ -74,21 +76,24 @@ may only name run manifests (no run, no claim).
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
+| [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 8 | proven | marker | committed | unvalidated | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
-| [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 4 | -- | marker | none | unvalidated | pending |
+| [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [parking_cost_zones](../registry/features/parking_cost_zones.yml) | matsim | experimental | ON | A/A/- | 36 | proven | marker | committed | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |
+| [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 7 | -- | marker | assumption | unvalidated | pending |
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
+| [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 24 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | pending |
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
-| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) | pending |
+| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
