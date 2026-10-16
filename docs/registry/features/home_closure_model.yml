@@ -12,7 +12,8 @@ description: >-
   activity FOLLOWED by another trip, which is never a genuine day-closing activity -- ADR-0108);
   the cell threshold is the config key closure_dwell_min_obs (default 30). closure_dwell_model
   "fixed_1h" reproduces the constant EXACTLY, including the absence of the plan-time cap: capping
-  a drawn dwell at MAX_PLAN_TIME_SECONDS is an EMPIRICAL-path behaviour only (only a drawn dwell
+  a drawn dwell at MAX_PLAN_TIME_SECONDS (30 h since ADR-0146, the simulated day; it was 36 h) is an
+  EMPIRICAL-path behaviour only (only a drawn dwell
   can exceed the bound where the constant would not), and even there the cap keeps a floor of
   HOME_CLOSURE_DWELL_S or leaves the row to the existing bound validation.
   (2) synthesised closure rows are MARKED (is_synthetic_closure, trip_key suffix _closure) so an
@@ -125,3 +126,10 @@ assessment:
     unmeasured, and so is the realised work-activity duration distribution. The accepted
     deviations are a recorded decision, not a finding, and stay open to challenge if a later
     project wants genuinely open days.
+notes: >-
+  Plan-time bound (ADR-0146, issue #443): the cap of the empirical dwell is the validator's
+  max_plan_time_seconds, whose default MAX_PLAN_TIME_SECONDS moved from 36 h to 30 h, the simulated
+  day. The measured validation above predates the change (cap rate 0.4 % at the 36 h bound); the
+  cap rate at 30 h is not measured yet. 5,895 persons of the run prod100_20260925 were late only
+  through the synthetic closure drawn against the 36 h bound (issue #443). The constant fixed_1h path
+  stays uncapped by design.

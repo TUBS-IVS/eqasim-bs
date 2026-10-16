@@ -83,6 +83,7 @@ may only name run manifests (no run, no claim).
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |
+| [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 4 | -- | marker | assumption | unvalidated | pending |
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 24 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | pending |

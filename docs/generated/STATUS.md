@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 104 | stages: 130 | datasets: 87 | ADRs: 138 | run manifests: 57
+- Features: 105 | stages: 130 | datasets: 87 | ADRs: 139 | run manifests: 57
 
 ## Population synthesis
 
@@ -171,6 +171,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
+| [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
 | [Urban parking (BS inner ring)](../registry/features/urban_parking.yml) | active | ON | A/A/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 
