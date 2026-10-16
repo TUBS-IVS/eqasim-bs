@@ -223,3 +223,5 @@ notes: >-
   the freight gate connector (#444), a sampler conditioned on the reported distance class (a possible later A/B).
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
+  The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's
+  legs (walk stays in particular); the portal report's n_stays_by_mode is the mode before that stage.

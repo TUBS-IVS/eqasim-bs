@@ -730,6 +730,14 @@ config:
   braunschweig.portal.max_routable_distance_m: 45000
   braunschweig.portal.external_point_distance_tolerance: 0.2
   braunschweig.portal.mode_substitution_warn_share: 0.1
+  # Outside-tour modes (ADR-0145, #453): a tour that touches an outside activity keeps its diary mode for
+  # the whole run (OutsideFilter), so its mode is judged against the SrV share at its realised distance
+  # before the plans are written; below min_share the whole tour gets a substitute drawn from the same
+  # SrV cell among the modes the person may use. warn_share: WARN when more outside tours than this are
+  # re-moded. Off is byte-identical.
+  braunschweig.outside_tour_modes.enabled: true
+  braunschweig.outside_tour_modes.min_share: 0.01
+  braunschweig.outside_tour_modes.warn_share: 0.5
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1
@@ -793,6 +801,10 @@ aliases:
   # output) reads these .final stages instead. With commute_day_state_enabled
   # false both are pass-throughs of the pre-assignment views.
   synthesis.population.trips.final: braunschweig.synthesis.portal_trips.trips_final
+  # The reporting day as the simulation starts it: trips.final with the modes of the tours that touch
+  # outside judged against SrV (ADR-0145, issue #453). Read by the population writer and the synthesis
+  # output only; the chain solver, the portal stage and the SrV comparisons keep reading trips.final.
+  synthesis.population.trips.simulated: braunschweig.synthesis.outside_tour_modes.stage
   synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
   # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
   synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day

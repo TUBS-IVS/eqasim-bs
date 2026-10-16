@@ -2,8 +2,9 @@ stage: synthesis.population.trips.final
 title: Reporting-day trips
 layer: behavior
 description: >-
-  The finished day of the population, as every consumer of the simulated day reads it: the secondary chain
-  solver, synthesis.population.activities.final, synthesis.output, the MATSim population and the analyses.
+  The finished day of the population, as the consumers of the reporting day read it: the secondary chain
+  solver, synthesis.population.activities.final, the portal and outside-tour stages and the analyses. The
+  MATSim population and synthesis.output read synthesis.population.trips.simulated instead (ADR-0145).
   In the production config the alias resolves to braunschweig.synthesis.portal_trips.trips_final (ADR-0141,
   issue #442), the trip table of the reporting day rewritten around portal stays at the cordon gates; that
   layer is stacked on braunschweig.synthesis.commute_day.trips_day_stage, which builds the reporting-day view
@@ -31,10 +32,12 @@ resolves_to:
 inputs: []
 features:
 - portal_trips
+- outside_tour_modes
 - commute_day_state
 - general_day_absence
 - departure_time_model
 decisions:
+- ADR-0145
 - ADR-0141
 - ADR-0104
 - ADR-0110
@@ -50,3 +53,5 @@ notes: >-
   and the work-participation report read braunschweig.synthesis.commute_day.trips_day_stage (the pre-portal
   frame) instead while braunschweig.portal.enabled is true, because they validate the donor-based day. Cache consequence of the re-pointing (ADR-0141): this stage and everything
   downstream recompute once, even with braunschweig.portal.enabled false, because the alias target changed.
+  Since ADR-0145 the population writer and the synthesis output read synthesis.population.trips.simulated
+  instead of this alias; every other consumer keeps this alias.
