@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 105 | stages: 130 | datasets: 87 | ADRs: 140 | run manifests: 58
+- Features: 105 | stages: 130 | datasets: 87 | ADRs: 140 | run manifests: 59
 
 ## Population synthesis
 
@@ -160,7 +160,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Freight analysis exclusion](../registry/features/freight_analysis_exclusion.yml) | active | ON | A/-/- | unvalidated |  |
 | [Assumptions (truck PCE / max velocity)](../registry/features/freight_assumptions.yml) | active | ON | A/i/i | unvalidated |  |
-| [Freight boundary endpoints linked by capacity and trip direction](../registry/features/freight_boundary_links.yml) | active | ON | A/i/i | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`) | [#444](https://github.com/TUBS-IVS/eqasim-bs/issues/444) |
+| [Freight boundary endpoints linked by capacity and trip direction](../registry/features/freight_boundary_links.yml) | active | ON | A/i/i | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`) | [#444](https://github.com/TUBS-IVS/eqasim-bs/issues/444) |
 | [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated |  |
 
 ## MATSim
