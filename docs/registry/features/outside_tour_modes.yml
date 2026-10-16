@@ -108,18 +108,27 @@ evidence:
       data record.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - i453-i443-ab-1pct-2026-10-16
   metric: null
   note: >-
-    Not run yet; the 1 % A/B with iterations of the plan's last task measures the direction, never a
-    validation.
+    A/B direction only (run i453-i443-ab-1pct-2026-10-16: 1 % sample, MATSim iterations until the eqasim termination criterion,
+    one seed and one draw per arm, flag off versus on at the same commit, no observed reference compared, so not a
+    validation). Measured off -> on in the frozen tours of the final iteration: walk trips over 5 km 168 -> 63,
+    bicycle trips over 30 km 47 -> 1, trips over 3 h 293 -> 164, walk trips 388 -> 290, bicycle trips 146 -> 26,
+    car share 66.41 % -> 69.58 %; in-region metrics unchanged. Stage report: 136 of 891 outside tours re-moded
+    (15.26 %), 0 draws relaxed, 5 outside legs still implausible after the draw, 2 portal tours left unchanged.
+    63 walk trips over 5 km (22 over 20 km) remain in frozen tours with the flag on; the run does not determine
+    their cause. min_share and warn_share remain assumptions; the stabilised mode shares are convergence, not
+    agreement with observed behaviour.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Implemented and unit-tested; no run has used it yet. min_share (0.01) and warn_share (0.5) are ASSUMPTIONS
-    until the A/B run of ADR-0145 (eqasim-bs#453).
+    Implemented and unit-tested; the 1 % A/B run i453-i443-ab-1pct-2026-10-16 measured the direction (not a validation). The
+    whole-feature assessment has not been done. min_share (0.01) and warn_share (0.5) remain ASSUMPTIONS of
+    ADR-0145 (eqasim-bs#453).
   source: ADR-0145
 notes: >-
   The feature changes results by design when enabled: the alias switch recomputes the stage behind it,

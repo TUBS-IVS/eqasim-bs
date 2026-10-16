@@ -100,18 +100,28 @@ evidence:
       stuck analysis counts stuck agents in its output; neither compares anything with observed behaviour.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - i453-i443-ab-1pct-2026-10-16
   metric: null
   note: >-
-    Not run yet; the 1 % A/B with iterations of the plan's task 14 measures the direction (plan-check figures
-    and stuck categories from the last iteration), never a validation.
+    A/B direction only (run i453-i443-ab-1pct-2026-10-16: 1 % sample, MATSim iterations until the eqasim termination criterion,
+    one seed and one draw per arm, arm 0 before the change, arm 1 with the 30 h bound and the mode flag off, arm 2
+    with the flag on, no observed reference compared, so not a validation). Residents stuck 153 -> 116 -> 104
+    (1.27 % -> 0.96 % -> 0.86 %); frozen residents with an activity end after the day 15 -> 4 -> 4, with
+    non-monotonic end times 42 -> 30 -> 22 (2.86 % -> 2.04 % -> 1.50 %). The share of non-monotonic frozen plans
+    exceeds the uncalibrated max_frozen_defect_share 0.005 in arms 1 and 2 (plan check ERROR, fail_on_threshold
+    false, the runs continued); the threshold stays an ASSUMPTION. Stuck freight agents 0 in every arm. The
+    analysis suite did not run (out of memory, targets dropped); the stuck figures come from the committed
+    stuck_agents module called by the run's metrics script.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Implemented (plan check and stuck-agent analysis) and unit-tested; no run has used them yet. The thresholds
-    are ASSUMPTIONS until the A/B run of ADR-0146 (eqasim-bs#443) has measured them.
+    Implemented (plan check and stuck-agent analysis) and unit-tested; the 1 % A/B run i453-i443-ab-1pct-2026-10-16 used the
+    plan check and, through its metrics script, the stuck-agent module (the analysis suite itself did not run). The
+    whole-feature assessment has not been done. The thresholds remain ASSUMPTIONS of ADR-0146 (eqasim-bs#443); the
+    run recorded the frozen non-monotonic share above max_frozen_defect_share.
   source: ADR-0146
 notes: >-
   The 30 h bound changes results by design: every stage from braunschweig.popsim.trips_stage downstream
