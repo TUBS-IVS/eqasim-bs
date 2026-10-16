@@ -355,14 +355,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _input_record(path: Path) -> dict:
-    return {"path": Path(path).resolve().as_posix(), "sha256": _sha256(path)}
+def _input_record(path: Path, paths) -> dict:
+    """Path (as ``paths`` records it) and the SHA-256 of the file's bytes (not line-ending normalised)."""
+    return {"path": paths(path), "sha256": _sha256(path)}
 
 
-def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_arm: str = "off") -> dict:
+def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_arm: str = "off", path_roots=()) -> dict:
     """Build the four tables and the provenance of an arm set: ``{"modestats_pooled", "zone_groups", "zone_group_deltas",
     "free_share", "provenance"}``. Raises ``InputError`` (and ``FileNotFoundError``/``ValueError`` of the strict report reader)
-    for any missing or malformed input; nothing is estimated or defaulted."""
+    for any missing or malformed input; nothing is estimated or defaulted.
+
+    The provenance records every input path relative to the repository root of this script or, for an input of another checkout
+    (the run outputs of the main checkout while the script runs in a worktree), to the first of ``path_roots`` that contains it
+    (``compare.PathRecorder``), and the ``code_state`` of the working tree (the commit, marked when it has uncommitted changes)."""
     arms = list(arms)
     labels = [arm.label for arm in arms]
     if not arms:
@@ -375,17 +380,20 @@ def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_a
     iterations = sorted(set(iterations))
     tariffs = parking_zones.load_tariffs(Path(tariffs_path))
     zone_types = dict(zip(tariffs["zone_id"], tariffs["zone_type"]))
-    provenance = {"iterations": iterations, "tariffs": _input_record(Path(tariffs_path)), "arms": {}}
+    paths = compare.PathRecorder(path_roots)
+    provenance = {"script": "scripts/parking/summarize_arm_set.py", "code_state": compare.calibrate.git_state(),
+                  "path_note": "paths are relative to the repository root of the checkout that holds the file",
+                  "iterations": iterations, "tariffs": _input_record(Path(tariffs_path), paths), "arms": {}}
     modestats, zone_rows, free_rows = {}, [], []
     for arm in arms:
         directory = Path(arm.directory)
         run_output = directory / MATSIM_OUTPUT_DIRECTORY
         if not run_output.is_dir():
             raise InputError(f"arm {arm.label}: {run_output} not found (the downloaded comparison subset of the run)")
-        record = {"directory": directory.resolve().as_posix()}
+        record = {"directory": paths(directory)}
         modestats_path = run_output / MODESTATS_FILE_NAME
         modestats[arm.label] = read_modestats(modestats_path)
-        record["modestats"] = _input_record(modestats_path)
+        record["modestats"] = _input_record(modestats_path, paths)
         if arm.with_outcomes:
             reports = [compare.outcome_report_path(run_output, number) for number in iterations]
             frames = []
@@ -394,15 +402,16 @@ def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_a
             frame, version = compare.pool_outcome_reports(frames)
             if version != compare.LATEST_REPORT_VERSION:
                 raise InputError(f"arm {arm.label}: the outcome reports are version {version}; this summary needs v4")
-            record["outcome_reports"] = [_input_record(path) for path in reports]
+            record["outcome_reports"] = [_input_record(path, paths) for path in reports]
             zone_rows.append(zone_group_table(arm.label, frame, iterations))
             log_path = _exactly_one(directory, "*.log", "pipeline log")
             config_path = _exactly_one(directory, "*_resolved.yml", "resolved config")
             draw = parse_free_draw(log_path.read_text(encoding="utf-8", errors="replace").splitlines(), str(log_path))
             free_rows.append(free_share_row(arm.label, frame, zone_types, draw, read_configured_shift(config_path), iterations))
-            record["pipeline_log"] = _input_record(log_path)
-            record["resolved_config"] = _input_record(config_path)
+            record["pipeline_log"] = _input_record(log_path, paths)
+            record["resolved_config"] = _input_record(config_path, paths)
         provenance["arms"][arm.label] = record
+    paths.warn_if_outside("arm-set-summary")
     zone_groups = pd.concat(zone_rows, ignore_index=True) if zone_rows else pd.DataFrame()
     return {"modestats_pooled": pooled_mode_shares(modestats, iterations, baseline_arm=baseline_arm, off_arm=off_arm),
             "zone_groups": zone_groups,
@@ -468,6 +477,9 @@ def main(argv=None) -> int:
                         help="inclusive range of iterations that is pooled (at least two)")
     parser.add_argument("--baseline-arm", default="v3", help="arm of the differences of the mode share and zone group tables")
     parser.add_argument("--off-arm", default="off", help="arm of the mode share differences to the unpriced reference")
+    parser.add_argument("--path-root", dest="path_roots", type=Path, action="append", default=[], metavar="REPOSITORY_ROOT",
+                        help="repository root of another checkout that holds inputs (repeatable); provenance paths are "
+                             "recorded relative to the first root that contains them")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--prefix", required=True, help="file name prefix of every output (descriptive: scenario, set, date)")
     parser.add_argument("--overwrite", action="store_true", help="replace existing output files")
@@ -480,7 +492,7 @@ def main(argv=None) -> int:
         raise SystemExit(f"tariff table not found: {tariffs_path}")
     try:
         result = summarize(args.arms, iterations=args.iteration, tariffs_path=tariffs_path, baseline_arm=args.baseline_arm,
-                           off_arm=args.off_arm)
+                           off_arm=args.off_arm, path_roots=args.path_roots)
         paths = write_tables(result, args.out_dir, args.prefix, overwrite=args.overwrite)
     except (InputError, FileNotFoundError, FileExistsError, ValueError) as error:
         raise SystemExit(str(error)) from error

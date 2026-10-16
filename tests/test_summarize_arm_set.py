@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -344,3 +345,36 @@ def test_duplicate_labels_missing_reports_and_two_logs_are_errors(summary, tmp_p
     with pytest.raises(summary.InputError, match="not found"):
         summary.summarize([summary.ArmInputs("v3", tmp_path / "absent", True)], iterations=[1, 2],
                           tariffs_path=COMMITTED_TARIFFS)
+
+
+@pytest.mark.skipif(not COMMITTED_TARIFFS.is_file(), reason="the committed tariff table is not in this checkout")
+def test_the_provenance_has_repository_relative_paths_and_the_code_state(summary, arm_set, tmp_path):
+    result = summary.summarize(arm_inputs(summary, arm_set), iterations=[1, 2], tariffs_path=COMMITTED_TARIFFS,
+                               path_roots=[tmp_path])
+    provenance = result["provenance"]
+    assert provenance["tariffs"]["path"] == "eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv"
+    assert provenance["arms"]["v3"]["directory"] == "v3"
+    assert provenance["arms"]["v3"]["outcome_reports"][0]["path"] == "v3/matsim_output/ITERS/it.1/1.parking_outcomes.csv"
+    assert provenance["arms"]["v3"]["pipeline_log"]["path"] == "v3/parking_v3_v3.log"
+
+    def strings(node):
+        if isinstance(node, dict):
+            return [text for value in node.values() for text in strings(value)]
+        if isinstance(node, list):
+            return [text for value in node for text in strings(value)]
+        return [node] if isinstance(node, str) else []
+
+    assert not [text for text in strings(provenance) if Path(text).is_absolute()]
+    # the code state is the commit of the working tree, marked when the tree has uncommitted changes (never left out)
+    assert re.match(r"^[0-9a-f]{40}( \(working tree has uncommitted changes\))?$", provenance["code_state"]), provenance["code_state"]
+    assert provenance["script"] == "scripts/parking/summarize_arm_set.py"
+
+
+@pytest.mark.skipif(not COMMITTED_TARIFFS.is_file(), reason="the committed tariff table is not in this checkout")
+def test_the_main_accepts_a_path_root(summary, arm_set, tmp_path):
+    out = tmp_path / "out"
+    argv = ["--data-path", str(COMMITTED_TARIFFS.parents[2]), "--iteration", "1-2", "--out-dir", str(out), "--prefix", "p",
+            "--path-root", str(tmp_path), "--arm-without-outcomes", f"off={arm_set[0]}", "--arm", f"v3={arm_set[1]}"]
+    assert summary.main(argv) == 0
+    provenance = json.loads((out / "p_provenance.json").read_text(encoding="utf-8"))
+    assert provenance["arms"]["off"]["directory"] == "off"

@@ -920,8 +920,44 @@ class Comparison(NamedTuple):
     provenance: dict
 
 
-def _input_record(path) -> dict:
-    return {"path": Path(path).resolve().as_posix(), "sha256": calibrate.file_sha256(path)}
+class PathRecorder:
+    """Turns input paths into the paths a provenance file records and counts those outside every root.
+
+    The recorded path is relative (posix) to the first root that contains it: the repository root of this script first, then
+    ``path_roots`` (the repository root of another checkout that holds the run outputs, e.g. the main checkout while the script
+    runs in a worktree), so a provenance names ``eqasim-data/...`` and not a machine path. A path outside every root is recorded
+    absolute (never dropped) and counted; ``warn_if_outside`` reports the count once (never silent)."""
+
+    def __init__(self, path_roots=()):
+        self.roots = [REPO, *(Path(root).resolve() for root in path_roots)]
+        self.outside = []
+
+    def __call__(self, path) -> str:
+        resolved = Path(path).resolve()
+        for root in self.roots:
+            try:
+                return resolved.relative_to(root).as_posix()
+            except ValueError:
+                continue
+        self.outside.append(resolved.as_posix())
+        return resolved.as_posix()
+
+    def record(self, path) -> dict:
+        return {"path": self(path), "sha256": calibrate.file_sha256(path)}
+
+    def warn_if_outside(self, label: str = "parking-compare") -> None:
+        if self.outside:
+            log.warning("[%s] %d input path(s) are outside every path root (%s) and are recorded as absolute paths in the "
+                        "provenance; pass --path-root for the checkout that holds them", label, len(self.outside),
+                        ", ".join(root.as_posix() for root in self.roots))
+
+
+def portable_path(path, path_roots=()) -> str:
+    """One path as ``PathRecorder`` records it (a warning for a path outside every root)."""
+    recorder = PathRecorder(path_roots)
+    recorded = recorder(path)
+    recorder.warn_if_outside()
+    return recorded
 
 
 def pool_outcome_reports(reports) -> tuple[pd.DataFrame, int]:
@@ -953,11 +989,13 @@ def pool_outcome_reports(reports) -> tuple[pd.DataFrame, int]:
     return pooled[list(stacked.columns)], version
 
 
-def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone_ids=CITY_CENTER_ZONE_IDS) -> Comparison:
+def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone_ids=CITY_CENTER_ZONE_IDS,
+            path_roots=()) -> Comparison:
     """Compare the arms with the SrV references; returns the metric table, the per-arm delta table and the provenance.
 
     ``iterations`` selects the outcome reports as a sequence of iteration numbers, pooled by ``pool_outcome_reports``
-    (default: the last ``ITERS/it.N`` of each arm alone). Raises ``ValueError`` for no
+    (default: the last ``ITERS/it.N`` of each arm alone). ``path_roots`` are the extra repository roots against which the
+    provenance records its input paths (see ``portable_path``). Raises ``ValueError`` for no
     arm, a duplicate or malformed label, a report that fails ``read_parking_outcomes``, a report zone without a tariff row,
     an unusable trips file or references, and ``FileNotFoundError`` for a missing report or trips file.
     """
@@ -986,11 +1024,12 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
         return specs_by_version[measure]
 
     rows, arm_provenance, report_versions = [], {}, {}
+    paths = PathRecorder(path_roots)
     for arm in arms:
         run_output = Path(arm.run_output)
         if not run_output.is_dir():
             raise FileNotFoundError(f"run output of arm {arm.label} not found: {run_output}")
-        record = {"run_output": run_output.resolve().as_posix(), "iterations": None, "last_iteration": None,
+        record = {"run_output": paths(run_output), "iterations": None, "last_iteration": None,
                   "outcome_reports": None, "outcome_report_version": None}
         frame, version = None, None
         if arm.with_outcomes:
@@ -1010,7 +1049,7 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
                             "written for the final iteration only, so the trip metrics and the outcome metrics do not "
                             "describe the same iteration", arm.label, chosen, last)
             record.update(iterations=chosen, last_iteration=last, outcome_report_version=version,
-                          outcome_reports=[{"path": report.resolve().as_posix(), "sha256": calibrate.file_sha256(report)}
+                          outcome_reports=[{"path": paths(report), "sha256": calibrate.file_sha256(report)}
                                            for report in reports])
             log.info("[parking-compare] arm %s: outcome report v%d, iteration(s) %s, %d pricing calls in %d rows", arm.label,
                      version, chosen, int(frame["count"].sum()), len(frame))
@@ -1025,7 +1064,7 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
                                  record["iterations"]))
         trips, trips_path = read_trips(run_output)
         zone_id = trip_zones(trips, zones_geojson)
-        record.update(trips_file=trips_path.resolve().as_posix(), trips_sha256=calibrate.file_sha256(trips_path),
+        record.update(trips_file=paths(trips_path), trips_sha256=calibrate.file_sha256(trips_path),
                       trips_rows=int(len(trips)))
         rows.extend(trip_rows(arm.label, trips, zone_id, city_center_zone_ids))
         arm_provenance[arm.label] = record
@@ -1033,14 +1072,16 @@ def compare(arms, *, data_path, zones_geojson, iterations=None, city_center_zone
                  100.0 * float(zone_id.notna().mean()))
 
     table = pd.DataFrame(rows, columns=list(TABLE_COLUMNS))
+    paths.warn_if_outside()
     provenance = {
         "generated_on": datetime.date.today().isoformat(), "code_state": calibrate.git_state(),
         "script": "scripts/parking/compare_parking_targets.py",
         "iterations_option": None if iterations is None else sorted(set(iterations)),
         "city_center_zone_ids": list(city_center_zone_ids),
-        "inputs": {"srv2023_city_center_parking": _input_record(references.tables["city_center"]),
-                   "srv2023_commute_parking_by_workplace_class": _input_record(references.tables["commute"]),
-                   "zones": _input_record(zones_geojson), "tariffs": _input_record(tariffs_path)},
+        "inputs": {"srv2023_city_center_parking": paths.record(references.tables["city_center"]),
+                   "srv2023_commute_parking_by_workplace_class": paths.record(references.tables["commute"]),
+                   "zones": paths.record(zones_geojson), "tariffs": paths.record(tariffs_path)},
+        "path_note": "paths are relative to the repository root of the checkout that holds the file",
         "arms": arm_provenance,
         "note": "a comparison of model output with SrV references, not a validation; every row of the table names its universe"}
     return Comparison(table, arm_deltas(table, labels, report_versions), provenance)
@@ -1162,6 +1203,9 @@ def main(argv=None) -> int:
                         help=f"the zone release (default: <data-path>/{ZONES_RELATIVE})")
     parser.add_argument("--iteration", type=parse_iterations, default=None, metavar="N|FIRST-LAST",
                         help="iteration of the outcome reports, or an inclusive range that is pooled (default: the last one)")
+    parser.add_argument("--path-root", dest="path_roots", type=Path, action="append", default=[], metavar="REPOSITORY_ROOT",
+                        help="repository root of another checkout that holds inputs (repeatable); provenance paths are "
+                             "recorded relative to the first root that contains them")
     parser.add_argument("--out", type=Path, required=True, help="the comparison table (csv); two sibling files are written")
     parser.add_argument("--overwrite", action="store_true", help="replace existing output files")
     args = parser.parse_args(argv)
@@ -1181,7 +1225,8 @@ def main(argv=None) -> int:
         restricted_inputs.require_restricted_file("parking_zones_2026", "zone polygons", zones_geojson)
     except FileNotFoundError as error:
         raise SystemExit(str(error)) from error
-    result = compare(args.arms, data_path=args.data_path, zones_geojson=zones_geojson, iterations=args.iteration)
+    result = compare(args.arms, data_path=args.data_path, zones_geojson=zones_geojson, iterations=args.iteration,
+                     path_roots=args.path_roots)
     for path in write_comparison(result, args.out, overwrite=args.overwrite):
         log.info("[parking-compare] wrote %s", path)
     return 0

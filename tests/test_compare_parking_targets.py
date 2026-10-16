@@ -1103,3 +1103,64 @@ def test_the_reader_parses_the_literal_v4_reports_of_the_java_listener_test(cmp,
         expected = frame[frame["outcome"] == "PAID_EXPECTED"].iloc[0]
         assert (expected["garage_probability_sum"], expected["garage_probability_sum_paid"],
                 expected["garage_probability_sum_free"]) == (0.75, 0.75, 0.0)
+
+
+# ------------------------------------------------------------------------------------------ portable provenance paths
+
+
+def _recorded_paths(node):
+    """Every string of a provenance record that is a file or directory path (key ``path``, ``run_output`` or ``*_file``)."""
+    found = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in {"path", "run_output", "trips_file"} and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_recorded_paths(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_recorded_paths(value))
+    return found
+
+
+def test_portable_path_is_relative_to_the_first_root_that_contains_it_and_warns_for_an_outside_path(cmp, tmp_path, caplog):
+    root = tmp_path / "checkout"
+    (root / "eqasim-data" / "x").mkdir(parents=True)
+    inside = root / "eqasim-data" / "x" / "file.csv"
+    inside.write_text("a\n", encoding="utf-8")
+    assert cmp.portable_path(inside, [root]) == "eqasim-data/x/file.csv"
+    assert cmp.portable_path(REPO / "scripts" / "parking" / "compare_parking_targets.py", [root]) == \
+        "scripts/parking/compare_parking_targets.py"   # the repository root of the script is always a root
+    outside = tmp_path / "elsewhere" / "file.csv"
+    outside.parent.mkdir()
+    outside.write_text("a\n", encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        recorded = cmp.portable_path(outside, [root])
+    assert recorded == outside.resolve().as_posix()   # never silently dropped, but never silent either
+    assert "outside every path root" in caplog.text
+
+
+def test_the_provenance_of_a_comparison_carries_repository_relative_paths_only(cmp, data, tmp_path):
+    checkout = tmp_path
+    off = write_run(tmp_path / "runs", "off", OFF_TRIPS)
+    zones = write_run(tmp_path / "runs", "zones", ZONES_TRIPS, ROWS)
+    zones_geojson = data / "braunschweig" / "parking" / "parking_zones_2026.geojson"
+    result = cmp.compare([cmp.ArmSpec("off", off, False), cmp.ArmSpec("zones_v2", zones, True)], data_path=data,
+                         zones_geojson=zones_geojson, path_roots=[checkout])
+    paths = _recorded_paths(result.provenance)
+    assert len(paths) >= 8
+    assert all(not Path(path).is_absolute() and ":" not in path for path in paths), paths
+    assert result.provenance["inputs"]["zones"]["path"] == "data/braunschweig/parking/parking_zones_2026.geojson"
+    assert result.provenance["arms"]["zones_v2"]["outcome_reports"][0]["path"] == "runs/zones/ITERS/it.2/2.parking_outcomes.csv"
+    assert result.provenance["arms"]["off"]["run_output"] == "runs/off"
+    assert "code_state" in result.provenance
+
+
+def test_the_main_accepts_a_path_root_for_inputs_of_another_checkout(cmp, data, tmp_path):
+    zones = write_run(tmp_path / "runs", "zones", ZONES_TRIPS, ROWS)
+    out = tmp_path / "out" / "x.csv"
+    argv = ["--arm", f"zones_v2={zones}", "--data-path", str(data), "--path-root", str(tmp_path),
+            "--zones-geojson", str(data / "braunschweig" / "parking" / "parking_zones_2026.geojson"), "--out", str(out)]
+    assert cmp.main(argv) == 0
+    provenance = json.loads(out.with_name(out.stem + "_provenance.json").read_text(encoding="utf-8"))
+    assert all(not Path(path).is_absolute() for path in _recorded_paths(provenance))
