@@ -94,7 +94,7 @@ import pandas as pd
 from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.attributes import (
     EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES)
-from braunschweig.popsim.mid import PARTICIPATION_W_ZWECK
+from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 

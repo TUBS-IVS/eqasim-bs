@@ -99,7 +99,7 @@ def _load_kreis_control_table(data_path: str) -> pd.DataFrame:
     """Load the merged per-Kreis control table (erwerbsstatus + schulabschluss +
     berufl_abschluss) -- the SAME GENESIS marginals the Tier-3 KREIS controls were
     fitted to. ARS_kreis is a 5-digit zero-padded string (400 Kreise)."""
-    from braunschweig.popsim.mid import load_kreis_control_table
+    from braunschweig.popsim.mid.kreis_controls import load_kreis_control_table
     kreis_dir = Path(data_path) / _KREIS_CONTROLS_SUBPATH
     return load_kreis_control_table(str(kreis_dir))
 
