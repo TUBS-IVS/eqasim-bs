@@ -488,27 +488,6 @@ _GATE_RESULTS, _UNDECIDED = _compute_gate_results()
 # ---------------------------------------------------------------------------
 
 ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
-    "braunschweig.analysis.analysis_suite": (
-        "braunschweig.analysis.dashboard.build_dashboard",
-        # matsim_archive joined with #354 (archive-path resolution replacing the
-        # matsim.simulation.run stage edge); same no-token debt as the siblings.
-        "braunschweig.analysis.matsim_archive",
-        "braunschweig.analysis.popsim_validation.run_popsim_control_validation",
-        "braunschweig.analysis.population_validation.controls",
-        "braunschweig.analysis.population_validation.population_source",
-        "braunschweig.analysis.population_validation.run_population_validation",
-        "braunschweig.analysis.run_education_validation",
-        "braunschweig.analysis.run_household_composition",
-        "braunschweig.analysis.run_integerizer_quality",
-        "braunschweig.analysis.run_mid_validation",
-        # stuck_agents joined with #443 (the stuck_agents sub-analysis); same no-token debt as the siblings.
-        "braunschweig.analysis.stuck_agents",
-    ),
-    "braunschweig.analysis.simwrapper_export": (
-        # matsim_archive joined with #354 -- see the analysis_suite entry.
-        "braunschweig.analysis.matsim_archive",
-        "braunschweig.analysis.simwrapper.export",
-    ),
     "braunschweig.data.bosserhof_location_category": (
         "braunschweig.data.bosserhof_purpose",
     ),

@@ -16,9 +16,74 @@ preserved.
 """
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 
 LOGGER = logging.getLogger("braunschweig.analysis.simwrapper_export")
+
+
+#: Hashed by dotted NAME (see :func:`validate`): first the modules ``execute()`` imports, then
+#: the rest of their import closure.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.analysis.simwrapper.export",
+    "braunschweig.analysis.matsim_archive",
+    # The rest of the import closure: modules the sub-analyses import, whose code this
+    # stage runs without importing it itself. The static walk over-approximates (ADR-0136).
+    "braunschweig.analysis.dashboard.build_dashboard",
+    "braunschweig.analysis.dashboard.comparisons",
+    "braunschweig.analysis.dashboard.html_template",
+    "braunschweig.analysis.dashboard.mid_reference",
+    "braunschweig.analysis.dashboard.paths",
+    "braunschweig.analysis.dashboard.run_metrics",
+    "braunschweig.analysis.dashboard.run_records",
+    "braunschweig.analysis.dashboard.spatial_metrics",
+    "braunschweig.analysis.fleet_filter",
+    "braunschweig.analysis.freight_filter",
+    "braunschweig.analysis.pipeline_trips_file",
+    "braunschweig.analysis.population_validation.population_source",
+    "braunschweig.analysis.simwrapper.behaviour",
+    "braunschweig.analysis.simwrapper.commuter_tabs",
+    "braunschweig.analysis.simwrapper.commuters",
+    "braunschweig.analysis.simwrapper.fleet",
+    "braunschweig.analysis.simwrapper.geo_layers",
+    "braunschweig.analysis.simwrapper.socio",
+    "braunschweig.analysis.simwrapper.spatial_export",
+    "braunschweig.analysis.simwrapper.student_commuters",
+    "braunschweig.analysis.simwrapper.trip_demand",
+    "braunschweig.analysis.simwrapper.writers",
+    "braunschweig.analysis.spatial",
+    "braunschweig.data.cordon.plans",
+    "braunschweig.synthesis.portal_trips.config_keys",
+    "braunschweig.analysis.stuck_agents",
+    "braunschweig.matsim.simulation.plan_check",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.plan_validation",
+    "data.hts.hts",
+)
+
+def validate(context):
+    """synpp validation token: md5 over the sources of every module this stage runs (#454).
+
+    synpp hashes only THIS module's source, and every sub-analysis here is imported lazily
+    inside ``execute()``. Without this token an edit to a sub-analysis would leave the cached
+    dashboard tabs in place, so the reports would silently describe old code. The modules are hashed by
+    dotted NAME, which keeps the stage import light; the closure gate in
+    tests/test_audit_synpp_helper_hash.py keeps the list complete (ADR-0136).
+    """
+    digest = hashlib.md5()
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_source = inspect.getsource(importlib.import_module(module_name))
+        except Exception as error:
+            raise RuntimeError(
+                f"simwrapper_export validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):

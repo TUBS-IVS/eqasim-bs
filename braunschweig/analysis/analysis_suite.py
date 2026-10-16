@@ -9,6 +9,9 @@ docs/superpowers/specs/2026-07-01-auto-analysis-suite-design.md.
 """
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import json
 import logging
 import traceback
@@ -40,6 +43,121 @@ KEY_METHOD = "braunschweig.population.method"
 # (imported lazily where needed to keep stage import light).
 KEY_MINOR_EMP_MAX_RATE = "analysis_minor_employment_max_rate"  # fraction, under-15 employed share
 KEY_MINOR_EMP_RAISE = "analysis_minor_employment_raise"        # bool: raise vs warn on exceed
+
+
+#: Hashed by dotted NAME (see :func:`validate`): first the sub-analyses ``configure()`` and
+#: ``execute()`` import, then the rest of their import closure.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.analysis.population_validation.controls",
+    "braunschweig.analysis.population_validation.population_source",
+    "braunschweig.analysis.matsim_archive",
+    "braunschweig.analysis.population_validation.run_population_validation",
+    "braunschweig.analysis.run_mid_validation",
+    "braunschweig.analysis.run_household_composition",
+    "braunschweig.analysis.popsim_validation.run_popsim_control_validation",
+    "braunschweig.analysis.run_integerizer_quality",
+    "braunschweig.analysis.run_education_validation",
+    "braunschweig.analysis.dashboard.build_dashboard",
+    "braunschweig.analysis.stuck_agents",
+    # The rest of the import closure: modules the sub-analyses import, whose code this
+    # stage runs without importing it itself. The static walk over-approximates (ADR-0136).
+    "braunschweig.analysis.dashboard.comparisons",
+    "braunschweig.analysis.dashboard.html_template",
+    "braunschweig.analysis.dashboard.mid_reference",
+    "braunschweig.analysis.dashboard.paths",
+    "braunschweig.analysis.dashboard.run_metrics",
+    "braunschweig.analysis.dashboard.run_records",
+    "braunschweig.analysis.dashboard.spatial_metrics",
+    "braunschweig.analysis.fleet_filter",
+    "braunschweig.analysis.freight_filter",
+    "braunschweig.analysis.integerizer_quality.cell_error",
+    "braunschweig.analysis.integerizer_quality.cell_geometry",
+    "braunschweig.analysis.integerizer_quality.report",
+    "braunschweig.analysis.integerizer_quality.zone_feasibility",
+    "braunschweig.analysis.noise_bands",
+    "braunschweig.analysis.pipeline_trips_file",
+    "braunschweig.analysis.popsim_validation.controls",
+    "braunschweig.analysis.population_validation.control_validation",
+    "braunschweig.analysis.population_validation.fleet_age_status",
+    "braunschweig.analysis.population_validation.fleet_evaluation",
+    "braunschweig.analysis.population_validation.geo_export",
+    "braunschweig.analysis.population_validation.participation_fit",
+    "braunschweig.analysis.population_validation.quality_assessment",
+    "braunschweig.analysis.population_validation.trip_coherence",
+    "braunschweig.analysis.population_validation.validation_chart",
+    "braunschweig.analysis.spatial",
+    "braunschweig.calibration.circuity",
+    "braunschweig.calibration.metrics",
+    "braunschweig.constants",
+    "braunschweig.data.census.households_size_age",
+    "braunschweig.data.census.households_type",
+    "braunschweig.data.census.population",
+    "braunschweig.data.cordon.network",
+    "braunschweig.data.kba.fleet_tables",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.school_distance",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.data.mid.status_by_kreis",
+    "braunschweig.gravity.friction",
+    "braunschweig.matsim.simulation.plan_check",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.cells",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.control_spec",
+    "braunschweig.popsim.controls",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.diary_plan_match",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.folders",
+    "braunschweig.popsim.kreis_attribute_control",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.control_cells",
+    "braunschweig.popsim.mid.csv_format",
+    "braunschweig.popsim.mid.donor",
+    "braunschweig.popsim.mid.kreis_controls",
+    "braunschweig.popsim.mid.participation",
+    "braunschweig.popsim.mid_p9",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.ownership_grid",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.prepared_cells",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.trips",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.popsim.zensus_employment_age",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.synthesis.portal_trips.config_keys",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
+)
+
+def validate(context):
+    """synpp validation token: md5 over the sources of every module this stage runs (#454).
+
+    synpp hashes only THIS module's source, and every sub-analysis here is imported lazily
+    inside ``execute()``. Without this token an edit to a sub-analysis would leave the cached
+    suite result in place, so the reports would silently describe old code. The modules are hashed by
+    dotted NAME, which keeps the stage import light; the closure gate in
+    tests/test_audit_synpp_helper_hash.py keeps the list complete (ADR-0136).
+    """
+    digest = hashlib.md5()
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_source = inspect.getsource(importlib.import_module(module_name))
+        except Exception as error:
+            raise RuntimeError(
+                f"analysis_suite validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):

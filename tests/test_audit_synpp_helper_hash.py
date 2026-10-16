@@ -373,6 +373,22 @@ def test_every_source_hashing_stage_hashes_its_whole_import_closure(real_reposit
         "stage's _TOKEN_CLOSURE_BOUNDARIES. Remove a register entry once its gap closes.")
 
 
+#: Collector stages whose results are read and cited (dashboard, validation reports). They must
+#: carry a validate() token over their whole import closure, so a sub-analysis edit re-runs them
+#: (issue #454). Without a token a stage drops out of the closure gate above entirely.
+ANALYSIS_COLLECTOR_STAGES = (
+    "braunschweig.analysis.analysis_suite",
+    "braunschweig.analysis.simwrapper_export",
+)
+
+
+@pytest.mark.parametrize("stage", ANALYSIS_COLLECTOR_STAGES)
+def test_the_analysis_collector_stages_hash_their_source(real_repository_report, stage):
+    entry = real_repository_report[stage]
+    assert entry["hashes_source"], f"{stage} has no validate() token over its helper sources"
+    assert entry["transitive_uncovered"] == []
+
+
 def test_no_stage_token_hashes_a_module_twice(real_repository_report):
     """A module belongs in one of the two tuples, once: its import site decides which.
 

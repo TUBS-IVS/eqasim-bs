@@ -13,7 +13,8 @@ description: 'Post-run analysis driver: dashboard, MiD validation, population va
   output_events.xml.gz (so the events are streamed once per run) and is otherwise computed; a failing stuck
   analysis is recorded there as available false with its reason. The sub-analysis warns when more than the
   configurable share analysis_stuck_warn_share (default 0.01 = stuck_agents.STUCK_WARN_SHARE, an ASSUMPTION,
-  ADR-0146) of the residents is stuck; it has no reference value.'
+  ADR-0146) of the residents is stuck; it has no reference value. The stage''s validate() token hashes the
+  whole import closure of its sub-analyses (ADR-0147).'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -36,3 +37,4 @@ decisions:
 - ADR-0031
 - ADR-0101
 - ADR-0146
+- ADR-0147
