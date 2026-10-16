@@ -501,13 +501,13 @@ inferred from the other.
   tests instead of running silently.
 - Changing `parking_tariff_snapshot_date` and the decay lengths of the configuration changes the stage inputs, so the stages
   that read them re-run for v3 (expected).
-- The curation-time dependency `pdfplumber` (it reads the Peine list) is not pinned in `environment.yml`; the real-list test
-  skips without it, and the district file is a pinned artefact, so the pipeline does not need it.
+- The curation-time dependency `pdfplumber` (it reads the Peine list) is pinned in `environment.yml` and the explicit locks
+  (0.11.9, 2026-10-16); the district file is a pinned artefact, so the pipeline itself does not need it.
 - The free Seesen garage is a private garage whose upper levels the page frees for long-stay parkers: the model offers it free to
   every stay of the zone within reach, which overstates the free supply for a short visitor stay on the lower levels beyond 2 h
   (named in the note of the row). The documented options use the 75 m limit and the 10 m lead as assumptions (decision 14).
 - Follow-ups, not part of this decision: Part C (runs; the run manifests will be linked from the feature record); a position
-  for Arena P2; pinning `pdfplumber`; a rule for a position between two named places (the third HarzVenture lot).
+  for Arena P2; a rule for a position between two named places (the third HarzVenture lot).
 
 ## Part B evidence
 

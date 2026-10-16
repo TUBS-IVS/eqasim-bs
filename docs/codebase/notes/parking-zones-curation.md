@@ -68,6 +68,6 @@ changes a file that a later step pins:
 - Never edit a derived file by hand, and never loosen a tie test to make a stale calibration pass; run the calibration.
 - Read the packages from their zips (SHA-256 checked by the code, the pin tied to the data record by
   `tests/test_parking_raw_package_records.py`); never extract them into the repository.
-- The curation-time dependency `pdfplumber` (reads the Peine list) is not pinned in `environment.yml`; the district tests
-  skip the real-list test without it. Do not import it from a stage.
+- The curation-time dependency `pdfplumber` (reads the Peine list) is pinned in `environment.yml` and the explicit locks
+  (0.11.9); the real-list test still skips where it is absent. Do not import it from a stage.
 - Fallback transparency applies to every step above: a rate is logged for each fallback, and a high rate is a failure signal.

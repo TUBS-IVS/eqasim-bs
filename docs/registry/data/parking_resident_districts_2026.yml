@@ -48,8 +48,8 @@ acquisition:
     525ac99eeb929bdd067d0012a9759b65f60cc0a81556f871c4cf4bbf1475057c, source
     https://www.wolfsburg.de/-/media/wolfsburg/statistik_daten_fakten/buergerdienste/bewohnerparken_strassenverzeichnis_20230723.pdf;
     raw_sources/resident_other_cities/peine_zone_street_list.pdf SHA-256
-    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f (read with pdfplumber 0.11.9: curation only, not in
-    environment.yml, an installed package of the curation environment), source
+    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f (read with pdfplumber 0.11.9: a curation-time
+    dependency, pinned in environment.yml and the explicit locks since 2026-10-16), source
     https://www.peine.de/de-wAssets/docs/mediadaten_stadt/eigene_daten/Buergerbuero/Team-A/Parkzonen-Bewohnerparkausweis.pdf;
     helmstedt_parking_brochure.pdf SHA-256 f1dc902583b195972c7ddd83450be46e273867c07e31509e20ce46d9cce824df, source
     https://www.stadt-helmstedt.de/fileadmin/user_upload/02_Kultur/pdf_Broschueren/Parken_in_Helmstedt.pdf, with the

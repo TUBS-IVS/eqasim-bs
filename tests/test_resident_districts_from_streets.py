@@ -569,7 +569,7 @@ def test_the_real_wolfsburg_list_has_the_67_rows_of_the_spec_in_ten_zones(rds, o
 
 
 def test_the_real_peine_list_has_29_entries_in_the_seven_zones_a_to_g(rds, owner_package):
-    pytest.importorskip("pdfplumber")   # a curation-time dependency only, not in environment.yml
+    pytest.importorskip("pdfplumber")   # a curation-time dependency (pinned in environment.yml)
     parsed = rds.read_peine_list(owner_package)
     assert len(parsed.rows) == 29
     assert sorted({row.zone for row in parsed.rows}) == list("ABCDEFG")
