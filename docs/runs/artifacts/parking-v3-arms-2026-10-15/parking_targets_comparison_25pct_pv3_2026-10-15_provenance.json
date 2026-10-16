@@ -1,0 +1,115 @@
+{
+  "arms": {
+    "off_25pct": {
+      "iterations": null,
+      "last_iteration": null,
+      "outcome_report_version": null,
+      "outcome_reports": null,
+      "run_output": "eqasim-data/output_bs_pv3_off_25pct/matsim_output",
+      "trips_file": "eqasim-data/output_bs_pv3_off_25pct/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 926910,
+      "trips_sha256": "e1d1db836b4340272164112f604f4edcf9e7b041d437a7509a799786ec0c02f1"
+    },
+    "v3_25pct": {
+      "iterations": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "last_iteration": 60,
+      "outcome_report_version": 4,
+      "outcome_reports": [
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.51/51.parking_outcomes.csv",
+          "sha256": "26e6c3a9ceabfca9d6de94004a53410195bcff00ad5d3c00a33e929a3d7df985"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.52/52.parking_outcomes.csv",
+          "sha256": "ded5d21694e1aaec4966a0368c59709648341159327ab998cccee7386667c683"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.53/53.parking_outcomes.csv",
+          "sha256": "e3d6d592c3017fdfd62a867a6c085b5ce0e743283f25303bcfe690deca818f47"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.54/54.parking_outcomes.csv",
+          "sha256": "a01bc0b3a42d5bef4b364f9150bf05f2fd1908639f437581c85083bde19395b7"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.55/55.parking_outcomes.csv",
+          "sha256": "fc295a36409124c44fde884a6c480a4c458727b145c44117aec00287441f806e"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.56/56.parking_outcomes.csv",
+          "sha256": "7dd6154c94e0f01213a9c6a090f38bc529ce66a9a471df44e085ccdb7486937f"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.57/57.parking_outcomes.csv",
+          "sha256": "0aefcee7cdfc41717d5fa280fc6745c7972465bdabc93a13ed5252c44a9485a4"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.58/58.parking_outcomes.csv",
+          "sha256": "e56eef62aafaa7655b10ac31c2585c742ead4a03cdffe03462cc0570efd4c2db"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.59/59.parking_outcomes.csv",
+          "sha256": "0198b9145162e4e7b5e4dafdd56ee54677ad5eb0722f8a4827b6de2cf95c6240"
+        },
+        {
+          "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/ITERS/it.60/60.parking_outcomes.csv",
+          "sha256": "c82e2f7d505ea7cedf319873ee522a624ca16c76b8b5aa2ef996b0a724dd3f4d"
+        }
+      ],
+      "run_output": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output",
+      "trips_file": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/eqasim_trips.csv.gz",
+      "trips_rows": 926918,
+      "trips_sha256": "83379dcb2b2552efb81e11fc9ba6be585c873a3a527612cabfaa4cc1db84978c"
+    }
+  },
+  "city_center_zone_ids": [
+    "bs_zone_ia",
+    "bs_zone_ib"
+  ],
+  "code_state": "868cf8ee4b251a60b07cfa9c324af509ca8e5cb9",
+  "generated_on": "2026-10-17",
+  "inputs": {
+    "srv2023_city_center_parking": {
+      "path": "eqasim-data/data/braunschweig/srv/srv2023_city_center_parking.csv",
+      "sha256": "438419f18a38c3b729a541ccc2a90dfab5faf53de04dc28807fb39d4c109942b"
+    },
+    "srv2023_commute_parking_by_workplace_class": {
+      "path": "eqasim-data/data/braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv",
+      "sha256": "bff6aa4eade4c8617204adf01867d1591197f9399eb11ad749655e8037e4c8be"
+    },
+    "tariffs": {
+      "path": "eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv",
+      "sha256": "7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82"
+    },
+    "zones": {
+      "path": "eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson",
+      "sha256": "7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504"
+    }
+  },
+  "iterations_option": [
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60
+  ],
+  "note": "a comparison of model output with SrV references, not a validation; every row of the table names its universe",
+  "path_note": "paths are relative to the repository root of the checkout that holds the file",
+  "script": "scripts/parking/compare_parking_targets.py"
+}

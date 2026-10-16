@@ -1,0 +1,57 @@
+{
+  "code_state": "a93f19b7570ee5c094fe518109ace38e65cee78c",
+  "generated_on": "2026-10-17",
+  "inputs": {
+    "comparison_large": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/parking_targets_comparison_25pct_pv3_2026-10-15.csv",
+      "sha256": "6f5d50799595a7c73b8aee1b159086d779696aa91b5c9516d79ee0652d97ce04"
+    },
+    "comparison_small": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/parking_targets_comparison_1pct_pv3_2026-10-15.csv",
+      "sha256": "8a99cbbe3cf16d22662e09c63e768436aca37251aa0af7aa4cf8d93e38e9e227"
+    },
+    "free_share_large": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_free_share.csv",
+      "sha256": "156553a285e831422cb49d924ff691c12b2847301c00ae5e7cd8969242b8ed71"
+    },
+    "free_share_small": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_free_share.csv",
+      "sha256": "f7ea83eba748fd1a0fae23cfd922dfc9efe81b7c2f329e6041155fa69afd8a9a"
+    },
+    "modestats_large": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_modestats_pooled.csv",
+      "sha256": "529468d5ed665889f2142c5094853346f18b2eb94dbca772e05c93ebf0f8797e"
+    },
+    "modestats_small": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_modestats_pooled.csv",
+      "sha256": "05b18d34bd7f70c3a3f10c666b74599bb7035962ed0e1e4e04ef68dee453ab3f"
+    },
+    "zone_groups_large": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_zone_groups.csv",
+      "sha256": "3c556b19db3d71ca989737d328eed0ead931360aa24ec980456338225e5cc34f"
+    },
+    "zone_groups_small": {
+      "path": "docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_zone_groups.csv",
+      "sha256": "0a558f04479185a8c0f939e0bf0455556bf0c8d1545e1c561d23efba7033af17"
+    }
+  },
+  "note": "every value of the table is a value of one of the input tables; a comparison of two runs per sample, not a validation",
+  "path_note": "paths are relative to the repository root of the checkout that holds the file",
+  "script": "scripts/parking/side_by_side_sample_sizes.py",
+  "sets": {
+    "large": {
+      "arms": [
+        "v3_25pct",
+        "off_25pct"
+      ],
+      "token": "25pct_pv3_2026-10-15"
+    },
+    "small": {
+      "arms": [
+        "v3",
+        "off"
+      ],
+      "token": "1pct_pv3_2026-10-15"
+    }
+  }
+}
