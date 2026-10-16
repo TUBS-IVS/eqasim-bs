@@ -19,11 +19,18 @@ description: >-
   qsim.endTime of the written config equals the bound, and, when the share of late or non-monotonic plans of
   the FROZEN residents exceeds braunschweig.plan_check.max_frozen_defect_share, logs at ERROR and continues
   (braunschweig.plan_check.fail_on_threshold false, the production value until the A/B has calibrated the
-  threshold) or raises (true). Freight is reported, never failed on. (3) The stuck-agent KPI of ADR-0146 (the stuckAndAbort events of the final iteration, by
-  subpopulation, mode, frozen flag and end-of-day versus during-day) is decided in the same record and
-  implemented in the stuck-agent analysis of issue #443, part 2; it is NOT part of this record's stages or
-  evidence yet. The bound changes results by decision.
+  threshold) or raises (true). Freight is reported, never failed on. (3) The stuck-agent KPI of ADR-0146
+  is a sub-analysis of the analysis suite (stage braunschweig.analysis.analysis_suite, keys
+  analysis_stuck_agents and analysis_stuck_warn_share, both declared with code defaults): it streams the
+  stuckAndAbort events of the final iteration (braunschweig.analysis.stuck_agents) and reports the stuck
+  agents by subpopulation, mode, frozen flag and end-of-day versus during-day, where the simulation end is
+  read from the run's output_config.xml (else output_config_reduced.xml; the plan-time bound with a WARNING
+  when neither carries it). The suite writes stuck_agents.csv and stuck_summary.json under
+  <output_path>/analysis/stuck/; the dashboard's additive stuck block reuses that summary when it is newer
+  than output_events.xml.gz and otherwise computes it, and a failing stuck analysis is logged and recorded as
+  available false with its reason without losing the other run metrics. The bound changes results by decision.
 stages:
+- braunschweig.analysis.analysis_suite
 - matsim.simulation.prepare
 pipelines:
   popsim_mid: active
@@ -44,6 +51,10 @@ introduced:
   adr: ADR-0146
 detail_doc: docs/codebase/notes/plan-check.md
 code_paths:
+- braunschweig/analysis/analysis_suite.py
+- braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/dashboard/run_records.py
+- braunschweig/analysis/stuck_agents.py
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/simulation/prepare.py
 - braunschweig/popsim/plan_validation.py
@@ -54,6 +65,9 @@ evidence:
   - tests/test_prepare_plan_check_wiring.py
   - tests/test_popsim_plan_validation.py
   - tests/test_performance_plan_validation.py
+  - tests/test_stuck_agents.py
+  - tests/test_dashboard_stuck_block.py
+  - tests/test_analysis_suite_stuck.py
   off_path_byte_identical:
     claimed: not_applicable
     note: >-
@@ -71,15 +85,19 @@ evidence:
       braunschweig.plan_check.fail_on_threshold is true, above max_frozen_defect_share for the frozen
       residents (false: ERROR log and the run continues). The resample caused by the bound is logged as a rate
       by braunschweig.popsim.plan_validation under the marker [popsim.plan_validation] and WARNS above
-      BOUND_RESAMPLE_WARN_RATE (0.01).
+      BOUND_RESAMPLE_WARN_RATE (0.01). The stuck analysis has no model fallback either: it fails early naming
+      the missing simulation output; a simulation end it cannot read from the output configs falls back to the
+      plan-time bound with a WARNING naming both files, and the dashboard logs whether its stuck block was
+      reused from the suite's summary or computed (marker [stuck_agents], [dashboard]).
   reference:
     kind: assumption
     note: >-
       No observed reference exists for feasible plans or stuck agents. Every threshold is an ASSUMPTION
       (ADR-0146): walk 5,000 m anchored in the SrV table of ADR-0145 (below 1 % beyond 5 km except the group
       other at 5-10 km, 1.05 %), bicycle 30,000 m (thin SrV evidence: one unweighted work trip at 30-45 km),
-      leg duration 10,800 s, max_frozen_defect_share 0.005, BOUND_RESAMPLE_WARN_RATE 0.01. The check counts defects in the
-      simulation input; it compares nothing with observed behaviour.
+      leg duration 10,800 s, max_frozen_defect_share 0.005, BOUND_RESAMPLE_WARN_RATE 0.01, the resident stuck
+      warn share analysis_stuck_warn_share 0.01. The check counts defects in the simulation input and the
+      stuck analysis counts stuck agents in its output; neither compares anything with observed behaviour.
 validation:
   state: unvalidated
   runs: []
@@ -92,8 +110,8 @@ assessment:
   by: null
   date: null
   pending_reason: >-
-    Implemented and unit-tested; no run has used it yet. The thresholds are ASSUMPTIONS until the A/B run of
-    ADR-0146 (eqasim-bs#443) and the stuck-agent KPI is not implemented yet.
+    Implemented (plan check and stuck-agent analysis) and unit-tested; no run has used them yet. The thresholds
+    are ASSUMPTIONS until the A/B run of ADR-0146 (eqasim-bs#443) has measured them.
   source: ADR-0146
 notes: >-
   The 30 h bound changes results by design: every stage from braunschweig.popsim.trips_stage downstream

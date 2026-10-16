@@ -9,7 +9,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 
 | Stage | Layer | Lineage | Prod | mid/open/ipf | Resolves to | Features |
 |---|---|---|---|---|---|---|
-| [braunschweig.analysis.analysis_suite](../registry/stages/braunschweig.analysis.analysis_suite.yml) | analysis | braunschweig_new | x | A/-/- | -- | freight_analysis_exclusion |
+| [braunschweig.analysis.analysis_suite](../registry/stages/braunschweig.analysis.analysis_suite.yml) | analysis | braunschweig_new | x | A/-/- | -- | freight_analysis_exclusion, plan_feasibility_check |
 | [braunschweig.analysis.cordon_validation](../registry/stages/braunschweig.analysis.cordon_validation.yml) | validation | braunschweig_new | x | A/-/- | -- | -- |
 | [braunschweig.analysis.reference.srv.commute_distance](../registry/stages/braunschweig.analysis.reference.srv.commute_distance.yml) | validation | braunschweig_new | x | A/s/s | -- | srv_primary_distance_validation |
 | [braunschweig.analysis.simwrapper_export](../registry/stages/braunschweig.analysis.simwrapper_export.yml) | analysis | braunschweig_new | x | A/-/- | -- | simwrapper_export |
