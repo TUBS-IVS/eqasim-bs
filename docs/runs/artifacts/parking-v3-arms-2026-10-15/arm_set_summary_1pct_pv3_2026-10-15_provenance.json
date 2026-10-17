@@ -2,6 +2,10 @@
   "arms": {
     "legacy": {
       "directory": "eqasim-data/output_bs_1pct_pv3_legacy",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_legacy/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "cb1e153c7202ef18f69cd565cf809a470bd4c822c5d53d5cce94ec2f5bc94964"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_legacy/matsim_output/modestats.csv",
         "sha256": "9448fd957dc5e05af08856102da3af3205c6ffd5a1e3c18f9fac7adcb8c86401"
@@ -9,6 +13,10 @@
     },
     "off": {
       "directory": "eqasim-data/output_bs_1pct_pv3_off",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_off/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "93548d24119c85cbc4fc5bac9e8b0a15b329fc21b691a2b4a533c52f1c3f7002"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_off/matsim_output/modestats.csv",
         "sha256": "0c6f75181ebfee326c9cf36fdd5b75300b10d6946574f24ba62e4462a269b3eb"
@@ -16,6 +24,10 @@
     },
     "v3": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "2ca31efd1236463d24ae8a5b14bfcb8a0954c0adfe89182363e5c21579f495ed"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3/matsim_output/modestats.csv",
         "sha256": "c3aa7f57f07c47245169862d0232d72482587387987bcae0f5a98acab8ea6e01"
@@ -73,6 +85,10 @@
     },
     "v3_cost_0.5": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3_cost_0.5",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "9cc58d15ec4ac8876e360f7cac5105a811bb658ee3a93187e4670ada548b843f"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/matsim_output/modestats.csv",
         "sha256": "8d330823f93a12cff64f69cbf9c68656b0f42b98cc8432421aa44c6c4ff731c5"
@@ -130,6 +146,10 @@
     },
     "v3_cost_2.0": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3_cost_2.0",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "a6f295a841fddc2c1ea124a77407e0eb52f8385633a55a04fca03d151e8e6a17"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/matsim_output/modestats.csv",
         "sha256": "bff45a923bb3ffd92b36517156621d702e6d2a175719ab9a52f096f7bd238b8d"
@@ -187,6 +207,10 @@
     },
     "v3_ev_off": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3_ev_off",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "2ca31efd1236463d24ae8a5b14bfcb8a0954c0adfe89182363e5c21579f495ed"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3_ev_off/matsim_output/modestats.csv",
         "sha256": "c3aa7f57f07c47245169862d0232d72482587387987bcae0f5a98acab8ea6e01"
@@ -244,6 +268,10 @@
     },
     "v3_free_shift_-0.1": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "607398fb4ce99b675e64f3a9b7f056b9863aabd1cc7fbcd3fcb0d7bb45b8e376"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/matsim_output/modestats.csv",
         "sha256": "799210e75beb142749e88c1c70a5d7ec0c7e75957e60c19bb0ca7cd5f8ec1191"
@@ -301,6 +329,10 @@
     },
     "v3_free_shift_-0.2": {
       "directory": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "ee8f181ad3db9e14deedf266faac7d05801801775dbbf0223d20c167473bef29"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/matsim_output/modestats.csv",
         "sha256": "c0f61e8b37441d2048a522b74bc0a5e8a142c04b0d8b6bf81bdbf120c65e2d68"
@@ -357,7 +389,7 @@
       }
     }
   },
-  "code_state": "11ea8b1589e33e8a530df87e0a9da5272a1ab17e",
+  "code_state": "ff9a43afa193ca78a0f5c1a0f14c845411bd915b",
   "iterations": [
     51,
     52,
