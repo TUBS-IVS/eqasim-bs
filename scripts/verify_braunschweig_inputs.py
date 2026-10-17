@@ -374,7 +374,8 @@ INPUTS: List[Input] = [
         restricted=True,
     ),
     # D12-D15: the owner's raw research packages (D12-D14, spec v3 B6) and the owner's transcription of the city page of Seesen
-    # (D15, spec v3 B7) behind the parking v3 data (issue #436). Only the curation chain (scripts/curation/parking_zones_2026/)
+    # (D15, spec v3 B7) behind the parking v3 data (issue #436); D16-D19: the owner's earlier delivery folders of 2026-10-01, -07,
+    # -08 and -13 (Part C final fix), one entry per folder naming the package the curation reads first. Only the curation chain (scripts/curation/parking_zones_2026/)
     # reads them; no stage and no run needs them, hence optional. Restricted and local like D5, D10 and D11 (the archived originals
     # are third-party documents); each has a data record of its own.
     Input(
@@ -430,6 +431,64 @@ INPUTS: List[Input] = [
             "'Parken in Seesen' (the free garage Bahnhofstrasse, spec v3 B7); the pipeline and the runs do not need it. The "
             "folder holds two more transcriptions (the Goslar GALERIA directory entry, cited only, and the Northeim Q-Park "
             "tariff, unused), which the data record lists. The curation code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D16 Parking municipal packages 2026-10-01 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-01/Braunschweig_Parkzonen.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_01, docs/registry/data/parking_packages_municipal_2026_10_01.yml"),
+        notes=(
+            "Curation input only: assemble_parking_zones.py --municipal-dir and resident_districts.py read the fee zones and the "
+            "resident districts of Braunschweig from this package and the Goslar districts from Goslar_Parkdaten.zip in the same "
+            "folder (Wolfsburg_Parkdaten.zip is D14); the pipeline and the runs do not need them. Never extracted; the curation "
+            "code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D17 Parking regional packages 2026-10-07 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-07/Regional_Parkdaten_Belege_2026-10-07.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_07, docs/registry/data/parking_packages_municipal_2026_10_07.yml"),
+        notes=(
+            "Curation input only: regional_zones.py and regional_garages.py read the layers and the tariff rules of this "
+            "consolidated package, garage_supplement.py the two supplement zips of the same folder; the pipeline and the runs do "
+            "not need them. Never extracted; the curation code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D18 Parking monthly products package 2026-10-08 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-08/Braunschweig_Monatstarife_2026-10-08.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_08, docs/registry/data/parking_packages_municipal_2026_10_08.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --bs-monthly-zip (the monthly products of the Braunschweig garages) and "
+            "station_lots.py (the three station car park zones) read it, with the Contipark evidence directory and the "
+            "Overpass response of the same folder; the pipeline and the runs do not need them. Never extracted; the curation "
+            "code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D19 Parking large-lot package 2026-10-13 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-13/Grossparkplaetze_ZGB8_2026-10-12.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_13, docs/registry/data/parking_packages_municipal_2026_10_13.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --large-lots-zip reads the 152 reviewed surface lots from it (the source of "
+            "every surface-lot row of the garage dataset); the pipeline and the runs do not need it. Never extracted; the "
+            "curation code checks the SHA-256."
         ),
         matsim_only=True,
         optional=True,

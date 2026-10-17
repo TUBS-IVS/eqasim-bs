@@ -1,4 +1,5 @@
-"""The three owner research packages behind the parking v3 data (spec v3 B6, issue #436) are registered raw sources.
+"""The owner packages behind the parking v3 data (spec v3 B6, issue #436) are registered raw sources: the three research
+packages and, per delivery folder, the earlier deliveries of 2026-10-01, -07, -08 and -13 (``FOLDER_RECORDS``).
 
 A package is registered once, as a data record of its own (acquisition, SHA-256, expected local path, licence), and is
 listed in the input preflight (``scripts/verify_braunschweig_inputs.py``) as an optional, restricted curation input. The
@@ -41,14 +42,14 @@ def _record(dataset: str, directory: Path = DATA_DIRECTORY) -> dict:
         return yaml.safe_load(handle)
 
 
-def _code_pin(module_name: str, constant: str) -> str:
+def _code_pin(module_name: str, constant: str, key: str | None = None) -> str:
     sys.path.insert(0, str(CURATION_DIR))
     try:
         value = getattr(importlib.import_module(module_name), constant)
     finally:
         sys.path.remove(str(CURATION_DIR))
     if isinstance(value, dict):
-        value = value["Wolfsburg_Parkdaten"]
+        value = value[key or "Wolfsburg_Parkdaten"]
     return value
 
 
@@ -240,3 +241,169 @@ def test_a_wrong_hash_or_size_in_a_record_fails_the_file_check(tmp_path):
     with pytest.raises(AssertionError, match="byte size"):
         _assert_file_matches_record(package, no_size, digest)
 
+
+# ---- the earlier owner deliveries of 2026-10-01, -07, -08 and -13 (one record per delivery folder, Part C final fix)
+#: record id -> (preflight entry, folder below raw_sources, the file the preflight entry names, {file below the folder:
+#: (SHA-256 that the record states, size in bytes, code pin (module, constant, key of a dict constant or None) or None)})
+FOLDER_RECORDS = {
+    "parking_packages_municipal_2026_10_01": (
+        "D16", "municipal_2026-10-01", "Braunschweig_Parkzonen.zip", {
+            "Braunschweig_Parkzonen.zip": (
+                "b47c463296995b035afc9894fe58dc57abdaffa14fa9709b2de1bfd144cd5abe", 17434642,
+                ('municipal_zones', 'PACKAGE_SHA256', 'Braunschweig_Parkzonen')),
+            "Braunschweig_Parkhaeuser.zip": (
+                "6e2c19d102eb9984f4ff8d857a3701476816820ecffebd775c37374eccb8513b", 17965,
+                None),
+            "Goslar_Parkdaten.zip": (
+                "aa1bc980ae605cbe5fc2f533a2a991b4ba32c0913dc9b27090cf9d67ddb5b9d9", 438525,
+                ('municipal_zones', 'PACKAGE_SHA256', 'Goslar_Parkdaten')),
+        }),
+    "parking_packages_municipal_2026_10_07": (
+        "D17", "municipal_2026-10-07", "Regional_Parkdaten_Belege_2026-10-07.zip", {
+            "Regional_Parkdaten_Belege_2026-10-07.zip": (
+                "e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7", 62237402,
+                ('regional_zones', 'PACKAGE_SHA256', None)),
+            "Parkhaus_Ergaenzungen_2026-10-07.zip": (
+                "76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa", 7775796,
+                ('garage_supplement', 'SUPPLEMENT_SHA256', None)),
+            "Parkhaus_Nachrecherche_2026-10-07.zip": (
+                "3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8", 2712028,
+                ('garage_supplement', 'FOLLOWUP_SHA256', None)),
+            "Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip": (
+                "650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0", 9634890,
+                ('regional_garages', 'SUPERSEDED_WOLFSBURG_LOTS_SHA256', None)),
+            "Braunschweig_Parkgebuehrenzonen_2023.zip": (
+                "7ce77084a61fa79b42b3321fb6b8f0660c8cb85260827be2ee665c211192535e", 26473044,
+                None),
+            "Goslar_Zone2_Gesamtpaket.zip": (
+                "61f2368ecf5d41a67adc49ff3d5344c6ad4b963063ce44694a1ad099b7a87bda", 390047,
+                None),
+            "TU_Braunschweig_Parkbereiche.zip": (
+                "12afddef2b6c1bc583b5542537aa8e99eccdc465958fcfdf10e11f61c2e83f65", 4810416,
+                None),
+            "Parken_BadHarzburg_Seesen_Koenigslutter_Schoeningen.zip": (
+                "32d4fd9b71d07ee6b6bf874d2d71386b98d40db6f7c7bb40246eb5ec049776e9", 1859183,
+                None),
+            "MANIFEST.md": (
+                "02aabfd3e3cbd3fd9ccc01d47a19f6a1e0e7cd181b67c37347680920cb1ce5cd", 14385,
+                None),
+        }),
+    "parking_packages_municipal_2026_10_08": (
+        "D18", "municipal_2026-10-08", "Braunschweig_Monatstarife_2026-10-08.zip", {
+            "Braunschweig_Monatstarife_2026-10-08.zip": (
+                "72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81", 3183430,
+                ('bs_monthly_products', 'PACKAGE_SHA256', None)),
+            "contipark_configurator_2026-10-08/SHA256SUMS": (
+                "2617d497bddfaadced2ff433cd4b675122570a58ca7b6b2b49c27b0514a76ceb", 193,
+                ('bs_monthly_products', 'EVIDENCE_SUMS_SHA256', None)),
+            "contipark_configurator_2026-10-08/wallstrasse_configurator.txt": (
+                "af0d4e3f77795e035e9c250c4ef820d0cc0ae204da4d5316713da4463655b9c0", 1139,
+                None),
+            "contipark_configurator_2026-10-08/eiermarkt_no_rental_product.txt": (
+                "0a7d31ae502822897971675af54cdb7511cc2a2d20f4427f19b2daa4c411fa87", 1061,
+                None),
+            "osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json": (
+                "fe4332938fcc7e99595aff167071a040fcea01b5be5df38e259647e64a7ecc26", 4915,
+                ('station_lots', 'OSM_SHA256', None)),
+            "osm_braunschweig_hbf_parking_2026-10-08.json": (
+                "d4ec9d2ad3224fae6bdb84119c7803815b6cc07c1b0c01fd2d54539057a4f876", 10437,
+                None),
+            "MANIFEST.md": (
+                "4f136249acaa26c68649a23c94b3697c1b95628f52549df2d060999b77f04ad2", 2869,
+                None),
+        }),
+    "parking_packages_municipal_2026_10_13": (
+        "D19", "municipal_2026-10-13", "Grossparkplaetze_ZGB8_2026-10-12.zip", {
+            "Grossparkplaetze_ZGB8_2026-10-12.zip": (
+                "d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4", 38210859,
+                ('large_lots', 'LOTS_SHA256', None)),
+            "wob_free_lots_evidence/MANIFEST.md": (
+                "0c702d30dcc289f5649af855df11892c49e24db37d2d0752d720c00c669bf9c2", 3412,
+                None),
+        }),
+}
+
+
+def _normalised_storage_notes(dataset: str, directory: Path = DATA_DIRECTORY) -> str:
+    return " ".join(str(_record(dataset, directory)["storage"]["notes"]).split())
+
+
+def _assert_folder_record_states_members(dataset: str, directory: Path = DATA_DIRECTORY) -> None:
+    """The record names the expected folder and states every member with its SHA-256 and its byte size."""
+    _, folder, _, members = FOLDER_RECORDS[dataset]
+    assert _record(dataset, directory)["storage"]["expected_path"] == f"eqasim-data/data/{RAW_SOURCES}/{folder}/"
+    notes = _normalised_storage_notes(dataset, directory)
+    for name, (digest, size, _) in members.items():
+        assert name in notes, f"{dataset}: storage.notes must name {name}"
+        assert digest in notes, f"{dataset}: storage.notes must state the SHA-256 {digest} of {name}"
+        assert f"{size:,} bytes" in notes, f"{dataset}: storage.notes must state the size {size:,} bytes of {name}"
+
+
+@pytest.mark.parametrize("dataset", sorted(FOLDER_RECORDS))
+def test_a_folder_record_states_every_member_with_its_hash_and_size(dataset):
+    _assert_folder_record_states_members(dataset)
+
+
+@pytest.mark.parametrize("dataset, name", sorted((dataset, name) for dataset, spec in FOLDER_RECORDS.items()
+                                                 for name, (_, _, pin) in spec[3].items() if pin is not None))
+def test_the_code_pin_of_a_folder_member_is_the_hash_of_the_record(dataset, name):
+    digest, _, (module_name, constant, key) = FOLDER_RECORDS[dataset][3][name]
+    assert len(digest) == 64
+    assert _code_pin(module_name, constant, key) == digest
+
+
+@pytest.mark.parametrize("dataset", sorted(FOLDER_RECORDS))
+def test_a_folder_record_is_a_restricted_local_only_raw_source(dataset):
+    record = _record(dataset)
+    assert record["acquisition"]["method"] == "restricted_delivery"
+    assert record["storage"]["committed"] is False and record["storage"]["local_only"] is True
+    assert record["licensing"]["restricted"] is True and record["licensing"]["redistribution"] == "restricted"
+    assert record["requirements"] == {"synthesis": "not_needed", "matsim": "not_needed", "production": "not_needed"}
+    assert record["verification"]["verifier_entry"] == FOLDER_RECORDS[dataset][0]
+    assert not record.get("used_by")
+
+
+@pytest.mark.parametrize("dataset", sorted(FOLDER_RECORDS))
+def test_the_preflight_lists_a_folder_record_as_an_optional_restricted_curation_input(dataset):
+    prefix, folder, preflight_file, _ = FOLDER_RECORDS[dataset]
+    entry = _preflight()[prefix]
+    assert entry.rel_path == f"{RAW_SOURCES}/{folder}/{preflight_file}"
+    assert entry.optional and entry.restricted and entry.matsim_only
+    assert dataset in entry.source and "available on request" in entry.source
+    assert "curation" in entry.notes.lower()
+
+
+def test_the_preflight_entries_of_the_folder_records_follow_the_transcription_entry():
+    names = list(_preflight())
+    assert names.index("D15") < names.index("D16") < names.index("D17") < names.index("D18") < names.index("D19")
+
+
+@pytest.mark.parametrize("dataset, name", sorted((dataset, name) for dataset, spec in FOLDER_RECORDS.items() for name in spec[3]))
+def test_a_local_folder_member_is_the_recorded_file(dataset, name):
+    """Where the member lies in the main checkout (or this worktree's data), its hash and size are the recorded ones."""
+    _, folder, _, members = FOLDER_RECORDS[dataset]
+    digest, size, _ = members[name]
+    relative = f"{RAW_SOURCES}/{folder}/{name}"
+    candidates = [
+        REPO_ROOT / "eqasim-data" / "data" / relative,
+        *([REPO_ROOT.parents[2] / "eqasim-data" / "data" / relative] if len(REPO_ROOT.parents) > 2 else []),
+    ]
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        pytest.skip(f"{relative} is not available locally (restricted, not in the repository)")
+    content = path.read_bytes()
+    assert hashlib.sha256(content).hexdigest() == digest, f"{path}: SHA-256 differs from the record"
+    assert len(content) == size, f"{path}: size {len(content)} bytes, the record states {size}"
+
+
+def test_a_wrong_member_hash_in_a_copy_of_a_folder_record_fails_the_check(tmp_path):
+    """Mutation check: the member check is able to fail, so a green run of it says something."""
+    dataset = "parking_packages_municipal_2026_10_13"
+    _assert_folder_record_states_members(dataset)   # the committed record passes
+    record = _record(dataset)
+    digest = FOLDER_RECORDS[dataset][3]["Grossparkplaetze_ZGB8_2026-10-12.zip"][0]
+    record["storage"]["notes"] = record["storage"]["notes"].replace(digest, "0" * 64)
+    with open(tmp_path / f"{dataset}.yml", "w", encoding="utf-8") as handle:
+        yaml.safe_dump(record, handle)
+    with pytest.raises(AssertionError, match="must state the SHA-256"):
+        _assert_folder_record_states_members(dataset, directory=tmp_path)
