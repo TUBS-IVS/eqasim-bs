@@ -1,5 +1,5 @@
 # ADR-0039 · 2026-06 · Urban parking (Braunschweig inner ring)
-- **Status:** active
+- **Status:** superseded by ADR-0139 (2026-09-30): zone-based parking costs replace the ring in the canonical configuration; the ring stays reproducible as the legacy mode (`enable_urban_parking: true` with `parking_zones_enabled: false`).
 - **Context:** Realistic parking pressure is concentrated in the Braunschweig inner ring.
 - **Decision:** Add urban parking (`enable_urban_parking`, `matsim/scenario/population.py` + Java),
   enabled in the 25%/100% server configs for realism, scoped to the BS inner ring only. The flag is

@@ -1,0 +1,5 @@
+arm,baseline_arm,metric,universe,n_model,n_baseline,model,baseline_model,delta_pp
+v3_25pct,off_25pct,car_trip_share_all_trips,chosen_trips_all_trips,926918,926910,0.526849,0.528868,-0.2019
+v3_25pct,off_25pct,car_trip_share_ending_in_zones,chosen_trips_ending_in_zones,54301,54301,0.515921,0.531629,-1.5709
+v3_25pct,off_25pct,car_trip_share_ending_outside_zones,chosen_trips_ending_outside_zones,872617,872609,0.527529,0.528696,-0.1167
+v3_25pct,off_25pct,car_trip_share_ending_in_ia_ib,chosen_trips_ending_in_ia_ib,19314,19314,0.489127,0.517345,-2.8218

@@ -1,0 +1,259 @@
+dataset: parking_resident_districts_2026
+title: >-
+  Resident parking districts of Braunschweig (A, B, C), Goslar (A, B, C, F, G, H, J), Wolfsburg (A-G, K, VO, FA), Peine (A-G),
+  Helmstedt (HE_RING) and Wolfenbuettel (WF_CENTRE), a second layer next to the parking cost zones
+inventory_id: null
+provider: >-
+  Owner-supplied municipal packages of 2026-10-01 (parking cost zones v2, spec Amendment C3, issue #436): the resident
+  parking districts A, B and C of the City of Braunschweig, digitised from its published district map (the vector PDF
+  Bewohnerparkplaetze_ABC.pdf, map code 2012-11, for the inner boundaries and the current published overview map for
+  the outer boundary; package Braunschweig_Parkzonen.zip), and the districts A, B, C, F, G, H and J of the City of
+  Goslar as its ArcGIS feature service Bewohnerparken publishes them (layer 4, Parkbereiche; package
+  Goslar_Parkdaten.zip). Since spec v3 B3 (2026-10-14) also: the resident parking zones of Wolfsburg (A-G, K, VO, FA; the
+  official street list of 2023-07-20, 67 rows with house-number ranges) and Peine (A-G; the official table
+  Parkzonen-Bewohnerparkausweis, 29 street entries) from the owner's research package
+  Parkdaten_Nachrecherche_2026-10-14.zip, matched to the street geometry of the OSM extract niedersachsen-260929.osm.pbf
+  (Geofabrik), and the unified resident zone "Altstadt innerhalb des Stadtringes" of Helmstedt (brochure Parken in Helmstedt,
+  December 2024) and the resident area of Wolfenbuettel (the schematic map Karte Geltungsbereich Bewohnerparkausweis),
+  constructed from the OSM geometry of the streets that the maps name
+vintage: >-
+  Packages supplied and the layer built on 2026-10-01. Braunschweig: district map of 2012-11 (inner boundaries) and the
+  overview map published on the supply date (outer boundary), georeferenced on the Open GeoData city map 1:20,000 of
+  March 2025. Goslar: last edit of the service 2018-11-22, which a retrieval in 2026 does not confirm as current.
+  Wolfsburg, Peine, Helmstedt and Wolfenbuettel: built on 2026-10-14 from the lists and maps retrieved on 2026-10-14 (the
+  Wolfsburg list is dated 2023-07-20, the Peine table has no date, the Helmstedt brochure is of December 2024, the
+  Wolfenbuettel map has no date) and the OSM snapshot of 2026-09-29.
+geography: >-
+  The resident parking districts A, B and C of Braunschweig (about 2.56 km2 around the inner city) and A, B, C, F, G, H
+  and J of Goslar (about 0.97 km2, essentially the old town with adjacent areas); since spec v3 B3 also Wolfsburg (10
+  districts, about 0.62 km2), Peine (7, about 0.22 km2), Helmstedt (1, about 0.67 km2, the old town inside the ring road)
+  and Wolfenbuettel (1, about 0.59 km2, the old town with four arms): 29 districts in six municipalities. Salzgitter has
+  no district (resident permits exist, but the city publishes neither a street list nor an area map) and Gifhorn has
+  none (the resident scheme ended in 2025/26); both are named in the coverage register.
+crs: EPSG:25832 (stored as WGS84 GeoJSON, seven decimals)
+roles:
+- spatial_input
+used_by:
+- braunschweig.parking.zones_stage
+acquisition:
+  method: derived
+  source: >-
+    The owner's packages Braunschweig_Parkzonen.zip and Goslar_Parkdaten.zip (SHA-256 of both in the data record
+    parking_zones_2026), local and gitignored under eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/;
+    Braunschweig source pages https://www.braunschweig.de/leben/stadtplan_verkehr/parken-in-braunschweig/parken-in-der-innenstadt.php
+    and https://www.braunschweig.de/vv/32/Bewohnerparkplaetze_ABC.pdf; Goslar service
+    https://services3.arcgis.com/X0EQlGp2g40JN62M/arcgis/rest/services/Bewohnerparken/FeatureServer. Spec v3 B3: the owner's
+    package Parkdaten_Nachrecherche_2026-10-14.zip (SHA-256 5a81c0b94da2a078540be2c58299bf246a269733ff69598e9a35b1faa4fad3bb;
+    members data/resident_wolfsburg_address_eligibility.json SHA-256
+    525ac99eeb929bdd067d0012a9759b65f60cc0a81556f871c4cf4bbf1475057c, source
+    https://www.wolfsburg.de/-/media/wolfsburg/statistik_daten_fakten/buergerdienste/bewohnerparken_strassenverzeichnis_20230723.pdf;
+    raw_sources/resident_other_cities/peine_zone_street_list.pdf SHA-256
+    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f (read with pdfplumber 0.11.9: a curation-time
+    dependency, pinned in environment.yml and the explicit locks since 2026-10-16), source
+    https://www.peine.de/de-wAssets/docs/mediadaten_stadt/eigene_daten/Buergerbuero/Team-A/Parkzonen-Bewohnerparkausweis.pdf;
+    helmstedt_parking_brochure.pdf SHA-256 f1dc902583b195972c7ddd83450be46e273867c07e31509e20ce46d9cce824df, source
+    https://www.stadt-helmstedt.de/fileadmin/user_upload/02_Kultur/pdf_Broschueren/Parken_in_Helmstedt.pdf, with the
+    Bewohnerparkgebuehrenordnung of 2024-04-10,
+    https://www.stadt-helmstedt.de/fileadmin/user_upload/01_Rathaus/Virtuelle_Verwaltung/Ortsrecht_neu/Bewohnerparkgebuehrenordnung.pdf;
+    wolfenbuettel_area_map.pdf SHA-256 06b2e4e98a19a4d096f1ab20e4eacac3cc70e7b4e7689b885f4d54bfd98ba472, source
+    https://www.wolfenbuettel.de/loadDocument.phtml?Ext=PDF&FID=2093.5245.1) and the OSM extract
+    eqasim-data/data/braunschweig/parking/raw_osm/niedersachsen-260929.osm.pbf (Geofabrik, ODbL 1.0, SHA-256
+    c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94)
+  script: scripts/curation/parking_zones_2026/resident_districts.py
+  notes: >-
+    A curation step run by a person, never a pipeline stage: python scripts/curation/parking_zones_2026/resident_districts.py
+    --municipal-dir eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01 [--out PATH --replace]. It refuses a
+    package whose SHA-256 differs from municipal_zones.PACKAGE_SHA256, reads the layer resident_parking_zones of each package
+    straight from the zip, checks the attributes against the recorded source wording (Braunschweig: districts A, B, C, working
+    accuracy 30 m, map year 2012; Goslar: the seven codes once each, last edit 2018-11-22, exactly one feature without a code, and
+    that feature must be "Parkbereich C - Oberstadt"), prefixes the ids per town (bs_district_a ... gs_district_j; the
+    town's own label stays in district_code and the AGS in municipality_ags) and applies two changes to the published
+    geometry, both recorded in the note of the district concerned. (1) The Goslar feature "Parkbereich C - Oberstadt",
+    which has an empty code, is united with district C by owner decision 2026-10-01 (spec Amendment C3); the package kept
+    the two features apart. (2) The Goslar districts G and H overlap by 6.32 m2 in the package; no source says which owns
+    the overlap, so the district with the later id (H) gives it up, and every point lies in at most one district.
+    Overlaps up to 1 m2 (the loader tolerance) are left as published. The step writes the file next to its target,
+    reloads it with the strict production loader and replaces the target only if that succeeds; it never replaces an
+    existing file without --replace. Two runs give the same bytes.
+    Spec v3 B3 (2026-10-14; Task B3, ASSUMPTION R3): with --research-package and --osm-extract the step also builds the
+    districts of four more towns (python scripts/curation/parking_zones_2026/resident_districts.py --municipal-dir ...
+    --research-package .../Parkdaten_Nachrecherche_2026-10-14.zip --osm-extract .../niedersachsen-260929.osm.pbf; it reads the
+    OSM file once for the union box of the four towns, about three minutes). Wolfsburg and Peine
+    (resident_districts_from_streets.py, also runnable per town with --town): the street list is read from the package member
+    (member and package SHA-256 checked; a list with another row count than expected, 67 and 29, stops the step), every street
+    name is folded by one function (case, umlauts, ss/sz, Str./Strasse, Friedr./Heinr., hyphens, spaces) and matched to the
+    named OSM highway ways inside the zone's locality (Wolfsburg: Stadtmitte radius 2000 m around (621350, 5809450), Vorsfelde
+    for zone VO and Fallersleben for zone FA 800 m around (624950, 5811450) and (617000, 5809100); Peine 1500 m around
+    (584075, 5797290); EPSG:25832, each point set from the OSM position of reference streets of the list, so a name that
+    exists in several places is resolved by locality, never by the first hit); a street with no way in its locality, or
+    that is no way at all, stops the step with every unmatched row listed (the one exception, counted as a fallback: a
+    square without a street way, Otto-Wels-Platz, is matched by the boundary of its named OSM area). A house-number range
+    is cut at the OSM house numbers (nodes and building areas with addr:street of the same key, within 60 m of the street):
+    the piece of the street between the projections of the extreme houses; a range whose ends share their parity lies on
+    one side of the street (ASSUMPTION R3-b, Wolfsburg only: its list interleaves zones this way, e.g. Schillerstr. 1-25,
+    2-30, 31-57, 38-66, but does not state it; Peine does not interleave and is not inferred) and is buffered on that side
+    only (a piece whose houses do not agree on a side falls back to both sides; the run logs "one-sided primary x/y,
+    fallback n": Wolfsburg 41/41, 0 fallback; Peine and the maps 0/0); a range with fewer than 2 matching houses
+    (1 for a single number) would be range_not_resolved (whole street, flagged, counted, warned above 20 %); none was. Every
+    piece is buffered by 25 m (ASSUMPTION R3, the width of a street with both kerbs, --buffer-m) and the pieces of a zone are
+    united. Overlaps between zones go to the more specific footprint (range or single number before whole street) and, between
+    equally specific ones, to the nearer street by a sampled Voronoi split (ties: the zone whose parking-area column names the
+    street, then the earlier zone code). Helmstedt and Wolfenbuettel (resident_districts_from_maps.py): the maps follow named
+    streets, so no vertex is hand-digitised. Helmstedt: the OSM ways of Leuckartstrasse, Goethestrasse, Am Ludgerihof,
+    Poststrasse, Wilhelmstrasse and Walbecker Strasse (which closes the north-western corner where Leuckartstrasse and
+    Goethestrasse do not meet; ASSUMPTION HE-a: the Leuckartstrasse and Goethestrasse ways end about 100 m apart at the NW
+    corner, where Walbecker Strasse leaves the ring, and no polygon closes without it) within 900 m of Markt are noded and
+    polygonised; the district is the face that contains Markt (672,391 m2), NOT widened (ruling R-B-14: the face is
+    polygonised from the road centrelines, so it already ends on the road middle where the dotted line lies, and the
+    brochure lists the spaces of Poststrasse, Wilhelmstrasse and Walbecker Strasse as "ausserhalb des Stadtringes"); the
+    spurs of ring-named streets that leave the ring stay out. Wolfenbuettel: the 46 streets labelled inside the pink area of the map
+    (transcribed from the map into WOLFENBUETTEL_STREETS; a way is used whole when any part lies within 600 m of Stadtmarkt,
+    the longest such ways being Am Herzogtore 644 m, Lange Strasse 633 m and Landeshuter Platz 613 m), buffered by 25 m,
+    united, and the holes
+    (blocks, 95,285 m2) filled because the map colours whole blocks. The step prints the share of each district inside the paid
+    street zones of its town (an indicator, not a gate).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_resident_districts_2026.geojson
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (owner decision 2026-10-08, issue #436): the sources named under licensing are
+    not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
+    other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
+    Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
+    5cc8d31d6b78285adf8d5c7c990cf29f00b5e1fa88f0b7c74eab6aa0ef807dda. ASCII, LF, WGS84 GeoJSON with seven coordinate
+    decimals and the licence and attribution as top-level members; one feature per district (29) with the properties
+    district_id, district_code, municipality_ags, name, geometry_source, source_url, source_date, digitised_on and
+    digitising_note (braunschweig.parking.zones.DISTRICT_PROVENANCE_COLUMNS) and, for the 19 districts of spec v3 B3, source_rows
+    (a JSON list: one entry per street entry of the list or map with its resolution, the OSM way ids and house numbers
+    used and the area after the overlaps; the ids are empty for the one entry matched by an area boundary) and mixed_zone_rows
+    (number of list rows marked as mixed-zone streets). The owner's packages stay local.
+verification:
+  verifier_entry: D10
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    Listed as D10 (matsim_only, restricted, local only) in scripts/verify_braunschweig_inputs.py; read by
+    braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml, key
+    parking_resident_districts_path). braunschweig.parking.zones.load_resident_districts reprojects to EPSG:25832 and
+    checks the provenance fields and ISO dates; the layer must be valid as stored, so an invalid polygon raises and is
+    never repaired (a repair would change the district the file states); validate_resident_districts checks the ids (unique
+    across the layer), the codes (unique per municipality), the AGS and that no two districts overlap by more than 1 m2;
+    validate_district_municipalities requires a coverage-register status row per district municipality. The validator
+    scripts/validate_parking_zones.py runs all three, rejects the test-set marker and prints the districts per
+    municipality (29 districts in 6 municipalities since spec v3 B3). tests/test_resident_districts_from_streets.py and
+    tests/test_resident_districts_from_maps.py pin the builders of spec v3 B3 on synthetic OSM data and lists (name folding,
+    list wording, ranges and parity, fallback rate, locality, overlaps, unmatched streets, the package pins).
+    tests/test_parking_resident_districts.py (the curation step on synthetic packages, the loader and
+    validator, the assignment, the committed layer), tests/test_parking_zones.py (the validator CLI) and
+    tests/test_parking_zones_stage.py (the stage) pin it.
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: >-
+    Per source; the layer holds polygons under two regimes. (1) bs_district_a, bs_district_b and bs_district_c: Stadt
+    Braunschweig, resident parking district map (vector PDF 2012 for the inner boundaries, the current overview for the
+    outer boundary); digitised (owner-supplied package 2026-10-01); working accuracy 30 m; base map Open GeoData
+    dl-de/by-2-0. (2) the gs_district_* districts: Stadt Goslar, ArcGIS service Bewohnerparken (last edit 2018-11-22);
+    open reuse licence not verified; used by owner decision 2026-10-01. Spec v3 B3: (3) the wob_district_* and pe_district_*
+    districts rest on the city lists (Stadt Wolfsburg,
+    street list of 2023-07-20; Stadt Peine, Parkzonen-Bewohnerparkausweis) and on OpenStreetMap street geometry; (4)
+    he_district_he_ring and wf_district_wf_centre on the maps of Stadt Helmstedt and Stadt Wolfenbuettel and on OpenStreetMap
+    street geometry. The OSM-derived geometry is a produced work under the ODbL 1.0 (attribution "c OpenStreetMap contributors"
+    in the file); no reuse licence of the city documents was verified; used by owner decision 2026-10-14. The GeoJSON carries
+    the licence and the attribution
+    as top-level members (license, attribution; resident_districts.py LICENSE, ATTRIBUTION).
+  notes: >-
+    Redistribution per source, so the layer as a whole is not cleared for redistribution (redistribution restricted): the
+    Braunschweig districts keep the attribution "Datenquelle: Stadt Braunschweig - Open GeoData, 2026, Lizenz: dl-de/by-2-0"
+    with the note that the data were changed, and the package states that this licence covers the base maps of the
+    georeference, not a separately verified release of the district graphics; for the Goslar districts the package states
+    that public query access is no proof of a licence and the open reuse licence is not verified. The layer is used by owner
+    decision 2026-10-01 and, since the decision of 2026-10-08, not distributed in the repository (see storage; licensing.restricted
+    is true because the file is not committed, as for parking_zones_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  The districts are geographic envelopes digitised from maps, taken from a service or built from street lists and maps, not surveyed
+  boundaries and no proof
+  of parking supply or permission. Braunschweig: working accuracy 30 m, a conservative working estimate of the package and no
+  confidence bound (the georeference fit RMSE of 4.88 m is a consistency measure, not the boundary accuracy); the polygons
+  contain buildings, green spaces and other areas without parking, and street-side rules and overlapping permit areas are
+  not resolved. Goslar: the service states no positional accuracy, its last edit is 2018-11-22, and only the old town with
+  adjacent areas is covered. Districts exist for these two towns only. Three Goslar polygons (A, B, G) were repaired by the
+  package (ring self-touching, area change below 1e-8 m2); the layer holds the package's valid polygons. Rule R2 (the cost
+  model frees a stay inside the district of the person's home) is an assumption, residence equals permit possession, and
+  it applies only where the zone honours resident permits (ASSUMPTION R2-a, the column resident_permits_valid of
+  parking_tariffs_2026): by default on street and resident zones, never on a campus, and not at the five BgA car parks,
+  where no source states that permits are valid; it does not read the zone's resident exemption. Spec v3 B3: the Wolfsburg
+  list and the Peine table name eligible resident ADDRESSES, not legal parking areas ("a proof of residence, not the
+  final delimitation of a permit's parking area"), so a district is the envelope of the listed streets with a 25 m buffer
+  (ASSUMPTION R3) and includes buildings and areas without parking; the Peine parking-area column (for example Luisenstrasse
+  Nordseite between Hermann-Ehlers-Strasse and Bahnhofstrasse, Am Werderpark) is carried as text and is not geometry. A
+  house-number range is as good as the OSM house numbers (all 29 Wolfsburg and 9 Peine ranges were resolved, none fell back
+  to the whole street); the parity of a Wolfsburg range is an inference from the interleaved ranges of the list (ASSUMPTION
+  R3-b; all 41 parity pieces found a side: one-sided primary 41/41). Five
+  Wolfsburg entries and one Peine entry carry a qualifier the step cannot apply (exclusions "ausser Nr. 38" and "ohne Nr.
+  22-24", parts of a street such as Westteil or Rondell, and a Teilstueck opposite the Schuetzenplatz): the whole street is
+  used and the entry is flagged qualifier_not_resolved in source_rows (rate: Wolfsburg primary 62/67 = 92.5 %, fallback 5 =
+  7.5 %; Peine primary 30/31 = 96.8 %, fallback 1; the maps 0). No street entry lost its whole area to another zone
+  (rows_without_area 0 in all four towns). 48 of the 67 Wolfsburg rows and 5 of the Peine rows are
+  mixed-zone streets (the Peine flag is derived: the street is listed for more than one zone); where equal footprints meet
+  the nearer street decides, and the zone whose parking-area column names the street wins ties (Peine Wallstrasse: listed
+  for zones E and G, zone G keeps it). The Helmstedt district is the OSM geometry of the ring road of today (the NW link is
+  ASSUMPTION HE-a), the Wolfenbuettel district is built from a schematic map without coordinates: a way is used whole when
+  any part lies within 600 m of the reference point, so the arms and the through streets that leave the old town
+  (Bahnhofstrasse, Lange Strasse, Dr.-Heinrich-Jasper-Strasse, Wallstrasse) are cut by that rule, not by the map; the longest
+  ways taken whole are Am Herzogtore 644 m, Lange Strasse 633 m and Landeshuter Platz 613 m. Indicator, not a gate: the share of a
+  district inside the paid street zones of its town is Wolfsburg A 91.9 %,
+  B 72.8 %, C 67.4 %, D 100.0 %, E 90.6 %, F 79.4 %, FA 58.6 %, G 76.9 %, K 0.0 %, VO 69.4 %; Peine A 100.0 %, B 35.1 %, C 100.0
+  %, D 35.0 %, E 100.0 %, F 25.1 %, G 100.0 %; Helmstedt 48.1 %; Wolfenbuettel 74.6 %. Wolfsburg district K (Koehlerbergstrasse,
+  Koenigswiese, Braunschweiger Strasse 31-79) neither overlaps nor touches a paid street zone (the nearest is 52.5 m away), so
+  rule R2 is inert there (R2 acts inside a fee zone only) and the spec's "inside or touch a resident-relevant paid zone"
+  indicator is unmet for K. By area, the districts
+  overlay the fee zones heavily (they are independent layers): Braunschweig A 0.104 km2 of zone Ia and 0.508 km2 of Ib, B
+  0.933 km2 of Ia and 0.295 km2 of Ib, C 0.464 km2 of Ia and 0.161 km2 of Ib; of the other zones four of the five BgA car
+  parks (about 400 to 2,600 m2 each, inside A, B and C; Willy-Brandt-Platz lies in no district) and about 3,700 m2 of the
+  TU Zentralcampus (2,555 m2 in A and 1,177 m2 in C), where R2 is off by R2-a; the Goslar districts cover 0.396 km2 of the
+  0.636 km2 of the old-town zone gs_altstadt_zone1 (with the zone release of 2026-10-07, spec Amendment D with its fix
+  round 1; the release of 2026-10-01 gave B 0.929 km2 of Ia, C 0.463 km2 of Ia, BgA car parks of about 1,400 to 2,800
+  m2, about 2,600 m2 of the Zentralcampus, all in A, and 0.402 of 0.642 km2 in Goslar).
+notes: >-
+  History of the file (LF SHA-256): 1f346983bedef9a31f9bf54b5a084f2078b0ae4f6a6a75b47858192832022ac7 (10 districts, 2026-10-08, the
+  first release), then 0737226ea15263ee6f037c7b425d772570d81e3f07d4bf0cd4b400846d98d42b
+  (29 districts, spec v3 B3, 2026-10-14, the Helmstedt face widened by 10 m), then
+  5cc8d31d6b78285adf8d5c7c990cf29f00b5e1fa88f0b7c74eab6aa0ef807dda (29 districts, B3 fix round 1,
+  2026-10-14: Helmstedt not widened, ruling R-B-14, plus osm_way_ids in source_rows; deterministic: two runs gave the same bytes).
+  Counts of the run of 2026-10-14
+  (OSM extract niedersachsen-260929): Wolfsburg 67 list rows = 67 street entries, 67 matched (66 by an OSM way = 98.5 %, 1 by
+  the boundary of a named area = 1.5 %: Otto-Wels-Platz), 0 unmatched; 29 ranged entries, 29 resolved (100.0 %), 0
+  range_not_resolved; 5 qualifier_not_resolved; 48 mixed rows; 19 overlaps resolved; 87 OSM ways of listed names dropped by
+  locality; 1 name in two places inside the locality (Seilerstrasse); districts A 84,957 m2, B 18,136, C 79,228, D 45,055, E
+  57,437, F 162,206, FA 16,732, G 49,446, K 33,182, VO 77,505. Peine 29 list rows = 31 street entries (Twete u. Breite Str.
+  15+16 and Wallstrasse u. Breite Str. 30, 31 list two streets each), 31 matched by an OSM way (100.0 %), 0 unmatched; 9
+  ranged entries, 9 resolved (100.0 %), 0 range_not_resolved; 1 qualifier_not_resolved; 5 mixed rows (derived); 35 overlaps
+  resolved; 47 ways dropped by locality; 4 names in several places inside the locality (Hagenstrasse, St.-Jakobi-Kirchplatz,
+  Bahnhofstr., Lindenstrasse); districts A 25,802 m2, B 23,836, C 19,550, D 51,278, E 60,766, F 25,214, G 13,961. Helmstedt:
+  73 ring ways (8 dangling ends), enclosed face 672,391 m2, district 672,391 m2 (not widened), 7 ways dropped by locality.
+  Wolfenbuettel: 46
+  of 46 map streets matched by an OSM way, 40 ways dropped by locality, 7 names in several places inside the locality, holes
+  filled 95,285 m2, district 593,027 m2. Braunschweig and Goslar districts are unchanged (the same areas as in the first
+  release). The coverage register names Salzgitter (no street list or map; the official GIS holds no resident layer) and
+  Gifhorn (scheme ended 2025/26 per council minutes) without a district (data record parking_coverage_register_2026).
+  Content on 2026-10-01: 10 districts, Braunschweig 3 (A 649,733 m2, B 1,252,014 m2, C 658,503 m2 in the package; the
+  file differs by the WGS84 rounding) and Goslar 7 (A, B, C, F, G, H, J; C includes the Oberstadt feature, H is 6.32 m2
+  smaller than in the package). The exposure counts that follow are an INDICATOR from an uncommitted probe, not a
+  validation and not reproducible from the repository: they were measured on the local 1 % plans of 2026-04-29, which
+  are lost, and the output of the probe is not committed; they are to be re-measured on the server plans
+  (assignment of the activities of the local 1 % scenario of 2026-04-29, 47,362 activities of 11,472 persons, with
+  the production functions of braunschweig.parking.attach):
+  937 activities (2.0 %) lie in a district, 809 of them also in a fee zone (797 with the zone release of 2026-10-01,
+  809 with that of 2026-10-07); 247 persons (2.2 %) live in a district; 20 of
+  the 21,082 non-home activities (0.09 %) lie in the district of the person's home, 1 of them reached by car in the plan of
+  the scenario, so rule R2 acts on a very small share of the stays of this scenario (an upper bound, because the count
+  knows neither the fee zone nor the permit flag of the zone, and an exposure indicator of an older model state, no
+  forecast). The second layer is read by braunschweig.parking.zones_stage, attached to the plans by
+  braunschweig.parking.attach (activity attribute parkingDistrict, person attribute residentParkingDistrict) and priced
+  by rule R2 of braunschweig.parking.cost (spec Amendment C3). The v1 resident zone (Stadthalle, its own tariff row in
+  parking_tariffs_2026) is a zone and unchanged.

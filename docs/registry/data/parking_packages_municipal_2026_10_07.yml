@@ -1,0 +1,96 @@
+dataset: parking_packages_municipal_2026_10_07
+title: >-
+  Owner delivery of 2026-10-07 (the consolidated regional parking evidence package, two garage supplements, the Wolfsburg
+  car-park review and four working packages), raw source of the regional zones and of the garage dataset
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) research packages handed over on 2026-10-07 for issue #436 (parking cost zones v2, spec Amendments
+  D and E): the consolidated regional evidence package Regional_Parkdaten_Belege_2026-10-07.zip (356 files, 27 GeoPackage layers,
+  tariff rules and sources of the garage feed of Stadt Braunschweig (PULP) and the pages of the cities and garage operators, each
+  rule with its source), the supplement and follow-up packages of the garage research, the review of the 24 car parks of the
+  Wolfsburg city layer, and four working packages of 2026-10-02 that the consolidated package freezes and supersedes. The sources
+  belong to their publishers (named per source in the packages)
+vintage: >-
+  Packages built 2026-10-02 (the four working packages) and 2026-10-07; their tariff rules and pages were retrieved between
+  2026-10-02 and 2026-10-07 (source_date per rule), the Goslar positions are the city's snapshot of 2018-11-22
+geography: >-
+  Braunschweig, Wolfsburg, Goslar, Helmstedt, Peine, Salzgitter, Wolfenbuettel, Gifhorn, Bad Harzburg, Seesen, Koenigslutter and
+  Schoeningen (the packages of the towns named in their file names)
+crs: >-
+  EPSG:25832 (GeoPackage layers of the regional package), as the package states
+roles:
+- spatial_input
+- supply_input
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied files, not downloaded by the pipeline. Obtain them from the owner (open an issue in TUBS-IVS/eqasim-bs) and
+    verify them against the SHA-256 values in storage.notes.
+  notes: >-
+    Nine files in the folder municipal_2026-10-07/, stored byte for byte as received. READ by committed code (every one is checked
+    against its pinned SHA-256 first, nothing is extracted): Regional_Parkdaten_Belege_2026-10-07.zip (the GeoPackage layers of
+    the zone and garage curation and daten/tariff_rules.json: regional_zones.py, regional_garages.py),
+    Parkhaus_Ergaenzungen_2026-10-07.zip (garage_supplement.py: four main points of garages without coordinates and six tariff
+    checks) and Parkhaus_Nachrecherche_2026-10-07.zip (garage_supplement.py: the directory observations of Goslar and Wolfsburg).
+    SUPERSEDED, history of the garage dataset only: Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip (the review of the 24 car parks of
+    the Wolfsburg city layer; its reader was removed in Task 4l, owner decision 2026-10-14; regional_garages.py keeps the SHA-256
+    as SUPERSEDED_WOLFSBURG_LOTS_SHA256). NOT READ by any committed code: the four working packages of 2026-10-02
+    Braunschweig_Parkgebuehrenzonen_2023.zip, Goslar_Zone2_Gesamtpaket.zip, TU_Braunschweig_Parkbereiche.zip and
+    Parken_BadHarzburg_Seesen_Koenigslutter_Schoeningen.zip (frozen and superseded by the consolidated package; archived, their
+    contents are described in the data record parking_zones_2026), and MANIFEST.md, the owner's local inventory of the folder with the
+    hashes and the content notes of the packages.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the archived pages and layers are third-party data whose redistribution is not cleared;
+    eqasim-data/ is ignored by design). Files, SHA-256 and sizes (verified on 2026-10-17 against the files in the main checkout; the
+    owner's MANIFEST.md of the folder states the same values for the five zips of its table):
+    Regional_Parkdaten_Belege_2026-10-07.zip e789623752bf508b3e31f37ed2e30fe019e171cb43274f495cfacc12924008e7 (62,237,402 bytes;
+    pinned in regional_zones.PACKAGE_SHA256);
+    Parkhaus_Ergaenzungen_2026-10-07.zip 76d2651433e05a4d0d0a75ba352fd17f99b329555eb3bb4525c34990383978fa (7,775,796 bytes; pinned in
+    garage_supplement.SUPPLEMENT_SHA256);
+    Parkhaus_Nachrecherche_2026-10-07.zip 3bbaff93fb8b26d6cdfb187c7e0bf746f099997c1c7fd04a961fcae7d37329d8 (2,712,028 bytes; pinned in
+    garage_supplement.FOLLOWUP_SHA256);
+    Wolfsburg_Parkplaetze_Pruefung_2026-10-07.zip 650508f87c80ee2b84063def301ff67b5ecb8f2653cef2ab4202fb398c818df0 (9,634,890 bytes;
+    pinned in regional_garages.SUPERSEDED_WOLFSBURG_LOTS_SHA256);
+    Braunschweig_Parkgebuehrenzonen_2023.zip 7ce77084a61fa79b42b3321fb6b8f0660c8cb85260827be2ee665c211192535e (26,473,044 bytes; no code
+    pin);
+    Goslar_Zone2_Gesamtpaket.zip 61f2368ecf5d41a67adc49ff3d5344c6ad4b963063ce44694a1ad099b7a87bda (390,047 bytes; no code pin);
+    TU_Braunschweig_Parkbereiche.zip 12afddef2b6c1bc583b5542537aa8e99eccdc465958fcfdf10e11f61c2e83f65 (4,810,416 bytes; no code pin);
+    Parken_BadHarzburg_Seesen_Koenigslutter_Schoeningen.zip 32d4fd9b71d07ee6b6bf874d2d71386b98d40db6f7c7bb40246eb5ec049776e9
+    (1,859,183 bytes; no code pin);
+    MANIFEST.md 02aabfd3e3cbd3fd9ccc01d47a19f6a1e0e7cd181b67c37347680920cb1ce5cd (14,385 bytes; no code pin).
+    A test ties the pins and the local files to this record (tests/test_parking_raw_package_records.py).
+verification:
+  verifier_entry: D17
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D17 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py with the consolidated package
+    Regional_Parkdaten_Belege_2026-10-07.zip, the package the curation chain reads first: only the curation chain needs it. A
+    missing file is reported as [RESTRICTED] with the route to obtain it; the SHA-256 is checked by the curation code that reads a
+    package, not by the preflight.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner research products that archive public pages, municipal layers and operator tariffs; the sources keep the terms of their
+    publishers. The consolidated package records its licence status in daten/license_status.json (no open licence for the Goslar
+    service, dataset-specific licence needed for the Wolfsburg data, graphic reuse permission needed for the TU maps; the draft
+    licence requests in the package were NOT sent), see the data record parking_zones_2026. Used by owner decision 2026-10-07.
+  notes: >-
+    The data derived from them and kept in the repository are facts of public rules and tariffs (parking_tariffs_2026, the
+    coverage register) and, as local restricted files, the zone and garage geometry (parking_zones_2026, parking_garages_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  Research products, not official data sets: the statements are the owner's reading of the archived sources and must be traced to
+  the source named for them. The four working packages are superseded by the consolidated package. The Wolfsburg car-park review
+  is superseded by the large-lot package of the folder municipal_2026-10-13 (data record parking_packages_municipal_2026_10_13).
+notes: >-
+  Used by the parking v2 and v3 work of issue #436 (ADR-0140, ADR-0142) through the curation chain
+  (scripts/curation/parking_zones_2026/). Registered as a raw source of its own on 2026-10-17 (Part C final fix); before that the
+  SHA-256 values were named in the data records parking_zones_2026 and parking_garages_2026 only.

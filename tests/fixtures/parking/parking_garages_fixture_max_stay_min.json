@@ -1,0 +1,4 @@
+{
+"documentation": "Maximum stays in whole minutes (spec v3 A1, ASSUMPTION M3) of the three fixture garages of the golden cases F04..F08 that have one. The garage dataset has the column max_stay_min since spec v3 B (ruling R-B-2) and the fixture file parking_garages_fixture.geojson is a legacy layout without it (loaded with allow_legacy_columns=True, the column empty); scripts/export_parking_golden_cases.py sets the column from this file. It is a sidecar and not a column of the geojson on purpose: the LF SHA-256 of the geojson is recorded in the sources of parking_tariffs_fixture.json, which the Java tests pin byte for byte. Tests only: they pin arithmetic, not truth.",
+"max_stay_min": {"fx_g20_max120": 120, "fx_g28_max90": 90, "fx_g30a_max120": 120}
+}

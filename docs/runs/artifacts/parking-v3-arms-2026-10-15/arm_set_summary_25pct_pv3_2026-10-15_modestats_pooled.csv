@@ -1,0 +1,15 @@
+arm,mode,baseline_arm,off_arm,iterations,n_iterations,mean_share,sd_share_within_run,diff_to_baseline_pp,diff_to_off_pp
+off_25pct,bicycle,v3_25pct,off_25pct,51-60,10,0.097644,0.000181,-0.0629,0.0000
+off_25pct,car,v3_25pct,off_25pct,51-60,10,0.517822,0.001125,0.1947,0.0000
+off_25pct,car_passenger,v3_25pct,off_25pct,51-60,10,0.105651,0.000051,-0.0481,0.0000
+off_25pct,outside,v3_25pct,off_25pct,51-60,10,0.037800,0.000000,0.0000,0.0000
+off_25pct,pt,v3_25pct,off_25pct,51-60,10,0.072353,0.000018,-0.0290,0.0000
+off_25pct,truck,v3_25pct,off_25pct,51-60,10,0.014751,0.000000,0.0000,0.0000
+off_25pct,walk,v3_25pct,off_25pct,51-60,10,0.153979,0.000896,-0.0547,0.0000
+v3_25pct,bicycle,v3_25pct,off_25pct,51-60,10,0.098272,0.000170,0.0000,0.0629
+v3_25pct,car,v3_25pct,off_25pct,51-60,10,0.515876,0.001107,0.0000,-0.1947
+v3_25pct,car_passenger,v3_25pct,off_25pct,51-60,10,0.106133,0.000052,0.0000,0.0481
+v3_25pct,outside,v3_25pct,off_25pct,51-60,10,0.037800,0.000000,0.0000,0.0000
+v3_25pct,pt,v3_25pct,off_25pct,51-60,10,0.072643,0.000018,0.0000,0.0290
+v3_25pct,truck,v3_25pct,off_25pct,51-60,10,0.014751,0.000000,0.0000,0.0000
+v3_25pct,walk,v3_25pct,off_25pct,51-60,10,0.154525,0.000895,0.0000,0.0547

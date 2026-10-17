@@ -182,7 +182,9 @@ See [testing](docs/codebase/TESTING.md) for focused selection and duration repor
 > `braunschweig/kba/derived/*.csv`, `braunschweig/buildings/bosserhof_class_to_*.csv`,
 > `braunschweig/calibration/detour_circuity_params.csv`,
 > `braunschweig/lsn/lsn2022_income_tax_by_kreis.csv`,
-> `braunschweig/nds_bbs_share_by_age.csv`) plus their provenance docs. **Everything else is
+> `braunschweig/nds_bbs_share_by_age.csv`), the curated parking cost zone release tables
+> (`braunschweig/parking/parking_*_2026.csv*`, see *Parking cost zones* below; its three geometry files are not
+> distributed) plus their provenance docs. **Everything else is
 > downloaded/obtained by you** and placed under `eqasim-data/data/` at the exact
 > path below. Restricted inputs are never committed and never redistributed.
 
@@ -283,6 +285,108 @@ python scripts/measure_combustion_split.py          # realised petrol/diesel vs 
 python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverage of the EV tilt
 python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
+
+**Parking cost zones (ADR-0139, ADR-0140 and ADR-0142).** Car parking is priced per stay from the parking zones and
+their tariffs (version 2 adds the resident parking districts and distance-weighted off-street garage options, priced as an
+expected cost); the garage options are ON with the calibrated decay lengths `parking_garage_decay_m` (every purpose but work and
+education) and `parking_garage_decay_commute_m` (work and education) (calibrated on the plans of a server run, no
+validation; 0 switches them off for their purposes; recalibrated with the price term (beta 0.310998) on 2026-10-14, see the
+calibration record `parking_garage_decay_calibration_2026`) and the parking search time is off. Version 3 (ADR-0142) adds three
+config keys, all set in `configs/base_bs.yml` and only read when the flag is on:
+`parking_option_price_beta_u_per_eur` (utility per EUR, a finite number >= 0, default 0.310998, the magnitude of the car cost
+coefficient of the mode choice; the weight of a parking option falls with its own price; a release value, not a free
+parameter: the Java startup check refuses a tariff model whose value differs from the mode choice, so change it only together
+with the mode parameter), `parking_cost_utility_factor` (dimensionless multiplier of the parking cost in the car utility, a
+finite number in [0, 10], default 1.0 = the model; a sensitivity, never calibrated) and `parking_ev_exemption_enabled`
+(boolean, default true; false writes no exemption flag and leaves electric cars paying where a zone states an exemption).
+Decisions and rejected options: ADR-0140 and ADR-0142; mechanism: `docs/codebase/notes/parking-cost-zones.md`,
+`parking-garage-options.md` and `parking-ev-exemption.md` in the same folder. The tariff table
+(`braunschweig/parking/parking_tariffs_2026.csv`), the coverage register
+(`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
+(`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository. Three geometry files do
+**not**: the zone polygons (`braunschweig/parking/parking_zones_2026.geojson`), the resident parking districts of
+Braunschweig, Goslar, Wolfsburg, Peine, Helmstedt and Wolfenbuettel (29 districts), a second layer next to the zones
+(`braunschweig/parking/parking_resident_districts_2026.geojson`), and the garage dataset of the ZGB towns, garages and the
+large surface lots of the eight towns (`braunschweig/parking/parking_garages_2026.geojson`, the distance-weighted
+garage options of a stay), because their sources are not cleared for redistribution (data records
+`parking_zones_2026`, `parking_resident_districts_2026`, `parking_garages_2026`; every source stays named there). They
+are **available on request: open an issue in TUBS-IVS/eqasim-bs**; place them at the paths above (the folder is ignored
+by git, like the other raw data) and verify them against the SHA-256 that each record states (the garage dataset gained the
+column `max_stay_min` on 2026-10-14, spec v3 B: the loader refuses a copy from before that date with the command that
+regenerates it, so request the current one; rebuilding the district file is a curation step and needs `pdfplumber` (0.11.9,
+pinned in `environment.yml` as a curation-time dependency) to read the Peine list). Without them the tests that
+read them skip and the pipeline stops with a message that names the file and this route. All six files are read by
+`braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, D10 and
+D11 (D5, D10 and D11 as `[RESTRICTED]` when absent), and `python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the parking files. The
+paid-parking share per 25 m cell of the majority rule over the parking supply
+(`braunschweig/parking/parking_paid_share_2026.csv.gz`, preflight D9, optional: no stage reads it yet) ships as well;
+re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf` in
+`eqasim-data/data/braunschweig/parking/raw_osm/` and `python scripts/build_parking_zones_from_osm.py --supply-share`
+(the pipeline's own OSM input D1 is not used for it). The garage dataset ships with its QA table
+`braunschweig/parking/parking_garages_2026_qa.csv`, and `validate_parking_zones.py` cross-checks it with the tariff
+table; the config keys `parking_garage_decay_m` and `parking_garage_decay_commute_m` (the decay lengths of the garage weights,
+metres) equal the `decay_length_m` and the `decay_commute_length_m` of
+`braunschweig/parking/parking_garage_decay_calibration_2026.csv` (committed; a test requires both equalities), which
+`python scripts/parking/calibrate_garage_decay.py --plans <the plans of the reference scenario>` writes (0 = garage
+options off); re-deriving the garage
+dataset needs the owner's regional evidence package and its two supplement packages
+(`Parkhaus_Ergaenzungen_2026-10-07.zip`, `Parkhaus_Nachrecherche_2026-10-07.zip`) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-07/` (not distributed), for the surface lots the
+owner's research package `Grossparkplaetze_ZGB8_2026-10-12.zip` and the folder `wob_free_lots_evidence/` (its `MANIFEST.md`
+and the archived evidence pages of the free Wolfsburg car parks) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/` (not distributed; `--large-lots-zip`,
+`--lot-threshold` with the default 50 spaces and `--wob-free-evidence-dir`), for the free status of four Wolfsburg lots the
+owner's package `Parkdaten_Restluecken_2026-10-14.zip` in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/` (not distributed; read in place, `--wob-evidence-zip`;
+the same folder holds `Parkdaten_Nachrecherche_2026-10-14.zip`, which the resident districts of Wolfsburg, Peine, Helmstedt and
+Wolfenbuettel are rebuilt from, `resident_districts.py --research-package`, and from which the tariff corrections of
+2026-10-14 were entered), for the Wolfsburg zones and the 15 area zones the owner's package `Wolfsburg_Parkdaten.zip` in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/` (not distributed; `--municipal-dir`; the three
+research packages have a data record each, `parking_package_nachrecherche_2026_10_14`,
+`parking_package_restluecken_2026_10_14` and `parking_package_wolfsburg_parkdaten_2026_10_01`, with their SHA-256, and the
+preflight lists them as the optional curation inputs D12 to D14, `[RESTRICTED]` when absent: no stage and no run needs
+them; the earlier delivery folders `municipal_2026-10-01`, `-07`, `-08` and `-13` have one data record each,
+`parking_packages_municipal_2026_10_01`, `..._10_07`, `..._10_08` and `..._10_13`, listed as D16 to D19), for the documented options of Bad Harzburg and Seesen (spec v3 B7) the pinned Geofabrik extract
+`niedersachsen-260929.osm.pbf` in `eqasim-data/data/braunschweig/parking/raw_osm/` (`--osm-extract`, checked against its
+SHA-256; the extract the paid-share cells are derived from) and the owner's transcription folder
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-15/` (not distributed; `--owner-transcriptions-dir`; data
+record `parking_owner_transcriptions_2026_10_15`, preflight D15; the HarzVenture page and the brochure text of Bad Harzburg
+come from the Restluecken package above), for the monthly products of the
+Braunschweig garages the owner's package `Braunschweig_Monatstarife_2026-10-08.zip` and the evidence directory
+`contipark_configurator_2026-10-08/` (two Contipark captures with their `SHA256SUMS`) in
+`eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/` (not distributed; `--bs-monthly-zip` and
+`--contipark-evidence-dir`), for the three Braunschweig Hauptbahnhof station car parks (zones, spec Amendment G1) the same package and the
+Overpass response `osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json` in that folder (OpenStreetMap, ODbL 1.0;
+`scripts/curation/parking_zones_2026/station_lots.py`, run after the zone assembly), and `scripts/curation/parking_zones_2026/regional_garages.py` (command in the data record
+`parking_garages_2026`). Work and education stays at a garage pay the lower of the metered price and its monthly product per working day (monthly / 21); a garage without a
+published one gets the median of the published products of its own municipality (ASSUMPTION P13, column
+`monthly_imputed_eur`), and the config key `parking_garage_monthly_imputation` (default true; false prices published
+products only) switches that off. With the
+flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
+`org.eqasim.braunschweig.parking`, and the jar must be a v3 build (it contains the class
+`org.eqasim.braunschweig.parking.ParkingOptionPriceBetaCheck`; the tariff model is schema 5, which an older jar refuses):
+`matsim.simulation.run` fails fast when the jar lacks the package or that class or when the run writes no parking outcome
+report. Zone polygon licences: the OSM-derived polygons are under the ODbL 1.0 (keep the
+attribution "(c) OpenStreetMap contributors" and the share-alike terms when you redistribute them; this includes the
+OSM campus grounds that the TU campus zones keep), Braunschweig 1a/1b and the BgA car parks, the detection zones of the
+TU campus zones (the TU requires explicit consent to reuse its graphics, not obtained), the Goslar car parks, the
+Braunlage car parks (the town's tourism coordinates, reuse terms not verified) and the Wolfsburg zones under their own
+terms, see the data record `parking_zones_2026`; the resident districts are under
+their own terms per source (a Braunschweig base map under dl-de/by-2-0, the Goslar service with an open reuse licence not
+verified, the Wolfsburg, Peine, Helmstedt and Wolfenbuettel districts built from the cities' street lists and maps and
+OpenStreetMap street geometry under the ODbL 1.0), see the data record `parking_resident_districts_2026`; the garage dataset holds facts of public operator and city
+pages (licences not verified; six OpenStreetMap-derived garage positions and the lot positions inside OpenStreetMap parking
+areas under the ODbL 1.0), see the data record
+`parking_garages_2026`. The two SrV parking tables (the shares above and
+`braunschweig/srv/srv2023_city_center_parking.csv`, whose garage share is the calibration target of the garage decay
+length and whose paid share is a comparison quantity only; the paid-only garage share of the row `bs_zentrum` of the commute table, columns
+`share_garage_large_lot_paid` and `share_street_paid`, is the calibration target of the commuter decay length) are regenerated with
+`python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir>
+--out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>`, which needs the local SrV 2023 add-on person modules
+(restricted, see above). Provenance, licences and limitations: data records `parking_zones_2026`,
+`parking_tariffs_2026`, `parking_coverage_register_2026`, `parking_resident_districts_2026`, `parking_paid_share_2026`,
+`parking_garages_2026`, `srv2023_commute_parking_by_workplace_class` and `srv2023_city_center_parking`; acquisition
+notes: section F of the checklist below.
 
 The exhaustive acquisition companion (with every note and edge case) is
 [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).

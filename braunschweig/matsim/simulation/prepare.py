@@ -18,11 +18,15 @@ namespace; the class itself is region-neutral (point-in-polygon zone
 attribution against the supplied shapefile).
 """
 
+import datetime
+import decimal
 import gzip
 import hashlib
 import importlib
 import inspect
 import json
+import logging
+import math
 import shutil
 import os.path
 import xml.etree.ElementTree as ET
@@ -32,15 +36,21 @@ from pathlib import Path
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
+from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import plan_check
+from braunschweig.parking import tariff_export
+
+log = logging.getLogger(__name__)
 
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
 #: arguments, so a change there changes the prepared scenario without touching this file
 #: (#327 gate). The three ``braunschweig.data.vrb`` helpers write the VRB zone fare inputs
-#: (ADR-0133) and are hashed unconditionally, like the deferred cordon helpers below. ``plan_check``
-#: runs the plan feasibility check as the last step of ``execute`` (#443).
-_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, plan_check)
+#: (ADR-0133), ``tariff_export`` and ``config_modules`` the parking inputs (issue #249); all are
+#: hashed unconditionally, like the deferred cordon helpers below. ``plan_check`` runs the plan
+#: feasibility check as the last step of ``execute`` (#443).
+_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
+                   config_modules, plan_check)
 
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
@@ -65,14 +75,83 @@ VRB_FARE_DEFAULTS = {
 }
 VRB_ZONE_TOOL = "org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation"
 
-#: The two cordon helpers this stage reaches through FUNCTION-LEVEL imports inside
-#: :func:`_cut_to_cordon`, hashed by dotted NAME because they are not module objects here.
-#: ``spatial.cordon`` decides the cordon POLYGON and the buffer width and
+#: Zone-based parking costs (issue #249, design spec 3.6). Flag-gated; absent/false writes no parking input and
+#: leaves the prepared config as it is.
+PARKING_KEY = "parking_zones_enabled"
+#: Parameters of the parking inputs (tariff model and braunschweigParking module), declared only when the flag is on
+#: (spec 5.5).
+PARKING_DEFAULTS = {
+    # Tariff state the committed tariff table records; it names the tariff model file.
+    "parking_tariff_snapshot_date": "2026-10-14",
+    # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends (the only implemented rule).
+    "parking_terminal_stay_rule": "until_fee_end",
+    # ASSUMPTION L1 (ADR-0139): every priced car stay lasts at least this many minutes (the module parameter
+    # minimumStayMinutes); 0 prices the stays as before L1.
+    "parking_minimum_stay_min": 15,
+    # ASSUMPTION G1 (spec Amendment E3, E5, E6): the decay length lambda in metres of the garage weights exp(-d / lambda),
+    # calibrated by scripts/parking/calibrate_garage_decay.py; 0 switches the garage options off. The default is 0: a
+    # value is set only together with its calibration table (configs/base_bs.yml, parking_garage_decay_m).
+    "parking_garage_decay_m": 0.0,
+    # ASSUMPTION G1-c (spec Amendment H1): the decay length lambda_c in metres of the garage weights of work and education
+    # stays, calibrated by the same script on the SrV commuter share of the class bs_zentrum (configs/base_bs.yml,
+    # parking_garage_decay_commute_m). None = not given: allowed only while parking_garage_decay_m is 0 (the garage options
+    # are off altogether, the model then carries 0); it is never defaulted to lambda or to 0 while the garage options are on,
+    # so the preparation fails when a run sets parking_garage_decay_m and forgets this key. 0 switches the garage options off
+    # for work and education only.
+    "parking_garage_decay_commute_m": None,
+    # ASSUMPTION G2 (spec Amendment E2): the maximum straight-line distance in metres from a destination to a garage
+    # option.
+    "parking_garage_max_distance_m": 1000.0,
+    # ASSUMPTION P13 (spec Amendment F3): a garage without a published monthly product uses the imputed product of its
+    # municipality (median of the published products, computed by the curation) as the monthly product of work and education
+    # stays; false is the sensitivity arm 'published only' (the zones_v2_published_monthly_only arm of the 25 % A/B).
+    "parking_garage_monthly_imputation": True,
+    # ASSUMPTION CF (spec v3 A3): the parking cost of a car trip is multiplied by this factor before it enters the car
+    # utility (the module parameter costFactor). A sensitivity, never calibrated: no local price-response evidence
+    # exists. 1.0 is the model and reproduces v2 bit for bit; the Java ParkingConfigGroup accepts [0, 10].
+    "parking_cost_utility_factor": 1.0,
+    # ASSUMPTION G1-d (spec v3 A2): the money coefficient of the parking option weights exp(-d / lambda - beta * c / 100) in
+    # utility per EUR, written into the tariff model as option_price_beta_u_per_eur. The default is the MAGNITUDE of the car
+    # cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998 (eqasim-java-bs): one money
+    # coefficient for the choice between parking options, without the income or distance elasticity of the person's whole
+    # utility (no local evidence identifies a separate parking price coefficient). The Java startup check
+    # ParkingOptionPriceBetaCheck refuses a tariff model whose value differs from the mode choice by more than 1e-9, 0
+    # included (ADR-0142 decision 2): 0 gives the price-independent weights of v2 in the Python reference and its calibration
+    # sensitivity, not in a MATSim run.
+    "parking_option_price_beta_u_per_eur": 0.310998,
+}
+#: The option price coefficient (utility per EUR) the committed garage decay lengths ``parking_garage_decay_m`` and
+#: ``parking_garage_decay_commute_m`` were CALIBRATED with (spec v3 B5, ASSUMPTION G1-d): the committed calibration table states it
+#: (row ``option_price_beta_u_per_eur``) and tests/test_parking_garage_decay_config.py pins this constant to the table, to
+#: ``PARKING_DEFAULTS`` and to every config. A run that uses another coefficient with garage options on reproduces other garage
+#: shares than the calibrated ones; ``_warn_if_decay_lengths_were_calibrated_at_another_beta`` says so. Move it only together
+#: with a new calibration table.
+PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR = 0.310998
+#: Range of parking_cost_utility_factor the Java ParkingConfigGroup accepts for the module parameter costFactor.
+PARKING_COST_FACTOR_MINIMUM = 0.0
+PARKING_COST_FACTOR_MAXIMUM = 10.0
+#: The factor of the model: no module parameter is written for it (the Java default is the same value).
+PARKING_COST_FACTOR_DEFAULT = 1.0
+#: Largest parking_minimum_stay_min the Java ParkingConfigGroup accepts: the minimum in seconds must fit a Java int.
+PARKING_MINIMUM_STAY_MAXIMUM_MIN = (2 ** 31 - 1) // 60
+#: MATSim config module read by the Java ParkingConfigGroup (eqasim-java-bs, org.eqasim.braunschweig.parking).
+PARKING_MODULE = "braunschweigParking"
+
+#: Modules this stage runs without importing them itself, hashed by dotted NAME because they are
+#: not module objects here. The two cordon helpers are FUNCTION-LEVEL imports inside
+#: :func:`_cut_to_cordon`: ``spatial.cordon`` decides the cordon POLYGON and the buffer width and
 #: ``cordon.extent`` writes the extent file the cutter is driven by, so both shape the cut
 #: scenario. Under the default (cross-cordon off) they are never imported at run time, but a
 #: token must not depend on a flag: hashing them unconditionally is what makes the cached
 #: scenario of a cordon RUN trustworthy, and it costs nothing when the flag is off.
 _DEFERRED_HELPER_MODULE_NAMES = (
+    # ``tariff_export`` turns every tariff row into a ``cost.ZoneTariff`` and writes its fields as the zone
+    # entry of the parking tariff model, so the dataclass decides the model's content and its validation; it
+    # converts every priced garage into a ``cost.GarageTariff`` through ``parking.garages`` (the tier and band
+    # parsers), which load ``parking.zones``.
+    "braunschweig.parking.cost",
+    "braunschweig.parking.garages",
+    "braunschweig.parking.zones",
     "braunschweig.data.cordon.extent",
     "braunschweig.data.spatial.cordon",
     # The rest of this stage's import closure: modules its helpers import, whose code this
@@ -102,6 +181,8 @@ def validate(context):
         digest.update(inspect.getsource(module).encode("utf-8"))
     # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
     # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
+    # The parking inputs are not read here: they arrive through the declared braunschweig.parking.zones_stage,
+    # whose own token hashes them and whose change synpp propagates to this stage.
     for path in fare_model_export.committed_input_paths():
         digest.update(fare_model_export.content_sha256(path).encode("ascii"))
     for module_name in _DEFERRED_HELPER_MODULE_NAMES:
@@ -179,6 +260,80 @@ def configure(context):
     context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
+    # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
+    # car cost model reads. OFF declares nothing else and writes nothing.
+    context.config(PARKING_KEY, False)
+    if context.config(PARKING_KEY):
+        context.stage("braunschweig.parking.zones_stage")
+        for key, default in PARKING_DEFAULTS.items():
+            context.config(key, default)
+        _check_parking_parameters(context.config("parking_tariff_snapshot_date"),
+                                  context.config("parking_terminal_stay_rule"),
+                                  context.config("parking_minimum_stay_min"),
+                                  context.config("parking_garage_decay_m"),
+                                  context.config("parking_garage_max_distance_m"),
+                                  context.config("parking_garage_monthly_imputation"),
+                                  context.config("parking_garage_decay_commute_m"),
+                                  context.config("parking_cost_utility_factor"),
+                                  context.config("parking_option_price_beta_u_per_eur"))
+
+
+def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min, garage_decay_m=0.0,
+                              garage_max_distance_m=1000.0, garage_monthly_imputation=True, garage_decay_commute_m=None,
+                              cost_factor=1.0, option_price_beta_u_per_eur=PARKING_DEFAULTS[
+                                  "parking_option_price_beta_u_per_eur"]):
+    """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
+
+    The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
+    reads the module only when the run starts; a typo or an unquoted YAML date (which arrives as ``datetime.date``,
+    not as text) must not surface only then. The date is checked by the validator the export uses,
+    ``tariff_export.check_snapshot_date``, and the message names the fix that matches the mistake: quotes for a YAML
+    date, the ISO format for text in another format. The minimum stay (L1) must be a whole number of minutes in
+    ``[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]``, the range the Java side reads from plain digits; a bool is rejected
+    although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute. The garage decay
+    length (G1; 0 = garage options off) and the commuter decay length (G1-c; 0 = their garage options off) must be finite
+    numbers of metres >= 0 and the maximum garage distance (G2) a finite number of metres > 0, all numbers and no bool
+    (``tariff_export.check_garage_parameters``); the commuter decay is required as soon as the decay length is above 0. The
+    monthly imputation switch (ASSUMPTION P13) must be a YAML boolean: a text such as "false" would be truthy and silently keep
+    the imputation on. The cost factor (ASSUMPTION CF) must be a finite number, no bool, in the Java range
+    ``[PARKING_COST_FACTOR_MINIMUM, PARKING_COST_FACTOR_MAXIMUM]``. The money coefficient of the option weights (ASSUMPTION
+    G1-d, spec v3 A2) must be a finite number >= 0, no bool (``tariff_export.check_option_price_beta``, the validator of ``cost``).
+    """
+    if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
+        raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
+                         f"{list(tariff_export.SUPPORTED_TERMINAL_STAY_RULES)}")
+    if (not isinstance(minimum_stay_min, int) or isinstance(minimum_stay_min, bool)
+            or not 0 <= minimum_stay_min <= PARKING_MINIMUM_STAY_MAXIMUM_MIN):
+        raise ValueError(f"parking_minimum_stay_min must be a whole number of minutes in "
+                         f"[0, {PARKING_MINIMUM_STAY_MAXIMUM_MIN}] (rule L1, ADR-0139; 0 prices the stays as before "
+                         f"L1), got {minimum_stay_min!r}")
+    try:
+        tariff_export.check_garage_parameters(garage_decay_m, garage_max_distance_m, garage_decay_commute_m)
+    except ValueError as error:
+        raise ValueError(f"{error} (config keys parking_garage_decay_m, parking_garage_decay_commute_m and "
+                         "parking_garage_max_distance_m)") from error
+    if not isinstance(garage_monthly_imputation, bool):
+        raise ValueError(f"parking_garage_monthly_imputation must be true or false (a YAML boolean), got "
+                         f"{garage_monthly_imputation!r}")
+    if (isinstance(cost_factor, bool) or not isinstance(cost_factor, (int, float)) or not math.isfinite(cost_factor)
+            or not PARKING_COST_FACTOR_MINIMUM <= cost_factor <= PARKING_COST_FACTOR_MAXIMUM):
+        raise ValueError(f"parking_cost_utility_factor must be a finite number in [{PARKING_COST_FACTOR_MINIMUM:g}, "
+                         f"{PARKING_COST_FACTOR_MAXIMUM:g}] (spec v3 A3, ASSUMPTION CF; 1.0 is the model), got "
+                         f"{cost_factor!r}")
+    try:
+        tariff_export.check_option_price_beta(option_price_beta_u_per_eur)
+    except ValueError as error:
+        raise ValueError(f"{error} (config key parking_option_price_beta_u_per_eur, spec v3 A2, ASSUMPTION G1-d)") from error
+    example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
+    try:
+        tariff_export.check_snapshot_date(snapshot_date)
+    except ValueError as error:
+        if isinstance(snapshot_date, datetime.date):  # datetime.datetime included
+            fix = f"YAML read the unquoted value as a date; quote it, e.g. {example!r}"
+        else:
+            fix = f"use the ISO form, e.g. {example!r}"
+        raise ValueError(f"parking_tariff_snapshot_date: {error}; {fix}") from error
+
 
 def execute(context):
     result = delegate.execute(context)
@@ -211,6 +366,10 @@ def execute(context):
     # and the freight injection.
     if context.config(VRB_FARES_KEY):
         _write_vrb_fare_inputs(context, result)
+
+    # The parking module goes into the FINAL config too, and the tariff model next to it: written last.
+    if context.config(PARKING_KEY):
+        _write_parking_inputs(context, result)
 
     # The check reads the FINAL files (after the cut, the freight injection and the fare inputs).
     if context.config(plan_check.KEY_ENABLED):
@@ -307,6 +466,100 @@ def _write_vrb_fare_inputs(context, config_name):
         raise RuntimeError("[vrb-fares] only %.2f%% of the final schedule's stop facilities carry a VRB zone "
                            "(minimum %.2f%%); check the CRS of the schedule and the zone polygons and the zone "
                            "field of the polygon layer" % (100 * facility_coverage, 100 * minimum))
+
+
+def _warn_if_decay_lengths_were_calibrated_at_another_beta(garage_decay_m, garage_decay_commute_m,
+                                                           option_price_beta_u_per_eur):
+    """Warn when garage options act with an option price coefficient other than the one the decay lengths were calibrated with.
+
+    The committed decay lengths (``parking_garage_decay_m``, ``parking_garage_decay_commute_m``) were calibrated with the
+    price term at ``PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR`` (spec v3 B5; the calibration table
+    ``parking_garage_decay_calibration_2026.csv`` states it and a test pins the constant to it). With garage options on (a decay
+    length above 0) and another ``parking_option_price_beta_u_per_eur`` (0 included: the weights of v2) the realised garage
+    shares differ from the calibrated ones. No warning at the calibrated coefficient or with the garage options off. Never
+    raises.
+    """
+    options_on = garage_decay_m > 0 or (garage_decay_commute_m or 0) > 0
+    if options_on and option_price_beta_u_per_eur != PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR:
+        log.warning("[parking-garages] the garage decay lengths were calibrated with parking_option_price_beta_u_per_eur %g "
+                    "(calibration record parking_garage_decay_calibration_2026, scripts/parking/calibrate_garage_decay.py) but "
+                    "this run uses %g, so the garage shares they reproduce differ from the calibrated ones: recalibrate at "
+                    "the beta of the run or restore the calibrated beta. Decay lengths: parking_garage_decay_m %g m, "
+                    "parking_garage_decay_commute_m %s m.",
+                    PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR, option_price_beta_u_per_eur, garage_decay_m,
+                    "%g" % garage_decay_commute_m if garage_decay_commute_m is not None else "not given")
+
+
+def _write_parking_inputs(context, config_name):
+    """Tariff model, braunschweigParking config module and an inputs report for the zone-based parking costs.
+
+    The tariff table of ``braunschweig.parking.zones_stage`` (spec 5.3: euros, decimal hours) becomes the tariff
+    model JSON (spec 5.4: integer cents and seconds) next to ``config_name``; the model also lists the ids of the
+    release's resident parking districts (spec Amendment C3), the ids a plan may carry. The module names that file
+    without a directory, so the Java side resolves it relative to the config wherever the scenario is moved, and the
+    report lists every file ``matsim.output`` must copy with the scenario: the model and the report itself.
+    The minimum stay (rule L1) is a run parameter, not a tariff property: it travels as the module parameter
+    ``minimumStayMinutes`` (plain digits, the form the Java side reads) and is recorded in the report, while the
+    tariff model stays as it was. An identical module already in the config is kept, a conflicting one raises
+    (``config_modules.write_module``); the report is written last, so it exists only when the files it lists do.
+    """
+    root = Path(context.path())
+    prefix = context.config("output_prefix")
+    snapshot_date = context.config("parking_tariff_snapshot_date")
+    terminal_stay_rule = context.config("parking_terminal_stay_rule")
+    minimum_stay_min = context.config("parking_minimum_stay_min")
+    release = context.stage("braunschweig.parking.zones_stage")
+    garage_decay_m = context.config("parking_garage_decay_m")
+    garage_decay_commute_m = context.config("parking_garage_decay_commute_m")
+    garage_max_distance_m = context.config("parking_garage_max_distance_m")
+    garage_monthly_imputation = context.config("parking_garage_monthly_imputation")
+    cost_factor = float(context.config("parking_cost_utility_factor"))
+    option_price_beta_u_per_eur = float(context.config("parking_option_price_beta_u_per_eur"))
+    _warn_if_decay_lengths_were_calibrated_at_another_beta(garage_decay_m, garage_decay_commute_m,
+                                                           option_price_beta_u_per_eur)
+    model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
+                                             sources=release["sources"], terminal_stay_rule=terminal_stay_rule,
+                                             resident_districts=release["districts"], garages=release["garages"],
+                                             garage_decay_m=garage_decay_m, garage_decay_commute_m=garage_decay_commute_m,
+                                             garage_max_distance_m=garage_max_distance_m,
+                                             garage_monthly_imputation=garage_monthly_imputation,
+                                             option_price_beta_u_per_eur=option_price_beta_u_per_eur)
+    monthly_products = tariff_export.monthly_product_summary(release["garages"], garage_monthly_imputation)
+    print("[parking-garages] monthly products of the exported garages (parking_garage_monthly_imputation=%s, "
+          "ASSUMPTION P13): %s" % (garage_monthly_imputation, tariff_export.monthly_product_text(monthly_products)))
+    tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
+    report_name = tariff_export.inputs_report_name(prefix)
+    tariff_export.write_tariff_model(root / tariffs_name, model)
+    module_parameters = {"enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule,
+                         "minimumStayMinutes": str(int(minimum_stay_min))}
+    if cost_factor != PARKING_COST_FACTOR_DEFAULT:
+        # The model value 1.0 writes nothing: the Java default applies and the config stays byte-identical to v2.
+        module_parameters["costFactor"] = format(decimal.Decimal(repr(cost_factor)), "f")
+    config_modules.write_module(root / config_name, PARKING_MODULE, module_parameters)
+    zone_types = dict(sorted(Counter(zone["zone_type"] for zone in model["zones"].values()).items()))
+    report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
+              "resident_districts": len(model["resident_districts"]), "zone_types": zone_types,
+              "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
+              "garages_listed": len(release["garages"]), "garages_priced": len(model["garages"]),
+              "garage_decay_m": model["garage_decay_m"], "garage_decay_commute_m": model["garage_decay_commute_m"],
+              "garage_max_distance_m": model["garage_max_distance_m"],
+              "option_price_beta_u_per_eur": model["option_price_beta_u_per_eur"],
+              "garage_monthly_imputation": garage_monthly_imputation, "parking_cost_utility_factor": cost_factor,
+              "garage_monthly_products": monthly_products,
+              "sources": model["sources"]}
+    tariff_export.write_json_document(root / report_name, report)
+    print("[parking] prepared inputs: %d zones (%s) and %d resident districts, terminal stay rule %s, minimum stay "
+          "%d min, cost factor %g, option price coefficient %g per EUR; garages priced %d of %d listed, decay length %s m (%s), "
+          "commuter decay length %s m (%s), maximum distance %s m; tariff model %s, "
+          "module %s in %s, report %s" % (
+              len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
+              len(model["resident_districts"]), terminal_stay_rule, minimum_stay_min, cost_factor,
+              model["option_price_beta_u_per_eur"], len(model["garages"]),
+              len(release["garages"]), model["garage_decay_m"],
+              "garage options ON" if model["garage_decay_m"] > 0 else "garage options OFF",
+              "%g" % model["garage_decay_commute_m"],
+              "commuter garage options ON" if model["garage_decay_commute_m"] > 0 else "commuter garage options OFF",
+              model["garage_max_distance_m"], tariffs_name, PARKING_MODULE, config_name, report_name))
 
 
 def _cut_to_cordon(context):

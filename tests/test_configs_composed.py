@@ -33,7 +33,9 @@ FEATURE_FLAGS_ON = [
     # config again -- the defect class ADR-0078/#253 removed.
     "fleet_ev_income_tilt", "fleet_euro6_substage", "fleet_wohnmobile_age_tilt",
     "fleet_gemeinde_bev_composition_tilt",
-    "cordon_enabled", "enable_urban_parking", "remode_carless_car_legs",
+    # Zone-based parking costs replace the legacy 8 km ring (ADR-0139, issue #436);
+    # enable_urban_parking is pinned OFF below (test_legacy_parking_ring_off_everywhere).
+    "cordon_enabled", "parking_zones_enabled", "remode_carless_car_legs",
     "braunschweig.home_density_weighting",
     "braunschweig.population.popsim.income_spatial_tilt",
     "braunschweig.population.popsim.income_kreis_control",
@@ -102,6 +104,18 @@ def test_all_feature_flags_on_everywhere(overlay):
     # with a logged fallback to Gemeinde-only when the CSV or the home geometry is
     # missing, which is what makes arming it safe.
     assert cfg["fleet_electric_calibration"] == "kreis_mix_gemeinde_grid_bev_tilt"
+
+
+@pytest.mark.parametrize("overlay", ALL_OVERLAYS)
+def test_legacy_parking_ring_off_everywhere(overlay):
+    """The zone tariffs (parking_zones_enabled, pinned ON in FEATURE_FLAGS_ON) and the legacy
+    ring fees price the same stays, so the plans writer rejects both flags on (ADR-0139).
+    Pinned here so a scale can never re-enable the ring next to the zones: that would only
+    fail at configure time of a run."""
+    cfg = _cfg(overlay)["config"]
+    assert cfg.get("enable_urban_parking") is False, (
+        f"legacy 8 km parking ring not OFF in composed {overlay}; it is mutually exclusive "
+        "with parking_zones_enabled")
 
 
 @pytest.mark.parametrize("overlay", ALL_OVERLAYS)

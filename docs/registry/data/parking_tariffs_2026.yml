@@ -1,0 +1,410 @@
+dataset: parking_tariffs_2026
+title: Parking tariffs of the ZGB parking cost zones, one sourced row per zone (September 2026)
+inventory_id: null
+provider: >-
+  Own transcription (issue #249) of public tariff publications: Stadt Braunschweig (ParkGO 2022 as amended
+  2025-11-04, BgA Entgeltordnung 2022, parkraummanagement.php, car-park directory of the city map), TU
+  Braunschweig (Parkordnung Stand 2026-06-03, GB3 pages), Stadt Wolfsburg (the Geoviewer theme Parken of the
+  owner-supplied package of 2026-10-01 and its Parkgebuehrenordnung of 2016 for the billing unit), Stadt Salzgitter,
+  Stadt Peine, Stadt Goslar (ParkGO 2025-06-24 and the announced 2026 fees), Stadtbetriebe Wolfenbuettel,
+  Parkraum- und Schwimmbadgesellschaft Stadt Gifhorn, Stadt Helmstedt (Gebuehrenordnung 2024; its brochure 'Parken in
+  Helmstedt' of 12/2024 for the fee window, spec Amendment D1); since spec Amendment D
+  (2026-10-07) the owner-supplied regional evidence package with the tariff sources of Stadt Bad Harzburg (ParkGO 2021
+  and tourism page), Stadt Seesen (ParkGO 2017 and information page), Stadt Braunlage (ParkGO 2018 and the tariff page
+  of the car park Hexenritt) and the service page of Stadt Goslar (three car parks at 1 EUR/h)
+vintage: >-
+  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of the primary source of a row; spec v3 B1 moved
+  pe_innenstadt, wf_innenstadt and sz_lebenstedt to 2026-10-14, see the last paragraph of the field notes); the three Wolfsburg rows
+  (spec Amendment C2) come from the city's Geoviewer layer of Stand 12/2024, retrieved 2026-10-01. valid_from per
+  row is the first date the source confirms (the retrieval date where the start is not published). The 13 rows of spec
+  Amendment D (the BgA car park Willy-Brandt-Platz, the campus Volkmaroder Strasse, three Goslar, five Bad Harzburg,
+  one Seesen and two Braunlage car parks) rest on sources retrieved 2026-09-29 to 2026-10-07 (source_date per row). The
+  commuter products (Task 4b, spec Amendments A4 and D2) rest on the ParkGO of Braunschweig (as amended 2025-11-04)
+  and the TU Parkordnung (Stand 2026-06-03), both retrieved 2026-09-29; the fee windows of Helmstedt and Goslar zone 1
+  (spec Amendment D1) on the Helmstedt brochure of 12/2024 and the Goslar service page, both of the owner-supplied
+  package retrieved 2026-10-07 (source_date stays the retrieval date of the row's primary source).
+geography: The 55 zones of parking_zones_2026 (eleven ZGB municipalities)
+crs: null
+roles:
+- supply_input
+- reference_table
+used_by:
+- braunschweig.parking.zones_stage
+acquisition:
+  method: committed
+  source: >-
+    https://www.braunschweig.de/politik_verwaltung/politik/stadtrecht/2_08_Parkgebuehrenordnung_2025.pdf and the
+    other source_url values of the table (one primary source per row, secondary sources in the notes column)
+  script: null
+  notes: >-
+    Hand transcription on 2026-09-29; every page and document was retrieved on that day (none taken from the
+    2026-09-21 review list unverified). SHA-256 of the retrieved documents (kept locally under
+    eqasim-data/data/braunschweig/parking/raw_sources/, gitignored): ParkGO Braunschweig 59957701...,
+    BgA Entgeltordnung 50444731..., TU Parkordnung 037bb432..., ParkGO Goslar c3008752..., Helmstedt
+    Gebuehrenordnung 89622fb2..., city car-park directory parkplaetze.geojson 861bc290.... The file's '#'
+    header states the cost semantics of design spec section 3.2 and the assumptions Z1, D1, T1, M1, C1, R1,
+    H1, F1, S1 (spec section 7), R2 and R2-a (spec Amendment C3; ruling R-T1e-a) and ASSUMPTION C-b (spec
+    Amendment C2; ruling R-T1d-a) and, since spec Amendment D, C-a, M2, D3-a and D3-b and, since Task 4b, P1 and P2 (C1 now
+    names the commuter product).
+    The three Wolfsburg rows wob_tarifzone_1, wob_tarifzone_2 and wob_tarifzone_3 (spec Amendment C2, 2026-10-01)
+    replace the row wob_innenstadt. Source per ruling R-C1: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand
+    12/2024); open reuse licence not verified; used by owner decision 2026-10-01. The values come from the attributes
+    of the street sections of each tariff zone (layer digitalisierung_handyparkzonen_a of the owner-supplied package
+    Wolfsburg_Parkdaten.zip, SHA-256 in the data record parking_zones_2026), derived by
+    scripts/curation/parking_zones_2026/municipal_zones.py tariff_zone_evidence and checked against the rows by
+    assemble_parking_zones.py --municipal-tariffs: the one price of a tariff zone (attribute Preis); the weekday fee
+    window of most of its sections (S1; the interval of the attribute Kostenpflichtige Parkzeit without a day read as
+    Monday to Friday, the Saturday interval not modelled, D1); a maximum stay only where every section states the same
+    one (no tariff zone does); the short-stay flag (Kurzzeitparken) recorded in the notes only. The billing unit rests
+    on ASSUMPTION C-b: the started half hour of the city's Parkgebuehrenordnung (sec. 1(2) of the version of
+    2016-03-16, Amtsblatt Nr. 12 of 2016-03-24, read online on 2026-10-01; superseded), because the current version
+    of 2020-07-21 linked on the city's Ortsrecht page returned HTTP 404 on 2026-10-01 and the city's Handyparken page
+    only states that phone parking costs the same as the ticket machine. No first period, day cap or free period is
+    published for the street sections; the values of the v1 row came from the Aufbau-Gesellschaft garage Tiefgarage
+    Rathaus and cover no street section, so none was carried over.
+    Spec Amendment D (2026-10-07; controller rulings R-4a-1 to R-4a-8 and R-D3-a) adds 13 rows and removes two. Added:
+    the BgA car park bs_bga_willy_brandt_platz (BgA Entgeltordnung sec. 1(1), annex 6, sec. 2: 0.90 EUR per 30 min,
+    minute-exact, no maximum stay, no day ticket; the package rule bs_bga_willy_brandt_platz_1 carries the same values;
+    the fee window is ASSUMPTION F1, Mo-Sa 9-20 as at the directory-listed BgA car parks, because the city's car-park
+    directory has no entry for the lot; resident_permits_valid false, ASSUMPTION R2-a); the TU campus
+    tu_campus_volkmaroder_strasse (the TU Parkordnung values of the other campus rows; the GB3 page states 'Ab 1.
+    Oktober 2026: Campus Forschungsflughafen, Standort Volkmaroder Strasse', so valid_from is 2026-10-01); the three
+    Goslar car parks at 1 EUR/h gs_parkplatz_baeringerstrasse, gs_parkplatz_klubgartenstrasse_zob and
+    gs_parkplatz_glockengiesserstrasse (the service page meingoslar.de/service of 2026-10-07: 1 EUR per hour,
+    Baeringerstrasse Mo-Sa 10-18, Klubgartenstrasse/ZOB Mo-Fr 10-16, Glockengiesserstrasse Mo-Fr 10-18, the Saturday
+    parts not modelled, D1; the billing unit is ASSUMPTION D3-a, the started half hour of the ParkGO of Goslar of
+    2025-06-24 sec. 1(2), because the page states none; the permit flag follows ASSUMPTION R2-a: the service lists the
+    Baeringerstrasse lot under 'Bewohnerparken Bereich A, C' and the Glockengiesserstrasse lot under 'Bereich H', so
+    resident permits are valid there, the empty default of the zone type, and the notes of both rows name R2-a;
+    for the ZOB car park the service states no resident regime, so resident_permits_valid is false as for the BgA
+    car parks; the ZOB lies in no resident district, so R2 cannot act there today); the five Bad Harzburg car parks bh_sole_therme, bh_kurpark,
+    bh_grossparkplatz, bh_burgberg and bh_berliner_platz (ParkGO of the Stadt Bad Harzburg, Ratsbeschluss 2020-12-08, in
+    force 2021-01-01, sec. 2(1): at most 0.50 EUR per started half hour; the tourism page names the car parks as paid
+    and publishes no price, so the ceiling is taken as the rate at every car park, ASSUMPTION D3-b (the package marks
+    this rule, bh_ordinary_ceiling, a legal ceiling with the scope 'signed fee-paying areas within the ParkGO, no
+    municipality-wide flat tariff', as not preferred for current use, status prior_snapshot, and ruling R-4a-3 uses it
+    as the rate; the OSM tag charge='0.50 EUR/30 min' at four of the five car parks, all but Berliner Platz,
+    corroborates it, crowd-sourced and no official source; the notes of the rows say so); no current source gives the
+    fee window, so ASSUMPTION F1 8-18 h; the maximum stays of 6 h and 10 h are not modelled, ASSUMPTION M2; the free
+    condition 'stay > 15 min' that the OSM tag of the Sole-Therme states is not modelled either, and its note says
+    so);
+    se_am_markt (ParkGO of the Stadt Seesen, Ratsbeschluss 2017-03-22: 0.10 EUR per started 10 min, Mo-Fr 8-18 h, the
+    Saturday part not modelled; the maximum stay is 6 h in the ordinance and 10 h on the information page, so none is
+    modelled, ASSUMPTION M2); and the two Braunlage car parks br_hexenritt (the published total-stay bands of the
+    official tariff page, reproduced exactly by free up to 30 min, a first period of 120 min at 2.50 EUR, 2.50 EUR (1.25
+    EUR/h) per started 120 min and at most 10.00 EUR per day; regional_zones._band_evidence refuses a band table it
+    cannot reproduce exactly) and br_wurmberg (ParkGO of Braunlage, 0.50 EUR per started half hour; effective
+    2018-01-10), both with the fee window of ASSUMPTION F1, 9-18 h, because no charging hours are published. The values
+    are those of the package's tariff_rules.json (derived by regional_zones.tariff_evidence) and are checked against the
+    rows by assemble_parking_zones.py --regional-tariffs: every number of a row is its rule's value or an assumption
+    named in the row, and the check fails on any other (the notes must name C-a, D3-a at the Goslar lots, D3-b at the
+    Bad Harzburg car parks, M2 where a source states a maximum stay (Bad Harzburg, Seesen), R2-a at the Goslar lots
+    and the flagged rows and F1 for an assumed window; the notes of the Bad Harzburg rows must say that the package
+    marks the ceiling rule not preferred and quote the OSM charge tag or say that there is none; the permit flag
+    must be false on exactly the two new rows that state it, bs_bga_willy_brandt_platz and
+    gs_parkplatz_klubgartenstrasse_zob (RESIDENT_PERMITS_NOT_VALID) and empty on every other new row; the committed-data
+    test test_committed_bga_car_parks_state_that_resident_permits_are_not_valid pins all six stated rows of the table,
+    the five BgA car parks and the ZOB car park, and an empty cell on every other). Removed:
+    bs_bga_kannengiesserstrasse (a pocket park since April
+    2026) and tu_international_house (merged into tu_campus_ost_langer_kamp, whose row is unchanged). Workplace class
+    (SrV 2023): the rows of the municipalities of Landkreis Goslar take the county key 03153; bs_bga_willy_brandt_platz
+    and tu_campus_volkmaroder_strasse take bs_outer by the location of the site relative to the SrV Oberbezirke (the
+    Hauptbahnhof forecourt lies in the Unterbezirk Hauptbahnhof of Oberbezirk 4, Stadtteilring; the campus at
+    Volkmaroder Strasse in the Stadtteilring), a reading of the location and an ASSUMPTION, since no Unterbezirk polygon
+    is available; it only sets the free-parking share of the work and education stays there (share_free_total 0.9465 for
+    bs_outer, against 0.939 for bs_innenbereich and 0.7938 for bs_zentrum; a campus row uses the member product, so the
+    class has no effect there). The header of the table states the assumptions C-a (now also for car parks and source
+    points), M2, D3-a and D3-b next to the earlier ones.
+    Task 4b (2026-10-07; spec Amendments A4, D1, D2, D4 and E8, issue #436) fills the optional column
+    commuter_day_eur, inserted before resident_permits_valid, on bs_zone_ib (the 30-day ticket of 79.00 EUR, ParkGO
+    sec. 1(2), over 21 working days: 3.76 EUR) and on the six campus rows (the month ticket of 10 EUR for university
+    members, Parkordnung sec. 6(2): 0.48 EUR, which competes with the 3.50 EUR member day ticket, A4); ASSUMPTION P2,
+    rounded to the cent. The 7-day ticket of zone Ib (29.00 EUR) is no monthly or 30-day product and stays unused. Every
+    monthly or 30-day product that the sources publish, used or not and with the reason, is a record of the QA table
+    parking_garages_2026_qa.csv (data record parking_garages_2026); its validator checks commuter_day_eur against the
+    used product. Spec Amendment F (Task 4f) changes no row of this table: the monthly products of the GARAGES (the published
+    Braunschweig Steinstrasse and Wallstrasse products and the imputed products of ASSUMPTION P13) are columns of the garage
+    dataset and never a commuter_day_eur of a zone row; the commuter price at a garage is min(metered, monthly / 21) of the
+    garage option (ADR-0140 decision 10). The fee window of he_innenstadt is 9-16 h (the city brochure 'Parken in Helmstedt' of 12/2024,
+    retrieved 2026-10-07: Mo-Fr 09:00-16:00 at 10 of its 11 places at 0.60 EUR per started half hour, Mo-Fr 09:00-18:00
+    at the Wallplatz; the package's daten/helmstedt_gebuehrenzeiten.json, source id he_parken, calls it many charged
+    city spaces with per-place exceptions) and that of gs_altstadt_zone1 10-18 h (the Goslar service page
+    meingoslar.de/service, retrieved 2026-10-07: the car park Kornstrasse and the other 2 EUR/h car parks that the page
+    lists state 10:00-18:00); both rows are municipal_page now and no longer carry ASSUMPTION F1 (the note of the Goslar
+    row states that the street machines of zone 1 showing the same times is an inference, because the page lists car
+    parks and no meters). The garage columns of the loaded layout stay absent from the table, i.e. empty on every row
+    (spec Amendment E8: garages enter through the dataset parking_garages_2026), and search_time_min stays empty on
+    every row (decision D4). The Ia note that said the resident permits were not modelled now points to rule R2 and the
+    district layer. Q3 and Q4 (fill cap and tagging completeness of lever 1) are zone-geometry rules: no tariff value rests
+    on them, they are recorded in the data record parking_zones_2026 and its QA table. P3 (a night tariff that is no per-unit
+    rate is not charged; no garage rests on it since the supplement of 2026-10-07) and its siblings P4 to P8, P10 (a free
+    period read as a grace period), P11 (the best available secondary evidence where no operator tariff is published) and P12
+    (the municipal free default of a Wolfsburg car park without any fee evidence outside every published tariff area;
+    WITHDRAWN by spec Amendment I5, no row of the garage dataset rests on it) are
+    assumptions of the garage dataset, not of this table: they are named in each garage's notes and in the data record
+    parking_garages_2026.
+    Spec Amendment G1 (Task 4g, 2026-10-08): three rows bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west for the DB
+    BahnPark station car parks of the Braunschweig Hauptbahnhof, appended by
+    scripts/curation/parking_zones_2026/station_lots.py (which also writes their zones) and checked by its
+    check_tariff_rows against the evidence. Every number is READ, never typed, from the text of the Contipark location
+    pages in the owner's package Braunschweig_Monatstarife_2026-10-08.zip (SHA-256
+    72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81; members evidence/contipark/p1.txt, p2.txt, p3.txt):
+    the specification names the label of the line, the step reads its amount and stops when the line is missing,
+    duplicated or contradicted: P1 '1 Stunde' 2.50 EUR (billing_unit_min 60), '1 Tag' 17.00 EUR (daily_cap_eur), '1 Monat
+    fuer Stellplatzmieter' 120.00 EUR, so commuter_day_eur 5.71 (120 / 21 = 5.714); P2 and P3 '30 Minuten' 1.10 EUR
+    (hourly_rate_eur 2.20, billing_unit_min 30, the line '1 Stunde' 2.20 EUR must be twice it), '1 Tag' 11.00 EUR, monthly
+    74.00 EUR, so 3.52 (74 / 21 = 3.524). The same three amounts of each lot must stand in the DB BahnPark sheet of
+    2026-05-29 (member evidence/contipark/db_bahnpark_8000049.txt) and the monthly amount must be the cheapest publicly
+    purchasable monthly product of the package's rules (BS_DB_P1_O01, BS_DB_P2_O02, BS_DB_P3_O02), else the step stops.
+    Fee window 0-24 h (the pages state the car parks open 00:00-24:00 and a fee table without a time limit; a window read
+    from the opening hours of an operator page is no ordinance or signage statement, so fee_window_source is 'assumption'
+    and the note names ASSUMPTION F1, ruling R-4g-2, the situation of P5 at the garages), no maximum stay, no
+    long-stay product, resident_permits_valid false (ASSUMPTION R2-a), workplace_class bs_outer (ASSUMPTION G-b: the
+    station lies in the SrV Unterbezirk Hauptbahnhof, as the BgA row at the forecourt; a reading of the location).
+    ASSUMPTION G-a: the amount is billed per started unit and the '1 Tag' amount is the daily maximum per stay; ASSUMPTION
+    C-a for the 50 m zone. Named and NOT modelled: the Kiss&Ride tariff of P1 (0.80 EUR for 15 min), its evening tariff
+    (18:00 to 02:00, at most 5.00 EUR on the first day), the BahnCard and Pcard discounts, the weekly (55.00 EUR) and
+    machine monthly (78.00 EUR) products of P2 and P3 and the reserved-space products (160.00, 130.00 EUR).
+    Spec v3 B1 (2026-10-14) supersedes the statements above where they differ (the maximum stays of Bad Harzburg and
+    Seesen, the window sources of the Bad Harzburg and station rows, assumption M2, Ia, Peine and Wolfenbuettel): see the
+    last paragraph of the field notes. Its inputs are read from the pinned packages as evidence, by source id; no script
+    of a package was run and nothing was extracted into the repository.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
+  committed: true
+  local_only: false
+  notes: Force-added (git add -f); ASCII, LF line endings, '#' header lines skipped by braunschweig.parking.zones.load_tariffs.
+verification:
+  verifier_entry: D6
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    Listed as D6 (matsim_only, committed) in scripts/verify_braunschweig_inputs.py; read by
+    braunschweig.parking.zones_stage when parking_zones_enabled is true (configs/base_bs.yml since
+    ADR-0139).
+    braunschweig.parking.zones.validate_tariffs (allow_fixture_marker=False) checks types, required and
+    forbidden fields per zone type, paired fields, fee windows, workplace class against the county of
+    municipality_ags, ISO dates and provenance; cross_validate checks one row per polygon; the validator also
+    converts every row with braunschweig.parking.tariff_export.tariff_row_to_zone (the tariff-model contract).
+    tests/test_parking_zones.py runs the validator over the committed files; since spec Amendment D
+    test_committed_d3_sites_are_single_site_zones_with_sourced_tariffs (rate, billing unit, fee window and window
+    source of each single site, the empty maximum stay, permit flag and search time, the Hexenritt bands, ASSUMPTION F1
+    in exactly the assumption rows) and test_committed_braunschweig_zones_follow_spec_amendment_d1 pin the new rows; since
+    Task 4b test_committed_commuter_products_follow_spec_amendment_d2 (the seven commuter values against the monthly
+    products over 21 working days, no commuter value elsewhere, the campus day tickets kept, no garage product and no
+    search time) and test_committed_fee_windows_of_helmstedt_and_goslar_zone_1_follow_spec_amendment_d1 (the two
+    windows, no ASSUMPTION F1 in their notes, the window source counts and the assumption rows by id; since spec v3 B1
+    municipal_page 22, operator_page 3, assumption 8 and ordinance 7: the five Bad Harzburg and the three station rows
+    left the assumption rows; the station rows say operator_page, ruling R-B-4).
+    tests/test_parking_zone_tariff_corrections_v3.py pins every cell that Task B1 changed with its source id (the
+    changed cells per row against the table of the base commit a9b640f2, every other row byte-equal in all columns, the
+    EV columns, the header assumptions M3, W-max and E2, the Echternplatz row of the coverage register).
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: >-
+    public tariff publications (facts), attribution to the municipalities, their companies and TU Braunschweig; the
+    Wolfsburg rows: Stadt Wolfsburg, Geoviewer Themenkarte Parken (Stand 12/2024); open reuse licence not verified;
+    used by owner decision 2026-10-01; the rows of spec Amendment D: the ordinances of Bad Harzburg, Seesen, Braunlage
+    and Goslar (official texts) and the service and tourism pages of the towns and the Helmstedt city brochure (facts,
+    attribution; the licence of the pages and the brochure is not verified), used by owner decision 2026-10-07
+  restricted: false
+  redistribution: allowed
+limitations: >-
+  Bad Harzburg (the bh_* zones) and Seesen (se_am_markt) lie outside the eight towns of the garage and lot inventory
+  (research package Grossparkplaetze_ZGB8), so the model has no garage or lot there; this says nothing about whether car parks
+  exist there. A stay above the maximum stay of these zones therefore has no option left: it is priced at the metered street
+  rate with the maximum ignored and is flagged NO_FEASIBLE_OPTION in the outcome report (expected by construction, not an
+  error). The Wolfsburg area zones 730 to 734 have only one or two options.
+  Assumption-labelled fee windows (fee_window_source assumption, F1): bs_bga_an_der_martinikirche,
+  bs_bga_jodutenstrasse_klint and bs_bga_willy_brandt_platz (Mo-Sa 9-20 as at the directory-listed BgA car parks),
+  the three Parkscheininseln of the Stadthalle concept (8-18 h, the concept's
+  regulated daytime window; their fee hours are not published) and the two Braunlage car parks (9-18 h): no current
+  source states their charging hours (spec Amendment D3). Since spec v3 B1 (2026-10-14) the five Bad Harzburg windows
+  (8-18 h, the dated 2021/22 citizen brochure of the town, source id bh_brochure_calendar) and the three Braunschweig
+  station windows bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west (0-24 h, the DB BahnPark station page, source id
+  db_hbf) are sourced: the Bad Harzburg windows say municipal_page (a municipal brochure) and the station windows operator_page
+  (ruling R-B-4, the published page of the car park's operator); neither is an ordinance or signage, and the DB page
+  states opening hours and no separate fee hours. The islands take
+  the ParkGO zone II amounts (0.50
+  EUR per 30 min, 9.00 EUR for 9-24 h), which parkraummanagement.php quotes for them. Braunschweig's ParkGO sets no
+  fee hours (machine display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page).
+  Single paid sites (spec Amendment D3): the Goslar rows rest on a marketing service page of the city, not on the
+  ordinance (the rate and the windows; the billing unit is ASSUMPTION D3-a) and carry the Saturday and holiday parts of
+  the page unmodelled (D1); the Bad Harzburg rows take the ParkGO ceiling of 0.50 EUR per started half hour for every
+  car park (ASSUMPTION D3-b), because the rates of the individual car parks are not published; maximum stays that a
+  source states are modelled since spec v3 B1 as max_stay_min without a long-stay product (Bad Harzburg 6 h and 10 h,
+  Seesen 6 h; the 10 h of the Seesen city page is a named conflict and not applied; ASSUMPTION M3: a longer stay has no
+  street option; M2 is withdrawn); Seesen states Mo-Fr 8-18 h in
+  the ordinance and a Saturday window that is not modelled; the Braunlage row br_wurmberg rests on the ParkGO of
+  Braunlage (parkgo2018.pdf, valid_from its effective date 2018-01-10) and br_hexenritt on the tariff page of
+  2026-10-07, whose prose and table differ on the free period (the table, 30 min, is read). The rows of the sites
+  without a sourced short-stay tariff are not written (Clausthal-Zellerfeld, see the coverage register). The fee windows of
+  he_innenstadt (9-16 h) and gs_altstadt_zone1 (10-18 h) are sourced since Task 4b (spec Amendment D1), but they are
+  readings of pages that list places, not of the meters: the Helmstedt brochure states Mo-Fr 09:00-16:00 at 10 of its 11
+  places and Mo-Fr 09:00-18:00 at the Wallplatz (the window is the common one, not a per-meter window; the maximum stay of
+  180 min at 10 places is modelled since spec v3 B1, ASSUMPTION M3), and the Goslar page lists car parks (the car park Kornstrasse
+  and the three
+  other 2 EUR/h car parks state 10-18 h) and no street meters, so the zone 1 window is an inference from the car parks of
+  the same rate; the Saturday parts of both are not modelled (D1).
+  Long-stay products chosen by assumption M1: the Stadthalle (Parkscheininsel 24-h ticket 9.00 EUR; overprices stays of
+  2-9 h, which cost 2.00-9.00 EUR at 1.00 EUR per hour on an island); the v1 schema has one long-stay product per zone.
+  Spec v3 B1 withdrew M1 for Ia (the 9.00 EUR ticket is zone Ib's) and Peine (the 8-hour ticket is sold at three lots
+  only): both rows carry no long-stay product, Ia keeps its 180 min maximum, Peine has no zone-wide maximum, and a stay
+  above a maximum has no street option (ASSUMPTION M3). One regime per zone (S1): Wolfenbuettel takes the
+  garage day tariff, Gifhorn the city meter tariff, and each Wolfsburg tariff zone the weekday window of most of its
+  street sections (tariff zone 1: the sections Am Bahnhof 1 and 2 state 00:00-24:00; tariff zone 2: the section
+  Klieverhagen states 07:00-15:00); night, shoulder and Saturday tariffs are not modelled (D1). Wolfsburg (since spec
+  Amendment C2): the layer of Stand 12/2024 is the city's phone-parking map, and its retrieval in 2026 does not
+  confirm that every tariff is still valid (the package readme); the billing unit rests on ASSUMPTION C-b; no
+  maximum stay, first period or day cap is published for the sections, so none is modelled (the expected output
+  change is stated in the data record parking_zones_2026); a press report of 2024-02-05 (regionalheute.de) quotes
+  zone 1 of the then valid ordinance at 1.30 EUR per started half hour, which is not reconciled with the layer's
+  2.00 EUR per hour (ruling R-T1d-b: the layer stays). Campus members pay the cheaper of the
+  3.50 EUR day ticket (C1, owner decision 3) and the 10 EUR month ticket per working day (0.48 EUR at 21 working days; A4,
+  ASSUMPTION P2), so every work or education stay on a campus costs 0.48 EUR in the model, also that of a member who holds
+  no month ticket (P2 assumes regulars); the sensitivity is the empty commuter_day_eur of the campus rows. The 30-day ticket
+  of zone Ib (3.76 EUR per working day) is sold by phone parking only, is offered to the work and education purposes only
+  and competes with the metered street product (P1); the model does not know who holds it (P2). The resident permits A/B/C
+  of Braunschweig and the Goslar permits are not part of this table: they are the second layer
+  parking_resident_districts_2026 (rule R2), which frees a stay only where the table's column resident_permits_valid
+  holds (ASSUMPTION R2-a, ruling R-T1e-a): by default on street and resident zones, never on a campus, and not at the five
+  BgA car parks bs_bga_* and the Goslar car park gs_parkplatz_klubgartenstrasse_zob, which state false because no
+  source says that resident permits are valid there (the code register of the model JSON, ASSUMPTIONS_REGISTER, names
+  the BgA car parks as its example of such rows; the flag is per row and the ZOB row has no effect today). The
+  exemption of zone-132 permit holders on the Parkscheininseln and the night-time residents-only rule of the
+  Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
+  the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
+  a polygon overlay. The Wolfenbuettel URL of the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the
+  current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
+  retrieval date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts ticketing that campus
+  on that day (GB3 page), so on the snapshot date 2026-09-29 this zone charged nothing; the snapshot date of the release is
+  2026-10-14 since spec v3 B1 (ruling R-B-7), when it charges.
+  40 rows after spec Amendment G1 (2026-10-08): street_paid 33, resident_zone 1, campus 6; fee_window_source municipal_page 17, ordinance 7, assumption 16; commuter_day_eur on 10 rows (bs_zone_ib, the six campus rows and the
+  three station rows); resident_permits_valid false on nine stated rows (the five bs_bga_* rows,
+  gs_parkplatz_klubgartenstrasse_zob and the three station rows), so R2 is off on 15 of the 40 zones with the six campus
+  zones. SHA-256 of the file (LF): 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc (before:
+  3e4b1ef239c62f310b6b9eb289577063d1cce3830c6ef880e2dfe8cf158ce6ca; the 37 data rows are unchanged, the header gained the assumptions G-a and G-b and the bites lists of C-a, P2 and R2-a, all written by the same step: station_lots.station_header, idempotent, refusing a header whose anchor lines are missing; the table of the chain (commit 9e5cc143) plus the step is the committed file byte for byte, pinned by a test). Expected output change of Task 4g (its one
+  statement): with parking_zones_enabled, stays within 50 m of the three Braunschweig Hbf car parks are priced as paid
+  parking at their rates (before: free outside every zone, assumption Z1), and work and education stays there pay at
+  most the monthly share (571 ct at P1, 352 ct at P2 and P3); the Wolfsburg deck becomes a garage option (data record
+  parking_garages_2026). The size of the effect is not established. The earlier summary follows.
+notes: >-
+  37 rows: street_paid 30, resident_zone 1, campus 6; fee_window_source municipal_page 17, ordinance 7,
+  assumption 13 (validator summary after Task 4b, 2026-10-07; municipal_page 15, ordinance 7 and assumption 15 before the
+  two window corrections of spec Amendment D1, see parking_zones_2026; 26 rows with municipal_page 12, ordinance 6 and
+  assumption 8 before spec Amendment D, and 24 rows with the single Wolfsburg row wob_innenstadt before spec Amendment
+  C2); commuter_day_eur on 7 rows (bs_zone_ib and the six campus rows). The synthetic test set with the same
+  columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth). v2 lever 1
+  (2026-09-30) accepted no rule-based core (parking_zones_2026_qa.csv), so no zone and hence no tariff row was
+  added: the planned bs_zone_ii would take the ParkGO sec. 1(2) zone II amounts (0.50 EUR per 30 min, i.e.
+  1.00 EUR/h, and the 9 h (540 min) to 24 h ticket of 9.00 EUR as day cap) and bs_zone_ia_sued the Ia row; both
+  rows are written only together with their polygons (cross_validate). The optional last column
+  resident_permits_valid (spec Amendment C3, ruling R-T1e-a; true or false, empty = the default of the zone type: valid
+  on street_paid and resident_zone rows, not valid on a campus, where true is rejected) is empty on every row but the
+  five bs_bga_* rows, which state false with the note "separately operated car park (BgA); no source states that
+  resident permits are valid; ASSUMPTION R2-a", and gs_parkplatz_klubgartenstrasse_zob (no resident regime stated;
+  ASSUMPTION R2-a in its note). It switches off the district rule R2 only, never resident_exempt.
+  scripts/validate_parking_zones.py prints where R2 is off (12 of the 37 zones on 2026-10-07: the six stated rows and
+  the six campus zones).
+  Expected output change of Task 4b (its one statement; spec Amendments A4, D1 and D2): with parking_zones_enabled, the
+  production default, ZONES runs price a work or education stay at the commuter product where it is cheaper: a campus stay
+  at 0.48 EUR instead of the 3.50 EUR day ticket, a stay in zone Ib at most 3.76 EUR instead of the metered amount up to the
+  9.00 EUR day cap; and the fee windows shrink to 9-16 h in Helmstedt (9-18 h before) and to 10-18 h in Goslar zone 1 (9-18 h
+  before), so a stay in the dropped hours is free. Each of the four lowers the parking cost of a car stay, so the car becomes
+  cheaper against the alternatives for those stays; the garage dataset changes nothing because no stage reads it. Exposure
+  indicator (scripts/curation/parking_zones_2026/count_zone_exposure.py with the production attach_parking_zones on the plans
+  eqasim-data/output_bs/braunschweig_1pct_population.xml.gz of 2026-04-29: 11,472 persons, 47,362 main activities, 17,301 car
+  arrivals; the zone file is unchanged, so the same 704 car arrivals lie in a zone as before): 95 of them are work or
+  education arrivals in a zone with a commuter product (Zentralcampus 20, Campus Nord 10, Beethovenstrasse 9, Langer Kamp 23,
+  Forschungsflughafen 18, Volkmaroder Strasse 0, zone Ib 15), 24 lie in Helmstedt (17 of them home arrivals, free by H1) and
+  78 in Goslar zone 1 (60 of them home arrivals). An exposure indicator of an older model state on a 1 % sample, not a
+  validation and no run of the cost model.
+  Columns of the v3 mechanics (ADR-0142, Part A of issue 436; Part B fills them, see the spec v3 B1 and B2 paragraphs
+  below): the table layout gained the optional columns ev_free_minutes (whole minutes >= 1; the longest chargeable stay of
+  an electric car that parks free on the street, empty = no exemption) and ev_rule_valid_until (ISO date, the last day of the
+  ordinance's rule, empty = open-ended; only together with ev_free_minutes); both exist on street_paid rows only; the loader
+  reads an absent optional column as empty. max_stay_min is an existing column; since v3 a street_paid row may state it
+  without a long-stay product (a stay above it then has no street option, ASSUMPTION M3), and a row with a maximum stay and
+  a commuter_day_eur must name the unlimited-stay product in its notes with the literal text 'unlimited-stay product:' (any
+  zone type). The tariff model JSON built from the table is schema 5 (zone entry field ev_free_minutes, written only while
+  ev_rule_valid_until is not before the snapshot date).
+  Spec v3 B1 (Task B1, issue #436, 2026-10-14). Evidence: the owner research packages Parkdaten_Nachrecherche_2026-10-14.zip
+  (SHA-256 5a81c0b94da2a078540be2c58299bf246a269733ff69598e9a35b1faa4fad3bb; data/root_findings.json and research/
+  street_sz_pe_gf.json, street_wf_harz.json, wob_residents_street.json) and Parkdaten_Restluecken_2026-10-14.zip (SHA-256
+  80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c; evidence/harz_windows), and for the station windows the
+  page db_hbf of Grossparkplaetze_ZGB8_2026-10-12.zip (SHA-256 d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4,
+  member SHA-256 c63a4bc4d2e89d977a795c41771dcf5ec57948caf0dc3a732951dd8fb8788933). The table gained the last two columns
+  ev_free_minutes and ev_rule_valid_until (braunschweig.parking.zones.EV_COLUMNS; Part A defines them, this task fills values).
+  Changed cells, each with its source id (the note of the row repeats it): bs_zone_ia long_stay_product_eur 9.00 EUR to empty
+  (bs_parkgo_2025; the ticket is zone Ib's; max 180 min kept; assumption M1 withdrawn for it); pe_innenstadt day cap 2.60,
+  maximum stay 180 min and long-stay product 4.20 EUR to empty (pe_current: 0.50 EUR per started 30 min; the tickets and the
+  180 min limits belong to lots; Echternplatz is excluded in the coverage register), EV 180 min to 2028-04-30 (pe_current
+  sec. 1a), source and valid_from the ordinance of 2023-04-01; wf_innenstadt 1.20 EUR per 30 min to 0.25 EUR for the first
+  15 min and then 0.05 EUR per started 3 min (wf_2026, Amtsblatt 55/2025, from 2026-01-01; the window 10-18 h stays the garage
+  window because the street windows are unresolved in the package); sz_lebenstedt maximum stay 150 min (sz_current, from
+  2026-06-25) and EV 240 min to 2026-12-31 (ASSUMPTION E2: within the maximum; marked machines only, not modelled);
+  he_innenstadt maximum stay 180 min (he_brochure); bh_sole_therme and bh_kurpark 360 min, bh_grossparkplatz, bh_burgberg
+  and bh_berliner_platz 600 min (bh_places; the brochure's 4 h for the Sole-Therme is named as a historical conflict) and
+  the window source municipal_page from the dated brochure (bh_brochure_calendar); se_am_markt maximum stay 360 min
+  (seesen_reg; the 10 h of seesen_parking is a named conflict and not applied) and EV 360 min to 2026-12-31 (the ordinance
+  states no duration, so the zone maximum bounds it); the four Goslar rows EV 240 min to 2026-12-31 (gs_2025_gazette; marked
+  machines only, so the exemption is an upper bound); bs_hbf_p1_nord, bs_hbf_p2_sued and bs_hbf_p3_west window source
+  operator_page (ruling R-B-4; db_hbf: Mo-So including holidays 00:00-00:00; these rows are written by
+  scripts/curation/parking_zones_2026/
+  station_lots.py, whose DB_WINDOW_EVIDENCE pins the package and member hashes); wob_tarifzone_1 to 3 note only (ASSUMPTION
+  W-max: no zone-wide maximum; the areas with a recorded maximum become area zones in Task B2). The curation checks
+  regional_zones.check_tariff_rows and station_lots.check_tariff_rows enforce the new values and were run against the
+  committed table and the real packages without a deviation. Header: M2 withdrawn, M3, W-max and E2 added, M1 narrowed to
+  the resident zones. Counts: street_paid 33, resident_zone 1, campus 6 (40 rows); fee_window_source municipal_page 22,
+  operator_page 3, ordinance 7, assumption 8; EV exemption on seven rows (sz_lebenstedt, pe_innenstadt, se_am_markt, four
+  Goslar rows). The
+  zone geometries are unchanged (parking_zones_2026.geojson SHA-256
+  4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490).
+  History of the file (LF SHA-256): 9c53c41618c04d2bd8e3ea05a9c7432910363ea1752182abed54d4b0ad73cabc before Task B1; then
+  c68781e37e7d37a4c688f5efba504a6e68c7f1b1a044c66e2511422b06573be2 (commit 9d51bbf1, Task B1); then
+  1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19 (commit 3d4682cc: the station windows say operator_page and the
+  header names that value); now, after fix round 2 (header line 2 states that the rows corrected by spec v3 B1 rest on the
+  2026-10-14
+  packages): SHA-256 of the file (LF): 8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f (before:
+  1d18ce85cf36fa513b981448112ea71534e96e392ff8a695e0afc2e368a07d19). The
+  record's hash is pinned against the committed file by a test.
+  Expected output change of Task B1 (its one statement; no run exists and the size is not established): with the Part A
+  rules, a stay in Ia above 180 min no longer buys the 9.00 EUR ticket and has no street option (priced over the garage and
+  lot options, else NO_FEASIBLE_OPTION); a Peine stay pays 0.50 EUR per started half hour without cap (8 h = 8.00 EUR, before
+  4.20 EUR above 3 h); a Wolfenbuettel stay pays 0.25 EUR for the first 15 min and then 1.00 EUR per hour (before 1.20 EUR per
+  hour); a stay above the new maxima in Salzgitter, Helmstedt, Bad Harzburg and Seesen has no street option; electric cars in
+  Salzgitter, Peine, Goslar and Seesen park free up to the exemption within its validity (Part A, ASSUMPTIONS E1 and E2).
+  The three Braunschweig lots that carry the Ia street product (Wendenstrasse/Werder, Grosser Hof, Buergerpark) took the
+  withdrawn long-stay band with it; ruling R-B-2 (2026-10-14) gives them the plain rate form and the zone's maximum stay
+  as the new column max_stay_min of the garage dataset (data record parking_garages_2026), and the garage QA tie of spec
+  Amendment I1 is equal again. Tariff state of the release (ruling R-B-7): parking_tariff_snapshot_date is 2026-10-14 in
+  PARKING_DEFAULTS, configs/base_bs.yml and both popsim fixtures, so every EV exemption of the table (the earliest ends
+  2026-12-31) is exported.
+  Spec v3 B2 (Task B2, issue #436, 2026-10-14): +15 rows, one per Wolfsburg area zone wob_area_<source_id> (55 rows now:
+  street_paid 48, resident_zone 1, campus 6; fee_window_source municipal_page 37, operator_page 3, ordinance 7, assumption 8).
+  Each row copies the values of its parent row (wob_tarifzone_1 for 668 and 680, wob_tarifzone_3 for 723 to 732 and 734 to 736:
+  municipality_ags, zone_type, workplace_class, hourly_rate_eur, billing_unit_min, fee_start_h, fee_end_h, fee_window_source,
+  resident_exempt, source_url, source_date, valid_from; every product and EV column empty like the parent) and has its OWN
+  max_stay_min from the layer field max_duration_minutes (30, 60 and thirteen times 120; source id: the layer
+  mobile_parking_areas of the owner's package Wolfsburg_Parkdaten.zip, SHA-256
+  73407d5b23ed2517547a0e648b6a91357772f4d9af1e4d1bc3b3efda4a3cad71,
+  and the source_id of the area). The note of a row names the parent, ASSUMPTION W-max, ASSUMPTION M3, the layer field
+  max_duration_raw, the raw paid-hours text of the area (field Kostenpflichtige Parkzeit) compared with the parent window and the
+  Kurzzeitparken flag (not modelled); the comparison found no difference for any of the 15 areas (the zone-1 areas state
+  '07:00-18:00, Sa 07:00-14:00', the zone-3 areas '09:00-18:00', so the parent windows 7-18 h and 9-18 h hold; a difference would
+  be named 'DIFFERS' in the note and the window left at the parent value: fee windows and maximum stays are separate columns,
+  nothing is inferred from the other). The three tariff rows are unchanged. Header: the bites lists of ASSUMPTION M3 and W-max
+  name the 15 zones. Written by scripts/curation/parking_zones_2026/wolfsburg_area_release.py (wolfsburg_area_zones.
+  area_tariff_rows and write_area_rows; check_area_tariff_rows compares the committed rows with the layer on every chain run
+  with --municipal-tariffs). Expected output change of Task B2 (its one statement; no run exists and the size is not
+  established): a stay of more than 30, 60 or 120 min in the respective area zone has no street option any more (priced over
+  the garage and lot options within reach, else NO_FEASIBLE_OPTION, ASSUMPTION M3); the price of a stay within the maximum is
+  unchanged; the Wolfsburg stays in the 58 areas without a recorded maximum are unchanged (ASSUMPTION W-max). The zone geometries
+  changed: parking_zones_2026.geojson SHA-256 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504 (before
+  4008d609c2791cefd2b912b1e058875947f6b42e608da209f5cc84f3995d9490). History of the file (LF SHA-256) after Task B1:
+  8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f before Task B2; now: SHA-256 of the file (LF):
+  7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82 (before:
+  8f14169ac0b7f36d00bb81e8aa2f5a79cacb57a91ac35fd183e8ecc6985ab97f). The record's hash is pinned
+  against the committed file by a test.
