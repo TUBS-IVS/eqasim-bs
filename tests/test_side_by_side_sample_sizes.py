@@ -42,9 +42,11 @@ def zone_row(arm, group, calls, paid, garage_paid, garage_free, cost, ev, nfo, p
 def write_set(folder: Path, token: str, v3: str, off: str, scale: int, metrics):
     """One sample: ``scale`` shifts the model numbers so a mix-up of the two samples shows. As in the real table every arm has a
     row of every metric and the off arm has no value for the metrics that need the parking outcomes."""
-    off_values = {"car_trip_share_ending_in_ia_ib": 0.50 + 0.001 * scale, "car_trip_share_all_trips": 0.53 + 0.001 * scale}
+    off_values = {"car_trip_share_ending_in_ia_ib": 0.50 + 0.001 * scale, "car_trip_share_all_trips": 0.53 + 0.001 * scale,
+                  "car_trip_share_ending_outside_zones": 0.530 + 0.001 * scale}
     v3_values = {"car_trip_share_ending_in_ia_ib": 0.40 + 0.001 * scale, "car_trip_share_all_trips": 0.52 + 0.001 * scale,
-                 "paid_share_ia_ib_all_purposes": 0.44 + 0.001 * scale}
+                 "paid_share_ia_ib_all_purposes": 0.44 + 0.001 * scale,
+                 "car_trip_share_ending_outside_zones": 0.529 + 0.0011 * scale}
     compare = []
     for metric, _ in metrics:
         compare.append(compare_row(v3, metric, 30 * scale, v3_values.get(metric, 0.10 + 0.001 * scale)))
@@ -143,3 +145,44 @@ def test_the_main_writes_a_deterministic_table_and_a_provenance(side, folder):
         side.main(argv)
     assert side.main(argv + ["--overwrite"]) == 0
     assert out.read_bytes() == first
+
+
+def test_the_outside_every_zone_row_is_a_row_of_the_table_read_from_its_own_metric(side, folder):
+    table = build(side, folder)
+    metric = "car_trip_share_ending_outside_zones"
+    assert metric in [name for name, _ in side.COMPARISON_METRICS]
+    assert cell(table, metric, "off_small") == pytest.approx(0.531) and cell(table, metric, "v3_small") == pytest.approx(0.5301)
+    assert cell(table, metric, "off_large") == pytest.approx(0.555) and cell(table, metric, "v3_large") == pytest.approx(0.5565)
+    assert cell(table, metric, "n_v3_small") == 30 and cell(table, metric, "n_v3_large") == 750
+
+
+def test_the_v3_minus_off_columns_are_the_contrast_of_each_sample_in_percentage_points(side, folder):
+    table = build(side, folder)
+    # outside every zone: small (0.5301 - 0.531) * 100 = -0.09 pp, large (0.5565 - 0.555) * 100 = +0.15 pp
+    outside = "car_trip_share_ending_outside_zones"
+    assert cell(table, outside, "v3_minus_off_small") == pytest.approx(-0.09)
+    assert cell(table, outside, "v3_minus_off_large") == pytest.approx(0.15)
+    # the zones Ia and Ib: (0.401 - 0.501) * 100 = -10 pp, (0.425 - 0.525) * 100 = -10 pp
+    ia_ib = "car_trip_share_ending_in_ia_ib"
+    assert cell(table, ia_ib, "v3_minus_off_small") == pytest.approx(-10.0)
+    assert cell(table, ia_ib, "v3_minus_off_large") == pytest.approx(-10.0)
+
+
+def test_the_v3_minus_off_columns_are_empty_where_the_off_arm_has_no_value_and_for_counts(side, folder):
+    table = build(side, folder)
+    assert pd.isna(cell(table, "paid_share_ia_ib_all_purposes", "v3_minus_off_small"))     # the off arm prices nothing
+    assert pd.isna(cell(table, "zone_bs_zone_ia_paid_share", "v3_minus_off_large"))
+    assert pd.isna(cell(table, "ev_exempt_count_all_zone_groups", "v3_minus_off_small"))   # a count scales with the sample
+    assert pd.isna(cell(table, "ev_exempt_count_all_zone_groups", "v3_minus_off_large"))
+    # the modestats row has both arms: (0.521 - 0.531) * 100 for the small sample
+    assert cell(table, "car_share_modestats_mean", "v3_minus_off_small") == pytest.approx(-1.0)
+
+
+def test_the_written_table_has_the_contrast_columns_with_fixed_decimals(side, folder):
+    argv = ["--folder", str(folder), "--set-small", "1pct_x", "--set-large", "25pct_x", "--arms-small", "v3,off",
+            "--arms-large", "v3_25pct,off_25pct", "--out-prefix", "side"]
+    assert side.main(argv) == 0
+    frame = pd.read_csv(folder / "side_side_by_side.csv", keep_default_na=False, dtype=str)
+    assert list(frame.columns) == side.OUTPUT_COLUMNS
+    row = frame[frame["metric"] == "car_trip_share_ending_outside_zones"].iloc[0]
+    assert row["v3_minus_off_small"] == "-0.0900" and row["v3_minus_off_large"] == "0.1500"

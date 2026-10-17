@@ -378,3 +378,128 @@ def test_the_main_accepts_a_path_root(summary, arm_set, tmp_path):
     assert summary.main(argv) == 0
     provenance = json.loads((out / "p_provenance.json").read_text(encoding="utf-8"))
     assert provenance["arms"]["off"]["directory"] == "off"
+
+
+# ------------------------------------------------------------------------------------------- the population identity check
+
+#: (person_id, person_trip_id, origin_x, origin_y, destination_x, destination_y) of the trips of the reference arm.
+IDENTITY_TRIPS_REFERENCE = [
+    (1, 0, 100.0, 200.0, 110.0, 210.0), (1, 1, 110.0, 210.0, 100.0, 200.0),
+    (2, 0, 300.0, 400.0, 310.0, 410.0),
+    (3, 0, 500.0, 600.0, 510.0, 610.0),
+]
+
+
+def identity_frame(summary, rows):
+    return pd.DataFrame(rows, columns=list(summary.TRIP_ENDPOINT_COLUMNS))
+
+
+def test_the_identity_row_counts_matched_and_unmatched_trips_and_persons(summary):
+    # arm: person 1 as in the reference, person 2's only trip missing, person 3 as in the reference, person 4 only here
+    arm_rows = [IDENTITY_TRIPS_REFERENCE[0], IDENTITY_TRIPS_REFERENCE[1], IDENTITY_TRIPS_REFERENCE[3], (4, 0, 7.0, 8.0, 9.0, 10.0)]
+    row = summary.population_identity_row("arm", identity_frame(summary, arm_rows), "ref",
+                                          identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    assert (row["arm"], row["reference_arm"]) == ("arm", "ref")
+    assert (row["persons"], row["reference_persons"]) == (3, 3)           # {1, 3, 4} against {1, 2, 3}
+    assert (row["persons_only_in_arm"], row["persons_only_in_reference"]) == (1, 1)
+    assert (row["trips"], row["reference_trips"]) == (4, 4)
+    assert (row["trips_matched"], row["trips_matched_endpoints_equal"]) == (3, 3)
+    assert (row["trips_only_in_arm"], row["trips_only_in_reference"]) == (1, 1)
+    assert row["persons_with_unmatched_trips"] == 2                       # persons 2 and 4
+    assert row["unmatched_trip_share"] == pytest.approx(2 / 5)            # (1 + 1) unmatched of the 3 + 1 + 1 trip keys
+    assert row["endpoints_equal_on_all_matched_trips"] is True
+
+
+def test_the_identity_row_sees_a_changed_endpoint_of_a_matched_trip(summary):
+    moved = list(IDENTITY_TRIPS_REFERENCE)
+    moved[2] = (2, 0, 300.0, 400.0, 311.0, 410.0)                         # the destination x of person 2 moved by 1 m
+    row = summary.population_identity_row("arm", identity_frame(summary, moved), "ref",
+                                          identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    assert (row["trips_matched"], row["trips_matched_endpoints_equal"]) == (4, 3)
+    assert row["endpoints_equal_on_all_matched_trips"] is False
+    assert (row["persons_only_in_arm"], row["persons_only_in_reference"], row["persons_with_unmatched_trips"]) == (0, 0, 0)
+
+
+def test_identical_trip_tables_give_a_clean_row(summary):
+    row = summary.population_identity_row("arm", identity_frame(summary, IDENTITY_TRIPS_REFERENCE), "ref",
+                                          identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    assert row["trips_matched"] == row["trips_matched_endpoints_equal"] == 4
+    assert row["unmatched_trip_share"] == 0.0 and row["endpoints_equal_on_all_matched_trips"] is True
+
+
+def test_the_identity_check_fails_for_an_endpoint_change_and_for_too_many_unmatched_trips(summary):
+    moved = list(IDENTITY_TRIPS_REFERENCE)
+    moved[0] = (1, 0, 100.0, 200.0, 111.0, 210.0)
+    row = summary.population_identity_row("arm", identity_frame(summary, moved), "ref",
+                                          identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    with pytest.raises(summary.InputError, match="endpoints"):
+        summary.check_population_identity(row, max_unmatched_trip_share=0.5)
+    short = identity_frame(summary, IDENTITY_TRIPS_REFERENCE[:3])         # person 3's trip missing: 1 of 4 reference trips
+    row = summary.population_identity_row("arm", short, "ref", identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    summary.check_population_identity(row, max_unmatched_trip_share=0.25)  # at the bound: accepted
+    with pytest.raises(summary.InputError, match="unmatched"):
+        summary.check_population_identity(row, max_unmatched_trip_share=0.2)
+
+
+def test_a_duplicate_trip_key_or_a_missing_column_is_an_error(summary, tmp_path):
+    duplicated = identity_frame(summary, [IDENTITY_TRIPS_REFERENCE[0], IDENTITY_TRIPS_REFERENCE[0]])
+    with pytest.raises(summary.InputError, match="more than one trip"):
+        summary.population_identity_row("arm", duplicated, "ref", identity_frame(summary, IDENTITY_TRIPS_REFERENCE))
+    run_output = tmp_path / "matsim_output"
+    run_output.mkdir()
+    pd.DataFrame({"person_id": [1], "mode": ["car"]}).to_csv(run_output / "eqasim_trips.csv", sep=";", index=False)
+    with pytest.raises(summary.InputError, match="origin_x"):
+        summary.read_trip_endpoints(run_output)
+
+
+def test_the_trip_endpoints_are_read_from_a_gzip_or_a_plain_table(summary, tmp_path):
+    frame = identity_frame(summary, IDENTITY_TRIPS_REFERENCE).assign(mode="car")      # further columns are ignored
+    for name, folder in (("eqasim_trips.csv.gz", "gz"), ("eqasim_trips.csv", "plain")):
+        run_output = tmp_path / folder
+        run_output.mkdir()
+        frame.to_csv(run_output / name, sep=";", index=False)
+        read = summary.read_trip_endpoints(run_output)
+        assert list(read.columns) == list(summary.TRIP_ENDPOINT_COLUMNS) and len(read) == 4
+
+
+def test_the_identity_table_has_one_row_per_arm_besides_the_reference(summary):
+    frames = {"ref": identity_frame(summary, IDENTITY_TRIPS_REFERENCE),
+              "a": identity_frame(summary, IDENTITY_TRIPS_REFERENCE), "b": identity_frame(summary, IDENTITY_TRIPS_REFERENCE[:3])}
+    table = summary.population_identity_table(frames, "ref", max_unmatched_trip_share=0.5)
+    assert table["arm"].tolist() == ["a", "b"] and set(table["reference_arm"]) == {"ref"}
+    with pytest.raises(summary.InputError, match="baseline arm"):
+        summary.population_identity_table(frames, "absent", max_unmatched_trip_share=0.5)
+
+
+@pytest.mark.skipif(not COMMITTED_TARIFFS.is_file(), reason="the committed tariff table is not in this checkout")
+def test_the_arm_set_writes_the_identity_table_when_asked_and_fails_without_trips(summary, arm_set, tmp_path):
+    for arm in arm_set:
+        trips = identity_frame(summary, IDENTITY_TRIPS_REFERENCE)
+        if arm.name == "v3_free_shift_-0.1":
+            trips = identity_frame(summary, IDENTITY_TRIPS_REFERENCE[:3])           # one trip missing, below the bound
+        (arm / "matsim_output").mkdir(parents=True, exist_ok=True)
+        trips.to_csv(arm / "matsim_output" / "eqasim_trips.csv.gz", sep=";", index=False)
+    result = summary.summarize(arm_inputs(summary, arm_set), iterations=[1, 2], tariffs_path=COMMITTED_TARIFFS,
+                               with_population_identity=True, max_unmatched_trip_share=0.3)
+    table = result["population_identity"]
+    assert table["arm"].tolist() == ["off", "v3_free_shift_-0.1"] and set(table["reference_arm"]) == {"v3"}
+    assert table["trips_only_in_reference"].tolist() == [0, 1]
+    assert len(result["provenance"]["arms"]["v3"]["eqasim_trips"]["sha256"]) == 64
+    paths = summary.write_tables(result, tmp_path / "out", "prefix")
+    assert "prefix_population_identity.csv" in {path.name for path in paths}
+    header = (tmp_path / "out" / "prefix_population_identity.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert header.startswith("arm,reference_arm,persons,reference_persons,persons_only_in_arm")
+    # without the option the table is not part of the result (the arms of the other tests have no trips)
+    assert summary.summarize(arm_inputs(summary, arm_set), iterations=[1, 2], tariffs_path=COMMITTED_TARIFFS)[
+        "population_identity"].empty
+    # an arm without a trips table is an error naming the arm
+    (arm_set[0] / "matsim_output" / "eqasim_trips.csv.gz").unlink()
+    with pytest.raises(summary.InputError, match="off"):
+        summary.summarize(arm_inputs(summary, arm_set), iterations=[1, 2], tariffs_path=COMMITTED_TARIFFS,
+                          with_population_identity=True)
+    # the check bites: too many unmatched trips of an arm fail the whole summary (1 matched, 3 only in the reference: 3 of 4)
+    identity_frame(summary, IDENTITY_TRIPS_REFERENCE[:1]).to_csv(arm_set[0] / "matsim_output" / "eqasim_trips.csv.gz", sep=";",
+                                                                  index=False)
+    with pytest.raises(summary.InputError, match="unmatched"):
+        summary.summarize(arm_inputs(summary, arm_set), iterations=[1, 2], tariffs_path=COMMITTED_TARIFFS,
+                          with_population_identity=True, max_unmatched_trip_share=0.3)

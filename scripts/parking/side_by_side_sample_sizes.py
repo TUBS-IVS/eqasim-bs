@@ -14,7 +14,10 @@ Output ``<out-prefix>_side_by_side.csv`` (snake_case columns): ``metric``, ``sou
 ``unit`` (``share``, ``cents`` or ``count``), ``universe`` (what the value is a share or mean of), ``off_small``,
 ``v3_small``, ``off_large``, ``v3_large``, ``n_v3_small`` and ``n_v3_large`` (the size of the universe of the v3 value: trips,
 pricing calls or persons, empty where the source has none), ``v3_large_minus_small`` (large minus small for the v3 arm: percentage
-points for a share, euro cents for a mean cost, empty for a count: a count scales with the sample). An arm without the value
+points for a share, euro cents for a mean cost, empty for a count: a count scales with the sample),
+``v3_minus_off_small`` and ``v3_minus_off_large`` (the v3 arm minus the off arm within one sample, same units: the contrast of
+each sample; the row ``car_trip_share_ending_outside_zones`` is the trips that end outside every parking zone, which the zone
+cost does not price directly, so it is the contrast row for the rows of the zones Ia and Ib). An arm without the value
 (the ``off`` arms price nothing) has an empty cell, never a zero.
 
 Usage (from the repository root)::
@@ -45,7 +48,7 @@ log = logging.getLogger("side_by_side_sample_sizes")
 #: Metrics of the comparison table (``parking_targets_comparison_<set>.csv``): (metric, unit).
 COMPARISON_METRICS = (
     ("car_trip_share_all_trips", "share"), ("car_trip_share_ending_in_zones", "share"),
-    ("car_trip_share_ending_in_ia_ib", "share"), ("paid_share_ia_ib_all_purposes", "share"),
+    ("car_trip_share_ending_outside_zones", "share"), ("car_trip_share_ending_in_ia_ib", "share"), ("paid_share_ia_ib_all_purposes", "share"),
     ("paid_share_ia_ib_other_purposes", "share"), ("garage_share_ia_ib_other_purposes", "share"),
     ("garage_share_ia_ib_work_education_paid_calls", "share"), ("mean_expected_cost_cents_ia_ib_work_education", "cents"),
     ("mean_expected_cost_cents_ia_ib_other_purposes", "cents"), ("mean_expected_cost_cents_all_zones_work_education", "cents"),
@@ -64,8 +67,10 @@ PURPOSE_CLASS_ALL = "all"
 SHARE_DECIMALS = 6
 COST_DECIMALS = 4
 PERCENTAGE_POINT_DECIMALS = 4
+#: Columns that hold a difference (percentage points for a share, euro cents for a mean cost, empty for a count).
+DIFFERENCE_COLUMNS = ("v3_large_minus_small", "v3_minus_off_small", "v3_minus_off_large")
 OUTPUT_COLUMNS = ["metric", "source", "unit", "universe", "off_small", "v3_small", "off_large", "v3_large", "n_v3_small",
-                  "n_v3_large", "v3_large_minus_small"]
+                  "n_v3_large", "v3_large_minus_small", "v3_minus_off_small", "v3_minus_off_large"]
 
 
 class InputError(ValueError):
@@ -112,13 +117,15 @@ def _row(metric, source, unit, universe, values, sizes):
     small, large = values[1], values[3]
     if unit == "share":
         change = 100.0 * (large - small)
+        contrast_small, contrast_large = 100.0 * (values[1] - values[0]), 100.0 * (values[3] - values[2])
     elif unit == "cents":
         change = large - small
+        contrast_small, contrast_large = values[1] - values[0], values[3] - values[2]
     else:
-        change = np.nan
+        change = contrast_small = contrast_large = np.nan
     return {"metric": metric, "source": source, "unit": unit, "universe": universe, "off_small": values[0], "v3_small": values[1],
             "off_large": values[2], "v3_large": values[3], "n_v3_small": sizes[0], "n_v3_large": sizes[1],
-            "v3_large_minus_small": change}
+            "v3_large_minus_small": change, "v3_minus_off_small": contrast_small, "v3_minus_off_large": contrast_large}
 
 
 def build_side_by_side(folder, set_small: str, set_large: str, *, arms_small, arms_large) -> pd.DataFrame:
@@ -208,13 +215,15 @@ def _text(frame: pd.DataFrame) -> pd.DataFrame:
     """Fixed decimals for the written table (determinism); counts as integers, empty for a missing value."""
     out = frame.copy().astype(object)
     for index, row in frame.iterrows():
-        for column in ("off_small", "v3_small", "off_large", "v3_large", "n_v3_small", "n_v3_large", "v3_large_minus_small"):
+        for column in ("off_small", "v3_small", "off_large", "v3_large", "n_v3_small", "n_v3_large", "v3_large_minus_small",
+                       "v3_minus_off_small", "v3_minus_off_large"):
             value = row[column]
+            difference = column in DIFFERENCE_COLUMNS
             if pd.isna(value):
                 out.at[index, column] = ""
-            elif column.startswith("n_") or row["unit"] == "count" and column != "v3_large_minus_small":
+            elif column.startswith("n_") or row["unit"] == "count" and not difference:
                 out.at[index, column] = f"{int(value)}"
-            elif column == "v3_large_minus_small":
+            elif difference:
                 out.at[index, column] = f"{value:.{PERCENTAGE_POINT_DECIMALS}f}"
             else:
                 out.at[index, column] = f"{value:.{COST_DECIMALS if row['unit'] == 'cents' else SHARE_DECIMALS}f}"

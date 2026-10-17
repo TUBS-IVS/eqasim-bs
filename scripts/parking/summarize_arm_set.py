@@ -39,6 +39,13 @@ Tables (``<prefix>_<name>.csv`` in ``--out-dir``; an existing file is replaced o
       draw) and the call-level EMPLOYER_FREE rate pooled over the selected iterations (``employer_free_count`` over the work
       and education calls in the zones of the free-draw zone types, and in all zones). The two rates are different measures:
       the first is a share of persons, the second a share of pricing calls.
+    * ``population_identity`` (only with ``--check-population-identity``): per arm besides the baseline arm, the comparison of its
+      final-iteration ``<arm>/matsim_output/eqasim_trips`` table with the baseline's by trip key and endpoints: persons in each
+      table and in one only, trips matched and matched with equal origin and destination, trips in one table only (a trip a run
+      did not finish and write, e.g. a stuck agent), the persons they belong to and their share of all trip keys. It is the
+      evidence that the arms simulated the same synthetic persons and activity locations; the run fails for a matched trip
+      with other endpoints or an unmatched share above ``--max-unmatched-trip-share`` (an ASSUMPTION, default 0.001). It says
+      nothing about the plans or the mode choice of the arms and validates nothing.
     * ``<prefix>_provenance.json``: the path and the SHA-256 of every input, the iterations, the arms.
 
 Usage (from the repository root)::
@@ -103,6 +110,13 @@ PERCENTAGE_POINT_DECIMALS = 4
 COST_DECIMALS = 4
 #: Shares of the modes of one iteration sum to 1 up to the rounding of the writer.
 MODESTATS_SUM_TOLERANCE = 1e-6
+#: Columns of the final-iteration ``eqasim_trips`` table that the population identity check reads: the trip key and the endpoints.
+TRIP_ENDPOINT_COLUMNS = ("person_id", "person_trip_id", "origin_x", "origin_y", "destination_x", "destination_y")
+#: ASSUMPTION: the share of unmatched trip keys (a trip in one arm's table only) above which two arms are no longer taken to
+#: simulate the same population. A run leaves a handful of trips unwritten (agents stuck at the simulation end: 28 of 926,918 at
+#: 25 % in the arm set of 2026-10-15, 3e-5); 0.001 is far above that and far below a differently built population. No
+#: scientific parameter, overridable with ``--max-unmatched-trip-share``.
+DEFAULT_MAX_UNMATCHED_TRIP_SHARE = 0.001
 
 FREE_DRAW_LINE = re.compile(
     r"\[parking\] free-parking draw \(RandomState\(random_seed (?P<seed>\d+) \+ (?P<offset>\d+)\), shift (?P<shift>[+-][\d.]+)\): "
@@ -337,6 +351,93 @@ def free_share_row(arm: str, frame: pd.DataFrame, zone_types: "dict[str, str]", 
     }
 
 
+# ---------------------------------------------------------------------------------------------- population identity
+
+
+def read_trip_endpoints(run_output) -> pd.DataFrame:
+    """The trip key and the endpoints of the final-iteration ``eqasim_trips`` table of a run (columns
+    ``TRIP_ENDPOINT_COLUMNS``). ``FileNotFoundError`` for a run without the table, ``InputError`` for a missing column."""
+    path = compare.find_trips_file(run_output)
+    header = list(pd.read_csv(path, sep=";", nrows=0).columns)
+    missing = [column for column in TRIP_ENDPOINT_COLUMNS if column not in header]
+    if missing:
+        raise InputError(f"{path}: the trips lack the column(s) {missing}; found {header}")
+    return pd.read_csv(path, sep=";", usecols=list(TRIP_ENDPOINT_COLUMNS))
+
+
+def _trip_keys(frame: pd.DataFrame, label: str) -> pd.DataFrame:
+    keys = frame.set_index(["person_id", "person_trip_id"])
+    if keys.index.duplicated().any():
+        raise InputError(f"arm {label}: more than one trip with the same person_id and person_trip_id in the trips table")
+    return keys
+
+
+def population_identity_row(arm: str, trips: pd.DataFrame, reference_arm: str, reference_trips: pd.DataFrame) -> dict:
+    """Do two arms simulate the same synthetic population? The row compares the final-iteration trip tables of ``arm`` and
+    ``reference_arm`` by the trip key (``person_id``, ``person_trip_id``) and the trip endpoints (origin and destination
+    coordinates, exact equality: both arms read the same synthetic activity locations, only the mode, times and routes are
+    outcomes of the run).
+
+    A trip is *matched* when both tables have its key; ``trips_matched_endpoints_equal`` counts the matched trips with equal
+    origin and destination. A trip in one table only is a trip that the other run did not finish and write (for example an
+    agent that was stuck at the simulation end), not a different activity chain: the columns ``trips_only_in_arm``,
+    ``trips_only_in_reference``, ``persons_only_in_arm``, ``persons_only_in_reference`` and ``persons_with_unmatched_trips``
+    report them and ``unmatched_trip_share`` is their share of all trip keys (matched plus unmatched). The row is evidence
+    for the sentence "the arms simulated the same persons and activity locations", never a validation of the model.
+    """
+    arm_keys, reference_keys = _trip_keys(trips, arm), _trip_keys(reference_trips, reference_arm)
+    matched = arm_keys.index.intersection(reference_keys.index)
+    arm_side, reference_side = arm_keys.loc[matched], reference_keys.loc[matched]
+    endpoints_equal = np.ones(len(matched), dtype=bool)
+    for column in ("origin_x", "origin_y", "destination_x", "destination_y"):
+        endpoints_equal &= arm_side[column].to_numpy() == reference_side[column].to_numpy()
+    only_in_arm = arm_keys.index.difference(reference_keys.index)
+    only_in_reference = reference_keys.index.difference(arm_keys.index)
+    persons, reference_persons = set(trips["person_id"]), set(reference_trips["person_id"])
+    unmatched_persons = {key[0] for key in only_in_arm} | {key[0] for key in only_in_reference}
+    unmatched = len(only_in_arm) + len(only_in_reference)
+    equal_count = int(endpoints_equal.sum())
+    return {"arm": arm, "reference_arm": reference_arm, "persons": len(persons), "reference_persons": len(reference_persons),
+            "persons_only_in_arm": len(persons - reference_persons), "persons_only_in_reference": len(reference_persons - persons),
+            "trips": len(arm_keys), "reference_trips": len(reference_keys), "trips_matched": len(matched),
+            "trips_matched_endpoints_equal": equal_count, "trips_only_in_arm": len(only_in_arm),
+            "trips_only_in_reference": len(only_in_reference), "persons_with_unmatched_trips": len(unmatched_persons),
+            "unmatched_trip_share": _ratio(unmatched, len(matched) + unmatched),
+            "endpoints_equal_on_all_matched_trips": bool(equal_count == len(matched))}
+
+
+def check_population_identity(row: dict, max_unmatched_trip_share: float) -> None:
+    """Fail early when ``row`` (``population_identity_row``) shows that the two arms did not simulate the same population: a
+    matched trip with other endpoints, or more unmatched trips than ``max_unmatched_trip_share`` of all trip keys. The bound
+    is an ASSUMPTION (``DEFAULT_MAX_UNMATCHED_TRIP_SHARE``): it separates the handful of trips a run leaves unwritten (stuck
+    agents) from a population that was built differently; it is no scientific parameter."""
+    if not row["endpoints_equal_on_all_matched_trips"]:
+        differing = row["trips_matched"] - row["trips_matched_endpoints_equal"]
+        raise InputError(f"arm {row['arm']} against {row['reference_arm']}: {differing} of {row['trips_matched']} matched trips have "
+                         "other endpoints (origin or destination coordinates); the arms did not simulate the same activity locations")
+    if row["unmatched_trip_share"] > max_unmatched_trip_share:
+        raise InputError(f"arm {row['arm']} against {row['reference_arm']}: the share of unmatched trips "
+                         f"{row['unmatched_trip_share']:.6f} is above the bound {max_unmatched_trip_share} "
+                         f"({row['trips_only_in_arm']} trips only in the arm, {row['trips_only_in_reference']} only in the "
+                         "reference); the arms did not simulate the same population")
+
+
+def population_identity_table(trips_by_arm: "dict[str, pd.DataFrame]", baseline_arm: str, *,
+                              max_unmatched_trip_share: float = DEFAULT_MAX_UNMATCHED_TRIP_SHARE) -> pd.DataFrame:
+    """One ``population_identity_row`` per arm besides ``baseline_arm``, each checked with ``check_population_identity``.
+    ``InputError`` when the baseline arm has no trip table."""
+    if baseline_arm not in trips_by_arm:
+        raise InputError(f"the baseline arm {baseline_arm!r} has no trips table (arms {sorted(trips_by_arm)})")
+    rows = []
+    for label, trips in trips_by_arm.items():
+        if label == baseline_arm:
+            continue
+        row = population_identity_row(label, trips, baseline_arm, trips_by_arm[baseline_arm])
+        check_population_identity(row, max_unmatched_trip_share)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 # --------------------------------------------------------------------------------------------------------------- the arm set
 
 
@@ -360,10 +461,16 @@ def _input_record(path: Path, paths) -> dict:
     return {"path": paths(path), "sha256": _sha256(path)}
 
 
-def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_arm: str = "off", path_roots=()) -> dict:
-    """Build the four tables and the provenance of an arm set: ``{"modestats_pooled", "zone_groups", "zone_group_deltas",
-    "free_share", "provenance"}``. Raises ``InputError`` (and ``FileNotFoundError``/``ValueError`` of the strict report reader)
-    for any missing or malformed input; nothing is estimated or defaulted.
+def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_arm: str = "off", path_roots=(),
+              with_population_identity: bool = False,
+              max_unmatched_trip_share: float = DEFAULT_MAX_UNMATCHED_TRIP_SHARE) -> dict:
+    """Build the tables and the provenance of an arm set: ``{"modestats_pooled", "zone_groups", "zone_group_deltas",
+    "free_share", "population_identity", "provenance"}``. Raises ``InputError`` (and ``FileNotFoundError``/``ValueError`` of the
+    strict report reader) for any missing or malformed input; nothing is estimated or defaulted.
+
+    ``with_population_identity`` adds the table ``population_identity`` (every arm against ``baseline_arm``, see
+    ``population_identity_row``): it reads the ``eqasim_trips`` table of EVERY arm (``InputError`` naming the arm when one is
+    missing) and fails when an arm exceeds ``max_unmatched_trip_share``; without it the table is empty.
 
     The provenance records every input path relative to the repository root of this script or, for an input of another checkout
     (the run outputs of the main checkout while the script runs in a worktree), to the first of ``path_roots`` that contains it
@@ -384,7 +491,7 @@ def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_a
     provenance = {"script": "scripts/parking/summarize_arm_set.py", "code_state": compare.calibrate.git_state(),
                   "path_note": "paths are relative to the repository root of the checkout that holds the file",
                   "iterations": iterations, "tariffs": _input_record(Path(tariffs_path), paths), "arms": {}}
-    modestats, zone_rows, free_rows = {}, [], []
+    modestats, zone_rows, free_rows, trips_by_arm = {}, [], [], {}
     for arm in arms:
         directory = Path(arm.directory)
         run_output = directory / MATSIM_OUTPUT_DIRECTORY
@@ -394,6 +501,13 @@ def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_a
         modestats_path = run_output / MODESTATS_FILE_NAME
         modestats[arm.label] = read_modestats(modestats_path)
         record["modestats"] = _input_record(modestats_path, paths)
+        if with_population_identity:
+            try:
+                trips_path = compare.find_trips_file(run_output)
+            except FileNotFoundError as error:
+                raise InputError(f"arm {arm.label}: {error}") from error
+            trips_by_arm[arm.label] = read_trip_endpoints(run_output)
+            record["eqasim_trips"] = _input_record(trips_path, paths)
         if arm.with_outcomes:
             reports = [compare.outcome_report_path(run_output, number) for number in iterations]
             frames = []
@@ -413,10 +527,12 @@ def summarize(arms, *, iterations, tariffs_path, baseline_arm: str = "v3", off_a
         provenance["arms"][arm.label] = record
     paths.warn_if_outside("arm-set-summary")
     zone_groups = pd.concat(zone_rows, ignore_index=True) if zone_rows else pd.DataFrame()
+    identity = (population_identity_table(trips_by_arm, baseline_arm, max_unmatched_trip_share=max_unmatched_trip_share)
+                if with_population_identity else pd.DataFrame())
     return {"modestats_pooled": pooled_mode_shares(modestats, iterations, baseline_arm=baseline_arm, off_arm=off_arm),
             "zone_groups": zone_groups,
             "zone_group_deltas": zone_group_deltas(zone_groups, baseline_arm) if not zone_groups.empty else pd.DataFrame(),
-            "free_share": pd.DataFrame(free_rows), "provenance": provenance}
+            "free_share": pd.DataFrame(free_rows), "population_identity": identity, "provenance": provenance}
 
 
 def _text(frame: pd.DataFrame) -> pd.DataFrame:
@@ -440,7 +556,8 @@ def write_tables(result: dict, out_dir, prefix: str, *, overwrite: bool = False)
     Refuses to replace an existing file without ``overwrite`` (nothing is written then)."""
     out_dir = Path(out_dir)
     targets = {name: out_dir / f"{prefix}_{name}.csv" for name in ("modestats_pooled", "zone_groups", "zone_group_deltas",
-                                                                   "free_share") if not result[name].empty}
+                                                                   "free_share", "population_identity")
+               if not result[name].empty}
     targets["provenance"] = out_dir / f"{prefix}_provenance.json"
     existing = [path for path in targets.values() if path.exists()]
     if existing and not overwrite:
@@ -482,6 +599,11 @@ def main(argv=None) -> int:
                              "recorded relative to the first root that contains them")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--prefix", required=True, help="file name prefix of every output (descriptive: scenario, set, date)")
+    parser.add_argument("--check-population-identity", action="store_true",
+                        help="also write <prefix>_population_identity.csv: every arm's final-iteration eqasim_trips against the "
+                             "baseline arm's (same persons, same trip endpoints); fails above --max-unmatched-trip-share")
+    parser.add_argument("--max-unmatched-trip-share", type=float, default=DEFAULT_MAX_UNMATCHED_TRIP_SHARE,
+                        help="ASSUMPTION, default %(default)s: share of unmatched trip keys above which the identity check fails")
     parser.add_argument("--overwrite", action="store_true", help="replace existing output files")
     args = parser.parse_args(argv)
     if not args.arms:
@@ -492,7 +614,9 @@ def main(argv=None) -> int:
         raise SystemExit(f"tariff table not found: {tariffs_path}")
     try:
         result = summarize(args.arms, iterations=args.iteration, tariffs_path=tariffs_path, baseline_arm=args.baseline_arm,
-                           off_arm=args.off_arm, path_roots=args.path_roots)
+                           off_arm=args.off_arm, path_roots=args.path_roots,
+                           with_population_identity=args.check_population_identity,
+                           max_unmatched_trip_share=args.max_unmatched_trip_share)
         paths = write_tables(result, args.out_dir, args.prefix, overwrite=args.overwrite)
     except (InputError, FileNotFoundError, FileExistsError, ValueError) as error:
         raise SystemExit(str(error)) from error
