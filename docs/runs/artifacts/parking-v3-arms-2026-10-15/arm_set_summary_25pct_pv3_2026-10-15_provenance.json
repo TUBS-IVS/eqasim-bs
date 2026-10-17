@@ -2,6 +2,10 @@
   "arms": {
     "off_25pct": {
       "directory": "eqasim-data/output_bs_pv3_off_25pct",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_pv3_off_25pct/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "e1d1db836b4340272164112f604f4edcf9e7b041d437a7509a799786ec0c02f1"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_pv3_off_25pct/matsim_output/modestats.csv",
         "sha256": "47dd766c89880bb16746dcf48f731d8630a6fa351b4f84942a13d6fa9a27c77e"
@@ -9,6 +13,10 @@
     },
     "v3_25pct": {
       "directory": "eqasim-data/output_bs_pv3_v3_25pct",
+      "eqasim_trips": {
+        "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/eqasim_trips.csv.gz",
+        "sha256": "83379dcb2b2552efb81e11fc9ba6be585c873a3a527612cabfaa4cc1db84978c"
+      },
       "modestats": {
         "path": "eqasim-data/output_bs_pv3_v3_25pct/matsim_output/modestats.csv",
         "sha256": "42f8beae26b2b8058fb7eae090122b1c2e97e263fe113c7d187d43ed6b1e188e"
@@ -65,7 +73,7 @@
       }
     }
   },
-  "code_state": "868cf8ee4b251a60b07cfa9c324af509ca8e5cb9",
+  "code_state": "13571314bf4d341c1443709f5416719da3ae5884",
   "iterations": [
     51,
     52,
