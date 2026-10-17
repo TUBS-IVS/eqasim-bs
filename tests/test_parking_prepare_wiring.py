@@ -27,7 +27,7 @@ import pytest
 from shapely.geometry import box
 
 from braunschweig.matsim import config_modules
-from braunschweig.matsim.simulation import prepare
+from braunschweig.matsim.simulation import plan_check, prepare
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import zones as parking_zones
 from matsim import output
@@ -72,7 +72,10 @@ class _Context:
     """
 
     def __init__(self, stage_path, values, paths=None):
-        self.values = dict(values)
+        # The plan check (ADR-0146, #443) is the last step of execute() and reads qsim.endTime and the population file of the
+        # written config, which these parking fixtures do not carry; it is tested in test_plan_check*.py and
+        # test_prepare_plan_check_wiring.py (which also pins that it runs after the parking inputs), so it is off here.
+        self.values = {plan_check.KEY_ENABLED: False, **values}
         self.declared_config = {}
         self.declared_stages = []
         self.stages = {}

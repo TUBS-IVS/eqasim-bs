@@ -823,7 +823,7 @@ def _wrapper_stages(incommuter_work):
         "synthesis.population.enriched": residents,
         "synthesis.population.spatial.locations": locations,
         "synthesis.vehicles.vehicles": (pd.DataFrame(), vehicles),
-        "synthesis.population.trips.final": trips,
+        POP.DAY_TRIPS_STAGE: trips,
         "synthesis.population.activities.final": activities,
         "braunschweig.synthesis.incommuters": incommuter,
         "braunschweig.synthesis.student_incommuters": no_students,
