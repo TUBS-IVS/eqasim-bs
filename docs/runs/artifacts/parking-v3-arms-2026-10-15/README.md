@@ -41,6 +41,7 @@ repository-relative paths and the code state, the tables themselves are byte-ide
 | `arm_set_summary_1pct_pv3_2026-10-15_zone_groups.csv` | per zone arm, zone group and purpose class: pricing calls, paid calls and share, expected garage share on paid and on free options, mean expected cost per call (unscaled euro cents), EV exempt, street infeasible, no feasible option and employer free counts |
 | `arm_set_summary_1pct_pv3_2026-10-15_zone_group_deltas.csv` | each zone arm minus `v3` on the rows of the previous table (the table `v3_ev_off` is judged on) |
 | `arm_set_summary_1pct_pv3_2026-10-15_free_share.csv` | per zone arm: configured shift, shift logged by the population stage, person-level free draw, pooled call-level EMPLOYER_FREE rate |
+| `arm_set_summary_1pct_pv3_2026-10-15_population_identity.csv` | per arm against `v3`: the final-iteration `eqasim_trips` table by trip key and endpoints (persons in each table and in one only, trips matched and matched with equal origin and destination, trips in one table only, their persons and share); the evidence that the arms simulated the same persons and activity locations |
 | `arm_set_summary_1pct_pv3_2026-10-15_provenance.json` | inputs with SHA-256, iterations |
 
 Zone groups (`ZONE_GROUPS` in the helper, first match wins, the column `zone_ids` lists the zones of each group): `bs_zone_ia`,
@@ -67,7 +68,7 @@ python scripts/parking/summarize_arm_set.py --data-path eqasim-data/data --path-
   --arm-without-outcomes off=${A}_off --arm-without-outcomes legacy=${A}_legacy --arm v3=${A}_v3 \
   --arm v3_cost_0.5=${A}_v3_cost_0.5 --arm v3_cost_2.0=${A}_v3_cost_2.0 \
   --arm v3_free_shift_-0.1=${A}_v3_free_shift_-0.1 --arm v3_free_shift_-0.2=${A}_v3_free_shift_-0.2 \
-  --arm v3_ev_off=${A}_v3_ev_off --out-dir $O --prefix arm_set_summary_1pct_pv3_2026-10-15
+  --arm v3_ev_off=${A}_v3_ev_off --check-population-identity --out-dir $O --prefix arm_set_summary_1pct_pv3_2026-10-15
 ```
 
 Tests of the helper: `python -m pytest tests/test_summarize_arm_set.py`.
@@ -85,14 +86,27 @@ Tests of the helper: `python -m pytest tests/test_summarize_arm_set.py`.
 - **Mode shares.** `modestats` (MATSim's own mode statistics) and the `car_trip_share_*` metrics of the comparison table (the
   `eqasim_trips` table of the final iteration 60 only) are different universes and different iterations; they were not reconciled.
   The `car_trip_share_*` and `trips_*` rows use ONE iteration while the outcome rows pool iterations 51-60 (the script warns).
+  The eqasim termination indicator `indicator:mode_share:car` (last row of `eqasim_termination.csv`, 0.617 to 0.636 in the ten
+  arms, `v3` 0.6334) is a THIRD car share: it runs over a five-mode list without `outside` and `truck`, against 0.5196 of
+  `modestats` (pooled 51-60) and 0.5304 of `eqasim_trips` for `v3`. The three universes were not reconciled and none is a reference.
+- **Contrast row.** The side-by-side table has the row `car_trip_share_ending_outside_zones` (trips that end outside every parking zone,
+  whose destination the zone cost does not price) and the columns `v3_minus_off_small` and `v3_minus_off_large` (v3 minus off
+  within one sample, percentage points for a share). The car share of the trips that end in Ia and Ib differs by -3.12 pp (1 %) and
+  -2.82 pp (25 %) between `v3` and `off`, that of the trips that end outside every zone by -0.13 pp and -0.12 pp. That is not a noise
+  estimate between independent runs (there is one run per arm); it shows how far the car share of trips without a priced destination
+  differs between the same two runs.
 - **The SD is within-run.** `sd_share_within_run` is the spread of one run over its iterations 51-60 (serially correlated: the same
   agents keep their plans). It is NOT the noise between independent runs and not a standard error; no difference between two arms
-  is tested. The arms share one seed and, for the cost arms, one cached population, so their differences are not independent draws.
+  is tested. The arms share one seed and simulate the same synthetic persons (every arm re-ran the stages that write its scenario; the
+  written population tables are byte-identical across the arms of a sample, and the `population_identity` table confirms the persons
+  and trip endpoints of the final trip tables), so their differences are not independent draws.
 - **Free share.** The person-level draw (`persons_drawn_free` of `persons_in_paid_zones`) is a share of persons in street and resident
   zones, taken from the pipeline log of the arm that built the population (the line appears once per population build). The
   call-level EMPLOYER_FREE rate is a share of pricing calls; the two are different measures and are shown next to each other,
   not as one number. `call_employer_free_share_draw_zones` uses the work and education calls in the zones of the free-draw zone types
-  (street and resident), `..._all_zones` also the campus zones, whose free share has its own assumption and no shift.
+  (street and resident), `..._all_zones` also the campus zones, whose free share has its own assumption and no shift. The Wolfsburg
+  workplace class 03103 uses the share of `bs_zentrum` (0.7938) as a proxy in the draw (`parking_free_share_proxy_classes`, logged by the
+  population stage), which is why its comparison row is 14.7 pp below the SrV share.
 - **`v3_ev_off` is compared on `zone_group_deltas`** (EV exempt counts and expected cost per zone group), not on mode shares
   (ruling R-C-3). The EV exemption acts only in the zones that carry an EV rule and only for the electric cars among the persons.
 - **Legacy ring vs zones.** `legacy` prices parking with the old ring model (`enable_urban_parking`); `v3` prices by zone. They
@@ -115,19 +129,21 @@ Inputs (read only, downloaded comparison subsets in the main checkout): `eqasim-
 zone polygons as for the 1 % set; the `*_provenance.json` files list every input path with its SHA-256.
 
 **Jar.** Both 25 % runs ran the same `eqasim-java-bs` code. Their shaded jars differ by file SHA-256 from the jars of the 1 % arms
-because every working directory rebuilds the shaded jar and the zip timestamps differ, but the list of zip entries (name and CRC-32
-of all 82,801 entries) is identical (jar check of review focus 4, ledger `progress.md` of this task). The 25 % pair shares one jar
-and the 1 % set shares one jar.
+because every working directory rebuilds the shaded jar and the zip timestamps differ, but the list of zip entries (name and CRC-32)
+is identical: 82,796 file entries, 82,801 entries including the directory entries. The check, the file hashes and the counts are
+recorded in the run manifest `docs/runs/parking-v3-arms-2026-10-15.yml` (`repository.notes`). The 25 % pair shares one jar and the
+1 % set shares one jar.
 
 | file | content |
 | --- | --- |
 | `parking_targets_comparison_25pct_pv3_2026-10-15.csv` (+ `_arm_deltas.csv`, `_provenance.json`) | `compare_parking_targets.py`, same format as the 1 % table |
-| `arm_set_summary_25pct_pv3_2026-10-15_{modestats_pooled,zone_groups,free_share}.csv`, `_provenance.json` | `summarize_arm_set.py` with `--baseline-arm v3_25pct --off-arm off_25pct`; there is no `zone_group_deltas` table (one zone arm only, nothing to subtract) |
+| `arm_set_summary_25pct_pv3_2026-10-15_{modestats_pooled,zone_groups,free_share,population_identity}.csv`, `_provenance.json` | `summarize_arm_set.py` with `--baseline-arm v3_25pct --off-arm off_25pct --check-population-identity`; there is no `zone_group_deltas` table (one zone arm only, nothing to subtract) |
 | `arm_set_summary_pv3_1pct_vs_25pct_2026-10-15_side_by_side.csv` (+ `_side_by_side_provenance.json`) | headline numbers of `v3`/`off` (1 %) next to `v3_25pct`/`off_25pct` (25 %), written by `scripts/parking/side_by_side_sample_sizes.py` from the tables of both samples |
 
 Columns of the side-by-side table: `off_small`, `v3_small` (1 % arms `off`, `v3`), `off_large`, `v3_large` (25 % arms), `n_v3_small`,
 `n_v3_large` (size of the universe of the v3 value: trips, pricing calls or persons), `v3_large_minus_small` (percentage points for
-a share, euro cents for a mean cost, empty for a count: counts scale with the sample). An empty cell means the arm has no such value
+a share, euro cents for a mean cost, empty for a count: counts scale with the sample), `v3_minus_off_small` and `v3_minus_off_large`
+(v3 minus off within one sample, same units; empty where the off arm has no value). An empty cell means the arm has no such value
 (the `off` arms price no zones), never a zero. Every cell is a value of one of the input tables; nothing is typed.
 
 Commands (repository root of the worktree, same environment as above; `M`, `R`, `O` as above):
@@ -140,7 +156,7 @@ python scripts/parking/compare_parking_targets.py --data-path eqasim-data/data -
 
 python scripts/parking/summarize_arm_set.py --data-path eqasim-data/data --path-root $R --iteration 51-60 \
   --baseline-arm v3_25pct --off-arm off_25pct --arm-without-outcomes off_25pct=$M/output_bs_pv3_off_25pct \
-  --arm v3_25pct=$M/output_bs_pv3_v3_25pct --out-dir $O --prefix arm_set_summary_25pct_pv3_2026-10-15
+  --arm v3_25pct=$M/output_bs_pv3_v3_25pct --check-population-identity --out-dir $O --prefix arm_set_summary_25pct_pv3_2026-10-15
 
 python scripts/parking/side_by_side_sample_sizes.py --folder $O --set-small 1pct_pv3_2026-10-15 \
   --set-large 25pct_pv3_2026-10-15 --arms-small v3,off --arms-large v3_25pct,off_25pct \
@@ -155,8 +171,12 @@ How to read the 25 % pair and the side-by-side table (caveats):
   run each, and the 25 % population is a separate population build (different persons and plans than the 1 % population), so
   the two samples are not nested. The within-run SD in `modestats_pooled` is the spread over iterations 51-60 of one run, not a
   between-run noise; no difference between two arms or two samples is tested.
-- **The two 25 % arms do not have the same trip count.** `trips_total` of the comparison table differs by a few trips between
-  `off_25pct` and `v3_25pct`; this was not investigated here. The car shares of trips are shares of each arm's own trip table.
+- **The two 25 % arms do not have the same trip count.** `trips_total` is 926,918 in `v3_25pct` and 926,910 in `off_25pct`. By trip key
+  926,900 trips are in both tables with identical origin and destination, 18 are in `v3_25pct` only and 10 in `off_25pct` only (22
+  persons; one person has trips in `off_25pct` only), see `arm_set_summary_25pct_pv3_2026-10-15_population_identity.csv`. The eqasim
+  stuck-agent counts of iteration 60 are 9,394 and 9,385 (`stuck_analysis.csv` on felix). That is a fact next to the unmatched trips, not
+  an explanation (`v3_25pct` has more trips and more stuck agents); the cause was not established. The car shares of trips are shares
+  of each arm's own trip table.
 - **Trip metrics use iteration 60, outcome metrics 51-60** (the script warns), as at 1 %. `car_share_modestats_mean` (MATSim mode
   statistics, pooled 51-60) and the trip car shares are different universes and were not reconciled.
 - **Counts are pricing calls.** The counts of the 25 % arm are about 25 times those of 1 %, so the side-by-side table gives a change

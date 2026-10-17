@@ -16,7 +16,7 @@
 - **Scope of this record:** Part A (stay feasibility, option prices, cost factor, EV exemption, report v4: Python reference,
   Java port, golden file, report; decisions 1 to 7) and Part B (data: zone-table corrections, Wolfsburg area zones, resident
   districts, free-lot evidence, recalibration of the decay lengths; decisions 8 to 13, from the heading "Part B: data" on).
-  Part C (runs) appends its own section when it is built. This record states NO model result.
+  Part C (runs) is the section "Part C: comparison runs" below, with its ruling ids. This record states NO model result.
 
 ## Context
 
@@ -61,8 +61,9 @@ shared golden file.
      alone because the street is unavailable (`street_unavailable`), the garage options left out for a maximum stay
      (`options_infeasible`) and the stays without any feasible option (`no_feasible_option`); the Java outcome report v4
      carries `street_infeasible_count` and `no_feasible_option_count` (decision 4). The model has no
-     threshold for `NO_FEASIBLE_OPTION`: the planned Part C arm check flags a share of 1 % of the stays in Ia and Ib (ruling
-     R-A-17), a plausibility flag and no scientific parameter.
+     threshold for `NO_FEASIBLE_OPTION`: the Part C arm check (`scripts/parking/arm_sanity.py`, ruling R-C-3) fails an arm above
+     1 % of the priced stays in Ia or Ib and only reports the other zone groups (ruling R-A-17), a plausibility flag and no
+     scientific parameter.
    - **Calibration consequence (Part B, B5).** The calibration measure must use the same option set as the pricing: the street
      weight is 1 only where the street is feasible for the stay's duration, and a commuter activity without a feasible street
      contributes an off-street share of 1. Part B implements it (Task B5, the calibration prices every stay through the
@@ -235,8 +236,8 @@ shared golden file.
   comparison are pooled ratios, not the calibration's per-stay mean.
 - v3 is unvalidated. A future run records its comparison with the SrV references in a run manifest; convergence of a run (the
   mode shares stop changing) is not validation, and the golden and unit tests are consistency and regression checks.
-- Follow-ups, not part of this decision: Part B (data) and Part C (runs); a pulp occupancy series is the issue
-  TUBS-IVS/eqasim-bs#448 (owner decision at spec review).
+- Follow-ups, not part of this decision: a pulp occupancy series is the issue TUBS-IVS/eqasim-bs#448 (owner decision at spec
+  review).
 
 ## Evidence
 
@@ -506,8 +507,8 @@ inferred from the other.
 - The free Seesen garage is a private garage whose upper levels the page frees for long-stay parkers: the model offers it free to
   every stay of the zone within reach, which overstates the free supply for a short visitor stay on the lower levels beyond 2 h
   (named in the note of the row). The documented options use the 75 m limit and the 10 m lead as assumptions (decision 14).
-- Follow-ups, not part of this decision: Part C (runs; the run manifests will be linked from the feature record); a position
-  for Arena P2; a rule for a position between two named places (the third HarzVenture lot).
+- Follow-ups, not part of this decision: a position for Arena P2; a rule for a position between two named places (the third
+  HarzVenture lot).
 
 ## Part B evidence
 
@@ -570,3 +571,34 @@ What the runs mean for this record:
   mode shares is not isolated (the manifest states both).
 - The optional SimWrapper dashboard analyses threw at the end of every run (not fatal, not part of the model); the fix is
   eqasim-java-bs PR #33 and was not deployed during the campaign so that every arm of a sample ran one jar.
+- The arms ran the code state `69fc8fc4` of this branch, which predates the merge of `origin/main` into it (portal trips,
+  outside-tour modes, the 30 h plan bound and plan check, the freight boundary links): the numbers of the manifest are those
+  of that code state and are not those of the current main. No arm was re-run on the merged main.
+- Every arm simulated the same synthetic persons (the written population tables are byte-identical across the arms of a sample
+  and the committed identity check of the final trip tables confirms the persons and the trip endpoints); the manifest
+  corrects an earlier statement that the arms shared a cached population file.
+- The headline effect (the car share of trips ending in Ia and Ib) is read next to a contrast row, the trips ending outside
+  every parking zone, whose destination the zone cost does not price; neither is a noise estimate between independent runs.
+
+## Part C ruling ids cited in the code and records
+
+The ids are historical labels of a local working ledger; the sentences state the rule. R-C-1: the runs go to felix on the
+Part B tip (branch `feature/i436-v3-b-data`, with the eqasim-java-bs branch `feature/i436-v3-a-mechanics`), and everything
+Part C adds (helper scripts, overlay copies, tables, manifest) goes to its own branch `feature/i436-v3-c-runs`, so the code
+state of the runs is fixed before the first Part C commit. R-C-2: the restricted files (zones, districts, garages) are
+installed on the workstation and on felix by copying to a temporary name and moving it into place, so that the file gets a new
+inode (the workstation copies are hard-linked across worktrees), and their SHA-256 is verified at both ends against the
+install list. R-C-3: the per-arm mechanics check `scripts/parking/arm_sanity.py` (a plausibility check, no validation): the
+run check line and the outcome report v4 header are present, the snapshot date, both decay lengths, the option price
+coefficient and the Java cost factor equal the arm's overlay, the source hash prefixes equal the install list (the inputs
+report is the primary evidence because cached stages leave no log line), the EV exemption acted (exempt persons above 0) in
+the v3 arms and is logged as disabled in `v3_ev_off`, which is compared on the exempt count and the expected cost per zone
+group and not on mode shares, and `NO_FEASIBLE_OPTION` above 1 % of the priced stays in Ia or Ib stops the arm while the other
+zone groups are only reported. R-C-4: the overlays are composed on the current `configs/base_bs.yml` (never copied from the
+v2 overlays) and carry scale, paths and the arm's lever only; `configs/` is unchanged in Part C, so nothing was tuned.
+R-C-5: the arms without the zone model (`off`, `legacy`) are checked with `--arm-kind off` or `legacy`: no zone-model log
+line, no outcome report, no enabled `braunschweigParking` module, and the ring flag set for `legacy` only. R-C-6: the final
+fix round before the pull request: `origin/main` merged into the branch with the gate re-run after the merge, the population
+identity check, the outside-zone contrast row, the corrections of the manifest and the artifact README, and the records of the
+earlier owner packages as raw sources. Review focus 1 (the 1 % hard stop on `NO_FEASIBLE_OPTION`), 4 (the jar comparison by
+the zip entry list) and 5 (`configs/` unchanged against the branch base) are labels of the same ledger.

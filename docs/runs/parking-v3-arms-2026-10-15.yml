@@ -7,8 +7,9 @@ repository:
     working tree when read on 2026-10-17; the pipeline provenance line of every log records pipeline_commit=69fc8fc4). Java:
     eqasim-java-bs on felix at ab49a956b2b60888450da9ea080b93953db739dc (branch feature/i436-v3-a-mechanics; the provenance
     line records eqasim_java_commit=unknown because eqasim_source_path is resolved relative to the merged config, the same
-    caveat as in docs/runs/parking-v2-plans-25pct-2026-10-12.yml; the commit above is the one the checkout held when it was read
-    on 2026-10-17, and nothing was deployed to felix during the campaign). The shaded jar braunschweig-2.3.1.jar is rebuilt by
+    caveat as in docs/runs/parking-v2-plans-25pct-2026-10-12.yml; fixed on main by PR #459, which resolves eqasim_source_path from the
+    working directory, so a run of the current main records the commit and these runs predate the fix; the commit above is the one
+    the checkout held when it was read on 2026-10-17, and nothing was deployed to felix during the campaign). The shaded jar braunschweig-2.3.1.jar is rebuilt by
     the stage matsim.runtime.eqasim in every working directory, so two jar files exist, one per working directory: the 1 % arms
     (cache_bs_1pct_allfeat_popsim, built 2026-10-15 14:42:59) ran the jar with SHA-256
     dd540a454fb901ea0c3e28db79a5a1f938561708998e1a7af370d1f36a49f596, the 25 % pair (cache_bs_25pct_parking_v2b, built 2026-10-16
@@ -18,7 +19,12 @@ repository:
     review of the arm set counted 82,801 entries including directory entries), only the zip timestamps differ. Within the 1 % set
     every arm used one jar, the two 25 % arms used one jar. Code of the Part C helper scripts (arm_sanity.py,
     compare_parking_targets.py, summarize_arm_set.py, side_by_side_sample_sizes.py): branch feature/i436-v3-c-runs of this
-    repository; the code_state of every table is in its provenance file.'
+    repository; the code_state of every table is in its provenance file. RUN CODE STATE VERSUS CURRENT MAIN: the arms ran the code
+    state 69fc8fc4 (the pipeline_commit of every log), which predates the merge of origin/main into the branch of this manifest
+    (merge commit 58cba024). The numbers of this manifest are those of that code state and are NOT those of the current main, which
+    has since changed the synthetic population and the plans (portal trips #442, outside-tour modes #453, the 30 h plan bound and
+    the plan check #443, the freight boundary links #444). The comparison is between arms of ONE code state; no arm was re-run on
+    the merged main.'
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -172,10 +178,28 @@ configuration:
     parking_coverage_register_2026 df4589aea744, srv2023_commute_parking_by_workplace_class bff6aa4eade4.'
 sampling:
   rate: 1 % (eight arms) and 25 % (two arms)
-  scope: 'ZGB-8 full pipeline population with cordon in-commuters. The 1 % arms share one population (working directory
-    cache_bs_1pct_allfeat_popsim: the zone, population and prepare stages ran once, in arm v3, and the other arms reused them
-    from the cache); the 25 % arms share another one (cache_bs_25pct_parking_v2b). The two populations are separate builds, so
-    the 1 % and 25 % results are not nested samples. Counts are sample counts, never expanded. EV exemption: 443 of 11,953 car
+  scope: 'ZGB-8 full pipeline population with cordon in-commuters. POPULATION OF THE ARMS: every arm re-ran the stages that write
+    its scenario in its own working directory (cache_bs_1pct_allfeat_popsim for the 1 % arms, cache_bs_25pct_parking_v2b for the
+    25 % pair): the pipeline log of each of the ten arms executes the primary candidates, the secondary chain solvers and the
+    scenario writers incl. the population writer (18 stages per log, 22 in the first arm of each sample); the PopSim stages came
+    from the cache (no popsim stage was executed in any log). So the arms do not share a cached population file, but they
+    simulated the same persons: the written synthetic-population tables persons, households, activities, trips and vehicles of
+    the eight 1 % arms have identical SHA-256 (prefixes persons 98b5bb3f99afa7dc, households 7957017471142ea8, activities
+    810f546980407128, trips d34f709ce4a85254, vehicles b7841b7e488c11e4; read-only sha256sum on felix, 2026-10-17) and those of
+    the two 25 % arms too (persons eda08d7cfeabde71, households 6aac7070fc945773, activities 42e84a2070c4d2c3, trips
+    d007882dbfa4787b, vehicles b5cc9aade8047f66), consistent with a deterministic build at random_seed 1234 (the determinism
+    itself was not tested separately). The MATSim plans file differs between arms only where the arm changes the attributes
+    written into it: v3, v3_cost_0.5 and v3_cost_2.0 have the byte-identical file (prefix e373ac2152c64792); off, legacy, the two
+    free-share arms and v3_ev_off differ from it. The committed identity check of the final-iteration eqasim_trips tables
+    (scripts/parking/summarize_arm_set.py --check-population-identity, tables *_population_identity.csv) finds the same 10,171
+    persons in all eight 1 % arms with identical endpoints of every matched trip and 0 to 2 of 37,032 trips present in one table
+    only, and at 25 % 254,660 persons in v3_25pct against 254,661 in off_25pct with identical endpoints of all 926,900 matched
+    trips and 28 unmatched trips (18 only in v3_25pct, 10 only in off_25pct; 22 persons). INDIRECT LINK TO THE 2026-10-12 PLANS:
+    the 25 % population is the one of the plans run of docs/runs/parking-v2-plans-25pct-2026-10-12.yml (same working directory
+    and random seed): its free-parking draw log line (300,855 persons, 13,584 in street or resident zones, 11,679 of them drawn
+    free, campus 5,740 persons of whom 1,128 free, RandomState 1234 + 7371) has the same counts as that of v3_25pct (an
+    indirect link by counts; the two files were not compared). The 1 % and 25 % populations are separate builds, so the 1 % and
+    25 % results are not nested samples. Counts are sample counts, never expanded. EV exemption: 443 of 11,953 car
     owners at 1 %, 10,725 of 298,166 car owners at 25 % (the pipeline log lines of the arms that built the populations).'
   notes: 'One run per arm. random_seed 1234 in every arm (the arms differ in the lever only), so a difference between two arms is
     one stochastic run each, not a tested effect.'
@@ -191,8 +215,14 @@ pipeline:
     has the iterations 0 to 60); the criterion value of the car share in the last row of eqasim_termination.csv (threshold 0.001,
     smoothing 20, horizon 10 in the config echo) is above the threshold in every arm: legacy 0.0029, v3_cost_2.0 0.0035,
     v3_free_shift_-0.2 0.0037, v3_25pct 0.0038, v3 0.0038, v3_ev_off 0.0038, off_25pct 0.0039, off 0.0040, v3_cost_0.5 0.0041,
-    v3_free_shift_-0.1 0.0041 (rounded from the file; the iteration column of the last two rows both read 59, a labelling that
-    was not investigated). Stable mode shares would be convergence, never validation; here the criterion was not even met, and the
+    v3_free_shift_-0.1 0.0041 (rounded from the file). The iteration column of the last two rows of eqasim_termination.csv both
+    reads 59 because eqasim labels both writes iteration - 1 (EqasimTerminationCriterion.prepareTerminationData): the call at
+    the start of iteration 60 (mayTerminateAfterIteration) writes the state after iteration 59, and doTerminate after iteration
+    60 writes a second row with the same label; the second row is the state after iteration 60 and its value is the one quoted
+    here. A THIRD CAR SHARE: the termination indicator indicator:mode_share:car of the last row is 0.617 to 0.636 in the ten
+    arms (v3 0.6334), a share over a five-mode list without outside and truck, while the modestats car share is 0.5196 (v3,
+    pooled 51-60; 0.5220 at iteration 60) and the car share of the eqasim_trips table is 0.5304 (v3, all trips); the three
+    universes were not reconciled and none of them is a reference. Stable mode shares would be convergence, never validation; here the criterion was not even met, and the
     comparison tables pool the iterations 51 to 60 as a late-iteration window, not as an equilibrium. The outcome report (CSV
     v4, 13 columns) is written per iteration; its iterations 51 to 60 and the eqasim_trips table of iteration 60 are the
     inputs of the comparison tables.'
@@ -205,7 +235,10 @@ status:
     all ten arms (artifact arm_sanity_results_2026-10-15.txt): module active and v4 report header, config echo (cost factor,
     option price coefficient 0.310998, decay lengths 575.27 and 69.69 m, tariff snapshot 2026-10-14), source hashes equal the
     install list, EV exemption evidence (exempt persons > 0 in the v3 arms, "disabled" in v3_ev_off), NO_FEASIBLE_OPTION 0 in
-    every zone group, and for off, legacy and off_25pct the absence of the zone model (a plausibility check of the mechanics, not
+    every zone group (the check reads the final report: at 1 % that is 0 of 17 priced stays in Ia and 0 of 2 in Ib in every zone
+    arm, so the 1 % check has almost no power against its 1 % hard-stop bound; the 25 % pair has 0 of 519 in Ia and 0 of 101 in
+    Ib; pooled over the iterations 51 to 60 the zone group tables count 228 and 65 pricing calls in Ia and Ib at 1 % (arm v3) and
+    5,441 and 1,127 at 25 % (v3_25pct), all with no_feasible_option_count 0), and for off, legacy and off_25pct the absence of the zone model (a plausibility check of the mechanics, not
     a validation). SHUTDOWN ERRORS (non-fatal, all ten logs): at the end of every run the three optional SimWrapper dashboard
     analyses CreateAvroNetwork (illegal Avro attribute names such as osm:way:highway), TripAnalysis (writeModeShift: the
     matchInput suffix match picked the per-iteration eqasim trips file, so the column euclidean_distance ''50214.108711817535''
@@ -216,7 +249,11 @@ status:
     households input linker cd23d4d7e, Avro-legal network copy cfa1691a8, on top of PR #31, which renamed the per-iteration eqasim
     files), which was NOT deployed to felix during this campaign so that all arms of a sample ran one jar. The ERROR lines are in
     the local-only pipeline logs (eqasim-data/output_bs_*pv3*/parking_v3_<arm>.log, 3 ERROR CommandRunner lines per log), not
-    committed.'
+    committed. STUCK AGENTS (eqasim stuck_analysis.csv of every arm, read-only on felix on 2026-10-17: the number of
+    PersonStuckEvents of an iteration, an indicator of the run mechanics and no validation quantity): iteration 0 and
+    iteration 60 are 662 and 373 (off, legacy and v3 and v3_ev_off), 372 (v3_cost_0.5), 373 (v3_cost_2.0), 371
+    (v3_free_shift_-0.1) and 374 (v3_free_shift_-0.2) at 1 %, and 18,024 and 9,394 (v3_25pct) against 18,024 and 9,385
+    (off_25pct) at 25 %; the files of v3 and v3_ev_off are byte-identical.'
 environment: 'felix (Ubuntu, 64 cores), conda env eqasim (Python 3.10.10 per the
   provenance line), JDK 25.0.3+9 (the log line "Using JDK 25 at /home/felix/tools/jdk-25.0.3+9"), the shaded jar
   braunschweig-2.3.1.jar of eqasim-java-bs (eqasim 2.3.1; the MATSim version is the one pinned by eqasim-java-bs ab49a956b and was not
@@ -227,26 +264,51 @@ validation:
   result: 'ARM SANE for 10 of 10 arms (exit 0 for each); the zone arms echo the intended levers, the installed source hashes
     and the v4 report; off, legacy and off_25pct carry no zone-model trace.'
   artifact: docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_sanity_results_2026-10-15.txt
+- metric: population identity of the arms (final-iteration eqasim_trips, committed check)
+  reference: 'none -- an internal consistency check that the arms of a sample simulated the same persons and activity
+    locations, not a comparison with an observed quantity'
+  result: '1 %: all eight arms have the same 10,171 persons, every matched trip has identical origin and destination, 0 to 2 of
+    37,032 trips are in one table only. 25 %: 254,660 persons in v3_25pct and 254,661 in off_25pct, identical endpoints of all
+    926,900 matched trips, 28 trips unmatched (share 3.0e-5, below the assumed bound 0.001 of the check). The written synthetic
+    population tables are byte-identical across the arms of a sample (sampling.scope).'
+  artifact: docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_population_identity.csv
+  notes: 'Written by scripts/parking/summarize_arm_set.py --check-population-identity (tests/test_summarize_arm_set.py); the
+    bound on the share of unmatched trips is an ASSUMPTION that separates a handful of unwritten trips from a differently built
+    population. The check says nothing about the plans, the mode choice or the quality of the population.'
 - metric: effect of the zone model on the mode shares (v3 against off, descriptive)
   reference: 'none -- the comparison arm is the model without parking cost, not an observation; a difference between arms is a
     model-internal sensitivity, one run per arm'
-  result: 'Car share of the trips that end in Braunschweig zones Ia and Ib (iteration 60): 0.5142 (off) against 0.4830 (v3) at 1 %,
-    0.5173 (off_25pct) against 0.4891 (v3_25pct) at 25 %; MATSim modestats car share (pooled 51-60): 0.5214 against 0.5196 at
+  result: 'Car share of the trips that end in Braunschweig zones Ia and Ib (iteration 60): 0.5142 (off) against 0.4830 (v3) at 1 %
+    (-3.12 pp, 737 trips), 0.5173 (off_25pct) against 0.4891 (v3_25pct) at 25 % (-2.82 pp, 19,314 trips). CONTRAST ROW, the trips
+    that end outside every parking zone, whose destination the zone cost does not price: 0.5320 (off) against 0.5306 (v3) at
+    1 % (-0.13 pp, 34,922 trips) and 0.5287 against 0.5275 at 25 % (-0.12 pp, 872,617 trips); the Ia and Ib difference is
+    about 24 times the outside-zone difference in both samples. The outside-zone difference is NOT a noise estimate between
+    independent runs (no such estimate exists, one run per arm); it only shows how far the car share of trips without a
+    priced destination differs between the same two runs. MATSim modestats car share (pooled 51-60): 0.5214 against 0.5196 at
     1 %, 0.5178 against 0.5159 at 25 %. Legacy ring against v3 at 1 %: modestats car share 0.5062 against 0.5196. The cost
     factor, free-share and EV arms (1 % only) move the car share within a range comparable to the within-run spread of the
     iterations (SD 0.0014 to 0.0017 at 1 %, 0.0011 at 25 %; this spread is not a between-run noise estimate and no difference was
     tested); the EV arm is bit-identical to v3 at 1 % because the EV exemption never fired there.'
   artifact: docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_pv3_1pct_vs_25pct_2026-10-15_side_by_side.csv
   notes: 'Values read from the side-by-side table (columns off_small, v3_small, off_large, v3_large; rows
-    car_trip_share_ending_in_ia_ib and car_share_modestats_mean) and from the modestats tables of the legacy and v3 arms. Trip
+    car_trip_share_ending_in_ia_ib, car_trip_share_ending_outside_zones and car_share_modestats_mean; columns v3_minus_off_small
+    and v3_minus_off_large hold the differences) and from the modestats tables of the legacy and v3 arms. Trip
     metrics use iteration 60 only, outcome metrics 51-60; modestats and eqasim_trips are different universes and were not
-    reconciled. The trip counts of the two 25 % arms differ by 8 (926,910 and 926,918), not investigated.'
+    reconciled. THE 8-TRIP DIFFERENCE OF THE 25 % PAIR (926,918 trips in v3_25pct, 926,910 in off_25pct): of the trip keys
+    (person_id, person_trip_id) 926,900 are in both tables with identical origin and destination, 18 are in v3_25pct only and 10
+    in off_25pct only (22 persons; one person has trips in off_25pct only); the eqasim stuck-agent counts of iteration 60 differ
+    by 9 in the same two arms (9,394 and 9,385). That is a fact next to the unmatched trips, not an explanation: v3_25pct has
+    more trips AND more stuck agents, so the sign does not follow from the stuck count, and the cause of the 28 unmatched trips
+    was not established. At 1 % the arms differ by 0 to 2 trips of 37,032.'
 - metric: paid share and garage share in Ia and Ib against the SrV 2023 city-centre tables (comparison, calibration targets and an independent check)
   reference: 'committed tables srv2023_city_center_parking and srv2023_commute_parking_by_workplace_class (data records of the
     same names); the role of every row (comparison, calibration target, independent check) is labelled in the universe_note column
     of the comparison table'
   result: 'COMPARISON, NOT VALIDATION. 25 % pair, arm v3_25pct, pooled iterations 51-60, pricing calls (not trips or persons): paid
-    share Ia+Ib other purposes 0.8601 against the SrV share paying 0.8333 (+2.7 pp, 2,744 calls; 1 %: 0.8640, 125 calls); paid
+    share Ia+Ib other purposes 0.8601 against the SrV share paying 0.8333 (+2.7 pp, 2,744 calls; 1 %: 0.8640, 125 calls); THE
+    +2.7 PP IS NOT AN AGREEMENT: the model value is a share of pricing calls (car alternatives that mode choice evaluated, chosen
+    or not, at every destination in the zones), the SrV value a share of residents who pay at their usual place; calls and
+    residents are different universes, so the closeness of the two numbers is no evidence; paid
     share Ia+Ib all purposes 0.4263 against 0.8333 (-40.7 pp; an upper bound of a chosen-trip share on a different universe: calls
     at all destinations against residents'' usual place, home stays included). The garage-share rows are CALIBRATION TARGETS of the
     two decay lengths, not validation quantities: other purposes 0.7098 against 0.7362 (2,744 calls), bs_zentrum work and education
@@ -257,7 +319,10 @@ validation:
   notes: 'The 1 % rows of the same table (parking_targets_comparison_1pct_pv3_2026-10-15.csv) rest on tens of calls per row and are
     noise-dominated: the bs_zentrum work-and-education garage share moved from 0.573 (22 calls) to 0.699 (440 calls) between
     the samples. Free-share rows follow from the free-parking draw of the workplace class (assumption A1), so their closeness to
-    the SrV share is by construction, not a result.'
+    the SrV share is by construction, not a result. The one visible exception is the Wolfsburg workplace class 03103: its
+    free-share row is 0.8002 against the SrV 0.9475 (-14.7 pp, 996 calls), because the draw gives that class the share of
+    bs_zentrum, 0.7938, as a proxy (the population stage logs it: parking_free_share_proxy_classes, 03103 -> bs_zentrum 0.7938),
+    not its own 0.9475; the row measures that configured proxy, not an error of the draw.'
 - metric: EV exemption lever
   reference: 'none -- an on/off sensitivity of the model'
   result: 'At 1 % the exemption never fired (ev_exempt_count 0 in every arm and zone group over iterations 51-60) and v3_ev_off is
@@ -286,10 +351,12 @@ artifacts:
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_zone_groups.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_zone_group_deltas.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_free_share.csv
+- docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_population_identity.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_1pct_pv3_2026-10-15_provenance.json
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_modestats_pooled.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_zone_groups.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_free_share.csv
+- docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_population_identity.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_25pct_pv3_2026-10-15_provenance.json
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_pv3_1pct_vs_25pct_2026-10-15_side_by_side.csv
 - docs/runs/artifacts/parking-v3-arms-2026-10-15/arm_set_summary_pv3_1pct_vs_25pct_2026-10-15_side_by_side_provenance.json
