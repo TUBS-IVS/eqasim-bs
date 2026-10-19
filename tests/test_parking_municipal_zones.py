@@ -206,7 +206,7 @@ def test_braunschweig_fee_zones_replace_ia_and_ib_with_the_v1_cut_outs_and_the_r
 # --------------------------------------------------------------------------- C2: Wolfsburg tariff zones
 
 
-def test_wolfsburg_tariff_zones_replace_wob_innenstadt_split_by_the_nearer_section(release):
+def test_wolfsburg_tariff_zones_replace_wob_innenstadt_split_by_the_nearer_section(release, assembly):
     zones = release["zones"]
     assert "wob_innenstadt" not in zones.index
     one, two, three = (zones.loc[f"wob_tarifzone_{key}"] for key in (1, 2, 3))
@@ -220,7 +220,13 @@ def test_wolfsburg_tariff_zones_replace_wob_innenstadt_split_by_the_nearer_secti
     strips = unary_union([STRIP_1.buffer(50.0), STRIP_2.buffer(50.0)])
     one_strip = one.geometry.intersection(strips.buffer(1.0))
     two_strip = two.geometry.intersection(strips.buffer(1.0))
-    assert one_strip.area == pytest.approx(two_strip.area, rel=2e-3)
+    # The sampled split line lies within half a sample spacing of the exact bisector (municipal_zones.SAMPLE_SPACING_M), so
+    # each side may gain or lose up to that band over the split length (the strips' 300 m plus the 50 m buffer at both
+    # ends): the two areas may differ by twice that. A relative bound tighter than the method's own accuracy failed on
+    # Linux CI (87 m2 apart) while passing on Windows - GEOS rounding differs between the builds.
+    split_length_m = 300.0 + 2 * 50.0
+    split_tolerance_m2 = 2 * (assembly.mz.SAMPLE_SPACING_M / 2) * split_length_m
+    assert abs(one_strip.area - two_strip.area) <= split_tolerance_m2
     assert one_strip.area + two_strip.area == pytest.approx(strips.area, rel=SIMPLIFIED_BUFFER)
     assert one_strip.intersection(two_strip).area < 1.0
     assert one.geometry.contains(_point(150, 38.5, WOB_X)) and two.geometry.contains(_point(150, 41.5, WOB_X))
