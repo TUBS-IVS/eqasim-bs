@@ -572,7 +572,8 @@ byte-identical. R-B-7: the tariff snapshot date is 2026-10-14. R-B-8: the stale-
 recalibration. R-B-10: the regenerated restricted files are installed with the Part B integration. R-B-11: the lot maximum
 is the simple elapsed-stay comparison. R-B-12: an area zone is the Voronoi cell of its section inside the parent zone.
 R-B-13: the Wolfsburg universe of the calibration and the comparison is selected by municipality. R-B-14: the Helmstedt
-ring is not widened. R-B-15: Arena P2 stays a QA row without a position. R-B-16: the commuter and Wolfsburg-check measures
+ring is not widened. R-B-15: Arena P2 stays a QA row without a position (SUPERSEDED on 2026-10-19 by R-C-7: it is a free option
+on OpenStreetMap ways). R-B-16: the commuter and Wolfsburg-check measures
 are payer-conditional. R-B-18: the documented options of Bad Harzburg and Seesen of decision 14.
 
 ## Part C: comparison runs (2026-10-15 to 2026-10-17)

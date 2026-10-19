@@ -1592,7 +1592,10 @@ def test_the_real_package_gives_the_rows_of_the_release_by_the_primary_method(ga
     # that the package keeps as 'not a verified entrance' without an OpenStreetMap object or coordinate source (counted, warned)
     assert counts["tariff_source_web_service"] == 0 and counts["limited"] == 18
     assert counts["position_origin"] == {"osm_object": 53, "coordinate_source": 4, "tariff_source_fallback": 1}
-    assert printed.count("WARNING") == 1 and "WOB_ARENA_P1 has no source in the package" in printed
+    # the package alone (no OpenStreetMap extract, ruling R-C-7): two warnings, the fallback of the Arena P1 position and the one that
+    # names the two Arena lots whose OpenStreetMap position was not available (P1 keeps the package point, P2 is the QA row)
+    assert printed.count("WARNING") == 2 and "WOB_ARENA_P1 has no source in the package" in printed
+    assert "OSM positions 0/2" in printed and "no OpenStreetMap extract was given (--osm-extract): WOB_ARENA_P1, WOB_ARENA_P2" in printed
     assert counts["capacity_origin"] == {"reported": 34, "osm_tag": 5, "area_estimate": 18, "derived": 1, "other": 0}
     assert "capacity origin: reported 34/58 (58.6 %), OSM tag 5/58 (8.6 %), area estimate 18/58 (31.0 %), derived 1/58 (1.7 %)" \
         in printed
@@ -1795,17 +1798,19 @@ def _site_of(row) -> str:
 def test_the_option_set_of_the_release_is_the_package_shortlist_less_the_two_mixed_peine_sites(committed, real_package):
     shortlist = {key for key, record in real_package["facilities"].items() if record["public_candidate_50"]}
     lots = committed[committed["facility_kind"] == "surface_lot"]
-    assert len(shortlist) == 57 and len(lots) == 58
+    assert len(shortlist) == 57 and len(lots) == 59
     # the package's own shortlist (written by its author, not by the policy of ``large_lots``) less the two mixed Peine sites, plus
-    # the three owner-decided free Wolfsburg lots of spec v3 B4 (the package keeps their access unknown or event-conditional)
+    # the four owner-decided free Wolfsburg lots of spec v3 B4 and ruling R-C-7 (the package keeps their access unknown or
+    # event-conditional; Arena P2 has a position only from the OpenStreetMap ways of the owner decision)
     assert set(lots["package_facility_id"]) == shortlist - {"peine_friedrich_ebert_platz", "peine_schuetzenplatz_sued"} | {
-        "WOB_PARK_720902", "WOB_PARK_1703940", "WOB_ARENA_P1"}
+        "WOB_PARK_720902", "WOB_PARK_1703940", "WOB_ARENA_P1", "WOB_ARENA_P2"}
     # no site of the dataset has the withdrawn municipal free default and none is free without a statement of its source
     assert not committed["assumptions"].fillna("").str.contains("P12").any()
     free = lots[lots["tariff_duration_bands"] == "0- free"]
     for garage_id, row in free.iterrows():
         if row["tariff_rule_ids"].startswith("evidence:"):       # spec v3 B4: the archived pages of the Restluecken package
-            assert garage_id in ("lot_wob_park_720902", "lot_wob_park_1703940", "lot_wob_arena_p1"), garage_id
+            assert garage_id in ("lot_wob_park_720902", "lot_wob_park_1703940", "lot_wob_arena_p1",
+                                 "lot_wob_arena_p2"), garage_id
             assert row["package_sha256"].endswith(";80f301c15fa13668397b6f7d127b089370224ce0ad16215dd9b96ec2fa1d8d2c")
             continue
         components = [rule_id for rule_id in row["tariff_rule_ids"].split(";") if rule_id in real_package["rules"]]
@@ -1823,7 +1828,7 @@ def test_every_record_of_the_package_is_exactly_once_a_row_or_a_qa_row_with_the_
     # the reason of every record, from the package's own fields in the order of its shortlist rule (a second implementation of
     # the policy; the three Wolfsburg lots that are free only on a per-site source and the two mixed sites are the owner's)
     public = ("public", "public_with_customer_discount", "mixed_public_and_customers")
-    owner = {"WOB_ARENA_P2": "lot_no_position", "WOB_PARK_327697": "lot_free_evidence_missing",
+    owner = {"WOB_PARK_327697": "lot_free_evidence_missing",
              "peine_friedrich_ebert_platz": "lot_mixed_tariff_unseparated",
              "peine_schuetzenplatz_sued": "lot_mixed_tariff_unseparated"}
     for _, row in qa.iterrows():
@@ -1855,7 +1860,7 @@ def test_every_record_of_the_package_is_exactly_once_a_row_or_a_qa_row_with_the_
         assert row["reason_code"] == expected, site
     assert qa["reason_code"].value_counts().sort_index().to_dict() == {
         "lot_access_not_public": 46, "lot_alias": 2, "lot_below_threshold": 23, "lot_capacity_unknown": 3,
-        "lot_free_evidence_missing": 1, "lot_mixed_tariff_unseparated": 2, "lot_no_position": 1, "lot_not_open": 2,
+        "lot_free_evidence_missing": 1, "lot_mixed_tariff_unseparated": 2, "lot_not_open": 2,
         "lot_not_surface_lot": 6, "lot_unconfirmed_candidate": 9}
 
 
