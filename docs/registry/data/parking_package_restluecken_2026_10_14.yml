@@ -75,7 +75,9 @@ limitations: >-
   package and not modelled, ASSUMPTION W-match); the BadeLand fee rule refers to the Zone I tariff and the later practice of
   ticket validation is unconfirmed; the Bad Harzburg brochure of 2021/22 is not a complete 2026 proof; the Gifhorn end date of
   the resident scheme and the last permit stock are unknown; the Salzgitter resident areas are not available at all. The
-  package gives no position for the Arena car park P2, so P2 has no option in the garage dataset (QA row lot_no_position).
+  package gives no position for the Arena car park P2; the garage dataset positions both Arena lots on OpenStreetMap ways of the
+  pinned extract by an owner decision of 2026-10-19 (ruling R-C-7), so P2 is a free option there (a run without the extract keeps
+  the QA row lot_no_position).
 notes: >-
   Used by the parking v3 Part B of issue #436 (ADR-0142): the free-lot evidence and the Arena (B4), the Bad Harzburg fee windows
   of the zone table (B1) and the Salzgitter and Gifhorn findings of the coverage register (B3). Registered as a raw source of

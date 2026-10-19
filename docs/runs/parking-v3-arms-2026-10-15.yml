@@ -371,5 +371,7 @@ notes: 'Outputs are local-only: the full run outputs stay on felix (eqasim-data/
   (data record parking_zones_2026). The README of the artifact folder holds the commands to regenerate every table. This set is a
   comparison of model arms, never a validation: no table compares a model value with a validated reference, one run per arm and
   sample, and a run that reaches the iteration limit with mode shares still changing is not converged, let alone calibrated.
-  Open follow-ups: the effect of the EV exemption at 25 % (an EV-off arm at that scale does not exist), an observed garage
+  Garage dataset of the arms: all ten ran on parking_garages_2026 84cf09f68ec3 (96 options: Arena P1 at the prior municipal
+  point of the package, no row for Arena P2); the dataset installed since 2026-10-19 (Task C4, 97 options, Arena P1 and P2 on their OpenStreetMap
+  ways) differs from it, and no arm was re-run on it. Open follow-ups: the effect of the EV exemption at 25 % (an EV-off arm at that scale does not exist), an observed garage
   quantity (issue TUBS-IVS/eqasim-bs#448) and the production decision on the v3 flags stay with the owner.'

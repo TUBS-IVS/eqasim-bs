@@ -227,7 +227,8 @@ validation:
     Braunschweig Ia without the withdrawn long-stay product), the Wolfsburg area zones with their own maximum stay
     (parking_zones_2026), the resident districts of six municipalities (parking_resident_districts_2026), the garage dataset with
     the maximum stay of three Ia lots, three more free lots and the two documented options of Bad Harzburg and Seesen (a free
-    Seesen garage, a free Bad Harzburg car park out of reach of every zone), Arena P2 without a position (parking_garages_2026),
+    Seesen garage, a free Bad Harzburg car park out of reach of every zone), the Volkswagen Arena lots P1 and P2 positioned on their
+    OpenStreetMap ways since 2026-10-19 (parking_garages_2026; the ten Part C arms ran on the dataset before that),
     and the two decay lengths recalibrated on that option set with the price term, the feasibility rule and the
     payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). STATE
     OF THE V3 COMPARISON RUNS (Part C; the run manifest parking-v3-arms-2026-10-15 is the one place that records them, with the

@@ -9,11 +9,12 @@ provider: >-
   every stay is priced and weighted by the production pricing code (feasibility of spec v3 A1 with the maximum stays of ASSUMPTION
   M3, price term of spec v3 A2)
 vintage: >-
-  generated 2026-10-15 (the header of the table states the date) at the code state 3b4d39b8 (Task B7 fix round 3; the table of
-  the first B7 commit was generated at 007b56ad, the first table of Task B5 at 164b4b74) on the 25 % reference plans (run
+  generated 2026-10-19 (the header of the table states the date) at the code state 5326373e (Task C4, rulings R-C-7 and R-C-8:
+  the Volkswagen Arena lots on their OpenStreetMap ways; the table of Task B7 fix round 3 was generated on 2026-10-15 at
+  3b4d39b8, the table of the first B7 commit at 007b56ad, the first table of Task B5 at 164b4b74) on the 25 % reference plans (run
   manifest parking-v2-plans-25pct-2026-10-12: the v2 plans run of 2026-10-12 on the server, parking zones on, both decay
   lengths 0.0, no MATSim run), the garage dataset after Task B7 (options: garages and large public surface lots and the two
-  documented options of Bad Harzburg and Seesen, 96 priced options, 34 of them free), the zone table and the tariff table after
+  documented options of Bad Harzburg and Seesen, 97 priced options, 35 of them free), the zone table and the tariff table after
   Tasks B1 and B2 (55 zones incl. 15 Wolfsburg area zones), and the option price coefficient 0.310998
 geography: The Braunschweig city centre (the fee zones bs_zone_ia and bs_zone_ib) for the calibration of both values, the Wolfsburg
   zones (every zone of the tariff table with municipality_ags 03103000, the tariff zones and the area zones) for the check; the
@@ -65,10 +66,12 @@ storage:
   local_only: false
   notes: >-
     Committed with git add -f (the data folder is gitignored by design). SHA-256 of the committed table (LF line endings):
-    11ec4ab9934ee3d7f8c4002369a08bab951bfa163a809d9be6b11c8de713744c. Long format quantity,value,unit,note under a '#'
+    b944d6d06238a612747b5ab28015ba1e129f8e00f340247850acdef46faf46e0. Long format quantity,value,unit,note under a '#'
     header; read by calibrate_garage_decay.read_calibration_table (which refuses a table without decay_commute_length_m, i.e.
     one written before Amendment H). Produced by the script on a clean tree at the code state named in its header (commit
-    3b4d39b8, Task B7 fix round 3; the table of the first B7 commit had
+    5326373e, Task C4 of 2026-10-19; the table of Task B7 fix round 3 (commit 3b4d39b8, SHA-256
+    11ec4ab9934ee3d7f8c4002369a08bab951bfa163a809d9be6b11c8de713744c) had the same values and the garage dataset 84cf09f6 with 96
+    options; the table of the first B7 commit had
     ec7d972633df7da9c1104be5b86347f3419cc87779bcb5fac3325fd22be6e75d at commit
     007b56ad; the table committed in fix round 2 at 4f921bf0
     (SHA-256 e2a4936dbcaee004b480ea9a3502372cdd044843bd4d1f6bfd5aff0234cbbe7f)
@@ -83,16 +86,21 @@ storage:
     byte-identical files (cmp, same SHA-256), so the generation date in the header and the code-state line are the only
     run-dependent content; the code-state line names the commit of the producing code, and a rerun at a later commit changes only
     that line and the date (the header says so). THE TABLE BELONGS TO THE GARAGE DATASET, THE ZONE FILE AND THE TARIFF TABLE NAMED
-    IN ITS HEADER EXACTLY (garage dataset SHA-256 84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41, the release
+    IN ITS HEADER EXACTLY (garage dataset SHA-256 e6a8768c5b5a223ca415eebc29bd01c7ef203f110e73c212a8704a8377ab0ca4, the release
     dataset of the data record parking_garages_2026; zones 7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504, record
     parking_zones_2026; tariffs 7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82, record parking_tariffs_2026):
     another option set, zone table or tariff table needs a new calibration (a fee window, a maximum stay or a long-stay product
     moves feasibility and prices), and tests/test_parking_garage_decay_config.py compares the header pins of the garage dataset
     and of the zone file with the one pin of their data records, those of the tariff table and the two SrV tables with the LF
     SHA-256 of the committed files, the row option_price_beta_u_per_eur with PARKING_DEFAULTS, every config and the module
-    constant prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR. The Wolfsburg car park Arena P2 is a QA row of the dataset
-    without a position (no option, ruling R-B-15); if a position arrives the dataset changes and the calibration must be run
-    again.
+    constant prepare.PARKING_GARAGE_DECAY_CALIBRATED_BETA_U_PER_EUR. The Wolfsburg car park Arena P2 was a QA row of the dataset
+    without a position (no option, ruling R-B-15) and became a free option with a position on OpenStreetMap ways on 2026-10-19
+    (ruling R-C-7), as ruling R-B-15 foresaw: the dataset changed (97 options, 35 free) and the calibration was run again. THE
+    VALUES DID NOT MOVE: lambda 575.27 m, lambda_c 69.69 m, the Wolfsburg check 0.500922 against 0.737705 and both option-set
+    sensitivities (lambda 575.27 m at 30 spaces, 818.93 m at 100) are those of the table before; Arena P2 and the moved Arena P1
+    lie in Wolfsburg, outside both Braunschweig universes, and the Wolfsburg check is paid-only, where a free option leaves the
+    measure. Only the counts changed (97 options used, 35 free, the Wolfsburg check has five free options within reach instead
+    of four).
 verification:
   verifier_entry: null
   notes: |
@@ -200,8 +208,8 @@ limitations: |
   not hold. Free options: the header and the rows state, per universe, the free options within 1,000 m by id and the activities
   they reach. No free option lies within 1,000 m of any activity of the two Braunschweig universes (0 of 8,226 and 0 of 1,327),
   so there the paid-only and the payment-inclusive measure coincide in which options count; the correction acts only in the
-  Wolfsburg check, where four free options (lot_wob_arena_p1, lot_wob_hoffmann_von_fallersleben, lot_wob_park_1703940,
-  lot_wob_theaterparkplatz) reach 269 of the 622 activities. A universe is averaged over its activities (as in E5): that mean
+  Wolfsburg check, where five free options (lot_wob_arena_p1, lot_wob_arena_p2, lot_wob_hoffmann_von_fallersleben,
+  lot_wob_park_1703940, lot_wob_theaterparkplatz) reach 269 of the 622 activities. A universe is averaged over its activities (as in E5): that mean
   equals the pooled ratio of the summed probabilities where no free option is in range of any activity of the universe and every
   stay is an expectation over the street and the options, and may differ from it otherwise (the pooled ratio is not computed).
   The freight agents of the plans (ids freight_*, 14,103 of the 314,958 person elements; they are no residents) are excluded from

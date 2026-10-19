@@ -80,7 +80,10 @@ its reason. The steps, the rule of each and the code that carries it:
   them is given (read in place from `Parkdaten_Restluecken_2026-10-14.zip` with `--wob-evidence-zip`, each page against the
   package's `file_manifest.json`, or listed with its SHA-256 in `wob_free_lots_evidence/MANIFEST.md`) and holds its quotation;
   otherwise they are QA rows with what was searched, and a named page that a given archive lacks stops the step. A site that the
-  package gives no position stays a QA row (`lot_no_position`) whatever its pages state (Volkswagen Arena P2). The row names every
+  package gives no position stays a QA row (`lot_no_position`) whatever its pages state, unless the owner decision names the
+  OpenStreetMap ways that ARE the lot (`osm_position`, ruling R-C-7: the Volkswagen Arena P1 and P2; the position is the
+  representative point of the union of the ways, which must lie within 75 m of the package's own point where there is one; it
+  needs `--osm-extract`, else P2 stays a QA row and the run warns). The row names every
   page with its SHA-256, carries no maximum stay (a free lot does not inherit the product of a zone) and, for the Arena, the
   match-day condition that is not modelled (ASSUMPTION W-match, owner decision 2026-10-14). ASSUMPTION P12 is withdrawn: no default
   makes a lot free.

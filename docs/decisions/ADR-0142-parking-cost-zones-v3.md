@@ -375,11 +375,18 @@ inferred from the other.
     the Volkswagen Arena car park P1 (the club page: free outside match days; ASSUMPTION W-match: match days are not modelled,
     the lot is free on the simulated weekday; owner decision YES). The page of the Suedufer states that its claim holds for the
     named point only; the extension to the lot is the owner's decision and the note of the row says so, as it says that the
-    free schedule of the Freibad lot is the owner's decision (the page gives no hours or stay rule). The Arena P1 position is the
-    package's prior municipal point, which the package keeps as no verified entrance (a counted fallback, 1 of 58, with its own
-    geometry method). Arena P2 has NO position in the large-lot package and stays a QA row with the reason `lot_no_position`: a
-    car park without a position has no option, and a guessed point would invent data (ruling R-B-15; the owner is asked for a
-    position). VW-Bad stays a QA row (no source); BadeLand stays a paid option at the zone I tariff (the visitor validation is
+    free schedule of the Freibad lot is the owner's decision (the page gives no hours or stay rule). The Arena P1 position was
+    the package's prior municipal point, which the package keeps as no verified entrance (a counted fallback, 1 of 58, with its
+    own geometry method). Arena P2 had NO position in the large-lot package and was a QA row with the reason `lot_no_position`:
+    a car park without a position has no option, and a guessed point would invent data (ruling R-B-15). SUPERSEDED on
+    2026-10-19 (owner decision "locate Arena P2 ourselves", ruling R-C-7): the position of both Arena lots is taken from the
+    pinned OpenStreetMap extract, not guessed. P1 is the way 25102111 (named P1, capacity tag 620); the package's prior point
+    lies inside it (0 m, limit 75 m). P2 is the union of the two ways 25102118 and 25102124, both named P2 (capacity tag 359 and
+    no tag, so the area estimate 30 spaces: 389 together) next to the arena, 94 m and 35 m from P1 (the package reports 380 for
+    P2); the row is a free option on the same evidence page and ASSUMPTION W-match as P1. `capacity_reported` stays the
+    package's value (P1 494 of the club page, P2 380 of the event operator) and the OpenStreetMap capacity is a named
+    cross-check in the note (P1 620). The dataset point of a lot is the representative point of the outline (of the union for P2).
+    VW-Bad stays a QA row (no source); BadeLand stays a paid option at the zone I tariff (the visitor validation is
     not modelled). The pages are read in place from the package (hash checked); the pipeline downloads nothing.
 13. **Recalibration of the decay lengths (spec B5).** lambda (visitors) and lambda_c (commuters) are refitted on the 25 %
     reference plans with the final option set of this part and the Part A rules; the values, the superseded v2 values, the
@@ -415,12 +422,25 @@ inferred from the other.
     methods are logged). A match at one of the five zone car parks is no new option: two HarzVenture lots (Nordhaeuser Strasse 4
     and 12) are the OpenStreetMap outlines of the zone car parks Sole-Therme and Grossparkplatz (QA row `zone_street_product`;
     the page equals the zone rows in rate, billing unit, maximum stay and end of the fee time, and its 15 free minutes and
-    maximum fee are not in the zone rows); the third has no address and no position (`lot_no_position`); the Silberbornbad has
+    maximum fee are not in the zone rows); the third had no address and no position (`lot_no_position`; located since ruling
+    R-C-8 on 2026-10-19, see the end of this decision); the Silberbornbad has
     two touching parking areas and no unique position (`lot_no_position`); the car park at the Galopprennbahn is a free option
     (the brochure names an area, so the row stands for the nearest lot; capacity 100 by the area estimate of the large-lot
     package; it lies 2.9 km from the nearest Bad Harzburg zone, so no stay reaches it within the option distance of 1 km, which
     the data record states). No paid HarzVenture lot is left, so no paid encoding is built; the step stops if one appears. The
-    dataset has 96 rows after 94. Braunlage stays unchanged (its two zones are the car parks); the free car parks of
+    dataset has 96 rows after 94. Ruling R-C-8 (owner decision 2026-10-19): the third HarzVenture lot "zwischen Hotel Seela und
+    Tankstelle" is located BETWEEN the two places that its page names, by a sixth key of the one function
+    (`osm_between_landmarks`: the Harz Hotel & Spa Seela, way 177798744, and the Q1 fuel station, node 7373015680; exactly one
+    parking area within 25 m of the line between them whose projection falls between the ends, else `ambiguous` or `unmatched`;
+    the tolerance is an ASSUMPTION and configurable; ASSUMPTION: the page's description identifies the only public lot between
+    the two). It is OpenStreetMap way 617792585 (capacity tag 192), which the regional package names as the outline of the zone
+    car park `bh_burgberg`: so, like the other two HarzVenture lots, it is NO new option (a second row would double the zone's
+    own car park) but a QA row `zone_street_product` whose note compares the page with the zone row: rate per hour, billing unit,
+    maximum stay (10 h) and end of the fee time (18:00) are EQUAL; the page's maximum fee of 10.00 EUR is not in the zone row,
+    which stands. The page governs every tariff field (owner decision); OpenStreetMap gives only the position and the capacity,
+    and its tags `maxstay` (1 day), `charge` and `fee:conditional` (08:00-18:00) are named in the note as discrepancies and never
+    used as values. Whether the zone row should take the page's 10.00 EUR maximum fee is an owner question (it changes the tariff
+    table pinned by the calibration); the dataset has 97 rows after 96 (the one new row is Arena P2, see decision 12). Braunlage stays unchanged (its two zones are the car parks); the free car parks of
     Koenigslutter and Schoeningen get no option (no position, no paid zone, so an option would be inert), and the Goslar GALERIA
     keeps its 15 EUR day maximum (owner decision of spec E12; a business directory not shown to be independent of the operator
     locator repeats its 8 EUR in the transcription of 2026-10-15: secondary, not a value). The Northeim Q-Park transcription is
@@ -453,7 +473,11 @@ inferred from the other.
 - **Widen the Helmstedt face to the road edge** (decision 11): the brochure counts the spaces of the ring roads as outside.
 - **A district for Salzgitter or Gifhorn** (decision 11): there is no list or map for Salzgitter, and the Gifhorn scheme ended.
 - **Guess a position for Arena P2, or extend the Suedufer claim to neighbouring lots without saying so** (decision 12): both
-  would invent a source statement; the first is a QA row, the second is an owner decision named in the note.
+  would invent a source statement; the second is an owner decision named in the note. The first was rejected until the
+  owner's decision of 2026-10-19, which locates P2 on OpenStreetMap ways rather than guessing a point.
+- **A second, paid option for the third HarzVenture lot, or OpenStreetMap's `maxstay`, `charge` and fee times as values**
+  (decision 14, ruling R-C-8): the lot is the zone car park `bh_burgberg` already priced as a zone, so a second row would be
+  a duplicate; the page governs and the tags are named discrepancies.
 - **Model the match days of the Arena** (decision 12): no occupancy or event data; named as W-match.
 - **Count the commuter non-payers as share 0** (decision 13): the target is conditional on payers; mixing the two measures
   is not like-for-like.
@@ -490,8 +514,10 @@ inferred from the other.
   The Wolfsburg area zones 730 to 734 have only one or two options.
 - Limitations to state with every v3 result, additional to Part A: W-max is an owner decision against the package's wording
   for 58 areas; the Goslar exemption is an upper bound; the districts are envelopes of listed streets, not permit areas
-  (R3, R3-b, HE-a); the Arena has one free lot instead of two until a position for P2 arrives, and the Arena P1 position is a
-  prior municipal point; match days are not modelled; lambda_c is an order of magnitude and does not transfer to a town with a
+  (R3, R3-b, HE-a); the two Arena lots are free options at points inside their OpenStreetMap outlines (P2 a union of two ways
+  reduced to one point); match days and event days are not modelled (W-match); the ten Part C arms (2026-10-15 to 2026-10-17) ran on the
+  garage dataset BEFORE these two lots changed (SHA-256 84cf09f6: Arena P1 at the prior municipal point, no row for P2) and were not
+  re-run; lambda_c is an order of magnitude and does not transfer to a town with a
   feasible street; the calibration universe has a sampling uncertainty that is not quantified and the plans predate the EV
   attribute (the calibration treats every stay as not exempt); the Wolfsburg check differs from its SrV reference by a number
   whose cause is not established.
@@ -507,8 +533,8 @@ inferred from the other.
 - The free Seesen garage is a private garage whose upper levels the page frees for long-stay parkers: the model offers it free to
   every stay of the zone within reach, which overstates the free supply for a short visitor stay on the lower levels beyond 2 h
   (named in the note of the row). The documented options use the 75 m limit and the 10 m lead as assumptions (decision 14).
-- Follow-ups, not part of this decision: a position for Arena P2; a rule for a position between two named places (the third
-  HarzVenture lot).
+- Follow-up, not part of this decision: whether the zone row `bh_burgberg` takes the 10.00 EUR maximum fee that the HarzVenture
+  page states for the lot (the zone rows of Bad Harzburg carry no maximum fee).
 
 ## Part B evidence
 
@@ -600,5 +626,9 @@ R-C-5: the arms without the zone model (`off`, `legacy`) are checked with `--arm
 line, no outcome report, no enabled `braunschweigParking` module, and the ring flag set for `legacy` only. R-C-6: the final
 fix round before the pull request: `origin/main` merged into the branch with the gate re-run after the merge, the population
 identity check, the outside-zone contrast row, the corrections of the manifest and the artifact README, and the records of the
-earlier owner packages as raw sources. Review focus 1 (the 1 % hard stop on `NO_FEASIBLE_OPTION`), 4 (the jar comparison by
+earlier owner packages as raw sources. R-C-7 (owner decision 2026-10-19): the Volkswagen Arena lots are positioned on the
+OpenStreetMap ways of the pinned extract (P1 the way 25102111, P2 the union of the ways 25102118 and 25102124), P2 becomes a free
+option and both keep the capacity that the package reports; decisions 12 states the rule. R-C-8 (same day): the third
+HarzVenture lot is positioned between its two named landmarks and found to be the zone car park `bh_burgberg`; decision 14
+states the rule. Review focus 1 (the 1 % hard stop on `NO_FEASIBLE_OPTION`), 4 (the jar comparison by
 the zip entry list) and 5 (`configs/` unchanged against the branch base) are labels of the same ledger.

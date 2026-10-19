@@ -37,11 +37,11 @@ vintage: >-
   The large-lot package: data state 2026-10-13, source_date per lot (2026-10-12 on 49 lots, 2026-10-07 on 5, 2026-10-13 on 1).
   Tariffs as published in October 2026, applied to the model's average weekday.
 geography: >-
-  96 rows in ten towns: 37 garages (Braunschweig 12, Wolfsburg 10, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
-  Salzgitter 1, Goslar 4, Seesen 1) and 59 surface lots at the size threshold of 50 spaces (Braunschweig 11, Salzgitter 9, Goslar 9,
-  Wolfsburg 10, Wolfenbuettel 7, Helmstedt 5, Peine 4, Gifhorn 3, Bad Harzburg 1), so Braunschweig 23, Wolfsburg 20, Goslar 13,
-  Salzgitter 10, Helmstedt 9, Wolfenbuettel 9, Peine 6, Gifhorn 4, Bad Harzburg 1, Seesen 1; 94 rows of the eight towns of the
-  research package and, since spec v3 B7, two documented options of Bad Harzburg and Seesen. Points, WGS84 (CRS84) on disk,
+  97 rows in ten towns: 37 garages (Braunschweig 12, Wolfsburg 10, Wolfenbuettel 2, Gifhorn 1, Helmstedt 4, Peine 2,
+  Salzgitter 1, Goslar 4, Seesen 1) and 60 surface lots at the size threshold of 50 spaces (Braunschweig 11, Salzgitter 9, Goslar 9,
+  Wolfsburg 11, Wolfenbuettel 7, Helmstedt 5, Peine 4, Gifhorn 3, Bad Harzburg 1), so Braunschweig 23, Wolfsburg 21, Goslar 13,
+  Salzgitter 10, Helmstedt 9, Wolfenbuettel 9, Peine 6, Gifhorn 4, Bad Harzburg 1, Seesen 1; 95 rows of the eight towns of the
+  research package (Volkswagen Arena P2 since ruling R-C-7) and, since spec v3 B7, two documented options of Bad Harzburg and Seesen. Points, WGS84 (CRS84) on disk,
   EPSG:25832 in memory.
 crs: EPSG:25832 (CRS84 on disk)
 roles:
@@ -555,33 +555,37 @@ acquisition:
     stated, expressible or imputed. Every other record is ONE QA row with a lot_* reason (garage_qa.CANDIDATE_REASONS), a site
     is one row (aliases and subpoints never become a second row), and every record of the package is accounted for exactly
     once (tests pin it against an independent reading of the policy). The rationale, the grammar mapping and the owner
-    decisions are in ADR-0140 (decision 13) and docs/codebase/notes/parking-large-lots.md. RESULT AT THE THRESHOLD 50: 58
+    decisions are in ADR-0140 (decision 13) and docs/codebase/notes/parking-large-lots.md. RESULT AT THE THRESHOLD 50 (the
+    package alone, without the OpenStreetMap extract; with the extract of ruling R-C-7 Arena P2 is released: 59 options and 93 QA
+    rows of package records): 58
     options and 94 QA rows of package records (the package's own shortlist of 57 less the two paid/free sites of Peine without
     verified subarea geometry, lot_mixed_tariff_unseparated by spec I3, plus the three owner-decided free Wolfsburg lots Allersee
     Suedufer, Freibad Fallersleben and Volkswagen Arena P1 of spec v3 B4), one more QA row for the accessible-parking point of the
     Theater (a subpoint of a lot) and two for the Braunschweig directory entries that the package does not hold (Nimesstrasse
-    and Loewenwall, no capacity stated). The options by town: Braunschweig 11, Salzgitter 9, Goslar 9, Wolfsburg 10,
+    and Loewenwall, no capacity stated). The options by town: Braunschweig 11, Salzgitter 9, Goslar 9, Wolfsburg 11,
     Wolfenbuettel 7, Helmstedt 5, Peine 4, Gifhorn 3; by tariff basis: the site's own components 13, the street product of
-    the zone 11, the free schedule 32 and an imputed tariff (ASSUMPTION P14) 2 (3.4 %; the step warns above 25 %); 18 of the
-    58 carry a restriction that the columns do not (a maximum stay or a weekend window, named in the notes of the row). The
-    105 candidate rows of the QA table by reason: lot_access_not_public 46, lot_below_threshold 23,
+    the zone 11, the free schedule 33 and an imputed tariff (ASSUMPTION P14) 2 (3.4 %; the step warns above 25 %); 18 of the
+    59 carry a restriction that the columns do not (a maximum stay or a weekend window, named in the notes of the row). The
+    104 candidate rows of the QA table by reason: lot_access_not_public 46, lot_below_threshold 23,
     lot_unconfirmed_candidate 9,
     lot_not_surface_lot 6, lot_capacity_unknown 5, lot_alias 2, lot_mixed_tariff_unseparated 2, lot_free_evidence_missing 1,
-    lot_no_position 3 (Arena P2 and, since spec v3 B7, the third HarzVenture lot and the Silberbornbad), lot_not_open 2 and, of the
+    lot_no_position 1 (since spec v3 B7 the Silberbornbad; Arena P2 and the third HarzVenture lot had it until ruling R-C-7 and
+    R-C-8 of 2026-10-19), lot_not_open 2 and, of the
     earlier reasons, dauerparker_only 2, customer_regime 1 (the Kurzzeitparkplatz Lilienthalplatz), no_coordinates 1 and
-    zone_street_product 2 (the two HarzVenture lots that are the zone car parks Sole-Therme and Grossparkplatz of Bad Harzburg,
-    spec v3 B7); no candidate has the reasons bga_zone, station_zone or outside_source_list any more (the Seesen garage is a row
-    now). The QA table has 250 rows (96 garages, 49 monthly products, 105 candidates). SENSITIVITY DATASETS
+    zone_street_product 3 (the three HarzVenture lots that are the zone car parks Sole-Therme, Grossparkplatz and Burgberg of Bad
+    Harzburg, spec v3 B7 and ruling R-C-8); no candidate has the reasons bga_zone, station_zone or outside_source_list any more
+    (the Seesen garage is a row now). The QA table has 250 rows (97 garages, 49 monthly products, 104 candidates). SENSITIVITY
+    DATASETS
     (local, not committed, never the release): the same command with --lot-threshold 30 and 100 and the outputs below
-    eqasim-data/output_parking_lot_threshold_sensitivity/: at 30 spaces 108 rows (37 garages, 71 lots; four sites without a
-    position of the package are lot_no_position, none is invented: three of the package and Arena P2) and at 100 spaces 77 rows
-    (37 garages, 40 lots; Arena P2 is lot_no_position; the Galopprennbahn car park of 100 spaces is in both); SHA-256 of
+    eqasim-data/output_parking_lot_threshold_sensitivity/: at 30 spaces 109 rows (37 garages, 72 lots; three sites without a
+    position of the package are lot_no_position, none is invented) and at 100 spaces 78 rows
+    (37 garages, 41 lots; the Galopprennbahn car park of 100 spaces is in both); SHA-256 of
     the files with LF line endings: parking_garages_2026_lot_threshold_30.geojson
-    46d97802f0a6021f4ff1df9bfc0aa36f86b7404dca79a7dbf05030ef73db4359, parking_garages_2026_qa_lot_threshold_30.csv
-    809c5869b096ddfc2c72ad0367975a1ec0587abfdd419e54a3eae44cdd6d01ed, parking_garages_2026_lot_threshold_100.geojson
-    58bc511e17ccbcc6bfcb3c9b090ed5feb59b8c99c34744f9e2caad41758fdbb6 and parking_garages_2026_qa_lot_threshold_100.csv
-    c4e97f868d98025ea54d2c3d63b5628f2d849e9b5a4fd1b16349010643545d91 (the files regenerated in Task B7 of spec v3;
-    the earlier hashes are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
+    68037d03317c4b57354f20f1b176a031d73ceb5f31796130efc04748338b0c03, parking_garages_2026_qa_lot_threshold_30.csv
+    065c63087f7f769ff0e3ff484da4a32309d8f5758d5f1a066801f0fcd3920c67, parking_garages_2026_lot_threshold_100.geojson
+    a8c113d255fc3d6dcaf2fae2da4428f568bf0b02a22a846cd982479d9b2e9cb3 and parking_garages_2026_qa_lot_threshold_100.csv
+    7e72dd8621b463a52a3b4a29db314dc836d377232c2a55b08bfecd376b86fd99 (the files regenerated in Task C4 of spec v3, ruling
+    R-C-7; the earlier hashes are in the notes). The report-only pass over the lots inside a zone polygon (below) finds 29
     such lots at 30 spaces (20 equal to the row of their zone, 9 differing: the six of the release at 50 and Goslar
     Christian-Dohm and Glockengiesser and Helmstedt Wallplatz) and 12 at 100 spaces (8 equal, 4 differing: Goslar
     Kornstrasse, Helmstedt Harsleber Tor and Holzberg and the Wolfenbuettel Lessingtheater); the 30 and 100 option sets are
@@ -767,7 +771,7 @@ storage:
     not cleared for redistribution, so the file is not in git (eqasim-data/ is ignored) and stays local like the
     other raw data, with the server data sync. It is available on request: open an issue in TUBS-IVS/eqasim-bs.
     Pinned SHA-256 of the content with LF line endings (verify a received copy against it):
-    84cf09f68ec35b1f3532b0d05d3156ef59ae5459402b2cbb7982b0e734553f41 (the earlier pins are in the history of the field notes:
+    e6a8768c5b5a223ca415eebc29bd01c7ef203f110e73c212a8704a8377ab0ca4 (the earlier pins are in the history of the field notes:
     storage.notes holds exactly one, the test of the calibration table reads it). The QA table parking_garages_2026_qa.csv next
     to it stays committed (force-added; the .gitignore comment of the committed parking release names it). GeoJSON
     FeatureCollection with the foreign members license, attribution and documentation (the definition of every
@@ -930,16 +934,17 @@ limitations: >-
   large-lot package, the 94 that fail the size and access policy of spec Amendment I (QA rows with a lot_* reason: 46
   without evidenced general public access, 23 below the size threshold of 50 spaces, 9 unconfirmed candidates, 6 that are no
   single surface lot, 3 whose capacity the package does not state, 1 free lot (VW-Bad) without an archived evidence page, 1
-  (Volkswagen Arena P2, decided free outside match days by the owner) without a position in the package, 2 closed or
+  (Volkswagen Arena P2, decided free outside match days by the owner; it has no position in the package and is a QA row only in a
+  run without the OpenStreetMap extract, see ruling R-C-7 in the notes), 2 closed or
   planned, 2 paid and free sites without subarea geometry and 1 alias), the two Braunschweig directory entries
   Nimesstrasse and Loewenwall (no capacity stated) and the accessible-parking point of the Theater (a subpoint of a lot,
   never a second row). The BgA lots and the ParkGO car parks of Braunschweig are rows where the package holds them and they
   pass the policy (the Markthalle and the Hauptbahnhof car parks P1 to P3 are zone AND lot by owner decision A); the car
   parks of the Wolfsburg city layer are decided again by the same policy (spec E14 is superseded for the rows), so the
   Autostadt and the Klinikum, whose access is no general public use in the package, are no rows any more (the
-  Volkswagen Arena P1 is a free row by the owner's decision of spec v3 B4, P2 has no position). Every one of the 96 listed rows is
+  Volkswagen Arena P1 and, since ruling R-C-7, P2 are free rows by the owner's decision of spec v3 B4 and of 2026-10-19). Every one of the 97 listed rows is
   priced (specs E13, E14, G2, I and v3 B4 and B7), but not every price is an operator statement: 11
-  of the 96 rows rest on a stronger assumption than the others (ASSUMPTION P10 or P11, counted from the assumptions column
+  of the 97 rows rest on a stronger assumption than the others (ASSUMPTION P10 or P11, counted from the assumptions column
   of the dataset: the Forschungsflughafen, the Suedkopf-Center, Achtermann, Charley-Jacob-Strasse, the Groepern garage, the
   five lots with a free short stay of Helmstedt and Salzgitter and the Buechereivorplatz of Salzgitter, which takes their
   product), and two lots carry an imputed tariff (ASSUMPTION P14: the Stadtbad Buergerpark and the Buechereivorplatz; the
@@ -967,11 +972,11 @@ limitations: >-
   where none
   publishes a tariff, the directories publish, not what drivers pay. Eleven assumptions and five readings carry the encoding
   and are counted per row (see the acquisition notes; ASSUMPTION L50, the size threshold, selects the rows and is no value of
-  the assumptions column): P3 on none of the 96 priced rows (it stays defined), P4 on 29, P5 on 27, P6 on 7 (every tiered
+  the assumptions column): P3 on none of the 97 priced rows (it stays defined), P4 on 29, P5 on 27, P6 on 7 (every tiered
   row), P7 on 5, P8 on 18 (every row with a priced duration schedule), P10 on 8 and P11 on 4, P12 on none (withdrawn, it
-  stays defined for older datasets) P14 on 2 and W-match on 1 (Arena P1); 49 of the 96 priced rows rest on at least one assumption
-  (51.0 %, below
-  the warning share of 75 %), and 39 of the 96 on P4 or P5 (40.6 %, below it too), which is the share of the priced rows
+  stays defined for older datasets) P14 on 2 and W-match on 2 (Arena P1 and P2); 50 of the 97 priced rows rest on at least one assumption
+  (51.5 %, below
+  the warning share of 75 %), and 39 of the 97 on P4 or P5 (40.2 %, below it too), which is the share of the priced rows
   whose rounding or charging times the sources do not state: the dataset is mostly a structure published by the operators
   plus these assumptions, and a sensitivity arm can leave a group out by the id in the assumptions column.
   The five READINGS: a day cap or a published day total whose day boundary is not stated is read as a maximum per stay (24
@@ -1003,9 +1008,8 @@ limitations: >-
   mixed_public_and_customers are options with their general
   tariff, the customer discount is not modelled (BadeLand was excluded as customer_regime in spec E14 (e), the class of the
   package reverses that); the two lots under ASSUMPTION P14 (3.6 % of the lots) carry the median product of their zone and
-  no statement of the lot; the VW-Bad lot (no archived page) and the Arena P2 (no position in the package) are not in the
-  dataset, so the free off-street mass of Wolfsburg is smaller than the owner's decision allows until a page and a position are
-  supplied; the free status of the Freibad and the Suedufer rests on pages that do not establish the exact surface (see the
+  no statement of the lot; the VW-Bad lot (no archived page) is not in the dataset, so the free off-street mass of Wolfsburg is smaller than
+  the owner's decision allows until a page is supplied; Arena P2 is in the dataset since ruling R-C-7; the free status of the Freibad and the Suedufer rests on pages that do not establish the exact surface (see the
   acquisition notes); availability and
   occupancy are not modelled; the capacity for the threshold (a reported value on 34 of the 58 lots, otherwise an
   OpenStreetMap value or an area estimate of floor(area / 25 m2)) is no model input, and the weights of the garage options
@@ -1041,13 +1045,13 @@ limitations: >-
   approximations, six positions are OpenStreetMap features (a feature centre, a parking node and the four main points of the
   supplement, one of which is a derived access point) with no survey, the Goslar garages keep the points of the city's
   service of 2018, and the Goslar garage Ca has a directory point 54 m from the city's point of 2018; the position check
-  only requires the point inside its municipality (the 58 surface lots are research points of the large-lot package inside
-  their parking area, an OpenStreetMap object for 53 of them, no entrances; Arena P1 has the prior municipal point of the package,
-  not a verified entrance). The operator column is empty where neither the
+  only requires the point inside its municipality (the 59 surface lots are research points of the large-lot package inside
+  their parking area, an OpenStreetMap object for 53 of them, or, for the two Volkswagen Arena lots, the representative point of
+  their OpenStreetMap outline by the owner decision of ruling R-C-7; no entrances). The operator column is empty where neither the
   package nor the page of the source names one (Braunschweig Forschungsflughafen, Lange Strasse Nord and Sued, Ring Center,
   Schloss-Arkaden,
   Schuetzenstrasse and Wilhelmstrasse, Helmstedt Stobenstrasse and Groepern, Wolfsburg Schillerstrasse, the Goslar garages
-  and all 58 surface lots: the large-lot package names no operator that the column takes).
+  and all 59 surface lots: the large-lot package names no operator that the column takes).
   Monthly products (spec Amendment F): the access window of the Steinstrasse Tarif A (Mo-Fr 06:30-21:00) is not modelled, so
   a work stay outside it still uses the product; the division by 21 working days and the minimum taken per stay (no
   subscription ownership) are the named limitations of ASSUMPTION P2; the Wallstrasse price is the gross amount of the
@@ -1365,3 +1369,55 @@ notes: >-
   30 spaces 46d97802f0a6021f4ff1df9bfc0aa36f86b7404dca79a7dbf05030ef73db4359,
   100 spaces 58bc511e17ccbcc6bfcb3c9b090ed5feb59b8c99c34744f9e2caad41758fdbb6;
   the round 1 hashes were ca9f41fc, dcf45873 and c6d8938a. Two runs of the command wrote identical bytes in all six files.
+  Task C4 (2026-10-19, issue #436; owner decisions of the same day, rulings R-C-7 and R-C-8; code commit 5326373e). THE ARENA LOTS
+  ARE POSITIONED ON THEIR OPENSTREETMAP WAYS. The owner decided to locate Arena P2 ourselves instead of leaving it a QA row without a
+  position. The pinned extract niedersachsen-260929.osm.pbf (SHA-256 c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94,
+  read once per run with the layers multipolygons and points for the municipalities of Bad Harzburg, Seesen and, since this task,
+  Wolfsburg, 2,075 parking objects) holds three parking ways next to the Volkswagen Arena (the building is way 24950693): way
+  25102111 named P1 (tag capacity 620, access permissive; 19 m from the building), way 25102118 named P2 (tag capacity 359; 142 m
+  from the building, 94 m from the P1 outline) and way 25102124 named P2 (no capacity tag, 767 m2 so 30 spaces by the area estimate
+  floor(767 / 25) of the capacity rule of the large-lot package; 128 m from the building, 35 m from the P1 outline, 12.0 m from
+  the other P2 way); the allerpark car parks P3 (way 25102260) and P4 (way 25297240) are 385 m and 712 m from the P2 ways and are
+  no part of this decision. P1: the position is the representative point of the outline of way 25102111; the package's prior
+  municipal point WOB_PARK_1441813 lies inside that outline (0.0 m, the locator limit is 75 m: a point farther than the limit stops
+  the step), so the row moves by 4.8 m and its geometry_method changes from package_prior_municipal_point to
+  osm_parking_area_representative_point (geometry_source_url the OpenStreetMap way); capacity_reported stays 494 (the VfL page and
+  the event operator, as in the package) and the OpenStreetMap tag 620 is named in the note as a discrepancy (+126 spaces, +25.5 %).
+  P2: the package has no position (coordinate_role unresolved), the row is a FREE option on the same VfL page and the same
+  ASSUMPTION W-match as P1 (match days and event closures are not modelled), positioned at the representative point of the UNION of
+  the two P2 ways (inside the larger way; the two parts are 12.0 m apart; the dataset holds one point per lot; the two lots are 222
+  m apart); capacity_reported is the 380 that the package reports (event operator, primary), and the OpenStreetMap capacity (359 +
+  30 = 389 spaces, +9, +2.4 %) is named in the note as a cross-check that supports the identification of the two ways with the
+  package's lot, never as a value. The step logs the rate (OSM positions 2 of 2) and warns when a run has no extract (P1 keeps the
+  package's point, P2 is the QA row lot_no_position with the hint to pass --osm-extract), so the fallback is never silent.
+  THE THIRD HARZVENTURE LOT (ruling R-C-8): the page's lot 'zwischen Hotel Seela und Tankstelle' has no address; it is located by
+  a sixth key of the one matching function (documented_lots.match_locator, method osm_between_landmarks): the Harz Hotel & Spa Seela
+  (way 177798744, Nordhaeuser Str. 5) and the Q1 fuel station (node 7373015680, Nordhaeuser Str. 3) are named, and exactly one
+  parking area (kerbside types excluded) must lie within 25 m (ASSUMPTION, configurable per locator) of the straight line between
+  them with its representative point projected strictly between the two ends, else the locator is ambiguous or unmatched (a
+  landmark that is missing or whose name does not contain 'seela' makes it unmatched). ASSUMPTION: the page's description
+  identifies the only public lot between the two landmarks. The function finds way 617792585 (0.0 m from the 196 m line, capacity
+  tag 192), which the regional package names as the outline of the zone car park bh_burgberg: like the other two HarzVenture lots
+  it is NO new option (the zone is its tariff; a second row would double the zone's own car park) and the QA row
+  candidate_bh_harzventure_seela_tankstelle changes from lot_no_position to zone_street_product (zone bh_burgberg, hourly reference
+  1.00 EUR); its note compares the page with the zone row: rate per hour 1.00 EUR, billing unit 30 min, maximum stay 600 min (10 h)
+  and end of the fee time 18 h are EQUAL; the page's maximum fee of 10.00 EUR is not in the zone row, which stands (an owner
+  question, because the tariff table is pinned by the calibration). The page governs every tariff field (owner decision); the
+  OpenStreetMap tags maxstay '1 day', charge '0.50 EUR/30 min' and fee:conditional 'yes @ (08:00-18:00)' are named in the note as
+  discrepancies and never used as values, and the OpenStreetMap capacity of 192 is named with its source. The notes of the other two
+  HarzVenture QA rows gained the same OpenStreetMap sentence. EFFECT (compared with the dataset of Task B7, SHA-256 84cf09f6...):
+  97 rows (96 before; 37 garages, 60 lots); the only changed feature is Arena P1 (geometry, geometry_method,
+  geometry_source_url and notes) and the only new one Arena P2; the foreign member documentation changed only in the glossary of
+  geometry_method; the QA table has 250 rows (97 garages, 49 monthly products, 104 candidates: the candidate row of Arena P2 became
+  its garage row) and the three HarzVenture QA rows changed as stated; at 30 spaces 109 rows and at 100 spaces 78 rows. RATES OF
+  THE RUN: OSM positions 2 of 2 owner-decided lots; documented options matched 5 of 6 (osm_object 1, nearest_to_address 2,
+  nearest_to_named_place 1, osm_between_landmarks 1; 1 ambiguous, the Silberbornbad; adding Wolfsburg to the read area changed no
+  other match); position source of the lots: OpenStreetMap object 55 of 59 (the package's 53 and the two Arena lots), coordinate
+  source of the package 4, tariff-source fallback 0 (it was 1: Arena P1); capacity origin reported 35, OpenStreetMap tag 5, area
+  estimate 18, derived 1; free rows 35 of 97. EXPECTED EFFECT ON MODEL OUTPUT: one more free off-street option near the Volkswagen
+  Arena in Wolfsburg (380 spaces, activities within the option distance of 1 km) and P1 moved by 4.8 m; the Braunschweig and
+  Wolfsburg calibration universes are unchanged in lambda and lambda_c (data record parking_garage_decay_calibration_2026). THE
+  TEN ARMS OF PART C (2026-10-15 to 2026-10-17, run manifest parking-v3-arms-2026-10-15) ran on the dataset BEFORE this task
+  (84cf09f6...: P1 at the prior municipal point, no P2) and were not re-run. Hashes (LF; two runs of the command wrote identical
+  bytes in all six files): parking_garages_2026.geojson e6a8768c5b5a223ca415eebc29bd01c7ef203f110e73c212a8704a8377ab0ca4, parking_garages_2026_qa.csv 9b9c7e08198d37de6ac70f0cd86d65929ab43c8a37c227a5042cb4c3f43477d4; the hashes of the four
+  sensitivity files are in the acquisition notes. Every hash of the paragraphs of Task B7 that differs is superseded by these.
