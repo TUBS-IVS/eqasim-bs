@@ -268,8 +268,11 @@ limitations: |
   with the weighting by person as the only addition, which
   equals the module's mean_option_share at every weight 1 to 3.3e-16) wrote the committed table
   eqasim-data/data/braunschweig/parking/parking_garage_decay_sampling_stability_2026.csv (git add -f; SHA-256 with LF line
-  endings fd294b545c76528a53ad4f5757d333cb3a75d081f1de8f6427c71d72e0f10203; its header pins the plans, zones, tariffs, garage
-  dataset, both SrV tables and the calibration table it belongs to, at the code state d89fb244 on a clean tree; runtime 338 s;
+  endings 890c77522c4352abe3edd3850d8367e653ce960d3f8ecce783bc1e171fb9e020; its header pins the plans, zones, tariffs, garage
+  dataset, both SrV tables and the calibration table it belongs to, at the code state e1bb488f on a clean tree; runtime 265 s;
+  regenerated on 2026-10-19 (Task C4) on the garage dataset with both Arena lots and the recalibrated table: every run row and
+  every summary value is identical to the table of 2026-10-15 (fd294b545c76, code state d89fb244, runtime 338 s), only the
+  header pins, the date and the runtime differ;
   tests/test_parking_garage_decay_sampling_stability.py ties the header, the production values and the summary rows to the
   committed files). It recomputes 575.27 and 69.69 m on the full sample and calibrates 20 person-level split-half pairs (seeds 0
   to 19; SD of one half = SD(A - B) / sqrt(2), SD at 25 % = that / sqrt(2), SD at 100 % = half of the 25 % SD) and 50 person
