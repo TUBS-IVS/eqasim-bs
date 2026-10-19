@@ -1257,6 +1257,79 @@ def test_the_assumption_of_a_free_lot_is_a_column_value_and_the_claim_scope_of_a
         pg.validate_garages(_lot_frame([{**row, "assumptions": "W-match", "facility_kind": "garage"}]))
 
 
+# --------------------------------------------------------------------------- the position of an owner-decided lot from OSM ways
+def _osm_way(key, x, y, side, tags):
+    return {"osm_key": key, "name": None, "tags": tags, "geometry": box(X0 + x, Y0 + y, X0 + x + side, Y0 + y + side)}
+
+
+def _osm_inputs(step, package_file, evidence, parking):
+    inputs = _inputs(step, package_file, evidence=evidence)
+    inputs["documented"] = {"objects": step.dl.osm_objects_from_rows(parking, [])}
+    return inputs
+
+
+def _osm_position_specs(monkeypatch, step):
+    """Two owner-decided lots whose position comes from OSM ways: ``WOB_PARK_E1`` has a point in the package (16500, 0) that the
+    way must lie within the locator limit of (the Arena P1 case), ``t_nopos`` has no point at all and two ways (the Arena P2 case)."""
+    page = (("page_a.html", "kostenlos"),)
+    monkeypatch.setattr(step.specs, "WOB_FREE_LOT_EVIDENCE", {
+        **EVIDENCE_SPECS,
+        "WOB_PARK_E1": {"name": "P1 test", "pages": page, "not_found": "x", "osm_position": {"osm_ids": ("way/11",)}},
+        "t_nopos": {"name": "P2 test", "pages": page, "not_found": "x", "osm_position": {"osm_ids": ("way/12", "way/13")}}})
+
+
+def test_an_owner_decided_lot_is_positioned_on_its_osm_ways_and_a_lot_without_a_package_position_is_released(
+        step, package_file, tmp_path, monkeypatch):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    _osm_position_specs(monkeypatch, step)
+    parking = [_osm_way("way/11", 16480, -20, 60, {"parking": "surface", "capacity": "120"}),
+               _osm_way("way/12", 30000, 0, 100, {"parking": "surface", "capacity": "359"}),
+               _osm_way("way/13", 30112, 0, 30, {"parking": "surface"})]                   # 900 m2: 36 by the area estimate
+    result = step.build_large_lots(_osm_inputs(step, package_file, evidence, parking))
+    rows = _by_id(result)
+    # the lot with a package point: the point is replaced by the outline's representative point, which lies inside the way
+    first = rows["lot_wob_park_e1"]
+    assert first["geometry_method"] == "osm_parking_area_representative_point"
+    assert first["geometry_source_url"] == "https://www.openstreetmap.org/way/11"
+    assert parking[0]["geometry"].contains(first["geometry"])
+    assert "way/11" in first["notes"] and "0.0 m from the prior position of the package" in first["notes"]
+    # the lot without a position in the package is released (it was a lot_no_position QA row), at a point inside the union
+    second = rows["lot_t_nopos"]
+    assert "candidate_lot_t_nopos" not in _reasons(result)
+    assert second["geometry_method"] == "osm_parking_area_representative_point"
+    assert any(part["geometry"].contains(second["geometry"]) for part in parking[1:])
+    assert second["geometry_source_url"] == "https://www.openstreetmap.org/way/12"
+    # the capacity of the row stays the package's reported value; the OSM capacity (tag plus area estimate) is named beside it
+    assert second["capacity_reported"] == 90
+    assert "way/12 359 (osm_integer_capacity)" in second["notes"] and "way/13 36 (estimated_floor_area_m2_divided_by_25)" in second["notes"]
+    assert "395 spaces" in second["notes"] and "reported 90" in second["notes"]
+    assert "way/11 120 (osm_integer_capacity)" in first["notes"]
+    # the free schedule and the evidence are unchanged by the position
+    assert second["tariff_duration_bands"] == "0- free" and second["tariff_rule_ids"] == "evidence:page_a.html"
+
+
+def test_an_osm_position_far_from_the_prior_point_or_on_a_missing_way_stops_the_step_and_no_extract_leaves_the_prior_state(
+        step, package_file, tmp_path, monkeypatch, capsys):
+    path, sha256 = _restluecken_package(tmp_path / "r")
+    evidence = step.ll.load_package_free_evidence(path, sha256)
+    _osm_position_specs(monkeypatch, step)
+    near = [_osm_way("way/12", 30000, 0, 100, {"parking": "surface", "capacity": "359"}),
+            _osm_way("way/13", 30112, 0, 30, {"parking": "surface"})]
+    far = [_osm_way("way/11", 17000, 0, 60, {"parking": "surface", "capacity": "120"})] + near      # 500 m from the point
+    with pytest.raises(SystemExit, match=r"WOB_PARK_E1.*500 m.*75 m"):
+        step.build_large_lots(_osm_inputs(step, package_file, evidence, far))
+    with pytest.raises(SystemExit, match=r"way/11.*no parking object"):
+        step.build_large_lots(_osm_inputs(step, package_file, evidence, near))
+    # without the extract: the package state (the point of the package; no position = QA row) with a warning, never silence
+    capsys.readouterr()
+    result = step.build_large_lots(_inputs(step, package_file, evidence=evidence))
+    assert _reasons(result)["candidate_lot_t_nopos"] == "lot_no_position"
+    assert "pass --osm-extract" in next(item for item in result["qa"] if item["record_id"] == "candidate_lot_t_nopos")["note"]
+    out = capsys.readouterr().out
+    assert "WARNING" in out and "no OpenStreetMap extract" in out and "OSM positions 0/2" in out
+
+
 def test_the_subpoint_of_a_lot_is_a_qa_row_and_every_municipal_point_is_accounted_for(step, package_file, tmp_path):
     result = step.build_large_lots(_inputs(step, package_file))
     entry = next(item for item in result["qa"] if item["record_id"] == "candidate_lot_wob_park_sub")
@@ -1811,10 +1884,11 @@ def test_the_five_withdrawn_wolfsburg_defaults_are_qa_rows_and_the_owner_decided
     # Autostadt, Klinikum and the Volkswagen Arena are no public options (spec I2: customer, event and conflicting access)
     for number in (1900571, 1966086):
         assert committed_qa.loc[f"candidate_lot_wob_park_{number}", "reason_code"] == "lot_access_not_public"
-    # the Arena (spec v3 B4): P1 is a free option outside match days, P2 has no position in the package
-    assert "candidate_lot_wob_arena_p1" not in committed_qa.index
-    assert committed_qa.loc["garage_lot_wob_arena_p1", "decision"] == "priced"
-    assert committed_qa.loc["candidate_lot_wob_arena_p2", "reason_code"] == "lot_no_position"
+    # the Arena (spec v3 B4): P1 is a free option outside match days; P2 has no position in the package and was a QA row until
+    # ruling R-C-7 positioned it on OpenStreetMap ways: it is a free option too (same page, same assumption W-match)
+    for lot in ("p1", "p2"):
+        assert f"candidate_lot_wob_arena_{lot}" not in committed_qa.index
+        assert committed_qa.loc[f"garage_lot_wob_arena_{lot}", "decision"] == "priced"
     assert "candidate_lot_wob_park_1900551" not in committed_qa.index     # the Theater point is the Theaterparkplatz row
     assert committed_qa.loc["candidate_lot_wob_park_1048584", "reason_code"] == "lot_alias"
 
@@ -1882,7 +1956,7 @@ def test_the_imputed_lots_are_named_with_their_donors_and_carry_the_donors_sched
 def test_the_free_lots_price_every_stay_at_zero_through_the_same_code_without_a_special_case(committed):
     from braunschweig.parking import cost
     free = [garage_id for garage_id, row in committed.iterrows() if row["tariff_duration_bands"] == "0- free"]
-    assert len(free) == 32 and all(garage_id.startswith("lot_") for garage_id in free)
+    assert len(free) == 33 and all(garage_id.startswith("lot_") for garage_id in free)
     for garage_id in free:
         garage = _tariff(committed, garage_id)
         assert garage.form == "bands" and garage.hourly_rate_cents is None and garage.daily_cap_cents is None
@@ -1996,10 +2070,10 @@ def test_a_committed_free_option_alone_never_makes_a_street_free_stay_cost_anyth
 def test_the_tariff_model_export_converts_every_lot_of_the_release_with_its_form(committed):
     lots = [garage_id for garage_id in committed.index if garage_id.startswith("lot_")]
     entries = [_tariff(committed, garage_id).to_json() for garage_id in lots]
-    assert len(entries) == 58 and {entry["garage_id"] for entry in entries} == set(lots)
+    assert len(entries) == 59 and {entry["garage_id"] for entry in entries} == set(lots)
     free = [entry for entry in entries
             if entry["bands"] and entry["bands"][0]["kind"] == "free" and entry["bands"][0]["to_min"] is None]
-    assert len(free) == 32
+    assert len(free) == 33
 
 
 # --------------------------------------------------------------------------- the zone product is exact to the cent (R-4j-6)
@@ -2585,7 +2659,7 @@ def test_the_pass_over_every_released_lot_inside_a_zone_polygon_finds_13_equal_a
     # the garages of the regional packages are no lots: no zone ids, whatever zone they lie in
     garage_rows = qa[qa["record_type"] == "garage"]
     kinds = garages.set_index("garage_id")["facility_kind"].reindex(garage_rows["garage_id"]).to_numpy()
-    assert len(garage_rows) == 94 and (garage_rows.loc[kinds == "garage", "zone_ids"] == "").all()
+    assert len(garage_rows) == 95 and (garage_rows.loc[kinds == "garage", "zone_ids"] == "").all()
 
 
 def test_the_released_rows_cite_a_page_for_the_tariff_and_the_position_by_the_primary_method(ll, committed):
@@ -2597,11 +2671,11 @@ def test_the_released_rows_cite_a_page_for_the_tariff_and_the_position_by_the_pr
     assert committed.loc["lot_wob_park_1114127", "source_url"] == wmg + "parkplatz-badeland-wolfsburg"
     for garage_id in ("lot_wob_park_1638410", "lot_wob_park_1769502", "lot_wob_park_1835014"):
         assert committed.loc[garage_id, "source_url"].endswith("/parkgebuehrenordnung_20200721.pdf"), garage_id
-    # finding L3: a position source is the OpenStreetMap object of the package (53 lots) or a source that the package names for the
-    # coordinates (four lots; Arena P1 has neither, its tariff source stands in, counted and warned); the count of that fallback
-    # is pinned on the real package
-    # (counts["position_origin"] of the primary-method test), because the same page can be both sources of a lot
-    assert int(lots["geometry_source_url"].str.startswith("https://www.openstreetmap.org/").sum()) == 53
+    # finding L3: a position source is the OpenStreetMap object of the package (53 lots), one of the OpenStreetMap ways that the owner
+    # decision of ruling R-C-7 names (the two Arena lots) or a source that the package names for the coordinates (four lots); the
+    # count of the package-only fallback is pinned on the real package (counts["position_origin"] of the primary-method test),
+    # because the same page can be both sources of a lot
+    assert int(lots["geometry_source_url"].str.startswith("https://www.openstreetmap.org/").sum()) == 55
     assert lots["geometry_source_url"].str.startswith("https://").all()
 
 

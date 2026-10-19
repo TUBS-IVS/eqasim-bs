@@ -98,6 +98,7 @@ import geopandas as gpd
 import pandas as pd
 from pyproj import Transformer
 from shapely.geometry import Point
+from shapely.ops import unary_union
 
 import curation_common as cc
 import bs_monthly_products as bsm
@@ -310,9 +311,10 @@ COLUMN_GLOSSARY = {
                        "package inside the parking area, no entrance; package_prior_municipal_point: the prior municipal "
                        "point that the package keeps as no verified entrance where it names no source of a position; "
                        "package_point_without_source: a point of which the package names no source at all; "
-                       "osm_parking_area_representative_point: a documented option of spec v3 B7, the representative point "
-                       "inside the OpenStreetMap parking area that documented_lots.match_locator matched, the notes name the "
-                       "matching method and its distance)",
+                       "osm_parking_area_representative_point: a documented option of spec v3 B7 or a lot of the owner decision of "
+                       "ruling R-C-7 (the Volkswagen Arena P1 and P2), the representative point inside the OpenStreetMap parking "
+                       "area (a union of ways for P2) that documented_lots.match_locator matched or that the owner decision names, "
+                       "the notes name the matching method and its distance)",
     "geometry_source_url": "source of the position",
     "package_sha256": "SHA-256 of the evidence package " + rz.PACKAGE_FILE + "; a row that the supplement package "
                       + sup.SUPPLEMENT_FILE + " (spec E12), the follow-up package " + sup.FOLLOWUP_FILE + " (spec E13) or the "
@@ -579,7 +581,8 @@ def load_garage_inputs(directory, expected_sha256: Optional[str] = None, supplem
 def _load_documented_inputs(inputs: dict, osm_path, transcriptions_directory, evidence_zip, zones, tariffs, municipality_polygons,
                             threshold: int, expected_osm_sha256, expected_seesen_sha256) -> dict:
     """The inputs of the documented options (spec v3 B7): the OpenStreetMap objects inside the municipalities of
-    ``DOCUMENTED_OPTIONS`` (``documented_lots.read_osm_extract``, the file against its pinned SHA-256), the HarzVenture page and the
+    ``DOCUMENTED_OPTIONS`` and of the lots of ``WOB_FREE_LOT_EVIDENCE`` that name ``osm_position`` ways
+    (``documented_lots.read_osm_extract``, the file against its pinned SHA-256), the HarzVenture page and the
     brochure text from the owner's Restluecken package, the owner's transcription of the city page of Seesen, the committed zone
     polygons and the tariff table (the zone car parks of Bad Harzburg are told by them) and the size threshold. All of them are
     required together; ``SystemExit`` names what is missing."""
@@ -589,7 +592,12 @@ def _load_documented_inputs(inputs: dict, osm_path, transcriptions_directory, ev
                if value is None]
     if missing:
         raise SystemExit(f"the documented options (--osm-extract) need {', '.join(missing)} as well")
-    ags_of_options = sorted({({**specs.TOWNS, **specs.OTHER_TOWNS}[option["town"]][0]) for option in specs.DOCUMENTED_OPTIONS})
+    ags_of_options = {({**specs.TOWNS, **specs.OTHER_TOWNS}[option["town"]][0]) for option in specs.DOCUMENTED_OPTIONS}
+    # the owner-decided lots whose position is OpenStreetMap ways (ruling R-C-7) lie in the municipality of their package record
+    facilities = (inputs.get("large") or {}).get("package", {}).get("facilities", {})
+    ags_of_options |= {specs.TOWNS[ll.TOWN_KEYS[facilities[key]["city"]]][0] for key, wanted in specs.WOB_FREE_LOT_EVIDENCE.items()
+                       if "osm_position" in wanted and key in facilities}
+    ags_of_options = sorted(ags_of_options)
     absent = [ags for ags in ags_of_options if ags not in municipality_polygons.index]
     if absent:
         raise SystemExit(f"the municipality polygons hold no municipality {absent}; the documented options lie there")
@@ -1922,26 +1930,108 @@ def _large_lot_encoding(inputs: dict, key: str, spec: dict) -> dict:
             "tariff_rule_ids": list(encoded["rule_ids"])}
 
 
-def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumptions=(), basis_sentences=()) -> dict:
+def _osm_lot_position(inputs: dict, key: str) -> Optional[dict]:
+    """The position of an owner-decided lot from the OpenStreetMap ways of ``WOB_FREE_LOT_EVIDENCE[key]["osm_position"]`` (ruling
+    R-C-7), or None where the run has no extract (``inputs["documented"]``; the caller counts and warns). Every way must be a parking
+    object of the pinned extract (else ``SystemExit``: a changed extract or a wrong id). The position is the representative point
+    (inside the area) of the UNION of the ways, in EPSG:25832; the package's own point, where it has one, must lie within
+    ``documented_lots.MATCH_DISTANCE_LIMIT_M`` of it, else ``SystemExit`` (the package and OpenStreetMap disagree about the lot, and
+    nothing is chosen between them). Returns {"point", "parts" ([{"osm_key", "geometry", "capacity", "capacity_method",
+    "area_m2"}]), "prior_distance_m" (None without a package point), "capacity" (the sum of the parts, None where one is unknown),
+    "extract_sha256"}."""
+    wanted = specs.WOB_FREE_LOT_EVIDENCE[key].get("osm_position")
+    documented = inputs.get("documented")
+    if wanted is None or documented is None:
+        return None
+    objects = documented["objects"]
+    parking = objects.parking.set_index("osm_key")
+    parts = []
+    for osm_id in wanted["osm_ids"]:
+        match = dl.match_locator({"osm_id": osm_id}, objects)
+        if match.status != "matched":
+            raise SystemExit(f"large lot {key}: the owner decision names the OpenStreetMap object {osm_id}, which is no parking "
+                             f"object of the extract {dl.OSM_EXTRACT_FILE} ({match.detail}): a changed extract or a wrong id")
+        osm = parking.loc[osm_id]
+        capacity, method = dl.osm_capacity(osm["tags"], osm["area_m2"])
+        parts.append({"osm_key": osm_id, "geometry": osm["geometry"], "capacity": capacity, "capacity_method": method,
+                      "area_m2": float(osm["area_m2"])})
+    union = unary_union([part["geometry"] for part in parts])
+    points = inputs["large"]["package"]["points"]
+    prior = points.loc[key, "geometry"] if key in points.index else None
+    prior_distance = None if prior is None else float(union.distance(prior))
+    if prior_distance is not None and prior_distance > dl.MATCH_DISTANCE_LIMIT_M:
+        raise SystemExit(f"large lot {key}: the package's own point lies {prior_distance:.0f} m from the OpenStreetMap position "
+                         f"({', '.join(wanted['osm_ids'])}), farther than the locator limit of {dl.MATCH_DISTANCE_LIMIT_M:g} m: the "
+                         "package and OpenStreetMap disagree about the lot, so none is chosen; review the owner decision")
+    capacities = [part["capacity"] for part in parts]
+    return {"point": union.representative_point(), "parts": parts, "prior_distance_m": prior_distance,
+            "capacity": None if None in capacities else sum(capacities),
+            "extract_sha256": documented.get("extract_sha256", dl.OSM_EXTRACT_SHA256)}
+
+
+def _osm_position_sentences(position: dict, record: dict) -> tuple:
+    """(position sentence, capacity sentence) for the notes of a lot positioned on OpenStreetMap ways (:func:`_osm_lot_position`):
+    the method, the ways with the distance between their parts and to the package's own point, and the OpenStreetMap capacity
+    (the tag or the area estimate of each way, summed) against the capacity that the package reports; the package value stays the
+    row's ``capacity_reported`` and the OpenStreetMap sum is a named cross-check, never a value."""
+    parts = position["parts"]
+    names = ", ".join(part["osm_key"] for part in parts)
+    gaps = [float(parts[0]["geometry"].distance(part["geometry"])) for part in parts[1:]]
+    sentence = (f"the representative point (inside the area) of the union of the OpenStreetMap parking "
+                f"way(s) {names} of the extract {dl.OSM_EXTRACT_FILE} (SHA-256 {position['extract_sha256']}) that the owner decision "
+                "names (ruling R-C-7; the dataset holds one point per lot)")
+    if gaps:
+        sentence += f"; the other part(s) lie {', '.join(f'{gap:.1f} m' for gap in gaps)} from the first"
+    if position["prior_distance_m"] is None:
+        sentence += "; the package gives this lot no position, so none is compared"
+    else:
+        sentence += (f"; the package's own point lies {position['prior_distance_m']:.1f} m from the prior position of the package "
+                     f"(limit {dl.MATCH_DISTANCE_LIMIT_M:g} m)")
+    sentence += "; no entrance, no ring, no tariff extent."
+    cells = ", ".join(f"{part['osm_key']} {part['capacity']} ({part['capacity_method']})" if part["capacity"] is not None
+                      else f"{part['osm_key']} unknown" for part in parts)
+    reported = record.get("capacity_reported")
+    if position["capacity"] is None:
+        capacity = f"OpenStreetMap capacity of the ways: {cells}; no sum (a way has no capacity tag and no area estimate)."
+    elif reported is None:
+        capacity = (f"OpenStreetMap capacity of the ways: {cells}, together {position['capacity']} spaces; the package reports no "
+                    "capacity for the site (a cross-check, not a reported capacity).")
+    else:
+        difference = position["capacity"] - int(reported)
+        capacity = (f"OpenStreetMap capacity of the ways: {cells}, together {position['capacity']} spaces, against the package's "
+                    f"reported {int(reported)} ({difference:+d} spaces, {100.0 * difference / int(reported):+.1f} %); "
+                    "capacity_reported keeps the package value and the OpenStreetMap sum is a named discrepancy, not a value.")
+    return sentence, capacity
+
+
+def _large_lot_row(inputs: dict, key: str, spec: dict, lot: dict, extra_assumptions=(), basis_sentences=(),
+                   osm_position=None) -> dict:
     """The dataset row (properties and ``geometry``, EPSG:25832) of one large lot (``facility_kind`` surface_lot): the research
     point of the package as it stands, the capacity only where the package REPORTS it, the tariff as encoded, and notes that state
     the selection (ASSUMPTION L50), the tariff, every assumption and reading by name, the zone consistency check and what is not
     modelled. ``lot`` is the result of :func:`_large_lot_encoding`; ``extra_assumptions`` (ASSUMPTION P14) and
-    ``basis_sentences`` come from the imputation."""
+    ``basis_sentences`` come from the imputation. ``osm_position`` (:func:`_osm_lot_position`) replaces the package's point: the row
+    is positioned on the OpenStreetMap ways of its owner decision (ruling R-C-7)."""
     large = inputs["large"]
     package, threshold = large["package"], large["threshold"]
     record = package["facilities"][key]
     encoded = lot["encoded"]
     ags, municipality = specs.TOWNS[ll.TOWN_KEYS[record["city"]]]
-    point = package["points"].loc[key, "geometry"]
+    point = package["points"].loc[key, "geometry"] if osm_position is None else osm_position["point"]
     primary_ids = (lot.get("source_rules") or [rule_id for rule_id in lot["used"] if rule_id in package["rules"]]
                    or list(record.get("tariff_rule_ids") or []))
     source_url, source_date = ll.source_of(
         package, [source for rule_id in primary_ids for source in package["rules"][rule_id].get("source_ids") or []]
         + list(record.get("source_ids") or []))
-    geometry_url, position_origin = _position_source(package, record)
-    geometry_url = geometry_url or source_url                             # the fallback is counted by _large_lot_counts
-    geometry_method, position_sentence = _position_method(record, position_origin)
+    if osm_position is None:
+        geometry_url, position_origin = _position_source(package, record)
+        geometry_url = geometry_url or source_url                         # the fallback is counted by _large_lot_counts
+        geometry_method, position_sentence = _position_method(record, position_origin)
+    else:
+        geometry_url = f"https://www.openstreetmap.org/{osm_position['parts'][0]['osm_key']}"
+        position_sentence, osm_capacity_sentence = _osm_position_sentences(osm_position, record)
+        geometry_method = DOCUMENTED_GEOMETRY_METHOD
+        basis_sentences = [*basis_sentences, osm_capacity_sentence]
     capacity, scope = None, None
     if record.get("capacity_selection_method") in ll.REPORTED_METHODS and record.get("capacity_reported") is not None:
         capacity = int(record["capacity_reported"])
@@ -2134,12 +2224,17 @@ def build_large_lots(inputs: dict) -> dict:
     if unknown_evidence:
         raise SystemExit(f"WOB_FREE_LOT_EVIDENCE names facilities that the package does not hold: {unknown_evidence}")
     owner_public = frozenset(specs.WOB_FREE_LOT_EVIDENCE)
+    positions = {owner: _osm_lot_position(inputs, owner) for owner, wanted in specs.WOB_FREE_LOT_EVIDENCE.items()
+                 if "osm_position" in wanted}
+    _log_osm_positions(positions)
     options, qa, failures, pending = {}, [], [], []
     for key, record in package["facilities"].items():
         reason, detail = ll.decide(record, threshold, owner_public), specs.LARGE_LOT_QA_DETAILS.get(key, "")
         spec = specs.LARGE_LOT_SPECS.get(key)
-        if reason is None and key not in package["points"].index:
+        if reason is None and key not in package["points"].index and positions.get(key) is None:
             reason, detail = "lot_no_position", ("the package states no position of the site, and none is invented"
+                                                 + ("; its position is OpenStreetMap ways of the owner decision, pass --osm-extract "
+                                                    "to place it" if key in positions else "")
                                                  + (f"; {detail}" if detail else ""))
         if reason is None and key in specs.WOB_FREE_LOT_EVIDENCE:
             state, text = _free_evidence(key, evidence)
@@ -2163,7 +2258,7 @@ def build_large_lots(inputs: dict) -> dict:
         if reason is None:
             try:
                 if key in specs.WOB_FREE_LOT_EVIDENCE:
-                    options[key] = _archived_free_row(inputs, key)
+                    options[key] = _archived_free_row(inputs, key, positions.get(key))
                 else:
                     lot = _large_lot_encoding(inputs, key, spec)
                     options[key] = _large_lot_row(inputs, key, spec, lot)
@@ -2197,6 +2292,20 @@ def build_large_lots(inputs: dict) -> dict:
     counts = _large_lot_counts(package, rows, qa, failures, imputed_rows, threshold, zone_consistency=zone_consistency)
     return {"rows": rows, "qa": qa, "notes": notes, "counts": counts, "failures": failures,
             "zone_consistency": zone_consistency}
+
+
+def _log_osm_positions(positions: dict) -> None:
+    """Fallback transparency for the lots positioned on OpenStreetMap ways (ruling R-C-7): how many have that position (primary)
+    against how many fall back to the package's point or to a QA row because the run has no extract; a warning names them."""
+    if not positions:
+        return
+    placed = sorted(key for key, position in positions.items() if position is not None)
+    unplaced = sorted(set(positions) - set(placed))
+    print(f"[large lots] owner-decided lots positioned on OpenStreetMap ways (ruling R-C-7): OSM positions {len(placed)}/"
+          f"{len(positions)} ({100.0 * len(placed) / len(positions):.1f} %)")
+    if unplaced:
+        print(f"[large lots] WARNING: no OpenStreetMap extract was given (--osm-extract): {', '.join(unplaced)} keep the package's "
+              "position (or are QA rows lot_no_position where the package has none)")
 
 
 def _log_owner_free_lots(options: dict, qa: list, evidence: dict) -> None:
@@ -2249,19 +2358,21 @@ def _evidence_page_sentence(entry: dict, quotation: str, lot_point) -> str:
     return sentence
 
 
-def _archived_free_row(inputs: dict, key: str) -> dict:
+def _archived_free_row(inputs: dict, key: str, osm_position=None) -> dict:
     """The row of one of the free Wolfsburg lots of spec Amendment I5a and spec v3 B4 on its archived evidence pages: the free
     schedule ``0- free`` (the pages state the lot free; no assumption id), every page as a source (the first page is the
     ``source_url``), the owner decision that the lot is general public named in the notes together with the assumption of the
     specification (the Arena: ASSUMPTION W-match, which is listed in the column ``assumptions``) and its condition. The lot
     carries no maximum stay: only its own evidence could state one, and a free lot does not inherit the product of a tariff zone
-    around it. The row cites the package of the pages in ``package_sha256`` next to the large-lot package."""
+    around it. The row cites the package of the pages in ``package_sha256`` next to the large-lot package. ``osm_position`` is the
+    position on OpenStreetMap ways of ruling R-C-7 (:func:`_osm_lot_position`), where the lot has one."""
     state, entries = _free_evidence(key, inputs["large"]["evidence"])
     if state != "ok":
         raise SystemExit(f"large lot {key}: no archived evidence for its free status")
     wanted = specs.WOB_FREE_LOT_EVIDENCE[key]
     quotations = dict(wanted["pages"])
-    lot_point = inputs["large"]["package"]["points"].loc[key, "geometry"]
+    lot_point = (inputs["large"]["package"]["points"].loc[key, "geometry"] if osm_position is None
+                 else osm_position["point"])
     rule_ids = [f"evidence:{entry['file']}" for entry in entries]
     assumption = wanted.get("assumption")
     if assumption is not None and assumption not in pg.ASSUMPTIONS:
@@ -2279,7 +2390,7 @@ def _archived_free_row(inputs: dict, key: str) -> dict:
     if wanted.get("condition"):
         comment += ". " + wanted["condition"]
     spec = {"comment": comment, "evidence_pages": True}
-    row = _large_lot_row(inputs, key, spec, lot)
+    row = _large_lot_row(inputs, key, spec, lot, osm_position=osm_position)
     row["source_url"], row["source_date"] = entries[0]["url"], entries[0]["retrieved"]
     package_hashes = [row["package_sha256"]] + sorted({entry["package_sha256"] for entry in entries
                                                        if entry.get("package_sha256")})
@@ -2426,6 +2537,28 @@ def _documented_free_row(inputs: dict, option: dict, parking: pd.Series, match, 
     return row
 
 
+#: The OpenStreetMap tags of a matched parking object that speak of its tariff: named in the QA note next to the page's and the zone
+#: row's values, never used as a value (owner decision 2026-10-19: the page governs the tariff fields, OpenStreetMap gives the
+#: position and the capacity only).
+OSM_TARIFF_TAGS = ("maxstay", "charge", "fee:conditional")
+
+
+def _osm_object_sentence(parking: pd.Series) -> str:
+    """What the OpenStreetMap object of a match says about itself, for the QA note of a lot that is a zone car park: its capacity
+    (the tag or the area estimate of ``documented_lots.osm_capacity``, with its source) and the tags of ``OSM_TARIFF_TAGS``, named
+    as discrepancies to the page and the zone row and never used as a value."""
+    capacity, method = dl.osm_capacity(parking["tags"], parking["area_m2"])
+    sentence = (f"The OpenStreetMap object has a capacity of {capacity} spaces ({method}; area {parking['area_m2']:.0f} m2; "
+                "not a reported capacity)" if capacity is not None
+                else "The OpenStreetMap object has no capacity (no tag, no area estimate applies)")
+    stated = {key: parking["tags"][key] for key in OSM_TARIFF_TAGS if key in parking["tags"]}
+    if stated:
+        sentence += ("; its tags that touch the tariff are NAMED AS DISCREPANCIES to the page and the zone row and NOT used as a "
+                     "value (the page governs, owner decision 2026-10-19): "
+                     + ", ".join(f"{key} '{value}'" for key, value in sorted(stated.items())))
+    return sentence
+
+
 def build_documented_options(inputs: dict) -> dict:
     """Locate the documented options of ``DOCUMENTED_OPTIONS`` in the OpenStreetMap extract (``documented_lots.match_locator``) and
     build the rows of the options and the QA rows of the others (spec v3 B7). Per option: no position (unmatched or ambiguous) is
@@ -2499,7 +2632,8 @@ def build_documented_options(inputs: dict) -> dict:
             refuse(option, ags, "zone_street_product", evidence,
                    f"{option['name']}: the position ({match.method}, {match.detail}) is the OpenStreetMap outline of the zone car "
                    f"park {zone_id}, so the lot is not a new option: the zone is its tariff{page}. Comparison with the zone row "
-                   f"{zone_id}: " + (_zone_comparison(facts, zone_row) if facts else "no page values to compare"),
+                   f"{zone_id}: " + (_zone_comparison(facts, zone_row) if facts else "no page values to compare")
+                   + ". " + _osm_object_sentence(parking.loc[match.osm_key]) + ".",
                    zone_id=zone_id, amount=reference)
             continue
         osm = parking.loc[match.osm_key]
@@ -2695,7 +2829,8 @@ def _large_lot_counts(package: dict, rows: list, qa: list, failures: list, imput
     position_origin = {"osm_object": 0, "coordinate_source": 0, "tariff_source_fallback": 0}
     unplaced = []
     for row in rows:
-        origin = _position_source(package, package["facilities"][row["package_facility_id"]])[1]
+        origin = ("osm_object" if row["geometry_method"] == DOCUMENTED_GEOMETRY_METHOD   # ruling R-C-7: OpenStreetMap ways of the owner
+                  else _position_source(package, package["facilities"][row["package_facility_id"]])[1])
         position_origin["tariff_source_fallback" if origin == "none" else origin] += 1
         if origin == "none":
             unplaced.append(row["package_facility_id"])

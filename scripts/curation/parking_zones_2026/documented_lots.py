@@ -80,8 +80,14 @@ AMBIGUITY_MARGIN_M = 10.0
 #: ``parking=*`` types that are kerbside parking, the street itself: a documented car park (a lot with its own tariff) is never
 #: one of them in a search by nearness (a name or an address tag of the object itself still matches it).
 ROADSIDE_PARKING_TYPES = ("street_side", "layby", "lane", "half_on_kerb", "on_kerb")
+#: The largest distance in m from the straight line between two landmark objects to a parking area for a position BETWEEN the
+#: landmarks (inclusive; ruling R-C-8). ASSUMPTION (nothing committed fixes it): a lot that a page places "between" two places
+#: touches or nearly touches the line from the one to the other; 25 m is about the depth of one row of bays with its lane, so a
+#: lot behind the next building or across the street is not between them. Configurable per locator (``between_tolerance_m``).
+BETWEEN_TOLERANCE_M = 25.0
 #: The methods of a match, in the order ``match_locator`` tries them.
-MATCH_METHODS = ("osm_object", "name_tag", "address_tag", "nearest_to_address", "nearest_to_named_place")
+MATCH_METHODS = ("osm_object", "name_tag", "address_tag", "nearest_to_address", "nearest_to_named_place",
+                 "osm_between_landmarks")
 
 #: The floor area per space of the package's area estimate (m2); the estimate is ``floor(area_m2 / AREA_PER_SPACE_M2)``.
 AREA_PER_SPACE_M2 = 25.0
@@ -279,6 +285,66 @@ def _nearest(points: list, parking: gpd.GeoDataFrame, limit_m: float, margin_m: 
                  f"the parking area {first_key} nearest to {what}, {first_distance:.1f} m away (limit {limit_m:g} m)")
 
 
+def _landmark(objects: OsmObjects, key: str, name_part: Optional[str]):
+    """(geometry, None) of the landmark object ``key`` (a place or a parking object of the extract), else (None, the reason): the
+    object must exist and, where ``name_part`` is given, carry a name that contains it (after ``normalise_street_name``)."""
+    for frame in (objects.places, objects.parking):
+        hit = frame[frame["osm_key"] == key]
+        if len(hit):
+            if name_part and _normalised(name_part) not in _normalised(hit["name"].iloc[0]):
+                return None, f"the landmark {key} is named {hit['name'].iloc[0]!r}, which does not contain {name_part!r}"
+            return hit.geometry.iloc[0], None
+    return None, f"the landmark {key} is no object of the extract"
+
+
+def _between_landmarks(locator: dict, objects: OsmObjects) -> Match:
+    """The parking area BETWEEN two landmark objects (ruling R-C-8), in the metric CRS: the line runs from a point inside the first
+    landmark (its representative point; a node is its own point) to the second; a parking area (kerbside types excluded) is a
+    candidate when it lies within ``between_tolerance_m`` (``BETWEEN_TOLERANCE_M``) of that line and the projection of its
+    representative point falls strictly between the two ends. Exactly one candidate is a match (``distance_m`` = its distance to
+    the line); several are ``ambiguous`` (a page that says "between" names one lot, so a second candidate means the description
+    does not tell them apart); none is ``unmatched``. A landmark that is missing or whose name does not contain the given part of
+    ``landmark_name_parts`` makes the locator unmatched with that reason."""
+    landmarks = tuple(locator["between_landmarks"])
+    if len(landmarks) != 2 or landmarks[0] == landmarks[1]:
+        raise SystemExit(f"between_landmarks needs two landmarks, found {landmarks!r}")
+    parts = tuple(locator.get("landmark_name_parts") or (None, None))
+    if len(parts) != 2:
+        raise SystemExit(f"landmark_name_parts needs one entry per landmark (None for no check), found {parts!r}")
+    tolerance_m = float(locator.get("between_tolerance_m", BETWEEN_TOLERANCE_M))
+    geometries = []
+    for key, part in zip(landmarks, parts):
+        geometry, reason = _landmark(objects, key, part)
+        if geometry is None:
+            return Match("unmatched", None, None, None, (), reason)
+        geometries.append(geometry if geometry.geom_type == "Point" else geometry.representative_point())
+    start, end = geometries
+    line = shapely.LineString([start, end])
+    length_squared = line.length ** 2
+    if length_squared == 0.0:
+        raise SystemExit(f"the landmarks {landmarks!r} lie at the same point: there is no line between them")
+    parking = objects.parking[~objects.parking["tags"].map(lambda tags: tags.get("parking") in ROADSIDE_PARKING_TYPES)]
+    candidates = {}
+    for key, geometry in zip(parking["osm_key"], parking.geometry):
+        point = geometry.representative_point()
+        fraction = ((point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y)) / length_squared
+        distance = float(geometry.distance(line))
+        if distance <= tolerance_m and 0.0 < fraction < 1.0:
+            candidates[key] = distance
+    what = (f"between the landmarks {landmarks[0]} and {landmarks[1]} (line of {line.length:.0f} m, tolerance {tolerance_m:g} m, "
+            "projection strictly between the ends)")
+    if not candidates:
+        return Match("unmatched", None, None, None, (), f"no parking area {what}")
+    ranked = sorted(candidates.items(), key=lambda item: (item[1], item[0]))
+    if len(ranked) > 1:
+        keys = tuple(sorted(candidates))
+        return Match("ambiguous", "osm_between_landmarks", None, None, keys,
+                     f"{len(keys)} parking areas {what}: {', '.join(keys)}")
+    key, distance = ranked[0]
+    return Match("matched", "osm_between_landmarks", key, round(distance, 2), (key,),
+                 f"the only parking area {key} {what}, {distance:.1f} m from the line")
+
+
 def match_locator(locator: dict, objects: OsmObjects, limit_m: float = MATCH_DISTANCE_LIMIT_M,
                   margin_m: float = AMBIGUITY_MARGIN_M) -> Match:
     """The OpenStreetMap parking object that a locator describes, by ONE documented procedure.
@@ -292,6 +358,8 @@ def match_locator(locator: dict, objects: OsmObjects, limit_m: float = MATCH_DIS
     3. ``address_tag``: parking objects that carry the street and the house number themselves (distance 0);
     4. ``nearest_to_address``: the parking object nearest to an OpenStreetMap place that carries the street and the house number;
     5. ``nearest_to_named_place``: the parking object nearest to a place whose name is one of ``anchor_names``.
+    6. ``osm_between_landmarks``: the one parking object on the line between the two ``between_landmarks`` objects (see
+       :func:`_between_landmarks`; ruling R-C-8, for a source that says only "between X and Y").
 
     Methods 2 and 3 with more than one candidate and methods 4 and 5 with a second candidate that is less than ``margin_m`` farther
     than the nearest are ``ambiguous``; a nearest candidate must be at most ``limit_m`` away. A locator without any key is
@@ -305,9 +373,9 @@ def match_locator(locator: dict, objects: OsmObjects, limit_m: float = MATCH_DIS
     number = normalise_house_number(locator["house_number"]) if locator.get("house_number") else ""
     names = [_normalised(name) for name in locator.get("names") or ()]
     anchors = [_normalised(name) for name in locator.get("anchor_names") or ()]
-    if not (locator.get("osm_id") or names or (street_key and number) or anchors):
-        raise SystemExit(f"locator {locator!r} gives no way to locate the option (an osm_id, names, a street with a house number "
-                         "or anchor_names)")
+    if not (locator.get("osm_id") or names or (street_key and number) or anchors or locator.get("between_landmarks")):
+        raise SystemExit(f"locator {locator!r} gives no way to locate the option (an osm_id, names, a street with a house number, "
+                         "anchor_names or between_landmarks)")
     notes = []
     if locator.get("osm_id"):
         hit = parking[parking["osm_key"] == locator["osm_id"]]
@@ -351,6 +419,11 @@ def match_locator(locator: dict, objects: OsmObjects, limit_m: float = MATCH_DIS
             notes.append(result.detail)
         else:
             notes.append("no OpenStreetMap place carries the documented anchor name")
+    if locator.get("between_landmarks"):
+        result = _between_landmarks(locator, objects)
+        if result.status != "unmatched":
+            return result
+        notes.append(result.detail)
     return Match("unmatched", None, None, None, (), "; ".join(notes))
 
 

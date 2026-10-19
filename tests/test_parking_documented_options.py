@@ -64,8 +64,9 @@ def _documented_inputs(step, tmp_path, parking, places=(), threshold=50):
                   for facility, way in zip(step.specs.ZONE_CAR_PARK_FACILITIES, (900, 901, 902, 903, 904))}
     facilities["se_parkhaus"] = {"attributes": {"osm_way_ids": "91181792", "point_role": "representative_point_not_entrance",
                                                 "longitude": PACKAGE_LONGITUDE, "latitude": PACKAGE_LATITUDE}}
-    zones = gpd.GeoDataFrame({"zone_id": ["bh_sole_therme"]}, geometry=[_lot(-10, -10, 60.0)], crs=METRIC_CRS)
-    tariffs = pd.DataFrame([_zone_row("bh_sole_therme")])
+    zones = gpd.GeoDataFrame({"zone_id": ["bh_sole_therme", "bh_burgberg"]}, geometry=[_lot(-10, -10, 60.0), _lot(8080, -5, 60.0)],
+                             crs=METRIC_CRS)
+    tariffs = pd.DataFrame([_zone_row("bh_sole_therme"), _zone_row("bh_burgberg", max_stay_min=600.0)])
     objects = step.dl.osm_objects_from_rows(parking, list(places))
     return {"file": {"sha256": REGIONAL_SHA256}, "facilities": facilities,
             "documented": {"objects": objects, "zones": zones, "tariffs": tariffs, "threshold": threshold,
@@ -82,10 +83,17 @@ def _extract_rows():
         _parking("way/900", _lot(0, 0, 40.0), None, {"parking": "surface", "fee": "no"}),
         _parking("way/700", _lot(1010, 0, 50.0), None, {"parking": "surface", "access": "yes", "fee": "no"}),
         _parking("way/801", _lot(3000, 0, 20.0), None, {"parking": "surface"}),
-        _parking("way/802", _lot(3000, 30, 20.0), None, {"parking": "surface"})]
+        _parking("way/802", _lot(3000, 30, 20.0), None, {"parking": "surface"}),
+        # the zone car park bh_burgberg (way 903) lies between Hotel Seela and the fuel station (ruling R-C-8): its OpenStreetMap
+        # tags state a capacity, a maximum stay of '1 day' and a charge that the page and the zone row do not
+        _parking("way/903", _lot(8090, 5, 40.0), None, {"parking": "surface", "access": "yes", "capacity": "192",
+                                                       "maxstay": "1 day", "charge": "0.50 EUR/30 min",
+                                                       "fee:conditional": "yes @ (08:00-18:00)"})]
     places = [_place("way/10", _lot(30, 20, 5.0), "Tourist-Information", "Nordhäuser Straße", "4"),
               _place("relation/20", box(X0 + 200, Y0 - 500, X0 + 1000, Y0 + 500), "Galopprennbahn Bad Harzburg"),
-              _place("way/30", _lot(3000, 15, 8.0), "Silberbornbad")]
+              _place("way/30", _lot(3000, 15, 8.0), "Silberbornbad"),
+              _place("way/177798744", _lot(8000, 0, 30.0), "Harz Hotel & Spa Seela", "Nordhäuser Straße", "5"),
+              _place("node/7373015680", Point(X0 + 8230, Y0 + 15), "Q1", "Nordhäuser Straße", "3")]
     return parking, places
 
 
@@ -160,12 +168,31 @@ def test_a_harzventure_lot_at_a_zone_car_park_is_no_new_option_and_the_page_is_c
     assert "bh_harzventure_tourist_information" not in {row["garage_id"] for row in result["rows"]}
 
 
-def test_a_harzventure_lot_without_an_address_is_located_by_nothing_and_says_why(step, tmp_path):
-    entry = {entry["record_id"]: entry for entry in _built(step, tmp_path)["qa"]}["candidate_bh_harzventure_seela_tankstelle"]
-    assert entry["reason"] == "lot_no_position" and entry["zone_ids"] == ""
-    assert "no address" in entry["note"] and "between two" in entry["note"] and "a maximum stay of 10 h" in entry["note"]
-    assert entry["note"].count("between two") == 1 and "{'unlocatable'" not in entry["note"]
-    assert "no free minutes stated" in entry["note"]          # nothing is carried over from the other lots of the page
+def test_the_harzventure_lot_between_hotel_seela_and_the_fuel_station_is_located_between_them_and_is_a_zone_car_park(step, tmp_path):
+    result = _built(step, tmp_path)
+    entry = {entry["record_id"]: entry for entry in result["qa"]}["candidate_bh_harzventure_seela_tankstelle"]
+    assert entry["reason"] == "zone_street_product" and entry["zone_ids"] == "bh_burgberg" and entry["amount_eur"] == "1.00"
+    note = entry["note"]
+    # located by the sixth key of the one function, naming both landmarks, with the identification assumption stated by the option
+    assert "osm_between_landmarks" in note and "way/903" in note and "way/177798744" in note and "node/7373015680" in note
+    assert "the OpenStreetMap outline of the zone car park bh_burgberg" in note and "so the lot is not a new option" in note
+    # the page of THIS lot is compared with the zone row (nothing is carried over from the other lots of the page)
+    assert "a maximum stay of 10 h" in note and "no free minutes stated" in note and "15 min free" not in note
+    assert "equal: rate per hour 1.00 EUR; billing unit 30 min; maximum stay 600 min; end of the fee time 18 h" in note
+    assert "maximum fee 10.00 EUR on the page against none in the zone row" in note and "The zone row stands" in note
+    # OpenStreetMap gives the capacity (source named); its tariff tags are named discrepancies and never values
+    assert "capacity of 192 spaces (osm_integer_capacity" in note and "not a reported capacity" in note
+    assert "NAMED AS DISCREPANCIES" in note and "NOT used as a value" in note
+    assert "maxstay '1 day'" in note and "charge '0.50 EUR/30 min'" in note and "fee:conditional 'yes @ (08:00-18:00)'" in note
+    assert "bh_harzventure_seela_tankstelle" not in {row["garage_id"] for row in result["rows"]}      # no second row of the zone's lot
+
+
+def test_the_harzventure_lot_between_the_landmarks_is_a_qa_row_without_a_position_when_a_landmark_is_missing(step, tmp_path):
+    parking, places = _extract_rows()
+    places = [place for place in places if place["osm_key"] != "node/7373015680"]
+    entry = {entry["record_id"]: entry for entry in step.build_documented_options(
+        _documented_inputs(step, tmp_path, parking, places))["qa"]}["candidate_bh_harzventure_seela_tankstelle"]
+    assert entry["reason"] == "lot_no_position" and "node/7373015680" in entry["note"] and "no position is invented" in entry["note"]
 
 
 def test_the_size_threshold_is_the_one_of_the_run_and_an_unknown_capacity_is_never_zero(step, tmp_path):
@@ -264,13 +291,33 @@ def test_the_committed_release_holds_the_two_free_documented_options_with_their_
     assert "c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94" in seesen["notes"] + galopp["notes"]
 
 
+def test_the_committed_release_positions_both_arena_lots_on_their_openstreetmap_outlines_and_keeps_the_reported_capacity():
+    garages, qa = _committed()
+    p1, p2 = garages.loc["lot_wob_arena_p1"], garages.loc["lot_wob_arena_p2"]
+    for row, way in ((p1, "way/25102111"), (p2, "way/25102118")):
+        assert (row["facility_kind"], bool(row["priced"]), row["tariff_duration_bands"], row["assumptions"]) == (
+            "surface_lot", True, "0- free", "W-match")
+        assert row["geometry_method"] == "osm_parking_area_representative_point"
+        assert row["geometry_source_url"] == "https://www.openstreetmap.org/" + way and pd.isna(row["max_stay_min"])
+    # the capacity of the row is the one the package reports (the VfL page / event operator); the OpenStreetMap capacity is named
+    # beside it as a discrepancy (P1 620 tag, P2 359 tag + 30 by the area estimate of the second way)
+    assert (p1["capacity_reported"], p2["capacity_reported"]) == (494, 380)
+    assert "way/25102111 620 (osm_integer_capacity), together 620 spaces, against the package's reported 494" in p1["notes"]
+    assert "way/25102124 30 (estimated_floor_area_m2_divided_by_25), together 389 spaces, against the package's reported 380" in p2["notes"]
+    assert "way/25102118, way/25102124" in p2["notes"] and "the other part(s) lie 12.0 m from the first" in p2["notes"]
+    assert "0.0 m from the prior position of the package" in p1["notes"]       # the prior municipal point lies inside the outline
+    # the two lots are 200 to 250 m apart at the points inside their outlines (the outlines themselves are 35 m apart)
+    assert 200.0 < p1.geometry.distance(p2.geometry) < 250.0
+    assert qa.loc["garage_lot_wob_arena_p2", "decision"] == "priced" and "candidate_lot_wob_arena_p2" not in qa.index
+
+
 def test_the_committed_qa_table_names_the_harzventure_lots_and_the_silberbornbad_with_their_reasons():
     _, qa = _committed()
     assert "candidate_se_parkhaus" not in qa.index                 # the candidate became the garage row of the option
     assert qa.loc["garage_se_parkhaus_bahnhofstrasse", "decision"] == "priced"
     expected = {"candidate_bh_harzventure_tourist_information": ("zone_street_product", "bh_sole_therme", "1.00"),
                 "candidate_bh_harzventure_hotel_seela": ("zone_street_product", "bh_grossparkplatz", "1.00"),
-                "candidate_bh_harzventure_seela_tankstelle": ("lot_no_position", "", ""),
+                "candidate_bh_harzventure_seela_tankstelle": ("zone_street_product", "bh_burgberg", "1.00"),
                 "candidate_bh_silberbornbad": ("lot_no_position", "", "")}
     for record, (reason, zone, amount) in expected.items():
         row = qa.loc[record]
@@ -281,5 +328,14 @@ def test_the_committed_qa_table_names_the_harzventure_lots_and_the_silberbornbad
     assert "free minutes 15 min on the page against none in the zone row" in tourist
     seela = qa.loc["candidate_bh_harzventure_hotel_seela", "note"]
     assert "way/51517817" in seela and "maximum stay 600 min" in seela and "a maximum stay of 10 h" in seela
+    # ruling R-C-8: the third lot is located between the Hotel Seela (way 177798744) and the fuel station (node 7373015680); it is
+    # the OpenStreetMap outline (way 617792585) of the zone car park bh_burgberg, so the zone is its tariff; the page governs
+    # (maximum stay 600 min and end of the fee time 18 h equal the zone row, the 10.00 EUR maximum fee is not in it) and the
+    # OpenStreetMap tags that touch the tariff are named and not used
+    third = qa.loc["candidate_bh_harzventure_seela_tankstelle", "note"]
+    assert "osm_between_landmarks" in third and "way/617792585" in third and "way/177798744" in third and "node/7373015680" in third
+    assert "maximum stay 600 min" in third and "end of the fee time 18 h" in third
+    assert "maximum fee 10.00 EUR on the page against none in the zone row" in third
+    assert "capacity of 192 spaces (osm_integer_capacity" in third and "maxstay '1 day'" in third and "NOT used as a value" in third
     assert "way/107233248" in qa.loc["candidate_bh_silberbornbad", "note"]
     assert "way/376719842" in qa.loc["candidate_bh_silberbornbad", "note"]

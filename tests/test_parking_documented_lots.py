@@ -415,3 +415,39 @@ def test_an_osm_extract_with_another_hash_or_missing_is_refused_and_the_clip_are
     elsewhere = box(*gpd.GeoSeries([box(9.0, 51.0, 9.01, 51.01)], crs="EPSG:4326").to_crs(METRIC_CRS).total_bounds)
     empty = dl.read_osm_extract(path, elsewhere, expected_sha256=digest)
     assert len(empty.parking) == 0 and len(empty.places) == 0
+
+
+# --------------------------------------------------------------------------- a position between two landmarks (ruling R-C-8)
+def _between_scene(dl):
+    """A hotel (area), a fuel station (node) 200 m east of it, a lot touching the line between them, a lot on the extension of the
+    line beyond the hotel and a lot 90 m beside the line."""
+    parking = [_parking("way/1", _lot(90, 5, 40.0)), _parking("way/2", _lot(-90, 5, 40.0)),
+               _parking("way/3", _lot(90, 105, 40.0)), _parking("way/4", _lot(90, 5, 40.0), None, {"parking": "street_side"})]
+    places = [_place("way/10", _lot(0, 0, 30.0), "Harz Hotel & Spa Seela"), _place("node/11", Point(X0 + 230, Y0 + 15), "Q1")]
+    return _objects(dl, parking[:3], places), _objects(dl, [parking[0], parking[3]], places)
+
+
+def test_a_lot_between_two_landmarks_is_the_one_on_the_line_between_them_and_not_beyond_either_end(dl):
+    objects, _ = _between_scene(dl)
+    locator = {"between_landmarks": ("way/10", "node/11"), "landmark_name_parts": ("seela", None)}
+    match = dl.match_locator(locator, objects)
+    assert (match.status, match.method, match.osm_key, match.distance_m) == ("matched", "osm_between_landmarks", "way/1", 0.0)
+    assert "way/10" in match.detail and "node/11" in match.detail
+    # the lot beside the line is a candidate only within a wider tolerance, and then the lot is no longer the only one: ambiguous
+    wide = dl.match_locator({**locator, "between_tolerance_m": 100.0}, objects)
+    assert (wide.status, wide.candidates) == ("ambiguous", ("way/1", "way/3"))
+    # the lot beyond the hotel never counts, however wide the tolerance (the projection must fall between the landmarks)
+    assert "way/2" not in wide.candidates
+    assert dl.BETWEEN_TOLERANCE_M == 25.0
+
+
+def test_a_between_locator_that_cannot_be_checked_is_unmatched_with_the_reason_and_roadside_parking_is_no_lot(dl):
+    objects, roadside = _between_scene(dl)
+    missing = dl.match_locator({"between_landmarks": ("way/10", "node/99")}, objects)
+    assert missing.status == "unmatched" and "node/99" in missing.detail
+    renamed = dl.match_locator({"between_landmarks": ("way/10", "node/11"), "landmark_name_parts": ("kurpark", None)}, objects)
+    assert renamed.status == "unmatched" and "way/10" in renamed.detail and "kurpark" in renamed.detail
+    only_street = dl.match_locator({"between_landmarks": ("way/10", "node/11")}, roadside)
+    assert only_street.status == "matched" and only_street.osm_key == "way/1"      # the kerbside object next to it is no candidate
+    with pytest.raises(SystemExit, match="two landmarks"):
+        dl.match_locator({"between_landmarks": ("way/10",)}, objects)

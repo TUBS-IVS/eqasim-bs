@@ -1023,7 +1023,11 @@ LARGE_LOT_SPECS = {
 #: ``assumptions`` and named in its notes) and the ``condition`` of the owner decision (named in the notes) and,
 #: where no page is archived or the run is given none, ``not_found`` (what was searched). A site whose pages are not given is a QA
 #: row ``lot_free_evidence_missing``; it is never free without a source. A site that the package gives no position is a QA row
-#: ``lot_no_position`` whatever its pages state (``LARGE_LOT_QA_DETAILS`` names the decision).
+#: ``lot_no_position`` whatever its pages state (``LARGE_LOT_QA_DETAILS`` names the decision), unless the entry has an
+#: ``osm_position`` (ruling R-C-7, owner decision 2026-10-19): ``osm_ids``, the OpenStreetMap parking ways of the pinned extract
+#: that ARE the lot; the position is the representative point of their union (the dataset holds one point per lot), which must lie
+#: within ``documented_lots.MATCH_DISTANCE_LIMIT_M`` of the package's own point where the package has one; it needs the run's
+#: ``--osm-extract`` (without it the lot keeps the package's point, or stays a QA row where the package has none).
 _RESTLUECKEN = "Parkdaten_Restluecken_2026-10-14.zip (the pages of evidence/wob_belege/; pass it as --wob-evidence-zip)"
 _WMG_FREE_QUOTATION = "24/7 \u00f6ffentlich zug\u00e4nglich und kostenlos"
 WOB_FREE_LOT_EVIDENCE = {
@@ -1052,7 +1056,7 @@ WOB_FREE_LOT_EVIDENCE = {
                          "not_found": "the free status rests on the page vfb_geschaeftsstelle.html (VfB Fallersleben, "
                                       "'Unser Standort in Fallersleben') of " + _RESTLUECKEN + "; this run was given no such "
                                       "evidence"},
-    "WOB_ARENA_P1": {"name": "Volkswagen Arena P1",
+    "WOB_ARENA_P1": {"name": "Volkswagen Arena P1", "osm_position": {"osm_ids": ("way/25102111",)},
                      "pages": (("vfl_anreise.html", "kann in der Regel auf den Parkpl\u00e4tzen P1 und P2 kostenfrei geparkt "
                                                     "werden"),),
                      "assumption": "W-match",
@@ -1062,7 +1066,9 @@ WOB_FREE_LOT_EVIDENCE = {
                                   "days and event closures are NOT modelled: the lot is a free option on every simulated weekday",
                      "not_found": "the free status outside match days rests on the page vfl_anreise.html (VfL Wolfsburg, "
                                   "Anreise zur Volkswagen Arena) of " + _RESTLUECKEN + "; this run was given no such evidence"},
-    "WOB_ARENA_P2": {"name": "Volkswagen Arena P2",
+    # the two OpenStreetMap ways that both carry the name 'P2' next to the arena and the P1 lot (owner decision 2026-10-19:
+    # locate P2 ourselves; ruling R-C-7): way 25102118 (tag capacity 359) and way 25102124 (no capacity tag)
+    "WOB_ARENA_P2": {"name": "Volkswagen Arena P2", "osm_position": {"osm_ids": ("way/25102118", "way/25102124")},
                      "pages": (("vfl_anreise.html", "kann in der Regel auf den Parkpl\u00e4tzen P1 und P2 kostenfrei geparkt "
                                                     "werden"),),
                      "assumption": "W-match",
@@ -1098,7 +1104,9 @@ LARGE_LOT_QA_DETAILS = {
     "WOB_ARENA_P2": "owner decision 2026-10-14 (spec v3 B4): free outside match days on the page of the VfL (pages archived in "
                     "Parkdaten_Restluecken_2026-10-14.zip), but the large-lot package gives P2 no position at all "
                     "(coordinate_role unresolved; the event operator's page of the package names only 'northwest behind the "
-                    "training grounds'), so P2 cannot be an option until a position is supplied: none is invented",
+                    "training grounds'), so P2 cannot be an option without a position: none is invented; since ruling R-C-7 "
+                    "(owner decision 2026-10-19) the position is the union of the OpenStreetMap ways 25102118 and 25102124 of "
+                    "the pinned extract, which a run needs --osm-extract for",
 }
 
 #: Spec v3 B7 (issue #436, ruling R-B-18, owner decisions of 2026-10-15): the facilities that a source DOCUMENTS and no package
@@ -1135,11 +1143,15 @@ DOCUMENTED_OPTIONS = (
     {"key": "bh_harzventure_seela_tankstelle", "town": "bh", "kind": "surface_lot",
      "name": "Parkplatz zwischen Hotel Seela und Tankstelle (HarzVenture)",
      "facility": "badharzburg_between_seela_petrol_station", "evidence": "harzventure",
-     "harzventure": "parkplatz_zwischen_hotel_seela_und_tankstelle", "locator": None,
-     "no_locator_reason": "the page gives no address and describes the lot only relative to two places ('between Hotel Seela and "
-                          "the petrol station'); the matching function has keys for an object, a name, an address and ONE named "
-                          "place, and no rule for a position between two, which no nearest-to-one-place search can replace "
-                          "without taking the lot of the hotel for the lot of the petrol station",
+     "harzventure": "parkplatz_zwischen_hotel_seela_und_tankstelle",
+     # ruling R-C-8 (owner decision 2026-10-19): located BETWEEN the two places that the page names, by the documented function:
+     # the Harz Hotel & Spa Seela (way 177798744, Nordhaeuser Str. 5) and the Q1 fuel station (node 7373015680, Nordhaeuser
+     # Str. 3); the tariff is the page's alone (OpenStreetMap gives the position and the capacity only)
+     "locator": {"between_landmarks": ("way/177798744", "node/7373015680"), "landmark_name_parts": ("seela", None)},
+     "locator_assumption": "ASSUMPTION: the description 'zwischen Hotel Seela und Tankstelle' identifies the only public lot "
+                           "between the Harz Hotel & Spa Seela and the Q1 fuel station next to it; the function checks in "
+                           "metres that exactly one parking area lies on the line between the two landmarks (ruling R-C-8, "
+                           "owner decision 2026-10-19)",
      "rate_rule": "badharzburg_between_seela_petrol_station_REV_01"},
     {"key": "bh_galopprennbahn", "town": "bh", "kind": "surface_lot", "name": "Parkplatz Galopprennbahn (Bad Harzburg)",
      "facility": "bad_harzburg_brochure_2022:galopprennbahn", "evidence": "brochure_free",
