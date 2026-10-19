@@ -1,0 +1,2 @@
+arm,reference_arm,persons,reference_persons,persons_only_in_arm,persons_only_in_reference,trips,reference_trips,trips_matched,trips_matched_endpoints_equal,trips_only_in_arm,trips_only_in_reference,persons_with_unmatched_trips,unmatched_trip_share,endpoints_equal_on_all_matched_trips
+off_25pct,v3_25pct,254661,254660,1,0,926910,926918,926900,926900,10,18,22,0.000030,True

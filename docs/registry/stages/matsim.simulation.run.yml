@@ -2,13 +2,19 @@ stage: matsim.simulation.run
 title: MATSim simulation run
 layer: matsim
 description: Runs RunSimulation from the eqasim-java-bs jar (mode choice per config -- OFF in
-  every committed config; SimWrapper Layer-1 dashboards per ADR-0074).
+  every committed config; SimWrapper Layer-1 dashboards per ADR-0074). When the prepared config
+  enables the braunschweigParking module (parking_zones_enabled, ADR-0139), it requires the jar to
+  contain the Java parking package before the run and the parking outcome report of the last
+  iteration that ran after it (braunschweig.parking.runtime_checks), because MATSim would read the
+  module of a jar without the package as an untyped group and price no parking; without the module
+  it checks nothing and calls MATSim as before.
 lineage:
   type: extended
   upstream: null
   notes: null
 code:
 - matsim/simulation/run.py
+- braunschweig/parking/runtime_checks.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -16,6 +22,8 @@ pipelines:
 production: true
 features:
 - simwrapper_layer1
+- parking_cost_zones
 decisions:
 - ADR-0033
 - ADR-0074
+- ADR-0139

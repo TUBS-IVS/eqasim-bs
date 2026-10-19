@@ -1,0 +1,8 @@
+arm,reference_arm,persons,reference_persons,persons_only_in_arm,persons_only_in_reference,trips,reference_trips,trips_matched,trips_matched_endpoints_equal,trips_only_in_arm,trips_only_in_reference,persons_with_unmatched_trips,unmatched_trip_share,endpoints_equal_on_all_matched_trips
+off,v3,10171,10171,0,0,37032,37032,37031,37031,1,1,2,0.000054,True
+legacy,v3,10171,10171,0,0,37033,37032,37032,37032,1,0,1,0.000027,True
+v3_cost_0.5,v3,10171,10171,0,0,37033,37032,37032,37032,1,0,1,0.000027,True
+v3_cost_2.0,v3,10171,10171,0,0,37033,37032,37032,37032,1,0,1,0.000027,True
+v3_free_shift_-0.1,v3,10171,10171,0,0,37034,37032,37032,37032,2,0,2,0.000054,True
+v3_free_shift_-0.2,v3,10171,10171,0,0,37032,37032,37032,37032,0,0,0,0.000000,True
+v3_ev_off,v3,10171,10171,0,0,37032,37032,37032,37032,0,0,0,0.000000,True

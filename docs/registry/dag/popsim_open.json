@@ -141,6 +141,14 @@
    "matsim.simulation.prepare"
   ],
   [
+   "braunschweig.parking.zones_stage",
+   "matsim.scenario.population"
+  ],
+  [
+   "braunschweig.parking.zones_stage",
+   "matsim.simulation.prepare"
+  ],
+  [
    "braunschweig.synthesis.cordon_gates",
    "braunschweig.synthesis.incommuters"
   ],
@@ -783,6 +791,7 @@
   "braunschweig.data.verbindungen.work_od",
   "braunschweig.data.verbindungen.zones",
   "braunschweig.data.vrb.zones",
+  "braunschweig.parking.zones_stage",
   "braunschweig.synthesis.cordon_gates",
   "braunschweig.synthesis.incommuters",
   "braunschweig.synthesis.locations.education_gravity",

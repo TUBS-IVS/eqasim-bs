@@ -1,0 +1,97 @@
+dataset: parking_package_nachrecherche_2026_10_14
+title: >-
+  Owner research package Parkdaten_Nachrecherche_2026-10-14.zip (parking rules and resident parking of eleven towns, raw
+  source of the parking v3 data corrections and the resident districts of four towns)
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) research package of 2026-10-14 for issue #436, delivered as one zip: research findings and
+  archived original sources (city ordinances, gazettes, brochures, street lists, maps) of eleven towns of the Braunschweig
+  region and eight earlier packages. The package states of itself that it is research evidence and no executable tariff
+  model. The archived originals belong to their publishers (Stadt Braunschweig, Wolfsburg, Peine, Salzgitter, Helmstedt,
+  Wolfenbuettel, Goslar, Seesen, Bad Harzburg, Gifhorn and others, each named with URL and retrieval date in the package)
+vintage: >-
+  Status 2026-10-14 (the package README states the date). Its sources have their own dates, named per source in the package
+  (for example the Wolfsburg resident street list of 2023-07-20, the Peine ordinance as amended 2022-12-22 and effective
+  2023-04-01, the Salzgitter ordinance effective 2026-06-25, the Helmstedt brochure of December 2024)
+geography: >-
+  Braunschweig (monthly products), Wolfsburg, Goslar, Helmstedt, Salzgitter, Peine, Wolfenbuettel, Seesen, Bad Harzburg,
+  Braunlage and Gifhorn (the eleven towns of the task list of the package)
+crs: null
+roles:
+- supply_input
+- assumption_basis
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied file, not downloaded by the pipeline. The package is a research product of the owner; the sources it
+    archives are public pages and documents whose URLs, retrieval dates and SHA-256 are listed in its own
+    RAW_SOURCE_MANIFEST.json. Obtain it from the owner (open an issue in TUBS-IVS/eqasim-bs) and verify it against the SHA-256
+    in storage.notes.
+  notes: >-
+    194 files below the root directory Parkdaten_Nachrecherche_2026-10-14/: 3 at the root and the rest in 4 folders (data,
+    research, raw_sources, scripts). The root files are README.md (German; the findings, the eleven-town table),
+    RAW_SOURCE_MANIFEST.json and VALIDATION.json; data/ (5 files: root_findings.json,
+    resident_wolfsburg_address_eligibility.json, existing_package_audit.json, helmstedt_effective_date_assumption.json,
+    pulp_capacity_observations.json), research/ (street_sz_pe_gf.json, street_wf_harz.json, wob_residents_street.json,
+    resident_other_cities.json, bs_monthly_wemolo.json), raw_sources/ (180 archived originals in the sub-folders root,
+    street_sz_pe_gf, street_wf_harz, resident_other_cities, wob_residents_street, bs_monthly_wemolo, helmstedt_update) and
+    scripts/collect_root_sources.py.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the archived originals are third-party documents whose redistribution is not
+    cleared; eqasim-data/ is ignored by design). SHA-256 of the zip:
+    5a81c0b94da2a078540be2c58299bf246a269733ff69598e9a35b1faa4fad3bb (51,300,300 bytes, verified on 2026-10-15 against the file in
+    the main checkout). The curation code pins the same value
+    (resident_districts_from_streets.PACKAGE_SHA256) and stops on another file; a test ties the pin to this record
+    (tests/test_parking_raw_package_records.py). Members the committed code reads, from the zip and never extracted (member
+    SHA-256 verified): data/resident_wolfsburg_address_eligibility.json
+    525ac99eeb929bdd067d0012a9759b65f60cc0a81556f871c4cf4bbf1475057c (the 67-row Wolfsburg street list),
+    raw_sources/resident_other_cities/peine_zone_street_list.pdf
+    c9c2208e3d9106a9f9930a24cc12d52a5153afc215a84059a0936dcc4f16e99f, helmstedt_parking_brochure.pdf
+    f1dc902583b195972c7ddd83450be46e273867c07e31509e20ce46d9cce824df and wolfenbuettel_area_map.pdf
+    06b2e4e98a19a4d096f1ab20e4eacac3cc70e7b4e7689b885f4d54bfd98ba472 (all in the same folder). Members that the tariff
+    corrections of spec v3 B1 were entered from by hand (their values are enforced by the curation checks, not read at run time):
+    data/root_findings.json 1b301ca2e92d9787e9cb024a0824e06caa976743001f39a951c8701aa62a070d, research/street_sz_pe_gf.json
+    8cb9e9a3ad76068e197b73c1d15bdb7818e225a76d1a72a577d40398676d54c0, research/street_wf_harz.json
+    930736c78394185019f00ac1c44d58e3a7d059a4d22411663c656c53183bb37c and research/wob_residents_street.json
+    130d1fe080b663e396beb7b96188936173d2d80b70f47a8838b861e1ca7bcf31. No committed code reads any other member; the
+    pulp_capacity_observations.json belongs to the occupancy-series issue TUBS-IVS/eqasim-bs#448.
+verification:
+  verifier_entry: D12
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D12 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py: only the curation chain needs
+    it. A missing file is reported as [RESTRICTED] with the route to obtain it; the SHA-256 is checked by the curation code
+    that reads the package, not by the preflight.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner research product; the archived originals keep the terms of their publishers (city ordinances and gazettes are
+    official acts, brochures, street lists and maps are city publications; no reuse licence was verified for them). Used by
+    owner decision 2026-10-14.
+  notes: >-
+    The data derived from it and kept in the repository are facts of public rules (the tariff table, the coverage register)
+    and, as local restricted files, the zone and district geometry; their licences are stated in their own records
+    (parking_tariffs_2026, parking_resident_districts_2026, parking_zones_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  A research package, not an official data set: its statements are the owner's reading of the archived sources and must be
+  traced to the source named for them. It says of itself that the Wolfsburg street list proves the entitlement of resident
+  ADDRESSES and is not the final delimitation of a permit's parking area, that the Helmstedt effective date of the amended fee
+  ordinance (2026-01-01) is an assumption of the package, that an empty maximum-stay field of a Wolfsburg area means unknown
+  and not unlimited, and that the Braunschweig monthly-price gaps stay partly open. The v3 data records state how each of
+  these is handled (parking_tariffs_2026, parking_resident_districts_2026, parking_zones_2026).
+notes: >-
+  Used by the parking v3 Part B of issue #436 (ADR-0142): the tariff corrections of the zone table (B1), the resident
+  districts of Wolfsburg, Peine, Helmstedt and Wolfenbuettel (B3) and the Salzgitter and Gifhorn findings of the coverage
+  register. Registered as a raw source of its own on 2026-10-15; the earlier owner deliveries of 2026-10-01, 2026-10-07,
+  2026-10-08 and 2026-10-13 are registered since 2026-10-17 with one record per delivery folder
+  (parking_packages_municipal_2026_10_01, parking_packages_municipal_2026_10_07, parking_packages_municipal_2026_10_08 and
+  parking_packages_municipal_2026_10_13).

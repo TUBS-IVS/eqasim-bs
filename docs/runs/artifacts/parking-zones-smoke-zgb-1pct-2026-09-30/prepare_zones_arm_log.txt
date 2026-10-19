@@ -1,0 +1,30 @@
+# Output of harness/prepare_zones_arm.py (logging INFO) re-run on 2026-09-30 on a fresh copy of the OFF inputs
+# with the integration worktree at 2d990e70; its population and tariff model are byte-identical to the ZONES
+# arm's (sha256 prefixes 7ce5ba6a and e0770b1b). Local absolute paths replaced by <integration worktree> and
+# <scratchpad>.
+INFO numexpr.utils Note: NumExpr detected 22 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+INFO numexpr.utils NumExpr defaulting to 8 threads.
+INFO braunschweig.parking.zones [parking-zones] loaded 24 zone polygons from <integration worktree>\eqasim-data\data\braunschweig\parking\parking_zones_2026.geojson; repaired 0 invalid geometries ([])
+INFO braunschweig.parking.zones [parking-zones] loaded 24 tariff rows from <integration worktree>\eqasim-data\data\braunschweig\parking\parking_tariffs_2026.csv
+INFO braunschweig.parking.zones [parking-zones] loaded 131 coverage register rows from <integration worktree>\eqasim-data\data\braunschweig\parking\parking_coverage_register_2026.csv
+INFO braunschweig.parking.zones_stage [parking] loaded 11 workplace share rows from <integration worktree>\eqasim-data\data\braunschweig\srv\srv2023_commute_parking_by_workplace_class.csv
+INFO braunschweig.parking.zones_stage [parking] zone release: 24 zones (campus 6, resident_zone 1, street_paid 17) in 8 municipalities; coverage register 131 rows (excluded 8, not_audited 115, zoned 8); free shares for 10 workplace classes; sources parking_zones_2026 146af05ce1b5, parking_tariffs_2026 25c699e3bbca, parking_coverage_register_2026 da21ff7e7bd2, srv2023_commute_parking_by_workplace_class ef7eaa362bee
+INFO braunschweig.parking.zones [parking-zones] 1964 of 49293 points (4.0 %) lie in a parking zone; 47329 outside every zone (free, Z1)
+INFO braunschweig.parking.attach [parking] activities in zones: 1964/49293 (4.0 %), 47329 outside every zone park free (assumption Z1); top zones: bs_zone_ia 343, wob_innenstadt 267, bs_zone_ib 244, gs_altstadt_zone1 225, pe_innenstadt 135, he_innenstadt 123, sz_lebenstedt 119, wf_innenstadt 113, tu_campus_ost_beethovenstrasse 81, tu_campus_ost_langer_kamp 70
+INFO braunschweig.parking.attach [parking] persons with a resident parking zone: 18/12073 (0.1 %) (bs_resident_stadthalle_132 18); 404 live in a zone of another type (no resident exemption, assumption R1); 24 have no home activity
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03102: persons 13, share_free_total 0.9870, p_free 0.9870, realised 1.0000
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03103: persons 135, share_free_total 0.9475, p_free 0.9475, realised 0.9333
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03151: persons 5, share_free_total 0.9393, p_free 0.9393, realised 1.0000
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03153: persons 11, share_free_total 0.9519, p_free 0.9519, realised 0.8182
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03154: persons 6, share_free_total 0.9277, p_free 0.9277, realised 0.8333
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03157: persons 5, share_free_total 0.9668, p_free 0.9668, realised 1.0000
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class 03158: persons 9, share_free_total 0.9711, p_free 0.9711, realised 1.0000
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class bs_innenbereich: persons 3, share_free_total 0.9390, p_free 0.9390, realised 1.0000
+INFO braunschweig.parking.attach [parking] free-parking draw, workplace class bs_zentrum: persons 125, share_free_total 0.7938, p_free 0.7938, realised 0.8640
+INFO braunschweig.parking.attach [parking] free-parking draw (RandomState(random_seed 1234 + 7371), shift +0.000): 312/12073 persons (2.6 %) have a work/education activity in a street_paid or resident_zone zone, 283 of them (90.7 %) park free; parkingFree on 407 of 451 eligible activities; 274 work/education activities in campus zones are never drawn (assumption C1)
+[smoke] release sources: [('parking_zones_2026', '146af05ce1b5'), ('parking_tariffs_2026', '25c699e3bbca'), ('parking_coverage_register_2026', 'da21ff7e7bd2'), ('srv2023_commute_parking_by_workplace_class', 'ef7eaa362bee')]
+[smoke] activities in a zone: 1964/49293 (4.0 %)
+[smoke] zoned activities by zone: {'bs_zone_ia': 343, 'wob_innenstadt': 267, 'bs_zone_ib': 244, 'gs_altstadt_zone1': 225, 'pe_innenstadt': 135, 'he_innenstadt': 123, 'sz_lebenstedt': 119, 'wf_innenstadt': 113, 'tu_campus_ost_beethovenstrasse': 81, 'tu_campus_ost_langer_kamp': 70, 'tu_zentralcampus': 64, 'tu_forschungsflughafen': 57, 'bs_resident_stadthalle_132': 49, 'tu_campus_nord': 35, 'gf_innenstadt': 27, 'bs_parkscheininsel_marthastrasse_koernerstrasse': 12}
+[smoke] parkingFree activities: 407; persons with residentParkingZone: 18
+[smoke] attributes written: {'person_attrs': 18, 'activity_attrs': 2371}
+[smoke] tariff model braunschweig_cordon_gatecheck_parking_tariffs_2026-09-29.json: 24 zones; module braunschweigParking written

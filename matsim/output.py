@@ -101,6 +101,24 @@ def archive_simulation_output(run_path, output_path):
     return hardlink_count, copy_count, file_count
 
 
+def _copy_listed_inputs(prepare_path, output_path, report_name, list_key, label):
+    """Copy the files a preparation report lists from prepare_path to output_path, under their names.
+
+    report_name is the JSON report in prepare_path and list_key the key of its list of file names. The
+    config modules refer to these files relative to the config, so they travel with the scenario under the
+    same names. A listed file that is missing raises FileNotFoundError naming it, the report and the label
+    ("VRB fare input", "parking input"). The one copy helper of the VRB fare and the parking inputs.
+    """
+    report_path = os.path.join(str(prepare_path), report_name)
+    with open(report_path, encoding="utf-8") as stream:
+        names = json.load(stream)[list_key]
+    for name in names:
+        source = os.path.join(str(prepare_path), name)
+        if not os.path.isfile(source):
+            raise FileNotFoundError("%s %s listed in %s is missing" % (label, source, report_path))
+        shutil.copy(source, os.path.join(str(output_path), name))
+
+
 def copy_vrb_fare_inputs(prepare_path, output_path, output_prefix):
     """Export the VRB fare inputs (ADR-0133) listed in the preparation report, under their prefixed names.
 
@@ -109,14 +127,21 @@ def copy_vrb_fare_inputs(prepare_path, output_path, output_prefix):
     """
     from braunschweig.data.vrb.fare_config_xml import fare_inputs_report_name
 
-    report_path = os.path.join(str(prepare_path), fare_inputs_report_name(output_prefix))
-    with open(report_path, encoding="utf-8") as stream:
-        names = json.load(stream)["fare_input_files"]
-    for name in names:
-        source = os.path.join(str(prepare_path), name)
-        if not os.path.isfile(source):
-            raise FileNotFoundError("VRB fare input %s listed in %s is missing" % (source, report_path))
-        shutil.copy(source, os.path.join(str(output_path), name))
+    _copy_listed_inputs(prepare_path, output_path, fare_inputs_report_name(output_prefix), "fare_input_files",
+                        "VRB fare input")
+
+
+def copy_parking_inputs(prepare_path, output_path, output_prefix):
+    """Export the parking inputs (issue #249) listed in the preparation report, under their prefixed names.
+
+    The braunschweigParking module in <prefix>config.xml refers to the tariff model relative to the config, so
+    the model travels with the scenario under the same name, as does the report that lists it. A listed file
+    that is missing fails.
+    """
+    from braunschweig.parking.tariff_export import inputs_report_name
+
+    _copy_listed_inputs(prepare_path, output_path, inputs_report_name(output_prefix), "parking_input_files",
+                        "parking input")
 
 
 def configure(context):
@@ -139,6 +164,9 @@ def configure(context):
     # VRB zone fare model (ADR-0133): the prepared config references its two input files, so they
     # travel with the scenario when the flag is on.
     context.config("vrb_zone_fares_enabled", False)
+    # Zone-based parking costs (issue #249): the prepared config references the tariff model, so it
+    # travels with the scenario, together with its inputs report, when the flag is on.
+    context.config("parking_zones_enabled", False)
     need_osm = context.config("export_detailed_network", False)
     if need_osm:
         context.stage("matsim.scenario.supply.osm")
@@ -172,6 +200,10 @@ def execute(context):
     if context.config("vrb_zone_fares_enabled"):
         copy_vrb_fare_inputs(context.path("matsim.simulation.prepare"), context.config("output_path"),
                              context.config("output_prefix"))
+
+    if context.config("parking_zones_enabled"):
+        copy_parking_inputs(context.path("matsim.simulation.prepare"), context.config("output_path"),
+                            context.config("output_prefix"))
 
     if context.config("export_detailed_network"):
         shutil.copy(

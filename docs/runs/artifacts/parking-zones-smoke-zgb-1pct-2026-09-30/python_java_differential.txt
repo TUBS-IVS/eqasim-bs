@@ -1,0 +1,27 @@
+Python/Java differential of the parking cost calculation on the committed tariff release (a consistency check of
+the two implementations of design rule set ADR-0139, not a validation).
+
+Code state: eqasim-bs integration branch feature/i249-parking-cost-zones (release: 24 zones of
+eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv); eqasim-java-bs feature/i249-parking-cost-zones,
+jar built from 06b65b3c8 with `mvn -pl braunschweig -am -DskipTests -Pstandalone package`.
+Tariff model: parking_tariff_model_zones_arm_2026-09-29.json (this directory), the JSON the ZONES arm ran with.
+
+Commands (Python: conda env eqasim, Python 3.10.10; Java: Temurin 25.0.4):
+    python harness/gen_cases.py eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv cases.csv
+    java -cp braunschweig-2.3.1.jar harness/DiffCheck.java parking_tariff_model_zones_arm_2026-09-29.json cases.csv
+
+Generator: seed 20260929, 60,000 random stays over the 24 zones; arrivals 0..30 h; 10 % terminal stays (terminal-
+stay rule T1); durations short (< 1 h), long (< 12 h), multi-day (< 40 h) and boundary values
+(0, 1, 59, 60, 61, 1799, 1800, 1801, 10800, 10801 s); purposes home, work, education, shop, leisure, other,
+errand; parkingFree true for 10 %, resident of the zone for 20 %. The Python reference
+braunschweig.parking.cost.parking_cost_cents prices every stay; DiffCheck prices the same stays with
+org.eqasim.braunschweig.parking.ParkingCostCalculator on the JSON model and compares cents and outcome.
+
+Result (2026-09-30):
+    cases 60000, mismatches 0, outcomes {EMPLOYER_FREE=5125, FREE_WITHIN_LIMIT=505, HOME=8460,
+    OUTSIDE_FEE_HOURS=14361, PAID_CAMPUS_GUEST=7528, PAID_CAMPUS_MEMBER=3967, PAID_LONG_STAY=1831,
+    PAID_METERED=17817, RESIDENT_FREE=406}
+
+NO_ZONE is not exercised here: it is decided before the calculator (no tariff), by the Python function with tariff
+None and by the Java cost model for an activity without parkingZone; both are pinned by unit tests.
+An earlier run on the 21-zone release of 2026-09-29 with the jar of 3b2232176 also gave 0 mismatches in 60,000 cases.

@@ -1,0 +1,20 @@
+# Parking cost zones v3 (#436), Part C arm 'v3_25pct': composed on configs/base_bs.yml by ~/launch_parking_v3_arm.sh.
+# Only scale, paths and this arm's lever differ from the base (ruling R-C-4: no tuning).
+working_directory: eqasim-data/cache_bs_25pct_parking_v2b
+run:
+  - synthesis.output
+  - matsim.output
+config:
+  sampling_rate: 0.25
+  matsim_last_iteration: 60
+  matsim_write_plans_interval: 5
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  cache_share_export: false
+  cache_share_recompute: []
+  analysis_working_directory: eqasim-data/cache_bs_25pct_parking_v2b
+  output_path: eqasim-data/output_bs_pv3_v3_25pct
+  output_prefix: braunschweig_pv3_v3_25pct_
+  parking_zones_enabled: true
+  enable_urban_parking: false

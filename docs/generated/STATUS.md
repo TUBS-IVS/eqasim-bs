@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 105 | stages: 130 | datasets: 87 | ADRs: 140 | run manifests: 59
+- Features: 106 | stages: 131 | datasets: 104 | ADRs: 143 | run manifests: 62
 
 ## Population synthesis
 
@@ -165,14 +165,15 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## MATSim
 
-14 stage(s), 13 in the production DAG. Datasets: `gtfs_feed`, `osm_niedersachsen`, `vrb_tariff_zone_polygons`, `vrb_tariff_zones`
+15 stage(s), 14 in the production DAG. Datasets: `gtfs_feed`, `osm_niedersachsen`, `parking_coverage_register_2026`, `parking_garages_2026`, `parking_resident_districts_2026`, `parking_tariffs_2026`, `parking_zones_2026`, `srv2023_commute_parking_by_workplace_class`, `vrb_tariff_zone_polygons`, `vrb_tariff_zones`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
+| [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
 | [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
-| [Urban parking (BS inner ring)](../registry/features/urban_parking.yml) | active | ON | A/A/i | unvalidated |  |
+| [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/i/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 
 ## Analysis

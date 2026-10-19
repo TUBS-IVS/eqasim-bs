@@ -28,8 +28,8 @@ try:
 except ImportError:
     HAS_PDFPLUMBER = False
 
-# pdfplumber is not part of the pinned runtime environments (environments/*.lock); only a
-# re-extraction from the official PDFs needs it. The committed table itself is pinned by
+# pdfplumber is pinned in environment.yml and the explicit locks (curation-time only); only a
+# re-extraction from the official PDFs needs it, so the tests still skip where it is absent. The committed table itself is pinned by
 # test_committed_data_has_each_official_table_tier_and_source_evidence, which always runs.
 needs_pdfplumber = pytest.mark.skipif(
     not HAS_PDFPLUMBER,

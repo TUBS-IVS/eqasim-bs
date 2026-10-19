@@ -229,8 +229,30 @@ config:
   fleet_hsn_tsn_attributes: true
   fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
 
-  # Urban parking (3 EUR/h for non-resident car trips into the BS inner ring).
-  enable_urban_parking: true
+  # Parking costs (ADR-0139, issue #436): the zone tariffs replace the legacy 8 km ring (the two
+  # flags are mutually exclusive), with the parking block of configs/base_bs.yml, pinned equal by
+  # tests/test_popsim_config_parity.py. The zones need the plans-writer alias below.
+  parking_zones_enabled: true
+  enable_urban_parking: false
+  parking_zones_path: braunschweig/parking/parking_zones_2026.geojson
+  parking_tariffs_path: braunschweig/parking/parking_tariffs_2026.csv
+  parking_coverage_register_path: braunschweig/parking/parking_coverage_register_2026.csv
+  parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
+  parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
+  parking_garages_path: braunschweig/parking/parking_garages_2026.geojson
+  parking_tariff_snapshot_date: "2026-10-14"
+  parking_workplace_free_share_shift: 0.0
+  parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
+  parking_campus_free_share: 0.2
+  parking_ev_exemption_enabled: true
+  parking_terminal_stay_rule: until_fee_end
+  parking_minimum_stay_min: 15
+  parking_garage_max_distance_m: 1000.0
+  parking_garage_decay_m: 575.27
+  parking_garage_decay_commute_m: 69.69
+  parking_garage_monthly_imputation: true
+  parking_cost_utility_factor: 1.0
+  parking_option_price_beta_u_per_eur: 0.310998
 
   # Household fleet routing-consistency: re-mode the initial car-driver legs of
   # carless persons (0-car households own no "car" vehicle) to car_passenger

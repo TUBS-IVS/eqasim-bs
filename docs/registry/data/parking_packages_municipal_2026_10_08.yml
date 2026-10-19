@@ -1,0 +1,85 @@
+dataset: parking_packages_municipal_2026_10_08
+title: >-
+  Owner delivery of 2026-10-08 (the Braunschweig monthly parking products package, two controller captures of the Contipark
+  pages and two OpenStreetMap responses of the main station), raw source of the monthly garage products and the station-lot zones
+inventory_id: null
+provider: >-
+  The owner's research package Braunschweig_Monatstarife_2026-10-08.zip (monthly and long-term parking products of 14 Braunschweig
+  garages and 5 surface lots, research date 2026-10-08; it states applied_to_user_model false and imputed_prices 0) and, captured
+  by the session controller on the owner's instruction on 2026-10-08 (nothing submitted, no login): the public Contipark product
+  configurator of the Parkhaus Wallstrasse and the Contipark location page of the Tiefgarage Eiermarkt, and two Overpass API
+  responses for the car parks at the main station of Braunschweig (OpenStreetMap contributors, ODbL 1.0; OSM base 2026-10-08).
+  The sources belong to their publishers
+vintage: >-
+  2026-10-08 (research date of the package, capture date of the Contipark pages, OSM base timestamps 2026-10-08T06:01:29Z and
+  2026-10-08T07:29:54Z)
+geography: Braunschweig (the garages of the monthly products, the main station car parks P1 Nord, P2 Sued and P3 West)
+crs: >-
+  WGS84 latitude/longitude in the Overpass responses; the curation step works in EPSG:25832
+roles:
+- supply_input
+- spatial_input
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied package and controller captures, not downloaded by the pipeline. The OpenStreetMap responses were obtained with
+    the Overpass queries named in the folder's MANIFEST.md; the Contipark pages are the public pages
+    https://www.contipark.de (configurator of the Parkhaus Wallstrasse, location page of the Tiefgarage Eiermarkt). Obtain the files
+    from the owner (open an issue in TUBS-IVS/eqasim-bs) and verify them against the SHA-256 values in storage.notes.
+  notes: >-
+    Folder municipal_2026-10-08/: Braunschweig_Monatstarife_2026-10-08.zip (90 files, manifest.sha256 of 89 entries, verified
+    member by member by the readers) is READ by bs_monthly_products.py (the monthly products of the Braunschweig garages, spec
+    Amendment F1) and by station_lots.py (evidence/contipark pages and data/tariff_rules.json of the DB station lots); the package
+    scripts are never executed. contipark_configurator_2026-10-08/ (SHA256SUMS, wallstrasse_configurator.txt,
+    eiermarkt_no_rental_product.txt) is READ by bs_monthly_products.py (--contipark-evidence-dir) through its pinned SHA256SUMS.
+    osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json (the outlines of the OSM ways 25411279, 7874165, 236421384 and
+    26163572) is READ by station_lots.py (the three station-lot zones of spec Amendment G1). NOT READ by any committed code:
+    osm_braunschweig_hbf_parking_2026-10-08.json (the response of nwr[amenity=parking](around:450,52.2527,10.5400), archived as the
+    context of the station lots) and MANIFEST.md (the owner's local inventory of the folder).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-08/
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the package archives third-party pages; eqasim-data/ is ignored by design). Files, SHA-256 and
+    sizes (verified on 2026-10-17 against the files in the main checkout): Braunschweig_Monatstarife_2026-10-08.zip
+    72fec30d4515a3f7468af66222802697b09ae042b283adc335b5ae3607650c81 (3,183,430 bytes; pinned in bs_monthly_products.PACKAGE_SHA256);
+    contipark_configurator_2026-10-08/SHA256SUMS 2617d497bddfaadced2ff433cd4b675122570a58ca7b6b2b49c27b0514a76ceb (193 bytes; pinned in
+    bs_monthly_products.EVIDENCE_SUMS_SHA256, which lists the two pages);
+    contipark_configurator_2026-10-08/wallstrasse_configurator.txt af0d4e3f77795e035e9c250c4ef820d0cc0ae204da4d5316713da4463655b9c0 (1,139
+    bytes); contipark_configurator_2026-10-08/eiermarkt_no_rental_product.txt
+    0a7d31ae502822897971675af54cdb7511cc2a2d20f4427f19b2daa4c411fa87 (1,061 bytes);
+    osm_braunschweig_hbf_station_lots_geometry_2026-10-08.json fe4332938fcc7e99595aff167071a040fcea01b5be5df38e259647e64a7ecc26 (4,915
+    bytes; pinned in station_lots.OSM_SHA256); osm_braunschweig_hbf_parking_2026-10-08.json
+    d4ec9d2ad3224fae6bdb84119c7803815b6cc07c1b0c01fd2d54539057a4f876 (10,437 bytes; no code pin); MANIFEST.md
+    4f136249acaa26c68649a23c94b3697c1b95628f52549df2d060999b77f04ad2 (2,869 bytes; no code pin). A test ties the pins and the local
+    files to this record (tests/test_parking_raw_package_records.py).
+verification:
+  verifier_entry: D18
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D18 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py with the monthly products package, the
+    file the garage and station-lot curation reads first: only the curation chain needs it. A missing file is reported as
+    [RESTRICTED] with the route to obtain it; the SHA-256 is checked by the curation code that reads it, not by the preflight.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    The monthly products package archives public operator pages and city pages, which keep the terms of their publishers (Contipark,
+    APCOA, DB BahnPark, Stadt Braunschweig; no reuse licence verified). The OpenStreetMap responses are OpenStreetMap data, (c)
+    OpenStreetMap contributors, ODbL 1.0. Used by owner decision 2026-10-08.
+  notes: >-
+    The committed files derived from them are facts of public tariffs (parking_tariffs_2026) and, as local restricted files, the garage
+    and station-lot geometry (parking_garages_2026, parking_zones_2026); their licences are stated in their own records.
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  The package states that it does not apply any price to the model and advises against imputing a missing monthly fee; the garages
+  without a published monthly product are handled by assumption P13 of the garage dataset (data record parking_garages_2026). The
+  Contipark captures are single page states of 2026-10-08.
+notes: >-
+  Used by the parking v2 work of issue #436 (spec Amendments F1 and G1, ADR-0140) through the curation chain
+  (scripts/curation/parking_zones_2026/). Registered as a raw source of its own on 2026-10-17 (Part C final fix); before that the
+  SHA-256 values were named in the data records parking_zones_2026 and parking_garages_2026 only.

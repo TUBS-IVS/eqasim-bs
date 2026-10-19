@@ -42,7 +42,7 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
     class _Context:
         def __init__(self, enabled):
             self._values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": True,
-                            C.KEY_ENABLED: enabled}
+                            prepare.PARKING_KEY: False, C.KEY_ENABLED: enabled}
 
         def config(self, key):
             return self._values[key]
@@ -52,3 +52,23 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
     seen.clear()
     assert prepare.execute(_Context(False)) == "config.xml"
     assert seen == ["freight", "fares"]
+
+
+def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
+    """The check reads the FINAL config, so the parking module and the tariff model (written by the parking step) come first."""
+    seen = []
+    monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
+    monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result: seen.append("fares"))
+    monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append(("parking", result)))
+    monkeypatch.setattr(C, "run", lambda context, result: seen.append(("check", result)))
+
+    class _Context:
+        _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
+                   prepare.PARKING_KEY: True, C.KEY_ENABLED: True}
+
+        def config(self, key):
+            return self._values[key]
+
+    assert prepare.execute(_Context()) == "config.xml"
+    assert seen == ["fares", ("parking", "config.xml"), ("check", "config.xml")]

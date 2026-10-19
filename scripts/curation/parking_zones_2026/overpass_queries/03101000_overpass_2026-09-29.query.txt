@@ -1,0 +1,15 @@
+[out:json][timeout:180];
+(
+  nwr["amenity"="parking"]["fee"="yes"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:both:fee"~"yes"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:left:fee"~"yes"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:right:fee"~"yes"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:condition:both"~"ticket"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:condition:left"~"ticket"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["parking:condition:right"~"ticket"](52.1867,10.4124,52.3575,10.643);
+  way["highway"]["highway"!~"^(footway|path|steps|cycleway|service|track|corridor|elevator|platform|construction|proposed|bridleway|bus_stop)$"](52.2480,10.4980,52.2860,10.5620);
+  nwr["amenity"="parking"](52.2480,10.4980,52.2860,10.5620);
+  nwr["amenity"="university"](52.1867,10.4124,52.3575,10.643);
+  nwr["amenity"="parking"]["operator"~"Technische Universit|TU Braunschweig"](52.1867,10.4124,52.3575,10.643);
+);
+out tags geom;

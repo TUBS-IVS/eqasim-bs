@@ -1,0 +1,2 @@
+arm,configured_shift,logged_shift,random_seed_and_offset,persons,persons_in_paid_zones,persons_drawn_free,person_free_share,person_free_percent_logged,campus_persons,campus_persons_drawn_free,iterations,work_education_calls_in_draw_zones,employer_free_calls_in_draw_zones,call_employer_free_share_draw_zones,work_education_calls_in_all_zones,employer_free_calls_in_all_zones,call_employer_free_share_all_zones
+v3_25pct,0.000000,0.000000,1234 + 7371,300855,13584,11679,0.859761,86.000000,5740,1128,51-60,6046,5232,0.865366,8476,5697,0.672133

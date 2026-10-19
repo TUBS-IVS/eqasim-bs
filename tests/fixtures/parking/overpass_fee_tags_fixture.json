@@ -1,0 +1,50 @@
+{
+  "version": 0.6,
+  "generator": "hand-written test fixture in the shape of an Overpass API 'out tags geom' response",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-28T00:00:00Z",
+    "copyright": "Synthetic test data; not OpenStreetMap content."
+  },
+  "elements": [
+    {
+      "type": "way",
+      "id": 101,
+      "geometry": [{"lat": 52.2600, "lon": 10.5200}, {"lat": 52.2600, "lon": 10.5210}],
+      "tags": {"highway": "residential", "name": "Fixture Street A", "parking:both": "lane", "parking:both:fee": "yes"}
+    },
+    {
+      "type": "way",
+      "id": 102,
+      "geometry": [{"lat": 52.2600, "lon": 10.5210}, {"lat": 52.2605, "lon": 10.5215}],
+      "tags": {"highway": "residential", "name": "Fixture Street B", "parking:left": "lane", "parking:left:fee": "yes"}
+    },
+    {
+      "type": "way",
+      "id": 103,
+      "geometry": [{"lat": 52.2650, "lon": 10.5300}, {"lat": 52.2650, "lon": 10.5310}],
+      "tags": {"highway": "tertiary", "parking:lane:both": "parallel", "parking:condition:right": "ticket"}
+    },
+    {
+      "type": "way",
+      "id": 201,
+      "geometry": [
+        {"lat": 52.2550, "lon": 10.5100}, {"lat": 52.2550, "lon": 10.5105}, {"lat": 52.2553, "lon": 10.5105},
+        {"lat": 52.2553, "lon": 10.5100}, {"lat": 52.2550, "lon": 10.5100}
+      ],
+      "tags": {"amenity": "parking", "fee": "yes", "name": "Fixture lot", "fee:conditional": "no @ (Su)"}
+    },
+    {
+      "type": "node",
+      "id": 301,
+      "lat": 52.2700,
+      "lon": 10.5000,
+      "tags": {"amenity": "parking", "fee": "yes", "parking": "surface"}
+    },
+    {
+      "type": "way",
+      "id": 401,
+      "geometry": [{"lat": 52.2620, "lon": 10.5250}, {"lat": 52.2620, "lon": 10.5260}],
+      "tags": {"highway": "residential", "name": "Named Only Street"}
+    }
+  ]
+}
