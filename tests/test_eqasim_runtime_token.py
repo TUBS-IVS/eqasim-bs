@@ -64,7 +64,50 @@ def test_non_source_files_do_not_change_the_digest(java_repo):
     assert eqasim.source_tree_digest(str(java_repo)) == before
 
 
+def test_crlf_and_lf_checkouts_of_the_same_content_give_the_same_digest(java_repo):
+    # core.autocrlf rewrites line endings per platform; the same commit must key the same jar.
+    source = java_repo / "core/src/A.java"
+    source.write_bytes(b"class A {\n  int x;\n}\n")
+    lf = eqasim.source_tree_digest(str(java_repo))
+    source.write_bytes(b"class A {\r\n  int x;\r\n}\r\n")
+    assert eqasim.source_tree_digest(str(java_repo)) == lf
+    source.write_bytes(b"class A {\r\n  int y;\r\n}\r\n")
+    assert eqasim.source_tree_digest(str(java_repo)) != lf
+
+
+@pytest.mark.parametrize("relative, content", [
+    ("pom.xml", "<project><version>2</version></project>\n"),
+    ("core/src/app.properties", "key=value\n"),
+])
+def test_xml_and_properties_edits_change_the_digest(java_repo, relative, content):
+    path = java_repo / relative
+    if not path.exists():
+        path.write_text("key=other\n", encoding="utf-8")
+        _git(java_repo, "add", relative)
+    before = eqasim.source_tree_digest(str(java_repo))
+    path.write_text(content, encoding="utf-8")
+    assert eqasim.source_tree_digest(str(java_repo)) != before
+
+
+def test_a_tracked_but_deleted_source_file_is_skipped(java_repo, tmp_path):
+    (java_repo / "core/src/B.java").write_text("class B {}\n", encoding="utf-8")
+    _git(java_repo, "add", "core/src/B.java")
+    with_b = eqasim.source_tree_digest(str(java_repo))
+    (java_repo / "core/src/B.java").unlink()  # still listed by git ls-files --cached
+    after_delete = eqasim.source_tree_digest(str(java_repo))
+    assert after_delete != with_b
+    # Same as a tree that never had B.java (same relative paths and contents).
+    other = tmp_path / "other"
+    (other / "core/src").mkdir(parents=True)
+    (other / "core/src/A.java").write_text("class A {}\n", encoding="utf-8")
+    (other / "pom.xml").write_text("<project/>\n", encoding="utf-8")
+    (other / ".gitignore").write_text("target/\n", encoding="utf-8")
+    _git(other, "init", "-q")
+    assert eqasim.source_tree_digest(str(other)) == after_delete
+
+
 def test_source_tree_digest_raises_outside_a_git_work_tree(tmp_path):
+    # Assumes pytest's tmp_path is not inside a git work tree (it lives under the OS temp dir).
     plain = tmp_path / "plain"
     plain.mkdir()
     (plain / "A.java").write_text("class A {}\n", encoding="utf-8")

@@ -115,6 +115,10 @@ def _fork_pom(context) -> str:
 
 def _versions(context) -> tuple:
     pom = _fork_pom(context)
+    if not os.path.isfile(pom):
+        raise RuntimeError("fork pom not found at %s: eqasim_source_path (%s) must point at the "
+                           "eqasim-java-bs work tree whose root pom.xml carries matsim.version and "
+                           "maven.compiler.source" % (pom, context.config("eqasim_source_path")))
     override = context.config("freight_tool_matsim_version")
     matsim_version = override if override else read_pom_property(pom, "matsim.version")
     return matsim_version, read_pom_property(pom, "maven.compiler.source")
@@ -130,7 +134,9 @@ def configure(context):
     # execute() calls maven.run(); declare its options here (synpp scopes config per stage).
     java.configure(context)
     maven.configure(context)
-    context.config("eqasim_source_path", "")
+    # Volatile: the token carries the pom's MATSim version and Java release, so the path is
+    # only a locator and a different path string must not re-key this stage (ADR-0148).
+    context.config("eqasim_source_path", "", volatile = True)
     # Empty = the fork pom's ${matsim.version}; set only to pin the tool to another release.
     context.config("freight_tool_matsim_version", "")
 

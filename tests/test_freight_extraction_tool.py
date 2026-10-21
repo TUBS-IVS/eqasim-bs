@@ -1,5 +1,4 @@
 import os
-import textwrap
 
 import pytest
 
@@ -14,8 +13,11 @@ POM = """<project><properties>
 class _Context:
     def __init__(self, cfg, path):
         self._cfg, self._path, self.stages = cfg, path, []
+        # Every declared option with its volatile flag, as synpp's ConfigurationContext sees it.
+        self.declared = {}
 
     def config(self, key, default=None, volatile=False):
+        self.declared[key] = volatile
         return self._cfg.get(key, default)
 
     def stage(self, name, *args, **kwargs):
@@ -47,6 +49,22 @@ def test_configure_declares_the_lockstep_keys_and_runtime_stages():
     context = _Context({}, "")
     extraction_tool.configure(context)
     assert "matsim.runtime.java" in context.stages and "matsim.runtime.maven" in context.stages
+    # execute() calls maven.run(), which reads these; synpp scopes config per stage, so an
+    # undeclared key would make the real call fail with a missing-option error.
+    for key in ("eqasim_source_path", "freight_tool_matsim_version",
+                "maven_binary", "maven_skip_tests", "java_home", "java_binary", "java_memory"):
+        assert key in context.declared, key
+    # The token already carries the pom's MATSim version and Java release, so the path string
+    # is only a locator and must not re-key the tool stage (ADR-0148).
+    assert context.declared["eqasim_source_path"] is True
+    assert context.declared["freight_tool_matsim_version"] is False
+
+
+def test_validate_names_the_pom_when_the_fork_pom_is_missing(tmp_path):
+    context = _Context({"eqasim_source_path": str(tmp_path), "freight_tool_matsim_version": ""}, "")
+    with pytest.raises(RuntimeError, match="eqasim_source_path") as error:
+        extraction_tool.validate(context)
+    assert "pom.xml" in str(error.value)
 
 
 def test_validate_token_is_content_only(tmp_path):
@@ -69,8 +87,7 @@ def test_version_override_wins(tmp_path):
 @pytest.mark.skipif(os.environ.get("EQASIM_BS_FREIGHT_TOOL_BUILD") != "1",
                     reason="Maven build of the tool jar; set EQASIM_BS_FREIGHT_TOOL_BUILD=1 to run")
 def test_execute_builds_the_shaded_jar(tmp_path):
-    from matsim.runtime import maven
-    source = tmp_path / "fork"
+    source =tmp_path / "fork"
     source.mkdir()
     (source / "pom.xml").write_text(POM, encoding="utf-8")
     context = _Context({"eqasim_source_path": str(source), "freight_tool_matsim_version": "",

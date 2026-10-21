@@ -57,6 +57,12 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
+def _sha256_text_file(path):
+    """sha256 hex of a text file with CRLF normalised to LF (``core.autocrlf`` checkouts)."""
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def source_tree_digest(source_path):
     """Content digest (sha256 hex) of the Java source tree at ``source_path``.
 
@@ -64,6 +70,8 @@ def source_tree_digest(source_path):
     (``SOURCE_SUFFIXES``), excluding ``target/`` and ``.claude/`` at any depth. Each file
     enters as its relative path plus its content hash, so the digest is independent of
     mtimes: checkouts, copies and worktrees do not rebuild the jar, a real edit does.
+    All three suffixes are text, so CRLF is normalised to LF before hashing: a Windows
+    ``core.autocrlf`` checkout and an LF checkout of the same commit give the same digest.
 
     The file list comes from ``git ls-files``; there is deliberately no fallback to a
     directory walk or to mtimes. A source path that is not a git work tree raises
@@ -96,7 +104,7 @@ def source_tree_digest(source_path):
         if not os.path.isfile(absolute):
             continue
         digest.update(normalised.encode("utf-8") + b"\0"
-                      + _sha256_file(absolute).encode("utf-8") + b"\n")
+                      + _sha256_text_file(absolute).encode("utf-8") + b"\n")
     return digest.hexdigest()
 
 

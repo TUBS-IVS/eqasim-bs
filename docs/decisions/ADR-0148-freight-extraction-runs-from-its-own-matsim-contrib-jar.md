@@ -61,7 +61,8 @@
 5. **Content token for the eqasim jar.** `matsim.runtime.eqasim.validate()` returns
    `{"format": 1, "source": <digest>}` for `eqasim_source_path`, and `{"format": 1, "jar": <sha256>}`
    for a prebuilt `eqasim_path` jar. `source_tree_digest` hashes, sorted by path, each file's
-   relative path (with `/` separators) and the sha256 of its raw bytes, for the files reported
+   relative path (with `/` separators) and the sha256 of its content with CRLF normalised to
+   LF (the jar token hashes raw bytes), for the files reported
    by `git ls-files -z --cached --others --exclude-standard` with a suffix in `SOURCE_SUFFIXES`
    (`.java`, `.xml`, `.properties`), excluding any file below a directory named `target` or
    `.claude` (`SOURCE_EXCLUDED_DIRECTORIES`) at any depth. Tracked files that are deleted in the
@@ -98,11 +99,12 @@
 - **Maven downloads the contrib once per cache directory.** The new stage resolves
   `org.matsim.contrib:application` from `repo.matsim.org` and the Geotools repository and
   shades it. A cache directory without it needs network access for the first build.
-- **Raw-byte digest.** `source_tree_digest` hashes file bytes, not normalised text. A CRLF and
-  an LF checkout of the same tree therefore give different digests exactly when their bytes
-  differ (for example under `core.autocrlf`); two checkouts with identical bytes give the same
-  digest regardless of mtimes. The wrapper hash of the tool stage is the exception: it is read
-  in text mode and is line-ending independent.
+- **Line-ending-normalised digest.** `source_tree_digest` in `matsim/runtime/eqasim.py` hashes
+  each source file (`.java`, `.xml`, `.properties`, all text) after normalising CRLF to LF, so a
+  Windows `core.autocrlf` checkout and an LF checkout of the same commit give the same digest,
+  independent of mtimes. The prebuilt-jar token (`eqasim_path`) hashes the raw bytes of the
+  binary jar. The wrapper hash of the tool stage is read in text mode and is likewise
+  line-ending independent.
 - **Non-git sources fail loudly.** A copy of the Java tree without `.git` can no longer be used
   as `eqasim_source_path`; the stage raises instead of choosing a key.
 - **Cache sharing.** `braunschweig.freight.extraction_tool` is not in `cache_share_stages`,
