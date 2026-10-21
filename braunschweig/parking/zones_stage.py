@@ -59,9 +59,6 @@ returned polygons: EPSG:25832.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -168,29 +165,6 @@ def validate(context):
         stage_label=__name__ + ".validate()")
     token["files"] = files
     return token
-
-
-def _legacy_validation_token(context):
-    """The pre-structured token (one sha256 string over the release files and the raw helper sources).
-
-    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
-    code; remove once every cache is migrated.
-    """
-    digest = hashlib.sha256()
-    for _, source_id, _, path in _release_files(context):
-        digest.update(f"{source_id}={tariff_export.content_sha256(path)};".encode("ascii"))
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_source = inspect.getsource(importlib.import_module(module_name))
-        except Exception as error:
-            raise RuntimeError(
-                f"braunschweig.parking.zones_stage validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, because skipping it "
-                "would silently reuse a stale parking zone release.") from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
 
 
 def load_workplace_shares(path) -> pd.DataFrame:

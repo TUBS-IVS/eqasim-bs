@@ -27,9 +27,6 @@ and ``{"enabled": False}``.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import os
 
@@ -293,16 +290,6 @@ def validate(context):
     """
     if not bool(context.config(KEY_ENABLED)):
         return 0
-    total_size = _raw_mid_total_size(context)
-    token = synpp_tokens.source_token(
-        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-        stage_label=__name__ + ".validate()")
-    token["raw_mid_bytes"] = total_size
-    return token
-
-
-def _raw_mid_total_size(context) -> int:
-    """Summed byte size of the three raw MiD files; a missing file raises ``RuntimeError`` naming it."""
     mid_dir = context.config(KEY_MID_DIR)
     total_size = 0
     for name in RAW_FILES:
@@ -314,31 +301,11 @@ def _raw_mid_total_size(context) -> int:
                 f"the directory configured as {KEY_MID_DIR}; set {KEY_ENABLED}: false to run "
                 "without the model.")
         total_size += os.path.getsize(path)
-    return total_size
-
-
-def _legacy_validation_token(context):
-    """The pre-structured token (``0``, or ``"<raw MiD bytes>-<md5 over the raw helper sources>"``).
-
-    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
-    code; remove once every cache is migrated.
-    """
-    if not bool(context.config(KEY_ENABLED)):
-        return 0
-    total_size = _raw_mid_total_size(context)
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_source = inspect.getsource(importlib.import_module(module_name))
-        except Exception as error:
-            raise RuntimeError(
-                f"{_LOG_TAG} validate(): cannot hash the deferred helper module {module_name!r} "
-                f"({type(error).__name__}: {error}); it must not be skipped, because skipping it "
-                "would silently reuse a stale cached donor pool.") from error
-        digest.update(deferred_source.encode("utf-8"))
-    return f"{total_size}-{digest.hexdigest()}"
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["raw_mid_bytes"] = total_size
+    return token
 
 
 def _read_persons(mid_dir):

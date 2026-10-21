@@ -15,7 +15,6 @@ CRS: EPSG:25832 throughout; all distances in metres.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -219,24 +218,6 @@ def validate(context):
     token = synpp_tokens.source_token(_HELPER_MODULES, (), stage_label=__name__ + ".validate()")
     token["files"] = files
     return token
-
-
-def _legacy_validation_token(context):
-    """The pre-structured token (one sha256 string over the two files and the raw helper sources).
-
-    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
-    code; remove once every cache is migrated.
-    """
-    path = _polygons_path(context)
-    if not path.is_file():
-        raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "
-                           "docs/registry/data/vrb_tariff_zone_polygons.yml")
-    digest = hashlib.sha256(path.read_bytes())
-    _, matrix_path, _ = fare_model_export.committed_input_paths()
-    digest.update(Path(matrix_path).read_bytes())
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    return digest.hexdigest()
 
 
 def execute(context):

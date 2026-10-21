@@ -21,9 +21,6 @@ attribution against the supplied shapefile).
 import datetime
 import decimal
 import gzip
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import math
@@ -189,35 +186,6 @@ def validate(context):
     token["files"] = {Path(path).name: fare_model_export.content_sha256(path)
                       for path in fare_model_export.committed_input_paths()}
     return token
-
-
-def _legacy_validation_token(context):
-    """The pre-structured token (one md5 string over the raw helper sources and the fare-model table hashes).
-
-    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
-    code; remove once every cache is migrated.
-    """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
-    # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
-    # The parking inputs are not read here: they arrive through the declared braunschweig.parking.zones_stage,
-    # whose own token hashes them and whose change synpp propagates to this stage.
-    for path in fare_model_export.committed_input_paths():
-        digest.update(fare_model_export.content_sha256(path).encode("ascii"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"matsim.simulation.prepare validate(): cannot hash the deferred helper "
-                f"module {module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse a stale prepared scenario."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
 
 
 def configure(context):

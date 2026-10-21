@@ -2,16 +2,15 @@
 
 The stage set is the AUDIT's own (``scripts/audit_synpp_helper_hash.py``), not a text grep, so a
 stage that the closure gate treats as source-hashing cannot keep a private md5 loop unnoticed.
-Stages whose token also covers data files (the five ``_COMPOSITE_STAGES``) keep a private
-``_legacy_validation_token`` that reproduces the pre-refactor string for the cache migration.
+Stages whose token also covers data files (the five ``_COMPOSITE_STAGES``) add that part under its
+own key next to the module digests. The pre-refactor token is never kept as code: the migration
+replays the validate() of the pre-refactor revision (task-13 ruling G).
 """
 from __future__ import annotations
 
 import ast
-import hashlib
 import importlib
 import importlib.util
-import inspect
 import pathlib
 import subprocess
 import sys
@@ -25,8 +24,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: number deliberately, together with the audit note, when a source-hashing stage is added or removed.
 EXPECTED_SOURCE_HASHING_STAGES = 30
 
-#: Stages whose token holds a non-source part (data files, sizes) next to the module digests; each
-#: keeps ``_legacy_validation_token(context)`` for the migration (scripts/migrate_cache_metadata.py).
+#: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
     "braunschweig.parking.zones_stage",
     "braunschweig.data.vrb.zone_polygons",
@@ -102,88 +100,11 @@ def test_the_audit_still_recognises_the_structured_form(source_hashing_stages):
     assert int(line.rsplit(":", 1)[1]) == EXPECTED_SOURCE_HASHING_STAGES
 
 
-def test_composite_stages_keep_a_private_legacy_validation_token(source_hashing_stages):
-    assert _COMPOSITE_STAGES <= set(source_hashing_stages)
-    missing = [name for name in sorted(_COMPOSITE_STAGES)
-               if not callable(getattr(importlib.import_module(name), "_legacy_validation_token", None))]
-    assert missing == []
-
-
 def test_the_legacy_loop_token_of_every_pure_stage_is_still_reproducible(source_hashing_stages):
-    """The migration proves a stored md5 string with ``legacy_source_token``; its inputs are the stage's
-    own tuples (read from the module, never copied), and the value has the old 32-hex shape."""
+    """``legacy_source_token`` still builds the old 32-hex md5 from the stage's own tuples."""
     from braunschweig import synpp_tokens
     for name in sorted(set(source_hashing_stages) - _COMPOSITE_STAGES):
         module = importlib.import_module(name)
         token = synpp_tokens.legacy_source_token(getattr(module, "_HELPER_MODULES", ()),
                                                  getattr(module, "_DEFERRED_HELPER_MODULE_NAMES", ()))
         assert len(token) == 32 and set(token) <= set("0123456789abcdef"), name
-
-
-def _md5_over(helpers, deferred):
-    digest = hashlib.md5()
-    for module in helpers:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in deferred:
-        digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-    return digest.hexdigest()
-
-
-def test_the_legacy_hook_of_prepare_reproduces_the_pre_refactor_algorithm():
-    """prepare's committed inputs need no config: independent re-implementation of the old body."""
-    from braunschweig.data.vrb import fare_model_export
-    from braunschweig.matsim.simulation import prepare
-    digest = hashlib.md5()
-    for module in prepare._HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for path in fare_model_export.committed_input_paths():
-        digest.update(fare_model_export.content_sha256(path).encode("ascii"))
-    for module_name in prepare._DEFERRED_HELPER_MODULE_NAMES:
-        digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-    assert prepare._legacy_validation_token(None) == digest.hexdigest()
-
-
-class _Config:
-    def __init__(self, values):
-        self.values = values
-
-    def config(self, key, default=None):
-        return self.values.get(key, default)
-
-
-def test_the_legacy_hook_of_zone_polygons_reproduces_the_pre_refactor_algorithm(tmp_path):
-    from braunschweig.data.vrb import fare_model_export, zone_polygons
-    polygons = tmp_path / "polygons.geojson"
-    polygons.write_bytes(b'{"type": "FeatureCollection", "features": []}\n')
-    context = _Config({"data_path": str(tmp_path), "vrb_zone_polygons_path": "polygons.geojson"})
-    digest = hashlib.sha256(polygons.read_bytes())
-    digest.update(pathlib.Path(fare_model_export.committed_input_paths()[1]).read_bytes())
-    for module in zone_polygons._HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    assert zone_polygons._legacy_validation_token(context) == digest.hexdigest()
-
-
-def test_the_legacy_hook_of_home_office_donors_reproduces_the_pre_refactor_algorithm(tmp_path):
-    from braunschweig.synthesis.commute_day import home_office_donors_stage as stage
-    sizes = 0
-    for index, name in enumerate(stage.RAW_FILES):
-        (tmp_path / name).write_bytes(b"x" * (10 + index))
-        sizes += 10 + index
-    context = _Config({stage.KEY_ENABLED: True, stage.KEY_MID_DIR: str(tmp_path)})
-    expected = f"{sizes}-{_md5_over(stage._HELPER_MODULES, stage._DEFERRED_HELPER_MODULE_NAMES)}"
-    assert stage._legacy_validation_token(context) == expected
-
-
-def test_the_legacy_hook_of_outside_tour_modes_reproduces_the_pre_refactor_algorithm(tmp_path):
-    from braunschweig.synthesis.outside_tour_modes import stage
-    table = tmp_path.joinpath(*stage.SRV_SUBDIR, stage._srv_table_module.TABLE_FILE_NAME)
-    table.parent.mkdir(parents=True)
-    table.write_bytes(b"band,share\n0,1\n")
-    context = _Config({stage.KEY_ENABLED: True, "data_path": str(tmp_path)})
-    digest = hashlib.md5()
-    for module in stage._HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in stage._DEFERRED_HELPER_MODULE_NAMES:
-        digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-    digest.update(table.read_bytes())
-    assert stage._legacy_validation_token(context) == digest.hexdigest()

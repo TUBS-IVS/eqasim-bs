@@ -685,15 +685,16 @@ def test_donor_stage_validate_token_tracks_the_declared_option_surface(tmp_path,
     context = _context(DONORS, config=_donor_stage_config(tmp_path))
     token = DONORS.validate(context)
 
+    import inspect
     from braunschweig.popsim.stage import config_keys
-    real_getsource = DONORS.inspect.getsource
+    real_getsource = inspect.getsource
 
     def patched_getsource(module):
         if module is config_keys:
             return real_getsource(module) + "\nZ_PROBE = 1  # a changed declared default\n"
         return real_getsource(module)
 
-    monkeypatch.setattr(DONORS.inspect, "getsource", patched_getsource)
+    monkeypatch.setattr(inspect, "getsource", patched_getsource)
     assert DONORS.validate(context) != token
 
 # --------------------------------------------------------------------------- state stage

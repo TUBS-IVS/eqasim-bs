@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import collections
 import hashlib
-import importlib
-import inspect
 import json
 import logging
 import os
@@ -69,31 +67,6 @@ def validate(context):
         with open(table_path, "rb") as handle:
             token["files"] = {_srv_table_module.TABLE_FILE_NAME: hashlib.sha256(handle.read()).hexdigest()}
     return token
-
-
-def _legacy_validation_token(context):
-    """The pre-structured token (one md5 string over the raw helper sources and, with the flag on, the table bytes).
-
-    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
-    code; remove once every cache is migrated.
-    """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-        except Exception as error:
-            raise RuntimeError(f"outside_tour_modes.stage validate(): cannot hash {module_name!r} "
-                               f"({type(error).__name__}: {error}); it must not be skipped") from error
-    if context.config(KEY_ENABLED):
-        table_path = os.path.join(context.config("data_path"), *SRV_SUBDIR, _srv_table_module.TABLE_FILE_NAME)
-        if not os.path.exists(table_path):
-            raise FileNotFoundError(f"{_LOG_TAG} validate(): committed table {_srv_table_module.TABLE_FILE_NAME} "
-                                    f"not found at {table_path}")
-        with open(table_path, "rb") as handle:
-            digest.update(handle.read())
-    return digest.hexdigest()
 
 
 def configure(context):
