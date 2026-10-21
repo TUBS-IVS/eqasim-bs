@@ -254,15 +254,18 @@ def execute(context):
 def validate(context):
     # Content, not mtime: a checkout, copy or agent worktree must not rebuild the jar and
     # with it every Java-dependent stage; an edited source file still does.
+    # Same precedence as execute(): a prebuilt eqasim_path jar wins over eqasim_source_path,
+    # so the token always describes the jar that is actually provided.
+    path = context.config("eqasim_path")
+    if path != "":
+        if not os.path.exists(path):
+            raise RuntimeError("Cannot find eqasim at: %s" % path)
+        return {"format": 1, "jar": _sha256_file(path)}
+
     source_path = context.config("eqasim_source_path")
     if source_path != "":
         if not os.path.exists(source_path):
             raise RuntimeError("eqasim_source_path does not exist: %s" % source_path)
         return {"format": 1, "source": source_tree_digest(source_path)}
 
-    path = context.config("eqasim_path")
-    if path == "":
-        return True
-    if not os.path.exists(path):
-        raise RuntimeError("Cannot find eqasim at: %s" % path)
-    return {"format": 1, "jar": _sha256_file(path)}
+    return True

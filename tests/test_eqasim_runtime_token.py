@@ -124,6 +124,18 @@ def test_validate_returns_a_content_token(java_repo):
     assert token == {"format": 1, "source": eqasim.source_tree_digest(str(java_repo))}
 
 
+def test_validate_follows_execute_precedence_when_both_keys_are_set(java_repo, tmp_path):
+    # execute() builds from the prebuilt eqasim_path jar first; the token must describe that jar.
+    jar = tmp_path / "braunschweig.jar"
+    jar.write_bytes(b"jar-content")
+
+    class _Context:
+        def config(self, key):
+            return {"eqasim_source_path": str(java_repo), "eqasim_path": str(jar)}[key]
+    token = eqasim.validate(_Context())
+    assert token == {"format": 1, "jar": eqasim._sha256_file(str(jar))}
+
+
 def test_validate_returns_a_jar_content_token(tmp_path):
     jar = tmp_path / "braunschweig.jar"
     jar.write_bytes(b"jar-content")

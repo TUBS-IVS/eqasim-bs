@@ -23,8 +23,11 @@
 - Consequence in a real run (run manifest `docs/runs/freight-boundary-links-ab-1pct-2026-10-16.yml`,
   ON arm): a new Java source mtime devalidated `matsim.runtime.eqasim`, and with it
   `braunschweig.freight.extraction`, which ran 05:33 to 06:48 (1 h 15 min), then
-  `freight.trips`, `braunschweig.matsim.simulation.prepare` and the rest. The extraction routes
-  four trip categories of about 45 min each (`docs/features/freight.md`).
+  `freight.trips`, `braunschweig.matsim.simulation.prepare` and the rest. The 1 h 15 min is the
+  observed duration of that stage in the ON arm of the manifest (1 % scenario, `sampling_rate`
+  0.01, ZGB-8 region, cordon and freight on, run on the server; the extraction itself does not
+  depend on the sampling rate). The estimate of about 45 min per trip category, four categories
+  in all, is the one in `docs/features/freight.md`; it is not an observation of that run.
 - Size of the mtime scan, measured on 2026-10-21 against the main checkout of the fork
   (`C:/Users/bienzeisler/Documents/GitHub/eqasim-java-bs`, read-only): the old rule (`os.walk`,
   skipping paths containing `target` or `.git`, suffix `.java`/`.xml`/`.properties`) matched
@@ -67,6 +70,8 @@
    (`.java`, `.xml`, `.properties`), excluding any file below a directory named `target` or
    `.claude` (`SOURCE_EXCLUDED_DIRECTORIES`) at any depth. Tracked files that are deleted in the
    work tree are skipped. The digest does not read mtimes.
+   When both keys are set, `eqasim_path` wins, as in `execute()`, so the token describes the jar
+   that is provided.
 6. **No fallback.** A source path that is not a git work tree, or a missing `git`, raises
    `RuntimeError`. A directory walk or an mtime key would silently apply a different cache rule.
 7. **Copy step.** `execute()` of `matsim.runtime.eqasim` now also ignores `.claude` in
@@ -96,9 +101,12 @@
 - **One-time jar rebuild.** The token format of `matsim.runtime.eqasim` changed (a number
   became a structured value), so the jar is rebuilt once on every existing cache, and with it
   every stage that depends on the jar, once.
-- **Maven downloads the contrib once per cache directory.** The new stage resolves
-  `org.matsim.contrib:application` from `repo.matsim.org` and the Geotools repository and
-  shades it. A cache directory without it needs network access for the first build.
+- **Maven downloads the contrib once per machine and user.** The new stage makes Maven resolve
+  `org.matsim.contrib:application` and its dependencies from `repo.matsim.org` and the OSGeo
+  repository into the local Maven repository (`~/.m2` unless the Maven settings say otherwise)
+  and shade them. `run` in `matsim/runtime/maven.py` sets no `maven.repo.local`, so the cache
+  directory does not hold the downloads. The first build on a machine or user without them needs
+  network access.
 - **Line-ending-normalised digest.** `source_tree_digest` in `matsim/runtime/eqasim.py` hashes
   each source file (`.java`, `.xml`, `.properties`, all text) after normalising CRLF to LF, so a
   Windows `core.autocrlf` checkout and an LF checkout of the same commit give the same digest,
@@ -118,7 +126,12 @@
   `target/` and `.claude/` and non-source files, raises outside a git work tree, token shape of
   the source and jar branches), `tests/test_freight_extraction_tool.py` (the tool stage) and
   `tests/test_freight_extraction.py` (`configure` depends on the tool stage and not on
-  `matsim.runtime.eqasim`; `tool_java_invocation`). These pin the wiring and the token rules.
+  `matsim.runtime.eqasim`; `tool_java_invocation`; `execute` runs the tool entry point with the
+  tool jar as class path). These pin the wiring and the token rules. Added in the review fixes:
+  CRLF and LF checkouts give the same source digest, `.xml` and `.properties` edits change it, a
+  tracked-but-deleted file is skipped, `eqasim_path` takes precedence over `eqasim_source_path`
+  in `validate()` as in `execute()`, a missing fork pom raises an actionable error, and the tool
+  stage declares the lockstep keys with `eqasim_source_path` volatile.
   The one test that builds the jar with Maven is opt-in (`EQASIM_BS_FREIGHT_TOOL_BUILD=1`) and
   skipped by default; none runs the routing.
 - Cause of the recompute: run manifest `docs/runs/freight-boundary-links-ab-1pct-2026-10-16.yml`
@@ -129,7 +142,9 @@
 - **Pending, not done:** the server comparison. On the 1 % scenario, the new
   `braunschweig.freight.extraction` cache entry must be compared with the previous one
   (`freight_extraction_summary.csv`, trip counts per category), and the stale-stage explainer
-  must show only the expected stages as stale for their own reason. It will be recorded in a
+  (`scripts/explain_stale_stages.py`, the Phase 1 deliverable of #468, PR #469, not yet merged
+  at the time of writing; spec section 4.6) must show only the expected stages as stale for
+  their own reason. It will be recorded in a
   run manifest `docs/runs/freight-tool-jar-1pct-<date>.yml` (classification smoke). Until that
   manifest exists, it is not established that the tool jar reproduces the counts of the fork
   jar, and a smoke would not validate the routing in any case.

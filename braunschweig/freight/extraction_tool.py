@@ -2,8 +2,8 @@
 
 The freight routing depends on MATSim's ``ExtractRelevantFreightTrips`` command, the pinned
 MATSim version and the inputs -- never on the eqasim fork's own code. Keying the jar on the
-whole Java source tree (``matsim.runtime.eqasim``) recomputed 1-3 h of routing after every
-Java edit, checkout or copy (run manifest freight-boundary-links-ab-1pct-2026-10-16). This
+whole Java source tree (``matsim.runtime.eqasim``) recomputed the routing after every Java
+edit, checkout or copy (one observed case: 1 h 15 min, see ADR-0148). This
 stage renders a minimal pom around ``org.matsim.contrib:application:${matsim.version}`` plus
 the four-line wrapper in ``braunschweig/freight/java`` and shades it; its token is the
 version string and the content of those two files. The MATSim version and the compiler

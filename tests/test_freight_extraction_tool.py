@@ -87,7 +87,7 @@ def test_version_override_wins(tmp_path):
 @pytest.mark.skipif(os.environ.get("EQASIM_BS_FREIGHT_TOOL_BUILD") != "1",
                     reason="Maven build of the tool jar; set EQASIM_BS_FREIGHT_TOOL_BUILD=1 to run")
 def test_execute_builds_the_shaded_jar(tmp_path):
-    source =tmp_path / "fork"
+    source = tmp_path / "fork"
     source.mkdir()
     (source / "pom.xml").write_text(POM, encoding="utf-8")
     context = _Context({"eqasim_source_path": str(source), "freight_tool_matsim_version": "",
