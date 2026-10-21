@@ -60,3 +60,25 @@ def test_legacy_source_token_equals_the_old_md5_loop(helper_modules):
     digest.update(inspect.getsource(helper_modules).encode("utf-8"))
     digest.update(inspect.getsource(importlib.import_module("tok_helper_b")).encode("utf-8"))
     assert synpp_tokens.legacy_source_token((helper_modules,), ("tok_helper_b",)) == digest.hexdigest()
+
+
+def test_whitespace_only_line_inside_a_string_literal_changes_the_digest():
+    from braunschweig import synpp_tokens
+    spaced = 'X = """a\n   \nb"""\n'
+    empty = 'X = """a\n\nb"""\n'
+    assert synpp_tokens.semantic_module_digest(spaced) != synpp_tokens.semantic_module_digest(empty)
+
+
+def test_an_indented_block_still_digests():
+    from braunschweig import synpp_tokens
+    block = '    def m(self):\n        """doc"""\n        return 1\n'
+    flat = 'def m(self):\n    return 1\n'
+    assert synpp_tokens.semantic_module_digest(block) == synpp_tokens.semantic_module_digest(flat)
+
+
+def test_a_helper_module_without_source_raises_runtime_error_naming_it():
+    import types
+    from braunschweig import synpp_tokens
+    with pytest.raises(RuntimeError, match="tok_no_source") as info:
+        synpp_tokens.source_token((types.ModuleType("tok_no_source"),), (), stage_label="probe")
+    assert "probe" in str(info.value) and info.value.__cause__ is not None

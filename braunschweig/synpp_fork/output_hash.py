@@ -9,7 +9,11 @@ is never "unchanged" and never "no hash".
 Symlink rule: the cache directory ``<hash>.cache`` itself may be a symlink (server cache
 farms link whole entries) and is hashed through. A symlink *inside* the cache directory
 (file or directory entry) raises, because hashing it would either skip content silently or
-hash something outside the entry; stages must write real files.
+hash something outside the entry; stages must write real files. This holds even when an exclude glob would skip the symlink
+(stricter on purpose). Windows directory junctions are not detected by ``os.path.islink`` on
+Python 3.10; no stage creates junctions.
+
+Exclude globs use ``fnmatch.fnmatchcase`` so the digest does not depend on the platform.
 """
 from __future__ import annotations
 
@@ -60,11 +64,12 @@ def hash_stage_output(working_directory: str, stage_hash: str, exclude_globs: tu
             path = os.path.join(root, name)
             _reject_symlink(path)
             relative = os.path.relpath(path, cache_dir).replace(os.sep, "/")
-            if any(fnmatch.fnmatch(relative, pattern) for pattern in exclude_globs):
+            if any(fnmatch.fnmatchcase(relative, pattern) for pattern in exclude_globs):
                 continue
             size = os.path.getsize(path)
             lines.append("%s\0%d\0%s\n" % (relative, size, _sha256_file(path)))
             total += size
+    lines.sort()  # global order by relative path, independent of directory walk order
     files_digest = hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
     digest = hashlib.sha256((pickle_digest + "\n" + files_digest).encode("utf-8")).hexdigest()
     return {"format": OUTPUT_HASH_FORMAT, "digest": digest, "pickle": pickle_digest,

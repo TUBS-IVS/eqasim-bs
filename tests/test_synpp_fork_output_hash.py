@@ -61,6 +61,8 @@ def test_hash_stage_output_raises_on_unreadable_file(entry):
     working, stage_hash, cache = entry
     os.chmod(cache / "a.csv", 0)
     try:
+        if os.access(cache / "a.csv", os.R_OK):
+            pytest.skip("permission bits are not enforced for this user (e.g. root)")
         with pytest.raises(PermissionError):
             output_hash.hash_stage_output(working, stage_hash)
     finally:
@@ -111,3 +113,23 @@ def test_symlinked_cache_directory_hashes_like_the_real_directory(entry, tmp_pat
     (farm / "s__h.p").write_bytes(b"pickle-bytes")
     _symlink_or_skip(cache, farm / "s__h.cache", target_is_directory=True)
     assert output_hash.hash_stage_output(str(farm), stage_hash) == real
+
+
+def test_exclude_globs_are_case_sensitive_on_every_platform(entry):
+    from braunschweig.synpp_fork import output_hash
+    working, stage_hash, _ = entry
+    assert output_hash.hash_stage_output(working, stage_hash, ("*.LOG",))["n_files"] == 2
+    assert output_hash.hash_stage_output(working, stage_hash, ("*.log",))["n_files"] == 1
+
+
+def test_manifest_is_sorted_globally_by_relative_path(entry):
+    from braunschweig.synpp_fork import output_hash
+    import hashlib
+    working, stage_hash, cache = entry
+    (cache / "z.txt").write_bytes(b"q")  # walk order lists root files before "sub/b.log"; sorted order does not
+    result = output_hash.hash_stage_output(working, stage_hash)
+    rows = []
+    for rel, data in (("a.csv", b"1;2\n"), ("z.txt", b"q"), ("sub/b.log", b"ts 1\n")):
+        rows.append("%s\0%d\0%s\n" % (rel, len(data), hashlib.sha256(data).hexdigest()))
+    expected = hashlib.sha256("".join(sorted(rows)).encode("utf-8")).hexdigest()
+    assert result["files"] == expected

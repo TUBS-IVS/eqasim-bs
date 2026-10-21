@@ -37,7 +37,13 @@ def _strip_docstrings(tree: ast.AST) -> ast.AST:
 
 def semantic_module_digest(source: str) -> str:
     """SHA-256 of the docstring-free AST dump of ``source`` (a module or a dedentable block)."""
-    tree = _strip_docstrings(ast.parse(textwrap.dedent(source)))
+    try:
+        parsed = ast.parse(source)
+    except IndentationError:
+        # An indented class/function block from inspect.getsource. dedent is applied only
+        # here: it rewrites whitespace-only lines, which would alter string literals.
+        parsed = ast.parse(textwrap.dedent(source))
+    tree = _strip_docstrings(parsed)
     canonical = ast.dump(tree, annotate_fields=True, include_attributes=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -60,7 +66,14 @@ def source_token(helper_modules, deferred_module_names, *, stage_label: str = "v
     """Structured validation token: one semantic digest per helper module, keyed by dotted name."""
     modules = {}
     for module in helper_modules:
-        modules[module.__name__] = semantic_module_digest(inspect.getsource(module))
+        try:
+            source = inspect.getsource(module)
+        except Exception as error:
+            raise RuntimeError(
+                f"{stage_label}: cannot retrieve the source of helper module "
+                f"{getattr(module, '__name__', module)!r} ({type(error).__name__}: {error}); "
+                "a helper module without source must not be skipped.") from error
+        modules[module.__name__] = semantic_module_digest(source)
     for module_name in deferred_module_names:
         module = _deferred_module(module_name, stage_label)
         modules[module.__name__] = semantic_module_digest(inspect.getsource(module))
