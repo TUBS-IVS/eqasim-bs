@@ -12,8 +12,9 @@ Step 2  collect own imports    -- whole-AST walk, module-level vs lazy (inside a
 Step 3  declared stage edges   -- literal context.stage("name") calls, resolved through the
                                   `aliases:` block of configs/base_bs.yml.
                                   required_helpers = first-party imports - declared stages.
-Step 4  validate() coverage    -- stages whose validate() hashes source (an md5 loop over
-                                  inspect.getsource or synpp_tokens.source_token); their
+Step 4  validate() coverage    -- stages whose validate() hashes source (detected from the AST:
+                                  a call of inspect.getsource or synpp_tokens.source_token
+                                  inside the top-level validate(), never a comment); their
                                   _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES read
                                   STATICALLY, each credited only when validate() reads it;
                                   a package entry covers its own __init__ only.
@@ -47,15 +48,6 @@ EXEMPTION_NAME = "_SYNPP_TOKEN_EXEMPTION"
 #: Module-level dict a source-hashing stage sets, {dotted stage module: reason}: stage modules
 #: its imports reach but whose code it never runs. The closure walk of THAT stage stops there.
 BOUNDARIES_NAME = "_TOKEN_CLOSURE_BOUNDARIES"
-
-
-#: First-party modules every source-hashing stage imports to BUILD its token. They are the hashing
-#: mechanism, not stage logic: no stage result depends on them, and a change to the digest algorithm
-#: is made visible by bumping ``synpp_tokens.TOKEN_FORMAT``, which differs in every stored token. Treated
-#: like a module that sets ``_SYNPP_TOKEN_EXEMPTION``, so importing the builder is not an uncovered helper.
-TOKEN_MECHANISM_EXEMPTIONS = {
-    "braunschweig.synpp_tokens": "builds the structured stage token; a digest change bumps TOKEN_FORMAT (#468)",
-}
 
 
 def module_name(path: Path, repo: Path) -> str:
@@ -297,6 +289,22 @@ def names_read_by_validate(tree: ast.Module) -> set[str]:
     return set()
 
 
+#: Dotted callee names that make a validate() a source-hashing one.
+SOURCE_HASHING_CALLS = frozenset({"inspect.getsource", "synpp_tokens.source_token"})
+
+
+def validate_hashes_source(tree: ast.Module) -> bool:
+    """True when the stage's top-level ``validate()`` calls ``inspect.getsource`` or
+    ``synpp_tokens.source_token``. Only a call counts, never a mention in a comment or string."""
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "validate":
+            return any(isinstance(child, ast.Call)
+                       and isinstance(child.func, ast.Attribute)
+                       and ast.unparse(child.func) in SOURCE_HASHING_CALLS
+                       for child in ast.walk(node))
+    return False
+
+
 def resolve_module_binding(dotted: str, trees: dict, on_disk: set[str],
                            packages: set[str]) -> str:
     """The on-disk module a helper-tuple name stands for, following re-exports.
@@ -378,8 +386,7 @@ def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_mo
 
 def exemption_reasons(repo: Path) -> dict[str, str]:
     """{module: reason} of every first-party module that sets ``_SYNPP_TOKEN_EXEMPTION``."""
-    reasons = {name: reason for name, reason in TOKEN_MECHANISM_EXEMPTIONS.items()
-               if (repo / Path(*name.split(".")).with_suffix(".py")).is_file()}
+    reasons = {}
     for path in iter_py(repo):
         text = path.read_text(encoding="utf-8")
         if EXEMPTION_NAME not in text:
@@ -430,17 +437,13 @@ def build_report(repo: Path) -> dict:
         module_level_imports, lazy_imports = collect_imports(
             module_tree, module, on_disk, is_package=module in packages)
         imports[module] = module_level_imports | lazy_imports
-        if exemption_reason(module_tree, module) is not None or module in TOKEN_MECHANISM_EXEMPTIONS:
+        if exemption_reason(module_tree, module) is not None:
             exempt.add(module)
-    # Which stages hash Python source at all: the note's `grep -rl "inspect.getsource"` (the
-    # pre-2026-10 md5 loops) plus the shared structured token `synpp_tokens.source_token`, which
-    # does the getsource itself (#468).
-    source_hashing = set()
-    for name, path in stages.items():
-        text = path.read_text(encoding="utf-8")
-        if "def validate" in text and ("inspect.getsource" in text
-                                       or "synpp_tokens.source_token" in text):
-            source_hashing.add(name)
+    # Which stages hash Python source at all: a top-level validate() that CALLS inspect.getsource
+    # (the pre-2026-10 md5 loops) or the shared structured token synpp_tokens.source_token, which
+    # does the getsource itself (#468). Read from the AST, so a comment or string that merely
+    # mentions either name does not count.
+    source_hashing = {name for name in stages if validate_hashes_source(trees[name])}
 
     report = {}
     for name, path in sorted(stages.items()):

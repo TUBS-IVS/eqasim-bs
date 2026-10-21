@@ -3,8 +3,8 @@
 The stage set is the AUDIT's own (``scripts/audit_synpp_helper_hash.py``), not a text grep, so a
 stage that the closure gate treats as source-hashing cannot keep a private md5 loop unnoticed.
 Stages whose token also covers data files (the five ``_COMPOSITE_STAGES``) add that part under its
-own key next to the module digests. The pre-refactor token is never kept as code: the migration
-replays the validate() of the pre-refactor revision (task-13 ruling G).
+own key next to the module digests. The pre-refactor token is never kept as code in the
+stages: the migration replays the validate() of the pre-refactor revision (task-13 ruling G).
 """
 from __future__ import annotations
 
@@ -83,13 +83,41 @@ def test_every_source_hashing_stage_calls_the_shared_token_builder(source_hashin
 
 
 def test_no_validate_keeps_a_private_md5_or_source_loop(source_hashing_stages):
-    """The legacy hooks are separate functions and exempt; validate() itself must not hash text."""
+    """validate() itself must not hash text: it only builds the shared structured token."""
     offenders = {}
     for name, path in source_hashing_stages.items():
         calls = _attribute_calls(_validate_node(path))
         bad = sorted(call for call in calls if call in {"hashlib.md5", "inspect.getsource"})
         if bad:
             offenders[name] = bad
+    assert offenders == {}
+
+
+_HELPER_TUPLES = ("_HELPER_MODULES", "_DEFERRED_HELPER_MODULE_NAMES")
+
+
+def _module_level_names(tree):
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def test_every_validate_reads_every_helper_tuple_its_module_defines(source_hashing_stages):
+    """A helper tuple that validate() never reads hashes nothing: the token would silently ignore
+    the modules it lists. A module without ``_DEFERRED_HELPER_MODULE_NAMES`` passes ``()`` (the
+    commute_day trio, ruling E), which is why only DEFINED tuples are required."""
+    offenders = {}
+    for name, path in source_hashing_stages.items():
+        defined = _module_level_names(ast.parse(path.read_text(encoding="utf-8")))
+        read = {child.id for child in ast.walk(_validate_node(path))
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)}
+        missing = sorted(t for t in _HELPER_TUPLES if t in defined and t not in read)
+        if missing:
+            offenders[name] = missing
     assert offenders == {}
 
 

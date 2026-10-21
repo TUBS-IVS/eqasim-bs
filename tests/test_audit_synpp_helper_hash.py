@@ -147,8 +147,8 @@ def test_a_package_entry_does_not_credit_its_submodules():
 
     assert audit.covered_by_entry("braunschweig.popsim.mid") == {"braunschweig.popsim.mid"}
     package = importlib.import_module("braunschweig.popsim.mid")
-    assert inspect_module.getsource(package) == open(
-        package.__file__, encoding="utf-8").read()
+    with open(package.__file__, encoding="utf-8") as handle:
+        assert inspect_module.getsource(package) == handle.read()
     assert package.__file__.endswith("__init__.py")
 
 
@@ -440,3 +440,47 @@ def test_only_the_trips_stage_builds_trips_through_a_donor_source():
                and node.func.attr == "build_trips" for node in ast.walk(ast.parse(text))):
             callers.add(audit.module_name(path, repo))
     assert callers == {"braunschweig.popsim.trips_stage"}
+
+
+def _write_package(tmp_path, files):
+    package = tmp_path / "braunschweig"
+    package.mkdir()
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "base_bs.yml").write_text("aliases: {}\n", encoding="utf-8")
+    for name, source in files.items():
+        (package / name).write_text(source, encoding="utf-8")
+
+
+def test_source_hashing_is_detected_from_a_call_not_from_text(tmp_path):
+    """A comment or string naming inspect.getsource must not turn a stage into a source-hashing one;
+    a validate() that really calls it (or synpp_tokens.source_token) must."""
+    stage = "def configure(context):\n    pass\ndef execute(context):\n    return 1\n"
+    _write_package(tmp_path, {
+        "__init__.py": "",
+        "commented.py": stage + (
+            "def validate(context):\n"
+            "    # inspect.getsource and synpp_tokens.source_token are NOT called here\n"
+            "    note = 'inspect.getsource'\n    return note\n"),
+        "outside.py": stage + (
+            "import inspect\n"
+            "def helper():\n    return inspect.getsource(helper)\n"
+            "def validate(context):\n    return 1\n"),
+        "legacy.py": stage + (
+            "import inspect\n"
+            "def validate(context):\n    return inspect.getsource(validate)\n"),
+        "structured.py": stage + (
+            "from braunschweig import synpp_tokens\n"
+            "def validate(context):\n    return synpp_tokens.source_token((), ())\n"),
+    })
+    report = audit.build_report(tmp_path)
+    assert {name: entry["hashes_source"] for name, entry in report.items()} == {
+        "braunschweig.commented": False, "braunschweig.outside": False,
+        "braunschweig.legacy": True, "braunschweig.structured": True}
+
+
+def test_the_token_builder_is_exempt_through_the_ordinary_marker():
+    """One exemption mechanism: synpp_tokens sets _SYNPP_TOKEN_EXEMPTION like every other exempt
+    module, and the audit prints it; there is no second, hard-coded list."""
+    repo = Path(__file__).resolve().parents[1]
+    assert not hasattr(audit, "TOKEN_MECHANISM_EXEMPTIONS")
+    assert "braunschweig.synpp_tokens" in audit.exemption_reasons(repo)

@@ -20,6 +20,13 @@ import textwrap
 
 TOKEN_FORMAT = 2
 
+#: Read by scripts/audit_synpp_helper_hash.py (ADR-0136): every source-hashing stage imports this
+#: module to BUILD its token, so no stage result depends on it. A change of the digest algorithm
+#: is made visible by bumping TOKEN_FORMAT, which differs in every stored token.
+_SYNPP_TOKEN_EXEMPTION = (
+    "builds the structured stage token; a digest change bumps TOKEN_FORMAT (#468)"
+)
+
 
 def python_tag() -> str:
     return "%d.%d" % sys.version_info[:2]
