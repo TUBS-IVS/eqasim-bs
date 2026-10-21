@@ -201,9 +201,28 @@ def test_stale_ancestor_with_output_hash_stays_stale_if(project):
     child = _by_name(assessments)["st_child"]
     assert child.stale_if == ["st_parent"] and not child.certain_recompute
     report = staleness.format_report(assessments)
-    assert "STALE-IF st_child  [if output of st_parent changes]" in report
+    assert ("STALE-IF st_child  [recomputes under synpp 1.6.2; the fork would reuse it if "
+            "st_parent output is unchanged]") in report
     assert "RECOMPUTE" not in report
-    assert "1 may recompute" in report.splitlines()[-1]
+    last = report.splitlines()[-1]
+    assert "1 may recompute" in last and "synpp 1.6.2 recomputes" in last
+
+
+def test_stale_if_label_promises_early_cutoff_only_once_the_fork_loop_is_active(project, monkeypatch):
+    from braunschweig.synpp_fork import metadata, staleness
+    _, working, _, _, run, registry = project
+    run()
+    meta = metadata.read_meta(str(working))
+    parent_hash, _ = _parent_and_child_hashes(meta)
+    meta[parent_hash]["output_hash"] = {"format": 1, "digest": "abc"}
+    _remove_pickle(working, "st_parent")
+    assessments = staleness.assess(registry(), str(working), meta, rerun_required=False)
+    assert staleness.EARLY_CUTOFF_ACTIVE is False        # Phase 4 flips it together with the fork's run()
+    monkeypatch.setattr(staleness, "EARLY_CUTOFF_ACTIVE", True)
+    report = staleness.format_report(assessments)
+    assert "STALE-IF st_child  [if output of st_parent changes]" in report
+    assert "synpp 1.6.2" not in report
+    assert "1 may recompute (stale ancestor, early cutoff decides)" in report.splitlines()[-1]
 
 
 def test_missing_parent_timestamp_is_reported_as_malformed_meta(project):
@@ -370,6 +389,7 @@ def test_assess_agrees_with_synpps_own_stale_set(diamond, scenario):
     predicted = _own_stale_plus_descendants(reg, assessments)
     actual = run()["stale"]
     assert predicted == set(actual)
+    assert {h for h, a in assessments.items() if a.stale or a.stale_if} == set(actual)
     if scenario is _scenario_none:
         assert predicted == set()
     else:
@@ -436,3 +456,178 @@ def test_child_inherits_only_from_non_stale_dependencies(tmp_path, monkeypatch):
     assert result["ch_c"].stale_if == ["ch_x"]
     assert result["ch_c"].unhashed_ancestors == []
     assert not result["ch_c"].certain_recompute
+
+
+def _write_modules(tmp_path, monkeypatch, sources):
+    for name, source in sources.items():
+        (tmp_path / (name + ".py")).write_text(textwrap.dedent(source), encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    def reload():
+        for name in sources:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+        importlib.invalidate_caches()
+    return reload
+
+
+def _stage(parent=None, token=False, ephemeral=False, extra_parent=None):
+    """Source of a tiny stage: optional parent (optionally ephemeral), a second plain parent and a token module."""
+    lines = []
+    if token:
+        lines.append("from pathlib import Path")
+    lines.append("def configure(context):")
+    lines.append("    pass")
+    if token:
+        lines.append("    context.config('token_file')")
+    if parent:
+        lines.append(f"    context.stage('{parent}', ephemeral={ephemeral})")
+    if extra_parent:
+        lines.append(f"    context.stage('{extra_parent}')")
+    if token:
+        lines.append("def validate(context):")
+        lines.append("    return {'format': 2, 'python': '3.10', "
+                     "'modules': {'helper': Path(context.config('token_file')).read_text()}}")
+    lines.append("def execute(context):")
+    total = " + ".join(f"context.stage('{name}')" for name in (parent, extra_parent) if name) or "1"
+    lines.append(f"    return {total}")
+    return "\n".join(lines) + "\n"
+
+
+LINEAR = {"ln_a": _stage(token=True), "ln_b": _stage("ln_a"), "ln_c": _stage("ln_b"), "ln_d": _stage("ln_c")}
+
+
+def test_assess_agrees_with_synpp_over_a_three_level_chain(tmp_path, monkeypatch):
+    """a -> b -> c -> d, token change on a: the transitive path equals synpp's devalidated set."""
+    from braunschweig.synpp_fork import metadata, staleness
+    reload = _write_modules(tmp_path, monkeypatch, LINEAR)
+    token = tmp_path / "token.txt"
+    token.write_text("v1", encoding="utf-8")
+    config = {"token_file": str(token)}
+    working = tmp_path / "cache"
+    working.mkdir()
+    reload()
+    synpp.run([{"descriptor": "ln_d"}], config, working_directory=str(working), rerun_required=False)
+    token.write_text("v2", encoding="utf-8")
+    reload()
+    assessments = staleness.assess(synpp.pipeline.process_stages([{"descriptor": "ln_d"}], config),
+                                   str(working), metadata.read_meta(str(working)), rerun_required=False)
+    reload()
+    actual = synpp.run([{"descriptor": "ln_d"}], config, working_directory=str(working),
+                       rerun_required=False, verbose=True)["stale"]
+    by_name = _by_name(assessments)
+    assert by_name["ln_a"].reasons == ["token_changed:helper"]
+    assert by_name["ln_d"].stale_if == ["ln_a"]           # inherited over two non-stale levels
+    assert {h for h, a in assessments.items() if a.stale or a.stale_if} == set(actual)
+    assert len(actual) == 4
+
+
+def test_stale_if_and_unhashed_ancestor_hashes_run_parallel_to_the_names(project):
+    from braunschweig.synpp_fork import metadata, staleness
+    _, working, _, _, run, registry = project
+    run()
+    meta = metadata.read_meta(str(working))
+    parent_hash, _ = _parent_and_child_hashes(meta)
+    _remove_pickle(working, "st_parent")
+    child = _by_name(staleness.assess(registry(), str(working), meta, rerun_required=False))["st_child"]
+    assert child.stale_if == ["st_parent"] and child.stale_if_hashes == [parent_hash]
+    assert child.unhashed_ancestors == ["st_parent"] and child.unhashed_ancestor_hashes == [parent_hash]
+
+
+CUTOFF = {"co_g": _stage(), "co_b": _stage("co_g"), "co_c": _stage("co_b")}
+
+
+def test_hashed_intermediate_is_the_cutoff_point_for_the_unhashed_flag(tmp_path, monkeypatch):
+    """G stale and unhashed -> B valid but with an output hash -> C.
+
+    B recomputes for certain (its parent G has no digest), but B's own recorded digest can
+    still spare C once the fork compares it, so C is STALE-IF, not a certain RECOMPUTE.
+    """
+    from braunschweig.synpp_fork import metadata, staleness
+    reload = _write_modules(tmp_path, monkeypatch, CUTOFF)
+    working = tmp_path / "cache"
+    working.mkdir()
+    reload()
+    synpp.run([{"descriptor": "co_c"}], {}, working_directory=str(working), rerun_required=False)
+    meta = metadata.read_meta(str(working))
+    b_hash = next(h for h in meta if h.split("__")[0] == "co_b")
+    meta[b_hash]["output_hash"] = {"format": 1, "digest": "abc"}
+    _remove_pickle(working, "co_g")
+    reload()
+    result = _by_name(staleness.assess(synpp.pipeline.process_stages([{"descriptor": "co_c"}], {}),
+                                       str(working), meta, rerun_required=False))
+    assert result["co_b"].certain_recompute and result["co_b"].unhashed_ancestors == ["co_g"]
+    assert result["co_c"].stale_if == ["co_g"]
+    assert result["co_c"].unhashed_ancestors == [] and not result["co_c"].certain_recompute
+
+
+# ep_c declares its parent ep_e ephemeral; synpp makes every ancestor of an ephemeral stage ephemeral
+# too, unless another path reaches it non-ephemerally (ep_x reaches ep_g directly).
+EPHEMERAL = {"ep_g": _stage(token=True), "ep_e": _stage("ep_g"), "ep_c": _stage("ep_e", ephemeral=True),
+             "ep_x": _stage("ep_c", extra_parent="ep_g")}
+
+
+def _ephemeral_project(tmp_path, monkeypatch, target):
+    reload = _write_modules(tmp_path, monkeypatch, EPHEMERAL)
+    token = tmp_path / "token.txt"
+    token.write_text("v1", encoding="utf-8")
+    config = {"token_file": str(token)}
+    working = tmp_path / "cache"
+    working.mkdir()
+
+    def registry():
+        reload()
+        return synpp.pipeline.process_stages([{"descriptor": target}], config)
+
+    def run():
+        reload()
+        return synpp.run([{"descriptor": target}], config, working_directory=str(working),
+                         rerun_required=False, verbose=True)
+    run()
+    return working, token, registry, run
+
+
+def test_uncached_ephemeral_stage_is_neither_stale_nor_unexpected(tmp_path, monkeypatch):
+    """synpp excludes an uncached ephemeral stage from its own checks, so its child is a HIT."""
+    from braunschweig.synpp_fork import metadata, staleness
+    working, _, registry, run = _ephemeral_project(tmp_path, monkeypatch, "ep_x")
+    assessments = staleness.assess(registry(), str(working), metadata.read_meta(str(working)),
+                                   rerun_required=False)
+    result = _by_name(assessments)
+    assert result["ep_e"].ephemeral_uncached and result["ep_e"].reasons == []
+    assert not result["ep_g"].ephemeral_uncached          # reached non-ephemerally through ep_x
+    for name in ("ep_g", "ep_c", "ep_x"):
+        assert not result[name].stale and not result[name].stale_if and not result[name].certain_recompute
+    assert staleness.unexpected(assessments, set()) == []
+    assert {h for h, a in assessments.items() if a.stale or a.stale_if} == set(run()["stale"]) == set()
+    report = staleness.format_report(assessments)
+    assert "EPHEMERAL ep_e  [not cached; synpp recomputes it only if a descendant runs]" in report
+    assert ("# WARNING: 1 ephemeral stage(s) in the registry; the fork disables early cutoff "
+            "for such runs (spec 4.4)") in report
+    assert "HIT      ep_c" in report
+
+
+def test_stale_ancestor_above_an_uncached_ephemeral_stage_reaches_its_descendants(tmp_path, monkeypatch):
+    from braunschweig.synpp_fork import metadata, staleness
+    working, token, registry, run = _ephemeral_project(tmp_path, monkeypatch, "ep_x")
+    token.write_text("v2", encoding="utf-8")
+    assessments = staleness.assess(registry(), str(working), metadata.read_meta(str(working)),
+                                   rerun_required=False)
+    result = _by_name(assessments)
+    assert result["ep_g"].reasons == ["token_changed:helper"]
+    assert result["ep_e"].reasons == [] and result["ep_e"].stale_if == ["ep_g"]
+    assert result["ep_c"].stale_if == ["ep_g"] and result["ep_c"].certain_recompute
+    assert staleness.unexpected(assessments, set()) == ["ep_g"]
+    assert {h for h, a in assessments.items() if a.stale or a.stale_if} == set(run()["stale"])
+
+
+def test_all_ephemeral_ancestry_is_ignored_by_synpp_and_by_assess(tmp_path, monkeypatch):
+    """With ep_c as target ep_g and ep_e are both ephemeral: a token change on ep_g stales nothing."""
+    from braunschweig.synpp_fork import metadata, staleness
+    working, token, registry, run = _ephemeral_project(tmp_path, monkeypatch, "ep_c")
+    token.write_text("v2", encoding="utf-8")
+    assessments = staleness.assess(registry(), str(working), metadata.read_meta(str(working)),
+                                   rerun_required=False)
+    assert all(not a.stale and not a.stale_if for a in assessments.values())
+    assert sum(a.ephemeral_uncached for a in assessments.values()) == 2
+    assert set(run()["stale"]) == set()
+    assert "# WARNING: 2 ephemeral stage(s)" in staleness.format_report(assessments)
