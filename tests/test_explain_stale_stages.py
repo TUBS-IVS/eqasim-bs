@@ -93,3 +93,7 @@ def test_json_report_carries_the_recompute_fields(project, tmp_path):
     report = json.loads(out.read_text(encoding="utf-8"))
     assert report["ex_parent"]["certain_recompute"] is False
     assert report["ex_parent"]["unhashed_ancestors"] == [] and "certain_recompute" in report["ex_child"]
+    for stage in report.values():                         # hash lists run parallel to the name lists
+        assert len(stage["stale_if_hashes"]) == len(stage["stale_if"])
+        assert len(stage["unhashed_ancestor_hashes"]) == len(stage["unhashed_ancestors"])
+        assert stage["ephemeral_uncached"] is False

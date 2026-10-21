@@ -88,6 +88,9 @@ def explain_before_run(config_path):
     the report, before any stage executes. Run targets never count as unexpected.
     An EMPTY list means "no gate" (the report is only logged); this differs from
     ``scripts/explain_stale_stages.py --expect ""``, which means "nothing is allowed".
+    With a non-empty list the number of further stages that will recompute because an ancestor
+    is stale is logged as a note (they are not gated). ``dryrun: true`` in the config skips the
+    assessment (synpp returns before devalidating anything).
     Raises RuntimeError when the config has no ``working_directory``.
     Returns 0 to continue, 2 to abort.
     """
@@ -97,6 +100,10 @@ def explain_before_run(config_path):
     cfg = doc.get("config", {}) or {}
     if not cfg.get("synpp_explain_before_run", True):
         log.info("[explain] pre-run assessment disabled (synpp_explain_before_run false).")
+        return 0
+    if doc.get("dryrun"):
+        # synpp returns from a dry run before it devalidates anything, so nothing is recomputed.
+        log.info("[explain] dryrun: pre-run assessment skipped")
         return 0
     from braunschweig.synpp_fork import metadata, registry, staleness
     working_directory = doc.get("working_directory")
@@ -115,6 +122,14 @@ def explain_before_run(config_path):
         log.error("[explain] aborting: stale stages not in synpp_expected_stale_stages: %s",
                   ", ".join(unexpected))
         return 2
+    if expected:
+        # The gate checks own reasons only; descendants of an expected stale stage recompute
+        # without being gated, so say how many (informational, never an abort).
+        downstream = sum(1 for a in assessments.values()
+                         if not a.stale and not a.ephemeral_uncached and a.certain_recompute)
+        if downstream:
+            log.info("[explain] note: %d further stage(s) will recompute because an ancestor is stale",
+                     downstream)
     return 0
 
 
