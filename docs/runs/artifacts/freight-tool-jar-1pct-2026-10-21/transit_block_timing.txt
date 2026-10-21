@@ -1,0 +1,14 @@
+== pipeline transit (JVM started 12:02)
+2026-10-21T12:09:58,719  INFO ExtractRelevantFreightTrips:151 Processing: 10000 persons of
+2026-10-21T12:12:32,280  INFO ExtractRelevantFreightTrips:151 Processing: 20000 persons of
+2026-10-21T13:44:26,870  INFO ExtractRelevantFreightTrips:151 Processing: 490000 persons o
+2026-10-21T13:45:14,763  INFO ExtractRelevantFreightTrips:151 Processing: 500000 persons o
+2026-10-21T13:45:59,633  INFO ExtractRelevantFreightTrips:151 Processing: 510000 persons o
+2026-10-21T13:51:23,836  INFO ExtractRelevantFreightTrips:151 Processing: 520000 persons o
+== control transit (JVM started 13:54)
+2026-10-21T13:56:58,133  INFO ExtractRelevantFreightTrips:151 Processing: 10000 persons of
+2026-10-21T13:57:22,753  INFO ExtractRelevantFreightTrips:151 Processing: 20000 persons of
+2026-10-21T14:14:20,993  INFO ExtractRelevantFreightTrips:151 Processing: 490000 persons o
+2026-10-21T14:14:32,544  INFO ExtractRelevantFreightTrips:151 Processing: 500000 persons o
+2026-10-21T14:14:46,318  INFO ExtractRelevantFreightTrips:151 Processing: 510000 persons o
+2026-10-21T14:17:00,797  INFO ExtractRelevantFreightTrips:151 Processing: 520000 persons o

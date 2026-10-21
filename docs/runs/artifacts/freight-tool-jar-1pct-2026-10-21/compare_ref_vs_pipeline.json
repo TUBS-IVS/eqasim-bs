@@ -1,0 +1,53 @@
+{
+  "reference": "/home/felix/i468-freighttool/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim/braunschweig.freight.extraction__8e87a15edd2848eaede4b412f0b907b3.cache",
+  "candidate": "/home/felix/i468-freighttool/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim/braunschweig.freight.extraction__19be2f3c06d45763669113ddede7019e.cache",
+  "categories": {
+    "internal": {
+      "plans_decompressed_sha256": [
+        "4ef634b10839271ce4e988d7cd46ff834baab59e3775b4fdd176e832b0a7fe02",
+        "4ef634b10839271ce4e988d7cd46ff834baab59e3775b4fdd176e832b0a7fe02"
+      ],
+      "plans_identical": true,
+      "locations_summary_identical_as_sorted_lines": true
+    },
+    "incoming": {
+      "plans_decompressed_sha256": [
+        "574d5039518d6957a7959bc9c17d642ba918620e303941e7df34e254803221a2",
+        "574d5039518d6957a7959bc9c17d642ba918620e303941e7df34e254803221a2"
+      ],
+      "plans_identical": true,
+      "locations_summary_identical_as_sorted_lines": true
+    },
+    "outgoing": {
+      "plans_decompressed_sha256": [
+        "291655eabe2fc45ad4697c4ffe829751114b4cb6f3f225650d6588e316676f4d",
+        "291655eabe2fc45ad4697c4ffe829751114b4cb6f3f225650d6588e316676f4d"
+      ],
+      "plans_identical": true,
+      "locations_summary_identical_as_sorted_lines": true
+    },
+    "transit": {
+      "plans_decompressed_sha256": [
+        "5a74be99f242cb89308b520dbfbcc18049461bf617a83fbb4a80fbd6270f01a9",
+        "5a74be99f242cb89308b520dbfbcc18049461bf617a83fbb4a80fbd6270f01a9"
+      ],
+      "plans_identical": true,
+      "locations_summary_identical_as_sorted_lines": true
+    }
+  },
+  "summary_reference": [
+    "trip_type;count",
+    "internal;6416",
+    "incoming;8625",
+    "outgoing;9531",
+    "transit;31792"
+  ],
+  "summary_candidate": [
+    "trip_type;count",
+    "internal;6416",
+    "incoming;8625",
+    "outgoing;9531",
+    "transit;31792"
+  ],
+  "summary_identical": true
+}

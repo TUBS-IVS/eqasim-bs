@@ -1,0 +1,138 @@
+WARNING! A Java JDK of at least version 11 is recommended.
+WARNING! osmconvert of at least version 0.8.x is recommended!
+WARNING! Osmosis of at least version 0.48.x is recommended!
+STALE    braunschweig.analysis.analysis_suite  [required, not_in_meta, cache_missing]
+STALE    braunschweig.analysis.cordon_validation  [required, not_in_meta, cache_missing]
+STALE    braunschweig.analysis.simwrapper_export  [required, not_in_meta, cache_missing]
+STALE    braunschweig.analysis.verbindungen_validation  [required, not_in_meta, cache_missing]
+HIT      braunschweig.data.alkis
+HIT      braunschweig.data.bbsr.regiostar
+HIT      braunschweig.data.bosserhof_location_category
+HIT      braunschweig.data.bosserhof_purpose
+HIT      braunschweig.data.building_potentials
+         legacy timestamp rule for parents: data.spatial.municipalities
+HIT      braunschweig.data.buildings
+         legacy timestamp rule for parents: braunschweig.data.alkis, eqasim_common.data.spatial.iris
+HIT      braunschweig.data.census.employees
+         legacy timestamp rule for parents: eqasim_common.spatial.codes
+HIT      braunschweig.data.census.employment
+         legacy timestamp rule for parents: eqasim_common.spatial.codes
+HIT      braunschweig.data.census.pendler
+HIT      braunschweig.data.cordon_gemeinden
+HIT      braunschweig.data.cordon_network
+         legacy timestamp rule for parents: matsim.scenario.supply.processed
+HIT      braunschweig.data.cordon_pt_gates
+         legacy timestamp rule for parents: matsim.scenario.supply.processed
+HIT      braunschweig.data.external_secondary_points
+HIT      braunschweig.data.external_workplaces
+         legacy timestamp rule for parents: braunschweig.data.census.pendler
+HIT      braunschweig.data.freight.german_wide
+STALE    braunschweig.data.hts.mid_donor  [token_changed:opaque]
+HIT      braunschweig.data.inkar.household_income
+HIT      braunschweig.data.landuse
+HIT      braunschweig.data.locations
+         legacy timestamp rule for parents: braunschweig.data.alkis, braunschweig.data.landuse, braunschweig.data.osm, eqasim_common.data.spatial.iris
+HIT      braunschweig.data.osm
+HIT      braunschweig.data.schools.facilities
+HIT      braunschweig.data.schools.kita_facilities
+         legacy timestamp rule for parents: eqasim_common.locations.education, braunschweig.data.building_potentials
+HIT      braunschweig.data.schools.university_facilities
+         legacy timestamp rule for parents: eqasim_common.locations.education, braunschweig.data.building_potentials
+STALE    braunschweig.data.verbindungen.margins  [not_in_meta, cache_missing]
+HIT      braunschweig.data.verbindungen.work_od
+         legacy timestamp rule for parents: braunschweig.data.verbindungen.zones
+HIT      braunschweig.data.verbindungen.zones
+         legacy timestamp rule for parents: data.spatial.municipalities
+HIT      braunschweig.data.vrb.zone_polygons
+         legacy timestamp rule for parents: data.gtfs.cleaned
+STALE    braunschweig.freight.extraction  [not_in_meta, cache_missing; config vs nearest variant: eqasim_branch: 'main' -> None, eqasim_commit: 'ab938aaac' -> None, eqasim_path: '' -> None, eqasim_repository: 'https://github.com/eqasim-org/eqasim-java.git' -> None, eqasim_source_path: '../eqasim-java-bs' -> None, freight_tool_matsim_version: None -> '', git_binary: 'git' -> None]
+STALE    braunschweig.freight.extraction_tool  [not_in_meta, cache_missing]
+STALE    braunschweig.freight.trips  [not_in_meta, cache_missing; config vs nearest variant: eqasim_branch: 'main' -> None, eqasim_commit: 'ab938aaac' -> None, eqasim_path: '' -> None, eqasim_repository: 'https://github.com/eqasim-org/eqasim-java.git' -> None, eqasim_source_path: '../eqasim-java-bs' -> None, freight_tool_matsim_version: None -> '', git_binary: 'git' -> None]
+STALE    braunschweig.gravity.model  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+HIT      braunschweig.locations.secondary
+         legacy timestamp rule for parents: braunschweig.data.locations
+STALE    braunschweig.locations.synthesis.replacement_education_gravity  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+HIT      braunschweig.locations.work
+         legacy timestamp rule for parents: data.spatial.municipalities, braunschweig.data.external_workplaces, braunschweig.data.building_potentials
+STALE    braunschweig.matsim.scenario.facilities  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.matsim.scenario.households  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.matsim.scenario.population  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.outside_tour_modes.enabled: None -> True, braunschweig.outside_tour_modes.min_share: None -> 0.01, braunschweig.outside_tour_modes.warn_share: None -> 0.5, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), output_path: 'eqasim-data/output_bs_1pct_pv3_v3' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.matsim.scenario.vehicles  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.matsim.simulation.prepare  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.outside_tour_modes.enabled: None -> True, braunschweig.outside_tour_modes.min_share: None -> 0.01, braunschweig.outside_tour_modes.warn_share: None -> 0.5, braunschweig.plan_check.bicycle_max_distance_m: None -> 30000, braunschweig.plan_check.enabled: None -> True, braunschweig.plan_check.fail_on_threshold: None -> False, braunschweig.plan_check.leg_max_duration_s: None -> 10800, braunschweig.plan_check.max_frozen_defect_share: None -> 0.005, braunschweig.plan_check.walk_max_distance_m: None -> 5000, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), freight_boundary_link_maximum_distance_m: None -> 300.0, freight_boundary_link_maximum_fallback_share: None -> 0.05, freight_boundary_link_minimum_capacity_veh_per_h: None -> 1000.0, freight_tool_matsim_version: None -> '', output_path: 'eqasim-data/output_bs_1pct_pv3_v3' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', output_prefix: 'braunschweig_1pct_pv3_v3_' -> 'braunschweig_1pct_allfeat_popsim_']
+STALE    braunschweig.parking.zones_stage  [token_changed:opaque]
+STALE    braunschweig.popsim.commute_distance  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.popsim.completed_donor  [token_changed:opaque]
+STALE    braunschweig.popsim.distance_distributions  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.portal.enabled: None -> True, braunschweig.portal.max_routable_distance_m: None -> 45000]
+STALE    braunschweig.popsim.enriched_adapter  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.popsim.stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.popsim.trips_stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.synthesis.commute_day.activities_day_stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_enabled: None -> True, cordon_gate_road_classes: None -> ('motorway', 'trunk', 'primary'), cordon_gravity_beta: None -> -0.05, cordon_gravity_capacity_exponent: None -> 1.0, cordon_network_buffer_fraction: None -> 0.1, cordon_network_source_buffer_m: None -> 45000, cordon_vg250_path: None -> 'germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip', export_detailed_network: None -> False, git_binary: None -> 'git', gtfs_date: None -> 'dayWithMostServices', gtfs_excluded_agency_ids: None -> [], gtfs_excluded_agency_name_patterns: None -> [], gtfs_excluded_route_short_name_patterns: None -> ['^Flexo$'], gtfs_path: None -> 'gtfs_cordon', java_binary: None -> '/home/felix/tools/jdk-25.0.3+9/bin/java', java_home: None -> '/home/felix/tools/jdk-25.0.3+9', java_memory: None -> '100G', matsim_threads: None -> 56, maven_binary: None -> 'mvn', maven_skip_tests: None -> False, osm_highways: None -> '*', osm_path: None -> 'osm/cordon', osm_railways: None -> '*', osmosis_binary: None -> '/usr/bin/osmosis', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', pt2matsim_branch: None -> 'v22.3', pt2matsim_version: None -> '22.3']
+STALE    braunschweig.synthesis.commute_day.home_office_donors_stage  [module_hash_changed, token_changed:opaque]
+STALE    braunschweig.synthesis.commute_day.output_day  [required, not_in_meta, cache_missing; config vs nearest variant: braunschweig.outside_tour_modes.enabled: None -> True, braunschweig.outside_tour_modes.min_share: None -> 0.01, braunschweig.outside_tour_modes.warn_share: None -> 0.5, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: None -> ('motorway', 'trunk', 'primary'), cordon_gravity_beta: None -> -0.05, cordon_gravity_capacity_exponent: None -> 1.0, cordon_network_buffer_fraction: None -> 0.1, cordon_network_source_buffer_m: None -> 45000, cordon_vg250_path: None -> 'germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip', export_detailed_network: None -> False, gtfs_date: None -> 'dayWithMostServices', gtfs_excluded_agency_ids: None -> [], gtfs_excluded_agency_name_patterns: None -> [], gtfs_excluded_route_short_name_patterns: None -> ['^Flexo$'], gtfs_path: None -> 'gtfs_cordon', java_binary: None -> '/home/felix/tools/jdk-25.0.3+9/bin/java', java_home: None -> '/home/felix/tools/jdk-25.0.3+9', java_memory: None -> '100G', matsim_threads: None -> 56, maven_binary: None -> 'mvn', maven_skip_tests: None -> False, osm_highways: None -> '*', osm_path: None -> 'osm/cordon', osm_railways: None -> '*', osmosis_binary: None -> '/usr/bin/osmosis', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', output_prefix: 'braunschweig_1pct_parking_v2_plans_' -> 'braunschweig_1pct_allfeat_popsim_', pt2matsim_branch: None -> 'v22.3', pt2matsim_version: None -> '22.3']
+STALE    braunschweig.synthesis.commute_day.spatial_locations_day  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: None -> ('motorway', 'trunk', 'primary'), cordon_gravity_beta: None -> -0.05, cordon_gravity_capacity_exponent: None -> 1.0, cordon_network_buffer_fraction: None -> 0.1, cordon_network_source_buffer_m: None -> 45000, cordon_vg250_path: None -> 'germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip', export_detailed_network: None -> False, git_binary: None -> 'git', gtfs_date: None -> 'dayWithMostServices', gtfs_excluded_agency_ids: None -> [], gtfs_excluded_agency_name_patterns: None -> [], gtfs_excluded_route_short_name_patterns: None -> ['^Flexo$'], gtfs_path: None -> 'gtfs_cordon', java_binary: None -> '/home/felix/tools/jdk-25.0.3+9/bin/java', java_home: None -> '/home/felix/tools/jdk-25.0.3+9', java_memory: None -> '100G', matsim_threads: None -> 56, maven_binary: None -> 'mvn', maven_skip_tests: None -> False, osm_highways: None -> '*', osm_path: None -> 'osm/cordon', osm_railways: None -> '*', osmosis_binary: None -> '/usr/bin/osmosis', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', pt2matsim_branch: None -> 'v22.3', pt2matsim_version: None -> '22.3']
+STALE    braunschweig.synthesis.commute_day.state_stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.synthesis.commute_day.trips_day_stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+HIT      braunschweig.synthesis.cordon_gates
+         legacy timestamp rule for parents: data.spatial.municipalities, braunschweig.data.cordon_network, braunschweig.data.cordon_gemeinden, braunschweig.data.census.pendler
+STALE    braunschweig.synthesis.day_absence.absence_stage  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.synthesis.incommuters  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary')]
+STALE    braunschweig.synthesis.locations.education_gravity  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.synthesis.locations.home_cell  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.synthesis.locations.secondary_candidates  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.portal.enabled: None -> True, cordon_network_source_buffer_m: None -> 45000]
+STALE    braunschweig.synthesis.locations.secondary_chainsolvers  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.chainsolvers.worker_memory_gb: 0.86 -> 1.09, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: None -> ('motorway', 'trunk', 'primary'), cordon_gravity_beta: None -> -0.05, cordon_gravity_capacity_exponent: None -> 1.0, cordon_network_buffer_fraction: None -> 0.1, cordon_network_source_buffer_m: None -> 45000, cordon_vg250_path: None -> 'germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip', export_detailed_network: None -> False, git_binary: None -> 'git', gtfs_date: None -> 'dayWithMostServices', gtfs_excluded_agency_ids: None -> [], gtfs_excluded_agency_name_patterns: None -> [], gtfs_excluded_route_short_name_patterns: None -> ['^Flexo$'], gtfs_path: None -> 'gtfs_cordon', java_binary: None -> '/home/felix/tools/jdk-25.0.3+9/bin/java', java_home: None -> '/home/felix/tools/jdk-25.0.3+9', java_memory: None -> '100G', matsim_threads: None -> 56, maven_binary: None -> 'mvn', maven_skip_tests: None -> False, osm_highways: None -> '*', osm_path: None -> 'osm/cordon', osm_railways: None -> '*', osmosis_binary: None -> '/usr/bin/osmosis', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', pt2matsim_branch: None -> 'v22.3', pt2matsim_version: None -> '22.3']
+STALE    braunschweig.synthesis.outside_tour_modes.stage  [not_in_meta, cache_missing]
+STALE    braunschweig.synthesis.portal_trips.anchors  [not_in_meta, cache_missing]
+STALE    braunschweig.synthesis.portal_trips.stage  [not_in_meta, cache_missing]
+STALE    braunschweig.synthesis.portal_trips.trips_final  [not_in_meta, cache_missing]
+STALE    braunschweig.synthesis.spatial.home_zones  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    braunschweig.synthesis.student_incommuters  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    braunschweig.synthesis.vehicles.cars.household  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+HIT      data.gtfs.cleaned
+         legacy timestamp rule for parents: data.spatial.municipalities
+HIT      data.hts.entd.cleaned
+         legacy timestamp rule for parents: data.hts.entd.raw
+HIT      data.hts.entd.raw
+HIT      data.osm.cleaned
+         legacy timestamp rule for parents: data.osm.osmosis, data.spatial.municipalities
+HIT      data.osm.osmosis
+HIT      data.spatial.departments
+         legacy timestamp rule for parents: data.spatial.municipalities
+HIT      data.spatial.municipalities
+         legacy timestamp rule for parents: eqasim_common.data.spatial.iris
+STALE    documentation.meta_output  [not_in_meta, cache_missing; config vs nearest variant: output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', output_prefix: 'braunschweig_1pct_parking_v2_plans_' -> 'braunschweig_1pct_allfeat_popsim_']
+HIT      eqasim_common.data.osm.chunked
+         legacy timestamp rule for parents: data.spatial.municipalities, eqasim_common.data.osm.osmconvert
+HIT      eqasim_common.data.osm.locations
+         legacy timestamp rule for parents: eqasim_common.data.osm.chunked, data.spatial.municipalities, eqasim_common.data.spatial.iris
+HIT      eqasim_common.data.osm.osmconvert
+HIT      eqasim_common.data.population.raw
+HIT      eqasim_common.data.spatial.iris
+         legacy timestamp rule for parents: eqasim_common.data.population.raw
+HIT      eqasim_common.gravity.distance_matrix
+         legacy timestamp rule for parents: eqasim_common.data.spatial.iris
+HIT      eqasim_common.locations.education
+         legacy timestamp rule for parents: eqasim_common.data.osm.locations, data.spatial.municipalities
+HIT      eqasim_common.spatial.codes
+         legacy timestamp rule for parents: eqasim_common.data.population.raw
+HIT      eqasim_common.spatial.entd_codes
+         legacy timestamp rule for parents: data.hts.entd.cleaned
+STALE    matsim.output  [required, not_in_meta, cache_missing; config vs nearest variant: braunschweig.outside_tour_modes.enabled: None -> True, braunschweig.outside_tour_modes.min_share: None -> 0.01, braunschweig.outside_tour_modes.warn_share: None -> 0.5, braunschweig.plan_check.bicycle_max_distance_m: None -> 30000, braunschweig.plan_check.enabled: None -> True, braunschweig.plan_check.fail_on_threshold: None -> False, braunschweig.plan_check.leg_max_duration_s: None -> 10800, braunschweig.plan_check.max_frozen_defect_share: None -> 0.005, braunschweig.plan_check.walk_max_distance_m: None -> 5000, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), freight_boundary_link_maximum_distance_m: None -> 300.0, freight_boundary_link_maximum_fallback_share: None -> 0.05, freight_boundary_link_minimum_capacity_veh_per_h: None -> 1000.0, freight_tool_matsim_version: None -> '', matsim_last_iteration: 60 -> 0, output_path: 'eqasim-data/output_bs_1pct_pv3_v3' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', output_prefix: 'braunschweig_1pct_pv3_v3_' -> 'braunschweig_1pct_allfeat_popsim_']
+STALE    matsim.runtime.eqasim  [module_hash_changed, token_changed:opaque]
+HIT      matsim.runtime.git
+HIT      matsim.runtime.java
+HIT      matsim.runtime.maven
+HIT      matsim.runtime.pt2matsim
+         legacy timestamp rule for parents: matsim.runtime.git, matsim.runtime.java, matsim.runtime.maven
+HIT      matsim.scenario.supply.gtfs
+         legacy timestamp rule for parents: matsim.runtime.java, matsim.runtime.pt2matsim, data.gtfs.cleaned, eqasim_common.data.spatial.iris, matsim.runtime.git, matsim.runtime.maven
+HIT      matsim.scenario.supply.osm
+         legacy timestamp rule for parents: matsim.runtime.java, matsim.runtime.pt2matsim, data.osm.cleaned, eqasim_common.data.spatial.iris, matsim.runtime.git, matsim.runtime.maven
+HIT      matsim.scenario.supply.processed
+         legacy timestamp rule for parents: matsim.runtime.java, matsim.runtime.pt2matsim, matsim.scenario.supply.osm, matsim.scenario.supply.gtfs, matsim.runtime.git, matsim.runtime.maven
+STALE    matsim.simulation.run  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.outside_tour_modes.enabled: None -> True, braunschweig.outside_tour_modes.min_share: None -> 0.01, braunschweig.outside_tour_modes.warn_share: None -> 0.5, braunschweig.plan_check.bicycle_max_distance_m: None -> 30000, braunschweig.plan_check.enabled: None -> True, braunschweig.plan_check.fail_on_threshold: None -> False, braunschweig.plan_check.leg_max_duration_s: None -> 10800, braunschweig.plan_check.max_frozen_defect_share: None -> 0.005, braunschweig.plan_check.walk_max_distance_m: None -> 5000, braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', braunschweig.portal.enabled: None -> True, braunschweig.portal.external_point_distance_tolerance: None -> 0.2, braunschweig.portal.fallback_warn_share: None -> 0.1, braunschweig.portal.max_routable_distance_m: None -> 45000, braunschweig.portal.mode_substitution_warn_share: None -> 0.1, cordon_gate_road_classes: ['motorway', 'trunk', 'primary'] -> ('motorway', 'trunk', 'primary'), freight_boundary_link_maximum_distance_m: None -> 300.0, freight_boundary_link_maximum_fallback_share: None -> 0.05, freight_boundary_link_minimum_capacity_veh_per_h: None -> 1000.0, freight_tool_matsim_version: None -> '', matsim_last_iteration: 60 -> 0, output_path: 'eqasim-data/output_bs_1pct_pv3_v3' -> 'eqasim-data/output_bs_1pct_allfeat_popsim', output_prefix: 'braunschweig_1pct_pv3_v3_' -> 'braunschweig_1pct_allfeat_popsim_']
+STALE    synthesis.population.activities  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    synthesis.population.sampled  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    synthesis.population.spatial.primary.candidates  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex', output_path: 'eqasim-data/output_bs_1pct_parking_v2_plans' -> 'eqasim-data/output_bs_1pct_allfeat_popsim']
+STALE    synthesis.vehicles.passengers.default  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+STALE    synthesis.vehicles.vehicles  [not_in_meta, cache_missing; config vs nearest variant: braunschweig.population.popsim.employment_grid_age_shape_source: None -> 'zensus2022_kreis_by_sex']
+# 102 stages: 51 stale for own reasons, 0 will recompute (stale ancestor without recorded output hash), 0 may recompute (stale ancestor; synpp 1.6.2 recomputes them, only the fork's early cutoff may spare them), 51 hits

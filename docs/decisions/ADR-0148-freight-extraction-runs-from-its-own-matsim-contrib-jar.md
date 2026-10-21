@@ -83,6 +83,17 @@
 7. **Copy step.** `execute()` of `matsim.runtime.eqasim` now also ignores `.claude` in
    `shutil.copytree`, so agent worktrees are neither copied into the build directory nor part
    of the token.
+8. **Pinned build plugins (added 2026-10-21 after the server run).** The rendered tool pom pins
+   `maven-compiler-plugin` 3.13.0 (with `<release>`), `maven-resources-plugin` 3.5.0 and
+   `maven-jar-plugin` 3.5.0 (the latter two mirror the fork root pom), in the template
+   `POM_TEMPLATE` of `braunschweig/freight/extraction_tool.py`. Reason: the first server run
+   failed because the pom pinned no compiler plugin. Maven 3.6.3 (the server's) binds
+   `maven-compiler-plugin` 3.1 in its super POM, which ignores the property
+   `maven.compiler.release` and compiles for Java 5 ("Source option 5 is no longer supported");
+   Maven 3.9.9 (local) binds 3.13.0, which had hidden the bug from the gated local build test.
+   Decision: the build plugins of the generated pom are pinned so that the build does not
+   depend on the Maven version that runs it. The pins change the rendered pom and therefore the
+   `pom` hash in the token of the tool stage; a test of the pins is committed.
 
 ## Rejected alternatives
 
@@ -158,12 +169,14 @@
 - File counts: measured 2026-10-21 as described under Context; the new-rule count is
   `git ls-files --cached --others --exclude-standard` filtered to the three suffixes and to
   paths without a `target` or `.claude` directory.
-- **Pending, not done:** the server comparison. On the 1 % scenario, the new
-  `braunschweig.freight.extraction` cache entry must be compared with the previous one
-  (`freight_extraction_summary.csv`, trip counts per category), and the stale-stage explainer
-  (`scripts/explain_stale_stages.py`, the Phase 1 deliverable of #468, on main since PR #469;
-  spec section 4.6, usable directly for this step) must show only the expected stages as stale
-  for their own reason. It will be recorded in a
-  run manifest `docs/runs/freight-tool-jar-1pct-<date>.yml` (classification smoke). Until that
-  manifest exists, it is not established that the tool jar reproduces the counts of the fork
-  jar, and a smoke would not validate the routing in any case.
+- **Server comparison, observed 2026-10-21:** run manifest
+  `docs/runs/freight-tool-jar-1pct-2026-10-21.yml` (smoke, wiring proof, A/B against the
+  previous cache entry; felix, Maven 3.6.3). The new `braunschweig.freight.extraction` entry
+  (tool jar) is byte-identical to the previous one (fork jar) for all four trip categories
+  (decompressed plans sha256) and has the identical `freight_extraction_summary.csv`; the
+  stale-stage explainer showed exactly the two expected freight stages as stale for their own
+  reason before the run and HIT for both on a second launch. The first launch failed on the
+  Maven 3.6.3 finding of decision 8 and was repeated from the fix commit. This is an
+  equivalence check on one input and one MATSim version, not a validation (no observed
+  reference). The 3 h versus 1 h runtime of the extraction is recorded in the manifest as an
+  observation, not a performance measurement, and is not attributed to the tool jar.

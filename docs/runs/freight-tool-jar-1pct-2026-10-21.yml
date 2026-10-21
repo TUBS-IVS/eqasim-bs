@@ -1,0 +1,186 @@
+id: freight-tool-jar-1pct-2026-10-21
+date: '2026-10-21'
+repository:
+  commit: 2425ea257675044b4a7cf929480e5b78bbd85957
+  branch: chore/i468-freight-tool-jar
+  notes: >-
+    Run 2 (the completed run) ran from eqasim-bs 2425ea25, the fix commit of this branch (transferred to felix by git
+    bundle, not pushed). Run 1 (failed) ran from eqasim-bs fb2f0708ca14049e9c538a17424d3c55136b53ed, the head of PR
+    #470 at that time. eqasim-java-bs (the fork) was at 4c1af4a42f3fbe06977999c652a50ec08bc58e8c (fork origin/main) in
+    both runs. Both repositories were detached worktrees on felix under ~/i468-freighttool/{eqasim-bs,eqasim-java-bs}
+    (setup_i468.sh), so the base value eqasim_source_path ../eqasim-java-bs resolved to that fork worktree without a
+    config change. The commits come from the "[i468]" line at the top of the run logs. The fork pom has
+    matsim.version 2026.0-2026w12 and maven.compiler.source 25 at its origin/main and at ab49a95, b7d26ecc and
+    21c1045; git log -S"<matsim.version>" on the fork pom shows only the initial commit c4d3518 (2026-06-05), so the
+    reference entry was built at the same MATSim version.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/i468_1pct_freight.yml
+  notes: >-
+    Throwaway server overlay (written by make_overlay_i468.py) built from configs/overlays/test_1pct.yml: run target
+    braunschweig.freight.extraction only, sampling_rate 0.01 (the extraction itself does not depend on it),
+    matsim_last_iteration 0, working_directory eqasim-data/cache_bs_1pct_allfeat_popsim, and cache_share_enabled
+    false and cache_share_export false (launcher-only keys that no stage reads). All other keys keep the base /
+    test_1pct value. The working directory is a physical copy (cp -a, 2026-10-21 11:24-11:32, 21 GB) of
+    felix:~/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim under the same relative name inside the worktree; the
+    production cache was not touched. eqasim-data came through the symlink farm of
+    freight-boundary-links-ab-1pct-2026-10-16 (86 links, 384 tracked entries kept). Reference: the copy's existing entry
+    braunschweig.freight.extraction__8e87a15edd2848eaede4b412f0b907b3 (pipeline.json updated 2026-10-15T15:42:52, built
+    through the fork jar braunschweig-2.3.1.jar of matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f).
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8 region (the freight extraction is a German-wide input filtered to the study area; it does not depend on the sampling rate)
+  notes: >-
+    No synthetic population is involved. The counts below are extraction counts of the long-distance freight trips
+    (full, not sampled): internal 6416, incoming 8625, outgoing 9531, transit 31792, total 56364.
+pipeline:
+  targets:
+  - braunschweig.freight.extraction
+  notes: >-
+    Two launches. Run 1 (launched 11:33:15 at fb2f0708) failed at 11:33:56 in braunschweig.freight.extraction_tool,
+    see the notes. Run 2 (launched 11:40:32 at 2425ea25): extraction_tool built 11:40:40-11:41:59 (BUILD SUCCESS under
+    Maven 3.6.3; stage hash 780b08cebcffa7cf01d8682865522b61; jar freight-tool/target/freight-tool-2026.0-2026w12.jar),
+    then braunschweig.freight.extraction__19be2f3c06d45763669113ddede7019e ran 11:41:59 -> 14:41:12, exit 0. The six
+    other stages of the freight-only overlay were cache hits.
+classification:
+- smoke
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Run 2 completed with exit 0 (run 1 failed, see notes). The extraction took 2 h 59 min; see the runtime entry in
+    the notes, which is NOT a performance measurement. This is a smoke and an equivalence check against the previous
+    cache entry. No observed reference is involved, so it is NOT a validation.
+source: >-
+  felix:~/i468-freighttool/ (run logs, cache entries). The committed numbers are the outputs of the scripts in
+  docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/: compare_freight_i468.py (compare_ref_vs_pipeline.json),
+  jar_artifacts_i468.py (jar_artifacts.json), jar_category_i468.sh and oldjar_internal_i468.sh
+  (internal_control_hashes.csv, control_run_times.txt), token_check_i468.py (token_check.json),
+  scripts/explain_stale_stages.py (explain_*.txt), and log excerpts (run1_failed_log_excerpt.txt,
+  run2_log_excerpt.txt).
+environment: 'server (felix, Linux KVM VM, 64 vCPUs, 94 GB), conda eqasim, JDK 25.0.3+9 (~/tools/jdk-25.0.3+9), system Maven 3.6.3 (/usr/share/maven)'
+validation:
+- metric: output equivalence of the new braunschweig.freight.extraction entry (tool jar) against the previous entry (fork jar), per trip category
+  reference: 'the previous cache entry braunschweig.freight.extraction__8e87a15edd2848eaede4b412f0b907b3 of the same working directory (built through the fork jar, same MATSim version); an equivalence reference, NOT observed data'
+  result: >-
+    PASS (identical output). freight_extraction_summary.csv is identical (internal 6416, incoming 8625, outgoing
+    9531, transit 31792). For each of the four categories the decompressed plans XML has the identical sha256 as the
+    reference (internal 4ef634b1..., incoming 574d5039..., outgoing 291655ea..., transit 5a74be99...), so the content
+    is byte-identical and person ids, attributes, activities, times and routes are identical. The
+    plans-locations-summary.tsv files are identical as sorted line sets.
+  artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/compare_ref_vs_pipeline.json
+  notes: >-
+    Shows that the tool jar reproduces the fork jar's output on this input at this MATSim version. It does not show
+    that the extraction is right with respect to reality.
+- metric: determinism controls, INTERNAL category (decompressed plans sha256)
+  reference: 'the reference entry''s decompressed sha256 4ef634b10839271ce4e988d7cd46ff834baab59e3775b4fdd176e832b0a7fe02; an equivalence reference, NOT observed data'
+  result: >-
+    PASS. Six independent runs of the INTERNAL category (old jar twice, new jar four times; plain bash, conda env
+    active, Python parent, simultaneous A/B) all produce the reference's decompressed sha256.
+  artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/internal_control_hashes.csv, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/control_run_times.txt
+  notes: >-
+    INTERNAL only. The controls show that this category is deterministic across jars and launch conditions; the
+    other three categories were compared once each (entry above).
+- metric: jar comparison, fork jar versus tool jar (entry class and bundled artifact versions)
+  reference: 'none -- a wiring check; the fork jar is the comparison object, not a reference for correctness'
+  result: >-
+    The entry class org/matsim/application/prepare/longDistanceFreightGER/tripExtraction/ExtractRelevantFreightTrips.class
+    has identical bytes in both jars, and no org.matsim artifact differs in version. The jars bundle 235 versus 224
+    artifacts. Version differences include jackson (e.g. databind 2.22.1 -> 2.21.1), log4j 2.26.1 -> 2.25.3, geotools
+    xsd/ogc 34.4 -> 34.2, commons-io 2.22.0 -> 2.21.0, aircompressor 2.0.3 -> 0.27, imageio-ext 2.0.2 -> 2.0.1, istack
+    3.0.7 -> 4.1.2, error_prone 2.48.0 -> 2.41.0; fork-only artifacts include log4j-slf4j-impl,
+    discrete_mode_choice and simwrapper.
+  artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/jar_artifacts.json
+  notes: >-
+    None of the dependency differences changed the output (byte identity in the first entry), on this input.
+- metric: stale-stage explainer (scripts/explain_stale_stages.py) before the run, after the run, and with the full test_1pct overlay
+  reference: 'none -- a wiring check of the explainer against the stages the change is expected to affect'
+  result: >-
+    Freight-only overlay before the run: 8 stages, exactly 2 stale for own reasons, braunschweig.freight.extraction_tool
+    (not_in_meta, cache_missing) and braunschweig.freight.extraction (not_in_meta, cache_missing; config versus the
+    nearest variant: the eqasim_* keys and git_binary no longer propagate, freight_tool_matsim_version is added;
+    eqasim_source_path does not propagate because it is volatile), and 6 hits. After the run, with the freight-only
+    overlay, only the run target itself is reported ([required]). After the run, with the run target
+    braunschweig.freight.trips, braunschweig.freight.extraction and braunschweig.freight.extraction_tool are HIT (the
+    second-launch HIT; braunschweig.freight.trips is stale as the run target, not_in_meta, cache_missing). Full
+    test_1pct overlay on the same copy: 102 stages, 51 stale for own reasons. Branch-attributable are
+    matsim.runtime.eqasim (module_hash_changed, token_changed:opaque), braunschweig.freight.extraction_tool,
+    braunschweig.freight.extraction and braunschweig.freight.trips; the other 47 come from main's changes since the
+    cache was last updated (e.g. the added key braunschweig.population.popsim.employment_grid_age_shape_source) and are
+    not caused by this branch.
+  artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before_run2.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after_trips.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_full_1pct.txt
+  notes: >-
+    The explainer predicts staleness; the run itself confirms the freight-only prediction (two stale stages
+    recomputed, then HIT). The 102 / 51 / 47 figures are read from explain_full_1pct.txt and not independently
+    re-derived here.
+- metric: content-token behaviour on the real fork (matsim.runtime.eqasim source digest and freight tool token)
+  reference: 'none -- a wiring check on a scratch worktree of the same fork commit'
+  result: >-
+    A second worktree of the same fork commit at another path gives the same matsim.runtime.eqasim source digest
+    (c8cd375e...) and the same freight tool token. Appending a comment line to
+    braunschweig/src/main/java/org/eqasim/braunschweig/BraunschweigConfigurator.java (a non-freight Java file) changes
+    the eqasim digest (to 63af263b...) and leaves the freight tool token unchanged; the revert restores the digest.
+    The scratch worktree was removed.
+  artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/token_check.json, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/token_check_i468.py
+  notes: >-
+    One edit of one file; it shows the intended decoupling (a non-freight Java edit no longer reaches the freight
+    stages), not that every possible edit behaves so.
+features:
+- freight_longhaul_v3
+artifacts:
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/setup_i468.sh
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/make_overlay_i468.py
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/i468_1pct_freight.yml
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/launch_i468.sh
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/compare_freight_i468.py
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/compare_ref_vs_pipeline.json
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/jar_artifacts_i468.py
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/jar_artifacts.json
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/jar_category_i468.sh
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/oldjar_internal_i468.sh
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/internal_control_hashes.csv
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/control_run_times.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/transit_block_timing.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/token_check_i468.py
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/token_check.json
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before_run2.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after_trips.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_full_1pct.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/run1_failed_log_excerpt.txt
+- docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/run2_log_excerpt.txt
+- 'felix:~/i468-freighttool (worktrees, the 21 GB working-directory copy and run logs; left on the server)'
+issues:
+- '#468'
+decisions:
+- ADR-0148
+notes: >-
+  What this run is evidence for: the freight extraction built from its own MATSim contrib jar
+  (braunschweig.freight.extraction_tool) reproduces, bit for bit, the output of the previous extraction built through
+  the fork jar, on this input and MATSim version (2026.0-2026w12), and a non-freight Java edit in the fork no longer
+  changes the freight stages' keys. What it does not show: (1) no validation of any kind, since no observed reference
+  is compared; (2) equivalence for other inputs or MATSim versions; (3) the INTERNAL determinism controls do not cover
+  the other three categories. RUN 1 FAILED, a real bug: the rendered tool pom pinned no maven-compiler-plugin, and
+  Maven 3.6.3 (the server's) binds maven-compiler-plugin 3.1 in its super POM, which ignores maven.compiler.release
+  and defaults to source/target 1.5; the build stopped with "Source option 5 is no longer supported. Use 8 or later."
+  (run1_failed_log_excerpt.txt). The local Maven 3.9.9 binds 3.13.0, so the gated local build test had passed. Fix
+  2425ea25 pins maven-compiler-plugin 3.13.0 (<release>), maven-resources-plugin 3.5.0 and maven-jar-plugin 3.5.0 (the
+  latter two mirror the fork root pom), with a test of the pins; run 2 ran from that commit. RUNTIME OBSERVATION, NOT A
+  PERFORMANCE MEASUREMENT: run 2 took 2 h 59 min for the extraction (11:41:59 -> 14:41:12; transit alone 12:02 ->
+  14:41) against 1 h 0 min for the reference entry (2026-10-15 14:42 -> 15:42, file timestamps). In a same-conditions
+  A/B started simultaneously at 13:50:51 (INTERNAL), the new jar took 138 s and the old jar 154 s; further INTERNAL
+  runs of the new jar took 89 s (plain), 97 s (conda env) and 90 s (Python parent). For the same person blocks of
+  TRANSIT, the pipeline JVM (started 12:02) against a control JVM (started 13:54) needed 154 s vs 25 s (10k to 20k),
+  48 s vs 11.5 s (490k to 500k), 45 s vs 13.8 s (500k to 510k) and 324 s vs 134 s (510k to 520k); the control TRANSIT
+  run was stopped at 590 000 persons because it would not add to the equivalence evidence
+  (transit_block_timing.txt). Excluded as causes: the jar (A/B above), JVM flags (identical except the CDS base
+  address), JIT (hot SpeedyALT methods C2-compiled in both), GC (pipeline JVM total GC 6.6 s), environment variables,
+  rlimits, scheduler class, nice, ionice, cgroup, THP, steal time, run-queue wait, and the study area (geometrically
+  identical; .shp bytes identical). Maintainer statement (2026-10-21): a colleague was computing on the same host at
+  the time, and the VM's CPU and RAM are shared and allocated dynamically. Classification: environmental, consistent
+  with all evidence (invisible inside the guest; JVMs started in the busy window stayed slow, JVMs started later were
+  fast). Not proven at the host level (no perf, no host access). The runtime difference is therefore not attributed
+  to the tool jar.

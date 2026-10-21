@@ -1,0 +1,22 @@
+[i468] eqasim-bs=2425ea257675044b4a7cf929480e5b78bbd85957 eqasim-java-bs=4c1af4a42f3fbe06977999c652a50ec08bc58e8c start=2026-10-21T11:40:34+02:00
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      braunschweig.data.freight.german_wide
+11:40:39 │ INFO    │ braunschweig     │ [explain] STALE    braunschweig.freight.extraction  [required, not_in_meta, cache_missing; config vs nearest variant: eqasim_branch: 'main' -> None, eqasim_commit: 'ab938aaac' -> None, eqasim_path: '' -> None, eqasim_repository: 'https://github.com/eqasim-org/eqasim-java.git' -> None, eqasim_source_path: '../eqasim-java-bs' -> None, freight_tool_matsim_version: None -> '', git_binary: 'git' -> None]
+11:40:39 │ INFO    │ braunschweig     │ [explain] STALE    braunschweig.freight.extraction_tool  [not_in_meta, cache_missing]
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      data.spatial.municipalities
+11:40:39 │ INFO    │ braunschweig     │ [explain]          legacy timestamp rule for parents: eqasim_common.data.spatial.iris
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.population.raw
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      eqasim_common.data.spatial.iris
+11:40:39 │ INFO    │ braunschweig     │ [explain]          legacy timestamp rule for parents: eqasim_common.data.population.raw
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      matsim.runtime.java
+11:40:39 │ INFO    │ braunschweig     │ [explain] HIT      matsim.runtime.maven
+11:40:39 │ INFO    │ braunschweig     │ [explain] # 8 stages: 2 stale for own reasons, 0 will recompute (stale ancestor without recorded output hash), 0 may recompute (stale ancestor; synpp 1.6.2 recomputes them, only the fork's early cutoff may spare them), 6 hits
+11:40:40 │ INFO    │ synpp            │ Executing stage braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 ...
+11:40:40 │ INFO    │ freight.extraction_tool │ [freight.extraction_tool] building the tool jar with MATSim version 2026.0-2026w12, Java release 25 (fork pom ../eqasim-java-bs/pom.xml)
+[INFO] BUILD SUCCESS
+11:41:59 │ INFO    │ synpp            │ Executing stage braunschweig.freight.extraction__19be2f3c06d45763669113ddede7019e ...
+11:47:22 │ INFO    │ freight.extraction │ [freight.extraction] category internal: 6416 trips
+11:54:43 │ INFO    │ freight.extraction │ [freight.extraction] category incoming: 8625 trips
+12:02:24 │ INFO    │ freight.extraction │ [freight.extraction] category outgoing: 9531 trips
+14:41:12 │ INFO    │ freight.extraction │ [freight.extraction] category transit: 31792 trips
+14:41:12 │ INFO    │ freight.extraction │ [freight.extraction] 56364 ZGB-relevant freight trips: {'internal': 6416, 'incoming': 8625, 'outgoing': 9531, 'transit': 31792}
+[i468] exit=0 end=2026-10-21T14:41:12+02:00
