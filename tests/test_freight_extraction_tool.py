@@ -1,4 +1,5 @@
 import os
+from xml.etree import ElementTree
 
 import pytest
 
@@ -43,6 +44,22 @@ def test_render_pom_pins_version_release_and_entry_point():
     assert "<maven.compiler.release>25</maven.compiler.release>" in pom
     assert extraction_tool.ENTRY_POINT in pom
     assert "https://repo.matsim.org/repository/matsim" in pom
+
+
+def test_render_pom_pins_the_build_plugins_independent_of_the_maven_defaults():
+    # Maven 3.6.3 (the run server) binds maven-compiler-plugin 3.1 by default, which ignores
+    # maven.compiler.release and compiles for Java 5. The pom must pin the plugins itself.
+    namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+    root = ElementTree.fromstring(extraction_tool.render_pom("2026.0-2026w12", "25"))
+    plugins = {}
+    for plugin in root.findall(".//m:build//m:plugin", namespace):
+        artifact = plugin.find("m:artifactId", namespace).text
+        plugins[artifact] = plugin
+    versions = {artifact: plugin.find("m:version", namespace).text for artifact, plugin in plugins.items()}
+    assert versions["maven-compiler-plugin"] == "3.13.0"
+    assert plugins["maven-compiler-plugin"].find("m:configuration/m:release", namespace).text == "25"
+    assert versions["maven-resources-plugin"] == "3.5.0"
+    assert versions["maven-jar-plugin"] == "3.5.0"
 
 
 def test_configure_declares_the_lockstep_keys_and_runtime_stages():

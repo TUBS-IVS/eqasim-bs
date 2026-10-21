@@ -27,6 +27,12 @@ JAR_RELATIVE = "freight-tool/target/freight-tool-%s.jar"
 WRAPPER_SOURCE = os.path.join(os.path.dirname(__file__), "java", "RunExtractFreightTrips.java")
 WRAPPER_TARGET = "src/main/java/org/eqasim/braunschweig/freight/RunExtractFreightTrips.java"
 
+# Build reproducibility across Maven versions: the compiler, resources and jar plugins are
+# pinned here (the resources and jar versions mirror the eqasim-java-bs fork root pom) instead
+# of inheriting the installed Maven's super-POM defaults. Maven 3.6.3, as installed on the run
+# server, binds maven-compiler-plugin 3.1, which ignores the property maven.compiler.release
+# (supported from 3.6) and compiles for Java 5. The property stays as a second statement of the
+# compiler level; the plugin's <release> is the one that takes effect.
 POM_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -59,6 +65,24 @@ POM_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 	</dependencies>
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.13.0</version>
+				<configuration>
+					<release>{java_release}</release>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>3.5.0</version>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.5.0</version>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
