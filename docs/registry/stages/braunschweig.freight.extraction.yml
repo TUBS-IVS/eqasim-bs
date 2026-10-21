@@ -3,6 +3,7 @@ title: Freight trip extraction
 layer: freight
 description: Runs the Java freight contrib to route german-wide freight trips on the German network
   and classify internal/in/out/through for the ZGB (ADR-0030; ~3h, shared via the stage cache).
+  Runs MATSim's ExtractRelevantFreightTrips from the braunschweig.freight.extraction_tool jar.
 lineage:
   type: braunschweig_new
   upstream: null

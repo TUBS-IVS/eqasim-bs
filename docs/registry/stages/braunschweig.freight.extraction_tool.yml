@@ -1,0 +1,21 @@
+stage: braunschweig.freight.extraction_tool
+title: Freight extraction tool jar
+layer: freight
+description: Builds a shaded jar of MATSim's application contrib at the fork pom's ${matsim.version}
+  plus the four-line RunExtractFreightTrips wrapper, so the freight routing depends on the pinned
+  MATSim version and its inputs only, not on the eqasim fork jar.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/freight/extraction_tool.py
+- braunschweig/freight/java/RunExtractFreightTrips.java
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- freight_longhaul_v3
+decisions: []

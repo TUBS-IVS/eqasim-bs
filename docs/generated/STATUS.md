@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 106 | stages: 131 | datasets: 104 | ADRs: 143 | run manifests: 62
+- Features: 106 | stages: 132 | datasets: 104 | ADRs: 143 | run manifests: 62
 
 ## Population synthesis
 
@@ -154,7 +154,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Freight
 
-3 stage(s), 3 in the production DAG. Datasets: `german_wide_freight_v3`
+4 stage(s), 4 in the production DAG. Datasets: `german_wide_freight_v3`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

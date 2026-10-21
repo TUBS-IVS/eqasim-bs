@@ -45,3 +45,28 @@ def test_trip_categories_cover_the_published_partition():
 def test_output_template_is_category_unique():
     names = {OUTPUT_TEMPLATE % category for category in TRIP_CATEGORIES}
     assert len(names) == len(TRIP_CATEGORIES)
+
+
+def test_configure_depends_on_the_tool_jar_not_the_eqasim_jar():
+    from braunschweig.freight import extraction
+
+    class _Context:
+        def __init__(self):
+            self.stages, self.cfg = [], {}
+
+        def stage(self, name, *args, **kwargs):
+            self.stages.append(name)
+
+        def config(self, key, default=None, volatile=False):
+            self.cfg[key] = default
+
+    context = _Context()
+    extraction.configure(context)
+    assert "braunschweig.freight.extraction_tool" in context.stages
+    assert "matsim.runtime.eqasim" not in context.stages
+
+
+def test_tool_java_invocation_names_the_entry_point_and_the_jar():
+    from braunschweig.freight import extraction, extraction_tool
+    assert extraction.tool_java_invocation("/cache/tool", "freight-tool/target/freight-tool-x.jar") == (
+        extraction_tool.ENTRY_POINT, "/cache/tool/freight-tool/target/freight-tool-x.jar")
