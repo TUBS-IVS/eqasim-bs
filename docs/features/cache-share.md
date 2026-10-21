@@ -64,3 +64,20 @@ sources; it is independent of controls / sampling / work_dir. A compatible
 snapshot can therefore be reused across scales. Export a completed run's stages to
 the store with `python scripts/cache_share.py export ...`; future runs prime them.
 Design: `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`.
+
+**Output hashes and migration (ADR-0149, issue #468, state after Phase 3).**
+`scripts/migrate_cache_metadata.py` records, for every cache entry it can prove, a content hash
+of the stage output (`output_hash`) and the parents' output digests the child was built against
+(`dependency_output_hashes`) in `pipeline.json`, and marks the entry `fork: {"format": 1}`.
+`prime` and `export` copy the `pipeline.json` records whole, so these fields travel with a shared
+entry. Nothing reads them for a decision yet: coherence of a copied entry
+(`braunschweig.cache_share._drop_incoherent_metadata`) and the validity of a child still follow
+the timestamp rule described above, so the limitation that a primed entry must match its parents'
+timestamps exactly is unchanged until Phase 4. The recorded fields are the preparation for it.
+
+**Planned, not in force (Phase 4 of #468).** Decided in ADR-0149 and not implemented: a copied
+entry will be kept when its dependencies' recorded output digests equal those of the target
+metadata (two legacy sides keep the timestamp rule; mixed pairs are dropped), and a child
+will stay valid when a re-executed parent reproduces its output hash (early cutoff). This
+section is to be rewritten when that lands; the decision and its implementation status are
+tracked in ADR-0149 and the contributor note `docs/codebase/notes/synpp-fork.md`.
