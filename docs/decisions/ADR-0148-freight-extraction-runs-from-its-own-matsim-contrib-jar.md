@@ -39,7 +39,8 @@
 1. **A tool stage for the freight Java code.** New stage `braunschweig.freight.extraction_tool`
    (`braunschweig/freight/extraction_tool.py`) renders a minimal Maven project into its cache
    directory: a pom with the dependency `org.matsim.contrib:application` and the shade plugin
-   (main class `org.eqasim.braunschweig.freight.RunExtractFreightTrips`), plus the wrapper
+   (main class `org.eqasim.braunschweig.freight.RunExtractFreightTrips`; build plugins pinned,
+   see item 8), plus the wrapper
    `braunschweig/freight/java/RunExtractFreightTrips.java`. It builds a shaded jar of
    `freight-tool/target/freight-tool-<matsim version>.jar` and returns that relative path.
 2. **Version lockstep through the fork pom.** `_versions` reads `matsim.version` and
@@ -91,9 +92,14 @@
    `maven-compiler-plugin` 3.1 in its super POM, which ignores the property
    `maven.compiler.release` and compiles for Java 5 ("Source option 5 is no longer supported");
    Maven 3.9.9 (local) binds 3.13.0, which had hidden the bug from the gated local build test.
-   Decision: the build plugins of the generated pom are pinned so that the build does not
-   depend on the Maven version that runs it. The pins change the rendered pom and therefore the
-   `pom` hash in the token of the tool stage; a test of the pins is committed.
+   Decision: the plugins that shape the jar (compiler, resources, jar, shade) are pinned in the
+   generated pom, so the jar does not depend on the super-POM defaults of the Maven that runs
+   it. Only the compiler pin fixed the observed failure; the resources and jar pins are
+   precautionary. `maven-surefire-plugin` stays at the super-POM default and is skipped by
+   `-DskipTests=true`. Verified with Maven 3.6.3 (server) and 3.9.9 (local); the minimum Maven
+   version of the pinned plugins was not checked offline, so "Maven 3.6.3 or later" is an
+   ASSUMPTION. The pins change the rendered pom and therefore the `pom` hash in the token of
+   the tool stage; a test of the pins is committed.
 
 ## Rejected alternatives
 
@@ -118,6 +124,10 @@
 - **One-time jar rebuild.** The token format of `matsim.runtime.eqasim` changed (a number
   became a structured value), so the jar is rebuilt once on every existing cache, and with it
   every stage that depends on the jar, once.
+- **The new key propagates downstream.** `freight_tool_matsim_version` is not volatile, so it
+  reaches every descendant of `braunschweig.freight.extraction_tool` and their cache names
+  change once; they recompute anyway because of the one-time `matsim.runtime.eqasim` and
+  freight recompute above.
 - **Maven downloads the contrib once per machine and user.** The new stage makes Maven resolve
   `org.matsim.contrib:application` and its dependencies from `repo.matsim.org` and the OSGeo
   repository into the local Maven repository (`~/.m2` unless the Maven settings say otherwise)
@@ -175,7 +185,8 @@
   (tool jar) is byte-identical to the previous one (fork jar) for all four trip categories
   (decompressed plans sha256) and has the identical `freight_extraction_summary.csv`; the
   stale-stage explainer showed exactly the two expected freight stages as stale for their own
-  reason before the run and HIT for both on a second launch. The first launch failed on the
+  reason before the run, and the explainer run after the run reports both as HIT (a prediction,
+  not a second pipeline launch). The first launch failed on the
   Maven 3.6.3 finding of decision 8 and was repeated from the fix commit. This is an
   equivalence check on one input and one MATSim version, not a validation (no observed
   reference). The 3 h versus 1 h runtime of the extraction is recorded in the manifest as an

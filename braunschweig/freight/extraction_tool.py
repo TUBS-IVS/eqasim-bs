@@ -27,12 +27,13 @@ JAR_RELATIVE = "freight-tool/target/freight-tool-%s.jar"
 WRAPPER_SOURCE = os.path.join(os.path.dirname(__file__), "java", "RunExtractFreightTrips.java")
 WRAPPER_TARGET = "src/main/java/org/eqasim/braunschweig/freight/RunExtractFreightTrips.java"
 
-# Build reproducibility across Maven versions: the compiler, resources and jar plugins are
-# pinned here (the resources and jar versions mirror the eqasim-java-bs fork root pom) instead
-# of inheriting the installed Maven's super-POM defaults. Maven 3.6.3, as installed on the run
-# server, binds maven-compiler-plugin 3.1, which ignores the property maven.compiler.release
-# (supported from 3.6) and compiles for Java 5. The property stays as a second statement of the
-# compiler level; the plugin's <release> is the one that takes effect.
+# The plugins that shape the jar (compiler, resources, jar, shade) are pinned here (the
+# resources and jar versions mirror the eqasim-java-bs fork root pom) instead of inheriting
+# the installed Maven's super-POM defaults. Maven 3.6.3, as installed on the run server, binds
+# maven-compiler-plugin 3.1, which ignores the property maven.compiler.release (supported from
+# 3.6) and compiles for Java 5. Only the compiler pin fixed that failure; resources and jar are
+# precautionary. The property stays as a second statement of the compiler level; the plugin's
+# <release> is the one that takes effect. See ADR-0148 Decision item 8.
 POM_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

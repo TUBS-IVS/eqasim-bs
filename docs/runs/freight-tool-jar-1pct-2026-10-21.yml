@@ -11,8 +11,10 @@ repository:
     (setup_i468.sh), so the base value eqasim_source_path ../eqasim-java-bs resolved to that fork worktree without a
     config change. The commits come from the "[i468]" line at the top of the run logs. The fork pom has
     matsim.version 2026.0-2026w12 and maven.compiler.source 25 at its origin/main and at ab49a95, b7d26ecc and
-    21c1045; git log -S"<matsim.version>" on the fork pom shows only the initial commit c4d3518 (2026-06-05), so the
-    reference entry was built at the same MATSim version.
+    21c1045. The value has been 2026.0-2026w12 since fork commit 78883e666 (2026-07-17, found with git log -G; the
+    initial commit c4d3518 had 2025.0-PR3568), and the reference entry was built on 2026-10-15, so it was built at
+    the same MATSim version. Direct evidence of the same MATSim build is jar_artifacts.json (the entry class has
+    identical bytes in both jars and no org.matsim artifact differs in version).
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -39,7 +41,7 @@ pipeline:
   - braunschweig.freight.extraction
   notes: >-
     Two launches. Run 1 (launched 11:33:15 at fb2f0708) failed at 11:33:56 in braunschweig.freight.extraction_tool,
-    see the notes. Run 2 (launched 11:40:32 at 2425ea25): extraction_tool built 11:40:40-11:41:59 (BUILD SUCCESS under
+    see the notes. Run 2 (start=11:40:34 in the run log, launch command issued 11:40:32, at 2425ea25): extraction_tool built 11:40:40-11:41:59 (BUILD SUCCESS under
     Maven 3.6.3; stage hash 780b08cebcffa7cf01d8682865522b61; jar freight-tool/target/freight-tool-2026.0-2026w12.jar),
     then braunschweig.freight.extraction__19be2f3c06d45763669113ddede7019e ran 11:41:59 -> 14:41:12, exit 0. The six
     other stages of the freight-only overlay were cache hits.
@@ -102,18 +104,21 @@ validation:
     (not_in_meta, cache_missing) and braunschweig.freight.extraction (not_in_meta, cache_missing; config versus the
     nearest variant: the eqasim_* keys and git_binary no longer propagate, freight_tool_matsim_version is added;
     eqasim_source_path does not propagate because it is volatile), and 6 hits. After the run, with the freight-only
-    overlay, only the run target itself is reported ([required]). After the run, with the run target
-    braunschweig.freight.trips, braunschweig.freight.extraction and braunschweig.freight.extraction_tool are HIT (the
-    second-launch HIT; braunschweig.freight.trips is stale as the run target, not_in_meta, cache_missing). Full
-    test_1pct overlay on the same copy: 102 stages, 51 stale for own reasons. Branch-attributable are
-    matsim.runtime.eqasim (module_hash_changed, token_changed:opaque), braunschweig.freight.extraction_tool,
-    braunschweig.freight.extraction and braunschweig.freight.trips; the other 47 come from main's changes since the
-    cache was last updated (e.g. the added key braunschweig.population.popsim.employment_grid_age_shape_source) and are
-    not caused by this branch.
+    overlay, only the run target itself is reported ([required]). After the run, the explainer run with the run
+    target braunschweig.freight.trips reports braunschweig.freight.extraction and braunschweig.freight.extraction_tool
+    as HIT (a prediction by the explainer, not a second pipeline launch; braunschweig.freight.trips is stale as the
+    run target, not_in_meta, cache_missing). Full test_1pct overlay on the same copy: 102 stages, 51 stale for own
+    reasons. Four are attributable to this branch's own changes: matsim.runtime.eqasim (module_hash_changed,
+    token_changed:opaque), braunschweig.freight.extraction_tool, braunschweig.freight.extraction and
+    braunschweig.freight.trips. The other 47 are stale for main's changes since the cache was last updated (e.g. the
+    added key braunschweig.population.popsim.employment_grid_age_shape_source); in addition, this branch's new
+    non-volatile key freight_tool_matsim_version also renames the hashes of the downstream stages (it appears as
+    None -> '' in the config diff of braunschweig.matsim.simulation.prepare, matsim.simulation.run and
+    matsim.output in explain_full_1pct.txt).
   artifact: docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_before_run2.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_after_trips.txt, docs/runs/artifacts/freight-tool-jar-1pct-2026-10-21/explain_full_1pct.txt
   notes: >-
-    The explainer predicts staleness; the run itself confirms the freight-only prediction (two stale stages
-    recomputed, then HIT). The 102 / 51 / 47 figures are read from explain_full_1pct.txt and not independently
+    The explainer predicts staleness; the run itself confirms the freight-only prediction (the two stale stages
+    were recomputed, and the explainer run after the run reports them as HIT). The 102 / 51 / 47 figures are read from explain_full_1pct.txt and not independently
     re-derived here.
 - metric: content-token behaviour on the real fork (matsim.runtime.eqasim source digest and freight tool token)
   reference: 'none -- a wiring check on a scratch worktree of the same fork commit'
@@ -163,24 +168,25 @@ notes: >-
   the fork jar, on this input and MATSim version (2026.0-2026w12), and a non-freight Java edit in the fork no longer
   changes the freight stages' keys. What it does not show: (1) no validation of any kind, since no observed reference
   is compared; (2) equivalence for other inputs or MATSim versions; (3) the INTERNAL determinism controls do not cover
-  the other three categories. RUN 1 FAILED, a real bug: the rendered tool pom pinned no maven-compiler-plugin, and
-  Maven 3.6.3 (the server's) binds maven-compiler-plugin 3.1 in its super POM, which ignores maven.compiler.release
-  and defaults to source/target 1.5; the build stopped with "Source option 5 is no longer supported. Use 8 or later."
-  (run1_failed_log_excerpt.txt). The local Maven 3.9.9 binds 3.13.0, so the gated local build test had passed. Fix
-  2425ea25 pins maven-compiler-plugin 3.13.0 (<release>), maven-resources-plugin 3.5.0 and maven-jar-plugin 3.5.0 (the
-  latter two mirror the fork root pom), with a test of the pins; run 2 ran from that commit. RUNTIME OBSERVATION, NOT A
+  the other three categories. RUN 1 FAILED, a real bug: the build stopped with "Source option 5 is no longer
+  supported. Use 8 or later." (run1_failed_log_excerpt.txt) because the rendered tool pom pinned no compiler plugin
+  and the server's Maven 3.6.3 compiles for Java 5 by default; the local Maven 3.9.9 had hidden it. Fix 2425ea25 pins
+  the build plugins, and run 2 ran from that commit; cause and decision are in ADR-0148 Decision item 8. RUNTIME OBSERVATION, NOT A
   PERFORMANCE MEASUREMENT: run 2 took 2 h 59 min for the extraction (11:41:59 -> 14:41:12; transit alone 12:02 ->
   14:41) against 1 h 0 min for the reference entry (2026-10-15 14:42 -> 15:42, file timestamps). In a same-conditions
   A/B started simultaneously at 13:50:51 (INTERNAL), the new jar took 138 s and the old jar 154 s; further INTERNAL
   runs of the new jar took 89 s (plain), 97 s (conda env) and 90 s (Python parent). For the same person blocks of
   TRANSIT, the pipeline JVM (started 12:02) against a control JVM (started 13:54) needed 154 s vs 25 s (10k to 20k),
   48 s vs 11.5 s (490k to 500k), 45 s vs 13.8 s (500k to 510k) and 324 s vs 134 s (510k to 520k); the control TRANSIT
-  run was stopped at 590 000 persons because it would not add to the equivalence evidence
-  (transit_block_timing.txt). Excluded as causes: the jar (A/B above), JVM flags (identical except the CDS base
-  address), JIT (hot SpeedyALT methods C2-compiled in both), GC (pipeline JVM total GC 6.6 s), environment variables,
-  rlimits, scheduler class, nice, ionice, cgroup, THP, steal time, run-queue wait, and the study area (geometrically
-  identical; .shp bytes identical). Maintainer statement (2026-10-21): a colleague was computing on the same host at
-  the time, and the VM's CPU and RAM are shared and allocated dynamically. Classification: environmental, consistent
-  with all evidence (invisible inside the guest; JVMs started in the busy window stayed slow, JVMs started later were
-  fast). Not proven at the host level (no perf, no host access). The runtime difference is therefore not attributed
-  to the tool jar.
+  run was stopped at 590 000 persons (last progress line 14:42:19, controller observation; not in a committed
+  artifact, whose last block is 510k to 520k) because it would not add to the equivalence evidence
+  (transit_block_timing.txt). Excluded as causes: the jar (A/B above, committed), and, observed interactively on felix
+  by the controller with jcmd, jstat, jstack and /proc, raw outputs not retained: JVM flags (identical except the CDS
+  base address), JIT (hot SpeedyALT methods C2-compiled in both), GC (pipeline JVM total GC 6.6 s), environment
+  variables, rlimits, scheduler class, nice, ionice, cgroup, THP, steal time, run-queue wait, and the study area
+  (geometrically identical; .shp bytes identical). Maintainer statement (2026-10-21): a colleague was computing on the
+  same host at the time, and the VM's CPU and RAM are shared and allocated dynamically. Observation: the control
+  TRANSIT JVM (from 13:54) ran at normal speed while the pipeline JVM (from 12:02) stayed 2.4 to 6.2 times slower (ratios of the four block pairs above) on the
+  same VM at overlapping times, so the effect is tied to the process lifetime. The mechanism is not identified and not
+  proven at the host level (no perf, no host access); the colleague's load is the maintainer's report. The runtime
+  difference is therefore not attributed to the tool jar.

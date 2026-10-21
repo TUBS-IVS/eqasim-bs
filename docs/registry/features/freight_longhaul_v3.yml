@@ -31,6 +31,7 @@ evidence:
   tests:
   - tests/test_freight_trips.py
   - tests/test_freight_extraction.py
+  - tests/test_freight_extraction_tool.py
   - tests/test_freight_injection_wiring.py
   - tests/test_freight_data.py
   off_path_byte_identical:
