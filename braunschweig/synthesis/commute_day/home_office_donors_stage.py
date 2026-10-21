@@ -35,6 +35,7 @@ import os
 
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import diary_plan_match as _diary_plan_match
@@ -278,20 +279,30 @@ def configure(context):
 
 
 def validate(context):
-    """Cache token: the raw MiD input sizes plus the pure builders' source hash.
+    """Cache token: the raw MiD input sizes plus the pure builders' structured source token.
 
     ``0`` when the model is disabled (the stage reads nothing, so nothing can invalidate it).
-    Otherwise ``"<summed byte size of the three raw MiD files>-<md5 of :data:`_HELPER_MODULES`
-    plus :data:`_DEFERRED_HELPER_MODULE_NAMES`>"``: the size half notices a re-delivered MiD
-    extract, the hash half notices an edit to the pure donor-pool/trip-construction code (or to
-    the declared option surface) that synpp's own per-file hashing would miss (see
-    :data:`_HELPER_MODULES`). A missing raw file raises ``RuntimeError`` naming it -- the pipeline
-    must fail here, at validation time, not halfway through a run. A deferred module that fails to
-    import raises rather than being skipped: skipping it would keep the stale cache alive exactly
-    when the code is broken.
+    Otherwise the structured token of :data:`_HELPER_MODULES` plus :data:`_DEFERRED_HELPER_MODULE_NAMES`
+    (one semantic digest per module) with ``raw_mid_bytes``, the summed byte size of the three raw MiD
+    files: the size notices a re-delivered MiD extract, the module digests notice an edit to the pure
+    donor-pool/trip-construction code (or to the declared option surface) that synpp's own per-file
+    hashing would miss (see :data:`_HELPER_MODULES`). A missing raw file raises ``RuntimeError`` naming
+    it -- the pipeline must fail here, at validation time, not halfway through a run. A deferred module
+    that fails to import raises rather than being skipped: skipping it would keep the stale cache alive
+    exactly when the code is broken.
     """
     if not bool(context.config(KEY_ENABLED)):
         return 0
+    total_size = _raw_mid_total_size(context)
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["raw_mid_bytes"] = total_size
+    return token
+
+
+def _raw_mid_total_size(context) -> int:
+    """Summed byte size of the three raw MiD files; a missing file raises ``RuntimeError`` naming it."""
     mid_dir = context.config(KEY_MID_DIR)
     total_size = 0
     for name in RAW_FILES:
@@ -303,6 +314,18 @@ def validate(context):
                 f"the directory configured as {KEY_MID_DIR}; set {KEY_ENABLED}: false to run "
                 "without the model.")
         total_size += os.path.getsize(path)
+    return total_size
+
+
+def _legacy_validation_token(context):
+    """The pre-structured token (``0``, or ``"<raw MiD bytes>-<md5 over the raw helper sources>"``).
+
+    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
+    code; remove once every cache is migrated.
+    """
+    if not bool(context.config(KEY_ENABLED)):
+        return 0
+    total_size = _raw_mid_total_size(context)
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))

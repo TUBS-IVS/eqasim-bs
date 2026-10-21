@@ -35,6 +35,7 @@ from pathlib import Path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
+from braunschweig import synpp_tokens
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import plan_check
@@ -173,8 +174,28 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 def validate(context):
     """Invalidate this wrapper when its delegated preparation helper changes.
 
-    A deferred module that fails to import raises rather than being skipped: skipping it
-    would keep a stale prepared scenario alive exactly when the helper is broken.
+    The structured source token of the helper modules (one semantic digest per module) plus ``files``, the
+    LF-normalised sha256 of each committed fare-model table keyed by its file name. A deferred module that
+    fails to import raises rather than being skipped: skipping it would keep a stale prepared scenario alive
+    exactly when the helper is broken.
+    """
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
+    # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
+    # The parking inputs are not read here: they arrive through the declared braunschweig.parking.zones_stage,
+    # whose own token hashes them and whose change synpp propagates to this stage.
+    token["files"] = {Path(path).name: fare_model_export.content_sha256(path)
+                      for path in fare_model_export.committed_input_paths()}
+    return token
+
+
+def _legacy_validation_token(context):
+    """The pre-structured token (one md5 string over the raw helper sources and the fare-model table hashes).
+
+    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
+    code; remove once every cache is migrated.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:

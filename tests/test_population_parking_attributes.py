@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import contextlib
 import gzip
-import hashlib
 import importlib
 import inspect
 import io
@@ -1338,12 +1337,11 @@ def test_validate_folds_a_present_deferred_module_into_the_token(monkeypatch):
     monkeypatch.setattr(POP, "_DEFERRED_HELPER_MODULE_NAMES", ("braunschweig.parking.cost",))
     with_module = POP.validate(None)
 
-    expected = hashlib.md5()
-    for module in POP._HELPER_MODULES:
-        expected.update(inspect.getsource(module).encode("utf-8"))
-    expected.update(inspect.getsource(
-        importlib.import_module("braunschweig.parking.cost")).encode("utf-8"))
-    assert with_module == expected.hexdigest()
+    from braunschweig import synpp_tokens
+    cost = importlib.import_module("braunschweig.parking.cost")
+    assert set(with_module["modules"]) - set(without["modules"]) == {"braunschweig.parking.cost"}
+    assert with_module["modules"]["braunschweig.parking.cost"] == synpp_tokens.semantic_module_digest(
+        inspect.getsource(cost))
     assert with_module != without
 
 

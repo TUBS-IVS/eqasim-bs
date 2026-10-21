@@ -12,7 +12,8 @@ Step 2  collect own imports    -- whole-AST walk, module-level vs lazy (inside a
 Step 3  declared stage edges   -- literal context.stage("name") calls, resolved through the
                                   `aliases:` block of configs/base_bs.yml.
                                   required_helpers = first-party imports - declared stages.
-Step 4  validate() coverage    -- stages whose validate() hashes source; their
+Step 4  validate() coverage    -- stages whose validate() hashes source (an md5 loop over
+                                  inspect.getsource or synpp_tokens.source_token); their
                                   _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES read
                                   STATICALLY, each credited only when validate() reads it;
                                   a package entry covers its own __init__ only.
@@ -46,6 +47,15 @@ EXEMPTION_NAME = "_SYNPP_TOKEN_EXEMPTION"
 #: Module-level dict a source-hashing stage sets, {dotted stage module: reason}: stage modules
 #: its imports reach but whose code it never runs. The closure walk of THAT stage stops there.
 BOUNDARIES_NAME = "_TOKEN_CLOSURE_BOUNDARIES"
+
+
+#: First-party modules every source-hashing stage imports to BUILD its token. They are the hashing
+#: mechanism, not stage logic: no stage result depends on them, and a change to the digest algorithm
+#: is made visible by bumping ``synpp_tokens.TOKEN_FORMAT``, which differs in every stored token. Treated
+#: like a module that sets ``_SYNPP_TOKEN_EXEMPTION``, so importing the builder is not an uncovered helper.
+TOKEN_MECHANISM_EXEMPTIONS = {
+    "braunschweig.synpp_tokens": "builds the structured stage token; a digest change bumps TOKEN_FORMAT (#468)",
+}
 
 
 def module_name(path: Path, repo: Path) -> str:
@@ -368,7 +378,8 @@ def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_mo
 
 def exemption_reasons(repo: Path) -> dict[str, str]:
     """{module: reason} of every first-party module that sets ``_SYNPP_TOKEN_EXEMPTION``."""
-    reasons = {}
+    reasons = {name: reason for name, reason in TOKEN_MECHANISM_EXEMPTIONS.items()
+               if (repo / Path(*name.split(".")).with_suffix(".py")).is_file()}
     for path in iter_py(repo):
         text = path.read_text(encoding="utf-8")
         if EXEMPTION_NAME not in text:
@@ -419,13 +430,16 @@ def build_report(repo: Path) -> dict:
         module_level_imports, lazy_imports = collect_imports(
             module_tree, module, on_disk, is_package=module in packages)
         imports[module] = module_level_imports | lazy_imports
-        if exemption_reason(module_tree, module) is not None:
+        if exemption_reason(module_tree, module) is not None or module in TOKEN_MECHANISM_EXEMPTIONS:
             exempt.add(module)
-    # Which stages hash Python source at all (the note's `grep -rl "inspect.getsource"`).
+    # Which stages hash Python source at all: the note's `grep -rl "inspect.getsource"` (the
+    # pre-2026-10 md5 loops) plus the shared structured token `synpp_tokens.source_token`, which
+    # does the getsource itself (#468).
     source_hashing = set()
     for name, path in stages.items():
         text = path.read_text(encoding="utf-8")
-        if "inspect.getsource" in text and "def validate" in text:
+        if "def validate" in text and ("inspect.getsource" in text
+                                       or "synpp_tokens.source_token" in text):
             source_hashing.add(name)
 
     report = {}

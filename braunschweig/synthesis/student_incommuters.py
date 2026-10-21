@@ -38,6 +38,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
+
 _log = logging.getLogger(__name__)
 _SENTINEL = object()
 CRS_METRIC = "EPSG:25832"
@@ -146,15 +148,14 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """Include the shared assembly and time-repair helpers in the cache token."""
-    import hashlib
-    import importlib
-    import inspect
+    """Include the shared assembly and time-repair helpers in the cache token.
 
-    digest = hashlib.md5()
-    for name in _DEFERRED_HELPER_MODULE_NAMES:
-        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
-    return digest.hexdigest()
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
+    """
+    return synpp_tokens.source_token(
+        (), _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

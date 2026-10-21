@@ -425,21 +425,14 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     assert S._DEFERRED_HELPER_MODULE_NAMES[0] == "braunschweig.analysis.spatial"
 
     token = S.validate(None)
-    assert len(token) == 32 and int(token, 16) >= 0        # md5 hex digest
+    assert token["format"] == 2
     assert token == S.validate(None)                       # deterministic
     # The token really depends on the deferred module's source, not only on the direct helpers:
-    # hand-hashing every source it names must reproduce it.
-    import hashlib
+    # it holds one digest per module of both tuples.
     import importlib
-    import inspect
-    expected = hashlib.md5()
-    # Order matters: validate() digests _HELPER_MODULES in tuple order, then the deferred
-    # names -- so this hand-hash follows the tuple, not an alphabetical guess.
     deferred = [importlib.import_module(name) for name in S._DEFERRED_HELPER_MODULE_NAMES]
     assert deferred[0] is spatial
-    for module in (*S._HELPER_MODULES, *deferred):
-        expected.update(inspect.getsource(module).encode("utf-8"))
-    assert token == expected.hexdigest()
+    assert set(token["modules"]) == {module.__name__ for module in (*S._HELPER_MODULES, *deferred)}
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():

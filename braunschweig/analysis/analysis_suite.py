@@ -9,13 +9,12 @@ docs/superpowers/specs/2026-07-01-auto-analysis-suite-design.md.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import traceback
 from pathlib import Path
+
+from braunschweig import synpp_tokens
 
 LOGGER = logging.getLogger("braunschweig.analysis.analysis_suite")
 
@@ -138,26 +137,20 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 )
 
 def validate(context):
-    """synpp validation token: md5 over the sources of every module this stage runs (#454).
+    """synpp validation token: structured token over the sources of every module this stage runs (#454).
 
     synpp hashes only THIS module's source, and every sub-analysis here is imported lazily
     inside ``execute()``. Without this token an edit to a sub-analysis would leave the cached
     suite result in place, so the reports would silently describe old code. The modules are hashed by
     dotted NAME, which keeps the stage import light; the closure gate in
     tests/test_audit_synpp_helper_hash.py keeps the list complete (ADR-0136).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_source = inspect.getsource(importlib.import_module(module_name))
-        except Exception as error:
-            raise RuntimeError(
-                f"analysis_suite validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        (), _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

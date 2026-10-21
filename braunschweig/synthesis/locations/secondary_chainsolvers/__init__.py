@@ -54,9 +54,6 @@ change devalidates the cached stage output exactly like an edit here.
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import time
 from typing import Any, Dict, List, Tuple
@@ -65,6 +62,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.calibration import secondary_measurement as _secondary_measurement
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
 # Imported at MODULE level (used directly by _solve_problem_set below, and for that
@@ -397,27 +395,18 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the helper submodules' sources.
+    """synpp validation token: structured token over the helper submodules' sources.
 
     synpp compares this token against the one stored with the cached stage
     output and devalidates the cache on mismatch, so helper-only source
     changes recompute the stage just like changes to this file itself.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"secondary_chainsolvers validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 #: Stage delivering the gate anchors of the portal stays (eqasim-bs#442); a dependency of this stage

@@ -67,6 +67,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.parking import attach, tariff_export
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import restricted_inputs
@@ -153,12 +154,27 @@ def _release_files(context) -> list[tuple[str, str, str, Path]]:
 
 
 def validate(context):
-    """Cache token: LF-normalised sha256 of the five release files and the source of every module that decides
-    the release (``_HELPER_MODULES``, ``_DEFERRED_HELPER_MODULE_NAMES``).
+    """Cache token: the structured source token of every module that decides the release
+    (``_HELPER_MODULES``, ``_DEFERRED_HELPER_MODULE_NAMES``; one semantic digest per module) plus ``files``,
+    the LF-normalised sha256 of each release input keyed by its dataset id.
 
     A missing file raises ``FileNotFoundError`` naming its config key. A deferred module that cannot be
     imported or read raises ``RuntimeError`` rather than being skipped, because skipping it would silently
     reuse a stale release. The LF normalisation gives a CRLF and an LF checkout of the same files one token.
+    """
+    files = {source_id: tariff_export.content_sha256(path) for _, source_id, _, path in _release_files(context)}
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["files"] = files
+    return token
+
+
+def _legacy_validation_token(context):
+    """The pre-structured token (one sha256 string over the release files and the raw helper sources).
+
+    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
+    code; remove once every cache is migrated.
     """
     digest = hashlib.sha256()
     for _, source_id, _, path in _release_files(context):

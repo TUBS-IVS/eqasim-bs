@@ -20,6 +20,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.calibration import srv_mode_by_distance_band_table as _srv_table_module
 from braunschweig.synthesis.outside_tour_modes import config_keys as _config_keys
 from braunschweig.synthesis.outside_tour_modes import rule as _rule
@@ -49,12 +50,32 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon",)
 
 
 def validate(context):
-    """synpp validation token over the helper sources and, with the flag on, the committed SrV table's bytes.
+    """synpp validation token: the structured source token of the helpers and, with the flag on, ``files``,
+    the sha256 of the committed SrV table's bytes keyed by its file name.
 
     Same source mechanism as ``portal_trips.stage.validate``. The table is data, which no source hash sees: a
     regenerated ``srv2023_mode_by_distance_band.csv`` must recompute this stage (and everything downstream)
     instead of serving modes judged against the old table. synpp's ValidateContext only answers declared
     options, so ``data_path`` is read only when the flag is on (configure declares it only then).
+    """
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    if context.config(KEY_ENABLED):
+        table_path = os.path.join(context.config("data_path"), *SRV_SUBDIR, _srv_table_module.TABLE_FILE_NAME)
+        if not os.path.exists(table_path):
+            raise FileNotFoundError(f"{_LOG_TAG} validate(): committed table {_srv_table_module.TABLE_FILE_NAME} "
+                                    f"not found at {table_path}")
+        with open(table_path, "rb") as handle:
+            token["files"] = {_srv_table_module.TABLE_FILE_NAME: hashlib.sha256(handle.read()).hexdigest()}
+    return token
+
+
+def _legacy_validation_token(context):
+    """The pre-structured token (one md5 string over the raw helper sources and, with the flag on, the table bytes).
+
+    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
+    code; remove once every cache is migrated.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:

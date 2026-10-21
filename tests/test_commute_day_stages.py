@@ -475,7 +475,7 @@ def test_donor_stage_validate_token_tracks_the_raw_input_size(tmp_path):
                      for name in DONORS.RAW_FILES)
 
     token = DONORS.validate(context)
-    assert token.startswith(f"{total_size}-")
+    assert token["raw_mid_bytes"] == total_size and token["format"] == 2
 
     # A re-delivered (changed) MiD extract must change the token, or the stage would silently
     # reuse a donor pool built from the previous delivery.
@@ -690,7 +690,7 @@ def test_donor_stage_validate_token_tracks_the_declared_option_surface(tmp_path,
 
     def patched_getsource(module):
         if module is config_keys:
-            return real_getsource(module) + "\n# a changed declared default\n"
+            return real_getsource(module) + "\nZ_PROBE = 1  # a changed declared default\n"
         return real_getsource(module)
 
     monkeypatch.setattr(DONORS.inspect, "getsource", patched_getsource)

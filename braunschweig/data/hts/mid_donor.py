@@ -15,6 +15,7 @@ import logging
 
 import numpy as np
 
+from braunschweig import synpp_tokens
 # KEY_MID comes from the leaf config-key module, not through the popsim stage package: this
 # stage shares the key, never the popsim stage's code, so its token must not hash that stage.
 from braunschweig.popsim.stage import config_keys as _popsim_config_keys
@@ -92,17 +93,14 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 
 
 def validate(context):
-    """Invalidate cached donors when a directly used MiD helper changes."""
-    import hashlib
-    import importlib
-    import inspect
+    """Invalidate cached donors when a directly used MiD helper changes.
 
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for name in _DEFERRED_HELPER_MODULE_NAMES:
-        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
-    return digest.hexdigest()
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def _map_donor_demographics(persons, rng):

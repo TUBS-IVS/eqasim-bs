@@ -26,6 +26,7 @@ import pandas as pd
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
+from braunschweig import synpp_tokens
 from braunschweig.data.vrb import fare_model_export, line_scopes
 
 log = logging.getLogger(__name__)
@@ -205,8 +206,27 @@ def _polygons_path(context) -> Path:
 
 
 def validate(context):
-    """Cache token: the polygon file bytes (a new download must invalidate the stage), the price-stage matrix
-    the expected zone ids come from, and the helper source."""
+    """Cache token: the structured source token of the helper modules plus ``files``, the sha256 of the polygon
+    file bytes (a new download must invalidate the stage) and of the price-stage matrix the expected zone ids
+    come from, each keyed by its file name."""
+    path = _polygons_path(context)
+    if not path.is_file():
+        raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "
+                           "docs/registry/data/vrb_tariff_zone_polygons.yml")
+    _, matrix_path, _ = fare_model_export.committed_input_paths()
+    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest(),
+             Path(matrix_path).name: hashlib.sha256(Path(matrix_path).read_bytes()).hexdigest()}
+    token = synpp_tokens.source_token(_HELPER_MODULES, (), stage_label=__name__ + ".validate()")
+    token["files"] = files
+    return token
+
+
+def _legacy_validation_token(context):
+    """The pre-structured token (one sha256 string over the two files and the raw helper sources).
+
+    Used only by scripts/migrate_cache_metadata.py to prove a stored legacy token against the current
+    code; remove once every cache is migrated.
+    """
     path = _polygons_path(context)
     if not path.is_file():
         raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "

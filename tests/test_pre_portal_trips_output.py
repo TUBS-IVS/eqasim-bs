@@ -139,7 +139,7 @@ def test_output_day_stages_the_pre_portal_trips_only_when_the_flag_is_on():
 def test_output_day_hashes_the_portal_config_keys_it_reads():
     token = OUTPUT.validate(None)
     assert PORTAL in OUTPUT._HELPER_MODULES
-    assert isinstance(token, str) and token
+    assert token["format"] == 2 and PORTAL.__name__ in token["modules"]
 
 
 # ------------------------------------------------------------------ output_day: execute

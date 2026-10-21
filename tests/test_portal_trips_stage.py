@@ -87,10 +87,10 @@ def test_thin_stages_declare_the_core_stage():
         assert context.stages == ["braunschweig.synthesis.portal_trips.stage"]
 
 
-def test_validate_token_is_a_stable_hex_digest():
+def test_validate_token_is_a_stable_structured_token():
     token = stage.validate(None)
     assert token == stage.validate(None)
-    assert len(token) == 32 and int(token, 16) >= 0
+    assert token["format"] == 2 and token["modules"]
 
 
 def test_execute_off_passes_the_trips_frame_through_unchanged():

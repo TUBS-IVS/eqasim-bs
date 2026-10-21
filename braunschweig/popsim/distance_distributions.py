@@ -75,14 +75,12 @@ Activity purposes:
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 # Import the helper directly from the default stage so that the binning logic
 # is identical. This is the only function we need from it (no CDF helpers are
 # separately defined there; the CDF is computed inline via cumsum).
@@ -208,7 +206,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the helper modules above.
+    """synpp validation token: structured token over the helper modules above.
 
     Same mechanism and boundary semantics as ``braunschweig.popsim.stage.validate()``
     (the single canonical statement) and ``braunschweig.popsim.trips_stage.validate()``
@@ -216,22 +214,13 @@ def validate(context):
     here because this stage's helper surface is small. A deferred module that fails to
     import raises rather than being skipped -- dropping it would keep the stale cache
     alive exactly when the code is broken.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"distance_distributions validate(): cannot hash the deferred helper "
-                f"module {module_name!r} ({type(error).__name__}: {error}); it must not "
-                "be skipped, because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 # Primary activity types — trips where BOTH ends are primary are excluded.
 # Matches the default stage exactly (synthesis/population/spatial/secondary/

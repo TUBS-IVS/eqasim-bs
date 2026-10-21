@@ -70,15 +70,13 @@ source into the stage's cache-validation token -- see the comment on
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import os  # noqa: F401  (unused here; kept for facade namespace parity, see below)
 
 import numpy as np  # noqa: F401  (unused here; kept for facade namespace parity, see below)
 import pandas as pd  # noqa: F401  (unused here; kept for facade namespace parity, see below)
 
+from braunschweig import synpp_tokens
 from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: F401  (namespace parity, see below)
 from braunschweig.gravity import attraction_vector, balancing, base, kreis_calibration, od
 from braunschweig.gravity.friction import build_friction_matrix  # noqa: F401  (namespace parity, see below)
@@ -206,7 +204,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the sibling modules' sources.
+    """synpp validation token: structured token over the sibling modules' sources.
 
     synpp calls ``validate`` for every stage, stores the returned token
     alongside the cached stage output and devalidates that cache when the token
@@ -235,31 +233,13 @@ def validate(context):
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
             cannot be imported or has no retrievable source; the original error
             is chained.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        # Resolved here, at RUN time, so importing them adds no import-time cost
-        # and cannot turn the deferred back-import in ``production_mass`` into a
-        # cycle. A failure is re-raised (never swallowed) naming the module: a
-        # dependency that no longer imports is broken, and dropping it from the
-        # token would keep the stale cached output alive at exactly that moment.
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"gravity model validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}). It is a direct "
-                "dependency of this stage's result and is listed in "
-                "_DEFERRED_HELPER_MODULE_NAMES, so it must be importable with a "
-                "retrievable source; fix the module (or remove it from that tuple "
-                "if the dependency is genuinely gone) -- it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):
