@@ -176,12 +176,16 @@ the revision.
   revision's text for every module that differs. Equal to the stored string, with
   refactor-equivalent helper modules, proves the token, and the current `validate()` value is
   stored.
+- The refactor-equivalence of the 30 stage modules is a migration-time property: the migration
+  proves it per entry, there is no committed test for it, because legitimate later edits must
+  turn into `kept_legacy`. A further edit to a stage module before an existing cache is
+  migrated makes that stage recompute once.
 - Anything else is a mismatch: the entry is left byte-for-byte unchanged (`kept_legacy`, one
   warning line with the reason) and the upstream timestamp rule keeps deciding it.
 
 Output hashing covers every entry of `pipeline.json` that has both artifacts, including entries
 of old config variants that are not in the current graph; this is the expensive part on large
-caches. The migration logs file count and bytes per entry and the count totals at the end
+caches. The migration logs file count, bytes and hashing seconds per entry and the count totals at the end
 (`migrated`, `kept_legacy`, `module_hash_mismatch`, `token_mismatch`, and so on).
 `pipeline.json` is rewritten atomically with `pipeline.json.bk` kept
 (`braunschweig.synpp_fork.metadata.write_meta`). Re-running is idempotent (`already_migrated`).

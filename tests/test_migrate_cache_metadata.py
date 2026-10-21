@@ -14,6 +14,7 @@ import inspect
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -688,3 +689,38 @@ def test_rev_text_drops_a_utf8_bom_like_getsource(project):
     project.monkeypatch.delitem(sys.modules, "bom_same", raising=False)
     importlib.invalidate_caches()
     assert inspect.getsource(importlib.import_module("bom_same")) == "VALUE = 3\n"
+
+
+# --- review fix wave (FW3, FW6) -------------------------------------------------------------------
+
+def test_the_per_entry_line_and_the_summary_carry_the_output_hashing_seconds(project, caplog):
+    project.write("mig_stage.py", PLAIN_STAGE)
+    rev = project.commit()
+    project.legacy_run("mig_stage")
+    config_path = project.root / "config.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_stage"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    with caplog.at_level("INFO"):
+        assert _load().main([str(config_path), "--legacy-source-repo", str(project.root),
+                             "--legacy-source-rev", rev]) == 0
+    assert re.search(r"migrated \(output hash over \d+ files, \d+ bytes, \d+\.\d+ s\)", caplog.text)
+    assert re.search(r"output hashing took \d+\.\d+ s in total", caplog.text)
+
+
+def test_the_launcher_logs_the_unmigrated_cache_hint_at_error_level(project, caplog):
+    project.write("mig_stage.py", PLAIN_STAGE)
+    project.commit()
+    project.legacy_run("mig_stage")
+    config_path = project.root / "launch.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(project.working), "run": ["mig_stage"],
+                                           "config": project.config}), encoding="utf-8")
+    project.reload()
+    spec = importlib.util.spec_from_file_location(
+        "run_synpp_hint_mod", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "run_synpp.py")
+    launcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launcher)
+    with caplog.at_level("INFO"):
+        launcher.explain_before_run(str(config_path))        # no gate: the launch continues
+    hint = [r for r in caplog.records if "legacy md5 module hash" in r.getMessage()]
+    assert hint and all(r.levelname == "ERROR" for r in hint)

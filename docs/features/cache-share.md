@@ -69,11 +69,20 @@ Design: `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`.
 `scripts/migrate_cache_metadata.py` records, for every cache entry it can prove, a content hash
 of the stage output (`output_hash`) and the parents' output digests the child was built against
 (`dependency_output_hashes`) in `pipeline.json`, and marks the entry `fork: {"format": 1}`.
-`prime` and `export` copy the `pipeline.json` records whole, so these fields travel with a shared
-entry. Nothing reads them for a decision yet: coherence of a copied entry
-(`braunschweig.cache_share._drop_incoherent_metadata`) and the validity of a child still follow
-the timestamp rule described above, so the limitation that a primed entry must match its parents'
-timestamps exactly is unchanged until Phase 4. The recorded fields are the preparation for it.
+These fields do NOT travel with a shared entry. `braunschweig.cache_share.track_run` writes the
+envelope sidecar `<entry>.metadata.json` at run time, copying the `pipeline.json` record as it was
+then. `export` writes that sidecar into the store only when the envelope's record equals the
+CURRENT `pipeline.json` record of the entry (and the runtime fingerprint is present). The
+migration rewrites the record (adds `output_hash` and `fork`, a longer `module_hash`), so for a
+migrated entry the two differ: `export` copies the artifacts WITHOUT metadata, and a later
+`prime` finds no record for it and treats the entry as a miss (the stage recomputes; safe, never
+a wrong hit). `track_run` re-writes an envelope only for entries a run actually recomputed, so
+re-exporting after a migration does not carry the migrated records either, and a record written
+by a Phase 3 run carries no `output_hash`. Nothing reads the recorded fields for a decision yet:
+coherence of a copied entry (`braunschweig.cache_share._drop_incoherent_metadata`) and the
+validity of a child still follow the timestamp rule described above, so the limitation that a
+primed entry must match its parents' timestamps exactly is unchanged until Phase 4. Refreshing
+and validating shared envelopes by output hash is Phase 4 work (Task 17 of #468).
 
 **Planned, not in force (Phase 4 of #468).** Decided in ADR-0149 and not implemented: a copied
 entry will be kept when its dependencies' recorded output digests equal those of the target

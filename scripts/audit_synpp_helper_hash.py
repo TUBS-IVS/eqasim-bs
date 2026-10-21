@@ -295,7 +295,12 @@ SOURCE_HASHING_CALLS = frozenset({"inspect.getsource", "synpp_tokens.source_toke
 
 def validate_hashes_source(tree: ast.Module) -> bool:
     """True when the stage's top-level ``validate()`` calls ``inspect.getsource`` or
-    ``synpp_tokens.source_token``. Only a call counts, never a mention in a comment or string."""
+    ``synpp_tokens.source_token``. Only a call counts, never a mention in a comment or string.
+
+    An aliased or from-import of ``inspect.getsource`` / ``synpp_tokens.source_token`` is not
+    recognised; the exact-30 pin in ``tests/test_token_refactor_coverage.py`` makes such a drop
+    fail loudly.
+    """
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "validate":
             return any(isinstance(child, ast.Call)

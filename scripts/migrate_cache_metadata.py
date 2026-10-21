@@ -33,7 +33,8 @@ code is proven to differ from it only by that refactor:
 
 "Refactor-equivalent": the semantic digests (docstring-free AST) of the two texts are equal after
 removing the module-level ``def validate`` (only a plain FunctionDef: an ``async def validate``
-or a ``validate = ...`` assignment is ordinary code and stays in) and the module-level imports of exactly
+or a ``validate = ...`` assignment is ordinary code and stays in) and the module-level imports of
+exactly
 ``import hashlib``, ``import inspect``, ``import importlib`` and ``from braunschweig import
 synpp_tokens`` (unaliased). Only the listed names are dropped from an import statement; any other
 name in the same statement stays in.
@@ -56,6 +57,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -129,8 +131,9 @@ class GitLegacySource:
     ``rev_text(path)`` is the text at REV of the file ``path``: read with ``git show`` when the file
     differs between REV and the working tree, the current text when it does not (identical by
     ``git diff``), None when the file is outside ``repo`` or absent at REV. Texts are LF-normalised
-    and BOM-free, as ``inspect.getsource`` returns them. Git missing or REV absent raises RuntimeError: without the
-    revision nothing can be proven, and silently keeping everything legacy would hide that.
+    and BOM-free, as ``inspect.getsource`` returns them. Git missing or REV absent raises
+    RuntimeError: without the revision nothing can be proven, and silently keeping everything
+    legacy would hide that.
     """
 
     def __init__(self, repo, rev: str, *, git: str = "git"):
@@ -332,6 +335,7 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
     if dry_run:
         meta = copy.deepcopy(meta)
     counts = {key: 0 for key in COUNT_KEYS}
+    counts["output_hash_seconds"] = 0.0      # wall time inside hash_stage_output (spec 4.3); not a count
     wrappers = {stage["wrapper"].name: stage["wrapper"] for stage in registry.values()}
     migrated = set()
     for entry in sorted(meta):
@@ -390,14 +394,17 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
             log.warning("[migrate] %s: kept legacy (cache artifacts %s.p / %s.cache missing)", entry, entry, entry)
             continue
         exclude = getattr(module, "_OUTPUT_HASH_EXCLUDE", ())
+        started = time.perf_counter()
         candidate["output_hash"] = output_hash.hash_stage_output(working_directory, entry, exclude)
+        elapsed = time.perf_counter() - started
+        counts["output_hash_seconds"] += elapsed
         counts["output_hashed"] += 1
         candidate["fork"] = {"format": 1}
         meta[entry] = candidate
         migrated.add(entry)
         counts["migrated"] += 1
-        log.info("[migrate] %s: migrated (output hash over %d files, %d bytes)", entry,
-                 candidate["output_hash"]["n_files"], candidate["output_hash"]["bytes"])
+        log.info("[migrate] %s: migrated (output hash over %d files, %d bytes, %.2f s)", entry,
+                 candidate["output_hash"]["n_files"], candidate["output_hash"]["bytes"], elapsed)
     for entry in sorted(migrated):
         record = meta[entry]
         filled = {}
@@ -423,6 +430,7 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
 def report(counts: dict, total: int) -> None:
     for key in COUNT_KEYS:
         log.info("[migrate] %s: %d", key, counts[key])
+    log.info("[migrate] output hashing took %.2f s in total", counts["output_hash_seconds"])
     rate = 100.0 * counts["migrated"] / total if total else 0.0
     line = "[migrate] migrated %d/%d (%.1f%%), kept legacy %d" % (counts["migrated"], total, rate,
                                                                    counts["kept_legacy"])

@@ -192,6 +192,16 @@ part lands (see Implementation status).
   `scripts/migrate_cache_metadata.py` with `--dry-run`, then for real, then
   `scripts/explain_stale_stages.py ... --expect ""` (README "Reusing an existing cache").
   The migration needs git and the revision `205a0fb7` (`git fetch origin main`).
+- **Migrate with the production interpreter** (the pinned `eqasim` environment, Python 3.10):
+  the module hash (`ast.dump`) and the token's `python` field depend on the Python minor
+  version; a migration under another minor makes every entry recompute (safe but costly).
+- **A shared store built before this change stays a miss.** `braunschweig.cache_share.export`
+  writes an entry's metadata sidecar only when the envelope written by `track_run` at run time
+  equals the current `pipeline.json` record; after migration the record differs, so a migrated
+  entry exports without metadata and `prime` treats it as a miss (recompute, never a wrong
+  hit). Re-exporting after the migration does not change this, because `track_run` rewrites an
+  envelope only for entries a run recomputed. Refreshing shared envelopes by output hash is
+  Phase 4 work (decision 5).
 - **Hashing cost.** The migration reads every output file of every `pipeline.json` entry,
   including old config variants that are no longer in the current graph; the migration logs
   files and bytes per entry. No full-cache run time is measured yet (acceptance pending).

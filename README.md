@@ -581,14 +581,25 @@ python scripts/migrate_cache_metadata.py configs/base_bs.yml configs/overlays/te
 python scripts/explain_stale_stages.py configs/base_bs.yml configs/overlays/test_100pct.yml --working-directory <dir> --expect ""
 ```
 
+- Run the migration with the production interpreter (the pinned `eqasim` conda environment,
+  Python 3.10): the module hash and the token's `python` field depend on the Python minor
+  version, and a migration under another minor version makes every entry recompute (safe, but
+  costly).
 - The migration needs the git repository with the revision the old caches were built from
   (`LEGACY_SOURCE_REV` in `scripts/migrate_cache_metadata.py`, on `main`): run
   `git fetch origin main` first. Without git or that revision it stops with an error.
 - It hashes the output of every cached entry in `pipeline.json`, including entries of old
   config variants that are not in the current stage graph. On a large cache this takes time:
   every output file is read once (large MATSim entries are the expensive ones). The
-  migration logs file count and bytes per entry; no run time is stated here because none has
-  been measured on a full cache yet.
+  migration logs file count, bytes and seconds per entry and the total hashing time; no run
+  time is stated here because none has been measured on a full cache yet.
+- A shared cache store (`cache_share_*`) built before this change holds md5 records. Migration
+  does not reach it through `prime`: `export` writes a store entry's metadata only when the
+  run-time envelope equals the current `pipeline.json` record, which a migrated record no longer
+  does, and a re-export after migration does not refresh it either. Priming from such a store
+  therefore recomputes the primed stages (a miss, never a wrong hit) until the stages have been
+  recomputed by a run under this version and exported again (ADR-0149; refreshing shared
+  envelopes is Phase 4).
 - An entry whose stored hashes cannot be proven to come from code equal to the current code
   is left unchanged and counted as `kept_legacy`; it recomputes if the code really changed.
   The report lists every such entry with its reason.
