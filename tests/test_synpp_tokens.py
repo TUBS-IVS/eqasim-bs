@@ -29,6 +29,31 @@ def test_class_and_module_docstrings_are_stripped_but_other_strings_stay():
     assert synpp_tokens.semantic_module_digest(without) != synpp_tokens.semantic_module_digest('class C:\n    NAME = "changed"\n')
 
 
+# Pinned in the eqasim env (Python 3.10, synpp 1.6.2) on 2026-10-21. ast.dump is specific to the
+# Python minor version, so the literal is only asserted on the interpreter it was computed with.
+_GOLDEN_SOURCE = '"""doc"""\nX = 1\n\n\ndef f(x):\n    """doc"""\n    return x + X\n'
+_GOLDEN_DIGEST = "edc913dc2bb4aaf77a5fd42bdf0b1b50620e82a3bc7beb218858d37637cceff0"
+_GOLDEN_PYTHON = "3.10"
+
+
+def test_golden_digest_of_a_fixed_snippet_is_pinned():
+    """A change of this digest without a TOKEN_FORMAT bump would silently keep stale caches valid;
+    bump TOKEN_FORMAT and update this pin together."""
+    from braunschweig import synpp_tokens
+    if synpp_tokens.python_tag() != _GOLDEN_PYTHON:
+        pytest.skip("ast.dump differs between Python minors; the golden digest was computed on "
+                    + _GOLDEN_PYTHON + ", this is " + synpp_tokens.python_tag())
+    assert synpp_tokens.semantic_module_digest(_GOLDEN_SOURCE) == _GOLDEN_DIGEST
+
+
+def test_source_token_has_exactly_the_documented_shape(helper_modules):
+    from braunschweig import synpp_tokens
+    token = synpp_tokens.source_token((helper_modules,), ())
+    assert token == {"format": synpp_tokens.TOKEN_FORMAT, "python": synpp_tokens.python_tag(),
+                     "modules": {"tok_helper_a": synpp_tokens.semantic_module_digest("A = 1\n")}}
+    assert synpp_tokens.TOKEN_FORMAT == 2   # moves together with _GOLDEN_DIGEST, never alone
+
+
 @pytest.fixture
 def helper_modules(tmp_path, monkeypatch):
     (tmp_path / "tok_helper_a.py").write_text("A = 1\n", encoding="utf-8")

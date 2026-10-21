@@ -1,9 +1,12 @@
 """Install contract of the synpp fork: patched names, SHA guard, semantic module hash."""
 import importlib
+import importlib.metadata
 import inspect
+import logging
 import sys
 import textwrap
 
+import pytest
 import synpp
 import synpp.pipeline as upstream
 
@@ -21,6 +24,34 @@ def test_install_patches_run_and_get_stage_hash():
     assert synpp.run is fork.run            # the package re-export, used by tests and notebooks
     assert upstream.get_stage_hash is fork.get_stage_hash
     assert upstream.process_stages.__module__ == "braunschweig.synpp_deterministic"
+
+
+def test_install_refuses_an_unsupported_synpp_version_and_patches_nothing(monkeypatch):
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    before = (upstream.run, upstream.get_stage_hash, upstream.process_stages, synpp.run)
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "9.9.9")
+    with pytest.raises(synpp_fork.UnsupportedSynppVersion):
+        synpp_fork.install()
+    assert (upstream.run, upstream.get_stage_hash, upstream.process_stages, synpp.run) == before
+
+
+def test_install_warns_when_the_upstream_file_differs_from_the_pinned_build(monkeypatch, caplog):
+    from braunschweig import synpp_fork
+    monkeypatch.setattr(synpp_fork, "upstream_pipeline_sha256", lambda: "0" * 64)
+    with caplog.at_level(logging.WARNING, logger="braunschweig.synpp_fork"):
+        synpp_fork.install()
+    messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(messages) == 1
+    assert "0" * 64 in messages[0] and synpp_fork.UPSTREAM_PIPELINE_SHA256 in messages[0]
+    assert "re-base" in messages[0]
+
+
+def test_install_is_silent_when_the_upstream_file_matches_the_pin(caplog):
+    from braunschweig import synpp_fork
+    with caplog.at_level(logging.WARNING, logger="braunschweig.synpp_fork"):
+        synpp_fork.install()
+    assert [r for r in caplog.records if r.name == "braunschweig.synpp_fork"] == []
 
 
 def test_patches_are_named_and_marked_in_the_source():

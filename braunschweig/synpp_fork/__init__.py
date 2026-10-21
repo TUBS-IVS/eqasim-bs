@@ -9,12 +9,15 @@ pinned by SHA-256: a different installed build fails ``tests/test_synpp_fork_ins
 from __future__ import annotations
 
 import hashlib
+import logging
 
 import synpp.pipeline as _upstream
 
 from braunschweig import synpp_deterministic
 
 UnsupportedSynppVersion = synpp_deterministic.UnsupportedSynppVersion
+
+logger = logging.getLogger(__name__)
 
 # sha256 of the installed synpp 1.6.2 pipeline.py the fork was copied from (computed in the
 # pinned eqasim env on 2026-10-16; re-check with upstream_pipeline_sha256() if the test fails).
@@ -39,6 +42,14 @@ def install(*, force_version_check: bool = True) -> None:
     """Install every project patch of synpp before the stage graph is built."""
     import synpp
     synpp_deterministic.install(force_version_check=force_version_check)
+    installed_sha = upstream_pipeline_sha256()
+    if installed_sha != UPSTREAM_PIPELINE_SHA256:
+        # Not a failure here (a rebuilt wheel with identical behaviour must still run), but the
+        # vendored run()/get_stage_hash were copied from the pinned build: say so loudly.
+        logger.warning("[synpp_fork] installed synpp.pipeline sha256 %s != pinned %s: the fork was "
+                       "copied from the pinned build; re-base braunschweig/synpp_fork/pipeline.py "
+                       "onto the installed file and update UPSTREAM_PIPELINE_SHA256",
+                       installed_sha, UPSTREAM_PIPELINE_SHA256)
     from braunschweig.synpp_fork import pipeline as fork
     _upstream.get_stage_hash = fork.get_stage_hash
     _upstream.run = fork.run

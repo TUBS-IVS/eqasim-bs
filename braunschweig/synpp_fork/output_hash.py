@@ -9,9 +9,9 @@ is never "unchanged" and never "no hash".
 Symlink rule: the cache directory ``<hash>.cache`` itself may be a symlink (server cache
 farms link whole entries) and is hashed through. A symlink *inside* the cache directory
 (file or directory entry) raises, because hashing it would either skip content silently or
-hash something outside the entry; stages must write real files. This holds even when an exclude glob would skip the symlink
-(stricter on purpose). Windows directory junctions are not detected by ``os.path.islink`` on
-Python 3.10; no stage creates junctions.
+hash something outside the entry; stages must write real files. This holds even when an
+exclude glob would skip the symlink (stricter on purpose). Windows directory junctions are not
+detected by ``os.path.islink`` on Python 3.10; no stage creates junctions.
 
 Exclude globs use ``fnmatch.fnmatchcase`` so the digest does not depend on the platform.
 """
