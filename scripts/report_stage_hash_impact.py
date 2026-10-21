@@ -29,33 +29,8 @@ if str(REPO) not in sys.path:
 
 
 def build_registry(base: str, overlay: str | None, patched: bool) -> dict:
-    from braunschweig import config_compose, synpp_deterministic
-
-    if patched:
-        synpp_deterministic.install()
-    from synpp.pipeline import process_stages
-
-    if overlay:
-        settings = config_compose.compose(base, overlay)
-    else:
-        import yaml
-        with open(base, encoding="utf-8") as fh:
-            settings = yaml.safe_load(fh)
-    definitions = []
-    for item in settings["run"]:
-        parameters = {}
-        if isinstance(item, dict):
-            key = list(item.keys())[0]
-            parameters = item[key]
-            item = key
-        definitions.append({"descriptor": item, "config": parameters})
-    previous = os.getcwd()
-    os.chdir(REPO)
-    try:
-        return process_stages(definitions, settings.get("config", {}) or {},
-                              settings.get("externals", {}) or {}, settings.get("aliases", {}) or {})
-    finally:
-        os.chdir(previous)
+    from braunschweig.synpp_fork import registry
+    return registry.build_registry(base, overlay, patched=patched)
 
 
 def read_listing(path: str | None) -> set[str]:

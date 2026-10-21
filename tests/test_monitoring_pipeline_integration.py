@@ -145,6 +145,7 @@ def _run_main(tmp_path, monkeypatch, config, run_from_yaml, log_text=None):
     run_synpp = _load_run_synpp()
     _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
+    monkeypatch.setattr(run_synpp, "explain_before_run", lambda path: 0)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
     return run_synpp.main([str(config_path)])
 

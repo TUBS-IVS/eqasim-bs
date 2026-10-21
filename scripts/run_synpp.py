@@ -12,6 +12,10 @@ Used by ``scripts/run_pipeline.sh`` in place of ``python -m synpp``. MATSim's Ja
 stdout keeps its own timestamps; braunschweig ``print()`` diagnostics are
 unchanged. ``force=True`` ensures this format wins even if synpp configures
 logging itself.
+
+Before synpp starts, the launcher primes the shared cache and then logs a read-only
+stale-stage assessment (``explain_before_run``) that can abort the launch on an unexpected
+stale stage.
 """
 from __future__ import annotations
 
@@ -72,6 +76,61 @@ def prime_from_config(config_path):
     os.makedirs(working_directory, exist_ok=True)
     return cache_share.prime(working_directory, stages, store, recompute,
                              share_metadata=cfg.get("cache_share_metadata", True))
+
+
+def explain_before_run(config_path):
+    """Log which stages this launch will recompute and why; abort on an unexpected one.
+
+    Read-only assessment (braunschweig.synpp_fork.staleness) of the working_directory
+    after priming. ``synpp_explain_before_run: false`` disables it (logged).
+    ``synpp_expected_stale_stages`` lists the stage NAMES allowed to be stale for their own
+    reasons; when the list is non-empty and another stage is stale, the launch stops with
+    the report, before any stage executes. Run targets never count as unexpected.
+    An EMPTY list means "no gate" (the report is only logged); this differs from
+    ``scripts/explain_stale_stages.py --expect ""``, which means "nothing is allowed".
+    With a non-empty list the number of further stages that will recompute because an ancestor
+    is stale is logged as a note (they are not gated). ``dryrun: true`` in the config skips the
+    assessment (synpp returns before devalidating anything).
+    Raises RuntimeError when the config has no ``working_directory``.
+    Returns 0 to continue, 2 to abort.
+    """
+    log = logging.getLogger("braunschweig")
+    with open(config_path, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle) or {}
+    cfg = doc.get("config", {}) or {}
+    if not cfg.get("synpp_explain_before_run", True):
+        log.info("[explain] pre-run assessment disabled (synpp_explain_before_run false).")
+        return 0
+    if doc.get("dryrun"):
+        # synpp returns from a dry run before it devalidates anything, so nothing is recomputed.
+        log.info("[explain] dryrun: pre-run assessment skipped")
+        return 0
+    from braunschweig.synpp_fork import metadata, registry, staleness
+    working_directory = doc.get("working_directory")
+    if not working_directory:
+        raise RuntimeError(
+            f"{config_path}: the pre-run assessment needs a working_directory to read the "
+            "synpp metadata from; set it in the config (or the overlay) or disable the "
+            "assessment with synpp_explain_before_run: false.")
+    stages = registry.build_registry_from_settings(doc)
+    assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
+    for line in staleness.format_report(assessments).splitlines():
+        log.info("[explain] %s", line)
+    expected = set(cfg.get("synpp_expected_stale_stages", []) or [])
+    unexpected = staleness.unexpected(assessments, expected)
+    if expected and unexpected:
+        log.error("[explain] aborting: stale stages not in synpp_expected_stale_stages: %s",
+                  ", ".join(unexpected))
+        return 2
+    if expected:
+        # The gate checks own reasons only; descendants of an expected stale stage recompute
+        # without being gated, so say how many (informational, never an abort).
+        downstream = sum(1 for a in assessments.values()
+                         if not a.stale and not a.ephemeral_uncached and a.certain_recompute)
+        if downstream:
+            log.info("[explain] note: %d further stage(s) will recompute because an ancestor is stale",
+                     downstream)
+    return 0
 
 
 def export_to_store_from_config(config_path):
@@ -211,6 +270,10 @@ def main(argv=None) -> int:
     # consecutive 100 % proof runs minutes after launch.
     ensure_run_directories(config_path)
     prime_from_config(config_path)
+    # Read-only stale-stage assessment after priming; can gate the launch (see
+    # explain_before_run and the synpp_* keys in configs/base_bs.yml).
+    if explain_before_run(config_path) != 0:
+        return 2
     # Record this run's own resource time series next to its outputs (issue #350).
     # The recorder samples the tree of THIS process, so every forked PopulationSim
     # worker and chainsolver shard is included, and it writes its summary from a
