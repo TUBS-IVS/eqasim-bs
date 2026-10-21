@@ -481,6 +481,14 @@ config:
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
 
+  # --- Pre-run stale-stage assessment (read-only) -----------------------------
+  # Logs every stage this launch will recompute and why (scripts/explain_stale_stages.py
+  # gives the same report on demand). A non-empty synpp_expected_stale_stages makes it a
+  # gate: a stage stale for its own reasons outside the list aborts the launch before any
+  # stage executes. Run targets always re-execute and never count as unexpected.
+  synpp_explain_before_run: true
+  synpp_expected_stale_stages: []
+
   # CEILING, not a fixed heap size (ADR-0126): one of the three CLAMPED keys, cut
   # down to the detected memory budget at the point of use (matsim/runtime/java.py,
   # data/osm/osmosis.py) when the machine is smaller than this; see the
