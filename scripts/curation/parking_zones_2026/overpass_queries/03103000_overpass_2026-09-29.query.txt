@@ -1,0 +1,13 @@
+[out:json][timeout:180];
+(
+  nwr["amenity"="parking"]["fee"="yes"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:both:fee"~"yes"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:left:fee"~"yes"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:right:fee"~"yes"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:condition:both"~"ticket"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:condition:left"~"ticket"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["parking:condition:right"~"ticket"](52.3159,10.6472,52.4951,10.9069);
+  way["highway"]["highway"!~"^(footway|path|steps|cycleway|service|track|corridor|elevator|platform|construction|proposed|bridleway|bus_stop)$"](52.4100,10.7650,52.4350,10.8050);
+  nwr["amenity"="parking"](52.4100,10.7650,52.4350,10.8050);
+);
+out tags geom;

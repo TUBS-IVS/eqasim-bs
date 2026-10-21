@@ -1,0 +1,85 @@
+# Output of scripts/parking/arm_sanity.py for the ten arms of the v3 comparison (issue #436), re-run on 2026-10-17 over the
+# downloaded comparison subsets in eqasim-data/output_bs_1pct_pv3_<arm>/ and eqasim-data/output_bs_pv3_<arm>_25pct/
+# (local-only, not committed). Lines are cut at 260 characters; paths are relative to the main checkout. The exit code of
+# every run is 0. A sane arm is a plausibility check of the run mechanics, never a validation.
+### arm off (off)
+[PASS] arm_kind_config: arm kind off: parking_zones_enabled false, enable_urban_parking false
+[PASS] no_parking_log_lines: none of the zone model's log lines in eqasim-data/output_bs_1pct_pv3_off/parking_v3_off.log
+[PASS] no_parking_outputs: no *.parking_outcomes.csv under ITERS and the module braunschweigParking is not enabled in output_config.xml
+ARM SANE: 3 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm legacy (legacy)
+[PASS] arm_kind_config: arm kind legacy: parking_zones_enabled false, enable_urban_parking true; the legacy ring rests on the config flag only: it is applied in the plan writer and leaves no log line or output file that this check could verify
+[PASS] no_parking_log_lines: none of the zone model's log lines in eqasim-data/output_bs_1pct_pv3_legacy/parking_v3_legacy.log
+[PASS] no_parking_outputs: no *.parking_outcomes.csv under ITERS and the module braunschweigParking is not enabled in output_config.xml
+ARM SANE: 3 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3 (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3/parking_v3_v3.log], equal to the iteration of the report; report header is the v4 header (13 columns)
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_parking_inputs_report.json): parking_cost_utility_factor 1, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, parking_garage_d
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4589aea744, srv20
+[PASS] ev_exemption: [parking] EV exemption: 443 of 11953 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_1pct_pv3_v3/parking_v3_v3.log]
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 13/22 (59.09 %), no_charge 13/22 (59.09 %) (an outcome rate of CALLS); configured workplace free-share shift +0.000 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_cost_0.5 (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/parking_v3_v3_cost_0.5.log], equal to the iteration of the report; report header is the v4 header (
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_cost_0.5_parking_inputs_report.json): parking_cost_utility_factor 0.5, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, parki
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_cost_0.5_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4589aea7
+[PASS] ev_exemption: [parking] EV exemption: 443 of 11953 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_1pct_pv3_v3_cost_0.5/parking_v3_v3_
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 13/22 (59.09 %), no_charge 13/22 (59.09 %) (an outcome rate of CALLS); configured workplace free-share shift +0.000 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_cost_2.0 (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/parking_v3_v3_cost_2.0.log], equal to the iteration of the report; report header is the v4 header (
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_cost_2.0_parking_inputs_report.json): parking_cost_utility_factor 2, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, parking
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_cost_2.0_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4589aea7
+[PASS] ev_exemption: [parking] EV exemption: 443 of 11953 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_1pct_pv3_v3_cost_2.0/parking_v3_v3_
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 13/22 (59.09 %), no_charge 13/22 (59.09 %) (an outcome rate of CALLS); configured workplace free-share shift +0.000 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_free_shift_-0.1 (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/parking_v3_v3_free_shift_-0.1.log], equal to the iteration of the report; report header is t
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_free_shift_-0.1_parking_inputs_report.json): parking_cost_utility_factor 1, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, 
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_free_shift_-0.1_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4
+[PASS] ev_exemption: [parking] EV exemption: 443 of 11953 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.1/parking
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 13/22 (59.09 %), no_charge 13/22 (59.09 %) (an outcome rate of CALLS); configured workplace free-share shift -0.100 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_free_shift_-0.2 (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/parking_v3_v3_free_shift_-0.2.log], equal to the iteration of the report; report header is t
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_free_shift_-0.2_parking_inputs_report.json): parking_cost_utility_factor 1, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, 
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_free_shift_-0.2_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4
+[PASS] ev_exemption: [parking] EV exemption: 443 of 11953 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_1pct_pv3_v3_free_shift_-0.2/parking
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 12/22 (54.55 %), no_charge 12/22 (54.55 %) (an outcome rate of CALLS); configured workplace free-share shift -0.200 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_ev_off (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_1pct_pv3_v3_ev_off/parking_v3_v3_ev_off.log], equal to the iteration of the report; report header is the v4 header (13 c
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_1pct_pv3_v3_ev_off_parking_inputs_report.json): parking_cost_utility_factor 1, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, parking_g
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_1pct_pv3_v3_ev_off_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4589aea744
+[PASS] ev_exemption: EV exemption disabled in the config and logged as disabled [from eqasim-data/output_bs_1pct_pv3_v3_ev_off/parking_v3_v3_ev_off.log]; NOTE: (the rest of this line was cut at 260 characters)
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/17 (0.00 %); bs_zone_ib 0/2 (0.00 %); bh 0/1 (0.00 %); other 0/39 (0.00 %)
+[INFO] free_share: work and education pricing calls in zones 22: employer_free 13/22 (59.09 %), no_charge 13/22 (59.09 %) (an outcome rate of CALLS); configured workplace free-share shift +0.000 (parking_workplace_free_share_shift); person-level free draw [fro
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm v3_25pct (v3)
+[PASS] module_active: [parking] run check line for iteration 60 [from eqasim-data/output_bs_pv3_v3_25pct/parking_v3_v3_25pct.log], equal to the iteration of the report; report header is the v4 header (13 columns)
+[PASS] config_echo: values equal the arm's config (Python side from inputs report braunschweig_pv3_v3_25pct_parking_inputs_report.json): parking_cost_utility_factor 1, parking_option_price_beta_u_per_eur 0.310998, parking_garage_decay_m 575.27, parking_garage_
+[PASS] sources: prefixes of the full SHA-256 of the inputs report braunschweig_pv3_v3_25pct_parking_inputs_report.json equal the install list: parking_zones_2026 7b200b87963e, parking_tariffs_2026 7de2d35e1808, parking_coverage_register_2026 df4589aea744, srv2
+[PASS] ev_exemption: [parking] EV exemption: 10725 of 298166 car owners (exempt > 0) and no warning that the vehicles frame lacks the powertrain column [from eqasim-data/output_bs_pv3_v3_25pct/parking_v3_v3_25pct
+[PASS] no_feasible_option: Ia and Ib at most 1 %; others reported only; NO_FEASIBLE_OPTION / priced stays per zone group: bs_zone_ia 0/519 (0.00 %); bs_zone_ib 0/101 (0.00 %); bh 0/4 (0.00 %); other 0/1091 (0.00 %); se_am_markt 0/8 (0.00 %); wob_area 0/17 (0.0
+[INFO] free_share: work and education pricing calls in zones 892: employer_free 581/892 (65.13 %), no_charge 584/892 (65.47 %) (an outcome rate of CALLS); configured workplace free-share shift +0.000 (parking_workplace_free_share_shift); person-level free draw
+ARM SANE: 6 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0
+### arm off_25pct (off)
+[PASS] arm_kind_config: arm kind off: parking_zones_enabled false, enable_urban_parking false
+[PASS] no_parking_log_lines: none of the zone model's log lines in eqasim-data/output_bs_pv3_off_25pct/parking_v3_off_25pct.log
+[PASS] no_parking_outputs: no *.parking_outcomes.csv under ITERS and the module braunschweigParking is not enabled in output_config.xml
+ARM SANE: 3 checks, none failed (a plausibility check of the run mechanics, not a validation)
+exit=0

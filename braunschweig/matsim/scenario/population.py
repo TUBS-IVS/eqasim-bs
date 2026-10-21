@@ -29,6 +29,17 @@ drawn ``day_absence_state`` (``braunschweig.synthesis.day_absence.absence_stage`
 row per enriched person on both its enabled and disabled path) is merged into the resident
 persons frame the SAME way, so ``add_person`` emits it as ``dayAbsenceState``. With
 ``day_absence_enabled`` false no such column is merged -> byte-identical plans.
+
+Zone-based parking costs (issue #436), the alternative to the legacy 8 km ring
+(``enable_urban_parking``; both flags on is rejected in ``configure``): with
+``parking_zones_enabled`` the frames AFTER the in-commuter merge are handed to
+``braunschweig.parking.attach`` -- the zone of every activity location, the resident zone of every
+home and the free-parking draw of the work/education activities, and, since parking cost zones v2
+(spec Amendment C3), the resident parking district of every activity location and of every home --
+so ``add_person`` emits ``parkingZone`` / ``parkingFree`` / ``parkingDistrict`` on activities and
+``residentParkingZone`` / ``residentParkingDistrict`` on persons, in-commuters included. The districts
+are a second layer, independent of the zones. With the flag false the zones stage is not even
+declared and no column is attached -> byte-identical plans.
 """
 from __future__ import annotations
 
@@ -36,8 +47,13 @@ import hashlib
 import importlib
 import inspect
 import logging
+import math
+
+import numpy as np
+import pandas as pd
 
 import matsim.scenario.population as base
+from braunschweig.parking import free_draw_options as _free_draw_options
 from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
 from braunschweig.synthesis.incommuter_merge import _base as _incommuter_merge_base
@@ -60,13 +76,20 @@ _LOG_TAG = "[commute day population]"
 #: id collisions are rejected. Both therefore decide the CONTENT of the written plans while
 #: leaving this file's own source untouched; both were module-level imports outside the token
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
-_HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
+_HELPER_MODULES = (base, _day_view, _incommuter_merge_base, _free_draw_options)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
 #: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+#: ``braunschweig.parking.attach`` (imported inside :func:`execute` only when parking_zones_enabled)
+#: decides which zone, resident zone and free-parking value every plan element carries, and
+#: ``braunschweig.parking.zones`` supplies its point-in-polygon test (``assign_zones``), so both shape
+#: the CONTENT of the parking attributes written here. Hashed unconditionally, like the module
+#: objects above: a token must not depend on a flag.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.writers",
+    "braunschweig.parking.attach",
+    "braunschweig.parking.zones",
 )
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
@@ -104,6 +127,55 @@ ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 #: (java.lang.String) for the persons that have one.
 ABSENCE_STATE_COLUMN = "day_absence_state"
 
+#: Zone-based parking costs (issue #436) and the stage they read when on. Default off: the flag
+#: is switched on in the canonical configuration, not here. Mutually exclusive with
+#: KEY_URBAN_PARKING, the legacy 8 km ring declared by the vendored ``base.declare_writer_inputs``.
+KEY_PARKING_ZONES_ENABLED = "parking_zones_enabled"
+DEFAULT_PARKING_ZONES_ENABLED = False
+KEY_URBAN_PARKING = "enable_urban_parking"
+ZONES_STAGE = "braunschweig.parking.zones_stage"
+
+#: Sensitivity arm of the free-parking draw: a share difference (unitless, valid range [-1, 1])
+#: added to the SrV free-parking share of every workplace class before the draw clips the
+#: probability to [0, 1]. 0.0 keeps the observed shares. Declared only when the flag is on.
+KEY_FREE_SHIFT = "parking_workplace_free_share_shift"
+DEFAULT_FREE_SHIFT = 0.0
+
+#: The two options of the free-parking draw added by parking cost zones v2 (spec Amendment D5, D6), declared only when
+#: the flag is on, validated by ``braunschweig.parking.free_draw_options`` (hashed above, imported by name so the stage
+#: token covers it): the explicit mapping workplace class -> SrV class whose share the draw uses
+#: (ASSUMPTION A1-b), and the share of the campus work/education persons who park free (ASSUMPTION C2, valid range
+#: [0, 1]). The code defaults switch both OFF (the v1 draw); configs/base_bs.yml states the production values.
+KEY_PROXY_CLASSES = _free_draw_options.KEY_PROXY_CLASSES
+KEY_CAMPUS_FREE_SHARE = _free_draw_options.KEY_CAMPUS_FREE_SHARE
+
+#: Parking cost zones v3 (spec A5, assumption E1): mark the owners of a BEV/PHEV car as exempt from the street fee where
+#: a zone grants it (``braunschweig.parking.attach.attach_ev_exemption``; written as the person attribute
+#: ``parkingEvExempt``). A boolean switch, declared only when the zones are on; on by default, so that a configuration
+#: reproducing the v2 prices states ``false`` explicitly.
+KEY_PARKING_EV_EXEMPTION_ENABLED = "parking_ev_exemption_enabled"
+DEFAULT_PARKING_EV_EXEMPTION_ENABLED = True
+
+#: Frame columns ``braunschweig.parking.attach`` adds and ``matsim.scenario.population`` writes:
+#: activity attributes ``parkingZone`` / ``parkingFree`` / ``parkingDistrict``, person attributes
+#: ``residentParkingZone`` / ``residentParkingDistrict``.
+PARKING_ZONE_COLUMN = "parking_zone"
+PARKING_FREE_COLUMN = "parking_free"
+RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+PARKING_DISTRICT_COLUMN = "parking_district"
+RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
+PARKING_EV_EXEMPT_COLUMN = "parking_ev_exempt"
+#: The purpose of the activities at the household home (they never pay, H1), and the mode of the initial plan's
+#: car-driver legs; only the own-district coverage rate reads them.
+HOME_PURPOSE = "home"
+CAR_MODE = "car"
+#: The identifying columns of the frames the attach functions extend, which must come back unchanged:
+#: an activity is keyed by (person_id, activity_index), a person by person_id.
+ACTIVITY_KEY_COLUMNS = ("person_id", "activity_index")
+PERSON_KEY_COLUMNS = ("person_id",)
+
+_PARKING_LOG_TAG = "[parking population]"
+
 
 def validate(context):
     """synpp validation token: md5 over the vendored writer's source.
@@ -114,6 +186,10 @@ def validate(context):
     cached ``plans.xml.gz`` in place although the writer that produced it changed. The token folds
     that source in, so a vendored-writer edit devalidates the stage exactly like an edit here
     (same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
+
+    The deferred helpers (:data:`_DEFERRED_HELPER_MODULE_NAMES`) follow, imported by name. One that
+    cannot be imported or read -- an absent one included -- raises rather than being skipped:
+    skipping it would silently reuse a stale ``plans.xml.gz`` exactly when the helper is broken.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
@@ -133,7 +209,10 @@ def validate(context):
 
 
 def configure(context):
-    base.configure(context)
+    # The vendored writer's declarations only: its own configure() additionally rejects
+    # KEY_PARKING_ZONES_ENABLED, because the plain writer attaches no parking attribute; this
+    # wrapper attaches them (execute) and declares the flag itself below.
+    base.declare_writer_inputs(context)
     context.stage(DAY_TRIPS_STAGE)
     context.stage(DAY_ACTIVITIES_STAGE)
     context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
@@ -152,6 +231,58 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
         context.stage("braunschweig.synthesis.student_incommuters")
+    # Zone-based parking costs (issue #436), declared only when on -- the same trade-off as the
+    # blocks above: a workflow with the model off carries neither the zones stage nor its keys.
+    context.config(KEY_PARKING_ZONES_ENABLED, DEFAULT_PARKING_ZONES_ENABLED)
+    if context.config(KEY_PARKING_ZONES_ENABLED):
+        # KEY_URBAN_PARKING was declared by base.declare_writer_inputs above. The zone tariffs and the
+        # legacy ring fees are alternative parking-cost models for the same stays, so the pair
+        # is a configuration error, raised here before any stage runs.
+        if context.config(KEY_URBAN_PARKING):
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {KEY_PARKING_ZONES_ENABLED} and {KEY_URBAN_PARKING} are both "
+                f"true, but the zone tariffs ({KEY_PARKING_ZONES_ENABLED}) and the legacy 8 km "
+                f"ring fees ({KEY_URBAN_PARKING}, isParis attributes) must never be combined: set "
+                f"{KEY_URBAN_PARKING}: false to run the zone model, or "
+                f"{KEY_PARKING_ZONES_ENABLED}: false to reproduce the legacy ring.")
+        context.stage(ZONES_STAGE)
+        _require_free_share_shift(context.config(KEY_FREE_SHIFT, DEFAULT_FREE_SHIFT))
+        _free_draw_options.require_proxy_classes(
+            context.config(KEY_PROXY_CLASSES, _free_draw_options.default_proxy_classes()))
+        _free_draw_options.require_campus_free_share(
+            context.config(KEY_CAMPUS_FREE_SHARE, _free_draw_options.DEFAULT_CAMPUS_FREE_SHARE))
+        context.config("random_seed")
+        _require_ev_exemption_flag(
+            context.config(KEY_PARKING_EV_EXEMPTION_ENABLED, DEFAULT_PARKING_EV_EXEMPTION_ENABLED))
+
+
+def _require_ev_exemption_flag(value):
+    """Return ``parking_ev_exemption_enabled`` as a bool, raising unless it is one.
+
+    A switch that decides whether electric cars are exempt from street fees must not be set by a truthy text such as
+    ``"false"`` (which would read as True), so only a real boolean is accepted.
+    """
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {KEY_PARKING_EV_EXEMPTION_ENABLED} must be a boolean (true: owners of a BEV/PHEV "
+            f"are exempt where a zone grants it, ASSUMPTION E1; false: no exemption); got {value!r}.")
+    return value
+
+
+def _require_free_share_shift(value):
+    """Return ``parking_workplace_free_share_shift`` as a float, raising unless it lies in [-1, 1].
+
+    The shift is a difference of shares: a value beyond +-1 could only saturate the clipped
+    free-parking probability, so it is almost certainly a unit error (percentage points instead
+    of a share difference) and is rejected at configure time.
+    """
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or not -1.0 <= value <= 1.0):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {KEY_FREE_SHIFT} must be a number in [-1, 1] (a difference of "
+            f"free-parking shares, {DEFAULT_FREE_SHIFT} keeps the SrV-observed shares); got "
+            f"{value!r}.")
+    return float(value)
 
 
 def attach_commute_day_state(persons, states):
@@ -211,10 +342,127 @@ def attach_day_absence_state(persons, absence):
     return merged
 
 
+def _require_attach_result(before, after, column, producer, keys):
+    """Return ``after`` if ``producer`` kept every row of ``before`` with its ``keys`` and added ``column``.
+
+    Each ``braunschweig.parking.attach`` function ADDS one column to a copy of the frame it is handed:
+    same rows, same order. A changed row count is a duplicating or dropping join inside it (e.g. one
+    location matched to two zones); a changed key at an unchanged count is a duplicating-and-dropping
+    or a mismatching join. Either would silently duplicate, lose or mislabel plan elements in the
+    written population, so it raises instead. ``keys`` are the identifying columns of the frame
+    (:data:`ACTIVITY_KEY_COLUMNS` or :data:`PERSON_KEY_COLUMNS`); they are compared row by row, which
+    implies an unchanged key set, with column-wise comparisons that stay cheap on a full population.
+    """
+    if len(after) != len(before):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {producer} returned {len(after)} rows for {len(before)} input "
+            "rows; the parking attributes must be attached row-preserving, and a changed count "
+            "is a duplicating or dropping join.")
+    for key in keys:
+        if key not in after.columns:
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {producer} dropped the key column {key!r}; the parking "
+                "attributes must be attached to the rows as handed.")
+        expected = before[key].reset_index(drop=True)
+        found = after[key].reset_index(drop=True)
+        unchanged = expected.eq(found).fillna(False).to_numpy(dtype=bool)
+        if not unchanged.all():
+            changed = np.flatnonzero(~unchanged)
+            first = int(changed[0])
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {producer} changed the key column {key!r} in {len(changed)} of "
+                f"{len(before)} rows (first at position {first}: {expected.iloc[first]!r} -> "
+                f"{found.iloc[first]!r}); the parking attributes must be attached to the rows as "
+                "handed and in their order, so a changed key is a duplicating, dropping or "
+                "mismatching join.")
+    if column not in after.columns:
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {producer} did not add the {column!r} column that "
+            "matsim.scenario.population writes as a MATSim attribute.")
+    return after
+
+
+def _own_district_stay_counts(activities, persons, trips):
+    """(non-home activities, of them in the district of the person's home, of those reached by car in the initial plan).
+
+    An "own-district stay" is a non-home activity whose ``parking_district`` equals the ``resident_parking_district`` of
+    its person (both set): the stays assumption R2 can exempt. "Reached by car" reads the initial plan's trip into the
+    activity (``trips`` row ``trip_index`` k leads to activity ``activity_index`` k + 1, the pairing of
+    ``matsim.scenario.population.add_person``) with mode ``car``: a car-DRIVER leg of the plan the simulation starts from,
+    before the mode choice of the run, so the count is an exposure indicator and no forecast of the priced stays.
+    """
+    missing = [column for column in ("person_id", "trip_index", "mode") if column not in trips.columns]
+    if missing:
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} the trips frame lacks the column(s) {missing}; the own-district coverage rate pairs "
+            "every trip with the activity it leads to.")
+    non_home = (activities["purpose"] != HOME_PURPOSE).to_numpy()
+    person_district = activities["person_id"].map(
+        persons.set_index("person_id")[RESIDENT_PARKING_DISTRICT_COLUMN])
+    activity_district = activities[PARKING_DISTRICT_COLUMN]
+    own = (non_home & activity_district.notna().to_numpy() & person_district.notna().to_numpy()
+           & (activity_district == person_district).to_numpy())
+    car_legs = trips.loc[trips["mode"] == CAR_MODE, ["person_id", "trip_index"]]
+    reached_by_car = pd.MultiIndex.from_arrays([activities["person_id"], activities["activity_index"]]).isin(
+        pd.MultiIndex.from_arrays([car_legs["person_id"], car_legs["trip_index"] + 1]))
+    return int(non_home.sum()), int(own.sum()), int((own & reached_by_car).sum())
+
+
+def _log_parking_coverage(activities, persons, resident_person_ids, trips):
+    """Log ONCE per population how many plan elements carry each parking attribute.
+
+    An activity without ``parkingZone`` lies outside every zone and parks free, and a person
+    without ``residentParkingZone`` is a resident of no zone: both are modelled states, but their
+    rates are the evidence that the zone join worked (CLAUDE.md "Fallback transparency").
+    In-commuters (persons absent from the resident enriched frame) are counted separately,
+    because zoned residents next to not one zoned in-commuter activity is the signature of a
+    broken in-commuter locations join -- that case is logged as a warning.
+    """
+    has_zone = activities[PARKING_ZONE_COLUMN].notna()
+    is_incommuter = ~activities["person_id"].isin(resident_person_ids)
+    n_activities = len(activities)
+    n_zoned = int(has_zone.sum())
+    n_incommuter = int(is_incommuter.sum())
+    n_incommuter_zoned = int((has_zone & is_incommuter).sum())
+    n_free = int(activities[PARKING_FREE_COLUMN].eq(True).sum())
+    n_persons = len(persons)
+    n_resident = int(persons[RESIDENT_PARKING_ZONE_COLUMN].notna().sum())
+    logger.info(
+        "%s parkingZone on %d/%d activities (%.1f%%), in-commuter activities with a parkingZone: "
+        "%d/%d; parkingFree=true on %d activities; residentParkingZone on %d/%d persons "
+        "(%.1f%%). Activities without a parkingZone lie outside every zone and park free "
+        "(assumption Z1).", _PARKING_LOG_TAG, n_zoned, n_activities,
+        100.0 * n_zoned / max(n_activities, 1), n_incommuter_zoned, n_incommuter, n_free,
+        n_resident, n_persons, 100.0 * n_resident / max(n_persons, 1))
+    if n_incommuter > 0 and n_incommuter_zoned == 0 and n_zoned > 0:
+        logger.warning(
+            "%s none of the %d in-commuter activities carries a parkingZone although %d resident "
+            "activities do; check the in-commuter locations handed to attach_parking_zones -- an "
+            "all-unzoned in-commuter set is the signature of a broken join rather than of "
+            "in-commuters who never enter a zone.", _PARKING_LOG_TAG, n_incommuter, n_zoned)
+
+    # The resident parking districts (spec Amendment C3), a second layer: their own coverage line, so that the zone
+    # line above stays what it was. The own-district stays are the exposure of assumption R2.
+    n_districted = int(activities[PARKING_DISTRICT_COLUMN].notna().sum())
+    n_incommuter_districted = int((activities[PARKING_DISTRICT_COLUMN].notna() & is_incommuter).sum())
+    n_resident_district = int(persons[RESIDENT_PARKING_DISTRICT_COLUMN].notna().sum())
+    n_non_home, n_own, n_own_by_car = _own_district_stay_counts(activities, persons, trips)
+    logger.info(
+        "%s parkingDistrict on %d/%d activities (%.1f%%), in-commuter activities with a parkingDistrict: %d/%d; "
+        "residentParkingDistrict on %d/%d persons (%.1f%%). Own-district stays (assumption R2): %d/%d non-home "
+        "activities lie in the district of the person's home (%.1f%%); reached by car in the initial plan: %d. "
+        "Activities without a parkingDistrict lie outside every district, and a person without a "
+        "residentParkingDistrict gets no district exemption.", _PARKING_LOG_TAG, n_districted, n_activities,
+        100.0 * n_districted / max(n_activities, 1), n_incommuter_districted, n_incommuter, n_resident_district,
+        n_persons, 100.0 * n_resident_district / max(n_persons, 1), n_own, n_non_home,
+        100.0 * n_own / max(n_non_home, 1), n_own_by_car)
+
+
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
     write_income_eur = bool(context.config("write_income_eur"))
+    parking_zones_enabled = bool(context.config(KEY_PARKING_ZONES_ENABLED))
     # The vendored load_raw reads the PRE-ASSIGNMENT trips/activities by name; the shim answers
     # those two names with the reporting-day frames instead, so the finished day reaches the
     # writer without the pre-assignment pickles ever being unpickled and dropped (both are full
@@ -242,6 +490,10 @@ def execute(context):
         # dayAbsenceState attribute -> byte-identical plans.
         logger.info("%s %s is false -- no dayAbsenceState attribute is written.",
                     _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
+
+    # The resident persons, captured BEFORE the in-commuter merge below, so the parking coverage
+    # log can count the injected in-commuters separately.
+    resident_person_ids = raw["persons"]["person_id"].to_numpy() if parking_zones_enabled else None
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
@@ -282,6 +534,60 @@ def execute(context):
         raw["vehicles"] = concat_frame(raw["vehicles"], inc["vehicles"], "owner_id")
         raw["vehicles"] = concat_frame(raw["vehicles"], student_inc["vehicles"],
                                        "owner_id")
+
+    # Zone-based parking costs (issue #436). Attached AFTER the in-commuter merge so injected
+    # in-commuters carry parkingZone / parkingFree exactly like residents. The order is fixed by
+    # the data flow: the resident zone is read from the zoned home activities, and the free-parking
+    # draw needs the zone of every work/education activity. The module is imported here rather
+    # than at module level, so the OFF path never imports it; validate() hashes it by name.
+    if parking_zones_enabled:
+        import braunschweig.parking.attach as attach
+
+        release = context.stage(ZONES_STAGE)
+        zoned_activities = attach.attach_parking_zones(
+            raw["activities"], raw["locations"], release["zones"])
+        raw["activities"] = _require_attach_result(
+            raw["activities"], zoned_activities, PARKING_ZONE_COLUMN, "attach_parking_zones",
+            ACTIVITY_KEY_COLUMNS)
+        persons_with_zone = attach.attach_resident_zones(
+            raw["persons"], raw["activities"], release["tariffs"])
+        raw["persons"] = _require_attach_result(
+            raw["persons"], persons_with_zone, RESIDENT_PARKING_ZONE_COLUMN,
+            "attach_resident_zones", PERSON_KEY_COLUMNS)
+        drawn_activities = attach.draw_parking_free(
+            raw["activities"], release["tariffs"], release["workplace_shares"],
+            int(context.config("random_seed")), shift=float(context.config(KEY_FREE_SHIFT)),
+            proxy_classes=_free_draw_options.require_proxy_classes(context.config(KEY_PROXY_CLASSES)),
+            campus_free_share=_free_draw_options.require_campus_free_share(context.config(KEY_CAMPUS_FREE_SHARE)))
+        raw["activities"] = _require_attach_result(
+            raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free",
+            ACTIVITY_KEY_COLUMNS)
+        # The resident parking districts (spec Amendment C3): a second layer on the same merged frames. Attached
+        # after the zone columns only by convention; neither layer reads the other.
+        districted_activities = attach.attach_parking_districts(
+            raw["activities"], raw["locations"], release["districts"])
+        raw["activities"] = _require_attach_result(
+            raw["activities"], districted_activities, PARKING_DISTRICT_COLUMN, "attach_parking_districts",
+            ACTIVITY_KEY_COLUMNS)
+        persons_with_district = attach.attach_resident_districts(raw["persons"], raw["activities"])
+        raw["persons"] = _require_attach_result(
+            raw["persons"], persons_with_district, RESIDENT_PARKING_DISTRICT_COLUMN,
+            "attach_resident_districts", PERSON_KEY_COLUMNS)
+        # The EV exemption of the zones of parking cost zones v3 (spec A5, assumption E1): read from the owner's
+        # vehicles AFTER the in-commuter merge, so the in-commuters' cars count like the residents'. With the switch
+        # off the function logs and returns the persons unchanged: no column, no attribute.
+        ev_exemption_enabled = _require_ev_exemption_flag(context.config(KEY_PARKING_EV_EXEMPTION_ENABLED))
+        persons_with_exemption = attach.attach_ev_exemption(raw["persons"], raw["vehicles"], ev_exemption_enabled)
+        if ev_exemption_enabled:
+            raw["persons"] = _require_attach_result(
+                raw["persons"], persons_with_exemption, PARKING_EV_EXEMPT_COLUMN, "attach_ev_exemption",
+                PERSON_KEY_COLUMNS)
+        _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids, raw["trips"])
+    else:
+        # No column -> matsim.scenario.population.effective_activity_fields and
+        # effective_person_fields are unchanged -> no parking attribute -> byte-identical plans.
+        logger.info("%s %s is false -- no parkingZone, parkingFree, parkingDistrict, residentParkingZone, "
+                    "residentParkingDistrict or parkingEvExempt attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])

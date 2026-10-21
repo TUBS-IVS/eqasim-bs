@@ -2,7 +2,11 @@ stage: matsim.output
 title: MATSim output stage
 layer: matsim
 description: Runs the MATSim simulation chain to its output; extended with the run-named durable
-  archive (ADR-0064); copies the VRB fare inputs when vrb_zone_fares_enabled (ADR-0133).
+  archive (ADR-0064); copies the VRB fare inputs when vrb_zone_fares_enabled (ADR-0133); copies the
+  parking inputs that the preparation report <prefix>parking_inputs_report.json lists (the tariff model
+  JSON and the report itself) under their prefixed names next to the exported config when
+  parking_zones_enabled, because the braunschweigParking module names the tariff model relative to the
+  config (matsim.output.copy_parking_inputs; a listed file that is missing raises; ADR-0139).
 lineage:
   type: extended
   upstream: null
@@ -17,7 +21,9 @@ production: true
 features:
 - matsim_output_archive
 - vrb_zone_fare_model
+- parking_cost_zones
 decisions:
 - ADR-0064
 - ADR-0071
 - ADR-0133
+- ADR-0139

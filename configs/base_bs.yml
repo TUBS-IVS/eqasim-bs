@@ -665,7 +665,121 @@ config:
   # Gemeinde-only (logged) if the CSV or the home-location geometry is missing.
   fleet_electric_calibration: kreis_mix_gemeinde_grid_bev_tilt
 
-  enable_urban_parking: true
+  # --- Parking costs (ADR-0139, issue #436) ---
+  # Zone-based parking costs replace the legacy 8 km ring (ADR-0039). The two flags are mutually
+  # exclusive: both true is rejected at configure time, because ring fees and zone tariffs would
+  # price the same stays; the legacy ring stays reproducible with parking_zones_enabled: false and
+  # enable_urban_parking: true. The 25 % legacy-vs-zones A/B is still pending (feature record
+  # parking_cost_zones); the owner decides this flip at PR review.
+  parking_zones_enabled: true
+  enable_urban_parking: false
+  # The zone release, relative to data_path (Data Registry parking_zones_2026,
+  # parking_tariffs_2026, parking_coverage_register_2026,
+  # srv2023_commute_parking_by_workplace_class and parking_resident_districts_2026), loaded and
+  # cross-validated as one unit by braunschweig.parking.zones_stage.
+  parking_zones_path: braunschweig/parking/parking_zones_2026.geojson
+  parking_tariffs_path: braunschweig/parking/parking_tariffs_2026.csv
+  parking_coverage_register_path: braunschweig/parking/parking_coverage_register_2026.csv
+  parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
+  # The resident parking districts of Braunschweig (A, B, C) and Goslar (A, B, C, F, G, H, J): a
+  # second layer next to the fee zones, which it may overlap (spec Amendment C3). The plans carry
+  # the district of every activity (parkingDistrict) and of every home (residentParkingDistrict);
+  # a stay inside the district of the person's home is free where the zone honours resident permits
+  # (ASSUMPTION R2 extends R1; R2-a, the tariff column resident_permits_valid: not on a campus and
+  # not at the BgA car parks).
+  parking_resident_districts_path: braunschweig/parking/parking_resident_districts_2026.geojson
+  # The garage dataset (Data Registry parking_garages_2026, spec Amendment E1): its priced garages are the
+  # distance-weighted garage options of a stay in a paid zone (ASSUMPTIONS G1 and G2), loaded and validated
+  # with the rest of the release by braunschweig.parking.zones_stage.
+  parking_garages_path: braunschweig/parking/parking_garages_2026.geojson
+  # Tariff state of the release: 2026-10-14, the date of the research packages whose ordinances the corrected rows of
+  # parking_tariffs_2026.csv follow (spec v3 B1, ruling R-B-7); an EV exemption is exported only while its
+  # ev_rule_valid_until is not before this date. Names the tariff model JSON. Quoted: an unquoted YAML date is
+  # rejected at configure time.
+  parking_tariff_snapshot_date: "2026-10-14"
+  # Sensitivity arm for assumption A1: a share difference in [-1, 1] added to the SrV free-parking
+  # share of every workplace class before the draw clips it to [0, 1]; 0.0 keeps the SrV shares.
+  parking_workplace_free_share_shift: 0.0
+  # ASSUMPTION A1-b (owner decision 2026-10-07, spec Amendment D5): the free-parking draw uses, for the persons of
+  # the workplace class on the left, the SrV share of the class on the right. Wolfsburg (03103) takes the share of
+  # Braunschweig Zentrum (bs_zentrum) instead of its own 0.9475, which was measured on in-commuters only and is
+  # dominated by commuters to the VW plant, which has its own free parking and lies outside every paid zone. The
+  # zones keep their county workplace_class. Keys and values are quoted SrV class rows without chains. The
+  # sensitivity arm that restores the class share is {"03103": null} in an overlay: overlays are deep-merged
+  # (braunschweig/config_compose.py), so an overlay {} would leave this entry unchanged; null is the explicit
+  # "no proxy" marker (the class uses its own SrV share) and survives the merge.
+  parking_free_share_proxy_classes: {"03103": "bs_zentrum"}
+  # ASSUMPTION C2 (owner estimate, no source; spec Amendment D6): the share of the persons with a work or education
+  # activity on a campus who find a free parking place (drawn once per person like the employer-free draw, never
+  # shifted by parking_workplace_free_share_shift). A number in [0, 1]; 0.0 keeps the v1 campus pricing and 0.4 is
+  # the other sensitivity arm.
+  parking_campus_free_share: 0.2
+  # ASSUMPTION E1 (owner decision 2026-10-14, spec v3 A5): every BEV or PHEV of the synthetic fleet belongs to an
+  # E-plate holder, so its owner is exempt from the street fee where a zone grants an EV exemption (ev_free_minutes
+  # of the tariff table). Boolean; false writes no parkingEvExempt attribute and reproduces the v2 prices.
+  parking_ev_exemption_enabled: true
+  # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends. The only
+  # supported value; the preparation stage and the Java ParkingConfigGroup reject others.
+  parking_terminal_stay_rule: until_fee_end
+  # ASSUMPTION L1 (owner decision 2026-09-30): every priced car stay lasts at least this many minutes
+  # (whole minutes >= 0). A car that arrives after the planned end of its activity would otherwise park
+  # for free; the priced stay is [arrival, max(departure, arrival + L)), before the tariff rules. It
+  # changes the price only, never the simulated timing. 0 prices as before L1; 0 and 30 are the
+  # sensitivity arms of the 25 % A/B.
+  parking_minimum_stay_min: 15
+  # ASSUMPTION G2 (spec Amendment E2): a garage within this straight-line distance (metres, EPSG:25832) of
+  # the destination of a stay is an option of the stay.
+  parking_garage_max_distance_m: 1000.0
+  # ASSUMPTIONS G1 and G3 (spec Amendment E3 and E5): the decay length lambda in metres of the off-street option weights
+  # exp(-d / lambda - beta * c / 100) (spec v3 A2, beta = parking_option_price_beta_u_per_eur below). A release value,
+  # CALIBRATED (not estimated) by scripts/parking/calibrate_garage_decay.py on the plans of the 25 % reference run (plans
+  # SHA-256 43607798e1cbe9d7..., v2 plans run of 2026-10-12) and the garage dataset of the table header (garages and large
+  # surface lots, SHA-256 0a7af9cf3a56b3c8...), with every stay priced by the production pricing code (maximum-stay
+  # feasibility of spec v3 A1 and the price term); target: the garage share of srv2023_city_center_parking,
+  # payment-inclusive measure (every option counts, spec Amendment I6); committed as
+  # parking_garage_decay_calibration_2026.csv, whose decay_length_m this value equals
+  # (tests/test_parking_garage_decay_config.py requires the equality). A calibration is no validation. A new option set
+  # needs a new calibration. 0 switches the garage options off (E6, the sensitivity arm).
+  # Recalibrated with the price term (beta 0.310998) on 2026-10-14, see the calibration record
+  # parking_garage_decay_calibration_2026 (superseded v2 value 324.31 m, fitted without the price term).
+  parking_garage_decay_m: 575.27
+  # ASSUMPTION G1-c (spec Amendment H): the decay length lambda_c in metres of the off-street option weights of work and
+  # education stays (lambda above governs every other purpose). A release value, CALIBRATED (not estimated) by the same
+  # script on the same 25 % plans and the same garage dataset (SHA-256 43607798e1cbe9d7... and 0a7af9cf3a56b3c8...): the
+  # work and education activities in the zones Ia and Ib without parkingFree (the payers only), target the PAID-only
+  # commuter garage share paid garage / (paid garage + paid street) of the SrV class bs_zentrum
+  # (srv2023_commute_parking_by_workplace_class, ruling R-4h-1: like-for-like with a universe of payers), with the paid-only
+  # measure of spec Amendment I6 (a free option leaves numerator and denominator), committed as decay_commute_length_m of
+  # parking_garage_decay_calibration_2026.csv, which this value equals (tests/test_parking_garage_decay_config.py). The
+  # bs_zentrum paid share is a calibration target; the independent check is the paid-only Wolfsburg commuter share of that
+  # table, a number and no validation. 0 switches the garage options off for work and education only (sensitivity arm);
+  # there is no default to lambda.
+  # Recalibrated with the price term (beta 0.310998) on 2026-10-14, see the calibration record
+  # parking_garage_decay_calibration_2026 (superseded v2 value 261.57 m, fitted without the price term). The measure is
+  # payer-conditional (ruling R-B-16: a stay priced at 0 ct leaves numerator and denominator). In zone Ia every commuter stay
+  # above its maximum stay is forced off-street (spec v3 A1), so the value rests on the Ib commuters and is an ORDER OF
+  # MAGNITUDE only (target uncertainty and floor in the record); its transfer to towns with a feasible street is unsupported.
+  parking_garage_decay_commute_m: 69.69
+  # ASSUMPTION P13 (spec Amendment F3, issue #436): a garage without a published monthly product uses the
+  # imputed product of its municipality (the median of the published current garage monthly products of that
+  # municipality, computed by the curation into the garage dataset, at least two products needed) as the monthly
+  # product that work and education stays pay per working day (monthly / 21, ASSUMPTION P2). false is the
+  # sensitivity arm "published only" (zones_v2_published_monthly_only): only the published products count.
+  parking_garage_monthly_imputation: true
+  # ASSUMPTION CF (spec v3 A3): multiplies the parking cost of a car trip before it enters the car utility
+  # (module parameter costFactor of braunschweigParking; 1.0 writes nothing and reproduces v2 bit for bit). A
+  # sensitivity, never calibrated: no local price-response evidence exists. A finite number in [0, 10]; the arms 0.5
+  # and 2.0 of Part C report the spread of the mode-share effect.
+  parking_cost_utility_factor: 1.0
+  # ASSUMPTION G1-d (spec v3 A2, issue #436): the money coefficient of the parking option weights
+  # exp(-d / lambda - beta * c / 100), utility per EUR, written into the tariff model as option_price_beta_u_per_eur. It is
+  # the MAGNITUDE of the car cost coefficient of the mode choice, BraunschweigModeParameters.betaCost_u_MU = -0.310998
+  # (eqasim-java-bs): one money coefficient for the choice between parking options, without the income or distance
+  # elasticity of the person's whole utility. A release value, not a free parameter: the Java startup check refuses a
+  # tariff model whose value differs from the mode choice by more than 1e-9, 0 included; 0 gives the price-independent
+  # weights of v2 in the Python reference only, not in a MATSim run.
+  parking_option_price_beta_u_per_eur: 0.310998
+
   remode_carless_car_legs: true
 
   # --- Secondary chain solver (issue #337, ADR-0096) ---

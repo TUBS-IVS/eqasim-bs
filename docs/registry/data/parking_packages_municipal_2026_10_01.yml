@@ -1,0 +1,83 @@
+dataset: parking_packages_municipal_2026_10_01
+title: >-
+  Owner delivery of 2026-10-01 (four municipal parking packages: Braunschweig Parkzonen, Braunschweig Parkhaeuser, Goslar
+  Parkdaten, Wolfsburg Parkdaten), raw source of the municipal zone geometry and the resident districts of parking v3
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) four municipal packages of 2026-10-01 for issue #436 (parking cost zones v2, spec Amendment
+  C: the owner's decision of 2026-10-01 to include them). Each package is a research product that archives the original
+  responses of a public municipal source with the package's own export script: the Braunschweig fee zones and resident
+  districts digitised from the city's published maps (https://www.braunschweig.de/leben/stadtplan_verkehr/parken-in-braunschweig/parken-in-der-innenstadt.php,
+  https://www.braunschweig.de/vv/32/Bewohnerparkplaetze_ABC.pdf), the Braunschweig garage feed (PULP), the ArcGIS feature
+  service Bewohnerparken of Stadt Goslar and the geoviewer theme Parken of Stadt Wolfsburg. The sources belong to their
+  publishers
+vintage: >-
+  Retrieved 2026-10-01. The source states differ per layer: the Braunschweig layer has a working accuracy of 25 m and the
+  city's fee zone map of 2025-11-26, the Wolfsburg layer the state December 2024, the Goslar service the last edit
+  2018-11-22 (the checks of the curation step, data record parking_zones_2026)
+geography: Braunschweig, Wolfsburg, Goslar
+crs: >-
+  EPSG:25832 (GeoPackage layers), EPSG:4326 (GeoJSON), as the packages state
+roles:
+- spatial_input
+- supply_input
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied files, not downloaded by the pipeline. Obtain them from the owner (open an issue in
+    TUBS-IVS/eqasim-bs) and verify them against the SHA-256 values in storage.notes.
+  notes: >-
+    Four zip files in the folder municipal_2026-10-01/, copied unchanged; each holds a German readme, metadata and quality
+    JSON, GeoPackage layers, GeoJSON, the original service responses and the export scripts (never executed). Braunschweig_Parkzonen.zip
+    is READ: the layer parking_fee_zones (zones 1a and 1b, replacing the geometry of bs_zone_ia and bs_zone_ib), the layer
+    reconstructed_section and, for the resident districts A, B and C, the digitised district map
+    (municipal_zones.py, resident_districts.py). Goslar_Parkdaten.zip is READ: the layers resident_parking_zones (the
+    districts A, B, C, F, G, H and J) and parking_facility_areas (the C4 cross-check against gs_altstadt_zone1). Wolfsburg_Parkdaten.zip
+    is READ (the layer mobile_parking_areas); it has a data record of its own, parking_package_wolfsburg_parkdaten_2026_10_01
+    (preflight D14), and is listed here only for completeness. Braunschweig_Parkhaeuser.zip (the PULP garage feed) is NOT READ by
+    any code: the garage products of the dataset come from the later packages (data record parking_garages_2026).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the archived responses are third-party data whose redistribution is not cleared;
+    eqasim-data/ is ignored by design). Files, SHA-256 and sizes (verified on 2026-10-17 against the files in the main
+    checkout): Braunschweig_Parkzonen.zip b47c463296995b035afc9894fe58dc57abdaffa14fa9709b2de1bfd144cd5abe (17,434,642 bytes; the
+    curation code pins the same value, municipal_zones.PACKAGE_SHA256 and refuses another file);
+    Braunschweig_Parkhaeuser.zip 6e2c19d102eb9984f4ff8d857a3701476816820ecffebd775c37374eccb8513b (17,965 bytes; no code pin, not
+    read); Goslar_Parkdaten.zip aa1bc980ae605cbe5fc2f533a2a991b4ba32c0913dc9b27090cf9d67ddb5b9d9 (438,525 bytes; pinned in
+    municipal_zones.PACKAGE_SHA256). Wolfsburg_Parkdaten.zip has its own record with its SHA-256 and size
+    (parking_package_wolfsburg_parkdaten_2026_10_01), which is not repeated here. A test ties the pins and the local files to this
+    record (tests/test_parking_raw_package_records.py).
+verification:
+  verifier_entry: D16
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D16 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py with Braunschweig_Parkzonen.zip,
+    the package the zone and district curation reads first: only the curation chain needs it. A missing file is reported as
+    [RESTRICTED] with the route to obtain it; the SHA-256 is checked by the curation code that reads a package, not by the
+    preflight.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner research products that archive municipal data; the data keep the terms of their publishers (Stadt Braunschweig, Stadt
+    Wolfsburg, Stadt Goslar). No open reuse licence was verified for them (the zone record parking_zones_2026 states the licence
+    status per source); used by owner decision 2026-10-01.
+  notes: >-
+    The committed files derived from them hold the digitised geometry only as restricted local files (parking_zones_2026,
+    parking_resident_districts_2026); their licences are stated in their own records.
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  Research products, not official data sets: the Braunschweig geometry is the owner's digitisation of published maps with a working
+  accuracy of 25 m, the Wolfsburg layer carries the state December 2024 and the Goslar service the last edit 2018-11-22; a retrieval
+  in 2026 does not confirm the present validity of every attribute. The data records parking_zones_2026 and
+  parking_resident_districts_2026 state how each limitation is handled.
+notes: >-
+  Used by the parking v3 work of issue #436 (ADR-0139, ADR-0140, ADR-0142) through the curation chain (scripts/curation/parking_zones_2026/).
+  Registered as a raw source of its own on 2026-10-17 (Part C final fix); before that the SHA-256 values were named in the data
+  records parking_zones_2026 and parking_resident_districts_2026 only.

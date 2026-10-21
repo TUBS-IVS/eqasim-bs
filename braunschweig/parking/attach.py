@@ -1,0 +1,728 @@
+"""Attach the parking cost zones and resident districts to the plan elements of the MATSim population (issue #249).
+
+The zone-based parking costs (design spec 2026-09-28, sections 3.4 and 3.5) need three facts on the plans:
+the zone of every activity location, the resident zone of every person and the free-parking draw of the
+work/education activities; parking cost zones v2 (spec Amendment C3) adds the resident parking district of every
+activity location and of every person's home. ``braunschweig.matsim.scenario.population`` calls the six functions
+below in this order on the frames the plans writer consumes, AFTER the cross-cordon in-commuter merge, so injected
+in-commuters are treated exactly like residents:
+
+1. :func:`attach_parking_zones` adds ``parking_zone`` to the activities: the ``zone_id`` of the zone polygon
+   that contains the activity location (``braunschweig.parking.zones.assign_zones``), NaN outside every
+   zone (assumption Z1: parking there is free). Written as the activity attribute ``parkingZone``.
+2. :func:`attach_resident_zones` adds ``resident_parking_zone`` to the persons: the zone of the person's
+   home when that zone is a ``resident_zone`` (assumption R1: residence equals permit possession), NaN
+   otherwise. Written as the person attribute ``residentParkingZone``.
+3. :func:`draw_parking_free` adds ``parking_free`` to the activities: True on the ``ELIGIBLE_PURPOSES``
+   activities of a person drawn to park free there, False everywhere else. One uniform per person; in a
+   ``street_paid`` or ``resident_zone`` zone P(free | workplace class) = ``share_free_total`` of the SrV 2023 class
+   row (assumption A1; the class of ``parking_free_share_proxy_classes`` supplies the share for a mapped class,
+   assumption A1-b) shifted by the sensitivity arm ``parking_workplace_free_share_shift``; in a campus zone
+   P(free) = ``parking_campus_free_share`` (assumption C2, an owner estimate; the members otherwise pay the day
+   product, assumption C1). Written as the activity attribute ``parkingFree`` (only where True).
+4. :func:`attach_parking_districts` adds ``parking_district`` to the activities: the ``district_id`` of the resident
+   parking district that contains the activity location (``braunschweig.parking.zones.assign_districts``), NaN
+   outside every district. The districts are a second layer, independent of the fee zones and free to overlap them.
+   Written as the activity attribute ``parkingDistrict``.
+5. :func:`attach_resident_districts` adds ``resident_parking_district`` to the persons: the district of the person's
+   home, NaN when the home lies in no district (assumption R2: residence inside a district equals permit possession;
+   the cost model exempts a stay inside that very district). Written as the person attribute
+   ``residentParkingDistrict``.
+
+6. :func:`attach_ev_exemption` (parking cost zones v3, spec A5) adds ``parking_ev_exempt`` to the persons: True for
+   a person owning a battery-electric or plug-in-hybrid car (assumption E1). Written as the person attribute
+   ``parkingEvExempt`` (only where True).
+
+Every function returns a COPY of the frame it extends with exactly one column added -- same rows, same
+order, same index -- and raises instead of writing a wrong attribute: a missing, duplicated or empty
+location, a zone id without a tariff row, a workplace class without an SrV share, conflicting home zones or
+districts. Coverage is logged as explicit rates under ``[parking]`` (CLAUDE.md "Fallback transparency"): "no zone",
+"no resident zone", "no district" and "not free" are modelled states, and their rates are the evidence that the
+joins worked. CRS: locations, zones and districts share one metric CRS (EPSG:25832,
+``braunschweig.parking.zones.CRS``).
+"""
+from __future__ import annotations
+
+import logging
+import math
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+
+from braunschweig.parking import free_draw_options as draw_options
+from braunschweig.parking import zones as parking_zones
+
+log = logging.getLogger(__name__)
+
+_LOG_TAG = "[parking]"
+
+#: Offset of the free-parking draw on the pipeline ``random_seed`` (spec 3.4). No other seeded stream of
+#: the repository uses it (checked with ``grep -rn 7371`` on 2026-09-28 and again on 2026-09-29).
+PARKING_FREE_SEED_OFFSET = 7371
+#: Activity purposes whose parking the free-parking draw covers (spec 3.4).
+ELIGIBLE_PURPOSES = ("work", "education")
+#: Zone types of the free-parking draw with the SrV class share (A1); a campus zone is drawn too, but with its own
+#: share (``parking_campus_free_share``, C2), never a class share.
+FREE_DRAW_ZONE_TYPES = ("street_paid", "resident_zone")
+RESIDENT_ZONE_TYPE = "resident_zone"
+CAMPUS_ZONE_TYPE = "campus"
+HOME_PURPOSE = "home"
+
+#: The columns added here. ``matsim.scenario.population`` lists them in OPTIONAL_ACTIVITY_FIELDS and
+#: OPTIONAL_PERSON_FIELDS and writes them as parkingZone, parkingFree, residentParkingZone, parkingDistrict and
+#: residentParkingDistrict.
+PARKING_ZONE_COLUMN = "parking_zone"
+PARKING_FREE_COLUMN = "parking_free"
+RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+PARKING_DISTRICT_COLUMN = "parking_district"
+RESIDENT_PARKING_DISTRICT_COLUMN = "resident_parking_district"
+#: The electric powertrain labels (battery-electric, plug-in hybrid) of the fleet vehicles. A MIRROR of
+#: ``braunschweig.synthesis.vehicles.fleet_sampling_de.ELECTRIC_POWERTRAINS``, the owner of the vocabulary:
+#: importing it here would put the whole fleet-sampling import closure (ten modules) into the cache token of every
+#: stage that imports this module (the plans writer and ``zones_stage``), so
+#: ``tests/test_parking_attach.py::test_ev_exemption_constants_are_the_ones_the_plans_writer_writes`` pins the two
+#: equal instead.
+ELECTRIC_POWERTRAINS = ("bev", "phev")
+#: Added by :func:`attach_ev_exemption`; written as the person attribute ``parkingEvExempt`` (only where True).
+PARKING_EV_EXEMPT_COLUMN = "parking_ev_exempt"
+
+#: Columns of the vehicles frame the plans writer consumes (``matsim.scenario.population.VEHICLE_FIELDS``) and the
+#: per-vehicle fleet column that ``matsim.scenario.vehicles`` writes as the vehicle attribute ``powertrain``.
+CAR_VEHICLE_MODE = "car"
+VEHICLE_OWNER_COLUMN = "owner_id"
+VEHICLE_MODE_COLUMN = "mode"
+VEHICLE_POWERTRAIN_COLUMN = "powertrain"
+VEHICLE_TYPE_COLUMN = "type_id"
+#: ``type_id`` of the routing car that ``braunschweig.synthesis.vehicles.cars.household`` gives a person without a fleet
+#: car (and of every legacy in-commuter car): a placeholder that carries no fleet identity, hence no powertrain.
+PLACEHOLDER_CAR_TYPE_ID = "default_car"
+
+#: Key of one activity in the activities and the locations frame of the plans writer.
+ACTIVITY_KEYS = ("person_id", "activity_index")
+
+#: Layout of the SrV commute-parking table written by ``scripts/extract_srv_commute_parking.py``
+#: (``braunschweig.calibration.srv_parking``): ``level`` is "class" for a workplace class and "total" for
+#: the pooled row, which is informational and never used by the draw.
+LEVEL_CLASS = "class"
+WORKPLACE_SHARE_LEVELS = ("class", "total")
+FREE_SHARE_COLUMN = "share_free_total"
+WORKPLACE_SHARE_COLUMNS = ("workplace_class", "level", FREE_SHARE_COLUMN)
+
+#: How many zones the coverage line of :func:`attach_parking_zones` names (by activity count).
+TOP_ZONES_LOGGED = 10
+
+
+# --------------------------------------------------------------------------- input checks
+
+
+def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"{_LOG_TAG} the {what} lack the column(s) {missing}; found {list(frame.columns)}")
+
+
+def _check_activity_keys(frame: pd.DataFrame, what: str) -> None:
+    """Every row needs a complete, unique (person_id, activity_index) key: the joins match on it."""
+    keys = frame[list(ACTIVITY_KEYS)]
+    incomplete = keys.isna().any(axis=1)
+    if incomplete.any():
+        raise ValueError(f"{_LOG_TAG} {int(incomplete.sum())} row(s) of the {what} have no complete "
+                         "(person_id, activity_index) key")
+    duplicated = keys.duplicated(keep=False)
+    if duplicated.any():
+        examples = sorted(set(keys[duplicated].itertuples(index=False, name=None)))[:5]
+        raise ValueError(f"{_LOG_TAG} {int(duplicated.sum())} row(s) of the {what} share a (person_id, "
+                         f"activity_index) key, e.g. {examples}; a key must identify exactly one activity")
+
+
+def _zone_attribute(tariffs: pd.DataFrame, column: str) -> pd.Series:
+    """``column`` of the tariff table indexed by ``zone_id``; raises for a missing column or a duplicate id."""
+    _require_columns(tariffs, ("zone_id", column), "tariffs")
+    duplicated = sorted(set(tariffs.loc[tariffs["zone_id"].duplicated(), "zone_id"]))
+    if duplicated:
+        raise ValueError(f"{_LOG_TAG} the tariffs carry duplicate zone_id(s) {duplicated}")
+    return pd.Series(tariffs[column].to_numpy(dtype=object),
+                     index=pd.Index(tariffs["zone_id"].to_numpy(dtype=object), name="zone_id"), name=column)
+
+
+def _reject_unknown_zones(zone_ids: pd.Series, known_zone_ids, what: str) -> None:
+    unknown = sorted(set(zone_ids.dropna()) - set(known_zone_ids))
+    if unknown:
+        raise ValueError(f"{_LOG_TAG} zone id(s) {unknown} of the {what} have no tariff row: the zone polygons "
+                         "and the tariff table must belong to one release (braunschweig.parking.zones_stage)")
+
+
+def format_value_counts(values: pd.Series, limit: int | None = None, *, by_value: bool = False) -> str:
+    """'value count, ...' of the non-missing ``values`` for a log line; 'none' when every value is missing.
+
+    Sorted by descending count (ties by value), or by value with ``by_value`` (a fixed order, e.g. the zone
+    types of a release); ``limit`` keeps the first entries only. The one count-line helper of the parking
+    package: ``braunschweig.parking.zones_stage`` uses it, too.
+    """
+    counts = values.dropna().value_counts().items()
+    if by_value:
+        counts = sorted(counts, key=lambda item: str(item[0]))
+    else:
+        counts = sorted(counts, key=lambda item: (-item[1], str(item[0])))
+    if limit is not None:
+        counts = counts[:limit]
+    return ", ".join(f"{value} {count}" for value, count in counts) or "none"
+
+
+def _rate(count: int, total: int) -> float:
+    return 100.0 * count / total if total else 0.0
+
+
+# --------------------------------------------------------------------------- activity zones
+
+
+def _located_points(activities: pd.DataFrame, locations: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    """The location point of every activity, in the row order of ``activities`` (shared by the zone and the district
+    attachment, so both layers see exactly the same validated points).
+
+    Rows are matched on ``ACTIVITY_KEYS``, never on their order. Raises ``TypeError`` unless ``locations`` is a
+    GeoDataFrame, and ``ValueError`` for a missing column, an incomplete or duplicated key, an activity without a
+    location row and a null, empty or non-point location.
+    """
+    _require_columns(activities, ACTIVITY_KEYS, "activities")
+    if not isinstance(locations, gpd.GeoDataFrame):
+        raise TypeError(f"{_LOG_TAG} the locations must be a GeoDataFrame with the activity points, "
+                        f"got {type(locations).__name__}")
+    _require_columns(locations, ACTIVITY_KEYS, "locations")
+    _check_activity_keys(activities, "activities")
+    _check_activity_keys(locations, "locations")
+    n_activities = len(activities)
+
+    location_points = pd.DataFrame({key: locations[key].to_numpy() for key in ACTIVITY_KEYS})
+    location_points["_geometry"] = locations.geometry.to_numpy()
+    located = activities[list(ACTIVITY_KEYS)].reset_index(drop=True).merge(
+        location_points, on=list(ACTIVITY_KEYS), how="left", validate="one_to_one", indicator=True)
+    without_location = (located["_merge"] == "left_only").to_numpy()
+    if without_location.any():
+        examples = located.loc[without_location, list(ACTIVITY_KEYS)].head(5).itertuples(index=False, name=None)
+        raise ValueError(f"{_LOG_TAG} {int(without_location.sum())} of {n_activities} activities have no location "
+                         f"row (joined on person_id, activity_index), e.g. {list(examples)}; every activity needs "
+                         "its location, so the locations frame is broken")
+    points = gpd.GeoSeries(located["_geometry"].to_numpy(), crs=locations.crs)
+    missing_geometry = (points.isna() | points.is_empty).to_numpy()
+    if missing_geometry.any():
+        examples = located.loc[missing_geometry, list(ACTIVITY_KEYS)].head(5).itertuples(index=False, name=None)
+        raise ValueError(f"{_LOG_TAG} {int(missing_geometry.sum())} of {n_activities} activity locations have no "
+                         f"geometry (null or empty), e.g. {list(examples)}; every activity needs a location point")
+    not_point = (points.geom_type != "Point").to_numpy()
+    if not_point.any():
+        raise ValueError(f"{_LOG_TAG} {int(not_point.sum())} activity location geometries are not points, e.g. "
+                         f"{sorted(set(points[not_point].geom_type))}; the plans writer places activities at points")
+    return points
+
+
+def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
+                         zones: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Return ``activities`` with ``parking_zone``: the zone id of each activity location, NaN outside.
+
+    ``locations`` is the locations frame of the plans writer (``synthesis.population.spatial.locations``
+    plus the injected in-commuters): one Point per (person_id, activity_index) in the CRS of ``zones``
+    (EPSG:25832); rows are matched on that key, never on their order. ``zones`` carries ``zone_id`` and the
+    polygons (``braunschweig.parking.zones_stage``); ``braunschweig.parking.zones.assign_zones`` makes the
+    point-in-polygon test and raises for a point inside two zones. The new column is of object dtype.
+
+    Raises ``TypeError`` unless ``locations`` is a GeoDataFrame, and ``ValueError`` for a missing column, an
+    incomplete or duplicated key, an activity without a location row, a null, empty or non-point location,
+    a CRS mismatch, and -- the signature of a broken join or CRS -- zones present but not one activity
+    inside any of them. Logs ``[parking] activities in zones: n/N (x %)`` with the most frequent zones.
+    """
+    points = _located_points(activities, locations)
+    result = activities.copy()
+    n_activities = len(activities)
+
+    if len(zones) == 0:
+        result[PARKING_ZONE_COLUMN] = pd.Series(np.nan, index=result.index, dtype=object)
+        log.warning("%s no parking zones given: all %d activities lie outside every zone and park free "
+                    "(assumption Z1)", _LOG_TAG, n_activities)
+        return result
+
+    assigned = parking_zones.assign_zones(gpd.GeoDataFrame(geometry=points), zones)
+    result[PARKING_ZONE_COLUMN] = pd.Series(assigned.to_numpy(dtype=object), index=result.index, dtype=object)
+    n_inside = int(assigned.notna().sum())
+    log.info("%s activities in zones: %d/%d (%.1f %%), %d outside every zone park free (assumption Z1); "
+             "top zones: %s", _LOG_TAG, n_inside, n_activities, _rate(n_inside, n_activities),
+             n_activities - n_inside, format_value_counts(assigned, TOP_ZONES_LOGGED))
+    if n_activities > 0 and n_inside == 0:
+        raise ValueError(f"{_LOG_TAG} not one of the {n_activities} activities lies in any of the {len(zones)} "
+                         f"parking zones: this is the signature of a broken locations join or a CRS mismatch "
+                         f"(locations {locations.crs}, zones {zones.crs}), not of a population that never enters "
+                         "a zone")
+    return result
+
+
+# --------------------------------------------------------------------------- resident zones
+
+
+def _home_activities(activities: pd.DataFrame, column: str, what: str) -> pd.DataFrame:
+    """The ``person_id`` and ``column`` of the ``home`` activities (``what`` names the attribute read from them).
+
+    Raises ``ValueError`` when no activity at all has the purpose ``home``: that is a purpose-label mismatch that
+    would silently exempt nobody, not a population without homes.
+    """
+    is_home = (activities["purpose"] == HOME_PURPOSE).to_numpy()
+    if len(activities) > 0 and not is_home.any():
+        raise ValueError(f"{_LOG_TAG} none of the {len(activities)} activities has the purpose {HOME_PURPOSE!r}; "
+                         f"the {what} is read from the home activities, so this is a purpose-label mismatch, "
+                         "not a population without homes")
+    return activities.loc[is_home, ["person_id", column]]
+
+
+def _reject_conflicting_homes(homes: pd.DataFrame, column: str, what: str) -> None:
+    """Raise unless all home activities of every person share one ``column`` value (``what``: the plural noun)."""
+    values_per_person = homes.groupby("person_id")[column].nunique(dropna=False)
+    conflicting = list(values_per_person.index[values_per_person.to_numpy() > 1])
+    if conflicting:
+        raise ValueError(f"{_LOG_TAG} {len(conflicting)} person(s) have home activities in different {what}, e.g. "
+                         f"person_id {conflicting[:5]}; all home activities of a person lie at the household home, "
+                         "so the locations frame is broken")
+
+
+def attach_resident_zones(persons: pd.DataFrame, activities: pd.DataFrame, tariffs: pd.DataFrame) -> pd.DataFrame:
+    """Return ``persons`` with ``resident_parking_zone``: the resident zone containing the person's home.
+
+    ``activities`` must already carry ``parking_zone`` (:func:`attach_parking_zones`). The home of a person
+    is where its ``home`` activities take place; all of them lie at the household home, so they share one
+    zone, and a person whose home activities lie in different zones (or inside and outside a zone) raises.
+    The zone counts only when its tariff row has ``zone_type == "resident_zone"`` (assumption R1); a home
+    in a zone of another type or outside every zone, and a person without a home activity, get NaN. The new
+    column is of object dtype. Raises ``ValueError`` as well for a missing column, a home zone without a
+    tariff row, and activities without a single ``home`` purpose (a label mismatch that would silently
+    exempt nobody). Logs the resident count per zone as a rate.
+    """
+    _require_columns(persons, ("person_id",), "persons")
+    _require_columns(activities, ("person_id", "purpose", PARKING_ZONE_COLUMN), "activities")
+    zone_types = _zone_attribute(tariffs, "zone_type")
+    homes = _home_activities(activities, PARKING_ZONE_COLUMN, "resident zone")
+    _reject_unknown_zones(homes[PARKING_ZONE_COLUMN], zone_types.index, "home activities")
+    _reject_conflicting_homes(homes, PARKING_ZONE_COLUMN, "parking zones (or inside and outside a zone)")
+
+    home_zone = homes.drop_duplicates("person_id").set_index("person_id")[PARKING_ZONE_COLUMN]
+    home_zone_type = home_zone.map(zone_types).to_numpy(dtype=object)
+    in_resident_zone = home_zone_type == RESIDENT_ZONE_TYPE
+    resident_zone = home_zone[in_resident_zone]
+    result = persons.copy()
+    result[RESIDENT_PARKING_ZONE_COLUMN] = pd.Series(result["person_id"].map(resident_zone).to_numpy(dtype=object),
+                                                     index=result.index, dtype=object)
+
+    n_persons = len(result)
+    n_resident = int(result[RESIDENT_PARKING_ZONE_COLUMN].notna().sum())
+    in_other_zone = home_zone.index[home_zone.notna().to_numpy() & ~in_resident_zone]
+    n_other_zone = int(result["person_id"].isin(in_other_zone).sum())
+    n_without_home = int((~result["person_id"].isin(home_zone.index)).sum())
+    log.info("%s persons with a resident parking zone: %d/%d (%.1f %%) (%s); %d live in a zone of another type "
+             "(no resident exemption, assumption R1); %d have no home activity", _LOG_TAG, n_resident, n_persons,
+             _rate(n_resident, n_persons), format_value_counts(result[RESIDENT_PARKING_ZONE_COLUMN]), n_other_zone,
+             n_without_home)
+    return result
+
+
+# --------------------------------------------------------------------------- resident parking districts
+
+
+def attach_parking_districts(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
+                             districts: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Return ``activities`` with ``parking_district``: the district id of each activity location, NaN outside.
+
+    The resident parking districts (spec Amendment C3) are a second layer next to the fee zones: independent of
+    them and free to overlap them, so an activity can lie in a district and in no zone, and the other way round.
+    ``locations`` is the locations frame of the plans writer, validated exactly as for :func:`attach_parking_zones`
+    (``_located_points``); ``districts`` carries ``district_id`` and the polygons (``braunschweig.parking.
+    zones_stage``, EPSG:25832) and ``braunschweig.parking.zones.assign_districts`` makes the point-in-polygon test.
+    The new column is of object dtype.
+
+    Raises like :func:`attach_parking_zones` for the locations, and ``ValueError`` for an empty ``districts`` frame:
+    the stage never delivers one, and the district rule would silently exempt nobody. A population in which not one
+    activity lies in a district is logged as a WARNING, not an error: unlike the zones, whose zero coverage is the
+    signature of a broken join, a population may live outside Braunschweig and Goslar. Logs ``[parking] activities in
+    resident districts: n/N (x %)`` with the most frequent districts.
+    """
+    points = _located_points(activities, locations)
+    n_activities = len(activities)
+    _require_columns(districts, ("district_id",), "districts")
+    if len(districts) == 0:
+        raise ValueError(f"{_LOG_TAG} no resident parking districts given: the district rule (R2) would exempt nobody, "
+                         "which is not a modelled state; the zones stage delivers the committed district layer")
+    assigned = parking_zones.assign_districts(gpd.GeoDataFrame(geometry=points), districts)
+    result = activities.copy()
+    result[PARKING_DISTRICT_COLUMN] = pd.Series(assigned.to_numpy(dtype=object), index=result.index, dtype=object)
+    n_inside = int(assigned.notna().sum())
+    log.info("%s activities in resident districts: %d/%d (%.1f %%), %d outside every district (no district "
+             "exemption); districts: %s", _LOG_TAG, n_inside, n_activities, _rate(n_inside, n_activities),
+             n_activities - n_inside, format_value_counts(assigned, TOP_ZONES_LOGGED))
+    if n_activities > 0 and n_inside == 0:
+        log.warning("%s not one of the %d activities lies in a resident parking district (%d districts): the district "
+                    "rule (R2) exempts nobody in this population; if the population should reach Braunschweig or "
+                    "Goslar, check the locations and their CRS (locations %s, districts %s)", _LOG_TAG, n_activities,
+                    len(districts), locations.crs, districts.crs)
+    return result
+
+
+def attach_resident_districts(persons: pd.DataFrame, activities: pd.DataFrame) -> pd.DataFrame:
+    """Return ``persons`` with ``resident_parking_district``: the resident district containing the person's home.
+
+    ``activities`` must already carry ``parking_district`` (:func:`attach_parking_districts`). The home of a person is
+    where its ``home`` activities take place; all of them lie at the household home, so they share one district, and a
+    person whose home activities lie in different districts (or inside and outside a district) raises. A home outside
+    every district, and a person without a home activity, get NaN. Unlike the resident zone (R1) there is no
+    tariff to consult: every district is a resident district. The new column is of object dtype. Raises
+    ``ValueError`` as well for a missing column and for activities without a single ``home`` purpose (a label mismatch
+    that would silently exempt nobody). Logs the resident count per district as a rate.
+    """
+    _require_columns(persons, ("person_id",), "persons")
+    _require_columns(activities, ("person_id", "purpose", PARKING_DISTRICT_COLUMN), "activities")
+    homes = _home_activities(activities, PARKING_DISTRICT_COLUMN, "resident district")
+    _reject_conflicting_homes(homes, PARKING_DISTRICT_COLUMN, "resident parking districts (or inside and outside a "
+                                                              "district)")
+    home_district = homes.drop_duplicates("person_id").set_index("person_id")[PARKING_DISTRICT_COLUMN]
+    result = persons.copy()
+    result[RESIDENT_PARKING_DISTRICT_COLUMN] = pd.Series(result["person_id"].map(home_district).to_numpy(dtype=object),
+                                                         index=result.index, dtype=object)
+    n_persons = len(result)
+    n_resident = int(result[RESIDENT_PARKING_DISTRICT_COLUMN].notna().sum())
+    n_without_home = int((~result["person_id"].isin(home_district.index)).sum())
+    log.info("%s persons with a resident parking district: %d/%d (%.1f %%) (%s); %d live in no district (no district "
+             "exemption, assumption R2); %d have no home activity", _LOG_TAG, n_resident, n_persons,
+             _rate(n_resident, n_persons), format_value_counts(result[RESIDENT_PARKING_DISTRICT_COLUMN]),
+             n_persons - n_resident - n_without_home, n_without_home)
+    return result
+
+
+# --------------------------------------------------------------------------- free-parking draw
+
+
+def free_share_by_class(workplace_shares: pd.DataFrame) -> pd.Series:
+    """P(free | workplace class): ``share_free_total`` of the class rows, indexed by the class name.
+
+    ``workplace_shares`` is the SrV commute-parking table (``srv2023_commute_parking_by_workplace_class``);
+    only its ``level == "class"`` rows are used, the pooled ``total`` row is informational. Raises
+    ``ValueError`` for a missing column, a level other than class/total, no class row, a class name that is
+    not text (the county keys carry a leading zero, so the column must be read as text), a duplicated class
+    or a share that is not a number in [0, 1].
+    """
+    _require_columns(workplace_shares, WORKPLACE_SHARE_COLUMNS, "workplace shares")
+    unknown_levels = sorted({str(level) for level in workplace_shares["level"] if level not in WORKPLACE_SHARE_LEVELS})
+    if unknown_levels:
+        raise ValueError(f"{_LOG_TAG} workplace shares: level(s) {unknown_levels} are not one of "
+                         f"{list(WORKPLACE_SHARE_LEVELS)}")
+    rows = workplace_shares[workplace_shares["level"] == LEVEL_CLASS]
+    if rows.empty:
+        raise ValueError(f"{_LOG_TAG} workplace shares: no level == 'class' row; the free-parking draw needs one "
+                         "row per workplace class")
+    classes = pd.Series(rows["workplace_class"].to_numpy(dtype=object))
+    not_text = [value for value in classes if not isinstance(value, str) or not value.strip()]
+    if not_text:
+        raise ValueError(f"{_LOG_TAG} workplace shares: workplace_class value(s) {not_text!r} are not text; read "
+                         "the column as text (dtype str), because the county keys carry a leading zero (03102)")
+    duplicated = sorted(set(classes[classes.duplicated()]))
+    if duplicated:
+        raise ValueError(f"{_LOG_TAG} workplace shares: duplicate class row(s) for {duplicated}")
+    shares = pd.to_numeric(rows[FREE_SHARE_COLUMN], errors="coerce").to_numpy(dtype=float)
+    invalid = ~((shares >= 0.0) & (shares <= 1.0))
+    if invalid.any():
+        found = {workplace_class: value for workplace_class, value, bad
+                 in zip(classes, rows[FREE_SHARE_COLUMN], invalid) if bad}
+        raise ValueError(f"{_LOG_TAG} workplace shares: {FREE_SHARE_COLUMN} must be a number in [0, 1], found {found}")
+    return pd.Series(shares, index=pd.Index(list(classes), name="workplace_class"), name=FREE_SHARE_COLUMN)
+
+
+def check_workplace_classes(tariffs: pd.DataFrame, free_shares: pd.Series, *, zone_types=None,
+                            source: str = "the workplace shares") -> None:
+    """Raise unless every tariff zone (of ``zone_types``; every zone by default) has a free share for its class.
+
+    ``free_shares`` is the result of :func:`free_share_by_class`. The error names each missing class with its
+    zones: a workplace class the SrV table lacks would leave P(free | class) undefined (assumption A1).
+    """
+    _require_columns(tariffs, ("zone_id", "zone_type", "workplace_class"), "tariffs")
+    rows = tariffs if zone_types is None else tariffs[tariffs["zone_type"].isin(zone_types)]
+    missing: dict[str, list[str]] = {}
+    for zone_id, workplace_class in zip(rows["zone_id"], rows["workplace_class"]):
+        if not isinstance(workplace_class, str) or workplace_class not in free_shares.index:
+            missing.setdefault(str(workplace_class), []).append(str(zone_id))
+    if missing:
+        raise ValueError(f"{_LOG_TAG} workplace class(es) {sorted(missing)} of the tariff zones "
+                         f"{dict(sorted(missing.items()))} have no level == 'class' row in {source}, so "
+                         "P(free | workplace class) of the free-parking draw (assumption A1) is undefined for them")
+
+
+def _require_seed(random_seed) -> int:
+    if isinstance(random_seed, (bool, np.bool_)) or not isinstance(random_seed, (int, np.integer)):
+        raise TypeError(f"{_LOG_TAG} random_seed must be an integer (the pipeline random_seed; the offset "
+                        f"{PARKING_FREE_SEED_OFFSET} is added here), got {random_seed!r}")
+    return int(random_seed)
+
+
+def _require_shift(shift) -> float:
+    """The sensitivity shift: a difference of shares in [-1, 1]; NaN would silently free nobody."""
+    valid = (not isinstance(shift, (bool, np.bool_)) and isinstance(shift, (int, float, np.integer, np.floating))
+             and math.isfinite(shift) and -1.0 <= shift <= 1.0)
+    if not valid:
+        raise ValueError(f"{_LOG_TAG} shift must be a number in [-1, 1] (parking_workplace_free_share_shift, a "
+                         f"difference of free-parking shares added before clipping); got {shift!r}")
+    return float(shift)
+
+
+def draw_parking_free(activities: pd.DataFrame, tariffs: pd.DataFrame, workplace_shares: pd.DataFrame,
+                      random_seed: int, shift: float = 0.0, proxy_classes: dict | None = None,
+                      campus_free_share: float = draw_options.DEFAULT_CAMPUS_FREE_SHARE) -> pd.DataFrame:
+    """Return ``activities`` with the boolean ``parking_free``: the free-parking draw of spec 3.4 and Amendment D5, D6.
+
+    Eligible: an activity whose purpose is in ``ELIGIBLE_PURPOSES`` and whose ``parking_zone`` (attached by
+    :func:`attach_parking_zones`) is a paid-zone type (``FREE_DRAW_ZONE_TYPES``) or a campus zone.
+
+    Paid zones (``street_paid``, ``resident_zone``): the workplace class of a person is the tariff
+    ``workplace_class`` of the zone of the person's FIRST paid-zone eligible activity (by ``activity_index``), and
+    ``p = clip(share + shift, 0, 1)``, where ``share`` is ``share_free_total`` of the SrV class row of
+    ``workplace_shares`` (:func:`free_share_by_class`) -- or, for a class that ``proxy_classes`` maps, of the mapped
+    SrV class (ASSUMPTION A1-b; the zone keeps its county class, only the share is taken from the other row); a null
+    value ``{"03103": None}`` is the explicit no-proxy marker, so the class uses its own share (the configuration
+    overlay arm, because an overlay is deep-merged and ``{}`` would not remove a base entry). The
+    shift applies to the proxied share like to any other. Campus zones: ``p = campus_free_share`` (ASSUMPTION C2);
+    neither the class share, the proxy nor the shift reaches it.
+
+    One uniform ``u`` per person decides ALL its eligible activities, each against the probability of its own zone
+    kind: a paid-zone activity is free when ``u < p`` of the person's class, a campus activity when
+    ``u < campus_free_share``. A person with eligible activities in both kinds of zone is therefore free at none, one
+    or both kinds -- the same ``u``, two thresholds -- which keeps the draw of a paid-zone activity independent of
+    whether the person also has a campus activity, so that ``campus_free_share`` 0.0 and an empty mapping give
+    exactly the v1 draw (campus never free). Every other activity (guests, other purposes, outside every zone) is
+    False. The defaults reproduce the v1 draw; production passes the values of ``configs/base_bs.yml``.
+
+    Random numbers: ONE ``numpy.random.RandomState(random_seed + PARKING_FREE_SEED_OFFSET)`` draws one
+    uniform ``u`` per person of the WHOLE frame -- eligible or not -- with the persons sorted by
+    ``person_id``. The result therefore does not depend on the row order: the same persons delivered as two
+    concatenated chunks, in either order, give identical results. Separate calls on disjoint subsets of the
+    persons do NOT reproduce the draw of the whole frame, because each call numbers the persons it is given.
+    Drawing for every person rather than for the eligible ones keeps common random numbers across zone
+    releases, shift arms, proxy mappings and campus shares: a person keeps its ``u`` when another release makes
+    it eligible, and the free set only grows with ``shift`` and with ``campus_free_share``.
+
+    Raises ``TypeError`` for a non-integer ``random_seed`` and ``ValueError`` for a missing column, an
+    incomplete or duplicated key, a ``shift`` outside [-1, 1], an invalid ``proxy_classes`` mapping (see
+    ``braunschweig.parking.free_draw_options``), a ``campus_free_share`` outside [0, 1], a zone id without a tariff
+    row, a workplace class of a street_paid/resident_zone tariff zone without a class row and an invalid shares
+    table. Warns for a mapped class (non-null value) without any paid-zone work/education person. Logs the mapping, per
+    workplace class ``persons n, the share used and its source class, p_free,
+    realised``, the campus persons with the campus share and the realised campus rate, and one summary line.
+    """
+    random_seed = _require_seed(random_seed)
+    shift = _require_shift(shift)
+    proxy_classes = draw_options.require_proxy_classes(
+        draw_options.default_proxy_classes() if proxy_classes is None else proxy_classes)
+    campus_free_share = draw_options.require_campus_free_share(campus_free_share)
+    _require_columns(activities, ACTIVITY_KEYS + ("purpose", PARKING_ZONE_COLUMN), "activities")
+    _check_activity_keys(activities, "activities")
+    zone_types = _zone_attribute(tariffs, "zone_type")
+    zone_classes = _zone_attribute(tariffs, "workplace_class")
+    free_shares = free_share_by_class(workplace_shares)
+    draw_options.require_proxy_classes_in_table(proxy_classes, free_shares.index)
+    check_workplace_classes(tariffs, free_shares, zone_types=FREE_DRAW_ZONE_TYPES)
+    zone_ids = activities[PARKING_ZONE_COLUMN]
+    _reject_unknown_zones(zone_ids, zone_types.index, "activities")
+
+    # The share the draw uses per class and the class it was read from (the class itself unless it is mapped).
+    source_class = {workplace_class: proxy_classes.get(workplace_class) or workplace_class
+                    for workplace_class in free_shares.index}
+    used_shares = pd.Series({workplace_class: float(free_shares[source]) for workplace_class, source
+                             in source_class.items()}, name=FREE_SHARE_COLUMN)
+    log.info("%s free-parking draw, share proxies (%s): %s; campus_free_share %.4f", _LOG_TAG,
+             draw_options.KEY_PROXY_CLASSES,
+             ", ".join(f"{key} -> {value} {used_shares[key]:.4f}" if value is not None
+                       else f"{key}: own class share {used_shares[key]:.4f} (proxy disabled by config)"
+                       for key, value in sorted(proxy_classes.items())) or "none", campus_free_share)
+
+    zone_type = zone_ids.map(zone_types)
+    purpose_eligible = activities["purpose"].isin(ELIGIBLE_PURPOSES).to_numpy()
+    in_paid_zone = purpose_eligible & zone_type.isin(FREE_DRAW_ZONE_TYPES).to_numpy()
+    on_campus = purpose_eligible & (zone_type == CAMPUS_ZONE_TYPE).to_numpy()
+
+    person_ids = np.sort(activities["person_id"].unique())
+    random = np.random.RandomState(random_seed + PARKING_FREE_SEED_OFFSET)
+    uniform = pd.Series(random.random_sample(len(person_ids)), index=person_ids)
+
+    first_paid_zone = (activities.loc[in_paid_zone, list(ACTIVITY_KEYS) + [PARKING_ZONE_COLUMN]]
+                       .sort_values(list(ACTIVITY_KEYS), kind="mergesort")
+                       .drop_duplicates("person_id", keep="first")
+                       .set_index("person_id")[PARKING_ZONE_COLUMN])
+    person_class = first_paid_zone.map(zone_classes)
+    probability = (person_class.map(used_shares) + shift).clip(lower=0.0, upper=1.0)
+    person_free = uniform.reindex(probability.index) < probability
+    campus_persons = pd.Index(np.sort(activities.loc[on_campus, "person_id"].unique()))
+    campus_person_free = uniform.reindex(campus_persons) < campus_free_share
+
+    parking_free = np.zeros(len(activities), dtype=bool)
+    for mask, free_by_person in ((in_paid_zone, person_free), (on_campus, campus_person_free)):
+        free_by_activity = activities.loc[mask, "person_id"].map(free_by_person)
+        if free_by_activity.isna().any():  # impossible by construction; guards the bool cast, where NaN is True
+            raise RuntimeError(f"{_LOG_TAG} free-parking draw: {int(free_by_activity.isna().sum())} eligible "
+                               "activities lost their person's draw")
+        parking_free[mask] = free_by_activity.to_numpy(dtype=bool)
+    result = activities.copy()
+    result[PARKING_FREE_COLUMN] = pd.Series(parking_free, index=result.index, dtype=bool)
+
+    for workplace_class in sorted(person_class.unique()):
+        members = person_class.index[person_class.to_numpy(dtype=object) == workplace_class]
+        share = float(used_shares[workplace_class])
+        if source_class[workplace_class] != workplace_class:
+            origin = f"{workplace_class} -> {source_class[workplace_class]} {share:.4f} (proxy)"
+        elif workplace_class in proxy_classes:
+            origin = f"own class share {share:.4f} (proxy disabled by config)"
+        else:
+            origin = f"own class share {share:.4f}"
+        log.info("%s free-parking draw, workplace class %s: persons %d, share used %s, p_free %.4f, realised %.4f",
+                 _LOG_TAG, workplace_class, len(members), origin, min(max(share + shift, 0.0), 1.0),
+                 float(person_free[members].mean()))
+    drawn_classes = set(person_class.unique())
+    for key, value in sorted(proxy_classes.items()):
+        if value is not None and key not in drawn_classes:
+            log.warning("%s proxy mapping %s -> %s changed no person (no paid-zone work/education activity of class "
+                        "%s)", _LOG_TAG, key, value, key)
+    n_campus_persons, n_campus_free_persons = len(campus_persons), int(campus_person_free.sum())
+    log.info("%s free-parking draw, campus persons %d: campus_free_share %.4f (ASSUMPTION C2; no shift), %d park free, "
+             "realised %.4f", _LOG_TAG, n_campus_persons, campus_free_share, n_campus_free_persons,
+             n_campus_free_persons / n_campus_persons if n_campus_persons else 0.0)
+    n_persons, n_paid_persons = len(person_ids), len(probability)
+    n_free_persons = int(person_free.sum())
+    n_paid, n_campus = int(in_paid_zone.sum()), int(on_campus.sum())
+    log.info("%s free-parking draw (RandomState(random_seed %d + %d), shift %+.3f): %d/%d persons (%.1f %%) have a "
+             "work/education activity in a street_paid or resident_zone zone, %d of them (%.1f %%) park free; %d/%d "
+             "persons (%.1f %%) have one in a campus zone, %d of them (%.1f %%) park free; parkingFree on %d of %d "
+             "eligible activities (paid zones %d of %d, campus %d of %d)", _LOG_TAG, random_seed,
+             PARKING_FREE_SEED_OFFSET, shift, n_paid_persons, n_persons, _rate(n_paid_persons, n_persons),
+             n_free_persons, _rate(n_free_persons, n_paid_persons), n_campus_persons, n_persons,
+             _rate(n_campus_persons, n_persons), n_campus_free_persons,
+             _rate(n_campus_free_persons, n_campus_persons), int(parking_free.sum()), n_paid + n_campus,
+             int(parking_free[in_paid_zone].sum()), n_paid, int(parking_free[on_campus].sum()), n_campus)
+    return result
+
+
+# --------------------------------------------------------------------------- EV exemption (v3, A5)
+
+
+def attach_ev_exemption(persons: pd.DataFrame, vehicles: pd.DataFrame, enabled: bool) -> pd.DataFrame:
+    """Return ``persons`` with ``parking_ev_exempt``: True for a person who owns a BEV or PHEV car (ASSUMPTION E1).
+
+    Parking cost zones v3 (spec A5): some towns let electric cars park free on the street up to a limit
+    (``ev_free_minutes`` of the tariff table). ASSUMPTION E1 (owner decision 2026-10-14): every battery-electric (BEV)
+    or plug-in-hybrid (PHEV) car of the synthetic fleet (``ELECTRIC_POWERTRAINS``) belongs to an E-plate holder; there
+    is no share and no sensitivity. The Java cost model reads the flag as the person attribute ``parkingEvExempt``.
+
+    Source: the per-vehicle ``powertrain`` column of the ``vehicles`` frame (the second element of the stage
+    ``synthesis.vehicles.vehicles``, after the in-commuter merge), which is the column ``matsim.scenario.vehicles``
+    writes as the vehicle attribute ``powertrain``. The vehicle TYPES frame carries no powertrain (only the HBEFA
+    technology), so it is not consulted. A person is exempt iff at least one of the vehicles it owns with
+    ``mode == "car"`` has a powertrain in ``ELECTRIC_POWERTRAINS`` (case and surrounding whitespace ignored); a person
+    without a car vehicle, with only ``car_passenger`` vehicles, or with only non-electric cars is not exempt.
+
+    SEVERAL CARS (limitation, not silently resolved): a person can own several car vehicles (the household fleet
+    gives the cars beyond the number of licensed adults round-robin to the licensed adults, and all cars of a
+    household without a licensed adult to its oldest adult: ``_assign_owners`` and ``_fallback_owners`` of
+    ``braunschweig.synthesis.vehicles.cars.household``) and the plans do not tie a leg to one vehicle: the
+    MATSim ``vehicles`` person attribute maps the mode ``car`` to a single id, and routing resolves the car by mode.
+    The rule here is therefore "ANY owned car vehicle is a BEV/PHEV", which can over-assign the exemption to a
+    person who drives a non-electric car of a mixed pair; the number of such mixed owners is logged. Cars are
+    attributed to their ``owner_id``, not to the other members of the household: a household member without a car of
+    their own owns only a placeholder routing car (``type_id`` ``default_car``, no powertrain) and is not exempt.
+
+    Fallback transparency: every car owner is counted as BEV/PHEV (exempt), other known powertrain, or placeholder
+    car without powertrain (``type_id`` ``default_car``: no fleet identity, by design, never exempt). The headline
+    rate is per car owner INCLUDING the placeholder-only owners (the persons without a car of their own of the
+    household fleet); the basis log line therefore also states the share of fleet-car owners (an owner of at least one
+    car that is no placeholder), the rate of every category among all car owners and the BEV/PHEV rate among the
+    fleet-car owners, so the reader can tell a fleet effect from a placeholder effect. A fleet car
+    without a powertrain (or a vehicles frame with no ``powertrain`` column at all, e.g. the legacy fleet of
+    ``fleet_model_enabled: false``) cannot be classified: it is never exempt, and it is warned about, because the
+    exemption would silently be missing. A result without a single exempt person although powertrains are known is
+    warned about, too. Vehicles whose owner is not in ``persons`` are ignored and warned about.
+
+    ``enabled`` false returns ``persons`` unchanged (no column, byte-identical plans) after logging that fact.
+    Otherwise the result is a COPY with exactly one bool column added -- same rows, order and index. Raises
+    ``ValueError`` for missing columns or duplicate person ids.
+    """
+    if not enabled:
+        log.info("%s EV exemption is disabled (parking_ev_exemption_enabled false): no parkingEvExempt attribute is "
+                 "written", _LOG_TAG)
+        return persons
+    _require_columns(persons, ("person_id",), "persons")
+    _require_columns(vehicles, (VEHICLE_OWNER_COLUMN, VEHICLE_MODE_COLUMN), "vehicles")
+    duplicated = sorted(set(persons.loc[persons["person_id"].duplicated(), "person_id"]))
+    if duplicated:
+        raise ValueError(f"{_LOG_TAG} the persons carry duplicate person_id(s) {duplicated[:5]}; the exemption is "
+                         "attached per person")
+
+    cars = vehicles[vehicles[VEHICLE_MODE_COLUMN] == CAR_VEHICLE_MODE]
+    has_powertrain_column = VEHICLE_POWERTRAIN_COLUMN in vehicles.columns
+    if has_powertrain_column:
+        raw_powertrain = cars[VEHICLE_POWERTRAIN_COLUMN].astype(object)
+        powertrain = raw_powertrain.where(raw_powertrain.notna(), "").astype(str).str.strip().str.lower()
+    else:
+        powertrain = pd.Series("", index=cars.index, dtype=object)
+    is_electric = powertrain.isin(ELECTRIC_POWERTRAINS)
+    is_known = powertrain != ""
+    if VEHICLE_TYPE_COLUMN in cars.columns:
+        is_placeholder = ~is_known & (cars[VEHICLE_TYPE_COLUMN] == PLACEHOLDER_CAR_TYPE_ID)
+    else:
+        is_placeholder = pd.Series(False, index=cars.index)
+
+    known_owner = cars[VEHICLE_OWNER_COLUMN].isin(persons["person_id"])
+    n_orphan_cars = int((~known_owner).sum())
+    if n_orphan_cars:
+        orphan_owners = sorted(set(cars.loc[~known_owner, VEHICLE_OWNER_COLUMN]))[:5]
+        log.warning("%s EV exemption: %d car vehicle(s) belong to an owner that is no person of the frame (e.g. %s) "
+                    "and are ignored; the vehicles and the persons must come from one merged population", _LOG_TAG,
+                    n_orphan_cars, orphan_owners)
+    cars, powertrain = cars[known_owner], powertrain[known_owner]
+    is_electric, is_known, is_placeholder = is_electric[known_owner], is_known[known_owner], is_placeholder[known_owner]
+
+    per_owner = pd.DataFrame({
+        "owner": cars[VEHICLE_OWNER_COLUMN].to_numpy(),
+        "electric": is_electric.to_numpy(),
+        "known": is_known.to_numpy(),
+        "placeholder": is_placeholder.to_numpy(),
+    }).groupby("owner").agg(cars=("electric", "size"), electric=("electric", "sum"), known=("known", "sum"),
+                            placeholder=("placeholder", "sum"))
+    exempt_owners = per_owner.index[per_owner["electric"] > 0]
+    result = persons.copy()
+    result[PARKING_EV_EXEMPT_COLUMN] = pd.Series(result["person_id"].isin(exempt_owners).to_numpy(dtype=bool),
+                                                 index=result.index, dtype=bool)
+
+    n_owners = len(per_owner)
+    n_exempt = len(exempt_owners)
+    n_other_known = int(((per_owner["known"] > 0) & (per_owner["electric"] == 0)).sum())
+    n_placeholder_only = int(((per_owner["known"] == 0) & (per_owner["placeholder"] == per_owner["cars"])).sum())
+    n_unclassified = n_owners - n_exempt - n_other_known - n_placeholder_only
+    n_fleet_owners = int((per_owner["cars"] > per_owner["placeholder"]).sum())
+    n_several = int((per_owner["cars"] > 1).sum())
+    n_mixed = int(((per_owner["cars"] > 1) & (per_owner["electric"] > 0)
+                   & (per_owner["electric"] < per_owner["cars"])).sum())
+    log.info("%s EV exemption: %d of %d car owners (%.1f %%) are BEV/PHEV and exempt where a zone grants it "
+             "(incl. placeholder-car owners)",
+             _LOG_TAG, n_exempt, n_owners, _rate(n_exempt, n_owners))
+    log.info("%s EV exemption basis (ASSUMPTION E1): fleet-car owners %d of %d (%.1f %%), the others own only the "
+             "placeholder routing car; of the %d car owners: BEV/PHEV %d (%.1f %% of car owners, %.1f %% of "
+             "fleet-car owners), other known powertrain %d (%.1f %%), placeholder car without powertrain %d (%.1f %%), "
+             "car without powertrain %d (%.1f %%); several cars %d, of them mixed electric/non-electric %d "
+             "(exempt: any owned car is a BEV/PHEV); powertrains of the car vehicles: %s", _LOG_TAG, n_fleet_owners,
+             n_owners, _rate(n_fleet_owners, n_owners), n_owners, n_exempt, _rate(n_exempt, n_owners),
+             _rate(n_exempt, n_fleet_owners), n_other_known, _rate(n_other_known, n_owners), n_placeholder_only,
+             _rate(n_placeholder_only, n_owners), n_unclassified, _rate(n_unclassified, n_owners), n_several, n_mixed,
+             format_value_counts(powertrain.where(is_known)))
+    if n_owners and not has_powertrain_column:
+        log.warning("%s EV exemption: the vehicles frame has no 'powertrain' column (the legacy fleet of "
+                    "fleet_model_enabled false carries none), so none of the %d car owners can be classified and "
+                    "nobody is exempt; zones with an EV exemption then price electric cars like all others",
+                    _LOG_TAG, n_owners)
+    elif n_unclassified:
+        log.warning("%s EV exemption: %d car owner(s) (%.1f %% of %d) own a car without a powertrain that is no "
+                    "placeholder routing car (type_id %s); they cannot be classified and are not exempt",
+                    _LOG_TAG, n_unclassified, _rate(n_unclassified, n_owners), n_owners, PLACEHOLDER_CAR_TYPE_ID)
+    if n_exempt == 0 and int(is_known.sum()) > 0:
+        log.warning("%s EV exemption: no BEV/PHEV among the %d car vehicle(s) with a known powertrain; the "
+                    "electric share of the fleet is zero, which is implausible for the synthetic fleet; check the "
+                    "powertrain column", _LOG_TAG, int(is_known.sum()))
+    return result

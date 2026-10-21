@@ -1,0 +1,77 @@
+dataset: parking_package_wolfsburg_parkdaten_2026_10_01
+title: >-
+  Owner package Wolfsburg_Parkdaten.zip (the 73 mobile-parking areas of the City of Wolfsburg and the car-park layers),
+  raw source of the Wolfsburg zones and, since spec v3 B2, of the Wolfsburg area zones
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) package of 2026-10-01 (issue #436): the data of the thematic map "Parken" of the geoviewer of
+  the City of Wolfsburg (https://geoviewer.stadt.wolfsburg.de/default/?t=projects%2Fgpt%2Fparken), retrieved on 2026-10-01
+  through the public WMS feature query (GetFeatureInfo with geometry; the WFS is not available at that endpoint) and written
+  as GeoPackage and GeoJSON with the original responses by the package's own script export_wolfsburg.py
+vintage: >-
+  Retrieved 2026-10-01; the layer metadata carry the state December 2024, and a retrieval in 2026 does not confirm the
+  present validity of every attribute (the package states this). The research package Parkdaten_Nachrecherche_2026-10-14
+  states that its re-check of the 73 areas found them unchanged against this zip, with all seven original attributes and the
+  WKT geometries
+geography: Wolfsburg (query window 600000/5790000 to 640000/5830000 in EPSG:25832, which covers the three layers)
+crs: EPSG:25832
+roles:
+- spatial_input
+- supply_input
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied file, not downloaded by the pipeline. The service is named in its Metadaten_und_Qualitaet.json and the
+    request files of Originaldaten/. Obtain it from the owner (open an issue in
+    TUBS-IVS/eqasim-bs) and verify it against the SHA-256 in storage.notes.
+  notes: >-
+    16 files below the root directory Wolfsburg_Parkdaten/: LIESMICH.txt (German), Metadaten_und_Qualitaet.json,
+    Wolfsburg_Parkdaten.gpkg, the layers mobile_parking_areas.geojson (73 polygons), parking_garages.geojson and
+    parking_locations.geojson, export_wolfsburg.py and Originaldaten/ (the service capabilities, the raw responses and their
+    request files, parking_theme.json).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-01/Wolfsburg_Parkdaten.zip
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the service licence is not verified; eqasim-data/ is ignored by design). SHA-256 of
+    the zip: 73407d5b23ed2517547a0e648b6a91357772f4d9af1e4d1bc3b3efda4a3cad71 (74,529 bytes, verified on 2026-10-15 against
+    the file in the main checkout). The curation code pins the same value (municipal_zones.PACKAGE_SHA256, key
+    Wolfsburg_Parkdaten) and a test ties the pin to this record (tests/test_parking_raw_package_records.py). Read from the
+    zip and never extracted: the layer mobile_parking_areas of Wolfsburg_Parkdaten.gpkg (municipal_zones, and
+    wolfsburg_area_zones for the areas with a recorded maximum stay: 15 of the 73, field max_duration_minutes; the 58 others
+    carry no value, which means unknown and not unlimited; the owner treats them as allowing long parking, ASSUMPTION W-max of
+    the data record parking_tariffs_2026). The
+    layer is also compared with the lot outlines of the large-lot package when the garage notes of the Cinemaxx and
+    Hoffmannstrasse lots are written (data record parking_garages_2026).
+verification:
+  verifier_entry: D14
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D14 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py: only the curation chain
+    (scripts/curation/parking_zones_2026/assemble_parking_zones.py with --municipal-dir, and wolfsburg_area_release.py) needs
+    it. A missing file is reported as [RESTRICTED]; the SHA-256 is checked by the code that reads the package.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Data of the City of Wolfsburg web services as exported by the owner; the open reuse licence of the services was not
+    verified. Used by owner decision 2026-10-01 (parking cost zones v2) and 2026-10-14 (v3 area zones).
+  notes: >-
+    The zone geometry derived from it is a local restricted file (data record parking_zones_2026); the tariff rows derived
+    from its attributes are committed facts (data record parking_tariffs_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  The layer carries the maximum stay of 15 of its 73 areas; the raw paid-hours text of an area is not a full weekly calendar
+  (the research package notes this for the Fallersleben areas). The street-section polygons are thin, which is why the area
+  zones are a Voronoi cell of the buffered section inside the parent zone and not the section itself (data record
+  parking_zones_2026). The tariff rows of zones 1 to 3 are derived from this layer's attributes (the fee window is the
+  dominant weekday regime of ASSUMPTION S1, the billing unit the started half hour of ASSUMPTION C-b; see
+  parking_tariffs_2026).
+notes: >-
+  Registered as a raw source of its own on 2026-10-15, when spec v3 B2 made it the source of 15 further zones; its SHA-256
+  was already named in the records parking_zones_2026 and parking_tariffs_2026, which keep describing how the layer enters
+  the zones and the tariff rows.

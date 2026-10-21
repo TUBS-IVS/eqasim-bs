@@ -49,6 +49,22 @@ def execute(context):
         context.stage("matsim.simulation.prepare")
     )
 
+    # Zone-based parking costs (issue #436, ADR-0139): MATSim reads a config module it has no registered
+    # group for as an untyped group without error, so a prepared config that enables braunschweigParking,
+    # run with a jar that lacks org.eqasim.braunschweig.parking, would price no parking and look healthy.
+    # Hence the jar is checked before the run and the outcome report of the last iteration after it; with
+    # the module absent or disabled neither check runs and MATSim is called exactly as before. Imported
+    # here, like every braunschweig helper of the vendored matsim package.
+    from braunschweig.parking import runtime_checks as parking_run_checks
+
+    parking_enabled = parking_run_checks.parking_module_enabled(config_path)
+    if parking_enabled:
+        # The jar eqasim.run() executes, resolved exactly as matsim.runtime.eqasim.run does. Not factored
+        # into a helper there: an edit of that module changes its synpp stage hash, which rebuilds the jar
+        # and re-runs every stage downstream of it.
+        jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
+        parking_run_checks.require_parking_package(jar_path)
+
     last_iteration = int(context.config("matsim_last_iteration"))
     write_events_interval = int(context.config("matsim_write_events_interval"))
     write_plans_interval = int(context.config("matsim_write_plans_interval"))
@@ -88,3 +104,5 @@ def execute(context):
         run_args += ["--simwrapper", "true"]
     eqasim.run(context, "org.eqasim.braunschweig.RunSimulation", run_args)
     assert os.path.exists("%s/simulation_output/output_events.xml.gz" % context.path())
+    if parking_enabled:
+        parking_run_checks.require_parking_outcomes("%s/simulation_output" % context.path())

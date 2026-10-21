@@ -1,0 +1,33 @@
+{
+  "description": "Rough control points for georeference_zone_map.py on the City of Braunschweig zone map 1a/1b (raw_sources/bs_zone_map_1a_1b.jpg): image pixel (px, py) read by eye at four street junctions, world coordinates (E, N, EPSG:25832) = intersection of the named OSM ways in the Overpass response of 2026-09-29. They only seed the global search; the fit uses the street network.",
+  "points": [
+    {
+      "label": "Steinweg x Wilhelmstrasse",
+      "px": 892,
+      "py": 652,
+      "E": 604255.5,
+      "N": 5791665.9
+    },
+    {
+      "label": "Gueldenstrasse x Lange Strasse",
+      "px": 285,
+      "py": 578,
+      "E": 603376.9,
+      "N": 5791818.9
+    },
+    {
+      "label": "Augusttorwall x Wolfenbuetteler Strasse",
+      "px": 893,
+      "py": 1268,
+      "E": 604257.0,
+      "N": 5790750.0
+    },
+    {
+      "label": "Am Wendentor x Wendentorwall",
+      "px": 722,
+      "py": 185,
+      "E": 604013.7,
+      "N": 5792390.8
+    }
+  ]
+}
