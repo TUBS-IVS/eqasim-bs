@@ -21,7 +21,7 @@ ported from another eqasim project), `retired`.
 | configured | 8 |
 | extended | 6 |
 | overridden | 24 |
-| braunschweig_new | 72 |
+| braunschweig_new | 73 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -62,7 +62,7 @@ ported from another eqasim project), `retired`.
 - **Cordon / external demand**: `braunschweig.data.census.pendler`, `braunschweig.data.cordon_gemeinden`, `braunschweig.data.cordon_network`, `braunschweig.data.cordon_pt_gates`, `braunschweig.synthesis.cordon_gates`, `braunschweig.synthesis.incommuters`, `braunschweig.synthesis.portal_trips.anchors`, `braunschweig.synthesis.portal_trips.stage`, `braunschweig.synthesis.student_incommuters`, `synthesis.population.trips.simulated`
 - **Education**: `braunschweig.data.education.student_share`, `braunschweig.data.schools.facilities`, `braunschweig.data.schools.kita_facilities`, `braunschweig.data.schools.university_facilities`, `braunschweig.synthesis.locations.education_gravity`
 - **Vehicle fleet**: `braunschweig.synthesis.vehicles.cars.household`
-- **Freight**: `braunschweig.data.freight.german_wide`, `braunschweig.freight.extraction`, `braunschweig.freight.trips`
+- **Freight**: `braunschweig.data.freight.german_wide`, `braunschweig.freight.extraction`, `braunschweig.freight.extraction_tool`, `braunschweig.freight.trips`
 - **Home locations**: `braunschweig.data.buildings`, `braunschweig.data.zensus_grid.population`
 - **MATSim**: `braunschweig.data.vrb.zone_polygons`, `braunschweig.data.vrb.zones`, `braunschweig.parking.zones_stage`
 - **Population synthesis**: `braunschweig.data.census.household_size`, `braunschweig.data.census.households_size_age`, `braunschweig.data.census.households_type`, `braunschweig.data.census.population`, `braunschweig.data.hts.mid_donor`, `braunschweig.ipf.model`, `braunschweig.ipf.prepare`, `braunschweig.popsim.completed_donor`

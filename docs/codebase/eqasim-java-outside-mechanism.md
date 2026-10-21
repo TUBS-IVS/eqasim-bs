@@ -56,7 +56,8 @@ needed.**
 
 ### 4. Python hook
 - eqasim Python drives Java via `eqasim.run(context, "org.eqasim...Run*", [...])`
-  (e.g. `matsim/simulation/prepare.py` runs RunGenerateConfig / RunPopulationRouting).
+  (e.g. `matsim/simulation/prepare.py` runs RunGenerateConfig / RunPopulationRouting),
+  except the freight extraction, which runs its own tool jar (ADR-0148).
 - eqasim-bs `matsim/` does NOT yet invoke the cutter (`grep cutter matsim/` empty) ->
   a `RunScenarioCutter` hook must be added.
 

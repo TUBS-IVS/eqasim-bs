@@ -59,6 +59,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.vrb.zones](../registry/stages/braunschweig.data.vrb.zones.yml) | matsim | braunschweig_new | -- | -/A/A | -- | -- |
 | [braunschweig.data.zensus_grid.population](../registry/stages/braunschweig.data.zensus_grid.population.yml) | home | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.freight.extraction](../registry/stages/braunschweig.freight.extraction.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
+| [braunschweig.freight.extraction_tool](../registry/stages/braunschweig.freight.extraction_tool.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
 | [braunschweig.freight.trips](../registry/stages/braunschweig.freight.trips.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
 | [braunschweig.gravity.distance_matrix_taz](../registry/stages/braunschweig.gravity.distance_matrix_taz.yml) | work | braunschweig_new | -- | -/-/- | -- | taz_work_location_choice |
 | [braunschweig.ipf.model](../registry/stages/braunschweig.ipf.model.yml) | population | braunschweig_new | -- | -/-/A | -- | employment_margin, household_size_margin, ipf_synthesis_legacy |

@@ -217,6 +217,10 @@
    "braunschweig.freight.trips"
   ],
   [
+   "braunschweig.freight.extraction_tool",
+   "braunschweig.freight.extraction"
+  ],
+  [
    "braunschweig.freight.trips",
    "matsim.simulation.prepare"
   ],
@@ -606,10 +610,6 @@
   ],
   [
    "matsim.runtime.eqasim",
-   "braunschweig.freight.extraction"
-  ],
-  [
-   "matsim.runtime.eqasim",
    "matsim.output"
   ],
   [
@@ -650,6 +650,10 @@
   ],
   [
    "matsim.runtime.java",
+   "braunschweig.freight.extraction_tool"
+  ],
+  [
+   "matsim.runtime.java",
    "matsim.runtime.eqasim"
   ],
   [
@@ -675,6 +679,10 @@
   [
    "matsim.runtime.java",
    "matsim.simulation.run"
+  ],
+  [
+   "matsim.runtime.maven",
+   "braunschweig.freight.extraction_tool"
   ],
   [
    "matsim.runtime.maven",
@@ -1171,6 +1179,7 @@
   "braunschweig.data.verbindungen.zones",
   "braunschweig.data.vrb.zone_polygons",
   "braunschweig.freight.extraction",
+  "braunschweig.freight.extraction_tool",
   "braunschweig.freight.trips",
   "braunschweig.locations.work",
   "braunschweig.parking.zones_stage",

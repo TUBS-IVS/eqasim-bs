@@ -2,7 +2,8 @@ stage: matsim.runtime.eqasim
 title: eqasim Java build
 layer: infrastructure
 description: Builds the eqasim Java package -- from the project's own eqasim-java-bs fork via
-  eqasim_source_path (ADR-0038).
+  eqasim_source_path (ADR-0038). Its cache token is a content digest of the Java source tree
+  (or of a prebuilt jar), not the newest mtime (ADR-0148).
 lineage:
   type: extended
   upstream: null
@@ -18,3 +19,4 @@ features:
 - eqasim_java_fork
 decisions:
 - ADR-0038
+- ADR-0148

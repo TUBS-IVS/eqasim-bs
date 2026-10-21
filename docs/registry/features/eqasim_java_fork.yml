@@ -54,7 +54,8 @@ validation:
     jar to braunschweig-2.3.1.jar, so DEFAULT_EQASIM_VERSION moved with it -- otherwise the
     stage aborts with "braunschweig JAR not built from eqasim_source_path". A release is NOT
     what delivers a java fix: the pipeline builds from eqasim_source_path and validate() keys
-    the cache on the newest source mtime, so a plain pull already delivers and rebuilds.
+    the cache on the content digest of the Java source tree (ADR-0148; it was the newest source
+    mtime before issue #468), so a plain pull already delivers and rebuilds.
     ADR-0098 removed the duplication that made this a recurring break: the version is now READ
     from the built tree's braunschweig/pom.xml (eqasim_version defaults to None = derive, an
     explicit value still overrides), so no fork release can rename the jar out from under the

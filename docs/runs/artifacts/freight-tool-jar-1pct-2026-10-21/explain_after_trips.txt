@@ -1,0 +1,15 @@
+WARNING! A Java JDK of at least version 11 is recommended.
+HIT      braunschweig.data.freight.german_wide
+HIT      braunschweig.freight.extraction
+         legacy timestamp rule for parents: braunschweig.data.freight.german_wide, data.spatial.municipalities, matsim.runtime.java, braunschweig.freight.extraction_tool
+HIT      braunschweig.freight.extraction_tool
+         legacy timestamp rule for parents: matsim.runtime.java, matsim.runtime.maven
+STALE    braunschweig.freight.trips  [required, not_in_meta, cache_missing; config vs nearest variant: eqasim_branch: 'main' -> None, eqasim_commit: 'ab938aaac' -> None, eqasim_path: '' -> None, eqasim_repository: 'https://github.com/eqasim-org/eqasim-java.git' -> None, eqasim_source_path: '../eqasim-java-bs' -> None, freight_tool_matsim_version: None -> '', git_binary: 'git' -> None]
+HIT      data.spatial.municipalities
+         legacy timestamp rule for parents: eqasim_common.data.spatial.iris
+HIT      eqasim_common.data.population.raw
+HIT      eqasim_common.data.spatial.iris
+         legacy timestamp rule for parents: eqasim_common.data.population.raw
+HIT      matsim.runtime.java
+HIT      matsim.runtime.maven
+# 9 stages: 1 stale for own reasons, 0 will recompute (stale ancestor without recorded output hash), 0 may recompute (stale ancestor; synpp 1.6.2 recomputes them, only the fork's early cutoff may spare them), 8 hits

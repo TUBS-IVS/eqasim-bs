@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 106 | stages: 131 | datasets: 104 | ADRs: 143 | run manifests: 62
+- Features: 106 | stages: 132 | datasets: 104 | ADRs: 144 | run manifests: 63
 
 ## Population synthesis
 
@@ -154,14 +154,14 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Freight
 
-3 stage(s), 3 in the production DAG. Datasets: `german_wide_freight_v3`
+4 stage(s), 4 in the production DAG. Datasets: `german_wide_freight_v3`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Freight analysis exclusion](../registry/features/freight_analysis_exclusion.yml) | active | ON | A/-/- | unvalidated |  |
 | [Assumptions (truck PCE / max velocity)](../registry/features/freight_assumptions.yml) | active | ON | A/i/i | unvalidated |  |
 | [Freight boundary endpoints linked by capacity and trip direction](../registry/features/freight_boundary_links.yml) | active | ON | A/i/i | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`) | [#444](https://github.com/TUBS-IVS/eqasim-bs/issues/444) |
-| [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated |  |
+| [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated (`freight-tool-jar-1pct-2026-10-21`) |  |
 
 ## MATSim
 
