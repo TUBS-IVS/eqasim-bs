@@ -66,14 +66,18 @@ def artifacts_present(working_directory: str, stage_hash: str) -> bool:
 
 
 def token_difference(current, stored) -> list:
-    """Names of the token modules that differ; ``["format"]`` for a structural change;
-    ``["opaque"]`` when either token is not a structured source token."""
+    """What differs between two structured source tokens: the differing module names, then any other
+    differing top-level key by its own name (``files`` for a composite token's data part, ``python``,
+    ``format``); ``["format"]`` when nothing nameable differs; ``["opaque"]`` when either token is not
+    a structured source token."""
     if isinstance(current, dict) and isinstance(stored, dict) and "modules" in current and "modules" in stored:
         cm, sm = current["modules"], stored["modules"]
         if not isinstance(cm, dict) or not isinstance(sm, dict):
             return ["opaque"]
         names = sorted(name for name in set(cm) | set(sm) if cm.get(name) != sm.get(name))
-        return names or ["format"]
+        others = sorted(key for key in (set(current) | set(stored)) - {"modules"}
+                        if current.get(key) != stored.get(key))
+        return (names + others) or ["format"]
     return ["opaque"]
 
 

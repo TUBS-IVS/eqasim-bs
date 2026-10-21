@@ -248,6 +248,19 @@ def test_token_difference_is_opaque_when_modules_is_not_a_mapping():
     assert staleness.token_difference(structured, {"modules": {"helper": "v2"}}) == ["helper"]
 
 
+def test_token_difference_names_module_and_non_module_keys():
+    """A composite token (modules plus ``files``) must say WHAT differs, not collapse to ``format``."""
+    from braunschweig.synpp_fork import staleness
+    base = {"format": 2, "python": "3.10", "modules": {"a": "1", "b": "2"}, "files": {"t.csv": "x"}}
+    assert staleness.token_difference({**base, "files": {"t.csv": "y"}}, base) == ["files"]
+    assert staleness.token_difference({**base, "python": "3.11"}, base) == ["python"]
+    assert staleness.token_difference({**base, "format": 3}, base) == ["format"]
+    changed = {**base, "modules": {"a": "9", "b": "2"}, "files": {"t.csv": "y"}}
+    assert staleness.token_difference(changed, base) == ["a", "files"]
+    only_current = {k: v for k, v in base.items() if k != "files"}
+    assert staleness.token_difference(only_current, base) == ["files"]
+
+
 def test_stored_string_token_against_a_structured_current_token_is_opaque(project):
     from braunschweig.synpp_fork import metadata, staleness
     _, working, _, _, run, registry = project
