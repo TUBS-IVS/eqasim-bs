@@ -114,6 +114,15 @@ def test_execute_logs_a_version_override_against_the_pom_value(tmp_path, monkeyp
         _run_execute_with_a_stub_build(tmp_path, monkeypatch, "2025.0")
     text = " ".join(record.getMessage() for record in caplog.records)
     assert "2025.0" in text and "2026.0-2026w12" in text and "override" in text.lower()
+    assert [r.levelname for r in caplog.records if "override" in r.getMessage()] == ["WARNING"]
+
+
+def test_execute_does_not_warn_when_the_override_equals_the_pom_value(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("INFO", logger=extraction_tool.logger.name):
+        _run_execute_with_a_stub_build(tmp_path, monkeypatch, "2026.0-2026w12")
+    overrides = [r for r in caplog.records if "override" in r.getMessage()]
+    assert [r.levelname for r in overrides] == ["INFO"]
+    assert "matches" in overrides[0].getMessage()
 
 
 @pytest.mark.skipif(os.environ.get("EQASIM_BS_FREIGHT_TOOL_BUILD") != "1",

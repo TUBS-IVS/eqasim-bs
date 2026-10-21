@@ -69,8 +69,14 @@ def _sha256_text_file(path):
 
 def _git_output(git_binary, source_path, arguments):
     """stdout bytes of ``git -C source_path <arguments>``; any failure is a RuntimeError."""
+    # Resolve the binary the way matsim/runtime/git.py run does (shutil.which).
+    resolved = shutil.which(git_binary)
+    if resolved is None:
+        raise RuntimeError(
+            "Cannot find git binary %s to list the Java sources of eqasim_source_path %s"
+            % (git_binary, source_path))
     try:
-        return sp.run([git_binary, "-C", source_path] + arguments, check = True,
+        return sp.run([resolved, "-C", source_path] + arguments, check = True,
                       capture_output = True).stdout
     except sp.CalledProcessError as error:
         raise RuntimeError(

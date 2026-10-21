@@ -160,9 +160,13 @@ def _log_resolved_versions(context, matsim_version, java_release):
                 "Java release %s (fork pom %s)", matsim_version, java_release, pom)
     override = context.config("freight_tool_matsim_version")
     if override:
-        logger.warning("[freight.extraction_tool] freight_tool_matsim_version override %s replaces "
-                       "the fork pom's matsim.version %s", override,
-                       read_pom_property(pom, "matsim.version"))
+        pom_version = read_pom_property(pom, "matsim.version")
+        if override == pom_version:
+            logger.info("[freight.extraction_tool] freight_tool_matsim_version override %s matches "
+                        "the fork pom's matsim.version", override)
+        else:
+            logger.warning("[freight.extraction_tool] freight_tool_matsim_version override %s replaces "
+                           "the fork pom's matsim.version %s", override, pom_version)
 
 
 def execute(context):
