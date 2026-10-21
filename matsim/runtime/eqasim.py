@@ -1,3 +1,4 @@
+import hashlib
 import re
 import subprocess as sp
 import os, os.path, shutil
@@ -17,8 +18,10 @@ import matsim.runtime.maven as maven
 # among its release files, so every fork release renames our jar -- v2.3.0 and v2.3.1
 # (2026-08-21, a pure version bump carrying no code at all) each did, and the workflow
 # runs on every merge to main. Note what a release does NOT do here: the pipeline builds
-# from eqasim_source_path and validate() keys its cache on the newest source mtime, so a
-# plain `git pull` in that tree already delivers a java fix and triggers the rebuild.
+# from eqasim_source_path and validate() keys its cache on the content digest of the Java
+# source tree (source_tree_digest), so a plain `git pull` in that tree already delivers a
+# java fix and triggers the rebuild, while a checkout, a copy or an agent worktree that
+# leaves the content unchanged does not.
 #
 # This constant remains the fallback for the two paths that have no such pom -- a prebuilt
 # eqasim_path jar, and the legacy upstream clone -- and is kept current (2.3.1, the fork's
@@ -38,6 +41,63 @@ DEFAULT_EQASIM_COMMIT = "ab938aaac"
 
 #: Relative location of the module pom that decides the built jar's name.
 BRAUNSCHWEIG_POM = os.path.join("braunschweig", "pom.xml")
+
+#: File suffixes of the Java source tree that enter the content digest of the jar.
+SOURCE_SUFFIXES = (".java", ".xml", ".properties")
+#: Directory names (at any depth) whose files are not source: build output and the
+#: worktrees of agent sessions that live inside the Java repository.
+SOURCE_EXCLUDED_DIRECTORIES = ("target", ".claude")
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def source_tree_digest(source_path):
+    """Content digest (sha256 hex) of the Java source tree at ``source_path``.
+
+    Covers the tracked and the untracked-but-not-ignored files with a source suffix
+    (``SOURCE_SUFFIXES``), excluding ``target/`` and ``.claude/`` at any depth. Each file
+    enters as its relative path plus its content hash, so the digest is independent of
+    mtimes: checkouts, copies and worktrees do not rebuild the jar, a real edit does.
+
+    The file list comes from ``git ls-files``; there is deliberately no fallback to a
+    directory walk or to mtimes. A source path that is not a git work tree raises
+    RuntimeError, because a silent fallback would key the cache on a different rule.
+    """
+    try:
+        listing = sp.run(
+            ["git", "-C", source_path, "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"], check = True, capture_output = True).stdout
+    except sp.CalledProcessError as error:
+        raise RuntimeError(
+            "Cannot list the Java sources of eqasim_source_path %s with git (is it a git work "
+            "tree?): %s" % (source_path, error.stderr.decode("utf-8", "replace").strip()))
+    except OSError as error:
+        raise RuntimeError(
+            "Cannot run git to list the Java sources of eqasim_source_path %s: %s"
+            % (source_path, error))
+
+    digest = hashlib.sha256()
+    for relative in sorted(p for p in listing.decode("utf-8").split("\0") if p):
+        normalised = relative.replace(os.sep, "/")
+        if not normalised.endswith(SOURCE_SUFFIXES):
+            continue
+        # A file under a directory named target or .claude at any depth is not source.
+        if any(directory in SOURCE_EXCLUDED_DIRECTORIES
+               for directory in normalised.split("/")[:-1]):
+            continue
+        absolute = os.path.join(source_path, relative)
+        # Tracked but deleted in the work tree: it is gone from the build, so it is skipped.
+        if not os.path.isfile(absolute):
+            continue
+        digest.update(normalised.encode("utf-8") + b"\0"
+                      + _sha256_file(absolute).encode("utf-8") + b"\n")
+    return digest.hexdigest()
 
 
 def module_version_from_pom(pom_path):
@@ -117,7 +177,7 @@ def configure(context):
     # Build OUR own editable Java project (eqasim-java-bs, the renamed braunschweig
     # module) from a local source tree instead of cloning upstream. When set, no git
     # clone happens; the source is copied in and Maven-built, so local Java edits take
-    # effect on the next run (see validate(), which keys the cache on the source mtime).
+    # effect on the next run (see validate(), which keys the cache on the source content digest).
     context.config("eqasim_source_path", "")
 
     # Same synpp per-stage config contract as pt2matsim (issue #229): delegate to the
@@ -154,9 +214,9 @@ def execute(context):
         if os.path.exists(destination):
             shutil.rmtree(destination)
         shutil.copytree(source_path, destination,
-                        ignore = shutil.ignore_patterns("target", ".git"))
+                        ignore = shutil.ignore_patterns("target", ".git", ".claude"))
         # Read the version from the COPIED tree -- that is the one maven builds, and
-        # a pom change already devalidates this stage through validate()'s mtime key.
+        # a pom change already devalidates this stage through validate()'s content digest.
         version = resolve_source_version(destination, configured_version)
         maven.run(context, ["-Pstandalone", "--projects", "braunschweig", "--also-make",
                             "package", "-DskipTests=true"], cwd = destination)
@@ -184,24 +244,17 @@ def execute(context):
     return jar
 
 def validate(context):
-    # Build from our own local source: key the cache on the latest source mtime so
-    # local Java edits trigger a rebuild on the next run.
+    # Content, not mtime: a checkout, copy or agent worktree must not rebuild the jar and
+    # with it every Java-dependent stage; an edited source file still does.
     source_path = context.config("eqasim_source_path")
     if source_path != "":
         if not os.path.exists(source_path):
             raise RuntimeError("eqasim_source_path does not exist: %s" % source_path)
-        latest = 0.0
-        for root, _dirs, files in os.walk(source_path):
-            if "target" in root or ".git" in root:
-                continue
-            for name in files:
-                if name.endswith((".java", ".xml", ".properties")):
-                    latest = max(latest, os.path.getmtime(os.path.join(root, name)))
-        return latest
+        return {"format": 1, "source": source_tree_digest(source_path)}
 
     path = context.config("eqasim_path")
     if path == "":
         return True
     if not os.path.exists(path):
         raise RuntimeError("Cannot find eqasim at: %s" % path)
-    return os.path.getmtime(path)
+    return {"format": 1, "jar": _sha256_file(path)}
