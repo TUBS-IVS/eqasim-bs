@@ -26,7 +26,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Parallel branches:** merge `origin/main` into your branch before `git pr`, and re-run the verification gate AFTER that merge — a green A/B against a stale base says nothing about the merge state (#284 + #287 turned `main` red exactly this way, each green on its own). While sibling branches are open, do not edit a shared prose file at all.
 
-**Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
+**Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around. Subagents: every dispatch names its model and a tool-call budget, per `docs/codebase/notes/subagent-budget.md`.
 
 **Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check").
 

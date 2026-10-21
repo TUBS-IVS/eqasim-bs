@@ -16,7 +16,9 @@ onto the `superpowers` skill chain, named in brackets.)
 3. **Plan** — write a step-by-step execution plan to `docs/superpowers/plans/YYYY-MM-DD-*.md`
    `[writing-plans]`.
 4. **Isolate** — work on a branch/worktree off `main`; parallel agents get **separate
-   worktrees**, never one working dir `[using-git-worktrees]`.
+   worktrees**, never one working dir `[using-git-worktrees]`. Every subagent dispatch
+   names its model and a tool-call budget per
+   [subagent-budget](docs/codebase/notes/subagent-budget.md).
 5. **Implement TDD** — red → green → refactor. New behaviour is **flag-gated, default-ON**
    with an explicit byte-identical **OFF-path test** `[test-driven-development]`.
 6. **Verify** — follow the [required agent verification gate](docs/codebase/TESTING.md#required-agent-verification-gate):
