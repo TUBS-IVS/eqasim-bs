@@ -14,7 +14,9 @@ gitignored) extend it. This note describes what exists today (Phase 1), not the 
 | `braunschweig/synpp_fork/staleness.py` (`assess`, `format_report`, `unexpected`) | Explains, per stage, whether the cache entry will be reused and why not. Replicates synpp 1.6.2's own devalidation steps; a differential test (`tests/test_synpp_fork_staleness.py`) compares it with `synpp.run(..., verbose=True)["stale"]`. |
 
 The assessment never executes a stage and never writes to the working directory.
-Ephemeral stages are not modelled; they are over-reported as stale (the safe direction).
+Ephemeral stages follow synpp 1.6.2: an uncached ephemeral stage that has dependents is outside
+synpp's own checks, so it gets no reasons, is never unexpected and does not make its cached
+children stale (it recomputes only when a descendant does).
 
 ## Running the explainer
 
@@ -33,10 +35,14 @@ re-executes on every run, never count). Exit 2: at least one is. Exit 1: error.
 | `HIT` | The cache entry is valid and will be reused. |
 | `STALE` | Stale for its own reasons; the bracket lists them (`required`, `not_in_meta`, `cache_missing`, `module_hash_changed`, `parents_changed`, `token_changed:<module>`, `parent_updated:<parent>`, `parent_output_changed:<parent>`, `meta_malformed:<what>`). For a stage with no cached variant the config keys that differ from the nearest cached variant are appended. |
 | `RECOMPUTE` | Valid on its own, but an ancestor is stale and has no recorded output hash, so there is nothing to compare against: the stage recomputes for certain. Every entry written by synpp 1.6.2 is of this kind today, so descendants of a stale stage show `RECOMPUTE`. |
-| `STALE-IF` | Valid on its own; an ancestor is stale but has a recorded output hash. Recomputes only if the re-executed ancestor's output differs (early cutoff, a later phase). |
+| `STALE-IF` | Valid on its own; an ancestor is stale but has a recorded output hash. Describes the FORK (Phase 4 early cutoff): it would reuse the stage if the re-executed ancestor's output is unchanged. synpp 1.6.2 recomputes every descendant of a stale stage, so while `staleness.EARLY_CUTOFF_ACTIVE` is False the label reads `recomputes under synpp 1.6.2; the fork would reuse it if ... output is unchanged`. A valid stage with its own recorded output hash is the cutoff point: its children are `STALE-IF` even when a stale ancestor further up has no hash. |
+| `EPHEMERAL` | An ephemeral stage without cache artifacts. Not stale, not unexpected; synpp recomputes it only if a descendant runs. Whenever the registry has any ephemeral stage the report also prints `# WARNING: <n> ephemeral stage(s) in the registry; the fork disables early cutoff for such runs (spec 4.4)`. |
 | `legacy timestamp rule for parents: ...` | Printed under a stage whose parent comparison used synpp's upstream timestamp rule because a recorded output hash was missing on either side. |
 
-The summary line counts the four groups separately.
+The summary line counts the groups separately. The `--json` output carries, per stage, the name
+lists (`stale_if`, `unhashed_ancestors`) and the parallel hash lists (`stale_if_hashes`,
+`unhashed_ancestor_hashes`; names are ambiguous for two variants of one stage), plus
+`ephemeral_uncached`.
 
 ## Configuration keys
 
@@ -62,6 +68,13 @@ The two gates differ on the empty case, on purpose:
 ## Limits
 
 - Only own reasons gate; `RECOMPUTE` and `STALE-IF` stages are reported but never counted
-  as unexpected, because they follow from a stale ancestor.
+  as unexpected, because they follow from a stale ancestor. With a non-empty
+  `synpp_expected_stale_stages` the launcher also logs `[explain] note: <k> further stage(s) will
+  recompute because an ancestor is stale` (the `RECOMPUTE` count), so a run target upstream of a
+  large cached chain is not silent; the note never aborts.
+- `dryrun: true` in the config skips the launcher assessment (logged): synpp returns before it
+  devalidates anything.
+- `STALE-IF` describes the fork, not synpp 1.6.2 (see the label table); the gate and
+  `unexpected()` are unaffected by it.
 - The report predicts what synpp 1.6.2 would do; it does not validate model results
   (a cache hit is not evidence about scientific correctness).
