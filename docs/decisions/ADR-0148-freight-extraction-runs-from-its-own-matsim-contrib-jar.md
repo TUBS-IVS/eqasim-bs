@@ -161,9 +161,9 @@
 - **Pending, not done:** the server comparison. On the 1 % scenario, the new
   `braunschweig.freight.extraction` cache entry must be compared with the previous one
   (`freight_extraction_summary.csv`, trip counts per category), and the stale-stage explainer
-  (`scripts/explain_stale_stages.py`, the Phase 1 deliverable of #468, PR #469, not yet merged
-  at the time of writing; spec section 4.6) must show only the expected stages as stale for
-  their own reason. It will be recorded in a
+  (`scripts/explain_stale_stages.py`, the Phase 1 deliverable of #468, on main since PR #469;
+  spec section 4.6, usable directly for this step) must show only the expected stages as stale
+  for their own reason. It will be recorded in a
   run manifest `docs/runs/freight-tool-jar-1pct-<date>.yml` (classification smoke). Until that
   manifest exists, it is not established that the tool jar reproduces the counts of the fork
   jar, and a smoke would not validate the routing in any case.
