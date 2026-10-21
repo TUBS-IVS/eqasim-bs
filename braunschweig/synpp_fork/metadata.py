@@ -31,10 +31,12 @@ def write_meta(meta: dict, working_directory: str) -> None:
             json.dump(meta, handle)
             handle.flush()
             os.fsync(handle.fileno())
+        if os.path.exists(path):
+            shutil.copy2(path, path + ".bk")
+        os.replace(new_path, path)
     except BaseException:
+        # Whatever failed (dump, backup copy, rename), pipeline.json is still the old file; do not
+        # leave a half-written or orphaned pipeline.json.new behind.
         if os.path.exists(new_path):
             os.remove(new_path)
         raise
-    if os.path.exists(path):
-        shutil.copy2(path, path + ".bk")
-    os.replace(new_path, path)

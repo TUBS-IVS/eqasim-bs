@@ -32,7 +32,8 @@ code is proven to differ from it only by that refactor:
    could turn a changed parent output into a hit.
 
 "Refactor-equivalent": the semantic digests (docstring-free AST) of the two texts are equal after
-removing the module-level ``def validate`` and the module-level imports of exactly
+removing the module-level ``def validate`` (only a plain FunctionDef: an ``async def validate``
+or a ``validate = ...`` assignment is ordinary code and stays in) and the module-level imports of exactly
 ``import hashlib``, ``import inspect``, ``import importlib`` and ``from braunschweig import
 synpp_tokens`` (unaliased). Only the listed names are dropped from an import statement; any other
 name in the same statement stays in.
@@ -114,13 +115,21 @@ def _md5(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
+class SourceRecord:
+    """What a patched ``inspect.getsource`` was asked for during one legacy replay."""
+
+    def __init__(self):
+        self.served = []        # (module, rev_text) answered with the text at REV
+        self.requested = set()  # names of every module asked for
+
+
 class GitLegacySource:
     """The module texts at a git revision of ``repo``.
 
     ``rev_text(path)`` is the text at REV of the file ``path``: read with ``git show`` when the file
     differs between REV and the working tree, the current text when it does not (identical by
-    ``git diff``), None when the file is outside ``repo`` or absent at REV. Texts are LF-normalised,
-    as ``inspect.getsource`` returns them. Git missing or REV absent raises RuntimeError: without the
+    ``git diff``), None when the file is outside ``repo`` or absent at REV. Texts are LF-normalised
+    and BOM-free, as ``inspect.getsource`` returns them. Git missing or REV absent raises RuntimeError: without the
     revision nothing can be proven, and silently keeping everything legacy would hide that.
     """
 
@@ -165,9 +174,10 @@ class GitLegacySource:
             if rel in self._differing:
                 raw = subprocess.run([self.git, "-C", str(self.repo), "show", "%s:%s" % (self.rev, rel)],
                                      capture_output=True, check=True).stdout
-                self._texts[rel] = raw.decode("utf-8").replace("\r\n", "\n")
+                # utf-8-sig: inspect.getsource (tokenize.open) drops a UTF-8 BOM.
+                self._texts[rel] = raw.decode("utf-8-sig").replace("\r\n", "\n")
             else:
-                with open(path, encoding="utf-8") as handle:   # universal newlines, like getsource
+                with open(path, encoding="utf-8-sig") as handle:   # universal newlines, no BOM, like getsource
                     self._texts[rel] = handle.read()
         return self._texts[rel]
 
@@ -175,15 +185,24 @@ class GitLegacySource:
     def patched_getsource(self):
         """Process-wide ``inspect.getsource`` returning the REV text of every module whose file differs.
 
-        Yields the list of (module, rev_text) pairs the patch served, so the caller can prove each
-        of them refactor-equivalent. Process-wide, because some validate() bodies import inspect
-        locally; restored in ``finally``.
+        Yields a ``SourceRecord``: ``served`` lists the (module, rev_text) pairs the patch answered
+        with REV text, so the caller can prove each of them refactor-equivalent; ``requested`` names
+        every module asked for (served or answered with its working-tree text), so the caller can
+        check that the new token covers no module the legacy token did not.
+
+        Only module objects are served REV text. A legacy validate() calling getsource on a
+        function or class gets its working-tree text; its replayed token then differs from the
+        stored one wherever that text changed, so such an entry fails closed (token_mismatch).
+        Process-wide, because some validate() bodies import inspect locally; restored in ``finally``.
         """
         real = inspect.getsource
-        served = []
+        record = SourceRecord()
+        served = record.served
 
         def getsource(obj):
             path = getattr(obj, "__file__", None) if inspect.ismodule(obj) else None
+            if inspect.ismodule(obj):
+                record.requested.add(obj.__name__)
             if path and self.differs(path):
                 text = self.rev_text(path)
                 if text is not None:
@@ -193,13 +212,13 @@ class GitLegacySource:
 
         inspect.getsource = getsource
         try:
-            yield served
+            yield record
         finally:
             inspect.getsource = real
 
 
 def _replay_legacy_token(module, context, legacy_source):
-    """REV's validate() run on REV texts; returns (token, served modules)."""
+    """REV's validate() run on REV texts; returns (token, SourceRecord)."""
     text = legacy_source.rev_text(module.__file__)
     if text is None:
         raise LookupError("%s is not in the legacy source revision" % module.__name__)
@@ -211,9 +230,9 @@ def _replay_legacy_token(module, context, legacy_source):
     namespace = dict(vars(module))
     namespace.update(hashlib=hashlib, importlib=importlib, inspect=inspect)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), module.__file__, "exec"), namespace)
-    with legacy_source.patched_getsource() as served:
+    with legacy_source.patched_getsource() as record:
         token = namespace["validate"](context)
-    return token, list(served)
+    return token, record
 
 
 def _not_equivalent(served) -> list:
@@ -249,16 +268,22 @@ def _prove_token(module, wrapper, stage, record, entry, working_directory, legac
     cache_path = "%s/%s.cache" % (working_directory, entry)
     config = stage["config"] if stage is not None else record.get("config", {})
     try:
-        replayed, served = _replay_legacy_token(module, ValidateContext(config, cache_path), legacy_source)
+        replayed, record_of_sources = _replay_legacy_token(module, ValidateContext(config, cache_path),
+                                                           legacy_source)
     except Exception as error:  # reported per entry and counted; the entry stays legacy
         return "token_unverifiable", None, "legacy validate() replay failed (%s: %s)" % (type(error).__name__, error)
     if replayed != record["validation_token"]:
         return "token_mismatch", None, "the replayed legacy token differs from the stored token"
-    changed = _not_equivalent(served)
+    changed = _not_equivalent(record_of_sources.served)
     if changed:
         return "token_mismatch", None, "hashed modules changed beyond the refactor: " + ", ".join(changed)
     if stage is not None:
-        return "token_migrated", wrapper.validate(ValidateContext(stage["config"], cache_path)), "registry"
+        new_token = wrapper.validate(ValidateContext(stage["config"], cache_path))
+        widened = _widened_modules(new_token, record_of_sources.requested)
+        if widened:
+            return ("token_mismatch", None, "token_coverage_widened: the new token hashes modules the "
+                    "legacy token did not: " + ", ".join(widened))
+        return "token_migrated", new_token, "registry"
     helpers = getattr(module, "_HELPER_MODULES", ())
     deferred = getattr(module, "_DEFERRED_HELPER_MODULE_NAMES", ())
     loop_token = synpp_tokens.source_token(helpers, deferred, stage_label=module.__name__ + ".validate()")
@@ -269,7 +294,21 @@ def _prove_token(module, wrapper, stage, record, entry, working_directory, legac
     if current != loop_token:
         return ("token_unverifiable", None,
                 "not in the registry and the token is not a pure source loop (composite token)")
+    widened = _widened_modules(loop_token, record_of_sources.requested)
+    if widened:
+        return ("token_mismatch", None, "token_coverage_widened: the new token hashes modules the "
+                "legacy token did not: " + ", ".join(widened))
     return "token_migrated", loop_token, "off-registry pure loop"
+
+
+def _widened_modules(new_token, requested) -> list:
+    """Modules a structured new token digests that the legacy replay never asked for.
+
+    The replay proves only the modules the legacy token covered; a module the refactor added to
+    the token has no proof that its cache-time text equals the current one."""
+    if not isinstance(new_token, dict) or not isinstance(new_token.get("modules"), dict):
+        return []
+    return sorted(set(new_token["modules"]) - set(requested))
 
 
 def _is_source_hashing(module) -> bool:
@@ -282,6 +321,10 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
 
     The proof counts (module_hash_*, token_*, output_*) count proof outcomes per entry; an entry is
     written only when all of its proofs passed (``migrated``), otherwise it is ``kept_legacy``.
+
+    When migrate raises (git failure, an unreadable or symlinked cache directory, ...), ``meta`` may
+    already be partly mutated: the caller must discard it and must not write it. ``main`` never
+    writes pipeline.json after an exception.
     """
     from braunschweig.synpp_fork import output_hash, staleness
     if legacy_source is None:
@@ -309,7 +352,14 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
         candidate = copy.deepcopy(record)
         failures = []
         stored_module_hash = record.get("module_hash")
-        if staleness.is_legacy_module_hash(stored_module_hash):
+        if stored_module_hash is None or (not staleness.is_legacy_module_hash(stored_module_hash)
+                                          and stored_module_hash != wrapper.module_hash):
+            # Neither synpp 1.6.2's md5 nor the current digest (or absent): nothing to prove, and
+            # run() would recompute it; never mark it migrated.
+            counts["module_hash_mismatch"] += 1
+            failures.append("module hash: %s" % ("missing" if stored_module_hash is None else
+                                                 "neither a legacy md5 nor the current semantic digest"))
+        elif staleness.is_legacy_module_hash(stored_module_hash):
             proven, reason = _prove_module_hash(module, stored_module_hash, legacy_source)
             if proven:
                 if len(wrapper.module_hash) != 64:

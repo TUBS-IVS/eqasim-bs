@@ -121,7 +121,7 @@ def configure(context):
 def execute(context):
     return context.stage("mig_parent") * 3
 """
-_MODULES = ("mig_stage", "mig_helper", "mig_parent", "mig_child")
+_MODULES = ("mig_stage", "mig_helper", "mig_parent", "mig_child", "mig_extra")
 
 
 def _load():
@@ -583,3 +583,108 @@ def test_write_meta_failure_leaves_the_old_file_in_place(tmp_path):
     with pytest.raises(TypeError):
         metadata.write_meta({"b": object()}, str(tmp_path))
     assert (tmp_path / "pipeline.json").read_bytes() == b'{"a": {"updated": 1}}'
+
+
+# --- review minors (N1, N2, N4, N5, N8) -------------------------------------------------------
+
+def test_a_refactored_validate_that_hashes_an_extra_module_is_not_migrated(project, caplog):
+    """N1: the replay proves only the modules the legacy token covered; a wider new token is a change."""
+    project.write("mig_helper.py", HELPER)
+    project.write("mig_extra.py", "EXTRA = 1\n")
+    project.write("mig_stage.py", LEGACY_STAGE)
+    rev = project.commit()
+    project.legacy_run("mig_stage")
+    before = project.meta()
+    project.write("mig_stage.py", NEW_STAGE.replace(
+        "source_token(_HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES)", 'source_token(_HELPER_MODULES, ("mig_extra",))'))
+    project.monkeypatch.delitem(sys.modules, "mig_extra", raising=False)
+    with caplog.at_level("WARNING"):
+        counts, meta = project.migrate("mig_stage", rev)
+    assert counts["module_hash_migrated"] == 1
+    assert counts["token_mismatch"] == 1 and counts["token_migrated"] == 0
+    assert counts["kept_legacy"] == 1 and meta == before
+    assert "token_coverage_widened" in caplog.text and "mig_extra" in caplog.text
+
+
+@pytest.mark.parametrize("stored", ["a" * 64, None])
+def test_a_non_legacy_module_hash_that_differs_is_a_mismatch(project, stored):
+    """N2: a 64-hex hash that is not the current digest, or a missing one, never migrates."""
+    project.write("mig_stage.py", PLAIN_STAGE)
+    rev = project.commit()
+    project.legacy_run("mig_stage")
+    meta = project.meta()
+    entry = next(iter(meta))
+    if stored is None:
+        del meta[entry]["module_hash"]
+    else:
+        meta[entry]["module_hash"] = stored
+    (project.working / "pipeline.json").write_text(json.dumps(meta), encoding="utf-8")
+    before = project.meta()
+    counts, meta = project.migrate("mig_stage", rev)
+    assert counts["module_hash_mismatch"] == 1 and counts["migrated"] == 0 and counts["kept_legacy"] == 1
+    assert meta == before
+
+
+def test_getsource_is_restored_after_a_replay_that_raises(project):
+    """N4: a legacy validate() that raises leaves inspect.getsource unpatched."""
+    project.write("mig_helper.py", HELPER)
+    project.write("mig_stage.py", LEGACY_COMPOSITE)
+    rev = project.commit()
+    data = project.root / "data.bin"
+    data.write_bytes(b"payload")
+    project.config["data_file"] = str(data)
+    project.legacy_run("mig_stage")
+    project.write("mig_stage.py", NEW_COMPOSITE)
+    data.unlink()                                            # the replayed validate() raises
+    real = inspect.getsource
+    project.registry("mig_stage")                            # import before migrate's own registry build
+    counts, _ = project.migrate("mig_stage", rev)
+    assert counts["token_unverifiable"] == 1 and counts["kept_legacy"] == 1
+    assert inspect.getsource is real
+    source = _load().GitLegacySource(project.root, rev)
+    with pytest.raises(ValueError):
+        with source.patched_getsource():
+            raise ValueError("boom")
+    assert inspect.getsource is real
+
+
+def test_refactor_equivalence_removes_only_a_module_level_def_validate():
+    """N4: an assignment named validate and an async def validate are ordinary code."""
+    module = _load()
+    assert not module.refactor_equivalent("validate = 1\nX = 1\n", "validate = 2\nX = 1\n")
+    assert not module.refactor_equivalent("validate = 1\nX = 1\n", "X = 1\n")
+    assert not module.refactor_equivalent("async def validate(c):\n    return 1\n",
+                                          "async def validate(c):\n    return 2\n")
+
+
+@pytest.mark.parametrize("target", ["copy2", "replace"])
+def test_write_meta_failure_after_the_new_file_keeps_the_old_file_and_cleans_up(tmp_path, monkeypatch, target):
+    """N5: a failing backup copy or rename leaves pipeline.json intact and no pipeline.json.new."""
+    from braunschweig.synpp_fork import metadata
+
+    def fail(*args, **kwargs):
+        raise OSError("simulated %s failure" % target)
+
+    (tmp_path / "pipeline.json").write_bytes(b'{"a": {"updated": 1}}')
+    if target == "copy2":
+        monkeypatch.setattr(metadata.shutil, "copy2", fail)
+    else:
+        monkeypatch.setattr(metadata.os, "replace", fail)
+    with pytest.raises(OSError):
+        metadata.write_meta({"b": {"updated": 2}}, str(tmp_path))
+    assert (tmp_path / "pipeline.json").read_bytes() == b'{"a": {"updated": 1}}'
+    assert not (tmp_path / "pipeline.json.new").exists()
+
+
+def test_rev_text_drops_a_utf8_bom_like_getsource(project):
+    """N8: inspect.getsource strips a UTF-8 BOM; the legacy texts must match it byte for byte."""
+    (project.root / "bom_changed.py").write_bytes(b"\xef\xbb\xbfVALUE = 1\n")
+    (project.root / "bom_same.py").write_bytes(b"\xef\xbb\xbfVALUE = 3\n")
+    rev = project.commit()
+    (project.root / "bom_changed.py").write_bytes(b"\xef\xbb\xbfVALUE = 2\n")
+    source = _load().GitLegacySource(project.root, rev)
+    assert source.rev_text(project.root / "bom_changed.py") == "VALUE = 1\n"
+    assert source.rev_text(project.root / "bom_same.py") == "VALUE = 3\n"
+    project.monkeypatch.delitem(sys.modules, "bom_same", raising=False)
+    importlib.invalidate_caches()
+    assert inspect.getsource(importlib.import_module("bom_same")) == "VALUE = 3\n"
