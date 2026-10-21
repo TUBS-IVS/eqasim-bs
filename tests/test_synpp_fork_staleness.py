@@ -8,7 +8,7 @@ import textwrap
 
 import pytest
 import synpp
-from synpp.pipeline import process_stages
+import synpp.pipeline  # process_stages is looked up at call time: braunschweig.synpp_fork.install() may replace it
 
 PARENT = """
 from pathlib import Path
@@ -51,7 +51,7 @@ def project(tmp_path, monkeypatch):
 
     def registry():
         reload()
-        return process_stages([{"descriptor": "st_child"}], config)
+        return synpp.pipeline.process_stages([{"descriptor": "st_child"}], config)
 
     return tmp_path, working, token, config, run, registry
 
@@ -312,7 +312,7 @@ def diamond(tmp_path, monkeypatch):
 
     def registry():
         reload()
-        return process_stages([{"descriptor": "dm_d"}], config)
+        return synpp.pipeline.process_stages([{"descriptor": "dm_d"}], config)
 
     def run():
         reload()
