@@ -25,7 +25,9 @@ eqasim fork jar is NOT an input, so Java edits elsewhere in the fork do not reco
   defaults to ``longDistanceFreight``) -- sampling to the pipeline rate
   happens later.
   This stage is sampling-rate independent and therefore cached across
-  sampling-rate changes (~4 x 45 min one-time routing cost).
+  sampling-rate changes. The routing cost is estimated at about 45 min per category
+  (docs/features/freight.md); the one observed figure (1 h 15 min for the stage) is in
+  ADR-0148.
 
 CRS: ``freight_crs`` (default EPSG:25832, the v3 network CRS).
 """

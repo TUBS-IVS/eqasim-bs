@@ -12,12 +12,15 @@ level are read from the fork's root pom so the two stay in lockstep.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import shutil
 
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
+
+logger = logging.getLogger(__name__)
 
 ENTRY_POINT = "org.eqasim.braunschweig.freight.RunExtractFreightTrips"
 JAR_RELATIVE = "freight-tool/target/freight-tool-%s.jar"
@@ -150,8 +153,21 @@ def validate(context):
             "wrapper": _sha256_text(wrapper), "pom": _sha256_text(render_pom(matsim_version, java_release))}
 
 
+def _log_resolved_versions(context, matsim_version, java_release):
+    """Log the versions the tool jar is built with, and an explicit override of the pom value."""
+    pom = _fork_pom(context)
+    logger.info("[freight.extraction_tool] building the tool jar with MATSim version %s, "
+                "Java release %s (fork pom %s)", matsim_version, java_release, pom)
+    override = context.config("freight_tool_matsim_version")
+    if override:
+        logger.warning("[freight.extraction_tool] freight_tool_matsim_version override %s replaces "
+                       "the fork pom's matsim.version %s", override,
+                       read_pom_property(pom, "matsim.version"))
+
+
 def execute(context):
     matsim_version, java_release = _versions(context)
+    _log_resolved_versions(context, matsim_version, java_release)
     project = os.path.join(context.path(), "freight-tool")
     if os.path.exists(project):
         shutil.rmtree(project)

@@ -84,6 +84,38 @@ def test_version_override_wins(tmp_path):
     assert extraction_tool.validate(context)["matsim_version"] == "2025.0"
 
 
+def _run_execute_with_a_stub_build(tmp_path, monkeypatch, override):
+    source = tmp_path / "fork"
+    source.mkdir()
+    (source / "pom.xml").write_text(POM, encoding="utf-8")
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    version = override or "2026.0-2026w12"
+
+    def fake_maven_run(context, arguments, cwd=None):
+        jar = stage / (extraction_tool.JAR_RELATIVE % version)
+        jar.parent.mkdir(parents=True)
+        jar.write_bytes(b"jar")
+    monkeypatch.setattr(extraction_tool.maven, "run", fake_maven_run)
+    context = _Context({"eqasim_source_path": str(source), "freight_tool_matsim_version": override}, str(stage))
+    extraction_tool.execute(context)
+    return str(source / "pom.xml")
+
+
+def test_execute_logs_the_resolved_versions_and_the_pom(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("INFO", logger=extraction_tool.logger.name):
+        pom = _run_execute_with_a_stub_build(tmp_path, monkeypatch, "")
+    text = " ".join(record.getMessage() for record in caplog.records)
+    assert "2026.0-2026w12" in text and "Java release 25" in text and pom in text
+
+
+def test_execute_logs_a_version_override_against_the_pom_value(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("INFO", logger=extraction_tool.logger.name):
+        _run_execute_with_a_stub_build(tmp_path, monkeypatch, "2025.0")
+    text = " ".join(record.getMessage() for record in caplog.records)
+    assert "2025.0" in text and "2026.0-2026w12" in text and "override" in text.lower()
+
+
 @pytest.mark.skipif(os.environ.get("EQASIM_BS_FREIGHT_TOOL_BUILD") != "1",
                     reason="Maven build of the tool jar; set EQASIM_BS_FREIGHT_TOOL_BUILD=1 to run")
 def test_execute_builds_the_shaded_jar(tmp_path):

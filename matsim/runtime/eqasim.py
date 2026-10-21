@@ -47,6 +47,10 @@ SOURCE_SUFFIXES = (".java", ".xml", ".properties")
 #: Directory names (at any depth) whose files are not source: build output and the
 #: worktrees of agent sessions that live inside the Java repository.
 SOURCE_EXCLUDED_DIRECTORIES = ("target", ".claude")
+#: Basename of a tracked file the Maven shade plugin rewrites on every local build of the
+#: fork (braunschweig/dependency-reduced-pom.xml). It is build output, not source, and
+#: hashing it would flip the digest after each build.
+SOURCE_EXCLUDED_FILE_NAMES = ("dependency-reduced-pom.xml",)
 
 
 def _sha256_file(path):
@@ -63,37 +67,64 @@ def _sha256_text_file(path):
         return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def source_tree_digest(source_path):
-    """Content digest (sha256 hex) of the Java source tree at ``source_path``.
-
-    Covers the tracked and the untracked-but-not-ignored files with a source suffix
-    (``SOURCE_SUFFIXES``), excluding ``target/`` and ``.claude/`` at any depth. Each file
-    enters as its relative path plus its content hash, so the digest is independent of
-    mtimes: checkouts, copies and worktrees do not rebuild the jar, a real edit does.
-    All three suffixes are text, so CRLF is normalised to LF before hashing: a Windows
-    ``core.autocrlf`` checkout and an LF checkout of the same commit give the same digest.
-
-    The file list comes from ``git ls-files``; there is deliberately no fallback to a
-    directory walk or to mtimes. A source path that is not a git work tree raises
-    RuntimeError, because a silent fallback would key the cache on a different rule.
-    """
+def _git_output(git_binary, source_path, arguments):
+    """stdout bytes of ``git -C source_path <arguments>``; any failure is a RuntimeError."""
     try:
-        listing = sp.run(
-            ["git", "-C", source_path, "ls-files", "-z", "--cached", "--others",
-             "--exclude-standard"], check = True, capture_output = True).stdout
+        return sp.run([git_binary, "-C", source_path] + arguments, check = True,
+                      capture_output = True).stdout
     except sp.CalledProcessError as error:
         raise RuntimeError(
             "Cannot list the Java sources of eqasim_source_path %s with git (is it a git work "
             "tree?): %s" % (source_path, error.stderr.decode("utf-8", "replace").strip()))
     except OSError as error:
         raise RuntimeError(
-            "Cannot run git to list the Java sources of eqasim_source_path %s: %s"
-            % (source_path, error))
+            "Cannot run git (%s) to list the Java sources of eqasim_source_path %s: %s"
+            % (git_binary, source_path, error))
+
+
+def source_tree_digest(source_path, git_binary = "git"):
+    """Content digest (sha256 hex) of the Java source tree at ``source_path``.
+
+    Covers the tracked and the untracked-but-not-ignored files with a source suffix
+    (``SOURCE_SUFFIXES``), excluding ``target/`` and ``.claude/`` at any depth and the
+    shade plugin's ``dependency-reduced-pom.xml`` (``SOURCE_EXCLUDED_FILE_NAMES``). Each file
+    enters as its relative path plus its content hash, so the digest is independent of
+    mtimes: checkouts, copies and worktrees do not rebuild the jar, a real edit does.
+    All three suffixes are text, so CRLF is normalised to LF before hashing: a Windows
+    ``core.autocrlf`` checkout and an LF checkout of the same commit give the same digest.
+
+    The file list comes from ``git ls-files`` (run with ``git_binary``, the pipeline's
+    ``git_binary`` option); there is deliberately no fallback to a directory walk or to
+    mtimes: a silent fallback would key the cache on a different rule. RuntimeError is
+    raised when: the path is not a git work tree; the path is not the ROOT of its own work
+    tree (a subdirectory of another repository, possibly one that gitignores it, would be
+    listed against the wrong repository); a file name is not valid UTF-8; or no source file
+    survives the filters (an empty token would never change).
+    """
+    toplevel = _git_output(git_binary, source_path, ["rev-parse", "--show-toplevel"])
+    toplevel = toplevel.decode("utf-8", "replace").strip()
+    if not os.path.exists(toplevel) or not os.path.samefile(toplevel, source_path):
+        raise RuntimeError(
+            "eqasim_source_path %s must be the root of its own git work tree, but git reports "
+            "the work tree root %s; the content digest would list files of another repository"
+            % (source_path, toplevel))
+
+    listing = _git_output(git_binary, source_path,
+                          ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+    try:
+        names = listing.decode("utf-8").split("\0")
+    except UnicodeDecodeError as error:
+        raise RuntimeError(
+            "git listed a file name below eqasim_source_path %s that is not valid UTF-8 (%s); "
+            "rename it so the content digest can include it" % (source_path, error))
 
     digest = hashlib.sha256()
-    for relative in sorted(p for p in listing.decode("utf-8").split("\0") if p):
+    hashed_files = 0
+    for relative in sorted(p for p in names if p):
         normalised = relative.replace(os.sep, "/")
         if not normalised.endswith(SOURCE_SUFFIXES):
+            continue
+        if normalised.rsplit("/", 1)[-1] in SOURCE_EXCLUDED_FILE_NAMES:
             continue
         # A file under a directory named target or .claude at any depth is not source.
         if any(directory in SOURCE_EXCLUDED_DIRECTORIES
@@ -105,6 +136,12 @@ def source_tree_digest(source_path):
             continue
         digest.update(normalised.encode("utf-8") + b"\0"
                       + _sha256_text_file(absolute).encode("utf-8") + b"\n")
+        hashed_files += 1
+    if hashed_files == 0:
+        raise RuntimeError(
+            "git listed no source files (%s) below eqasim_source_path %s; the content digest "
+            "would be constant and a Java edit would never rebuild the jar"
+            % (", ".join(SOURCE_SUFFIXES), source_path))
     return digest.hexdigest()
 
 
@@ -266,6 +303,6 @@ def validate(context):
     if source_path != "":
         if not os.path.exists(source_path):
             raise RuntimeError("eqasim_source_path does not exist: %s" % source_path)
-        return {"format": 1, "source": source_tree_digest(source_path)}
+        return {"format": 1, "source": source_tree_digest(source_path, context.config("git_binary"))}
 
     return True

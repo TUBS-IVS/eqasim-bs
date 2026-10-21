@@ -116,10 +116,72 @@ def test_source_tree_digest_raises_outside_a_git_work_tree(tmp_path):
         eqasim.source_tree_digest(str(plain))
 
 
+def test_shade_plugin_rewrite_of_the_dependency_reduced_pom_does_not_change_the_digest(java_repo):
+    # The fork tracks braunschweig/dependency-reduced-pom.xml; every local shade build rewrites it.
+    reduced = java_repo / "braunschweig/dependency-reduced-pom.xml"
+    reduced.parent.mkdir()
+    reduced.write_text("<project>a</project>\n", encoding="utf-8")
+    _git(java_repo, "add", "braunschweig/dependency-reduced-pom.xml")
+    before = eqasim.source_tree_digest(str(java_repo))
+    reduced.write_text("<project>b</project>\n", encoding="utf-8")
+    assert eqasim.source_tree_digest(str(java_repo)) == before
+
+
+def test_a_source_dir_ignored_by_an_enclosing_repo_raises(tmp_path):
+    # `git -C sub ls-files` would resolve the parent repo and list nothing: a constant token.
+    outer = tmp_path / "outer"
+    (outer / "sub").mkdir(parents=True)
+    (outer / ".gitignore").write_text("sub/\n", encoding="utf-8")
+    (outer / "sub/A.java").write_text("class A {}\n", encoding="utf-8")
+    _git(outer, "init", "-q")
+    with pytest.raises(RuntimeError, match="root of its own git work tree"):
+        eqasim.source_tree_digest(str(outer / "sub"))
+
+
+def test_a_plain_subdirectory_of_a_repo_raises(java_repo):
+    with pytest.raises(RuntimeError, match="root of its own git work tree"):
+        eqasim.source_tree_digest(str(java_repo / "core"))
+
+
+def test_a_work_tree_without_any_source_file_raises(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / "README.md").write_text("notes\n", encoding="utf-8")
+    _git(empty, "init", "-q")
+    with pytest.raises(RuntimeError, match="no source files"):
+        eqasim.source_tree_digest(str(empty))
+
+
+def test_a_missing_git_binary_raises_naming_it(java_repo):
+    with pytest.raises(RuntimeError, match="no-such-git-binary"):
+        eqasim.source_tree_digest(str(java_repo), git_binary="no-such-git-binary")
+
+
+def test_validate_passes_the_configured_git_binary(java_repo):
+    class _Context:
+        def config(self, key):
+            return {"eqasim_source_path": str(java_repo), "eqasim_path": "",
+                    "git_binary": "no-such-git-binary"}[key]
+    with pytest.raises(RuntimeError, match="no-such-git-binary"):
+        eqasim.validate(_Context())
+
+
+def test_a_non_utf8_file_name_raises_runtime_error(java_repo, monkeypatch):
+    real_run = subprocess.run
+
+    def fake_run(command, *args, **kwargs):
+        if "ls-files" in command:
+            return subprocess.CompletedProcess(command, 0, stdout=b"core/\xff.java\x00", stderr=b"")
+        return real_run(command, *args, **kwargs)
+    monkeypatch.setattr(eqasim.sp, "run", fake_run)
+    with pytest.raises(RuntimeError, match="not valid UTF-8"):
+        eqasim.source_tree_digest(str(java_repo))
+
+
 def test_validate_returns_a_content_token(java_repo):
     class _Context:
         def config(self, key):
-            return {"eqasim_source_path": str(java_repo), "eqasim_path": ""}[key]
+            return {"eqasim_source_path": str(java_repo), "eqasim_path": "", "git_binary": "git"}[key]
     token = eqasim.validate(_Context())
     assert token == {"format": 1, "source": eqasim.source_tree_digest(str(java_repo))}
 
@@ -131,7 +193,8 @@ def test_validate_follows_execute_precedence_when_both_keys_are_set(java_repo, t
 
     class _Context:
         def config(self, key):
-            return {"eqasim_source_path": str(java_repo), "eqasim_path": str(jar)}[key]
+            return {"eqasim_source_path": str(java_repo), "eqasim_path": str(jar),
+                    "git_binary": "git"}[key]
     token = eqasim.validate(_Context())
     assert token == {"format": 1, "jar": eqasim._sha256_file(str(jar))}
 

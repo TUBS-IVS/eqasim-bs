@@ -68,12 +68,18 @@
    LF (the jar token hashes raw bytes), for the files reported
    by `git ls-files -z --cached --others --exclude-standard` with a suffix in `SOURCE_SUFFIXES`
    (`.java`, `.xml`, `.properties`), excluding any file below a directory named `target` or
-   `.claude` (`SOURCE_EXCLUDED_DIRECTORIES`) at any depth. Tracked files that are deleted in the
+   `.claude` (`SOURCE_EXCLUDED_DIRECTORIES`) at any depth and any file named
+   `dependency-reduced-pom.xml` (`SOURCE_EXCLUDED_FILE_NAMES`; the fork tracks it and the shade
+   plugin rewrites it on every local build). Tracked files that are deleted in the
    work tree are skipped. The digest does not read mtimes.
    When both keys are set, `eqasim_path` wins, as in `execute()`, so the token describes the jar
    that is provided.
-6. **No fallback.** A source path that is not a git work tree, or a missing `git`, raises
-   `RuntimeError`. A directory walk or an mtime key would silently apply a different cache rule.
+6. **No fallback.** A source path that is not a git work tree, or a missing `git` (the binary
+   is the pipeline's `git_binary` option), raises `RuntimeError`. So do a source path that is not
+   the root of its own work tree (a subdirectory of another repository, possibly gitignored by
+   it, would be listed against the wrong repository), a file name that is not valid UTF-8, and a
+   listing with no source file left after the filters (the token would be constant). A directory
+   walk or an mtime key would silently apply a different cache rule.
 7. **Copy step.** `execute()` of `matsim.runtime.eqasim` now also ignores `.claude` in
    `shutil.copytree`, so agent worktrees are neither copied into the build directory nor part
    of the token.
@@ -113,6 +119,17 @@
   independent of mtimes. The prebuilt-jar token (`eqasim_path`) hashes the raw bytes of the
   binary jar. The wrapper hash of the tool stage is read in text mode and is likewise
   line-ending independent.
+- **Freight now needs `eqasim_source_path`.** The tool reads `matsim.version` and the Java
+  release from the fork pom, so a setup with only a prebuilt `eqasim_path` jar fails loudly at
+  `braunschweig.freight.extraction_tool`. `freight_tool_matsim_version` alone does not lift
+  this, because `java_release` still comes from the pom.
+- **Limits of the source digest.** Resources with other suffixes (for example an `.html` file
+  bundled into the jar) are not hashed, and gitignored files are copied by the `copytree` in
+  `execute()` of `matsim.runtime.eqasim` but not hashed; the old mtime rule did not see them
+  either. After editing such a file, force the rebuild by deleting the stage's
+  `matsim.runtime.eqasim__<hash>.p` file (or its `.cache` directory) in the pipeline working
+  directory: synpp 1.6.2 (`synpp/pipeline.py`, devalidation step "cache is not existant")
+  marks a stage stale when either is missing, and with it every descendant stage.
 - **Non-git sources fail loudly.** A copy of the Java tree without `.git` can no longer be used
   as `eqasim_source_path`; the stage raises instead of choosing a key.
 - **Cache sharing.** `braunschweig.freight.extraction_tool` is not in `cache_share_stages`,
@@ -131,7 +148,9 @@
   CRLF and LF checkouts give the same source digest, `.xml` and `.properties` edits change it, a
   tracked-but-deleted file is skipped, `eqasim_path` takes precedence over `eqasim_source_path`
   in `validate()` as in `execute()`, a missing fork pom raises an actionable error, and the tool
-  stage declares the lockstep keys with `eqasim_source_path` volatile.
+  stage declares the lockstep keys with `eqasim_source_path` volatile. Added in the final
+  review: the source-root, empty-listing, non-UTF-8, `git_binary` and `dependency-reduced-pom.xml`
+  rules of the digest, and the version log lines of the tool stage's `execute`.
   The one test that builds the jar with Maven is opt-in (`EQASIM_BS_FREIGHT_TOOL_BUILD=1`) and
   skipped by default; none runs the routing.
 - Cause of the recompute: run manifest `docs/runs/freight-boundary-links-ab-1pct-2026-10-16.yml`
