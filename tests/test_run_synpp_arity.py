@@ -95,6 +95,7 @@ def test_main_calls_run_from_yaml_with_installed_signature(tmp_path, monkeypatch
     # the real pipeline never runs, provenance/logging/cache-prime are neutralised.
     monkeypatch.setattr(mod.synpp, "run_from_yaml", _recorder)
     monkeypatch.setattr(mod, "prime_from_config", lambda config_path: None)
+    monkeypatch.setattr(mod, "explain_before_run", lambda config_path: 0)
     monkeypatch.setattr(mod, "export_to_store_from_config", lambda config_path: None)
     _pin_resource_gate(monkeypatch)
     # main() imports these lazily from braunschweig.*, so patch them at the source.
@@ -146,6 +147,7 @@ def test_main_hands_the_resource_report_to_the_provenance_record(tmp_path, monke
     provenance_calls = []
     monkeypatch.setattr(mod.synpp, "run_from_yaml", lambda *a, **k: None)
     monkeypatch.setattr(mod, "prime_from_config", lambda config_path: None)
+    monkeypatch.setattr(mod, "explain_before_run", lambda config_path: 0)
     monkeypatch.setattr(mod, "export_to_store_from_config", lambda config_path: None)
     monkeypatch.setattr("braunschweig.logging_setup.setup_logging",
                         lambda level="INFO": str(tmp_path / "run.log"))
@@ -214,6 +216,7 @@ def test_main_two_args_composes_and_runs_merged_config(tmp_path, monkeypatch):
     seen = {}
     _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(mod, "prime_from_config", lambda p: seen.setdefault("prime", p))
+    monkeypatch.setattr(mod, "explain_before_run", lambda p: 0)
     monkeypatch.setattr(mod, "export_to_store_from_config", lambda p: seen.setdefault("export", p))
     # main() imports these lazily from braunschweig.*, so patch them at the source
     # (mirrors test_main_calls_run_from_yaml_with_installed_signature above).
@@ -242,3 +245,30 @@ def test_main_two_args_composes_and_runs_merged_config(tmp_path, monkeypatch):
     assert Path(seen["prime"]) == merged_path
     assert Path(seen["export"]) == merged_path
     assert Path(seen["provenance"]) == merged_path
+
+
+def test_main_aborts_before_synpp_when_the_pre_run_assessment_gates(tmp_path, monkeypatch):
+    """explain_before_run returning 2 must stop main() with exit code 2 before
+    synpp.run_from_yaml executes any stage (the stale-stage gate)."""
+    mod = _load()
+
+    _pin_resource_gate(monkeypatch)
+    ran = []
+    monkeypatch.setattr(mod.synpp, "run_from_yaml", lambda *a, **k: ran.append(a))
+    monkeypatch.setattr(mod, "prime_from_config", lambda config_path: None)
+    monkeypatch.setattr(mod, "explain_before_run", lambda config_path: 2)
+    monkeypatch.setattr(mod, "export_to_store_from_config", lambda config_path: None)
+    monkeypatch.setattr("braunschweig.logging_setup.setup_logging",
+                        lambda level="INFO": str(tmp_path / "run.log"))
+    monkeypatch.setattr("braunschweig.provenance.log_and_write_run_provenance",
+                        lambda config_path, **kwargs: None)
+
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(textwrap.dedent("""
+        working_directory: {wd}
+        run: []
+        config: {{}}
+    """).format(wd=tmp_path / "wd").strip(), encoding="utf-8")
+
+    assert mod.main([str(config_path)]) == 2
+    assert ran == [], "synpp.run_from_yaml must not run after the gate aborts"
