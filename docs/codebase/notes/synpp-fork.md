@@ -185,8 +185,8 @@ the revision.
 
 Output hashing covers every entry of `pipeline.json` that has both artifacts, including entries
 of old config variants that are not in the current graph; this is the expensive part on large
-caches. The migration logs file count, bytes and hashing seconds per entry and the count totals at the end
-(`migrated`, `kept_legacy`, `module_hash_mismatch`, `token_mismatch`, and so on).
+caches. The migration logs file count, bytes and hashing seconds per entry and the count totals at
+the end (`migrated`, `kept_legacy`, `module_hash_mismatch`, `token_mismatch`, and so on).
 `pipeline.json` is rewritten atomically with `pipeline.json.bk` kept
 (`braunschweig.synpp_fork.metadata.write_meta`). Re-running is idempotent (`already_migrated`).
 

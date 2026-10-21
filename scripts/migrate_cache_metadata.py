@@ -34,8 +34,7 @@ code is proven to differ from it only by that refactor:
 "Refactor-equivalent": the semantic digests (docstring-free AST) of the two texts are equal after
 removing the module-level ``def validate`` (only a plain FunctionDef: an ``async def validate``
 or a ``validate = ...`` assignment is ordinary code and stays in) and the module-level imports of
-exactly
-``import hashlib``, ``import inspect``, ``import importlib`` and ``from braunschweig import
+exactly ``import hashlib``, ``import inspect``, ``import importlib`` and ``from braunschweig import
 synpp_tokens`` (unaliased). Only the listed names are dropped from an import statement; any other
 name in the same statement stays in.
 
@@ -335,7 +334,8 @@ def migrate(registry: dict, working_directory: str, meta: dict, *, dry_run: bool
     if dry_run:
         meta = copy.deepcopy(meta)
     counts = {key: 0 for key in COUNT_KEYS}
-    counts["output_hash_seconds"] = 0.0      # wall time inside hash_stage_output (spec 4.3); not a count
+    # Wall time inside hash_stage_output (spec 4.3); not a count.
+    counts["output_hash_seconds"] = 0.0
     wrappers = {stage["wrapper"].name: stage["wrapper"] for stage in registry.values()}
     migrated = set()
     for entry in sorted(meta):

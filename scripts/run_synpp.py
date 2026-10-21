@@ -297,8 +297,9 @@ def main(argv=None) -> int:
         # Deterministic stage hashes and content-addressed validity: synpp 1.6.2 propagates
         # implicit config keys in a set-iteration order that depends on PYTHONHASHSEED, so
         # identical code + config produced different cache hashes per process (ADR-0105). Must be
-        # installed BEFORE synpp starts building the stage graph; see braunschweig/synpp_deterministic.py and
-        # braunschweig/synpp_fork/__init__.py (semantic module hash, content-addressed validity).
+        # installed BEFORE synpp starts building the stage graph; see
+        # braunschweig/synpp_deterministic.py and braunschweig/synpp_fork/__init__.py (semantic
+        # module hash, content-addressed validity).
         from braunschweig import synpp_fork
         synpp_fork.install()
         with track_cache_provenance_from_config(config_path):
