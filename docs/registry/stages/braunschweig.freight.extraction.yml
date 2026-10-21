@@ -19,3 +19,4 @@ features:
 - freight_longhaul_v3
 decisions:
 - ADR-0030
+- ADR-0148

@@ -7,6 +7,7 @@ description: Injects long-haul heavy-goods-vehicle traffic (internal/in/out/thro
 stages:
 - braunschweig.freight.trips
 - braunschweig.freight.extraction
+- braunschweig.freight.extraction_tool
 - braunschweig.data.freight.german_wide
 pipelines:
   popsim_mid: active
@@ -25,6 +26,7 @@ detail_doc: docs/features/freight.md
 code_paths:
 - braunschweig/freight/trips.py
 - braunschweig/freight/extraction.py
+- braunschweig/freight/extraction_tool.py
 evidence:
   tests:
   - tests/test_freight_trips.py

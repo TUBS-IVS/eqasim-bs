@@ -18,4 +18,5 @@ pipelines:
 production: true
 features:
 - freight_longhaul_v3
-decisions: []
+decisions:
+- ADR-0148
