@@ -288,12 +288,13 @@ def main(argv=None) -> int:
         # None/[]/{} makes Synpp.build_from_yml read working_directory and run from the
         # YAML, reproducing the old single-argument behaviour without overriding any
         # config.
-        # Deterministic stage hashes: synpp 1.6.2 propagates implicit config keys in a
+        # Deterministic stage hashes and content-addressed validity: synpp 1.6.2 propagates implicit config keys in a
         # set-iteration order that depends on PYTHONHASHSEED, so identical code + config
         # produced different cache hashes per process (ADR-0105). Must be installed BEFORE
-        # synpp starts building the stage graph; see braunschweig/synpp_deterministic.py.
-        from braunschweig import synpp_deterministic
-        synpp_deterministic.install()
+        # synpp starts building the stage graph; see braunschweig/synpp_deterministic.py and
+        # braunschweig/synpp_fork/__init__.py (semantic module hash, content-addressed validity).
+        from braunschweig import synpp_fork
+        synpp_fork.install()
         with track_cache_provenance_from_config(config_path):
             synpp.run_from_yaml(config_path, None, [], {})
         # Export the shareable stage caches into the shared store ONLY after a
