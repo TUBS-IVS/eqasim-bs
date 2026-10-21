@@ -86,6 +86,9 @@ def explain_before_run(config_path):
     ``synpp_expected_stale_stages`` lists the stage NAMES allowed to be stale for their own
     reasons; when the list is non-empty and another stage is stale, the launch stops with
     the report, before any stage executes. Run targets never count as unexpected.
+    An EMPTY list means "no gate" (the report is only logged); this differs from
+    ``scripts/explain_stale_stages.py --expect ""``, which means "nothing is allowed".
+    Raises RuntimeError when the config has no ``working_directory``.
     Returns 0 to continue, 2 to abort.
     """
     log = logging.getLogger("braunschweig")
@@ -97,6 +100,11 @@ def explain_before_run(config_path):
         return 0
     from braunschweig.synpp_fork import metadata, registry, staleness
     working_directory = doc.get("working_directory")
+    if not working_directory:
+        raise RuntimeError(
+            f"{config_path}: the pre-run assessment needs a working_directory to read the "
+            "synpp metadata from; set it in the config (or the overlay) or disable the "
+            "assessment with synpp_explain_before_run: false.")
     stages = registry.build_registry_from_settings(doc)
     assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
     for line in staleness.format_report(assessments).splitlines():

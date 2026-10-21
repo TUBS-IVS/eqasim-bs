@@ -7,6 +7,10 @@ Read-only. Exit 0: every stage stale for its own reasons is in --expect (run tar
 re-executes on every run, never count as unexpected); exit 2: at least one is not; exit 1: error.
 Stages marked STALE-IF are valid now and recompute only if the named ancestor's output changes
 (early cutoff decides at run time, see braunschweig/synpp_fork/staleness.py).
+Stages marked RECOMPUTE have a stale ancestor with no recorded output hash and will recompute
+for certain. --expect is a gate only when given: `--expect ""` means NOTHING may be stale
+(besides run targets), whereas the launcher key `synpp_expected_stale_stages: []` means
+"no gate" (scripts/run_synpp.py, explain_before_run).
 """
 from __future__ import annotations
 
@@ -34,7 +38,11 @@ def main(argv=None) -> int:
     parser.add_argument("base")
     parser.add_argument("overlay", nargs="?")
     parser.add_argument("--working-directory")
-    parser.add_argument("--expect", help="stage names allowed to be stale, comma-separated or @file")
+    parser.add_argument(
+        "--expect",
+        help="stage names allowed to be stale, comma-separated or @file. Given but empty "
+             '(--expect "") means NOTHING may be stale (besides run targets); this differs from the '
+             "launcher key synpp_expected_stale_stages: [], which means no gate.")
     parser.add_argument("--json", dest="json_out")
     args = parser.parse_args(argv)
 
@@ -50,7 +58,8 @@ def main(argv=None) -> int:
     print(staleness.format_report(assessments))
     if args.json_out:
         payload = {a.stage: {"hash": a.hash, "reasons": a.reasons, "legacy_rules": a.legacy_rules,
-                             "stale_if": a.stale_if,
+                             "stale_if": a.stale_if, "certain_recompute": a.certain_recompute,
+                             "unhashed_ancestors": a.unhashed_ancestors,
                              "config_diff": {k: list(v) for k, v in a.config_diff.items()}}
                    for a in assessments.values()}
         with open(args.json_out, "w", encoding="utf-8") as handle:

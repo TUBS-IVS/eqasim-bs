@@ -67,3 +67,21 @@ def test_disabled_switch_is_a_logged_noop(project, caplog):
     with caplog.at_level("INFO"):
         assert _load().explain_before_run(str(config_path)) == 0
     assert "pre-run assessment disabled" in caplog.text
+
+
+def test_expected_list_containing_the_stale_stage_lets_the_launch_continue(project):
+    write, working = project
+    config_path = write(["ls_stage"])
+    entry = next(n for n in os.listdir(working) if n.endswith(".p"))
+    os.remove(working / entry)
+    assert _load().explain_before_run(str(config_path)) == 0
+
+
+def test_missing_working_directory_is_a_clear_error(project):
+    write, _ = project
+    config_path = write([])
+    doc = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    del doc["working_directory"]
+    config_path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="working_directory"):
+        _load().explain_before_run(str(config_path))
