@@ -1,7 +1,9 @@
-"""In-repo vendored fork of the synpp 1.6.2 pipeline runtime (spec 2026-10-16).
+"""Namespace of the in-repo synpp 1.6.2 fork (spec 2026-10-16).
 
-Phase 1 installs only the deterministic implicit-config propagation of ADR-0105. Later
-phases add the semantic stage hash and the content-addressed validity rule of ``run()``.
+Phase 1 only wraps ``braunschweig.synpp_deterministic`` (the deterministic implicit-config
+propagation of ADR-0105) behind ``install()`` and adds the read-only registry builder,
+metadata reader and staleness assessment used by the explainer. Later phases add the
+vendored ``run()`` / ``get_stage_hash()`` (semantic stage hash, content-addressed validity).
 """
 from __future__ import annotations
 

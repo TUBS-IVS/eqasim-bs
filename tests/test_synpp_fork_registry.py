@@ -63,3 +63,31 @@ def test_report_script_still_exposes_build_registry():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.build_registry)
+
+
+def test_load_settings_with_overlay_lets_the_overlay_win(tmp_path):
+    from braunschweig.synpp_fork import registry
+    base = tmp_path / "base.yml"
+    overlay = tmp_path / "overlay.yml"
+    base.write_text(yaml.safe_dump({"config": {"value": 1, "kept": "base"}}), encoding="utf-8")
+    overlay.write_text(yaml.safe_dump({"working_directory": str(tmp_path / "cache"),
+                                       "run": ["mini_child"], "config": {"value": 2}}), encoding="utf-8")
+    settings = registry.load_settings(str(base), str(overlay))
+    assert settings["config"] == {"value": 2, "kept": "base"}
+    assert settings["run"] == ["mini_child"]
+
+
+def test_load_settings_rejects_an_empty_config(tmp_path):
+    from braunschweig.synpp_fork import registry
+    empty = tmp_path / "empty.yml"
+    empty.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"empty\.yml.*empty config"):
+        registry.load_settings(str(empty), None)
+
+
+def test_load_settings_rejects_a_config_without_a_run_list(tmp_path):
+    from braunschweig.synpp_fork import registry
+    path = tmp_path / "norun.yml"
+    path.write_text(yaml.safe_dump({"config": {"value": 1}}), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"norun\.yml.*no 'run' list"):
+        registry.load_settings(str(path), None)

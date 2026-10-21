@@ -20,7 +20,12 @@ def load_settings(base: str, overlay: str | None) -> dict:
         from braunschweig import config_compose
         return config_compose.compose(base, overlay)
     with open(base, encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
+        settings = yaml.safe_load(handle)
+    if not settings:
+        raise ValueError(f"{base}: empty config (expected a YAML mapping with a 'run' list)")
+    if not isinstance(settings.get("run"), list) or not settings["run"]:
+        raise ValueError(f"{base}: no 'run' list in the config (the stages to build are missing)")
+    return settings
 
 
 def definitions_from_settings(settings: dict) -> list:
@@ -53,4 +58,11 @@ def build_registry_from_settings(settings: dict, *, patched: bool = True) -> dic
 
 
 def build_registry(base: str, overlay: str | None = None, *, patched: bool = True) -> dict:
+    """Compose ``base`` (+ ``overlay``) and build the stage registry read-only.
+
+    ``patched`` defaults to True: the project's synpp patches are installed first, so the
+    registry carries the production stage hashes. While building, the process changes into
+    the repository root (synpp resolves stage modules relative to it) and restores the
+    previous working directory afterwards.
+    """
     return build_registry_from_settings(load_settings(base, overlay), patched=patched)
