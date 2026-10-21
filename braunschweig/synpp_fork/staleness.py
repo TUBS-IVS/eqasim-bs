@@ -137,6 +137,10 @@ def assess(registry: dict, working_directory: str, meta: dict, *, rerun_required
             assessment.config_diff = nearest_config_diff(name_of[stage_hash], stage["config"], meta)
         if not assessment.reasons:
             for dependency in stage.get("dependencies", []):
+                if out[dependency].stale:
+                    # A stale dependency is itself the ancestor (recorded above); what it
+                    # inherited from further up is cut off by its own output digest.
+                    continue
                 for ancestor in out[dependency].stale_if:
                     if ancestor not in assessment.stale_if:
                         assessment.stale_if.append(ancestor)

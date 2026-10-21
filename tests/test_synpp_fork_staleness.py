@@ -158,7 +158,7 @@ def test_format_report_has_one_line_per_stage(project):
     run()
     report = staleness.format_report(staleness.assess(registry(), str(working),
                                                       metadata.read_meta(str(working)), rerun_required=False))
-    lines = [line for line in report.splitlines() if line.startswith(("HIT", "STALE"))]
+    lines = [line for line in report.splitlines() if line.startswith(("HIT", "STALE", "RECOMPUTE"))]
     assert len(lines) == 2
 
 
@@ -387,3 +387,52 @@ def test_unexpected_honours_a_non_trivial_expected_set(diamond):
     assert staleness.unexpected(assessments, {"dm_b"}) == ["dm_c"]
     assert staleness.unexpected(assessments, {"dm_b", "dm_c"}) == []
     assert staleness.unexpected(assessments, set()) == ["dm_b", "dm_c"]
+
+
+CHAIN = {
+    "ch_g": "def execute(context):\n    return 1\n",
+    "ch_h": "def execute(context):\n    return 2\n",
+    "ch_x": ('def configure(context):\n    context.stage("ch_g")\n    context.stage("ch_h")\n'
+             'def execute(context):\n    return context.stage("ch_g") + context.stage("ch_h")\n'),
+    "ch_c": ('def configure(context):\n    context.stage("ch_x")\n'
+             'def execute(context):\n    return context.stage("ch_x") + 1\n'),
+}
+
+
+def test_child_inherits_only_from_non_stale_dependencies(tmp_path, monkeypatch):
+    """G stale and unhashed, X stale for its OWN reason (with a recorded output hash), child C.
+
+    C is STALE-IF on X; the unhashed grandparent G must not turn C into a certain RECOMPUTE,
+    because X's recorded digest can still stop the propagation (early cutoff).
+    """
+    from braunschweig.synpp_fork import metadata, staleness
+    for name, source in CHAIN.items():
+        (tmp_path / (name + ".py")).write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    working = tmp_path / "cache"
+    working.mkdir()
+
+    def build():
+        for name in CHAIN:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+        importlib.invalidate_caches()
+        return synpp.pipeline.process_stages([{"descriptor": "ch_c"}], {})
+
+    for name in CHAIN:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    importlib.invalidate_caches()
+    synpp.run([{"descriptor": "ch_c"}], {}, working_directory=str(working), rerun_required=False)
+    meta = metadata.read_meta(str(working))
+
+    def hash_of(name):
+        return next(h for h in meta if h.split("__")[0] == name)
+
+    _remove_pickle(working, "ch_g")                       # G: stale (cache_missing), no output hash
+    meta[hash_of("ch_h")]["updated"] += 10.0              # X: own reason via the legacy rule on H
+    meta[hash_of("ch_x")]["output_hash"] = {"format": 1, "digest": "abc"}
+    result = _by_name(staleness.assess(build(), str(working), meta, rerun_required=False))
+    assert result["ch_g"].reasons == ["cache_missing"]
+    assert result["ch_x"].reasons == ["parent_updated:ch_h"]
+    assert result["ch_c"].stale_if == ["ch_x"]
+    assert result["ch_c"].unhashed_ancestors == []
+    assert not result["ch_c"].certain_recompute

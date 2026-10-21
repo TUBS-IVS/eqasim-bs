@@ -53,7 +53,7 @@ def test_all_hits_exit_zero_and_json(project, tmp_path, capsys):
     assert _load().main([str(config_path), "--json", str(out)]) == 0
     report = json.loads(out.read_text(encoding="utf-8"))
     assert report["ex_parent"]["reasons"] == []
-    assert report["ex_parent"]["unhashed_ancestors"] == [] and "certain_recompute" in report["ex_child"]
+    assert report["ex_child"]["reasons"] == ["required"]
     assert "HIT      ex_parent" in capsys.readouterr().out
 
 
