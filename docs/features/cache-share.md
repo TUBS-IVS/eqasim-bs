@@ -107,12 +107,10 @@ digest. `braunschweig.freight.extraction` is the known case: its unshared
 reproducible across builds, so `braunschweig.freight.extraction` recomputes there. The decision text
 is ADR-0149 (R17-3, R17-2).
 
-*Envelope refresh (R17-1).* Under early cutoff a spared child's record changes during a run
-(`dependencies[parent]` takes the parent's new `updated`; the recorded digest is equal by definition
-and stays) while its `updated` stays. `track_run` then rewrites the
-`metadata` of an EXISTING valid envelope to the new record and keeps the envelope's `environment`
-(the runtime that created the artifact, not the one that re-validated it), so `export` still sees
-envelope and record equal. It never creates an envelope: an entry that has none stays unknown.
+*Envelope refresh (R17-1).* Under early cutoff, `track_run` keeps an existing envelope in step with a
+record that a run changed (the envelope's original environment is kept; it never creates an envelope), so
+`export` still sees envelope and record equal. The decision text is in
+[ADR-0149, R17-1](../decisions/ADR-0149-vendored-synpp-fork-and-content-addressed-stage-validity.md).
 
 *Known safe misses (R17-2; documented, not changed).*
 

@@ -193,8 +193,9 @@ def _coherence_basis(entry: dict, metadata: dict) -> str:
 def _coherent(entry: dict, metadata: dict) -> bool:
     """A child's record is coherent with its parents when every present parent either
     agrees by output hash or, for two legacy records, by equal timestamps, and every absent
-    parent has a digest recorded in the child (decided at run time). A mixed pair (one side hashed, the other not) is incoherent: content cannot be
-    compared, so synpp must recompute (spec 2026-10-16 section 4.5)."""
+    parent has a digest recorded in the child (decided at run time). A mixed pair (one side
+    hashed, the other not) is incoherent: content cannot be compared, so synpp must
+    recompute (spec 2026-10-16 section 4.5)."""
     return _incoherence(entry, metadata) is None
 
 
