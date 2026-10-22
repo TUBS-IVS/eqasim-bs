@@ -100,10 +100,11 @@ notes: >-
   plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
   true, when the share of late or non-monotonic plans of the frozen residents exceeds
   max_frozen_defect_share (false: ERROR log, the stage continues). The check also counts the legs stamped
-  walkFallbackFrom (a pt leg the router replaced by walk): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk per class;
+  walkFallbackFrom (a pt leg the router replaced by walk): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class, and n_pt_unstamped_walk
+  (pt-intended walk-only trips without the stamp, WARNING when above 0: a stale eqasim jar);
   key .max_frozen_pt_as_walk_share (0.02, ASSUMPTION, default declared in configure() and pinned in configs/base_bs.yml) fails the
   stage for the frozen residents only when fail_on_threshold is true. The attribute needs the eqasim-java-bs
-  PlanRouter change, so the counter is 0 until that fork change is merged and the jar rebuilt (#465). in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
+  PlanRouter change, so n_pt_as_walk is 0 until that fork change is merged and the jar rebuilt, and n_pt_unstamped_walk makes that visible (#465). in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
   _HELPER_MODULES, and braunschweig.popsim.plan_validation, braunschweig.popsim.closure_dwell and
   data.hts.hts (its import closure) are in the deferred helper names, so the validate token covers
   the check (ADR-0136). Contributor note docs/codebase/notes/plan-check.md.

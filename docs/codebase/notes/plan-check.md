@@ -55,10 +55,10 @@ Limitations). Distances are straight-line metres between the coordinates of the 
 | `braunschweig.plan_check.bicycle_max_distance_m` | 30000 | counts bicycle legs over it |
 | `braunschweig.plan_check.leg_max_duration_s` | 10800 | counts legs with a `trav_time` over it |
 | `braunschweig.plan_check.max_frozen_defect_share` | 0.005 | ERROR log, or RAISES with the next key |
-| `braunschweig.plan_check.max_frozen_pt_as_walk_share` | 0.02 (default declared in configure() and pinned in `configs/base_bs.yml`) | share of frozen-resident legs that are pt replaced by walk (`walkFallbackFrom`); ERROR log, or RAISES with the next key (ASSUMPTION) |
+| `braunschweig.plan_check.max_frozen_pt_as_walk_share` | 0.02 (default declared in configure() and pinned in `configs/base_bs.yml`) | share of the frozen-resident pt-intended trips (`routingMode` pt) that are replaced by a walk (`walkFallbackFrom`); ERROR log, or RAISES with the next key (ASSUMPTION) |
 | `braunschweig.plan_check.fail_on_threshold` | `false` | `true` makes the thresholds above raise |
 
-The pt-as-walk counter (`n_pt_as_walk`, `pt_as_walk_by_hour`, `share_pt_as_walk`) depends on the eqasim-java-bs `PlanRouter` change that stamps `walkFallbackFrom`; until that is merged and the jar rebuilt it stays 0.
+The pt counters are per trip (`split_trips`: legs joined by `pt interaction` activities are one trip): `n_pt_trips` (trips with leg attribute `routingMode` pt or a `walkFallbackFrom` stamp), `n_pt_as_walk`, `pt_as_walk_by_hour`, `share_pt_as_walk` (= `n_pt_as_walk / n_pt_trips`, the threshold's share) and `share_pt_as_walk_of_legs` (report only). They depend on the eqasim-java-bs `PlanRouter` change that stamps `walkFallbackFrom`; with an older jar `n_pt_as_walk` stays 0. So that 0 cannot be mistaken for "no fallback", `n_pt_unstamped_walk` (per block and as the top-level total of the summary) counts pt-intended trips that consist of walk legs only and carry no stamp; `_log_summary` logs a WARNING naming the likely cause (jar without the stamp: rebuild `eqasim_source_path`; or a direct walk returned by the router) whenever it is above 0.
 
 Only the threshold acts, and only for the `residents` subpopulation in the `frozen` class: when the share of
 late plans or of non-monotonic plans exceeds it, the check logs at ERROR and continues

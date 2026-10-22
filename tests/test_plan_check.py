@@ -110,7 +110,7 @@ def test_iter_person_plans_reads_subpopulation_activities_and_legs(population_pa
     assert [p.subpopulation for p in plans] == [C.RESIDENTS, C.RESIDENTS, "freight", C.RESIDENTS, "incommuter"]
     assert plans[0].activities[1] == ("outside", 31 * 3600.0, 20000.0, 0.0)
     assert plans[0].activities[2] == ("home", None, 0.0, 0.0)
-    assert plans[0].legs == [("walk", 5.5 * 3600.0, None), ("walk", 5.5 * 3600.0, None)]
+    assert plans[0].legs == [("walk", 5.5 * 3600.0, None, None), ("walk", 5.5 * 3600.0, None, None)]
 
 
 def test_leg_tour_frozen_marks_the_legs_of_tours_touching_outside():
@@ -197,12 +197,12 @@ def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulate
     h = 3600.0
     # Every activity END time is inside the day; only the last leg (departs 29:00, travels 1:30) arrives at 30:30.
     late_arrival_frozen = _plan("a", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
-                                [("car", 0.5 * h, None), ("car", 1.5 * h, None)])
+                                [("car", 0.5 * h, None, None), ("car", 1.5 * h, None, None)])
     on_time_frozen = _plan("b", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
-                           [("car", 0.5 * h, None), ("car", 0.5 * h, None)])
+                           [("car", 0.5 * h, None, None), ("car", 0.5 * h, None, None)])
     late_arrival_inside = _plan("c", [("home", 8 * h, 0, 0), ("work", 29.5 * h, 1, 0), ("home", None, 0, 0)],
-                                [("car", 0.5 * h, None), ("car", 1.0 * h, None)])
-    no_travel_time = _plan("d", [("home", 8 * h, 0, 0), ("work", None, 1, 0)], [("car", None, None)])
+                                [("car", 0.5 * h, None, None), ("car", 1.0 * h, None, None)])
+    no_travel_time = _plan("d", [("home", 8 * h, 0, 0), ("work", None, 1, 0)], [("car", None, None, None)])
     summary = _summarise([late_arrival_frozen, on_time_frozen, late_arrival_inside, no_travel_time])
     residents = summary["subpopulations"][C.RESIDENTS]
     assert residents["frozen"]["n_plans_late"] == 0 and residents["in_region"]["n_plans_late"] == 0
@@ -220,7 +220,7 @@ def test_arrival_late_is_report_only_and_never_fails_the_thresholds():
 
 
 def test_summarise_raises_naming_the_person_when_a_plan_has_more_legs_than_activities_minus_one():
-    broken = _plan("broken_42", [("home", 1.0, 0, 0), ("work", None, 1, 0)], [("car", 10.0, None), ("car", 10.0, None)])
+    broken = _plan("broken_42", [("home", 1.0, 0, 0), ("work", None, 1, 0)], [("car", 10.0, None, None), ("car", 10.0, None, None)])
     with pytest.raises(ValueError, match="broken_42"):
         _summarise([broken])
 
@@ -350,14 +350,16 @@ def test_summarise_counts_pt_as_walk_per_class_and_hour(population_path):
     assert frozen["n_pt_as_walk"] == 1 and frozen["pt_as_walk_by_hour"] == {"23": 1}
     # The leg that kept the attribute but is a pt leg again is NOT a pt-as-walk trip.
     assert frozen["n_pt_as_walk_attr_without_walk"] == 1
-    assert frozen["share_pt_as_walk"] == 1 / frozen["n_legs"]
+    # Denominator: the two pt-intended trips (the stamped walk and the stamped pt leg), not the five legs.
+    assert frozen["n_pt_trips"] == 2 and frozen["share_pt_as_walk"] == 1 / 2
+    assert frozen["share_pt_as_walk_of_legs"] == 1 / frozen["n_legs"]
     # The in-commuter subpopulation is counted in its own block.
     assert summary["subpopulations"]["incommuter"][C.FROZEN]["pt_as_walk_by_hour"] == {"3": 1}
     assert summary["subpopulations"][C.RESIDENTS][C.IN_REGION]["n_pt_as_walk"] == 0
 
 
 def test_summarise_files_a_pt_as_walk_leg_without_origin_end_time_under_unknown():
-    plan = _plan("u", [("outside", None, 0, 0), ("work", None, 1, 0)], [("walk", 60.0, "pt")])
+    plan = _plan("u", [("outside", None, 0, 0), ("work", None, 1, 0)], [("walk", 60.0, "pt", "pt")])
     frozen = _summarise([plan])["subpopulations"][C.RESIDENTS][C.FROZEN]
     assert frozen["pt_as_walk_by_hour"] == {"unknown": 1}
 
@@ -381,3 +383,79 @@ def test_format_by_hour_orders_numerically_with_unknown_last():
 
 def test_format_by_hour_empty_returns_empty_dict():
     assert C._format_by_hour({}) == {}
+
+
+# --- pt-intended trips and the unstamped walk fallback (eqasim-bs#465): a counter of 0 must not hide a stale jar ---
+
+def _routing_mode(mode):
+    return f'<attributes><attribute name="routingMode" class="java.lang.String">{mode}</attribute></attributes>'
+
+
+_STAMP = '<attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute>'
+_PT_ROUTING = '<attribute name="routingMode" class="java.lang.String">pt</attribute>'
+
+PT_TRIPS_POPULATION = f"""<?xml version="1.0" encoding="utf-8"?>
+<population>
+  <person id="unstamped">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="07:00:00"/>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">{_routing_mode("pt")}</leg>
+      <activity type="outside" x="100" y="0" end_time="17:00:00"/>
+      <leg mode="car" dep_time="17:00:00" trav_time="00:10:00">{_routing_mode("car")}</leg>
+      <activity type="home" x="0" y="0"/>
+    </plan>
+  </person>
+  <person id="stamped">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="07:00:00"/>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">
+        <attributes>{_PT_ROUTING}{_STAMP}</attributes></leg>
+      <activity type="outside" x="100" y="0"/>
+    </plan>
+  </person>
+  <person id="served">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="07:00:00"/>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:05:00">{_routing_mode("pt")}</leg>
+      <activity type="pt interaction" x="10" y="0" end_time="07:05:00"/>
+      <leg mode="pt" dep_time="07:05:00" trav_time="00:20:00">{_routing_mode("pt")}</leg>
+      <activity type="pt interaction" x="90" y="0" end_time="07:25:00"/>
+      <leg mode="walk" dep_time="07:25:00" trav_time="00:05:00">{_routing_mode("pt")}</leg>
+      <activity type="outside" x="100" y="0"/>
+    </plan>
+  </person>
+</population>
+"""
+
+
+def _pt_trip_summary(tmp_path):
+    path = tmp_path / "pt_trips.xml"
+    path.write_text(PT_TRIPS_POPULATION, encoding="utf-8")
+    return _summarise(C.iter_person_plans(path))
+
+
+def test_pt_walk_only_trip_without_the_stamp_is_counted_as_unstamped_and_warned_about(tmp_path, caplog):
+    summary = _pt_trip_summary(tmp_path)
+    frozen = summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+    # unstamped (walk-only pt trip, no attribute) + stamped + served = three pt-intended trips; the car trip is none.
+    assert frozen["n_pt_trips"] == 3
+    assert frozen["n_pt_unstamped_walk"] == 1
+    assert frozen["n_pt_as_walk"] == 1                      # only the stamped one; the served trip is neither
+    assert frozen["share_pt_as_walk"] == pytest.approx(1 / 3)
+    assert summary["n_pt_unstamped_walk"] == 1
+    with caplog.at_level("WARNING"):
+        C._log_summary(summary)
+    assert any(r.levelname == "WARNING" and "walkFallbackFrom" in r.getMessage()
+               and "eqasim_source_path" in r.getMessage() for r in caplog.records)
+
+
+def test_no_unstamped_warning_when_every_pt_walk_is_stamped_or_served(tmp_path, caplog):
+    start, end = PT_TRIPS_POPULATION.index('  <person id="unstamped">'), PT_TRIPS_POPULATION.index('  <person id="stamped">')
+    path = tmp_path / "pt_trips_without_unstamped.xml"
+    path.write_text(PT_TRIPS_POPULATION[:start] + PT_TRIPS_POPULATION[end:], encoding="utf-8")
+    summary = _summarise(C.iter_person_plans(path))
+    assert summary["n_pt_unstamped_walk"] == 0
+    assert summary["subpopulations"][C.RESIDENTS][C.FROZEN]["n_pt_as_walk"] == 1
+    with caplog.at_level("WARNING"):
+        C._log_summary(summary)
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
