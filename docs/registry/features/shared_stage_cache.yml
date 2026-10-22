@@ -49,7 +49,9 @@ evidence:
     note: Infrastructure feature (stage caching); no external reference applies.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - cache-migration-100pct-2026-10-22
+  - content-addressed-cache-acceptance-100pct-2026-10-22
   metric: null
   note: >
     No behavioural KPI applies. Real-synpp tests prove coherent reuse and safe misses
@@ -62,7 +64,8 @@ validation:
     test_envelope_follows_the_record_a_spared_child_refreshes,
     test_a_later_run_refreshes_the_envelope_of_a_migrated_record) and the early cutoff of the
     fork's run() in tests/test_synpp_fork_early_cutoff.py. These are synthetic mechanics
-    tests; the acceptance on a copy of the 100 % cache on the server is pending.
+    tests. The acceptance on a copy of the 100 % cache on the server ran on 2026-10-22 and is a smoke, not a
+    validation: runs cache-migration-100pct-2026-10-22 and content-addressed-cache-acceptance-100pct-2026-10-22.
 assessment:
   status: pending
   by: null
@@ -70,5 +73,6 @@ assessment:
   pending_reason: |
     ADR-0036 documents the design; no owner verdict on realised cache-hit reliability has been recorded.
     The Phase 4 change (ADR-0149: coherence by output hash, early cutoff) is covered by synthetic tests only;
-    the server acceptance on a cache copy is pending, so no hit rate on a real cache is claimed.
+    the server acceptance on a cache copy (cache-migration-100pct-2026-10-22, content-addressed-cache-acceptance-100pct-2026-10-22) is a smoke of the mechanics, so no hit rate on a real
+    cache is claimed.
   source: ADR-0036

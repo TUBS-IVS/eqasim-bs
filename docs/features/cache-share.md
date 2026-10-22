@@ -130,6 +130,6 @@ record that a run changed (the envelope's original environment is kept; it never
 
 Status: implemented and proven by synthetic tests (`tests/test_cache_share_synpp.py`,
 `tests/test_synpp_fork_early_cutoff.py`); the acceptance on a copy of the 100 % cache on the
-server is **pending** (maintainer go), so no hit rate on a real store is stated here. The decision
+server ran on 2026-10-22 as a smoke (`docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`), so no hit rate on a real store is stated here. The decision
 and the rulings are in ADR-0149, the loop and its log vocabulary in
 `docs/codebase/notes/synpp-fork.md`.

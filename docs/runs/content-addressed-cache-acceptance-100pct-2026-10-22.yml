@@ -1,0 +1,204 @@
+id: content-addressed-cache-acceptance-100pct-2026-10-22
+date: '2026-10-22'
+repository:
+  commit: bfefef7142c427014d0d48f5cd452eaa08f0635f
+  branch: chore/i468-early-cutoff
+  notes: >-
+    The branch head at the time of the run (PR #473, Phase 4 of #468), detached worktree ~/i468p4/eqasim-bs on felix;
+    eqasim-java-bs (the fork) at 4c1af4a. The scenarios edit two tracked files temporarily
+    (matsim/runtime/java.py and braunschweig/synthesis/locations/secondary_chainsolvers/escort.py) and restore them
+    with git checkout; the scripts refuse to start on a dirty copy of these files.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/make_runtime_overlays_i468p4.py
+  notes: >-
+    Throwaway overlays written by make_runtime_overlays_i468p4.py (printed in out/overlays.txt, not committed as
+    YAML) on top of the overlay i468p4_100pct.yml of the migration run (cache-migration-100pct-2026-10-22). They start
+    from configs/overlays/test_100pct.yml of the checked-out commit, so every scientific key and every stage hash
+    equals the production 100 % configuration. Only the run targets (matsim.runtime.eqasim and
+    braunschweig.freight.extraction_tool), the working directory of the prime scenarios and the launcher-only
+    cache_share and gate keys (synpp_expected_stale_stages [matsim.runtime.java] in the gated launch) differ; no stage
+    reads these keys. cache_share is enabled with an empty scratch store eqasim-data/cache_i468p4_store for provenance
+    tracking only.
+sampling:
+  rate: 100% (sampling_rate 1.0 of the base overlay; no population is touched)
+  scope: ZGB-8 cache copy; only the Java runtime subgraph (matsim.runtime.java, git, maven, eqasim, braunschweig.freight.extraction_tool) is executed
+  notes: >-
+    No synthetic population, no MATSim simulation. The scenarios exercise the cache validity logic (explainer,
+    fork run(), cache_share prime/export) on five real stages.
+pipeline:
+  targets:
+  - matsim.runtime.eqasim
+  - braunschweig.freight.extraction_tool
+  notes: >-
+    Scenarios on the migrated cp -a copy of cache_bs_100pct_allfeat_popsim (see cache-migration-100pct-2026-10-22).
+    Script scenarios_i468p4.sh (2026-10-22 from 12:18:22): S0 launch of the runtime targets through the launcher; S1
+    comment edits in matsim/runtime/java.py and secondary_chainsolvers/escort.py; S2 body edit (JAVA_PROBE = 1) in
+    matsim/runtime/java.py, a gated launch and a revert; S3 the Java source tree replaced by a cp -a copy with every
+    file touched (new mtimes); S4 explicit export of the two jar modules into a scratch store, prime of a fresh
+    working directory, launch. Script cutoff_scenarios_i468p4.sh (from 12:27:23) with the driver
+    run_targets_cached_i468p4.py: X2 body edit and revert, X4 prime of a second fresh directory. Within the
+    explainer outputs the stale set is the own-reason set; compare_stale_sets_i468p4.py diffs two explainer JSON files.
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    All scripts exited 0 (compare exits 1 where a difference is expected, S2). The first attempt of the cutoff script
+    failed at once (see the notes); the logs of both attempts are committed. This is a smoke of the cache mechanics on
+    a real cache copy, NOT a validation: no observed data is compared, and the stage-chain scale (popsim, chainsolver)
+    is not exercised.
+source: >-
+  felix:~/i468p4/ (logs, cache copies, scratch store). Committed outputs: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/
+  out/ (explainer reports E*.txt/json, compare_*.txt, log excerpts S*/X*, overlays.txt, migrate output) and run_logs/
+  (scenarios.log.txt, cutoff.log.txt, cutoff_attempt1_driver_import_error.log.txt, setup.log.txt, migrate_compare.log.txt).
+environment: 'server (felix, Linux KVM VM, 64 vCPUs, 94 GB RAM), conda eqasim, JDK 25.0.3+9 (~/tools/jdk-25.0.3+9)'
+validation:
+- metric: S0 launch of the runtime targets through the launcher (explainer E0 after it)
+  reference: 'none -- a wiring check'
+  result: >-
+    Exit 0. The launcher's pre-check classified 3 stale stages (matsim.runtime.eqasim and
+    braunschweig.freight.extraction_tool as run targets with no entry in this cache, matsim.runtime.java
+    module_hash_changed) and executed matsim.runtime.java, matsim.runtime.eqasim and braunschweig.freight.extraction_tool
+    (git and maven were HIT); early cutoff kept 0 stages cached. The output hashes were recorded for the first time
+    ("no previous output hash recorded"; eqasim jar 1478 files, 217807431 bytes; tool 9 files, 186636116 bytes).
+    Explainer E0 on the whole 107-stage graph afterwards: 70 stale for own reasons, 2 RECOMPUTE, 35 HIT.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S0_runtime_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E0.txt
+  notes: >-
+    The launcher's pre-check still prints the legacy md5 warning ("1 entries ...: run scripts/migrate_cache_metadata.py
+    first") for matsim.runtime.java, which was kept legacy by the migration because its code changed; the
+    quick-fix commit of this branch rewords it.
+- metric: S1, comment edits in matsim/runtime/java.py and secondary_chainsolvers/escort.py
+  reference: 'E0 (the explainer before the edit); an equivalence reference, NOT observed data'
+  result: >-
+    PASS. Explainer E1 equals E0: the own-reason stale sets are identical (70 and 70, 0 only in either), and the
+    summary line is identical (70 stale, 2 RECOMPUTE, 35 HIT). A comment edit makes no stage stale.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E1.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E1.txt
+  notes: >-
+    Both files were edited, so the check covers the semantic digest of a plain helper module and of a stage module
+    (escort.py). It covers comment edits only.
+- metric: S2, behaviour-neutral body edit (JAVA_PROBE = 1) in matsim/runtime/java.py, then revert
+  reference: 'E0; an equivalence reference, NOT observed data'
+  result: >-
+    PASS on the explainer. E2 equals E0 except that matsim.runtime.java is newly stale (module_hash_changed), both jar
+    stages show STALE-IF, and the legacy matsim.runtime.pt2matsim moves from stale (parent_updated:matsim.runtime.java,
+    upstream timestamp rule) to RECOMPUTE (3 RECOMPUTE, 2 STALE-IF, 32 HIT). After the gated launch (synpp_expected_stale_stages
+    [matsim.runtime.java]) E2b equals E0; after the revert E2c shows the java edit again and, after the revert launch,
+    E2d equals E0. Launches: matsim.runtime.java re-executes and its output hash is "identical to the previous
+    output", but the launcher rebuilt both jars (see the harness ruling: the launcher always passes
+    rerun_required=True, the jars are run targets).
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E2.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E2b.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E2c.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E2d.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_gated_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_revert_excerpt.txt
+  notes: >-
+    The rebuild of the jar stages in S2 is a harness effect, not a failure of early cutoff: see X2 and the harness
+    ruling below.
+- metric: S3, Java source tree replaced by a cp -a copy with every file touched
+  reference: 'E0; an equivalence reference, NOT observed data'
+  result: >-
+    PASS. Explainer E3 equals E0 (70 and 70 own-reason stale, 0 only in either); matsim.runtime.eqasim and
+    braunschweig.freight.extraction_tool are HIT. The source token follows content, not mtimes or the path.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_E0_E3.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E3.txt
+  notes: >-
+    One copy of one tree; every file got a new mtime.
+- metric: S4, explicit export of the two jar modules into a scratch store and prime of a fresh working directory
+  reference: 'none -- a wiring check of cache_share on real entries'
+  result: >-
+    Export: 5 entries for 2 modules; metadata for 2 of 5 copied entries (the 3 older legacy variants carry no
+    provenance envelope). Prime of a fresh directory: "kept 2 copied records (output-hash match 0, legacy equal
+    timestamps 0, no parents 0, absent parent decided by digest at run time 2)", primed 5. Explainer E4 on the fresh
+    directory: 5 stale for own reasons, 0 HIT (git, java, maven and the two jars). After the launch, which executed all
+    five (the two jars as run targets), E4b: 2 stale (the run targets), 3 HIT.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_export.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_prime.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E4.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_fresh_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E4b.txt
+  notes: >-
+    Exercises the R17-3 rule (an absent parent decided by digest at run time) on real entries. The launcher rebuilt the
+    jars here because they were run targets.
+- metric: X2, early cutoff on real stages (driver with rerun_required=False)
+  reference: 'none -- a wiring check on five real stages'
+  result: >-
+    PASS. Body edit in matsim/runtime/java.py: only matsim.runtime.java executed ("Stale before execution: 1
+    stages"); its output hash was identical to the previous output; the log says "Output of matsim.runtime.java
+    unchanged: ... not devalidated by it" for matsim.runtime.eqasim and braunschweig.freight.extraction_tool and
+    "early cutoff kept 2 stages cached". After the revert the same sequence repeated (java executed, 2 stages kept
+    cached). The java output digest (eb29fb25...) was unchanged across the three executions; the jar digests were not
+    touched. Explainer after X2: 2 stale (the run targets), 3 HIT.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_run_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_revert_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_pre.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_post.txt
+  notes: >-
+    The production launcher cannot show this for run targets (see the ruling); the saving is realised for stages that
+    are not run targets.
+- metric: X4, a second fresh directory primed with the two jar stages (driver with rerun_required=False)
+  reference: 'none -- a wiring check on five real stages'
+  result: >-
+    PASS. matsim.runtime.git, matsim.runtime.java and matsim.runtime.maven executed (not_in_meta, cache_missing in the
+    fresh directory); both jar stages stayed cached ("early cutoff kept 2 stages cached", decided by digest, R17-3).
+    Explainer before: 5 stale for own reasons, 0 HIT; after: git, java and maven HIT, 2 stale (the run targets).
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_prime.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_pre.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_run_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_post.txt
+  notes: >-
+    R17-3 on real data: the jars are reused in a directory whose parents had to be recomputed, because the parents
+    reproduced the same output.
+- metric: byte reproducibility of the two Java jar stages (finding, not a pass/fail)
+  reference: 'none -- an observation across rebuilds of identical inputs'
+  result: >-
+    Every rebuild of matsim.runtime.eqasim and braunschweig.freight.extraction_tool from identical inputs logs
+    "changed (files differ)" against the previous output hash. The eqasim jar stage's output was 217807431 bytes in the
+    copy (S0, S2) and 217801443 bytes in the fresh directory (S4); the tool stage's output was 186636116 versus
+    186636104 bytes. The outputs of matsim.runtime.java, git and maven are "identical to the previous output". The two
+    jar builds are therefore not byte-reproducible; the cause (e.g. timestamps in the archive, ordering) was not
+    investigated.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_gated_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_revert_excerpt.txt, docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_fresh_excerpt.txt
+  notes: >-
+    This is the measured evidence for the known limit of ADR-0149 (a rebuilt jar changes its output digest, so its
+    consumers recompute, R17-2) and for the follow-up on reproducible jars. A rebuild is unavoidable when a jar stage
+    is a run target or its inputs change; the early cutoff spares only stages whose parents' outputs are reproduced.
+features:
+- shared_stage_cache
+- tier_ab_caching
+artifacts:
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/scenarios_i468p4.sh
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/cutoff_scenarios_i468p4.sh
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/make_runtime_overlays_i468p4.py
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_targets_cached_i468p4.py
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/compare_stale_sets_i468p4.py
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/overlays.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E0.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E1.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E2.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E3.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/E4.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S0_runtime_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_gated_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S2_revert_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_export.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_prime.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/S4_fresh_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_run_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X2_revert_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_prime.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/X4_run_excerpt.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_logs/scenarios.log.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_logs/cutoff.log.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_logs/cutoff_attempt1_driver_import_error.log.txt
+- 'felix:~/i468p4 (worktrees, cache copies, scratch store and run logs; left on the server)'
+issues:
+- '#468'
+decisions:
+- ADR-0149
+notes: >-
+  What this run is evidence for: the content-addressed cache validity of ADR-0149 (Phase 3 tokens and migration, Phase
+  4 early cutoff and cache_share coherence) behaves as designed on real stages of a real 100 % cache copy: comment edits
+  and a touched Java tree change nothing, a body edit devalidates exactly the one stage, an unchanged output spares its
+  two children, and a primed fresh directory reuses the jars when the recomputed parents reproduce their output.
+  What it does not show: (1) no validation of any kind and no saved hours or hit rate (nothing was timed as a
+  performance measurement); (2) the chain at scale: the plan's early-cutoff run on secondary_chainsolvers/escort.py was
+  infeasible because secondary_chainsolvers is not_in_meta in this copy (the 2026-08-21 cache predates the current
+  code, so a run would recompute popsim and chainsolver for hours); the comment edit in escort.py is checked (S1), the
+  body-edit and early-cutoff runs use matsim.runtime.java with its two jar children, which share the same run() code
+  path; (3) the production launcher's behaviour for non-target stages; (4) the three older legacy variants of the jar
+  modules, which carry no envelope. HARNESS RULING (S2 versus X2): the launcher always passes rerun_required=True,
+  so run targets re-execute whatever their parents produced; the early-cutoff scenarios therefore use the driver
+  run_targets_cached_i468p4.py, which runs the same composed configuration through the installed fork with
+  rerun_required=False (a harness detail; the stages to be spared must not be run targets, and production benefits on
+  non-target stages, where the expensive chain lies). FAILED FIRST ATTEMPT: the first run of cutoff_scenarios_i468p4.sh
+  failed at once with ModuleNotFoundError for braunschweig (the driver lives outside the worktree); it was fixed by
+  putting the working directory on sys.path and re-run; the log of the failed attempt is
+  run_logs/cutoff_attempt1_driver_import_error.log.txt. NON-REPRODUCIBLE JARS: see the last validation entry.

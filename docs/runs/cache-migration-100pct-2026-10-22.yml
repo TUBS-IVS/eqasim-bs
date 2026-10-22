@@ -1,0 +1,121 @@
+id: cache-migration-100pct-2026-10-22
+date: '2026-10-22'
+repository:
+  commit: bfefef7142c427014d0d48f5cd452eaa08f0635f
+  branch: chore/i468-early-cutoff
+  notes: >-
+    The branch head at the time of the run (PR #473, Phase 4 of #468), checked out as a detached worktree on felix.
+    The comparison side ran from the legacy revision 205a0fb7 (the base before the content-addressed change); the
+    Java fork eqasim-java-bs was at 4c1af4a. The follow-up commits of this branch (the wording fix of the legacy md5
+    warning and these records) came after the run.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/make_overlay_i468p4.py
+  notes: >-
+    Throwaway server overlay eqasim-data/i468p4_100pct.yml, written by make_overlay_i468p4.py (not committed as a
+    YAML file; the composed result is printed as [config-merge] lines at the top of out/migrate.txt): the base plus
+    sampling_rate 1.0, the popsim work_dir/max_cells/num_workers/importance_profile of the 100 % production run,
+    matsim_last_iteration 0, working_directory eqasim-data/cache_bs_100pct_allfeat_popsim, and cache_share_enabled
+    false (cache_share_export false) so that no shared store is touched. Configs and overlays are identical between
+    205a0fb7 and the branch head (git diff --stat empty, controller check).
+sampling:
+  rate: 100% (sampling_rate 1.0)
+  scope: ZGB-8 region cache copy (cache_bs_100pct_allfeat_popsim); no pipeline stage was executed
+  notes: >-
+    No simulation and no stage execution. The run reads the cache metadata and output files only.
+pipeline:
+  targets: []
+  notes: >-
+    A cache-metadata migration plus two explainer assessments, not a pipeline launch. The migration is
+    scripts/migrate_cache_metadata.py (ADR-0149 decision 7), the explainer is scripts/explain_stale_stages.py.
+    Layout on felix: ~/i468p4/{eqasim-bs (detached at bfefef71), eqasim-bs-rev (detached at 205a0fb7),
+    eqasim-java-bs (detached at 4c1af4a)}, data through the committed symlink_farm.py. The working directory is one
+    physical copy (cp -a, 2026-10-22 11:59:41 to 12:12:12, 86 GB, 168 entries, pipeline.json mtime 2026-08-21) of the
+    production cache cache_bs_100pct_allfeat_popsim; the original was not touched. The revision worktree's cache
+    directory is a symlink to the same copy (read-only use there). Scripts: setup_i468p4.sh, make_overlay_i468p4.py,
+    migrate_and_compare_i468p4.sh, compare_stale_sets_i468p4.py.
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Migration exit 0; both explainer assessments completed. This is a smoke and an A/B comparison of two explainer
+    assessments of the same cache copy, NOT a validation: no observed data is compared, and "equal stale sets" says
+    that the migration changes no staleness decision, not that the cache content is right.
+source: >-
+  felix:~/i468p4/ (logs, cache copy). Committed outputs: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/
+  out/{migrate_dry.txt, migrate.txt, A_rev.txt, A_rev.json, B_head.txt, B_head.json, compare_A_B.txt, overlays.txt} and
+  run_logs/{setup, migrate_compare}.log.txt.
+environment: 'server (felix, Linux KVM VM, 64 vCPUs, 94 GB RAM, 260 GB free at the start), conda eqasim, JDK 25.0.3+9 (~/tools/jdk-25.0.3+9)'
+validation:
+- metric: own-reason stale set before and after the cache migration (explainer A under the legacy revision, explainer B under the branch head after the migration)
+  reference: >-
+    A = the own-reason stale set of the copy under revision 205a0fb7 (upstream md5 module hash and timestamp rules,
+    the Phase 1 explainer); an equivalence reference (what the old code would recompute), NOT observed data
+  result: >-
+    PASS (A == B). 107 stages in each assessment; own-reason stale 72 in A and 72 in B; stale in A only 0; stale in B
+    only 0; the reasons are identical per stage. The migration therefore recomputes nothing that the old code would
+    not recompute. Explainer B in full: 72 stale, 3 RECOMPUTE, 32 HIT.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_A_B.txt
+  notes: >-
+    Acceptance criterion ruling: the plan's "0 own-reason stale after the migration" assumes a cache built at the
+    legacy revision. This 100 % cache dates from 2026-08-21 (about two months older than 205a0fb7), so entries built by
+    older code are genuinely stale (reasons per stage in compare_A_B.txt, e.g. not_in_meta, cache_missing,
+    module_hash_changed). The criterion was therefore set to A == B (a stricter-or-equal statement of spec section 5,
+    "Phase 3 one-time cost: none after migration"). The 72 stale stages are stale for reasons independent of the
+    migration; this run does not say why they were not rebuilt at a newer revision.
+- metric: migration counts on the real 100 % cache copy
+  reference: 'none -- counts reported by scripts/migrate_cache_metadata.py'
+  result: >-
+    migrated 77 of 168 entries (45.8 %), kept legacy 91; exit 0. Reasons for the 91 kept-legacy entries: 79
+    module_hash_mismatch (the stage code changed since the 2026-08-21 cache was built), 2 token_mismatch, 12
+    not_in_dag (entries no stage of the current graph has). Output hashing took 24.96 s in total. pipeline.json was
+    rewritten with the backup pipeline.json.bk. A dry run (out/migrate_dry.txt) preceded it.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/migrate.txt
+  notes: >-
+    The 24.96 s is the hashing time of this copy on felix, one observation, not a performance benchmark.
+    Kept-legacy entries are not an error: the migration does not rewrite an entry whose stored module hash matches
+    neither the current source nor the legacy revision.
+- metric: explainer warning after the migration (finding)
+  reference: 'none -- an observation of the explainer wording'
+  result: >-
+    After the migration explainer B still prints "# WARNING: 4 entries carry a legacy md5 module hash: run
+    scripts/migrate_cache_metadata.py first" (line 111 of B_head.txt) for entries kept legacy because their code
+    changed (census.employees, census.employment, data.osm.osmosis, matsim.runtime.java; stage names from the
+    controller's felix report). The text was misleading after a migration. The commit "Reword the legacy md5 module
+    hash warning so it is true after a migration too" of this branch fixes the wording; the substring "legacy md5
+    module hash" that the launcher keys on is unchanged.
+  artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/B_head.txt
+  notes: >-
+    A wording defect of a hint, not a staleness decision; the stale sets above are unaffected.
+features:
+- shared_stage_cache
+- tier_ab_caching
+artifacts:
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/setup_i468p4.sh
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/make_overlay_i468p4.py
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/migrate_and_compare_i468p4.sh
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/compare_stale_sets_i468p4.py
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/migrate_dry.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/migrate.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/A_rev.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/A_rev.json
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/B_head.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/B_head.json
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/compare_A_B.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/overlays.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_logs/setup.log.txt
+- docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/run_logs/migrate_compare.log.txt
+- 'felix:~/i468p4 (worktrees, the 86 GB cache copy and run logs; left on the server)'
+issues:
+- '#468'
+decisions:
+- ADR-0149
+notes: >-
+  What this run is evidence for: on a real, two-month-old 100 % cache copy the migration of ADR-0149 changes no
+  staleness decision (the own-reason stale set is identical before and after, 72 of 107 stages) and migrates 77 of
+  168 entries. What it does not show: (1) no validation of any kind; (2) that a cache built at the branch head
+  migrates fully (this cache predates it, 91 entries stay legacy); (3) a speed-up, since no stage was run. The
+  claim "zero recompute after migration" holds here in the form A == B, not as "0 stale".

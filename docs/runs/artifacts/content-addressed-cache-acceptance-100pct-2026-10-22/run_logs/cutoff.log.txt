@@ -1,0 +1,86 @@
+[i468p4] X2 body edit, cached targets 2026-10-22T12:27:23+02:00
+before braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 updated=1792664649.189245 digest=57f52acf360cd34768831e0d4a7cd76c9aa65b498b8a0fd0cc33e63c6c10855e
+before matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f updated=1792664625.095924 digest=4d75d32d6847aa12f3279f5d014c28857ff22ff02feb8c5adbb90f87ec762cf3
+before matsim.runtime.eqasim__487dd2bedd6100bc00fd055b229615a6 updated=1784533142.200916 digest=None
+before matsim.runtime.eqasim__973b003a8b09c3b4c9f56340da410274 updated=1787158490.640017 digest=None
+before matsim.runtime.eqasim__9fa06f92f4264dcd4e2b51e5fc07a9bd updated=1782812882.248675 digest=None
+before matsim.runtime.java__33163fea50c0df3e4d95de454c6a903a updated=1782812836.277392 digest=None
+before matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 updated=1792664590.461294 digest=eb29fb256ab9b2eaf1b942671978103e5d29280a5bdd5b5728d49270a7602af3
+X2_pre exit=0 # 5 stages: 3 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 2 hits
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+HIT      matsim.runtime.git
+STALE    matsim.runtime.java  [module_hash_changed]
+HIT      matsim.runtime.maven
+X2_run exit=0
+Stale before execution: 1 stages, decided for their own reasons
+Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+Executed 1 stages; early cutoff kept 2 stages cached (descendants of stale stages that did not execute)
+- executed matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 [module_hash_changed]
+- kept cached braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61
+- kept cached matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f
+after_edit braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 updated=1792664649.189245 digest=57f52acf360cd34768831e0d4a7cd76c9aa65b498b8a0fd0cc33e63c6c10855e
+after_edit matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f updated=1792664625.095924 digest=4d75d32d6847aa12f3279f5d014c28857ff22ff02feb8c5adbb90f87ec762cf3
+after_edit matsim.runtime.eqasim__487dd2bedd6100bc00fd055b229615a6 updated=1784533142.200916 digest=None
+after_edit matsim.runtime.eqasim__973b003a8b09c3b4c9f56340da410274 updated=1787158490.640017 digest=None
+after_edit matsim.runtime.eqasim__9fa06f92f4264dcd4e2b51e5fc07a9bd updated=1782812882.248675 digest=None
+after_edit matsim.runtime.java__33163fea50c0df3e4d95de454c6a903a updated=1782812836.277392 digest=None
+after_edit matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 updated=1792664845.732772 digest=eb29fb256ab9b2eaf1b942671978103e5d29280a5bdd5b5728d49270a7602af3
+X2_revert exit=0
+Stale before execution: 1 stages, decided for their own reasons
+Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+Executed 1 stages; early cutoff kept 2 stages cached (descendants of stale stages that did not execute)
+- executed matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 [module_hash_changed]
+- kept cached braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61
+- kept cached matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f
+after_revert braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 updated=1792664649.189245 digest=57f52acf360cd34768831e0d4a7cd76c9aa65b498b8a0fd0cc33e63c6c10855e
+after_revert matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f updated=1792664625.095924 digest=4d75d32d6847aa12f3279f5d014c28857ff22ff02feb8c5adbb90f87ec762cf3
+after_revert matsim.runtime.eqasim__487dd2bedd6100bc00fd055b229615a6 updated=1784533142.200916 digest=None
+after_revert matsim.runtime.eqasim__973b003a8b09c3b4c9f56340da410274 updated=1787158490.640017 digest=None
+after_revert matsim.runtime.eqasim__9fa06f92f4264dcd4e2b51e5fc07a9bd updated=1782812882.248675 digest=None
+after_revert matsim.runtime.java__33163fea50c0df3e4d95de454c6a903a updated=1782812836.277392 digest=None
+after_revert matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 updated=1792664846.841619 digest=eb29fb256ab9b2eaf1b942671978103e5d29280a5bdd5b5728d49270a7602af3
+X2_post exit=0 # 5 stages: 2 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 3 hits
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+HIT      matsim.runtime.git
+HIT      matsim.runtime.java
+HIT      matsim.runtime.maven
+[i468p4] X4 prime a second fresh directory 2026-10-22T12:27:27+02:00
+prime exit=0
+INFO [cache_share] prime: kept 2 copied records (output-hash match 0, legacy equal timestamps 0, no parents 0, absent parent decided by digest at run time 2)
+INFO [cache_share] prime: metadata for 2/5 copied entries (enabled=True); entries without metadata require recomputation
+INFO [cache_share] prime: primed 5, already-present 0, forced 0, missing-in-store 0 (store=eqasim-data/cache_i468p4_store)
+X4_pre exit=0 # 5 stages: 5 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 0 hits
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+STALE    matsim.runtime.git  [not_in_meta, cache_missing]
+STALE    matsim.runtime.java  [not_in_meta, cache_missing]
+STALE    matsim.runtime.maven  [not_in_meta, cache_missing]
+X4_run exit=0
+Stale before execution: 3 stages, decided for their own reasons
+Executing stage matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 ...
+Output of matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+Executing stage matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 ...
+Output of matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+Output of matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+Executed 3 stages; early cutoff kept 2 stages cached (descendants of stale stages that did not execute)
+- executed matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 [not_in_meta, cache_missing]
+- executed matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 [not_in_meta, cache_missing]
+- executed matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 [not_in_meta, cache_missing]
+- kept cached braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61
+- kept cached matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f
+X4_post exit=0 # 5 stages: 2 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 3 hits
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+HIT      matsim.runtime.git
+HIT      matsim.runtime.java
+HIT      matsim.runtime.maven
+[i468p4] done 2026-10-22T12:27:32+02:00

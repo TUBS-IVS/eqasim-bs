@@ -1,10 +1,11 @@
 # ADR-0149 · 2026-10-21 · A vendored synpp fork and content-addressed stage validity
 
-- **Status:** active; Phase 3 and Phase 4 of #468 are in force, with the server acceptance of Phase 4 pending.
+- **Status:** active; Phase 3 and Phase 4 of #468 are in force; the server acceptance of both phases on a copy of the
+  100 % cache is done (`docs/runs/cache-migration-100pct-2026-10-22.yml`, `docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`).
   Phase 3: semantic tokens, output hashes, fork skeleton, migration. Phase 4 (PR for #468
   Phase 4): early cutoff in the fork's `run()` and `cache_share` coherence by output hash.
-  The **server acceptance on a copy of the 100 % cache is pending** (see "Implementation
-  status" and "Evidence").
+  The server acceptance on a copy of the 100 % cache ran on 2026-10-22 (see "Implementation
+  status" and "Evidence"); it is a smoke, not a validation.
 - **Numbering:** ADR-0149 is the next free id. Checked on 2026-10-21 across all local and
   remote branches: the highest record anywhere is ADR-0148.
 - **Issue:** #468. **Relates to:** ADR-0105 (deterministic stage hashes), ADR-0136 (token
@@ -223,9 +224,9 @@ into this record):
 | Fork skeleton: `install()`, vendored `get_stage_hash` (semantic) and `run()`, SHA and version guards | in force (Phase 3); with Phase 4 `run()` decides child validity by output hash |
 | Explainer and launcher pre-check (decision 6) | in force since PR #469 |
 | Migration (decision 7) | in force; mandatory once per existing cache (see Consequences) |
-| Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | in force (Phase 4, PR for #468 Phase 4); server acceptance pending |
-| `cache_share` coherence by output hash, envelope refresh, absent-parent rule (decision 5, R17-1, R17-3) | in force (Phase 4, PR for #468 Phase 4); server acceptance pending |
-| Server acceptance of Phase 4 on a copy of the 100 % cache (scenarios in "Evidence") | **pending (maintainer go)**; no run manifest exists yet |
+| Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S2, X2) |
+| `cache_share` coherence by output hash, envelope refresh, absent-parent rule (decision 5, R17-1, R17-3) | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S4, X4) |
+| Server acceptance of Phase 3 (migration) and Phase 4 on a copy of the 100 % cache (scenarios in "Evidence") | **done 2026-10-22**: `cache-migration-100pct-2026-10-22` and `content-addressed-cache-acceptance-100pct-2026-10-22`; both are smokes |
 
 ## Relation to ADR-0105 and ADR-0136
 
@@ -282,7 +283,8 @@ part lands (see Implementation status).
   tokens (md5 module hashes) still primes as a miss.
 - **Hashing cost.** The migration reads every output file of every `pipeline.json` entry,
   including old config variants that are no longer in the current graph; the migration logs
-  files and bytes per entry. No full-cache run time is measured yet (acceptance pending).
+  files and bytes per entry. On the felix copy of the 100 % cache (168 entries) the output hashing took 24.96 s in
+  total, one observation, not a benchmark (`cache-migration-100pct-2026-10-22`). No full-run overhead of the early cutoff is measured.
 - **Python minor upgrade = one deliberate recompute** of every source-hashing stage (the
   token records the minor version); the explainer shows it as a token difference.
 - **Fork re-base obligation.** When synpp is upgraded, `braunschweig/synpp_fork/pipeline.py`
@@ -336,11 +338,16 @@ Measured on 2026-10-21 during implementation (scratch checks, not committed as t
 - Real stage registry (1 % and 100 % configs) with synthetic legacy `pipeline.json` records:
   107 of 107 entries migrated. State: **synthetic**, not a real cache.
 
-Acceptance on a real cache: **server acceptance on felix: pending (maintainer go).** It
-is a `cp -a` copy of the 100 % cache, never the original; a run manifest
-`docs/runs/cache-migration-100pct-<date>.yml` records it when done. Until then the claim
-"zero recompute after migration" is a design property proven on synthetic records and
-the replay checks above, not an observation on a production cache.
+Acceptance on a real cache: **server acceptance on felix, done 2026-10-22**, on a `cp -a` copy of the 100 %
+cache (never the original), recorded in `docs/runs/cache-migration-100pct-2026-10-22.yml`. The acceptance criterion was
+set to A == B (own-reason stale set under the legacy revision 205a0fb7 versus under the branch head after
+the migration), because the 100 % cache dates from 2026-08-21 and is older than that revision, so entries
+built by older code are genuinely stale. Result: 107 stages each, own-reason stale 72 versus 72, 0 only in
+either, identical reasons per stage; migrated 77 of 168 entries, kept legacy 91 (79 module hash mismatch, 2
+token mismatch, 12 not in the DAG). So "zero recompute after migration" holds in the form "the migration
+recomputes nothing the old code would not", not as "0 stale". The 91 kept-legacy entries are mostly entries
+whose code changed since the cache was built. Wording defect found on this run: the explainer's legacy md5
+warning also fired after a migration (4 entries kept legacy); reworded in the same PR.
 
 Phase 4 tests committed on the branch (synthetic pipelines in `tmp_path`, no scientific claim;
 they pin the mechanics):
@@ -375,9 +382,9 @@ they pin the mechanics):
   `test_a_later_run_refreshes_the_envelope_of_a_migrated_record`, and the scenario
   `older_target_parent_other_output` of `test_shared_dependency_chain`.
 
-Phase 4 server scenarios, all **pending (maintainer go)**, to run on the migrated copy of the
-100 % cache and to be recorded in `docs/runs/content-addressed-cache-acceptance-100pct-<date>.yml`
-(classification `smoke`, no scientific claim): (1) a comment edit in a stage helper, explainer shows
+Phase 4 server scenarios, **run on 2026-10-22** on the migrated copy of the 100 % cache and recorded in
+`docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml` (classification `smoke`, no scientific claim). The scenario text below is
+the plan as written; the results and the deviations are listed after it. (1) a comment edit in a stage helper, explainer shows
 nothing stale besides run targets; (2) a behaviour-neutral edit of a helper body, explainer shows
 the one directly affected stage stale and its descendants `STALE-IF`, the run logs
 `early cutoff kept N stages cached`; (3) a copied Java tree for `eqasim_source_path`, no freight
@@ -386,6 +393,32 @@ parents are all shared is `HIT` with no `legacy timestamp rule` lines for fork-w
 primed entry with an unshared parent (R17-3) is `STALE-IF` before the run and is spared or
 recomputed at run time by the parent's digest, and `braunschweig.freight.extraction` is expected
 to recompute because the rebuilt `braunschweig.freight.extraction_tool` jar has other bytes
-(R17-2). Until the manifest exists, no
-statement about hit rates, saved hours or run times on a real cache is made anywhere in the
-documentation.
+(R17-2). No statement about hit rates, saved hours or run times on a real cache is made anywhere in the
+documentation; the manifest records mechanics only.
+
+Results of the Phase 4 scenarios (`content-addressed-cache-acceptance-100pct-2026-10-22`; stage choice, harness rulings and the failed first attempt are in
+the manifest):
+
+- The scenarios use the Java runtime subgraph (`matsim.runtime.java`, `git`, `maven`, `matsim.runtime.eqasim`,
+  `braunschweig.freight.extraction_tool`) instead of `escort.py` and the chainsolver: `secondary_chainsolvers`
+  is `not_in_meta` in this copy, so the plan's run would recompute popsim and chainsolver for hours. The
+  comment edit in `escort.py` is still checked (S1). The chain at scale is NOT exercised; the mechanics use the
+  same `run()` code path.
+- S1 (comment edits in `matsim/runtime/java.py` and `escort.py`): explainer equal to the baseline (70 own-reason
+  stale each). S3 (Java tree copied with all files touched): equal to the baseline, both jar stages `HIT`.
+- S2 / X2 (body edit `JAVA_PROBE = 1` in `matsim/runtime/java.py`): the explainer marks exactly
+  `matsim.runtime.java` stale (`module_hash_changed`) and both jar stages `STALE-IF`. With the launcher the
+  jar stages are re-executed anyway, because the launcher always passes `rerun_required=True` and they are run
+  targets. With a driver using the same composed config through the fork and `rerun_required=False`: only
+  `matsim.runtime.java` executed, its output was identical, "early cutoff kept 2 stages cached"; the revert
+  repeated this; the java output digest did not change across the three executions. Production gains on
+  non-target stages only.
+- S4 / X4 (explicit export of the two jar modules, prime of fresh directories): "kept 2 copied records (absent
+  parent decided by digest at run time 2)" (R17-3 on real data); in the driver run `git`, `java` and `maven`
+  executed and both jar stages stayed cached.
+- **Measured evidence for the jar limit (R17-2).** Every rebuild of `matsim.runtime.eqasim` and
+  `braunschweig.freight.extraction_tool` from identical inputs logged "changed (files differ)": the eqasim jar
+  stage's output was 217807431 bytes in the copy and 217801443 bytes in a fresh directory, the tool stage's
+  186636116 versus 186636104 bytes, while `java`, `git` and `maven` reproduced "identical to the previous
+  output". The jar builds are not byte-reproducible, so consumers of a rebuilt jar recompute, as stated in the
+  known limits; making the jar builds reproducible is a follow-up, not part of this decision.

@@ -6,8 +6,10 @@ gitignored). It describes the package after Phase 4: the explainer (Phase 1), th
 tokens, the output hash, the fork skeleton and the cache migration (Phase 3), and the content-addressed
 validity of Phase 4: early cutoff in the fork's `run()` (child validity by parent output hash) and
 `cache_share` coherence by output hash. `staleness.EARLY_CUTOFF_ACTIVE` is `True`. The server
-acceptance of Phase 4 on a copy of the 100 % cache is **pending**; the behaviour below is proven by
-synthetic tests only (`tests/test_synpp_fork_early_cutoff.py`, `tests/test_cache_share_synpp.py`).
+acceptance of both phases on a copy of the 100 % cache ran on 2026-10-22 (smoke, not validation;
+`docs/runs/cache-migration-100pct-2026-10-22.yml`, `docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`); the behaviour below is proven by
+synthetic tests (`tests/test_synpp_fork_early_cutoff.py`, `tests/test_cache_share_synpp.py`) and
+smoke-checked on real stages there.
 
 ## What the package owns today
 
@@ -73,7 +75,7 @@ children stale (it recomputes only when a descendant does).
    `stale_reasons` per executed entry.
 
 Output hashing cost per stage is logged (`Output hash for <hash>: <files> files, <bytes> bytes, <s> s`);
-no full-run overhead has been measured on a real cache (server acceptance pending).
+no full-run overhead has been measured on a real cache (the server acceptance in `docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml` is a mechanics smoke).
 
 ## Running the explainer
 
@@ -250,5 +252,5 @@ the end (`migrated`, `kept_legacy`, `module_hash_mismatch`, `token_mismatch`, an
 
 Status of the real-cache proof: tested with synthetic legacy records on the real stage registries
 (107 of 107 entries migrated, 2026-10-21, not a real cache); the acceptance on a copy of the
-100 % cache on felix, including the Phase 4 early-cutoff scenarios (ADR-0149 "Evidence"), is
-pending (maintainer go).
+100 % cache on felix (2026-10-22) is recorded in `docs/runs/cache-migration-100pct-2026-10-22.yml` (migration) and
+`docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml` (Phase 4 scenarios); see ADR-0149 "Evidence".

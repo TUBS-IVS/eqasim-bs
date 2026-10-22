@@ -620,9 +620,9 @@ behaviour-neutral edit (a comment, a docstring, formatting) does not even make a
 hashes and tokens are taken from the syntax tree. Limits: a rebuilt Java jar changes its output
 digest, so its consumers recompute; a new upstream config key still renames downstream cache
 files; a stage that reads files outside its parents' cache directories is not covered. The
-acceptance of this mechanism on a copy of the 100 % cache on the server is **pending**; until a run
-manifest records it, treat the saved recomputation as a design property proven on synthetic
-pipelines, not as a measured speed-up.
+acceptance of this mechanism on a copy of the 100 % cache on the server ran on 2026-10-22
+(`docs/runs/cache-migration-100pct-2026-10-22.yml`, `docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`; a smoke of the mechanics); treat the saved
+recomputation as a design property, not as a measured speed-up.
 
 `synpp_expected_stale_stages` (in the `config:` block of `configs/base_bs.yml`, default `[]`)
 turns the report into a gate. An empty list means no gate (the report is only logged). With stage
