@@ -441,7 +441,7 @@ def test_matsim_population_validate_hashes_the_vendored_base_module():
         "population module in _HELPER_MODULES, otherwise an edit to the vendored writer leaves "
         "a stale cached plans.xml.gz")
     assert POP.validate(None) == POP.validate(None)
-    assert len(POP.validate(None)) == 32   # md5 hexdigest
+    assert POP.validate(None)["format"] == 2 and POP.base.__name__ in POP.validate(None)["modules"]
 
 
 def test_matsim_population_load_raw_never_reads_the_pre_assignment_frames():
@@ -578,7 +578,7 @@ def test_overrides_hash_the_vendored_base_module():
             "cached stage output")
         # validate() must actually fold those sources in, not just declare them.
         assert module.validate(None) == module.validate(None)
-        assert len(module.validate(None)) == 32          # md5 hexdigest
+        assert module.base.__name__ in module.validate(None)["modules"]
 
 
 # --------------------------------------------------------------------------- check 1 arithmetic

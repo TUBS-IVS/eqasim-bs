@@ -2,7 +2,8 @@
 
 Equivalent to ``python -m synpp <config.yml>`` but installs a logging format that
 prefixes every synpp log line with an ISO timestamp (asctime), and installs the
-deterministic stage-hash patch (ADR-0105, ``braunschweig.synpp_deterministic``)
+synpp fork (``braunschweig/synpp_fork/__init__.py``: deterministic stage-hash propagation
+per ADR-0105, the semantic module hash and the vendored content-addressed ``run()``)
 before synpp builds the stage graph. This lets ``braunschweig.analysis.runtime``
 compute per-stage wall-clock durations from the run log, so the slowest stages
 (secondary locations / location choice, gravity, ...) are visible and settings
@@ -115,7 +116,12 @@ def explain_before_run(config_path):
     stages = registry.build_registry_from_settings(doc)
     assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
     for line in staleness.format_report(assessments).splitlines():
-        log.info("[explain] %s", line)
+        # An unmigrated cache recomputes every stage: log that hint at ERROR so it cannot be
+        # missed. It does not abort; the abort gate stays synpp_expected_stale_stages.
+        if "legacy md5 module hash" in line:
+            log.error("[explain] %s", line)
+        else:
+            log.info("[explain] %s", line)
     expected = set(cfg.get("synpp_expected_stale_stages", []) or [])
     unexpected = staleness.unexpected(assessments, expected)
     if expected and unexpected:
@@ -288,12 +294,14 @@ def main(argv=None) -> int:
         # None/[]/{} makes Synpp.build_from_yml read working_directory and run from the
         # YAML, reproducing the old single-argument behaviour without overriding any
         # config.
-        # Deterministic stage hashes: synpp 1.6.2 propagates implicit config keys in a
-        # set-iteration order that depends on PYTHONHASHSEED, so identical code + config
-        # produced different cache hashes per process (ADR-0105). Must be installed BEFORE
-        # synpp starts building the stage graph; see braunschweig/synpp_deterministic.py.
-        from braunschweig import synpp_deterministic
-        synpp_deterministic.install()
+        # Deterministic stage hashes and content-addressed validity: synpp 1.6.2 propagates
+        # implicit config keys in a set-iteration order that depends on PYTHONHASHSEED, so
+        # identical code + config produced different cache hashes per process (ADR-0105). Must be
+        # installed BEFORE synpp starts building the stage graph; see
+        # braunschweig/synpp_deterministic.py and braunschweig/synpp_fork/__init__.py (semantic
+        # module hash, content-addressed validity).
+        from braunschweig import synpp_fork
+        synpp_fork.install()
         with track_cache_provenance_from_config(config_path):
             synpp.run_from_yaml(config_path, None, [], {})
         # Export the shareable stage caches into the shared store ONLY after a

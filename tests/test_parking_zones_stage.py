@@ -385,6 +385,13 @@ def test_validate_changes_when_an_input_byte_changes(fixture_data, key):
     assert zones_stage.validate(context) != before
 
 
+def test_validate_is_a_structured_token_with_one_file_digest_per_release_input(fixture_data):
+    token = zones_stage.validate(_context(fixture_data))
+    assert token["format"] == 2 and token["modules"]
+    assert set(token["files"]) == {source_id for _, _, source_id in zones_stage.RELEASE_INPUTS}
+    assert all(len(digest) == 64 for digest in token["files"].values())
+
+
 def test_validate_ignores_line_endings(fixture_data):
     """LF-normalised hashes: a Windows checkout (CRLF) and a Linux one (LF) share one token."""
     context = _context(fixture_data)
@@ -407,7 +414,7 @@ def test_validate_folds_in_the_source_of_every_module_the_stage_runs(fixture_dat
 
     def getsource(target):
         source = real_getsource(target)
-        return source + "\n# edited" if getattr(target, "__name__", None) == module_name else source
+        return source + "\nZ_PROBE = 1\n" if getattr(target, "__name__", None) == module_name else source
 
     monkeypatch.setattr(inspect, "getsource", getsource)
     assert zones_stage.validate(context) != before
@@ -454,7 +461,7 @@ def test_the_committed_release_loads_through_the_stage(caplog):
     # The committed garage dataset: 97 rows (37 garages, 60 surface lots), every one priced (specs E13, E14 and I, spec v3 B4 and
     # B7, ruling R-C-7), in EPSG:25832.
     assert len(release["garages"]) == 97 and release["garages"]["priced"].all()
-    assert len(zones_stage.validate(context)) == 64
+    assert set(zones_stage.validate(context)["files"]) == {source_id for _, _, source_id in zones_stage.RELEASE_INPUTS}
     # The committed release exports as the schema-5 tariff model the preparation writes: with the decay 0 (the garage
     # options off) and with a decay value, both list the 97 priced rows.
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date="2026-09-28", sources=release["sources"],

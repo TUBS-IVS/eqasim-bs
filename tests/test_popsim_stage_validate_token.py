@@ -9,8 +9,8 @@ was silently reused. That is the documented synpp helper trap and a
 scientific-correctness hazard, so these tests pin the properties the hook must
 have:
 
-- the token is a STABLE 32-char lowercase md5 hex digest (a stable token is what
-  keeps the cache usable at all),
+- the token is a STABLE structured token, one semantic sha256 digest per module (a
+  stable token is what keeps the cache usable at all),
 - the token CHANGES when the source of ANY listed helper changes (otherwise the
   hook does not close the trap),
 - ``_HELPER_MODULES`` really covers the ``braunschweig.popsim.mid`` package, the
@@ -39,7 +39,6 @@ depends on external data, so the tests are deterministic and side-effect free.
 
 from __future__ import annotations
 
-import hashlib
 import importlib
 import inspect
 import pkgutil
@@ -195,8 +194,8 @@ def _covered_module_names() -> set[str]:
 # token shape and stability
 # ---------------------------------------------------------------------------
 
-def test_validate_returns_stable_lowercase_md5_hex():
-    """Two calls must return the SAME 32-char lowercase hex digest.
+def test_validate_returns_a_stable_structured_token():
+    """Two calls must return the SAME structured token (``format`` 2, one digest per module).
 
     An unstable token would devalidate the cached stage output on every run,
     which is as wrong as never devalidating it.
@@ -205,30 +204,23 @@ def test_validate_returns_stable_lowercase_md5_hex():
     second = stage.validate(None)
 
     assert first == second
-    assert len(first) == 32
-    assert set(first) <= HEX_DIGITS
+    assert first["format"] == 2
+    assert first["modules"]
+    assert all(len(digest) == 64 and set(digest) <= HEX_DIGITS for digest in first["modules"].values())
 
 
-def test_validate_hashes_exactly_the_listed_modules_in_order():
-    """The digest must be md5 over both listed sets, in tuple order.
+def test_validate_covers_exactly_the_listed_modules():
+    """The token must hold one digest per module of BOTH listed sets, and nothing else.
 
-    ``_HELPER_MODULES`` (module objects) first, then
-    ``_DEFERRED_HELPER_MODULE_NAMES`` (dotted names, imported lazily). The
-    expectation is recomputed FROM those two tuples, so this pins the hashing rule
-    and the deterministic ITERATION ORDER only -- a set or ``dir()`` based order
-    would make the token vary between processes -- not which modules are covered.
-    The covered set is gated on the stage's import closure in
-    tests/test_audit_synpp_helper_hash.py.
+    ``_HELPER_MODULES`` (module objects) and ``_DEFERRED_HELPER_MODULE_NAMES`` (dotted
+    names, imported lazily). The expectation is recomputed FROM those two tuples, so this
+    pins the hashing rule (the key set), not which modules are covered. The covered set
+    is gated on the stage's import closure in tests/test_audit_synpp_helper_hash.py.
     """
-    expected = hashlib.md5()
-    for module in stage._HELPER_MODULES:
-        expected.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in stage._DEFERRED_HELPER_MODULE_NAMES:
-        expected.update(
-            inspect.getsource(importlib.import_module(module_name)).encode("utf-8")
-        )
+    expected = {module.__name__ for module in stage._HELPER_MODULES} | {
+        importlib.import_module(name).__name__ for name in stage._DEFERRED_HELPER_MODULE_NAMES}
 
-    assert stage.validate(None) == expected.hexdigest()
+    assert set(stage.validate(None)["modules"]) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -259,16 +251,34 @@ def test_validate_token_changes_when_a_listed_helper_source_changes(
 
     def fake_getsource(object_):
         if object_ is target_module:
-            return real_getsource(object_) + "\n# simulated helper edit\n"
+            return real_getsource(object_) + "\nZ_PROBE = 1\n"
         return real_getsource(object_)
 
     monkeypatch.setattr(inspect, "getsource", fake_getsource)
     changed_token = stage.validate(None)
 
     assert changed_token != baseline_token
-    assert len(changed_token) == 32
+    differing = {name for name in baseline_token["modules"]
+                 if changed_token["modules"][name] != baseline_token["modules"][name]}
+    assert differing == {target_module_name}
 
     monkeypatch.undo()
+    assert stage.validate(None) == baseline_token
+
+
+def test_a_comment_edit_to_a_helper_keeps_the_token(monkeypatch):
+    """A comment-only edit of a listed helper must NOT devalidate the stage (the point of #344)."""
+    baseline_token = stage.validate(None)
+    target_module = stage._HELPER_MODULES[0]
+    real_getsource = inspect.getsource
+
+    def fake_getsource(object_):
+        if object_ is target_module:
+            return real_getsource(object_) + "\n# probe comment\n"
+        return real_getsource(object_)
+
+    monkeypatch.setattr(inspect, "getsource", fake_getsource)
+
     assert stage.validate(None) == baseline_token
 
 
@@ -307,14 +317,16 @@ def test_validate_token_changes_when_a_deferred_helper_source_changes(
 
     def fake_getsource(object_):
         if object_ is target_module:
-            return real_getsource(object_) + "\n# simulated deferred helper edit\n"
+            return real_getsource(object_) + "\nZ_PROBE = 1\n"
         return real_getsource(object_)
 
     monkeypatch.setattr(inspect, "getsource", fake_getsource)
     changed_token = stage.validate(None)
 
     assert changed_token != baseline_token
-    assert len(changed_token) == 32
+    differing = {name for name in baseline_token["modules"]
+                 if changed_token["modules"][name] != baseline_token["modules"][name]}
+    assert differing == {target_module_name}
 
     monkeypatch.undo()
     assert stage.validate(None) == baseline_token

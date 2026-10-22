@@ -126,9 +126,12 @@ def test_off_path_marks_everyone_present_without_reading_any_file(tmp_path):
     assert out["diagnostics"] == {"enabled": False}
 
 
-def test_validate_token_is_an_md5_over_the_pure_module():
+def test_validate_token_is_a_structured_token_over_the_pure_modules():
     token = S.validate(None)
-    assert isinstance(token, str) and len(token) == 32
+    import importlib
+    expected = {module.__name__ for module in S._HELPER_MODULES} | {
+        importlib.import_module(name).__name__ for name in S._DEFERRED_HELPER_MODULE_NAMES}
+    assert token["format"] == 2 and set(token["modules"]) == expected
 
 
 def test_validate_token_changes_when_srv_absence_module_changes(monkeypatch):
@@ -136,15 +139,16 @@ def test_validate_token_changes_when_srv_absence_module_changes(monkeypatch):
     braunschweig.calibration.srv_absence, not absence.py alone -- the age-band edges/labels and
     the household-size-class top (what a person is drawn AGAINST) live there, so an edit there
     must devalidate the stage's cache exactly like an edit to the draw rule in absence.py."""
+    import inspect
     token = S.validate(None)
-    real_getsource = S.inspect.getsource
+    real_getsource = inspect.getsource
 
     def patched_getsource(module):
         if module is S.srv_absence:
-            return real_getsource(module) + "\n# a changed age band edge\n"
+            return real_getsource(module) + "\nZ_PROBE = 1  # a changed age band edge\n"
         return real_getsource(module)
 
-    monkeypatch.setattr(S.inspect, "getsource", patched_getsource)
+    monkeypatch.setattr(inspect, "getsource", patched_getsource)
     assert S.validate(None) != token
 
 

@@ -25,10 +25,9 @@ unchanged (byte-identical OFF path).
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
+
+from braunschweig import synpp_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the candidate-assembly helpers this stage runs.
+    """synpp validation token: structured token over the candidate-assembly helpers this stage runs.
 
     This stage delegates the assembly logic to the secondary_chainsolvers
     package submodules, but synpp's get_stage_hash only hashes THIS file's
@@ -67,20 +66,13 @@ def validate(context):
     silently reuse the stale cached candidate set on a partial rerun.
     :data:`_DEFERRED_HELPER_MODULE_NAMES` lists every module of this stage's import closure
     (tests/test_audit_synpp_helper_hash.py).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"secondary_candidates validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        (), _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

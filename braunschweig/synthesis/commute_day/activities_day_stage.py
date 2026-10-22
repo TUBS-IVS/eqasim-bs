@@ -17,11 +17,11 @@ and mutating it here would corrupt them.
 """
 from __future__ import annotations
 
-import hashlib
-import inspect
 import logging
 
 import synthesis.population.activities as base
+
+from braunschweig import synpp_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +43,20 @@ _HELPER_MODULES = (base,)
 
 
 def validate(context):
-    """synpp validation token: md5 over the pure helper modules' sources.
+    """synpp validation token: structured token over the pure helper modules' sources.
 
     synpp hashes only THIS module's source, so an edit to a helper module it imports would
     otherwise leave the cached stage output in place although the rules that produced it
     changed. The token folds those sources in, so a helper edit devalidates the stage exactly
     like an edit here (same mechanism as
     ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, (),
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

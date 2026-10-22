@@ -562,6 +562,50 @@ configs. Production runs execute on a 64c/128GB Linux server (`scripts/
 run_pipeline.sh`, `scripts/sync_data_to_server.ps1`); the preflight verifier
 gates `run_pipeline.sh` (skip with `EQASIM_SKIP_VERIFY=1`).
 
+### Reusing an existing cache
+
+Since #468 (ADR-0149) the launcher computes stage hashes and `validate()` tokens from the
+syntax tree of the code instead of its raw text, so a cache built by an earlier version
+carries values the new version cannot match. **Migrate every existing cache once after
+updating to this version, before its first launch**; otherwise every stage reads
+`module_hash_changed` and recomputes (the explainer report and the launcher log then print a
+warning that names the migration script). The migration rewrites only `pipeline.json`
+(backup: `pipeline.json.bk`); it never recomputes a stage and never changes a cached output.
+
+```powershell
+# 1. report only, writes nothing
+python scripts/migrate_cache_metadata.py configs/base_bs.yml configs/overlays/test_100pct.yml --working-directory <dir> --dry-run
+# 2. rewrite pipeline.json
+python scripts/migrate_cache_metadata.py configs/base_bs.yml configs/overlays/test_100pct.yml --working-directory <dir>
+# 3. check: only run targets may be stale; exit code 0 means nothing else is
+python scripts/explain_stale_stages.py configs/base_bs.yml configs/overlays/test_100pct.yml --working-directory <dir> --expect ""
+```
+
+- Run the migration with the production interpreter (the pinned `eqasim` conda environment,
+  Python 3.10): the module hash and the token's `python` field depend on the Python minor
+  version, and a migration under another minor version makes every entry recompute (safe, but
+  costly).
+- The migration needs the git repository with the revision the old caches were built from
+  (`LEGACY_SOURCE_REV` in `scripts/migrate_cache_metadata.py`, on `main`): run
+  `git fetch origin main` first. Without git or that revision it stops with an error.
+- It hashes the output of every cached entry in `pipeline.json`, including entries of old
+  config variants that are not in the current stage graph. On a large cache this takes time:
+  every output file is read once (large MATSim entries are the expensive ones). The
+  migration logs file count, bytes and seconds per entry and the total hashing time; no run
+  time is stated here because none has been measured on a full cache yet.
+- A shared cache store (`cache_share_*`) built before this change holds md5 records. Migration
+  does not reach it through `prime`: `export` writes a store entry's metadata only when the
+  run-time envelope equals the current `pipeline.json` record, which a migrated record no longer
+  does, and a re-export after migration does not refresh it either. Priming from such a store
+  therefore recomputes the primed stages (a miss, never a wrong hit) until the stages have been
+  recomputed by a run under this version and exported again (ADR-0149; refreshing shared
+  envelopes is Phase 4).
+- An entry whose stored hashes cannot be proven to come from code equal to the current code
+  is left unchanged and counted as `kept_legacy`; it recomputes if the code really changed.
+  The report lists every such entry with its reason.
+- Design and limits: `docs/decisions/ADR-0149-vendored-synpp-fork-and-content-addressed-stage-validity.md`,
+  contributor note `docs/codebase/notes/synpp-fork.md`.
+
 ### Commute-day-state model
 
 `python scripts/run_synpp.py` remains the single entry point; the model itself is governed

@@ -15,7 +15,6 @@ CRS: EPSG:25832 throughout; all distances in metres.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -26,6 +25,7 @@ import pandas as pd
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
+from braunschweig import synpp_tokens
 from braunschweig.data.vrb import fare_model_export, line_scopes
 
 log = logging.getLogger(__name__)
@@ -205,18 +205,19 @@ def _polygons_path(context) -> Path:
 
 
 def validate(context):
-    """Cache token: the polygon file bytes (a new download must invalidate the stage), the price-stage matrix
-    the expected zone ids come from, and the helper source."""
+    """Cache token: the structured source token of the helper modules plus ``files``, the sha256 of the polygon
+    file bytes (a new download must invalidate the stage) and of the price-stage matrix the expected zone ids
+    come from, each keyed by its file name."""
     path = _polygons_path(context)
     if not path.is_file():
         raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "
                            "docs/registry/data/vrb_tariff_zone_polygons.yml")
-    digest = hashlib.sha256(path.read_bytes())
     _, matrix_path, _ = fare_model_export.committed_input_paths()
-    digest.update(Path(matrix_path).read_bytes())
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    return digest.hexdigest()
+    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest(),
+             Path(matrix_path).name: hashlib.sha256(Path(matrix_path).read_bytes()).hexdigest()}
+    token = synpp_tokens.source_token(_HELPER_MODULES, (), stage_label=__name__ + ".validate()")
+    token["files"] = files
+    return token
 
 
 def execute(context):

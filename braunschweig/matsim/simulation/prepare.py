@@ -21,9 +21,6 @@ attribution against the supplied shapefile).
 import datetime
 import decimal
 import gzip
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import math
@@ -35,6 +32,7 @@ from pathlib import Path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
+from braunschweig import synpp_tokens
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import plan_check
@@ -173,30 +171,21 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 def validate(context):
     """Invalidate this wrapper when its delegated preparation helper changes.
 
-    A deferred module that fails to import raises rather than being skipped: skipping it
-    would keep a stale prepared scenario alive exactly when the helper is broken.
+    The structured source token of the helper modules (one semantic digest per module) plus ``files``, the
+    LF-normalised sha256 of each committed fare-model table keyed by its file name. A deferred module that
+    fails to import raises rather than being skipped: skipping it would keep a stale prepared scenario alive
+    exactly when the helper is broken.
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
     # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
     # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
     # The parking inputs are not read here: they arrive through the declared braunschweig.parking.zones_stage,
     # whose own token hashes them and whose change synpp propagates to this stage.
-    for path in fare_model_export.committed_input_paths():
-        digest.update(fare_model_export.content_sha256(path).encode("ascii"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"matsim.simulation.prepare validate(): cannot hash the deferred helper "
-                f"module {module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse a stale prepared scenario."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    token["files"] = {Path(path).name: fare_model_export.content_sha256(path)
+                      for path in fare_model_export.committed_input_paths()}
+    return token
 
 
 def configure(context):

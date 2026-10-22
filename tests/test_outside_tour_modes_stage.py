@@ -70,10 +70,11 @@ class _ValidateContext:
         return self._values[option]
 
 
-def test_validate_token_is_a_stable_hex_digest_and_needs_only_the_flag_when_off():
+def test_validate_token_is_a_stable_structured_token_and_needs_only_the_flag_when_off():
     context = _ValidateContext({keys.KEY_ENABLED: False})
     token = stage.validate(context)
-    assert token == stage.validate(context) and len(token) == 32 and int(token, 16) >= 0
+    assert token == stage.validate(context) and token["format"] == 2 and token["modules"]
+    assert "files" not in token
 
 
 def test_validate_token_covers_the_committed_table_bytes_when_on(tmp_path):
@@ -88,6 +89,8 @@ def test_validate_token_covers_the_committed_table_bytes_when_on(tmp_path):
     table_path.write_text("# b\npurpose_group,band\n", encoding="utf-8")
     second = stage.validate(context)
     assert first != second
+    assert set(first["files"]) == {M.TABLE_FILE_NAME} and first["files"] != second["files"]
+    assert first["modules"] == second["modules"]
     assert first != stage.validate(_ValidateContext({keys.KEY_ENABLED: False}))
 
 

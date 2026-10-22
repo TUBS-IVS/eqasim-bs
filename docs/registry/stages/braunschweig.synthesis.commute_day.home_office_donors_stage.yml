@@ -182,7 +182,7 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   weighted; NaN when the delivery carries no P_GEW column, never a substituted value).
 
   validate() returns a cache token folding the summed byte size of the three raw MiD files (so a
-  re-delivered extract invalidates the cache) plus an md5 of the pure donor_pool/popsim.trips/
+  re-delivered extract invalidates the cache) plus a structured source token (one semantic digest per module) of the pure donor_pool/popsim.trips/
   plan_validation/trips_stage/closure_dwell/diary_facts/diary_plan_match module sources and of
   the deferred leaf module popsim.stage.config_keys, and since ADR-0136 of every other module
   of its import closure (so an edit to those helpers -- or a changed

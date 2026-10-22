@@ -164,7 +164,7 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   failing on data the enabled path would reject -- the OFF path must never fail where the ON path
   would.
 
-  The cache token (validate()) is an md5 of THREE pure modules'' sources, not the absence module
+  The cache token (validate()) is a structured token (one semantic digest per module) of THREE pure modules'' sources, not the absence module
   alone (final-review fix wave, Important finding 3; issue #425 added the third): synpp hashes
   only absence_stage.py itself, so an edit to a helper module would otherwise leave a stale
   cached output in place. The draw module absence.py owns the household/individual composition

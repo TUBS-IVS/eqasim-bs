@@ -102,9 +102,6 @@ change.
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import json  # noqa: F401 -- namespace parity only; the pre-split module had this at top level
 import logging
 import os
@@ -114,6 +111,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.data.census.household_size import kreis_household_stats
 from braunschweig.data.mid.income_by_size import (
     load_income_by_size_bundesland,
@@ -583,7 +581,7 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 
 
 def validate(context):
-    """synpp validation token: md5 over every helper module's source.
+    """synpp validation token: structured token over every helper module's source.
 
     THIS DOCSTRING IS THE SINGLE CANONICAL STATEMENT of what the token covers and
     what it does not. The comments at ``_HELPER_MODULES`` and
@@ -696,32 +694,13 @@ def validate(context):
         RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
             cannot be imported or has no retrievable source; the original error
             is chained.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        # Deferred (function-level) direct dependencies, resolved lazily: this
-        # runs at RUN time, so importing them here adds no import-time cost and
-        # cannot create the cycles the deferral avoids. A failure is re-raised
-        # (never swallowed) with the module named, because a deferred dependency
-        # that no longer imports is a broken dependency, and dropping it from the
-        # token would keep the stale cached output alive exactly then.
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"popsim stage validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}). It is a direct "
-                "dependency of this stage's result and is listed in "
-                "_DEFERRED_HELPER_MODULE_NAMES, so it must be importable with a "
-                "retrievable source; fix the module (or remove it from that tuple "
-                "if the dependency is genuinely gone) -- it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

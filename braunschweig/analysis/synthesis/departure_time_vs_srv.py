@@ -52,9 +52,6 @@ The stage reads cached synthesis stages only (no MATSim), so it runs on a cached
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import os
@@ -63,6 +60,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig import provenance as run_provenance
+from braunschweig import synpp_tokens
 from braunschweig.analysis import departure_time as D
 from braunschweig.analysis import plan_structure as _plan_structure
 from braunschweig.calibration import metrics as _metrics
@@ -176,28 +174,19 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over this stage's helper modules.
+    """synpp validation token: structured token over this stage's helper modules.
 
     Same mechanism and boundary semantics as
     ``braunschweig.analysis.synthesis.plan_structure_vs_srv.validate()``: over-hashing only costs
     a re-run of a minutes-long analysis stage, while under-hashing silently reports a stale
     comparison as a current result.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"departure_time_vs_srv validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

@@ -59,14 +59,12 @@ returned polygons: EPSG:25832.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.parking import attach, tariff_export
 from braunschweig.parking import garages as parking_garages
 from braunschweig.parking import restricted_inputs
@@ -153,28 +151,20 @@ def _release_files(context) -> list[tuple[str, str, str, Path]]:
 
 
 def validate(context):
-    """Cache token: LF-normalised sha256 of the five release files and the source of every module that decides
-    the release (``_HELPER_MODULES``, ``_DEFERRED_HELPER_MODULE_NAMES``).
+    """Cache token: the structured source token of every module that decides the release
+    (``_HELPER_MODULES``, ``_DEFERRED_HELPER_MODULE_NAMES``; one semantic digest per module) plus ``files``,
+    the LF-normalised sha256 of each release input keyed by its dataset id.
 
     A missing file raises ``FileNotFoundError`` naming its config key. A deferred module that cannot be
     imported or read raises ``RuntimeError`` rather than being skipped, because skipping it would silently
     reuse a stale release. The LF normalisation gives a CRLF and an LF checkout of the same files one token.
     """
-    digest = hashlib.sha256()
-    for _, source_id, _, path in _release_files(context):
-        digest.update(f"{source_id}={tariff_export.content_sha256(path)};".encode("ascii"))
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_source = inspect.getsource(importlib.import_module(module_name))
-        except Exception as error:
-            raise RuntimeError(
-                f"braunschweig.parking.zones_stage validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, because skipping it "
-                "would silently reuse a stale parking zone release.") from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    files = {source_id: tariff_export.content_sha256(path) for _, source_id, _, path in _release_files(context)}
+    token = synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
+    token["files"] = files
+    return token
 
 
 def load_workplace_shares(path) -> pd.DataFrame:

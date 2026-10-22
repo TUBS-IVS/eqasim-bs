@@ -108,7 +108,7 @@ def extract(repo_root: str, base: str, overlay: Optional[str] = None) -> dict:
             item = key
         definitions.append({"descriptor": item, "config": parameters})
 
-    from braunschweig import synpp_deterministic
+    from braunschweig import synpp_fork
 
     # The name-level graph does not depend on stage hashes, but install the same
     # deterministic propagation the production entry point uses so that a dryrun
@@ -118,8 +118,8 @@ def extract(repo_root: str, base: str, overlay: Optional[str] = None) -> dict:
     # means the dryrun exercises synpp's own (order-dependent) propagation
     # instead, which still yields the same name-level graph.
     try:
-        synpp_deterministic.install()
-    except synpp_deterministic.UnsupportedSynppVersion as error:
+        synpp_fork.install()
+    except synpp_fork.UnsupportedSynppVersion as error:
         logger.warning(
             "[documentation] deterministic stage-hash patch not installed for DAG "
             "extraction (%s); continuing with synpp's own propagation -- the "

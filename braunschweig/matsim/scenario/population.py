@@ -43,9 +43,6 @@ declared and no column is attached -> byte-identical plans.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import math
 
@@ -53,6 +50,7 @@ import numpy as np
 import pandas as pd
 
 import matsim.scenario.population as base
+from braunschweig import synpp_tokens
 from braunschweig.parking import free_draw_options as _free_draw_options
 from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
@@ -178,7 +176,7 @@ _PARKING_LOG_TAG = "[parking population]"
 
 
 def validate(context):
-    """synpp validation token: md5 over the vendored writer's source.
+    """synpp validation token: structured token over the vendored writer's source.
 
     synpp hashes only THIS module's source, so an edit to the vendored
     ``matsim.scenario.population`` this wrapper delegates to (``load_raw``, ``prepare_frames``,
@@ -190,22 +188,13 @@ def validate(context):
     The deferred helpers (:data:`_DEFERRED_HELPER_MODULE_NAMES`) follow, imported by name. One that
     cannot be imported or read -- an absent one included -- raises rather than being skipped:
     skipping it would silently reuse a stale ``plans.xml.gz`` exactly when the helper is broken.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"population validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

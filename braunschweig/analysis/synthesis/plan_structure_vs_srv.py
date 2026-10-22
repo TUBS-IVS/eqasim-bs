@@ -96,9 +96,6 @@ The stage reads cached synthesis stages only (no MATSim), so it runs on a cached
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import os
@@ -107,6 +104,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig import provenance as run_provenance
+from braunschweig import synpp_tokens
 from braunschweig.analysis import plan_structure as P
 from braunschweig.calibration import srv_distance_targets as T
 from braunschweig.calibration import srv_plan_structure as SRV
@@ -197,29 +195,20 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over this stage's helper modules.
+    """synpp validation token: structured token over this stage's helper modules.
 
     Same mechanism and boundary semantics as ``braunschweig.popsim.trips_stage.validate()``.
     Over-hashing only costs a re-run of a minutes-long analysis stage, while under-hashing
     silently reports a stale comparison as a current result. A deferred module that fails to
     import raises rather than being skipped -- skipping it would keep the stale cache alive
     exactly when the code is broken.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"plan_structure_vs_srv validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse a stale cached comparison."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

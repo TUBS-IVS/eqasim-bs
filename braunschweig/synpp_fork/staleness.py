@@ -26,6 +26,7 @@ The fork's own run() (Phase 4) decides children from parent output digests and f
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -34,6 +35,13 @@ from synpp.pipeline import ValidateContext
 # False while synpp 1.6.2 executes the pipeline (it recomputes every descendant of a stale stage);
 # Phase 4 sets it True when the fork's run() decides children from parent output hashes.
 EARLY_CUTOFF_ACTIVE = False
+
+_LEGACY_MODULE_HASH = re.compile(r"[0-9a-f]{32}")
+
+
+def is_legacy_module_hash(value) -> bool:
+    """True for synpp 1.6.2's md5 module hash (32 hex digits); the fork's semantic digest has 64."""
+    return isinstance(value, str) and _LEGACY_MODULE_HASH.fullmatch(value) is not None
 
 
 @dataclass
@@ -54,6 +62,9 @@ class StageAssessment:
     config_diff: dict = field(default_factory=dict)
     ephemeral: bool = False
     ephemeral_uncached: bool = False
+    # True when module_hash_changed fired on a stored 32-hex md5 module hash (synpp 1.6.2's raw-text
+    # hash): such an entry was never migrated, see scripts/migrate_cache_metadata.py (Ruling H).
+    legacy_module_hash: bool = False
 
     @property
     def stale(self) -> bool:
@@ -66,14 +77,18 @@ def artifacts_present(working_directory: str, stage_hash: str) -> bool:
 
 
 def token_difference(current, stored) -> list:
-    """Names of the token modules that differ; ``["format"]`` for a structural change;
-    ``["opaque"]`` when either token is not a structured source token."""
+    """What differs between two structured source tokens: the differing module names, then any other
+    differing top-level key by its own name (``files`` for a composite token's data part, ``python``,
+    ``format``); ``["format"]`` when nothing nameable differs; ``["opaque"]`` when either token is not
+    a structured source token."""
     if isinstance(current, dict) and isinstance(stored, dict) and "modules" in current and "modules" in stored:
         cm, sm = current["modules"], stored["modules"]
         if not isinstance(cm, dict) or not isinstance(sm, dict):
             return ["opaque"]
         names = sorted(name for name in set(cm) | set(sm) if cm.get(name) != sm.get(name))
-        return names or ["format"]
+        others = sorted(key for key in (set(current) | set(stored)) - {"modules"}
+                        if current.get(key) != stored.get(key))
+        return (names + others) or ["format"]
     return ["opaque"]
 
 
@@ -169,6 +184,7 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
     entry = meta[stage_hash]
     if entry.get("module_hash") != stage["wrapper"].module_hash:
         assessment.reasons.append("module_hash_changed")
+        assessment.legacy_module_hash = is_legacy_module_hash(entry.get("module_hash"))
     if set(entry.get("dependencies", {})) != set(stage.get("dependencies", [])):
         assessment.reasons.append("parents_changed")
     cache_path = os.path.join(working_directory, stage_hash + ".cache")
@@ -251,6 +267,10 @@ def format_report(assessments: dict) -> str:
     if ephemeral:
         lines.append(f"# WARNING: {ephemeral} ephemeral stage(s) in the registry; "
                      "the fork disables early cutoff for such runs (spec 4.4)")
+    legacy = sum(a.legacy_module_hash for a in assessments.values())
+    if legacy:
+        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash: "
+                     "run scripts/migrate_cache_metadata.py first")
     if EARLY_CUTOFF_ACTIVE:
         maybe_note = "stale ancestor, early cutoff decides"
     else:

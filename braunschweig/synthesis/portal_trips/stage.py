@@ -14,9 +14,6 @@ substitutions, the capped re-entry shares -- and warns when a rate exceeds the c
 from __future__ import annotations
 
 import copy
-import hashlib
-import importlib
-import inspect
 import json
 import logging
 import os
@@ -24,6 +21,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.synthesis.portal_trips import classification as _classification
 from braunschweig.synthesis.portal_trips import config_keys as _config_keys
 from braunschweig.synthesis.portal_trips import gates as _gates
@@ -62,17 +60,14 @@ _EMPTY_STAY_REPORT = {
 
 
 def validate(context):
-    """synpp validation token over the helper sources (same mechanism as trips_day_stage.validate)."""
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-        except Exception as error:
-            raise RuntimeError(f"portal_trips.stage validate(): cannot hash {module_name!r} "
-                               f"({type(error).__name__}: {error}); it must not be skipped") from error
-    return digest.hexdigest()
+    """synpp validation token over the helper sources (same mechanism as trips_day_stage.validate).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

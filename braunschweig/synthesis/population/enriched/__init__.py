@@ -42,10 +42,8 @@ because ``get_stage_hash`` only covers this file -- a helper-only change
 devalidates the cached stage output exactly like an edit here.
 """
 
-import hashlib
-import importlib
-import inspect
 
+from braunschweig import synpp_tokens
 from braunschweig.data.mid import reference_tables as _mid_reference_tables
 from braunschweig.data.mid.reference_tables import load_class_midpoint_eur
 
@@ -180,27 +178,18 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the helper submodules' sources.
+    """synpp validation token: structured token over the helper submodules' sources.
 
     synpp compares this token against the one stored with the cached stage
     output and devalidates the cache on mismatch, so helper-only source
     changes recompute the stage just like changes to this file itself.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"enriched validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

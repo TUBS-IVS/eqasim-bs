@@ -562,8 +562,15 @@ def test_prepare_token_changes_when_a_module_that_shapes_the_parking_inputs_chan
     before = prepare.validate(None)
     getsource = inspect.getsource
     monkeypatch.setattr(inspect, "getsource", lambda obj: getsource(obj) + (
-        "\n# edited" if getattr(obj, "__name__", None) == module_name else ""))
+        "\nZ_PROBE = 1\n" if getattr(obj, "__name__", None) == module_name else ""))
     assert prepare.validate(None) != before
+
+
+def test_prepare_token_holds_the_committed_fare_model_tables_by_file_name():
+    from braunschweig.data.vrb import fare_model_export
+    token = prepare.validate(None)
+    assert token["format"] == 2
+    assert set(token["files"]) == {Path(path).name for path in fare_model_export.committed_input_paths()}
 
 
 def _output_context(tmp_path, prepare_dir, **values):

@@ -88,7 +88,7 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   state_diagnostics.json, which is what ADR-0104 check 4 previously had to quote out of
   run_log_excerpts.txt.
 
-  The cache token (validate()) is an md5 of plan_replacement''s source alone (synpp hashes only
+  The cache token (validate()) is a structured token (one semantic digest per module) of plan_replacement''s source alone (synpp hashes only
   trips_day_stage.py itself, so an edit to the pure replacement module would otherwise leave a
   stale cached view in place) -- the same mechanism as
   braunschweig.synthesis.locations.secondary_chainsolvers.validate. On the OFF path execute()

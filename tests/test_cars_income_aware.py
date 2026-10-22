@@ -349,5 +349,5 @@ def test_enriched_validate_token_covers_the_cars_module(monkeypatch):
     getsource = inspect.getsource
     monkeypatch.setattr(
         inspect, "getsource",
-        lambda obj: getsource(obj) + ("\n# edited\n" if obj is cars_by_status else ""))
+        lambda obj: getsource(obj) + ("\nZ_PROBE = 1\n" if obj is cars_by_status else ""))
     assert enriched.validate(None) != before

@@ -34,9 +34,6 @@ readable by its consumers without a branch of their own.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import os
 
@@ -44,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig import constants as _constants
+from braunschweig import synpp_tokens
 from braunschweig.calibration import commute_day_state_reference as _state_reference
 from braunschweig.popsim import chain_matching as _chain_matching
 from braunschweig.synthesis import escort_duty as _escort_duty
@@ -155,29 +153,20 @@ WARN_PRIMARY_DONOR_SOURCE_SHARE = 0.5
 
 
 def validate(context):
-    """synpp validation token: md5 over the pure helper modules' sources.
+    """synpp validation token: structured token over the pure helper modules' sources.
 
     synpp hashes only THIS module's source, so an edit to a helper module it imports would
     otherwise leave the cached stage output in place although the rules that produced it
     changed. The token folds those sources in, so a helper edit devalidates the stage exactly
     like an edit here (same mechanism as
     ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"state_stage validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):
