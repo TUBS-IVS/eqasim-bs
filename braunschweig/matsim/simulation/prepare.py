@@ -252,6 +252,7 @@ def configure(context):
     context.config(plan_check.KEY_BICYCLE_MAX_DISTANCE_M, plan_check.DEFAULT_BICYCLE_MAX_DISTANCE_M)
     context.config(plan_check.KEY_LEG_MAX_DURATION_S, plan_check.DEFAULT_LEG_MAX_DURATION_S)
     context.config(plan_check.KEY_MAX_FROZEN_DEFECT_SHARE, plan_check.DEFAULT_MAX_FROZEN_DEFECT_SHARE)
+    context.config(plan_check.KEY_MAX_FROZEN_PT_AS_WALK_SHARE, plan_check.DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE)
     context.config(plan_check.KEY_FAIL_ON_THRESHOLD, plan_check.DEFAULT_FAIL_ON_THRESHOLD)
 
     # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
