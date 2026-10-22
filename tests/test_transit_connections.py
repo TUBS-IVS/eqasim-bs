@@ -10,7 +10,12 @@ WALK_MAX_M = 5000.0
 
 def _trips(rows):
     base = dict(is_only_walk=0, access_distance_km=0.3, egress_distance_km=0.3, transfer_distance_km=0.0)
-    return pd.DataFrame([{**base, **r} for r in rows])
+    out = pd.DataFrame([{**base, **r} for r in rows])
+    # The Java tool writes total_walk_distance_km = access + egress + transfer (BatchPublicTransportRouter).
+    if "total_walk_distance_km" not in out:
+        out["total_walk_distance_km"] = (out["access_distance_km"] + out["egress_distance_km"]
+                                         + out["transfer_distance_km"])
+    return out
 
 
 def _legs(rows):
@@ -22,30 +27,43 @@ def _mask(trips, legs):
 
 
 def test_connection_rule_cases():
+    # Real Java behaviour for an only-walk trip: the single walk leg is the FIRST leg, so the whole walk is
+    # in access_distance_km and egress_distance_km stays 0 (BatchPublicTransportRouter, isFirstLeg branch).
     trips = _trips([
         {"identifier": "ok"},
         {"identifier": "egress_outside"},
-        {"identifier": "short_walk", "is_only_walk": 1, "access_distance_km": 0.2, "egress_distance_km": 0.2},
-        {"identifier": "long_walk", "is_only_walk": 1, "access_distance_km": 1.5, "egress_distance_km": 1.5},
+        {"identifier": "short_walk", "is_only_walk": 1, "access_distance_km": 0.4, "egress_distance_km": 0.0},
+        {"identifier": "long_walk", "is_only_walk": 1, "access_distance_km": 3.0, "egress_distance_km": 0.0},
         {"identifier": "far_access", "access_distance_km": 6.0},
         {"identifier": "far_transfer", "transfer_distance_km": 5.5},
+        {"identifier": "no_legs"},
+        {"identifier": "blank_id"},
+        {"identifier": "walk_unknown", "is_only_walk": float("nan")},
     ])
     legs = _legs([
         ("ok", 0, "s_in_a", "s_in_b"),
         ("egress_outside", 0, "s_in_a", "s_out"),
         ("far_access", 0, "s_in_a", "s_in_b"),
         ("far_transfer", 0, "s_in_a", "s_in_b"),
-        ("ok", 1, "", ""),  # defensive: blank stop ids are ignored
+        ("blank_id", 0, "s_in_a", ""),
+        ("walk_unknown", 0, "s_in_a", "s_in_b"),
     ])
     mask = _mask(trips, legs)
     assert mask.to_dict() == {"ok": True, "egress_outside": False, "short_walk": True,
-                              "long_walk": False, "far_access": False, "far_transfer": False}
+                              "long_walk": False, "far_access": False, "far_transfer": False,
+                              "no_legs": False, "blank_id": False, "walk_unknown": False}
+
+
+def test_duplicate_trip_identifiers_raise():
+    trips = _trips([{"identifier": "a"}, {"identifier": "a"}])
+    with pytest.raises(ValueError, match="duplicate"):
+        _mask(trips, _legs([("a", 0, "s_in_a", "s_in_b")]))
 
 
 def test_plausible_walk_boundary_is_inclusive():
     trips = _trips([
-        {"identifier": "at", "is_only_walk": 1, "access_distance_km": 0.3, "egress_distance_km": 0.3},
-        {"identifier": "above", "is_only_walk": 1, "access_distance_km": 0.31, "egress_distance_km": 0.3},
+        {"identifier": "at", "is_only_walk": 1, "access_distance_km": 0.6, "egress_distance_km": 0.0},
+        {"identifier": "above", "is_only_walk": 1, "access_distance_km": 0.61, "egress_distance_km": 0.0},
     ])
     mask = _mask(trips, _legs([]))
     assert mask.to_dict() == {"at": True, "above": False}
@@ -86,6 +104,28 @@ def test_route_batch_roundtrip_and_columns(monkeypatch, tmp_path):
     assert len(trips) == 1
 
 
+
+
+def test_route_batch_keeps_numeric_looking_identifiers_as_strings(monkeypatch, tmp_path):
+    run = _fake_run("identifier,is_only_walk\n007,0\n",
+                    "identifier,leg_index,access_stop_id,egress_stop_id\n007,0,1,2\n")
+    monkeypatch.setattr(connections.eqasim, "run", run)
+    tasks = _tasks().assign(identifier=["007"])
+    trips, legs = connections.route_batch(None, tasks, config_path="c", threads=1, work_dir=str(tmp_path))
+    assert list(trips["identifier"]) == ["007"] and list(legs["identifier"]) == ["007"]
+
+
+@pytest.mark.parametrize("trips_csv, what", [
+    ("identifier,is_only_walk\n", "missing 1"),
+    ("identifier,is_only_walk\nt1,0\nt9,0\n", "unexpected 1"),
+])
+def test_route_batch_rejects_partial_router_output(monkeypatch, tmp_path, trips_csv, what):
+    monkeypatch.setattr(connections.eqasim, "run", _fake_run(trips_csv, "identifier\n"))
+    with pytest.raises(ValueError, match=what):
+        connections.route_batch(None, _tasks(), config_path="c", threads=1, work_dir=str(tmp_path))
+
+
+
 def test_route_batch_rejects_nan_coordinates_before_java(monkeypatch, tmp_path):
     run = _fake_run("", "")
     monkeypatch.setattr(connections.eqasim, "run", run)
@@ -105,7 +145,11 @@ def test_write_router_config(tmp_path):
         assert p in text
 
 
-def test_trip_without_leg_rows_and_not_only_walk_has_no_outside_stop():
-    # The router writes legs rows for pt legs only; a trip absent from legs has no stop to reject.
-    trips = _trips([{"identifier": "no_legs", "is_only_walk": 0}])
-    assert _mask(trips, _legs([])).to_dict() == {"no_legs": True}
+def test_write_router_config_escapes_xml_attribute_values(tmp_path):
+    import xml.etree.ElementTree as ET
+    connections.write_router_config(str(tmp_path / "c.xml"), network_path='a&b "net".xml',
+                                    schedule_path="s<1>.xml", vehicles_path="v.xml")
+    root = ET.parse(tmp_path / "c.xml").getroot()  # raises ParseError if unescaped
+    values = {p.get("name"): p.get("value") for p in root.iter("param")}
+    assert values["inputNetworkFile"] == 'a&b "net".xml'
+    assert values["transitScheduleFile"] == "s<1>.xml"
