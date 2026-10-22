@@ -1,5 +1,6 @@
 """Plan feasibility check on the written MATSim population (eqasim-bs#443, ADR-0146)."""
 import gzip
+import zipfile
 
 import pytest
 
@@ -287,16 +288,34 @@ RUN_POPULATION = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
+JAR_NAME = "eqasim.jar"
+
+
+def _write_stub_jar(path, class_bytes=b"\xca\xfe\xba\xbe walkFallbackFrom", entry=C.PLAN_ROUTER_CLASS_ENTRY):
+    """A tiny zip standing in for the eqasim jar: one entry with the given bytes."""
+    with zipfile.ZipFile(path, "w") as jar:
+        jar.writestr(entry, class_bytes)
+    return path
+
+
 class _RunContext:
+    """Stub of the synpp context: stage directory, config values and the jar of ``matsim.runtime.eqasim``."""
+
     def __init__(self, directory, fail_on_threshold, max_share=0.1):
         self._directory = directory
         self._values = {C.KEY_WALK_MAX_DISTANCE_M: 5000.0, C.KEY_BICYCLE_MAX_DISTANCE_M: 30000.0,
                         C.KEY_LEG_MAX_DURATION_S: 10800.0, C.KEY_MAX_FROZEN_DEFECT_SHARE: max_share,
                         C.KEY_MAX_FROZEN_PT_AS_WALK_SHARE: 0.02,
                         C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold}
+        (directory / "runtime").mkdir(exist_ok=True)
+        _write_stub_jar(directory / "runtime" / JAR_NAME)
 
-    def path(self):
-        return str(self._directory)
+    def path(self, name=None):
+        return str(self._directory / "runtime") if name == "matsim.runtime.eqasim" else str(self._directory)
+
+    def stage(self, name):
+        assert name == "matsim.runtime.eqasim"
+        return JAR_NAME
 
     def config(self, key):
         return self._values[key]
@@ -385,77 +404,118 @@ def test_format_by_hour_empty_returns_empty_dict():
     assert C._format_by_hour({}) == {}
 
 
-# --- pt-intended trips and the unstamped walk fallback (eqasim-bs#465): a counter of 0 must not hide a stale jar ---
+# --- pt-intended trips, the routingMode guard and the jar guard (eqasim-bs#465): 0 must not hide a stale jar ---
 
-def _routing_mode(mode):
-    return f'<attributes><attribute name="routingMode" class="java.lang.String">{mode}</attribute></attributes>'
+def _attributes(**attributes):
+    items = "".join(f'<attribute name="{name}" class="java.lang.String">{value}</attribute>'
+                    for name, value in attributes.items())
+    return f"<attributes>{items}</attributes>"
 
 
-_STAMP = '<attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute>'
-_PT_ROUTING = '<attribute name="routingMode" class="java.lang.String">pt</attribute>'
-
+# Realistic legs: MATSim's TripRouter gives every leg the REQUESTED routing mode and eqasim's fallback re-routes as
+# walk, so a replacement leg carries routingMode walk plus the stamp walkFallbackFrom=pt.
 PT_TRIPS_POPULATION = f"""<?xml version="1.0" encoding="utf-8"?>
 <population>
-  <person id="unstamped">
+  <person id="frozen_fallback">
     <plan selected="yes">
       <activity type="home" x="0" y="0" end_time="07:00:00"/>
-      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">{_routing_mode("pt")}</leg>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">{_attributes(routingMode="walk", walkFallbackFrom="pt")}</leg>
       <activity type="outside" x="100" y="0" end_time="17:00:00"/>
-      <leg mode="car" dep_time="17:00:00" trav_time="00:10:00">{_routing_mode("car")}</leg>
+      <leg mode="car" dep_time="17:00:00" trav_time="00:10:00">{_attributes(routingMode="car")}</leg>
       <activity type="home" x="0" y="0"/>
     </plan>
   </person>
-  <person id="stamped">
+  <person id="frozen_served">
     <plan selected="yes">
       <activity type="home" x="0" y="0" end_time="07:00:00"/>
-      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">
-        <attributes>{_PT_ROUTING}{_STAMP}</attributes></leg>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:05:00">{_attributes(routingMode="pt")}</leg>
+      <activity type="pt interaction" x="10" y="0" end_time="07:05:00"/>
+      <leg mode="pt" dep_time="07:05:00" trav_time="00:20:00">{_attributes(routingMode="pt")}</leg>
+      <activity type="pt interaction" x="90" y="0" end_time="07:25:00"/>
+      <leg mode="walk" dep_time="07:25:00" trav_time="00:05:00">{_attributes(routingMode="pt")}</leg>
       <activity type="outside" x="100" y="0"/>
     </plan>
   </person>
-  <person id="served">
+  <person id="in_region_fallback">
     <plan selected="yes">
-      <activity type="home" x="0" y="0" end_time="07:00:00"/>
-      <leg mode="walk" dep_time="07:00:00" trav_time="00:05:00">{_routing_mode("pt")}</leg>
-      <activity type="pt interaction" x="10" y="0" end_time="07:05:00"/>
-      <leg mode="pt" dep_time="07:05:00" trav_time="00:20:00">{_routing_mode("pt")}</leg>
-      <activity type="pt interaction" x="90" y="0" end_time="07:25:00"/>
-      <leg mode="walk" dep_time="07:25:00" trav_time="00:05:00">{_routing_mode("pt")}</leg>
-      <activity type="outside" x="100" y="0"/>
+      <activity type="home" x="0" y="0" end_time="08:00:00"/>
+      <leg mode="walk" dep_time="08:00:00" trav_time="00:10:00">{_attributes(routingMode="walk", walkFallbackFrom="pt")}</leg>
+      <activity type="work" x="100" y="0"/>
     </plan>
   </person>
 </population>
 """
 
 
-def _pt_trip_summary(tmp_path):
+def test_pt_as_walk_is_counted_per_trip_in_the_class_of_the_trip_so_numerator_and_denominator_share_a_block(tmp_path):
     path = tmp_path / "pt_trips.xml"
     path.write_text(PT_TRIPS_POPULATION, encoding="utf-8")
-    return _summarise(C.iter_person_plans(path))
-
-
-def test_pt_walk_only_trip_without_the_stamp_is_counted_as_unstamped_and_warned_about(tmp_path, caplog):
-    summary = _pt_trip_summary(tmp_path)
-    frozen = summary["subpopulations"][C.RESIDENTS][C.FROZEN]
-    # unstamped (walk-only pt trip, no attribute) + stamped + served = three pt-intended trips; the car trip is none.
-    assert frozen["n_pt_trips"] == 3
-    assert frozen["n_pt_unstamped_walk"] == 1
-    assert frozen["n_pt_as_walk"] == 1                      # only the stamped one; the served trip is neither
-    assert frozen["share_pt_as_walk"] == pytest.approx(1 / 3)
-    assert summary["n_pt_unstamped_walk"] == 1
-    with caplog.at_level("WARNING"):
-        C._log_summary(summary)
-    assert any(r.levelname == "WARNING" and "walkFallbackFrom" in r.getMessage()
-               and "eqasim_source_path" in r.getMessage() for r in caplog.records)
-
-
-def test_no_unstamped_warning_when_every_pt_walk_is_stamped_or_served(tmp_path, caplog):
-    start, end = PT_TRIPS_POPULATION.index('  <person id="unstamped">'), PT_TRIPS_POPULATION.index('  <person id="stamped">')
-    path = tmp_path / "pt_trips_without_unstamped.xml"
-    path.write_text(PT_TRIPS_POPULATION[:start] + PT_TRIPS_POPULATION[end:], encoding="utf-8")
     summary = _summarise(C.iter_person_plans(path))
-    assert summary["n_pt_unstamped_walk"] == 0
-    assert summary["subpopulations"][C.RESIDENTS][C.FROZEN]["n_pt_as_walk"] == 1
+    frozen = summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+    in_region = summary["subpopulations"][C.RESIDENTS][C.IN_REGION]
+    # frozen: the stamped fallback trip (routingMode walk, stamp pt) and the served three-leg trip; the car trip is none.
+    assert (frozen["n_pt_trips"], frozen["n_pt_as_walk"]) == (2, 1)
+    assert frozen["share_pt_as_walk"] == pytest.approx(1 / 2)
+    assert (in_region["n_pt_trips"], in_region["n_pt_as_walk"]) == (1, 1) and in_region["share_pt_as_walk"] == 1.0
+    assert frozen["pt_as_walk_by_hour"] == {"7": 1} and in_region["pt_as_walk_by_hour"] == {"8": 1}
+    assert summary["n_legs_with_routing_mode"] > 0
+
+
+def test_a_population_without_any_routing_mode_warns_that_the_pt_trip_counts_are_meaningless(population_path, caplog):
+    summary = _summarise(C.iter_person_plans(population_path))     # POPULATION: pt and stamped legs, no routingMode
+    assert summary["n_legs_with_routing_mode"] == 0 and summary["n_pt_or_stamped_legs"] > 0
     with caplog.at_level("WARNING"):
         C._log_summary(summary)
+    assert any(r.levelname == "WARNING" and "routingMode" in r.getMessage() and "meaningless" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_no_routing_mode_warning_when_routing_modes_are_present_or_there_is_no_pt(tmp_path, caplog):
+    path = tmp_path / "pt_trips.xml"
+    path.write_text(PT_TRIPS_POPULATION, encoding="utf-8")
+    car_only = _plan("c", [("home", 0.0, 0, 0), ("work", None, 1, 0)], [("car", 60.0, None, None)])
+    with caplog.at_level("WARNING"):
+        C._log_summary(_summarise(C.iter_person_plans(path)))
+        C._log_summary(_summarise([car_only]))
     assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_require_walk_fallback_stamp_passes_on_a_jar_whose_plan_router_holds_the_attribute_and_logs_once(tmp_path, caplog):
+    jar = _write_stub_jar(tmp_path / "ok.jar")
+    with caplog.at_level("INFO"):
+        C.require_walk_fallback_stamp(jar)
+    assert len([r for r in caplog.records if r.levelname == "INFO" and "stamps the walk fallback" in r.getMessage()]) == 1
+
+
+def _not_a_zip(path):
+    path.write_bytes(b"not a zip")
+    return path
+
+
+@pytest.mark.parametrize("make_jar, error, match", [
+    (lambda p: _write_stub_jar(p, b"\xca\xfe\xba\xbe no stamp here"), RuntimeError, "predates the walk fallback stamp"),
+    (lambda p: _write_stub_jar(p, entry="org/eqasim/core/Other.class"), RuntimeError, "does not contain"),
+    (lambda p: p.parent / "absent.jar", FileNotFoundError, "does not exist"),
+    (_not_a_zip, RuntimeError, "zip archive"),
+])
+def test_require_walk_fallback_stamp_raises_naming_the_jar(tmp_path, make_jar, error, match):
+    jar = make_jar(tmp_path / "bad.jar")
+    with pytest.raises(error, match=match) as excinfo:
+        C.require_walk_fallback_stamp(jar)
+    assert str(jar) in str(excinfo.value)
+
+
+def test_a_stale_jar_message_names_the_fix_and_the_issue(tmp_path):
+    jar = _write_stub_jar(tmp_path / "stale.jar", b"no stamp")
+    with pytest.raises(RuntimeError) as excinfo:
+        C.require_walk_fallback_stamp(jar)
+    assert "eqasim_source_path" in str(excinfo.value) and "#465" in str(excinfo.value)
+
+
+def test_run_raises_before_writing_the_report_when_the_jar_predates_the_stamp(tmp_path):
+    _write_run_inputs(tmp_path)
+    context = _RunContext(tmp_path, fail_on_threshold=False)
+    _write_stub_jar(tmp_path / "runtime" / JAR_NAME, b"no stamp")
+    with pytest.raises(RuntimeError, match="predates the walk fallback stamp"):
+        C.run(context, "bs_config.xml")
+    assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()

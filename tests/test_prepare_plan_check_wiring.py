@@ -26,6 +26,8 @@ def test_configure_declares_the_plan_check_keys():
                          (C.KEY_FAIL_ON_THRESHOLD, C.DEFAULT_FAIL_ON_THRESHOLD)):
         assert context.calls[key] == default
     assert C.DEFAULT_FAIL_ON_THRESHOLD is False   # an uncalibrated check must not abort a run (ADR-0146)
+    # plan_check.run resolves the eqasim jar through this stage for the walk fallback stamp guard (#465).
+    assert "matsim.runtime.eqasim" in context.stages
 
 
 def test_plan_check_module_is_part_of_the_prepare_token():

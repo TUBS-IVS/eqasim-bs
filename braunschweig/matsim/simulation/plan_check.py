@@ -23,7 +23,9 @@ import logging
 import math
 import os
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterator
 
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
@@ -61,6 +63,9 @@ WALK_FALLBACK_ATTRIBUTE = "walkFallbackFrom"
 #: is a pt-intended trip, whatever the router made of it.
 ROUTING_MODE_ATTRIBUTE = "routingMode"
 PT_MODE = "pt"
+#: The jar entry whose constant pool holds the attribute name when the Java fork stamps the fallback legs
+#: (``PlanRouter.WALK_FALLBACK_ATTRIBUTE``, eqasim-bs#465).
+PLAN_ROUTER_CLASS_ENTRY = "org/eqasim/core/scenario/routing/PlanRouter.class"
 #: Leg modes that make a pt-intended trip "walk-only" (no pt leg was produced).
 WALK_MODES = frozenset({"walk", "non_network_walk"})
 #: Activity types ending like this are router-made trip stops (``pt interaction``); they do not end a trip.
@@ -166,7 +171,7 @@ def leg_tour_frozen(activities: list) -> list:
 def _empty_block() -> dict:
     return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_arrival_late": 0, "n_plans_non_monotonic": 0,
             "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0,
-            "n_pt_trips": 0, "n_pt_as_walk": 0, "n_pt_as_walk_attr_without_walk": 0, "n_pt_unstamped_walk": 0,
+            "n_pt_trips": 0, "n_pt_as_walk": 0, "n_pt_as_walk_attr_without_walk": 0,
             "pt_as_walk_by_hour": {}}
 
 
@@ -196,16 +201,18 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     time) is after the simulated day; a plan whose last leg lacks the end time or the travel time cannot be
     evaluated and is not counted. The latter is report only (it is not part of the failure rule).
 
-    The pt counters are per TRIP (``split_trips``): ``n_pt_trips`` are the trips requested as pt (leg attribute
-    ``routingMode`` = pt, or a leg stamped ``walkFallbackFrom`` = pt), assigned to the class of the trip's first
-    leg; ``n_pt_as_walk`` the stamped walk legs; ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the
-    threshold's share; 0 when the block has no pt-intended trip); ``share_pt_as_walk_of_legs`` the same count
-    over all legs (report only). ``n_pt_unstamped_walk`` counts pt-intended trips that consist of walk legs only
-    and carry no ``walkFallbackFrom`` stamp: a fallback the eqasim jar did not stamp (a jar without the stamp, or a
-    router that returned a direct walk), so that a counter of 0 cannot be mistaken for "no fallback happened".
+    The pt counters are per TRIP (``split_trips``) and all of one block: ``n_pt_trips`` are the trips requested as pt
+    (leg attribute ``routingMode`` = pt, or a leg stamped ``walkFallbackFrom`` = pt), assigned to the class of the
+    trip's first leg; ``n_pt_as_walk`` the pt-intended trips with a stamped walk leg, in the same class (so numerator
+    and denominator share one block); ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the threshold's share; 0
+    when the block has no pt-intended trip); ``share_pt_as_walk_of_legs`` the same count over all legs (report
+    only, its legs are counted by leg class). A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
+    router did: ``require_walk_fallback_stamp`` guards that in ``run``. ``n_legs_with_routing_mode`` and
+    ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
+    ``routingMode`` although pt or stamped legs exist).
     """
     blocks: dict = {}
-    n_pt_unstamped_walk = 0
+    n_legs_with_routing_mode = n_pt_or_stamped_legs = 0
     for person in plans:
         if len(person.legs) > max(len(person.activities) - 1, 0):
             raise ValueError(f"{_LOG_TAG} person {person.person_id}: {len(person.legs)} legs for "
@@ -227,7 +234,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 block["n_plans_arrival_late"] += 1
         if any(later < earlier for earlier, later in zip(ends, ends[1:])):
             block["n_plans_non_monotonic"] += 1
-        for index, (mode, travel, walk_fallback_from, _routing_mode) in enumerate(person.legs):
+        for index, (mode, travel, walk_fallback_from, routing_mode) in enumerate(person.legs):
             leg_block = sub[FROZEN if frozen_legs[index] else IN_REGION]
             leg_block["n_legs"] += 1
             _, _, ox, oy = person.activities[index]
@@ -239,28 +246,26 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 leg_block["n_bicycle_legs_over"] += 1
             if travel is not None and travel > leg_max_duration_s:
                 leg_block["n_legs_over_duration"] += 1
-            if walk_fallback_from is not None:
-                if mode == "walk":
-                    leg_block["n_pt_as_walk"] += 1
-                    departure = person.activities[index][1]
-                    hour = "unknown" if departure is None else str(int(departure // 3600.0))
-                    by_hour = leg_block["pt_as_walk_by_hour"]
-                    by_hour[hour] = by_hour.get(hour, 0) + 1
-                else:
-                    # The attribute survived but the leg is no longer a walk (e.g. a later replanning changed
-                    # its mode): reported on its own, never part of the pt-as-walk counter.
-                    leg_block["n_pt_as_walk_attr_without_walk"] += 1
+            n_legs_with_routing_mode += routing_mode is not None
+            n_pt_or_stamped_legs += mode == PT_MODE or walk_fallback_from is not None
         for trip in split_trips(person.activities, len(person.legs)):
             trip_legs = [person.legs[index] for index in trip]
-            stamped = any(leg[2] is not None for leg in trip_legs)
-            pt_intended = any(leg[2] == PT_MODE or leg[3] == PT_MODE for leg in trip_legs)
-            if not pt_intended:
+            if not any(leg[2] == PT_MODE or leg[3] == PT_MODE for leg in trip_legs):
                 continue
             trip_block = sub[FROZEN if frozen_legs[trip[0]] else IN_REGION]
             trip_block["n_pt_trips"] += 1
-            if not stamped and all(leg[0] in WALK_MODES for leg in trip_legs):
-                trip_block["n_pt_unstamped_walk"] += 1
-                n_pt_unstamped_walk += 1
+            stamped_walk = next((index for index in trip
+                                 if person.legs[index][2] is not None and person.legs[index][0] == "walk"), None)
+            if stamped_walk is not None:
+                trip_block["n_pt_as_walk"] += 1
+                departure = person.activities[stamped_walk][1]
+                hour = "unknown" if departure is None else str(int(departure // 3600.0))
+                by_hour = trip_block["pt_as_walk_by_hour"]
+                by_hour[hour] = by_hour.get(hour, 0) + 1
+            # A stamp that survived on a leg that is no longer a walk (e.g. a later replanning changed its mode):
+            # reported on its own, never part of the pt-as-walk counter.
+            trip_block["n_pt_as_walk_attr_without_walk"] += sum(
+                1 for index in trip if person.legs[index][2] is not None and person.legs[index][0] != "walk")
     for sub in blocks.values():
         for block in sub.values():
             n = block["n_persons"]
@@ -269,7 +274,8 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             block["share_plans_non_monotonic"] = block["n_plans_non_monotonic"] / n if n else 0.0
             block["share_pt_as_walk"] = block["n_pt_as_walk"] / block["n_pt_trips"] if block["n_pt_trips"] else 0.0
             block["share_pt_as_walk_of_legs"] = block["n_pt_as_walk"] / block["n_legs"] if block["n_legs"] else 0.0
-    return {"simulation_end_s": float(simulation_end_s), "n_pt_unstamped_walk": n_pt_unstamped_walk,
+    return {"simulation_end_s": float(simulation_end_s), "n_legs_with_routing_mode": n_legs_with_routing_mode,
+            "n_pt_or_stamped_legs": n_pt_or_stamped_legs,
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
                            "leg_max_duration_s": leg_max_duration_s},
             "subpopulations": blocks}
@@ -370,22 +376,51 @@ def _log_summary(summary: dict) -> None:
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
                         "%d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
                         "bicycle legs over %d, legs over duration %d of %d, pt as walk %d of %d pt-intended trips "
-                        "(%.2f%%; %.2f%% of all legs), walk-fallback attribute without walk %d, pt-intended walk-only "
-                        "trips without the stamp %d, pt as walk by departure hour %s", _LOG_TAG, subpopulation, name,
+                        "(%.2f%%; %.2f%% of all legs), walk-fallback attribute without walk %d, pt as walk by departure "
+                        "hour %s", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
                         block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"], block["n_pt_as_walk"], block["n_pt_trips"], 100.0 * block["share_pt_as_walk"],
                         100.0 * block["share_pt_as_walk_of_legs"], block["n_pt_as_walk_attr_without_walk"],
-                        block["n_pt_unstamped_walk"], _format_by_hour(block["pt_as_walk_by_hour"]))
-            if block["n_pt_unstamped_walk"]:
-                logger.warning("%s %s/%s: %d pt-intended trips (routingMode pt) consist of walk legs only and carry "
-                               "no %s stamp: a pt-to-walk fallback that is not counted as pt as walk. Likely cause: "
-                               "the eqasim jar was built without the %s stamp (rebuild eqasim_source_path); "
-                               "otherwise the router returned a direct walk. A pt-as-walk count of 0 is not "
-                               "evidence while this count is above 0.", _LOG_TAG, subpopulation, name,
-                               block["n_pt_unstamped_walk"], WALK_FALLBACK_ATTRIBUTE, WALK_FALLBACK_ATTRIBUTE)
+                        _format_by_hour(block["pt_as_walk_by_hour"]))
+    if summary["n_pt_or_stamped_legs"] and not summary["n_legs_with_routing_mode"]:
+        logger.warning("%s %d legs have mode pt or carry the %s stamp, but no leg carries a %s attribute: the pt "
+                       "trip counts (n_pt_trips, share_pt_as_walk) are meaningless for this population. Check "
+                       "that the population was written with MATSim plans v6 routing modes.", _LOG_TAG,
+                       summary["n_pt_or_stamped_legs"], WALK_FALLBACK_ATTRIBUTE, ROUTING_MODE_ATTRIBUTE)
+
+
+def require_walk_fallback_stamp(jar_path) -> None:
+    """Raise unless the eqasim jar at ``jar_path`` stamps the legs ``PlanRouter.fixOnlyWalk`` replaced (#465).
+
+    A jar built before the stamp was added writes no ``walkFallbackFrom`` leg attribute, so ``n_pt_as_walk`` would
+    read 0 whatever the router did: a silent failure. The check opens ``PLAN_ROUTER_CLASS_ENTRY`` and requires the
+    attribute name ``WALK_FALLBACK_ATTRIBUTE`` (UTF-8, as the class constant pool holds it) in its bytes. Raises
+    ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a file that is no zip archive, a jar without
+    the class, or a class without the name; the message names the jar and the fix. Logs one INFO line on success.
+    """
+    path = Path(jar_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"{_LOG_TAG} the eqasim jar to check for the walk fallback stamp does not exist: {path}")
+    fix = ("rebuild the jar from an eqasim-java-bs revision with the walk fallback stamp (check it out in the tree "
+           "eqasim_source_path points to), see eqasim-bs#465")
+    try:
+        with zipfile.ZipFile(path) as jar:
+            try:
+                class_bytes = jar.read(PLAN_ROUTER_CLASS_ENTRY)
+            except KeyError:
+                raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} does not contain {PLAN_ROUTER_CLASS_ENTRY}; "
+                                   f"{fix}") from None
+    except zipfile.BadZipFile as error:
+        raise RuntimeError(f"{_LOG_TAG} cannot read the eqasim jar {path} as a zip archive: {error}") from error
+    if WALK_FALLBACK_ATTRIBUTE.encode("utf-8") not in class_bytes:
+        raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} predates the walk fallback stamp: its "
+                           f"{PLAN_ROUTER_CLASS_ENTRY} does not contain {WALK_FALLBACK_ATTRIBUTE}, so no pt-to-walk "
+                           f"fallback would be stamped and the pt-as-walk count would read 0 whatever happened; {fix}")
+    logger.info("%s the eqasim jar %s stamps the walk fallback (%s found in %s)", _LOG_TAG, path,
+                WALK_FALLBACK_ATTRIBUTE, PLAN_ROUTER_CLASS_ENTRY)
 
 
 def run(context, config_name: str) -> dict:
@@ -399,6 +434,9 @@ def run(context, config_name: str) -> dict:
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"{_LOG_TAG} written config not found: {config_path}")
     assert_qsim_end_time(config_path, MAX_PLAN_TIME_SECONDS)
+    # Resolved exactly as matsim.simulation.run and matsim.runtime.eqasim.run do.
+    jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
+    require_walk_fallback_stamp(jar_path)
     population_path = resolve_population_path(config_path)
     summary = summarise(iter_person_plans(population_path), simulation_end_s=MAX_PLAN_TIME_SECONDS,
                         walk_max_distance_m=float(context.config(KEY_WALK_MAX_DISTANCE_M)),
