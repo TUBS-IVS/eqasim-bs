@@ -1,6 +1,8 @@
 """Exercise shared-cache reuse through synpp's actual invalidation rules."""
 import importlib
 import json
+import logging
+import shutil
 import sys
 from copy import deepcopy
 
@@ -266,7 +268,8 @@ def _assert_runs_are_distinguishable(target, source):
 
 
 @pytest.mark.parametrize("scenario", ["complete", "missing_parent", "changed_parent", "forced_parent",
-                                    "older_target_parent", "newer_target_child"])
+                                    "older_target_parent", "older_target_parent_other_output",
+                                    "newer_target_child"])
 def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
     module, _, trace, token = pipeline
     child = "shared_cache_probe_child"
@@ -290,12 +293,20 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
                              rerun_required=False)
 
     source, store, target = (tmp_path / name for name in ("source", "store", "target"))
-    if scenario == "older_target_parent":
+    if scenario.startswith("older_target_parent"):
         target.mkdir()
         synpp.run([{"descriptor": module}], config, working_directory=str(target),
                   rerun_required=False)
         # Make "older" true by construction rather than by clock tick.
         _age_recorded_runs(target)
+        if scenario == "older_target_parent_other_output":
+            # Same entry name, but the target parent's recorded output differs from the one the
+            # primed child saw (simulated: the output digest is overwritten).
+            path = target / "pipeline.json"
+            records = json.loads(path.read_text(encoding="utf-8"))
+            for record in records.values():
+                record["output_hash"] = {**record["output_hash"], "digest": "0" * 64}
+            path.write_text(json.dumps(records), encoding="utf-8")
     expected = run(source)
     if scenario == "newer_target_child":
         assert run(target) == expected
@@ -303,7 +314,7 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         _age_recorded_runs(target)
         for entry in cache_share.find_stage_entries(str(target), module):
             (target / (entry + ".p")).unlink()
-    if scenario in ("older_target_parent", "newer_target_child"):
+    if scenario in ("older_target_parent", "older_target_parent_other_output", "newer_target_child"):
         _assert_runs_are_distinguishable(target, source)
     modules = [child] if scenario == "missing_parent" else [module, child]
     cache_share.export(str(source), modules, str(store))
@@ -319,7 +330,176 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         # record holds the parent's digest, cached. Upstream synpp would re-execute the child too.
         executions = ["executed", "child", "executed"]
     if scenario == "older_target_parent":
+        # Content decides (spec 4.5): the target's parent has the same output digest the primed
+        # child recorded, so the child is a hit although the runs' timestamps differ.
+        executions = ["executed", "executed", "child"]
+    if scenario == "older_target_parent_other_output":
         executions = ["executed", "executed", "child", "child"]
     if scenario == "newer_target_child":
         executions = ["executed", "child", "executed", "child", "child"]
     assert trace.read_text().splitlines() == executions
+
+
+def test_coherent_keeps_hash_matched_entries_and_drops_mixed_ones():
+    parent = {"updated": 1.0, "output_hash": {"format": 1, "digest": "d1"}}
+    child = {"dependencies": {"p": 5.0}, "dependency_output_hashes": {"p": "d1"}}
+    assert cache_share._coherent(child, {"p": parent, "c": child})
+    child_wrong = {"dependencies": {"p": 5.0}, "dependency_output_hashes": {"p": "d2"}}
+    assert not cache_share._coherent(child_wrong, {"p": parent})
+    legacy_child = {"dependencies": {"p": 1.0}}
+    legacy_parent = {"updated": 1.0}
+    assert cache_share._coherent(legacy_child, {"p": legacy_parent})
+    assert not cache_share._coherent(legacy_child, {"p": parent})          # mixed -> dropped
+    assert not cache_share._coherent(legacy_child, {})                     # missing parent
+
+
+def test_drop_counts_each_incoherence_reason():
+    hashed = {"updated": 1.0, "output_hash": {"format": 1, "digest": "d1"}}
+    metadata = {
+        "hashed": hashed, "legacy": {"updated": 1.0},
+        "ok": {"dependencies": {"hashed": 9.0}, "dependency_output_hashes": {"hashed": "d1"}},
+        "bad_hash": {"dependencies": {"hashed": 9.0}, "dependency_output_hashes": {"hashed": "x"}},
+        "bad_time": {"dependencies": {"legacy": 2.0}},
+        "mixed": {"dependencies": {"hashed": 1.0}},
+        "orphan": {"dependencies": {"hashed": 9.0, "gone": 1.0},
+                   "dependency_output_hashes": {"hashed": "d1"}},
+    }
+    counts = {}
+    removed = cache_share._drop_incoherent_metadata(metadata, ["hashed", "legacy"], counts=counts)
+    assert removed == 4 and set(metadata) == {"hashed", "legacy", "ok"}
+    assert counts == {"output_hash_mismatch": 1, "legacy_timestamp_mismatch": 1,
+                      "mixed_hashed_legacy": 1, "missing_parent": 1}
+
+
+def _two_stage_modules(tmp_path, monkeypatch, parent, child, parent_src, child_src):
+    (tmp_path / (parent + ".py")).write_text(parent_src, encoding="utf-8")
+    (tmp_path / (child + ".py")).write_text(child_src, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in (parent, child):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    importlib.invalidate_caches()
+
+
+_CS_PARENT = (
+    "from pathlib import Path\n"
+    "def configure(context):\n    context.config('trace')\n    context.config('payload')\n"
+    "def validate(context):\n    return Path(context.config('payload')).read_text()\n"
+    "def execute(context):\n"
+    "    open(context.config('trace'), 'a').write('parent\\n')\n"
+    "    return len(Path(context.config('payload')).read_text())\n")
+_CS_CHILD = (
+    "def configure(context):\n    context.config('trace')\n    context.stage('cs_parent')\n"
+    "def execute(context):\n    open(context.config('trace'), 'a').write('child\\n')\n"
+    "    return context.stage('cs_parent') * 2\n")
+
+
+def _cs_run(directory, config):
+    directory.mkdir(exist_ok=True)
+    with cache_share.track_run(str(directory)):
+        synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(directory),
+                  rerun_required=False)
+
+
+def _remove_entry(directory, entry):
+    for suffix in (".p", ".cache", ".metadata.json"):
+        path = directory / (entry + suffix)
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+    meta = json.loads((directory / "pipeline.json").read_text(encoding="utf-8"))
+    meta.pop(entry)
+    (directory / "pipeline.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def test_prime_from_another_run_is_a_hit_when_output_hashes_match(tmp_path, monkeypatch):
+    """Two independent runs of the same two-stage pipeline have different timestamps; priming
+    the parent from run A into run B's directory must keep B's child valid (spec 4.5)."""
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    a, b, store = tmp_path / "a", tmp_path / "b", tmp_path / "store"
+    for directory in (a, b):
+        _cs_run(directory, config)
+    cache_share.export(str(a), ["cs_parent"], str(store))
+    _remove_entry(b, cache_share.find_stage_entries(str(b), "cs_parent")[0])
+    cache_share.prime(str(b), ["cs_parent"], str(store), [])
+    before = trace.read_text().splitlines()
+    synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(b), rerun_required=False)
+    assert trace.read_text().splitlines() == before
+
+
+def test_prime_drops_a_child_whose_parent_output_differs_and_logs_the_reason(
+        tmp_path, monkeypatch, caplog):
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    a, b, store = tmp_path / "a", tmp_path / "b", tmp_path / "store"
+    config = {"trace": str(trace), "payload": str(payload)}
+    payload.write_text("abc", encoding="utf-8")
+    _cs_run(a, config)
+    payload.write_text("abcdef", encoding="utf-8")                    # run B's parent output differs
+    _cs_run(b, config)
+    cache_share.export(str(a), ["cs_parent"], str(store))
+    _remove_entry(b, cache_share.find_stage_entries(str(b), "cs_parent")[0])
+    with caplog.at_level(logging.INFO, logger="braunschweig.cache_share"):
+        cache_share.prime(str(b), ["cs_parent"], str(store), [])
+    assert "output-hash mismatch 1" in caplog.text
+    child = cache_share.find_stage_entries(str(b), "cs_child")[0]
+    assert child not in json.loads((b / "pipeline.json").read_text(encoding="utf-8"))
+
+
+def test_envelope_follows_the_record_a_spared_child_refreshes(tmp_path, monkeypatch):
+    """R17-1: early cutoff rewrites a spared child's record (dependencies, dependency_output_hashes)
+    while its ``updated`` stays; track_run must refresh the envelope and keep its environment."""
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    wd = tmp_path / "wd"
+    _cs_run(wd, config)
+    child = cache_share.find_stage_entries(str(wd), "cs_child")[0]
+    parent = cache_share.find_stage_entries(str(wd), "cs_parent")[0]
+    sidecar = wd / (child + ".metadata.json")
+    envelope = json.loads(sidecar.read_text(encoding="utf-8"))
+    envelope["environment"] = {"system": "creation-runtime-marker"}
+    sidecar.write_text(json.dumps(envelope), encoding="utf-8")
+    old_record = json.loads((wd / "pipeline.json").read_text(encoding="utf-8"))[child]
+    # Same length, different text: the token changes, the parent re-executes, its output digest is
+    # unchanged, so the child is spared and only its record is refreshed.
+    payload.write_text("xyz", encoding="utf-8")
+    _cs_run(wd, config)
+    assert trace.read_text().splitlines() == ["parent", "child", "parent"]
+    record = json.loads((wd / "pipeline.json").read_text(encoding="utf-8"))[child]
+    assert record["updated"] == old_record["updated"]
+    assert record["dependencies"][parent] != old_record["dependencies"][parent]
+    refreshed = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert refreshed["metadata"] == record
+    assert refreshed["environment"] == {"system": "creation-runtime-marker"}
+
+
+def test_envelope_refresh_never_invents_provenance_for_unknown_entries(tmp_path, monkeypatch):
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    wd = tmp_path / "wd"
+    _cs_run(wd, config)
+    child = cache_share.find_stage_entries(str(wd), "cs_child")[0]
+    sidecar = wd / (child + ".metadata.json")
+    sidecar.unlink()
+    payload.write_text("xyz", encoding="utf-8")
+    _cs_run(wd, config)
+    assert not sidecar.exists()
