@@ -372,3 +372,8 @@ def test_find_threshold_violations_names_the_pt_as_walk_share():
         "n_pt_as_walk": 5, "share_pt_as_walk": 0.05}}}}
     assert any("pt_as_walk" in v for v in C.find_threshold_violations(summary, 0.005, 0.02))
     assert C.find_threshold_violations(summary, 0.005, 0.10) == []
+
+
+def test_format_by_hour_orders_numerically_with_unknown_last():
+    assert list(C._format_by_hour({"23": 1, "unknown": 2, "3": 4})) == ["3", "23", "unknown"]
+    assert list(C._format_by_hour({"10": 1, "2": 1})) == ["2", "10"]

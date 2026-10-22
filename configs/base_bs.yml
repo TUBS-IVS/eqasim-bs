@@ -871,6 +871,7 @@ config:
   braunschweig.plan_check.bicycle_max_distance_m: 30000
   braunschweig.plan_check.leg_max_duration_s: 10800
   braunschweig.plan_check.max_frozen_defect_share: 0.005
+  braunschweig.plan_check.max_frozen_pt_as_walk_share: 0.02
   braunschweig.plan_check.fail_on_threshold: false
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
