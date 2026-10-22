@@ -26,6 +26,9 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    Explain unexpected skips. A skip is not a pass; direct pytest and results from
    another checkout or pre-merge code state cannot substitute for this gate.
    Later executable changes require the final regression gate again.
+   The shared runner also writes this evidence to `.claude/gate/tests-<platform>.json`,
+   which the local push gate reads
+   ([agent-process-automation](notes/agent-process-automation.md)).
    Documentation-only recording or clarification of the process and results
    does not invalidate the executable-code evidence.
 5. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
