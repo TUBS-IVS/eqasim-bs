@@ -1,4 +1,5 @@
 """Exercise the public test command in a fresh process and unrelated directory."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,7 +19,7 @@ def _run(tmp_path, source, *options):
     # The repository ini also sets pytest's default conftest boundary. Override
     # both boundaries so external probes never scan unrelated shared Temp paths.
     return subprocess.run(
-        [sys.executable, str(RUNNER), *options, str(test_file), "-q",
+        [sys.executable, str(RUNNER), "--no-evidence", *options, str(test_file), "-q",
          f"--rootdir={tmp_path}", f"--confcutdir={tmp_path}"],
         cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8",
         timeout=60,
@@ -54,6 +55,7 @@ def test_runner_propagates_pytest_failure(tmp_path):
 
 def test_pipeline_collection_selects_only_pipeline_without_requiring_data(tmp_path):
     result = _run(tmp_path, '''
+import json
 import os
 import pytest
 
@@ -173,3 +175,79 @@ def test_slow_pipeline(): pass
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1/4 tests collected (3 deselected)" in result.stdout
     assert ("test_fast_pipeline" if pipeline else "test_fast_unit") in result.stdout
+
+
+def _committed_repo(path):
+    """A git repository with one commit; returns its HEAD sha."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=path, capture_output=True, text=True,
+                              check=True).stdout.strip()
+    git("init", "-q")
+    git("config", "user.email", "t@example.org")
+    git("config", "user.name", "t")
+    (path / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "a.txt")
+    git("commit", "-q", "-m", "init")
+    return git("rev-parse", "HEAD")
+
+
+@pytest.fixture
+def evidence_runner(tmp_path, monkeypatch):
+    """run_tests with REPO_ROOT on a committed tmp repo and pytest replaced by ``exit_code``."""
+    from scripts import run_tests
+
+    sha = _committed_repo(tmp_path)
+    calls = []
+
+    def fake_call(command, **kwargs):
+        calls.append(command)
+        return fake_call.exit_code
+    fake_call.exit_code = 0
+    monkeypatch.setattr(run_tests, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(run_tests, "check_environment", lambda: {
+        "python": sys.executable, "python_version": "3.10", "errors": [],
+    })
+    monkeypatch.setattr(run_tests.subprocess, "call", fake_call)
+    return run_tests, tmp_path, sha, fake_call, calls
+
+
+def _evidence(root):
+    from braunschweig.gate_evidence import platform_tag
+    path = root / ".claude" / "gate" / f"tests-{platform_tag()}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def test_runner_writes_platform_tagged_evidence_for_a_full_run(evidence_runner):
+    from braunschweig.gate_evidence import platform_tag
+
+    run_tests, root, sha, _, calls = evidence_runner
+    assert run_tests.main(["-q"]) == 0
+    evidence = _evidence(root)
+    assert evidence["head"] == sha and evidence["dirty"] is False
+    assert evidence["scope"] == "full" and evidence["exit"] == 0
+    assert evidence["platform"] == platform_tag()
+    # Without a caller-supplied --junitxml the runner adds one, so counts are recorded.
+    assert evidence["junitxml"].endswith(f"junit-{platform_tag()}.xml")
+    assert any(arg.startswith("--junitxml=") for arg in calls[0])
+
+
+def test_runner_marks_focused_failing_runs(evidence_runner):
+    run_tests, root, _, fake_call, _ = evidence_runner
+    fake_call.exit_code = 1
+    assert run_tests.main(["-k", "probe"]) == 1
+    evidence = _evidence(root)
+    assert evidence["scope"] == "focused" and evidence["exit"] == 1
+
+
+def test_runner_check_mode_writes_no_evidence(evidence_runner):
+    run_tests, root, _, _, _ = evidence_runner
+    assert run_tests.main(["--check"]) == 0
+    assert _evidence(root) is None
+
+
+def test_runner_no_evidence_option_writes_nothing(evidence_runner):
+    # The fresh-process probes above run the real runner on throwaway tests; they must
+    # not overwrite the checkout's real gate evidence.
+    run_tests, root, _, _, _ = evidence_runner
+    assert run_tests.main(["--no-evidence", "-q"]) == 0
+    assert _evidence(root) is None

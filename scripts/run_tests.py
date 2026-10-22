@@ -19,6 +19,8 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from braunschweig import gate_evidence  # noqa: E402  (needs the repository on sys.path)
 # WSL mounts Windows drive ``X:`` at ``/mnt/x``; overridable for tests.
 WSL_DRIVE_MOUNT = Path("/mnt")
 WINDOWS_GITDIR = re.compile(r"^gitdir:\s*([A-Za-z]):[\\/](.*?)\s*$")
@@ -99,6 +101,9 @@ def main(argv=None):
     parser.add_argument("--keep-worktree-pointer", action="store_true",
                         help="Under Linux/WSL, leave a Windows-absolute .git pointer of a linked "
                              "worktree as it is instead of rewriting it to a relative path.")
+    parser.add_argument("--no-evidence", action="store_true",
+                        help="Do not write .claude/gate/tests-<platform>.json (for probe runs "
+                             "that must not replace the checkout's push-gate evidence).")
     args, pytest_args = parser.parse_known_args(argv)
     if platform.system() == "Linux" and not args.keep_worktree_pointer:
         repair_worktree_pointer(REPO_ROOT)
@@ -146,8 +151,42 @@ def main(argv=None):
         marker = f"({marker}) and ({marker_args.expression})"
     command = [sys.executable, "-u", "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini")]
     command.extend(pytest_args or ["-q"])
+    junitxml = next((arg.split("=", 1)[1] for arg in pytest_args if arg.startswith("--junitxml=")),
+                    None)
+    if junitxml is None and not args.no_evidence:
+        junitxml = str(Path(REPO_ROOT) / gate_evidence.GATE_DIR
+                       / f"junit-{gate_evidence.platform_tag()}.xml")
+        command.append(f"--junitxml={junitxml}")
     command.extend(["-m", marker])
-    return subprocess.call(command, cwd=REPO_ROOT, env=env)
+    started_at = gate_evidence.now_iso()
+    exit_code = subprocess.call(command, cwd=REPO_ROOT, env=env)
+    if not args.no_evidence:
+        record_test_evidence(command, pytest_args, args.pipeline, marker_args.expression,
+                             exit_code, junitxml, started_at)
+    return exit_code
+
+
+def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, junitxml, started_at):
+    """Write ``.claude/gate/tests-<platform>.json`` for the local push gate.
+
+    The gate (docs/codebase/notes/agent-process-automation.md) accepts only a ``full``
+    run of a clean HEAD; a writer failure is reported and never changes the exit code.
+    """
+    try:
+        junit_path = Path(junitxml)
+        if not junit_path.is_absolute():
+            junit_path = Path(REPO_ROOT) / junit_path
+        scope = gate_evidence.run_scope(pytest_args, pipeline=pipeline, marker=marker)
+        payload = {**gate_evidence.git_state(REPO_ROOT),
+                   "platform": gate_evidence.platform_tag(), "python": sys.executable,
+                   "command": command, "scope": scope, "exit": exit_code,
+                   **gate_evidence.junit_counts(junit_path), "junitxml": str(junit_path),
+                   "started_at": started_at, "finished_at": gate_evidence.now_iso()}
+        path = gate_evidence.write_evidence(REPO_ROOT, f"tests-{payload['platform']}.json", payload)
+        print(f"evidence: {path} (scope={scope}, exit={exit_code}, head={payload['head']}, "
+              f"dirty={payload['dirty']})", flush=True)
+    except Exception as error:  # evidence is advisory for the runner; never mask pytest's result
+        print(f"could not write test evidence: {error}", file=sys.stderr)
 
 
 if __name__ == "__main__":
