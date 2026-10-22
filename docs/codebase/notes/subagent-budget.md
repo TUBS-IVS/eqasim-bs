@@ -16,8 +16,10 @@ feature workflow in `CONTRIBUTING.md`; it does not replace any of its steps.
    one dispatch, sonnet), then one scoped re-review of the fix diff only. After the second
    failed fix round the controller takes the task over instead of running further rounds.
    The most capable model is reserved for the final whole-branch review.
-4. **Keep shell output short inside subagents too:** `tail`/`grep` long output, run the
-   test runner in its quiet mode, never paste full logs into the context.
+4. **Keep shell output short inside subagents too:** `tail`/`grep` long output, never
+   paste full logs into the context. `scripts/run_tests.py` already runs pytest with
+   `-q --tb=short` for every selection, test paths included; do not add `-v` or a longer
+   `--tb` unless a failure needs it.
 5. **Record the call count per task** in the plan ledger. A task that overran its budget
    is split before the next task of its kind is dispatched.
 6. **Fan-out needs the owner's OK** (model, plan, scale) before dispatch, and at most

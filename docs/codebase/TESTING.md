@@ -79,6 +79,14 @@ python scripts/run_tests.py -k passenger --durations=20
 python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml
 ```
 
+The runner passes `-q --tb=short` to pytest for every selection, test paths and
+filters included, so a failure prints a short traceback instead of pytest's default
+long one (the `-q` in the examples above is optional). A verbosity option of your own
+(`-v`, `-vv`, `--verbose`, `-q`, `--quiet`, `--verbosity`) replaces `-q`, because pytest
+sums `-v` and `-q`; `--tb=<style>` replaces `--tb=short`. Both defaults change only
+the printed output, never which tests run. Why short output matters:
+[subagent-budget](notes/subagent-budget.md).
+
 Parallel runs are optional development feedback. With `pytest-xdist` installed,
 `python scripts/run_tests.py -n 8 -q` runs the same selection in eight worker
 processes (3:19 instead of 6:53 min on the Windows development machine,
