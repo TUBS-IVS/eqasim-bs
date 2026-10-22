@@ -4,6 +4,7 @@ from xml.etree import ElementTree
 import pytest
 
 from braunschweig.freight import extraction_tool
+from tests import jar_reproducibility
 
 POM = """<project><properties>
   <maven.compiler.source>25</maven.compiler.source>
@@ -142,13 +143,28 @@ def test_execute_does_not_warn_when_the_override_equals_the_pom_value(tmp_path, 
     assert "matches" in overrides[0].getMessage()
 
 
+def test_render_pom_fixes_the_output_timestamp():
+    # Without a fixed project.build.outputTimestamp the jar and shade plugins stamp the
+    # module's own entries with the build time, so every rebuild changes the jar bytes (#474).
+    # The value is written out so that changing it, which rebuilds the jar and the routing
+    # behind it once, is deliberate.
+    root = ElementTree.fromstring(extraction_tool.render_pom("2026.0-2026w12", "25"))
+    namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+    assert root.find("m:properties/m:project.build.outputTimestamp", namespace).text \
+        == "2026-01-01T00:00:00Z"
+
+
 @pytest.mark.skipif(os.environ.get("EQASIM_BS_FREIGHT_TOOL_BUILD") != "1",
                     reason="Maven build of the tool jar; set EQASIM_BS_FREIGHT_TOOL_BUILD=1 to run")
-def test_execute_builds_the_shaded_jar(tmp_path):
+def test_execute_builds_a_byte_reproducible_jar(tmp_path):
+    # Two real Maven builds (minutes, a ~190 MB shaded jar each): reproducibility can only be
+    # shown on the real plugins. The two working directories differ in path length so an
+    # embedded absolute path changes a file size, not only its bytes.
     source = tmp_path / "fork"
     source.mkdir()
     (source / "pom.xml").write_text(POM, encoding="utf-8")
-    context = _Context({"eqasim_source_path": str(source), "freight_tool_matsim_version": "",
-                        "maven_binary": "mvn", "maven_skip_tests": True, "java_home": ""}, str(tmp_path))
-    jar = extraction_tool.execute(context)
-    assert os.path.exists(os.path.join(str(tmp_path), jar))
+    cfg = {"eqasim_source_path": str(source), "freight_tool_matsim_version": "",
+           "maven_binary": "mvn", "maven_skip_tests": True, "java_home": ""}
+    first, second = jar_reproducibility.build_twice(
+        extraction_tool, lambda path: _Context(cfg, path), tmp_path)
+    assert first == second
