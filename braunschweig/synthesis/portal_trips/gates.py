@@ -102,6 +102,52 @@ def rail_exit_stations(stops: dict, routes: list, cordon_polygon, rail_like_mode
     return gpd.GeoDataFrame(frame, geometry=[Point(*stops[s]) for s in exits], crs=crs)
 
 
+ALL_MODES = "all"
+EXIT_COLUMNS = ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y"]
+
+
+def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.GeoDataFrame:
+    """Exit stops of all (or the given) transit modes: one row per (inside stop, route).
+
+    A route exits the extent at an inside stop whose NEXT stop in route order lies outside it;
+    ``outside_x/outside_y`` is that next stop (it fixes the direction the route leaves in). An inside
+    stop that is only preceded by an outside stop is an ENTRY and is not listed. ``modes`` is
+    ``ALL_MODES`` or a set of modes (compared lower-cased). ``crs`` is the CRS of the schedule
+    coordinates (EPSG:25832 in the Braunschweig pipeline); it is attached unchanged.
+    """
+    wanted = None if modes == ALL_MODES else {str(mode).strip().lower() for mode in modes}
+    inside_cache = {}
+
+    def is_inside(stop_id, route):
+        if stop_id not in inside_cache:
+            if stop_id not in schedule.stops:
+                raise ValueError(f"[portal_trips] exit stops: stop '{stop_id}' of route '{route.route_id}' "
+                                 f"(line '{route.line_id}', mode '{route.mode}') is not in the transit stops")
+            inside_cache[stop_id] = cordon_polygon.contains(Point(*schedule.stops[stop_id]))
+        return inside_cache[stop_id]
+
+    rows, scanned = [], 0
+    for route in schedule.routes:
+        if wanted is not None and str(route.mode).strip().lower() not in wanted:
+            continue
+        scanned += 1
+        flags = [is_inside(stop_id, route) for stop_id in route.stop_ids]
+        for position in range(len(flags) - 1):
+            if flags[position] and not flags[position + 1]:
+                outside_x, outside_y = schedule.stops[route.stop_ids[position + 1]]
+                rows.append((route.stop_ids[position], route.line_id, route.route_id, route.mode,
+                             float(outside_x), float(outside_y)))
+    logger.info("[portal_trips.gates] exit stops: %d routes scanned (modes: %s), %d exits found at %d stops",
+                scanned, "all" if wanted is None else sorted(wanted), len(rows), len({row[0] for row in rows}))
+    frame = pd.DataFrame(rows, columns=EXIT_COLUMNS)
+    return gpd.GeoDataFrame(frame, geometry=[Point(*schedule.stops[s]) for s in frame["stop_id"]], crs=crs)
+
+
+def exit_stop_points(exits: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """One row per distinct exit stop with its geometry (input of the detour computation)."""
+    return exits[["stop_id", "geometry"]].drop_duplicates("stop_id").reset_index(drop=True)
+
+
 def draw_external_points(reported_m, origin_xy, external_points, tolerance, rng):
     """Draw one external point per stay at the reported distance (band ``reported * (1 +- tolerance)``).
 

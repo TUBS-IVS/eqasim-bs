@@ -51,6 +51,48 @@ def test_rail_exit_stations_are_inside_stops_adjacent_to_an_outside_stop_on_a_ra
     assert stations.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
 
 
+def _exit_schedule():
+    from braunschweig.data.transit.schedule import RouteInfo, Schedule
+    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
+
+    def route(route_id, mode, stop_ids):
+        return RouteInfo("L_" + route_id, route_id, mode, tuple(stop_ids), (0.0,) * len(stop_ids), (0.0,))
+
+    return Schedule(stops, [route("r1", "rail", ["a", "b", "c"]), route("r2", "bus", ["b", "c"]),
+                            route("r3", "bus", ["c", "b"])])
+
+
+def test_exit_stops_lists_one_row_per_inside_stop_and_route_with_an_outside_next_stop():
+    exits = g.exit_stops(_exit_schedule(), SQUARE)
+    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "geometry"]
+    # r3 enters the extent at b (an ENTRY, not an exit), so only r1 and r2 qualify.
+    assert sorted(exits["route_id"]) == ["r1", "r2"]
+    assert exits["stop_id"].tolist() == ["b", "b"]
+    assert (exits["outside_x"] == 14000.0).all() and (exits["outside_y"] == 5000.0).all()
+    assert exits.crs.to_epsg() == 25832
+    assert exits.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
+
+
+def test_exit_stops_modes_filter_keeps_only_the_given_lower_cased_modes():
+    exits = g.exit_stops(_exit_schedule(), SQUARE, modes=frozenset({"rail"}))
+    assert exits["route_id"].tolist() == ["r1"]
+    assert g.ALL_MODES == "all"
+
+
+def test_exit_stops_loop_route_lists_the_stop_before_the_outside_stop_only():
+    from braunschweig.data.transit.schedule import RouteInfo, Schedule
+    stops = {"a": (2000.0, 5000.0), "c": (14000.0, 5000.0), "b": (8000.0, 5000.0)}
+    loop = RouteInfo("L", "loop", "rail", ("a", "c", "b"), (0.0, 0.0, 0.0), (0.0,))
+    exits = g.exit_stops(Schedule(stops, [loop]), SQUARE)
+    assert exits["stop_id"].tolist() == ["a"]
+
+
+def test_exit_stop_points_has_one_row_per_distinct_stop():
+    points = g.exit_stop_points(g.exit_stops(_exit_schedule(), SQUARE))
+    assert points["stop_id"].tolist() == ["b"]
+    assert points.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
+
+
 def test_draw_external_points_prefers_the_reported_distance_band_weighted_by_population():
     external = gpd.GeoDataFrame({"commune_id": ["EXT1", "EXT2", "EXT3"], "ewz": [1.0, 1.0, 1000.0]},
                                 geometry=[Point(100000.0, 0.0), Point(0.0, 100000.0), Point(300000.0, 0.0)],
