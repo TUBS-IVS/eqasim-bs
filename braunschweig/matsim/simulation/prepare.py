@@ -40,6 +40,9 @@ from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
 
+#: Upstream name of the gtfs supply stage; its result carries the ``next_day`` summary (eqasim-bs#465).
+GTFS_STAGE = "matsim.scenario.supply.gtfs"
+
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
 #: arguments, so a change there changes the prepared scenario without touching this file
@@ -190,6 +193,8 @@ def validate(context):
 
 def configure(context):
     delegate.configure(context)
+    # Read by _summarise_final_schedule for the next-day extension check (result only, no config key).
+    context.stage(GTFS_STAGE)
     # VRB zone fare model (ADR-0133): official zone polygons instead of the legacy concentric rings.
     context.config(VRB_FARES_KEY, False)
     if context.config(VRB_FARES_KEY):
@@ -352,10 +357,14 @@ def execute(context):
     if context.config("freight_enabled"):
         _inject_freight(context, result)
 
+    # Summarise the FINAL schedule (after the cut and the freight injection) once, independent of the fare
+    # model: the departures per hour document how far the schedule reaches into the next day.
+    summary = _summarise_final_schedule(context)
+
     # The fare inputs refer to the FINAL schedule and config, so they are written after the cut
     # and the freight injection.
     if context.config(VRB_FARES_KEY):
-        _write_vrb_fare_inputs(context, result)
+        _write_vrb_fare_inputs(context, result, summary)
 
     # The parking module goes into the FINAL config too, and the tariff model next to it: written last.
     if context.config(PARKING_KEY):
@@ -380,12 +389,15 @@ def _attach_vrb_tariff_zones(context):
 
 
 def _schedule_summary(schedule_path) -> dict:
-    """Line ids and the VRB zone counts of the stop facilities of a MATSim schedule, in one streaming pass.
+    """Line ids, VRB zone counts of the stop facilities and departures per hour of a MATSim schedule, in one pass.
 
-    Each finished stopFacility / transitLine element is cleared after reading, so a large schedule is not
-    kept in memory as a whole tree.
+    Each finished stopFacility / departure / transitLine element is cleared after reading, so a large schedule
+    is not kept in memory as a whole tree. ``departures_per_hour`` maps the hour of day (``departureTime`` //
+    3600 s, may exceed 23 for next-day departures) to the departure count; ``max_departure_h`` is the latest
+    departure time in hours (0.0 for a schedule without departures).
     """
     line_ids, facilities, zoned_by_zone = set(), 0, Counter()
+    departures_per_hour, max_departure_s = Counter(), 0.0
     with gzip.open(schedule_path, "rb") as stream:
         for _, element in ET.iterparse(stream):
             if element.tag == "stopFacility":
@@ -395,14 +407,40 @@ def _schedule_summary(schedule_path) -> dict:
                 if zone is not None and zone.strip():
                     zoned_by_zone[zone.strip()] += 1
                 element.clear()
+            elif element.tag == "departure":
+                departure_s = plan_check.parse_time_s(element.get("departureTime"))
+                departures_per_hour[int(departure_s // 3600)] += 1
+                max_departure_s = max(max_departure_s, departure_s)
+                element.clear()
             elif element.tag == "transitLine":
                 line_ids.add(element.get("id"))
                 element.clear()
     return {"line_ids": line_ids, "facilities": facilities, "zoned_facilities": sum(zoned_by_zone.values()),
-            "zoned_by_zone": dict(sorted(zoned_by_zone.items()))}
+            "zoned_by_zone": dict(sorted(zoned_by_zone.items())),
+            "departures_per_hour": dict(sorted(departures_per_hour.items())),
+            "max_departure_h": max_departure_s / 3600.0}
 
 
-def _write_vrb_fare_inputs(context, config_name):
+def _summarise_final_schedule(context) -> dict:
+    """Parse the final transit schedule once and print its departures per hour (also with VRB fares off).
+
+    Fallback transparency: when the next-day extension was on (``next_day_hours`` > 0 in the result of the gtfs
+    supply stage) but the final schedule has no departure after 24 h, the extension did not reach the schedule
+    (nothing duplicated, or lost in the cordon cut): warned, never raised.
+    """
+    summary = _schedule_summary(Path(context.path()) / "{}transit_schedule.xml.gz".format(
+        context.config("output_prefix")))
+    print("[schedule] final schedule departures per hour %s, max departure %.1f h" % (
+        dict(sorted(summary["departures_per_hour"].items())), summary["max_departure_h"]))
+    next_day = (context.stage(GTFS_STAGE) or {}).get("next_day") or {}
+    if next_day.get("next_day_hours", 0.0) > 0 and summary["max_departure_h"] <= 24.0:
+        log.warning("[schedule] next_day_hours is %g but the final schedule has no departure after 24 h "
+                    "(max departure %.1f h): the next-day extension is not in the schedule",
+                    next_day["next_day_hours"], summary["max_departure_h"])
+    return summary
+
+
+def _write_vrb_fare_inputs(context, config_name, summary):
     """Line scopes, fare model, vrbFare config module and a coverage report for the enabled fare model.
 
     Coverage is counted on the FINAL schedule (after the cordon cut and freight injection), which is the one
@@ -431,7 +469,6 @@ def _write_vrb_fare_inputs(context, config_name):
         "maximumUnsupportedShare": repr(float(context.config("vrb_fare_maximum_unsupported_share"))),
     })
     zone_tool = json.loads((root / "vrb_tariff_zone_report.json").read_text(encoding="utf-8"))
-    summary = _schedule_summary(root / "{}transit_schedule.xml.gz".format(context.config("output_prefix")))
     line_ids = summary["line_ids"]
     covered = line_ids & set(scopes["line_id"])
     line_coverage = len(covered) / max(len(line_ids), 1)

@@ -15,6 +15,7 @@ here instead of in a real run (``tests/test_execute_context_config_contract.py``
 from __future__ import annotations
 
 import datetime
+import gzip
 import hashlib
 import inspect
 import json
@@ -83,6 +84,10 @@ class _Context:
         self.executing = False
         self._path = Path(stage_path)
         self._path.mkdir(parents=True, exist_ok=True)
+        # execute() summarises the final schedule (departures per hour, #465) whatever the fare model does.
+        if "output_prefix" in self.values:
+            (self._path / "{}transit_schedule.xml.gz".format(self.values["output_prefix"])).write_bytes(
+                gzip.compress(b"<transitSchedule><transitStops/></transitSchedule>"))
 
     def config(self, key, *default, **options):  # synpp's configure-time config also takes volatile=...
         if self.executing:
@@ -544,7 +549,9 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda ctx: events.append("vrb_zones"))
     monkeypatch.setattr(prepare, "_cut_to_cordon", cut_to_cordon)
     monkeypatch.setattr(prepare, "_inject_freight", lambda ctx, name: events.append(("freight", name)))
-    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda ctx, name: events.append(("vrb_inputs", name)))
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda ctx: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs",
+                        lambda ctx, name, summary: events.append(("vrb_inputs", name)))
     monkeypatch.setattr(prepare, "_write_parking_inputs",
                         lambda ctx, name: (events.append(("parking", name)), write_parking_inputs(ctx, name)))
     assert prepare.execute(context) == cut_config

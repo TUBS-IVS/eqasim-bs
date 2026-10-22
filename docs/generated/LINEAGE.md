@@ -18,9 +18,9 @@ ported from another eqasim project), `retired`.
 | Lineage | Stages |
 |---|---|
 | inherited | 21 |
-| configured | 8 |
+| configured | 7 |
 | extended | 6 |
-| overridden | 24 |
+| overridden | 25 |
 | braunschweig_new | 73 |
 | upstream_port | 0 |
 | retired | 0 |
@@ -36,6 +36,7 @@ ported from another eqasim project), `retired`.
 | `matsim.scenario.facilities` | `braunschweig.matsim.scenario.facilities` | `braunschweig.matsim.scenario.facilities` | `=` |
 | `matsim.scenario.households` | `braunschweig.matsim.scenario.households` | `braunschweig.matsim.scenario.households` | `=` |
 | `matsim.scenario.population` | `braunschweig.matsim.scenario.population` | `braunschweig.matsim.scenario.population` | `=` |
+| `matsim.scenario.supply.gtfs` | `braunschweig.matsim.scenario.supply_gtfs` | `braunschweig.matsim.scenario.supply_gtfs` | `braunschweig.matsim.scenario.supply_gtfs` |
 | `matsim.scenario.vehicles` | `braunschweig.matsim.scenario.vehicles` | `braunschweig.matsim.scenario.vehicles` | `=` |
 | `matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` |
 | `synthesis.locations.education` | `eqasim_common.locations.education` | `eqasim_common.locations.education` | `eqasim_common.locations.education` |

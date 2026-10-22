@@ -469,7 +469,8 @@ config:
     - eqasim_common.locations.education
     - eqasim_common.spatial.codes
     - eqasim_common.spatial.entd_codes
-    - matsim.scenario.supply.gtfs
+    # alias TARGET (cache entries are named by the executed module, not the alias source)
+    - braunschweig.matsim.scenario.supply_gtfs
     - matsim.scenario.supply.osm
     - matsim.scenario.supply.processed
     # Tier B1: popsim.stage is sampling-independent; sharing it reuses the donor
@@ -578,6 +579,8 @@ config:
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs_cordon
+  # Repeat first-day pt departures before this hour (h) at +24 h so late trips find a connection (#465); 0 = off.
+  braunschweig.transit_schedule.next_day_hours: 6.0
   vrb_stations_path: vrb/stations.json
   # VRB zone fare model (ADR-0133, issue #430): official zone polygons + 2022 price-stage matrix
   # (2026 assumption) + 2026 prices instead of the placeholder rings. ON since the 1 % ON/OFF smoke
@@ -946,6 +949,7 @@ aliases:
   # The eqasim output writer, run on the reporting-day trips/activities; also exports commute_day_state in persons.csv.
   synthesis.output: braunschweig.synthesis.commute_day.output_day
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  matsim.scenario.supply.gtfs: braunschweig.matsim.scenario.supply_gtfs
   matsim.scenario.population: braunschweig.matsim.scenario.population
   matsim.scenario.households: braunschweig.matsim.scenario.households
   matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
