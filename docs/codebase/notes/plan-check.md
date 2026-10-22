@@ -55,7 +55,7 @@ Limitations). Distances are straight-line metres between the coordinates of the 
 | `braunschweig.plan_check.bicycle_max_distance_m` | 30000 | counts bicycle legs over it |
 | `braunschweig.plan_check.leg_max_duration_s` | 10800 | counts legs with a `trav_time` over it |
 | `braunschweig.plan_check.max_frozen_defect_share` | 0.005 | ERROR log, or RAISES with the next key |
-| `braunschweig.plan_check.max_frozen_pt_as_walk_share` | 0.02 | share of frozen-resident legs that are pt replaced by walk (`walkFallbackFrom`); ERROR log, or RAISES with the next key (ASSUMPTION) |
+| `braunschweig.plan_check.max_frozen_pt_as_walk_share` | 0.02 (default declared in configure() and pinned in `configs/base_bs.yml`) | share of frozen-resident legs that are pt replaced by walk (`walkFallbackFrom`); ERROR log, or RAISES with the next key (ASSUMPTION) |
 | `braunschweig.plan_check.fail_on_threshold` | `false` | `true` makes the thresholds above raise |
 
 The pt-as-walk counter (`n_pt_as_walk`, `pt_as_walk_by_hour`, `share_pt_as_walk`) depends on the eqasim-java-bs `PlanRouter` change that stamps `walkFallbackFrom`; until that is merged and the jar rebuilt it stays 0.
