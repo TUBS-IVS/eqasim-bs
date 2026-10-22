@@ -111,6 +111,7 @@ may only name run manifests (no run, no claim).
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated | pending |
 | [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 5 | -- | none | none | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) | pending |
+| [transit_next_day](../registry/features/transit_next_day.yml) | matsim | active | ON | A/A/A | 3 | proven | marker | assumption | unvalidated | pending |
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | supported | off | i/i/i | 5 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |

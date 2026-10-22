@@ -36,7 +36,8 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
     monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append("freight"))
-    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result: seen.append("fares"))
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
     monkeypatch.setattr(C, "run", lambda context, result: seen.append(("check", result)))
 
     class _Context:
@@ -59,7 +60,8 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
     seen = []
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
-    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result: seen.append("fares"))
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: seen.append("fares"))
     monkeypatch.setattr(prepare, "_write_parking_inputs", lambda context, result: seen.append(("parking", result)))
     monkeypatch.setattr(C, "run", lambda context, result: seen.append(("check", result)))
 
