@@ -7,8 +7,11 @@ description: >-
   override of matsim.scenario.supply.gtfs duplicates the departures below braunschweig.transit_schedule.next_day_hours
   hours as <id>_d2 at +86400 s with one <vehicle>_d2 per distinct original vehicle, so the early-morning
   service of the next day exists in the 24-30 h window. The duplicate is an ASSUMPTION: the next day has the
-  same timetable as the chosen service day (no weekday-specific calendar). matsim.simulation.prepare logs
-  the departures per hour of the final (post-cordon-cut) schedule on every run.
+  same timetable as the chosen service day (no weekday-specific calendar). matsim.simulation.prepare prints
+  the departures per hour of the final (post-cordon-cut) schedule on every run. The WHY and the rejected
+  options are in ADR-0151. ASSUMPTION: original GTFS night trips at 24:00 and later are kept and the
+  00:00-06:00 duplicates are added on top, so lines serving both get doubled service between 24 h and about
+  26 h; this is visible in the per-hour histogram and is to be checked once at the 1 % smoke.
 stages:
 - matsim.scenario.supply.gtfs
 - matsim.simulation.prepare
@@ -24,7 +27,7 @@ production:
 introduced:
   issue: 465
   pr: null
-  adr: null
+  adr: ADR-0151
 detail_doc: null
 code_paths:
 - braunschweig/matsim/scenario/supply_gtfs.py
@@ -73,7 +76,7 @@ assessment:
     Implemented and unit-tested for issue 465; no run has exercised it and no owner verdict exists.
   source: null
 notes: >-
-  The final-schedule summary of braunschweig.matsim.simulation.prepare (_summarise_final_schedule) logs
+  The final-schedule summary of braunschweig.matsim.simulation.prepare (_summarise_final_schedule) prints
   [schedule] final schedule departures per hour {...}, max departure X h on the schedule after the cordon
   cut on every run, independent of the VRB fares; the VRB-fares path reuses that summary. The stage
   matsim.scenario.supply.gtfs recomputes once after this change (new cache_share_stages name). The estimated

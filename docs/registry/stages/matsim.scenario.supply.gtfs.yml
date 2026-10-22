@@ -27,6 +27,8 @@ inputs:
 - gtfs_feed
 features:
 - transit_next_day
+decisions:
+- ADR-0151
 notes: >-
   Next-day extension (issue 465). pt2matsim converts ONE service day (its dayWithMostServices rule), so the
   schedule ends at the last departure of that day while the simulation runs 30 h
