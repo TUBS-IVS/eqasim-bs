@@ -25,6 +25,8 @@ evidence:
   - tests/test_allfeat_caching_config.py
   - tests/test_popsim_work_dir_guard.py
   - tests/test_configs_composed.py
+  - tests/test_synpp_fork_early_cutoff.py
+  - tests/test_cache_share_synpp.py
   off_path_byte_identical:
     claimed: not_applicable
     note: A fixed shared work_dir changes cache reuse, not the stage outputs themselves.
@@ -39,11 +41,17 @@ validation:
   state: unvalidated
   runs: []
   metric: null
-  note: No KPI applies to a caching mechanism.
+  note: >
+    No KPI applies to a caching mechanism. Since ADR-0149 (Phase 4 of #468) the vendored synpp
+    fork keeps a child cached when its re-executed parent reproduces the same output hash
+    (tests/test_synpp_fork_early_cutoff.py) and a primed Tier-A/B entry is judged by output hash
+    (tests/test_cache_share_synpp.py, test_prime_from_another_run_is_a_hit_when_output_hashes_match).
+    Both are synthetic mechanics tests; the server acceptance on a cache copy is pending.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
+    The Phase 4 cache validity change of ADR-0149 is tested synthetically only; its server acceptance is pending.
     ADR-0037 records this feature's status as "config wiring partial" (backlog [1.3]); the base config now enumerates a populated cache_share_stages list, which may mean the backlog item is stale -- worth a fresh check before this row is marked fully "on" without caveats.
   source: ADR-0037

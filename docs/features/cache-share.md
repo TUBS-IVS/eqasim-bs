@@ -65,28 +65,58 @@ snapshot can therefore be reused across scales. Export a completed run's stages 
 the store with `python scripts/cache_share.py export ...`; future runs prime them.
 Design: `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`.
 
-**Output hashes and migration (ADR-0149, issue #468, state after Phase 3).**
+**Output hashes, migration and coherence by output hash (ADR-0149, issue #468, Phase 3 and 4).**
 `scripts/migrate_cache_metadata.py` records, for every cache entry it can prove, a content hash
 of the stage output (`output_hash`) and the parents' output digests the child was built against
-(`dependency_output_hashes`) in `pipeline.json`, and marks the entry `fork: {"format": 1}`.
-These fields do NOT travel with a shared entry. `braunschweig.cache_share.track_run` writes the
-envelope sidecar `<entry>.metadata.json` at run time, copying the `pipeline.json` record as it was
-then. `export` writes that sidecar into the store only when the envelope's record equals the
-CURRENT `pipeline.json` record of the entry (and the runtime fingerprint is present). The
-migration rewrites the record (adds `output_hash` and `fork`, a longer `module_hash`), so for a
-migrated entry the two differ: `export` copies the artifacts WITHOUT metadata, and a later
-`prime` finds no record for it and treats the entry as a miss (the stage recomputes; safe, never
-a wrong hit). `track_run` re-writes an envelope only for entries a run actually recomputed, so
-re-exporting after a migration does not carry the migrated records either, and a record written
-by a Phase 3 run carries no `output_hash`. Nothing reads the recorded fields for a decision yet:
-coherence of a copied entry (`braunschweig.cache_share._drop_incoherent_metadata`) and the
-validity of a child still follow the timestamp rule described above, so the limitation that a
-primed entry must match its parents' timestamps exactly is unchanged until Phase 4. Refreshing
-and validating shared envelopes by output hash is Phase 4 work (Task 17 of #468).
+(`dependency_output_hashes`) in `pipeline.json`, and marks the entry `fork: {"format": 1}`; under
+the vendored fork the launcher's `run()` writes the same fields for every stage it executes.
+`braunschweig.cache_share.track_run` writes the envelope sidecar `<entry>.metadata.json` at run
+time, copying the `pipeline.json` record, and `export` writes that sidecar into the store only
+when the envelope's record equals the CURRENT `pipeline.json` record of the entry (and the runtime
+fingerprint is present).
 
-**Planned, not in force (Phase 4 of #468).** Decided in ADR-0149 and not implemented: a copied
-entry will be kept when its dependencies' recorded output digests equal those of the target
-metadata (two legacy sides keep the timestamp rule; mixed pairs are dropped), and a child
-will stay valid when a re-executed parent reproduces its output hash (early cutoff). This
-section is to be rewritten when that lands; the decision and its implementation status are
-tracked in ADR-0149 and the contributor note `docs/codebase/notes/synpp-fork.md`.
+*Coherence by output hash (Phase 4).* `prime` copies the entries, merges the records of
+compatible envelopes and then keeps only coherent ones. `braunschweig.cache_share._incoherence`
+judges an entry against its parents in the target metadata; `_coherent` is "no reason".
+There are four outcomes of an entry with parents, and the first failing parent decides:
+
+| Outcome | Meaning | Result |
+|---|---|---|
+| output-hash match | both sides carry a digest and they are equal (the child's `dependency_output_hashes[parent]` equals the parent's `output_hash.digest`) | kept, a hit although the timestamps differ between runs |
+| `output_hash_mismatch` | both sides carry a digest and they differ | dropped (recompute) |
+| `legacy_timestamp_mismatch` | neither side carries a digest and the parent's `updated` differs from the timestamp the child recorded | dropped |
+| `mixed_hashed_legacy` | exactly one side carries a digest, content cannot be compared | dropped |
+
+A missing parent (`missing_parent`) is dropped as well; two legacy sides with equal timestamps are
+kept (the old rule). `_coherent` is never more permissive than the fork's
+`braunschweig.synpp_fork.staleness.assess`; it can be stricter (for example a legacy parent older than
+the child's snapshot), which is a safe miss, never a false hit. `prime` logs both sides of the decision:
+`invalidated N incoherent dependency records (output-hash mismatch a, legacy timestamp mismatch b,
+mixed hashed/legacy pair c, missing parent d)` and `kept N copied records (output-hash match x,
+legacy equal timestamps y, no parents z)`. A hit is therefore observable and not assumed; the explainer
+(`scripts/explain_stale_stages.py`) shows the primed entries as `HIT` or as stale with the reason.
+
+*Envelope refresh (R17-1).* Under early cutoff a spared child's record changes during a run
+(`dependencies`, `dependency_output_hashes`) while its `updated` stays. `track_run` then rewrites the
+`metadata` of an EXISTING valid envelope to the new record and keeps the envelope's `environment`
+(the runtime that created the artifact, not the one that re-validated it), so `export` still sees
+envelope and record equal. It never creates an envelope: an entry that has none stays unknown.
+
+*Known safe misses (R17-2; documented, not changed).*
+
+- A migrated record differs from its envelope (the migration rewrote `pipeline.json`), so `export`
+  copies the artifacts WITHOUT metadata and a `prime` from that store misses, until a later run under
+  `track_run` has refreshed the envelope.
+- A store written before the semantic tokens (md5 module hashes) primes as a miss.
+- `braunschweig.freight.extraction_tool` is not in `cache_share_stages`, while the dependent
+  `braunschweig.freight.extraction` is shared. The tool jar is not reproducible across Maven builds
+  (the same holds for the eqasim jar), so a rebuilt jar changes its output digest: a primed
+  `freight.extraction` record whose recorded tool digest differs from the target's tool entry is
+  dropped as incoherent and recomputed. This is correct (the jar really differs) but means early
+  cutoff cannot spare consumers of a rebuilt jar.
+
+Status: implemented and proven by synthetic tests (`tests/test_cache_share_synpp.py`,
+`tests/test_synpp_fork_early_cutoff.py`); the acceptance on a copy of the 100 % cache on the
+server is **pending** (maintainer go), so no hit rate on a real store is stated here. The decision
+and the rulings are in ADR-0149, the loop and its log vocabulary in
+`docs/codebase/notes/synpp-fork.md`.
