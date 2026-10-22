@@ -22,9 +22,10 @@ onto the `superpowers` skill chain, named in brackets.)
 5. **Implement TDD** — red → green → refactor. New behaviour is **flag-gated, default-ON**
    with an explicit byte-identical **OFF-path test** `[test-driven-development]`.
 6. **Verify** — follow the [required agent verification gate](docs/codebase/TESTING.md#required-agent-verification-gate):
-   use the shared runner in the locked environment, run the final regression suite
-   on Linux/WSL2, record evidence, and require both Linux/Windows CI checks before
-   merge. Linux validation is the norm, not a special case for import shadowing —
+   use the shared runner in the locked environment, run the affected tests locally
+   (data-gated ones on a checkout with the data), let CI run the full suite on the PR,
+   record evidence, and require both Linux/Windows CI checks before merge (ADR-0150).
+   Linux validation is the norm, not a special case for import shadowing —
    a Windows-only pass is not evidence for data-gated goldens; compare SKIP counts,
    not only failures, per
    [linux-parity-testing](docs/codebase/notes/linux-parity-testing.md). Add the

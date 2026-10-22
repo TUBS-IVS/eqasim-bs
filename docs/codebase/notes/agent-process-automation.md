@@ -47,19 +47,19 @@ Rules shared by both (helpers in `braunschweig/gate_evidence.py`):
 ## What the push gate requires
 
 The gate is a personal `PreToolUse` hook. It intercepts `git push`, `git pr` and
-`gh pr create` in an eqasim-bs checkout and allows the command only when all three hold:
+`gh pr create` in an eqasim-bs checkout and allows the command only when both hold:
 
-1. `tests-linux.json` has `head == HEAD`, `dirty == false`, `scope == "full"`,
-   `exit == 0`. This is the final Linux/WSL run of the
-   [verification gate](../TESTING.md#required-agent-verification-gate), step 3. Windows
-   evidence is reported when present but is not required; CI supplies the second
-   platform before merge.
-2. `docs-check.json` has `head == HEAD`, `dirty == false`, `fail_count == 0`,
+1. `docs-check.json` has `head == HEAD`, `dirty == false`, `fail_count == 0`,
    `no_dag == false`. CI's `--no-dag` mode skips the DAG-freshness check, so its output
    is not enough.
-3. `origin/main` is an ancestor of `HEAD` (after a non-interactive `git fetch origin main`,
+2. `origin/main` is an ancestor of `HEAD` (after a non-interactive `git fetch origin main`,
    which updates the remote-tracking ref). If the fetch fails or times out (offline), the
    gate shows a note and does not block.
+
+The gate does not require test evidence. The full suite runs in CI on the PR, on Linux
+and Windows, and its green result on the latest commit is the final-code evidence
+(ADR-0150, [verification gate](../TESTING.md#required-agent-verification-gate)).
+`tests-linux.json` and `tests-windows.json` are shown as information when present.
 
 If the gate blocks, its message names each missing item and the exact command that
 produces it. A command prefixed with `EQASIM_GATE_OVERRIDE="<reason>"` passes. Every
