@@ -1,5 +1,7 @@
 import gzip
 
+import pytest
+
 from braunschweig.matsim.scenario import transit_next_day as t
 
 SCHEDULE = b"""<?xml version="1.0"?><transitSchedule><transitStops>
@@ -47,7 +49,52 @@ def test_extend_duplicates_a_shared_vehicle_once(tmp_path):
     s, v = _write(tmp_path)
     out = t.extend_schedule(s, v, str(tmp_path / "so.xml.gz"), str(tmp_path / "vo.xml.gz"), next_day_hours=8.0)
     assert out["n_duplicated"] == 2 and out["n_vehicles_added"] == 1  # d1 and d2 both use v1
+    vtext = gzip.decompress((tmp_path / "vo.xml.gz").read_bytes()).decode()
+    assert vtext.count('id="v1_d2"') == 1
 
 
 def test_format_time_allows_hours_beyond_24():
     assert t.format_time(29.5 * 3600) == "29:30:00"
+
+
+def _run(tmp_path, schedule=SCHEDULE, vehicles=VEHICLES, hours=6.0):
+    s, v = tmp_path / "s.xml.gz", tmp_path / "v.xml.gz"
+    s.write_bytes(gzip.compress(schedule))
+    v.write_bytes(gzip.compress(vehicles))
+    out = t.extend_schedule(str(s), str(v), str(tmp_path / "so.xml.gz"), str(tmp_path / "vo.xml.gz"),
+                            next_day_hours=hours)
+    return (out, gzip.decompress((tmp_path / "so.xml.gz").read_bytes()).decode(),
+            gzip.decompress((tmp_path / "vo.xml.gz").read_bytes()).decode())
+
+
+def test_vehicles_keep_xsi_prefix_and_child_elements(tmp_path):
+    vehicles = b"""<?xml version="1.0"?><vehicleDefinitions xmlns="http://www.matsim.org/files/dtd"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.matsim.org/files/dtd x.xsd">
+<vehicleType id="bus"/><vehicle id="v1" type="bus"><attributes><attribute name="a" class="java.lang.String">x</attribute></attributes></vehicle>
+<vehicle id="v2" type="bus"/></vehicleDefinitions>"""
+    _, _, vtext = _run(tmp_path, vehicles=vehicles)
+    assert "xsi:schemaLocation" in vtext
+    assert vtext.count('name="a"') == 2  # the duplicate keeps the <attributes> child
+
+
+def test_route_without_departures_is_unchanged(tmp_path):
+    _, text, _ = _run(tmp_path)
+    assert '<transitRoute id="E">' in text and text.count("<departures") == 1
+
+
+def test_bound_is_half_open(tmp_path):
+    schedule = SCHEDULE.replace(b"07:00:00", b"06:00:00")
+    out, text, _ = _run(tmp_path, schedule=schedule, hours=6.0)
+    assert out["n_duplicated"] == 1 and "d2_d2" not in text  # exactly 06:00 is NOT duplicated
+
+
+@pytest.mark.parametrize("schedule, vehicles, hours", [
+    (SCHEDULE.replace(b' vehicleRefId="v1"/>', b"/>", 1), VEHICLES, 6.0),
+    (SCHEDULE, VEHICLES.replace(b'<vehicle id="v1" type="bus"/>', b""), 6.0),
+    (SCHEDULE, VEHICLES, -1.0),
+    (SCHEDULE.replace(b'id="d3"', b'id="d1_d2"'), VEHICLES, 6.0),
+    (SCHEDULE, VEHICLES.replace(b'id="v2"', b'id="v1_d2"'), 6.0),
+])
+def test_invalid_input_raises(tmp_path, schedule, vehicles, hours):
+    with pytest.raises(ValueError):
+        _run(tmp_path, schedule=schedule, vehicles=vehicles, hours=hours)

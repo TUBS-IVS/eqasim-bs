@@ -8,8 +8,11 @@ fresh vehicle id (``<id>_d2``) so a vehicle is never in two places at the same t
 Assumptions (explicit):
 - The first-day timetable is repeated unchanged on the next day (same lines, routes, vehicle type).
 - Departures already at or after ``day_s`` are left alone and are never duplicated again.
+- The interval is half-open: a departure at exactly ``next_day_hours`` h is NOT duplicated.
+- ElementTree does not preserve the DOCTYPE line of the schedule; MATSim reads schedules without it.
 - ``next_day_hours == 0`` is the OFF path: both files are copied byte for byte.
 """
+import copy
 import gzip
 import logging
 import shutil
@@ -25,6 +28,7 @@ KEY_NEXT_DAY_HOURS = "braunschweig.transit_schedule.next_day_hours"
 DEFAULT_NEXT_DAY_HOURS = 6.0
 
 _VEHICLE_NS = "http://www.matsim.org/files/dtd"
+_XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 
 __all__ = [
     "NEXT_DAY_VEHICLE_SUFFIX",
@@ -58,6 +62,13 @@ def _histogram(times_s):
     return dict(sorted(Counter(int(s // 3600) for s in times_s).items()))
 
 
+def _log_summary(n_dup, n_total, hours, n_vehicles, before, after):
+    share = 100.0 * n_dup / n_total if n_total else 0.0
+    logger.info("[transit_next_day] departures duplicated %d/%d (%.1f %%) up to %02d h, vehicles added %d",
+                n_dup, n_total, share, int(hours), n_vehicles)
+    logger.info("[transit_next_day] departures per hour before %s, after %s", before, after)
+
+
 def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehicles_out: str, *,
                     next_day_hours: float, day_s: float = 86400.0) -> dict:
     """Write schedule and vehicles with first-day departures before ``next_day_hours`` repeated at +``day_s``."""
@@ -73,12 +84,12 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
     if next_day_hours == 0:
         shutil.copyfile(schedule_in, schedule_out)
         shutil.copyfile(vehicles_in, vehicles_out)
-        logger.info("[transit_next_day] next_day_hours=0: schedule and vehicles copied unchanged "
-                    "(%d departures)", len(departure_times))
+        _log_summary(0, len(departure_times), next_day_hours, 0, before, before)
         return {"n_departures": len(departure_times), "n_duplicated": 0, "n_vehicles_added": 0,
                 "departures_per_hour_before": before, "departures_per_hour_after": dict(before),
                 "max_departure_h": max(departure_times, default=0.0) / 3600.0}
 
+    existing_departure_ids = {d.get("id") for d in schedule_tree.getroot().iter("departure")}
     shifted_times = []
     duplicated_vehicles = []  # insertion-ordered distinct vehicle ids
     for departures in schedule_tree.getroot().iter("departures"):
@@ -87,28 +98,36 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
             time_s = parse_time_s(dep.get("departureTime"))
             if time_s >= day_s or time_s >= bound_s:
                 continue
-            copy = ET.Element("departure", dict(dep.attrib))
-            copy.set("id", dep.get("id") + NEXT_DAY_VEHICLE_SUFFIX)
-            copy.set("departureTime", format_time(time_s + day_s))
+            new_id = dep.get("id") + NEXT_DAY_VEHICLE_SUFFIX
+            if new_id in existing_departure_ids:
+                raise ValueError(f"generated departure id {new_id} already exists in {schedule_in}")
+            clone = ET.Element("departure", dict(dep.attrib))
+            clone.set("id", new_id)
+            clone.set("departureTime", format_time(time_s + day_s))
             vehicle = dep.get("vehicleRefId")
             if vehicle is None:
                 raise ValueError(f"departure {dep.get('id')} has no vehicleRefId")
-            copy.set("vehicleRefId", vehicle + NEXT_DAY_VEHICLE_SUFFIX)
+            clone.set("vehicleRefId", vehicle + NEXT_DAY_VEHICLE_SUFFIX)
             if vehicle not in duplicated_vehicles:
                 duplicated_vehicles.append(vehicle)
-            copy.tail = dep.tail
-            departures.append(copy)
+            clone.tail = dep.tail
+            departures.append(clone)
             shifted_times.append(time_s + day_s)
 
     ET.register_namespace("", _VEHICLE_NS)
+    ET.register_namespace("xsi", _XSI_NS)
     vehicles_tree = _parse(vehicles_in)
     vroot = vehicles_tree.getroot()
     by_id = {v.get("id"): v for v in vroot if v.tag.endswith("}vehicle") or v.tag == "vehicle"}
     for vehicle in duplicated_vehicles:
         if vehicle not in by_id:
             raise ValueError(f"vehicle {vehicle} referenced by a departure is missing in {vehicles_in}")
-        new = ET.Element(by_id[vehicle].tag, dict(by_id[vehicle].attrib))
-        new.set("id", vehicle + NEXT_DAY_VEHICLE_SUFFIX)
+        new_id = vehicle + NEXT_DAY_VEHICLE_SUFFIX
+        if new_id in by_id:
+            raise ValueError(f"generated vehicle id {new_id} already exists in {vehicles_in}")
+        new = copy.deepcopy(by_id[vehicle])
+        new.set("id", new_id)
+        new.tail = by_id[vehicle].tail
         vroot.append(new)
 
     _write(schedule_tree, schedule_out)
@@ -116,9 +135,8 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
 
     after = _histogram(departure_times + shifted_times)
     max_h = max(departure_times + shifted_times, default=0.0) / 3600.0
-    logger.info("[transit_next_day] %d departures, %d duplicated (+%d vehicles), max departure %.2f h; "
-                "per hour before %s, after %s", len(departure_times), len(shifted_times),
-                len(duplicated_vehicles), max_h, before, after)
+    _log_summary(len(shifted_times), len(departure_times), next_day_hours, len(duplicated_vehicles),
+                 before, after)
     return {"n_departures": len(departure_times), "n_duplicated": len(shifted_times),
             "n_vehicles_added": len(duplicated_vehicles), "departures_per_hour_before": before,
             "departures_per_hour_after": after, "max_departure_h": max_h}
