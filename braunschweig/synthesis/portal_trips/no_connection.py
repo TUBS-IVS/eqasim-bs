@@ -219,7 +219,10 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
             if action[k] is None and pd.notna(result["gate_id"].iat[row]):
                 action[k] = ACTION_DEPARTURE_SHIFTED
                 shifted[k] = (variant, d, result.iloc[row])
-                for leg in ([out_pos[k]] if variant in ("out", "both") else []) +                            ([ret_pos[k]] if variant in ("ret", "both") else []):
+                for leg in (
+                    ([out_pos[k]] if variant in ("out", "both") else [])
+                    + ([ret_pos[k]] if variant in ("ret", "both") else [])
+                ):
                     dep[leg] += d  # later steps and later stays bound against the shifted trip
                     arr[leg] += d
         unresolved = [k for k in unresolved if action[k] is None]

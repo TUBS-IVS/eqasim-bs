@@ -41,8 +41,9 @@ class Schedule:
 def read_schedule(schedule_path: str) -> Schedule:
     """Stream a MATSim transit schedule (XML or XML.gz) into stops and routes with departures.
 
-    Elements are cleared after their end event (and a route after it is stored), so memory stays
-    bounded by the stops and routes kept, not by the file size.
+    Elements are cleared after their end event (and a route after it is stored), so memory is
+    reduced, not constant: the emptied element nodes stay attached to their parent, so memory still
+    grows slowly with the number of elements in the file, on top of the stops and routes kept.
 
     A non-first route stop with neither ``departureOffset`` nor ``arrivalOffset`` gets offset 0.0
     (the vehicle is assumed at the route start there); such stops are counted and logged as a rate
