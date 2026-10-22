@@ -135,6 +135,19 @@ def test_output_keeps_the_input_doctype_of_schedule_and_vehicles(tmp_path):
     assert "d1_d2" in text and 'id="v1_d2"' in vtext
 
 
+def test_doctype_is_found_past_an_xml_comment_containing_a_tag_like_text(tmp_path):
+    # A comment such as "<by>" before the DOCTYPE must not end the prolog window early.
+    doctype = b'<!DOCTYPE transitSchedule SYSTEM "http://www.matsim.org/files/dtd/transitSchedule_v2.dtd">'
+    schedule = SCHEDULE.replace(
+        b'<?xml version="1.0"?>',
+        b'<?xml version="1.0"?>\n<!-- generated <by> tool -->\n' + doctype + b"\n",
+    )
+    out, text, _ = _run(tmp_path, schedule=schedule)
+    assert out["n_duplicated"] == 1
+    assert text.count(doctype.decode()) == 1
+    assert text.index("?>") < text.index("<!DOCTYPE") < text.index("<transitSchedule")
+
+
 def test_extension_that_duplicates_nothing_warns(tmp_path, caplog):
     with caplog.at_level("WARNING", logger=t.logger.name):
         out, _, _ = _run(tmp_path, hours=0.1)  # 0.1 h = 06:00 min: no departure before it

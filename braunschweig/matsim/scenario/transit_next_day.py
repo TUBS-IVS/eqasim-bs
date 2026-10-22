@@ -61,7 +61,10 @@ def _parse(path):
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rb") as handle:
         raw = handle.read()
-    root_start = re.search(rb"<[A-Za-z]", raw)  # the DOCTYPE is only looked for before the root element
+    # The DOCTYPE is only looked for before the root element. Comments are blanked out (same length) before
+    # locating the root so that tag-like text inside a prolog comment (e.g. "<by>") cannot end the window early.
+    masked = re.sub(rb"<!--.*?-->", lambda m: b" " * len(m.group(0)), raw, flags=re.S)
+    root_start = re.search(rb"<[A-Za-z]", masked)
     match = _DOCTYPE.search(raw[:root_start.start()] if root_start else raw)
     return ET.ElementTree(ET.fromstring(raw)), (match.group(0) if match else None)
 
