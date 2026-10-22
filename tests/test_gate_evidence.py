@@ -91,3 +91,29 @@ def test_write_evidence_is_versioned_json_under_the_gate_dir(tmp_path):
     assert path == tmp_path / ".claude" / "gate" / "tests-linux.json"
     assert json.loads(path.read_text(encoding="utf-8")) == {"schema": 1, "exit": 0}
     assert platform_tag() in ("linux", "windows", "darwin")
+
+
+def test_documentation_check_writes_docs_evidence(repo, monkeypatch):
+    from types import SimpleNamespace
+
+    from braunschweig.documentation import __main__ as cli
+    from braunschweig.documentation import checks
+
+    class FakeContext:
+        features = stages = datasets = adrs = manifests = ()
+
+        def __init__(self, repo_root, use_dag_extraction):
+            pass
+
+    findings = [SimpleNamespace(severity=checks.WARN), SimpleNamespace(severity=checks.OK)]
+    monkeypatch.setattr(checks, "CheckContext", FakeContext)
+    monkeypatch.setattr(checks, "run_all_checks", lambda context: findings)
+    assert cli.main(["check", "--no-dag", "--quiet", "--repo-root", str(repo)]) == 0
+    evidence = json.loads((repo / ".claude" / "gate" / "docs-check.json").read_text(encoding="utf-8"))
+    assert evidence["head"] == _git(repo, "rev-parse", "HEAD") and evidence["dirty"] is False
+    assert (evidence["fail_count"], evidence["warn_count"], evidence["no_dag"]) == (0, 1, True)
+
+    findings.append(SimpleNamespace(severity=checks.FAIL))
+    assert cli.main(["check", "--no-dag", "--quiet", "--repo-root", str(repo)]) == 1
+    evidence = json.loads((repo / ".claude" / "gate" / "docs-check.json").read_text(encoding="utf-8"))
+    assert evidence["fail_count"] == 1
