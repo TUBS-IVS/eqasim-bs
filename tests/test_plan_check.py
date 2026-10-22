@@ -371,7 +371,6 @@ def test_summarise_counts_pt_as_walk_per_class_and_hour(population_path):
     assert frozen["n_pt_as_walk_attr_without_walk"] == 1
     # Denominator: the two pt-intended trips (the stamped walk and the stamped pt leg), not the five legs.
     assert frozen["n_pt_trips"] == 2 and frozen["share_pt_as_walk"] == 1 / 2
-    assert frozen["share_pt_as_walk_of_legs"] == 1 / frozen["n_legs"]
     # The in-commuter subpopulation is counted in its own block.
     assert summary["subpopulations"]["incommuter"][C.FROZEN]["pt_as_walk_by_hour"] == {"3": 1}
     assert summary["subpopulations"][C.RESIDENTS][C.IN_REGION]["n_pt_as_walk"] == 0

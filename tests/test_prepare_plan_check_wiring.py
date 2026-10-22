@@ -75,3 +75,26 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
 
     assert prepare.execute(_Context()) == "config.xml"
     assert seen == ["fares", ("parking", "config.xml"), ("check", "config.xml")]
+
+
+def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disabled(monkeypatch):
+    """A disabled check must not resolve the eqasim jar nor demand its stamp (#465)."""
+    seen = []
+    monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
+    monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result: None)
+    monkeypatch.setattr(C, "run", lambda context, result: seen.append("run"))
+    monkeypatch.setattr(C, "require_walk_fallback_stamp", lambda jar_path: seen.append("stamp"))
+
+    class _Context:
+        _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
+                   prepare.PARKING_KEY: False, C.KEY_ENABLED: False}
+
+        def config(self, key):
+            return self._values[key]
+
+        def stage(self, name, **kwargs):
+            seen.append(("stage", name))
+
+    assert prepare.execute(_Context()) == "config.xml"
+    assert seen == []

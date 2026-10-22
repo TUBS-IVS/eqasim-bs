@@ -205,8 +205,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     (leg attribute ``routingMode`` = pt, or a leg stamped ``walkFallbackFrom`` = pt), assigned to the class of the
     trip's first leg; ``n_pt_as_walk`` the pt-intended trips with a stamped walk leg, in the same class (so numerator
     and denominator share one block); ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the threshold's share; 0
-    when the block has no pt-intended trip); ``share_pt_as_walk_of_legs`` the same count over all legs (report
-    only, its legs are counted by leg class). A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
+    when the block has no pt-intended trip). A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
     router did: ``require_walk_fallback_stamp`` guards that in ``run``. ``n_legs_with_routing_mode`` and
     ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
     ``routingMode`` although pt or stamped legs exist).
@@ -273,7 +272,6 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
             block["share_plans_arrival_late"] = block["n_plans_arrival_late"] / n if n else 0.0
             block["share_plans_non_monotonic"] = block["n_plans_non_monotonic"] / n if n else 0.0
             block["share_pt_as_walk"] = block["n_pt_as_walk"] / block["n_pt_trips"] if block["n_pt_trips"] else 0.0
-            block["share_pt_as_walk_of_legs"] = block["n_pt_as_walk"] / block["n_legs"] if block["n_legs"] else 0.0
     return {"simulation_end_s": float(simulation_end_s), "n_legs_with_routing_mode": n_legs_with_routing_mode,
             "n_pt_or_stamped_legs": n_pt_or_stamped_legs,
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
@@ -376,14 +374,14 @@ def _log_summary(summary: dict) -> None:
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
                         "%d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
                         "bicycle legs over %d, legs over duration %d of %d, pt as walk %d of %d pt-intended trips "
-                        "(%.2f%%; %.2f%% of all legs), walk-fallback attribute without walk %d, pt as walk by departure "
+                        "(%.2f%%), walk-fallback attribute without walk %d, pt as walk by departure "
                         "hour %s", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
                         block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"], block["n_pt_as_walk"], block["n_pt_trips"], 100.0 * block["share_pt_as_walk"],
-                        100.0 * block["share_pt_as_walk_of_legs"], block["n_pt_as_walk_attr_without_walk"],
+                        block["n_pt_as_walk_attr_without_walk"],
                         _format_by_hour(block["pt_as_walk_by_hour"]))
     if summary["n_pt_or_stamped_legs"] and not summary["n_legs_with_routing_mode"]:
         logger.warning("%s %d legs have mode pt or carry the %s stamp, but no leg carries a %s attribute: the pt "
