@@ -56,6 +56,13 @@ KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
 #: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
 #: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
+#: Leg attribute that eqasim stamps on a leg its router replaced by a walk (value: the mode that was requested,
+#: ``pt``); the Java constant carries the same name (eqasim-bs#465).
+WALK_FALLBACK_ATTRIBUTE = "walkFallbackFrom"
+#: ASSUMPTION (#465): the share of the legs of frozen resident tours that may be pt trips realised as walks. It
+#: is a threshold for flagging a broken pt router for tours the mode choice never re-chooses, not a reference.
+KEY_MAX_FROZEN_PT_AS_WALK_SHARE = "braunschweig.plan_check.max_frozen_pt_as_walk_share"
+DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
 DEFAULT_FAIL_ON_THRESHOLD = False
 
@@ -67,7 +74,7 @@ class PersonPlan:
     person_id: str
     subpopulation: str
     activities: list = field(default_factory=list)   # (type, end_time_s or None, x, y)
-    legs: list = field(default_factory=list)         # (mode, trav_time_s or None)
+    legs: list = field(default_factory=list)         # (mode, trav_time_s or None, walk_fallback_from or None)
 
 
 def parse_time_s(text: str) -> float:
@@ -78,6 +85,16 @@ def parse_time_s(text: str) -> float:
 
 def _open(path):
     return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
+
+
+def _walk_fallback_from(leg) -> str | None:
+    """The value of the leg's ``walkFallbackFrom`` attribute (the requested mode), or None when absent."""
+    attributes = leg.find("attributes")
+    if attributes is not None:
+        for attribute in attributes.findall("attribute"):
+            if attribute.get("name") == WALK_FALLBACK_ATTRIBUTE and (attribute.text or "").strip():
+                return attribute.text.strip()
+    return None
 
 
 def iter_person_plans(population_path) -> Iterator[PersonPlan]:
@@ -111,7 +128,8 @@ def iter_person_plans(population_path) -> Iterator[PersonPlan]:
                                                   float(child.get("x")), float(child.get("y"))))
                     elif child.tag == "leg":
                         travel = child.get("trav_time")
-                        person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None))
+                        person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None,
+                                            _walk_fallback_from(child)))
             element.clear()
             root.clear()
             yield person
@@ -136,7 +154,8 @@ def leg_tour_frozen(activities: list) -> list:
 
 def _empty_block() -> dict:
     return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_arrival_late": 0, "n_plans_non_monotonic": 0,
-            "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0}
+            "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0,
+            "n_pt_as_walk": 0, "n_pt_as_walk_attr_without_walk": 0, "pt_as_walk_by_hour": {}}
 
 
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
@@ -170,7 +189,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 block["n_plans_arrival_late"] += 1
         if any(later < earlier for earlier, later in zip(ends, ends[1:])):
             block["n_plans_non_monotonic"] += 1
-        for index, (mode, travel) in enumerate(person.legs):
+        for index, (mode, travel, walk_fallback_from) in enumerate(person.legs):
             leg_block = sub[FROZEN if frozen_legs[index] else IN_REGION]
             leg_block["n_legs"] += 1
             _, _, ox, oy = person.activities[index]
@@ -182,12 +201,24 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 leg_block["n_bicycle_legs_over"] += 1
             if travel is not None and travel > leg_max_duration_s:
                 leg_block["n_legs_over_duration"] += 1
+            if walk_fallback_from is not None:
+                if mode == "walk":
+                    leg_block["n_pt_as_walk"] += 1
+                    departure = person.activities[index][1]
+                    hour = "unknown" if departure is None else str(int(departure // 3600.0))
+                    by_hour = leg_block["pt_as_walk_by_hour"]
+                    by_hour[hour] = by_hour.get(hour, 0) + 1
+                else:
+                    # The attribute survived but the leg is no longer a walk (e.g. a later replanning changed
+                    # its mode): reported on its own, never part of the pt-as-walk counter.
+                    leg_block["n_pt_as_walk_attr_without_walk"] += 1
     for sub in blocks.values():
         for block in sub.values():
             n = block["n_persons"]
             block["share_plans_late"] = block["n_plans_late"] / n if n else 0.0
             block["share_plans_arrival_late"] = block["n_plans_arrival_late"] / n if n else 0.0
             block["share_plans_non_monotonic"] = block["n_plans_non_monotonic"] / n if n else 0.0
+            block["share_pt_as_walk"] = block["n_pt_as_walk"] / block["n_legs"] if block["n_legs"] else 0.0
     return {"simulation_end_s": float(simulation_end_s),
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
                            "leg_max_duration_s": leg_max_duration_s},
@@ -238,14 +269,25 @@ def resolve_population_path(config_path) -> str:
     return population_path
 
 
-def find_threshold_violations(summary: dict, max_frozen_defect_share: float) -> list:
-    """Names of the failure-rule shares of the frozen resident plans that exceed the allowed share."""
+def _allowed_shares(max_frozen_defect_share: float, max_frozen_pt_as_walk_share: float) -> dict:
+    return {"share_plans_late": max_frozen_defect_share, "share_plans_non_monotonic": max_frozen_defect_share,
+            "share_pt_as_walk": max_frozen_pt_as_walk_share}
+
+
+def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
+                              max_frozen_pt_as_walk_share: float) -> list:
+    """Names of the failure-rule shares of the frozen resident block that exceed their allowed share.
+
+    ``share_plans_late`` and ``share_plans_non_monotonic`` (share of persons) are compared with
+    ``max_frozen_defect_share``; ``share_pt_as_walk`` (share of legs) with ``max_frozen_pt_as_walk_share``.
+    """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    return [key for key in ("share_plans_late", "share_plans_non_monotonic")
-            if frozen.get(key, 0.0) > max_frozen_defect_share]
+    return [key for key, allowed in _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share).items()
+            if frozen.get(key, 0.0) > allowed]
 
 
-def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_threshold: bool) -> list:
+def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_pt_as_walk_share: float, *,
+                     fail_on_threshold: bool) -> list:
     """Apply the failure rule to the frozen resident plans and return the violated share names.
 
     Above the allowed late / non-monotonic share the check raises when ``fail_on_threshold`` is true, and logs
@@ -253,10 +295,12 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_t
     calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
     """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    violations = find_threshold_violations(summary, max_frozen_defect_share)
+    violations = find_threshold_violations(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share)
+    allowed_shares = _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share)
     for key in violations:
+        unit, count_key = ("legs", "n_legs") if key == "share_pt_as_walk" else ("persons", "n_persons")
         message = (f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
-                   f"{frozen.get('n_persons', 0)} exceeds {100.0 * max_frozen_defect_share:.2f}%; the "
+                   f"{frozen.get(count_key, 0)} {unit} exceeds {100.0 * allowed_shares[key]:.2f}%; the "
                    "tours the mode choice never re-chooses cannot be lived in the simulated day")
         if fail_on_threshold:
             raise ValueError(message)
@@ -269,12 +313,14 @@ def _log_summary(summary: dict) -> None:
         for name, block in classes.items():
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
                         "%d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
-                        "bicycle legs over %d, legs over duration %d of %d", _LOG_TAG, subpopulation, name,
+                        "bicycle legs over %d, legs over duration %d of %d, pt as walk %d (%.2f%%), walk-fallback "
+                        "attribute without walk %d, pt as walk by departure hour %s", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
                         block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
-                        block["n_legs"])
+                        block["n_legs"], block["n_pt_as_walk"], 100.0 * block["share_pt_as_walk"],
+                        block["n_pt_as_walk_attr_without_walk"], block["pt_as_walk_by_hour"])
 
 
 def run(context, config_name: str) -> dict:
@@ -295,11 +341,15 @@ def run(context, config_name: str) -> dict:
                         leg_max_duration_s=float(context.config(KEY_LEG_MAX_DURATION_S)))
     _log_summary(summary)
     max_frozen_defect_share = float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE))
+    max_frozen_pt_as_walk_share = float(context.config(KEY_MAX_FROZEN_PT_AS_WALK_SHARE))
     fail_on_threshold = bool(context.config(KEY_FAIL_ON_THRESHOLD))
     summary["threshold"] = {"max_frozen_defect_share": max_frozen_defect_share,
+                            "max_frozen_pt_as_walk_share": max_frozen_pt_as_walk_share,
                             "fail_on_threshold": fail_on_threshold,
-                            "exceeded": find_threshold_violations(summary, max_frozen_defect_share)}
+                            "exceeded": find_threshold_violations(summary, max_frozen_defect_share,
+                                                                  max_frozen_pt_as_walk_share)}
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
-    check_thresholds(summary, max_frozen_defect_share, fail_on_threshold=fail_on_threshold)
+    check_thresholds(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share,
+                     fail_on_threshold=fail_on_threshold)
     return summary
