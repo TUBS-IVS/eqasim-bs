@@ -16,6 +16,10 @@ from braunschweig.synpp_fork.output_hash import hash_stage_output
 
 STAGE_HASH = "jarstage"
 WORKING_DIRECTORIES = ("a", "working_directory_with_a_longer_path")
+#: Windows cannot start a process in a working directory longer than 258 characters
+#: (CreateProcess, MAX_PATH; the error is a bare "WinError 267"), and Maven runs in a
+#: subdirectory of the cache directory. A long --basetemp hits this before Maven starts.
+WINDOWS_MAX_CACHE_PATH = 240
 
 
 def build_twice(module, make_context, root):
@@ -30,6 +34,10 @@ def build_twice(module, make_context, root):
     for name in WORKING_DIRECTORIES:
         working_directory = os.path.join(str(root), name)
         cache = os.path.join(working_directory, STAGE_HASH + ".cache")
+        if os.name == "nt" and len(os.path.abspath(cache)) > WINDOWS_MAX_CACHE_PATH:
+            raise RuntimeError("cache directory %s has %d characters; Windows cannot start Maven "
+                               "below it (MAX_PATH): use a shorter --basetemp"
+                               % (cache, len(os.path.abspath(cache))))
         os.makedirs(cache)
         jar = module.execute(make_context(cache))
         assert os.path.isfile(os.path.join(cache, jar)), jar
