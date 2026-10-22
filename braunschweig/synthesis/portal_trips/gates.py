@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 #: the in-commuter stage module into this helper).
 RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_rail"})
 KIND_ROAD = "road"
-KIND_RAIL = "rail"
+KIND_PT = "pt"
 GATE_COLUMNS = ["gate_id", "kind", "x", "y"]
 
 
@@ -210,6 +210,182 @@ def draw_external_points(reported_m, origin_xy, external_points, tolerance, rng)
     return point_xy, commune_id, band_miss
 
 
+# ---- timetable-aware pt gates (#465, WP-C) ----
+
+PT_GATE_COLUMNS = ["gate_id", "x", "y", "reason", "n_in_direction", "n_served", "n_connected"]
+REASON_GATE_FOUND = "gate_found"
+REASON_NO_GATE_IN_DIRECTION = "no_gate_in_direction"
+REASON_NO_GATE_SERVED = "no_gate_served"
+REASON_NO_CONNECTION = "no_connection"
+_REASONS = (REASON_GATE_FOUND, REASON_NO_GATE_IN_DIRECTION, REASON_NO_GATE_SERVED, REASON_NO_CONNECTION)
+_OUT, _RET = "out", "ret"
+
+
+def _stop_xy(exits: gpd.GeoDataFrame) -> dict:
+    """``stop_id -> (x, y)`` of the exit stops."""
+    points = exit_stop_points(exits)
+    return {str(s): (float(p.x), float(p.y)) for s, p in zip(points["stop_id"], points.geometry)}
+
+
+def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidates: int) -> list[list[str]]:
+    """Per stay the exit ``stop_id``s whose outward route heads toward the external point.
+
+    A route heads toward the point when its outside stop is closer to the point than the exit stop
+    itself (``hypot(outside - point) < hypot(stop - point)``). A stop is listed once however many routes
+    qualify; the ``n_candidates`` stops with the smallest detour origin -> stop -> point are kept,
+    ordered by detour (ties keep the order of ``exits``).
+    """
+    if n_candidates < 1:
+        raise ValueError(f"[portal_trips] pt gates: n_candidates must be >= 1, got {n_candidates}")
+    origin_xy = np.asarray(origin_xy, dtype=float)
+    point_xy = np.asarray(point_xy, dtype=float)
+    stop_ids = exits["stop_id"].astype(str).to_numpy()
+    stop_x, stop_y = exits.geometry.x.to_numpy(), exits.geometry.y.to_numpy()
+    out_x, out_y = exits["outside_x"].to_numpy(dtype=float), exits["outside_y"].to_numpy(dtype=float)
+    result = []
+    for origin, point in zip(origin_xy, point_xy):
+        toward = np.hypot(out_x - point[0], out_y - point[1]) < np.hypot(stop_x - point[0], stop_y - point[1])
+        seen, rows = set(), []
+        for k in np.flatnonzero(toward):
+            if stop_ids[k] in seen:
+                continue
+            seen.add(stop_ids[k])
+            detour = np.hypot(origin[0] - stop_x[k], origin[1] - stop_y[k]) + \
+                np.hypot(point[0] - stop_x[k], point[1] - stop_y[k])
+            rows.append((detour, stop_ids[k]))
+        rows.sort(key=lambda row: row[0])  # stable: ties keep the order of ``exits``
+        result.append([stop for _, stop in rows[:n_candidates]])
+    return result
+
+
+def served_mask(schedule, stop_ids, t_s: float, window_s: float, exits: gpd.GeoDataFrame) -> list[bool]:
+    """Per stop: does one of its EXIT routes depart within ``[t_s, t_s + window_s]``?
+
+    Only the routes listed for the stop in ``exits`` count (the routes that leave the extent there).
+    """
+    from braunschweig.data.transit.schedule import departures_at_stop
+
+    keys_by_stop = {}
+    for stop, line, route in zip(exits["stop_id"].astype(str), exits["line_id"], exits["route_id"]):
+        keys_by_stop.setdefault(stop, set()).add((line, route))
+    flags = []
+    for stop in stop_ids:
+        keys = keys_by_stop.get(str(stop))
+        if not keys:
+            flags.append(False)
+            continue
+        departures = departures_at_stop(schedule, str(stop), keys)
+        flags.append(bool(((departures >= t_s) & (departures <= t_s + window_s)).any()))
+    return flags
+
+
+def _parse_identifier(identifier: str):
+    """``"<stay>:<stop_id>:<direction>"`` -> ``(stay, stop_id, direction)``; stop ids may contain ':'."""
+    first, last = identifier.index(":"), identifier.rindex(":")
+    return int(identifier[:first]), identifier[first + 1:last], identifier[last + 1:]
+
+
+def _connected(router, tasks, *, inside_stop_ids, walk_max_m) -> set:
+    """Identifiers of ``tasks`` that the router connects (one router call; empty tasks make no call)."""
+    from braunschweig.data.transit.connections import TASK_COLUMNS, connection_mask
+
+    if not tasks:
+        return set()
+    frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
+    trips, legs = router(frame)
+    mask = connection_mask(trips, legs, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m)
+    return set(mask.index[mask.to_numpy()].astype(str))
+
+
+def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_s, return_departure_s,
+                    return_arrival_s, has_return, exits: gpd.GeoDataFrame, schedule, router, *,
+                    n_candidates: int, service_window_s: float, inside_stop_ids: set, walk_max_m: float
+                    ) -> pd.DataFrame:
+    """The pt gate of each pt stay: direction -> served window -> router connection -> smallest detour.
+
+    All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
+    seconds). Per stay: the candidates are ``pt_gate_candidates``; a candidate must be served
+    (``served_mask``) in ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when
+    the stay has a return leg, at the planned re-entry; the router must connect it from the in-region
+    end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
+    the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
+    The gate arrival and the re-entry depend on the candidate and use the distance split of
+    ``timing._split_share``. The admissible candidate with the smallest detour wins.
+
+    The router gets ONE batch per direction (identifiers ``"<stay>:<stop_id>:out"`` / ``":ret"``). The
+    return batch holds only the candidates already served and connected outbound, and is not sent for
+    stays without a return leg. Result: ``PT_GATE_COLUMNS``, one row per stay, ``gate_id`` None with a
+    ``reason`` when no candidate is admissible; ``n_served`` counts candidates served in every checked
+    direction, ``n_connected`` those that also connect. The reasons are logged as rates (the stage
+    surfaces a high ``no_connection`` share).
+    """
+    from braunschweig.synthesis.portal_trips.timing import _split_share
+
+    origin_xy = np.asarray(origin_xy, dtype=float)
+    point_xy = np.asarray(point_xy, dtype=float)
+    out_dep, out_arr = (np.asarray(v, dtype=float) for v in (outbound_departure_s, outbound_arrival_s))
+    ret_dep, ret_arr = (np.asarray(v, dtype=float) for v in (return_departure_s, return_arrival_s))
+    has_return = np.asarray(has_return, dtype=bool)
+    n = len(origin_xy)
+    candidates = pt_gate_candidates(origin_xy, point_xy, exits, n_candidates) if len(exits) else [[] for _ in range(n)]
+    xy = _stop_xy(exits)
+
+    def dist(a, b):
+        return np.array([np.hypot(a[0] - b[0], a[1] - b[1])])
+
+    # Per (stay, stop): the planned gate arrival and re-entry, then the served windows.
+    out_time, ret_time, served = {}, {}, {}
+    for i in range(n):
+        for stop in candidates[i]:
+            d_origin, d_point = dist(origin_xy[i], xy[stop]), dist(xy[stop], point_xy[i])
+            share_out, _ = _split_share(d_origin, d_point)
+            out_time[i, stop] = float(out_dep[i] + share_out[0] * (out_arr[i] - out_dep[i]))
+            ok = served_mask(schedule, [stop], out_time[i, stop], service_window_s, exits)[0]
+            if ok and has_return[i]:
+                share_ret, _ = _split_share(d_point, dist(xy[stop], origin_xy[i]))
+                ret_time[i, stop] = float(ret_dep[i] + share_ret[0] * (ret_arr[i] - ret_dep[i]))
+                ok = served_mask(schedule, [stop], ret_time[i, stop], service_window_s, exits)[0]
+            served[i, stop] = ok
+
+    def task(i, stop, direction):
+        gx, gy = xy[stop]
+        ox, oy = origin_xy[i]
+        if direction == _OUT:
+            return (f"{i}:{stop}:{_OUT}", ox, oy, gx, gy, float(out_dep[i]))
+        return (f"{i}:{stop}:{_RET}", gx, gy, ox, oy, ret_time[i, stop])
+
+    kwargs = dict(inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m)
+    served_keys = [(i, s) for i in range(n) for s in candidates[i] if served[i, s]]
+    out_ok = _connected(router, [task(i, s, _OUT) for i, s in served_keys], **kwargs)
+    out_pass = [(i, s) for i, s in served_keys if f"{i}:{s}:{_OUT}" in out_ok]
+    ret_pairs = [(i, s) for i, s in out_pass if has_return[i]]
+    ret_ok = _connected(router, [task(i, s, _RET) for i, s in ret_pairs], **kwargs)
+    connected = {(i, s) for i, s in out_pass if not has_return[i] or f"{i}:{s}:{_RET}" in ret_ok}
+
+    rows = []
+    for i in range(n):
+        served_n = sum(served[i, s] for s in candidates[i])
+        won = [s for s in candidates[i] if (i, s) in connected]  # candidates are ordered by detour
+        if not candidates[i]:
+            reason = REASON_NO_GATE_IN_DIRECTION
+        elif served_n == 0:
+            reason = REASON_NO_GATE_SERVED
+        elif not won:
+            reason = REASON_NO_CONNECTION
+        else:
+            reason = REASON_GATE_FOUND
+        gate = won[0] if won else None
+        rows.append((gate, xy[gate][0] if gate else np.nan, xy[gate][1] if gate else np.nan, reason,
+                     len(candidates[i]), int(served_n), len(won)))
+    frame = pd.DataFrame(rows, columns=PT_GATE_COLUMNS)
+    frame["gate_id"] = frame["gate_id"].astype(object).where(frame["gate_id"].notna(), None)
+    counts = frame["reason"].value_counts()
+    logger.info("[portal_trips.gates] pt gates over %d pt stays: %s", n,
+                ", ".join(f"{r} {int(counts.get(r, 0))}/{n} ({100.0 * counts.get(r, 0) / max(n, 1):.1f}%)"
+                          for r in _REASONS))
+    return frame
+
+
 def _nearest_by_detour(origin_xy, point_xy, candidate_xy):
     """Index of the candidate minimising |origin - candidate| + |candidate - point| per row."""
     inside = np.hypot(origin_xy[:, None, 0] - candidate_xy[None, :, 0],
@@ -219,8 +395,12 @@ def _nearest_by_detour(origin_xy, point_xy, candidate_xy):
     return np.argmin(inside + outside, axis=1)
 
 
-def choose_gates(origin_xy, point_xy, modes, road_gates, rail_stations) -> pd.DataFrame:
-    """The gate of each stay: a rail exit station for pt, the road gate with the smallest detour otherwise."""
+def choose_gates(origin_xy, point_xy, modes, road_gates, pt_gates: pd.DataFrame) -> pd.DataFrame:
+    """The gate of each stay: from ``pt_gates`` for pt stays, the road gate with the smallest detour otherwise.
+
+    ``pt_gates`` (``choose_pt_gates`` result) has one row per pt stay, in the order of the pt stays in
+    ``modes``. A pt stay whose ``gate_id`` is None raises: the fallback chain must resolve it before.
+    """
     origin_xy = np.asarray(origin_xy, dtype=float)
     point_xy = np.asarray(point_xy, dtype=float)
     modes = np.asarray(modes, dtype=object)
@@ -229,26 +409,30 @@ def choose_gates(origin_xy, point_xy, modes, road_gates, rail_stations) -> pd.Da
     if not np.isfinite(point_xy).all():
         raise ValueError("[portal_trips] external point coordinates contain non-finite values; "
                          "no gate can be chosen")
-    is_rail = modes == "pt"
+    is_pt = modes == "pt"
     out = pd.DataFrame(index=range(len(modes)), columns=GATE_COLUMNS)
-    if is_rail.any():
-        if len(rail_stations) == 0:
-            raise ValueError(f"[portal_trips] {int(is_rail.sum())} pt stays but no rail exit station inside the extent")
-        rail_xy = np.column_stack([rail_stations.geometry.x.to_numpy(), rail_stations.geometry.y.to_numpy()])
-        picked = _nearest_by_detour(origin_xy[is_rail], point_xy[is_rail], rail_xy)
-        out.loc[is_rail, "gate_id"] = rail_stations["stop_id"].astype(str).to_numpy()[picked]
-        out.loc[is_rail, "kind"] = KIND_RAIL
-        out.loc[is_rail, "x"] = rail_xy[picked, 0]
-        out.loc[is_rail, "y"] = rail_xy[picked, 1]
-    if (~is_rail).any():
+    if is_pt.any():
+        if pt_gates is None or len(pt_gates) != int(is_pt.sum()):
+            raise ValueError(f"[portal_trips] {int(is_pt.sum())} pt stays but {0 if pt_gates is None else len(pt_gates)}"
+                             " pt gate rows; pass one row per pt stay")
+        unresolved = pt_gates["gate_id"].isna().to_numpy()
+        if unresolved.any():
+            reasons = pt_gates.loc[unresolved, "reason"].value_counts().to_dict()
+            raise ValueError(f"[portal_trips] {int(unresolved.sum())} pt stays have no admissible gate "
+                             f"(reasons {reasons}); resolve them (mode switch, shift) before choosing gates")
+        out.loc[is_pt, "gate_id"] = pt_gates["gate_id"].astype(str).to_numpy()
+        out.loc[is_pt, "kind"] = KIND_PT
+        out.loc[is_pt, "x"] = pt_gates["x"].to_numpy(dtype=float)
+        out.loc[is_pt, "y"] = pt_gates["y"].to_numpy(dtype=float)
+    if (~is_pt).any():
         if len(road_gates) == 0:
-            raise ValueError(f"[portal_trips] {int((~is_rail).sum())} road stays but no road gate")
+            raise ValueError(f"[portal_trips] {int((~is_pt).sum())} road stays but no road gate")
         road_xy = np.column_stack([road_gates.geometry.x.to_numpy(), road_gates.geometry.y.to_numpy()])
-        picked = _nearest_by_detour(origin_xy[~is_rail], point_xy[~is_rail], road_xy)
-        out.loc[~is_rail, "gate_id"] = road_gates["gate_id"].astype(str).to_numpy()[picked]
-        out.loc[~is_rail, "kind"] = KIND_ROAD
-        out.loc[~is_rail, "x"] = road_xy[picked, 0]
-        out.loc[~is_rail, "y"] = road_xy[picked, 1]
+        picked = _nearest_by_detour(origin_xy[~is_pt], point_xy[~is_pt], road_xy)
+        out.loc[~is_pt, "gate_id"] = road_gates["gate_id"].astype(str).to_numpy()[picked]
+        out.loc[~is_pt, "kind"] = KIND_ROAD
+        out.loc[~is_pt, "x"] = road_xy[picked, 0]
+        out.loc[~is_pt, "y"] = road_xy[picked, 1]
     out["x"] = out["x"].astype(float)
     out["y"] = out["y"].astype(float)
     return out
