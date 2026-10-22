@@ -101,7 +101,7 @@ may only name run manifests (no run, no claim).
 | [secondary_srv_location_types](../registry/features/secondary_srv_location_types.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | pending |
 | [sector_aware_attraction_tilt](../registry/features/sector_aware_attraction_tilt.yml) | work | parked | off | i/i/i | 1 | -- | none | none | measured_vs_reference (`sector-aware-ab-2026-07-15`) | pending |
 | [sex_aware_couples](../registry/features/sex_aware_couples.yml) | population | supported | off | -/-/A | 1 | proven | none | assumption | unvalidated | pending |
-| [shared_stage_cache](../registry/features/shared_stage_cache.yml) | infrastructure | active | ON | A/s/s | 5 | -- | marker | none | unvalidated | pending |
+| [shared_stage_cache](../registry/features/shared_stage_cache.yml) | infrastructure | active | ON | A/s/s | 5 | -- | marker | none | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) | pending |
 | [simwrapper_export](../registry/features/simwrapper_export.yml) | analysis | active | ON | A/-/- | 5 | not claimed | marker | none | unvalidated | pending |
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 1 | not claimed | none | none | unvalidated | pending |
 | [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 7 | proven | none | committed | unvalidated | pending |
@@ -110,7 +110,7 @@ may only name run manifests (no run, no claim).
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated | pending |
-| [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 5 | -- | none | none | unvalidated | pending |
+| [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 5 | -- | none | none | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) | pending |
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | supported | off | i/i/i | 5 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
