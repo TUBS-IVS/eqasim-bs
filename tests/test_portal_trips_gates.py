@@ -430,3 +430,67 @@ def test_exit_stops_empty_result_keeps_columns_and_crs_and_warns(caplog):
     assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "geometry"]
     assert exits.crs.to_epsg() == 3035
     assert any(r.levelname == "WARNING" and "tram" in r.getMessage() for r in caplog.records)
+
+
+def test_choose_pt_gates_serves_only_by_routes_heading_toward_the_point():
+    # hbf has a directional route r_hbf (east, no departure in the window) and a route r_away that leaves
+    # westward and runs in the window: the stop is NOT served for an eastern point.
+    stops = {"hbf": (5000.0, 5000.0), "ext": (20000.0, 5000.0), "extw": (-9000.0, 5000.0)}
+
+    def route(rid, stop_ids, deps):
+        return RouteInfo("L_" + rid, rid, "bus", tuple(stop_ids), (0.0, 0.0), tuple(deps))
+
+    schedule = Schedule(stops, [route("r_hbf", ["hbf", "ext"], [1000.0]),
+                                route("r_away", ["hbf", "extw"], [36500.0, 52000.0])])
+    exits = g.exit_stops(schedule, SQUARE)
+    kwargs = dict(n_candidates=5, service_window_s=3600.0, inside_stop_ids={"hbf", "soph"}, walk_max_m=5000.0)
+    args = (np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
+            np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule)
+    east = g.choose_pt_gates(*args, _fake_router({"0:hbf:out", "0:hbf:ret"}, []), **kwargs)
+    assert east.iloc[0]["reason"] == g.REASON_NO_GATE_SERVED
+    west_args = (args[0], np.array([[-50000.0, 5000.0]])) + args[2:]
+    west = g.choose_pt_gates(*west_args, _fake_router({"0:hbf:out", "0:hbf:ret"}, []), **kwargs)
+    assert west.iloc[0]["gate_id"] == "hbf"
+
+
+def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
+    # Stay 0 flies east in the outbound window of r_hbf; stay 1 leaves 2 h later (r_hbf not served for it).
+    schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
+    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    log = []
+    frame = g.choose_pt_gates(
+        np.array([[5000.0, 5200.0]] * 2), np.array([[50000.0, 5000.0]] * 2),
+        np.array([36000.0, 43200.0]), np.array([37800.0, 45000.0]), np.array([50000.0, 57000.0]),
+        np.array([51800.0, 58800.0]), np.array([True, True]), exits, schedule,
+        _fake_router({"0:hbf:out", "0:hbf:ret", "1:hbf:out", "1:hbf:ret"}, log),
+        n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+    assert frame["reason"].tolist() == [g.REASON_GATE_FOUND, g.REASON_NO_GATE_SERVED]
+    assert all(i.startswith("0:") for task in log for i in task["identifier"])
+    # connection differs per stay: only stay 1 connects
+    frame = g.choose_pt_gates(
+        np.array([[5000.0, 5200.0]] * 2), np.array([[50000.0, 5000.0]] * 2),
+        np.array([36000.0, 36000.0]), np.array([37800.0, 37800.0]), np.array([50000.0, 50000.0]),
+        np.array([51800.0, 51800.0]), np.array([True, True]), exits, schedule,
+        _fake_router({"1:hbf:out", "1:hbf:ret"}, []), n_candidates=1, service_window_s=3600.0,
+        inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+    assert frame["reason"].tolist() == [g.REASON_NO_CONNECTION, g.REASON_GATE_FOUND]
+
+
+def test_choose_pt_gates_rejects_non_finite_inputs_but_ignores_return_times_without_a_return():
+    schedule = _gate_schedule({"r_hbf": [36500.0]})
+    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+
+    def run(origin_y=5200.0, out_arr=37800.0, ret_dep=50000.0, has_return=False):
+        return g.choose_pt_gates(
+            np.array([[5000.0, origin_y]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
+            np.array([out_arr]), np.array([ret_dep]), np.array([51800.0]), np.array([has_return]), exits, schedule,
+            _fake_router({"0:hbf:out"}, []), n_candidates=1, service_window_s=3600.0,
+            inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+
+    with pytest.raises(ValueError, match="origin"):
+        run(origin_y=np.nan)
+    with pytest.raises(ValueError, match="outbound"):
+        run(out_arr=np.nan)
+    with pytest.raises(ValueError, match="return"):
+        run(ret_dep=np.nan, has_return=True)
+    assert run(ret_dep=np.nan, has_return=False).iloc[0]["gate_id"] == "hbf"

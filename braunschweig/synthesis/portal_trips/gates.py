@@ -227,6 +227,13 @@ def _stop_xy(exits: gpd.GeoDataFrame) -> dict:
     return {str(s): (float(p.x), float(p.y)) for s, p in zip(points["stop_id"], points.geometry)}
 
 
+def _toward_mask(point, exits: gpd.GeoDataFrame) -> np.ndarray:
+    """Per exit row: does the outward route head toward ``point`` (outside stop closer than the exit stop)?"""
+    return (np.hypot(exits["outside_x"].to_numpy(dtype=float) - point[0],
+                     exits["outside_y"].to_numpy(dtype=float) - point[1])
+            < np.hypot(exits.geometry.x.to_numpy() - point[0], exits.geometry.y.to_numpy() - point[1]))
+
+
 def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidates: int) -> list[list[str]]:
     """Per stay the exit ``stop_id``s whose outward route heads toward the external point.
 
@@ -241,10 +248,9 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidate
     point_xy = np.asarray(point_xy, dtype=float)
     stop_ids = exits["stop_id"].astype(str).to_numpy()
     stop_x, stop_y = exits.geometry.x.to_numpy(), exits.geometry.y.to_numpy()
-    out_x, out_y = exits["outside_x"].to_numpy(dtype=float), exits["outside_y"].to_numpy(dtype=float)
     result = []
     for origin, point in zip(origin_xy, point_xy):
-        toward = np.hypot(out_x - point[0], out_y - point[1]) < np.hypot(stop_x - point[0], stop_y - point[1])
+        toward = _toward_mask(point, exits)
         seen, rows = set(), []
         for k in np.flatnonzero(toward):
             if stop_ids[k] in seen:
@@ -258,25 +264,55 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidate
     return result
 
 
+def _departure_table(schedule, exits: gpd.GeoDataFrame) -> dict:
+    """``(stop_id, (line_id, route_id)) -> sorted departure times (s)`` for the exit routes of ``exits``.
+
+    One pass over the schedule routes (built once per call, not per stay). A stop visited twice by one
+    route contributes both times, as in ``schedule.departures_at_stop``.
+    """
+    pairs = {(str(s), (line, route)) for s, line, route in zip(exits["stop_id"], exits["line_id"], exits["route_id"])}
+    keys = {key for _, key in pairs}
+    times: dict = {}
+    for route in schedule.routes:
+        key = (route.line_id, route.route_id)
+        if key not in keys:
+            continue
+        for stop, offset in zip(route.stop_ids, route.departure_offsets_s):
+            if (str(stop), key) in pairs:
+                times.setdefault((str(stop), key), []).extend(d + offset for d in route.departures_s)
+    return {pair: np.sort(np.asarray(values, dtype=float)) for pair, values in times.items()}
+
+
+def _has_departure(table: dict, stop: str, keys, t_s: float, window_s: float) -> bool:
+    """Does one of the routes ``keys`` depart at ``stop`` within ``[t_s, t_s + window_s]``?"""
+    for key in keys:
+        departures = table.get((stop, key))
+        if departures is None:
+            continue
+        index = int(np.searchsorted(departures, t_s, side="left"))
+        if index < len(departures) and departures[index] <= t_s + window_s:
+            return True
+    return False
+
+
+def _keys_by_stop(exits: gpd.GeoDataFrame, rows=None) -> dict:
+    """``stop_id -> {(line_id, route_id)}`` of the exit rows (all rows, or those selected by ``rows``)."""
+    frame = exits if rows is None else exits[rows]
+    out: dict = {}
+    for stop, line, route in zip(frame["stop_id"].astype(str), frame["line_id"], frame["route_id"]):
+        out.setdefault(stop, set()).add((line, route))
+    return out
+
+
 def served_mask(schedule, stop_ids, t_s: float, window_s: float, exits: gpd.GeoDataFrame) -> list[bool]:
     """Per stop: does one of its EXIT routes depart within ``[t_s, t_s + window_s]``?
 
     Only the routes listed for the stop in ``exits`` count (the routes that leave the extent there).
+    ``choose_pt_gates`` narrows this further to the routes heading toward the stay's external point.
     """
-    from braunschweig.data.transit.schedule import departures_at_stop
-
-    keys_by_stop = {}
-    for stop, line, route in zip(exits["stop_id"].astype(str), exits["line_id"], exits["route_id"]):
-        keys_by_stop.setdefault(stop, set()).add((line, route))
-    flags = []
-    for stop in stop_ids:
-        keys = keys_by_stop.get(str(stop))
-        if not keys:
-            flags.append(False)
-            continue
-        departures = departures_at_stop(schedule, str(stop), keys)
-        flags.append(bool(((departures >= t_s) & (departures <= t_s + window_s)).any()))
-    return flags
+    table = _departure_table(schedule, exits)
+    keys = _keys_by_stop(exits)
+    return [_has_departure(table, str(stop), keys.get(str(stop), ()), t_s, window_s) for stop in stop_ids]
 
 
 def _parse_identifier(identifier: str):
@@ -315,8 +351,11 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     The router gets ONE batch per direction (identifiers ``"<stay>:<stop_id>:out"`` / ``":ret"``). The
     return batch holds only the candidates already served and connected outbound, and is not sent for
     stays without a return leg. Result: ``PT_GATE_COLUMNS``, one row per stay, ``gate_id`` None with a
-    ``reason`` when no candidate is admissible; ``n_served`` counts candidates served in every checked
-    direction, ``n_connected`` those that also connect. The reasons are logged as rates (the stage
+    ``reason`` when no candidate is admissible. ``n_in_direction`` is the number of candidates kept (in
+    direction, AFTER the ``n_candidates`` cut); ``n_served`` the candidates served in EVERY checked direction
+    (outbound, plus return when ``has_return``) by a route heading toward the stay's point; ``n_connected``
+    those that also connect in every checked direction. Non-finite coordinates or times raise ``ValueError``
+    (return times are only checked for stays with a return leg). The reasons are logged as rates (the stage
     surfaces a high ``no_connection`` share).
     """
     from braunschweig.synthesis.portal_trips.timing import _split_share
@@ -327,24 +366,44 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     ret_dep, ret_arr = (np.asarray(v, dtype=float) for v in (return_departure_s, return_arrival_s))
     has_return = np.asarray(has_return, dtype=bool)
     n = len(origin_xy)
+    for label, values in (("origin", origin_xy), ("external point", point_xy)):
+        if not np.isfinite(values).all():
+            raise ValueError(f"[portal_trips] pt gates: {label} coordinates contain non-finite values")
+    if not (np.isfinite(out_dep).all() and np.isfinite(out_arr).all()):
+        raise ValueError("[portal_trips] pt gates: outbound departure/arrival times contain non-finite values")
+    if not (np.isfinite(ret_dep[has_return]).all() and np.isfinite(ret_arr[has_return]).all()):
+        raise ValueError("[portal_trips] pt gates: return departure/arrival times of stays with a return leg "
+                         "contain non-finite values")
     candidates = pt_gate_candidates(origin_xy, point_xy, exits, n_candidates) if len(exits) else [[] for _ in range(n)]
     xy = _stop_xy(exits)
+    table = _departure_table(schedule, exits)
 
-    def dist(a, b):
-        return np.array([np.hypot(a[0] - b[0], a[1] - b[1])])
-
-    # Per (stay, stop): the planned gate arrival and re-entry, then the served windows.
+    # All (stay, stop) pairs at once: the gate arrival / re-entry share is one vectorised _split_share call.
+    pair_keys = [(i, stop) for i in range(n) for stop in candidates[i]]
     out_time, ret_time, served = {}, {}, {}
-    for i in range(n):
-        for stop in candidates[i]:
-            d_origin, d_point = dist(origin_xy[i], xy[stop]), dist(xy[stop], point_xy[i])
-            share_out, _ = _split_share(d_origin, d_point)
-            out_time[i, stop] = float(out_dep[i] + share_out[0] * (out_arr[i] - out_dep[i]))
-            ok = served_mask(schedule, [stop], out_time[i, stop], service_window_s, exits)[0]
+    if pair_keys:
+        stay = np.array([i for i, _ in pair_keys])
+        gate = np.array([xy[stop] for _, stop in pair_keys])
+        d_origin = np.hypot(origin_xy[stay, 0] - gate[:, 0], origin_xy[stay, 1] - gate[:, 1])
+        d_point = np.hypot(point_xy[stay, 0] - gate[:, 0], point_xy[stay, 1] - gate[:, 1])
+        share_out, _ = _split_share(d_origin, d_point)
+        share_ret, _ = _split_share(d_point, d_origin)
+        t_out = out_dep[stay] + share_out * (out_arr[stay] - out_dep[stay])
+        t_ret = ret_dep[stay] + share_ret * (ret_arr[stay] - ret_dep[stay])
+        stop_rows = {}
+        for r, stop in enumerate(exits["stop_id"].astype(str)):
+            stop_rows.setdefault(stop, []).append(r)
+        route_keys = list(zip(exits["line_id"], exits["route_id"]))
+        toward = {}
+        for k, (i, stop) in enumerate(pair_keys):
+            if i not in toward:
+                toward[i] = _toward_mask(point_xy[i], exits)
+            # the routes at this stop that head toward the stay's external point
+            keys = {route_keys[r] for r in stop_rows[stop] if toward[i][r]}
+            out_time[i, stop], ret_time[i, stop] = float(t_out[k]), float(t_ret[k])
+            ok = _has_departure(table, stop, keys, out_time[i, stop], service_window_s)
             if ok and has_return[i]:
-                share_ret, _ = _split_share(d_point, dist(xy[stop], origin_xy[i]))
-                ret_time[i, stop] = float(ret_dep[i] + share_ret[0] * (ret_arr[i] - ret_dep[i]))
-                ok = served_mask(schedule, [stop], ret_time[i, stop], service_window_s, exits)[0]
+                ok = _has_departure(table, stop, keys, ret_time[i, stop], service_window_s)
             served[i, stop] = ok
 
     def task(i, stop, direction):
