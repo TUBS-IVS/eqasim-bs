@@ -18,9 +18,10 @@
   never corrected (issue #465, section "Mechanism").
 - Measured, run `i453-i443-ab-1pct-2026-10-16` (1 % A/B, arm 2, final iteration 84), as reported in the
   body of issue #465 (https://github.com/TUBS-IVS/eqasim-bs/issues/465): 58 of the 104 stuck residents were
-  walking (issue "Why it matters"; the "Measured" list gives 58 of 66 frozen residents stuck at the end walking,
-  57 of them planned as pt); of 246 planned-pt portal trips, 90 were walk after prepare, and 33 of 33 departing
-  at 23:00 or later. The run manifest of that A/B is on branch `runs/i453-i443-ab-1pct` (not in `docs/runs/` on
+  walking (issue "Why it matters": stuck residents are those that stopped moving before the end of the
+  simulated day). The issue's "Measured" list gives a different count over a different set: 58 of the 66
+  residents frozen at the end of the simulation were stuck walking, and 57 of those 58 were planned as pt.
+  Of 246 planned-pt portal trips, 90 were walk after prepare, and 33 of 33 departing at 23:00 or later. The run manifest of that A/B is on branch `runs/i453-i443-ab-1pct` (not in `docs/runs/` on
   this branch); the numbers are cited from the issue, which names the run and its outputs on felix.
 - Gate table and probe, issue comment https://github.com/TUBS-IVS/eqasim-bs/issues/465#issuecomment-6334330264
   (router probe `RunBatchPublicTransportRouter` on the pre-cut schedule, 53 planned-pt portal trips routed as
@@ -45,10 +46,16 @@
    return leg, at the planned re-entry. The router must connect the in-region end to the gate at the planned
    departure and the gate back at the re-entry. The admissible candidate with the smallest detour wins. The
    router runs once per direction as a batch, the return batch only for candidates already connected outbound.
+   The return-leg service check reads OUTWARD departures at the gate near the re-entry time as a proxy; the
+   inbound service of the return is checked by the router, not by the timetable scan.
 3. **Connection rule** (`braunschweig/data/transit/connections.py`): `is_only_walk == 0`, every pt leg's
    access and egress stop inside the cut extent, access, egress and transfer walking each at most
    `plan_check.DEFAULT_WALK_MAX_DISTANCE_M / 1000` km (the constant is read, not copied); or an only-walk result
    with `total_walk_distance_km <= 0.6` km (a walk of that length is plausible, so no connection is needed).
+   The Java tool writes no trips row for a task without a route; that is the router outcome "no route", not a
+   broken run: the task counts as not connected, under its own rejection reason `no_route` in the log, and the
+   run raises only when every task lacks a trips row, or when the output has unexpected or duplicate
+   identifiers, or lacks the leg stop-id columns (an eqasim jar without the fork change).
 4. **Router.** The eqasim production batch tool `RunBatchPublicTransportRouter`, run through the Java stages
    `matsim.runtime.eqasim` and `matsim.runtime.java` on the pre-cut network and schedule of
    `matsim.scenario.supply.processed` and the vehicles of `matsim.scenario.supply.gtfs`, with a minimal config
@@ -64,7 +71,8 @@
    return, a return shift keeps the 30 h plan bound and the next trip's departure); `kept_no_connection`. A
    tour switch also switches the other stays of the same tour and counts them under the switch label, so
    `gate_found` counts only the stays whose tour was not switched. A switched stay takes the substitution
-   columns of `modes.py` with the new reason `no_pt_connection`.
+   columns of `modes.py` with the new reason `no_pt_connection`. A whole-tour switch counts every changed stay
+   in `n_mode_substituted`, including stays of that tour that were not pt.
 6. **Kept stays still get a gate.** The plan is kept (design decision 4), and the stay takes the
    nearest-by-detour gate among its directional exit stops, else among all exit stops. The eqasim `fixOnlyWalk`
    path stays the observable last resort; the kept share is counted and warned above
@@ -87,7 +95,10 @@
 ## Consequences
 
 - A synthesis stage now depends on the eqasim jar and the Java runtime (`matsim.runtime.eqasim`; the DAG
-  changed), and its `validate()` token hashes the new helper modules.
+  changed), and its `validate()` token hashes the new helper modules. The jar must come from the fork change
+  that writes access and egress stop ids per leg (eqasim-java-bs branch `feat/batch-router-leg-stops`).
+- The stage also depends on `matsim.scenario.supply.gtfs` (the transit vehicles file the router config names)
+  besides `matsim.scenario.supply.processed`.
 - Runtime of the batch router at 100 %: ASSUMPTION, under 15 min at 25,000 stays x 5 candidates x 2 directions;
   not measured, to be measured in WP-E.
 - The result changes by design: pt stays without a connection become car, car passenger, shifted or counted

@@ -15,6 +15,15 @@ connection when
   ``plausible_walk_m`` (the origin is within plausible walking distance of the
   destination, so no timetable connection is needed).
 
+Walk legs of a pt trip. For a pt trip the Java tool books the EGRESS walk as transfer walking
+(``Worker.run`` compares a leg counter ``isLastLeg`` with ``planElements.size()``, which also counts the
+interaction activities, so the last walk leg is never recognised as the last leg). The rule is
+unaffected because access, egress and transfer share the one limit ``walk_max_m``.
+
+A task for which the router finds no route gets NO trips row (``Worker.run`` adds a row only when
+``calcRoute`` returns a result): that is a router outcome "no route", not a broken run, and counts as
+not a connection (``connection_mask(..., task_ids=...)``, reason ``no_route``).
+
 Coordinates are metric (the scenario CRS); distances in the router output are kilometres,
 the input departure time is in seconds and the output times are in minutes.
 """
@@ -36,6 +45,18 @@ TASK_COLUMNS = ["identifier", "origin_x", "origin_y", "destination_x", "destinat
 _NUMERIC_TASK_COLUMNS = TASK_COLUMNS[1:]
 
 ROUTER_CLASS = "org.eqasim.core.tools.routing.RunBatchPublicTransportRouter"
+
+#: Columns of the router outputs that ``connection_mask`` reads. The leg stop ids exist only in an eqasim
+#: jar built from the fork change (eqasim-java-bs branch ``feat/batch-router-leg-stops``).
+TRIPS_REQUIRED_COLUMNS = ["identifier", "is_only_walk", "access_distance_km", "egress_distance_km",
+                          "transfer_distance_km", "total_walk_distance_km"]
+LEGS_REQUIRED_COLUMNS = ["identifier", "access_stop_id", "egress_stop_id"]
+_JAR_HINT = ("the eqasim jar probably lacks the fork change (eqasim-java-bs branch "
+             "feat/batch-router-leg-stops, \"write access and egress stop ids per leg in the batch public "
+             "transport router\"); rebuild the jar from that branch")
+
+#: Share of tasks without a trips row above which the rate is logged as a WARNING.
+NO_ROUTE_WARN_SHARE = 0.5
 
 #: A router maps a task frame (``TASK_COLUMNS``) to ``(trips, legs)`` frames; the stage binds
 #: ``functools.partial(route_batch, context, config_path=..., threads=..., work_dir=...)``.
@@ -90,6 +111,13 @@ def write_router_config(path: str, *, network_path: str, schedule_path: str, veh
     return path
 
 
+def _require_columns(frame: pd.DataFrame, required: list[str], label: str, caller: str) -> None:
+    """``ValueError`` naming the missing router-output columns (and the likely cause: a jar without the fork change)."""
+    absent = [c for c in required if c not in frame.columns]
+    if absent:
+        raise ValueError(f"{caller}: the router {label} output lacks the columns {absent}; {_JAR_HINT}")
+
+
 def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
                 work_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Route ``tasks`` with the Java batch pt router; return ``(trips, legs)`` frames.
@@ -98,7 +126,14 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
     Non-finite coordinates raise ``ValueError`` BEFORE Java is started. Input and outputs are
     written to ``work_dir`` (``router_tasks.csv``, ``router_trips.csv``, ``router_legs.csv``).
     Identifier and stop-id columns are read as strings (the router writes legs rows for pt legs
-    only). ``ValueError`` if the returned trips do not cover exactly the task identifiers.
+    only). ``ValueError`` for duplicate task identifiers (before Java runs), duplicate or UNEXPECTED trip
+    identifiers, a router output without the columns ``connection_mask`` needs (the stop-id columns need the
+    fork jar), and when the router returns no trips row at all.
+
+    A task without a trips row is a router outcome, not an error: Java adds a trips row only when
+    ``calcRoute`` returns a result, so "no route" leaves no row. Their count is logged as a rate (INFO,
+    WARNING above ``NO_ROUTE_WARN_SHARE``); pass the task identifiers to ``connection_mask(task_ids=...)``
+    to count them as not connected. If EVERY task lacks a row the run is broken and raises.
 
     Router settings. The batch router's ``transitRouter`` / SwissRailRaptor parameters are the MATSim
     defaults, equal to the Braunschweig simulation's (checked 2026-10-22: no transitRouter or
@@ -118,6 +153,11 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
             ids = tasks.loc[bad, "identifier"].head(5).tolist()
             raise ValueError(f"route_batch: {int(bad.sum())} task(s) have a non-finite {column} "
                              f"(first identifiers {ids}); fix the input coordinates")
+    task_ids = tasks["identifier"].astype(str)
+    if task_ids.duplicated().any():
+        dups = task_ids[task_ids.duplicated()].head(5).tolist()
+        raise ValueError(f"route_batch: duplicate task identifiers (first {dups}); "
+                         "each task needs a unique identifier")
     os.makedirs(work_dir, exist_ok=True)
     tasks_path = os.path.join(work_dir, "router_tasks.csv")
     trips_path = os.path.join(work_dir, "router_trips.csv")
@@ -132,26 +172,44 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
     trips = pd.read_csv(trips_path, dtype={"identifier": str})
     legs = pd.read_csv(legs_path, dtype={"identifier": str, "access_stop_id": str, "egress_stop_id": str},
                        keep_default_na=False, na_values=[])
-    # A partial router output is a broken run, not data: every task needs exactly one trips row.
-    expected = set(tasks["identifier"].astype(str))
+    _require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "route_batch")
+    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "route_batch")
+    if trips["identifier"].duplicated().any():
+        raise ValueError(f"route_batch: duplicate trip identifiers in {trips_path} "
+                         f"(first {trips.loc[trips['identifier'].duplicated(), 'identifier'].head(5).tolist()})")
+    expected = set(task_ids)
     returned = set(trips["identifier"])
     missing, unexpected = expected - returned, returned - expected
-    if missing or unexpected:
-        raise ValueError(f"route_batch: router output does not cover the tasks: missing {len(missing)} "
-                         f"(e.g. {sorted(missing)[:5]}), unexpected {len(unexpected)} "
-                         f"(e.g. {sorted(unexpected)[:5]}); see {trips_path}")
+    if unexpected:
+        raise ValueError(f"route_batch: router output has unexpected {len(unexpected)} identifier(s) "
+                         f"(e.g. {sorted(unexpected)[:5]}) that are not tasks; see {trips_path}")
+    if missing:
+        share = len(missing) / len(expected)
+        message = (f"[pt-router] {len(missing)}/{len(expected)} task(s) ({100.0 * share:.1f}%) have no trips row "
+                   f"(the router found no route; examples {sorted(missing)[:3]})")
+        if len(missing) == len(expected):
+            raise ValueError(f"route_batch: router output has missing {len(missing)} of {len(expected)} tasks, "
+                             f"i.e. no trips row at all; the run is broken, see {trips_path}")
+        (logger.warning if share > NO_ROUTE_WARN_SHARE else logger.info)(message)
     return trips, legs
 
 
 def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids: set[str],
-                    walk_max_m: float, plausible_walk_m: float = 600.0) -> pd.Series:
+                    walk_max_m: float, plausible_walk_m: float = 600.0,
+                    task_ids=None) -> pd.Series:
     """Boolean Series indexed by ``identifier``: does the routed result count as a connection?
 
     See the module docstring for the rule. A pt trip (``is_only_walk == 0``) needs at least one
     legs row (a pt trip has >= 1 pt leg by construction, so a missing leg is a failure signal),
     and every pt leg needs a non-blank access and egress stop id inside ``inside_stop_ids``.
     A missing or NaN ``is_only_walk`` (or any value other than 0/1), and missing or NaN
-    distances, count as not a connection. Duplicate trip identifiers raise ``ValueError``.
+    distances, count as not a connection. Duplicate trip identifiers and trips or legs frames without
+    the needed columns (``TRIPS_REQUIRED_COLUMNS``, ``LEGS_REQUIRED_COLUMNS``) raise ``ValueError``.
+
+    ``task_ids`` (optional): the identifiers that were routed. The result is then indexed by exactly these,
+    in this order; a task without a trips row (the router found no route) is not a connection and is counted
+    under the rejection reason ``no_route``. A trips identifier that is not in ``task_ids`` raises
+    ``ValueError``.
 
     Only-walk distance: for an only-walk trip the Java tool (``BatchPublicTransportRouter``,
     ``isFirstLeg`` branch) books the single walk leg as ACCESS and leaves egress at 0, so
@@ -161,11 +219,18 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
     The shares of connections, accepted short walks and each rejection reason are logged
     (a share near 0 or 1 signals a broken router input).
     """
+    _require_columns(trips, TRIPS_REQUIRED_COLUMNS, "trips", "connection_mask")
+    _require_columns(legs, LEGS_REQUIRED_COLUMNS, "legs", "connection_mask")
     if trips["identifier"].duplicated().any():
         dups = trips.loc[trips["identifier"].duplicated(), "identifier"].head(5).tolist()
         raise ValueError(f"connection_mask: duplicate trip identifiers (first {dups}); "
                          f"each task needs exactly one trips row")
     trips = trips.set_index("identifier", drop=False)
+    if task_ids is not None:
+        task_ids = pd.Index(pd.Series(list(task_ids), dtype=str))
+        stray = trips.index.difference(task_ids)
+        if len(stray):
+            raise ValueError(f"connection_mask: trips identifiers {list(stray[:5])} are not in task_ids")
     walk_max_km = walk_max_m / 1000.0
     plausible_walk_km = plausible_walk_m / 1000.0
 
@@ -198,13 +263,18 @@ def connection_mask(trips: pd.DataFrame, legs: pd.DataFrame, *, inside_stop_ids:
     pt_ok = pt_trip & has_legs & ~has_blank & ~has_outside & walk_ok
     mask = (pt_ok | short_walk).astype(bool)
     mask.name = "is_connection"
+    n_no_route = 0
+    if task_ids is not None:
+        n_no_route = int((~task_ids.isin(trips.index)).sum())
+        mask = mask.reindex(task_ids, fill_value=False).astype(bool)
+        mask.name = "is_connection"
 
     n = len(mask)
     if n:
         logger.info("[pt-router] connections %d/%d (%.1f%%): pt %d, plausible short walk %d; rejected: "
-                    "is_only_walk_missing %d, only-walk too long %d, no_pt_legs %d, blank_stop_id %d, "
-                    "outside stop %d, walk distance %d",
-                    mask.sum(), n, 100.0 * mask.sum() / n, pt_ok.sum(), short_walk.sum(),
+                    "no_route %d, is_only_walk_missing %d, only-walk too long %d, no_pt_legs %d, "
+                    "blank_stop_id %d, outside stop %d, walk distance %d",
+                    mask.sum(), n, 100.0 * mask.sum() / n, pt_ok.sum(), short_walk.sum(), n_no_route,
                     flag_missing.sum(), (only_walk & ~short_walk).sum(), no_pt_legs.sum(),
                     blank_stop.sum(), outside_stop.sum(), far_walk.sum())
     return mask

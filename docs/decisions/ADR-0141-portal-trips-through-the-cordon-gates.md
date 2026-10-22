@@ -1,6 +1,6 @@
 # ADR-0141 · 2026-10-08 · Portal trips: long-distance trips leave and re-enter the supplied area through the cordon gates
 
-- **Status:** active (implemented; behaviour effect NOT yet validated, the 1 % OFF/ON A/B run manifest is owed)
+- **Status:** active (implemented; behaviour effect NOT yet validated, the 1 % OFF/ON A/B run manifest is owed); partly superseded by ADR-0152 (pt gates)
 - **Numbering:** ADR-0141 is the next free id. Checked on 2026-10-08 across all local and remote
   branches and the two open pull requests (#438, #441): the highest record anywhere is ADR-0140
   (parking cost zones v2, on a branch that is not yet merged).

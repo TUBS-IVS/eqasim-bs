@@ -12,7 +12,8 @@ A pt stay whose ``choose_pt_gates`` result has no gate is resolved by a counted 
    only when neither leg alone yields a gate at that step). An outbound shift is allowed only while
    ``min_stay_s`` remains between the shifted outbound arrival and the return departure (without a
    return leg: while the arrival stays within ``bound_s``); a return shift only while the shifted return
-   arrival stays within ``bound_s`` and before the departure of the person's next trip;
+   arrival stays within ``bound_s`` and before the CURRENT departure of the person's next trip (shifts
+   accepted at earlier grid steps are already applied, so two stays of one person never overlap);
 4. ``kept_no_connection``: the plan is kept, the stay takes its gate from ``fallback_gates`` and is
    counted (the stage warns above a configurable share).
 
@@ -20,8 +21,9 @@ A pt stay whose ``choose_pt_gates`` result has no gate is resolved by a counted 
 home-based tour (its modes row changes; ``choose_gates`` later places it at a road gate), whatever its
 current mode, so that the modes table and the legs of the tour agree; such a stay is counted under the
 switch label even when it had a gate, so ``gate_found`` counts only the stays whose tour was NOT switched.
-Invalid shift parameters raise ``ValueError`` (a non-positive step would silently disable the shift path). The probe is called once per grid
-step for all unresolved stays, never per stay. All actions are logged as rates over the pt stays.
+Invalid shift parameters raise ``ValueError`` (a non-positive step would silently disable the shift path).
+The probe is called once per grid step for all unresolved stays, never per stay.
+All actions are logged as rates over the pt stays.
 """
 from __future__ import annotations
 
@@ -117,27 +119,34 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     if n_pt == 0:
         return modes_out[MODE_COLUMNS + ["no_connection_action"]], trips_out, pt_gates.copy()
 
-    trip_pos = {(p, t): i for i, (p, t) in enumerate(zip(trips_out["person_id"], trips_out["trip_index"]))}
+    pt_persons = persons[pt_rows]
+    # Lookups cover only the persons of the pt stays, all read from ONE source (trips_out, the current state);
+    # positions index trips_out, which keeps every trip of every person for the output.
+    relevant = np.flatnonzero(trips_out["person_id"].isin(set(pt_persons)).to_numpy())
+    relevant_trips = trips_out.iloc[relevant]
+    trip_pos = {(p, t): int(pos) for pos, p, t in zip(relevant, relevant_trips["person_id"],
+                                                      relevant_trips["trip_index"])}
     dep = trips_out["departure_time"].to_numpy().copy()
     arr = trips_out["arrival_time"].to_numpy().copy()
-    pt_persons = persons[pt_rows]
     out_idx = stays["outbound_trip_index"].to_numpy()[pt_rows]
     has_ret = stays["return_trip_index"].notna().to_numpy()[pt_rows]
     ret_idx = stays["return_trip_index"].to_numpy()[pt_rows]
     out_pos = np.array([trip_pos[p, int(t)] for p, t in zip(pt_persons, out_idx)])
     ret_pos = np.array([trip_pos[p, int(t)] if h else -1 for p, t, h in zip(pt_persons, ret_idx, has_ret)])
     # Per person, once: the sorted trips (tours) and the stay rows (tour switch).
-    sorted_trips = {p: g.sort_values("trip_index") for p, g in trips.groupby("person_id", sort=False)}
+    sorted_trips = {p: g.sort_values("trip_index") for p, g in relevant_trips.groupby("person_id", sort=False)}
     stay_rows = {}
     for row, p in enumerate(persons):
-        stay_rows.setdefault(p, []).append(row)
+        if p in sorted_trips:
+            stay_rows.setdefault(p, []).append(row)
 
-    def next_departure(person, trip):
+    def next_position(person, trip):
+        """Position (in trips_out) of the person's trip after ``trip``, -1 when there is none."""
         later = sorted_trips[person]["trip_index"].to_numpy()
         later = later[later > trip]
-        return dep[trip_pos[person, int(later.min())]] if len(later) else np.inf
+        return trip_pos[person, int(later.min())] if len(later) else -1
 
-    nxt_dep = np.array([next_departure(p, t) if h else np.inf for p, t, h in zip(pt_persons, ret_idx, has_ret)])
+    nxt_pos = np.array([next_position(p, t) if h else -1 for p, t, h in zip(pt_persons, ret_idx, has_ret)])
 
     action = np.full(n_pt, None, dtype=object)
     action[pt_gates["gate_id"].notna().to_numpy()] = ACTION_GATE_FOUND
@@ -188,7 +197,8 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
             if has_ret[k]:
                 r_dep, r_arr = dep[ret_pos[k]], arr[ret_pos[k]]
                 out_ok = o_arr + d + min_stay_s <= r_dep
-                ret_ok = r_arr + d <= min(bound_s, nxt_dep[k])
+                next_dep = dep[nxt_pos[k]] if nxt_pos[k] >= 0 else np.inf  # current, incl. earlier shifts
+                ret_ok = r_arr + d <= min(bound_s, next_dep)
                 options = [("out", out_ok), ("ret", ret_ok), ("both", out_ok and ret_ok)]
             else:
                 r_dep = np.nan
@@ -209,6 +219,9 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
             if action[k] is None and pd.notna(result["gate_id"].iat[row]):
                 action[k] = ACTION_DEPARTURE_SHIFTED
                 shifted[k] = (variant, d, result.iloc[row])
+                for leg in ([out_pos[k]] if variant in ("out", "both") else []) +                            ([ret_pos[k]] if variant in ("ret", "both") else []):
+                    dep[leg] += d  # later steps and later stays bound against the shifted trip
+                    arr[leg] += d
         unresolved = [k for k in unresolved if action[k] is None]
 
     for k, (variant, d, row) in shifted.items():

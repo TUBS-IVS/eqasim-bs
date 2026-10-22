@@ -431,6 +431,7 @@ def test_choose_pt_gates_maps_identifiers_to_the_right_stay_when_stays_differ():
         _fake_router({"0:hbf:out", "0:hbf:ret", "1:hbf:out", "1:hbf:ret"}, log),
         n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
     assert frame["reason"].tolist() == [g.REASON_GATE_FOUND, g.REASON_NO_GATE_SERVED]
+    assert log, "the router was never called, so the identifier check below would pass vacuously"
     assert all(i.startswith("0:") for task in log for i in task["identifier"])
     # connection differs per stay: only stay 1 connects
     frame = g.choose_pt_gates(
@@ -460,3 +461,22 @@ def test_choose_pt_gates_rejects_non_finite_inputs_but_ignores_return_times_with
     with pytest.raises(ValueError, match="return"):
         run(ret_dep=np.nan, has_return=True)
     assert run(ret_dep=np.nan, has_return=False).iloc[0]["gate_id"] == "hbf"
+
+
+def test_choose_pt_gates_counts_a_task_without_a_trips_row_as_no_route(caplog):
+    # The Java router writes no trips row when it finds no route: not connected, counted as ``no_route``.
+    schedule = _gate_schedule({"r_hbf": [36500.0, 52000.0]})
+    exits = g.exit_stops(schedule, SQUARE, modes="rail")
+    inner = _fake_router({"0:hbf:out", "0:hbf:ret", "0:soph:out", "0:soph:ret"}, [])
+
+    def router(tasks):
+        trips, legs = inner(tasks)
+        return trips[trips["identifier"] != "0:hbf:out"].reset_index(drop=True), legs
+
+    with caplog.at_level("INFO"):
+        frame = g.choose_pt_gates(
+            np.array([[5000.0, 5200.0]]), np.array([[50000.0, 5000.0]]), np.array([36000.0]),
+            np.array([37800.0]), np.array([50000.0]), np.array([51800.0]), np.array([True]), exits, schedule,
+            router, n_candidates=1, service_window_s=3600.0, inside_stop_ids=INSIDE_STOPS, walk_max_m=5000.0)
+    assert frame.iloc[0]["reason"] == g.REASON_NO_CONNECTION
+    assert any("no_route 1" in r.getMessage() for r in caplog.records)

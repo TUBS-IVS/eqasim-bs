@@ -274,3 +274,51 @@ def test_mixed_outcome_keeps_pt_gates_aligned():
                                                   nc.ACTION_DEPARTURE_SHIFTED, nc.ACTION_KEPT]
     assert g["gate_id"].tolist() == ["found", "shift", "f4"]
     assert g["x"].iloc[2] == 40.0
+
+
+def _two_stay_person_trips():
+    # Two pt stays of person 1, each its own home-based tour: A = trips 0/1, B = trips 2/3.
+    return _trips(1, [("home", "out", "pt", 10000, 10500), ("out", "home", "pt", 12000, 12600),
+                      ("home", "out", "pt", 13000, 13500), ("out", "home", "pt", 20000, 20500)])
+
+
+def test_two_stays_of_one_person_never_overlap_when_the_second_outbound_is_shifted():
+    # Stay A shifts its return by 300 s (arrival 12900), stay B shifts its outbound by 300 s (departure 13300).
+    # The return bound of A is the CURRENT departure of B's outbound, so the trips stay in order.
+    def probe(positions, out_dep, ret_dep):
+        found = np.where(positions == 0, np.isclose(ret_dep, 12000 + 300) & np.isclose(out_dep, 10000),
+                         np.isclose(out_dep, 13000 + 300) & np.isclose(ret_dep, 20000))
+        return _gates(["s" if f else None for f in found])
+
+    stays = pd.DataFrame([_stay(1, 0, 1), _stay(1, 2, 3)])
+    kw = {**KW, "shift_step_s": 300.0, "shift_window_s": 1200.0}
+    m, t, g = nc.resolve_no_connection(stays, _two_stay_person_trips(), _modes(2), _avail_int(False, False),
+                                       _gates([None, None]), probe, fallback_gates=_fallback(2), **kw)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_DEPARTURE_SHIFTED] * 2
+    assert t["departure_time"].tolist() == [10000, 12300, 13300, 20000]
+    assert (t["arrival_time"].to_numpy()[:-1] <= t["departure_time"].to_numpy()[1:]).all()
+
+
+def test_return_shift_never_overruns_the_unshifted_next_outbound():
+    # A's return could only be found at +600 s (arrival 13200 > B's departure 13000): kept, not overlapping.
+    def probe(positions, out_dep, ret_dep):
+        found = (positions == 0) & np.isclose(ret_dep, 12000 + 600) & np.isclose(out_dep, 10000)
+        return _gates(["s" if f else None for f in found])
+
+    stays = pd.DataFrame([_stay(1, 0, 1), _stay(1, 2, 3)])
+    kw = {**KW, "shift_step_s": 300.0, "shift_window_s": 1200.0}
+    m, t, _ = nc.resolve_no_connection(stays, _two_stay_person_trips(), _modes(2), _avail_int(False, False),
+                                       _gates([None, None]), probe, fallback_gates=_fallback(2), **kw)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_KEPT, nc.ACTION_KEPT]
+    assert t["departure_time"].tolist() == [10000, 12000, 13000, 20000]
+
+
+def test_persons_without_a_pt_stay_are_returned_unchanged():
+    other = _trips(9, [("home", "work", "car", 3600, 4000), ("work", "home", "car", 40000, 40500)])
+    trips = pd.concat([_chain(), other], ignore_index=True)
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    m, t, g = nc.resolve_no_connection(stays, trips, _modes(1), _avail_int(True, True), _gates([None]),
+                                       _no_probe, fallback_gates=_fallback(1), **KW)
+    assert t.iloc[5:]["mode"].tolist() == ["car", "car"]
+    assert t.iloc[5:]["departure_time"].tolist() == [3600.0, 40000.0]
+    assert m["no_connection_action"].tolist() == [nc.ACTION_TOUR_TO_CAR]

@@ -64,8 +64,8 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   gate link (`gates.gate_inside_points`, which raises listing every gate with no endpoint inside); pt gates are
   exit stops inside the extent from which a route of any transit mode continues to a stop outside it
   (`gates.exit_stops`, chosen by `gates.choose_pt_gates` against the timetable and the router, ADR-0152, which
-  supersedes the rail-exit-station rule of ADR-0141;
-  derived from the supply timetable, not from `braunschweig.data.cordon_pt_gates`). Pinned by
+  supersedes the rail-exit-station rule of ADR-0141),
+  derived from the supply timetable, not from `braunschweig.data.cordon_pt_gates`. Pinned by
   `tests/test_portal_trips_gates.py::test_gate_inside_points_takes_the_link_endpoint_inside_the_polygon` and
   `...::test_gate_inside_points_raises_when_no_endpoint_is_inside`.
 - **`outside` is a fixed, anchored purpose of the vendored problem splitter** (`FIXED_PURPOSES` and

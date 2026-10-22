@@ -593,7 +593,8 @@ def test_the_probe_shifts_the_arrivals_by_the_same_amount_as_the_departures():
         # would leave the re-entry at 72000 s and never connect.
         is_return = tasks["identifier"].str.endswith(":ret")
         return_tasks.extend(tasks.loc[is_return, "departure_time"].tolist())
-        ok = set(tasks.loc[is_return & (tasks["departure_time"] > 72000.0), "identifier"]) |             set(tasks.loc[~is_return, "identifier"])
+        ok = (set(tasks.loc[is_return & (tasks["departure_time"] > 72000.0), "identifier"])
+              | set(tasks.loc[~is_return, "identifier"]))
         return _router(connects=lambda i: i in ok)(tasks)
 
     fixture["router"] = router

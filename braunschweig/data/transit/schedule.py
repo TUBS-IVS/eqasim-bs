@@ -8,12 +8,15 @@ midnight; values >= 86400 are next-day departures and are kept as they are).
 from __future__ import annotations
 
 import gzip
+import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import numpy as np
 
 from braunschweig.matsim.simulation.plan_check import parse_time_s
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,8 +41,15 @@ class Schedule:
 def read_schedule(schedule_path: str) -> Schedule:
     """Stream a MATSim transit schedule (XML or XML.gz) into stops and routes with departures.
 
-    Raises ``FileNotFoundError`` for a missing file and ``ValueError`` when a route
-    references a stop that is not declared in ``transitStops``.
+    Elements are cleared after their end event (and a route after it is stored), so memory stays
+    bounded by the stops and routes kept, not by the file size.
+
+    A non-first route stop with neither ``departureOffset`` nor ``arrivalOffset`` gets offset 0.0
+    (the vehicle is assumed at the route start there); such stops are counted and logged as a rate
+    (WARN when any exist). Raises ``FileNotFoundError`` for a missing file and ``ValueError`` when a
+    route references a stop that is not declared in ``transitStops``, a ``stopFacility`` lacks ``x`` or
+    ``y``, or more than half of all non-first route stops lack both offsets (the offsets are then
+    unusable and every served-window check would be wrong).
     """
     opener = gzip.open if str(schedule_path).endswith(".gz") else open
     stops: dict[str, tuple[float, float]] = {}
@@ -50,6 +60,7 @@ def read_schedule(schedule_path: str) -> Schedule:
     offsets: list[float] = []
     departures: list[float] = []
     in_route = False
+    n_non_first = n_no_offset = 0
     with opener(schedule_path, "rb") as handle:
         for event, elem in ET.iterparse(handle, events=("start", "end")):
             tag = elem.tag.split("}")[-1]
@@ -63,21 +74,39 @@ def read_schedule(schedule_path: str) -> Schedule:
                     stop_ids, offsets, departures = [], [], []
                 continue
             if tag == "stopFacility":
+                if elem.get("x") is None or elem.get("y") is None:
+                    raise ValueError(f"{schedule_path}: stopFacility {elem.get('id')!r} has no x/y coordinates")
                 stops[elem.get("id")] = (float(elem.get("x")), float(elem.get("y")))
+                elem.clear()
             elif not in_route:
                 continue
             elif tag == "transportMode":
                 mode = (elem.text or "").strip()
             elif tag == "stop" and elem.get("refId"):
-                stop_ids.append(elem.get("refId"))
                 offset = elem.get("departureOffset") or elem.get("arrivalOffset")
+                if stop_ids:  # the first stop of a route legitimately carries no offset
+                    n_non_first += 1
+                    n_no_offset += 0 if offset else 1
+                stop_ids.append(elem.get("refId"))
                 offsets.append(parse_time_s(offset) if offset else 0.0)
+                elem.clear()
             elif tag == "departure" and elem.get("departureTime"):
                 departures.append(parse_time_s(elem.get("departureTime")))
+                elem.clear()
             elif tag == "transitRoute":
                 routes.append(RouteInfo(line_id, route_id, mode, tuple(stop_ids),
                                         tuple(offsets), tuple(departures)))
                 in_route = False
+                elem.clear()
+
+    if n_no_offset:
+        message = (f"{schedule_path}: {n_no_offset}/{n_non_first} non-first route stops "
+                   f"({100.0 * n_no_offset / n_non_first:.1f}%) have neither departureOffset nor arrivalOffset "
+                   "and were given offset 0.0")
+        if 2 * n_no_offset > n_non_first:
+            raise ValueError(f"{message}; more than half of the stop offsets are missing, the schedule's "
+                             "offset information is unusable")
+        logger.warning("[schedule] %s", message)
 
     unknown = sorted({s for r in routes for s in r.stop_ids if s not in stops})
     if unknown:

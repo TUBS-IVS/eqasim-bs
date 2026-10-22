@@ -110,9 +110,9 @@ def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.G
                 outside_x, outside_y = schedule.stops[route.stop_ids[position + 1]]
                 rows.append((route.stop_ids[position], route.line_id, route.route_id, route.mode,
                              float(outside_x), float(outside_y)))
-    logger.info("[portal_trips.gates] exit stops: %d routes scanned (modes: %s), %d exits found at %d stops",
-                scanned, "all" if wanted is None else sorted(wanted), len(rows), len({row[0] for row in rows}))
     requested = "all" if wanted is None else sorted(wanted)
+    logger.info("[portal_trips.gates] exit stops: %d routes scanned (modes: %s), %d exits found at %d stops",
+                scanned, requested, len(rows), len({row[0] for row in rows}))
     if scanned == 0 or not rows:
         logger.warning("[portal_trips.gates] exit stops: %d routes scanned and %d exits found for modes %s; "
                        "the timetable offers no exit for these modes", scanned, len(rows), requested)
@@ -193,13 +193,15 @@ def _toward_mask(point, exits: gpd.GeoDataFrame) -> np.ndarray:
             < np.hypot(exits.geometry.x.to_numpy() - point[0], exits.geometry.y.to_numpy() - point[1]))
 
 
-def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidates: int) -> list[list[str]]:
+def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidates: int,
+                       toward=None) -> list[list[str]]:
     """Per stay the exit ``stop_id``s whose outward route heads toward the external point.
 
     A route heads toward the point when its outside stop is closer to the point than the exit stop
     itself (``hypot(outside - point) < hypot(stop - point)``). A stop is listed once however many routes
     qualify; the ``n_candidates`` stops with the smallest detour origin -> stop -> point are kept,
-    ordered by detour (ties keep the order of ``exits``).
+    ordered by detour (ties keep the order of ``exits``). ``toward`` optionally gives the per-stay
+    ``_toward_mask`` (computed once by the caller when it needs the masks again).
     """
     if n_candidates < 1:
         raise ValueError(f"[portal_trips] pt gates: n_candidates must be >= 1, got {n_candidates}")
@@ -208,10 +210,10 @@ def pt_gate_candidates(origin_xy, point_xy, exits: gpd.GeoDataFrame, n_candidate
     stop_ids = exits["stop_id"].astype(str).to_numpy()
     stop_x, stop_y = exits.geometry.x.to_numpy(), exits.geometry.y.to_numpy()
     result = []
-    for origin, point in zip(origin_xy, point_xy):
-        toward = _toward_mask(point, exits)
+    for i, (origin, point) in enumerate(zip(origin_xy, point_xy)):
+        toward_i = _toward_mask(point, exits) if toward is None else toward[i]
         seen, rows = set(), []
-        for k in np.flatnonzero(toward):
+        for k in np.flatnonzero(toward_i):
             if stop_ids[k] in seen:
                 continue
             seen.add(stop_ids[k])
@@ -254,41 +256,19 @@ def _has_departure(table: dict, stop: str, keys, t_s: float, window_s: float) ->
     return False
 
 
-def _keys_by_stop(exits: gpd.GeoDataFrame, rows=None) -> dict:
-    """``stop_id -> {(line_id, route_id)}`` of the exit rows (all rows, or those selected by ``rows``)."""
-    frame = exits if rows is None else exits[rows]
-    out: dict = {}
-    for stop, line, route in zip(frame["stop_id"].astype(str), frame["line_id"], frame["route_id"]):
-        out.setdefault(stop, set()).add((line, route))
-    return out
-
-
-def served_mask(schedule, stop_ids, t_s: float, window_s: float, exits: gpd.GeoDataFrame) -> list[bool]:
-    """Per stop: does one of its EXIT routes depart within ``[t_s, t_s + window_s]``?
-
-    Only the routes listed for the stop in ``exits`` count (the routes that leave the extent there).
-    ``choose_pt_gates`` narrows this further to the routes heading toward the stay's external point.
-    """
-    table = _departure_table(schedule, exits)
-    keys = _keys_by_stop(exits)
-    return [_has_departure(table, str(stop), keys.get(str(stop), ()), t_s, window_s) for stop in stop_ids]
-
-
-def _parse_identifier(identifier: str):
-    """``"<stay>:<stop_id>:<direction>"`` -> ``(stay, stop_id, direction)``; stop ids may contain ':'."""
-    first, last = identifier.index(":"), identifier.rindex(":")
-    return int(identifier[:first]), identifier[first + 1:last], identifier[last + 1:]
-
-
 def _connected(router, tasks, *, inside_stop_ids, walk_max_m) -> set:
-    """Identifiers of ``tasks`` that the router connects (one router call; empty tasks make no call)."""
+    """Identifiers of ``tasks`` that the router connects (one router call; empty tasks make no call).
+
+    A task without a trips row (the router found no route) is not connected and is counted as ``no_route``.
+    """
     from braunschweig.data.transit.connections import TASK_COLUMNS, connection_mask
 
     if not tasks:
         return set()
     frame = pd.DataFrame(tasks, columns=TASK_COLUMNS)
     trips, legs = router(frame)
-    mask = connection_mask(trips, legs, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m)
+    mask = connection_mask(trips, legs, inside_stop_ids=inside_stop_ids, walk_max_m=walk_max_m,
+                           task_ids=frame["identifier"])
     return set(mask.index[mask.to_numpy()].astype(str))
 
 
@@ -299,9 +279,11 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     """The pt gate of each pt stay: direction -> served window -> router connection -> smallest detour.
 
     All arguments are per pt stay (row ``i`` of the arrays is stay ``i``; coordinates metric, times in
-    seconds). Per stay: the candidates are ``pt_gate_candidates``; a candidate must be served
-    (``served_mask``) in ``[t, t + service_window_s]`` at the planned gate arrival (outbound) and, when
-    the stay has a return leg, at the planned re-entry; the router must connect it from the in-region
+    seconds). Per stay: the candidates are ``pt_gate_candidates``; a candidate must be served, i.e. a route
+    heading toward the stay's external point departs at the stop in ``[t, t + service_window_s]`` at the planned
+    gate arrival (outbound) and, when the stay has a return leg, at the planned re-entry (the outward
+    departures near the re-entry time are a PROXY for the return service: the inbound service is not read
+    from the timetable here, the router checks it); the router must connect it from the in-region
     end to the gate at the planned trip departure (outbound) and from the gate to the in-region end at
     the re-entry (return; ``connection_mask`` rule with ``inside_stop_ids`` and ``walk_max_m``).
     The gate arrival and the re-entry depend on the candidate and use the distance split of
@@ -333,7 +315,10 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
     if not (np.isfinite(ret_dep[has_return]).all() and np.isfinite(ret_arr[has_return]).all()):
         raise ValueError("[portal_trips] pt gates: return departure/arrival times of stays with a return leg "
                          "contain non-finite values")
-    candidates = pt_gate_candidates(origin_xy, point_xy, exits, n_candidates) if len(exits) else [[] for _ in range(n)]
+    # The "route heads toward the point" mask is computed once per stay and used for the candidates and the service check.
+    toward = [_toward_mask(point, exits) for point in point_xy] if len(exits) else []
+    candidates = (pt_gate_candidates(origin_xy, point_xy, exits, n_candidates, toward=toward)
+                  if len(exits) else [[] for _ in range(n)])
     xy = _stop_xy(exits)
     table = _departure_table(schedule, exits)
 
@@ -353,10 +338,7 @@ def choose_pt_gates(origin_xy, point_xy, outbound_departure_s, outbound_arrival_
         for r, stop in enumerate(exits["stop_id"].astype(str)):
             stop_rows.setdefault(stop, []).append(r)
         route_keys = list(zip(exits["line_id"], exits["route_id"]))
-        toward = {}
         for k, (i, stop) in enumerate(pair_keys):
-            if i not in toward:
-                toward[i] = _toward_mask(point_xy[i], exits)
             # the routes at this stop that head toward the stay's external point
             keys = {route_keys[r] for r in stop_rows[stop] if toward[i][r]}
             out_time[i, stop], ret_time[i, stop] = float(t_out[k]), float(t_ret[k])
