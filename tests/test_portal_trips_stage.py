@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString, Point, box
 
+from braunschweig.data.transit.schedule import RouteInfo, Schedule
 from braunschweig.synthesis.portal_trips import anchors as anchors_stage
 from braunschweig.synthesis.portal_trips import classification
 from braunschweig.synthesis.portal_trips import config_keys as keys
@@ -23,7 +24,7 @@ class _RecordingConfigureContext:
     def __init__(self, values=None):
         self.calls, self.stages, self._values = {}, [], values or {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, **kwargs):
         self.calls[key] = default
         return self._values.get(key, default)
 
@@ -36,13 +37,18 @@ def test_configure_declares_the_portal_keys_and_the_inputs():
     stage.configure(context)
     for key in (keys.KEY_ENABLED, keys.KEY_MAX_ROUTABLE_DISTANCE_M, keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE,
                 keys.KEY_MODE_SUBSTITUTION_WARN_SHARE, keys.KEY_FALLBACK_WARN_SHARE, "random_seed",
-                "cordon_network_buffer_fraction"):
+                "cordon_network_buffer_fraction", keys.KEY_PT_GATE_MODES, keys.KEY_GATE_SERVICE_WINDOW_S,
+                keys.KEY_GATE_CANDIDATES, keys.KEY_SHIFT_WINDOW_S, keys.KEY_SHIFT_STEP_S, keys.KEY_MIN_STAY_S,
+                keys.KEY_NO_CONNECTION_WARN_SHARE, "matsim_threads", "processes"):
         assert key in context.calls
     assert context.calls[keys.KEY_FALLBACK_WARN_SHARE] == keys.DEFAULT_FALLBACK_WARN_SHARE
+    assert context.calls[keys.KEY_GATE_CANDIDATES] == keys.DEFAULT_GATE_CANDIDATES
+    assert context.calls[keys.KEY_NO_CONNECTION_WARN_SHARE] == keys.DEFAULT_NO_CONNECTION_WARN_SHARE
     for name in (stage.TRIPS_STAGE, "synthesis.population.enriched", "synthesis.population.spatial.home.locations",
                  "synthesis.population.spatial.primary.locations", "braunschweig.synthesis.cordon_gates",
                  "braunschweig.data.cordon_network", "braunschweig.data.external_secondary_points",
-                 "data.spatial.municipalities", "matsim.scenario.supply.processed"):
+                 "data.spatial.municipalities", "matsim.scenario.supply.processed",
+                 "matsim.scenario.supply.gtfs", "matsim.runtime.eqasim", "matsim.runtime.java"):
         assert name in context.stages
     # The sampled frame lacks the availability columns the mode check needs.
     assert "synthesis.population.sampled" not in context.stages
@@ -113,6 +119,30 @@ def test_execute_off_passes_the_trips_frame_through_unchanged():
 # Pure entry point
 # --------------------------------------------------------------------------------------------------
 
+GATE_SETTINGS = {"n_candidates": 5, "service_window_s": 3600.0, "shift_window_s": 7200.0, "shift_step_s": 1800.0,
+                 "min_stay_s": 1800.0, "no_connection_warn_share": 0.05}
+
+
+def _router(connects=lambda identifier: True, calls=None):
+    """A fake batch router with real-shape frames; a task connects when ``connects(identifier)``.
+
+    A non-connecting task gets a leg whose access stop lies outside the extent, so the real
+    ``connection_mask`` (not the fake) rejects it.
+    """
+    def router(tasks):
+        if calls is not None:
+            calls.append(tasks.copy())
+        ids = tasks["identifier"].tolist()
+        trips = pd.DataFrame({"identifier": ids, "is_only_walk": 0, "access_distance_km": 0.3,
+                              "egress_distance_km": 0.3, "transfer_distance_km": 0.0,
+                              "total_walk_distance_km": 0.6})
+        legs = pd.DataFrame({"identifier": ids, "leg_index": 0,
+                             "access_stop_id": ["hbf" if connects(i) else "far" for i in ids],
+                             "egress_stop_id": "hbf"})
+        return trips, legs
+    return router
+
+
 def _fixture():
     extent = box(0.0, 0.0, 50000.0, 50000.0)  # cut extent 50 x 50 km
     persons = pd.DataFrame({"person_id": [1, 2], "household_id": [10, 20], "car_availability": ["all", "none"],
@@ -139,10 +169,15 @@ def _fixture():
                                        LineString([(-1000.0, 25000.0), (1000.0, 25000.0)])], crs=CRS)
     external = gpd.GeoDataFrame({"commune_id": ["EXT1", "EXT2"], "ewz": [100.0, 100.0]},
                                 geometry=[Point(200000.0, 25000.0), Point(-100000.0, 25000.0)], crs=CRS)
-    stops = {"hbf": (25000.0, 25000.0), "far": (80000.0, 25000.0)}
-    routes = [("rail", ["hbf", "far"])]
+    # hbf (inside, at home) has one route east (towards EXT1) and one west (towards EXT2); both run every 15 min.
+    stops = {"hbf": (25000.0, 25000.0), "far": (80000.0, 25000.0), "west": (-30000.0, 25000.0)}
+    departures = tuple(float(t) for t in range(0, 86400, 900))
+    schedule = Schedule(stops, [
+        RouteInfo("L_east", "r_east", "rail", ("hbf", "far"), (0.0, 600.0), departures),
+        RouteInfo("L_west", "r_west", "rail", ("hbf", "west"), (0.0, 600.0), departures)])
     return dict(trips=trips, persons=persons, df_home=homes, df_work=work, df_education=education, gates=gates,
-                links=links, external_points=external, stops=stops, routes=routes, cordon_polygon=extent,
+                links=links, external_points=external, schedule=schedule, router=_router(), pt_gate_modes="all",
+                gate_settings=dict(GATE_SETTINGS), cordon_polygon=extent,
                 threshold_m=45000.0, tolerance=0.2, warn_share=0.1, fallback_warn_share=0.1, seed=7)
 
 
@@ -155,7 +190,7 @@ def test_build_portal_trips_makes_the_far_worker_and_the_far_leisure_trip_portal
     assert anchors["gate_id"].tolist() == ["gate_e", "hbf"]            # east towards EXT1, the rail exit for person 2
     assert anchors["mode"].tolist() == ["car", "pt"]                   # person 2 has neither car nor passenger seat
     assert report["n_stays"] == 2 and report["n_mode_substituted"] == 1
-    assert report["n_stays_by_kind"] == {"road": 1, "rail": 1}
+    assert report["n_stays_by_kind"] == {"road": 1, "pt": 1}
     # person 1: origin = home (25000, 25000), gate_e inside end (49000, 25000), assigned work (200000, 25000):
     # outside 151000 m, return proxy = origin -> inside 24000 m, so share_out = 151000 / (151000 + 24000) of the
     # 2 h return (the donor reported distance of 175 km plays no part).
@@ -457,6 +492,128 @@ def test_origin_is_the_assigned_primary_location_when_the_outbound_leg_leaves_wo
 
 
 # --------------------------------------------------------------------------------------------------
+# Timetable-aware gates and the no-connection chain (#465)
+# --------------------------------------------------------------------------------------------------
+
+def test_configure_rejects_invalid_timetable_gate_settings():
+    with pytest.raises(ValueError, match=keys.KEY_GATE_CANDIDATES.replace(".", r"\.")):
+        stage.configure(_RecordingConfigureContext({"cordon_enabled": True, keys.KEY_GATE_CANDIDATES: 0}))
+
+
+def test_a_connected_pt_stay_takes_the_primary_path_without_a_warning(caplog):
+    calls = []
+    fixture = _fixture()
+    fixture["router"] = _router(calls=calls)
+    with caplog.at_level("INFO", logger=stage.logger.name):
+        report = stage.build_portal_trips(**fixture)["report"]
+    assert report["n_pt_stays"] == 1
+    assert report["no_connection_actions"] == {"gate_found": 1}
+    assert report["pt_gate_reasons"] == {"gate_found": 1}
+    assert report["n_departure_shifted_s_median"] is None and report["n_kept_fallback_all_stops"] == 0
+    assert calls, "the primary path must have asked the router"
+    assert not [r for r in caplog.records if r.levelname == "WARNING" and "without a timetable-aware gate" in r.getMessage()]
+    assert any("primary path: gate_found 1" in r.getMessage() for r in caplog.records)
+
+
+def test_a_pt_stay_without_any_connection_is_kept_counted_and_warned(caplog):
+    fixture = _fixture()
+    fixture["router"] = _router(connects=lambda identifier: False)
+    with caplog.at_level("INFO", logger=stage.logger.name):
+        out = stage.build_portal_trips(**fixture)
+    report = out["report"]
+    assert report["no_connection_actions"] == {"kept_no_connection": 1}
+    assert report["pt_gate_reasons"] == {"no_connection": 1}
+    assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]   # the kept stay takes its directional exit stop
+    assert any(r.levelname == "WARNING" and "without a timetable-aware gate 1/1" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_one_connected_and_one_tour_switched_pt_stay_are_counted_separately():
+    fixture = _fixture()
+    fixture["trips"]["mode"] = "pt"
+    fixture["persons"]["car_availability"] = "all"
+    fixture["persons"]["has_license"] = True
+    fixture["router"] = _router(connects=lambda identifier: identifier.startswith("0:"))
+    out = stage.build_portal_trips(**fixture)
+    report = out["report"]
+    assert report["n_pt_stays"] == 2
+    assert report["no_connection_actions"] == {"gate_found": 1, "tour_to_car": 1}
+    assert report["n_stays_by_kind"] == {"pt": 1, "road": 1}
+    assert report["mode_substitution_reasons"] == {"no_pt_connection": 1}
+    assert out["anchors"]["mode"].tolist() == ["pt", "car"]
+
+
+def test_a_shifted_departure_is_reported_with_its_median_shift():
+    fixture = _fixture()
+    # No connection at the planned time, a connection once the outbound departure moved by one grid step.
+    planned = 9 * 3600.0
+
+    def router(tasks):
+        out = tasks[tasks["identifier"].str.endswith(":out")]
+        ok_ids = set(out.loc[out["departure_time"] > planned, "identifier"]) | \
+            set(tasks.loc[tasks["identifier"].str.endswith(":ret"), "identifier"])
+        return _router(connects=lambda i: i in ok_ids)(tasks)
+
+    fixture["router"] = router
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert report["no_connection_actions"] == {"departure_shifted": 1}
+    assert report["n_departure_shifted_s_median"] == 1800.0
+
+
+def test_a_stay_without_a_pt_stay_needs_no_router():
+    fixture = _fixture()
+    fixture["router"] = None
+    fixture["trips"] = fixture["trips"][fixture["trips"]["person_id"] == 1]
+    fixture["persons"] = fixture["persons"][fixture["persons"]["person_id"] == 1]
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert report["n_pt_stays"] == 0 and report["no_connection_actions"] == {}
+
+
+def test_a_kept_stay_without_a_directional_exit_stop_takes_the_all_stops_fallback_and_logs_it(caplog):
+    fixture = _fixture()
+    # Only the east route exists: person 2's point lies west, so no exit stop heads toward it.
+    fixture["schedule"] = Schedule(fixture["schedule"].stops, fixture["schedule"].routes[:1])
+    with caplog.at_level("INFO", logger=stage.logger.name):
+        out = stage.build_portal_trips(**fixture)
+    report = out["report"]
+    assert report["pt_gate_reasons"] == {"no_gate_in_direction": 1}
+    assert report["no_connection_actions"] == {"kept_no_connection": 1}
+    assert report["n_kept_fallback_all_stops"] == 1
+    assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]
+    assert any("all-stops fallback 1/1" in r.getMessage() for r in caplog.records)
+
+
+def test_the_probe_shifts_the_arrivals_by_the_same_amount_as_the_departures():
+    fixture = _fixture()
+    return_tasks = []
+
+    def router(tasks):
+        # Return connects only when the (re-entry) departure lies beyond the planned one: 20:00 = the planned
+        # return arrival, because the gate is at home (share 1). A shifted departure with an UNshifted arrival
+        # would leave the re-entry at 72000 s and never connect.
+        is_return = tasks["identifier"].str.endswith(":ret")
+        return_tasks.extend(tasks.loc[is_return, "departure_time"].tolist())
+        ok = (set(tasks.loc[is_return & (tasks["departure_time"] > 72000.0), "identifier"])
+              | set(tasks.loc[~is_return, "identifier"]))
+        return _router(connects=lambda i: i in ok)(tasks)
+
+    fixture["router"] = router
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert report["no_connection_actions"] == {"departure_shifted": 1}
+    assert 72000.0 + 1800.0 in return_tasks
+    assert report["n_departure_shifted_s_median"] == 1800.0
+
+
+@pytest.mark.parametrize("name, value", [("no_connection_warn_share", 0.0), ("n_candidates", 0),
+                                         ("shift_step_s", 0.0), ("min_stay_s", -1.0)])
+def test_build_portal_trips_validates_the_gate_settings_of_a_direct_caller(name, value):
+    fixture = _fixture()
+    fixture["gate_settings"][name] = value
+    with pytest.raises(ValueError, match=r"braunschweig\.portal\."):
+        stage.build_portal_trips(**fixture)
+
+
+# --------------------------------------------------------------------------------------------------
 # execute() wiring
 # --------------------------------------------------------------------------------------------------
 
@@ -468,11 +625,16 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
     report_dir.mkdir()
     seen = {}
 
-    def fake_read_transit_stops_routes(path):
+    def fake_read_schedule(path):
         seen["schedule_path"] = path
-        return fixture["stops"], fixture["routes"]
+        return fixture["schedule"]
 
-    monkeypatch.setattr("braunschweig.data.cordon.network.read_transit_stops_routes", fake_read_transit_stops_routes)
+    def fake_route_batch(context, tasks, **kwargs):
+        seen["router_kwargs"] = kwargs
+        return fixture["router"](tasks)
+
+    monkeypatch.setattr("braunschweig.data.transit.schedule.read_schedule", fake_read_schedule)
+    monkeypatch.setattr("braunschweig.data.transit.connections.route_batch", fake_route_batch)
     monkeypatch.setattr("braunschweig.data.spatial.cordon.buffer_m_from_fraction", lambda df, fraction: 123.0)
     monkeypatch.setattr("braunschweig.data.spatial.cordon.build_cordon_polygon",
                         lambda df, buffer_m: fixture["cordon_polygon"])
@@ -485,11 +647,12 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         "braunschweig.data.cordon_network": fixture["links"],
         "braunschweig.data.external_secondary_points": fixture["external_points"],
         "data.spatial.municipalities": gpd.GeoDataFrame({"name": ["muni"]}, geometry=[Point(0.0, 0.0)], crs=CRS),
-        "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz"},
+        "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
+        "matsim.scenario.supply.gtfs": {"schedule_path": "transit_schedule.xml.gz",
+                                        "vehicles_path": "transit_vehicles.xml.gz"},
     }
-    values = {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000, keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2,
-              keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1, keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7,
-              "cordon_network_buffer_fraction": 0.1}
+    values = _gate_values()
+    values.update({"matsim_threads": None, "processes": 3})
 
     class _Context:
         def config(self, key):
@@ -501,11 +664,16 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         def path(self, name=None):
             if name is None:
                 return str(report_dir)
-            assert name == "matsim.scenario.supply.processed"
-            return str(schedule_dir)
+            return str({"matsim.scenario.supply.processed": schedule_dir,
+                        "matsim.scenario.supply.gtfs": tmp_path / "gtfs"}[name])
 
     out = stage.execute(_Context())
     assert seen["schedule_path"] == os.path.join(str(schedule_dir), "schedule.xml.gz")
+    # The router runs on the pre-cut network/schedule and the gtfs vehicles with the volatile thread budget.
+    assert seen["router_kwargs"]["threads"] == 3
+    router_config = (report_dir / stage.ROUTER_CONFIG_NAME).read_text(encoding="utf-8")
+    assert os.path.join(str(schedule_dir), "network.xml.gz") in router_config
+    assert os.path.join(str(tmp_path / "gtfs"), "transit_vehicles.xml.gz") in router_config
     assert out["report"]["enabled"] is True and out["report"]["n_stays"] == 2
     assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]
     # R34: the report is persisted in the stage directory for the A/B manifest.
@@ -513,12 +681,21 @@ def test_execute_on_wires_the_inputs_into_the_pure_entry_point(tmp_path, monkeyp
         assert json.load(handle) == out["report"]
 
 
+def _gate_values():
+    return {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
+            keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2, keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1,
+            keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1,
+            keys.KEY_PT_GATE_MODES: "all", keys.KEY_GATE_SERVICE_WINDOW_S: 3600.0, keys.KEY_GATE_CANDIDATES: 5,
+            keys.KEY_SHIFT_WINDOW_S: 7200.0, keys.KEY_SHIFT_STEP_S: 1800.0, keys.KEY_MIN_STAY_S: 1800.0,
+            keys.KEY_NO_CONNECTION_WARN_SHARE: 0.05}
+
+
 def _execute_context_with_municipality_crs(tmp_path, monkeypatch, municipality_crs):
     """A stub execute context whose municipalities carry ``municipality_crs`` (all other frames EPSG:25832)."""
     fixture = _fixture()
     calls = []
-    monkeypatch.setattr("braunschweig.data.cordon.network.read_transit_stops_routes",
-                        lambda path: calls.append("read_transit_stops_routes") or (fixture["stops"], fixture["routes"]))
+    monkeypatch.setattr("braunschweig.data.transit.schedule.read_schedule",
+                        lambda path: calls.append("read_schedule") or fixture["schedule"])
     monkeypatch.setattr("braunschweig.data.spatial.cordon.buffer_m_from_fraction",
                         lambda df, fraction: calls.append("buffer") or 123.0)
     monkeypatch.setattr("braunschweig.data.spatial.cordon.build_cordon_polygon",
@@ -532,11 +709,11 @@ def _execute_context_with_municipality_crs(tmp_path, monkeypatch, municipality_c
         "braunschweig.data.external_secondary_points": fixture["external_points"],
         "data.spatial.municipalities": gpd.GeoDataFrame({"name": ["muni"]}, geometry=[Point(0.0, 0.0)],
                                                         crs=municipality_crs),
-        "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz"},
+        "matsim.scenario.supply.processed": {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
+        "matsim.scenario.supply.gtfs": {"vehicles_path": "transit_vehicles.xml.gz"},
     }
-    values = {keys.KEY_ENABLED: True, keys.KEY_MAX_ROUTABLE_DISTANCE_M: 45000,
-              keys.KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE: 0.2, keys.KEY_MODE_SUBSTITUTION_WARN_SHARE: 0.1,
-              keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1}
+    values = _gate_values()
+    values.update({"matsim_threads": None, "processes": 1})
 
     class _Context:
         def config(self, key):
