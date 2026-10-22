@@ -596,15 +596,41 @@ python scripts/explain_stale_stages.py configs/base_bs.yml configs/overlays/test
 - A shared cache store (`cache_share_*`) built before this change holds md5 records. Migration
   does not reach it through `prime`: `export` writes a store entry's metadata only when the
   run-time envelope equals the current `pipeline.json` record, which a migrated record no longer
-  does, and a re-export after migration does not refresh it either. Priming from such a store
-  therefore recomputes the primed stages (a miss, never a wrong hit) until the stages have been
-  recomputed by a run under this version and exported again (ADR-0149; refreshing shared
-  envelopes is Phase 4).
+  does, so such an entry primes as a miss (recompute, never a wrong hit); how a later run and an
+  explicit export make it shareable again is in `docs/features/cache-share.md`.
 - An entry whose stored hashes cannot be proven to come from code equal to the current code
   is left unchanged and counted as `kept_legacy`; it recomputes if the code really changed.
   The report lists every such entry with its reason.
 - Design and limits: `docs/decisions/ADR-0149-vendored-synpp-fork-and-content-addressed-stage-validity.md`,
   contributor note `docs/codebase/notes/synpp-fork.md`.
+
+### Which stages will recompute, and early cutoff
+
+The launcher checks the cache before it starts synpp and logs the result with the `[explain]`
+prefix; `python scripts/explain_stale_stages.py <config> [<overlay>] --working-directory <dir>`
+prints the same report on demand. It never executes a stage and never writes to the cache. Per
+stage it prints `HIT` (reused), `STALE [reasons]` (recomputes for its own reasons, for example
+`token_changed:<module>`), `RECOMPUTE` (recomputes for certain because a stale ancestor left nothing to
+compare against), `STALE-IF` (recomputes only if the output of a stale ancestor changes) or `EPHEMERAL`.
+
+Since Phase 4 of #468 (ADR-0149) the launcher decides a stage whose parent recomputed by the parent's
+output: if the re-executed parent reproduces a byte-identical output (content hash of its pickle and
+cache files), the stage behind it stays cached (`early cutoff kept N stages cached` in the log). A
+behaviour-neutral edit (a comment, a docstring, formatting) does not even make a stage stale, because
+hashes and tokens are taken from the syntax tree. Limits: a rebuilt Java jar changes its output
+digest, so its consumers recompute; a new upstream config key still renames downstream cache
+files; a stage that reads files outside its parents' cache directories is not covered. The
+acceptance of this mechanism on a copy of the 100 % cache on the server ran on 2026-10-22
+(`docs/runs/cache-migration-100pct-2026-10-22.yml`, `docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml`; a smoke of the mechanics); treat the saved
+recomputation as a design property, not as a measured speed-up.
+
+`synpp_expected_stale_stages` (in the `config:` block of `configs/base_bs.yml`, default `[]`)
+turns the report into a gate. An empty list means no gate (the report is only logged). With stage
+names listed, any other stage that is stale for its own reasons aborts the launch with exit code 2
+before the first stage executes, and the log notes how many further stages will recompute because an
+ancestor is stale. `synpp_explain_before_run: false` skips the check; `dryrun: true` skips it too.
+`scripts/explain_stale_stages.py --expect ""` is stricter than the launcher key: nothing may be stale
+besides the run targets (exit code 2 otherwise). Details: `docs/codebase/notes/synpp-fork.md`.
 
 ### Commute-day-state model
 

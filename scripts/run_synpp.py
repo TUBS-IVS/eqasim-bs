@@ -90,8 +90,9 @@ def explain_before_run(config_path):
     An EMPTY list means "no gate" (the report is only logged); this differs from
     ``scripts/explain_stale_stages.py --expect ""``, which means "nothing is allowed".
     With a non-empty list the number of further stages that will recompute because an ancestor
-    is stale is logged as a note (they are not gated). ``dryrun: true`` in the config skips the
-    assessment (synpp returns before devalidating anything).
+    is stale is logged as a note (they are not gated). It counts the stages that recompute for
+    certain; a stage that early cutoff may still spare (STALE-IF) is left out. ``dryrun: true`` in
+    the config skips the assessment (synpp returns before devalidating anything).
     Raises RuntimeError when the config has no ``working_directory``.
     Returns 0 to continue, 2 to abort.
     """
@@ -116,8 +117,10 @@ def explain_before_run(config_path):
     stages = registry.build_registry_from_settings(doc)
     assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
     for line in staleness.format_report(assessments).splitlines():
-        # An unmigrated cache recomputes every stage: log that hint at ERROR so it cannot be
-        # missed. It does not abort; the abort gate stays synpp_expected_stale_stages.
+        # An unmigrated cache recomputes every stage (the costly case): log that hint at ERROR so it
+        # cannot be missed. The same line also appears after a migration for entries kept legacy because
+        # their stage code changed since the cache was built (genuinely stale, no action needed); the
+        # severity stays ERROR for both. It does not abort; the abort gate stays synpp_expected_stale_stages.
         if "legacy md5 module hash" in line:
             log.error("[explain] %s", line)
         else:
@@ -130,9 +133,14 @@ def explain_before_run(config_path):
         return 2
     if expected:
         # The gate checks own reasons only; descendants of an expected stale stage recompute
-        # without being gated, so say how many (informational, never an abort).
+        # without being gated, so say how many (informational, never an abort). A STALE-IF stage
+        # (its ancestor's output decides, early cutoff) is counted only when early cutoff does not
+        # apply: the fork's run() is inactive, or the registry holds an uncached ephemeral stage
+        # (eager rule; assess then marks such stages certain_recompute as well).
         downstream = sum(1 for a in assessments.values()
-                         if not a.stale and not a.ephemeral_uncached and a.certain_recompute)
+                         if not a.stale and not a.ephemeral_uncached
+                         and (a.certain_recompute
+                              or (a.stale_if and (a.eager_rule or not staleness.EARLY_CUTOFF_ACTIVE))))
         if downstream:
             log.info("[explain] note: %d further stage(s) will recompute because an ancestor is stale",
                      downstream)

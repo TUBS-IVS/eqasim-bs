@@ -29,6 +29,7 @@ evidence:
   - tests/test_cache_share_cli.py
   - tests/test_run_synpp_prime.py
   - tests/test_cache_share_synpp.py
+  - tests/test_synpp_fork_early_cutoff.py
   off_path_byte_identical:
     claimed: not_applicable
     note: |
@@ -38,22 +39,40 @@ evidence:
     log_marker: '[cache_share] prime: primed'
     note: |
       Logs primed/already-present/forced/missing-in-store counts, transported metadata,
-      missing provenance and incoherent dependency snapshots. Actual hits remain subject
-      to native synpp module/config/token validation (ADR-0122).
+      missing provenance, dropped incoherent dependency snapshots per reason (output-hash
+      mismatch, legacy timestamp mismatch, mixed hashed/legacy pair, missing parent) and the
+      kept copied records per rule (output-hash match, legacy equal timestamps, no parents).
+      Actual hits remain subject to native synpp module/config/token validation (ADR-0122)
+      and, under the vendored fork, to the output-hash rule of ADR-0149.
   reference:
     kind: none
     note: Infrastructure feature (stage caching); no external reference applies.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - cache-migration-100pct-2026-10-22
+  - content-addressed-cache-acceptance-100pct-2026-10-22
   metric: null
   note: >
     No behavioural KPI applies. Real-synpp tests prove coherent reuse and safe misses
-    across configuration, module, token, missing-dependency and mixed-run changes.
+    across configuration, module, token, missing-dependency and mixed-run changes. Since
+    ADR-0149 (Phase 4 of #468) a primed entry is kept by output hash instead of exact
+    timestamps: tests/test_cache_share_synpp.py
+    (test_prime_from_another_run_is_a_hit_when_output_hashes_match,
+    test_prime_drops_a_child_whose_parent_output_differs_and_logs_the_reason,
+    test_prime_logs_how_many_copied_records_were_kept_and_why,
+    test_envelope_follows_the_record_a_spared_child_refreshes,
+    test_a_later_run_refreshes_the_envelope_of_a_migrated_record) and the early cutoff of the
+    fork's run() in tests/test_synpp_fork_early_cutoff.py. These are synthetic mechanics
+    tests. The acceptance on a copy of the 100 % cache on the server ran on 2026-10-22 and is a smoke, not a
+    validation: runs cache-migration-100pct-2026-10-22 and content-addressed-cache-acceptance-100pct-2026-10-22.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
     ADR-0036 documents the design; no owner verdict on realised cache-hit reliability has been recorded.
+    The Phase 4 change (ADR-0149: coherence by output hash, early cutoff) is covered by synthetic tests only;
+    the server acceptance on a cache copy (cache-migration-100pct-2026-10-22, content-addressed-cache-acceptance-100pct-2026-10-22) is a smoke of the mechanics, so no hit rate on a real
+    cache is claimed.
   source: ADR-0036
