@@ -379,12 +379,15 @@ def _attach_vrb_tariff_zones(context):
 
 
 def _schedule_summary(schedule_path) -> dict:
-    """Line ids and the VRB zone counts of the stop facilities of a MATSim schedule, in one streaming pass.
+    """Line ids, VRB zone counts of the stop facilities and departures per hour of a MATSim schedule, in one pass.
 
-    Each finished stopFacility / transitLine element is cleared after reading, so a large schedule is not
-    kept in memory as a whole tree.
+    Each finished stopFacility / departure / transitLine element is cleared after reading, so a large schedule
+    is not kept in memory as a whole tree. ``departures_per_hour`` maps the hour of day (``departureTime`` //
+    3600 s, may exceed 23 for next-day departures) to the departure count; ``max_departure_h`` is the latest
+    departure time in hours (0.0 for a schedule without departures).
     """
     line_ids, facilities, zoned_by_zone = set(), 0, Counter()
+    departures_per_hour, max_departure_s = Counter(), 0.0
     with gzip.open(schedule_path, "rb") as stream:
         for _, element in ET.iterparse(stream):
             if element.tag == "stopFacility":
@@ -394,11 +397,18 @@ def _schedule_summary(schedule_path) -> dict:
                 if zone is not None and zone.strip():
                     zoned_by_zone[zone.strip()] += 1
                 element.clear()
+            elif element.tag == "departure":
+                departure_s = plan_check.parse_time_s(element.get("departureTime"))
+                departures_per_hour[int(departure_s // 3600)] += 1
+                max_departure_s = max(max_departure_s, departure_s)
+                element.clear()
             elif element.tag == "transitLine":
                 line_ids.add(element.get("id"))
                 element.clear()
     return {"line_ids": line_ids, "facilities": facilities, "zoned_facilities": sum(zoned_by_zone.values()),
-            "zoned_by_zone": dict(sorted(zoned_by_zone.items()))}
+            "zoned_by_zone": dict(sorted(zoned_by_zone.items())),
+            "departures_per_hour": dict(sorted(departures_per_hour.items())),
+            "max_departure_h": max_departure_s / 3600.0}
 
 
 def _write_vrb_fare_inputs(context, config_name):
@@ -442,9 +452,10 @@ def _write_vrb_fare_inputs(context, config_name):
               "line_scope_coverage": line_coverage, "lines_without_scope": sorted(line_ids - covered)[:50]}
     (root / report_name).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print("[vrb-fares] prepared inputs (final schedule): facilities zoned %d/%d (%.2f%%), lines with scope %d/%d "
-          "(%.2f%%), boundary ties %d (zone tool)" % (
+          "(%.2f%%), boundary ties %d (zone tool); departures per hour %s, latest departure %.2f h" % (
               summary["zoned_facilities"], summary["facilities"], 100 * facility_coverage, len(covered),
-              len(line_ids), 100 * line_coverage, zone_tool["boundary_ties"]))
+              len(line_ids), 100 * line_coverage, zone_tool["boundary_ties"],
+              summary["departures_per_hour"], summary["max_departure_h"]))
     minimum = float(context.config("vrb_fare_minimum_line_scope_coverage"))
     if line_coverage < minimum:
         raise RuntimeError("[vrb-fares] only %.2f%% of schedule lines have a tariff scope row (minimum %.2f%%); "

@@ -152,7 +152,8 @@ def test_schedule_summary_reads_lines_and_zones_in_one_pass(tmp_path):
     path = tmp_path / "schedule.xml.gz"
     path.write_bytes(gzip.compress(_schedule(("A", "B"), zoned=3, facilities=4).encode()))
     summary = prepare._schedule_summary(path)
-    assert summary == {"line_ids": {"A", "B"}, "facilities": 4, "zoned_facilities": 3, "zoned_by_zone": {"40": 3}}
+    assert summary == {"line_ids": {"A", "B"}, "facilities": 4, "zoned_facilities": 3, "zoned_by_zone": {"40": 3},
+                       "departures_per_hour": {}, "max_departure_h": 0.0}
 
 
 def test_on_execute_fails_loudly_when_schedule_lines_lack_scope_rows(tmp_path, monkeypatch):
