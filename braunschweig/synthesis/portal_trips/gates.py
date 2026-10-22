@@ -106,6 +106,20 @@ ALL_MODES = "all"
 EXIT_COLUMNS = ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y"]
 
 
+def _normalise_modes(modes):
+    """``None`` for all modes, else the set of lower-cased modes (a single string is one mode)."""
+    if isinstance(modes, str):
+        return None if modes.strip().lower() == ALL_MODES else {modes.strip().lower()}
+    try:
+        items = list(modes)
+    except TypeError:
+        items = None
+    if items is None or not all(isinstance(item, str) for item in items):
+        raise ValueError(f"[portal_trips] exit stops: modes must be '{ALL_MODES}', a mode string or an iterable "
+                         f"of mode strings, got {modes!r}")
+    return {item.strip().lower() for item in items}
+
+
 def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.GeoDataFrame:
     """Exit stops of all (or the given) transit modes: one row per (inside stop, route).
 
@@ -115,7 +129,7 @@ def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.G
     ``ALL_MODES`` or a set of modes (compared lower-cased). ``crs`` is the CRS of the schedule
     coordinates (EPSG:25832 in the Braunschweig pipeline); it is attached unchanged.
     """
-    wanted = None if modes == ALL_MODES else {str(mode).strip().lower() for mode in modes}
+    wanted = _normalise_modes(modes)
     inside_cache = {}
 
     def is_inside(stop_id, route):
@@ -139,6 +153,10 @@ def exit_stops(schedule, cordon_polygon, modes="all", crs="EPSG:25832") -> gpd.G
                              float(outside_x), float(outside_y)))
     logger.info("[portal_trips.gates] exit stops: %d routes scanned (modes: %s), %d exits found at %d stops",
                 scanned, "all" if wanted is None else sorted(wanted), len(rows), len({row[0] for row in rows}))
+    requested = "all" if wanted is None else sorted(wanted)
+    if scanned == 0 or not rows:
+        logger.warning("[portal_trips.gates] exit stops: %d routes scanned and %d exits found for modes %s; "
+                       "the timetable offers no exit for these modes", scanned, len(rows), requested)
     frame = pd.DataFrame(rows, columns=EXIT_COLUMNS)
     return gpd.GeoDataFrame(frame, geometry=[Point(*schedule.stops[s]) for s in frame["stop_id"]], crs=crs)
 

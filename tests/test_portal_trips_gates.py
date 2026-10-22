@@ -5,6 +5,7 @@ import pytest
 import geopandas as gpd
 from shapely.geometry import LineString, Point, box
 
+from braunschweig.data.transit.schedule import RouteInfo, Schedule
 from braunschweig.synthesis.portal_trips import gates as g
 
 SQUARE = box(0.0, 0.0, 10000.0, 10000.0)  # the cut extent of these tests
@@ -52,7 +53,6 @@ def test_rail_exit_stations_are_inside_stops_adjacent_to_an_outside_stop_on_a_ra
 
 
 def _exit_schedule():
-    from braunschweig.data.transit.schedule import RouteInfo, Schedule
     stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
 
     def route(route_id, mode, stop_ids):
@@ -80,7 +80,6 @@ def test_exit_stops_modes_filter_keeps_only_the_given_lower_cased_modes():
 
 
 def test_exit_stops_loop_route_lists_the_stop_before_the_outside_stop_only():
-    from braunschweig.data.transit.schedule import RouteInfo, Schedule
     stops = {"a": (2000.0, 5000.0), "c": (14000.0, 5000.0), "b": (8000.0, 5000.0)}
     loop = RouteInfo("L", "loop", "rail", ("a", "c", "b"), (0.0, 0.0, 0.0), (0.0,))
     exits = g.exit_stops(Schedule(stops, [loop]), SQUARE)
@@ -253,3 +252,30 @@ def test_draw_external_points_band_miss_flags_are_per_stay_for_a_mixed_vector():
         np.array([100000.0, 10000.0, 95000.0]), np.zeros((3, 2)), external, 0.2, np.random.default_rng(0))
     assert band_miss.tolist() == [False, True, False]
     assert commune.tolist() == ["EXT0", "EXT0", "EXT0"]
+
+
+def test_exit_stops_accepts_a_single_mode_string_and_all_case_insensitively():
+    assert g.exit_stops(_exit_schedule(), SQUARE, modes="rail")["route_id"].tolist() == ["r1"]
+    assert len(g.exit_stops(_exit_schedule(), SQUARE, modes="All")) == 2
+
+
+def test_exit_stops_rejects_modes_that_are_not_strings():
+    with pytest.raises(ValueError, match="modes"):
+        g.exit_stops(_exit_schedule(), SQUARE, modes=5)
+    with pytest.raises(ValueError, match="modes"):
+        g.exit_stops(_exit_schedule(), SQUARE, modes=[1, 2])
+
+
+def test_exit_stops_raises_for_a_route_stop_missing_from_the_stops():
+    schedule = Schedule({"a": (2000.0, 5000.0)}, [RouteInfo("L", "r", "rail", ("a", "ghost"), (0.0, 0.0), (0.0,))])
+    with pytest.raises(ValueError, match="'ghost'"):
+        g.exit_stops(schedule, SQUARE)
+
+
+def test_exit_stops_empty_result_keeps_columns_and_crs_and_warns(caplog):
+    with caplog.at_level("WARNING", logger=g.logger.name):
+        exits = g.exit_stops(_exit_schedule(), SQUARE, modes=frozenset({"tram"}), crs="EPSG:3035")
+    assert len(exits) == 0
+    assert list(exits.columns) == ["stop_id", "line_id", "route_id", "mode", "outside_x", "outside_y", "geometry"]
+    assert exits.crs.to_epsg() == 3035
+    assert any(r.levelname == "WARNING" and "tram" in r.getMessage() for r in caplog.records)
