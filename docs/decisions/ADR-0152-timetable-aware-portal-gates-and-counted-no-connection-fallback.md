@@ -23,6 +23,7 @@
   residents frozen at the end of the simulation were stuck walking, and 57 of those 58 were planned as pt.
   Of 246 planned-pt portal trips, 90 were walk after prepare, and 33 of 33 departing at 23:00 or later. The run manifest of that A/B is on branch `runs/i453-i443-ab-1pct` (not in `docs/runs/` on
   this branch); the numbers are cited from the issue, which names the run and its outputs on felix.
+  Amended 2026-10-22: that manifest is now on main as `docs/runs/i453-i443-ab-1pct-2026-10-16.yml`.
 - Gate table and probe, issue comment https://github.com/TUBS-IVS/eqasim-bs/issues/465#issuecomment-6334330264
   (router probe `RunBatchPublicTransportRouter` on the pre-cut schedule, 53 planned-pt portal trips routed as
   walk over 600 m in arm 2, against the 19 gate stations used in arm 2): Sophienhof has 4 departures, all
