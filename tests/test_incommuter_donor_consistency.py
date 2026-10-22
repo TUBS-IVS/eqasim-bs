@@ -231,7 +231,7 @@ def test_helper_source_changes_invalidate_stage_cache(monkeypatch, stage, helper
     before = stage.validate(None)
     getsource = inspect.getsource
     monkeypatch.setattr(inspect, "getsource", lambda module: getsource(module) +
-                        ("\n# changed helper\n" if module.__name__ == helper else ""))
+                        ("\nZ_PROBE = 1\n" if module.__name__ == helper else ""))
     assert stage.validate(None) != before
 
 

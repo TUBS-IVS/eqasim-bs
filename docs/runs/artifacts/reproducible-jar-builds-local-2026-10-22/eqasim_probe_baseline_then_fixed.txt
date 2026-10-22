@@ -1,0 +1,97 @@
+
+
+files 1555 1555 differing 12
+DIFF eqasim-java/braunschweig/target/braunschweig-2.3.1-sources.jar (69069, '496793f72cfb') (69069, 'c702bdcc5a12')
+DIFF eqasim-java/braunschweig/target/braunschweig-2.3.1-tests.jar (80134, '44ffc98be25c') (80134, '0b960e3d151b')
+DIFF eqasim-java/braunschweig/target/braunschweig-2.3.1.jar (193515669, '5c8400c83bee') (193515669, 'ae8ce4a52b3d')
+DIFF eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (14414, '8466298d581c') (15166, '3402a46406a4')
+DIFF eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (5474, '133bcc583906') (5762, '7a8e4537602c')
+DIFF eqasim-java/braunschweig/target/original-braunschweig-2.3.1.jar (119161, 'dada006f0cab') (119161, 'df61f5af5907')
+DIFF eqasim-java/core/target/core-2.3.1-sources.jar (3305202, 'b71604f3ade9') (3305202, 'a780ceb1d8d3')
+DIFF eqasim-java/core/target/core-2.3.1-tests.jar (89671, 'b0c2b7ba93da') (89671, 'f618586c4f4f')
+DIFF eqasim-java/core/target/core-2.3.1.jar (3753261, '5580e8956850') (3753261, '3a8efb374ff4')
+DIFF eqasim-java/core/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (110908, '35d1ef329b40') (116828, '59f2eaa00a4b')
+DIFF eqasim-java/core/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (4072, '52a1d0d46e62') (4296, 'dc6654bf90e7')
+DIFF eqasim-java/target/eqasim-2.3.1-tests.jar (2139, '90d4bc9e5fb1') (2139, 'f3cca5e5842f')
+ JAR eqasim-java/braunschweig/target/braunschweig-2.3.1-sources.jar entries 68 68 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/maven/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/braunschweig/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/braunschweig/pom.properties (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  entry diffs 6
+ JAR eqasim-java/braunschweig/target/braunschweig-2.3.1-tests.jar entries 42 42 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 40) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 40) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY org/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  ENTRY org/eqasim/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/fares/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/fares/zonal/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/mode_choice/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 18) crc same True extra same True
+  entry diffs 41
+ JAR eqasim-java/braunschweig/target/braunschweig-2.3.1.jar entries 82757 82757 order same: True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY eqasim.properties (2026, 10, 22, 13, 39, 6) (2026, 10, 22, 13, 41, 38) crc same True extra same True
+  ENTRY org/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/BraunschweigConfigurator.class (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/fares/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  entry diffs 667
+ JAR eqasim-java/braunschweig/target/original-braunschweig-2.3.1.jar entries 78 78 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 38) (2026, 10, 22, 13, 42, 20) crc same True extra same True
+  ENTRY org/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/ (2026, 10, 22, 13, 39, 26) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/fares/ (2026, 10, 22, 13, 39, 24) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/fares/zonal/ (2026, 10, 22, 13, 39, 26) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  ENTRY org/eqasim/braunschweig/mode_choice/ (2026, 10, 22, 13, 39, 26) (2026, 10, 22, 13, 42, 2) crc same True extra same True
+  entry diffs 77
+ JAR eqasim-java/core/target/core-2.3.1-sources.jar entries 512 512 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 0) (2026, 10, 22, 13, 41, 32) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 0) (2026, 10, 22, 13, 41, 32) crc same True extra same True
+  ENTRY META-INF/maven/ (2026, 10, 22, 13, 39, 0) (2026, 10, 22, 13, 41, 34) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/ (2026, 10, 22, 13, 39, 0) (2026, 10, 22, 13, 41, 34) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/core/ (2026, 10, 22, 13, 39, 0) (2026, 10, 22, 13, 41, 34) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/core/pom.properties (2026, 10, 22, 13, 38, 50) (2026, 10, 22, 13, 41, 26) crc same True extra same True
+  entry diffs 6
+ JAR eqasim-java/core/target/core-2.3.1-tests.jar entries 57 57 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 39, 2) (2026, 10, 22, 13, 41, 34) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 39, 2) (2026, 10, 22, 13, 41, 34) crc same True extra same True
+  ENTRY org/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  ENTRY org/eqasim/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  ENTRY org/eqasim/mode_choice/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  ENTRY org/eqasim/scenario/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  ENTRY org/eqasim/scenario/cutter/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  ENTRY org/eqasim/scenario/cutter/population/ (2026, 10, 22, 13, 38, 48) (2026, 10, 22, 13, 41, 24) crc same True extra same True
+  entry diffs 56
+ JAR eqasim-java/core/target/core-2.3.1.jar entries 601 601 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 38, 54) (2026, 10, 22, 13, 41, 28) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 38, 54) (2026, 10, 22, 13, 41, 28) crc same True extra same True
+  ENTRY melun/ (2026, 10, 22, 13, 38, 12) (2026, 10, 22, 13, 40, 40) crc same True extra same True
+  ENTRY org/ (2026, 10, 22, 13, 38, 12) (2026, 10, 22, 13, 40, 40) crc same True extra same True
+  ENTRY org/eqasim/ (2026, 10, 22, 13, 38, 12) (2026, 10, 22, 13, 40, 40) crc same True extra same True
+  ENTRY org/eqasim/core/ (2026, 10, 22, 13, 38, 38) (2026, 10, 22, 13, 41, 10) crc same True extra same True
+  ENTRY org/eqasim/core/analysis/ (2026, 10, 22, 13, 38, 34) (2026, 10, 22, 13, 41, 4) crc same True extra same True
+  ENTRY org/eqasim/core/analysis/activities/ (2026, 10, 22, 13, 38, 32) (2026, 10, 22, 13, 41, 4) crc same True extra same True
+  entry diffs 600
+ JAR eqasim-java/target/eqasim-2.3.1-tests.jar entries 7 7 order same: True
+  ENTRY META-INF/ (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 38) crc same True extra same True
+  ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 38) crc same True extra same True
+  ENTRY META-INF/maven/ (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 38) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/ (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 38) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/eqasim/ (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 38) crc same True extra same True
+  ENTRY META-INF/maven/org.eqasim/eqasim/pom.properties (2026, 10, 22, 13, 38, 10) (2026, 10, 22, 13, 40, 36) crc same True extra same True
+  entry diffs 6
+=== FIXED ===
+
+
+files 1555 1555 differing 4
+DIFF eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (14461, '9521c819b698') (15213, 'baef644ff139')
+DIFF eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (5492, '2df595970893') (5780, '8f95137338ef')
+DIFF eqasim-java/core/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (111278, '9e49f647d8ee') (117198, '7d3294e19aa0')
+DIFF eqasim-java/core/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (4086, '9b49107b5975') (4310, 'f87bfe30d2b9')

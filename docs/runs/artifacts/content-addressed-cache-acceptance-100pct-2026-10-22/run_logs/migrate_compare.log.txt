@@ -1,0 +1,88 @@
+[i468p4] A: explainer at REV start 2026-10-22T12:13:22+02:00
+A exit=2
+[i468p4] migration dry-run start 2026-10-22T12:13:26+02:00
+dry-run exit=0
+[i468p4] migration start 2026-10-22T12:14:31+02:00
+migrate exit=0
+[i468p4] B: explainer at head start 2026-10-22T12:15:23+02:00
+B exit=2
+[i468p4] compare 2026-10-22T12:15:53+02:00
+stages: A 107, B 107
+own-reason stale (excluding required-only): A 72, B 72
+required-only: A 0, B 0
+stale in A only: 0
+stale in B only: 0
+stale in both (reasons A | B):
+  braunschweig.analysis.analysis_suite: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.cordon_validation: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.reference.srv.commute_distance: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.analysis.simwrapper_export: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.synthesis.commute_distance_by_kreis: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.synthesis.departure_time_vs_srv: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.synthesis.plan_structure_vs_srv: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.synthesis.work_participation_by_kreis: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.analysis.verbindungen_validation: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.data.census.employees: ['module_hash_changed'] | ['module_hash_changed']
+  braunschweig.data.census.employment: ['module_hash_changed'] | ['module_hash_changed']
+  braunschweig.data.cordon_network: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.cordon_pt_gates: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.hts.mid_donor: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.verbindungen.margins: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.verbindungen.work_od: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.verbindungen.zones: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.data.vrb.zone_polygons: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.freight.extraction: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.freight.extraction_tool: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.freight.trips: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.gravity.model: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.locations.synthesis.replacement_education_gravity: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.matsim.scenario.facilities: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.matsim.scenario.households: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.matsim.scenario.population: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.matsim.scenario.vehicles: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.matsim.simulation.prepare: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.parking.zones_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.commute_distance: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.completed_donor: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.distance_distributions: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.enriched_adapter: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.popsim.trips_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.activities_day_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.home_office_donors_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.output_day: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.spatial_locations_day: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.state_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.commute_day.trips_day_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.cordon_gates: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.day_absence.absence_stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.incommuters: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.locations.education_gravity: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.locations.home_cell: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.locations.secondary_candidates: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.locations.secondary_chainsolvers: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.outside_tour_modes.stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.portal_trips.anchors: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.portal_trips.stage: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.portal_trips.trips_final: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.spatial.home_zones: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.student_incommuters: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  braunschweig.synthesis.vehicles.cars.household: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  data.gtfs.cleaned: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  data.osm.cleaned: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  data.osm.osmosis: ['module_hash_changed'] | ['module_hash_changed']
+  eqasim_common.data.osm.locations: ['not_in_meta'] | ['not_in_meta']
+  eqasim_common.locations.education: ['not_in_meta'] | ['not_in_meta']
+  matsim.output: ['required', 'not_in_meta', 'cache_missing'] | ['required', 'not_in_meta', 'cache_missing']
+  matsim.runtime.eqasim: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  matsim.runtime.java: ['module_hash_changed'] | ['module_hash_changed']
+  matsim.scenario.supply.gtfs: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  matsim.scenario.supply.osm: ['not_in_meta'] | ['not_in_meta']
+  matsim.scenario.supply.processed: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  matsim.simulation.run: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  synthesis.population.activities: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  synthesis.population.sampled: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  synthesis.population.spatial.primary.candidates: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  synthesis.vehicles.passengers.default: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+  synthesis.vehicles.vehicles: ['not_in_meta', 'cache_missing'] | ['not_in_meta', 'cache_missing']
+[i468p4] done 2026-10-22T12:15:53+02:00

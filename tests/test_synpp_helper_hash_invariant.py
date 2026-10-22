@@ -743,7 +743,7 @@ def test_trips_stage_declares_a_validate_token_over_its_helpers():
                      "braunschweig.popsim.sources.mid"):
         assert required in names, required
     token = trips_stage.validate(None)
-    assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+    assert token["format"] == 2 and token["modules"]  # structured token (braunschweig.synpp_tokens)
 
 
 def test_trips_stage_token_covers_the_project_detour_constant(monkeypatch):
@@ -774,10 +774,10 @@ def test_trips_stage_token_covers_the_project_detour_constant(monkeypatch):
 
     def _patched_getsource(obj):
         if obj is constants_module:
-            return real_getsource(obj) + "\n# token discrimination probe\n"
+            return real_getsource(obj) + "\nZ_PROBE = 1\n"  # a body edit: a comment edit no longer changes the token
         return real_getsource(obj)
 
-    monkeypatch.setattr(trips_stage.inspect, "getsource", _patched_getsource)
+    monkeypatch.setattr(inspect_module, "getsource", _patched_getsource)
     after = trips_stage.validate(None)
     assert after != before, (
         "editing braunschweig.constants left trips_stage's token unchanged, so a warm "
@@ -815,7 +815,7 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
                      "synthesis.population.spatial.secondary.distance_distributions"):
         assert required in names, required
     token = distance_distributions.validate(None)
-    assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+    assert token["format"] == 2 and token["modules"]  # structured token (braunschweig.synpp_tokens)
 
 
 def test_distance_distributions_validate_token_changes_when_mid_donor_source_changes(monkeypatch):
@@ -835,10 +835,10 @@ def test_distance_distributions_validate_token_changes_when_mid_donor_source_cha
 
     def patched_getsource(obj):
         if obj is mid_donor:
-            return real_getsource(obj) + "\n# perturbed by the test\n"
+            return real_getsource(obj) + "\nZ_PROBE = 1\n"
         return real_getsource(obj)
 
-    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    monkeypatch.setattr(inspect, "getsource", patched_getsource)
     token_after = distance_distributions.validate(None)
     assert token_before != token_after
 
@@ -863,10 +863,10 @@ def test_distance_distributions_token_changes_when_the_seed_day_filter_source_ch
 
     def patched_getsource(obj):
         if obj is popsim_seed:
-            return real_getsource(obj) + "\n# perturbed by the test\n"
+            return real_getsource(obj) + "\nZ_PROBE = 1\n"
         return real_getsource(obj)
 
-    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    monkeypatch.setattr(inspect, "getsource", patched_getsource)
     assert distance_distributions.validate(None) != token_before
 
 
@@ -884,8 +884,8 @@ def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_ch
 
     def patched_getsource(obj):
         if obj is popsim_seed:
-            return real_getsource(obj) + "\n# perturbed by the test\n"
+            return real_getsource(obj) + "\nZ_PROBE = 1\n"
         return real_getsource(obj)
 
-    monkeypatch.setattr(chainsolvers.inspect, "getsource", patched_getsource)
+    monkeypatch.setattr(inspect, "getsource", patched_getsource)
     assert chainsolvers.validate(None) != token_before

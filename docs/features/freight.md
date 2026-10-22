@@ -27,13 +27,14 @@ The injection is a **three-stage hybrid** (flag-gated; see below):
 1. **Java extraction (cached, 100%, one run per category).**
    `braunschweig.freight.extraction` runs the published matsim
    application-contrib tool `RunExtractFreightTrips`
-   (`ExtractRelevantFreightTrips`) against the dissolved ZGB study-area polygon
+   (`ExtractRelevantFreightTrips`) from the `braunschweig.freight.extraction_tool` jar
+   (ADR-0148) against the dissolved ZGB study-area polygon
    (the union of the in-scope municipalities, plus the cordon buffer when
    `cordon_enabled`) on the German-wide network. The tool routes every freight
    trip, classifies it, trims each plan at the study-area boundary and shifts
    the departure time by the access travel time. The stage runs the
    **unmodified tool once per category**
-   (`--geographicalTripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each)
+   (`--geographicalTripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, estimated ~45 min each; the one observed figure, 1 h 15 min for the whole stage, is in ADR-0148)
    and returns `{category: plans_file}` -- the exact published classification,
    no geometric heuristic (trimmed endpoints lie on network nodes *inside* the
    polygon, so a point-in-polygon test cannot recover the category). The

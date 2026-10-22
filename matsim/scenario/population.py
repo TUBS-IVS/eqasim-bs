@@ -21,6 +21,16 @@ RBW_PERSON_ATTRIBUTES = (
 
 PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
 
+#: Zone-based parking costs (issue #436, ADR-0139). Only the braunschweig.matsim.scenario.population
+#: wrapper attaches the parking columns (through braunschweig.parking.attach); this writer only writes
+#: them when the frames carry them. A pipeline that runs THIS stage (no alias to the wrapper) would
+#: therefore write plans without a single parkingZone next to the tariff model and the
+#: braunschweigParking module that the preparation writes -- a run pricing no stay -- so configure
+#: rejects the flag instead.
+KEY_PARKING_ZONES_ENABLED = "parking_zones_enabled"
+#: The alias a run config needs for the zone-based parking costs.
+PARKING_WRITER_ALIAS = "matsim.scenario.population: braunschweig.matsim.scenario.population"
+
 # eqasim-bs#442 (portal trips): an activity of type PORTAL_GATE_ACTIVITY_TYPE gets the Boolean activity
 # attribute PORTAL_GATE_ATTRIBUTE=true, an identification marker that tells a portal gate from an outside
 # activity of the eqasim cutter (no Java code of the production configuration reads it, ADR-0141). This
@@ -30,7 +40,29 @@ PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
 PORTAL_GATE_ACTIVITY_TYPE = "outside"
 PORTAL_GATE_ATTRIBUTE = "portalGate"
 
+
 def configure(context):
+    """synpp configure of this stage: the writer's own declarations plus the parking-zone guard.
+
+    synpp substitutes an alias for the stage name, so this function runs only in pipelines where
+    this plain writer IS the ``matsim.scenario.population`` stage; the braunschweig wrapper calls
+    :func:`declare_writer_inputs` instead and declares the flag itself.
+    """
+    declare_writer_inputs(context)
+    if context.config(KEY_PARKING_ZONES_ENABLED, False):
+        raise ValueError(
+            "[population] %s is true, but this pipeline writes the MATSim plans with the plain "
+            "matsim.scenario.population stage, which attaches no parking attribute: the preparation "
+            "would write the parking tariff model and the braunschweigParking module, yet no "
+            "activity would carry a parkingZone, so the run would price no parking stay. Alias the "
+            "writer to the braunschweig wrapper that attaches the attributes (aliases: %s, wired as "
+            "in configs/base_bs.yml or configs/fixtures/config_popsim_open_braunschweig.yml), or set "
+            "%s: false."
+            % (KEY_PARKING_ZONES_ENABLED, PARKING_WRITER_ALIAS, KEY_PARKING_ZONES_ENABLED))
+
+
+def declare_writer_inputs(context):
+    """Declare the stages and config keys the writer reads (shared with the braunschweig wrapper)."""
     context.stage("synthesis.population.enriched")
 
     context.stage("synthesis.population.activities")
@@ -122,6 +154,17 @@ OPTIONAL_PERSON_FIELDS = [
     # driver-car attribute above: the Java capability entrypoint consumes it
     # only when the MiD feature produced the column.
     "car_passenger_availability",
+    # Zone-based parking costs (issue #436): the resident parking zone containing the
+    # person's home (written as residentParkingZone). Present only with parking_zones_enabled.
+    "resident_parking_zone",
+    # Resident parking districts (parking cost zones v2, spec Amendment C3): the district
+    # containing the person's home (written as residentParkingDistrict). Present only with
+    # parking_zones_enabled; a second layer, independent of the zone above.
+    "resident_parking_district",
+    # Parking cost zones v3 (spec A5, assumption E1): True for a person who owns a BEV/PHEV car (written as
+    # parkingEvExempt, java.lang.Boolean, only where True). Present only with parking_zones_enabled and
+    # parking_ev_exemption_enabled.
+    "parking_ev_exempt",
 ]
 
 
@@ -134,6 +177,112 @@ def effective_person_fields(df_persons):
 ACTIVITY_FIELDS = [
     "person_id", "start_time", "end_time", "purpose", "geometry", "location_id"
 ]
+
+# Optional, ADDITIVE activity fields of the zone-based parking costs (issue #436), attached by
+# braunschweig.parking.attach through the braunschweig.matsim.scenario.population wrapper when
+# parking_zones_enabled is on:
+#   parking_zone -> "parkingZone" (java.lang.String): zone_id of the parking tariff table whose
+#                   polygon contains the activity location; NaN outside every zone;
+#   parking_free -> "parkingFree" (java.lang.Boolean): free parking at the work/education place,
+#                   drawn once per person; a boolean for EVERY activity;
+#   parking_district -> "parkingDistrict" (java.lang.String): district_id of the resident parking
+#                   district layer (spec Amendment C3) whose polygon contains the activity
+#                   location; NaN outside every district. A second layer, independent of
+#                   parking_zone: an activity can lie in a district and in no zone and vice versa.
+# Appended to the projected fields ONLY when present, exactly like OPTIONAL_PERSON_FIELDS, so the
+# positional ACTIVITY_FIELDS.index(...) lookups are unaffected and frames without the columns are
+# written byte-identically.
+OPTIONAL_ACTIVITY_FIELDS = [
+    "parking_zone",
+    "parking_free",
+    "parking_district",
+]
+
+
+def effective_activity_fields(df_activities):
+    """Return ACTIVITY_FIELDS plus any present OPTIONAL_ACTIVITY_FIELDS (in order)."""
+    return ACTIVITY_FIELDS + [
+        f for f in OPTIONAL_ACTIVITY_FIELDS if f in df_activities.columns
+    ]
+
+
+def _is_missing_value(value):
+    """True for None and the pandas/NumPy missing-value scalars (NaN, pd.NA, NaT)."""
+    if value is None:
+        return True
+    missing = pd.isna(value)
+    return isinstance(missing, (bool, np.bool_)) and bool(missing)
+
+
+#: The text forms of a missing value -- str(np.nan), str(None), str(pd.NA) -- that a broken upstream
+#: join or an astype(str) over missing zones leaves in an object column. None of them is a zone id.
+_STRINGIFIED_MISSING_VALUES = frozenset(("nan", "None", "<NA>"))
+
+
+def _parking_zone_id(column, value):
+    """Return a present parking zone id, raising ValueError unless it is a non-empty string.
+
+    The id must match a ``zone_id`` of the tariff table the Java cost model reads; a numeric
+    value would be written as e.g. "5.0" and only fail at the first priced car trip, so it is
+    rejected here instead. The same holds for the text forms of a missing value
+    (``_STRINGIFIED_MISSING_VALUES``): outside every zone the value must stay missing, so that
+    no attribute is written at all.
+    """
+    return _parking_id(column, value, "parking zone id string (a zone_id of the parking tariff table)",
+                       "outside every zone", "zones")
+
+
+def _parking_district_id(column, value):
+    """Return a present resident parking district id, raising ValueError unless it is a non-empty string.
+
+    The id must match a ``district_id`` of the resident district layer (spec Amendment C3); the Java cost
+    model compares the activity's district with the district of the person's home, so a wrong id would
+    silently exempt nobody (or the wrong persons). Numbers, empty text and the text forms of a missing value
+    are rejected exactly as for zone ids: outside every district the value must stay missing.
+    """
+    return _parking_id(column, value, "resident parking district id string (a district_id of the resident "
+                                      "district layer)", "outside every district", "districts")
+
+
+def _parking_id(column, value, expected, outside, plural):
+    if not isinstance(value, str) or value == "":
+        raise ValueError(
+            "Invalid %s %r; expected a non-empty %s or a missing value %s." % (column, value, expected, outside))
+    if value in _STRINGIFIED_MISSING_VALUES:
+        raise ValueError(
+            "Invalid %s %r: the text form of a missing value, which a broken upstream join (or an "
+            "astype(str) over missing %s) leaves behind; %s the value must stay "
+            "missing (NaN/None) so that no attribute is written." % (column, value, plural, outside))
+    return value
+
+
+def _is_free_parking(value):
+    """Whether an activity's ``parking_free`` value is True; raises ValueError unless boolean.
+
+    braunschweig.parking.attach.draw_parking_free assigns a boolean to EVERY activity, so a
+    missing or non-boolean value means the row bypassed the draw -- writing it as "not free"
+    would silently price that stay as paid, hence the error.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid parking_free %r; expected a boolean from the free-parking draw "
+        "(braunschweig.parking.attach.draw_parking_free) for every activity." % (value,))
+
+
+def _is_ev_exempt(value):
+    """Whether a person's ``parking_ev_exempt`` value is True; raises ValueError unless boolean.
+
+    braunschweig.parking.attach.attach_ev_exemption assigns a boolean to EVERY person, so a missing or
+    non-boolean value means the row bypassed it -- writing it as "not exempt" would silently price an
+    electric car's stay as paid, hence the error.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid parking_ev_exempt %r; expected a boolean from the EV exemption "
+        "(braunschweig.parking.attach.attach_ev_exemption) for every person." % (value,))
+
 
 TRIP_FIELDS = [
     "person_id", "mode", "departure_time", "travel_time"
@@ -148,6 +297,7 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                remode_carless_car_legs = False, id_attribute_types = None,
                rbw_omission_counter = None,
                passenger_availability_omission_counter = None,
+               activity_fields = None,
                remode_counter = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
@@ -155,6 +305,18 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     # attributes (e.g. housing_tenure) can be emitted only when present.
     if person_fields is None:
         person_fields = PERSON_FIELDS
+    # ``activity_fields`` is the same for every activity tuple: ACTIVITY_FIELDS by default,
+    # effective_activity_fields(df) from write_population, so the optional parking attributes
+    # are read only when their columns are present. The optional fields come after
+    # ACTIVITY_FIELDS, so the ACTIVITY_FIELDS.index(...) lookups below stay valid.
+    if activity_fields is None:
+        activity_fields = ACTIVITY_FIELDS
+    parking_zone_index = (activity_fields.index("parking_zone")
+                          if "parking_zone" in activity_fields else None)
+    parking_free_index = (activity_fields.index("parking_free")
+                          if "parking_free" in activity_fields else None)
+    parking_district_index = (activity_fields.index("parking_district")
+                              if "parking_district" in activity_fields else None)
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
@@ -310,6 +472,41 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _day_absence_state is not None and not pd.isna(_day_absence_state):
             writer.add_attribute("dayAbsenceState", "java.lang.String", str(_day_absence_state))
 
+    # Zone-based parking costs (issue #436): the resident parking zone (Bewohnerparkzone) that
+    # contains the person's home, attached by braunschweig.parking.attach.attach_resident_zones
+    # in the braunschweig.matsim.scenario.population wrapper; the Java cost model exempts the
+    # person from that one zone's fees. ADDITIVE and emitted only when the column is present AND
+    # the home lies in a resident zone: every other person -- most residents and every in-commuter
+    # living outside the zones -- carries NaN and gets NO attribute rather than the literal string
+    # "nan"/"None", because "resident of no zone" is itself the modelled state. Output is
+    # byte-identical when parking_zones_enabled is off (the column is then never attached).
+    if "resident_parking_zone" in person_fields:
+        _resident_parking_zone = person[person_fields.index("resident_parking_zone")]
+        if not _is_missing_value(_resident_parking_zone):
+            writer.add_attribute("residentParkingZone", "java.lang.String",
+                                 _parking_zone_id("resident_parking_zone", _resident_parking_zone))
+
+    # Resident parking districts (parking cost zones v2, spec Amendment C3): the district containing the
+    # person's home, attached by braunschweig.parking.attach.attach_resident_districts; the Java cost model
+    # exempts the person's stays inside that very district (assumption R2). ADDITIVE and emitted only when
+    # the column is present AND the home lies in a district: every other person carries NaN and gets NO
+    # attribute, never "nan"/"None". Independent of residentParkingZone above. Byte-identical when
+    # parking_zones_enabled is off (the column is then never attached).
+    if "resident_parking_district" in person_fields:
+        _resident_parking_district = person[person_fields.index("resident_parking_district")]
+        if not _is_missing_value(_resident_parking_district):
+            writer.add_attribute("residentParkingDistrict", "java.lang.String",
+                                 _parking_district_id("resident_parking_district", _resident_parking_district))
+
+    # Parking cost zones v3 (spec A5, assumption E1): the person owns a BEV/PHEV car, so a zone's EV exemption
+    # (ev_free_minutes) applies to their street stays. Attached by braunschweig.parking.attach.attach_ev_exemption
+    # for EVERY person; ADDITIVE and written only as "true" -- every other person gets NO attribute (the Java cost
+    # model reads an absent attribute as not exempt). Byte-identical when parking_zones_enabled or
+    # parking_ev_exemption_enabled is off (the column is then never attached).
+    if "parking_ev_exempt" in person_fields:
+        if _is_ev_exempt(person[person_fields.index("parking_ev_exempt")]):
+            writer.add_attribute("parkingEvExempt", "java.lang.Boolean", "true")
+
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])
     writer.add_attribute("sex", "java.lang.String", person[PERSON_FIELDS.index("sex")][0])
@@ -346,6 +543,11 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             None if location_id == -1 else location_id
         )
 
+        # All attributes of this activity go into ONE dict, so an activity carries at most one
+        # <attributes> block; an activity without any attribute is passed ``None`` below and is
+        # written as the bare element, exactly as before the parking attributes existed.
+        activity_attributes = {}
+
         # Activity-level isParis: tag activities whose location lies within
         # the BS inner ring (<= _URBAN_RADIUS_M from BS Hbf). See module
         # docstring above for the rationale. Off by default (D-5).
@@ -353,11 +555,31 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             dx = geometry.x - _URBAN_HBF_E
             dy = geometry.y - _URBAN_HBF_N
             is_urban_activity = (dx * dx + dy * dy) <= (_URBAN_RADIUS_M * _URBAN_RADIUS_M)
-            activity_attributes = {
-                "isParis": ("java.lang.Boolean", "true" if is_urban_activity else "false"),
-            }
-        else:
-            activity_attributes = None
+            activity_attributes["isParis"] = (
+                "java.lang.Boolean", "true" if is_urban_activity else "false")
+
+        # Zone-based parking costs (issue #436), mutually exclusive with the ring above (the
+        # wrapper rejects both flags at configure time). ADDITIVE: read only when the columns are
+        # in the activity tuple (parking_zones_enabled on). A location outside every zone carries
+        # NaN and gets NO parkingZone -- never the literal "nan"/"None", which the Java cost model
+        # would reject as an unknown zone id -- because "no zone" is itself the modelled state
+        # (parking is free outside every zone). parkingFree is written ONLY as "true": the Java
+        # side reads an absent attribute as "not free", so a "false" on nearly every activity
+        # would add bytes without information.
+        if parking_zone_index is not None:
+            parking_zone = activity[parking_zone_index]
+            if not _is_missing_value(parking_zone):
+                activity_attributes["parkingZone"] = (
+                    "java.lang.String", _parking_zone_id("parking_zone", parking_zone))
+        if parking_free_index is not None and _is_free_parking(activity[parking_free_index]):
+            activity_attributes["parkingFree"] = ("java.lang.Boolean", "true")
+        # The resident district (spec Amendment C3), a layer of its own: written whether or not the location
+        # lies in a zone, and absent (not "nan") outside every district.
+        if parking_district_index is not None:
+            parking_district = activity[parking_district_index]
+            if not _is_missing_value(parking_district):
+                activity_attributes["parkingDistrict"] = (
+                    "java.lang.String", _parking_district_id("parking_district", parking_district))
 
         # eqasim-bs#442: mark a portal gate (identification marker, see PORTAL_GATE_ATTRIBUTE). The attribute
         # is a real java.lang.Boolean (a String "true" would not be recognised on the Java side) and is
@@ -372,7 +594,7 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             location = location,
             start_time = None if np.isnan(start_time) else start_time,
             end_time = None if np.isnan(end_time) else end_time,
-            attributes = activity_attributes,
+            attributes = activity_attributes or None,
         )
 
         if not trip is None:
@@ -443,7 +665,10 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             writer = writers.PopulationWriter(writer)
             writer.start_population()
 
-            activity_iterator = backlog_iterator(iter(df_activities[ACTIVITY_FIELDS].itertuples(index = False)))
+            # Additive optional activity fields (the parking attributes) are appended AFTER
+            # ACTIVITY_FIELDS when present, the same way as the optional person fields below.
+            activity_fields = effective_activity_fields(df_activities)
+            activity_iterator = backlog_iterator(iter(df_activities[activity_fields].itertuples(index = False)))
             trip_iterator = backlog_iterator(iter(df_trips[TRIP_FIELDS].itertuples(index = False)))
             vehicle_iterator = backlog_iterator(iter(df_vehicles[VEHICLE_FIELDS].itertuples(index = False)))
 
@@ -514,6 +739,7 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                rbw_omission_counter=rbw_omission_counter,
                                passenger_availability_omission_counter=
                                passenger_availability_omission_counter,
+                               activity_fields=activity_fields,
                                remode_counter=remode_counter)
                     progress.update()
 

@@ -1,5 +1,6 @@
 """Plan feasibility check on the written MATSim population (eqasim-bs#443, ADR-0146)."""
 import gzip
+import zipfile
 
 import pytest
 
@@ -38,6 +39,33 @@ POPULATION = """<?xml version="1.0" encoding="utf-8"?>
       <activity type="freight_start" x="0" y="0" end_time="05:00:00"/>
       <leg mode="truck" dep_time="05:00:00" trav_time="01:00:00"/>
       <activity type="freight_end" x="50000" y="0"/>
+    </plan>
+  </person>
+  <person id="3">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="22:00:00"/>
+      <leg mode="car" dep_time="22:00:00" trav_time="00:20:00"/>
+      <activity type="outside" x="100" y="0" end_time="23:00:00"/>
+      <leg mode="walk" dep_time="23:00:00" trav_time="00:20:00">
+        <attributes><attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute></attributes>
+      </leg>
+      <activity type="work" x="200" y="0" end_time="24:00:00"/>
+      <leg mode="pt" dep_time="24:00:00" trav_time="00:20:00">
+        <attributes><attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute></attributes>
+      </leg>
+      <activity type="home" x="0" y="0"/>
+    </plan>
+  </person>
+  <person id="in_1">
+    <attributes>
+      <attribute name="subpopulation" class="java.lang.String">incommuter</attribute>
+    </attributes>
+    <plan selected="yes">
+      <activity type="outside" x="0" y="0" end_time="03:00:00"/>
+      <leg mode="walk" dep_time="03:00:00" trav_time="00:10:00">
+        <attributes><attribute name="walkFallbackFrom" class="java.lang.String">pt</attribute></attributes>
+      </leg>
+      <activity type="work" x="100" y="0"/>
     </plan>
   </person>
 </population>
@@ -79,11 +107,11 @@ def test_parse_time_s_accepts_hours_beyond_24():
 
 def test_iter_person_plans_reads_subpopulation_activities_and_legs(population_path):
     plans = list(C.iter_person_plans(population_path))
-    assert [p.person_id for p in plans] == ["1", "2", "freight_1"]
-    assert [p.subpopulation for p in plans] == [C.RESIDENTS, C.RESIDENTS, "freight"]
+    assert [p.person_id for p in plans] == ["1", "2", "freight_1", "3", "in_1"]
+    assert [p.subpopulation for p in plans] == [C.RESIDENTS, C.RESIDENTS, "freight", C.RESIDENTS, "incommuter"]
     assert plans[0].activities[1] == ("outside", 31 * 3600.0, 20000.0, 0.0)
     assert plans[0].activities[2] == ("home", None, 0.0, 0.0)
-    assert plans[0].legs == [("walk", 5.5 * 3600.0), ("walk", 5.5 * 3600.0)]
+    assert plans[0].legs == [("walk", 5.5 * 3600.0, None, None), ("walk", 5.5 * 3600.0, None, None)]
 
 
 def test_leg_tour_frozen_marks_the_legs_of_tours_touching_outside():
@@ -97,13 +125,13 @@ def test_summarise_counts_late_non_monotonic_long_and_slow_legs_per_subpopulatio
                           walk_max_distance_m=5000.0, bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0)
     residents = summary["subpopulations"][C.RESIDENTS]
     frozen, inside = residents["frozen"], residents["in_region"]
-    assert frozen["n_persons"] == 1 and inside["n_persons"] == 1
+    assert frozen["n_persons"] == 2 and inside["n_persons"] == 1
     assert frozen["n_plans_late"] == 1 and inside["n_plans_late"] == 0
     assert frozen["n_plans_non_monotonic"] == 0 and inside["n_plans_non_monotonic"] == 1   # person 2: 18:00 then 17:00
     assert frozen["n_walk_legs_over"] == 2 and inside["n_walk_legs_over"] == 2               # person 2's two 6 km walks
     assert frozen["n_legs_over_duration"] == 2 and inside["n_legs_over_duration"] == 0
     assert inside["n_bicycle_legs_over"] == 0
-    assert frozen["share_plans_late"] == 1.0
+    assert frozen["share_plans_late"] == 0.5
     assert summary["subpopulations"]["freight"]["in_region"]["n_persons"] == 1
     assert summary["subpopulations"]["freight"]["frozen"]["n_persons"] == 0
 
@@ -129,9 +157,9 @@ def test_check_thresholds_fails_on_the_frozen_resident_class_only():
         "freight": {"frozen": {"n_persons": 0, "share_plans_late": 0.0, "share_plans_non_monotonic": 0.0},
                     "in_region": {"n_persons": 10, "share_plans_late": 1.0, "share_plans_non_monotonic": 0.0}}}}
     with pytest.raises(ValueError, match="frozen"):
-        C.check_thresholds(summary, 0.005, fail_on_threshold=True)
+        C.check_thresholds(summary, 0.005, 0.02, fail_on_threshold=True)
     summary["subpopulations"][C.RESIDENTS]["frozen"]["share_plans_late"] = 0.004
-    assert C.check_thresholds(summary, 0.005, fail_on_threshold=True) == []
+    assert C.check_thresholds(summary, 0.005, 0.02, fail_on_threshold=True) == []
 
 
 def test_resolve_population_path_resolves_a_relative_input_plans_file_next_to_the_config(tmp_path):
@@ -170,12 +198,12 @@ def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulate
     h = 3600.0
     # Every activity END time is inside the day; only the last leg (departs 29:00, travels 1:30) arrives at 30:30.
     late_arrival_frozen = _plan("a", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
-                                [("car", 0.5 * h), ("car", 1.5 * h)])
+                                [("car", 0.5 * h, None, None), ("car", 1.5 * h, None, None)])
     on_time_frozen = _plan("b", [("home", 7 * h, 0, 0), ("outside", 29 * h, 1, 0), ("home", None, 0, 0)],
-                           [("car", 0.5 * h), ("car", 0.5 * h)])
+                           [("car", 0.5 * h, None, None), ("car", 0.5 * h, None, None)])
     late_arrival_inside = _plan("c", [("home", 8 * h, 0, 0), ("work", 29.5 * h, 1, 0), ("home", None, 0, 0)],
-                                [("car", 0.5 * h), ("car", 1.0 * h)])
-    no_travel_time = _plan("d", [("home", 8 * h, 0, 0), ("work", None, 1, 0)], [("car", None)])
+                                [("car", 0.5 * h, None, None), ("car", 1.0 * h, None, None)])
+    no_travel_time = _plan("d", [("home", 8 * h, 0, 0), ("work", None, 1, 0)], [("car", None, None, None)])
     summary = _summarise([late_arrival_frozen, on_time_frozen, late_arrival_inside, no_travel_time])
     residents = summary["subpopulations"][C.RESIDENTS]
     assert residents["frozen"]["n_plans_late"] == 0 and residents["in_region"]["n_plans_late"] == 0
@@ -189,11 +217,11 @@ def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulate
 def test_arrival_late_is_report_only_and_never_fails_the_thresholds():
     summary = {"subpopulations": {C.RESIDENTS: {"frozen": {
         "n_persons": 10, "share_plans_late": 0.0, "share_plans_non_monotonic": 0.0, "share_plans_arrival_late": 0.9}}}}
-    assert C.check_thresholds(summary, 0.005, fail_on_threshold=True) == []
+    assert C.check_thresholds(summary, 0.005, 0.02, fail_on_threshold=True) == []
 
 
 def test_summarise_raises_naming_the_person_when_a_plan_has_more_legs_than_activities_minus_one():
-    broken = _plan("broken_42", [("home", 1.0, 0, 0), ("work", None, 1, 0)], [("car", 10.0), ("car", 10.0)])
+    broken = _plan("broken_42", [("home", 1.0, 0, 0), ("work", None, 1, 0)], [("car", 10.0, None, None), ("car", 10.0, None, None)])
     with pytest.raises(ValueError, match="broken_42"):
         _summarise([broken])
 
@@ -213,7 +241,7 @@ def test_iter_person_plans_keeps_the_root_element_empty_while_streaming(populati
         return iterator
 
     monkeypatch.setattr(C.ET, "iterparse", spying_iterparse)
-    assert len(list(C.iter_person_plans(population_path))) == 3
+    assert len(list(C.iter_person_plans(population_path))) == 5
     # The cleared person elements must not stay attached to the root (memory stays bounded at 100 % scale).
     assert len(seen[0].root) == 0
 
@@ -225,7 +253,7 @@ def _frozen_summary(share_late):
 
 def test_check_thresholds_logs_an_error_and_continues_when_failing_is_off(caplog):
     with caplog.at_level("ERROR", logger=C.logger.name):
-        violations = C.check_thresholds(_frozen_summary(0.02), 0.005, fail_on_threshold=False)
+        violations = C.check_thresholds(_frozen_summary(0.02), 0.005, 0.02, fail_on_threshold=False)
     assert violations == ["share_plans_late"]
     assert any(record.levelname == "ERROR" and "share_plans_late" in record.getMessage() and "2.00%" in
                record.getMessage() for record in caplog.records)
@@ -233,7 +261,7 @@ def test_check_thresholds_logs_an_error_and_continues_when_failing_is_off(caplog
 
 def test_check_thresholds_raises_when_failing_is_on():
     with pytest.raises(ValueError, match="share_plans_late"):
-        C.check_thresholds(_frozen_summary(0.02), 0.005, fail_on_threshold=True)
+        C.check_thresholds(_frozen_summary(0.02), 0.005, 0.02, fail_on_threshold=True)
 
 
 # --- run(): the whole check against a written config and population (reviewer probe of the final review) ---
@@ -260,15 +288,34 @@ RUN_POPULATION = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
+JAR_NAME = "eqasim.jar"
+
+
+def _write_stub_jar(path, class_bytes=b"\xca\xfe\xba\xbe walkFallbackFrom", entry=C.PLAN_ROUTER_CLASS_ENTRY):
+    """A tiny zip standing in for the eqasim jar: one entry with the given bytes."""
+    with zipfile.ZipFile(path, "w") as jar:
+        jar.writestr(entry, class_bytes)
+    return path
+
+
 class _RunContext:
+    """Stub of the synpp context: stage directory, config values and the jar of ``matsim.runtime.eqasim``."""
+
     def __init__(self, directory, fail_on_threshold, max_share=0.1):
         self._directory = directory
         self._values = {C.KEY_WALK_MAX_DISTANCE_M: 5000.0, C.KEY_BICYCLE_MAX_DISTANCE_M: 30000.0,
                         C.KEY_LEG_MAX_DURATION_S: 10800.0, C.KEY_MAX_FROZEN_DEFECT_SHARE: max_share,
+                        C.KEY_MAX_FROZEN_PT_AS_WALK_SHARE: 0.02,
                         C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold}
+        (directory / "runtime").mkdir(exist_ok=True)
+        _write_stub_jar(directory / "runtime" / JAR_NAME)
 
-    def path(self):
-        return str(self._directory)
+    def path(self, name=None):
+        return str(self._directory / "runtime") if name == "matsim.runtime.eqasim" else str(self._directory)
+
+    def stage(self, name):
+        assert name == "matsim.runtime.eqasim"
+        return JAR_NAME
 
     def config(self, key):
         return self._values[key]
@@ -306,3 +353,168 @@ def test_run_does_not_raise_when_the_frozen_defect_is_inside_the_share(tmp_path)
     _write_run_inputs(tmp_path)
     C.run(_RunContext(tmp_path, fail_on_threshold=True, max_share=1.0), "bs_config.xml")
     assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
+
+
+# --- pt trips realised as walks (eqasim-bs#465): the leg attribute walkFallbackFrom, per class and hour ---
+
+def test_iter_person_plans_reads_the_walk_fallback_attribute_of_a_leg(population_path):
+    plans = {p.person_id: p for p in C.iter_person_plans(population_path)}
+    assert [leg[2] for leg in plans["3"].legs] == [None, "pt", "pt"]
+    assert plans["1"].legs[0][2] is None
+
+
+def test_summarise_counts_pt_as_walk_per_class_and_hour(population_path):
+    summary = _summarise(C.iter_person_plans(population_path))
+    frozen = summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+    assert frozen["n_pt_as_walk"] == 1 and frozen["pt_as_walk_by_hour"] == {"23": 1}
+    # The leg that kept the attribute but is a pt leg again is NOT a pt-as-walk trip.
+    assert frozen["n_pt_as_walk_attr_without_walk"] == 1
+    # Denominator: the two pt-intended trips (the stamped walk and the stamped pt leg), not the five legs.
+    assert frozen["n_pt_trips"] == 2 and frozen["share_pt_as_walk"] == 1 / 2
+    # The in-commuter subpopulation is counted in its own block.
+    assert summary["subpopulations"]["incommuter"][C.FROZEN]["pt_as_walk_by_hour"] == {"3": 1}
+    assert summary["subpopulations"][C.RESIDENTS][C.IN_REGION]["n_pt_as_walk"] == 0
+
+
+def test_summarise_files_a_pt_as_walk_leg_without_origin_end_time_under_unknown():
+    plan = _plan("u", [("outside", None, 0, 0), ("work", None, 1, 0)], [("walk", 60.0, "pt", "pt")])
+    frozen = _summarise([plan])["subpopulations"][C.RESIDENTS][C.FROZEN]
+    assert frozen["pt_as_walk_by_hour"] == {"unknown": 1}
+
+
+def test_walk_fallback_attribute_name_matches_the_java_constant():
+    assert C.WALK_FALLBACK_ATTRIBUTE == "walkFallbackFrom"
+
+
+def test_find_threshold_violations_names_the_pt_as_walk_share():
+    summary = {"subpopulations": {C.RESIDENTS: {C.FROZEN: {
+        "n_persons": 100, "n_legs": 100, "share_plans_late": 0.0, "share_plans_non_monotonic": 0.0,
+        "n_pt_as_walk": 5, "share_pt_as_walk": 0.05}}}}
+    assert any("pt_as_walk" in v for v in C.find_threshold_violations(summary, 0.005, 0.02))
+    assert C.find_threshold_violations(summary, 0.005, 0.10) == []
+
+
+def test_format_by_hour_orders_numerically_with_unknown_last():
+    assert list(C._format_by_hour({"23": 1, "unknown": 2, "3": 4})) == ["3", "23", "unknown"]
+    assert list(C._format_by_hour({"10": 1, "2": 1})) == ["2", "10"]
+
+
+def test_format_by_hour_empty_returns_empty_dict():
+    assert C._format_by_hour({}) == {}
+
+
+# --- pt-intended trips, the routingMode guard and the jar guard (eqasim-bs#465): 0 must not hide a stale jar ---
+
+def _attributes(**attributes):
+    items = "".join(f'<attribute name="{name}" class="java.lang.String">{value}</attribute>'
+                    for name, value in attributes.items())
+    return f"<attributes>{items}</attributes>"
+
+
+# Realistic legs: MATSim's TripRouter gives every leg the REQUESTED routing mode and eqasim's fallback re-routes as
+# walk, so a replacement leg carries routingMode walk plus the stamp walkFallbackFrom=pt.
+PT_TRIPS_POPULATION = f"""<?xml version="1.0" encoding="utf-8"?>
+<population>
+  <person id="frozen_fallback">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="07:00:00"/>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:10:00">{_attributes(routingMode="walk", walkFallbackFrom="pt")}</leg>
+      <activity type="outside" x="100" y="0" end_time="17:00:00"/>
+      <leg mode="car" dep_time="17:00:00" trav_time="00:10:00">{_attributes(routingMode="car")}</leg>
+      <activity type="home" x="0" y="0"/>
+    </plan>
+  </person>
+  <person id="frozen_served">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="07:00:00"/>
+      <leg mode="walk" dep_time="07:00:00" trav_time="00:05:00">{_attributes(routingMode="pt")}</leg>
+      <activity type="pt interaction" x="10" y="0" end_time="07:05:00"/>
+      <leg mode="pt" dep_time="07:05:00" trav_time="00:20:00">{_attributes(routingMode="pt")}</leg>
+      <activity type="pt interaction" x="90" y="0" end_time="07:25:00"/>
+      <leg mode="walk" dep_time="07:25:00" trav_time="00:05:00">{_attributes(routingMode="pt")}</leg>
+      <activity type="outside" x="100" y="0"/>
+    </plan>
+  </person>
+  <person id="in_region_fallback">
+    <plan selected="yes">
+      <activity type="home" x="0" y="0" end_time="08:00:00"/>
+      <leg mode="walk" dep_time="08:00:00" trav_time="00:10:00">{_attributes(routingMode="walk", walkFallbackFrom="pt")}</leg>
+      <activity type="work" x="100" y="0"/>
+    </plan>
+  </person>
+</population>
+"""
+
+
+def test_pt_as_walk_is_counted_per_trip_in_the_class_of_the_trip_so_numerator_and_denominator_share_a_block(tmp_path):
+    path = tmp_path / "pt_trips.xml"
+    path.write_text(PT_TRIPS_POPULATION, encoding="utf-8")
+    summary = _summarise(C.iter_person_plans(path))
+    frozen = summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+    in_region = summary["subpopulations"][C.RESIDENTS][C.IN_REGION]
+    # frozen: the stamped fallback trip (routingMode walk, stamp pt) and the served three-leg trip; the car trip is none.
+    assert (frozen["n_pt_trips"], frozen["n_pt_as_walk"]) == (2, 1)
+    assert frozen["share_pt_as_walk"] == pytest.approx(1 / 2)
+    assert (in_region["n_pt_trips"], in_region["n_pt_as_walk"]) == (1, 1) and in_region["share_pt_as_walk"] == 1.0
+    assert frozen["pt_as_walk_by_hour"] == {"7": 1} and in_region["pt_as_walk_by_hour"] == {"8": 1}
+    assert summary["n_legs_with_routing_mode"] > 0
+
+
+def test_a_population_without_any_routing_mode_warns_that_the_pt_trip_counts_are_meaningless(population_path, caplog):
+    summary = _summarise(C.iter_person_plans(population_path))     # POPULATION: pt and stamped legs, no routingMode
+    assert summary["n_legs_with_routing_mode"] == 0 and summary["n_pt_or_stamped_legs"] > 0
+    with caplog.at_level("WARNING"):
+        C._log_summary(summary)
+    assert any(r.levelname == "WARNING" and "routingMode" in r.getMessage() and "meaningless" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_no_routing_mode_warning_when_routing_modes_are_present_or_there_is_no_pt(tmp_path, caplog):
+    path = tmp_path / "pt_trips.xml"
+    path.write_text(PT_TRIPS_POPULATION, encoding="utf-8")
+    car_only = _plan("c", [("home", 0.0, 0, 0), ("work", None, 1, 0)], [("car", 60.0, None, None)])
+    with caplog.at_level("WARNING"):
+        C._log_summary(_summarise(C.iter_person_plans(path)))
+        C._log_summary(_summarise([car_only]))
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_require_walk_fallback_stamp_passes_on_a_jar_whose_plan_router_holds_the_attribute_and_logs_once(tmp_path, caplog):
+    jar = _write_stub_jar(tmp_path / "ok.jar")
+    with caplog.at_level("INFO"):
+        C.require_walk_fallback_stamp(jar)
+    assert len([r for r in caplog.records if r.levelname == "INFO" and "stamps the walk fallback" in r.getMessage()]) == 1
+
+
+def _not_a_zip(path):
+    path.write_bytes(b"not a zip")
+    return path
+
+
+@pytest.mark.parametrize("make_jar, error, match", [
+    (lambda p: _write_stub_jar(p, b"\xca\xfe\xba\xbe no stamp here"), RuntimeError, "predates the walk fallback stamp"),
+    (lambda p: _write_stub_jar(p, entry="org/eqasim/core/Other.class"), RuntimeError, "does not contain"),
+    (lambda p: p.parent / "absent.jar", FileNotFoundError, "does not exist"),
+    (_not_a_zip, RuntimeError, "zip archive"),
+])
+def test_require_walk_fallback_stamp_raises_naming_the_jar(tmp_path, make_jar, error, match):
+    jar = make_jar(tmp_path / "bad.jar")
+    with pytest.raises(error, match=match) as excinfo:
+        C.require_walk_fallback_stamp(jar)
+    assert str(jar) in str(excinfo.value)
+
+
+def test_a_stale_jar_message_names_the_fix_and_the_issue(tmp_path):
+    jar = _write_stub_jar(tmp_path / "stale.jar", b"no stamp")
+    with pytest.raises(RuntimeError) as excinfo:
+        C.require_walk_fallback_stamp(jar)
+    assert "eqasim_source_path" in str(excinfo.value) and "#465" in str(excinfo.value)
+
+
+def test_run_raises_before_writing_the_report_when_the_jar_predates_the_stamp(tmp_path):
+    _write_run_inputs(tmp_path)
+    context = _RunContext(tmp_path, fail_on_threshold=False)
+    _write_stub_jar(tmp_path / "runtime" / JAR_NAME, b"no stamp")
+    with pytest.raises(RuntimeError, match="predates the walk fallback stamp"):
+        C.run(context, "bs_config.xml")
+    assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()

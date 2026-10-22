@@ -27,6 +27,7 @@ import pandas as pd
 from shapely.geometry import Point
 
 from braunschweig import constants as _constants
+from braunschweig import synpp_tokens
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
 from braunschweig.data.cordon import demand as _demand
 from braunschweig.data.cordon.demand import (
@@ -1177,26 +1178,13 @@ def validate(context):
 
     A deferred module that fails to import raises rather than being skipped: skipping it
     would keep the stale cached in-commuters alive exactly when the helper is broken.
-    """
-    import hashlib
-    import importlib
-    import inspect
 
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"incommuters validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse stale cached in-commuters."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

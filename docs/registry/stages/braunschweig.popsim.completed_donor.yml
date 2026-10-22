@@ -85,7 +85,7 @@ notes: >-
   .exclude_holiday_plan_sources the key is declared HERE only (no other stage reads it), which is
   what puts it into this stage's config hash: flipping it rebuilds the donor AND, as a descendant,
   re-runs popsim. The stage
-  defines validate() over an md5 of its helper modules (diary_facts, diary_plan_match,
+  defines validate() as a structured token, one semantic digest per helper module (diary_facts, diary_plan_match,
   weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
   itself and a helper edit would otherwise serve a stale cached donor build.
   THE src_* COLUMNS PROPAGATE (intended, ruling R8 of the #365/#366/#367 implementation): they sit

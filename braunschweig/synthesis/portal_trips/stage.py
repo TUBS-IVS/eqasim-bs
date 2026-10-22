@@ -14,9 +14,7 @@ substitutions, the capped re-entry shares -- and warns when a rate exceeds the c
 from __future__ import annotations
 
 import copy
-import hashlib
-import importlib
-import inspect
+import functools
 import json
 import logging
 import os
@@ -24,17 +22,27 @@ import os
 import numpy as np
 import pandas as pd
 
+from shapely.geometry import Point
+
+from braunschweig import synpp_tokens
+from braunschweig.matsim.simulation import plan_check as _plan_check
+from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.synthesis.portal_trips import classification as _classification
 from braunschweig.synthesis.portal_trips import config_keys as _config_keys
 from braunschweig.synthesis.portal_trips import gates as _gates
 from braunschweig.synthesis.portal_trips import modes as _modes
+from braunschweig.synthesis.portal_trips import no_connection as _no_connection
 from braunschweig.synthesis.portal_trips import rewrite
 from braunschweig.synthesis.portal_trips import timing as _timing
 from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_ENABLED, DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE, DEFAULT_FALLBACK_WARN_SHARE,
-    DEFAULT_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, KEY_ENABLED,
-    KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE, KEY_MAX_ROUTABLE_DISTANCE_M,
-    KEY_MODE_SUBSTITUTION_WARN_SHARE, RNG_OFFSET, validate_settings)
+    DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
+    DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
+    DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_STEP_S, DEFAULT_SHIFT_WINDOW_S, KEY_ENABLED,
+    KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE, KEY_GATE_CANDIDATES,
+    KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S, KEY_MODE_SUBSTITUTION_WARN_SHARE,
+    KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, RNG_OFFSET,
+    validate_settings)
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +54,16 @@ REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "follow
                          "euclidean_distance", "departure_time", "arrival_time")
 
 #: Own-package helpers whose source shapes this stage's output (hashed by validate()).
-_HELPER_MODULES = (_classification, _config_keys, _gates, _modes, rewrite, _timing)
+_HELPER_MODULES = (_classification, _config_keys, _gates, _modes, _no_connection, rewrite, _timing,
+                   _plan_check, _plan_validation)
 #: Cross-package modules imported inside execute() (hashed by dotted name).
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network")
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.cordon.network",
+                                 "braunschweig.data.transit.schedule", "braunschweig.data.transit.connections",
+                                 "braunschweig.popsim.closure_dwell", "data.hts.hts")
+
+#: Router work files live in a subdirectory of the stage directory.
+ROUTER_WORK_DIR_NAME = "pt_router"
+ROUTER_CONFIG_NAME = "pt_router_config.xml"
 
 #: Report entries of a run without any outside stay (the stay-level counts are all zero).
 _EMPTY_STAY_REPORT = {
@@ -58,21 +73,20 @@ _EMPTY_STAY_REPORT = {
     "n_reentry_clamped": 0, "n_return_share_degenerate": 0, "n_outbound_share_degenerate": 0,
     "return_share_out_median": None,
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
+    "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
+    "n_kept_fallback_all_stops": 0,
 }
 
 
 def validate(context):
-    """synpp validation token over the helper sources (same mechanism as trips_day_stage.validate)."""
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            digest.update(inspect.getsource(importlib.import_module(module_name)).encode("utf-8"))
-        except Exception as error:
-            raise RuntimeError(f"portal_trips.stage validate(): cannot hash {module_name!r} "
-                               f"({type(error).__name__}: {error}); it must not be skipped") from error
-    return digest.hexdigest()
+    """synpp validation token over the helper sources (same mechanism as trips_day_stage.validate).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
+    """
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):
@@ -80,16 +94,30 @@ def configure(context):
     context.stage(TRIPS_STAGE)
     if not enabled:
         return
-    validate_settings(float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MAX_ROUTABLE_DISTANCE_M)),
-                      float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE,
-                                           DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
-                      float(context.config(KEY_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE)),
-                      float(context.config(KEY_FALLBACK_WARN_SHARE, DEFAULT_FALLBACK_WARN_SHARE)))
     context.config("random_seed")
     # The gates ARE the cordon: a portal layer without a cordon has nowhere to send a trip.
     if not context.config("cordon_enabled", False):
         raise ValueError(f"{KEY_ENABLED}=True requires cordon_enabled=True (the portal stays sit at the cordon gates)")
     context.config("cordon_network_buffer_fraction", 0.10)
+    # Timetable-aware pt gates (#465): the settings, and the runtime of the batch pt router (the router is a
+    # Java tool of the eqasim jar, run through eqasim.run -> java.run like in matsim.simulation.prepare).
+    pt_gate_settings = _configure_gate_settings(context)
+    validate_settings(float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MAX_ROUTABLE_DISTANCE_M)),
+                      float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE,
+                                           DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
+                      float(context.config(KEY_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE)),
+                      float(context.config(KEY_FALLBACK_WARN_SHARE, DEFAULT_FALLBACK_WARN_SHARE)),
+                      **pt_gate_settings)
+    context.config(KEY_PT_GATE_MODES, DEFAULT_PT_GATE_MODES)
+    # The batch pt router runs eqasim.run -> java.run; connections.configure declares the Java options.
+    from braunschweig.data.transit import connections
+    connections.configure(context)
+    context.stage("matsim.runtime.eqasim")
+    context.stage("matsim.runtime.java")
+    # Execution details, not scientific config: the thread count must not devalidate cached stages.
+    context.config("processes", volatile=True)
+    context.config("matsim_threads", None, volatile=True)
+    context.stage("matsim.scenario.supply.gtfs")
     # The enriched frame carries car_availability / has_license / bicycle_availability, which the
     # mode check needs; the sampled frame does not.
     context.stage(PERSONS_STAGE)
@@ -100,6 +128,21 @@ def configure(context):
     context.stage("braunschweig.data.external_secondary_points")
     context.stage("data.spatial.municipalities")
     context.stage("matsim.scenario.supply.processed")
+
+
+def _configure_gate_settings(context) -> dict:
+    """Declare the timetable-aware gate settings and return them as the keyword arguments of ``validate_settings``.
+
+    Called from ``configure`` only: the two-argument ``context.config(key, default)`` form is invalid at execute.
+    """
+    return {"gate_candidates": int(context.config(KEY_GATE_CANDIDATES, DEFAULT_GATE_CANDIDATES)),
+            "gate_service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S,
+                                                          DEFAULT_GATE_SERVICE_WINDOW_S)),
+            "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S, DEFAULT_SHIFT_WINDOW_S)),
+            "shift_step_s": float(context.config(KEY_SHIFT_STEP_S, DEFAULT_SHIFT_STEP_S)),
+            "min_stay_s": float(context.config(KEY_MIN_STAY_S, DEFAULT_MIN_STAY_S)),
+            "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE,
+                                                             DEFAULT_NO_CONNECTION_WARN_SHARE))}
 
 
 def assert_consistent_crs(frames: dict) -> None:
@@ -235,15 +278,72 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
     return is_portal, distance, counts
 
 
+def _stay_fallback_gates(origin_xy, point_xy, exits, needed):
+    """The gate a KEPT pt stay without a connection takes, for the stays flagged in ``needed``.
+
+    Per needed stay the nearest-by-detour exit stop among its DIRECTIONAL exit stops (outside stop closer to
+    the external point than the exit stop); when the stay has none, among all exit stops. Returns
+    ``(frame with gate_id, x, y, all_stops)``: one row per stay (rows of stays that are not ``needed`` stay
+    None/NaN and are never read by ``resolve_no_connection``, which only reads the rows of the stays it
+    keeps) and ``all_stops``, the bool flags of the needed stays that had no directional exit stop and
+    took the all-stops fallback. Without any exit stop every row is None/NaN (``choose_gates`` then raises
+    for a kept stay).
+    """
+    n = len(origin_xy)
+    frame = pd.DataFrame({"gate_id": [None] * n, "x": np.full(n, np.nan), "y": np.full(n, np.nan)})
+    all_stops = np.zeros(n, dtype=bool)
+    if n == 0 or len(exits) == 0 or not np.any(needed):
+        return frame, all_stops
+    points = _gates.exit_stop_points(exits)
+    point_ids = points["stop_id"].astype(str).to_numpy()
+    all_xy = np.column_stack([points.geometry.x.to_numpy(), points.geometry.y.to_numpy()])
+    id_row = {stop: row for row, stop in enumerate(point_ids)}
+    exit_ids = exits["stop_id"].astype(str).to_numpy()
+    gate_ids = np.full(n, None, dtype=object)
+    xy = np.full((n, 2), np.nan)
+    for i in np.flatnonzero(needed):
+        toward = _gates._toward_mask(point_xy[i], exits)
+        rows = sorted({id_row[stop] for stop in exit_ids[toward]})
+        if not rows:
+            rows = list(range(len(point_ids)))
+            all_stops[i] = True
+        best = rows[int(_gates._nearest_by_detour(origin_xy[i:i + 1], point_xy[i:i + 1], all_xy[rows])[0])]
+        gate_ids[i], xy[i] = point_ids[best], all_xy[best]
+    frame["gate_id"] = gate_ids
+    frame["x"], frame["y"] = xy[:, 0], xy[:, 1]
+    return frame, all_stops
+
+
+def _inside_stop_ids(schedule, cordon_polygon) -> set:
+    """Ids of the schedule stops that lie inside the cut extent (a connection may only use these)."""
+    return {stop for stop, (x, y) in schedule.stops.items() if cordon_polygon.contains(Point(x, y))}
+
+
 def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates, links, external_points,
-                       stops, routes, cordon_polygon, threshold_m, tolerance, warn_share, fallback_warn_share,
-                       seed):
+                       schedule, router, pt_gate_modes, gate_settings, cordon_polygon, threshold_m, tolerance,
+                       warn_share, fallback_warn_share, seed):
     """Pure entry point: classify, merge stays, draw points, choose gates, time, fix modes, rewrite.
 
     Coordinates are metres in the CRS of ``df_home``; times are seconds. ``warn_share`` bounds the
     mode-substitution rate and ``fallback_warn_share`` the rates of the two classification/draw
     fallbacks; exceeding either only changes the log level (the counts are always in the report).
+
+    The pt stays take a timetable-aware gate (#465): ``schedule`` is the pre-cut transit schedule
+    (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
+    (``braunschweig.data.transit.connections.Router``: tasks frame -> (trips, legs)), ``pt_gate_modes``
+    ``"all"`` or the transit modes allowed as gates, and ``gate_settings`` the dict with ``n_candidates``,
+    ``service_window_s``, ``shift_window_s``, ``shift_step_s``, ``min_stay_s`` and ``no_connection_warn_share``.
+    A pt stay without an admissible gate is resolved by ``no_connection.resolve_no_connection`` (whole-tour
+    mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
+    report and WARNed above ``no_connection_warn_share``.
     """
+    # A direct caller gets the same range checks as configure() (a zero shift step would silently disable the shift path).
+    validate_settings(threshold_m, tolerance, warn_share, fallback_warn_share,
+                      gate_candidates=gate_settings["n_candidates"],
+                      gate_service_window_s=gate_settings["service_window_s"],
+                      shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
+                      min_stay_s=gate_settings["min_stay_s"],
+                      no_connection_warn_share=gate_settings["no_connection_warn_share"])
     missing = [column for column in REQUIRED_TRIP_COLUMNS if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} trips frame lacks {missing}")
@@ -287,14 +387,17 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     availability = _modes.mode_availability(persons)
     modes = _modes.portal_modes(stays, trips, availability)
     road_gates = _gates.gate_inside_points(gates, links, cordon_polygon)
-    rail_stations = _gates.rail_exit_stations(stops, routes, cordon_polygon, crs=df_home.crs)
-    gate_rows = _gates.choose_gates(origin_xy, point_xy, modes["mode"].to_numpy(), road_gates, rail_stations)
+    modes, trips, pt_gates, pt_report = _resolve_pt_stays(
+        stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, router,
+        pt_gate_modes, gate_settings, cordon_polygon, df_home.crs)
+    gate_rows = _gates.choose_gates(origin_xy, point_xy, modes["mode"].to_numpy(), road_gates, pt_gates)
     gate_xy = gate_rows[["x", "y"]].to_numpy(dtype=float)
     outbound = _timing.outbound_arrivals(stays, trips, origin_xy, gate_xy, point_xy)
     times = pd.concat([_timing.reentry_times(stays, trips, gate_xy, point_xy, origin_xy,
                                              outbound_arrival_time=outbound["outbound_arrival_time"].to_numpy()),
                        outbound], axis=1)
-    out, anchors = rewrite.rewrite_trips(trips, stays, gate_rows, times, modes, origin_xy, df_home.crs)
+    out, anchors = rewrite.rewrite_trips(trips, stays, gate_rows, times, modes[_modes.MODE_COLUMNS], origin_xy,
+                                         df_home.crs)
 
     unknown_mode = ~modes["outbound_mode"].isin(list(_modes.MODE_FALLBACKS)).to_numpy()
     licence = persons.set_index("person_id")["has_license"].reindex(np.unique(person_ids))
@@ -317,9 +420,91 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         "n_stay_persons_missing_license": int(licence.isna().sum()),
         "n_unknown_donor_mode": int(unknown_mode.sum()),
         "unknown_donor_modes": _counts(modes["outbound_mode"][unknown_mode]),
+        **pt_report,
     })
-    _log_report(report, warn_share, fallback_warn_share)
+    _log_report(report, warn_share, fallback_warn_share, gate_settings["no_connection_warn_share"])
     return {"trips": out, "anchors": anchors, "report": report}
+
+
+def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, router,
+                      pt_gate_modes, gate_settings, cordon_polygon, crs):
+    """Timetable-aware gates of the pt stays and the no-connection fallback chain (#465).
+
+    Returns ``(modes, trips, pt_gates, report_entries)``: ``modes`` carries the added column
+    ``no_connection_action``, ``trips`` the mode switches and departure shifts of the chain, ``pt_gates`` one
+    gate row per stay that is still pt (kept stays hold their nearest directional exit stop).
+    """
+    pt_rows = np.flatnonzero((modes["mode"] == "pt").to_numpy())
+    n_pt = len(pt_rows)
+    walk_max_m = float(_plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+    bound_s = float(_plan_validation.MAX_PLAN_TIME_SECONDS)
+    chain = dict(shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
+                 min_stay_s=gate_settings["min_stay_s"], bound_s=bound_s)
+    if n_pt == 0:
+        empty = pd.DataFrame(columns=_gates.PT_GATE_COLUMNS)
+        out_modes, out_trips, out_gates = _no_connection.resolve_no_connection(
+            stays, trips, modes, availability, empty, lambda *args: empty,
+            fallback_gates=pd.DataFrame(columns=["gate_id", "x", "y"]), **chain)
+        return out_modes, out_trips, out_gates, {
+            "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {},
+            "n_departure_shifted_s_median": None, "n_kept_fallback_all_stops": 0}
+    if router is None:
+        raise ValueError(f"{_LOG_TAG} {n_pt} pt stays need the batch pt router but none was given")
+    exits = _gates.exit_stops(schedule, cordon_polygon, pt_gate_modes, crs=crs)
+    inside_stop_ids = _inside_stop_ids(schedule, cordon_polygon)
+
+    person_ids = stays["person_id"].to_numpy()[pt_rows]
+    has_return = stays["return_trip_index"].notna().to_numpy()[pt_rows]
+    dep_all = trips["departure_time"].to_numpy(dtype=float)
+    arr_all = trips["arrival_time"].to_numpy(dtype=float)
+    out_pos = outbound_positions[pt_rows]
+    ret_pos = np.zeros(n_pt, dtype=int)
+    if has_return.any():
+        ret_pos[has_return] = _trip_row_positions(
+            trips, person_ids[has_return], stays["return_trip_index"].to_numpy()[pt_rows][has_return].astype(int))
+    out_dep, out_arr = dep_all[out_pos], arr_all[out_pos]
+    ret_dep = np.where(has_return, dep_all[ret_pos], np.nan)
+    ret_arr = np.where(has_return, arr_all[ret_pos], np.nan)
+    pt_origin, pt_point = origin_xy[pt_rows], point_xy[pt_rows]
+
+    def choose(positions, o_dep, o_arr, r_dep, r_arr):
+        return _gates.choose_pt_gates(
+            pt_origin[positions], pt_point[positions], o_dep, o_arr, r_dep, r_arr, has_return[positions], exits,
+            schedule, router, n_candidates=gate_settings["n_candidates"],
+            service_window_s=gate_settings["service_window_s"], inside_stop_ids=inside_stop_ids,
+            walk_max_m=walk_max_m)
+
+    pt_gates = choose(np.arange(n_pt), out_dep, out_arr, ret_dep, ret_arr)
+
+    def probe(positions, shifted_out_dep, shifted_ret_dep):
+        # The arrivals move by the same amount as the departures (the trip durations are unchanged).
+        positions = np.asarray(positions, dtype=int)
+        ret_here = has_return[positions]
+        return choose(positions, shifted_out_dep, out_arr[positions] + (shifted_out_dep - out_dep[positions]),
+                      np.where(ret_here, shifted_ret_dep, np.nan),
+                      np.where(ret_here, ret_arr[positions] + (shifted_ret_dep - ret_dep[positions]), np.nan))
+
+    # Only stays without a gate at the planned times can end up kept, so only they need a fallback gate.
+    fallback_gates, all_stops = _stay_fallback_gates(pt_origin, pt_point, exits,
+                                                     pt_gates["gate_id"].isna().to_numpy())
+    out_modes, out_trips, out_gates = _no_connection.resolve_no_connection(
+        stays, trips, modes, availability, pt_gates, probe, fallback_gates=fallback_gates, **chain)
+
+    actions = out_modes["no_connection_action"].to_numpy()[pt_rows]
+    kept = actions == _no_connection.ACTION_KEPT
+    n_kept = int(kept.sum())
+    n_kept_all_stops = int(all_stops[kept].sum())
+    logger.info("%s kept pt stays %d: nearest directional exit stop %d/%d (primary), all-stops fallback %d/%d "
+                "(%.1f%%)", _LOG_TAG, n_kept, n_kept - n_kept_all_stops, n_kept, n_kept_all_stops, n_kept,
+                100.0 * n_kept_all_stops / max(n_kept, 1))
+    shifted = actions == _no_connection.ACTION_DEPARTURE_SHIFTED
+    new_dep = out_trips["departure_time"].to_numpy(dtype=float)
+    shift_s = np.maximum(np.abs(new_dep[out_pos] - out_dep), np.where(has_return, np.abs(new_dep[ret_pos] - ret_dep), 0.0))
+    return out_modes, out_trips, out_gates, {
+        "n_pt_stays": int(n_pt), "pt_gate_reasons": _counts(pt_gates["reason"]),
+        "no_connection_actions": _counts(actions),
+        "n_departure_shifted_s_median": float(np.median(shift_s[shifted])) if shifted.any() else None,
+        "n_kept_fallback_all_stops": int(n_kept_all_stops)}
 
 
 def _counts(values) -> dict:
@@ -327,7 +512,7 @@ def _counts(values) -> dict:
     return {str(key): int(count) for key, count in pd.Series(values).value_counts().items()}
 
 
-def _log_report(report, warn_share, fallback_warn_share):
+def _log_report(report, warn_share, fallback_warn_share, no_connection_warn_share):
     n_stays = max(report["n_stays"], 1)
     n_drawn = max(report["n_external_point_drawn"], 1)
     logger.info("%s %d portal legs -> %d outside stays for %d/%d persons (%.2f%%); %d inner legs removed; "
@@ -368,6 +553,16 @@ def _log_report(report, warn_share, fallback_warn_share):
     if report["n_unknown_donor_mode"]:
         logger.warning("%s %d stays have a donor outbound mode the mode check does not know (%s); kept unchecked",
                        _LOG_TAG, report["n_unknown_donor_mode"], report["unknown_donor_modes"])
+    n_pt = report["n_pt_stays"]
+    if n_pt:
+        found = report["no_connection_actions"].get(_no_connection.ACTION_GATE_FOUND, 0)
+        share_unresolved = (n_pt - found) / n_pt
+        log = logger.warning if share_unresolved > no_connection_warn_share else logger.info
+        log("%s pt stays without a timetable-aware gate %d/%d (%.2f%%; warn above %.0f%%); primary path: gate_found "
+            "%d; gate reasons %s; actions %s", _LOG_TAG, n_pt - found, n_pt, 100.0 * share_unresolved,
+            100.0 * no_connection_warn_share, found,
+            {k: f"{v}/{n_pt} ({100.0 * v / n_pt:.1f}%)" for k, v in report["pt_gate_reasons"].items()},
+            {k: f"{v}/{n_pt} ({100.0 * v / n_pt:.1f}%)" for k, v in report["no_connection_actions"].items()})
     share = report["n_mode_substituted"] / n_stays
     log = logger.warning if share > warn_share else logger.info
     log("%s mode substituted for %d/%d stays (%.2f%%; warn above %.0f%%): %s", _LOG_TAG,
@@ -380,7 +575,8 @@ def execute(context):
     if not context.config(KEY_ENABLED):
         logger.info("%s disabled: trips.final passed through unchanged", _LOG_TAG)
         return {"trips": trips, "anchors": rewrite.empty_anchors(None), "report": {"enabled": False}}
-    from braunschweig.data.cordon.network import read_transit_stops_routes
+    from braunschweig.data.transit.connections import route_batch, write_router_config
+    from braunschweig.data.transit.schedule import read_schedule
     from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
 
     df_muni = context.stage("data.spatial.municipalities")
@@ -395,12 +591,31 @@ def execute(context):
         df_muni, buffer_m_from_fraction(df_muni, float(context.config("cordon_network_buffer_fraction"))))
     supply = context.stage("matsim.scenario.supply.processed")
     schedule_path = os.path.join(context.path("matsim.scenario.supply.processed"), supply["schedule_path"])
-    stops, routes = read_transit_stops_routes(schedule_path)
+    schedule = read_schedule(schedule_path)
+    # The batch pt router runs on the pre-cut network and schedule (the stay's in-region end may lie in the
+    # buffer ring) with the vehicles of the gtfs stage; its work files live in the stage directory.
+    supply_dir = context.path("matsim.scenario.supply.processed")
+    gtfs_dir = context.path("matsim.scenario.supply.gtfs")
+    vehicles_path = os.path.join(gtfs_dir, context.stage("matsim.scenario.supply.gtfs")["vehicles_path"])
+    config_path = write_router_config(
+        os.path.join(context.path(), ROUTER_CONFIG_NAME), network_path=os.path.join(supply_dir, supply["network_path"]),
+        schedule_path=schedule_path, vehicles_path=vehicles_path)
+    router = functools.partial(
+        route_batch, context, config_path=config_path,
+        threads=int(context.config("matsim_threads") or context.config("processes")),
+        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME))
     df_work, df_education = context.stage("synthesis.population.spatial.primary.locations")
     out = build_portal_trips(
         trips=trips, persons=context.stage(PERSONS_STAGE), df_home=df_home, df_work=df_work,
-        df_education=df_education, gates=gates, links=links, external_points=external_points, stops=stops,
-        routes=routes, cordon_polygon=cordon_polygon,
+        df_education=df_education, gates=gates, links=links, external_points=external_points, schedule=schedule,
+        router=router, pt_gate_modes=context.config(KEY_PT_GATE_MODES),
+        gate_settings={"n_candidates": int(context.config(KEY_GATE_CANDIDATES)),
+                       "service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S)),
+                       "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S)),
+                       "shift_step_s": float(context.config(KEY_SHIFT_STEP_S)),
+                       "min_stay_s": float(context.config(KEY_MIN_STAY_S)),
+                       "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE))},
+        cordon_polygon=cordon_polygon,
         threshold_m=float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M)),
         tolerance=float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
         warn_share=float(context.config(KEY_MODE_SUBSTITUTION_WARN_SHARE)),

@@ -140,7 +140,7 @@ and plumbing only. synpp hashes only the STAGE module's own source for its
 cache key, so an edit to a pure helper would otherwise leave a stale cached
 stage output in place while the rule that produced it had changed. Every
 stage in this package therefore defines its own `validate(context)` that folds
-an `md5` of its pure helpers' `inspect.getsource(...)` into the cache token
+a semantic digest of each pure helper's source (`braunschweig.synpp_tokens.source_token`) into the cache token
 (the same mechanism `braunschweig.synthesis.locations.secondary_chainsolvers.validate`
 uses):
 

@@ -217,6 +217,10 @@
    "braunschweig.freight.trips"
   ],
   [
+   "braunschweig.freight.extraction_tool",
+   "braunschweig.freight.extraction"
+  ],
+  [
    "braunschweig.freight.trips",
    "matsim.simulation.prepare"
   ],
@@ -239,6 +243,14 @@
   [
    "braunschweig.locations.work",
    "synthesis.population.spatial.primary.locations"
+  ],
+  [
+   "braunschweig.parking.zones_stage",
+   "matsim.scenario.population"
+  ],
+  [
+   "braunschweig.parking.zones_stage",
+   "matsim.simulation.prepare"
   ],
   [
    "braunschweig.popsim.completed_donor",
@@ -598,7 +610,7 @@
   ],
   [
    "matsim.runtime.eqasim",
-   "braunschweig.freight.extraction"
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "matsim.runtime.eqasim",
@@ -642,6 +654,14 @@
   ],
   [
    "matsim.runtime.java",
+   "braunschweig.freight.extraction_tool"
+  ],
+  [
+   "matsim.runtime.java",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "matsim.runtime.java",
    "matsim.runtime.eqasim"
   ],
   [
@@ -667,6 +687,10 @@
   [
    "matsim.runtime.java",
    "matsim.simulation.run"
+  ],
+  [
+   "matsim.runtime.maven",
+   "braunschweig.freight.extraction_tool"
   ],
   [
    "matsim.runtime.maven",
@@ -711,6 +735,10 @@
   [
    "matsim.scenario.population",
    "matsim.simulation.prepare"
+  ],
+  [
+   "matsim.scenario.supply.gtfs",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "matsim.scenario.supply.gtfs",
@@ -1163,8 +1191,10 @@
   "braunschweig.data.verbindungen.zones",
   "braunschweig.data.vrb.zone_polygons",
   "braunschweig.freight.extraction",
+  "braunschweig.freight.extraction_tool",
   "braunschweig.freight.trips",
   "braunschweig.locations.work",
+  "braunschweig.parking.zones_stage",
   "braunschweig.popsim.completed_donor",
   "braunschweig.synthesis.commute_day.home_office_donors_stage",
   "braunschweig.synthesis.commute_day.state_stage",

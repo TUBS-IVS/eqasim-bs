@@ -20,9 +20,7 @@ dynamic discovery test catches the opposite and more dangerous case: a module
 ADDED to the package and never covered, which is exactly how the ENTD siblings
 slipped out of the popsim stage's token (issue #290, PR #296).
 """
-import hashlib
 import importlib
-import inspect
 import pkgutil
 import sys
 from pathlib import Path
@@ -103,27 +101,23 @@ def test_helper_modules_is_a_tuple_in_a_fixed_order():
     assert isinstance(model._DEFERRED_HELPER_MODULE_NAMES, tuple)
 
 
-def test_token_is_a_deterministic_md5_hex_digest():
+def test_token_is_a_deterministic_structured_token():
     first = model.validate(None)
     second = model.validate(None)
     assert first == second
-    assert len(first) == 32
-    assert set(first) <= HEX_DIGITS
+    assert first["format"] == 2
+    assert all(len(digest) == 64 and set(digest) <= HEX_DIGITS for digest in first["modules"].values())
 
 
 def test_token_folds_in_every_covered_module_and_nothing_else():
-    """Recompute the digest independently from the two tuples.
+    """Recompute the module set independently from the two tuples.
 
     This is the assertion that would fail if ``validate()`` were changed to skip
-    a module, hash something twice, or hash in a different order.
+    a module or to add one the tuples do not list.
     """
-    digest = hashlib.md5()
-    for module in model._HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in model._DEFERRED_HELPER_MODULE_NAMES:
-        source = inspect.getsource(importlib.import_module(module_name))
-        digest.update(source.encode("utf-8"))
-    assert model.validate(None) == digest.hexdigest()
+    expected = {module.__name__ for module in model._HELPER_MODULES} | {
+        importlib.import_module(name).__name__ for name in model._DEFERRED_HELPER_MODULE_NAMES}
+    assert set(model.validate(None)["modules"]) == expected
 
 
 def test_every_discovered_submodule_is_covered_or_deliberately_excluded():

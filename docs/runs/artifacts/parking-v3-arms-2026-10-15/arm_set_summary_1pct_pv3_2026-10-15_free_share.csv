@@ -1,0 +1,7 @@
+arm,configured_shift,logged_shift,random_seed_and_offset,persons,persons_in_paid_zones,persons_drawn_free,person_free_share,person_free_percent_logged,campus_persons,campus_persons_drawn_free,iterations,work_education_calls_in_draw_zones,employer_free_calls_in_draw_zones,call_employer_free_share_draw_zones,work_education_calls_in_all_zones,employer_free_calls_in_all_zones,call_employer_free_share_all_zones
+v3,0.000000,0.000000,1234 + 7371,12046,510,445,0.872549,87.300000,226,47,51-60,248,207,0.834677,355,233,0.656338
+v3_cost_0.5,0.000000,0.000000,1234 + 7371,12046,510,445,0.872549,87.300000,226,47,51-60,248,207,0.834677,355,233,0.656338
+v3_cost_2.0,0.000000,0.000000,1234 + 7371,12046,510,445,0.872549,87.300000,226,47,51-60,248,207,0.834677,355,233,0.656338
+v3_free_shift_-0.1,-0.100000,-0.100000,1234 + 7371,12046,510,390,0.764706,76.500000,226,47,51-60,248,186,0.750000,355,212,0.597183
+v3_free_shift_-0.2,-0.200000,-0.200000,1234 + 7371,12046,510,342,0.670588,67.100000,226,47,51-60,248,144,0.580645,355,170,0.478873
+v3_ev_off,0.000000,0.000000,1234 + 7371,12046,510,445,0.872549,87.300000,226,47,51-60,248,207,0.834677,355,233,0.656338

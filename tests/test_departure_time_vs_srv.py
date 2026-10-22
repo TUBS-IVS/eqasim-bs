@@ -468,19 +468,14 @@ def test_validate_hashes_the_pure_module_and_the_reference_builders():
                                       srv_plan_structure, departure_time_model, metrics,
                                       popsim_trips, config_keys, provenance, portal_config_keys}
     token = S.validate(None)
-    assert len(token) == 32 and int(token, 16) >= 0
+    assert token["format"] == 2
     assert token == S.validate(None)
-    # The token really is the md5 over exactly those sources and then the rest of the stage's
-    # import closure (gated in tests/test_audit_synpp_helper_hash.py), in the declared order.
-    import hashlib
+    # The token holds exactly those modules and then the rest of the stage's import closure
+    # (gated in tests/test_audit_synpp_helper_hash.py).
     import importlib
-    import inspect
-    expected = hashlib.md5()
-    for module in S._HELPER_MODULES:
-        expected.update(inspect.getsource(module).encode("utf-8"))
-    for name in S._DEFERRED_HELPER_MODULE_NAMES:
-        expected.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
-    assert token == expected.hexdigest()
+    expected = {module.__name__ for module in S._HELPER_MODULES} | {
+        importlib.import_module(name).__name__ for name in S._DEFERRED_HELPER_MODULE_NAMES}
+    assert set(token["modules"]) == expected
 
 
 # --------------------------------------------------------------------------- stage: execute

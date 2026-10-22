@@ -34,13 +34,11 @@ way -- see :func:`execute`.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 
 import pandas as pd
 
+from braunschweig import synpp_tokens
 from braunschweig.analysis import json_output as _json_output
 from braunschweig.calibration import reported_time_precision as _reported_time_precision
 from braunschweig.calibration import srv_departure_times as _srv_departure_times
@@ -134,7 +132,7 @@ MATCH_COLUMNS = ("person_id", "donor_id", "coarsening_level")
 
 
 def validate(context):
-    """synpp validation token: md5 over the pure helper modules' sources.
+    """synpp validation token: structured token over the pure helper modules' sources.
 
     synpp hashes only THIS module's source, so an edit to a helper module it imports would
     otherwise leave the cached stage output in place although the rules that produced it
@@ -144,22 +142,13 @@ def validate(context):
 
     A deferred module that fails to import raises rather than being skipped: skipping it
     would keep the stale cache alive exactly when the helper is broken.
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"trips_day_stage validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
-                "skipped, because skipping it would silently reuse stale cached trips."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

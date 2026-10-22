@@ -45,6 +45,7 @@ production:
   - braunschweig.plan_check.bicycle_max_distance_m
   - braunschweig.plan_check.leg_max_duration_s
   - braunschweig.plan_check.max_frozen_defect_share
+  - braunschweig.plan_check.max_frozen_pt_as_walk_share
 introduced:
   issue: 443
   pr: null

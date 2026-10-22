@@ -29,9 +29,9 @@ evidence:
       With freight off the filter is a documented no-op (docs/features/freight.md); there is no dedicated freight_enabled=False end-to-end byte-identity test, only a row-filter-level no-op test (test_noop_without_freight_agents).
   fallback_rate:
     instrumented: true
-    log_marker: excluded %d freight agents
+    log_marker: excluded %d rows of %d freight agents
     note: |
-      Logs the excluded-agent count and percentage per analysis table; a separate warning fires when the expected person-id column is missing (agents NOT filtered, per no-silent-fallback).
+      Logs the excluded row count (trips or activities), the number of distinct freight agents behind them and the percentage of the rows per analysis table; a separate warning fires when the expected person-id column is missing (agents NOT filtered, per no-silent-fallback).
   reference:
     kind: none
     note: This is a filter, not a data-consuming feature; no external reference applies.

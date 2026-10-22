@@ -71,6 +71,37 @@ DEFAULT_MODE_SUBSTITUTION_WARN_SHARE = 0.1
 KEY_FALLBACK_WARN_SHARE = "braunschweig.portal.fallback_warn_share"
 DEFAULT_FALLBACK_WARN_SHARE = 0.1
 
+#: Transit modes whose routes may serve as pt portal gates: ``"all"`` (every mode of the schedule) or a list of
+#: mode names (compared lower-cased) that restricts the exit stops (#465).
+KEY_PT_GATE_MODES = "braunschweig.portal.pt_gate_modes"
+DEFAULT_PT_GATE_MODES = "all"
+
+#: Seconds. A pt gate must have an outward departure within [t_gate, t_gate + window] at the planned gate
+#: arrival (outbound) and, for stays with a return leg, at the planned re-entry (#465).
+KEY_GATE_SERVICE_WINDOW_S = "braunschweig.portal.gate_service_window_s"
+DEFAULT_GATE_SERVICE_WINDOW_S = 3600.0
+
+#: Number of exit stops (smallest detour, outward route towards the external point) the router checks per stay.
+KEY_GATE_CANDIDATES = "braunschweig.portal.gate_candidates"
+DEFAULT_GATE_CANDIDATES = 5
+
+#: Seconds. A pt stay without an admissible gate may shift its trip departures to the grid
+#: ``t + k * shift_step_s`` up to ``t + shift_window_s`` (#465).
+KEY_SHIFT_WINDOW_S = "braunschweig.portal.shift_window_s"
+DEFAULT_SHIFT_WINDOW_S = 7200.0
+KEY_SHIFT_STEP_S = "braunschweig.portal.shift_step_s"
+DEFAULT_SHIFT_STEP_S = 1800.0
+
+#: Seconds. An outbound shift is allowed only while at least this much time remains between the shifted
+#: outbound arrival and the return departure.
+KEY_MIN_STAY_S = "braunschweig.portal.min_stay_s"
+DEFAULT_MIN_STAY_S = 1800.0
+
+#: WARN when the share of pt stays that did not get a timetable-aware gate (tour switched, shifted or kept
+#: without connection) exceeds this.
+KEY_NO_CONNECTION_WARN_SHARE = "braunschweig.portal.no_connection_warn_share"
+DEFAULT_NO_CONNECTION_WARN_SHARE = 0.05
+
 #: Added to random_seed for the external-point draw; disjoint from the in-commuter (100000)
 #: and student in-commuter (200000) offsets so the streams never overlap.
 RNG_OFFSET = 300000
@@ -92,7 +123,12 @@ PORTAL_GATE_ACTIVITY_ATTRIBUTE = "portalGate"
 
 
 def validate_settings(max_routable_distance_m: float, external_point_distance_tolerance: float,
-                      mode_substitution_warn_share: float, fallback_warn_share: float) -> None:
+                      mode_substitution_warn_share: float, fallback_warn_share: float, *,
+                      gate_candidates: int = DEFAULT_GATE_CANDIDATES,
+                      gate_service_window_s: float = DEFAULT_GATE_SERVICE_WINDOW_S,
+                      shift_window_s: float = DEFAULT_SHIFT_WINDOW_S, shift_step_s: float = DEFAULT_SHIFT_STEP_S,
+                      min_stay_s: float = DEFAULT_MIN_STAY_S,
+                      no_connection_warn_share: float = DEFAULT_NO_CONNECTION_WARN_SHARE) -> None:
     """Raise ``ValueError`` naming the key when a setting is outside its valid range."""
     if not max_routable_distance_m > 0.0:
         raise ValueError(f"{KEY_MAX_ROUTABLE_DISTANCE_M} must be > 0 m, got {max_routable_distance_m!r}")
@@ -104,3 +140,15 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
                          f"got {mode_substitution_warn_share!r}")
     if not 0.0 < fallback_warn_share <= 1.0:
         raise ValueError(f"{KEY_FALLBACK_WARN_SHARE} must lie in (0, 1], got {fallback_warn_share!r}")
+    if int(gate_candidates) != gate_candidates or gate_candidates < 1:
+        raise ValueError(f"{KEY_GATE_CANDIDATES} must be an integer >= 1, got {gate_candidates!r}")
+    if not gate_service_window_s >= 0.0:
+        raise ValueError(f"{KEY_GATE_SERVICE_WINDOW_S} must be >= 0 s, got {gate_service_window_s!r}")
+    if not shift_window_s >= 0.0:
+        raise ValueError(f"{KEY_SHIFT_WINDOW_S} must be >= 0 s, got {shift_window_s!r}")
+    if not shift_step_s > 0.0:
+        raise ValueError(f"{KEY_SHIFT_STEP_S} must be > 0 s, got {shift_step_s!r}")
+    if not min_stay_s >= 0.0:
+        raise ValueError(f"{KEY_MIN_STAY_S} must be >= 0 s, got {min_stay_s!r}")
+    if not 0.0 < no_connection_warn_share <= 1.0:
+        raise ValueError(f"{KEY_NO_CONNECTION_WARN_SHARE} must lie in (0, 1], got {no_connection_warn_share!r}")

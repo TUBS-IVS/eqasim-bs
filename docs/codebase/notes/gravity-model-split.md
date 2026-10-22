@@ -46,7 +46,7 @@ The split gave this stage a `validate()` hook it never had before. synpp's
 (`inspect.getsource` of `model.py`), never its siblings', so without
 `validate()` a change confined to a sibling would silently reuse the stale
 cached stage output on a partial rerun. The new `validate()` folds the 5
-new siblings' sources into an md5 token via `_HELPER_MODULES`. Because the
+new siblings' sources into a structured token (one semantic digest per module) via `_HELPER_MODULES`. Because the
 stage had no token before this split, the first run after this change has no
 stored token to compare against and therefore recomputes this stage and
 everything downstream of it once — a deliberate, one-off cost, not a bug.

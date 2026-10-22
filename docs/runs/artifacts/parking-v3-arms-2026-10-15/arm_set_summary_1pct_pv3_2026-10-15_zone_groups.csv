@@ -1,0 +1,145 @@
+arm,zone_group,purpose_class,iterations,zone_ids,priced_calls,paid_calls,paid_share,garage_share_paid_options,garage_share_free_options,mean_expected_cost_cents,ev_exempt_count,street_infeasible_count,no_feasible_option_count,employer_free_count
+v3,bs_zone_ia,all,51-60,bs_zone_ia,228,115,0.504386,0.414453,0.000000,149.2321,0,23,0,59
+v3,bs_zone_ia,work_education,51-60,bs_zone_ia,76,17,0.223684,0.165113,0.000000,107.2500,0,12,0,59
+v3,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,98,0.867257,0.725192,0.000000,228.9728,0,11,0,0
+v3,bs_zone_ib,all,51-60,bs_zone_ib,65,15,0.230769,0.119891,0.000000,83.1260,0,0,0,23
+v3,bs_zone_ib,work_education,51-60,bs_zone_ib,28,5,0.178571,0.001927,0.000000,56.5604,0,0,0,23
+v3,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.644915,0.000000,318.2913,0,0,0,0
+v3,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,41,0.471264,0.234124,0.042963,114.3222,0,0,0,20
+v3,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,11,0.354839,0.124305,0.000002,181.0627,0,0,0,20
+v3,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.500465,0.113263,131.3058,0,0,0,0
+v3,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,131,0.388724,0.057505,0.047124,44.4008,0,4,0,118
+v3,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,87,0.420290,0.007324,0.003845,38.5149,0,1,0,118
+v3,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266616,0.225146,104.3356,0,3,0,0
+v3_cost_0.5,bs_zone_ia,all,51-60,bs_zone_ia,228,116,0.508772,0.418377,0.000000,149.2801,0,23,0,59
+v3_cost_0.5,bs_zone_ia,work_education,51-60,bs_zone_ia,76,17,0.223684,0.165113,0.000000,107.2498,0,12,0,59
+v3_cost_0.5,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,99,0.876106,0.733110,0.000000,229.0698,0,11,0,0
+v3_cost_0.5,bs_zone_ib,all,51-60,bs_zone_ib,65,15,0.230769,0.120155,0.000000,83.4270,0,0,0,23
+v3_cost_0.5,bs_zone_ib,work_education,51-60,bs_zone_ib,28,5,0.178571,0.001927,0.000000,56.5604,0,0,0,23
+v3_cost_0.5,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.646344,0.000000,319.9221,0,0,0,0
+v3_cost_0.5,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_cost_0.5,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,41,0.471264,0.234461,0.043024,114.0869,0,0,0,20
+v3_cost_0.5,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,11,0.354839,0.124305,0.000002,181.0627,0,0,0,20
+v3_cost_0.5,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.501352,0.113425,130.6854,0,0,0,0
+v3_cost_0.5,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3_cost_0.5,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3_cost_0.5,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3_cost_0.5,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_cost_0.5,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_cost_0.5,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_cost_0.5,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,131,0.388724,0.057393,0.047172,44.4628,0,4,0,118
+v3_cost_0.5,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,87,0.420290,0.007324,0.003845,38.5149,0,1,0,118
+v3_cost_0.5,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266053,0.225392,104.6474,0,3,0,0
+v3_cost_2.0,bs_zone_ia,all,51-60,bs_zone_ia,228,117,0.513158,0.422594,0.000000,150.0498,0,23,0,59
+v3_cost_2.0,bs_zone_ia,work_education,51-60,bs_zone_ia,76,17,0.223684,0.165113,0.000000,107.2499,0,12,0,59
+v3_cost_2.0,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,100,0.884956,0.741617,0.000000,230.6228,0,11,0,0
+v3_cost_2.0,bs_zone_ib,all,51-60,bs_zone_ib,65,15,0.230769,0.120076,0.000000,83.2330,0,0,0,23
+v3_cost_2.0,bs_zone_ib,work_education,51-60,bs_zone_ib,28,5,0.178571,0.001927,0.000000,56.5604,0,0,0,23
+v3_cost_2.0,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.645915,0.000000,318.8710,0,0,0,0
+v3_cost_2.0,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_cost_2.0,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,41,0.471264,0.234673,0.043088,114.4383,0,0,0,20
+v3_cost_2.0,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,11,0.354839,0.124305,0.000002,181.0627,0,0,0,20
+v3_cost_2.0,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.501911,0.113593,131.6117,0,0,0,0
+v3_cost_2.0,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3_cost_2.0,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3_cost_2.0,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3_cost_2.0,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_cost_2.0,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_cost_2.0,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_cost_2.0,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,131,0.388724,0.057525,0.047103,44.3888,0,4,0,118
+v3_cost_2.0,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,87,0.420290,0.007324,0.003845,38.5149,0,1,0,118
+v3_cost_2.0,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266716,0.225044,104.2752,0,3,0,0
+v3_free_shift_-0.1,bs_zone_ia,all,51-60,bs_zone_ia,228,120,0.526316,0.435044,0.000000,156.6728,0,26,0,56
+v3_free_shift_-0.1,bs_zone_ia,work_education,51-60,bs_zone_ia,76,20,0.263158,0.204590,0.000000,128.0311,0,15,0,56
+v3_free_shift_-0.1,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,100,0.884956,0.740188,0.000000,230.0091,0,11,0,0
+v3_free_shift_-0.1,bs_zone_ib,all,51-60,bs_zone_ib,65,19,0.292308,0.121202,0.000000,106.6412,0,0,0,19
+v3_free_shift_-0.1,bs_zone_ib,work_education,51-60,bs_zone_ib,28,9,0.321429,0.004364,0.000000,110.6427,0,0,0,19
+v3_free_shift_-0.1,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.646331,0.000000,319.4738,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,46,0.528736,0.273282,0.042963,135.5412,0,0,0,15
+v3_free_shift_-0.1,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,16,0.516129,0.234689,0.000003,238.9475,0,0,0,15
+v3_free_shift_-0.1,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.500007,0.113263,132.8700,0,0,0,0
+v3_free_shift_-0.1,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3_free_shift_-0.1,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3_free_shift_-0.1,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3_free_shift_-0.1,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_free_shift_-0.1,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_free_shift_-0.1,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_free_shift_-0.1,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,140,0.415430,0.065305,0.047386,56.4558,0,5,0,109
+v3_free_shift_-0.1,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,96,0.463768,0.020204,0.004184,58.0251,0,2,0,109
+v3_free_shift_-0.1,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266054,0.225418,104.6927,0,3,0,0
+v3_free_shift_-0.2,bs_zone_ia,all,51-60,bs_zone_ia,228,132,0.578947,0.475220,0.000000,176.6950,0,34,0,36
+v3_free_shift_-0.2,bs_zone_ia,work_education,51-60,bs_zone_ia,76,32,0.421053,0.322298,0.000000,194.1208,0,23,0,36
+v3_free_shift_-0.2,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,100,0.884956,0.742085,0.000000,225.9582,0,11,0,0
+v3_free_shift_-0.2,bs_zone_ib,all,51-60,bs_zone_ib,65,19,0.292308,0.121284,0.000000,106.7761,0,0,0,19
+v3_free_shift_-0.2,bs_zone_ib,work_education,51-60,bs_zone_ib,28,9,0.321429,0.004364,0.000000,110.6427,0,0,0,19
+v3_free_shift_-0.2,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.646773,0.000000,320.2043,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,51,0.586207,0.315685,0.054518,152.7742,0,1,0,10
+v3_free_shift_-0.2,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,21,0.677419,0.352258,0.032261,288.0239,0,1,0,10
+v3_free_shift_-0.2,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.501352,0.113425,132.2005,0,0,0,0
+v3_free_shift_-0.2,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3_free_shift_-0.2,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3_free_shift_-0.2,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3_free_shift_-0.2,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_free_shift_-0.2,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_free_shift_-0.2,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_free_shift_-0.2,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,153,0.454006,0.079132,0.052494,73.4284,0,7,0,92
+v3_free_shift_-0.2,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,109,0.526570,0.042664,0.012543,85.7170,0,4,0,92
+v3_free_shift_-0.2,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266209,0.225287,104.5067,0,3,0,0
+v3_ev_off,bs_zone_ia,all,51-60,bs_zone_ia,228,115,0.504386,0.414453,0.000000,149.2321,0,23,0,59
+v3_ev_off,bs_zone_ia,work_education,51-60,bs_zone_ia,76,17,0.223684,0.165113,0.000000,107.2500,0,12,0,59
+v3_ev_off,bs_zone_ia,other_purposes,51-60,bs_zone_ia,113,98,0.867257,0.725192,0.000000,228.9728,0,11,0,0
+v3_ev_off,bs_zone_ib,all,51-60,bs_zone_ib,65,15,0.230769,0.119891,0.000000,83.1260,0,0,0,23
+v3_ev_off,bs_zone_ib,work_education,51-60,bs_zone_ib,28,5,0.178571,0.001927,0.000000,56.5604,0,0,0,23
+v3_ev_off,bs_zone_ib,other_purposes,51-60,bs_zone_ib,12,10,0.833333,0.644915,0.000000,318.2913,0,0,0,0
+v3_ev_off,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_ev_off,wob,all,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",87,41,0.471264,0.234124,0.042963,114.3222,0,0,0,20
+v3_ev_off,wob,work_education,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",31,11,0.354839,0.124305,0.000002,181.0627,0,0,0,20
+v3_ev_off,wob,other_purposes,51-60,"wob_area_724, wob_area_727, wob_area_732, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",33,30,0.909091,0.500465,0.113263,131.3058,0,0,0,0
+v3_ev_off,bh,all,51-60,"bh_kurpark, bh_sole_therme",2,1,0.500000,0.000000,0.000000,25.0000,0,0,0,1
+v3_ev_off,bh,work_education,51-60,"bh_kurpark, bh_sole_therme",1,0,0.000000,0.000000,0.000000,0.0000,0,0,0,1
+v3_ev_off,bh,other_purposes,51-60,"bh_kurpark, bh_sole_therme",1,1,1.000000,0.000000,0.000000,50.0000,0,0,0,0
+v3_ev_off,se_am_markt,all,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_ev_off,se_am_markt,work_education,51-60,se_am_markt,12,0,0.000000,0.000000,0.000000,0.0000,0,0,0,12
+v3_ev_off,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_ev_off,other,all,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",337,131,0.388724,0.057505,0.047124,44.4008,0,4,0,118
+v3_ev_off,other,work_education,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",207,87,0.420290,0.007324,0.003845,38.5149,0,1,0,118
+v3_ev_off,other,other_purposes,51-60,"bs_parkscheininsel_marthastrasse_koernerstrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",67,44,0.656716,0.266616,0.225146,104.3356,0,3,0,0

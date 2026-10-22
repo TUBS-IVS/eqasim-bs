@@ -18,10 +18,10 @@ ported from another eqasim project), `retired`.
 | Lineage | Stages |
 |---|---|
 | inherited | 21 |
-| configured | 8 |
+| configured | 7 |
 | extended | 6 |
-| overridden | 24 |
-| braunschweig_new | 71 |
+| overridden | 25 |
+| braunschweig_new | 73 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -36,6 +36,7 @@ ported from another eqasim project), `retired`.
 | `matsim.scenario.facilities` | `braunschweig.matsim.scenario.facilities` | `braunschweig.matsim.scenario.facilities` | `=` |
 | `matsim.scenario.households` | `braunschweig.matsim.scenario.households` | `braunschweig.matsim.scenario.households` | `=` |
 | `matsim.scenario.population` | `braunschweig.matsim.scenario.population` | `braunschweig.matsim.scenario.population` | `=` |
+| `matsim.scenario.supply.gtfs` | `braunschweig.matsim.scenario.supply_gtfs` | `braunschweig.matsim.scenario.supply_gtfs` | `braunschweig.matsim.scenario.supply_gtfs` |
 | `matsim.scenario.vehicles` | `braunschweig.matsim.scenario.vehicles` | `braunschweig.matsim.scenario.vehicles` | `=` |
 | `matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` |
 | `synthesis.locations.education` | `eqasim_common.locations.education` | `eqasim_common.locations.education` | `eqasim_common.locations.education` |
@@ -62,9 +63,9 @@ ported from another eqasim project), `retired`.
 - **Cordon / external demand**: `braunschweig.data.census.pendler`, `braunschweig.data.cordon_gemeinden`, `braunschweig.data.cordon_network`, `braunschweig.data.cordon_pt_gates`, `braunschweig.synthesis.cordon_gates`, `braunschweig.synthesis.incommuters`, `braunschweig.synthesis.portal_trips.anchors`, `braunschweig.synthesis.portal_trips.stage`, `braunschweig.synthesis.student_incommuters`, `synthesis.population.trips.simulated`
 - **Education**: `braunschweig.data.education.student_share`, `braunschweig.data.schools.facilities`, `braunschweig.data.schools.kita_facilities`, `braunschweig.data.schools.university_facilities`, `braunschweig.synthesis.locations.education_gravity`
 - **Vehicle fleet**: `braunschweig.synthesis.vehicles.cars.household`
-- **Freight**: `braunschweig.data.freight.german_wide`, `braunschweig.freight.extraction`, `braunschweig.freight.trips`
+- **Freight**: `braunschweig.data.freight.german_wide`, `braunschweig.freight.extraction`, `braunschweig.freight.extraction_tool`, `braunschweig.freight.trips`
 - **Home locations**: `braunschweig.data.buildings`, `braunschweig.data.zensus_grid.population`
-- **MATSim**: `braunschweig.data.vrb.zone_polygons`, `braunschweig.data.vrb.zones`
+- **MATSim**: `braunschweig.data.vrb.zone_polygons`, `braunschweig.data.vrb.zones`, `braunschweig.parking.zones_stage`
 - **Population synthesis**: `braunschweig.data.census.household_size`, `braunschweig.data.census.households_size_age`, `braunschweig.data.census.households_type`, `braunschweig.data.census.population`, `braunschweig.data.hts.mid_donor`, `braunschweig.ipf.model`, `braunschweig.ipf.prepare`, `braunschweig.popsim.completed_donor`
 - **Secondary locations**: `braunschweig.data.bosserhof_location_category`, `braunschweig.data.bosserhof_purpose`, `braunschweig.data.external_secondary_points`, `braunschweig.data.locations`, `braunschweig.synthesis.locations.secondary_candidates`
 - **Spatial base data**: `braunschweig.data.alkis`, `braunschweig.data.bbsr.regiostar`, `braunschweig.data.landuse`, `braunschweig.data.osm`, `braunschweig.data.spatial.taz`, `braunschweig.data.verbindungen.zones`

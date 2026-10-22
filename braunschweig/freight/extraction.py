@@ -2,7 +2,11 @@
 
 Runs the published matsim application-contrib extraction
 (``ExtractRelevantFreightTrips``, Lu et al. 2022, via our
-``RunExtractFreightTrips`` wrapper) against the study-area polygon:
+``RunExtractFreightTrips`` wrapper) against the study-area polygon. The routing runs
+MATSim's ``ExtractRelevantFreightTrips`` from the ``braunschweig.freight.extraction_tool``
+jar (MATSim application contrib at the pinned ``matsim.version`` plus the wrapper); the
+eqasim fork jar is NOT an input, so Java edits elsewhere in the fork do not recompute the
+~4 x 45 min routing (issue #468):
 
 - study area = dissolved in-scope municipalities, PLUS the cordon network
   buffer when ``cordon_enabled`` (the trimmed trip endpoints must lie where
@@ -21,7 +25,9 @@ Runs the published matsim application-contrib extraction
   defaults to ``longDistanceFreight``) -- sampling to the pipeline rate
   happens later.
   This stage is sampling-rate independent and therefore cached across
-  sampling-rate changes (~4 x 45 min one-time routing cost).
+  sampling-rate changes. The routing cost is estimated at about 45 min per category
+  (docs/features/freight.md); the one observed figure (1 h 15 min for the stage) is in
+  ADR-0148.
 
 CRS: ``freight_crs`` (default EPSG:25832, the v3 network CRS).
 """
@@ -32,8 +38,9 @@ import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 
-import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+
+from braunschweig.freight import extraction_tool
 
 logger = logging.getLogger(__name__)
 
@@ -49,19 +56,23 @@ def configure(context):
     context.stage("braunschweig.data.freight.german_wide")
     context.stage("data.spatial.municipalities")
     context.stage("matsim.runtime.java")
-    context.stage("matsim.runtime.eqasim")
+    context.stage("braunschweig.freight.extraction_tool")
 
-    # synpp scopes config per stage (issue #229): execute() calls eqasim.run() ->
-    # java.run(), which reads the java binary/memory options AND the hang-watchdog
-    # options (#330) from THIS stage's context. Delegate to java's own configure()
-    # so the declares cannot drift from what java.run actually reads. Required
-    # rather than optional for the watchdog keys: they are volatile, and synpp does
-    # not propagate volatile options to downstream stages.
+    # synpp scopes config per stage (issue #229): execute() calls java.run(), which reads
+    # the java binary/memory options AND the hang-watchdog options (#330) from THIS stage's
+    # context. Delegate to java's own configure() so the declares cannot drift from what
+    # java.run actually reads. Required rather than optional for the watchdog keys: they
+    # are volatile, and synpp does not propagate volatile options to downstream stages.
     java.configure(context)
 
     context.config("cordon_enabled", False)
     context.config("cordon_network_buffer_fraction", 0.10)
     context.config("freight_crs", "EPSG:25832")
+
+
+def tool_java_invocation(tool_cache_path, jar_relative):
+    """Entry point and absolute classpath for the extraction tool jar (pure, testable)."""
+    return extraction_tool.ENTRY_POINT, "%s/%s" % (tool_cache_path, jar_relative)
 
 
 def count_persons(plans_path):
@@ -105,13 +116,17 @@ def execute(context):
     plans_path = os.path.abspath(paths["plans_path"])
     network_path = os.path.abspath(paths["network_path"])
 
+    entry_point, class_path = tool_java_invocation(
+        context.path("braunschweig.freight.extraction_tool"),
+        context.stage("braunschweig.freight.extraction_tool"))
+
     outputs = {}
     counts = {}
     for category in TRIP_CATEGORIES:
         output_name = OUTPUT_TEMPLATE % category
         output_path = os.path.abspath("%s/%s" % (context.path(), output_name))
 
-        eqasim.run(context, "org.eqasim.braunschweig.scenario.RunExtractFreightTrips", [
+        java.run(context, entry_point, [
             plans_path,
             "--network", network_path,
             "--shp", "study_area.shp",
@@ -130,7 +145,7 @@ def execute(context):
             "--geographicalTripType", category.upper(),
             "--subpopulation", "freight",
             "--output", output_path,
-        ])
+        ], class_path=class_path)
 
         assert os.path.exists(output_path), \
             "freight extraction did not write %s" % output_name

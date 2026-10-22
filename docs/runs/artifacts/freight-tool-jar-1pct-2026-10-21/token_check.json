@@ -1,0 +1,49 @@
+{
+ "A": {
+  "eqasim_source_digest": "c8cd375edf58dfcffe6907ed7da697c737afd3057150c30fa9208c6035b20cf6",
+  "freight_tool_token": {
+   "format": 1,
+   "matsim_version": "2026.0-2026w12",
+   "java_release": "25",
+   "wrapper": "dd1d97c4c4365dd144ab08ef41da401ccb9535169f3fbf781e65d7f179abaf67",
+   "pom": "8e881f3d1506104a2f8398cdf40d3ae2b5a6624baa059e8df12070466fb0ab29"
+  }
+ },
+ "B_same_commit_other_path": {
+  "eqasim_source_digest": "c8cd375edf58dfcffe6907ed7da697c737afd3057150c30fa9208c6035b20cf6",
+  "freight_tool_token": {
+   "format": 1,
+   "matsim_version": "2026.0-2026w12",
+   "java_release": "25",
+   "wrapper": "dd1d97c4c4365dd144ab08ef41da401ccb9535169f3fbf781e65d7f179abaf67",
+   "pom": "8e881f3d1506104a2f8398cdf40d3ae2b5a6624baa059e8df12070466fb0ab29"
+  }
+ },
+ "B_after_java_edit": {
+  "eqasim_source_digest": "63af263b18f9463674a105bcdf7449db3d5f7ee7dcf9731af223ea951052e6fa",
+  "freight_tool_token": {
+   "format": 1,
+   "matsim_version": "2026.0-2026w12",
+   "java_release": "25",
+   "wrapper": "dd1d97c4c4365dd144ab08ef41da401ccb9535169f3fbf781e65d7f179abaf67",
+   "pom": "8e881f3d1506104a2f8398cdf40d3ae2b5a6624baa059e8df12070466fb0ab29"
+  }
+ },
+ "B_after_revert": {
+  "eqasim_source_digest": "c8cd375edf58dfcffe6907ed7da697c737afd3057150c30fa9208c6035b20cf6",
+  "freight_tool_token": {
+   "format": 1,
+   "matsim_version": "2026.0-2026w12",
+   "java_release": "25",
+   "wrapper": "dd1d97c4c4365dd144ab08ef41da401ccb9535169f3fbf781e65d7f179abaf67",
+   "pom": "8e881f3d1506104a2f8398cdf40d3ae2b5a6624baa059e8df12070466fb0ab29"
+  }
+ },
+ "checks": {
+  "same_commit_other_path_same_eqasim_digest": true,
+  "same_commit_other_path_same_freight_token": true,
+  "java_edit_changes_eqasim_digest": true,
+  "java_edit_keeps_freight_token": true,
+  "revert_restores_eqasim_digest": true
+ }
+}

@@ -4,7 +4,8 @@ import os
 def _run_synpp_source() -> str:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(root, "scripts", "run_synpp.py")
-    return open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
 
 
 def test_run_synpp_uses_setup_logging():

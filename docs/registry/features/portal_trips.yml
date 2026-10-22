@@ -11,8 +11,10 @@ description: >-
   destination's distance from home (way out before plus way back; a consistency cap, not a proven bound). The
   portal stage rewrites the reporting-day trips behind the alias
   synthesis.population.trips.final: consecutive far destinations merge into one stay, the gate is the road gate
-  or the schedule-derived rail exit station with the smallest detour (always inside the cut extent, so the
-  scenario cutter cuts nothing), the stay ends at a time derived from the donor's diary, and the donor's
+  or the schedule-derived pt exit stop with the smallest detour among those that the timetable and the eqasim
+  batch router show to be served and connected at the stay's times (ADR-0152; always inside the cut extent, so
+  the scenario cutter cuts nothing; a pt stay without any connection becomes car, car passenger, a shifted
+  departure or a counted kept stay), the stay ends at a time derived from the donor's diary, and the donor's
   outbound mode is fixed for both legs after an availability check with a counted substitution order. The
   outbound leg arrives at the gate after the geometric inside share of its diary duration (ADR-0141).
   Two guard rails behind the same flag bound the secondary distance CDFs by the threshold and the external
@@ -102,6 +104,9 @@ code_paths:
 - braunschweig/synthesis/portal_trips/config_keys.py
 - braunschweig/synthesis/portal_trips/gates.py
 - braunschweig/synthesis/portal_trips/modes.py
+- braunschweig/synthesis/portal_trips/no_connection.py
+- braunschweig/data/transit/schedule.py
+- braunschweig/data/transit/connections.py
 - braunschweig/synthesis/portal_trips/rewrite.py
 - braunschweig/synthesis/portal_trips/stage.py
 - braunschweig/synthesis/portal_trips/timing.py
@@ -136,6 +141,9 @@ evidence:
   - tests/test_portal_trips_classification.py
   - tests/test_portal_trips_config_keys.py
   - tests/test_portal_trips_gates.py
+  - tests/test_portal_trips_no_connection.py
+  - tests/test_transit_connections.py
+  - tests/test_transit_schedule_reader.py
   - tests/test_portal_trips_rewrite.py
   - tests/test_portal_trips_stage.py
   - tests/test_portal_trips_timing_modes.py
@@ -221,6 +229,9 @@ notes: >-
   synthesis.population.trips.final and everything downstream once, and the distance CDFs and the external
   candidates recompute too. Not in scope (tracked elsewhere): the plan feasibility check and stuck KPI (#443),
   the freight gate connector (#444), a sampler conditioned on the reported distance class (a possible later A/B).
+  Timetable-aware pt gates (ADR-0152, #465): implemented, effect not yet measured; the WP-E run manifest is owed,
+  so the validation block above does not cover them. Fallback rate of the no-connection chain: logged as rates
+  under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share.
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
   The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's

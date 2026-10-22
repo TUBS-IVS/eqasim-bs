@@ -1,0 +1,73 @@
+dataset: parking_packages_municipal_2026_10_13
+title: >-
+  Owner delivery of 2026-10-13 (the large surface lot research package Grossparkplaetze_ZGB8_2026-10-12.zip and the manifest folder
+  of the free Wolfsburg car parks), raw source of every surface-lot row of the garage dataset
+inventory_id: null
+provider: >-
+  The owner's (L. Bienzeisler's) research package of the large surface lots of the eight towns of the study area (152 reviewed
+  records with 198 tariff rules, 238 sources and 120 research points, every rule with its source; data state 2026-10-13, source
+  date per lot) for issue #436 (parking cost zones v2, spec Amendment I). The sources are public pages and documents of the cities,
+  operators and event venues, named per source in the package; they belong to their publishers
+vintage: >-
+  Data state 2026-10-13: source_date per lot 2026-10-12 on 49 lots, 2026-10-07 on 5 and 2026-10-13 on 1 (data record
+  parking_garages_2026); tariffs as published in October 2026
+geography: >-
+  Braunschweig, Wolfsburg, Goslar, Salzgitter, Helmstedt, Wolfenbuettel, Peine and Gifhorn (the eight towns of the package)
+crs: >-
+  EPSG:25832 (GeoPackage layer researched_locations), WGS84 in the GeoJSON of the package, as the package states
+roles:
+- supply_input
+- spatial_input
+acquisition:
+  method: restricted_delivery
+  source: >-
+    Owner-supplied file, not downloaded by the pipeline. Obtain it from the owner (open an issue in TUBS-IVS/eqasim-bs) and verify it
+    against the SHA-256 in storage.notes.
+  notes: >-
+    Folder municipal_2026-10-13/: Grossparkplaetze_ZGB8_2026-10-12.zip (308 members, 307 of them listed in its MANIFEST.json) is READ by
+    large_lots.py (regional_garages.py --large-lots-zip): data/facilities.json, data/tariff_rules.json, data/sources.json,
+    data/summary.json, data/researched_locations.geojson (with the GeoPackage layer researched_locations of data/surface_parking.gpkg
+    only as a cross-check to 1 cm), review/wolfsburg_24_geometry_crosswalk.json and review/municipal_point_aliases.json; the package
+    scripts are never executed. wob_free_lots_evidence/ holds one file, MANIFEST.md, the manifest of the archived evidence pages of
+    the free Wolfsburg car parks (spec Amendment I5a): it is READ by large_lots.py (--wob-free-evidence-dir) and lists no page,
+    because the pages are archived in the Restluecken package (data record parking_package_restluecken_2026_10_14), which the curation
+    step reads in place.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/raw_sources/municipal_2026-10-13/
+  committed: false
+  local_only: true
+  notes: >-
+    Not distributed in the repository (the package archives third-party pages; eqasim-data/ is ignored by design). Files, SHA-256 and
+    sizes (verified on 2026-10-17 against the files in the main checkout): Grossparkplaetze_ZGB8_2026-10-12.zip
+    d467275ced5b68717ff2f426ad94be4debd085a9bebfaa239cfa6f4518fc9db4 (38,210,859 bytes; pinned in large_lots.LOTS_SHA256, the curation
+    code refuses another file); wob_free_lots_evidence/MANIFEST.md
+    0c702d30dcc289f5649af855df11892c49e24db37d2d0752d720c00c669bf9c2 (3,412 bytes; no code pin: the manifest names the SHA-256 of every
+    page it lists, here none). A test ties the pin and the local files to this record (tests/test_parking_raw_package_records.py).
+verification:
+  verifier_entry: D19
+  script: scripts/verify_braunschweig_inputs.py
+  notes: >-
+    Listed as D19 (optional, restricted, matsim_only) in scripts/verify_braunschweig_inputs.py with the large-lot package: only the
+    curation chain needs it. A missing file is reported as [RESTRICTED] with the route to obtain it; the SHA-256 is checked by the
+    curation code that reads the package, not by the preflight.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: >-
+    Owner research product that archives public pages and operator tariffs; the sources keep the terms of their publishers (no reuse
+    licence verified). Used by owner decisions of 2026-10-13.
+  notes: >-
+    The data derived from it and kept in the repository are facts of public tariffs (parking_tariffs_2026) and, as a local restricted
+    file, the garage and lot geometry (parking_garages_2026).
+  redistribution: restricted
+  restricted: true
+limitations: >-
+  A research package, not an official data set: its statements are the owner's reading of the archived sources and must be traced
+  to the source named for them. It replaces the Wolfsburg car-park review of the folder municipal_2026-10-07 for every surface lot
+  (data record parking_garages_2026).
+notes: >-
+  Used by the parking v2 work of issue #436 (spec Amendment I, Task 4j, ADR-0140) through the curation chain
+  (scripts/curation/parking_zones_2026/large_lots.py, regional_garages.py). Registered as a raw source of its own on 2026-10-17
+  (Part C final fix); before that the SHA-256 was named in the data record parking_garages_2026 only.

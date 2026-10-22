@@ -14,9 +14,10 @@ STAGES = (analysis_suite, simwrapper_export)
 
 
 @pytest.mark.parametrize("stage", STAGES, ids=lambda module: module.__name__)
-def test_the_token_is_a_stable_md5_over_importable_modules(stage):
+def test_the_token_is_a_stable_structured_token_over_importable_modules(stage):
     first = stage.validate(None)
-    assert len(first) == 32 and int(first, 16) >= 0
+    assert first["format"] == 2 and first["modules"]
+    assert all(len(digest) == 64 and int(digest, 16) >= 0 for digest in first["modules"].values())
     assert stage.validate(None) == first
 
 
@@ -31,10 +32,27 @@ def test_an_edit_to_a_sub_analysis_changes_the_token(stage, edited_module, monke
 
     def edited_getsource(module):
         source = real_getsource(module)
-        return source + "\n# edited\n" if module.__name__ == edited_module else source
+        return source + "\nZ_PROBE = 1\n" if module.__name__ == edited_module else source
 
-    monkeypatch.setattr(stage.inspect, "getsource", edited_getsource)
-    assert stage.validate(None) != before
+    monkeypatch.setattr(inspect, "getsource", edited_getsource)
+    after = stage.validate(None)
+    assert after != before
+    assert {name for name in before["modules"] if after["modules"][name] != before["modules"][name]} == {
+        edited_module}
+
+
+@pytest.mark.parametrize("stage", STAGES, ids=lambda module: module.__name__)
+def test_a_comment_edit_to_a_sub_analysis_keeps_the_token(stage, monkeypatch):
+    before = stage.validate(None)
+    edited_module = next(iter(before["modules"]))
+    real_getsource = inspect.getsource
+
+    def commented_getsource(module):
+        source = real_getsource(module)
+        return source + "\n# probe comment\n" if module.__name__ == edited_module else source
+
+    monkeypatch.setattr(inspect, "getsource", commented_getsource)
+    assert stage.validate(None) == before
 
 
 def test_a_module_that_cannot_be_imported_fails_the_token(monkeypatch):

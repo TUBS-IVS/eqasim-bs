@@ -59,7 +59,7 @@ EXPECTED_SHAREABLE_STAGES = {
     "eqasim_common.locations.education",
     "eqasim_common.spatial.codes",
     "eqasim_common.spatial.entd_codes",
-    "matsim.scenario.supply.gtfs",
+    "braunschweig.matsim.scenario.supply_gtfs",
     "matsim.scenario.supply.osm",
     "matsim.scenario.supply.processed",
     # Tier B1:

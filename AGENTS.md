@@ -70,9 +70,10 @@ overview, not an append-only log. Do not revive retired status or backlog files.
   unit tests cannot show a scientific pipeline works. Run
   `python scripts/run_tests.py --check` at session start and follow the
   [required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate)
-  before handing off, pushing or opening a PR. Write a test only for a defect it
-  can plausibly catch ([.claude/rules/tests.md](.claude/rules/tests.md)). Do not
-  run an unrelated full suite for a documentation-only edit.
+  before handing off, pushing or opening a PR. Locally run the affected tests;
+  the full suite runs in CI on the PR (ADR-0150), so do not start local full
+  suites in its place. Write a test only for a defect it
+  can plausibly catch ([.claude/rules/tests.md](.claude/rules/tests.md)).
 - Update the applicable registries, ADRs and run manifests before declaring a
   model change done; regenerate and check generated docs when those sources
   change. Report what was verified and whether scientific outputs may change.

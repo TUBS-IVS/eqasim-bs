@@ -1,11 +1,13 @@
 """Run the same regression command on Linux, WSL2 and native Windows.
 
 Use ``--check`` for interpreter/import diagnostics, ``--pipeline`` for the
-existing real-data opt-in tests. Remaining arguments are passed to pytest.
+existing real-data opt-in tests. Remaining arguments are passed to pytest, which
+runs with ``-q --tb=short`` unless they set a verbosity or traceback style of their own.
 """
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.metadata
 import importlib.util
 import json
@@ -19,6 +21,46 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from braunschweig import gate_evidence  # noqa: E402  (needs the repository on sys.path)
+# WSL mounts Windows drive ``X:`` at ``/mnt/x``; overridable for tests.
+WSL_DRIVE_MOUNT = Path("/mnt")
+WINDOWS_GITDIR = re.compile(r"^gitdir:\s*([A-Za-z]):[\\/](.*?)\s*$")
+
+
+def repair_worktree_pointer(checkout, drive_mount=None):
+    """Make a linked worktree's ``.git`` pointer readable by git inside WSL.
+
+    Windows git writes ``gitdir: C:/.../.git/worktrees/<id>`` into the ``.git`` file of
+    a linked worktree. POSIX git treats ``C:/...`` as a relative path, so every
+    git-dependent test fails under WSL in a Windows-created worktree
+    (docs/codebase/notes/linux-parity-testing.md). A pointer relative to the checkout is
+    read correctly by both gits; the back-pointer in ``.git/worktrees/<id>/gitdir`` is
+    Windows-owned and stays untouched. Returns the new relative pointer, or ``None`` when
+    nothing was rewritten: a main checkout, an already resolvable pointer, or a pointer
+    whose admin dir cannot be found under ``drive_mount`` (reported on stderr, never
+    rewritten blindly).
+    """
+    pointer_file = Path(checkout) / ".git"
+    if not pointer_file.is_file():
+        return None
+    content = pointer_file.read_text(encoding="utf-8")
+    match = WINDOWS_GITDIR.match(content)
+    if match is None:
+        return None
+    drive, rest = match.groups()
+    mount = WSL_DRIVE_MOUNT if drive_mount is None else Path(drive_mount)
+    admin_dir = mount / drive.lower() / rest.replace("\\", "/")
+    if not (admin_dir / "commondir").is_file():
+        print(f"cannot repair worktree pointer {content.strip()!r}: {admin_dir} is not a "
+              "worktree admin dir, git inside WSL will not find this repository",
+              file=sys.stderr)
+        return None
+    relative = os.path.relpath(admin_dir, Path(checkout)).replace("\\", "/")
+    pointer_file.write_text(f"gitdir: {relative}\n", encoding="utf-8", newline="\n")
+    print(f"repaired worktree pointer: {content.strip()} -> gitdir: {relative} "
+          "(git inside WSL cannot follow Windows paths)", flush=True)
+    return relative
 
 
 def check_environment():
@@ -58,7 +100,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Print environment diagnostics only.")
     parser.add_argument("--pipeline", action="store_true", help="Select real-data pipeline tests only.")
+    parser.add_argument("--keep-worktree-pointer", action="store_true",
+                        help="Under Linux/WSL, leave a Windows-absolute .git pointer of a linked "
+                             "worktree as it is instead of rewriting it to a relative path.")
+    parser.add_argument("--no-evidence", action="store_true",
+                        help="Do not write .claude/gate/tests-<platform>.json (for probe runs "
+                             "that must not replace the checkout's push-gate evidence).")
     args, pytest_args = parser.parse_known_args(argv)
+    if platform.system() == "Linux" and not args.keep_worktree_pointer:
+        repair_worktree_pointer(REPO_ROOT)
     report = check_environment()
     if args.check:
         print(json.dumps(report, indent=2))
@@ -102,9 +152,102 @@ def main(argv=None):
     if marker_args.expression:
         marker = f"({marker}) and ({marker_args.expression})"
     command = [sys.executable, "-u", "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini")]
-    command.extend(pytest_args or ["-q"])
+    command.extend(output_defaults(pytest_args))
+    command.extend(pytest_args)
+    junitxml = caller_junitxml(pytest_args)
+    if junitxml is None and not args.no_evidence:
+        junitxml = str(Path(REPO_ROOT) / gate_evidence.GATE_DIR
+                       / f"junit-{gate_evidence.platform_tag()}.xml")
+        command.append(f"--junitxml={junitxml}")
+        # A report left by an earlier run must never be read as this run's counts.
+        Path(junitxml).unlink(missing_ok=True)
     command.extend(["-m", marker])
-    return subprocess.call(command, cwd=REPO_ROOT, env=env)
+    started_at = gate_evidence.now_iso()
+    before = None if args.no_evidence else gate_evidence.git_state(REPO_ROOT)
+    exit_code = subprocess.call(command, cwd=REPO_ROOT, env=env)
+    if not args.no_evidence:
+        record_test_evidence(command, pytest_args, args.pipeline, marker_args.expression,
+                             exit_code, junitxml, started_at, before)
+    return exit_code
+
+
+def caller_junitxml(pytest_args):
+    """The caller's JUnit path, from ``--junitxml=X`` or ``--junitxml X``; None when absent."""
+    for index, arg in enumerate(pytest_args):
+        if arg.startswith("--junitxml="):
+            return arg.split("=", 1)[1]
+        if arg == "--junitxml" and index + 1 < len(pytest_args):
+            return pytest_args[index + 1]
+    return None
+
+
+def output_defaults(pytest_args):
+    """``-q`` and ``--tb=short`` for every run, each unless the caller sets an option of its kind.
+
+    A focused run (``run_tests.py tests/test_x.py``, the usual local run since ADR-0150) must
+    print as little as the bare full run: shell output is a large share of an agent's tokens
+    (docs/codebase/notes/subagent-budget.md). A caller's verbosity option replaces ``-q``
+    because pytest sums ``-v`` and ``-q``, so both together would cancel the caller's ``-v``;
+    ``--tb=<style>`` / ``--tb <style>`` replaces ``--tb=short``. Which tests run is untouched.
+    ``PYTEST_ADDOPTS`` and ``@file`` arguments are not inspected.
+    """
+    defaults = []
+    if not caller_sets_verbosity(pytest_args):
+        defaults.append("-q")
+    if not any(arg == "--tb" or arg.startswith("--tb=") for arg in pytest_args):
+        defaults.append("--tb=short")
+    return defaults
+
+
+def caller_sets_verbosity(pytest_args):
+    """Whether a pytest argument is a verbosity option: ``-v``/``-q`` (repeated, or bundled
+    as in ``-xvs`` and ``-vk expr``), ``--verbose``, ``--quiet`` or ``--verbosity``."""
+    for arg in pytest_args:
+        if arg in ("--verbose", "--quiet", "--verbosity") or arg.startswith("--verbosity="):
+            return True
+        if arg.startswith("-") and not arg.startswith("--"):
+            for letter in arg[1:]:
+                if letter in "vq":
+                    return True
+                if letter not in "xsl":  # -k, -r, -n ...: the rest of the argument is a value
+                    break
+    return False
+
+
+def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, junitxml, started_at,
+                         before=None):
+    """Write ``.claude/gate/tests-<platform>.json`` for the local push gate.
+
+    The gate (docs/codebase/notes/agent-process-automation.md) accepts only a ``full``
+    run of a clean HEAD; a writer failure is reported and never changes the exit code.
+    The tree state is taken before and after the run: if HEAD or the dirty flag changed
+    while pytest ran, the result describes no single code state and ``dirty`` becomes
+    ``None`` (not evidence). JUnit counts come only from a report written by this run.
+    """
+    try:
+        junit_path = Path(junitxml)
+        if not junit_path.is_absolute():
+            junit_path = Path(REPO_ROOT) / junit_path
+        started = datetime.datetime.fromisoformat(started_at).timestamp()
+        fresh = junit_path.exists() and junit_path.stat().st_mtime >= started - 1
+        counts = gate_evidence.junit_counts(junit_path if fresh else Path(REPO_ROOT) / ".no-junit")
+        scope = gate_evidence.run_scope(pytest_args, pipeline=pipeline, marker=marker)
+        # Under WSL on a loaded machine the diff can take minutes; a timeout would turn the
+        # whole run into "not evidence", so the check after the run gets a generous limit.
+        state = gate_evidence.git_state(REPO_ROOT, timeout=600.0)
+        if before is not None and (before["head"], before["dirty"]) != (state["head"], state["dirty"]):
+            state.update(dirty=None, warning=f"the tree changed during the run (before: head "
+                                             f"{before['head']}, dirty {before['dirty']})")
+        payload = {**state,
+                   "platform": gate_evidence.platform_tag(), "python": sys.executable,
+                   "command": command, "scope": scope, "exit": exit_code,
+                   **counts, "junitxml": str(junit_path),
+                   "started_at": started_at, "finished_at": gate_evidence.now_iso()}
+        path = gate_evidence.write_evidence(REPO_ROOT, f"tests-{payload['platform']}.json", payload)
+        print(f"evidence: {path} (scope={scope}, exit={exit_code}, head={payload['head']}, "
+              f"dirty={payload['dirty']})", flush=True)
+    except Exception as error:  # evidence is advisory for the runner; never mask pytest's result
+        print(f"could not write test evidence: {error}", file=sys.stderr)
 
 
 if __name__ == "__main__":

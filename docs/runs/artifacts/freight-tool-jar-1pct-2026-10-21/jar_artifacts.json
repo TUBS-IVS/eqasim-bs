@@ -1,0 +1,138 @@
+{
+  "reference_jar": "eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar",
+  "candidate_jar": "eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim/braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61.cache/freight-tool/target/freight-tool-2026.0-2026w12.jar",
+  "artifacts_reference": 235,
+  "artifacts_candidate": 224,
+  "entry_class_sha256": [
+    "6e236bb02ed8c04999a406a7844f3a0a7788b779e4d7b3c2ef2fce5800766f78",
+    "6e236bb02ed8c04999a406a7844f3a0a7788b779e4d7b3c2ef2fce5800766f78"
+  ],
+  "entry_class_identical": true,
+  "version_differences": {
+    "com.fasterxml.jackson.core:jackson-core": [
+      "2.21.1",
+      "2.20.0"
+    ],
+    "com.fasterxml.jackson.core:jackson-databind": [
+      "2.22.1",
+      "2.21.1"
+    ],
+    "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml": [
+      "2.22.1",
+      "2.21.1"
+    ],
+    "com.google.errorprone:error_prone_annotations": [
+      "2.48.0",
+      "2.41.0"
+    ],
+    "com.sun.istack:istack-commons-runtime": [
+      "3.0.7",
+      "4.1.2"
+    ],
+    "commons-io:commons-io": [
+      "2.22.0",
+      "2.21.0"
+    ],
+    "io.airlift:aircompressor": [
+      "2.0.3",
+      "0.27"
+    ],
+    "it.geosolutions.imageio-ext:imageio-ext-geocore": [
+      "2.0.2",
+      "2.0.1"
+    ],
+    "it.geosolutions.imageio-ext:imageio-ext-streams": [
+      "2.0.2",
+      "2.0.1"
+    ],
+    "it.geosolutions.imageio-ext:imageio-ext-tiff": [
+      "2.0.2",
+      "2.0.1"
+    ],
+    "it.geosolutions.imageio-ext:imageio-ext-utilities": [
+      "2.0.2",
+      "2.0.1"
+    ],
+    "org.apache.logging.log4j:log4j-api": [
+      "2.26.1",
+      "2.25.3"
+    ],
+    "org.apache.logging.log4j:log4j-core": [
+      "2.26.1",
+      "2.25.3"
+    ],
+    "org.geotools.ogc:net.opengis.fes": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-core": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-fes": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-filter": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-gml2": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-gml3": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools.xsd:gt-xsd-ows": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools:gt-coverage": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools:gt-geopkg": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools:gt-jdbc": [
+      "34.4",
+      "34.2"
+    ],
+    "org.geotools:gt-xml": [
+      "34.4",
+      "34.2"
+    ],
+    "org.glassfish.jaxb:jaxb-runtime": [
+      "2.4.0-b180830.0438",
+      "4.0.6"
+    ],
+    "org.glassfish.jaxb:txw2": [
+      "2.4.0-b180830.0438",
+      "4.0.6"
+    ],
+    "org.slf4j:slf4j-api": [
+      "2.0.17",
+      "2.0.12"
+    ]
+  },
+  "only_in_reference": [
+    "ch.qos.reload4j:reload4j",
+    "com.fasterxml.jackson.dataformat:jackson-dataformat-csv",
+    "com.sun.xml.fastinfoset:FastInfoset",
+    "io.pebbletemplates:pebble",
+    "org.apache.logging.log4j:log4j-slf4j-impl",
+    "org.eqasim:braunschweig",
+    "org.eqasim:core",
+    "org.jvnet.staxex:stax-ex",
+    "org.matsim.contrib:discrete_mode_choice",
+    "org.matsim.contrib:simwrapper",
+    "org.slf4j:slf4j-reload4j",
+    "tech.tablesaw:tablesaw-jsplot"
+  ],
+  "only_in_candidate": [
+    "org.eqasim.braunschweig:freight-tool"
+  ]
+}

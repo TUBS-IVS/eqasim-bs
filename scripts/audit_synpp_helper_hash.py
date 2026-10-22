@@ -12,7 +12,9 @@ Step 2  collect own imports    -- whole-AST walk, module-level vs lazy (inside a
 Step 3  declared stage edges   -- literal context.stage("name") calls, resolved through the
                                   `aliases:` block of configs/base_bs.yml.
                                   required_helpers = first-party imports - declared stages.
-Step 4  validate() coverage    -- stages whose validate() hashes source; their
+Step 4  validate() coverage    -- stages whose validate() hashes source (detected from the AST:
+                                  a call of inspect.getsource or synpp_tokens.source_token
+                                  inside the top-level validate(), never a comment); their
                                   _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES read
                                   STATICALLY, each credited only when validate() reads it;
                                   a package entry covers its own __init__ only.
@@ -287,6 +289,27 @@ def names_read_by_validate(tree: ast.Module) -> set[str]:
     return set()
 
 
+#: Dotted callee names that make a validate() a source-hashing one.
+SOURCE_HASHING_CALLS = frozenset({"inspect.getsource", "synpp_tokens.source_token"})
+
+
+def validate_hashes_source(tree: ast.Module) -> bool:
+    """True when the stage's top-level ``validate()`` calls ``inspect.getsource`` or
+    ``synpp_tokens.source_token``. Only a call counts, never a mention in a comment or string.
+
+    An aliased or from-import of ``inspect.getsource`` / ``synpp_tokens.source_token`` is not
+    recognised; the exact-30 pin in ``tests/test_token_refactor_coverage.py`` makes such a drop
+    fail loudly.
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "validate":
+            return any(isinstance(child, ast.Call)
+                       and isinstance(child.func, ast.Attribute)
+                       and ast.unparse(child.func) in SOURCE_HASHING_CALLS
+                       for child in ast.walk(node))
+    return False
+
+
 def resolve_module_binding(dotted: str, trees: dict, on_disk: set[str],
                            packages: set[str]) -> str:
     """The on-disk module a helper-tuple name stands for, following re-exports.
@@ -421,12 +444,11 @@ def build_report(repo: Path) -> dict:
         imports[module] = module_level_imports | lazy_imports
         if exemption_reason(module_tree, module) is not None:
             exempt.add(module)
-    # Which stages hash Python source at all (the note's `grep -rl "inspect.getsource"`).
-    source_hashing = set()
-    for name, path in stages.items():
-        text = path.read_text(encoding="utf-8")
-        if "inspect.getsource" in text and "def validate" in text:
-            source_hashing.add(name)
+    # Which stages hash Python source at all: a top-level validate() that CALLS inspect.getsource
+    # (the pre-2026-10 md5 loops) or the shared structured token synpp_tokens.source_token, which
+    # does the getsource itself (#468). Read from the AST, so a comment or string that merely
+    # mentions either name does not count.
+    source_hashing = {name for name in stages if validate_hashes_source(trees[name])}
 
     report = {}
     for name, path in sorted(stages.items()):

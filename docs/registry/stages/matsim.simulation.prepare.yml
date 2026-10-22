@@ -1,12 +1,49 @@
 stage: matsim.simulation.prepare
 title: MATSim run preparation
 layer: matsim
-description: Prepares the MATSim run (config, freight injection, urban parking, subpopulations)
-  via braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
+description: Prepares the MATSim run (config, freight injection, subpopulations) via
+  braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
   the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133). With
   cordon_enabled it cuts the scenario to the cordon extent with eqasim's RunScenarioCutter; the fork's
   TransitScheduleCutter keeps the last inside stop and the scheduled times of every cut transit route
-  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). The freight injection links every boundary
+  (docs/codebase/notes/eqasim-transit-schedule-cutter.md). With parking_zones_enabled (ADR-0139) it
+  writes, as its last step and next to the final config, the parking tariff model
+  <prefix>parking_tariffs_<parking_tariff_snapshot_date>.json (built by braunschweig.parking.tariff_export
+  from the release of braunschweig.parking.zones_stage, carrying the release's source hashes, the permit flag
+  resident_permits_valid of every zone and the ids of the release's resident parking districts as resident_districts,
+  both additive to schema 2, spec Amendment C3; schema 3, spec Amendment E, adds the priced garages of the release as
+  garages and the parameters garage_decay_m (config parking_garage_decay_m, 0 = garage options off, the pre-calibration
+  value and the sensitivity arm; the canonical value is the calibrated lambda, see the data record
+  parking_garage_decay_calibration_2026) and garage_max_distance_m (parking_garage_max_distance_m, 1000); schema 4,
+  spec Amendment H, adds garage_decay_commute_m (config parking_garage_decay_commute_m, the decay length of work and
+  education stays, calibrated in the same table; declared with the default None, which is accepted only while
+  parking_garage_decay_m is 0 and is otherwise refused at configure time, so it is never defaulted to the other decay;
+  0 = commuter garage options off); schema 5, spec v3 A1, A2 and A5 (issue 436), adds option_price_beta_u_per_eur
+  (config parking_option_price_beta_u_per_eur, default 0.310998, the magnitude of the car cost coefficient
+  betaCost_u_MU of the mode choice, assumption G1-d, one money coefficient for the parking option weights without the
+  income or distance term; validated finite and >= 0 at configure time, 0 gives the price-independent weights of v2 in the
+  Python reference; the Java reader (ParkingTariffs) refuses a model whose value differs from the mode choice by more than 1e-9, 0
+  included, so a run needs the mode-choice value, ADR-0142 decision 2), max_stay_min on
+  every garage entry (null until the garage dataset carries the column, Part B) and ev_free_minutes on every zone entry
+  (written only while the zone's ev_rule_valid_until is empty or not before parking_tariff_snapshot_date, else null with
+  an info log line naming the zone), and lists the assumptions M3, G1-d and, with an exemption in the model, E1 and E2;
+  since schema 5 the register lists a garage-dataset assumption (P3 to P8, P10, P11) only when a priced garage row names it
+  and never the withdrawn P12; the config key
+  parking_garage_monthly_imputation (spec Amendment F3, default true) lets a garage without a published monthly product use
+  the imputed one of assumption P13 as monthly_cents (false means published products only) and the model then lists P13 in its
+  assumptions register, the counts per municipality are logged and written to the inputs report; the garages come
+  from the release of braunschweig.parking.zones_stage, whose key parking_garages_path names the dataset, and a decay
+  above 0 for either decay without a priced garage is rejected), the MATSim
+  config module braunschweigParking (enabled, tariffsPath relative to the config, terminalStayRule, and
+  minimumStayMinutes from parking_minimum_stay_min, the minimum parked duration of assumption L1, and costFactor from
+  parking_cost_utility_factor, the sensitivity factor of assumption CF in [0, 10], written only when it differs from the
+  model value 1.0 so the default config stays byte-identical) that
+  switches the Java car cost model to the zone tariffs, and the inputs report
+  <prefix>parking_inputs_report.json listing the files matsim.output copies; it has no configuration key for the
+  search-time factor of the Java module (the lever is off by owner decision D4 of ADR-0140, a key is added only with a
+  measured search time), so the module default 0.0 applies; with the flag off it declares
+  no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
+  (enable_urban_parking) has no preparation step (ADR-0039). The freight injection links every boundary
   endpoint to a high-capacity link in the trip direction (ADR-0144).
 lineage:
   type: overridden
@@ -33,14 +70,20 @@ features:
 - freight_boundary_links
 - mode_choice
 - vrb_zone_fare_model
+- parking_cost_zones
 - plan_feasibility_check
+- transit_next_day
 decisions:
 - ADR-0121
 - ADR-0030
 - ADR-0039
 - ADR-0133
+- ADR-0139
+- ADR-0140
+- ADR-0142
 - ADR-0144
 - ADR-0146
+- ADR-0151
 notes: >-
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare
@@ -58,7 +101,19 @@ notes: >-
   braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS (30 h), on a config without
   plans.inputPlansFile or with a population path that does not exist, and, only when fail_on_threshold is
   true, when the share of late or non-monotonic plans of the frozen residents exceeds
-  max_frozen_defect_share (false: ERROR log, the stage continues); in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
+  max_frozen_defect_share (false: ERROR log, the stage continues). The check also counts the legs stamped
+  walkFallbackFrom (a pt leg the router replaced by walk): n_pt_as_walk, pt_as_walk_by_hour and share_pt_as_walk (over the pt-intended trips, routingMode pt) per class
+  (all counted per pt-intended trip, in the class of its first leg);
+  key .max_frozen_pt_as_walk_share (0.02, ASSUMPTION, default declared in configure() and pinned in configs/base_bs.yml) fails the
+  stage for the frozen residents only when fail_on_threshold is true. The attribute needs the eqasim-java-bs
+  PlanRouter change, so a jar built before it would make n_pt_as_walk read 0 whatever the router did: plan_check.require_walk_fallback_stamp
+  therefore RAISES (before any counting, only when the check runs) unless PlanRouter.class of the eqasim jar of matsim.runtime.eqasim contains
+  walkFallbackFrom (fix: rebuild from eqasim_source_path, #465); a WARNING is logged when pt or stamped legs exist but no leg carries a
+  routingMode attribute (n_pt_trips meaningless). in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
   _HELPER_MODULES, and braunschweig.popsim.plan_validation, braunschweig.popsim.closure_dwell and
   data.hts.hts (its import closure) are in the deferred helper names, so the validate token covers
   the check (ADR-0136). Contributor note docs/codebase/notes/plan-check.md.
+  Final-schedule summary (issue 465, feature record transit_next_day): _summarise_final_schedule prints
+  [schedule] final schedule departures per hour {...}, max departure X h on the final, post-cordon-cut
+  transit schedule on every run, independent of vrb_zone_fares_enabled; the VRB-fares path reuses that
+  summary.

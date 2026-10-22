@@ -1,3 +1,4 @@
+import hashlib
 import re
 import subprocess as sp
 import os, os.path, shutil
@@ -17,8 +18,10 @@ import matsim.runtime.maven as maven
 # among its release files, so every fork release renames our jar -- v2.3.0 and v2.3.1
 # (2026-08-21, a pure version bump carrying no code at all) each did, and the workflow
 # runs on every merge to main. Note what a release does NOT do here: the pipeline builds
-# from eqasim_source_path and validate() keys its cache on the newest source mtime, so a
-# plain `git pull` in that tree already delivers a java fix and triggers the rebuild.
+# from eqasim_source_path and validate() keys its cache on the content digest of the Java
+# source tree (source_tree_digest), so a plain `git pull` in that tree already delivers a
+# java fix and triggers the rebuild, while a checkout, a copy or an agent worktree that
+# leaves the content unchanged does not.
 #
 # This constant remains the fallback for the two paths that have no such pom -- a prebuilt
 # eqasim_path jar, and the legacy upstream clone -- and is kept current (2.3.1, the fork's
@@ -38,6 +41,128 @@ DEFAULT_EQASIM_COMMIT = "ab938aaac"
 
 #: Relative location of the module pom that decides the built jar's name.
 BRAUNSCHWEIG_POM = os.path.join("braunschweig", "pom.xml")
+
+#: Byte-reproducible jars (issue #474): early cutoff (ADR-0149) spares the MATSim chain behind
+#: this stage only if a rebuild from the same source reproduces the stage's output hash.
+#: Without a fixed Maven project.build.outputTimestamp the jar, source and shade plugins stamp
+#: every entry they write with the build time. Passed on the command line, so the fork's poms
+#: (TUBS-IVS/eqasim-java-bs) need no change; the plugins it pins (jar 3.5.0, source 3.4.0,
+#: shade 3.6.2) honour it. An arbitrary fixed instant, not the build date; it is part of
+#: execute(), so changing it rebuilds the jar once.
+OUTPUT_TIMESTAMP = "2026-01-01T00:00:00Z"
+REPRODUCIBLE_BUILD_ARGUMENT = "-Dproject.build.outputTimestamp=%s" % OUTPUT_TIMESTAMP
+#: Maven's incremental-build state (maven-status/*/inputFiles.lst) lists the absolute paths of
+#: the copied sources, so it differs between working directories while every jar is identical.
+#: No consumer reads it; the jars stay hashed.
+_OUTPUT_HASH_EXCLUDE = ("*/target/maven-status/*",)
+
+#: File suffixes of the Java source tree that enter the content digest of the jar.
+SOURCE_SUFFIXES = (".java", ".xml", ".properties")
+#: Directory names (at any depth) whose files are not source: build output and the
+#: worktrees of agent sessions that live inside the Java repository.
+SOURCE_EXCLUDED_DIRECTORIES = ("target", ".claude")
+#: Basename of a tracked file the Maven shade plugin rewrites on every local build of the
+#: fork (braunschweig/dependency-reduced-pom.xml). It is build output, not source, and
+#: hashing it would flip the digest after each build.
+SOURCE_EXCLUDED_FILE_NAMES = ("dependency-reduced-pom.xml",)
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sha256_text_file(path):
+    """sha256 hex of a text file with CRLF normalised to LF (``core.autocrlf`` checkouts)."""
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _git_output(git_binary, source_path, arguments):
+    """stdout bytes of ``git -C source_path <arguments>``; any failure is a RuntimeError."""
+    # Resolve the binary the way matsim/runtime/git.py run does (shutil.which).
+    resolved = shutil.which(git_binary)
+    if resolved is None:
+        raise RuntimeError(
+            "Cannot find git binary %s to list the Java sources of eqasim_source_path %s"
+            % (git_binary, source_path))
+    try:
+        return sp.run([resolved, "-C", source_path] + arguments, check = True,
+                      capture_output = True).stdout
+    except sp.CalledProcessError as error:
+        raise RuntimeError(
+            "Cannot list the Java sources of eqasim_source_path %s with git (is it a git work "
+            "tree?): %s" % (source_path, error.stderr.decode("utf-8", "replace").strip()))
+    except OSError as error:
+        raise RuntimeError(
+            "Cannot run git (%s) to list the Java sources of eqasim_source_path %s: %s"
+            % (git_binary, source_path, error))
+
+
+def source_tree_digest(source_path, git_binary = "git"):
+    """Content digest (sha256 hex) of the Java source tree at ``source_path``.
+
+    Covers the tracked and the untracked-but-not-ignored files with a source suffix
+    (``SOURCE_SUFFIXES``), excluding ``target/`` and ``.claude/`` at any depth and the
+    shade plugin's ``dependency-reduced-pom.xml`` (``SOURCE_EXCLUDED_FILE_NAMES``). Each file
+    enters as its relative path plus its content hash, so the digest is independent of
+    mtimes: checkouts, copies and worktrees do not rebuild the jar, a real edit does.
+    All three suffixes are text, so CRLF is normalised to LF before hashing: a Windows
+    ``core.autocrlf`` checkout and an LF checkout of the same commit give the same digest.
+
+    The file list comes from ``git ls-files`` (run with ``git_binary``, the pipeline's
+    ``git_binary`` option); there is deliberately no fallback to a directory walk or to
+    mtimes: a silent fallback would key the cache on a different rule. RuntimeError is
+    raised when: the path is not a git work tree; the path is not the ROOT of its own work
+    tree (a subdirectory of another repository, possibly one that gitignores it, would be
+    listed against the wrong repository); a file name is not valid UTF-8; or no source file
+    survives the filters (an empty token would never change).
+    """
+    toplevel = _git_output(git_binary, source_path, ["rev-parse", "--show-toplevel"])
+    toplevel = toplevel.decode("utf-8", "replace").strip()
+    if not os.path.exists(toplevel) or not os.path.samefile(toplevel, source_path):
+        raise RuntimeError(
+            "eqasim_source_path %s must be the root of its own git work tree, but git reports "
+            "the work tree root %s; the content digest would list files of another repository"
+            % (source_path, toplevel))
+
+    listing = _git_output(git_binary, source_path,
+                          ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+    try:
+        names = listing.decode("utf-8").split("\0")
+    except UnicodeDecodeError as error:
+        raise RuntimeError(
+            "git listed a file name below eqasim_source_path %s that is not valid UTF-8 (%s); "
+            "rename it so the content digest can include it" % (source_path, error))
+
+    digest = hashlib.sha256()
+    hashed_files = 0
+    for relative in sorted(p for p in names if p):
+        normalised = relative.replace(os.sep, "/")
+        if not normalised.endswith(SOURCE_SUFFIXES):
+            continue
+        if normalised.rsplit("/", 1)[-1] in SOURCE_EXCLUDED_FILE_NAMES:
+            continue
+        # A file under a directory named target or .claude at any depth is not source.
+        if any(directory in SOURCE_EXCLUDED_DIRECTORIES
+               for directory in normalised.split("/")[:-1]):
+            continue
+        absolute = os.path.join(source_path, relative)
+        # Tracked but deleted in the work tree: it is gone from the build, so it is skipped.
+        if not os.path.isfile(absolute):
+            continue
+        digest.update(normalised.encode("utf-8") + b"\0"
+                      + _sha256_text_file(absolute).encode("utf-8") + b"\n")
+        hashed_files += 1
+    if hashed_files == 0:
+        raise RuntimeError(
+            "git listed no source files (%s) below eqasim_source_path %s; the content digest "
+            "would be constant and a Java edit would never rebuild the jar"
+            % (", ".join(SOURCE_SUFFIXES), source_path))
+    return digest.hexdigest()
 
 
 def module_version_from_pom(pom_path):
@@ -117,7 +242,7 @@ def configure(context):
     # Build OUR own editable Java project (eqasim-java-bs, the renamed braunschweig
     # module) from a local source tree instead of cloning upstream. When set, no git
     # clone happens; the source is copied in and Maven-built, so local Java edits take
-    # effect on the next run (see validate(), which keys the cache on the source mtime).
+    # effect on the next run (see validate(), which keys the cache on the source content digest).
     context.config("eqasim_source_path", "")
 
     # Same synpp per-stage config contract as pt2matsim (issue #229): delegate to the
@@ -154,12 +279,13 @@ def execute(context):
         if os.path.exists(destination):
             shutil.rmtree(destination)
         shutil.copytree(source_path, destination,
-                        ignore = shutil.ignore_patterns("target", ".git"))
+                        ignore = shutil.ignore_patterns("target", ".git", ".claude"))
         # Read the version from the COPIED tree -- that is the one maven builds, and
-        # a pom change already devalidates this stage through validate()'s mtime key.
+        # a pom change already devalidates this stage through validate()'s content digest.
         version = resolve_source_version(destination, configured_version)
         maven.run(context, ["-Pstandalone", "--projects", "braunschweig", "--also-make",
-                            "package", "-DskipTests=true"], cwd = destination)
+                            "package", "-DskipTests=true", REPRODUCIBLE_BUILD_ARGUMENT],
+                  cwd = destination)
         jar = "eqasim-java/braunschweig/target/braunschweig-%s.jar" % version
         if not os.path.exists("%s/%s" % (context.path(), jar)):
             raise RuntimeError(
@@ -177,31 +303,28 @@ def execute(context):
     git.run(context, ["checkout", context.config("eqasim_commit")],
             cwd = "{}/eqasim-java".format(context.path()))
     maven.run(context, ["-Pstandalone", "--projects", "bavaria", "--also-make", "package",
-                        "-DskipTests=true"], cwd = "%s/eqasim-java" % context.path())
+                        "-DskipTests=true", REPRODUCIBLE_BUILD_ARGUMENT],
+              cwd = "%s/eqasim-java" % context.path())
     jar = "eqasim-java/bavaria/target/bavaria-%s.jar" % version
     if not os.path.exists("%s/%s" % (context.path(), jar)):
         raise RuntimeError("The JAR was not created correctly. Wrong eqasim_version specified?")
     return jar
 
 def validate(context):
-    # Build from our own local source: key the cache on the latest source mtime so
-    # local Java edits trigger a rebuild on the next run.
+    # Content, not mtime: a checkout, copy or agent worktree must not rebuild the jar and
+    # with it every Java-dependent stage; an edited source file still does.
+    # Same precedence as execute(): a prebuilt eqasim_path jar wins over eqasim_source_path,
+    # so the token always describes the jar that is actually provided.
+    path = context.config("eqasim_path")
+    if path != "":
+        if not os.path.exists(path):
+            raise RuntimeError("Cannot find eqasim at: %s" % path)
+        return {"format": 1, "jar": _sha256_file(path)}
+
     source_path = context.config("eqasim_source_path")
     if source_path != "":
         if not os.path.exists(source_path):
             raise RuntimeError("eqasim_source_path does not exist: %s" % source_path)
-        latest = 0.0
-        for root, _dirs, files in os.walk(source_path):
-            if "target" in root or ".git" in root:
-                continue
-            for name in files:
-                if name.endswith((".java", ".xml", ".properties")):
-                    latest = max(latest, os.path.getmtime(os.path.join(root, name)))
-        return latest
+        return {"format": 1, "source": source_tree_digest(source_path, context.config("git_binary"))}
 
-    path = context.config("eqasim_path")
-    if path == "":
-        return True
-    if not os.path.exists(path):
-        raise RuntimeError("Cannot find eqasim at: %s" % path)
-    return os.path.getmtime(path)
+    return True

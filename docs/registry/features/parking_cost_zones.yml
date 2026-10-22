@@ -1,0 +1,272 @@
+feature: parking_cost_zones
+title: Zone-based parking costs (sourced tariffs, SrV free-parking shares)
+area: matsim
+description: >-
+  Prices the parking stay at the destination of every car trip from the parking release (ADR-0139, extended by
+  ADR-0140): the parking zones (parking_zones_2026, built from municipal and sourced data), their tariffs
+  (parking_tariffs_2026: fee window, free threshold, first period, billing unit, day cap, maximum stay with a
+  long-stay product, TU campus member and guest day products, commuter products per working day), the resident
+  parking districts (parking_resident_districts_2026) and the garage dataset (parking_garages_2026). A stay pays the
+  cheapest product the driver can use (assumption P1); a work or education stay may use the commuter product (P2,
+  monthly price over 21 working days), at a garage its monthly product (published, else the median of the published
+  products of the same municipality under assumption P13; config parking_garage_monthly_imputation, default true, false is
+  the sensitivity arm published products only; ADR-0140 decision 10). Residents are exempt in their resident zone (R1) and in the resident district of
+  their home where the zone honours permits (R2, R2-a). A stay in a paid street or resident zone has the street option and
+  every priced garage within 1,000 m with the weight exp(-d / lambda) (G1, G2; lambda_c for work and education, G1-c) and
+  is priced as the probability-weighted expected cost; the options act only with the decay of the stay's purpose above 0:
+  parking_garage_decay_m for the visitor purposes, parking_garage_decay_commute_m for work and education, both calibrated
+  (G3; the current values and state: validation.note). Outside every zone parking is free (assumption Z1; the coverage register
+  parking_coverage_register_2026 states the status of every municipality). Work and education parking is free for a
+  share of persons per workplace class equal to the SrV 2023 free share among car commuters (assumption A1; the paid
+  zones of Wolfsburg use the share of the class bs_zentrum, A1-b) and for a share of the persons with work or education on
+  a TU campus (C2, an owner estimate). Every priced stay lasts at least L = parking_minimum_stay_min minutes (assumption
+  L1, 15 by default, 0 prices as before L1), so the stay of a car that arrives after the planned end of its activity is
+  priced for L minutes instead of none; the rule changes the price only, never the simulated timing. The parking search
+  time (lever 4) is implemented and OFF (search_time_min empty, searchTimeFactor 0.0). The Java car cost model adds the
+  parking cost to the driving cost behind the existing eqasim car cost model seam; the car utility and its coefficients
+  are unchanged. Replaces the legacy 8 km ring (feature urban_parking) when parking_zones_enabled is on; the two flags
+  are mutually exclusive (ADR-0139). Decisions of the v2 release, rejected options and consequences: ADR-0140. The v3
+  mechanics (ADR-0142): a stay above the maximum stay of its zone has no street option (assumption M3; without any feasible
+  option it is priced at the street's metered cents as NO_FEASIBLE_OPTION), the option weights carry the option's own price
+  (G1-d, config parking_option_price_beta_u_per_eur, the magnitude of the mode-choice cost coefficient), owners of a BEV or
+  PHEV are exempt from the street fee where a zone states an EV exemption (E1, E2; config parking_ev_exemption_enabled), the
+  parking cost enters the car utility multiplied by parking_cost_utility_factor (CF, default 1.0, a sensitivity) and the
+  Java outcome report is CSV v4. The v3 data (ADR-0142 decisions 8 to 14, Part B): the corrected zone tariffs with
+  maximum stays and EV exemptions, the Wolfsburg area zones, the resident districts of Wolfsburg, Peine, Helmstedt and
+  Wolfenbuettel, three free lots, two documented options of Bad Harzburg and Seesen and the recalibrated decay lengths; the
+  curation is described in docs/codebase/notes/parking-zones-curation.md; state: validation.note.
+stages:
+- braunschweig.parking.zones_stage
+- matsim.scenario.population
+- matsim.simulation.prepare
+- matsim.simulation.run
+- matsim.output
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: experimental
+production:
+  enabled: true
+  flags:
+  - parking_zones_enabled
+introduced:
+  issue: '#436'
+  pr: null
+  adr: ADR-0139
+detail_doc: docs/codebase/notes/parking-cost-zones.md
+code_paths:
+- braunschweig/parking/zones_stage.py
+- braunschweig/parking/zones.py
+- braunschweig/parking/attach.py
+- braunschweig/parking/cost.py
+- braunschweig/parking/tariff_export.py
+- braunschweig/parking/garages.py
+- braunschweig/parking/garage_qa.py
+- braunschweig/parking/free_draw_options.py
+- braunschweig/parking/golden_cases.py
+- braunschweig/parking/runtime_checks.py
+- braunschweig/calibration/srv_parking.py
+- braunschweig/matsim/config_modules.py
+- braunschweig/matsim/scenario/population.py
+- matsim/scenario/population.py
+- braunschweig/matsim/simulation/prepare.py
+- matsim/simulation/run.py
+- matsim/output.py
+- scripts/extract_srv_commute_parking.py
+- scripts/validate_parking_zones.py
+- scripts/export_parking_golden_cases.py
+- scripts/build_parking_zones_from_osm.py
+- scripts/parking/calibrate_garage_decay.py
+- scripts/parking/compare_parking_targets.py
+- scripts/curation/parking_zones_2026/assemble_parking_zones.py
+- scripts/curation/parking_zones_2026/regional_garages.py
+- scripts/curation/parking_zones_2026/bs_monthly_products.py
+- scripts/curation/parking_zones_2026/station_lots.py
+- scripts/curation/parking_zones_2026/large_lots.py
+- scripts/curation/parking_zones_2026/wolfsburg_area_zones.py
+- scripts/curation/parking_zones_2026/wolfsburg_area_release.py
+- scripts/curation/parking_zones_2026/resident_districts.py
+- scripts/curation/parking_zones_2026/resident_districts_from_streets.py
+- scripts/curation/parking_zones_2026/resident_districts_from_maps.py
+- scripts/verify_braunschweig_inputs.py
+evidence:
+  tests:
+  - tests/test_parking_cost.py
+  - tests/test_parking_golden_cases.py
+  - tests/test_parking_tariff_export.py
+  - tests/test_parking_zones.py
+  - tests/test_parking_zones_stage.py
+  - tests/test_parking_attach.py
+  - tests/test_population_parking_attributes.py
+  - tests/test_parking_prepare_wiring.py
+  - tests/test_parking_run_checks.py
+  - tests/test_srv_parking.py
+  - tests/test_parking_garages.py
+  - tests/test_parking_garage_options.py
+  - tests/test_parking_garage_calibration.py
+  - tests/test_parking_garage_decay_config.py
+  - tests/test_parking_free_draw_options.py
+  - tests/test_parking_resident_districts.py
+  - tests/test_parking_garage_supplement.py
+  - tests/test_parking_municipal_zones.py
+  - tests/test_parking_regional_garages.py
+  - tests/test_parking_bs_monthly_products.py
+  - tests/test_parking_station_lots.py
+  - tests/test_parking_regional_zones.py
+  - tests/test_parking_supply_share.py
+  - tests/test_parking_large_lots.py
+  - tests/test_parking_zone_assembly.py
+  - tests/test_parking_zone_exposure.py
+  - tests/test_parking_zone_geometry.py
+  - tests/test_verify_braunschweig_inputs.py
+  - tests/test_parking_zone_tariff_corrections_v3.py
+  - tests/test_parking_wolfsburg_area_zones.py
+  - tests/test_resident_districts_from_streets.py
+  - tests/test_resident_districts_from_maps.py
+  - tests/test_parking_raw_package_records.py
+  - tests/test_compare_parking_targets.py
+  - tests/test_configs_composed.py
+  - tests/test_popsim_config_parity.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_population_parking_attributes.py::test_frames_without_parking_columns_match_the_prechange_writer_bytes
+    note: >-
+      With the flag off the plans writer attaches no parking column and writes the plans of the writer
+      before this feature byte for byte (golden literals generated from base commit 1fe22664; the legacy
+      ring is pinned the same way by test_legacy_ring_frames_match_the_prechange_writer_bytes, and the
+      wrapper never touches braunschweig.parking.attach, test_execute_off_never_touches_the_attach_module);
+      the preparation then declares only the flag and leaves the prepared config byte-identical
+      (tests/test_parking_prepare_wiring.py::test_off_declares_only_the_flag_and_leaves_the_prepared_config_byte_identical),
+      and the run stage calls no parking check and starts MATSim with unchanged arguments
+      (tests/test_parking_run_checks.py::test_off_calls_no_parking_check_and_runs_matsim_exactly_as_before).
+      Without the braunschweigParking module the Java car cost model name is unchanged (eqasim-java-bs
+      BraunschweigConfiguratorParkingTest). The simulation-level check of the jar without the module is
+      recorded in the run manifest parking-zones-smoke-zgb-1pct-2026-09-30: OFF and LEGACY trips and scores
+      byte-identical across the jars of origin/main and the branch (jar_parity_sha256.csv).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[parking]'
+    note: >-
+      Every attach step logs its coverage as rates under [parking]: activities in zones with the most
+      frequent zones, persons with a resident zone, and per workplace class the persons, p_free and the
+      realised free share of the draw. An activity outside every zone is the modelled state of assumption
+      Z1, not a fallback; zones present but not one activity inside raise (the signature of a broken join
+      or a CRS mismatch), and an unknown zone id raises in Python and in Java. At controller start the Java
+      ParkingPopulationCheck fails the run for unknown zone ids, legacy isParis attributes or mistyped
+      parking attributes and logs the plans' zone coverage in one [parking] population line. During the run
+      every pricing call is counted by outcome (ITERS/it.N/N.parking_outcomes.csv and one [parking] log line
+      per iteration); the counts are pricing calls, one per car alternative that mode choice evaluated,
+      chosen or not, and version 1 reports the mix without a threshold. The Java ParkingOutcomeReportListener
+      also logs the active minimum stay (L1) once at startup and per iteration how many priced stays in a
+      zone it extended, likewise per pricing call. When the prepared config enables
+      the braunschweigParking module, matsim.simulation.run refuses a jar without the Java parking package
+      before the run and a run whose last iteration wrote no outcome report after it
+      (braunschweig.parking.runtime_checks), so a zones-prepared scenario cannot run unpriced. Since v2 the garage
+      dataset logs its priced share and the count of rows per assumption (P3 to P14) at every load, the free-parking
+      draw logs the realised free share per workplace class and per campus together with the proxy mapping, the
+      outcome report (CSV v3) carries the expected garage share and the stays with a garage in range per outcome, zone
+      and purpose, and the Java listener logs the garage rates per iteration while the garage options are on. An
+      activity inside a resident district outside every fee zone is free by Z1, not a fallback. A garage priced from
+      secondary evidence (P11) and a surface lot priced by an imputed median tariff (P14) are named per row, not hidden; the
+      municipal free default (P12) is withdrawn
+      (ADR-0140 decision 13, no row rests on it).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
+    note: >-
+      The tariffs are committed, sourced facts per zone (data records parking_tariffs_2026 and
+      parking_coverage_register_2026; the zone polygons of parking_zones_2026 are a local restricted file, not in the
+      repository) and the free shares a committed SrV 2023
+      aggregate (srv2023_commute_parking_by_workplace_class). They are model inputs, not an observed
+      behavioural reference: this feature compares no model output with observed behaviour yet.
+      srv2023_city_center_parking is a comparison quantity of the planned runs with a universe caveat (SrV asks
+      Braunschweig residents, the model counts all car arrivals), not a validation; since v2 its garage share is
+      the CALIBRATION TARGET of the garage decay length (ADR-0140, parking_garage_decay_calibration_2026; its state:
+      validation.note)
+      and no longer a validation quantity, while its paid share stays an independent comparison quantity; in
+      srv2023_commute_parking_by_workplace_class the paid-only garage share of the row bs_zentrum is the calibration
+      target of the commuter decay length (ADR-0140 decision 12) and that of the row 03103 (Wolfsburg) the independent check
+      (scripts/parking/compare_parking_targets.py).
+validation:
+  state: unvalidated
+  runs:
+  - parking-zones-smoke-zgb-1pct-2026-09-30
+  - parking-v3-arms-2026-10-15
+  metric: null
+  note: >-
+    The local 1 % OFF/LEGACY/ZONES smoke (run manifest parking-zones-smoke-zgb-1pct-2026-09-30) is a wiring
+    proof and an indicative A/B on the June 2026 scenario after 10 iterations: the zone attributes, the tariff
+    model and the braunschweigParking module work end to end, the branch jar without the module reproduces the
+    origin/main jar byte for byte, and the Python reference and the Java calculator agree on the golden cases
+    and in randomised differential tests. These are consistency checks, not a validation; the one comparison
+    with an observed quantity (the SrV city-centre paid share) carries a universe caveat and is recorded as a
+    comparison. That smoke ran the first release (ADR-0139). STATE OF THE V2 RELEASE (ADR-0140; this is the one place that
+    states it): no MATSim run of it exists, neither the three-arm comparison nor any other, so nothing of v2 is
+    validated and no direction or size of an effect on the mode shares is stated; the garage options are ON in the
+    canonical configuration with the two calibrated decay lengths parking_garage_decay_m (visitor purposes) and
+    parking_garage_decay_commute_m (work and education), whose values are those of configs/base_bs.yml and of the committed
+    table parking_garage_decay_calibration_2026 (ADR-0140 decision 14, spec Amendment I6): calibrated on 2026-10-14 on the
+    25 % reference plans (since Part B, B5, on the option set, the rules and the measures of v3, see the next paragraph; the
+    option counts are in the data record parking_garages_2026), lambda on the payment-inclusive measure and lambda_c on the
+    paid-only share of bs_zentrum (a free
+    option leaves numerator and denominator, like-for-like with a universe of payers); calibrations to SrV shares, no
+    validation; the independent paid-only Wolfsburg commuter check is a number without a pre-registered bound whose
+    difference is not explained (ADR-0140 decisions 12 and 14; the data record states the number and its universe); the
+    table belongs to the garage dataset named in its header exactly (a test ties it to the pin of the data record), so a new
+    option set needs a new calibration; the commuter and Wolfsburg rows of the run comparison count all off-street options,
+    free ones included, and are labelled so (the outcome report v3 has no paid/free split; pointer: report v4 makes the two
+    *_paid_calls rows paid-only ratios, ADR-0142 decision 4); the Java side of the commuter decay
+    (schema 4) is merged (Task 4i, eqasim-java-bs 0bda7137f); the parking search time is
+    off (searchTimeFactor 0.0, no zone carries a search time). STATE OF THE V3 MECHANICS AND DATA (ADR-0142 decisions 1 to 13, Parts
+    A and B; this is the one place that states it): the
+    mechanics are implemented in the Python reference and the Java port (eqasim-java-bs 24b5fea42 to ea74c1f26, tariff model
+    schema 5, golden file schema 6, jar marker ParkingOptionPriceBetaCheck) and ON by default (parking_ev_exemption_enabled
+    true, parking_option_price_beta_u_per_eur 0.310998, parking_cost_utility_factor 1.0). Since Part B the committed data give
+    them cases to act on: the corrected zone tariffs with maximum stays and EV exemptions (data record parking_tariffs_2026;
+    Braunschweig Ia without the withdrawn long-stay product), the Wolfsburg area zones with their own maximum stay
+    (parking_zones_2026), the resident districts of six municipalities (parking_resident_districts_2026), the garage dataset with
+    the maximum stay of three Ia lots, three more free lots and the two documented options of Bad Harzburg and Seesen (a free
+    Seesen garage, a free Bad Harzburg car park out of reach of every zone), the Volkswagen Arena lots P1 and P2 positioned on their
+    OpenStreetMap ways since 2026-10-19 (parking_garages_2026; the ten Part C arms ran on the dataset before that),
+    and the two decay lengths recalibrated on that option set with the price term, the feasibility rule and the
+    payer-conditional commuter measure (parking_garage_decay_calibration_2026; the values are those of configs/base_bs.yml). STATE
+    OF THE V3 COMPARISON RUNS (Part C; the run manifest parking-v3-arms-2026-10-15 is the one place that records them, with the
+    numbers): ten MATSim runs of v3 exist, eight 1 % arms (off, legacy ring, v3, two cost factors, two free-share shifts, EV
+    exemption off) and a v3 / off pair at 25 %. They are a COMPARISON of model arms, one run per arm, and a comparison of v3 with
+    the committed SrV tables in which the garage shares are calibration targets and the Wolfsburg check is an independent number
+    without a pre-registered bound; none of it is a validation, so the state stays unvalidated. No arm stopped by the mode-share
+    termination criterion (all ran to the iteration limit with the criterion above its threshold), so a stable late window is
+    not even established, and convergence would not be validation anyway. The effect of the zone model on the mode shares is an
+    arm difference of single runs without a between-run noise estimate, not an established effect; the EV exemption is not
+    measurable at 1 % and not isolated at 25 %. An OBSERVED garage quantity (a PULP occupancy series) does not exist yet: issue
+    #448; the garage shares compared with SrV are the calibration targets of the decay lengths. Nothing of v3 is validated: the
+    tests are consistency and regression checks. The regenerated restricted files (zones, districts, garages) are installed with
+    the Part B integration. Open: the 25 % legacy-vs-zones A/B and the L1 arms of the v2 plan (task 5b of issue #436), which have
+    no run. Convergence of a run is not validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Owner review of the v2 release (ADR-0140), of the v3 mechanics (Part A) and data (Part B) (ADR-0142) and of the v3 comparison runs
+    (manifest parking-v3-arms-2026-10-15; validation.note states which).
+    Owner review of the 25 % legacy-vs-zones A/B (with the L1 arms parking_minimum_stay_min 0 and 30 next
+    to the default 15), which is still to run on the server, and of the
+    production flip of parking_zones_enabled to true, which is part of the reviewed branch although the
+    design had planned it for after the A/B; the owner decides the flip at PR review. The two popsim
+    fixture configurations follow the flip with the parking block of configs/base_bs.yml
+    (tests/test_popsim_config_parity.py pins it), so reverting it there reverts them too.
+  note: >-
+    Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.parking, branch
+    feature/i436-parking-cost-zones-v2, which extends feature/i249-parking-cost-zones) with its own unit tests;
+    the golden cases are shared through tests/fixtures/parking/parking_golden_cases.json (schema_version 6; the tariff
+    fixture and the export are schema 5).
+notes: >-
+  simple_ipf_open is not_used because its configurations write the plans with the plain
+  matsim.scenario.population stage, which attaches no parking attribute and therefore rejects
+  parking_zones_enabled at configure time (stage record matsim.scenario.population); the zones need the
+  alias to braunschweig.matsim.scenario.population. The calibration of lambda is
+  scripts/parking/calibrate_garage_decay.py on the plans of a server run, whose table
+  parking_garage_decay_calibration_2026.csv is committed; the current state is in validation.note. introduced.adr
+  names the first decision; ADR-0140 extends it.

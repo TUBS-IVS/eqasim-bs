@@ -50,6 +50,15 @@ class Input:
     alt_paths: List[str] = field(default_factory=list)
 
 
+#: The request route of the three parking files that rest on sources not cleared for redistribution (data records
+#: parking_zones_2026, parking_resident_districts_2026, parking_garages_2026; ADR-0140, issue #436).
+RESTRICTED_PARKING_SOURCE = (
+    "Not distributed in the repository (restricted source licences, data record {record}); available on request: open "
+    "an issue in TUBS-IVS/eqasim-bs. Verify a received copy against the SHA-256 in the record (storage.notes); "
+    "nothing to download."
+)
+
+
 INPUTS: List[Input] = [
     # --- A: Federal / shared datasets -------------------------------------
     Input(
@@ -254,6 +263,236 @@ INPUTS: List[Input] = [
         ),
         matsim_only=True,
         optional=False,
+    ),
+    # D5-D8 and D10: the release of the zone-based parking costs (ADR-0139); required because
+    # parking_zones_enabled is on in configs/base_bs.yml, and braunschweig.parking.zones_stage raises
+    # naming the config key when a file is missing. D6-D8 are committed with the repository (force-added per
+    # the .gitignore allowlist). D5, D10 and D11 are NOT (owner decision 2026-10-08, issue #436): their sources
+    # are not cleared for redistribution, so they stay local like the other raw data and are available on
+    # request (RESTRICTED_PARKING_SOURCE). The sources are prose on purpose: --check-urls skips them, since a
+    # moved municipal page does not break a local file.
+    Input(
+        name="D5  Parking cost zone polygons 2026 (restricted, local)",
+        rel_path="braunschweig/parking/parking_zones_2026.geojson",
+        source=RESTRICTED_PARKING_SOURCE.format(record="parking_zones_2026, docs/registry/data/parking_zones_2026.yml"),
+        notes=(
+            "Config key parking_zones_path. OSM-derived polygons (also the OSM campus grounds of the TU zones): "
+            "ODbL 1.0, (c) OpenStreetMap contributors; Braunschweig 1a/1b and the BgA car parks, the TU detection "
+            "zones, the Goslar and Braunlage car parks and the Wolfsburg zones: their own terms, see the data record "
+            "parking_zones_2026; the outlines of the three Braunschweig Hauptbahnhof car parks (spec Amendment G1) are "
+            "OpenStreetMap ways, ODbL 1.0. Cross-check the release with python scripts/validate_parking_zones.py "
+            "--data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        restricted=True,
+    ),
+    Input(
+        name="D6  Parking tariffs 2026 (committed)",
+        rel_path="braunschweig/parking/parking_tariffs_2026.csv",
+        source="Committed with the repository (docs/registry/data/parking_tariffs_2026.yml); nothing to download.",
+        notes="Config key parking_tariffs_path. One sourced tariff row per zone of D5.",
+        matsim_only=True,
+    ),
+    Input(
+        name="D7  Parking coverage register 2026 (committed)",
+        rel_path="braunschweig/parking/parking_coverage_register_2026.csv",
+        source=(
+            "Committed with the repository (docs/registry/data/parking_coverage_register_2026.yml); "
+            "nothing to download."
+        ),
+        notes="Config key parking_coverage_register_path. Status of every ZGB municipality.",
+        matsim_only=True,
+    ),
+    Input(
+        name="D8  SrV 2023 commute parking by workplace class (committed)",
+        rel_path="braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv",
+        source=(
+            "Committed with the repository (docs/registry/data/srv2023_commute_parking_by_workplace_class.yml); "
+            "regenerate with python scripts/extract_srv_commute_parking.py from the local SrV add-on files."
+        ),
+        notes=(
+            "Config key parking_workplace_shares_path. share_free_total per workplace class is "
+            "P(free | workplace class) of the free-parking draw (assumption A1)."
+        ),
+        matsim_only=True,
+    ),
+    # D9: the classified cells of the majority rule over the parking supply (parking cost zones v2, spec
+    # Amendment B7). Committed like D5-D8 but read by no stage yet (preparation of a probabilistic variant),
+    # hence optional.
+    Input(
+        name="D9  Paid-parking share per 25 m cell 2026 (committed)",
+        rel_path="braunschweig/parking/parking_paid_share_2026.csv.gz",
+        source="Committed with the repository (docs/registry/data/parking_paid_share_2026.yml); nothing to download.",
+        notes=(
+            "No stage reads it yet. ODbL 1.0 (derived from OpenStreetMap), (c) OpenStreetMap contributors. "
+            "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        optional=True,
+    ),
+    # D10: the resident parking districts (parking cost zones v2, spec Amendment C3), the fifth input of the release
+    # of braunschweig.parking.zones_stage; restricted like D5 and required for the same reason, listed after the
+    # optional D9 because it was added after it.
+    Input(
+        name="D10 Parking resident districts 2026 (restricted, local)",
+        rel_path="braunschweig/parking/parking_resident_districts_2026.geojson",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_resident_districts_2026, docs/registry/data/parking_resident_districts_2026.yml"),
+        notes=(
+            "Config key parking_resident_districts_path. Resident parking districts of Braunschweig (A, B, C), "
+            "Goslar (A, B, C, F, G, H, J), Wolfsburg (A-G, K, VO, FA), Peine (A-G), Helmstedt (HE_RING) and "
+            "Wolfenbuettel (WF_CENTRE), a second layer next to the fee zones (rule R2). Licence per source: "
+            "Braunschweig districts with an Open GeoData dl-de/by-2-0 base map, Goslar districts with the open reuse "
+            "licence not verified (used by owner decision), the four towns of spec v3 B3 from city lists and maps with "
+            "OpenStreetMap street geometry (ODbL 1.0), see the data record parking_resident_districts_2026. "
+            "Cross-check with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        restricted=True,
+    ),
+    # D11: the garage dataset (parking cost zones v2, spec Amendment E1): garages as points with their own tariff where one
+    # is published, the sixth input of the release of braunschweig.parking.zones_stage (the distance-weighted garage options
+    # of spec Amendment E, Task 4d); restricted like D5 and required for the same reason.
+    Input(
+        name="D11 Parking garages 2026 (restricted, local)",
+        rel_path="braunschweig/parking/parking_garages_2026.geojson",
+        source=RESTRICTED_PARKING_SOURCE.format(record="parking_garages_2026, docs/registry/data/parking_garages_2026.yml"),
+        notes=(
+            "Config key parking_garages_path. The garages and the large public surface lots of eight ZGB towns with their "
+            "own tariff, every row priced (column facility_kind): where the published structure maps exactly to the garage "
+            "columns, to time-of-day tiers or to duration bands, otherwise under named assumptions (grace period, best "
+            "secondary evidence, the imputed median tariff of a lot); monthly product published or imputed per garage "
+            "(column monthly_imputed_eur, ASSUMPTION P13, spec Amendment F: the median of the published products of the "
+            "same municipality); the counts, the assumptions and the monthly products are stated in the data record "
+            "parking_garages_2026; the QA table parking_garages_2026_qa.csv "
+            "lies next to it. Licence per source (facts of public pages, licences not verified; six OpenStreetMap "
+            "positions of garages and the lot positions inside OpenStreetMap parking areas under the ODbL 1.0, (c) "
+            "OpenStreetMap contributors), see the data record parking_garages_2026. "
+            "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        restricted=True,
+    ),
+    # D12-D15: the owner's raw research packages (D12-D14, spec v3 B6) and the owner's transcription of the city page of Seesen
+    # (D15, spec v3 B7) behind the parking v3 data (issue #436); D16-D19: the owner's earlier delivery folders of 2026-10-01, -07,
+    # -08 and -13 (Part C final fix), one entry per folder naming the package the curation reads first. Only the curation chain (scripts/curation/parking_zones_2026/)
+    # reads them; no stage and no run needs them, hence optional. Restricted and local like D5, D10 and D11 (the archived originals
+    # are third-party documents); each has a data record of its own.
+    Input(
+        name="D12 Parking research package Nachrecherche 2026-10-14 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Nachrecherche_2026-10-14.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_nachrecherche_2026_10_14, docs/registry/data/parking_package_nachrecherche_2026_10_14.yml"),
+        notes=(
+            "Curation input only: rebuilding the resident districts of Wolfsburg, Peine, Helmstedt and Wolfenbuettel "
+            "(resident_districts.py --research-package) and re-checking the v3 tariff corrections need it; the pipeline "
+            "and the runs do not. Never extracted; the curation code checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D13 Parking research package Restluecken 2026-10-14 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-14/Parkdaten_Restluecken_2026-10-14.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_restluecken_2026_10_14, docs/registry/data/parking_package_restluecken_2026_10_14.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --wob-evidence-zip reads the archived pages of the free Wolfsburg "
+            "car parks from it in place; the pipeline and the runs do not need it. Never extracted; the curation code "
+            "checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D14 Parking research package Wolfsburg_Parkdaten 2026-10-01 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-01/Wolfsburg_Parkdaten.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_package_wolfsburg_parkdaten_2026_10_01, "
+                   "docs/registry/data/parking_package_wolfsburg_parkdaten_2026_10_01.yml"),
+        notes=(
+            "Curation input only: assemble_parking_zones.py --municipal-dir and wolfsburg_area_release.py read the layer "
+            "mobile_parking_areas (73 areas, 15 with a recorded maximum stay) from it; the pipeline and the runs do not "
+            "need it. Never extracted; the curation code checks its SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D15 Parking owner transcription Seesen city page 2026-10-15 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-15/seesen_parken_in_seesen_city_page.txt",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_owner_transcriptions_2026_10_15, docs/registry/data/parking_owner_transcriptions_2026_10_15.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --owner-transcriptions-dir reads this one transcription of the city page "
+            "'Parken in Seesen' (the free garage Bahnhofstrasse, spec v3 B7); the pipeline and the runs do not need it. The "
+            "folder holds two more transcriptions (the Goslar GALERIA directory entry, cited only, and the Northeim Q-Park "
+            "tariff, unused), which the data record lists. The curation code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D16 Parking municipal packages 2026-10-01 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-01/Braunschweig_Parkzonen.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_01, docs/registry/data/parking_packages_municipal_2026_10_01.yml"),
+        notes=(
+            "Curation input only: assemble_parking_zones.py --municipal-dir and resident_districts.py read the fee zones and the "
+            "resident districts of Braunschweig from this package and the Goslar districts from Goslar_Parkdaten.zip in the same "
+            "folder (Wolfsburg_Parkdaten.zip is D14); the pipeline and the runs do not need them. Never extracted; the curation "
+            "code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D17 Parking regional packages 2026-10-07 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-07/Regional_Parkdaten_Belege_2026-10-07.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_07, docs/registry/data/parking_packages_municipal_2026_10_07.yml"),
+        notes=(
+            "Curation input only: regional_zones.py and regional_garages.py read the layers and the tariff rules of this "
+            "consolidated package, garage_supplement.py the two supplement zips of the same folder; the pipeline and the runs do "
+            "not need them. Never extracted; the curation code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D18 Parking monthly products package 2026-10-08 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-08/Braunschweig_Monatstarife_2026-10-08.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_08, docs/registry/data/parking_packages_municipal_2026_10_08.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --bs-monthly-zip (the monthly products of the Braunschweig garages) and "
+            "station_lots.py (the three station car park zones) read it, with the Contipark evidence directory and the "
+            "Overpass response of the same folder; the pipeline and the runs do not need them. Never extracted; the curation "
+            "code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
+    ),
+    Input(
+        name="D19 Parking large-lot package 2026-10-13 (curation only, restricted, local)",
+        rel_path="braunschweig/parking/raw_sources/municipal_2026-10-13/Grossparkplaetze_ZGB8_2026-10-12.zip",
+        source=RESTRICTED_PARKING_SOURCE.format(
+            record="parking_packages_municipal_2026_10_13, docs/registry/data/parking_packages_municipal_2026_10_13.yml"),
+        notes=(
+            "Curation input only: regional_garages.py --large-lots-zip reads the 152 reviewed surface lots from it (the source of "
+            "every surface-lot row of the garage dataset); the pipeline and the runs do not need it. Never extracted; the "
+            "curation code checks the SHA-256."
+        ),
+        matsim_only=True,
+        optional=True,
+        restricted=True,
     ),
 ]
 

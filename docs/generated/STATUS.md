@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 105 | stages: 130 | datasets: 87 | ADRs: 140 | run manifests: 60
+- Features: 107 | stages: 132 | datasets: 104 | ADRs: 148 | run manifests: 68
 
 ## Population synthesis
 
@@ -154,25 +154,27 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Freight
 
-3 stage(s), 3 in the production DAG. Datasets: `german_wide_freight_v3`
+4 stage(s), 4 in the production DAG. Datasets: `german_wide_freight_v3`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Freight analysis exclusion](../registry/features/freight_analysis_exclusion.yml) | active | ON | A/-/- | unvalidated |  |
 | [Assumptions (truck PCE / max velocity)](../registry/features/freight_assumptions.yml) | active | ON | A/i/i | unvalidated |  |
 | [Freight boundary endpoints linked by capacity and trip direction](../registry/features/freight_boundary_links.yml) | active | ON | A/i/i | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`) | [#444](https://github.com/TUBS-IVS/eqasim-bs/issues/444) |
-| [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated |  |
+| [Long-haul freight injection (v3)](../registry/features/freight_longhaul_v3.yml) | active | ON | A/-/- | unvalidated (`freight-tool-jar-1pct-2026-10-21`) |  |
 
 ## MATSim
 
-14 stage(s), 13 in the production DAG. Datasets: `gtfs_feed`, `osm_niedersachsen`, `vrb_tariff_zone_polygons`, `vrb_tariff_zones`
+15 stage(s), 14 in the production DAG. Datasets: `gtfs_feed`, `osm_niedersachsen`, `parking_coverage_register_2026`, `parking_garages_2026`, `parking_resident_districts_2026`, `parking_tariffs_2026`, `parking_zones_2026`, `srv2023_commute_parking_by_workplace_class`, `vrb_tariff_zone_polygons`, `vrb_tariff_zones`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
+| [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
 | [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
-| [Urban parking (BS inner ring)](../registry/features/urban_parking.yml) | active | ON | A/A/i | unvalidated |  |
+| [Next-day departures in the transit schedule for the 30 h simulated day](../registry/features/transit_next_day.yml) | active | ON | A/A/A | unvalidated | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
+| [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/i/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 
 ## Analysis
@@ -213,8 +215,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)](../registry/features/resource_adaptive_config.yml) | active | ON | A/A/A | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
 | [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
-| [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated |  |
-| [Tier-A/B caching (32 stages + popsim)](../registry/features/tier_ab_caching.yml) | active | ON | A/s/s | unvalidated |  |
+| [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) |  |
+| [Tier-A/B caching (32 stages + popsim)](../registry/features/tier_ab_caching.yml) | active | ON | A/s/s | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) |  |
 
 ## Spatial base data
 

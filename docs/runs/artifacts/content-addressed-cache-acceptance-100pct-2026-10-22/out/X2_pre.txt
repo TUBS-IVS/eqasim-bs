@@ -1,0 +1,7 @@
+WARNING! A Java JDK of at least version 11 is recommended.
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+HIT      matsim.runtime.git
+STALE    matsim.runtime.java  [module_hash_changed]
+HIT      matsim.runtime.maven
+# 5 stages: 3 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 2 hits

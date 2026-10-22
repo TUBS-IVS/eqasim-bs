@@ -1,0 +1,15 @@
+working_directory: eqasim-data/cache_bs_1pct_allfeat_popsim
+run:
+- braunschweig.freight.extraction
+config:
+  sampling_rate: 0.01
+  output_path: eqasim-data/output_bs_1pct_allfeat_popsim
+  analysis_working_directory: eqasim-data/cache_bs_1pct_allfeat_popsim
+  output_prefix: braunschweig_1pct_allfeat_popsim_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  cache_share_export: false
+  cache_share_recompute: []
+  cache_share_enabled: false

@@ -152,7 +152,8 @@ def test_schedule_summary_reads_lines_and_zones_in_one_pass(tmp_path):
     path = tmp_path / "schedule.xml.gz"
     path.write_bytes(gzip.compress(_schedule(("A", "B"), zoned=3, facilities=4).encode()))
     summary = prepare._schedule_summary(path)
-    assert summary == {"line_ids": {"A", "B"}, "facilities": 4, "zoned_facilities": 3, "zoned_by_zone": {"40": 3}}
+    assert summary == {"line_ids": {"A", "B"}, "facilities": 4, "zoned_facilities": 3, "zoned_by_zone": {"40": 3},
+                       "departures_per_hour": {}, "max_departure_h": 0.0}
 
 
 def test_on_execute_fails_loudly_when_schedule_lines_lack_scope_rows(tmp_path, monkeypatch):
@@ -169,6 +170,7 @@ def test_off_execute_does_not_touch_config_or_call_the_zone_tool(tmp_path, monke
         {"zone": ["1"], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:25832")
     config = Path(context.path()) / "bs_config.xml"
     config.write_text('<?xml version="1.0" encoding="utf-8"?>\n<config>\n</config>\n', encoding="utf-8")
+    (Path(context.path()) / "bs_transit_schedule.xml.gz").write_bytes(gzip.compress(_schedule(("L1",), 1).encode()))
     before = config.read_bytes()
     calls = []
     monkeypatch.setattr(prepare.eqasim, "run", lambda ctx, command, arguments: calls.append(command))

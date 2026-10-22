@@ -1,0 +1,269 @@
+[config-merge] working_directory: (added) eqasim-data/cache_bs_100pct_allfeat_popsim
+[config-merge] run: (added) ['synthesis.output', 'matsim.output', 'braunschweig.analysis.cordon_validation', 'braunschweig.analysis.simwrapper_export', 'braunschweig.analysis.analysis_suite', 'braunschweig.analysis.synthesis.plan_structure_vs_srv', 'braunschweig.analysis.synthesis.departure_time_vs_srv', 'braunschweig.analysis.verbindungen_validation', 'braunschweig.analysis.synthesis.commute_distance_by_kreis', 'braunschweig.analysis.synthesis.work_participation_by_kreis']
+[config-merge] config.sampling_rate: (added) 1.0
+[config-merge] config.output_path: (added) eqasim-data/output_bs_100pct_allfeat_popsim
+[config-merge] config.analysis_working_directory: (added) eqasim-data/cache_bs_100pct_allfeat_popsim
+[config-merge] config.output_prefix: (added) braunschweig_100pct_allfeat_popsim_
+[config-merge] config.matsim_last_iteration: (added) 0
+[config-merge] config.braunschweig.population.popsim.work_dir: (added) eqasim-data/popsim_work_allfeat_opt
+[config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+[config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+[config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+[config-merge] config.cache_share_export: (added) False
+[config-merge] config.cache_share_recompute: (added) []
+[config-merge] config.cache_share_enabled: True -> False
+[config-merge] composed configs/base_bs.yml + eqasim-data/i468p4_100pct.yml: 1 overridden, 13 added
+[synpp deterministic] patched synpp 1.6.2 process_stages: implicit config propagation now topological and order-independent (stage hashes stable across processes)
+Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+NumExpr defaulting to 16 threads.
+[migrate] braunschweig.analysis.analysis_suite__18b4cb77f31c594dcb2580cca39eed50: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.analysis.cordon_validation__916909d34918eb80000499af3b4353d1: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.analysis.cordon_validation__feb6e6beb560a81b8eade7f5e6af2ef4: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.analysis.simwrapper_export__3dbbd88b9a8cf54007c90d7dba9d6733: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.analysis.simwrapper_export__b4b8faece1ba671e1bdabf36f9831d1f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: migrated (output hash over 0 files, 10829 bytes, 0.00 s)
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: migrated (output hash over 0 files, 10829 bytes, 0.00 s)
+[migrate] braunschweig.data.alkis__c1c30a53e689a90b57dda63ffd235ec3: migrated (output hash over 0 files, 150322179 bytes, 1.10 s)
+[migrate] braunschweig.data.bbsr.regiostar__b53dadbacbf2f5c7d78fc063265e835d: migrated (output hash over 0 files, 9747 bytes, 0.00 s)
+[migrate] braunschweig.data.bosserhof_location_category__5bb008300317f3b9a0a0bd5885a9c251: migrated (output hash over 0 files, 1192 bytes, 0.00 s)
+[migrate] braunschweig.data.bosserhof_purpose__4d5f594e4954a220bde4cff56675eca0: migrated (output hash over 0 files, 1907 bytes, 0.00 s)
+[migrate] braunschweig.data.building_potentials__2c19dac33dfbf82755df27f9aac15f97: migrated (output hash over 0 files, 95528790 bytes, 0.64 s)
+[migrate] braunschweig.data.buildings__baf9a18b2c2082357bcd1918c5580ef8: migrated (output hash over 0 files, 73992102 bytes, 0.53 s)
+[migrate] braunschweig.data.buildings__c1c30a53e689a90b57dda63ffd235ec3: migrated (output hash over 0 files, 73992102 bytes, 0.53 s)
+[migrate] braunschweig.data.census.employees__1096fc084c7526b0e2817f6ff4358f28: migrated (output hash over 0 files, 4584 bytes, 0.00 s)
+[migrate] braunschweig.data.census.employees__edf3db6d87ebbab6037e3c847912504b: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.census.employment__425353b5935a7712397927dc98476bbe: migrated (output hash over 0 files, 3257 bytes, 0.00 s)
+[migrate] braunschweig.data.census.employment__daa879fdfb1e685e1fe3021360272ff3: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.census.pendler__ba229329bf17df62cdd3928452df1e8f: migrated (output hash over 0 files, 1172786 bytes, 0.01 s)
+[migrate] braunschweig.data.cordon_gemeinden__368060e74a9360851d6e25c870f15dde: migrated (output hash over 0 files, 30720510 bytes, 0.17 s)
+[migrate] braunschweig.data.cordon_gemeinden__90978cea1e8f1a94dc32954e76d83b2e: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.cordon_network__a6c52b809f32bb04e603b026fbc417a7: migrated (output hash over 0 files, 48484442 bytes, 0.29 s)
+[migrate] braunschweig.data.cordon_pt_gates__890349afdc51739ee0052f7da2878bf4: migrated (output hash over 0 files, 29244 bytes, 0.00 s)
+[migrate] braunschweig.data.cordon_pt_gates__dc8e3a4c3c2866948782885c3d3f5b40: migrated (output hash over 0 files, 29244 bytes, 0.00 s)
+[migrate] braunschweig.data.external_secondary_points__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 735409 bytes, 0.01 s)
+[migrate] braunschweig.data.external_workplaces__c7d5a0be56883a51f40f80188f696343: migrated (output hash over 0 files, 153242 bytes, 0.00 s)
+[migrate] braunschweig.data.external_workplaces__d8b53a38d650de60e99049aa182fc568: migrated (output hash over 0 files, 153242 bytes, 0.00 s)
+[migrate] braunschweig.data.freight.german_wide__e950b72cc0479a164230908849f25455: migrated (output hash over 0 files, 235 bytes, 0.00 s)
+[migrate] braunschweig.data.hts.mid_donor__8a1bcdff0a3e3f467a1b4de2837e66d6: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.inkar.household_income__b3c4c993ddc44800156da0ffce772a83: migrated (output hash over 0 files, 17145 bytes, 0.00 s)
+[migrate] braunschweig.data.landuse__fc97173cea7f396bde17fb785c4f5f63: migrated (output hash over 0 files, 408635665 bytes, 2.57 s)
+[migrate] braunschweig.data.locations__0d9395d1ba0d5e0a020216762bb804b5: migrated (output hash over 0 files, 22855415 bytes, 0.13 s)
+[migrate] braunschweig.data.locations__52dd727dc783be740d1a2003abc7bfbf: migrated (output hash over 0 files, 22855415 bytes, 0.19 s)
+[migrate] braunschweig.data.osm__ed1151793fc161b9f8739c4ded527ae6: migrated (output hash over 0 files, 1139088 bytes, 0.01 s)
+[migrate] braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea: migrated (output hash over 0 files, 29145 bytes, 0.00 s)
+[migrate] braunschweig.data.schools.kita_facilities__88a2ca16df5733f923c820b01861418f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.schools.kita_facilities__c76a2fdccdca940cf7dc63d77742b18c: migrated (output hash over 0 files, 32701 bytes, 0.00 s)
+[migrate] braunschweig.data.schools.university_facilities__38400d72409e9b36d057058953553685: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.data.schools.university_facilities__deeccc1639a27b53658fe5b092a38615: migrated (output hash over 0 files, 15896 bytes, 0.00 s)
+[migrate] braunschweig.data.verbindungen.margins__698cd4e9707470f0ed28547c2c9cdd0d: migrated (output hash over 0 files, 2798 bytes, 0.00 s)
+[migrate] braunschweig.data.vrb.zones__3faf2ace5d673f626c8d6a0ec843148e: kept legacy (stage braunschweig.data.vrb.zones is not in the DAG)
+[migrate] braunschweig.freight.extraction__028bdd0a66bba0fcc8ab88e6479cd528: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.freight.trips__028bdd0a66bba0fcc8ab88e6479cd528: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.gravity.model__71df1675191952f5b38a70f4c7e1838d: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.gravity.model__b13ec16cb95dee8504e6ceb815dc63b1: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.gravity.model__e5ae70ce2a399dc87c73d55a2b9cd636: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.locations.secondary__0d9395d1ba0d5e0a020216762bb804b5: migrated (output hash over 0 files, 19208021 bytes, 0.12 s)
+[migrate] braunschweig.locations.secondary__52dd727dc783be740d1a2003abc7bfbf: migrated (output hash over 0 files, 19208021 bytes, 0.11 s)
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__5a1746df8fa4dfaf489f65309e914c04: migrated (output hash over 0 files, 23846911 bytes, 0.17 s)
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: migrated (output hash over 0 files, 23728310 bytes, 0.15 s)
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__642dc8da09bac04ff01ec286fb5e4708: migrated (output hash over 0 files, 22111600 bytes, 0.16 s)
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__f80b365dbd23f5d4e8c1fde626c6a76b: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.locations.work__1a0249bd0d48e888313eb41d7a4ec23b: migrated (output hash over 0 files, 18359292 bytes, 0.14 s)
+[migrate] braunschweig.locations.work__e0f324467412f527ff12aac62db26fe7: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.facilities__1e8a228c1587549e1e15ba89942375c7: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.facilities__99ec8f355f6270c3a4bb5799fd2fa609: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.facilities__e30e92ce59903ffa0e1fa5a4f5b3ef3b: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.households__6a00297f540f3f306101bb7cebab3691: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.population__cde784a99748e6c540a5cf79faf61764: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.population__d894ee617b2eba4af70445c93bf2c161: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.scenario.vehicles__511f0bcd259695c13086eef56936ce9f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.simulation.prepare__5280b9661ea21fcb42e4ebb5f467536d: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.simulation.prepare__59bf1bd0d44f6d9291fc12ac4d599d2a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.matsim.simulation.prepare__8c42a373c405ea9390de3cab1bea7513: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.commute_distance__4ae140d19d33e3775f3f941a9c0c1b4a: migrated (output hash over 0 files, 9518607 bytes, 0.06 s)
+[migrate] braunschweig.popsim.commute_distance__8996dfe7cfba148f9a0ae435a70cf94c: migrated (output hash over 0 files, 11384295 bytes, 0.07 s)
+[migrate] braunschweig.popsim.completed_donor__94e091f958d89db27c09db6f8e3d99a6: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.distance_distributions__632f5f6c775946dca446a07f6562c1d2: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.distance_distributions__849e8cd4916dcfdc2140b2e661f93754: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.distance_distributions__8ae1dc0ea6c73f7f2f5dd38f511829a5: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.distance_distributions__a17a8152820243d42be0b03db48afa5f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.enriched_adapter: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.enriched_adapter__7cc4a01e657c6e64f712e0968a4e9661: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.enriched_adapter__8fe48c654cbb464b0b85f2555e705c75: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.enriched_adapter__db63f20b7fd3f2dfeb9ab104833cdd71: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.enriched_adapter__f3536114eb8826159ebc2571deea3f6a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.stage__4deea1cb21653463b6d2bf31371be2b5: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.stage__5b2fa19512066876387bcf306fa146d7: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.stage__ec327d90fbb1fabe426f1d85869093fd: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.stage__f3f75bee692957795d6cbfe4d5535285: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision; token: the replayed legacy token differs from the stored token)
+[migrate] braunschweig.popsim.trips_stage__17a53e7426f300023f9ad2473006279c: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.trips_stage__4ae140d19d33e3775f3f941a9c0c1b4a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.popsim.trips_stage__f952b7e6f10e3479484bcadfc3e4891e: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision; token: the replayed legacy token differs from the stored token)
+[migrate] braunschweig.synthesis.cordon_gates__7204088fb2a03fd61fb6ceeba57bf871: migrated (output hash over 0 files, 132458 bytes, 0.00 s)
+[migrate] braunschweig.synthesis.incommuters__6a00297f540f3f306101bb7cebab3691: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.incommuters__ad3d3c1b09d156f46c342a3369f7e6b3: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.incommuters__b9c60eea0c2d3fdd0f6716fd17162275: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.education_gravity__8ac114b7eb52822aad4c7082f81148f7: migrated (output hash over 0 files, 6939491 bytes, 0.05 s)
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: migrated (output hash over 0 files, 4328323 bytes, 0.03 s)
+[migrate] braunschweig.synthesis.locations.education_gravity__e0f024f8158e1930a19ca6d2db1b14ef: migrated (output hash over 0 files, 5181190 bytes, 0.03 s)
+[migrate] braunschweig.synthesis.locations.home_cell__15b09693dd9100682186b3ebe2411e9b: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.home_cell__67717f3e7d6d4f8f062508eebc7a3b54: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.home_cell__b8b86e52aadb3e1343918e52c872d683: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.home_cell__c544239a73896a5a1c378b4352d25bca: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.secondary_candidates__4a92d50839d11c35f397853346fbc3d0: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.secondary_candidates__f5e52075fc8e0d204b7ea46870f87f05: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.secondary_chainsolvers__1bb2db0e97fc38fd358f1e1d174b7e9a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.secondary_chainsolvers__4fef04c20907d58250030e751ea1c39a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.locations.secondary_chainsolvers__cd999992c03ac4384c455ddff3853678: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.spatial.home_zones: migrated (output hash over 0 files, 16757895 bytes, 0.10 s)
+[migrate] braunschweig.synthesis.spatial.home_zones__f3536114eb8826159ebc2571deea3f6a: migrated (output hash over 0 files, 16756926 bytes, 0.13 s)
+[migrate] braunschweig.synthesis.vehicles.cars.household__81877f3351c010f981d28910ffca2184: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.vehicles.cars.household__8b030d405ea6eddc3c5de5d5d6359b3a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] braunschweig.synthesis.vehicles.cars.household__fb3f06eb1fbf4668c5e20e32f43f6657: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] data.gtfs.cleaned__2068a386e37cbe265e18cff8315d99c0: migrated (output hash over 9 files, 112425133 bytes, 0.72 s)
+[migrate] data.gtfs.cleaned__40afeba15da872776efe8ccf8d14b9fd: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] data.hts.entd.cleaned__dbe8ad3b1a93732a85d97be8a80264f7: migrated (output hash over 0 files, 23538321 bytes, 0.20 s)
+[migrate] data.hts.entd.filtered__04101129dc048b45ea8540c2e940a237: kept legacy (stage data.hts.entd.filtered is not in the DAG)
+[migrate] data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7: migrated (output hash over 0 files, 20645074 bytes, 0.09 s)
+[migrate] data.hts.entd.reweighted__04101129dc048b45ea8540c2e940a237: kept legacy (stage data.hts.entd.reweighted is not in the DAG)
+[migrate] data.hts.selected__468966baca6b5c7edf0339e4f7bcd996: kept legacy (stage data.hts.selected is not in the DAG)
+[migrate] data.osm.cleaned__01976b4c022985560d66a51d73a11be7: migrated (output hash over 2 files, 422323454 bytes, 1.95 s)
+[migrate] data.osm.osmosis__061e3a907c27feaa9e5e46d784276f4a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] data.osm.osmosis__6a83dc47bc06f6c141f5789f3be2c5f8: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] data.spatial.departments: migrated (output hash over 0 files, 112095 bytes, 0.00 s)
+[migrate] data.spatial.departments__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 112095 bytes, 0.00 s)
+[migrate] data.spatial.municipalities: migrated (output hash over 0 files, 356243 bytes, 0.00 s)
+[migrate] data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 356243 bytes, 0.00 s)
+[migrate] documentation.meta_output__52ad251889854d11b7bf5357cd487407: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] documentation.meta_output__5c3b9ac5936beb3dce7ba9d0f68d0e39: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] documentation.meta_output__903717e9fb913627f94873584fed123c: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] documentation.meta_output__9788cf0f6d574ce8ed4eab5677fd25d9: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] eqasim_common.data.osm.chunked__3a187d0bdff44a97e3641203c243094f: migrated (output hash over 246 files, 91042950 bytes, 0.44 s)
+[migrate] eqasim_common.data.osm.osmconvert__be5c115868fe252da3d95bb5e8904351: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] eqasim_common.data.population.raw__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 357071 bytes, 0.00 s)
+[migrate] eqasim_common.data.spatial.iris__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 360554 bytes, 0.00 s)
+[migrate] eqasim_common.gravity.distance_matrix: migrated (output hash over 0 files, 154302 bytes, 0.00 s)
+[migrate] eqasim_common.gravity.distance_matrix__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 154302 bytes, 0.00 s)
+[migrate] eqasim_common.spatial.codes: migrated (output hash over 0 files, 8762 bytes, 0.00 s)
+[migrate] eqasim_common.spatial.codes__c04db1943ae15b4681d256f4d6eee421: migrated (output hash over 0 files, 8762 bytes, 0.00 s)
+[migrate] eqasim_common.spatial.entd_codes__dbe8ad3b1a93732a85d97be8a80264f7: migrated (output hash over 0 files, 1288 bytes, 0.00 s)
+[migrate] matsim.output__66b34ecc23d155a26dc165bda5de8e90: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.output__738ffeea2ecb1876d32f873f72ee927d: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.eqasim__487dd2bedd6100bc00fd055b229615a6: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.eqasim__973b003a8b09c3b4c9f56340da410274: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.eqasim__9fa06f92f4264dcd4e2b51e5fc07a9bd: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] matsim.runtime.java__33163fea50c0df3e4d95de454c6a903a: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.maven__13296ad8543cda7307c109799337e998: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21: migrated (output hash over 0 files, 4 bytes, 0.00 s)
+[migrate] matsim.runtime.pt2matsim__3ea6f7465f40c1b823343f3c5916f438: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.runtime.pt2matsim__63258fbf8a6ba20f257ece51566899e8: migrated (output hash over 401 files, 115722899 bytes, 0.95 s)
+[migrate] matsim.scenario.supply.gtfs__61289aa464c134de6fae4ef221311f04: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.scenario.supply.osm__aab11dd5424a5acd30a6a698885e39cb: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.scenario.supply.processed__a6c52b809f32bb04e603b026fbc417a7: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.simulation.run__3a4d811202b3cb2093fa341d3ab88b7f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] matsim.simulation.run__e73b80af2fc2fd5ecba16ada60acd457: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] synthesis.output__061133fcf7157a20c680e5d99b65e095: kept legacy (stage synthesis.output is not in the DAG)
+[migrate] synthesis.output__1c2021d4c7cfa9e0c53012231e4e0b9e: kept legacy (stage synthesis.output is not in the DAG)
+[migrate] synthesis.output__1f4b3aec1046b92576face48da58de5c: kept legacy (stage synthesis.output is not in the DAG)
+[migrate] synthesis.output__2e38ad9c854e58e259d0b64223d629dc: kept legacy (stage synthesis.output is not in the DAG)
+[migrate] synthesis.output__30899a82ecad4c351209e820058fb52f: kept legacy (stage synthesis.output is not in the DAG)
+[migrate] synthesis.population.activities__4ae140d19d33e3775f3f941a9c0c1b4a: migrated (output hash over 0 files, 236463532 bytes, 1.64 s)
+[migrate] synthesis.population.sampled__7cc4a01e657c6e64f712e0968a4e9661: migrated (output hash over 0 files, 507189736 bytes, 3.58 s)
+[migrate] synthesis.population.sampled__8fe48c654cbb464b0b85f2555e705c75: migrated (output hash over 0 files, 509789940 bytes, 3.56 s)
+[migrate] synthesis.population.sampled__db63f20b7fd3f2dfeb9ab104833cdd71: migrated (output hash over 0 files, 509995922 bytes, 3.57 s)
+[migrate] synthesis.population.sampled__f3536114eb8826159ebc2571deea3f6a: migrated (output hash over 0 files, 456359751 bytes, 3.16 s)
+[migrate] synthesis.population.spatial.locations__1bb2db0e97fc38fd358f1e1d174b7e9a: kept legacy (stage synthesis.population.spatial.locations is not in the DAG)
+[migrate] synthesis.population.spatial.locations__72f62da23f216cf52d8b790c56a63678: kept legacy (stage synthesis.population.spatial.locations is not in the DAG)
+[migrate] synthesis.population.spatial.locations__cd999992c03ac4384c455ddff3853678: kept legacy (stage synthesis.population.spatial.locations is not in the DAG)
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: migrated (output hash over 0 files, 26982883 bytes, 0.18 s)
+[migrate] synthesis.population.spatial.primary.candidates__ac9a69948888dd3e53b0c4da7df8f683: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] synthesis.population.spatial.primary.candidates__d2260176c5af2f15e4212209262a3a0f: kept legacy (module hash: stored md5 matches neither the current source nor the legacy revision)
+[migrate] synthesis.vehicles.passengers.default__f3536114eb8826159ebc2571deea3f6a: migrated (output hash over 0 files, 75950536 bytes, 0.64 s)
+[migrate] synthesis.vehicles.vehicles__0da4c87841f8be43b98db24777cef8e4: migrated (output hash over 0 files, 602957218 bytes, 4.62 s)
+[migrate] synthesis.vehicles.vehicles__2e3ba60a27c8378b403cfa37c506778d: migrated (output hash over 0 files, 582990721 bytes, 4.08 s)
+[migrate] synthesis.vehicles.vehicles__716092241594f6f536b7f90f107bbd8e: migrated (output hash over 0 files, 663609704 bytes, 3.04 s)
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: parent braunschweig.data.verbindungen.margins__698cd4e9707470f0ed28547c2c9cdd0d was updated after the child; no parent digest recorded (the child stays stale)
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: parent braunschweig.data.verbindungen.work_od__698cd4e9707470f0ed28547c2c9cdd0d has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: parent braunschweig.data.verbindungen.zones__8ace065d142bd3a17662a81aeb380c69 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: parent braunschweig.synthesis.locations.home_cell__b8b86e52aadb3e1343918e52c872d683 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__713d673bd8cbedd91d6f827b0b84be69: parent synthesis.population.spatial.primary.candidates__e550ad1ddf9fa0498eb99f49e0606657 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: parent braunschweig.data.verbindungen.work_od__698cd4e9707470f0ed28547c2c9cdd0d has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: parent braunschweig.data.verbindungen.zones__8ace065d142bd3a17662a81aeb380c69 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: parent braunschweig.locations.synthesis.replacement_education_gravity__0ef87eb6de6532fa10718eec565477f4 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: parent braunschweig.synthesis.locations.home_cell__15b09693dd9100682186b3ebe2411e9b has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.analysis.verbindungen_validation__89da9aba52d8f9b292ded13781fe3dd5: parent synthesis.population.spatial.primary.candidates__e550ad1ddf9fa0498eb99f49e0606657 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.cordon_network__a6c52b809f32bb04e603b026fbc417a7: parent matsim.scenario.supply.processed__a6c52b809f32bb04e603b026fbc417a7 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.cordon_pt_gates__890349afdc51739ee0052f7da2878bf4: parent matsim.scenario.supply.processed__a6c52b809f32bb04e603b026fbc417a7 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.cordon_pt_gates__dc8e3a4c3c2866948782885c3d3f5b40: parent matsim.scenario.supply.processed__be80b4536cbb273b0c2cea840cbd8b9a has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.schools.kita_facilities__c76a2fdccdca940cf7dc63d77742b18c: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.schools.university_facilities__deeccc1639a27b53658fe5b092a38615: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.data.verbindungen.margins__698cd4e9707470f0ed28547c2c9cdd0d: parent braunschweig.data.verbindungen.zones__8ace065d142bd3a17662a81aeb380c69 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__5a1746df8fa4dfaf489f65309e914c04: parent braunschweig.locations.work__a1ae65924aa85e0c9752f5d2e089c69e has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__5a1746df8fa4dfaf489f65309e914c04: parent braunschweig.popsim.commute_distance__8996dfe7cfba148f9a0ae435a70cf94c was updated after the child; no parent digest recorded (the child stays stale)
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__5a1746df8fa4dfaf489f65309e914c04: parent braunschweig.synthesis.locations.home_cell__c544239a73896a5a1c378b4352d25bca has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__5a1746df8fa4dfaf489f65309e914c04: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: parent braunschweig.locations.work__a1ae65924aa85e0c9752f5d2e089c69e has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: parent braunschweig.synthesis.locations.education_gravity__04c01780f25c7d83973b7588389b6417 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: parent braunschweig.synthesis.locations.home_cell__b8b86e52aadb3e1343918e52c872d683 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__62d3dfbb9d91795fb7054b273396b4e7: parent synthesis.population.spatial.primary.candidates__e550ad1ddf9fa0498eb99f49e0606657 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__642dc8da09bac04ff01ec286fb5e4708: parent braunschweig.popsim.commute_distance__e39ecc2236bc69a32f736dfce734786d has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__642dc8da09bac04ff01ec286fb5e4708: parent braunschweig.synthesis.locations.home_cell__361bac368a4420073b977f23fffb87a7 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__642dc8da09bac04ff01ec286fb5e4708: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.locations.synthesis.replacement_education_gravity__642dc8da09bac04ff01ec286fb5e4708: parent synthesis.population.spatial.primary.candidates__ac9a69948888dd3e53b0c4da7df8f683 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.popsim.commute_distance__4ae140d19d33e3775f3f941a9c0c1b4a: parent braunschweig.popsim.trips_stage__4ae140d19d33e3775f3f941a9c0c1b4a has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.popsim.commute_distance__8996dfe7cfba148f9a0ae435a70cf94c: parent braunschweig.popsim.trips_stage__f952b7e6f10e3479484bcadfc3e4891e has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.cordon_gates__7204088fb2a03fd61fb6ceeba57bf871: parent braunschweig.data.cordon_gemeinden__90978cea1e8f1a94dc32954e76d83b2e has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__8ac114b7eb52822aad4c7082f81148f7: parent braunschweig.data.schools.kita_facilities__1bf2d5d4246d8289731f244165199389 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__8ac114b7eb52822aad4c7082f81148f7: parent braunschweig.data.schools.university_facilities__9db726bdca9f891adfa4ec592ecd17cd has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__8ac114b7eb52822aad4c7082f81148f7: parent braunschweig.popsim.enriched_adapter__8fe48c654cbb464b0b85f2555e705c75 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__8ac114b7eb52822aad4c7082f81148f7: parent braunschweig.synthesis.locations.home_cell__c544239a73896a5a1c378b4352d25bca has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: parent braunschweig.data.schools.kita_facilities__88a2ca16df5733f923c820b01861418f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: parent braunschweig.data.schools.university_facilities__38400d72409e9b36d057058953553685 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: parent braunschweig.popsim.enriched_adapter__f3536114eb8826159ebc2571deea3f6a has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: parent braunschweig.synthesis.locations.home_cell__67717f3e7d6d4f8f062508eebc7a3b54 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__bab1d67d1bcf186c79090a651cf51684: parent synthesis.population.spatial.primary.candidates__d2260176c5af2f15e4212209262a3a0f has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__e0f024f8158e1930a19ca6d2db1b14ef: parent braunschweig.popsim.enriched_adapter__7cc4a01e657c6e64f712e0968a4e9661 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__e0f024f8158e1930a19ca6d2db1b14ef: parent braunschweig.synthesis.locations.home_cell__361bac368a4420073b977f23fffb87a7 has no output hash; the timestamp rule stays for it
+[migrate] braunschweig.synthesis.locations.education_gravity__e0f024f8158e1930a19ca6d2db1b14ef: parent synthesis.population.spatial.primary.candidates__ac9a69948888dd3e53b0c4da7df8f683 has no output hash; the timestamp rule stays for it
+[migrate] data.osm.cleaned__01976b4c022985560d66a51d73a11be7: parent data.osm.osmosis__6a83dc47bc06f6c141f5789f3be2c5f8 has no output hash; the timestamp rule stays for it
+[migrate] matsim.runtime.pt2matsim__63258fbf8a6ba20f257ece51566899e8: parent matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.activities__4ae140d19d33e3775f3f941a9c0c1b4a: parent braunschweig.popsim.enriched_adapter__f3536114eb8826159ebc2571deea3f6a has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.activities__4ae140d19d33e3775f3f941a9c0c1b4a: parent braunschweig.popsim.trips_stage__4ae140d19d33e3775f3f941a9c0c1b4a has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.sampled__7cc4a01e657c6e64f712e0968a4e9661: parent braunschweig.popsim.stage__5b2fa19512066876387bcf306fa146d7 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.sampled__8fe48c654cbb464b0b85f2555e705c75: parent braunschweig.popsim.stage__4deea1cb21653463b6d2bf31371be2b5 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.sampled__db63f20b7fd3f2dfeb9ab104833cdd71: parent braunschweig.popsim.stage__f3f75bee692957795d6cbfe4d5535285 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.sampled__f3536114eb8826159ebc2571deea3f6a: parent braunschweig.popsim.stage__ec327d90fbb1fabe426f1d85869093fd has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent braunschweig.gravity.model__b13ec16cb95dee8504e6ceb815dc63b1 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent braunschweig.locations.work__a1ae65924aa85e0c9752f5d2e089c69e has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent braunschweig.popsim.enriched_adapter__8fe48c654cbb464b0b85f2555e705c75 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent braunschweig.popsim.trips_stage__17a53e7426f300023f9ad2473006279c has no output hash; the timestamp rule stays for it
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent braunschweig.synthesis.spatial.home_zones was updated after the child; no parent digest recorded (the child stays stale)
+[migrate] synthesis.population.spatial.primary.candidates__04e27cc4549821fa3c359ad88f34454f: parent eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.passengers.default__f3536114eb8826159ebc2571deea3f6a: parent braunschweig.popsim.enriched_adapter__f3536114eb8826159ebc2571deea3f6a has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.vehicles__0da4c87841f8be43b98db24777cef8e4: parent braunschweig.synthesis.vehicles.cars.household__fb3f06eb1fbf4668c5e20e32f43f6657 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.vehicles__2e3ba60a27c8378b403cfa37c506778d: parent braunschweig.synthesis.vehicles.cars.household__8b030d405ea6eddc3c5de5d5d6359b3a has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.vehicles__2e3ba60a27c8378b403cfa37c506778d: parent synthesis.vehicles.passengers.default has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.vehicles__716092241594f6f536b7f90f107bbd8e: parent braunschweig.synthesis.vehicles.cars.household__81877f3351c010f981d28910ffca2184 has no output hash; the timestamp rule stays for it
+[migrate] synthesis.vehicles.vehicles__716092241594f6f536b7f90f107bbd8e: parent synthesis.vehicles.passengers.default has no output hash; the timestamp rule stays for it
+[migrate] module_hash_migrated: 77
+[migrate] module_hash_mismatch: 79
+[migrate] token_migrated: 0
+[migrate] token_mismatch: 2
+[migrate] token_not_applicable: 154
+[migrate] token_unverifiable: 0
+[migrate] output_hashed: 77
+[migrate] output_missing: 0
+[migrate] not_in_dag: 12
+[migrate] already_migrated: 0
+[migrate] dependency_hashes_filled: 72
+[migrate] dependency_hashes_skipped_stale: 3
+[migrate] dependency_hashes_parent_legacy: 61
+[migrate] migrated: 77
+[migrate] kept_legacy: 91
+[migrate] output hashing took 40.01 s in total
+[migrate] migrated 77/168 (45.8%), kept legacy 91
+[migrate] WARNING: 91 entries kept legacy; the upstream timestamp rule decides them and those with a changed module hash or token recompute (see the per-entry lines above)
+[migrate] dry run: pipeline.json not written

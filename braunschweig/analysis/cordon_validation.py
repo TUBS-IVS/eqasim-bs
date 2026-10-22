@@ -30,12 +30,10 @@ stays exactly as it was.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
-import inspect
 import logging
 import os
 
+from braunschweig import synpp_tokens
 from braunschweig.analysis import json_output as _json_output
 from braunschweig.analysis.json_output import write_json
 from braunschweig.data.cordon import gate_assignment as _gate_assignment
@@ -83,27 +81,18 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 def validate(context):
-    """synpp validation token: md5 over the helper modules that shape this stage's output.
+    """synpp validation token: structured token over the helper modules that shape this stage's output.
 
     synpp hashes only THIS module's source, so an edit to a helper it writes its files through
     would otherwise leave the cached outputs in place although their content or format changed
     (same mechanism as ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+
+    Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
+    digest per helper module (docstrings, comments and formatting do not change it).
     """
-    digest = hashlib.md5()
-    for module in _HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
-    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        try:
-            deferred_module = importlib.import_module(module_name)
-            deferred_source = inspect.getsource(deferred_module)
-        except Exception as error:
-            raise RuntimeError(
-                f"cordon_validation validate(): cannot hash the deferred helper module "
-                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
-                "because skipping it would silently reuse stale cached output."
-            ) from error
-        digest.update(deferred_source.encode("utf-8"))
-    return digest.hexdigest()
+    return synpp_tokens.source_token(
+        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+        stage_label=__name__ + ".validate()")
 
 
 def configure(context):

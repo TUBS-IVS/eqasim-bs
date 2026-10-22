@@ -23,7 +23,9 @@ import logging
 import math
 import os
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterator
 
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
@@ -54,6 +56,25 @@ DEFAULT_LEG_MAX_DURATION_S = 10800.0
 #: ASSUMPTION (ADR-0146): the share of frozen resident plans that may be late or non-monotonic; the A/B calibrates it.
 KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
+#: Leg attribute that eqasim stamps on a leg its router replaced by a walk (value: the mode that was requested,
+#: ``pt``); the Java constant carries the same name (eqasim-bs#465).
+WALK_FALLBACK_ATTRIBUTE = "walkFallbackFrom"
+#: Leg attribute MATSim writes (plans v6) for the routing mode a trip was requested with; a trip with value ``pt``
+#: is a pt-intended trip, whatever the router made of it.
+ROUTING_MODE_ATTRIBUTE = "routingMode"
+PT_MODE = "pt"
+#: The jar entry whose constant pool holds the attribute name when the Java fork stamps the fallback legs
+#: (``PlanRouter.WALK_FALLBACK_ATTRIBUTE``, eqasim-bs#465).
+PLAN_ROUTER_CLASS_ENTRY = "org/eqasim/core/scenario/routing/PlanRouter.class"
+#: Leg modes that make a pt-intended trip "walk-only" (no pt leg was produced).
+WALK_MODES = frozenset({"walk", "non_network_walk"})
+#: Activity types ending like this are router-made trip stops (``pt interaction``); they do not end a trip.
+INTERACTION_SUFFIX = "interaction"
+#: ASSUMPTION (#465): the share of the pt-intended TRIPS (routingMode ``pt``) of frozen resident tours that may be
+#: realised as walks. It is a threshold for flagging a symptom (e.g. no timetable connection or a missing stop)
+#: for tours the mode choice never re-chooses, not a reference value and not proof of a broken router.
+KEY_MAX_FROZEN_PT_AS_WALK_SHARE = "braunschweig.plan_check.max_frozen_pt_as_walk_share"
+DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
 #: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
 #: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
@@ -67,7 +88,8 @@ class PersonPlan:
     person_id: str
     subpopulation: str
     activities: list = field(default_factory=list)   # (type, end_time_s or None, x, y)
-    legs: list = field(default_factory=list)         # (mode, trav_time_s or None)
+    # (mode, trav_time_s or None, walk_fallback_from or None, routing_mode or None)
+    legs: list = field(default_factory=list)
 
 
 def parse_time_s(text: str) -> float:
@@ -78,6 +100,16 @@ def parse_time_s(text: str) -> float:
 
 def _open(path):
     return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
+
+
+def _leg_attribute(leg, name: str) -> str | None:
+    """The value of the leg attribute ``name`` (e.g. ``walkFallbackFrom``, ``routingMode``), or None when absent."""
+    attributes = leg.find("attributes")
+    if attributes is not None:
+        for attribute in attributes.findall("attribute"):
+            if attribute.get("name") == name and (attribute.text or "").strip():
+                return attribute.text.strip()
+    return None
 
 
 def iter_person_plans(population_path) -> Iterator[PersonPlan]:
@@ -111,7 +143,9 @@ def iter_person_plans(population_path) -> Iterator[PersonPlan]:
                                                   float(child.get("x")), float(child.get("y"))))
                     elif child.tag == "leg":
                         travel = child.get("trav_time")
-                        person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None))
+                        person.legs.append((child.get("mode"), parse_time_s(travel) if travel else None,
+                                            _leg_attribute(child, WALK_FALLBACK_ATTRIBUTE),
+                                            _leg_attribute(child, ROUTING_MODE_ATTRIBUTE)))
             element.clear()
             root.clear()
             yield person
@@ -136,7 +170,26 @@ def leg_tour_frozen(activities: list) -> list:
 
 def _empty_block() -> dict:
     return {"n_persons": 0, "n_legs": 0, "n_plans_late": 0, "n_plans_arrival_late": 0, "n_plans_non_monotonic": 0,
-            "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0}
+            "n_walk_legs_over": 0, "n_bicycle_legs_over": 0, "n_legs_over_duration": 0,
+            "n_pt_trips": 0, "n_pt_as_walk": 0, "n_pt_as_walk_attr_without_walk": 0,
+            "pt_as_walk_by_hour": {}}
+
+
+def split_trips(activities: list, n_legs: int) -> list:
+    """The leg indices of each trip: consecutive legs joined by an ``... interaction`` activity form one trip.
+
+    A pt trip routed with access and egress walks (``pt interaction`` stops in between) is ONE trip, so the pt
+    trip counts below are per trip, not per leg.
+    """
+    trips, current = [], []
+    for index in range(n_legs):
+        current.append(index)
+        if not activities[index + 1][0].endswith(INTERACTION_SUFFIX):
+            trips.append(current)
+            current = []
+    if current:
+        trips.append(current)
+    return trips
 
 
 def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bicycle_max_distance_m: float,
@@ -147,8 +200,18 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
     counts plans whose last planned arrival (end time of the last leg's origin activity plus the leg's travel
     time) is after the simulated day; a plan whose last leg lacks the end time or the travel time cannot be
     evaluated and is not counted. The latter is report only (it is not part of the failure rule).
+
+    The pt counters are per TRIP (``split_trips``) and all of one block: ``n_pt_trips`` are the trips requested as pt
+    (leg attribute ``routingMode`` = pt, or a leg stamped ``walkFallbackFrom`` = pt), assigned to the class of the
+    trip's first leg; ``n_pt_as_walk`` the pt-intended trips with a stamped walk leg, in the same class (so numerator
+    and denominator share one block); ``share_pt_as_walk`` = ``n_pt_as_walk / n_pt_trips`` (the threshold's share; 0
+    when the block has no pt-intended trip). A jar without the stamp makes ``n_pt_as_walk`` read 0 whatever the
+    router did: ``require_walk_fallback_stamp`` guards that in ``run``. ``n_legs_with_routing_mode`` and
+    ``n_pt_or_stamped_legs`` tell ``_log_summary`` when ``n_pt_trips`` is meaningless (no leg carries a
+    ``routingMode`` although pt or stamped legs exist).
     """
     blocks: dict = {}
+    n_legs_with_routing_mode = n_pt_or_stamped_legs = 0
     for person in plans:
         if len(person.legs) > max(len(person.activities) - 1, 0):
             raise ValueError(f"{_LOG_TAG} person {person.person_id}: {len(person.legs)} legs for "
@@ -170,7 +233,7 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 block["n_plans_arrival_late"] += 1
         if any(later < earlier for earlier, later in zip(ends, ends[1:])):
             block["n_plans_non_monotonic"] += 1
-        for index, (mode, travel) in enumerate(person.legs):
+        for index, (mode, travel, walk_fallback_from, routing_mode) in enumerate(person.legs):
             leg_block = sub[FROZEN if frozen_legs[index] else IN_REGION]
             leg_block["n_legs"] += 1
             _, _, ox, oy = person.activities[index]
@@ -182,13 +245,35 @@ def summarise(plans, *, simulation_end_s: float, walk_max_distance_m: float, bic
                 leg_block["n_bicycle_legs_over"] += 1
             if travel is not None and travel > leg_max_duration_s:
                 leg_block["n_legs_over_duration"] += 1
+            n_legs_with_routing_mode += routing_mode is not None
+            n_pt_or_stamped_legs += mode == PT_MODE or walk_fallback_from is not None
+        for trip in split_trips(person.activities, len(person.legs)):
+            trip_legs = [person.legs[index] for index in trip]
+            if not any(leg[2] == PT_MODE or leg[3] == PT_MODE for leg in trip_legs):
+                continue
+            trip_block = sub[FROZEN if frozen_legs[trip[0]] else IN_REGION]
+            trip_block["n_pt_trips"] += 1
+            stamped_walk = next((index for index in trip
+                                 if person.legs[index][2] is not None and person.legs[index][0] == "walk"), None)
+            if stamped_walk is not None:
+                trip_block["n_pt_as_walk"] += 1
+                departure = person.activities[stamped_walk][1]
+                hour = "unknown" if departure is None else str(int(departure // 3600.0))
+                by_hour = trip_block["pt_as_walk_by_hour"]
+                by_hour[hour] = by_hour.get(hour, 0) + 1
+            # A stamp that survived on a leg that is no longer a walk (e.g. a later replanning changed its mode):
+            # reported on its own, never part of the pt-as-walk counter.
+            trip_block["n_pt_as_walk_attr_without_walk"] += sum(
+                1 for index in trip if person.legs[index][2] is not None and person.legs[index][0] != "walk")
     for sub in blocks.values():
         for block in sub.values():
             n = block["n_persons"]
             block["share_plans_late"] = block["n_plans_late"] / n if n else 0.0
             block["share_plans_arrival_late"] = block["n_plans_arrival_late"] / n if n else 0.0
             block["share_plans_non_monotonic"] = block["n_plans_non_monotonic"] / n if n else 0.0
-    return {"simulation_end_s": float(simulation_end_s),
+            block["share_pt_as_walk"] = block["n_pt_as_walk"] / block["n_pt_trips"] if block["n_pt_trips"] else 0.0
+    return {"simulation_end_s": float(simulation_end_s), "n_legs_with_routing_mode": n_legs_with_routing_mode,
+            "n_pt_or_stamped_legs": n_pt_or_stamped_legs,
             "thresholds": {"walk_max_distance_m": walk_max_distance_m, "bicycle_max_distance_m": bicycle_max_distance_m,
                            "leg_max_duration_s": leg_max_duration_s},
             "subpopulations": blocks}
@@ -238,14 +323,25 @@ def resolve_population_path(config_path) -> str:
     return population_path
 
 
-def find_threshold_violations(summary: dict, max_frozen_defect_share: float) -> list:
-    """Names of the failure-rule shares of the frozen resident plans that exceed the allowed share."""
+def _allowed_shares(max_frozen_defect_share: float, max_frozen_pt_as_walk_share: float) -> dict:
+    return {"share_plans_late": max_frozen_defect_share, "share_plans_non_monotonic": max_frozen_defect_share,
+            "share_pt_as_walk": max_frozen_pt_as_walk_share}
+
+
+def find_threshold_violations(summary: dict, max_frozen_defect_share: float,
+                              max_frozen_pt_as_walk_share: float) -> list:
+    """Names of the failure-rule shares of the frozen resident block that exceed their allowed share.
+
+    ``share_plans_late`` and ``share_plans_non_monotonic`` (share of persons) are compared with
+    ``max_frozen_defect_share``; ``share_pt_as_walk`` (share of pt-intended trips) with ``max_frozen_pt_as_walk_share``.
+    """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    return [key for key in ("share_plans_late", "share_plans_non_monotonic")
-            if frozen.get(key, 0.0) > max_frozen_defect_share]
+    return [key for key, allowed in _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share).items()
+            if frozen.get(key, 0.0) > allowed]
 
 
-def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_threshold: bool) -> list:
+def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_pt_as_walk_share: float, *,
+                     fail_on_threshold: bool) -> list:
     """Apply the failure rule to the frozen resident plans and return the violated share names.
 
     Above the allowed late / non-monotonic share the check raises when ``fail_on_threshold`` is true, and logs
@@ -253,10 +349,12 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_t
     calibrated it, so an uncalibrated threshold must not abort a run (ADR-0146). The ERROR is never silent.
     """
     frozen = summary["subpopulations"].get(RESIDENTS, {}).get(FROZEN, _empty_block())
-    violations = find_threshold_violations(summary, max_frozen_defect_share)
+    violations = find_threshold_violations(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share)
+    allowed_shares = _allowed_shares(max_frozen_defect_share, max_frozen_pt_as_walk_share)
     for key in violations:
+        unit, count_key = ("pt-intended trips", "n_pt_trips") if key == "share_pt_as_walk" else ("persons", "n_persons")
         message = (f"{_LOG_TAG} frozen resident plans: {key} = {100.0 * frozen[key]:.2f}% of "
-                   f"{frozen.get('n_persons', 0)} exceeds {100.0 * max_frozen_defect_share:.2f}%; the "
+                   f"{frozen.get(count_key, 0)} {unit} exceeds {100.0 * allowed_shares[key]:.2f}%; the "
                    "tours the mode choice never re-chooses cannot be lived in the simulated day")
         if fail_on_threshold:
             raise ValueError(message)
@@ -264,17 +362,63 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, *, fail_on_t
     return violations
 
 
+def _format_by_hour(by_hour: dict) -> dict:
+    """The per-hour counts ordered by numeric hour, with ``unknown`` last."""
+    known = sorted((key for key in by_hour if key != "unknown"), key=int)
+    return {key: by_hour[key] for key in known + (["unknown"] if "unknown" in by_hour else [])}
+
+
 def _log_summary(summary: dict) -> None:
     for subpopulation, classes in summary["subpopulations"].items():
         for name, block in classes.items():
             logger.info("%s %s/%s: persons %d, activity end after the day %d (%.2f%%), last arrival after the day "
                         "%d (%.2f%%), non-monotonic %d (%.2f%%), walk legs over %d, "
-                        "bicycle legs over %d, legs over duration %d of %d", _LOG_TAG, subpopulation, name,
+                        "bicycle legs over %d, legs over duration %d of %d, pt as walk %d of %d pt-intended trips "
+                        "(%.2f%%), walk-fallback attribute without walk %d, pt as walk by departure "
+                        "hour %s", _LOG_TAG, subpopulation, name,
                         block["n_persons"], block["n_plans_late"], 100.0 * block["share_plans_late"],
                         block["n_plans_arrival_late"], 100.0 * block["share_plans_arrival_late"],
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
-                        block["n_legs"])
+                        block["n_legs"], block["n_pt_as_walk"], block["n_pt_trips"], 100.0 * block["share_pt_as_walk"],
+                        block["n_pt_as_walk_attr_without_walk"],
+                        _format_by_hour(block["pt_as_walk_by_hour"]))
+    if summary["n_pt_or_stamped_legs"] and not summary["n_legs_with_routing_mode"]:
+        logger.warning("%s %d legs have mode pt or carry the %s stamp, but no leg carries a %s attribute: the pt "
+                       "trip counts (n_pt_trips, share_pt_as_walk) are meaningless for this population. Check "
+                       "that the population was written with MATSim plans v6 routing modes.", _LOG_TAG,
+                       summary["n_pt_or_stamped_legs"], WALK_FALLBACK_ATTRIBUTE, ROUTING_MODE_ATTRIBUTE)
+
+
+def require_walk_fallback_stamp(jar_path) -> None:
+    """Raise unless the eqasim jar at ``jar_path`` stamps the legs ``PlanRouter.fixOnlyWalk`` replaced (#465).
+
+    A jar built before the stamp was added writes no ``walkFallbackFrom`` leg attribute, so ``n_pt_as_walk`` would
+    read 0 whatever the router did: a silent failure. The check opens ``PLAN_ROUTER_CLASS_ENTRY`` and requires the
+    attribute name ``WALK_FALLBACK_ATTRIBUTE`` (UTF-8, as the class constant pool holds it) in its bytes. Raises
+    ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a file that is no zip archive, a jar without
+    the class, or a class without the name; the message names the jar and the fix. Logs one INFO line on success.
+    """
+    path = Path(jar_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"{_LOG_TAG} the eqasim jar to check for the walk fallback stamp does not exist: {path}")
+    fix = ("rebuild the jar from an eqasim-java-bs revision with the walk fallback stamp (check it out in the tree "
+           "eqasim_source_path points to), see eqasim-bs#465")
+    try:
+        with zipfile.ZipFile(path) as jar:
+            try:
+                class_bytes = jar.read(PLAN_ROUTER_CLASS_ENTRY)
+            except KeyError:
+                raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} does not contain {PLAN_ROUTER_CLASS_ENTRY}; "
+                                   f"{fix}") from None
+    except zipfile.BadZipFile as error:
+        raise RuntimeError(f"{_LOG_TAG} cannot read the eqasim jar {path} as a zip archive: {error}") from error
+    if WALK_FALLBACK_ATTRIBUTE.encode("utf-8") not in class_bytes:
+        raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} predates the walk fallback stamp: its "
+                           f"{PLAN_ROUTER_CLASS_ENTRY} does not contain {WALK_FALLBACK_ATTRIBUTE}, so no pt-to-walk "
+                           f"fallback would be stamped and the pt-as-walk count would read 0 whatever happened; {fix}")
+    logger.info("%s the eqasim jar %s stamps the walk fallback (%s found in %s)", _LOG_TAG, path,
+                WALK_FALLBACK_ATTRIBUTE, PLAN_ROUTER_CLASS_ENTRY)
 
 
 def run(context, config_name: str) -> dict:
@@ -288,6 +432,9 @@ def run(context, config_name: str) -> dict:
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"{_LOG_TAG} written config not found: {config_path}")
     assert_qsim_end_time(config_path, MAX_PLAN_TIME_SECONDS)
+    # Resolved exactly as matsim.simulation.run and matsim.runtime.eqasim.run do.
+    jar_path = "%s/%s" % (context.path("matsim.runtime.eqasim"), context.stage("matsim.runtime.eqasim"))
+    require_walk_fallback_stamp(jar_path)
     population_path = resolve_population_path(config_path)
     summary = summarise(iter_person_plans(population_path), simulation_end_s=MAX_PLAN_TIME_SECONDS,
                         walk_max_distance_m=float(context.config(KEY_WALK_MAX_DISTANCE_M)),
@@ -295,11 +442,15 @@ def run(context, config_name: str) -> dict:
                         leg_max_duration_s=float(context.config(KEY_LEG_MAX_DURATION_S)))
     _log_summary(summary)
     max_frozen_defect_share = float(context.config(KEY_MAX_FROZEN_DEFECT_SHARE))
+    max_frozen_pt_as_walk_share = float(context.config(KEY_MAX_FROZEN_PT_AS_WALK_SHARE))
     fail_on_threshold = bool(context.config(KEY_FAIL_ON_THRESHOLD))
     summary["threshold"] = {"max_frozen_defect_share": max_frozen_defect_share,
+                            "max_frozen_pt_as_walk_share": max_frozen_pt_as_walk_share,
                             "fail_on_threshold": fail_on_threshold,
-                            "exceeded": find_threshold_violations(summary, max_frozen_defect_share)}
+                            "exceeded": find_threshold_violations(summary, max_frozen_defect_share,
+                                                                  max_frozen_pt_as_walk_share)}
     with open(os.path.join(directory, PLAN_CHECK_FILE_NAME), "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
-    check_thresholds(summary, max_frozen_defect_share, fail_on_threshold=fail_on_threshold)
+    check_thresholds(summary, max_frozen_defect_share, max_frozen_pt_as_walk_share,
+                     fail_on_threshold=fail_on_threshold)
     return summary

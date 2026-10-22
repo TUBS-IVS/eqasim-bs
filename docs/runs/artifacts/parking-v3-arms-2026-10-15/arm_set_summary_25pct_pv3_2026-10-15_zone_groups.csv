@@ -1,0 +1,25 @@
+arm,zone_group,purpose_class,iterations,zone_ids,priced_calls,paid_calls,paid_share,garage_share_paid_options,garage_share_free_options,mean_expected_cost_cents,ev_exempt_count,street_infeasible_count,no_feasible_option_count,employer_free_count
+v3_25pct,bs_zone_ia,all,51-60,bs_zone_ia,5441,2548,0.468296,0.388247,0.000000,132.0767,0,525,0,1512
+v3_25pct,bs_zone_ia,work_education,51-60,bs_zone_ia,1911,366,0.191523,0.158721,0.000000,90.4626,0,292,0,1512
+v3_25pct,bs_zone_ia,other_purposes,51-60,bs_zone_ia,2498,2182,0.873499,0.724234,0.000000,218.4769,0,233,0,0
+v3_25pct,bs_zone_ib,all,51-60,bs_zone_ib,1127,252,0.223602,0.126961,0.000000,70.3401,0,0,0,275
+v3_25pct,bs_zone_ib,work_education,51-60,bs_zone_ib,355,74,0.208451,0.012537,0.000000,77.3061,0,0,0,275
+v3_25pct,bs_zone_ib,other_purposes,51-60,bs_zone_ib,246,178,0.723577,0.563554,0.000000,210.6896,0,0,0,0
+v3_25pct,bs_zone_ia_sued,all,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,bs_zone_ia_sued,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,bs_zone_ia_sued,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,bs_zone_ii,all,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,bs_zone_ii,work_education,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,bs_zone_ii,other_purposes,51-60,,0,0,,,,,0,0,0,0
+v3_25pct,wob,all,51-60,"wob_area_668, wob_area_723, wob_area_724, wob_area_725, wob_area_726, wob_area_727, wob_area_728, wob_area_729, wob_area_730, wob_area_731, wob_area_732, wob_area_734, wob_area_735, wob_area_736, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",2527,885,0.350218,0.192435,0.040076,84.5213,0,30,0,787
+v3_25pct,wob,work_education,51-60,"wob_area_668, wob_area_723, wob_area_724, wob_area_725, wob_area_726, wob_area_727, wob_area_728, wob_area_729, wob_area_730, wob_area_731, wob_area_732, wob_area_734, wob_area_735, wob_area_736, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",996,199,0.199799,0.103303,0.011201,91.8699,0,18,0,787
+v3_25pct,wob,other_purposes,51-60,"wob_area_668, wob_area_723, wob_area_724, wob_area_725, wob_area_726, wob_area_727, wob_area_728, wob_area_729, wob_area_730, wob_area_731, wob_area_732, wob_area_734, wob_area_735, wob_area_736, wob_tarifzone_1, wob_tarifzone_2, wob_tarifzone_3",807,686,0.850062,0.475084,0.111666,151.2799,0,12,0,0
+v3_25pct,bh,all,51-60,"bh_burgberg, bh_grossparkplatz, bh_kurpark, bh_sole_therme",37,11,0.297297,0.000000,0.000000,50.0000,0,0,0,18
+v3_25pct,bh,work_education,51-60,"bh_burgberg, bh_grossparkplatz, bh_kurpark, bh_sole_therme",18,0,0.000000,0.000000,0.000000,0.0000,0,0,0,18
+v3_25pct,bh,other_purposes,51-60,"bh_burgberg, bh_grossparkplatz, bh_kurpark, bh_sole_therme",14,11,0.785714,0.000000,0.000000,132.1429,0,0,0,0
+v3_25pct,se_am_markt,all,51-60,se_am_markt,28,4,0.142857,0.000000,0.003335,21.6096,0,0,0,17
+v3_25pct,se_am_markt,work_education,51-60,se_am_markt,22,4,0.181818,0.000000,0.004244,27.5031,0,0,0,17
+v3_25pct,se_am_markt,other_purposes,51-60,se_am_markt,0,0,,,,,0,0,0,0
+v3_25pct,other,all,51-60,"bs_hbf_p1_nord, bs_hbf_p3_west, bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse, bs_parkscheininsel_marthastrasse_koernerstrasse, bs_parkscheininsel_mentestrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_baeringerstrasse, gs_parkplatz_glockengiesserstrasse, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",8507,3076,0.361585,0.052200,0.041732,33.8642,20,103,0,3088
+v3_25pct,other,work_education,51-60,"bs_hbf_p1_nord, bs_hbf_p3_west, bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse, bs_parkscheininsel_marthastrasse_koernerstrasse, bs_parkscheininsel_mentestrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_baeringerstrasse, gs_parkplatz_glockengiesserstrasse, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",5174,2079,0.401817,0.008244,0.000848,28.1028,1,29,0,3088
+v3_25pct,other,other_purposes,51-60,"bs_hbf_p1_nord, bs_hbf_p3_west, bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse, bs_parkscheininsel_marthastrasse_koernerstrasse, bs_parkscheininsel_mentestrasse, bs_resident_stadthalle_132, gf_innenstadt, gs_altstadt_zone1, gs_parkplatz_baeringerstrasse, gs_parkplatz_glockengiesserstrasse, gs_parkplatz_klubgartenstrasse_zob, he_innenstadt, pe_innenstadt, sz_lebenstedt, tu_campus_nord, tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_campus_volkmaroder_strasse, tu_forschungsflughafen, tu_zentralcampus, wf_innenstadt",1615,997,0.617337,0.248550,0.217108,88.3461,19,74,0,0
