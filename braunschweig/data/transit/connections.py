@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 
 import matsim.runtime.eqasim as eqasim
+import matsim.runtime.java as java
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,16 @@ _CONFIG_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" ?>
 	</module>
 </config>
 """
+
+
+def configure(context) -> None:
+    """Declare the config options that ``route_batch`` needs at execute.
+
+    ``route_batch`` runs the router through ``eqasim.run`` -> ``java.run``, whose Java options (binary,
+    memory, hang watchdog) are volatile and not passed downstream by synpp (#330). Every stage that calls
+    ``route_batch`` must call this from its own ``configure``.
+    """
+    java.configure(context)
 
 
 def write_router_config(path: str, *, network_path: str, schedule_path: str, vehicles_path: str) -> str:

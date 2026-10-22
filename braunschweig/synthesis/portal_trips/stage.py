@@ -22,7 +22,6 @@ import os
 import numpy as np
 import pandas as pd
 
-import matsim.runtime.java as java
 from shapely.geometry import Point
 
 from braunschweig import synpp_tokens
@@ -102,7 +101,7 @@ def configure(context):
     context.config("cordon_network_buffer_fraction", 0.10)
     # Timetable-aware pt gates (#465): the settings, and the runtime of the batch pt router (the router is a
     # Java tool of the eqasim jar, run through eqasim.run -> java.run like in matsim.simulation.prepare).
-    pt_gate_settings = _read_gate_settings(context)
+    pt_gate_settings = _configure_gate_settings(context)
     validate_settings(float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MAX_ROUTABLE_DISTANCE_M)),
                       float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE,
                                            DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
@@ -110,7 +109,9 @@ def configure(context):
                       float(context.config(KEY_FALLBACK_WARN_SHARE, DEFAULT_FALLBACK_WARN_SHARE)),
                       **pt_gate_settings)
     context.config(KEY_PT_GATE_MODES, DEFAULT_PT_GATE_MODES)
-    java.configure(context)
+    # The batch pt router runs eqasim.run -> java.run; connections.configure declares the Java options.
+    from braunschweig.data.transit import connections
+    connections.configure(context)
     context.stage("matsim.runtime.eqasim")
     context.stage("matsim.runtime.java")
     # Execution details, not scientific config: the thread count must not devalidate cached stages.
@@ -129,8 +130,11 @@ def configure(context):
     context.stage("matsim.scenario.supply.processed")
 
 
-def _read_gate_settings(context) -> dict:
-    """The timetable-aware gate settings as the keyword arguments of ``validate_settings``."""
+def _configure_gate_settings(context) -> dict:
+    """Declare the timetable-aware gate settings and return them as the keyword arguments of ``validate_settings``.
+
+    Called from ``configure`` only: the two-argument ``context.config(key, default)`` form is invalid at execute.
+    """
     return {"gate_candidates": int(context.config(KEY_GATE_CANDIDATES, DEFAULT_GATE_CANDIDATES)),
             "gate_service_window_s": float(context.config(KEY_GATE_SERVICE_WINDOW_S,
                                                           DEFAULT_GATE_SERVICE_WINDOW_S)),
