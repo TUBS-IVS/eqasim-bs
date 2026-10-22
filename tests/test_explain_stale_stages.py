@@ -21,6 +21,10 @@ def _load():
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
+    # The explainer builds its registry with the fork installed (semantic module hashes); populate the
+    # cache the same way so the first test of a fresh interpreter does not see md5 module hashes.
+    from braunschweig import synpp_fork
+    synpp_fork.install()
     (tmp_path / "ex_parent.py").write_text(textwrap.dedent("""
         def configure(context):
             context.config("value")
@@ -96,4 +100,4 @@ def test_json_report_carries_the_recompute_fields(project, tmp_path):
     for stage in report.values():                         # hash lists run parallel to the name lists
         assert len(stage["stale_if_hashes"]) == len(stage["stale_if"])
         assert len(stage["unhashed_ancestor_hashes"]) == len(stage["unhashed_ancestors"])
-        assert stage["ephemeral_uncached"] is False
+        assert stage["ephemeral_uncached"] is False and stage["eager_rule"] is False

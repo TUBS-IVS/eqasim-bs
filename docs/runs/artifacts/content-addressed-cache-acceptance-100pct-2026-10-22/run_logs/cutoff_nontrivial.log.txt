@@ -1,0 +1,21 @@
+[i468p4] X5 remove the pickle of data.hts.entd.raw 2026-10-22T12:41:06+02:00
+before data.hts.entd.cleaned__dbe8ad3b1a93732a85d97be8a80264f7 updated=1782827713.708651 digest=f0a62cbd120843fd739b1209a9ede12b4683cec2db77bbec66cf3f8a86d19336 bytes=23538321 recorded_parent_digests={'data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7': 'd424decf8e1da3e32507a82ae9e212c04e7db077b48a09811434dd470503b2db'}
+before data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7 updated=1782812841.662458 digest=d424decf8e1da3e32507a82ae9e212c04e7db077b48a09811434dd470503b2db bytes=20645074 recorded_parent_digests={}
+removing eqasim-data/cache_bs_100pct_allfeat_popsim/data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7.p
+STALE    data.hts.entd.cleaned  [required]
+STALE    data.hts.entd.raw  [cache_missing]
+# 2 stages: 2 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 0 hits
+X5_run exit=0
+Stale before execution: 1 stages, decided for their own reasons
+Executing stage data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7 ...
+Output hash for data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7: 0 files, 20645074 bytes, 0.1 s; identical to the previous output
+Output of data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7 unchanged: data.hts.entd.cleaned__dbe8ad3b1a93732a85d97be8a80264f7 not devalidated by it
+Executed 1 stages; early cutoff kept 1 stages cached (descendants of stale stages that did not execute)
+- executed data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7 [cache_missing]
+- kept cached data.hts.entd.cleaned__dbe8ad3b1a93732a85d97be8a80264f7
+after data.hts.entd.cleaned__dbe8ad3b1a93732a85d97be8a80264f7 updated=1782827713.708651 digest=f0a62cbd120843fd739b1209a9ede12b4683cec2db77bbec66cf3f8a86d19336 bytes=23538321 recorded_parent_digests={'data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7': 'd424decf8e1da3e32507a82ae9e212c04e7db077b48a09811434dd470503b2db'}
+after data.hts.entd.raw__dbe8ad3b1a93732a85d97be8a80264f7 updated=1792665671.291643 digest=d424decf8e1da3e32507a82ae9e212c04e7db077b48a09811434dd470503b2db bytes=20645074 recorded_parent_digests={}
+STALE    data.hts.entd.cleaned  [required]
+HIT      data.hts.entd.raw
+# 2 stages: 1 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 1 hits
+[i468p4] done 2026-10-22T12:41:13+02:00

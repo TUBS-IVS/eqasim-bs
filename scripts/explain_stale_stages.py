@@ -5,10 +5,13 @@
 
 Read-only. Exit 0: every stage stale for its own reasons is in --expect (run targets, which synpp
 re-executes on every run, never count as unexpected); exit 2: at least one is not; exit 1: error.
-Stages marked STALE-IF are valid now and would be reused by the fork's early cutoff if the named
-ancestor's output is unchanged; synpp 1.6.2 recomputes them (see braunschweig/synpp_fork/staleness.py,
-EARLY_CUTOFF_ACTIVE). Stages marked RECOMPUTE have a stale ancestor with no recorded output hash and
-will recompute for certain. Uncached ephemeral stages are marked EPHEMERAL and never count as
+Stages marked STALE-IF are valid now and the fork's run() keeps them cached if the named ancestor
+is re-executed with an unchanged output (early cutoff), and recomputes them otherwise (plain
+synpp 1.6.2 would recompute them; see braunschweig/synpp_fork/staleness.py, EARLY_CUTOFF_ACTIVE).
+Stages marked RECOMPUTE have a stale ancestor and will recompute for certain: either their own
+record carries no output hash of the stale parent (or of a stage between), so nothing cuts the cascade
+off, or the registry holds an uncached ephemeral stage and upstream's eager rule applies to the whole
+run. Uncached ephemeral stages are marked EPHEMERAL and never count as
 unexpected. --expect is a gate only when given: `--expect ""` means NOTHING may be stale
 (besides run targets), whereas the launcher key `synpp_expected_stale_stages: []` means
 "no gate" (scripts/run_synpp.py, explain_before_run).
@@ -63,7 +66,7 @@ def main(argv=None) -> int:
                              "unhashed_ancestors": a.unhashed_ancestors,
                              "stale_if_hashes": a.stale_if_hashes,
                              "unhashed_ancestor_hashes": a.unhashed_ancestor_hashes,
-                             "ephemeral_uncached": a.ephemeral_uncached,
+                             "ephemeral_uncached": a.ephemeral_uncached, "eager_rule": a.eager_rule,
                              "config_diff": {k: list(v) for k, v in a.config_diff.items()}}
                    for a in assessments.values()}
         with open(args.json_out, "w", encoding="utf-8") as handle:
