@@ -106,7 +106,10 @@ def test_module_hash_change_is_detected(project):
     from braunschweig.synpp_fork import metadata, staleness
     tmp_path, working, _, _, run, registry = project
     run()
-    (tmp_path / "st_child.py").write_text(textwrap.dedent(CHILD).replace("* 2", "* 3"), encoding="utf-8")
+    # The edit must change the file SIZE: synpp hashes inspect.getsource(), whose linecache (and the .pyc check) only
+    # notices a rewrite by size or mtime, and a same-size rewrite can land in the same coarse kernel timestamp as the
+    # run's read of the file (observed as a 1-in-3 flake under WSL: reasons == []).
+    (tmp_path / "st_child.py").write_text(textwrap.dedent(CHILD).replace("* 2", "* 3  # edited"), encoding="utf-8")
     result = _by_name(staleness.assess(registry(), str(working), metadata.read_meta(str(working)),
                                        rerun_required=False))
     assert result["st_child"].reasons == ["module_hash_changed"]

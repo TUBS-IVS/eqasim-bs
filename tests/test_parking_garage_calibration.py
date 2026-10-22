@@ -13,6 +13,7 @@ import dataclasses
 import importlib.util
 import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -1880,3 +1881,36 @@ def test_the_command_line_takes_the_new_sensitivity_options(cal, monkeypatch, tm
     with pytest.raises(SystemExit) as refused:
         cal.main(base + ["--commuter-target-respondents", "0", "--sensitivity-commuter-target-se", "1"])
     assert refused.value.code == 2
+
+
+# ------------------------------------------------------------------------------------------------ provenance: git_state
+
+
+def _repo_with_one_commit(path: Path) -> str:
+    git = ["git", "-C", str(path), "-c", "user.name=test", "-c", "user.email=test@example.org"]
+    path.mkdir()
+    subprocess.run(git + ["init", "-q"], check=True)
+    # Line endings are content here, as git inside WSL sees a Windows checkout (no autocrlf on that side).
+    subprocess.run(git + ["config", "core.autocrlf", "false"], check=True)
+    (path / "file.txt").write_bytes(b"a\nb\n")
+    subprocess.run(git + ["add", "file.txt"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
+    return subprocess.run(git + ["rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_git_state_ignores_line_ending_only_differences_but_not_content(cal, tmp_path):
+    repo = tmp_path / "repo"
+    sha = _repo_with_one_commit(repo)
+    assert cal.git_state(repo) == sha
+    (repo / "file.txt").write_bytes(b"a\r\nb\r\n")        # CRLF only: every file of a Windows checkout seen from WSL
+    assert cal.git_state(repo) == sha
+    (repo / "file.txt").write_bytes(b"a\r\nchanged\r\n")  # a content change on top of the line endings
+    assert cal.git_state(repo) == f"{sha} (working tree has uncommitted changes)"
+
+
+def test_git_state_names_a_timeout_instead_of_claiming_there_is_no_checkout(cal, monkeypatch):
+    # A git call killed by the timeout (status takes 22-28 s on a CRLF-dirty checkout under WSL) is not "no git checkout".
+    def killed(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+    monkeypatch.setattr(cal.subprocess, "run", killed)
+    assert cal.git_state() == f"unknown (git timed out after {cal.GIT_STATE_TIMEOUT_SECONDS} s)"
