@@ -428,6 +428,19 @@ def test_a_validate_that_raises_for_a_new_stage_aborts_the_run_before_any_stage_
         pipe.assess()
 
 
+def test_an_in_memory_run_validates_every_stage_before_anything_executes(tmp_path, monkeypatch):
+    """Upstream step 4.8 also runs with working_directory None: validate() of the second stage must abort
+    the run before the FIRST stage executes (cache path "None/<hash>.cache", as upstream builds it)."""
+    child = _child_with("def validate(context):\n    raise RuntimeError('missing input of ec_child')")
+    pipe = Pipeline(tmp_path, monkeypatch, TWO, overrides={"ec_child": child})
+    with pytest.raises(RuntimeError, match="missing input of ec_child"):
+        pipe.run(in_memory=True, run_function=upstream_run())
+    assert pipe.events() == []                          # the contract: upstream executes nothing either
+    with pytest.raises(RuntimeError, match="missing input of ec_child"):
+        pipe.run(in_memory=True)
+    assert pipe.events() == []
+
+
 def test_a_malformed_exclusion_of_a_stage_devalidated_mid_run_fails_before_it_executes(tmp_path, monkeypatch):
     """ec_child is valid when the run starts, so only the check before its own execution can catch it."""
     helper = tmp_path / "ec_exclusions.py"

@@ -35,9 +35,11 @@ that assess judges by timestamp), which is a safe miss, never a false hit.
 
 Known facts (documented, not changed):
 
-- ``export`` drops the metadata of a migrated record: the migration rewrote
-  ``pipeline.json`` while the sidecar envelope still holds the pre-migration record, so
-  the two differ (a safe miss).
+- ``export`` drops the metadata of a migrated record unless a later fork run under
+  ``track_run`` refreshed its envelope: the migration rewrote ``pipeline.json`` while the
+  sidecar envelope still holds the pre-migration record, so the two differ (a safe miss).
+  ``track_run`` rewrites the ``metadata`` of an existing envelope whenever it differs from
+  the record, so the next run covering that entry makes it shareable again.
 - A store written before the content-addressed cache (md5 module hashes) primes as a
   miss.
 - ``braunschweig.freight.extraction_tool`` is not shared, unlike the shared
@@ -167,6 +169,21 @@ def _incoherence(entry: dict, metadata: dict):
         else:
             return "mixed_hashed_legacy"
     return None
+
+
+def _coherence_basis(entry: dict, metadata: dict) -> str:
+    """Name the rule that accepted an entry already known to be coherent (``_incoherence`` is None).
+
+    ``no_parents``: nothing to compare; ``legacy_timestamp_match``: at least one parent was
+    judged by equal timestamps (legacy records); else ``output_hash_match``. Used only for the
+    kept counts that ``prime`` logs."""
+    dependencies = entry.get("dependencies", {})
+    if not dependencies:
+        return "no_parents"
+    recorded = entry.get("dependency_output_hashes", {})
+    if any(recorded.get(dependency) is None for dependency in dependencies):
+        return "legacy_timestamp_match"
+    return "output_hash_match"
 
 
 def _coherent(entry: dict, metadata: dict) -> bool:
@@ -404,6 +421,15 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
                 counts.get("legacy_timestamp_mismatch", 0),
                 counts.get("mixed_hashed_legacy", 0), counts.get("missing_parent", 0))
         with_metadata = sum(entry in metadata for entry in primed)
+        kept = {"output_hash_match": 0, "legacy_timestamp_match": 0, "no_parents": 0}
+        for entry in primed:
+            if entry in metadata:
+                kept[_coherence_basis(metadata[entry], metadata)] += 1
+        logger.info(
+            "[cache_share] prime: kept %d copied records (output-hash match %d, "
+            "legacy equal timestamps %d, no parents %d)",
+            with_metadata, kept["output_hash_match"], kept["legacy_timestamp_match"],
+            kept["no_parents"])
         for entry in primed:
             sidecar = os.path.join(working_directory, entry + _METADATA_SUFFIX)
             if entry in metadata:

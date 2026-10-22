@@ -210,13 +210,12 @@ def _age_recorded_runs(directory, seconds=1.0):
     often enough to matter (measured: 2 failures in 120 runs of
     ``older_target_parent``).
 
-    On such a collision the scenario silently loses its precondition:
-    ``cache_share._drop_incoherent_metadata`` requires EXACT timestamp equality to
-    judge a primed child coherent with the target's parent -- deliberately, see its
-    docstring -- so an equal pair keeps the primed record instead of dropping it,
-    and synpp's ``parent.updated > child.dependencies[parent]`` is False for equal
-    values. The child is then served from cache rather than re-executed, and the
-    test fails although nothing is wrong with the code under test.
+    Under the timestamp rule such a collision silently lost the scenario's precondition
+    (an equal pair kept the primed record, so the child was served from cache). Coherence is
+    now decided by OUTPUT HASH (spec 2026-10-16 section 4.5, ``_drop_incoherent_metadata``);
+    only legacy records without hashes use exact timestamp equality. The scenarios still
+    age the target so the two runs stay distinguishable by timestamp: the expectations
+    must hold because the output digests agree or differ, never because of the clock.
 
     Ageing the recorded timestamps states the precondition instead of hoping for it,
     and removes the clock from the test. ``updated`` and the dependency snapshots
@@ -248,9 +247,10 @@ def _assert_runs_are_distinguishable(target, source):
     """The precondition of the two cross-run scenarios, asserted instead of assumed.
 
     Both need the target's entries to be recognisably from a different run than the
-    store's. Coherence is decided by EXACT timestamp equality, so a single shared
-    value silently turns the scenario into a different one -- which is how this test
-    used to fail about 2.5 % of the time on a coarse clock.
+    store's. Under the old timestamp rule a single shared value silently turned the
+    scenario into a different one -- which is how this test used to fail about 2.5 % of
+    the time on a coarse clock; the output-hash rule no longer depends on it, but a
+    shared value would still blur which run an entry came from.
 
     What this assertion does and does NOT do, precisely: ``_age_recorded_runs`` is
     what makes the precondition hold, by shifting the target a whole second away so
@@ -453,6 +453,64 @@ def test_prime_drops_a_child_whose_parent_output_differs_and_logs_the_reason(
     assert "output-hash mismatch 1" in caplog.text
     child = cache_share.find_stage_entries(str(b), "cs_child")[0]
     assert child not in json.loads((b / "pipeline.json").read_text(encoding="utf-8"))
+
+
+def test_prime_logs_how_many_copied_records_were_kept_and_why(tmp_path, monkeypatch, caplog):
+    """Primary-path observability (CLAUDE.md "Fallback transparency"): next to the drop counts the
+    log states the kept records, split into output-hash match, legacy equal timestamps, no parents."""
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    a, b, store = tmp_path / "a", tmp_path / "b", tmp_path / "store"
+    _cs_run(a, config)
+    cache_share.export(str(a), ["cs_parent", "cs_child"], str(store))
+    b.mkdir()
+    with caplog.at_level(logging.INFO, logger="braunschweig.cache_share"):
+        cache_share.prime(str(b), ["cs_parent", "cs_child"], str(store), [])
+    assert ("kept 2 copied records (output-hash match 1, legacy equal timestamps 0, no parents 1)"
+            in caplog.text)
+    before = trace.read_text().splitlines()
+    synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(b), rerun_required=False)
+    assert trace.read_text().splitlines() == before                  # the primary path really hit
+
+
+def test_kept_basis_names_the_rule_that_accepted_a_record():
+    hashed = {"updated": 1.0, "output_hash": {"format": 1, "digest": "d1"}}
+    assert cache_share._coherence_basis({}, {}) == "no_parents"
+    child = {"dependencies": {"p": 5.0}, "dependency_output_hashes": {"p": "d1"}}
+    assert cache_share._coherence_basis(child, {"p": hashed}) == "output_hash_match"
+    assert cache_share._coherence_basis({"dependencies": {"p": 1.0}}, {"p": {"updated": 1.0}}) == (
+        "legacy_timestamp_match")
+
+
+def test_a_later_run_refreshes_the_envelope_of_a_migrated_record(tmp_path, monkeypatch):
+    """A migration rewrites pipeline.json, so export drops that record's metadata (safe miss); any
+    later fork run under track_run refreshes the envelope, after which export shares it again."""
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    wd = tmp_path / "wd"
+    _cs_run(wd, config)
+    child = cache_share.find_stage_entries(str(wd), "cs_child")[0]
+    path = wd / "pipeline.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[child]["migration_probe"] = True                          # what a migration rewrite looks like
+    path.write_text(json.dumps(records), encoding="utf-8")
+    before_store, after_store = tmp_path / "store_before", tmp_path / "store_after"
+    cache_share.export(str(wd), ["cs_child"], str(before_store))
+    assert not (before_store / (child + ".metadata.json")).exists()
+    _cs_run(wd, config)
+    cache_share.export(str(wd), ["cs_child"], str(after_store))
+    shared = json.loads((after_store / (child + ".metadata.json")).read_text(encoding="utf-8"))
+    assert shared["metadata"] == json.loads(path.read_text(encoding="utf-8"))[child]
 
 
 def test_envelope_follows_the_record_a_spared_child_refreshes(tmp_path, monkeypatch):

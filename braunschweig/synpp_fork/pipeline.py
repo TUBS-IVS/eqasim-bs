@@ -184,6 +184,13 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
         # is no early cutoff to disable, so ephemeral stages get no early-cutoff warning here.
         logger.info("No working directory: nothing is cached, every stage executes "
                     "(early cutoff does not apply)")
+        # Upstream step 4.8 calls validate() on every non-ephemeral stage before anything executes,
+        # also here (cache path "None/<hash>.cache"). An input-checking validate() must abort the run
+        # up front, not at the stage's turn. The result is discarded: nothing is compared in memory.
+        for hash in sorted_hashes:
+            if hash not in ephemeral_counts:
+                registry[hash]["wrapper"].validate(
+                    ValidateContext(registry[hash]["config"], "%s/%s.cache" % (working_directory, hash)))
         for hash in sorted_hashes:
             is_required = rerun_required and hash in required_hashes
             if hash not in ephemeral_counts or is_required:
