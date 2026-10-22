@@ -98,3 +98,24 @@ def test_bound_is_half_open(tmp_path):
 def test_invalid_input_raises(tmp_path, schedule, vehicles, hours):
     with pytest.raises(ValueError):
         _run(tmp_path, schedule=schedule, vehicles=vehicles, hours=hours)
+
+
+def test_estimated_service_day_counts_calendar_and_exceptions(tmp_path):
+    # 2026-06-08 is a Monday. Service A runs Mon-Fri, service B Saturday only, over that week.
+    calendar = ("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+                "A,1,1,1,1,1,0,0,20260608,20260614\n"
+                "B,0,0,0,0,0,1,0,20260608,20260614\n")
+    # One removal on the Monday leaves Tuesday as the earliest date with the most services.
+    dates = "service_id,date,exception_type\nA,20260608,2\n"
+    (tmp_path / "calendar.txt").write_text(calendar, encoding="utf-8")
+    (tmp_path / "calendar_dates.txt").write_text(dates, encoding="utf-8")
+    assert t.estimated_service_day(str(tmp_path)) == ("2026-06-09", 1)
+
+
+def test_estimated_service_day_adds_exception_services(tmp_path):
+    calendar = ("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+                "A,1,0,0,0,0,0,0,20260608,20260608\n")
+    dates = "service_id,date,exception_type\nB,20260609,1\nC,20260609,1\n"
+    (tmp_path / "calendar.txt").write_text(calendar, encoding="utf-8")
+    (tmp_path / "calendar_dates.txt").write_text(dates, encoding="utf-8")
+    assert t.estimated_service_day(str(tmp_path)) == ("2026-06-09", 2)

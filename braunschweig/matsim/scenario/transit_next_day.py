@@ -13,8 +13,11 @@ Assumptions (explicit):
 - ``next_day_hours == 0`` is the OFF path: both files are copied byte for byte.
 """
 import copy
+import csv
+import datetime
 import gzip
 import logging
+import os
 import shutil
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -140,3 +143,47 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
     return {"n_departures": len(departure_times), "n_duplicated": len(shifted_times),
             "n_vehicles_added": len(duplicated_vehicles), "departures_per_hour_before": before,
             "departures_per_hour_after": after, "max_departure_h": max_h}
+
+
+_WEEKDAY_COLUMNS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _read_csv(path):
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        return list(csv.DictReader(handle))
+
+
+def estimated_service_day(gtfs_path: str) -> tuple:
+    """Return ``(ISO date, number of active services)`` of the date with the most services.
+
+    Re-implements the ``dayWithMostServices`` rule of pt2matsim from the GTFS calendar for the
+    log only (pt2matsim's own choice stays authoritative): services of ``calendar.txt`` count on
+    the weekdays flagged between ``start_date`` and ``end_date``; ``calendar_dates.txt`` adds
+    (exception type 1) or removes (type 2) a service on one date. Ties go to the earliest date.
+    Raises FileNotFoundError when neither file exists and ValueError when no service is active.
+    """
+    calendar_path = os.path.join(gtfs_path, "calendar.txt")
+    dates_path = os.path.join(gtfs_path, "calendar_dates.txt")
+    if not os.path.exists(calendar_path) and not os.path.exists(dates_path):
+        raise FileNotFoundError(f"neither calendar.txt nor calendar_dates.txt in {gtfs_path}")
+    active = {}  # date -> set of service ids
+    if os.path.exists(calendar_path):
+        for row in _read_csv(calendar_path):
+            day = datetime.datetime.strptime(row["start_date"], "%Y%m%d").date()
+            end = datetime.datetime.strptime(row["end_date"], "%Y%m%d").date()
+            while day <= end:
+                if row[_WEEKDAY_COLUMNS[day.weekday()]].strip() == "1":
+                    active.setdefault(day, set()).add(row["service_id"])
+                day += datetime.timedelta(days=1)
+    if os.path.exists(dates_path):
+        for row in _read_csv(dates_path):
+            day = datetime.datetime.strptime(row["date"], "%Y%m%d").date()
+            if row["exception_type"].strip() == "1":
+                active.setdefault(day, set()).add(row["service_id"])
+            elif row["exception_type"].strip() == "2":
+                active.setdefault(day, set()).discard(row["service_id"])
+    counts = {day: len(services) for day, services in active.items() if services}
+    if not counts:
+        raise ValueError(f"no active service on any date in {gtfs_path}")
+    best = min(counts, key=lambda day: (-counts[day], day))
+    return best.isoformat(), counts[best]
