@@ -136,9 +136,13 @@ The two gates differ on the empty case, on purpose:
 - `dryrun: true` in the config skips the launcher assessment (logged): synpp returns before it
   devalidates anything.
 - `STALE-IF` is a prediction: whether the stage is spared depends on the ancestor's output at run
-  time (see the label table); the gate and `unexpected()` are unaffected by it. A rebuilt Java
-  jar changes its output digest (the eqasim jar and the freight tool jar are not byte-reproducible
-  across builds), so early cutoff cannot spare the consumers of a rebuilt jar.
+  time (see the label table); the gate and `unexpected()` are unaffected by it. The two Java jar
+  stages (`matsim.runtime.eqasim`, `braunschweig.freight.extraction_tool`) build
+  byte-reproducibly since #474 (ADR-0149 decision 8), so a rebuild from the same inputs with the
+  same JDK and Maven plugins reproduces their output digest and early cutoff spares their
+  consumers. A Java source edit still changes `matsim.runtime.eqasim`'s output even when the jar
+  bytes stay the same (a comment-only edit), because its cache directory holds the copied source
+  tree.
 - The report predicts what synpp 1.6.2 would do; it does not validate model results
   (a cache hit is not evidence about scientific correctness).
 - `info` (`context.set_info`) is not part of the output digest: a parent that re-executes with
@@ -186,7 +190,11 @@ source-hashing stage means updating that number deliberately together with
 A stage module may declare `_OUTPUT_HASH_EXCLUDE = ("*.log", "logfile*")`: `fnmatch` globs (case
 sensitive on every platform) on the path relative to the stage's `<hash>.cache` directory, for
 files whose content changes without meaning. It must be a tuple of strings; anything else makes
-`hash_stage_output` raise `TypeError`. It is empty everywhere today; add entries on evidence. A
+`hash_stage_output` raise `TypeError`. Two stages declare it: the Maven jar stages
+`matsim.runtime.eqasim` and `braunschweig.freight.extraction_tool` exclude
+`*/target/maven-status/*`, Maven's incremental-build state, whose `inputFiles.lst` lists the
+absolute source paths of the build directory (ADR-0149 decision 8, #474). It is empty
+everywhere else; add entries on evidence. A
 symlink inside a cache directory raises even when a glob would exclude it; the cache directory
 itself may be a symlink. An unreadable file or directory raises, never "no hash".
 

@@ -1,0 +1,16 @@
+# Issue #474: entries of the freight tool jar, local Windows build against felix build (2026-10-22).
+# Listings by jar_entries.py (name, crc32, size, DOS time), compared with diff --strip-trailing-cr.
+# local: gated test build 'a' of reproducible-jar-builds-local-2026-10-22, sha256 896959761d988e074dd1ee9c5a8e8aaae1669b5aebcbe033543b7752e23b4f2e
+# felix: gated test build 'a' of gated_tests_felix.txt, sha256 61616a06587b368b852b883b695d0f7da8160f67245b44a825377d42d02fde61
+# entries: 79979 local, 79979 felix; differing lines below ('<' local, '>' felix).
+# The jgrapht line differs only in how the Windows console encoded the name's o-slash; CRC, size and time are equal.
+563,564c563,564
+< META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.properties 9f2b6985 82 2026-01-01T00:00:00
+< META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.xml b1572a3f 2760 2026-01-01T00:00:00
+---
+> META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.properties 1854ec8d 79 2026-01-01T00:00:00
+> META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.xml 2fbb62dd 2677 2026-01-01T00:00:00
+63966c63966
+< org/jgrapht/alg/linkprediction/SørensenIndexLinkPrediction.class b6daac75 2199 2023-05-02T11:41:20
+---
+> org/jgrapht/alg/linkprediction/SÃ¸rensenIndexLinkPrediction.class b6daac75 2199 2023-05-02T11:41:20

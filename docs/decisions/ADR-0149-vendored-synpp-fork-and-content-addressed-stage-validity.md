@@ -5,10 +5,11 @@
   Phase 3: semantic tokens, output hashes, fork skeleton, migration. Phase 4 (PR for #468
   Phase 4): early cutoff in the fork's `run()` and `cache_share` coherence by output hash.
   The server acceptance on a copy of the 100 % cache ran on 2026-10-22 (see "Implementation
-  status" and "Evidence"); it is a smoke, not a validation.
+  status" and "Evidence"); it is a smoke, not a validation. Amended 2026-10-22 by decision 8
+  (byte-reproducible jar builds, #474).
 - **Numbering:** ADR-0149 is the next free id. Checked on 2026-10-21 across all local and
   remote branches: the highest record anywhere is ADR-0148.
-- **Issue:** #468. **Relates to:** ADR-0105 (deterministic stage hashes), ADR-0136 (token
+- **Issue:** #468; decision 8: #474. **Relates to:** ADR-0105 (deterministic stage hashes), ADR-0136 (token
   covers the import closure), ADR-0147, ADR-0148 (freight tool jar, Phase 2 of #468).
 - **Design:** `docs/superpowers/specs/2026-10-16-content-addressed-stage-cache-design.md`
   (local, gitignored) sections 2 to 7.
@@ -110,6 +111,24 @@ changes.** synpp stays pinned to 1.6.2 (`environment.yml`).
    line naming the reason. The rewrite is atomic (`pipeline.json.new`, backup
    `pipeline.json.bk`). An entry that already carries `fork` or `output_hash` is left
    alone (re-running is idempotent).
+8. **Byte-reproducible jar builds (#474, amended 2026-10-22).** Early cutoff spares the
+   consumers of a jar stage only if a rebuild from the same inputs reproduces the stage's
+   output hash. Both Maven-built jar stages now do, in any working directory:
+   `braunschweig.freight.extraction_tool` (its consumer `braunschweig.freight.extraction`) and
+   `matsim.runtime.eqasim` (the `matsim.*` chain). The two measured causes and their fixes:
+   1. The jar, source and shade plugins stamped every entry they write with the build time,
+      so every rebuild changed the bytes. Fix: a fixed Maven `project.build.outputTimestamp`
+      (`OUTPUT_TIMESTAMP`, an arbitrary fixed instant): rendered into the tool pom
+      (`braunschweig/freight/extraction_tool.py` `POM_TEMPLATE`) and passed as `-D` on the
+      eqasim build's command line (`matsim/runtime/eqasim.py` `REPRODUCIBLE_BUILD_ARGUMENT`),
+      so the fork `TUBS-IVS/eqasim-java-bs` needs no change.
+   2. Maven's incremental-build state `target/maven-status/maven-compiler-plugin/*/*/inputFiles.lst`
+      lists the absolute path of every compiled source file, so the output also differed
+      between working directories. It is build bookkeeping no consumer reads; both stage
+      modules declare `_OUTPUT_HASH_EXCLUDE = ("*/target/maven-status/*",)`. The jars and the
+      rest of the cache directory stay hashed.
+   The measurements, including the arithmetic that explains the byte counts of the Phase 4
+   acceptance, are in `docs/runs/reproducible-jar-builds-local-2026-10-22.yml`.
 
 Decisions made while implementing Phase 3 (maintainer rulings in the working ledger, folded
 into this record):
@@ -194,14 +213,17 @@ into this record):
   metadata until a later run under `track_run` has refreshed its envelope; a store written
   before the semantic tokens (md5 module hashes) primes as a miss;
   `braunschweig.freight.extraction_tool` is unshared next to the shared
-  `braunschweig.freight.extraction`, and its jar is not reproducible across Maven builds, so a
-  rebuilt tool jar changes its output digest and a primed `freight.extraction` record whose
-  tool digest differs from the target's tool entry is dropped as incoherent (recompute, safe).
-  In a FRESH directory there is no tool entry, so the record is kept (R17-3), the tool jar is
-  rebuilt there, its digest differs, and the run recomputes `braunschweig.freight.extraction`
-  at its turn; server scenario (4) must expect exactly that. The same holds for the eqasim jar
-  (`matsim.runtime.eqasim`): a rebuilt jar changes its output digest, so early cutoff cannot
-  spare the jar's consumers.
+  `braunschweig.freight.extraction`, so a primed `freight.extraction` record whose tool digest
+  differs from the target's tool entry is dropped as incoherent (recompute, safe). In a FRESH
+  directory there is no tool entry, so the record is kept (R17-3), the tool jar is rebuilt
+  there, and the record is spared or recomputed at run time by the rebuilt jar's digest. Until
+  decision 8 (#474) no jar build reproduced its digest, so the run always recomputed
+  `braunschweig.freight.extraction` there (server scenario S4 measured the rebuilt jar's changed
+  digest; the recompute itself was not exercised), and early cutoff could never spare the
+  consumers of a rebuilt jar, the eqasim jar
+  (`matsim.runtime.eqasim`) included. Since decision 8 a rebuild from the same inputs with the
+  same JDK and Maven plugins reproduces the digest; a record written against a jar built
+  before decision 8 carries that build's digest and recomputes once.
 - **R17-3, an absent parent is decided at run time by digest.** Spec section 1 criterion 4 and
   section 4.5 ask that "the dependency is in the registry", not in the target metadata. A
   copied record whose parent is absent from the target metadata (a parent that is not shared,
@@ -227,6 +249,7 @@ into this record):
 | Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S2, X2) |
 | `cache_share` coherence by output hash, envelope refresh, absent-parent rule (decision 5, R17-1, R17-3) | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S4, X4) |
 | Server acceptance of Phase 3 (migration) and Phase 4 on a copy of the 100 % cache (scenarios in "Evidence") | **done 2026-10-22**: `cache-migration-100pct-2026-10-22` and `content-addressed-cache-acceptance-100pct-2026-10-22`; both are smokes |
+| Byte-reproducible jar builds (decision 8, #474) | in force with the PR for #474; proven on the workstation and on felix (`reproducible-jar-builds-local-2026-10-22`, `reproducible-jar-builds-felix-2026-10-22`); a run with the consumers cached after a rebuild is open |
 
 ## Relation to ADR-0105 and ADR-0136
 
@@ -259,6 +282,19 @@ part lands (see Implementation status).
   tracing harness in production code and a learning run per stage; kept as a future option.
 - **Hash only the freight-relevant classes of the eqasim jar.** Replaced by the tool jar
   (ADR-0148).
+- **Decision 8: set `project.build.outputTimestamp` in the fork's poms.** Works as well, but
+  needs a change and a release in the second repository `TUBS-IVS/eqasim-java-bs`; the
+  command-line property reaches every module of the reactor build without one.
+- **Decision 8: the source's commit date as the timestamp.** The eqasim stage copies the tree
+  without `.git` and the tool build has no repository; a commit date would also change on a
+  rebase that leaves the content unchanged.
+- **Decision 8: delete `target/maven-status` after the build.** Equivalent for the digest, but
+  edits Maven's build tree behind its back; the declared exclude is visible in the stage module
+  and goes through the one hashing code path.
+- **Decision 8: hash only the jar of a jar stage.** Would also spare the consumers after a
+  comment-only Java edit (the copied source tree is part of `matsim.runtime.eqasim`'s output),
+  but `_OUTPUT_HASH_EXCLUDE` has no "all but" form and the issue asked only for rebuilds from
+  unchanged inputs.
 
 ## Consequences
 
@@ -300,6 +336,18 @@ part lands (see Implementation status).
   still recomputes; a new upstream config key still renames the downstream cache files.
   A stage that reads paths outside its parents' cache directories is not covered by output
   hashes, as today.
+- **Decision 8 costs one recompute.** It changes the code of both jar stages, so both rebuild
+  once, and the first reproducible jar differs from the last non-reproducible one: their
+  consumers recompute once (`braunschweig.freight.extraction`, about 3 h per its stage record,
+  and the `matsim.*` chain).
+- **Limits of decision 8.** Reproducible means the same inputs, the same JDK and the same Maven
+  plugins and dependencies; a JDK update can change the class files and then rightly
+  recomputes the consumers. The build's time zone does not matter (a UTC build gave the same
+  tool jar as a Europe/Berlin build); the platform does, by line endings, so the builds are
+  reproducible per platform, and a cache moved between Windows and Linux would see a changed jar
+  digest and recompute the consumers (safe). A Java source edit changes `matsim.runtime.eqasim`'s output even
+  when the jar bytes stay the same (a comment-only edit), because its cache directory holds the
+  copied source tree.
 
 ## Evidence
 
@@ -409,4 +457,23 @@ failed first attempt are in the manifest, not repeated here):
   entry with all parents shared, and the `braunschweig.freight.extraction` recompute (R17-2).
 - **Measured evidence for the jar limit (R17-2).** Rebuilds of the eqasim jar and tool jar stages from identical
   inputs did not reproduce their output hash (byte counts in the manifest), so consumers of a rebuilt jar
-  recompute, as stated in the known limits; reproducible jar builds are a follow-up, not part of this decision.
+  recompute, as stated in the known limits; reproducible jar builds were left to a follow-up, now decision 8.
+
+Decision 8 (#474), evidence (`docs/runs/reproducible-jar-builds-local-2026-10-22.yml` on the Windows workstation
+and `docs/runs/reproducible-jar-builds-felix-2026-10-22.yml` on felix; wiring proofs, not validations):
+
+- Tests: `tests/jar_reproducibility.py` builds a jar stage twice through its `execute()` in two working
+  directories of different path lengths and compares `hash_stage_output` with the stage's exclusions; the
+  gated `test_execute_builds_a_byte_reproducible_jar` in `tests/test_freight_extraction_tool.py`
+  (`EQASIM_BS_FREIGHT_TOOL_BUILD=1`) and `tests/test_eqasim_runtime_token.py` (`EQASIM_BS_EQASIM_SOURCE`) failed
+  without the fix and pass with it. Always-on guards: `test_render_pom_fixes_the_output_timestamp`,
+  `test_execute_passes_the_fixed_output_timestamp_to_maven` and `tests/test_jar_stage_output_hash.py` (the
+  exclusion never matches a jar or a class file).
+- The byte counts of the Phase 4 acceptance are explained by cause 2: the copy's working directory
+  `cache_bs_100pct_allfeat_popsim` is 12 characters longer than `cache_i468p4_fresh`, and the fork at `4c1af4a`
+  has 499 Java source files in `core` and `braunschweig` (main and test): 499 x 12 = 5988 bytes = 217807431 -
+  217801443 for the eqasim stage, and 1 x 12 = 12 bytes for the tool's single source file.
+- On felix (Maven 3.6.3, JDK 25.0.3+9, fork `ab49a956`) both gated tests pass as well. A Windows and a Linux build
+  of the tool jar differ only in the line endings of the two text files Maven stores under `META-INF/maven/`
+  (`pom.xml`, `pom.properties`); every class file and timestamp is equal.
+- Not yet shown: a rebuild that leaves the consumers cached in a real run (issue #474, "Done when").

@@ -1,0 +1,19 @@
+53:REPRODUCIBLE_BUILD_ARGUMENT = "-DTEMP_RED_CHECK=%s" % OUTPUT_TIMESTAMP
+57:_OUTPUT_HASH_EXCLUDE = ()
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'bytes': 276192372} != {'bytes': 276208087}
+E         {'digest': '4c932a08459b37071ae5b3467dd4c593d95988db9fe2b0ae9c994c25dba4ed2f'} != {'digest': '2c3adb40c36fdf3b57a9d08ed08c113ca03e8fee7f098b35ef08e305e33b20df'}
+E         {'files': '1b7d5f70dc9b8a85d44a911df80ac38b620363ae6e211e2cb32aedf3dd98df1b'} != {'files': 'dbc884f53a867702fae37297d9414fbcafa79a30b0128b01e70d20991cc88b6b'}
+E         Use -v to get more diff
+
+tests\test_eqasim_runtime_token.py:243: AssertionError
+---------------------------- Captured stdout call -----------------------------
+---------------------------- Captured stderr call -----------------------------
+
+
+=========================== short test summary info ===========================
+FAILED tests/test_eqasim_runtime_token.py::test_execute_builds_a_byte_reproducible_jar
+1 failed, 20 deselected in 356.73s (0:05:56)
+
+[exited with code 0]

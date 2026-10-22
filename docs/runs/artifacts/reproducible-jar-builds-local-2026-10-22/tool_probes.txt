@@ -1,0 +1,32 @@
+[i474] default time zone of this machine: W. Europe Standard Time
+[i474] 1. baseline (no outputTimestamp), default time zone
+baseline (no outputTimestamp in pom): True extra maven arguments: []
+files 9 9 differing 3
+DIFF freight-tool/target/freight-tool-2026.0-2026w12.jar (186626206, '3a4c76f99e26') (186626206, 'aa80a5e8ad4b')
+DIFF freight-tool/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (151, 'ffe4a36a1cc1') (167, '6b10f2d8bd77')
+DIFF freight-tool/target/original-freight-tool-2026.0-2026w12.jar (3117, 'd0fcbe3e88f3') (3117, 'b87832f979d6')
+JAR freight-tool/target/freight-tool-2026.0-2026w12.jar size 186626206 186626206 entries 79979 79979 order same: True
+ ENTRY META-INF/MANIFEST.MF (2026, 10, 22, 14, 14, 58) (2026, 10, 22, 14, 15, 48) crc same True extra same True
+ ENTRY META-INF/ (2026, 10, 22, 14, 14, 58) (2026, 10, 22, 14, 15, 48) crc same True extra same True
+ ENTRY org/ (2026, 10, 22, 14, 14, 56) (2026, 10, 22, 14, 15, 46) crc same True extra same True
+ ENTRY org/eqasim/ (2026, 10, 22, 14, 14, 56) (2026, 10, 22, 14, 15, 46) crc same True extra same True
+ ENTRY org/eqasim/braunschweig/ (2026, 10, 22, 14, 14, 56) (2026, 10, 22, 14, 15, 46) crc same True extra same True
+ ENTRY org/eqasim/braunschweig/freight/ (2026, 10, 22, 14, 14, 56) (2026, 10, 22, 14, 15, 46) crc same True extra same True
+ ENTRY org/eqasim/braunschweig/freight/RunExtractFreightTrips.class (2026, 10, 22, 14, 14, 56) (2026, 10, 22, 14, 15, 46) crc same True extra same True
+ ENTRY META-INF/maven/ (2026, 10, 22, 14, 14, 36) (2026, 10, 22, 14, 15, 28) crc same True extra same True
+ ENTRY META-INF/maven/org.eqasim.braunschweig/ (2026, 10, 22, 14, 14, 36) (2026, 10, 22, 14, 15, 28) crc same True extra same True
+ ENTRY META-INF/maven/org.eqasim.braunschweig/freight-tool/ (2026, 10, 22, 14, 14, 36) (2026, 10, 22, 14, 15, 28) crc same True extra same True
+ ENTRY META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.xml (2026, 10, 22, 14, 14, 36) (2026, 10, 22, 14, 15, 28) crc same True extra same True
+ ENTRY META-INF/maven/org.eqasim.braunschweig/freight-tool/pom.properties (2026, 10, 22, 14, 14, 58) (2026, 10, 22, 14, 15, 48) crc same True extra same True
+ entry diffs 12
+[i474] 2. fixed, MAVEN_OPTS=-Duser.timezone=UTC
+baseline (no outputTimestamp in pom): False extra maven arguments: []
+files 9 9 differing 1
+DIFF freight-tool/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (152, 'c0f9c8f81f76') (168, 'd359f093eeaf')
+JAR freight-tool/target/freight-tool-2026.0-2026w12.jar size 186626237 186626237 entries 79979 79979 order same: True
+ entry diffs 0
+[i474] 3. jar sha256: UTC build vs the gated test's build (default time zone)
+\896959761d988e074dd1ee9c5a8e8aaae1669b5aebcbe033543b7752e23b4f2e *C:\\Users\\bienzeisler\\AppData\\Local\\Temp\\i474/tool_fixed_utc/aaa/freight-tool/target/freight-tool-2026.0-2026w12.jar
+896959761d988e074dd1ee9c5a8e8aaae1669b5aebcbe033543b7752e23b4f2e */c/Users/bienzeisler/AppData/Local/Temp/i474/gated_tool/test_execute_builds_a_byte_rep0/a/jarstage.cache/freight-tool/target/freight-tool-2026.0-2026w12.jar
+896959761d988e074dd1ee9c5a8e8aaae1669b5aebcbe033543b7752e23b4f2e */c/Users/bienzeisler/AppData/Local/Temp/i474/gated_tool/test_execute_builds_a_byte_rep0/working_directory_with_a_longer_path/jarstage.cache/freight-tool/target/freight-tool-2026.0-2026w12.jar
+rc=0
