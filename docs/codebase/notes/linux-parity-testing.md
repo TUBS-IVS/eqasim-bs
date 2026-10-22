@@ -3,11 +3,12 @@
 ## The rule
 
 A test run on the Windows development box is not evidence that a branch is
-green on Linux, where CI and the production server run. Before calling a
-branch's test result final -- in a PR, in a run manifest, in a session close --
-validate the same node ids on the WSL mirror of the server environment. Doing
-this takes seconds; not doing it lets a platform-specific defect ride into
-`main` looking like a pass.
+green on Linux, where CI and the production server run. For the full suite,
+the CI `regression` job on Linux is that evidence: it installs the same captured
+server snapshot as the WSL mirror (ADR-0150). Locally, validate the affected
+node ids on the WSL mirror before calling a focused result final -- in a PR, in
+a run manifest, in a session close. Doing this takes seconds; not doing it lets
+a platform-specific defect ride into `main` looking like a pass.
 
 ## The invocation, including the Git Bash caveat
 
@@ -28,12 +29,14 @@ Substitute the actual checkout or worktree path. Reproducing a three-test
 failure this way takes about 4 seconds -- there is no excuse to skip it before
 a claim of "tests pass".
 
-## A Windows-created worktree cannot resolve `.git` from WSL
+## A Windows-created worktree cannot resolve `.git` from WSL (the runner repairs it)
 
 Running the suite from WSL against a git worktree that was created on Windows
-fails every git-dependent test for an environmental reason, not a code defect:
-the worktree's `.git` file holds a Windows absolute path that git inside WSL
-cannot follow. `git rev-parse --short HEAD` exits 128 there, and
+used to fail every git-dependent test for an environmental reason, not a code
+defect: the worktree's `.git` file holds `gitdir: C:/.../.git/worktrees/<id>`,
+and POSIX git treats `C:/...` as a *relative* path (no leading `/`), so it
+looks for `/mnt/c/.../<worktree>/C:/Users/...` and reports "not a git
+repository". `git rev-parse --short HEAD` exits 128 there, and
 `braunschweig.provenance` logs "cannot determine git commit for
 '/mnt/c/.../<worktree>' ... recording 'unknown'" for every test that depends
 on it. The main checkout is unaffected -- its `.git` is a real directory, not a
@@ -45,12 +48,23 @@ Recognise it by where the failures land: they cluster in
 alongside that `git rev-parse` exit-128 warning in the output. Measured on one
 branch: a full WSL run against a Windows-created worktree reported 25 failed,
 5919 passed, 35 skipped, and all 25 failures came from exactly those two files
-(isolating them gives 25 failed, 4 passed) -- no other test was affected. A WSL
-run reporting failures only in those two files is a clean run.
+(isolating them gives 25 failed, 4 passed) -- no other test was affected.
 
-So read such a run as covering everything except the git-dependent tests, and
-take those from the Windows run or the server, both of which have a `.git`
-that git can resolve.
+**Fix (`scripts/run_tests.py`, `repair_worktree_pointer`):** under Linux the
+runner rewrites such a pointer once to a path relative to the checkout
+(`gitdir: ../../../.git/worktrees/<id>`), which both gits read correctly; the
+Windows-owned back-pointer in `.git/worktrees/<id>/gitdir` stays untouched,
+so `git worktree list/remove/prune` on Windows keep working. The rewrite is
+logged (`repaired worktree pointer: ...`), idempotent, refuses to write a
+pointer it cannot verify, and `--keep-worktree-pointer` disables it. Verified
+2026-10-22 on a throwaway worktree with WSL git 2.43.0 and Windows git
+2.51.2: the two files above went from 25 failed to 33 passed, 0 failed.
+Consequence: the first WSL run in a fresh worktree must go through
+`run_tests.py` (`--check` at session start suffices); a direct `pytest` call
+before that still hits the old failure. Git's own relative worktree paths
+(`worktree.useRelativePaths`, git >= 2.48) were rejected because they mark the
+repository with `extensions.relativeWorktrees`, which the WSL git (2.43)
+cannot open at all.
 
 ## Division of labour
 
