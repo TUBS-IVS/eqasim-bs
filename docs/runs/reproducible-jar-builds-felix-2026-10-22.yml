@@ -30,12 +30,13 @@ status:
     observed data is involved. Still open for issue #474: a pipeline run in which the consumers of a rebuilt jar stay
     cached.
 source: >-
-  felix:~/i474/out (gated_tests_felix.txt, pytest_tool.log, pytest_eqasim.log and the build directories). Committed in
-  docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/: gated_tests_felix.sh, its output gated_tests_felix.txt,
-  jar_entries.py and tool_jar_entries_local_vs_felix.txt. gated_tests_felix.txt was taken from the local poller's
-  `ssh cat` of the log, because the later scp failed while felix was briefly unreachable; once felix was back its
-  sha256 (5fed44ef5d70f252...) was checked equal to the server file.
-environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim), Temurin JDK 25.0.3+9, Apache Maven 3.6.3, time zone Europe/Berlin'
+  felix:~/i474/out (gated_tests_felix.txt, pytest_tool.log, pytest_eqasim.log and the build directories), deleted on
+  2026-10-22 after the run at the user's request; the two pytest logs held only the PASS lines and the platform line.
+  Committed in docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/: gated_tests_felix.sh, its output
+  gated_tests_felix.txt, jar_entries.py and tool_jar_entries_local_vs_felix.txt. gated_tests_felix.txt was taken from
+  the local poller's `ssh cat` of the log, because the later scp failed while felix was briefly unreachable; once felix
+  was back its sha256 (5fed44ef5d70f252...) was checked equal to the server file.
+environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pytest 9.1.1), Temurin JDK 25.0.3+9, Apache Maven 3.6.3, time zone Europe/Berlin'
 validation:
 - metric: gated tests with the fix on the server toolchain
   reference: 'build A against build B through tests/jar_reproducibility.py; an equivalence reference, NOT observed data'
