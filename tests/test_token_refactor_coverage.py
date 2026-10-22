@@ -22,7 +22,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: Measured 2026-10-21 at origin/main 205a0fb7 (``scripts/audit_synpp_helper_hash.py .``: "stages
 #: whose validate() hashes source: 30"). The design spec's 26 was the 2026-10-16 count. Update this
 #: number deliberately, together with the audit note, when a source-hashing stage is added or removed.
-EXPECTED_SOURCE_HASHING_STAGES = 30
+#: Re-measured 2026-10-22 on branch fix/i465-next-day-departures: 31 (+1 = braunschweig.matsim.scenario.supply_gtfs, #465).
+EXPECTED_SOURCE_HASHING_STAGES = 31
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
