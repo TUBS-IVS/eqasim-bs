@@ -1,0 +1,67 @@
+[i468p4] S0 launch runtime targets 2026-10-22T12:18:22+02:00
+S0_runtime exit=0
+12:18:22 │ WARNING │ resources        │ [resources] processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately.
+           │ Stale before execution: 3 stages, decided for their own reasons
+           │ Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+           │ Executing stage matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f ...
+...
+           │ Executed 3 stages; early cutoff kept 0 stages cached (descendants of stale stages that did not execute)
+E0 exit=0 # 107 stages: 70 stale for own reasons, 2 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 35 hits
+[i468p4] S1 comment edits 2026-10-22T12:20:16+02:00
+E1 exit=0 # 107 stages: 70 stale for own reasons, 2 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 35 hits
+compare E0 E1 exit=0 own-reason stale (excluding required-only): A 70, B 70
+[i468p4] S2 body edit 2026-10-22T12:20:47+02:00
+E2 exit=0 # 107 stages: 70 stale for own reasons, 3 will recompute (stale ancestor, no recorded output hash cuts it off), 2 may recompute (stale ancestor, early cutoff decides), 32 hits
+compare E0 E2 exit=1 own-reason stale (excluding required-only): A 70, B 70
+  A-only matsim.runtime.pt2matsim matsim.runtime.pt2matsim__63258fbf8a6ba20f257ece51566899e8 ['parent_updated:matsim.runtime.java']
+  B-only matsim.runtime.java matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ['module_hash_changed']
+S2_gated exit=0
+12:21:17 │ WARNING │ resources        │ [resources] processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately.
+           │ Stale before execution: 3 stages, decided for their own reasons
+           │ Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+           │ Executing stage matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f ...
+...
+           │ Executed 3 stages; early cutoff kept 0 stages cached (descendants of stale stages that did not execute)
+E2b exit=0 # 107 stages: 70 stale for own reasons, 2 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 35 hits
+compare E0 E2b exit=0 own-reason stale (excluding required-only): A 70, B 70
+E2c exit=0 # 107 stages: 70 stale for own reasons, 3 will recompute (stale ancestor, no recorded output hash cuts it off), 2 may recompute (stale ancestor, early cutoff decides), 32 hits
+compare E0 E2c exit=1 own-reason stale (excluding required-only): A 70, B 70
+  A-only matsim.runtime.pt2matsim matsim.runtime.pt2matsim__63258fbf8a6ba20f257ece51566899e8 ['parent_updated:matsim.runtime.java']
+  B-only matsim.runtime.java matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ['module_hash_changed']
+S2_revert exit=0
+12:23:09 │ WARNING │ resources        │ [resources] processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately.
+           │ Stale before execution: 3 stages, decided for their own reasons
+           │ Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+           │ Executing stage matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f ...
+...
+           │ Executed 3 stages; early cutoff kept 0 stages cached (descendants of stale stages that did not execute)
+E2d exit=0 # 107 stages: 70 stale for own reasons, 2 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 35 hits
+compare E0 E2d exit=0 own-reason stale (excluding required-only): A 70, B 70
+[i468p4] S3 Java tree cp -a + touch 2026-10-22T12:24:36+02:00
+E3 exit=0 # 107 stages: 70 stale for own reasons, 2 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 35 hits
+compare E0 E3 exit=0 own-reason stale (excluding required-only): A 70, B 70
+S3 matsim.runtime.eqasim: reasons=[] stale_if=[]
+S3 braunschweig.freight.extraction_tool: reasons=[] stale_if=[]
+[i468p4] S4 export + prime fresh directory 2026-10-22T12:25:03+02:00
+export exit=0
+INFO [cache_share] export: 5 entr(ies) for 2 module(s) -> eqasim-data/cache_i468p4_store; already-in-store 0; skipped (no cache present) 0 
+INFO [cache_share] export: metadata for 2/5 copied entries (enabled=True)
+prime exit=0
+INFO [cache_share] prime: kept 2 copied records (output-hash match 0, legacy equal timestamps 0, no parents 0, absent parent decided by digest at run time 2)
+INFO [cache_share] prime: metadata for 2/5 copied entries (enabled=True); entries without metadata require recomputation
+INFO [cache_share] prime: primed 5, already-present 0, forced 0, missing-in-store 0 (store=eqasim-data/cache_i468p4_store)
+E4 exit=0 # 5 stages: 5 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 0 hits
+STALE    braunschweig.freight.extraction_tool  [required]
+STALE    matsim.runtime.eqasim  [required]
+# 5 stages: 5 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 0 hits
+S4_fresh exit=0
+12:25:13 │ WARNING │ resources        │ [resources] processes is pinned to 32 but 62 cores are budgeted on this machine; the run will leave capacity unused. This warning is EXPECTED on the canonical production configuration (configs/base_bs.yml pins processes: 32 against a 62-core budget on the run server) -- do not act on it there. processes is RESULT-AFFECTING, not operational: raising it changes the np.array_split person-chunk partition and the drawn seed count at synthesis/population/matched.py (parallel_statistical_matching) and synthesis/population/spatial/secondary/locations.py (execute), i.e. the statistical-matching and secondary-location realisations. Both sites declare it HASHED (not volatile), so raising the pin correctly devalidates those two stages and they recompute by themselves -- the recompute is the cost of a changed realisation, not a defect (ADR-0126, Decision 3). Raise the pin only deliberately.
+           │ Stale before execution: 5 stages, decided for their own reasons
+           │ Executing stage matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 ...
+           │ Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+           │ Executing stage matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 ...
+           │ Executing stage matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f ...
+...
+           │ Executed 5 stages; early cutoff kept 0 stages cached (descendants of stale stages that did not execute)
+E4b exit=0 # 5 stages: 2 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 3 hits
+[i468p4] done 2026-10-22T12:26:22+02:00

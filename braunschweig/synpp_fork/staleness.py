@@ -5,23 +5,32 @@
 module hash, cache files, parent set, validation token) and the parent-output rule: a child
 is stale when a parent's recorded output digest differs from the parent's current one; when
 either side lacks output hashes the upstream timestamp rule applies and is reported in
-``legacy_rules``. Descendants of a stale stage are NOT marked stale here: the fork decides
-them at run time from the re-executed parent's output (early cutoff); they are predicted in
-``stale_if``. When a stale ancestor has no recorded output digest (not in ``pipeline.json``,
-or its record lacks ``output_hash``, as every legacy entry does), there is nothing to compare
-against and synpp (and the future fork) recompute the descendant for certain:
-``certain_recompute`` is then True and the report says ``RECOMPUTE`` instead of ``STALE-IF``.
+``legacy_rules``. Descendants of a stale stage are NOT marked stale here: the fork's run()
+decides them at run time from the re-executed parent's output (early cutoff); they are
+predicted in ``stale_if``.
+
+The fork's run() spares a child of a re-executed parent ONLY when the CHILD's own record carries
+``dependency_output_hashes[parent]`` and it equals the parent's new output digest (spec 4.9: a
+mismatch never becomes a hit). ``assess`` mirrors exactly that. A child whose record carries no
+digest of its stale parent has nothing to compare against and recomputes for certain: its
+``certain_recompute`` is True and the report says ``RECOMPUTE`` instead of ``STALE-IF``. The
+property is per edge: through a valid intermediate B an ancestor stays unhashed for a child C only
+when it is unhashed for B (so B certainly recomputes) and C's record carries no digest of B (or B
+is an uncached ephemeral stage); a child that did record B's digest is the cutoff point.
+``unhashed_ancestors`` lists the ancestors for which no recorded digest cuts the cascade off.
 
 Ephemeral stages (spec 4.4): synpp 1.6.2 never validates an UNCACHED ephemeral stage on its own
 (it is outside ``sorted_cached_hashes``); it recomputes it only when a descendant is stale (step
 4.10). ``assess`` therefore gives such a stage no reasons and sets ``ephemeral_uncached``; it
 is not unexpected, and it passes the staleness of its own ancestors on to its children like any
-other valid stage. ``format_report`` warns when the registry contains ephemeral stages, because
-the fork disables early cutoff for such runs.
+other valid stage. A registry that holds an uncached ephemeral stage (``eager_rule_applies``) runs
+upstream's eager rule for the whole run, early cutoff off: every descendant of a stale stage
+recomputes. ``assess`` then marks every ``stale_if`` stage ``certain_recompute`` and sets
+``eager_rule``; ``format_report`` says why and warns.
 
-``EARLY_CUTOFF_ACTIVE`` is False while only synpp 1.6.2 executes the pipeline: then a ``stale_if``
-stage recomputes like every other descendant of a stale stage, and the ``STALE-IF`` label says so.
-The fork's own run() (Phase 4) decides children from parent output digests and flips it.
+``EARLY_CUTOFF_ACTIVE`` describes the fork's run(), which decides children from output digests;
+set it False to label a prediction for plain synpp 1.6.2, which recomputes every descendant of a
+stale stage: a ``stale_if`` stage then reads as one that only the fork would spare.
 """
 from __future__ import annotations
 
@@ -32,9 +41,9 @@ from dataclasses import dataclass, field
 import networkx as nx
 from synpp.pipeline import ValidateContext
 
-# False while synpp 1.6.2 executes the pipeline (it recomputes every descendant of a stale stage);
-# Phase 4 sets it True when the fork's run() decides children from parent output hashes.
-EARLY_CUTOFF_ACTIVE = False
+# True: the fork's run() decides the children of a re-executed stage from output digests. False would
+# describe synpp 1.6.2, which recomputes every descendant of a stale stage (used by tests and labels).
+EARLY_CUTOFF_ACTIVE = True
 
 _LEGACY_MODULE_HASH = re.compile(r"[0-9a-f]{32}")
 
@@ -62,6 +71,9 @@ class StageAssessment:
     config_diff: dict = field(default_factory=dict)
     ephemeral: bool = False
     ephemeral_uncached: bool = False
+    # True on every assessment of a registry that holds an uncached ephemeral stage: run() applies
+    # upstream's eager rule to the whole run (``eager_rule_applies``), early cutoff is off.
+    eager_rule: bool = False
     # True when module_hash_changed fired on a stored 32-hex md5 module hash (synpp 1.6.2's raw-text
     # hash): such an entry was never migrated, see scripts/migrate_cache_metadata.py (Ruling H).
     legacy_module_hash: bool = False
@@ -112,6 +124,23 @@ def has_output_hash(record) -> bool:
     return bool(record) and bool((record.get("output_hash") or {}).get("digest"))
 
 
+def records_parent_digest(record, parent_hash: str) -> bool:
+    """True when a CHILD's record carries the output digest of ``parent_hash`` it was computed from.
+
+    This is the claim the fork's run() compares a re-executed parent's new output against
+    (``dependency_output_hashes``); without it the child recomputes."""
+    return bool(record) and (record.get("dependency_output_hashes") or {}).get(parent_hash) is not None
+
+
+def eager_rule_applies(registry: dict, working_directory: str) -> bool:
+    """True when run() applies upstream's eager rule to the whole run: some stage is ephemeral and
+    has no cache artifacts. run() flips every CACHED ephemeral stage to non-ephemeral first, so a
+    cached one does not count; with no working directory nothing is cached."""
+    return any(stage.get("ephemeral") and not (
+        working_directory is not None and artifacts_present(working_directory, stage_hash))
+        for stage_hash, stage in registry.items())
+
+
 def _add_ancestor(assessment, name: str, stage_hash: str, *, unhashed: bool) -> None:
     """Record a stale ancestor (and, when it has no recorded digest, as unhashed); names stay
     parallel to hashes and are not duplicated."""
@@ -146,6 +175,7 @@ def assess(registry: dict, working_directory: str, meta: dict, *, rerun_required
             _assess_own_reasons(assessment, stage, stage_hash, name_of, working_directory, meta, out,
                                 rerun_required)
         if not assessment.reasons:
+            record = meta.get(stage_hash)
             for dependency in stage.get("dependencies", []):
                 if out[dependency].stale:
                     # A stale dependency is itself the ancestor; what it inherited from further
@@ -153,18 +183,25 @@ def assess(registry: dict, working_directory: str, meta: dict, *, rerun_required
                     # (uncached ephemeral) has not recorded it yet.
                     if assessment.ephemeral_uncached:
                         _add_ancestor(assessment, name_of[dependency], dependency,
-                                      unhashed=not has_output_hash(meta.get(dependency)))
+                                      unhashed=not records_parent_digest(record, dependency))
                     continue
                 parent = out[dependency]
                 for name, ancestor in zip(parent.stale_if, parent.stale_if_hashes):
-                    # An ancestor stays "unhashed" through a valid intermediate only when that
-                    # intermediate has no recorded digest of its own to stop the propagation
-                    # (spec 4.4 loop), or is an uncached ephemeral stage (no early cutoff there).
+                    # An ancestor stays "unhashed" through a valid intermediate only when the
+                    # intermediate certainly recomputes because of it AND this stage recorded no
+                    # digest of the intermediate to stop the propagation (the fork's per-child rule),
+                    # or the intermediate is an uncached ephemeral stage (no early cutoff there).
                     unhashed = ancestor in parent.unhashed_ancestor_hashes and (
-                        parent.ephemeral_uncached or not has_output_hash(meta.get(dependency)))
+                        parent.ephemeral_uncached or not records_parent_digest(record, dependency))
                     _add_ancestor(assessment, name, ancestor, unhashed=unhashed)
             assessment.certain_recompute = bool(assessment.unhashed_ancestors)
         out[stage_hash] = assessment
+    if eager_rule_applies(registry, working_directory):
+        # run() applies upstream's eager rule to the whole run: no digest cuts anything off.
+        for assessment in out.values():
+            assessment.eager_rule = True
+            if not assessment.stale and assessment.stale_if:
+                assessment.certain_recompute = True
     return out
 
 
@@ -172,6 +209,12 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
                         rerun_required) -> None:
     """Fill ``reasons`` / ``legacy_rules`` / direct ``stale_if`` / ``config_diff`` for a stage that
     synpp validates on its own (everything except an uncached ephemeral stage)."""
+    # synpp 1.6.2 (step 4.8) calls validate() on every such stage before anything executes, a stage
+    # that is not in pipeline.json included. Many validate() functions raise on a missing input; the
+    # call and its exception must come before the first execution, not at the stage's turn hours
+    # later. For a stage without a record the token is irrelevant: not_in_meta makes it stale anyway.
+    cache_path = os.path.join(working_directory, stage_hash + ".cache")
+    token = stage["wrapper"].validate(ValidateContext(stage["config"], cache_path))
     if rerun_required and "required-index" in stage:
         assessment.reasons.append("required")
     if not assessment.in_meta:
@@ -187,8 +230,6 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
         assessment.legacy_module_hash = is_legacy_module_hash(entry.get("module_hash"))
     if set(entry.get("dependencies", {})) != set(stage.get("dependencies", [])):
         assessment.reasons.append("parents_changed")
-    cache_path = os.path.join(working_directory, stage_hash + ".cache")
-    token = stage["wrapper"].validate(ValidateContext(stage["config"], cache_path))
     stored = entry.get("validation_token")
     if token != stored:
         assessment.reasons.extend("token_changed:" + name for name in token_difference(token, stored))
@@ -196,8 +237,9 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
         return
     for dependency in stage.get("dependencies", []):
         if out[dependency].stale:
+            # The fork spares this stage only if ITS record carries the digest of the stale parent.
             _add_ancestor(assessment, name_of[dependency], dependency,
-                          unhashed=not has_output_hash(meta.get(dependency)))
+                          unhashed=not records_parent_digest(entry, dependency))
             continue
         if dependency not in meta:
             # Only an uncached ephemeral parent can be valid yet absent from meta. synpp step 4.6
@@ -243,10 +285,13 @@ def format_report(assessments: dict) -> str:
                     f"{k}: {old!r} -> {new!r}" for k, (old, new) in sorted(assessment.config_diff.items()))
             lines.append(f"STALE    {assessment.stage}  [{detail}]")
         elif assessment.certain_recompute:
-            names = ", ".join(assessment.unhashed_ancestors)
-            verb = "is stale and has no" if len(assessment.unhashed_ancestors) == 1 else "are stale and have no"
-            noun = "ancestor" if len(assessment.unhashed_ancestors) == 1 else "ancestors"
-            lines.append(f"RECOMPUTE {assessment.stage}  [{noun} {names} {verb} recorded output hash]")
+            # eager rule: every stale_if stage recomputes; else only those no recorded digest cuts off
+            ancestors = assessment.stale_if if assessment.eager_rule else assessment.unhashed_ancestors
+            names = ", ".join(ancestors)
+            noun, verb = ("ancestor", "is") if len(ancestors) == 1 else ("ancestors", "are")
+            why = ("eager rule, ephemeral stages in the registry" if assessment.eager_rule
+                   else "no recorded output hash cuts the cascade off")
+            lines.append(f"RECOMPUTE {assessment.stage}  [{noun} {names} {verb} stale; {why}]")
         elif assessment.stale_if:
             names = ", ".join(assessment.stale_if)
             if EARLY_CUTOFF_ACTIVE:
@@ -263,20 +308,25 @@ def format_report(assessments: dict) -> str:
     live = [a for a in assessments.values() if not a.stale and not a.ephemeral_uncached]
     certain = [a for a in live if a.certain_recompute]
     maybe = [a for a in live if not a.certain_recompute and a.stale_if]
-    ephemeral = sum(a.ephemeral for a in assessments.values())
+    # run() flips a CACHED ephemeral stage to non-ephemeral, so only uncached ones turn early cutoff off.
+    ephemeral = sum(a.ephemeral and not a.cache_present for a in assessments.values())
+    eager = any(a.eager_rule for a in assessments.values())
     if ephemeral:
         lines.append(f"# WARNING: {ephemeral} ephemeral stage(s) in the registry; "
                      "the fork disables early cutoff for such runs (spec 4.4)")
     legacy = sum(a.legacy_module_hash for a in assessments.values())
     if legacy:
-        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash: "
-                     "run scripts/migrate_cache_metadata.py first")
+        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash (never migrated, or kept "
+                     "legacy by the migration because the stage code changed since the cache was built): "
+                     "run scripts/migrate_cache_metadata.py if this cache was never migrated")
     if EARLY_CUTOFF_ACTIVE:
         maybe_note = "stale ancestor, early cutoff decides"
     else:
         maybe_note = "stale ancestor; synpp 1.6.2 recomputes them, only the fork's early cutoff may spare them"
+    certain_note = ("stale ancestor, eager rule because of ephemeral stages" if eager
+                    else "stale ancestor, no recorded output hash cuts it off")
     summary = (f"# {len(assessments)} stages: {len(stale)} stale for own reasons, "
-               f"{len(certain)} will recompute (stale ancestor without recorded output hash), "
+               f"{len(certain)} will recompute ({certain_note}), "
                f"{len(maybe)} may recompute ({maybe_note}), "
                f"{len(live) - len(certain) - len(maybe)} hits")
     if uncached:

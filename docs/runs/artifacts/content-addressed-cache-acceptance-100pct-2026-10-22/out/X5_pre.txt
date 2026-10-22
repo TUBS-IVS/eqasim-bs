@@ -1,0 +1,3 @@
+STALE    data.hts.entd.cleaned  [required]
+STALE    data.hts.entd.raw  [cache_missing]
+# 2 stages: 2 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 0 hits

@@ -1,0 +1,18 @@
+synpp Stale before execution: 3 stages, decided for their own reasons
+synpp Executing stage matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 ...
+synpp Output hash for matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657: 0 files, 4 bytes, 0.0 s; no previous output hash recorded
+synpp Output of matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+synpp Executing stage matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+synpp Output hash for matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1: 0 files, 4 bytes, 0.0 s; no previous output hash recorded
+synpp Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+synpp Output of matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+synpp Executing stage matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 ...
+synpp Output hash for matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21: 0 files, 4 bytes, 0.0 s; no previous output hash recorded
+synpp Output of matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 unchanged: matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f not devalidated by it
+synpp Output of matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 unchanged: braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61 not devalidated by it
+synpp Executed 3 stages; early cutoff kept 2 stages cached (descendants of stale stages that did not execute)
+synpp - executed matsim.runtime.git__ad41c38f3c0edd3fc8d31fcf4b034657 [not_in_meta, cache_missing]
+synpp - executed matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 [not_in_meta, cache_missing]
+synpp - executed matsim.runtime.maven__7d703597c5483b67ca7a710bf401af21 [not_in_meta, cache_missing]
+synpp - kept cached braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61
+synpp - kept cached matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f
