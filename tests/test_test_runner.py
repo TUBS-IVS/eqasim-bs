@@ -288,6 +288,59 @@ def test_runner_marks_focused_failing_runs(evidence_runner):
     assert evidence["scope"] == "focused" and evidence["exit"] == 1
 
 
+def _pytest_options(command):
+    """The options between ``-c <pytest.ini>`` and the runner's own ``-m <marker>`` boundary."""
+    assert command[-2:] == ["-m", "not pipeline"]
+    return command[command.index("-c") + 2:-2]
+
+
+@pytest.mark.parametrize("caller_args, added", [
+    # The defect: any argument used to drop the quiet default, so the usual local run of the
+    # affected test files (ADR-0150) printed full pytest output into the agent context.
+    pytest.param([], ["-q", "--tb=short"], id="bare-run"),
+    pytest.param(["tests/test_x.py"], ["-q", "--tb=short"], id="test-path"),
+    pytest.param(["-k", "probe", "--durations=5"], ["-q", "--tb=short"], id="filter-and-reporting"),
+    # A verbosity option of the caller replaces -q: pytest sums -v and -q, so both together
+    # would print the default output instead of the verbose one the caller asked for.
+    pytest.param(["-v"], ["--tb=short"], id="v"),
+    pytest.param(["-vv"], ["--tb=short"], id="vv"),
+    pytest.param(["--verbose"], ["--tb=short"], id="verbose"),
+    pytest.param(["--verbosity=2"], ["--tb=short"], id="verbosity-equals"),
+    pytest.param(["--verbosity", "2"], ["--tb=short"], id="verbosity-separate"),
+    pytest.param(["-xvs"], ["--tb=short"], id="v-bundled-with-flags"),
+    pytest.param(["-vk", "probe"], ["--tb=short"], id="v-bundled-with-k"),
+    pytest.param(["tests/test_x.py", "-q"], ["--tb=short"], id="q"),
+    pytest.param(["-qq"], ["--tb=short"], id="qq"),
+    pytest.param(["--quiet"], ["--tb=short"], id="quiet"),
+    # A value that merely contains v or q is no verbosity option.
+    pytest.param(["-kverbose"], ["-q", "--tb=short"], id="k-value-with-v"),
+    pytest.param(["-rA", "-k", "quiet"], ["-q", "--tb=short"], id="r-and-k-values"),
+    # A traceback style of the caller replaces --tb=short.
+    pytest.param(["--tb=long"], ["-q"], id="tb-equals"),
+    pytest.param(["--tb", "native"], ["-q"], id="tb-separate"),
+    pytest.param(["-v", "--tb=line"], [], id="verbosity-and-tb-by-the-caller"),
+])
+def test_runner_keeps_pytest_output_short_unless_the_caller_chooses_its_own(
+        tmp_path, monkeypatch, caller_args, added):
+    from scripts import run_tests
+
+    calls = []
+
+    def record(command, **kwargs):
+        calls.append(command)
+        return 0
+    # --no-evidence never touches git, so no repository is needed (18 cases stay cheap).
+    monkeypatch.setattr(run_tests, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(run_tests, "check_environment", lambda: {
+        "python": sys.executable, "python_version": "3.10", "errors": [],
+    })
+    monkeypatch.setattr(run_tests.subprocess, "call", record)
+    assert run_tests.main(["--no-evidence", *caller_args]) == 0
+    # The caller's arguments follow verbatim and in order (which tests run is theirs to
+    # choose); the runner only puts the defaults they did not override in front.
+    assert _pytest_options(calls[0]) == [*added, *caller_args]
+
+
 def test_runner_check_mode_writes_no_evidence(evidence_runner):
     run_tests, root, _, _, _ = evidence_runner
     assert run_tests.main(["--check"]) == 0

@@ -1,7 +1,8 @@
 """Run the same regression command on Linux, WSL2 and native Windows.
 
 Use ``--check`` for interpreter/import diagnostics, ``--pipeline`` for the
-existing real-data opt-in tests. Remaining arguments are passed to pytest.
+existing real-data opt-in tests. Remaining arguments are passed to pytest, which
+runs with ``-q --tb=short`` unless they set a verbosity or traceback style of their own.
 """
 from __future__ import annotations
 
@@ -151,7 +152,8 @@ def main(argv=None):
     if marker_args.expression:
         marker = f"({marker}) and ({marker_args.expression})"
     command = [sys.executable, "-u", "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini")]
-    command.extend(pytest_args or ["-q"])
+    command.extend(output_defaults(pytest_args))
+    command.extend(pytest_args)
     junitxml = caller_junitxml(pytest_args)
     if junitxml is None and not args.no_evidence:
         junitxml = str(Path(REPO_ROOT) / gate_evidence.GATE_DIR
@@ -177,6 +179,39 @@ def caller_junitxml(pytest_args):
         if arg == "--junitxml" and index + 1 < len(pytest_args):
             return pytest_args[index + 1]
     return None
+
+
+def output_defaults(pytest_args):
+    """``-q`` and ``--tb=short`` for every run, each unless the caller sets an option of its kind.
+
+    A focused run (``run_tests.py tests/test_x.py``, the usual local run since ADR-0150) must
+    print as little as the bare full run: shell output is a large share of an agent's tokens
+    (docs/codebase/notes/subagent-budget.md). A caller's verbosity option replaces ``-q``
+    because pytest sums ``-v`` and ``-q``, so both together would cancel the caller's ``-v``;
+    ``--tb=<style>`` / ``--tb <style>`` replaces ``--tb=short``. Which tests run is untouched.
+    ``PYTEST_ADDOPTS`` and ``@file`` arguments are not inspected.
+    """
+    defaults = []
+    if not caller_sets_verbosity(pytest_args):
+        defaults.append("-q")
+    if not any(arg == "--tb" or arg.startswith("--tb=") for arg in pytest_args):
+        defaults.append("--tb=short")
+    return defaults
+
+
+def caller_sets_verbosity(pytest_args):
+    """Whether a pytest argument is a verbosity option: ``-v``/``-q`` (repeated, or bundled
+    as in ``-xvs`` and ``-vk expr``), ``--verbose``, ``--quiet`` or ``--verbosity``."""
+    for arg in pytest_args:
+        if arg in ("--verbose", "--quiet", "--verbosity") or arg.startswith("--verbosity="):
+            return True
+        if arg.startswith("-") and not arg.startswith("--"):
+            for letter in arg[1:]:
+                if letter in "vq":
+                    return True
+                if letter not in "xsl":  # -k, -r, -n ...: the rest of the argument is a value
+                    break
+    return False
 
 
 def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, junitxml, started_at,
