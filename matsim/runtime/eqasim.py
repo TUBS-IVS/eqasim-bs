@@ -42,6 +42,20 @@ DEFAULT_EQASIM_COMMIT = "ab938aaac"
 #: Relative location of the module pom that decides the built jar's name.
 BRAUNSCHWEIG_POM = os.path.join("braunschweig", "pom.xml")
 
+#: Byte-reproducible jars (issue #474): early cutoff (ADR-0149) spares the MATSim chain behind
+#: this stage only if a rebuild from the same source reproduces the stage's output hash.
+#: Without a fixed Maven project.build.outputTimestamp the jar, source and shade plugins stamp
+#: every entry they write with the build time. Passed on the command line, so the fork's poms
+#: (TUBS-IVS/eqasim-java-bs) need no change; the plugins it pins (jar 3.5.0, source 3.4.0,
+#: shade 3.6.2) honour it. An arbitrary fixed instant, not the build date; it is part of
+#: execute(), so changing it rebuilds the jar once.
+OUTPUT_TIMESTAMP = "2026-01-01T00:00:00Z"
+REPRODUCIBLE_BUILD_ARGUMENT = "-Dproject.build.outputTimestamp=%s" % OUTPUT_TIMESTAMP
+#: Maven's incremental-build state (maven-status/*/inputFiles.lst) lists the absolute paths of
+#: the copied sources, so it differs between working directories while every jar is identical.
+#: No consumer reads it; the jars stay hashed.
+_OUTPUT_HASH_EXCLUDE = ("*/target/maven-status/*",)
+
 #: File suffixes of the Java source tree that enter the content digest of the jar.
 SOURCE_SUFFIXES = (".java", ".xml", ".properties")
 #: Directory names (at any depth) whose files are not source: build output and the
@@ -270,7 +284,8 @@ def execute(context):
         # a pom change already devalidates this stage through validate()'s content digest.
         version = resolve_source_version(destination, configured_version)
         maven.run(context, ["-Pstandalone", "--projects", "braunschweig", "--also-make",
-                            "package", "-DskipTests=true"], cwd = destination)
+                            "package", "-DskipTests=true", REPRODUCIBLE_BUILD_ARGUMENT],
+                  cwd = destination)
         jar = "eqasim-java/braunschweig/target/braunschweig-%s.jar" % version
         if not os.path.exists("%s/%s" % (context.path(), jar)):
             raise RuntimeError(
@@ -288,7 +303,8 @@ def execute(context):
     git.run(context, ["checkout", context.config("eqasim_commit")],
             cwd = "{}/eqasim-java".format(context.path()))
     maven.run(context, ["-Pstandalone", "--projects", "bavaria", "--also-make", "package",
-                        "-DskipTests=true"], cwd = "%s/eqasim-java" % context.path())
+                        "-DskipTests=true", REPRODUCIBLE_BUILD_ARGUMENT],
+              cwd = "%s/eqasim-java" % context.path())
     jar = "eqasim-java/bavaria/target/bavaria-%s.jar" % version
     if not os.path.exists("%s/%s" % (context.path(), jar)):
         raise RuntimeError("The JAR was not created correctly. Wrong eqasim_version specified?")

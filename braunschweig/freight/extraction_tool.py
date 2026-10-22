@@ -27,6 +27,18 @@ JAR_RELATIVE = "freight-tool/target/freight-tool-%s.jar"
 WRAPPER_SOURCE = os.path.join(os.path.dirname(__file__), "java", "RunExtractFreightTrips.java")
 WRAPPER_TARGET = "src/main/java/org/eqasim/braunschweig/freight/RunExtractFreightTrips.java"
 
+# Byte-reproducible jar (issue #474): early cutoff (ADR-0149) spares the routing behind this
+# stage only if a rebuild from the same inputs reproduces the stage's output hash. Without a
+# fixed Maven project.build.outputTimestamp the jar and shade plugins stamp the module's own
+# entries (wrapper class, manifest, pom.properties) with the build time. The value is an
+# arbitrary fixed instant, not the build date; it is part of the rendered pom and therefore
+# of this stage's token, so changing it rebuilds the jar once.
+OUTPUT_TIMESTAMP = "2026-01-01T00:00:00Z"
+# Maven's incremental-build state (maven-status/*/inputFiles.lst) lists the absolute paths of
+# the compiled sources, so it differs between working directories while the jar is identical.
+# No consumer reads it; the jar stays hashed.
+_OUTPUT_HASH_EXCLUDE = ("*/target/maven-status/*",)
+
 # The plugins that shape the jar (compiler, resources, jar, shade) are pinned here (the
 # resources and jar versions mirror the eqasim-java-bs fork root pom) instead of inheriting
 # the installed Maven's super-POM defaults. Maven 3.6.3, as installed on the run server, binds
@@ -45,6 +57,7 @@ POM_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 	<properties>
 		<maven.compiler.release>{java_release}</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.build.outputTimestamp>{output_timestamp}</project.build.outputTimestamp>
 	</properties>
 	<repositories>
 		<repository>
@@ -130,7 +143,7 @@ def read_pom_property(pom_path: str, name: str) -> str:
 
 def render_pom(matsim_version: str, java_release: str) -> str:
     return POM_TEMPLATE.format(matsim_version=matsim_version, java_release=java_release,
-                               entry_point=ENTRY_POINT)
+                               entry_point=ENTRY_POINT, output_timestamp=OUTPUT_TIMESTAMP)
 
 
 def _fork_pom(context) -> str:

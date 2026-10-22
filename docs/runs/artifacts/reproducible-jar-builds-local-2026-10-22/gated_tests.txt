@@ -1,0 +1,32 @@
+[i474] start 2026-10-22T14:07:11+02:00
+[i474] eqasim-bs HEAD c2f0a46309800761dec931e25d29d7d04f1ad88b; uncommitted .py files: 3
+[i474] eqasim-java-bs HEAD 21c1045c4d6ffd55d362927cd485fd09f7cb1d0b; git status --short:
+ M braunschweig/dependency-reduced-pom.xml
+?? .claude/
+openjdk version "25.0.4.1" 2026-08-18 LTS
+OpenJDK Runtime Environment Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS)
+OpenJDK 64-Bit Server VM Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS, mixed mode, sharing)
+
+Apache Maven 3.9.9 (8e8579a9e76f7d015ee5ec7bfcdc97d260186937)
+Maven home: C:\Users\bienzeisler\tools\apache-maven-3.9.9
+Java version: 25.0.4.1, vendor: Eclipse Adoptium, runtime: C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot
+Default locale: de_DE, platform encoding: UTF-8
+OS name: "windows 11", version: "10.0", arch: "amd64", family: "windows"
+[i474] freight tool jar
+tests/test_freight_extraction_tool.py::test_execute_builds_a_byte_reproducible_jar PASSED [100%]
+================ 1 passed, 11 deselected in 105.96s (0:01:45) =================
+module braunschweig.freight.extraction_tool exclude ('*/target/maven-status/*',)
+a                                        with exclude: digest 0f50de8ee835ad29, 7 files, 186636177 bytes | without: digest 8a8ae7adc9b33cef, 9 files, 186636431 bytes
+working_directory_with_a_longer_path     with exclude: digest 0f50de8ee835ad29, 7 files, 186636177 bytes | without: digest 1274ebb6678169c4, 9 files, 186636466 bytes
+differs: freight-tool/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (193, '625fc3800578') (228, 'eb6888f98e91')
+[i474] eqasim jar
+tests/test_eqasim_runtime_token.py::test_execute_builds_a_byte_reproducible_jar PASSED [100%]
+================ 1 passed, 21 deselected in 287.02s (0:04:47) =================
+module matsim.runtime.eqasim exclude ('*/target/maven-status/*',)
+a                                        with exclude: digest 563bacba44ff5dfd, 1547 files, 276047149 bytes | without: digest 24587eb57d48b35b, 1555 files, 276185188 bytes
+working_directory_with_a_longer_path     with exclude: digest 563bacba44ff5dfd, 1547 files, 276047149 bytes | without: digest 276dc10a830db21d, 1555 files, 276200903 bytes
+differs: eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (10278, '70630161b1ba') (11923, '712842879621')
+differs: eqasim-java/braunschweig/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (3890, '5ffdcf8488be') (4520, '2d5f2922963a')
+differs: eqasim-java/core/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst (78348, '19befc951f8e') (91298, '7e83208cd6cf')
+differs: eqasim-java/core/target/maven-status/maven-compiler-plugin/testCompile/default-testCompile/inputFiles.lst (2840, 'b4e54c22e29a') (3330, '17b3fd5d5509')
+[i474] end 2026-10-22T14:14:20+02:00

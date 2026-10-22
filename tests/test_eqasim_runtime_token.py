@@ -11,6 +11,7 @@ import time
 import pytest
 
 from matsim.runtime import eqasim
+from tests import jar_reproducibility
 
 
 def _git(repo, *args):
@@ -212,3 +213,56 @@ def test_validate_returns_a_jar_content_token(tmp_path):
     assert eqasim.validate(_Context()) == first
     jar.write_bytes(b"other-content")
     assert eqasim.validate(_Context()) != first
+
+
+class _BuildContext:
+    def __init__(self, cfg, path):
+        self._cfg, self._path = cfg, path
+
+    def config(self, key, default=None):
+        return self._cfg[key]
+
+    def stage(self, name, *args, **kwargs):
+        return None
+
+    def path(self, *args):
+        return self._path
+
+
+def test_execute_passes_the_fixed_output_timestamp_to_maven(tmp_path, monkeypatch):
+    # Without a fixed project.build.outputTimestamp the jar plugins stamp every entry with the
+    # build time (#474); the gated test below proves the effect on real builds. The value is
+    # written out so that changing it, which rebuilds the jar and its consumers once, is deliberate.
+    source = tmp_path / "fork"
+    (source / "braunschweig").mkdir(parents=True)
+    (source / "braunschweig/pom.xml").write_text(
+        "<project><parent><version>9.9.9</version></parent></project>", encoding="utf-8")
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    calls = []
+
+    def fake_maven_run(context, arguments, cwd=None):
+        calls.append(arguments)
+        jar = stage / "eqasim-java/braunschweig/target/braunschweig-9.9.9.jar"
+        jar.parent.mkdir(parents=True)
+        jar.write_bytes(b"jar")
+    monkeypatch.setattr(eqasim.maven, "run", fake_maven_run)
+    cfg = {"eqasim_version": None, "eqasim_path": "", "eqasim_source_path": str(source)}
+    eqasim.execute(_BuildContext(cfg, str(stage)))
+    [arguments] = calls
+    assert [a for a in arguments if "outputTimestamp" in a] == [
+        "-Dproject.build.outputTimestamp=2026-01-01T00:00:00Z"]
+
+
+@pytest.mark.skipif(not os.environ.get("EQASIM_BS_EQASIM_SOURCE"),
+                    reason="Maven build of the eqasim jar; set EQASIM_BS_EQASIM_SOURCE to an "
+                           "eqasim-java-bs work tree to run")
+def test_execute_builds_a_byte_reproducible_jar(tmp_path):
+    # Two real multi-module Maven builds (about 3 min each locally, a ~190 MB shaded jar each):
+    # reproducibility can only be shown on the real plugins of the fork. Issue #474.
+    cfg = {"eqasim_version": None, "eqasim_path": "",
+           "eqasim_source_path": os.environ["EQASIM_BS_EQASIM_SOURCE"],
+           "maven_binary": "mvn", "maven_skip_tests": True, "java_home": ""}
+    first, second = jar_reproducibility.build_twice(
+        eqasim, lambda path: _BuildContext(cfg, path), tmp_path)
+    assert first == second

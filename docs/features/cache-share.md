@@ -103,9 +103,10 @@ and the fork compares its new output digest with the one the child recorded: equ
 (a hit), different recomputes it. A mismatch never becomes a hit. Before that run the explainer
 shows such an entry as `STALE-IF`, not `HIT`: whether it is a hit is decided at run time by the
 digest. `braunschweig.freight.extraction` is the known case: its unshared
-`braunschweig.freight.extraction_tool` is rebuilt in a fresh directory and the jar bytes are not
-reproducible across builds, so `braunschweig.freight.extraction` recomputes there. The decision text
-is ADR-0149 (R17-3, R17-2).
+`braunschweig.freight.extraction_tool` is rebuilt in a fresh directory. Since #474 the tool jar
+builds byte-reproducibly, so a rebuild with the same inputs, JDK and Maven plugins reproduces the
+recorded digest and `braunschweig.freight.extraction` is spared there; before #474 it always
+recomputed. The decision text is ADR-0149 (R17-3, R17-2, decision 8).
 
 *Envelope refresh (R17-1).* Under early cutoff, `track_run` keeps an existing envelope in step with a
 record that a run changed (the envelope's original environment is kept; it never creates an envelope), so
@@ -121,12 +122,13 @@ record that a run changed (the envelope's original environment is kept; it never
   never rewrites an entry already in the store.
 - A store written before the semantic tokens (md5 module hashes) primes as a miss.
 - `braunschweig.freight.extraction_tool` is not in `cache_share_stages`, while the dependent
-  `braunschweig.freight.extraction` is shared. The tool jar is not reproducible across Maven builds
-  (the same holds for the eqasim jar), so a rebuilt jar changes its output digest: a primed
-  `freight.extraction` record whose recorded tool digest differs from the target's existing tool
-  entry is dropped as incoherent and recomputed, and in a fresh directory the record is kept and
-  recomputed at run time (see above). This is correct (the jar really differs) but means early
-  cutoff cannot spare consumers of a rebuilt jar.
+  `braunschweig.freight.extraction` is shared. A primed `freight.extraction` record whose
+  recorded tool digest differs from the target's existing tool entry is dropped as incoherent and
+  recomputed; in a fresh directory the record is kept and decided at run time by the rebuilt
+  jar's digest (see above). Since #474 both jars (tool and eqasim) build byte-reproducibly
+  (ADR-0149 decision 8), so the digests differ only when the jar really differs (other inputs,
+  another JDK or Maven plugin version) or when one side was built before #474; such a record
+  recomputes once.
 
 Status: implemented and proven by synthetic tests (`tests/test_cache_share_synpp.py`,
 `tests/test_synpp_fork_early_cutoff.py`); the acceptance on a copy of the 100 % cache on the

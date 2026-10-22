@@ -1,0 +1,70 @@
+id: reproducible-jar-builds-felix-2026-10-22
+date: '2026-10-22'
+repository:
+  commit: 0ef52424dc177784313c530e95c46601392571a0
+  branch: chore/i474-reproducible-jars
+  notes: >-
+    The head of PR #475 at the time, checked out as a detached worktree ~/i474/eqasim-bs of the production repository
+    on felix (fetched from origin; removed after the run). The production checkout ~/eqasim-bs, on another branch, was
+    not touched. The Java source was the production fork checkout ~/eqasim-java-bs at
+    ab49a956b2b60888450da9ea080b93953db739dc (2026-10-14), clean, read only (the stage copies it before building).
+configuration:
+  config: pytest.ini
+  notes: >-
+    gated_tests_felix.sh with JAVA_HOME=~/tools/jdk-25.0.3+9 and the system Maven 3.6.3 (/usr/share/maven), the
+    production toolchain. The gated tests run Maven as matsim.runtime.maven run does (not offline), against ~/.m2.
+sampling:
+  rate: not applicable (no population is involved)
+  scope: two Java build stages (braunschweig.freight.extraction_tool, matsim.runtime.eqasim), executed outside synpp
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run; the same harness as reproducible-jar-builds-local-2026-10-22 (tests/jar_reproducibility.py:
+    two working directories whose path lengths differ by 35 characters, output hash with the stage's exclusions).
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    Both gated tests passed on the server toolchain (2026-10-22 15:19-15:26). A wiring proof, NOT a validation: no
+    observed data is involved. Still open for issue #474: a pipeline run in which the consumers of a rebuilt jar stay
+    cached.
+source: >-
+  felix:~/i474/out (gated_tests_felix.txt, pytest_tool.log, pytest_eqasim.log and the build directories), deleted on
+  2026-10-22 after the run at the user's request; the two pytest logs held only the PASS lines and the platform line.
+  Committed in docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/: gated_tests_felix.sh, its output
+  gated_tests_felix.txt, jar_entries.py and tool_jar_entries_local_vs_felix.txt. gated_tests_felix.txt was taken from
+  the local poller's `ssh cat` of the log, because the later scp failed while felix was briefly unreachable; once felix
+  was back its sha256 (5fed44ef5d70f252...) was checked equal to the server file.
+environment: 'server (felix, hostname matsim, Linux 5.15.0-139-generic), conda eqasim (~/miniforge3/envs/eqasim, Python 3.10.10, pytest 9.1.1), Temurin JDK 25.0.3+9, Apache Maven 3.6.3, time zone Europe/Berlin'
+validation:
+- metric: gated tests with the fix on the server toolchain
+  reference: 'build A against build B through tests/jar_reproducibility.py; an equivalence reference, NOT observed data'
+  result: >-
+    PASS for both. Freight tool: digest adff375e20e4ff0f... in both working directories (7 files, 186636058 bytes with
+    the exclusion; without it the builds differ only in inputFiles.lst, 168 against 203 bytes). eqasim (fork
+    ab49a956): digest 018fdda6b56a8413... in both (1510 files, 218322589 bytes with the exclusion; without it only the
+    4 inputFiles.lst differ). Test times 153.77 s and 211.26 s.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/gated_tests_felix.txt
+- metric: freight tool jar, the Windows workstation build against the felix build of the same inputs
+  reference: 'the jar of build "a" of reproducible-jar-builds-local-2026-10-22 (sha256 896959761d988e07...); an equivalence reference, NOT observed data'
+  result: >-
+    The files differ (felix sha256 61616a06587b368b...). Of 79979 entries 2 differ in content, both text files Maven
+    stores in META-INF/maven/org.eqasim.braunschweig/freight-tool/: pom.xml (2760 against 2677 bytes) and
+    pom.properties (82 against 79 bytes). Every class file, every other resource and every timestamp is equal. The
+    differences are line endings: the rendered pom has 83 lines and 2677 bytes with LF, and Windows text mode writes
+    CRLF (83 more bytes); pom.properties holds 3 lines, written with CRLF on Windows (read from the local jar).
+  artifact: docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/tool_jar_entries_local_vs_felix.txt
+  notes: >-
+    Reproducibility holds per platform. A cache moved between Windows and Linux would see a changed digest (the
+    cache directory also holds the copied wrapper source with checkout-dependent line endings) and recompute the
+    consumers, which is safe. In this comparison JDK 25.0.4.1 against 25.0.3 and Maven 3.9.9 against 3.6.3 gave
+    identical class files; no general claim across JDK versions is made.
+artifacts:
+- docs/runs/artifacts/reproducible-jar-builds-felix-2026-10-22/
+issues:
+- '#474'
+decisions:
+- ADR-0149
+notes: >-
+  The eqasim jars of the two machines are not compared: the local build used another fork commit (21c1045c4).
