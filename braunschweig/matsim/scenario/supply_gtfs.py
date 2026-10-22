@@ -22,6 +22,8 @@ SCHEDULE_FILE = "transit_schedule.xml.gz"
 VEHICLES_FILE = "transit_vehicles.xml.gz"
 SERVICE_DAY_SCHEDULE_FILE = "transit_schedule_service_day.xml.gz"
 SERVICE_DAY_VEHICLES_FILE = "transit_vehicles_service_day.xml.gz"
+#: Default of the declared key ``gtfs_date`` (matsim.scenario.supply.gtfs): pt2matsim picks the busiest day.
+GTFS_DATE_AUTO = "dayWithMostServices"
 
 #: ``delegate`` runs pt2matsim; ``transit_next_day`` rewrites its output. Both change the result
 #: without touching this file (closure-hash rule, ADR-0136).
@@ -56,7 +58,15 @@ def validate(context):
 
 
 def _estimated_service_day(context):
-    """Estimate pt2matsim's service day for the log; never fails the stage (logged when not possible)."""
+    """Estimate pt2matsim's service day for the log; never fails the stage (logged when not possible).
+
+    Returns None without an estimate when ``gtfs_date`` pins a date: pt2matsim then uses that date, so the
+    ``dayWithMostServices`` rule does not apply (logged).
+    """
+    pinned = context.config("gtfs_date")
+    if pinned not in (None, GTFS_DATE_AUTO):
+        logger.info("[supply_gtfs] service day not estimated: gtfs_date pinned to %s", pinned)
+        return None
     gtfs_path = "%s/output" % context.path("data.gtfs.cleaned")
     try:
         return estimated_service_day(gtfs_path)

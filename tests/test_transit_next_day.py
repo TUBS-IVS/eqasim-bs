@@ -119,3 +119,30 @@ def test_estimated_service_day_adds_exception_services(tmp_path):
     (tmp_path / "calendar.txt").write_text(calendar, encoding="utf-8")
     (tmp_path / "calendar_dates.txt").write_text(dates, encoding="utf-8")
     assert t.estimated_service_day(str(tmp_path)) == ("2026-06-09", 2)
+
+
+def test_output_keeps_the_input_doctype_of_schedule_and_vehicles(tmp_path):
+    # MATSim's readers pick their format delegate from the DOCTYPE, so the rewrite must not drop it.
+    schedule_doctype = b'<!DOCTYPE transitSchedule SYSTEM "http://www.matsim.org/files/dtd/transitSchedule_v2.dtd">'
+    vehicles_doctype = b'<!DOCTYPE vehicleDefinitions SYSTEM "http://www.matsim.org/files/dtd/vehicleDefinitions_v1.0.xsd">'
+    schedule = SCHEDULE.replace(b'<?xml version="1.0"?>', b'<?xml version="1.0"?>\n' + schedule_doctype + b"\n")
+    vehicles = VEHICLES.replace(b'<?xml version="1.0"?>', b'<?xml version="1.0"?>\n' + vehicles_doctype + b"\n")
+    out, text, vtext = _run(tmp_path, schedule=schedule, vehicles=vehicles)
+    assert out["n_duplicated"] == 1
+    assert text.count(schedule_doctype.decode()) == 1 and vtext.count(vehicles_doctype.decode()) == 1
+    assert text.index("?>") < text.index("<!DOCTYPE") < text.index("<transitSchedule")
+    assert vtext.index("?>") < vtext.index("<!DOCTYPE") < vtext.index("<vehicleDefinitions")
+    assert "d1_d2" in text and 'id="v1_d2"' in vtext
+
+
+def test_extension_that_duplicates_nothing_warns(tmp_path, caplog):
+    with caplog.at_level("WARNING", logger=t.logger.name):
+        out, _, _ = _run(tmp_path, hours=0.1)  # 0.1 h = 06:00 min: no departure before it
+    assert out["n_duplicated"] == 0
+    assert any(r.levelname == "WARNING" and "[transit_next_day]" in r.getMessage() for r in caplog.records)
+
+
+def test_summary_shows_a_fractional_horizon_untruncated(tmp_path, caplog):
+    with caplog.at_level("INFO", logger=t.logger.name):
+        _run(tmp_path, hours=6.5)
+    assert any("up to 6.5 h" in r.getMessage() for r in caplog.records)

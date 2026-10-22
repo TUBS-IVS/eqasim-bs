@@ -9,15 +9,19 @@ Assumptions (explicit):
 - The first-day timetable is repeated unchanged on the next day (same lines, routes, vehicle type).
 - Departures already at or after ``day_s`` are left alone and are never duplicated again.
 - The interval is half-open: a departure at exactly ``next_day_hours`` h is NOT duplicated.
-- ElementTree does not preserve the DOCTYPE line of the schedule; MATSim reads schedules without it.
+- ElementTree drops the DOCTYPE line, but MATSim's readers (and pt2matsim's PublicTransitMapper, which reads this
+  file in matsim.scenario.supply.processed) select their format delegate from it: the DOCTYPE of the input is
+  captured and re-inserted right after the XML declaration of the output (schedule and vehicles).
 - ``next_day_hours == 0`` is the OFF path: both files are copied byte for byte.
 """
 import copy
 import csv
 import datetime
 import gzip
+import io
 import logging
 import os
+import re
 import shutil
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -49,16 +53,30 @@ def format_time(seconds: float) -> str:
     return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
 
 
+_DOCTYPE = re.compile(rb"<!DOCTYPE[^>\[]*(?:\[[^\]]*\])?\s*>")
+
+
 def _parse(path):
+    """Parse a (gzipped) XML file; return ``(tree, DOCTYPE bytes or None)`` (ElementTree drops the DOCTYPE)."""
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rb") as handle:
-        return ET.parse(handle)
+        raw = handle.read()
+    root_start = re.search(rb"<[A-Za-z]", raw)  # the DOCTYPE is only looked for before the root element
+    match = _DOCTYPE.search(raw[:root_start.start()] if root_start else raw)
+    return ET.ElementTree(ET.fromstring(raw)), (match.group(0) if match else None)
 
 
-def _write(tree, path):
+def _write(tree, doctype, path):
+    """Write the tree; a captured DOCTYPE goes on its own line right after the XML declaration."""
+    buffer = io.BytesIO()
+    tree.write(buffer, encoding="utf-8", xml_declaration=True)
+    data = buffer.getvalue()
+    if doctype is not None:
+        declaration_end = data.index(b"?>") + 2
+        data = data[:declaration_end] + b"\n" + doctype + data[declaration_end:]
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "wb") as handle:
-        tree.write(handle, encoding="utf-8", xml_declaration=True)
+        handle.write(data)
 
 
 def _histogram(times_s):
@@ -67,8 +85,8 @@ def _histogram(times_s):
 
 def _log_summary(n_dup, n_total, hours, n_vehicles, before, after):
     share = 100.0 * n_dup / n_total if n_total else 0.0
-    logger.info("[transit_next_day] departures duplicated %d/%d (%.1f %%) up to %02d h, vehicles added %d",
-                n_dup, n_total, share, int(hours), n_vehicles)
+    logger.info("[transit_next_day] departures duplicated %d/%d (%.1f %%) up to %g h, vehicles added %d",
+                n_dup, n_total, share, hours, n_vehicles)
     logger.info("[transit_next_day] departures per hour before %s, after %s", before, after)
 
 
@@ -79,7 +97,7 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
         raise ValueError(f"next_day_hours must be >= 0, got {next_day_hours}")
     bound_s = next_day_hours * 3600.0
 
-    schedule_tree = _parse(schedule_in)
+    schedule_tree, schedule_doctype = _parse(schedule_in)
     departure_times = [parse_time_s(d.get("departureTime"))
                        for d in schedule_tree.getroot().iter("departure")]
     before = _histogram(departure_times)
@@ -90,7 +108,8 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
         _log_summary(0, len(departure_times), next_day_hours, 0, before, before)
         return {"n_departures": len(departure_times), "n_duplicated": 0, "n_vehicles_added": 0,
                 "departures_per_hour_before": before, "departures_per_hour_after": dict(before),
-                "max_departure_h": max(departure_times, default=0.0) / 3600.0}
+                "max_departure_h": max(departure_times, default=0.0) / 3600.0,
+                "next_day_hours": 0.0}
 
     existing_departure_ids = {d.get("id") for d in schedule_tree.getroot().iter("departure")}
     shifted_times = []
@@ -119,7 +138,7 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
 
     ET.register_namespace("", _VEHICLE_NS)
     ET.register_namespace("xsi", _XSI_NS)
-    vehicles_tree = _parse(vehicles_in)
+    vehicles_tree, vehicles_doctype = _parse(vehicles_in)
     vroot = vehicles_tree.getroot()
     by_id = {v.get("id"): v for v in vroot if v.tag.endswith("}vehicle") or v.tag == "vehicle"}
     for vehicle in duplicated_vehicles:
@@ -133,16 +152,22 @@ def extend_schedule(schedule_in: str, vehicles_in: str, schedule_out: str, vehic
         new.tail = by_id[vehicle].tail
         vroot.append(new)
 
-    _write(schedule_tree, schedule_out)
-    _write(vehicles_tree, vehicles_out)
+    _write(schedule_tree, schedule_doctype, schedule_out)
+    _write(vehicles_tree, vehicles_doctype, vehicles_out)
 
     after = _histogram(departure_times + shifted_times)
     max_h = max(departure_times + shifted_times, default=0.0) / 3600.0
     _log_summary(len(shifted_times), len(departure_times), next_day_hours, len(duplicated_vehicles),
                  before, after)
+    if not shifted_times:
+        # Fallback transparency: the extension is configured on but found nothing to repeat.
+        logger.warning("[transit_next_day] next_day_hours is %g but 0 of %d departures were duplicated: the "
+                       "schedule gets no next-day service (no departure before that hour on the first day?)",
+                       next_day_hours, len(departure_times))
     return {"n_departures": len(departure_times), "n_duplicated": len(shifted_times),
             "n_vehicles_added": len(duplicated_vehicles), "departures_per_hour_before": before,
-            "departures_per_hour_after": after, "max_departure_h": max_h}
+            "departures_per_hour_after": after, "max_departure_h": max_h,
+            "next_day_hours": next_day_hours}
 
 
 _WEEKDAY_COLUMNS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")

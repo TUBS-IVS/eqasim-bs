@@ -71,3 +71,12 @@ def test_validate_token_changes_with_the_helper_source(monkeypatch):
     monkeypatch.setattr(inspect, "getsource",
                         lambda m: real(m) + "\nX = 1\n" if m is t else real(m))
     assert supply_gtfs.validate(_Ctx(".", 6.0)) != first
+
+
+def test_a_pinned_gtfs_date_is_logged_instead_of_an_estimate(tmp_path, caplog):
+    ctx = _Ctx(tmp_path, 6.0)
+    ctx._cfg["gtfs_date"] = "2026-06-09"
+    with caplog.at_level("INFO", logger=supply_gtfs.logger.name):
+        assert supply_gtfs._estimated_service_day(ctx) is None
+    assert any("service day not estimated: gtfs_date pinned to 2026-06-09" in r.getMessage()
+               for r in caplog.records)

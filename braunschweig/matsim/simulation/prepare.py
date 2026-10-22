@@ -40,6 +40,9 @@ from braunschweig.parking import tariff_export
 
 log = logging.getLogger(__name__)
 
+#: Upstream name of the gtfs supply stage; its result carries the ``next_day`` summary (eqasim-bs#465).
+GTFS_STAGE = "matsim.scenario.supply.gtfs"
+
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
 #: arguments, so a change there changes the prepared scenario without touching this file
@@ -190,6 +193,8 @@ def validate(context):
 
 def configure(context):
     delegate.configure(context)
+    # Read by _summarise_final_schedule for the next-day extension check (result only, no config key).
+    context.stage(GTFS_STAGE)
     # VRB zone fare model (ADR-0133): official zone polygons instead of the legacy concentric rings.
     context.config(VRB_FARES_KEY, False)
     if context.config(VRB_FARES_KEY):
@@ -416,11 +421,21 @@ def _schedule_summary(schedule_path) -> dict:
 
 
 def _summarise_final_schedule(context) -> dict:
-    """Parse the final transit schedule once and log its departures per hour (also with VRB fares off)."""
+    """Parse the final transit schedule once and print its departures per hour (also with VRB fares off).
+
+    Fallback transparency: when the next-day extension was on (``next_day_hours`` > 0 in the result of the gtfs
+    supply stage) but the final schedule has no departure after 24 h, the extension did not reach the schedule
+    (nothing duplicated, or lost in the cordon cut): warned, never raised.
+    """
     summary = _schedule_summary(Path(context.path()) / "{}transit_schedule.xml.gz".format(
         context.config("output_prefix")))
     print("[schedule] final schedule departures per hour %s, max departure %.1f h" % (
         dict(sorted(summary["departures_per_hour"].items())), summary["max_departure_h"]))
+    next_day = (context.stage(GTFS_STAGE) or {}).get("next_day") or {}
+    if next_day.get("next_day_hours", 0.0) > 0 and summary["max_departure_h"] <= 24.0:
+        log.warning("[schedule] next_day_hours is %g but the final schedule has no departure after 24 h "
+                    "(max departure %.1f h): the next-day extension is not in the schedule",
+                    next_day["next_day_hours"], summary["max_departure_h"])
     return summary
 
 
