@@ -249,7 +249,7 @@ into this record):
 | Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S2, X2) |
 | `cache_share` coherence by output hash, envelope refresh, absent-parent rule (decision 5, R17-1, R17-3) | in force (Phase 4, PR for #468 Phase 4); server acceptance done (S4, X4) |
 | Server acceptance of Phase 3 (migration) and Phase 4 on a copy of the 100 % cache (scenarios in "Evidence") | **done 2026-10-22**: `cache-migration-100pct-2026-10-22` and `content-addressed-cache-acceptance-100pct-2026-10-22`; both are smokes |
-| Byte-reproducible jar builds (decision 8, #474) | in force with the PR for #474; proven locally (`reproducible-jar-builds-local-2026-10-22`); the felix check is open |
+| Byte-reproducible jar builds (decision 8, #474) | in force with the PR for #474; proven on the workstation and on felix (`reproducible-jar-builds-local-2026-10-22`, `reproducible-jar-builds-felix-2026-10-22`); a run with the consumers cached after a rebuild is open |
 
 ## Relation to ADR-0105 and ADR-0136
 
@@ -343,7 +343,9 @@ part lands (see Implementation status).
 - **Limits of decision 8.** Reproducible means the same inputs, the same JDK and the same Maven
   plugins and dependencies; a JDK update can change the class files and then rightly
   recomputes the consumers. The build's time zone does not matter (a UTC build gave the same
-  tool jar as a Europe/Berlin build). A Java source edit changes `matsim.runtime.eqasim`'s output even
+  tool jar as a Europe/Berlin build); the platform does, by line endings, so the builds are
+  reproducible per platform, and a cache moved between Windows and Linux would see a changed jar
+  digest and recompute the consumers (safe). A Java source edit changes `matsim.runtime.eqasim`'s output even
   when the jar bytes stay the same (a comment-only edit), because its cache directory holds the
   copied source tree.
 
@@ -457,8 +459,8 @@ failed first attempt are in the manifest, not repeated here):
   inputs did not reproduce their output hash (byte counts in the manifest), so consumers of a rebuilt jar
   recompute, as stated in the known limits; reproducible jar builds were left to a follow-up, now decision 8.
 
-Decision 8 (#474), evidence (`docs/runs/reproducible-jar-builds-local-2026-10-22.yml`, a local wiring proof, not
-a validation):
+Decision 8 (#474), evidence (`docs/runs/reproducible-jar-builds-local-2026-10-22.yml` on the Windows workstation
+and `docs/runs/reproducible-jar-builds-felix-2026-10-22.yml` on felix; wiring proofs, not validations):
 
 - Tests: `tests/jar_reproducibility.py` builds a jar stage twice through its `execute()` in two working
   directories of different path lengths and compares `hash_stage_output` with the stage's exclusions; the
@@ -471,5 +473,7 @@ a validation):
   `cache_bs_100pct_allfeat_popsim` is 12 characters longer than `cache_i468p4_fresh`, and the fork at `4c1af4a`
   has 499 Java source files in `core` and `braunschweig` (main and test): 499 x 12 = 5988 bytes = 217807431 -
   217801443 for the eqasim stage, and 1 x 12 = 12 bytes for the tool's single source file.
-- Not yet shown: the same on felix (Maven 3.6.3, JDK 25.0.3+9) and a rebuild that leaves the consumers cached in
-  a real run (issue #474, "Done when").
+- On felix (Maven 3.6.3, JDK 25.0.3+9, fork `ab49a956`) both gated tests pass as well. A Windows and a Linux build
+  of the tool jar differ only in the line endings of the two text files Maven stores under `META-INF/maven/`
+  (`pom.xml`, `pom.properties`); every class file and timestamp is equal.
+- Not yet shown: a rebuild that leaves the consumers cached in a real run (issue #474, "Done when").
