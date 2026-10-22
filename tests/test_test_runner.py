@@ -300,3 +300,22 @@ def test_runner_no_evidence_option_writes_nothing(evidence_runner):
     run_tests, root, _, _, _ = evidence_runner
     assert run_tests.main(["--no-evidence", "-q"]) == 0
     assert _evidence(root) is None
+
+
+def test_runner_gives_the_dirty_check_after_the_run_a_long_timeout(evidence_runner, monkeypatch):
+    # Measured 2026-10-22 under WSL on a Windows worktree: `git diff --quiet HEAD` takes
+    # 0.5 s on an idle machine but timed out at 60 s while two test suites were running.
+    # A timeout turns the whole 77-minute run into "not evidence", so the check after the
+    # run may take minutes.
+    from braunschweig import gate_evidence
+
+    run_tests, _, _, _, _ = evidence_runner
+    timeouts = []
+    real = gate_evidence.git_state
+
+    def spy(checkout, timeout=60.0):
+        timeouts.append(timeout)
+        return real(checkout, timeout=timeout)
+    monkeypatch.setattr(gate_evidence, "git_state", spy)
+    assert run_tests.main(["-q"]) == 0
+    assert len(timeouts) == 2 and timeouts[-1] >= 300

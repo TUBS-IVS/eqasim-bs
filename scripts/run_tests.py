@@ -197,7 +197,9 @@ def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, juni
         fresh = junit_path.exists() and junit_path.stat().st_mtime >= started - 1
         counts = gate_evidence.junit_counts(junit_path if fresh else Path(REPO_ROOT) / ".no-junit")
         scope = gate_evidence.run_scope(pytest_args, pipeline=pipeline, marker=marker)
-        state = gate_evidence.git_state(REPO_ROOT)
+        # Under WSL on a loaded machine the diff can take minutes; a timeout would turn the
+        # whole run into "not evidence", so the check after the run gets a generous limit.
+        state = gate_evidence.git_state(REPO_ROOT, timeout=600.0)
         if before is not None and (before["head"], before["dirty"]) != (state["head"], state["dirty"]):
             state.update(dirty=None, warning=f"the tree changed during the run (before: head "
                                              f"{before['head']}, dirty {before['dirty']})")
