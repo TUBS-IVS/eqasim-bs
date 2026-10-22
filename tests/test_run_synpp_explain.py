@@ -150,3 +150,21 @@ def test_gate_notes_how_many_further_stages_recompute_without_aborting(
         assert _load().explain_before_run(str(config_path)) == 0
     note = "note: %d further stage(s) will recompute because an ancestor is stale" % further
     assert (note in caplog.text) if further else ("further stage(s)" not in caplog.text)
+
+
+def test_a_validate_that_raises_for_a_new_stage_stops_the_launch_like_synpp_does(tmp_path, monkeypatch):
+    """synpp validates every cached stage before executing anything, a stage with no record included;
+    the pre-run assessment must surface the same exception instead of reporting the stage as stale."""
+    (tmp_path / "vr_stage.py").write_text(
+        "def validate(context):\n    raise RuntimeError('missing input of vr_stage')\n"
+        "def execute(context):\n    return 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "vr_stage", raising=False)
+    importlib.invalidate_caches()
+    working = tmp_path / "cache"
+    working.mkdir()
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(yaml.safe_dump({"working_directory": str(working), "run": ["vr_stage"],
+                                           "config": {"synpp_explain_before_run": True}}), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="missing input of vr_stage"):
+        _load().explain_before_run(str(config_path))

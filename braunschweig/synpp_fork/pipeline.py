@@ -172,7 +172,7 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
     # (devalidate every descendant of a stale stage before anything executes) is replaced by the
     # per-child decision of step 6; step 4.10 (ephemeral parents) is kept.
     ephemeral_present = any(stage.get("ephemeral") for stage in registry.values())
-    if ephemeral_present:
+    if ephemeral_present and not working_directory is None:
         logger.warning("Ephemeral stages present: early cutoff is disabled, upstream's eager "
                        "devalidation of every descendant applies to this run")
 
@@ -180,7 +180,10 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
     reasons = {}
 
     if working_directory is None:
-        # Upstream: without a working directory nothing is cached and every stage executes.
+        # Upstream: without a working directory nothing is cached and every stage executes. There
+        # is no early cutoff to disable, so ephemeral stages get no early-cutoff warning here.
+        logger.info("No working directory: nothing is cached, every stage executes "
+                    "(early cutoff does not apply)")
         for hash in sorted_hashes:
             is_required = rerun_required and hash in required_hashes
             if hash not in ephemeral_counts or is_required:
@@ -230,7 +233,7 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
         if hash in stale_hashes:
             output_exclusions[hash] = _output_exclusions(registry[hash])
 
-    # The reasons of these stages are final; any later devalidation is decided per child in step 6.
+    # The stages stale before the first execution; every other stage is decided per child in step 6.
     own_stale = set(stale_hashes)
 
     logger.info("Stale before execution: %d stages, decided for their own reasons" % len(stale_hashes))
@@ -346,20 +349,23 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
                 "fork": {"format": 1}
             }
 
-            # Early cutoff: decide every child that is not already stale from the digest it recorded.
+            # Early cutoff: decide every child from the digest it recorded for this parent. A child
+            # that is already stale executes anyway; it only gains the parent's reason (diagnostics,
+            # e.g. a run target that is stale for `required` only), never a different outcome.
             if not ephemeral_present:  # otherwise the eager rule already marked every descendant
                 for child_hash in graph.successors(hash):
-                    if child_hash in own_stale:
-                        continue
-
                     recorded = recorded_inputs.get(child_hash, {}).get(hash)
 
                     if not recorded is None and not output is None and recorded == output["digest"]:
                         if not child_hash in stale_hashes:
                             # not (yet) devalidated by another parent: keep it and make its record
                             # coherent with the parent that was just rebuilt, also for the timestamp rule
-                            meta[child_hash]["dependencies"][hash] = meta[hash]["updated"]
+                            meta[child_hash].setdefault("dependencies", {})[hash] = meta[hash]["updated"]
                             logger.info("Output of %s unchanged: %s not devalidated by it" % (hash, child_hash))
+                    elif child_hash in stale_hashes and not child_hash in recorded_inputs:
+                        # stale and without any record before this run (not in pipeline.json): its own
+                        # reasons are complete, an unrecorded parent digest would add nothing
+                        continue
                     else:
                         reason = "%s:%s" % (
                             "parent_output_unrecorded" if recorded is None else "parent_output_changed",
@@ -392,19 +398,23 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
 
             progress += 1
             executed.append(hash)
-            logger.info("Pipeline progress: %d/%d (%.2f%%)" % (
+            # The denominator is the number of stages KNOWN to be stale now: executing a stage can
+            # devalidate children, so the total may still grow (the line keeps its upstream prefix and
+            # shape "Pipeline progress: n/m (p%)" for scripts/monitor_run_health.sh).
+            logger.info("Pipeline progress: %d/%d known stale (%.2f%%)" % (
                 progress, len(stale_hashes), 100 * progress / len(stale_hashes)
             ))
 
     # End of run summary: what executed and why, and what early cutoff kept cached. Every descendant
-    # of a stage that was stale before the run would have been re-executed by upstream; those that
-    # did not execute were kept.
+    # of a stage that was stale before the run (for any reason, a run target's `required` included)
+    # would have been re-executed by upstream; those that did not execute were kept.
     spared = set()
     for hash in own_stale:
         spared.update(nx.descendants(graph, hash))
     spared -= stale_hashes
 
-    logger.info("Executed %d stages; early cutoff kept %d stages cached" % (len(executed), len(spared)))
+    logger.info("Executed %d stages; early cutoff kept %d stages cached "
+                "(descendants of stale stages that did not execute)" % (len(executed), len(spared)))
     for hash in executed:
         logger.info("- executed %s [%s]" % (hash, ", ".join(reasons.get(hash, []))))
     for hash in sorted(spared):

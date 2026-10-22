@@ -8,6 +8,7 @@ and the fallback is logged. Every test runs real synpp stages in ``tmp_path``.
 import importlib
 import json
 import logging
+import re
 import shutil
 import sys
 
@@ -244,6 +245,10 @@ def test_early_cutoff_keeps_a_whole_chain_cached_and_says_so(tmp_path, monkeypat
     messages = [r.getMessage() for r in caplog.records]
     summary = next(i for i, m in enumerate(messages) if m.startswith("Executed 1 stages"))
     assert "early cutoff kept 3 stages cached" in messages[summary]
+    assert "descendants of stale stages" in messages[summary]            # says what is counted
+    progress = [m for m in messages if m.startswith("Pipeline progress:")]
+    assert progress and all(re.fullmatch(r"Pipeline progress: \d+/\d+ known stale \(\d+\.\d\d%\)", m)
+                            for m in progress)         # the total can still grow while the run goes on
     tail = "\n".join(messages[summary:])               # the end-of-run summary names both groups
     assert "ec_a" in tail and "token_changed:opaque" in tail
     assert all(name in tail for name in ("ec_b", "ec_c", "ec_d"))
@@ -269,6 +274,12 @@ def test_a_required_stage_re_executes_every_run_but_its_unchanged_output_spares_
     assert pipe.run(rerun_required=True, targets=["ec_p", "ec_x"])["results"] == [3, 12]
     assert pipe.events() == ["ec_p", "ec_c", "ec_x", "ec_p", "ec_x"]          # ec_c was not re-executed
     assert pipe.record("ec_x")["stale_reasons"] == ["required"]
+    # A changed output devalidates ec_c; ec_x (stale only for `required`) records the parent reason too.
+    pipe.set_payload("ec_p", 4)
+    assert pipe.run(rerun_required=True, targets=["ec_p", "ec_x"])["results"] == [4, 16]
+    assert pipe.events()[5:] == ["ec_p", "ec_c", "ec_x"]
+    assert pipe.record("ec_c")["stale_reasons"] == ["parent_output_changed:ec_p"]
+    assert pipe.record("ec_x")["stale_reasons"] == ["required", "parent_output_changed:ec_c"]
 
 
 def test_a_legacy_child_of_a_re_executed_parent_recomputes_and_is_logged(two_stage, caplog):
@@ -335,6 +346,17 @@ def test_an_ephemeral_registry_runs_upstream_s_eager_rule_for_the_whole_run(tmp_
         assert fork_meta[pipe.key(name, fork_meta)]["stale_reasons"] == ["ancestor_stale (eager rule)"]
 
 
+def test_an_in_memory_run_with_ephemeral_stages_does_not_claim_a_disabled_early_cutoff(tmp_path, monkeypatch,
+                                                                                       caplog):
+    """Nothing is cached without a working directory, so there is no early cutoff to disable."""
+    pipe = Pipeline(tmp_path, monkeypatch, EPHEMERAL, ephemeral_edges={("ec_c", "ec_e")})
+    with caplog.at_level(logging.INFO, logger="synpp"):
+        assert pipe.run(in_memory=True)["results"] == [10]
+    assert pipe.events() == ["ec_g", "ec_e", "ec_c", "ec_x"]
+    assert "early cutoff is disabled" not in caplog.text
+    assert "No working directory" in caplog.text
+
+
 def test_an_ephemeral_registry_marks_every_stale_if_stage_a_certain_recompute_and_says_why(tmp_path, monkeypatch):
     """Records written by the fork carry digests, so without ephemeral stages ec_c and ec_x would be
     STALE-IF; the eager rule makes them certain, and assess predicts exactly what the fork executes."""
@@ -385,6 +407,25 @@ def test_a_malformed_output_exclusion_fails_before_any_stage_executes(tmp_path, 
         pipe.run()
     assert pipe.events() == []                          # not even the healthy parent ran
     assert not [p for p in pipe.working.iterdir() if p.name.endswith((".cache", ".p"))]
+
+
+def test_a_validate_that_raises_for_a_new_stage_aborts_the_run_before_any_stage_executes(tmp_path, monkeypatch):
+    """Upstream step 4.8 validates EVERY cached stage before anything executes, new stages included.
+
+    Many validate() functions raise on a missing input; a run with a new stage must fail at the start,
+    not at that stage's turn after hours of upstream stages. The explainer fails the same way.
+    """
+    child = _child_with("def validate(context):\n    raise RuntimeError('missing input of ec_child')")
+    pipe = Pipeline(tmp_path, monkeypatch, TWO, overrides={"ec_child": child})
+    (tmp_path / "cache_upstream").mkdir()
+    with pytest.raises(RuntimeError, match="missing input of ec_child"):
+        pipe.run(working=tmp_path / "cache_upstream", run_function=upstream_run())
+    assert pipe.events() == []                          # the contract: upstream executes nothing either
+    with pytest.raises(RuntimeError, match="missing input of ec_child"):
+        pipe.run()
+    assert pipe.events() == []
+    with pytest.raises(RuntimeError, match="missing input of ec_child"):
+        pipe.assess()
 
 
 def test_a_malformed_exclusion_of_a_stage_devalidated_mid_run_fails_before_it_executes(tmp_path, monkeypatch):

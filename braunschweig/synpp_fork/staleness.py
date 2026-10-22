@@ -209,6 +209,12 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
                         rerun_required) -> None:
     """Fill ``reasons`` / ``legacy_rules`` / direct ``stale_if`` / ``config_diff`` for a stage that
     synpp validates on its own (everything except an uncached ephemeral stage)."""
+    # synpp 1.6.2 (step 4.8) calls validate() on every such stage before anything executes, a stage
+    # that is not in pipeline.json included. Many validate() functions raise on a missing input; the
+    # call and its exception must come before the first execution, not at the stage's turn hours
+    # later. For a stage without a record the token is irrelevant: not_in_meta makes it stale anyway.
+    cache_path = os.path.join(working_directory, stage_hash + ".cache")
+    token = stage["wrapper"].validate(ValidateContext(stage["config"], cache_path))
     if rerun_required and "required-index" in stage:
         assessment.reasons.append("required")
     if not assessment.in_meta:
@@ -224,8 +230,6 @@ def _assess_own_reasons(assessment, stage, stage_hash, name_of, working_director
         assessment.legacy_module_hash = is_legacy_module_hash(entry.get("module_hash"))
     if set(entry.get("dependencies", {})) != set(stage.get("dependencies", [])):
         assessment.reasons.append("parents_changed")
-    cache_path = os.path.join(working_directory, stage_hash + ".cache")
-    token = stage["wrapper"].validate(ValidateContext(stage["config"], cache_path))
     stored = entry.get("validation_token")
     if token != stored:
         assessment.reasons.extend("token_changed:" + name for name in token_difference(token, stored))
