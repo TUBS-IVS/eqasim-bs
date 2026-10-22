@@ -75,7 +75,28 @@ def main(argv=None) -> int:
           f"{len(context.manifests)} run manifests")
     print(f"{counts[OK]} OK, {counts[WARN]} WARN, {counts[FAIL]} FAIL, "
           f"{counts[SKIP]} SKIP")
+    _record_check_evidence(args, counts[FAIL], counts[WARN])
     return 1 if counts[FAIL] else 0
+
+
+def _record_check_evidence(args, fail_count: int, warn_count: int) -> None:
+    """Write ``.claude/gate/docs-check.json`` for the local push gate.
+
+    The gate (docs/codebase/notes/agent-process-automation.md) accepts it only for a
+    clean HEAD with ``fail_count == 0``; a writer failure never changes the exit code.
+    """
+    from braunschweig import gate_evidence
+    try:
+        payload = {**gate_evidence.git_state(args.repo_root), "fail_count": fail_count,
+                   "warn_count": warn_count, "no_dag": args.no_dag,
+                   "command": [sys.executable, "-m", "braunschweig.documentation", "check"]
+                   + (["--no-dag"] if args.no_dag else []),
+                   "finished_at": gate_evidence.now_iso()}
+        path = gate_evidence.write_evidence(args.repo_root, "docs-check.json", payload)
+        print(f"evidence: {path} (fail={fail_count}, head={payload['head']}, "
+              f"dirty={payload['dirty']})")
+    except Exception as error:  # evidence is advisory here; never mask the check result
+        print(f"could not write documentation-check evidence: {error}", file=sys.stderr)
 
 
 if __name__ == "__main__":

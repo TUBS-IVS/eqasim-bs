@@ -45,7 +45,9 @@ onto the `superpowers` skill chain, named in brackets.)
    [docs/DOCUMENTATION_GOVERNANCE.md](docs/DOCUMENTATION_GOVERNANCE.md) for the full
    ownership model.
 
-`/close` enforces step 9 at session end. (`PROJECT_STATUS.md`, `PROJECT_BACKLOG.md` and
+`/close` enforces step 9 at session end; where the maintainer's retro automation is installed
+([agent-process-automation](docs/codebase/notes/agent-process-automation.md)), the record
+checklist is injected after every PR and the session retro proposes what is missing. (`PROJECT_STATUS.md`, `PROJECT_BACKLOG.md` and
 the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/run rows there.)
 
 ## Branches & PRs

@@ -1,4 +1,5 @@
 """Exercise the public test command in a fresh process and unrelated directory."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,7 +19,7 @@ def _run(tmp_path, source, *options):
     # The repository ini also sets pytest's default conftest boundary. Override
     # both boundaries so external probes never scan unrelated shared Temp paths.
     return subprocess.run(
-        [sys.executable, str(RUNNER), *options, str(test_file), "-q",
+        [sys.executable, str(RUNNER), "--no-evidence", *options, str(test_file), "-q",
          f"--rootdir={tmp_path}", f"--confcutdir={tmp_path}"],
         cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8",
         timeout=60,
@@ -83,6 +84,77 @@ def test_pipeline_input_preflight_failure_stops_before_pytest(tmp_path, monkeypa
     assert "Missing required inputs" in capfd.readouterr().out
 
 
+def _linked_worktree(tmp_path, pointer):
+    """Lay out a main repository's worktree admin dir and a linked worktree as git does.
+
+    ``<mount>/c/repo/main/.git/worktrees/wt`` is the admin dir (with ``commondir``);
+    ``<mount>/c/repo/wt/.git`` is the pointer file whose content is ``pointer``. ``mount``
+    stands in for WSL's ``/mnt`` so a Windows path ``C:/repo/...`` maps to ``<mount>/c/repo/...``.
+    """
+    mount = tmp_path / "mnt"
+    admin = mount / "c" / "repo" / "main" / ".git" / "worktrees" / "wt"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    checkout = mount / "c" / "repo" / "wt"
+    checkout.mkdir()
+    (checkout / ".git").write_text(pointer, encoding="utf-8")
+    return mount, checkout
+
+
+@pytest.mark.parametrize("pointer, repaired, message", [
+    # Windows git wrote an absolute Windows path: POSIX git inside WSL reads it as a
+    # relative path and fails. The repair must make it relative to the checkout.
+    ("gitdir: C:/repo/main/.git/worktrees/wt\n", "../main/.git/worktrees/wt", "repaired worktree pointer"),
+    ("gitdir: C:\\repo\\main\\.git\\worktrees\\wt\n", "../main/.git/worktrees/wt", "repaired worktree pointer"),
+    # Already resolvable by both gits: leave untouched (idempotence).
+    ("gitdir: ../main/.git/worktrees/wt\n", None, ""),
+    ("gitdir: /mnt/c/repo/main/.git/worktrees/wt\n", None, ""),
+    # The admin dir the pointer names does not exist under the mount: refuse loudly,
+    # never write a pointer that cannot be verified.
+    ("gitdir: C:/elsewhere/.git/worktrees/wt\n", None, "cannot repair worktree pointer"),
+])
+def test_repair_worktree_pointer_makes_windows_gitdir_relative(tmp_path, capfd, pointer, repaired, message):
+    from scripts import run_tests
+
+    mount, checkout = _linked_worktree(tmp_path, pointer)
+    assert run_tests.repair_worktree_pointer(checkout, drive_mount=mount) == repaired
+    expected = pointer if repaired is None else f"gitdir: {repaired}\n"
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+    captured = capfd.readouterr()
+    assert message in captured.out + captured.err
+    # A second run finds nothing left to repair and changes nothing.
+    assert run_tests.repair_worktree_pointer(checkout, drive_mount=mount) is None
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+
+
+def test_repair_worktree_pointer_ignores_a_main_checkout(tmp_path):
+    from scripts import run_tests
+
+    (tmp_path / ".git").mkdir()  # a real repository directory, not a linked worktree
+    assert run_tests.repair_worktree_pointer(tmp_path, drive_mount=tmp_path / "mnt") is None
+
+
+@pytest.mark.parametrize("system, options, expected", [
+    ("Linux", [], "gitdir: ../main/.git/worktrees/wt\n"),
+    ("Linux", ["--keep-worktree-pointer"], "gitdir: C:/repo/main/.git/worktrees/wt\n"),
+    ("Windows", [], "gitdir: C:/repo/main/.git/worktrees/wt\n"),
+])
+def test_runner_repairs_worktree_pointer_only_on_linux_unless_opted_out(
+        tmp_path, monkeypatch, system, options, expected):
+    from scripts import run_tests
+
+    mount, checkout = _linked_worktree(tmp_path, "gitdir: C:/repo/main/.git/worktrees/wt\n")
+    monkeypatch.setattr(run_tests, "REPO_ROOT", checkout)
+    monkeypatch.setattr(run_tests, "WSL_DRIVE_MOUNT", mount)
+    monkeypatch.setattr(run_tests.platform, "system", lambda: system)
+    monkeypatch.setattr(run_tests, "check_environment", lambda: {
+        "python": sys.executable, "python_version": "3.10", "errors": [],
+    })
+    monkeypatch.setattr(run_tests.subprocess, "call", lambda *args, **kwargs: 0)
+    assert run_tests.main([*options, "-q"]) == 0
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+
+
 @pytest.mark.parametrize("pipeline", [False, True])
 def test_caller_marker_filters_within_enforced_boundary(tmp_path, pipeline):
     options = (["--pipeline", "-mnot slow"] if pipeline
@@ -102,3 +174,148 @@ def test_slow_pipeline(): pass
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1/4 tests collected (3 deselected)" in result.stdout
     assert ("test_fast_pipeline" if pipeline else "test_fast_unit") in result.stdout
+
+
+def _committed_repo(path):
+    """A git repository with one commit; returns its HEAD sha."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=path, capture_output=True, text=True,
+                              check=True).stdout.strip()
+    git("init", "-q")
+    git("config", "user.email", "t@example.org")
+    git("config", "user.name", "t")
+    (path / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "a.txt")
+    git("commit", "-q", "-m", "init")
+    return git("rev-parse", "HEAD")
+
+
+@pytest.fixture
+def evidence_runner(tmp_path, monkeypatch):
+    """run_tests with REPO_ROOT on a committed tmp repo and pytest replaced by ``exit_code``."""
+    from scripts import run_tests
+
+    sha = _committed_repo(tmp_path)
+    calls = []
+
+    def fake_call(command, **kwargs):
+        calls.append(command)
+        junit = run_tests.caller_junitxml(command[1:])
+        if fake_call.junit and junit:
+            Path(junit).parent.mkdir(parents=True, exist_ok=True)
+            Path(junit).write_text('<testsuite tests="4" failures="1" errors="0" skipped="1"/>', encoding="utf-8")
+        if fake_call.edit is not None:
+            fake_call.edit()
+        return fake_call.exit_code
+    fake_call.exit_code, fake_call.junit, fake_call.edit = 0, True, None
+    monkeypatch.setattr(run_tests, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(run_tests, "check_environment", lambda: {
+        "python": sys.executable, "python_version": "3.10", "errors": [],
+    })
+    monkeypatch.setattr(run_tests.subprocess, "call", fake_call)
+    return run_tests, tmp_path, sha, fake_call, calls
+
+
+def _evidence(root):
+    from braunschweig.gate_evidence import platform_tag
+    path = root / ".claude" / "gate" / f"tests-{platform_tag()}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def test_runner_writes_platform_tagged_evidence_for_a_full_run(evidence_runner):
+    from braunschweig.gate_evidence import platform_tag
+
+    run_tests, root, sha, _, calls = evidence_runner
+    assert run_tests.main(["-q"]) == 0
+    evidence = _evidence(root)
+    assert evidence["head"] == sha and evidence["dirty"] is False
+    assert evidence["scope"] == "full" and evidence["exit"] == 0
+    assert evidence["platform"] == platform_tag()
+    # Without a caller-supplied --junitxml the runner adds one, so counts are recorded.
+    assert evidence["junitxml"].endswith(f"junit-{platform_tag()}.xml")
+    assert any(arg.startswith("--junitxml=") for arg in calls[0])
+    assert (evidence["passed"], evidence["failed"], evidence["skipped"]) == (2, 1, 1)
+
+
+def test_runner_never_reports_counts_from_a_stale_junit_file(evidence_runner):
+    from braunschweig.gate_evidence import platform_tag
+
+    run_tests, root, _, fake_call, _ = evidence_runner
+    stale = root / ".claude" / "gate" / f"junit-{platform_tag()}.xml"
+    stale.parent.mkdir(parents=True)
+    stale.write_text('<testsuite tests="999" failures="0" errors="0" skipped="0"/>', encoding="utf-8")
+    fake_call.junit, fake_call.exit_code = False, 4          # pytest died before writing a report
+    assert run_tests.main(["-q"]) == 4
+    assert _evidence(root)["passed"] is None
+
+
+def test_runner_marks_a_tree_changed_during_the_run_as_not_evidence(evidence_runner):
+    run_tests, root, _, fake_call, _ = evidence_runner
+
+    def commit_mid_run():
+        (root / "a.txt").write_text("changed\n", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "mid-run"], cwd=root, check=True)
+    fake_call.edit = commit_mid_run
+    assert run_tests.main(["-q"]) == 0
+    evidence = _evidence(root)
+    assert evidence["dirty"] is None and "changed during the run" in evidence["warning"]
+
+
+def test_runner_writer_failure_keeps_pytest_exit_code(evidence_runner, monkeypatch):
+    from braunschweig import gate_evidence
+
+    run_tests, _, _, fake_call, _ = evidence_runner
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(gate_evidence, "write_evidence", broken)
+    fake_call.exit_code = 1
+    assert run_tests.main(["-q"]) == 1
+
+
+def test_runner_respects_a_separate_junitxml_argument(evidence_runner):
+    run_tests, root, _, _, calls = evidence_runner
+    assert run_tests.main(["-q", "--junitxml", str(root / "custom.xml")]) == 0
+    assert sum(arg.startswith("--junitxml") for arg in calls[0]) == 1
+    assert _evidence(root)["junitxml"].endswith("custom.xml")
+
+
+def test_runner_marks_focused_failing_runs(evidence_runner):
+    run_tests, root, _, fake_call, _ = evidence_runner
+    fake_call.exit_code = 1
+    assert run_tests.main(["-k", "probe"]) == 1
+    evidence = _evidence(root)
+    assert evidence["scope"] == "focused" and evidence["exit"] == 1
+
+
+def test_runner_check_mode_writes_no_evidence(evidence_runner):
+    run_tests, root, _, _, _ = evidence_runner
+    assert run_tests.main(["--check"]) == 0
+    assert _evidence(root) is None
+
+
+def test_runner_no_evidence_option_writes_nothing(evidence_runner):
+    # The fresh-process probes above run the real runner on throwaway tests; they must
+    # not overwrite the checkout's real gate evidence.
+    run_tests, root, _, _, _ = evidence_runner
+    assert run_tests.main(["--no-evidence", "-q"]) == 0
+    assert _evidence(root) is None
+
+
+def test_runner_gives_the_dirty_check_after_the_run_a_long_timeout(evidence_runner, monkeypatch):
+    # Measured 2026-10-22 under WSL on a Windows worktree: `git diff --quiet HEAD` takes
+    # 0.5 s on an idle machine but timed out at 60 s while two test suites were running.
+    # A timeout turns the whole 77-minute run into "not evidence", so the check after the
+    # run may take minutes.
+    from braunschweig import gate_evidence
+
+    run_tests, _, _, _, _ = evidence_runner
+    timeouts = []
+    real = gate_evidence.git_state
+
+    def spy(checkout, timeout=60.0):
+        timeouts.append(timeout)
+        return real(checkout, timeout=timeout)
+    monkeypatch.setattr(gate_evidence, "git_state", spy)
+    assert run_tests.main(["-q"]) == 0
+    assert len(timeouts) == 2 and timeouts[-1] >= 300
