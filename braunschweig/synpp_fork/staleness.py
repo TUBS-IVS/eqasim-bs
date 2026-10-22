@@ -316,8 +316,9 @@ def format_report(assessments: dict) -> str:
                      "the fork disables early cutoff for such runs (spec 4.4)")
     legacy = sum(a.legacy_module_hash for a in assessments.values())
     if legacy:
-        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash: "
-                     "run scripts/migrate_cache_metadata.py first")
+        lines.append(f"# WARNING: {legacy} entries carry a legacy md5 module hash (never migrated, or kept "
+                     "legacy by the migration because the stage code changed since the cache was built): "
+                     "run scripts/migrate_cache_metadata.py if this cache was never migrated")
     if EARLY_CUTOFF_ACTIVE:
         maybe_note = "stale ancestor, early cutoff decides"
     else:

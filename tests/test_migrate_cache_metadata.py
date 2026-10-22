@@ -518,8 +518,9 @@ def test_explainer_hints_at_the_migration_for_legacy_md5_module_hashes(project):
     (assessment,) = assessments.values()
     assert assessment.reasons == ["module_hash_changed"] and assessment.legacy_module_hash
     report = staleness.format_report(assessments)
-    assert ("# WARNING: 1 entries carry a legacy md5 module hash: run scripts/migrate_cache_metadata.py first"
-            in report.splitlines())
+    assert ("# WARNING: 1 entries carry a legacy md5 module hash (never migrated, or kept legacy by the migration "
+            "because the stage code changed since the cache was built): run scripts/migrate_cache_metadata.py "
+            "if this cache was never migrated" in report.splitlines())
     assert report.splitlines()[-1].startswith("# 1 stages:")      # the summary stays the last line
     project.migrate("mig_stage", rev)
     assessments = staleness.assess(project.registry("mig_stage"), str(project.working),
