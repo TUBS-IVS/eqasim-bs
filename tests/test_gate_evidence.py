@@ -11,8 +11,7 @@ import subprocess
 
 import pytest
 
-from braunschweig.gate_evidence import (git_state, junit_counts, platform_tag, run_scope,
-                                        write_evidence)
+from braunschweig.gate_evidence import git_state, junit_counts, run_scope, write_evidence
 
 
 def _git(repo, *args):
@@ -65,16 +64,24 @@ def test_git_state_outside_a_repo_is_unknown_with_warning(tmp_path):
     (["--lf"], "focused"),
     (["--deselect", "tests/test_x.py::test_y"], "focused"),
     (["--collect-only"], "focused"),
+    (["-xq"], "focused"), (["-qx"], "focused"), (["--fixtures"], "focused"), (["--help"], "focused"),
+    (["-o", "addopts=-x"], "focused"), (["-c", "other.ini"], "focused"), (["--setup-plan"], "focused"),
+    (["-q", "tests/"], "focused"), (["--junitxml", "out.xml", "-q"], "full"), (["-p", "no:cacheprovider"], "full"),
+    (["-q", "--durations", "30", "--tb=short", "-rA"], "full"),
 ])
 def test_test_scope_is_full_only_without_selection(args, scope):
-    assert run_scope(args) == scope
+    assert run_scope(args, environ={}) == scope
+
+
+def test_test_scope_is_focused_when_pytest_addopts_is_set():
+    assert run_scope(["-q"], environ={"PYTEST_ADDOPTS": "-x"}) == "focused"
 
 
 @pytest.mark.parametrize("pipeline, marker, scope", [
     (True, None, "focused"), (False, "slow", "focused"), (False, None, "full"),
 ])
 def test_test_scope_counts_pipeline_and_markers_as_selection(pipeline, marker, scope):
-    assert run_scope(["-q"], pipeline=pipeline, marker=marker) == scope
+    assert run_scope(["-q"], pipeline=pipeline, marker=marker, environ={}) == scope
 
 
 def test_junit_counts_from_a_minimal_report(tmp_path):
@@ -90,7 +97,6 @@ def test_write_evidence_is_versioned_json_under_the_gate_dir(tmp_path):
     path = write_evidence(tmp_path, "tests-linux.json", {"exit": 0})
     assert path == tmp_path / ".claude" / "gate" / "tests-linux.json"
     assert json.loads(path.read_text(encoding="utf-8")) == {"schema": 1, "exit": 0}
-    assert platform_tag() in ("linux", "windows", "darwin")
 
 
 def test_documentation_check_writes_docs_evidence(repo, monkeypatch):
@@ -117,3 +123,24 @@ def test_documentation_check_writes_docs_evidence(repo, monkeypatch):
     assert cli.main(["check", "--no-dag", "--quiet", "--repo-root", str(repo)]) == 1
     evidence = json.loads((repo / ".claude" / "gate" / "docs-check.json").read_text(encoding="utf-8"))
     assert evidence["fail_count"] == 1
+
+
+def test_docs_check_writer_failure_keeps_the_check_exit_code(repo, monkeypatch):
+    from types import SimpleNamespace
+
+    from braunschweig import gate_evidence
+    from braunschweig.documentation import __main__ as cli
+    from braunschweig.documentation import checks
+
+    class FakeContext:
+        features = stages = datasets = adrs = manifests = ()
+
+        def __init__(self, repo_root, use_dag_extraction):
+            pass
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(checks, "CheckContext", FakeContext)
+    monkeypatch.setattr(checks, "run_all_checks", lambda context: [SimpleNamespace(severity=checks.FAIL)])
+    monkeypatch.setattr(gate_evidence, "write_evidence", broken)
+    assert cli.main(["check", "--no-dag", "--quiet", "--repo-root", str(repo)]) == 1

@@ -55,7 +55,6 @@ def test_runner_propagates_pytest_failure(tmp_path):
 
 def test_pipeline_collection_selects_only_pipeline_without_requiring_data(tmp_path):
     result = _run(tmp_path, '''
-import json
 import os
 import pytest
 
@@ -201,8 +200,14 @@ def evidence_runner(tmp_path, monkeypatch):
 
     def fake_call(command, **kwargs):
         calls.append(command)
+        junit = run_tests.caller_junitxml(command[1:])
+        if fake_call.junit and junit:
+            Path(junit).parent.mkdir(parents=True, exist_ok=True)
+            Path(junit).write_text('<testsuite tests="4" failures="1" errors="0" skipped="1"/>', encoding="utf-8")
+        if fake_call.edit is not None:
+            fake_call.edit()
         return fake_call.exit_code
-    fake_call.exit_code = 0
+    fake_call.exit_code, fake_call.junit, fake_call.edit = 0, True, None
     monkeypatch.setattr(run_tests, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(run_tests, "check_environment", lambda: {
         "python": sys.executable, "python_version": "3.10", "errors": [],
@@ -229,6 +234,50 @@ def test_runner_writes_platform_tagged_evidence_for_a_full_run(evidence_runner):
     # Without a caller-supplied --junitxml the runner adds one, so counts are recorded.
     assert evidence["junitxml"].endswith(f"junit-{platform_tag()}.xml")
     assert any(arg.startswith("--junitxml=") for arg in calls[0])
+    assert (evidence["passed"], evidence["failed"], evidence["skipped"]) == (2, 1, 1)
+
+
+def test_runner_never_reports_counts_from_a_stale_junit_file(evidence_runner):
+    from braunschweig.gate_evidence import platform_tag
+
+    run_tests, root, _, fake_call, _ = evidence_runner
+    stale = root / ".claude" / "gate" / f"junit-{platform_tag()}.xml"
+    stale.parent.mkdir(parents=True)
+    stale.write_text('<testsuite tests="999" failures="0" errors="0" skipped="0"/>', encoding="utf-8")
+    fake_call.junit, fake_call.exit_code = False, 4          # pytest died before writing a report
+    assert run_tests.main(["-q"]) == 4
+    assert _evidence(root)["passed"] is None
+
+
+def test_runner_marks_a_tree_changed_during_the_run_as_not_evidence(evidence_runner):
+    run_tests, root, _, fake_call, _ = evidence_runner
+
+    def commit_mid_run():
+        (root / "a.txt").write_text("changed\n", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "mid-run"], cwd=root, check=True)
+    fake_call.edit = commit_mid_run
+    assert run_tests.main(["-q"]) == 0
+    evidence = _evidence(root)
+    assert evidence["dirty"] is None and "changed during the run" in evidence["warning"]
+
+
+def test_runner_writer_failure_keeps_pytest_exit_code(evidence_runner, monkeypatch):
+    from braunschweig import gate_evidence
+
+    run_tests, _, _, fake_call, _ = evidence_runner
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(gate_evidence, "write_evidence", broken)
+    fake_call.exit_code = 1
+    assert run_tests.main(["-q"]) == 1
+
+
+def test_runner_respects_a_separate_junitxml_argument(evidence_runner):
+    run_tests, root, _, _, calls = evidence_runner
+    assert run_tests.main(["-q", "--junitxml", str(root / "custom.xml")]) == 0
+    assert sum(arg.startswith("--junitxml") for arg in calls[0]) == 1
+    assert _evidence(root)["junitxml"].endswith("custom.xml")
 
 
 def test_runner_marks_focused_failing_runs(evidence_runner):

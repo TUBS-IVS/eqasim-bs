@@ -6,6 +6,7 @@ existing real-data opt-in tests. Remaining arguments are passed to pytest.
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.metadata
 import importlib.util
 import json
@@ -151,36 +152,59 @@ def main(argv=None):
         marker = f"({marker}) and ({marker_args.expression})"
     command = [sys.executable, "-u", "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini")]
     command.extend(pytest_args or ["-q"])
-    junitxml = next((arg.split("=", 1)[1] for arg in pytest_args if arg.startswith("--junitxml=")),
-                    None)
+    junitxml = caller_junitxml(pytest_args)
     if junitxml is None and not args.no_evidence:
         junitxml = str(Path(REPO_ROOT) / gate_evidence.GATE_DIR
                        / f"junit-{gate_evidence.platform_tag()}.xml")
         command.append(f"--junitxml={junitxml}")
+        # A report left by an earlier run must never be read as this run's counts.
+        Path(junitxml).unlink(missing_ok=True)
     command.extend(["-m", marker])
     started_at = gate_evidence.now_iso()
+    before = None if args.no_evidence else gate_evidence.git_state(REPO_ROOT)
     exit_code = subprocess.call(command, cwd=REPO_ROOT, env=env)
     if not args.no_evidence:
         record_test_evidence(command, pytest_args, args.pipeline, marker_args.expression,
-                             exit_code, junitxml, started_at)
+                             exit_code, junitxml, started_at, before)
     return exit_code
 
 
-def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, junitxml, started_at):
+def caller_junitxml(pytest_args):
+    """The caller's JUnit path, from ``--junitxml=X`` or ``--junitxml X``; None when absent."""
+    for index, arg in enumerate(pytest_args):
+        if arg.startswith("--junitxml="):
+            return arg.split("=", 1)[1]
+        if arg == "--junitxml" and index + 1 < len(pytest_args):
+            return pytest_args[index + 1]
+    return None
+
+
+def record_test_evidence(command, pytest_args, pipeline, marker, exit_code, junitxml, started_at,
+                         before=None):
     """Write ``.claude/gate/tests-<platform>.json`` for the local push gate.
 
     The gate (docs/codebase/notes/agent-process-automation.md) accepts only a ``full``
     run of a clean HEAD; a writer failure is reported and never changes the exit code.
+    The tree state is taken before and after the run: if HEAD or the dirty flag changed
+    while pytest ran, the result describes no single code state and ``dirty`` becomes
+    ``None`` (not evidence). JUnit counts come only from a report written by this run.
     """
     try:
         junit_path = Path(junitxml)
         if not junit_path.is_absolute():
             junit_path = Path(REPO_ROOT) / junit_path
+        started = datetime.datetime.fromisoformat(started_at).timestamp()
+        fresh = junit_path.exists() and junit_path.stat().st_mtime >= started - 1
+        counts = gate_evidence.junit_counts(junit_path if fresh else Path(REPO_ROOT) / ".no-junit")
         scope = gate_evidence.run_scope(pytest_args, pipeline=pipeline, marker=marker)
-        payload = {**gate_evidence.git_state(REPO_ROOT),
+        state = gate_evidence.git_state(REPO_ROOT)
+        if before is not None and (before["head"], before["dirty"]) != (state["head"], state["dirty"]):
+            state.update(dirty=None, warning=f"the tree changed during the run (before: head "
+                                             f"{before['head']}, dirty {before['dirty']})")
+        payload = {**state,
                    "platform": gate_evidence.platform_tag(), "python": sys.executable,
                    "command": command, "scope": scope, "exit": exit_code,
-                   **gate_evidence.junit_counts(junit_path), "junitxml": str(junit_path),
+                   **counts, "junitxml": str(junit_path),
                    "started_at": started_at, "finished_at": gate_evidence.now_iso()}
         path = gate_evidence.write_evidence(REPO_ROOT, f"tests-{payload['platform']}.json", payload)
         print(f"evidence: {path} (scope={scope}, exit={exit_code}, head={payload['head']}, "

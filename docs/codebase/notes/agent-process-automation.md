@@ -23,14 +23,22 @@ Rules shared by both (helpers in `braunschweig/gate_evidence.py`):
 - **`dirty` ignores line endings.** It comes from the exit code of
   `git diff --ignore-cr-at-eol --quiet HEAD` (`git_state`). Inside WSL, a Windows checkout
   shows thousands of CRLF-only changes, and `git status` needs 20+ seconds there
-  ([linux-parity-testing](linux-parity-testing.md)). Untracked files do not count.
+  ([linux-parity-testing](linux-parity-testing.md)). Untracked files do not count, so a
+  run that passes only because of an uncommitted new file still records `dirty: false`.
+- **A changed tree is not evidence.** The runner records HEAD and `dirty` before and after
+  pytest. If either changed during the run, `dirty` becomes `null` and `warning` says so.
 - **`null` means "not evidence".** If `git` fails, `head` / `dirty` are `null` and
   `warning` says why.
-- **`scope` is `full` only for the whole default suite** (`run_scope`). Test paths, node
-  ids, `-k`, `-m`, `-x`, `--lf`, `--deselect`, `--collect-only` and `--pipeline` make a
-  run `focused`. `-n` only parallelises the run, so it stays `full`.
+- **`scope` is `full` only for the whole default suite** (`run_scope`). The check is
+  fail-closed: only reporting and parallelism options keep a run `full`, namely `-q`, `-v`,
+  `-l`, `-s`, `-r…`, `-n`, `-p`, `-W`, `--tb`, `--durations`, `--junitxml`, `--dist` and
+  `--color`. Anything else makes it `focused`. That includes test paths, node ids,
+  `-x`/`-k`/`-m` (also bundled as `-xq`), `-o`, `-c`, `--fixtures`, `--pipeline` and a set
+  `PYTEST_ADDOPTS`.
 - **The runner always records JUnit counts.** Without a caller `--junitxml`, it writes
-  `.claude/gate/junit-<platform>.xml`.
+  `.claude/gate/junit-<platform>.xml`. It deletes that file before the run, so the counts
+  always come from this run. If pytest dies before writing a report, the counts are
+  `null`.
 - **Probe runs can opt out.** `--no-evidence` writes nothing. The runner's own
   fresh-process tests use it, so they never replace a checkout's real evidence.
 - **Writer failures never change exit codes.** A writer error is printed, and the test
@@ -46,9 +54,12 @@ The gate is a personal `PreToolUse` hook. It intercepts `git push`, `git pr` and
    [verification gate](../TESTING.md#required-agent-verification-gate), step 3. Windows
    evidence is reported when present but is not required; CI supplies the second
    platform before merge.
-2. `docs-check.json` has `head == HEAD`, `dirty == false`, `fail_count == 0`.
-3. `origin/main` is an ancestor of `HEAD` (after `git fetch origin main`). If the fetch
-   fails (offline), the gate shows a note and does not block.
+2. `docs-check.json` has `head == HEAD`, `dirty == false`, `fail_count == 0`,
+   `no_dag == false`. CI's `--no-dag` mode skips the DAG-freshness check, so its output
+   is not enough.
+3. `origin/main` is an ancestor of `HEAD` (after a non-interactive `git fetch origin main`,
+   which updates the remote-tracking ref). If the fetch fails or times out (offline), the
+   gate shows a note and does not block.
 
 If the gate blocks, its message names each missing item and the exact command that
 produces it. A command prefixed with `EQASIM_GATE_OVERRIDE="<reason>"` passes. Every

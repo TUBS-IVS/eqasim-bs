@@ -19,20 +19,18 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import xml.etree.ElementTree as ElementTree
 
 #: Evidence directory relative to the checkout; covered by the ``.claude/*`` gitignore.
 GATE_DIR = ".claude/gate"
 
-#: pytest options that narrow the selected tests: a run using any of them is "focused".
-SELECTING_OPTIONS = ("-k", "-x", "--exitfirst", "--lf", "--last-failed", "--ff",
-                     "--failed-first", "--maxfail", "--co", "--collect-only", "--deselect",
-                     "--ignore", "--ignore-glob", "--sw", "--stepwise", "-m")
-#: pytest options whose value follows as a separate argument (not a test path).
-VALUE_OPTIONS = ("-n", "-p", "-o", "-c", "-W", "-k", "-m", "--tb", "--durations",
-                 "--junitxml", "--rootdir", "--basetemp", "--confcutdir", "--deselect",
-                 "--ignore", "--ignore-glob", "--maxfail", "--dist")
+#: pytest options that only change reporting or parallelism: the ONLY options a ``full``
+#: run may carry (fail-closed allowlist; anything else may narrow or skip the suite).
+NEUTRAL_FLAGS = {"-q", "-qq", "-v", "-vv", "-l", "--showlocals", "-s"}
+NEUTRAL_VALUE_OPTIONS = {"-n", "-p", "-W", "--tb", "--durations", "--junitxml", "--dist", "--color",
+                         "--maxprocesses", "--durations-min", "--basetemp"}
 
 
 def now_iso() -> str:
@@ -66,23 +64,27 @@ def git_state(checkout, timeout: float = 60.0) -> dict:
     return state
 
 
-def run_scope(pytest_args, pipeline: bool = False, marker=None) -> str:
-    """``full`` for the whole default suite, ``focused`` when anything narrows the selection.
+def run_scope(pytest_args, pipeline: bool = False, marker=None, environ=None) -> str:
+    """``full`` only for the whole default suite with reporting/parallelism options; else ``focused``.
 
-    ``pipeline`` and ``marker`` are the runner's own ``--pipeline`` / ``-m`` (it strips them
-    from the pytest arguments). ``-n`` (xdist) only parallelises and keeps a run ``full``.
+    Fail-closed: test paths, node ids, ``-x``/``-k``/``-m`` (also bundled as ``-xq``),
+    ``-o``/``-c``, ``--fixtures``/``--help`` and any option not on the allowlist make a run
+    ``focused``, as do the runner's own ``--pipeline``/``-m`` and a set ``PYTEST_ADDOPTS``.
     """
-    if pipeline or marker:
+    environ = os.environ if environ is None else environ
+    if pipeline or marker or environ.get("PYTEST_ADDOPTS"):
         return "focused"
-    previous = None
-    for arg in pytest_args:
+    args = list(pytest_args)
+    index = 0
+    while index < len(args):
+        arg = args[index]
         option = arg.split("=", 1)[0]
-        if option in SELECTING_OPTIONS or any(
-                arg.startswith(short) and len(arg) > 2 for short in ("-k", "-m")):
+        if arg in NEUTRAL_FLAGS or re.fullmatch(r"-r\w+", arg):
+            index += 1
+        elif option in NEUTRAL_VALUE_OPTIONS or re.fullmatch(r"-[npW].+", arg):
+            index += 1 if ("=" in arg or len(option) > 2 and not option.startswith("--")) else 2
+        else:
             return "focused"
-        if not arg.startswith("-") and previous not in VALUE_OPTIONS:
-            return "focused"  # a test path or node id
-        previous = arg
     return "full"
 
 
