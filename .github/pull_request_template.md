@@ -21,14 +21,14 @@
      recorded as a run manifest (docs/runs/) where significant.
      Convergence is not validation. -->
 
-<!-- Follow docs/codebase/TESTING.md#required-agent-verification-gate.
-     Report tested commit/dirty state, OS, environment diagnostics, exact runner
-     command, exit status, passed/skipped/deselected counts, and JUnit path.
-     Explain unavailable checks or unexpected skips; pending CI is not a pass. -->
+<!-- Follow docs/codebase/TESTING.md#required-agent-verification-gate (ADR-0150).
+     Report the focused local command, tested commit, OS, passed/skipped counts,
+     and link the CI run. Explain unavailable checks or unexpected skips;
+     pending CI is not a pass. -->
 - [ ] Session preflight: `python scripts/run_tests.py --check` passed
-- [ ] Final-code Linux/WSL regression: `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml` passed
-- [ ] Windows compatibility evidence recorded (local run or latest PR CI)
-- [ ] Both regression CI platforms and documentation check are green before merge
+- [ ] Affected tests passed locally through `scripts/run_tests.py` (command and counts above)
+- [ ] Data-gated tests covering the changed code run locally with the data, or not applicable
+- [ ] Both regression CI platforms and documentation check are green on the latest commit, against the current `main`
 - [ ] Required real-data smoke recorded, or its non-applicability explained
 
 ## Registry / documentation impact (docs/DOCUMENTATION_GOVERNANCE.md)

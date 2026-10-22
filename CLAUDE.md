@@ -24,7 +24,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Where a new fact goes:** stage exists/changed → Stage Registry (+ `... dag` if the graph changed) · feature semantics/state → Feature Registry · dataset → Data Registry + `scripts/verify_braunschweig_inputs.py` + README · WHY a choice was made, incl. rejected options → ADR · what a run produced or proved → run manifest · work still to do → GitHub issue · module/package layout, or a rule maintainers must follow → `docs/codebase/notes/<slug>.md` · public setup contract → README. Every substantial PR → `documentation build` + `check` (the PR template carries this checklist). A chat summary, a PR body or `SESSION_LOG.md` is never a fact's only home. Never invent history: `unknown` is a valid value; convergence ≠ validation; a smoke ≠ validation.
 
-**Parallel branches:** merge `origin/main` into your branch before `git pr`, and re-run the verification gate AFTER that merge — a green A/B against a stale base says nothing about the merge state (#284 + #287 turned `main` red exactly this way, each green on its own). While sibling branches are open, do not edit a shared prose file at all.
+**Parallel branches:** merge `origin/main` into your branch before `git pr`, and let CI test the pushed merge; if `main` moves before merge, merge it again and push — a green run against a stale base says nothing about the merge state (#284 + #287 turned `main` red exactly this way, each green on its own). While sibling branches are open, do not edit a shared prose file at all.
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around. Subagents: every dispatch names its model and a tool-call budget, per `docs/codebase/notes/subagent-budget.md`.
 
@@ -46,7 +46,9 @@ All code must be written in English: class, method, variable, package and file n
 [required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate)
 (`python scripts/run_tests.py`, `--check` at session start; no direct-pytest, patched,
 skipped or other-code-state substitutes; evidence recorded in the handoff/PR; both CI
-platforms before merge). How tests are written: `.claude/rules/tests.md`.
+platforms before merge). Locally, run only the tests the change affects, including its
+data-gated tests; the full suite runs in CI on the PR, never as parallel local runs
+(ADR-0150). How tests are written: `.claude/rules/tests.md`.
 
 ## Fallback transparency (no silent fallbacks) — MANDATORY
 

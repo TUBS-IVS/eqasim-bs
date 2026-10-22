@@ -3,11 +3,12 @@
 ## The rule
 
 A test run on the Windows development box is not evidence that a branch is
-green on Linux, where CI and the production server run. Before calling a
-branch's test result final -- in a PR, in a run manifest, in a session close --
-validate the same node ids on the WSL mirror of the server environment. Doing
-this takes seconds; not doing it lets a platform-specific defect ride into
-`main` looking like a pass.
+green on Linux, where CI and the production server run. For the full suite,
+the CI `regression` job on Linux is that evidence: it installs the same captured
+server snapshot as the WSL mirror (ADR-0150). Locally, validate the affected
+node ids on the WSL mirror before calling a focused result final -- in a PR, in
+a run manifest, in a session close. Doing this takes seconds; not doing it lets
+a platform-specific defect ride into `main` looking like a pass.
 
 ## The invocation, including the Git Bash caveat
 
