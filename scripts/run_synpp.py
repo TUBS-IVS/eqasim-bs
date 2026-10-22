@@ -117,8 +117,10 @@ def explain_before_run(config_path):
     stages = registry.build_registry_from_settings(doc)
     assessments = staleness.assess(stages, working_directory, metadata.read_meta(working_directory))
     for line in staleness.format_report(assessments).splitlines():
-        # An unmigrated cache recomputes every stage: log that hint at ERROR so it cannot be
-        # missed. It does not abort; the abort gate stays synpp_expected_stale_stages.
+        # An unmigrated cache recomputes every stage (the costly case): log that hint at ERROR so it
+        # cannot be missed. The same line also appears after a migration for entries kept legacy because
+        # their stage code changed since the cache was built (genuinely stale, no action needed); the
+        # severity stays ERROR for both. It does not abort; the abort gate stays synpp_expected_stale_stages.
         if "legacy md5 module hash" in line:
             log.error("[explain] %s", line)
         else:

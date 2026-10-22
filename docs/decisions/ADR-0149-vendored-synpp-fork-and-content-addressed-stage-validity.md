@@ -283,8 +283,8 @@ part lands (see Implementation status).
   tokens (md5 module hashes) still primes as a miss.
 - **Hashing cost.** The migration reads every output file of every `pipeline.json` entry,
   including old config variants that are no longer in the current graph; the migration logs
-  files and bytes per entry. On the felix copy of the 100 % cache (168 entries) the output hashing took 24.96 s in
-  total, one observation, not a benchmark (`cache-migration-100pct-2026-10-22`). No full-run overhead of the early cutoff is measured.
+  files and bytes per entry. The hashing time on the felix copy of the 100 % cache is in `cache-migration-100pct-2026-10-22`
+  (one observation, not a benchmark). No full-run overhead of the early cutoff is measured.
 - **Python minor upgrade = one deliberate recompute** of every source-hashing stage (the
   token records the minor version); the explainer shows it as a token difference.
 - **Fork re-base obligation.** When synpp is upgraded, `braunschweig/synpp_fork/pipeline.py`
@@ -342,12 +342,12 @@ Acceptance on a real cache: **server acceptance on felix, done 2026-10-22**, on 
 cache (never the original), recorded in `docs/runs/cache-migration-100pct-2026-10-22.yml`. The acceptance criterion was
 set to A == B (own-reason stale set under the legacy revision 205a0fb7 versus under the branch head after
 the migration), because the 100 % cache dates from 2026-08-21 and is older than that revision, so entries
-built by older code are genuinely stale. Result: 107 stages each, own-reason stale 72 versus 72, 0 only in
-either, identical reasons per stage; migrated 77 of 168 entries, kept legacy 91 (79 module hash mismatch, 2
-token mismatch, 12 not in the DAG). So "zero recompute after migration" holds in the form "the migration
-recomputes nothing the old code would not", not as "0 stale". The 91 kept-legacy entries are mostly entries
-whose code changed since the cache was built. Wording defect found on this run: the explainer's legacy md5
-warning also fired after a migration (4 entries kept legacy); reworded in the same PR.
+built by older code are genuinely stale. Result: the two stale sets are identical (counts, reasons and the
+migration counters are in the manifest). So "zero recompute after migration" holds in the form "the migration
+recomputes nothing the old code would not", not as "0 stale". Many entries stay legacy because their stored
+module hash matches neither the current source nor the legacy revision. Wording defect found on this run: the
+explainer's legacy md5 warning also fired after a migration; reworded in the same PR (the launcher keeps
+logging that line at ERROR, see `docs/codebase/notes/synpp-fork.md`).
 
 Phase 4 tests committed on the branch (synthetic pipelines in `tmp_path`, no scientific claim;
 they pin the mechanics):
@@ -396,29 +396,17 @@ to recompute because the rebuilt `braunschweig.freight.extraction_tool` jar has 
 (R17-2). No statement about hit rates, saved hours or run times on a real cache is made anywhere in the
 documentation; the manifest records mechanics only.
 
-Results of the Phase 4 scenarios (`content-addressed-cache-acceptance-100pct-2026-10-22`; stage choice, harness rulings and the failed first attempt are in
-the manifest):
+Results of the Phase 4 scenarios (`content-addressed-cache-acceptance-100pct-2026-10-22`; the numbers, the stage choice, the harness rulings and the
+failed first attempt are in the manifest, not repeated here):
 
-- The scenarios use the Java runtime subgraph (`matsim.runtime.java`, `git`, `maven`, `matsim.runtime.eqasim`,
-  `braunschweig.freight.extraction_tool`) instead of `escort.py` and the chainsolver: `secondary_chainsolvers`
-  is `not_in_meta` in this copy, so the plan's run would recompute popsim and chainsolver for hours. The
-  comment edit in `escort.py` is still checked (S1). The chain at scale is NOT exercised; the mechanics use the
-  same `run()` code path.
-- S1 (comment edits in `matsim/runtime/java.py` and `escort.py`): explainer equal to the baseline (70 own-reason
-  stale each). S3 (Java tree copied with all files touched): equal to the baseline, both jar stages `HIT`.
-- S2 / X2 (body edit `JAVA_PROBE = 1` in `matsim/runtime/java.py`): the explainer marks exactly
-  `matsim.runtime.java` stale (`module_hash_changed`) and both jar stages `STALE-IF`. With the launcher the
-  jar stages are re-executed anyway, because the launcher always passes `rerun_required=True` and they are run
-  targets. With a driver using the same composed config through the fork and `rerun_required=False`: only
-  `matsim.runtime.java` executed, its output was identical, "early cutoff kept 2 stages cached"; the revert
-  repeated this; the java output digest did not change across the three executions. Production gains on
-  non-target stages only.
-- S4 / X4 (explicit export of the two jar modules, prime of fresh directories): "kept 2 copied records (absent
-  parent decided by digest at run time 2)" (R17-3 on real data); in the driver run `git`, `java` and `maven`
-  executed and both jar stages stayed cached.
-- **Measured evidence for the jar limit (R17-2).** Every rebuild of `matsim.runtime.eqasim` and
-  `braunschweig.freight.extraction_tool` from identical inputs logged "changed (files differ)": the eqasim jar
-  stage's output was 217807431 bytes in the copy and 217801443 bytes in a fresh directory, the tool stage's
-  186636116 versus 186636104 bytes, while `java`, `git` and `maven` reproduced "identical to the previous
-  output". The jar builds are not byte-reproducible, so consumers of a rebuilt jar recompute, as stated in the
-  known limits; making the jar builds reproducible is a follow-up, not part of this decision.
+- Comment edits and a copied Java tree change nothing (S1, S3); the explainer marks a body edit as stale for
+  exactly the edited stage with its children `STALE-IF` (S2).
+- With a driver that does not force run targets (`rerun_required=False`) the early cutoff kept the unchanged
+  children cached, on a trivial 4-byte parent output (X2, X4) and on a 20 MB migrated parent output (X5). The
+  launcher always re-executes run targets, so production gains on non-target stages only.
+- A prime of a fresh directory decided an absent parent by digest at run time (S4, X4: R17-3).
+- Not exercised: the stage chain at scale (`escort.py`/chainsolver are `not_in_meta` in the copy), the primed
+  entry with all parents shared, and the `braunschweig.freight.extraction` recompute (R17-2).
+- **Measured evidence for the jar limit (R17-2).** Rebuilds of the eqasim jar and tool jar stages from identical
+  inputs did not reproduce their output hash (byte counts in the manifest), so consumers of a rebuilt jar
+  recompute, as stated in the known limits; reproducible jar builds are a follow-up, not part of this decision.

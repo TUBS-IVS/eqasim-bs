@@ -41,7 +41,9 @@ classification:
 status:
   execution: completed
   notes: >-
-    Migration exit 0; both explainer assessments completed. This is a smoke and an A/B comparison of two explainer
+    Migration exit 0; both explainer assessments completed (their exit code 2 comes from the gate --expect "", which
+    reports every stale stage as UNEXPECTED, see the last line of A_rev.txt and B_head.txt and the exit lines of
+    run_logs/migrate_compare.log.txt; it is not an error). This is a smoke and an A/B comparison of two explainer
     assessments of the same cache copy, NOT a validation: no observed data is compared, and "equal stale sets" says
     that the migration changes no staleness decision, not that the cache content is right.
 source: >-
@@ -69,22 +71,27 @@ validation:
 - metric: migration counts on the real 100 % cache copy
   reference: 'none -- counts reported by scripts/migrate_cache_metadata.py'
   result: >-
-    migrated 77 of 168 entries (45.8 %), kept legacy 91; exit 0. Reasons for the 91 kept-legacy entries: 79
-    module_hash_mismatch (the stage code changed since the 2026-08-21 cache was built), 2 token_mismatch, 12
-    not_in_dag (entries no stage of the current graph has). Output hashing took 24.96 s in total. pipeline.json was
-    rewritten with the backup pipeline.json.bk. A dry run (out/migrate_dry.txt) preceded it.
+    migrated 77 of 168 entries (45.8 %), kept legacy 91; exit 0. The 91 kept-legacy entries are 79 with
+    module_hash_mismatch (the stored md5 matches neither the current source nor the legacy revision; the 2
+    token_mismatch entries are among these 79) plus 12 not_in_dag (entries no stage of the current graph has);
+    79 + 12 = 91 (counters at the end of out/migrate.txt). Output hashing took 24.96 s in total in the real
+    migration (out/migrate.txt) and 40.01 s in the dry run that preceded it (out/migrate_dry.txt, same copy; the
+    difference is not explained, plausibly file-system caching). pipeline.json was rewritten with the backup
+    pipeline.json.bk.
   artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/migrate.txt
   notes: >-
-    The 24.96 s is the hashing time of this copy on felix, one observation, not a performance benchmark.
-    Kept-legacy entries are not an error: the migration does not rewrite an entry whose stored module hash matches
-    neither the current source nor the legacy revision.
+    The hashing times are single observations on felix, not a performance benchmark. Kept-legacy entries are not an
+    error: the migration does not rewrite an entry whose stored module hash matches neither the current source
+    nor the legacy revision. That the code changed since the 2026-08-21 cache was built is the inference from
+    this, consistent with the cache being older than revision 205a0fb7, not a separately measured fact.
 - metric: explainer warning after the migration (finding)
   reference: 'none -- an observation of the explainer wording'
   result: >-
     After the migration explainer B still prints "# WARNING: 4 entries carry a legacy md5 module hash: run
-    scripts/migrate_cache_metadata.py first" (line 111 of B_head.txt) for entries kept legacy because their code
-    changed (census.employees, census.employment, data.osm.osmosis, matsim.runtime.java; stage names from the
-    controller's felix report). The text was misleading after a migration. The commit "Reword the legacy md5 module
+    scripts/migrate_cache_metadata.py first" (line 111 of B_head.txt) for entries kept legacy because their
+    module hash differs from the current source (the four stages braunschweig.data.census.employees,
+    braunschweig.data.census.employment, data.osm.osmosis and matsim.runtime.java, each STALE with
+    [module_hash_changed] at lines 19, 20, 83 and 99 of B_head.txt). The text was misleading after a migration. The commit "Reword the legacy md5 module
     hash warning so it is true after a migration too" of this branch fixes the wording; the substring "legacy md5
     module hash" that the launcher keys on is unchanged.
   artifact: docs/runs/artifacts/content-addressed-cache-acceptance-100pct-2026-10-22/out/B_head.txt
