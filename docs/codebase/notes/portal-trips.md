@@ -13,7 +13,7 @@ of `trips_final`). Nothing here repeats those.
 |---|---|
 | `config_keys.py` | The ONE home of the `braunschweig.portal.*` key names, defaults, `validate_settings`, the RNG offset, the `outside` purpose, the `portal_` location id prefix, the `portalGate` attribute name and `final_view_trips_stage` (which trips stage the validation analyses read). Every reader declares the keys with these constants. |
 | `classification.py` | Which legs are portal legs; consecutive portal destinations become one outside stay. |
-| `gates.py` | Road gate points, rail exit stations, the external point draw, the detour rule. |
+| `gates.py` | Road gate points, `exit_stops` and `choose_pt_gates` (timetable-aware pt gates, ADR-0152), the external point draw, the detour rule. `no_connection.py` resolves pt stays without an admissible gate (counted chain, ADR-0152). |
 | `timing.py`, `modes.py` | Arrival at the gate and re-entry time from the diary; the fixed mode and its substitution. |
 | `rewrite.py` | Rewrites the trip table around the stays and emits the gate anchors. |
 | `stage.py`, `trips_final.py`, `anchors.py` | The synpp stage (one dict `{trips, anchors, report}`) and the two thin stages that hand one frame each to their consumers. |
@@ -61,8 +61,10 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   (`configs/base_bs.yml`) is the only config with the flag on.
 - **The gate point must lie inside the cut extent.** The cutter runs unchanged after the portal stage; a stay
   outside the extent would be cut again and the stay would be corrupted. Road gates use the inside end node of the
-  gate link (`gates.gate_inside_points`, which raises listing every gate with no endpoint inside); rail gates are
-  stations inside the extent from which a rail route continues to a stop outside it (`gates.rail_exit_stations`,
+  gate link (`gates.gate_inside_points`, which raises listing every gate with no endpoint inside); pt gates are
+  exit stops inside the extent from which a route of any transit mode continues to a stop outside it
+  (`gates.exit_stops`, chosen by `gates.choose_pt_gates` against the timetable and the router, ADR-0152, which
+  supersedes the rail-exit-station rule of ADR-0141;
   derived from the supply timetable, not from `braunschweig.data.cordon_pt_gates`). Pinned by
   `tests/test_portal_trips_gates.py::test_gate_inside_points_takes_the_link_endpoint_inside_the_polygon` and
   `...::test_gate_inside_points_raises_when_no_endpoint_is_inside`.
@@ -98,7 +100,7 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   solver samples the distance of the preceding secondary leg from `arrival - departure`; keeping the diary's
   arrival at the far destination would inflate that distance. MATSim ignores planned arrivals, so only the
   synthesis is affected. The re-entry clamp lower bound is the arrival at the gate, so the gate activity never
-  ends before it starts. A rail gate that coincides with the origin proxy gives an inside distance of 0 and thus a
+  ends before it starts. A pt gate that coincides with the origin proxy gives an inside distance of 0 and thus a
   zero-duration outbound leg (share 0), which is legitimate, not degenerate.
 - **The spatial inputs of the stage are in one CRS.** `assert_consistent_crs` (municipalities, home locations,
   gates, links, external points) raises before the first spatial step and in the pure entry point
@@ -246,7 +248,7 @@ primary method is broken" warns above `braunschweig.portal.fallback_warn_share`.
 |---|---|
 | `primary legs assigned a/b ..., reported-distance fallback c` | Work/education legs classified by the assigned location (primary) versus the donor's reported distance (fallback, legitimate for persons without an assigned location). Raises when EVERY work/education leg falls back: the join of the primary locations is broken. It can also fire on a tiny run without primary locations. |
 | `displacement bound (non-primary legs, n): bounded a/n, lose portal status through the bound b, without a usable bound c/n, without a reported distance d/n` | Non-primary legs (not work/education, not the way home) whose reported distance was cut by the diary's bound; of those, the legs that would have been portal by the reported distance alone but are not any more; legs whose bound is unknown (a leg in the sums without a reported distance such as the synthetic home closure, or a chain that does not start/end at home), which keep the reported distance; and legs whose OWN reported distance is missing (nothing to tighten, never portal; neither bounded nor unbounded). Information rates (INFO). A high unbounded rate means few diaries chain cleanly from and to home. The counts are in the report as `n_nonprimary_legs`, `n_nonprimary_legs_bounded`, `n_portal_legs_lost_through_bound`, `n_nonprimary_legs_without_bound`, `n_nonprimary_legs_without_reported_distance`. |
-| `N portal legs -> M outside stays for p/q persons` | Size of the effect; also removed inner legs, stays without return, stays by kind (road/rail) and mode. |
+| `N portal legs -> M outside stays for p/q persons` | Size of the effect; also removed inner legs, stays without return, stays by kind (road/pt) and mode. |
 | `gate usage (top 10 ...)` | A single gate taking most stays points to a wrong gate set or a degenerate detour rule. |
 | `external point drawn outside the distance band` | Band-miss rate of the external point draw (the nearest point is used). High = tolerance too tight or the external point set too sparse around the reported distances. |
 | `origin proxied by home` | Stays whose real origin (a secondary activity, or a primary activity without a location) was replaced by home for the gate choice. |
@@ -262,3 +264,14 @@ portal legs` (the pre-existing carless re-mode shim, now counted), the distance-
 dropped share per mode (`trips beyond N m dropped`), and the candidate stage logs
 `external centroids inside the supply ring: a/b kept`, and the facilities stage logs
 `N portal gate facilities registered`.
+
+## Timetable-aware pt gates and the no-connection chain (ADR-0152, issue #465)
+
+- `gates.choose_pt_gates` picks the gate of a pt stay: directional exit stops, the `gate_candidates` smallest
+  detours, served within `gate_service_window_s`, connection checked by the eqasim batch router
+  (`braunschweig/data/transit/connections.py`). The stage depends on `matsim.runtime.eqasim`,
+  `matsim.runtime.java`, `matsim.scenario.supply.gtfs` and `matsim.scenario.supply.processed`.
+- `no_connection.resolve_no_connection` handles stays without a gate in a counted order (tour to car, tour to car
+  passenger, departure shift, kept); the stage logs the rates under `[portal_trips]` and warns above
+  `braunschweig.portal.no_connection_warn_share`. Keys and defaults: `portal_trips/config_keys.py`.
+- Status: implemented, effect not yet measured (WP-E run manifest owed).

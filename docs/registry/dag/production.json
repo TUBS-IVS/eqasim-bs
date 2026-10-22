@@ -610,6 +610,10 @@
   ],
   [
    "matsim.runtime.eqasim",
+   "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "matsim.runtime.eqasim",
    "matsim.output"
   ],
   [
@@ -651,6 +655,10 @@
   [
    "matsim.runtime.java",
    "braunschweig.freight.extraction_tool"
+  ],
+  [
+   "matsim.runtime.java",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "matsim.runtime.java",
@@ -727,6 +735,10 @@
   [
    "matsim.scenario.population",
    "matsim.simulation.prepare"
+  ],
+  [
+   "matsim.scenario.supply.gtfs",
+   "braunschweig.synthesis.portal_trips.stage"
   ],
   [
    "matsim.scenario.supply.gtfs",
