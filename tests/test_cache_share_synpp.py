@@ -12,6 +12,10 @@ from braunschweig import cache_share
 
 @pytest.fixture
 def pipeline(tmp_path, monkeypatch):
+    # The production launcher always runs the fork (content-addressed validity); install it here so
+    # the scenarios do not depend on whether an earlier test already patched synpp in this process.
+    from braunschweig import synpp_fork
+    synpp_fork.install()
     module_name = "shared_cache_probe"
     (tmp_path / (module_name + ".py")).write_text(
         "from pathlib import Path\n"
@@ -309,6 +313,11 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         token.write_text("changed", encoding="utf-8")
     assert run(target) == expected
     executions = ["executed", "child"] * (1 if scenario == "complete" else 2)
+    if scenario == "changed_parent":
+        # The changed token re-executes the primed parent (shared metadata never overrides the
+        # token), but its output is identical: the fork's early cutoff keeps the primed child, whose
+        # record holds the parent's digest, cached. Upstream synpp would re-execute the child too.
+        executions = ["executed", "child", "executed"]
     if scenario == "older_target_parent":
         executions = ["executed", "executed", "child", "child"]
     if scenario == "newer_target_child":

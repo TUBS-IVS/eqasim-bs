@@ -1,5 +1,11 @@
 # tests/test_synpp_fork_staleness.py
-"""Own-reason and parent-output staleness, checked against real synpp runs."""
+"""Own-reason and parent-output staleness, checked against real synpp runs.
+
+Two kinds of run appear here and must not be mixed up. ``_pristine_run`` is synpp 1.6.2's own
+``run()`` (legacy records, every descendant of a stale stage devalidated): the upstream-differential
+tests compare ``assess`` with what that function devalidates. ``_fork_run`` is the fork's
+``run()`` (output hashes, early cutoff): the fork tests compare ``assess`` with what it executes.
+"""
 import importlib
 import os
 import shutil
@@ -9,6 +15,19 @@ import textwrap
 import pytest
 import synpp
 import synpp.pipeline  # process_stages is looked up at call time: braunschweig.synpp_fork.install() may replace it
+
+from tests.synpp_pristine import upstream_run
+
+
+def _pristine_run(*args, **kwargs):
+    return upstream_run()(*args, **kwargs)
+
+
+def _fork_run(*args, **kwargs):
+    from braunschweig import synpp_fork
+    from braunschweig.synpp_fork import pipeline as fork
+    synpp_fork.install()
+    return fork.run(*args, **kwargs)
 
 PARENT = """
 from pathlib import Path
@@ -46,7 +65,7 @@ def project(tmp_path, monkeypatch):
 
     def run():
         reload()
-        return synpp.run([{"descriptor": "st_child"}], config, working_directory=str(working),
+        return _pristine_run([{"descriptor": "st_child"}], config, working_directory=str(working),
                          rerun_required=False)
 
     def registry():
@@ -183,46 +202,61 @@ def test_stale_ancestor_without_output_hash_means_certain_recompute(project):
     assert child.stale_if == ["st_parent"] and child.certain_recompute
     assert child.unhashed_ancestors == ["st_parent"]
     report = staleness.format_report(assessments)
-    assert ("RECOMPUTE st_child  [ancestor st_parent is stale and has no recorded output hash]"
+    assert ("RECOMPUTE st_child  [ancestor st_parent is stale; no recorded output hash cuts the cascade off]"
             in report)
     assert "STALE-IF" not in report
     assert "1 will recompute" in report.splitlines()[-1]
 
 
-def test_stale_ancestor_with_output_hash_stays_stale_if(project):
+def test_stale_ancestor_whose_digest_the_child_recorded_stays_stale_if(project):
+    """The child's own record decides (ruling R16-2): it holds the digest, so early cutoff can spare it."""
     from braunschweig.synpp_fork import metadata, staleness
     _, working, _, _, run, registry = project
     run()
     meta = metadata.read_meta(str(working))
-    parent_hash, _ = _parent_and_child_hashes(meta)
-    meta[parent_hash]["output_hash"] = {"format": 1, "digest": "abc"}
+    parent_hash, child_hash = _parent_and_child_hashes(meta)
+    meta[child_hash]["dependency_output_hashes"] = {parent_hash: "abc"}
     _remove_pickle(working, "st_parent")
     assessments = staleness.assess(registry(), str(working), meta, rerun_required=False)
     child = _by_name(assessments)["st_child"]
     assert child.stale_if == ["st_parent"] and not child.certain_recompute
+    assert child.unhashed_ancestors == []
     report = staleness.format_report(assessments)
-    assert ("STALE-IF st_child  [recomputes under synpp 1.6.2; the fork would reuse it if "
-            "st_parent output is unchanged]") in report
-    assert "RECOMPUTE" not in report
-    last = report.splitlines()[-1]
-    assert "1 may recompute" in last and "synpp 1.6.2 recomputes" in last
+    assert "STALE-IF st_child  [if output of st_parent changes]" in report
+    assert "RECOMPUTE" not in report and "synpp 1.6.2" not in report
+    assert "1 may recompute (stale ancestor, early cutoff decides)" in report.splitlines()[-1]
 
 
-def test_stale_if_label_promises_early_cutoff_only_once_the_fork_loop_is_active(project, monkeypatch):
+def test_a_parent_output_hash_does_not_help_a_child_that_recorded_none(project):
+    """The parent carries a digest, the child's record has none for it: nothing to compare, certain recompute."""
     from braunschweig.synpp_fork import metadata, staleness
     _, working, _, _, run, registry = project
     run()
     meta = metadata.read_meta(str(working))
-    parent_hash, _ = _parent_and_child_hashes(meta)
+    parent_hash, child_hash = _parent_and_child_hashes(meta)
     meta[parent_hash]["output_hash"] = {"format": 1, "digest": "abc"}
+    assert "dependency_output_hashes" not in meta[child_hash]
+    _remove_pickle(working, "st_parent")
+    child = _by_name(staleness.assess(registry(), str(working), meta, rerun_required=False))["st_child"]
+    assert child.certain_recompute and child.unhashed_ancestors == ["st_parent"]
+
+
+def test_stale_if_label_names_synpp_1_6_2_while_the_early_cutoff_flag_is_off(project, monkeypatch):
+    from braunschweig.synpp_fork import metadata, staleness
+    _, working, _, _, run, registry = project
+    run()
+    meta = metadata.read_meta(str(working))
+    parent_hash, child_hash = _parent_and_child_hashes(meta)
+    meta[child_hash]["dependency_output_hashes"] = {parent_hash: "abc"}
     _remove_pickle(working, "st_parent")
     assessments = staleness.assess(registry(), str(working), meta, rerun_required=False)
-    assert staleness.EARLY_CUTOFF_ACTIVE is False        # Phase 4 flips it together with the fork's run()
-    monkeypatch.setattr(staleness, "EARLY_CUTOFF_ACTIVE", True)
+    assert staleness.EARLY_CUTOFF_ACTIVE is True         # the fork's run() decides children by output hash
+    monkeypatch.setattr(staleness, "EARLY_CUTOFF_ACTIVE", False)
     report = staleness.format_report(assessments)
-    assert "STALE-IF st_child  [if output of st_parent changes]" in report
-    assert "synpp 1.6.2" not in report
-    assert "1 may recompute (stale ancestor, early cutoff decides)" in report.splitlines()[-1]
+    assert ("STALE-IF st_child  [recomputes under synpp 1.6.2; the fork would reuse it if "
+            "st_parent output is unchanged]") in report
+    last = report.splitlines()[-1]
+    assert "1 may recompute" in last and "synpp 1.6.2 recomputes" in last
 
 
 def test_missing_parent_timestamp_is_reported_as_malformed_meta(project):
@@ -295,14 +329,18 @@ def test_missing_cache_directory_alone_makes_the_stage_stale(project):
 
 
 DIAMOND = {
+    # The token covers the token file AND the payload file; the output is the payload: a token
+    # edit re-executes dm_a with an identical output, a payload edit with a changed one.
     "dm_a": """
 from pathlib import Path
 def configure(context):
     context.config("token_file")
+    context.config("payload_file")
 def validate(context):
-    return {"format": 2, "python": "3.10", "modules": {"helper": Path(context.config("token_file")).read_text()}}
+    text = Path(context.config("token_file")).read_text() + Path(context.config("payload_file")).read_text()
+    return {"format": 2, "python": "3.10", "modules": {"helper": text}}
 def execute(context):
-    return 1
+    return int(Path(context.config("payload_file")).read_text())
 """,
     "dm_b": """
 def configure(context):
@@ -326,14 +364,16 @@ def execute(context):
 }
 
 
-@pytest.fixture
-def diamond(tmp_path, monkeypatch):
+def _build_diamond(tmp_path, monkeypatch, run_function):
+    """dm_a -> (dm_b, dm_c) -> dm_d, populated by ``run_function`` (pristine or fork run)."""
     for name, source in DIAMOND.items():
         (tmp_path / (name + ".py")).write_text(textwrap.dedent(source), encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
     token = tmp_path / "token.txt"
     token.write_text("v1", encoding="utf-8")
-    config = {"token_file": str(token)}
+    payload = tmp_path / "payload.txt"
+    payload.write_text("1", encoding="utf-8")
+    config = {"token_file": str(token), "payload_file": str(payload)}
     working = tmp_path / "cache"
     working.mkdir()
 
@@ -348,11 +388,23 @@ def diamond(tmp_path, monkeypatch):
 
     def run():
         reload()
-        return synpp.run([{"descriptor": "dm_d"}], config, working_directory=str(working),
-                         rerun_required=False, verbose=True)
+        return run_function([{"descriptor": "dm_d"}], config, working_directory=str(working),
+                            rerun_required=False, verbose=True)
 
     run()
     return tmp_path, working, token, registry, run
+
+
+@pytest.fixture
+def diamond(tmp_path, monkeypatch):
+    """Legacy records written by synpp 1.6.2's own run(); ``run`` is that run too."""
+    return _build_diamond(tmp_path, monkeypatch, _pristine_run)
+
+
+@pytest.fixture
+def fork_diamond(tmp_path, monkeypatch):
+    """Records written by the fork's run() (output hashes everywhere); ``run`` is the fork's run."""
+    return _build_diamond(tmp_path, monkeypatch, _fork_run)
 
 
 def _own_stale_plus_descendants(registry_dict, assessments):
@@ -433,10 +485,10 @@ CHAIN = {
 
 
 def test_child_inherits_only_from_non_stale_dependencies(tmp_path, monkeypatch):
-    """G stale and unhashed, X stale for its OWN reason (with a recorded output hash), child C.
+    """G stale and unhashed, X stale for its OWN reason, child C that recorded X's digest.
 
     C is STALE-IF on X; the unhashed grandparent G must not turn C into a certain RECOMPUTE,
-    because X's recorded digest can still stop the propagation (early cutoff).
+    because C's recorded digest of X can still stop the propagation (early cutoff).
     """
     from braunschweig.synpp_fork import metadata, staleness
     for name, source in CHAIN.items():
@@ -454,7 +506,7 @@ def test_child_inherits_only_from_non_stale_dependencies(tmp_path, monkeypatch):
     for name in CHAIN:
         monkeypatch.delitem(sys.modules, name, raising=False)
     importlib.invalidate_caches()
-    synpp.run([{"descriptor": "ch_c"}], {}, working_directory=str(working), rerun_required=False)
+    _pristine_run([{"descriptor": "ch_c"}], {}, working_directory=str(working), rerun_required=False)
     meta = metadata.read_meta(str(working))
 
     def hash_of(name):
@@ -462,7 +514,7 @@ def test_child_inherits_only_from_non_stale_dependencies(tmp_path, monkeypatch):
 
     _remove_pickle(working, "ch_g")                       # G: stale (cache_missing), no output hash
     meta[hash_of("ch_h")]["updated"] += 10.0              # X: own reason via the legacy rule on H
-    meta[hash_of("ch_x")]["output_hash"] = {"format": 1, "digest": "abc"}
+    meta[hash_of("ch_c")]["dependency_output_hashes"] = {hash_of("ch_x"): "abc"}
     result = _by_name(staleness.assess(build(), str(working), meta, rerun_required=False))
     assert result["ch_g"].reasons == ["cache_missing"]
     assert result["ch_x"].reasons == ["parent_updated:ch_h"]
@@ -519,13 +571,13 @@ def test_assess_agrees_with_synpp_over_a_three_level_chain(tmp_path, monkeypatch
     working = tmp_path / "cache"
     working.mkdir()
     reload()
-    synpp.run([{"descriptor": "ln_d"}], config, working_directory=str(working), rerun_required=False)
+    _pristine_run([{"descriptor": "ln_d"}], config, working_directory=str(working), rerun_required=False)
     token.write_text("v2", encoding="utf-8")
     reload()
     assessments = staleness.assess(synpp.pipeline.process_stages([{"descriptor": "ln_d"}], config),
                                    str(working), metadata.read_meta(str(working)), rerun_required=False)
     reload()
-    actual = synpp.run([{"descriptor": "ln_d"}], config, working_directory=str(working),
+    actual = _pristine_run([{"descriptor": "ln_d"}], config, working_directory=str(working),
                        rerun_required=False, verbose=True)["stale"]
     by_name = _by_name(assessments)
     assert by_name["ln_a"].reasons == ["token_changed:helper"]
@@ -550,20 +602,22 @@ CUTOFF = {"co_g": _stage(), "co_b": _stage("co_g"), "co_c": _stage("co_b")}
 
 
 def test_hashed_intermediate_is_the_cutoff_point_for_the_unhashed_flag(tmp_path, monkeypatch):
-    """G stale and unhashed -> B valid but with an output hash -> C.
+    """G stale and unhashed -> B valid -> C that recorded B's digest.
 
-    B recomputes for certain (its parent G has no digest), but B's own recorded digest can
-    still spare C once the fork compares it, so C is STALE-IF, not a certain RECOMPUTE.
+    B recomputes for certain (its record holds no digest of G), but C's recorded digest of B can
+    still spare C once the fork compares it with B's new output, so C is STALE-IF, not a
+    certain RECOMPUTE.
     """
     from braunschweig.synpp_fork import metadata, staleness
     reload = _write_modules(tmp_path, monkeypatch, CUTOFF)
     working = tmp_path / "cache"
     working.mkdir()
     reload()
-    synpp.run([{"descriptor": "co_c"}], {}, working_directory=str(working), rerun_required=False)
+    _pristine_run([{"descriptor": "co_c"}], {}, working_directory=str(working), rerun_required=False)
     meta = metadata.read_meta(str(working))
     b_hash = next(h for h in meta if h.split("__")[0] == "co_b")
-    meta[b_hash]["output_hash"] = {"format": 1, "digest": "abc"}
+    c_hash = next(h for h in meta if h.split("__")[0] == "co_c")
+    meta[c_hash]["dependency_output_hashes"] = {b_hash: "abc"}
     _remove_pickle(working, "co_g")
     reload()
     result = _by_name(staleness.assess(synpp.pipeline.process_stages([{"descriptor": "co_c"}], {}),
@@ -593,7 +647,7 @@ def _ephemeral_project(tmp_path, monkeypatch, target):
 
     def run():
         reload()
-        return synpp.run([{"descriptor": target}], config, working_directory=str(working),
+        return _pristine_run([{"descriptor": target}], config, working_directory=str(working),
                          rerun_required=False, verbose=True)
     run()
     return working, token, registry, run
@@ -644,3 +698,76 @@ def test_all_ephemeral_ancestry_is_ignored_by_synpp_and_by_assess(tmp_path, monk
     assert sum(a.ephemeral_uncached for a in assessments.values()) == 2
     assert set(run()["stale"]) == set()
     assert "# WARNING: 2 ephemeral stage(s)" in staleness.format_report(assessments)
+
+
+# --- the fork's run(): early cutoff, mirrored exactly by assess (rulings R16-2 and R16-4) -------------
+
+def _scenario_payload_changed(working, token, meta):
+    (token.parent / "payload.txt").write_text("3", encoding="utf-8")
+    return meta
+
+
+def _names(hashes):
+    return {h.split("__")[0] for h in hashes}
+
+
+@pytest.mark.parametrize("scenario, expected", [
+    (_scenario_token_changed, {"dm_a"}),                                    # dm_a's output is unchanged
+    (_scenario_payload_changed, {"dm_a", "dm_b", "dm_c", "dm_d"}),          # dm_a's output changed
+    (_scenario_pickle_removed, {"dm_b"}),                                   # dm_b rebuilds identically
+])
+def test_the_fork_executes_own_stale_stages_plus_stale_if_stages_whose_ancestor_output_changed(
+        fork_diamond, scenario, expected):
+    """Pristine synpp would execute every descendant; the fork executes only what really changed."""
+    from braunschweig.synpp_fork import metadata, staleness
+    _, working, token, registry, run = fork_diamond
+    metadata.write_meta(scenario(working, token, metadata.read_meta(str(working))), str(working))
+    assessments = staleness.assess(registry(), str(working), metadata.read_meta(str(working)),
+                                   rerun_required=False)
+    own = {a.stage for a in assessments.values() if a.stale}
+    maybe = {a.stage for a in assessments.values() if not a.stale and a.stale_if}
+    assert not any(a.certain_recompute for a in assessments.values())       # every record has digests
+    executed = _names(run()["stale"])
+    assert executed == expected
+    assert own <= executed <= own | maybe
+
+
+@pytest.mark.parametrize("unrecorded, expected", [
+    ((), {"ln_a"}),
+    (("ln_c", "ln_d"), {"ln_a"}),                      # unrecorded edges behind a stage that can still be spared
+    (("ln_b",), {"ln_a", "ln_b"}),
+    (("ln_b", "ln_c"), {"ln_a", "ln_b", "ln_c"}),
+    (("ln_b", "ln_c", "ln_d"), {"ln_a", "ln_b", "ln_c", "ln_d"}),
+])
+def test_assess_names_exactly_the_stages_the_fork_cannot_spare(tmp_path, monkeypatch, unrecorded, expected):
+    """a -> b -> c -> d, a re-executes with an identical output; a child that recorded no digest of its
+    parent recomputes, and the chain breaks exactly where such a record is missing (ruling R16-2)."""
+    from braunschweig.synpp_fork import metadata, staleness
+    reload = _write_modules(tmp_path, monkeypatch, LINEAR)
+    token = tmp_path / "token.txt"
+    token.write_text("v1", encoding="utf-8")
+    config = {"token_file": str(token)}
+    working = tmp_path / "cache"
+    working.mkdir()
+
+    def run():
+        reload()
+        return _fork_run([{"descriptor": "ln_d"}], config, working_directory=str(working),
+                         rerun_required=False, verbose=True)
+
+    run()
+    meta = metadata.read_meta(str(working))
+    parent_of = {"ln_b": "ln_a", "ln_c": "ln_b", "ln_d": "ln_c"}
+
+    def hash_of(name):
+        return next(h for h in meta if h.split("__")[0] == name)
+
+    for child in unrecorded:
+        del meta[hash_of(child)]["dependency_output_hashes"][hash_of(parent_of[child])]
+    metadata.write_meta(meta, str(working))
+    token.write_text("v2", encoding="utf-8")
+    reload()
+    assessments = staleness.assess(synpp.pipeline.process_stages([{"descriptor": "ln_d"}], config),
+                                   str(working), metadata.read_meta(str(working)), rerun_required=False)
+    assert {a.stage for a in assessments.values() if a.stale or a.certain_recompute} == expected
+    assert _names(run()["stale"]) == expected

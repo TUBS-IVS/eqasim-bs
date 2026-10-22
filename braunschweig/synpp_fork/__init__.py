@@ -26,6 +26,8 @@ UPSTREAM_PIPELINE_SHA256 = "cd2952b78113949b5b25078b4ec4974fe24aa754efcdd99b0c3f
 PATCHES = (
     "deterministic-propagation",   # process_stages from braunschweig.synpp_deterministic (ADR-0105)
     "semantic-module-hash",        # get_stage_hash digests the AST, not the raw text
+    "content-addressed-validity",  # run(): own-reason staleness from staleness.assess, output hashes,
+                                   # per-child early cutoff instead of devalidating every descendant
 )
 
 
