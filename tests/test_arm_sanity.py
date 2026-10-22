@@ -16,6 +16,7 @@ import gzip
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -699,7 +700,13 @@ def cached_pipeline_lines(**kwargs) -> list[str]:
 
 
 def set_age(path: Path, seconds_ago: int) -> None:
-    now = path.stat().st_mtime
+    """Set the modification time of ``path`` to ``seconds_ago`` before the wall clock (negative: in the future).
+
+    The base is the clock, not the file's current mtime: relative to the file, ``set_age(f, 600)`` followed by
+    ``set_age(f, -600)`` only restores the original write time, and a log written a few milliseconds after the fixture's own
+    log then shares its coarse kernel timestamp on Linux, so ``newest_first`` keeps the given order (observed under WSL).
+    """
+    now = time.time()
     os.utime(path, (now - seconds_ago, now - seconds_ago))
 
 

@@ -1039,13 +1039,29 @@ def calibrate_option_set(universes: Universes, options: pd.DataFrame, tariffs_by
         notes["commuters"], notes["wolfsburg"])
 
 
-def git_state() -> str:
+# Seen from WSL, a Windows checkout reports every CRLF file as modified and a status/diff call hashes all of them
+# (22-28 s measured on 2026-10-22); the former 20 s limit then killed git and left an index.lock behind.
+GIT_STATE_TIMEOUT_SECONDS = 120
+
+
+def git_state(repo: Path = REPO) -> str:
+    """The HEAD commit of ``repo``, marked when tracked files differ from it (untracked files do not count).
+
+    Line-ending-only differences are ignored (``--ignore-cr-at-eol``): git inside WSL sees a Windows checkout with
+    CRLF working files as 2,850 modified files although no content changed, which would falsely mark every WSL run as
+    produced on a dirty tree. ``--numstat`` is used because git 2.43 still lists such files under ``--name-only``.
+    A git call that exceeds the timeout is reported as such; "no git checkout" is reserved for a missing git or a
+    directory outside a repository.
+    """
     try:
-        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True,
-                                timeout=20).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO, capture_output=True,
-                               text=True, check=True, timeout=20).stdout.strip()
-        return commit + (" (working tree has uncommitted changes)" if dirty else "")
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True,
+                                timeout=GIT_STATE_TIMEOUT_SECONDS).stdout.strip()
+        changed = subprocess.run(["git", "diff", "--ignore-cr-at-eol", "--numstat", "HEAD", "--"], cwd=repo,
+                                 capture_output=True, text=True, check=True,
+                                 timeout=GIT_STATE_TIMEOUT_SECONDS).stdout.strip()
+        return commit + (" (working tree has uncommitted changes)" if changed else "")
+    except subprocess.TimeoutExpired as error:
+        return f"unknown (git timed out after {error.timeout:.0f} s)"
     except (OSError, subprocess.SubprocessError):
         return "unknown (no git checkout)"
 

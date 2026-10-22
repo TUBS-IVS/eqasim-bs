@@ -371,6 +371,7 @@ aliases:
   data.spatial.codes: eqasim_common.spatial.entd_codes
   synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  matsim.scenario.supply.gtfs: braunschweig.matsim.scenario.supply_gtfs
   # Reporting-day view of the day (ADR-0104, issue #244). This workflow does NOT run the
   # commute-day-state model -- its donor pool is built from the raw MiD 2023 delivery and is
   # specific to the MiD/production workflow -- so the two reporting-day aliases point at the

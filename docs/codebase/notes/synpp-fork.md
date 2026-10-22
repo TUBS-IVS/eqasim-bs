@@ -18,7 +18,7 @@ smoke-checked on real stages there.
 | `braunschweig/synpp_fork/__init__.py` (`install`, `PATCHES`, `UPSTREAM_PIPELINE_SHA256`) | Installs the project's synpp patches before a registry is built: first `braunschweig.synpp_deterministic.install()` (deterministic implicit-config propagation, ADR-0105, with its synpp version guard), then replaces `synpp.pipeline.get_stage_hash`, `synpp.pipeline.run` and the re-exported `synpp.run` by the copies in `pipeline.py`. Logs a warning when the installed `synpp/pipeline.py` differs from the pinned SHA. |
 | `braunschweig/synpp_fork/pipeline.py` (`get_stage_hash`, `run`) | The vendored copy of synpp 1.6.2's `run()` and `get_stage_hash()`. Three patches, each marked `# PATCH <name>` in the source and named in `PATCHES`: `deterministic-propagation` (`process_stages` from `braunschweig.synpp_deterministic`), `semantic-module-hash` (`get_stage_hash` digests the AST via `braunschweig.synpp_tokens.semantic_module_digest`) and `content-addressed-validity` (the `run()` loop, see "The `run()` loop under the fork"). |
 | `braunschweig/synpp_fork/output_hash.py` (`hash_stage_output`, `OUTPUT_HASH_FORMAT`) | Content hash of a stage's output (pickle plus every file of its cache directory). Used by the migration and by the fork's `run()` after every executed stage. |
-| `braunschweig/synpp_tokens.py` (`semantic_module_digest`, `source_token`, `legacy_source_token`, `TOKEN_FORMAT`) | Semantic source digests and the structured `validate()` token of the 30 source-hashing stages. Lives outside the package because the stage modules import it. |
+| `braunschweig/synpp_tokens.py` (`semantic_module_digest`, `source_token`, `legacy_source_token`, `TOKEN_FORMAT`) | Semantic source digests and the structured `validate()` token of the 31 source-hashing stages. Lives outside the package because the stage modules import it. |
 | `braunschweig/synpp_fork/registry.py` (`load_settings`, `build_registry`) | Composes the base config (plus an optional overlay through `braunschweig.config_compose`), validates it (empty config or missing `run` list raise `ValueError` naming the file) and builds the synpp stage registry read-only, with the production stage hashes. |
 | `braunschweig/synpp_fork/metadata.py` (`read_meta`, `write_meta`) | Reads and writes synpp's `pipeline.json` with synpp's own backup convention. |
 | `braunschweig/synpp_fork/staleness.py` (`assess`, `format_report`, `unexpected`) | Explains, per stage, whether the cache entry will be reused and why not. Replicates synpp 1.6.2's own devalidation steps and is the function the fork's `run()` calls for the stages that are stale for their own reasons, so the pre-run report and the run cannot disagree. Differential tests (`tests/test_synpp_fork_staleness.py`) compare it with synpp 1.6.2's pristine `run()` (`tests/synpp_pristine.py`) and with the fork. |
@@ -181,7 +181,7 @@ minor upgrade recomputes every source-hashing stage once, and the explainer show
 difference. The golden test skips on a minor other than the pinned one.
 
 The coverage test `tests/test_token_refactor_coverage.py` takes the stage set from
-`scripts/audit_synpp_helper_hash.py` and pins its size (30 on 2026-10-21); adding or removing a
+`scripts/audit_synpp_helper_hash.py` and pins its size (31 on 2026-10-22); adding or removing a
 source-hashing stage means updating that number deliberately together with
 `docs/codebase/notes/synpp-helper-hash-audit.md`.
 
