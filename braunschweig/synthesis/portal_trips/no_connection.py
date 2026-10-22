@@ -7,7 +7,9 @@ A pt stay whose ``choose_pt_gates`` result has no gate is resolved by a counted 
 2. ``tour_to_car_passenger``: the same with ``car_passenger`` (needs ``can_car_passenger``);
 3. ``departure_shifted``: the stay's own legs move to the first grid time ``t + k * shift_step_s``
    (``k >= 1``, at most ``t + shift_window_s``) at which the probe finds a gate. Variants per step, in
-   preference order: outbound only, return only, both. An outbound shift is allowed only while
+   preference order outbound only, return only, both (a design call: the "both" variant moves two legs of
+   the stay, each within its own bounds with the stay and return durations unchanged, so it is tried
+   only when neither leg alone yields a gate at that step). An outbound shift is allowed only while
    ``min_stay_s`` remains between the shifted outbound arrival and the return departure (without a
    return leg: while the arrival stays within ``bound_s``); a return shift only while the shifted return
    arrival stays within ``bound_s`` and before the departure of the person's next trip;
@@ -16,7 +18,9 @@ A pt stay whose ``choose_pt_gates`` result has no gate is resolved by a counted 
 
 ``gate_found`` stays are untouched. A whole-tour switch also switches every other stay of the same
 home-based tour (its modes row changes; ``choose_gates`` later places it at a road gate), whatever its
-current mode, so that the modes table and the legs of the tour agree. The probe is called once per grid
+current mode, so that the modes table and the legs of the tour agree; such a stay is counted under the
+switch label even when it had a gate, so ``gate_found`` counts only the stays whose tour was NOT switched.
+Invalid shift parameters raise ``ValueError`` (a non-positive step would silently disable the shift path). The probe is called once per grid
 step for all unresolved stays, never per stay. All actions are logged as rates over the pt stays.
 """
 from __future__ import annotations
@@ -43,14 +47,8 @@ REASON_NO_PT_CONNECTION = "no_pt_connection"
 HOME = "home"
 
 
-def tour_trip_indices(trips: pd.DataFrame, person_id, trip_index) -> np.ndarray:
-    """Trip indices of the home-based tour containing the trip.
-
-    From the last trip with ``preceding_purpose == "home"`` at or before ``trip_index`` to the next trip
-    with ``following_purpose == "home"`` at or after it (the first / last trip of the person when no such
-    trip exists).
-    """
-    own = trips[trips["person_id"] == person_id].sort_values("trip_index")
+def _tour_of(own: pd.DataFrame, person_id, trip_index) -> np.ndarray:
+    """``tour_trip_indices`` on the already sorted trips of ONE person."""
     index = own["trip_index"].to_numpy()
     if trip_index not in index:
         raise ValueError(f"[portal_trips] person {person_id} has no trip {trip_index}")
@@ -59,6 +57,16 @@ def tour_trip_indices(trips: pd.DataFrame, person_id, trip_index) -> np.ndarray:
     start = starts.max() if len(starts) else index.min()
     end = ends.min() if len(ends) else index.max()
     return index[(index >= start) & (index <= end)]
+
+
+def tour_trip_indices(trips: pd.DataFrame, person_id, trip_index) -> np.ndarray:
+    """Trip indices of the home-based tour containing the trip.
+
+    From the last trip with ``preceding_purpose == "home"`` at or before ``trip_index`` to the next trip
+    with ``following_purpose == "home"`` at or after it (the first / last trip of the person when no such
+    trip exists).
+    """
+    return _tour_of(trips[trips["person_id"] == person_id].sort_values("trip_index"), person_id, trip_index)
 
 
 def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.DataFrame,
@@ -76,6 +84,10 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     plus ``no_connection_action`` (None for stays that are not pt); ``pt_gates_out`` has one row per stay
     that is still pt.
     """
+    if not shift_step_s > 0 or not shift_window_s >= 0 or not min_stay_s >= 0 or not np.isfinite(bound_s):
+        raise ValueError(f"[portal_trips] invalid shift parameters: shift_step_s={shift_step_s} (must be > 0), "
+                         f"shift_window_s={shift_window_s} (>= 0), min_stay_s={min_stay_s} (>= 0), "
+                         f"bound_s={bound_s} (finite)")
     if len(modes) != len(stays):
         raise ValueError(f"[portal_trips] modes ({len(modes)} rows) is not aligned with stays ({len(stays)} rows)")
     stays = stays.reset_index(drop=True)
@@ -114,8 +126,18 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     ret_idx = stays["return_trip_index"].to_numpy()[pt_rows]
     out_pos = np.array([trip_pos[p, int(t)] for p, t in zip(pt_persons, out_idx)])
     ret_pos = np.array([trip_pos[p, int(t)] if h else -1 for p, t, h in zip(pt_persons, ret_idx, has_ret)])
-    nxt_dep = np.array([dep[trip_pos[p, int(t) + 1]] if h and (p, int(t) + 1) in trip_pos else np.inf
-                        for p, t, h in zip(pt_persons, ret_idx, has_ret)])
+    # Per person, once: the sorted trips (tours) and the stay rows (tour switch).
+    sorted_trips = {p: g.sort_values("trip_index") for p, g in trips.groupby("person_id", sort=False)}
+    stay_rows = {}
+    for row, p in enumerate(persons):
+        stay_rows.setdefault(p, []).append(row)
+
+    def next_departure(person, trip):
+        later = sorted_trips[person]["trip_index"].to_numpy()
+        later = later[later > trip]
+        return dep[trip_pos[person, int(later.min())]] if len(later) else np.inf
+
+    nxt_dep = np.array([next_departure(p, t) if h else np.inf for p, t, h in zip(pt_persons, ret_idx, has_ret)])
 
     action = np.full(n_pt, None, dtype=object)
     action[pt_gates["gate_id"].notna().to_numpy()] = ACTION_GATE_FOUND
@@ -124,9 +146,10 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
 
     def switch_tour(stay_row: int, new_mode: str, label: str) -> None:
         person = persons[stay_row]
-        tour = {int(i) for i in tour_trip_indices(trips, person, int(stays["outbound_trip_index"].iat[stay_row]))}
-        for row in range(len(stays)):
-            if persons[row] != person or row in switched:
+        tour = {int(i) for i in _tour_of(sorted_trips[person], person,
+                                         int(stays["outbound_trip_index"].iat[stay_row]))}
+        for row in stay_rows[person]:
+            if row in switched:
                 continue
             if int(stays["outbound_trip_index"].iat[row]) not in tour:
                 continue
@@ -205,7 +228,7 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     still_pt = np.array([int(pt_rows[k]) not in switched for k in range(n_pt)])
     gates_out = gates_out[still_pt].reset_index(drop=True)
     counts = pd.Series(action).value_counts()
-    logger.info("[portal_trips.no_connection] %d pt stays: %s", n_pt,
+    logger.info("[portal_trips.no_connection] %d pt stays (gate_found = tour not switched): %s", n_pt,
                 ", ".join(f"{a} {int(counts.get(a, 0))}/{n_pt} ({100.0 * counts.get(a, 0) / n_pt:.1f}%)"
                           for a in ACTIONS))
     return modes_out[MODE_COLUMNS + ["no_connection_action"]], trips_out, gates_out

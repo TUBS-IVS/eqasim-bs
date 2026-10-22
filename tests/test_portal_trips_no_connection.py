@@ -213,3 +213,64 @@ def test_misaligned_inputs_raise():
     with pytest.raises(ValueError):
         nc.resolve_no_connection(stays, _chain(), _modes(1), other, _gates([None]), _no_probe,
                                  fallback_gates=_fallback(1), **KW)
+
+
+@pytest.mark.parametrize("override", [dict(shift_step_s=0.0), dict(shift_step_s=-1.0), dict(shift_window_s=-1.0),
+                                      dict(min_stay_s=-1.0), dict(bound_s=float("inf")),
+                                      dict(bound_s=float("nan"))])
+def test_invalid_shift_parameters_raise(override):
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    with pytest.raises(ValueError):
+        nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]),
+                                 _no_probe, fallback_gates=_fallback(1), **{**KW, **override})
+
+
+def test_return_bound_uses_next_existing_trip_index():
+    trips = _chain()
+    trips.loc[3, "departure_time"] = 60500 + 1000
+    trips["trip_index"] = [0, 1, 2, 10, 11]  # non-consecutive: the next trip after 2 is 10
+    seen = []
+
+    def probe(positions, out_dep, ret_dep):
+        seen.append(ret_dep.tolist())
+        return _gates([None] * len(positions))
+
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    nc.resolve_no_connection(stays, trips, _modes(1), _avail_int(False, False), _gates([None]), probe,
+                             fallback_gates=_fallback(1), **KW)
+    assert not any(any(np.isclose(r, 60000 + 1800)) for r in seen)
+
+
+def test_both_variant_found_only_when_neither_leg_alone_works():
+    def probe(positions, out_dep, ret_dep):
+        found = np.isclose(out_dep, 40000 + 1800) & np.isclose(ret_dep, 60000 + 1800)
+        return _gates(["s" if f else None for f in found])
+
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    m, t, g = nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]),
+                                       probe, fallback_gates=_fallback(1), **KW)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_DEPARTURE_SHIFTED]
+    assert t.loc[1, "departure_time"] == 41800 and t.loc[2, "departure_time"] == 61800
+
+
+def test_mixed_outcome_keeps_pt_gates_aligned():
+    def trips_for(person, mode="pt"):
+        return _trips(person, [("home", "work", mode, 3600, 4000), ("work", "out", mode, 40000, 40500),
+                               ("out", "home", mode, 60000, 60500)])
+
+    trips = pd.concat([trips_for(p) for p in (1, 2, 3, 4)], ignore_index=True)
+    stays = pd.DataFrame([_stay(p, 1, 2) for p in (1, 2, 3, 4)])
+    availability = pd.DataFrame({"can_car": [False, True, False, False], "can_car_passenger": False},
+                                index=pd.Index([1, 2, 3, 4], name="person_id"))
+    fallback = pd.DataFrame({"gate_id": ["f1", "f2", "f3", "f4"], "x": [10.0, 20.0, 30.0, 40.0], "y": 0.0})
+
+    def probe(positions, out_dep, ret_dep):
+        found = np.isclose(out_dep, 40000 + 1800) & (positions == 2)
+        return _gates(["shift" if f else None for f in found])
+
+    m, t, g = nc.resolve_no_connection(stays, trips, _modes(4), availability, _gates(["found", None, None, None]),
+                                       probe, fallback_gates=fallback, **KW)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_GATE_FOUND, nc.ACTION_TOUR_TO_CAR,
+                                                  nc.ACTION_DEPARTURE_SHIFTED, nc.ACTION_KEPT]
+    assert g["gate_id"].tolist() == ["found", "shift", "f4"]
+    assert g["x"].iloc[2] == 40.0
