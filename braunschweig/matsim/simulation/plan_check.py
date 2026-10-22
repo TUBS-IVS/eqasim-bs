@@ -54,15 +54,16 @@ DEFAULT_LEG_MAX_DURATION_S = 10800.0
 #: ASSUMPTION (ADR-0146): the share of frozen resident plans that may be late or non-monotonic; the A/B calibrates it.
 KEY_MAX_FROZEN_DEFECT_SHARE = "braunschweig.plan_check.max_frozen_defect_share"
 DEFAULT_MAX_FROZEN_DEFECT_SHARE = 0.005
-#: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
-#: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
 #: Leg attribute that eqasim stamps on a leg its router replaced by a walk (value: the mode that was requested,
 #: ``pt``); the Java constant carries the same name (eqasim-bs#465).
 WALK_FALLBACK_ATTRIBUTE = "walkFallbackFrom"
 #: ASSUMPTION (#465): the share of the legs of frozen resident tours that may be pt trips realised as walks. It
-#: is a threshold for flagging a broken pt router for tours the mode choice never re-chooses, not a reference.
+#: is a threshold for flagging a symptom (e.g. no timetable connection or a missing stop) for tours the mode
+#: choice never re-chooses, not a reference value and not proof of a broken router.
 KEY_MAX_FROZEN_PT_AS_WALK_SHARE = "braunschweig.plan_check.max_frozen_pt_as_walk_share"
 DEFAULT_MAX_FROZEN_PT_AS_WALK_SHARE = 0.02
+#: false -> above ``max_frozen_defect_share`` the check logs at ERROR and continues; true -> it raises. Default
+#: false: the threshold is an ASSUMPTION and becomes a failure only after the A/B of #443 calibrated it (ADR-0146).
 KEY_FAIL_ON_THRESHOLD = "braunschweig.plan_check.fail_on_threshold"
 DEFAULT_FAIL_ON_THRESHOLD = False
 
@@ -308,6 +309,12 @@ def check_thresholds(summary: dict, max_frozen_defect_share: float, max_frozen_p
     return violations
 
 
+def _format_by_hour(by_hour: dict) -> dict:
+    """The per-hour counts ordered by numeric hour, with ``unknown`` last."""
+    known = sorted((key for key in by_hour if key != "unknown"), key=int)
+    return {key: by_hour[key] for key in known + (["unknown"] if "unknown" in by_hour else [])}
+
+
 def _log_summary(summary: dict) -> None:
     for subpopulation, classes in summary["subpopulations"].items():
         for name, block in classes.items():
@@ -320,7 +327,7 @@ def _log_summary(summary: dict) -> None:
                         block["n_plans_non_monotonic"], 100.0 * block["share_plans_non_monotonic"],
                         block["n_walk_legs_over"], block["n_bicycle_legs_over"], block["n_legs_over_duration"],
                         block["n_legs"], block["n_pt_as_walk"], 100.0 * block["share_pt_as_walk"],
-                        block["n_pt_as_walk_attr_without_walk"], block["pt_as_walk_by_hour"])
+                        block["n_pt_as_walk_attr_without_walk"], _format_by_hour(block["pt_as_walk_by_hour"]))
 
 
 def run(context, config_name: str) -> dict:
