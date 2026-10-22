@@ -569,6 +569,49 @@ def test_a_stay_without_a_pt_stay_needs_no_router():
     assert report["n_pt_stays"] == 0 and report["no_connection_actions"] == {}
 
 
+def test_a_kept_stay_without_a_directional_exit_stop_takes_the_all_stops_fallback_and_logs_it(caplog):
+    fixture = _fixture()
+    # Only the east route exists: person 2's point lies west, so no exit stop heads toward it.
+    fixture["schedule"] = Schedule(fixture["schedule"].stops, fixture["schedule"].routes[:1])
+    with caplog.at_level("INFO", logger=stage.logger.name):
+        out = stage.build_portal_trips(**fixture)
+    report = out["report"]
+    assert report["pt_gate_reasons"] == {"no_gate_in_direction": 1}
+    assert report["no_connection_actions"] == {"kept_no_connection": 1}
+    assert report["n_kept_fallback_all_stops"] == 1
+    assert out["anchors"]["gate_id"].tolist() == ["gate_e", "hbf"]
+    assert any("all-stops fallback 1/1" in r.getMessage() for r in caplog.records)
+
+
+def test_the_probe_shifts_the_arrivals_by_the_same_amount_as_the_departures():
+    fixture = _fixture()
+    return_tasks = []
+
+    def router(tasks):
+        # Return connects only when the (re-entry) departure lies beyond the planned one: 20:00 = the planned
+        # return arrival, because the gate is at home (share 1). A shifted departure with an UNshifted arrival
+        # would leave the re-entry at 72000 s and never connect.
+        is_return = tasks["identifier"].str.endswith(":ret")
+        return_tasks.extend(tasks.loc[is_return, "departure_time"].tolist())
+        ok = set(tasks.loc[is_return & (tasks["departure_time"] > 72000.0), "identifier"]) |             set(tasks.loc[~is_return, "identifier"])
+        return _router(connects=lambda i: i in ok)(tasks)
+
+    fixture["router"] = router
+    report = stage.build_portal_trips(**fixture)["report"]
+    assert report["no_connection_actions"] == {"departure_shifted": 1}
+    assert 72000.0 + 1800.0 in return_tasks
+    assert report["n_departure_shifted_s_median"] == 1800.0
+
+
+@pytest.mark.parametrize("name, value", [("no_connection_warn_share", 0.0), ("n_candidates", 0),
+                                         ("shift_step_s", 0.0), ("min_stay_s", -1.0)])
+def test_build_portal_trips_validates_the_gate_settings_of_a_direct_caller(name, value):
+    fixture = _fixture()
+    fixture["gate_settings"][name] = value
+    with pytest.raises(ValueError, match=r"braunschweig\.portal\."):
+        stage.build_portal_trips(**fixture)
+
+
 # --------------------------------------------------------------------------------------------------
 # execute() wiring
 # --------------------------------------------------------------------------------------------------

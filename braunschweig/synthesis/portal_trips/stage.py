@@ -274,37 +274,40 @@ def _classify(trips, home_xy, primary, threshold_m, fallback_warn_share):
     return is_portal, distance, counts
 
 
-def _stay_fallback_gates(origin_xy, point_xy, exits):
-    """The gate a KEPT pt stay without a connection takes, and how many needed the all-stops fallback.
+def _stay_fallback_gates(origin_xy, point_xy, exits, needed):
+    """The gate a KEPT pt stay without a connection takes, for the stays flagged in ``needed``.
 
-    Per stay the nearest-by-detour exit stop among its DIRECTIONAL exit stops (outside stop closer to the
-    external point than the exit stop); when the stay has none, among all exit stops (counted, logged by the
-    caller). Returns ``(frame with gate_id, x, y, n_all_stops)``; without any exit stop the rows are NaN/None
-    (``choose_gates`` then raises for a stay that was kept).
+    Per needed stay the nearest-by-detour exit stop among its DIRECTIONAL exit stops (outside stop closer to
+    the external point than the exit stop); when the stay has none, among all exit stops. Returns
+    ``(frame with gate_id, x, y, all_stops)``: one row per stay (rows of stays that are not ``needed`` stay
+    None/NaN and are never read by ``resolve_no_connection``, which only reads the rows of the stays it
+    keeps) and ``all_stops``, the bool flags of the needed stays that had no directional exit stop and
+    took the all-stops fallback. Without any exit stop every row is None/NaN (``choose_gates`` then raises
+    for a kept stay).
     """
     n = len(origin_xy)
     frame = pd.DataFrame({"gate_id": [None] * n, "x": np.full(n, np.nan), "y": np.full(n, np.nan)})
-    if n == 0 or len(exits) == 0:
-        return frame, 0
+    all_stops = np.zeros(n, dtype=bool)
+    if n == 0 or len(exits) == 0 or not np.any(needed):
+        return frame, all_stops
     points = _gates.exit_stop_points(exits)
     point_ids = points["stop_id"].astype(str).to_numpy()
     all_xy = np.column_stack([points.geometry.x.to_numpy(), points.geometry.y.to_numpy()])
     id_row = {stop: row for row, stop in enumerate(point_ids)}
     exit_ids = exits["stop_id"].astype(str).to_numpy()
-    n_all_stops = 0
-    best_rows = []
-    for i in range(n):
+    gate_ids = np.full(n, None, dtype=object)
+    xy = np.full((n, 2), np.nan)
+    for i in np.flatnonzero(needed):
         toward = _gates._toward_mask(point_xy[i], exits)
         rows = sorted({id_row[stop] for stop in exit_ids[toward]})
         if not rows:
             rows = list(range(len(point_ids)))
-            n_all_stops += 1
+            all_stops[i] = True
         best = rows[int(_gates._nearest_by_detour(origin_xy[i:i + 1], point_xy[i:i + 1], all_xy[rows])[0])]
-        best_rows.append(best)
-    frame["gate_id"] = point_ids[best_rows]
-    frame["x"] = all_xy[best_rows, 0]
-    frame["y"] = all_xy[best_rows, 1]
-    return frame, n_all_stops
+        gate_ids[i], xy[i] = point_ids[best], all_xy[best]
+    frame["gate_id"] = gate_ids
+    frame["x"], frame["y"] = xy[:, 0], xy[:, 1]
+    return frame, all_stops
 
 
 def _inside_stop_ids(schedule, cordon_polygon) -> set:
@@ -330,6 +333,13 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
     """
+    # A direct caller gets the same range checks as configure() (a zero shift step would silently disable the shift path).
+    validate_settings(threshold_m, tolerance, warn_share, fallback_warn_share,
+                      gate_candidates=gate_settings["n_candidates"],
+                      gate_service_window_s=gate_settings["service_window_s"],
+                      shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
+                      min_stay_s=gate_settings["min_stay_s"],
+                      no_connection_warn_share=gate_settings["no_connection_warn_share"])
     missing = [column for column in REQUIRED_TRIP_COLUMNS if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} trips frame lacks {missing}")
@@ -470,16 +480,16 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
                       np.where(ret_here, shifted_ret_dep, np.nan),
                       np.where(ret_here, ret_arr[positions] + (shifted_ret_dep - ret_dep[positions]), np.nan))
 
-    fallback_gates, n_all_stops = _stay_fallback_gates(pt_origin, pt_point, exits)
+    # Only stays without a gate at the planned times can end up kept, so only they need a fallback gate.
+    fallback_gates, all_stops = _stay_fallback_gates(pt_origin, pt_point, exits,
+                                                     pt_gates["gate_id"].isna().to_numpy())
     out_modes, out_trips, out_gates = _no_connection.resolve_no_connection(
         stays, trips, modes, availability, pt_gates, probe, fallback_gates=fallback_gates, **chain)
 
     actions = out_modes["no_connection_action"].to_numpy()[pt_rows]
     kept = actions == _no_connection.ACTION_KEPT
     n_kept = int(kept.sum())
-    n_kept_all_stops = 0
-    if n_kept and len(exits):
-        n_kept_all_stops = sum(1 for i in np.flatnonzero(kept) if not _gates._toward_mask(pt_point[i], exits).any())
+    n_kept_all_stops = int(all_stops[kept].sum())
     logger.info("%s kept pt stays %d: nearest directional exit stop %d/%d (primary), all-stops fallback %d/%d "
                 "(%.1f%%)", _LOG_TAG, n_kept, n_kept - n_kept_all_stops, n_kept, n_kept_all_stops, n_kept,
                 100.0 * n_kept_all_stops / max(n_kept, 1))
