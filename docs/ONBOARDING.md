@@ -58,7 +58,8 @@ config_*.yml → scripts/run_synpp.py → synthesis.output → matsim.output →
   lock for native portability checks. Start with `python scripts/run_tests.py --check`
   to catch interpreter, dependency and `matsim` import problems. Follow the
   [required verification gate](codebase/TESTING.md#required-agent-verification-gate)
-  before handing off work or opening a PR; use the shared runner on both platforms.
+  before handing off work or opening a PR: the shared runner locally for the affected
+  tests, CI for the full suite on both platforms (ADR-0150).
 
 ## 4. How to run
 

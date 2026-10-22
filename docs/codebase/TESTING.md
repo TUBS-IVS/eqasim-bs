@@ -11,28 +11,37 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    [environment installation and refresh policy](notes/reproducible-environment.md).
    Diagnose a failed preflight before proceeding; do not work around it with
    import patches or a fresh unconstrained dependency solve.
-2. **During implementation:** run affected tests through the same runner, using
-   paths or `-k`. Preserve scientific invariants and measure repeated work before
-   consolidating tests. A focused pass is development feedback, not the final gate.
-3. **Before final handoff, push or PR:** integrate the current `origin/main` and run
-   `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml`
-   on the final code state in server-mirrored Linux/WSL2. Use an isolated checkout
-   on the server only when local Linux is unavailable; do not mutate its trusted
-   environment or start a production simulation for this regression gate.
-   Native Windows checks use the identical command. If a required platform is
-   unavailable, report it explicitly; do not label that gate passed.
-4. **Record evidence:** tested commit (and any uncommitted changes), OS, environment
-   diagnostics, command, exit status, pass/skip/deselected counts and JUnit path.
-   Explain unexpected skips. A skip is not a pass; direct pytest and results from
-   another checkout or pre-merge code state cannot substitute for this gate.
-   Later executable changes require the final regression gate again.
+2. **During implementation and before push:** run the tests affected by the change
+   through the same runner, using paths, node ids or `-k`. Preserve scientific
+   invariants and measure repeated work before consolidating tests. This focused
+   local run is the whole local duty; a local full suite is not required (ADR-0150).
+3. **Data-gated tests run locally.** CI carries no restricted input data, so tests
+   that declare such a dependency skip there
+   ([test-data-dependencies](notes/test-data-dependencies.md)). When the change
+   touches code such tests cover, run exactly those tests locally on a checkout that
+   carries the data and report their pass and skip counts. A worktree carries no
+   gitignored data unless it is linked in.
+4. **Final-code evidence comes from CI.** Merge the current `origin/main`, push the
+   branch and open the PR (`git pr`). The `regression` workflow then runs
+   `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml` on
+   Linux (the captured server snapshot, as in WSL) and on Windows, in parallel on
+   GitHub's machines. Do not start local full suites to replace it. Only when CI
+   cannot run, run that command locally in Linux/WSL2, report it as the substitute,
+   and never label a missing platform passed.
+5. **Record evidence:** in the PR, name the focused local command with its pass/skip
+   counts (data-gated tests included where step 3 applies) and link the CI run.
+   A skip is not a pass. Explain unexpected skips; compare CI's skip count with
+   the previous run of `main` when it changes. The shared runner also writes local
+   evidence to `.claude/gate/tests-<platform>.json`; the local push gate shows it
+   as information ([agent-process-automation](notes/agent-process-automation.md)).
    Documentation-only recording or clarification of the process and results
    does not invalidate the executable-code evidence.
-5. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
+6. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
    documentation check must pass on the PR's latest commit. Inspect failures
-   rather than disabling a platform or weakening assertions. CI provides the
-   second platform when it cannot be run locally; pending CI is pending evidence.
-6. **When scientific behavior or pipeline wiring changes:** additionally run the
+   rather than disabling a platform or weakening assertions. Pending CI is pending
+   evidence. If `main` moved since the last CI run, merge `origin/main` into the
+   branch and push again: re-running a workflow does not pick up a newer `main`.
+7. **When scientific behavior or pipeline wiring changes:** additionally run the
    relevant real-data smoke with its preflight and record a run manifest. The
    regression suite does not replace that evidence. Never launch a production
    run merely to satisfy a regression check.
