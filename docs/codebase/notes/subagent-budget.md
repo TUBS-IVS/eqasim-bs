@@ -22,6 +22,14 @@ feature workflow in `CONTRIBUTING.md`; it does not replace any of its steps.
    is split before the next task of its kind is dispatched.
 6. **Fan-out needs the owner's OK** (model, plan, scale) before dispatch, and at most
    three implementers run in parallel.
+7. **Dispatch the tool-restricted agent type, not `general-purpose`, when one fits.**
+   Where the session offers them (user-level agents in `~/.claude/agents/`, not part of
+   this repository): `implementer` for one well-specified task (a plan step, a bug fix
+   with a known root cause), `reviewer` for task and re-reviews, `explorer` for
+   read-only lookups. `general-purpose` only when the job needs tools these lack (web,
+   MCP, spawning agents) or is open-ended research. This also applies to the
+   `superpowers` subagent-driven-development dispatches, whose templates default to
+   `general-purpose`. See "Measured: tool-restricted agent types" below.
 
 ## Why: where the tokens went
 
@@ -59,3 +67,24 @@ agents at roughly 30k instead of 65k per call, minus the extra start contexts of
 additional agents. That would save roughly a third of the subagent cost, about a fifth
 of total usage. This is arithmetic on the table above, not a measurement; re-measure
 over several sessions before claiming a saving.
+
+## Measured: tool-restricted agent types
+
+Local measurement, 2026-10-22, over the subagent transcripts of eqasim-bs sessions since
+2026-10-01 (`~/.claude/projects/*eqasim-bs*/*/subagents/`, agent type from each
+`.meta.json`; assistant records deduplicated by message id; same weights as above).
+Only jobs that ran on Sonnet 5.5, so the model does not confound the comparison. The
+first-call context is the fixed start cost (system prompt, tool schemas, skill list,
+CLAUDE.md, memory) that every call of the job re-reads.
+
+| Agent type | Jobs (1-10 calls) | First-call context | Effective tokens per call |
+|---|---|---|---|
+| `general-purpose` | 73 | about 67k | about 29k |
+| `reviewer` | 21 | about 20k | about 17k |
+| `implementer` | 7 | about 21k | about 12k |
+
+Medians. For jobs of 11-30 calls: `general-purpose` about 21k per call (n = 86),
+`implementer` about 12k (n = 7). The start-context difference (about 46k tokens) is a
+direct effect of the smaller tool set; the per-call difference also depends on the jobs,
+which were not matched, and the new-agent samples are small (three sessions). Re-measure
+once more jobs exist before quoting a session-level saving.
