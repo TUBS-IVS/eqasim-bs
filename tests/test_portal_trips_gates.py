@@ -22,12 +22,6 @@ def _road_gates():
     return gates, links
 
 
-def test_rail_like_modes_copy_matches_the_incommuter_stage_constant():
-    # The copy avoids importing a synpp stage module at module level; this test keeps it from drifting.
-    from braunschweig.synthesis import incommuters
-    assert g.RAIL_LIKE_MODES == incommuters.RAIL_LIKE_MODES
-
-
 def test_gate_inside_points_takes_the_link_endpoint_inside_the_polygon():
     gates, links = _road_gates()
     inside = g.gate_inside_points(gates, links, SQUARE)
@@ -42,14 +36,6 @@ def test_gate_inside_points_raises_when_no_endpoint_is_inside():
     links.loc[links["link_id"] == "L1", "geometry"] = LineString([(11000.0, 5000.0), (12000.0, 5000.0)])
     with pytest.raises(ValueError, match="gate_e"):
         g.gate_inside_points(gates, links, SQUARE)
-
-
-def test_rail_exit_stations_are_inside_stops_adjacent_to_an_outside_stop_on_a_rail_route():
-    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0), "d": (3000.0, 3000.0)}
-    routes = [("rail", ["a", "b", "c"]), ("bus", ["b", "c"]), ("rail", ["a", "d"])]
-    stations = g.rail_exit_stations(stops, routes, SQUARE)
-    assert stations["stop_id"].tolist() == ["b"]
-    assert stations.geometry.iloc[0].coords[0] == (8000.0, 5000.0)
 
 
 def _exit_schedule():
@@ -327,26 +313,6 @@ def test_gate_inside_points_lists_all_offending_gates_in_one_error():
     with pytest.raises(ValueError) as error:
         g.gate_inside_points(gates, links, SQUARE)
     assert "gate_e" in str(error.value) and "gate_s" in str(error.value)
-
-
-def test_rail_exit_stations_use_the_given_crs():
-    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
-    stations = g.rail_exit_stations(stops, [("rail", ["a", "b", "c"])], SQUARE, crs="EPSG:3035")
-    assert stations.crs.to_epsg() == 3035
-    assert g.rail_exit_stations(stops, [("rail", ["a", "b", "c"])], SQUARE).crs.to_epsg() == 25832
-
-
-def test_rail_exit_stations_raise_for_a_route_stop_missing_from_the_stops(caplog):
-    stops = {"a": (2000.0, 5000.0)}
-    with pytest.raises(ValueError, match="'ghost'"):
-        g.rail_exit_stations(stops, [("rail", ["a", "ghost"])], SQUARE)
-
-
-def test_rail_exit_stations_log_the_routes_scanned_and_the_stations_found(caplog):
-    stops = {"a": (2000.0, 5000.0), "b": (8000.0, 5000.0), "c": (14000.0, 5000.0)}
-    with caplog.at_level("INFO", logger=g.logger.name):
-        g.rail_exit_stations(stops, [("rail", ["a", "b", "c"]), ("bus", ["b", "c"])], SQUARE)
-    assert any("1 rail routes scanned, 1 exit stations" in record.getMessage() for record in caplog.records)
 
 
 def _external(ewz, xs=None):

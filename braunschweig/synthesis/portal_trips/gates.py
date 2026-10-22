@@ -3,9 +3,8 @@
 Road gates come from ``braunschweig.synthesis.cordon_gates`` as the POINT where a network link
 crosses the cordon boundary (= the cutter's extent). A portal stay must sit INSIDE that extent,
 or the cutter would cut it again, so the stay is placed at the gate link's inside endpoint
-(``gate_inside_points``). Rail portals are the stations inside the extent from which a rail
-route continues to a stop outside it (``rail_exit_stations``) -- the in-area counterpart of the
-rail ENTRY stations the in-commuters board at. The external point only fixes the direction and
+(``gate_inside_points``). pt portals are the exit stops inside the extent (``exit_stops``) that a route leaves outward,
+chosen timetable-aware by ``choose_pt_gates``. The external point only fixes the direction and
 the outside distance of a stay; it is drawn among the external Gemeinde points at the donor's
 reported distance (ADR-0027's distance proxy; direction has no survey source). The gate is the
 one with the smallest detour origin -> gate -> point (ASSUMPTION: no preference for motorways).
@@ -21,9 +20,6 @@ from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
-#: Same set as braunschweig.synthesis.incommuters.RAIL_LIKE_MODES (kept here to avoid importing
-#: the in-commuter stage module into this helper).
-RAIL_LIKE_MODES = frozenset({"rail", "train", "subway", "light_rail", "regional_rail"})
 KIND_ROAD = "road"
 KIND_PT = "pt"
 GATE_COLUMNS = ["gate_id", "kind", "x", "y"]
@@ -63,43 +59,6 @@ def gate_inside_points(gates, links, cordon_polygon) -> gpd.GeoDataFrame:
     logger.info("[portal_trips.gates] gates with both link endpoints inside: %d/%d", both_inside, len(gates))
     frame = pd.DataFrame(rows, columns=["gate_id", "link_id", "road_class", "capacity"])
     return gpd.GeoDataFrame(frame, geometry=points, crs=gates.crs)
-
-
-def rail_exit_stations(stops: dict, routes: list, cordon_polygon, rail_like_modes=RAIL_LIKE_MODES,
-                       crs="EPSG:25832") -> gpd.GeoDataFrame:
-    """Inside stops of rail routes that are adjacent, in route order, to a stop outside the extent.
-
-    ``crs`` is the CRS of the schedule coordinates in ``stops`` (the Braunschweig pipeline writes
-    its transit schedule in EPSG:25832); it is attached to the result unchanged.
-    """
-    inside_cache = {}
-
-    def is_inside(stop_id, route_index, mode):
-        if stop_id not in inside_cache:
-            if stop_id not in stops:
-                raise ValueError(f"[portal_trips] rail exit stations: stop '{stop_id}' of route #{route_index} "
-                                 f"(mode '{mode}') is not in the transit stops")
-            x, y = stops[stop_id]
-            inside_cache[stop_id] = cordon_polygon.contains(Point(x, y))
-        return inside_cache[stop_id]
-
-    exits, exit_set, routes_scanned = [], set(), 0
-    for route_index, (mode, sequence) in enumerate(routes):
-        if mode is None or str(mode).strip().lower() not in rail_like_modes:
-            continue
-        routes_scanned += 1
-        flags = [is_inside(stop_id, route_index, mode) for stop_id in sequence]
-        for position, stop_id in enumerate(sequence):
-            if not flags[position]:
-                continue
-            before = position > 0 and not flags[position - 1]
-            after = position + 1 < len(sequence) and not flags[position + 1]
-            if (before or after) and stop_id not in exit_set:
-                exit_set.add(stop_id)
-                exits.append(stop_id)
-    logger.info("[portal_trips.gates] %d rail routes scanned, %d exit stations found", routes_scanned, len(exits))
-    frame = pd.DataFrame({"stop_id": exits})
-    return gpd.GeoDataFrame(frame, geometry=[Point(*stops[s]) for s in exits], crs=crs)
 
 
 ALL_MODES = "all"
