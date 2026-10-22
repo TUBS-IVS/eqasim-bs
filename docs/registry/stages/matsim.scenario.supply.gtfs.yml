@@ -1,18 +1,49 @@
 stage: matsim.scenario.supply.gtfs
 title: Transit schedule build
 layer: matsim
-description: Upstream pt2matsim GTFS conversion over the regional feed.
+description: Upstream pt2matsim GTFS conversion over the regional feed, extended by the region override
+  braunschweig.matsim.scenario.supply_gtfs with the next-day departures of the 30 h simulated day
+  (issue 465, feature record transit_next_day).
 lineage:
-  type: configured
-  upstream: null
-  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
-    baseline.
+  type: overridden
+  upstream: matsim.scenario.supply.gtfs
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to). The override delegates to the upstream stage unchanged and
+    post-processes its output.
 code:
 - matsim/scenario/supply/gtfs.py
+- braunschweig/matsim/scenario/supply_gtfs.py
+- braunschweig/matsim/scenario/transit_next_day.py
 pipelines:
   popsim_mid: active
   popsim_open: active
   simple_ipf_open: active
 production: true
+resolves_to:
+  popsim_mid: braunschweig.matsim.scenario.supply_gtfs
+  popsim_open: braunschweig.matsim.scenario.supply_gtfs
+  simple_ipf_open: braunschweig.matsim.scenario.supply_gtfs
 inputs:
 - gtfs_feed
+features:
+- transit_next_day
+notes: >-
+  Next-day extension (issue 465). pt2matsim converts ONE service day (its dayWithMostServices rule), so the
+  schedule ends at the last departure of that day while the simulation runs 30 h
+  (braunschweig.popsim.plan_validation.MAX_PLAN_TIME_SECONDS) and pt trips after midnight had no timetable
+  service. braunschweig.matsim.scenario.supply_gtfs.execute runs the upstream stage, renames its two outputs
+  to transit_schedule_service_day.xml.gz and transit_vehicles_service_day.xml.gz (kept as the unextended
+  pt2matsim result) and writes transit_schedule.xml.gz and transit_vehicles.xml.gz, in which
+  braunschweig.matsim.scenario.transit_next_day.extend_schedule duplicates every departure with a time below
+  braunschweig.transit_schedule.next_day_hours * 3600 s as <id>_d2 at +86400 s and appends one <vehicle>_d2
+  per distinct original vehicle. Key braunschweig.transit_schedule.next_day_hours: default 6.0 (the 30 h
+  bound minus 24 h), 0 switches the extension off (byte-identical copies of the service-day files), a negative
+  value raises before pt2matsim runs. The stage returns the extended paths under the unchanged keys
+  schedule_path and vehicles_path plus service_day_schedule_path, service_day_vehicles_path, next_day and
+  estimated_service_day. It logs the duplicated share and the departures per hour before and after under the
+  marker [transit_next_day]. estimated_service_day recomputes the dayWithMostServices day from the cleaned
+  GTFS calendar files for the log only; it is an ESTIMATE (pt2matsim's own choice is authoritative) and a
+  failure only warns. The stage validate token hashes transit_next_day and the delegate helpers; the
+  cache_share_stages entry of configs/base_bs.yml names braunschweig.matsim.scenario.supply_gtfs, so older
+  shared-store entries of the upstream module do not prime (one-time recompute). The cleaned feed's trips
+  beyond 24 h are not touched.

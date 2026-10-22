@@ -72,6 +72,7 @@ features:
 - vrb_zone_fare_model
 - parking_cost_zones
 - plan_feasibility_check
+- transit_next_day
 decisions:
 - ADR-0121
 - ADR-0030
@@ -103,3 +104,7 @@ notes: >-
   _HELPER_MODULES, and braunschweig.popsim.plan_validation, braunschweig.popsim.closure_dwell and
   data.hts.hts (its import closure) are in the deferred helper names, so the validate token covers
   the check (ADR-0136). Contributor note docs/codebase/notes/plan-check.md.
+  Final-schedule summary (issue 465, feature record transit_next_day): _summarise_final_schedule logs
+  [schedule] final schedule departures per hour {...}, max departure X h on the final, post-cordon-cut
+  transit schedule on every run, independent of vrb_zone_fares_enabled; the VRB-fares path reuses that
+  summary.

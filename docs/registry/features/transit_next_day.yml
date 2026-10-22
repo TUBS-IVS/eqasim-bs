@@ -1,0 +1,80 @@
+feature: transit_next_day
+title: Next-day departures in the transit schedule for the 30 h simulated day
+area: matsim
+description: >-
+  pt2matsim converts a single service day, so the transit schedule had no departures after that day's last
+  trip while the simulation runs 30 h and plans contain pt trips after midnight (issue 465). The region
+  override of matsim.scenario.supply.gtfs duplicates the departures below braunschweig.transit_schedule.next_day_hours
+  hours as <id>_d2 at +86400 s with one <vehicle>_d2 per distinct original vehicle, so the early-morning
+  service of the next day exists in the 24-30 h window. The duplicate is an ASSUMPTION: the next day has the
+  same timetable as the chosen service day (no weekday-specific calendar). matsim.simulation.prepare logs
+  the departures per hour of the final (post-cordon-cut) schedule on every run.
+stages:
+- matsim.scenario.supply.gtfs
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.transit_schedule.next_day_hours
+introduced:
+  issue: 465
+  pr: null
+  adr: null
+detail_doc: null
+code_paths:
+- braunschweig/matsim/scenario/supply_gtfs.py
+- braunschweig/matsim/scenario/transit_next_day.py
+- braunschweig/matsim/simulation/prepare.py
+- configs/base_bs.yml
+evidence:
+  tests:
+  - tests/test_transit_next_day.py
+  - tests/test_supply_gtfs_stage.py
+  - tests/test_prepare_schedule_summary.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_transit_next_day.py
+    note: >-
+      braunschweig.transit_schedule.next_day_hours 0 writes byte-identical copies of the pt2matsim
+      schedule and vehicles files (pinned in tests/test_transit_next_day.py); the stage then differs from
+      upstream only by the additional service-day file copies and the log lines. The default 6.0 changes
+      results by design.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[transit_next_day]'
+    note: >-
+      There is no primary/fallback split. The extension logs the duplicated departures as n/N (share)
+      up to the cut-off hour, the vehicles added and the departures per hour before and after. The
+      service-day estimate for the log is the only recovery path: a failure to read the cleaned GTFS
+      calendar logs a WARNING under [supply_gtfs] and never fails the stage.
+  reference:
+    kind: assumption
+    note: >-
+      No observed reference exists for next-day service. Assumption: the timetable of the next day equals
+      the one of the chosen service day, and 6 h (30 h bound minus 24 h) is the extent needed. Neither
+      is compared with observed data.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >-
+    Unit-tested only; no run has used the extended schedule yet and nothing has been compared with
+    observed pt use after midnight.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    Implemented and unit-tested for issue 465; no run has exercised it and no owner verdict exists.
+  source: null
+notes: >-
+  The final-schedule summary of braunschweig.matsim.simulation.prepare (_summarise_final_schedule) logs
+  [schedule] final schedule departures per hour {...}, max departure X h on the schedule after the cordon
+  cut on every run, independent of the VRB fares; the VRB-fares path reuses that summary. The stage
+  matsim.scenario.supply.gtfs recomputes once after this change (new cache_share_stages name). The estimated
+  service day is derived from the cleaned GTFS calendar and may differ from pt2matsim's own choice.
