@@ -19,6 +19,44 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# WSL mounts Windows drive ``X:`` at ``/mnt/x``; overridable for tests.
+WSL_DRIVE_MOUNT = Path("/mnt")
+WINDOWS_GITDIR = re.compile(r"^gitdir:\s*([A-Za-z]):[\\/](.*?)\s*$")
+
+
+def repair_worktree_pointer(checkout, drive_mount=None):
+    """Make a linked worktree's ``.git`` pointer readable by git inside WSL.
+
+    Windows git writes ``gitdir: C:/.../.git/worktrees/<id>`` into the ``.git`` file of
+    a linked worktree. POSIX git treats ``C:/...`` as a relative path, so every
+    git-dependent test fails under WSL in a Windows-created worktree
+    (docs/codebase/notes/linux-parity-testing.md). A pointer relative to the checkout is
+    read correctly by both gits; the back-pointer in ``.git/worktrees/<id>/gitdir`` is
+    Windows-owned and stays untouched. Returns the new relative pointer, or ``None`` when
+    nothing was rewritten: a main checkout, an already resolvable pointer, or a pointer
+    whose admin dir cannot be found under ``drive_mount`` (reported on stderr, never
+    rewritten blindly).
+    """
+    pointer_file = Path(checkout) / ".git"
+    if not pointer_file.is_file():
+        return None
+    content = pointer_file.read_text(encoding="utf-8")
+    match = WINDOWS_GITDIR.match(content)
+    if match is None:
+        return None
+    drive, rest = match.groups()
+    mount = WSL_DRIVE_MOUNT if drive_mount is None else Path(drive_mount)
+    admin_dir = mount / drive.lower() / rest.replace("\\", "/")
+    if not (admin_dir / "commondir").is_file():
+        print(f"cannot repair worktree pointer {content.strip()!r}: {admin_dir} is not a "
+              "worktree admin dir, git inside WSL will not find this repository",
+              file=sys.stderr)
+        return None
+    relative = os.path.relpath(admin_dir, Path(checkout)).replace("\\", "/")
+    pointer_file.write_text(f"gitdir: {relative}\n", encoding="utf-8", newline="\n")
+    print(f"repaired worktree pointer: {content.strip()} -> gitdir: {relative} "
+          "(git inside WSL cannot follow Windows paths)", flush=True)
+    return relative
 
 
 def check_environment():
@@ -58,7 +96,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Print environment diagnostics only.")
     parser.add_argument("--pipeline", action="store_true", help="Select real-data pipeline tests only.")
+    parser.add_argument("--keep-worktree-pointer", action="store_true",
+                        help="Under Linux/WSL, leave a Windows-absolute .git pointer of a linked "
+                             "worktree as it is instead of rewriting it to a relative path.")
     args, pytest_args = parser.parse_known_args(argv)
+    if platform.system() == "Linux" and not args.keep_worktree_pointer:
+        repair_worktree_pointer(REPO_ROOT)
     report = check_environment()
     if args.check:
         print(json.dumps(report, indent=2))

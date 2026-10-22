@@ -83,6 +83,77 @@ def test_pipeline_input_preflight_failure_stops_before_pytest(tmp_path, monkeypa
     assert "Missing required inputs" in capfd.readouterr().out
 
 
+def _linked_worktree(tmp_path, pointer):
+    """Lay out a main repository's worktree admin dir and a linked worktree as git does.
+
+    ``<mount>/c/repo/main/.git/worktrees/wt`` is the admin dir (with ``commondir``);
+    ``<mount>/c/repo/wt/.git`` is the pointer file whose content is ``pointer``. ``mount``
+    stands in for WSL's ``/mnt`` so a Windows path ``C:/repo/...`` maps to ``<mount>/c/repo/...``.
+    """
+    mount = tmp_path / "mnt"
+    admin = mount / "c" / "repo" / "main" / ".git" / "worktrees" / "wt"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    checkout = mount / "c" / "repo" / "wt"
+    checkout.mkdir()
+    (checkout / ".git").write_text(pointer, encoding="utf-8")
+    return mount, checkout
+
+
+@pytest.mark.parametrize("pointer, repaired, message", [
+    # Windows git wrote an absolute Windows path: POSIX git inside WSL reads it as a
+    # relative path and fails. The repair must make it relative to the checkout.
+    ("gitdir: C:/repo/main/.git/worktrees/wt\n", "../main/.git/worktrees/wt", "repaired worktree pointer"),
+    ("gitdir: C:\\repo\\main\\.git\\worktrees\\wt\n", "../main/.git/worktrees/wt", "repaired worktree pointer"),
+    # Already resolvable by both gits: leave untouched (idempotence).
+    ("gitdir: ../main/.git/worktrees/wt\n", None, ""),
+    ("gitdir: /mnt/c/repo/main/.git/worktrees/wt\n", None, ""),
+    # The admin dir the pointer names does not exist under the mount: refuse loudly,
+    # never write a pointer that cannot be verified.
+    ("gitdir: C:/elsewhere/.git/worktrees/wt\n", None, "cannot repair worktree pointer"),
+])
+def test_repair_worktree_pointer_makes_windows_gitdir_relative(tmp_path, capfd, pointer, repaired, message):
+    from scripts import run_tests
+
+    mount, checkout = _linked_worktree(tmp_path, pointer)
+    assert run_tests.repair_worktree_pointer(checkout, drive_mount=mount) == repaired
+    expected = pointer if repaired is None else f"gitdir: {repaired}\n"
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+    captured = capfd.readouterr()
+    assert message in captured.out + captured.err
+    # A second run finds nothing left to repair and changes nothing.
+    assert run_tests.repair_worktree_pointer(checkout, drive_mount=mount) is None
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+
+
+def test_repair_worktree_pointer_ignores_a_main_checkout(tmp_path):
+    from scripts import run_tests
+
+    (tmp_path / ".git").mkdir()  # a real repository directory, not a linked worktree
+    assert run_tests.repair_worktree_pointer(tmp_path, drive_mount=tmp_path / "mnt") is None
+
+
+@pytest.mark.parametrize("system, options, expected", [
+    ("Linux", [], "gitdir: ../main/.git/worktrees/wt\n"),
+    ("Linux", ["--keep-worktree-pointer"], "gitdir: C:/repo/main/.git/worktrees/wt\n"),
+    ("Windows", [], "gitdir: C:/repo/main/.git/worktrees/wt\n"),
+])
+def test_runner_repairs_worktree_pointer_only_on_linux_unless_opted_out(
+        tmp_path, monkeypatch, system, options, expected):
+    from scripts import run_tests
+
+    mount, checkout = _linked_worktree(tmp_path, "gitdir: C:/repo/main/.git/worktrees/wt\n")
+    monkeypatch.setattr(run_tests, "REPO_ROOT", checkout)
+    monkeypatch.setattr(run_tests, "WSL_DRIVE_MOUNT", mount)
+    monkeypatch.setattr(run_tests.platform, "system", lambda: system)
+    monkeypatch.setattr(run_tests, "check_environment", lambda: {
+        "python": sys.executable, "python_version": "3.10", "errors": [],
+    })
+    monkeypatch.setattr(run_tests.subprocess, "call", lambda *args, **kwargs: 0)
+    assert run_tests.main([*options, "-q"]) == 0
+    assert (checkout / ".git").read_text(encoding="utf-8") == expected
+
+
 @pytest.mark.parametrize("pipeline", [False, True])
 def test_caller_marker_filters_within_enforced_boundary(tmp_path, pipeline):
     options = (["--pipeline", "-mnot slow"] if pipeline
