@@ -351,10 +351,14 @@ def execute(context):
     if context.config("freight_enabled"):
         _inject_freight(context, result)
 
+    # Summarise the FINAL schedule (after the cut and the freight injection) once, independent of the fare
+    # model: the departures per hour document how far the schedule reaches into the next day.
+    summary = _summarise_final_schedule(context)
+
     # The fare inputs refer to the FINAL schedule and config, so they are written after the cut
     # and the freight injection.
     if context.config(VRB_FARES_KEY):
-        _write_vrb_fare_inputs(context, result)
+        _write_vrb_fare_inputs(context, result, summary)
 
     # The parking module goes into the FINAL config too, and the tariff model next to it: written last.
     if context.config(PARKING_KEY):
@@ -411,7 +415,16 @@ def _schedule_summary(schedule_path) -> dict:
             "max_departure_h": max_departure_s / 3600.0}
 
 
-def _write_vrb_fare_inputs(context, config_name):
+def _summarise_final_schedule(context) -> dict:
+    """Parse the final transit schedule once and log its departures per hour (also with VRB fares off)."""
+    summary = _schedule_summary(Path(context.path()) / "{}transit_schedule.xml.gz".format(
+        context.config("output_prefix")))
+    print("[schedule] final schedule departures per hour %s, max departure %.1f h" % (
+        dict(sorted(summary["departures_per_hour"].items())), summary["max_departure_h"]))
+    return summary
+
+
+def _write_vrb_fare_inputs(context, config_name, summary):
     """Line scopes, fare model, vrbFare config module and a coverage report for the enabled fare model.
 
     Coverage is counted on the FINAL schedule (after the cordon cut and freight injection), which is the one
@@ -440,7 +453,6 @@ def _write_vrb_fare_inputs(context, config_name):
         "maximumUnsupportedShare": repr(float(context.config("vrb_fare_maximum_unsupported_share"))),
     })
     zone_tool = json.loads((root / "vrb_tariff_zone_report.json").read_text(encoding="utf-8"))
-    summary = _schedule_summary(root / "{}transit_schedule.xml.gz".format(context.config("output_prefix")))
     line_ids = summary["line_ids"]
     covered = line_ids & set(scopes["line_id"])
     line_coverage = len(covered) / max(len(line_ids), 1)
@@ -452,10 +464,9 @@ def _write_vrb_fare_inputs(context, config_name):
               "line_scope_coverage": line_coverage, "lines_without_scope": sorted(line_ids - covered)[:50]}
     (root / report_name).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print("[vrb-fares] prepared inputs (final schedule): facilities zoned %d/%d (%.2f%%), lines with scope %d/%d "
-          "(%.2f%%), boundary ties %d (zone tool); departures per hour %s, latest departure %.2f h" % (
+          "(%.2f%%), boundary ties %d (zone tool)" % (
               summary["zoned_facilities"], summary["facilities"], 100 * facility_coverage, len(covered),
-              len(line_ids), 100 * line_coverage, zone_tool["boundary_ties"],
-              summary["departures_per_hour"], summary["max_departure_h"]))
+              len(line_ids), 100 * line_coverage, zone_tool["boundary_ties"]))
     minimum = float(context.config("vrb_fare_minimum_line_scope_coverage"))
     if line_coverage < minimum:
         raise RuntimeError("[vrb-fares] only %.2f%% of schedule lines have a tariff scope row (minimum %.2f%%); "

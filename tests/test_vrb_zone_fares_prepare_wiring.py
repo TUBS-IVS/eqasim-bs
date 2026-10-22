@@ -170,6 +170,7 @@ def test_off_execute_does_not_touch_config_or_call_the_zone_tool(tmp_path, monke
         {"zone": ["1"], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:25832")
     config = Path(context.path()) / "bs_config.xml"
     config.write_text('<?xml version="1.0" encoding="utf-8"?>\n<config>\n</config>\n', encoding="utf-8")
+    (Path(context.path()) / "bs_transit_schedule.xml.gz").write_bytes(gzip.compress(_schedule(("L1",), 1).encode()))
     before = config.read_bytes()
     calls = []
     monkeypatch.setattr(prepare.eqasim, "run", lambda ctx, command, arguments: calls.append(command))
