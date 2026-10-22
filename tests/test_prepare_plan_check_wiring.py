@@ -84,7 +84,8 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
     seen = []
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
-    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result: None)
+    monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
+    monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
     monkeypatch.setattr(C, "run", lambda context, result: seen.append("run"))
     monkeypatch.setattr(C, "require_walk_fallback_stamp", lambda jar_path: seen.append("stamp"))
 
