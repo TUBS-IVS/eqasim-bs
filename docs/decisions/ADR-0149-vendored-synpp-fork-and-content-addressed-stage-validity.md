@@ -1,10 +1,10 @@
 # ADR-0149 · 2026-10-21 · A vendored synpp fork and content-addressed stage validity
 
-- **Status:** active. Phase 3 of #468 is in force (semantic tokens, output hashes, fork
-  skeleton, migration). Phase 4 (early cutoff in the fork's `run()`, `cache_share` coherence
-  by output hash) is implemented on the branch `chore/i468-early-cutoff` and in force once
-  that branch is merged; its **server acceptance on a copy of the 100 % cache is pending**
-  (see "Implementation status" and "Evidence").
+- **Status:** active; Phase 3 and Phase 4 of #468 are in force, with the server acceptance of Phase 4 pending.
+  Phase 3: semantic tokens, output hashes, fork skeleton, migration. Phase 4 (PR for #468
+  Phase 4): early cutoff in the fork's `run()` and `cache_share` coherence by output hash.
+  The **server acceptance on a copy of the 100 % cache is pending** (see "Implementation
+  status" and "Evidence").
 - **Numbering:** ADR-0149 is the next free id. Checked on 2026-10-21 across all local and
   remote branches: the highest record anywhere is ADR-0148.
 - **Issue:** #468. **Relates to:** ADR-0105 (deterministic stage hashes), ADR-0136 (token
@@ -86,9 +86,11 @@ changes.** synpp stays pinned to 1.6.2 (`environment.yml`).
 5. **`cache_share` coherence by output hash (Phase 4, implemented).** A copied entry is kept
    when its dependencies' recorded output digests equal those of the target metadata (both
    sides carry hashes) or, for two legacy sides, when the timestamps are equal as before;
-   mixed pairs and missing parents are dropped (spec 4.5;
-   `braunschweig.cache_share._incoherence`, `_coherent`, `_drop_incoherent_metadata`). The
-   envelope refresh (R17-1) and the known safe misses (R17-2) are listed below.
+   mixed pairs are dropped (spec 4.5; `braunschweig.cache_share._incoherence`, `_coherent`,
+   `_drop_incoherent_metadata`). A parent that is absent from the target metadata keeps the
+   record if the record carries a digest for it (R17-3); only a record without that digest is
+   dropped as `missing_parent`. The envelope refresh (R17-1) and the known safe misses (R17-2)
+   are listed below.
 6. **Stale-stage explainer.** `scripts/explain_stale_stages.py` and the launcher
    pre-check (Phase 1, PR #469) report per stage `HIT`, `STALE <reasons>` and so on, and
    gate a run on `--expect` / `synpp_expected_stale_stages`. Both read the same
@@ -181,7 +183,8 @@ into this record):
   cutoff and, per executed stage, its `stale_reasons` (including reasons added during the run);
   `pipeline.json` records `stale_reasons` per executed entry.
 - **R17-1, the envelope follows a refreshed record.** A spared child's record changes during a
-  run (`dependencies`, `dependency_output_hashes`) while its `updated` stays.
+  run (`dependencies[parent]` is set to the parent's new `updated`; the recorded digest is equal
+  by definition and stays) while its `updated` stays.
   `braunschweig.cache_share.track_run` rewrites the `metadata` of an EXISTING valid envelope
   when it differs from the record, keeping the envelope's `environment` (provenance is the
   runtime that created the artifact); it never creates an envelope. An entry without a prior
@@ -192,9 +195,24 @@ into this record):
   `braunschweig.freight.extraction_tool` is unshared next to the shared
   `braunschweig.freight.extraction`, and its jar is not reproducible across Maven builds, so a
   rebuilt tool jar changes its output digest and a primed `freight.extraction` record whose
-  tool digest differs from the target's is dropped as incoherent (recompute, safe). The same
-  holds for the eqasim jar (`matsim.runtime.eqasim`): a rebuilt jar changes its output digest,
-  so early cutoff cannot spare the jar's consumers.
+  tool digest differs from the target's tool entry is dropped as incoherent (recompute, safe).
+  In a FRESH directory there is no tool entry, so the record is kept (R17-3), the tool jar is
+  rebuilt there, its digest differs, and the run recomputes `braunschweig.freight.extraction`
+  at its turn; server scenario (4) must expect exactly that. The same holds for the eqasim jar
+  (`matsim.runtime.eqasim`): a rebuilt jar changes its output digest, so early cutoff cannot
+  spare the jar's consumers.
+- **R17-3, an absent parent is decided at run time by digest.** Spec section 1 criterion 4 and
+  section 4.5 ask that "the dependency is in the registry", not in the target metadata. A
+  copied record whose parent is absent from the target metadata (a parent that is not shared,
+  so absent from a fresh directory) is therefore **kept** if it carries
+  `dependency_output_hashes[parent]` for every absent parent. The run re-executes the absent
+  parent (`not_in_meta`) and the fork compares the new digest with the one the child recorded
+  (R16-2): equal spares the child, different recomputes it, so a mismatch never becomes a
+  hit. Before the run the explainer shows such a child as `STALE-IF`, not `HIT` and not
+  `RECOMPUTE`. A record without a digest for an absent parent would recompute for certain and
+  is dropped as `missing_parent`. `prime` logs the kept-with-absent-parent count as its own
+  basis. Present parents keep the rules above (hash match, legacy equal timestamps, mixed pair
+  dropped).
 
 ## Implementation status
 
@@ -205,8 +223,8 @@ into this record):
 | Fork skeleton: `install()`, vendored `get_stage_hash` (semantic) and `run()`, SHA and version guards | in force (Phase 3); with Phase 4 `run()` decides child validity by output hash |
 | Explainer and launcher pre-check (decision 6) | in force since PR #469 |
 | Migration (decision 7) | in force; mandatory once per existing cache (see Consequences) |
-| Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | implemented on the branch `chore/i468-early-cutoff` (Phase 4); in force on merge |
-| `cache_share` coherence by output hash, envelope refresh (decision 5, R17-1) | implemented on the branch `chore/i468-early-cutoff` (Phase 4); in force on merge |
+| Early cutoff and validity by output hash in `run()` (decision 4), incl. the Phase 4 rulings | in force (Phase 4, PR for #468 Phase 4); server acceptance pending |
+| `cache_share` coherence by output hash, envelope refresh, absent-parent rule (decision 5, R17-1, R17-3) | in force (Phase 4, PR for #468 Phase 4); server acceptance pending |
 | Server acceptance of Phase 4 on a copy of the 100 % cache (scenarios in "Evidence") | **pending (maintainer go)**; no run manifest exists yet |
 
 ## Relation to ADR-0105 and ADR-0136
@@ -257,9 +275,11 @@ part lands (see Implementation status).
   equals the current `pipeline.json` record; after migration the record differs, so a migrated
   entry exports without metadata and `prime` treats it as a miss (recompute, never a wrong
   hit). With Phase 4 (R17-1) the next run under `track_run` rewrites the `metadata` of an
-  existing valid envelope that differs from the record, so a later export shares the migrated
-  record again; an entry without an envelope stays unknown, and a store built before the
-  semantic tokens (md5 module hashes) still primes as a miss.
+  existing valid envelope that differs from the record, so a later EXPLICIT `export`
+  (`skip_existing=False`, the CLI default) shares the migrated record again; the automatic
+  export after a run uses `skip_existing=True` and never rewrites an entry already in the
+  store. An entry without an envelope stays unknown, and a store built before the semantic
+  tokens (md5 module hashes) still primes as a miss.
 - **Hashing cost.** The migration reads every output file of every `pipeline.json` entry,
   including old config variants that are no longer in the current graph; the migration logs
   files and bytes per entry. No full-cache run time is measured yet (acceptance pending).
@@ -348,6 +368,10 @@ they pin the mechanics):
   `test_drop_counts_each_incoherence_reason`, `test_prime_logs_how_many_copied_records_were_kept_and_why`,
   `test_envelope_follows_the_record_a_spared_child_refreshes` (R17-1),
   `test_envelope_refresh_never_invents_provenance_for_unknown_entries`,
+  `test_primed_child_with_an_unshared_parent_is_decided_by_digest_equal_output` and
+  `test_primed_child_with_an_unshared_parent_recomputes_when_the_parent_output_differs` (R17-3),
+  `test_record_without_a_digest_for_an_absent_parent_is_dropped_as_missing_parent`,
+  `test_the_explainer_shows_a_primed_child_with_an_unshared_parent_as_stale_if`,
   `test_a_later_run_refreshes_the_envelope_of_a_migrated_record`, and the scenario
   `older_target_parent_other_output` of `test_shared_dependency_chain`.
 
@@ -357,7 +381,11 @@ Phase 4 server scenarios, all **pending (maintainer go)**, to run on the migrate
 nothing stale besides run targets; (2) a behaviour-neutral edit of a helper body, explainer shows
 the one directly affected stage stale and its descendants `STALE-IF`, the run logs
 `early cutoff kept N stages cached`; (3) a copied Java tree for `eqasim_source_path`, no freight
-stage stale; (4) a fresh working directory primed from `cache_share_store`, primed entries `HIT`
-with no `legacy timestamp rule` lines for fork-written entries. Until the manifest exists, no
+stage stale; (4) a fresh working directory primed from `cache_share_store`: a primed entry whose
+parents are all shared is `HIT` with no `legacy timestamp rule` lines for fork-written entries; a
+primed entry with an unshared parent (R17-3) is `STALE-IF` before the run and is spared or
+recomputed at run time by the parent's digest, and `braunschweig.freight.extraction` is expected
+to recompute because the rebuilt `braunschweig.freight.extraction_tool` jar has other bytes
+(R17-2). Until the manifest exists, no
 statement about hit rates, saved hours or run times on a real cache is made anywhere in the
 documentation.

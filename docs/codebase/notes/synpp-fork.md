@@ -50,8 +50,9 @@ children stale (it recomputes only when a descendant does).
 4. **Per-child decision.** For each child of the re-executed parent that is valid so far, the fork
    compares the parent's new digest with the digest the CHILD recorded for that parent
    (`dependency_output_hashes[parent]` in the child's own record):
-   - equal: the child is spared, its record is refreshed (`dependencies`,
-     `dependency_output_hashes`), log `Output of <parent> unchanged: <child> not devalidated by it`;
+   - equal: the child is spared, its record's `dependencies[parent]` is set to the parent's new
+     `updated` (the recorded digest is equal by definition and stays), log
+     `Output of <parent> unchanged: <child> not devalidated by it`;
    - different: the child is devalidated, reason `parent_output_changed:<parent>`;
    - no digest recorded (a legacy record): the child recomputes as under upstream, reason
      `parent_output_unrecorded:<parent>`, logged as `legacy timestamp rule for ...`.
@@ -138,6 +139,12 @@ The two gates differ on the empty case, on purpose:
   across builds), so early cutoff cannot spare the consumers of a rebuilt jar.
 - The report predicts what synpp 1.6.2 would do; it does not validate model results
   (a cache hit is not evidence about scientific correctness).
+- `info` (`context.set_info`) is not part of the output digest: a parent that re-executes with
+  identical bytes but different `info` spares its children. In this repository `info` is
+  diagnostic only.
+- A hit trusts the recorded digest and never re-hashes the bytes on disk, so a corrupted or
+  hand-edited entry whose record still matches stays a hit (the same trust model as upstream
+  synpp).
 
 ## `pipeline.json` fields
 

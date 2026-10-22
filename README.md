@@ -596,10 +596,8 @@ python scripts/explain_stale_stages.py configs/base_bs.yml configs/overlays/test
 - A shared cache store (`cache_share_*`) built before this change holds md5 records. Migration
   does not reach it through `prime`: `export` writes a store entry's metadata only when the
   run-time envelope equals the current `pipeline.json` record, which a migrated record no longer
-  does. A run under this version refreshes the metadata of an existing envelope (ADR-0149,
-  R17-1), after which an export shares the migrated record again; an entry without an envelope,
-  and a store built before the semantic tokens (md5 module hashes), still primes as a miss
-  (recompute, never a wrong hit).
+  does, so such an entry primes as a miss (recompute, never a wrong hit); how a later run and an
+  explicit export make it shareable again is in `docs/features/cache-share.md`.
 - An entry whose stored hashes cannot be proven to come from code equal to the current code
   is left unchanged and counted as `kept_legacy`; it recomputes if the code really changed.
   The report lists every such entry with its reason.

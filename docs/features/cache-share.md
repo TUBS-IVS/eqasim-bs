@@ -78,7 +78,7 @@ fingerprint is present).
 *Coherence by output hash (Phase 4).* `prime` copies the entries, merges the records of
 compatible envelopes and then keeps only coherent ones. `braunschweig.cache_share._incoherence`
 judges an entry against its parents in the target metadata; `_coherent` is "no reason".
-There are four outcomes of an entry with parents, and the first failing parent decides:
+There are five outcomes of an entry with parents, and the first failing parent decides:
 
 | Outcome | Meaning | Result |
 |---|---|---|
@@ -86,18 +86,30 @@ There are four outcomes of an entry with parents, and the first failing parent d
 | `output_hash_mismatch` | both sides carry a digest and they differ | dropped (recompute) |
 | `legacy_timestamp_mismatch` | neither side carries a digest and the parent's `updated` differs from the timestamp the child recorded | dropped |
 | `mixed_hashed_legacy` | exactly one side carries a digest, content cannot be compared | dropped |
+| absent parent with a recorded digest | the parent is not in the target metadata (it is not shared, so a fresh directory lacks it) but the child's record carries `dependency_output_hashes[parent]` | kept; decided at run time (see below) |
 
-A missing parent (`missing_parent`) is dropped as well; two legacy sides with equal timestamps are
-kept (the old rule). `_coherent` is never more permissive than the fork's
+An absent parent WITHOUT a recorded digest (`missing_parent`) is dropped (it would recompute for
+certain); two legacy sides with equal timestamps are kept (the old rule). `_coherent` is never more permissive than the fork's
 `braunschweig.synpp_fork.staleness.assess`; it can be stricter (for example a legacy parent older than
 the child's snapshot), which is a safe miss, never a false hit. `prime` logs both sides of the decision:
 `invalidated N incoherent dependency records (output-hash mismatch a, legacy timestamp mismatch b,
 mixed hashed/legacy pair c, missing parent d)` and `kept N copied records (output-hash match x,
-legacy equal timestamps y, no parents z)`. A hit is therefore observable and not assumed; the explainer
-(`scripts/explain_stale_stages.py`) shows the primed entries as `HIT` or as stale with the reason.
+legacy equal timestamps y, no parents z, absent parent decided by digest at run time w)`. A hit is
+therefore observable and not assumed; the explainer (`scripts/explain_stale_stages.py`) shows the
+primed entries as `HIT` or as stale with the reason.
+
+*A primed entry whose parent is recomputed in the target.* The run re-executes the absent parent,
+and the fork compares its new output digest with the one the child recorded: equal keeps the child
+(a hit), different recomputes it. A mismatch never becomes a hit. Before that run the explainer
+shows such an entry as `STALE-IF`, not `HIT`: whether it is a hit is decided at run time by the
+digest. `braunschweig.freight.extraction` is the known case: its unshared
+`braunschweig.freight.extraction_tool` is rebuilt in a fresh directory and the jar bytes are not
+reproducible across builds, so `braunschweig.freight.extraction` recomputes there. The decision text
+is ADR-0149 (R17-3, R17-2).
 
 *Envelope refresh (R17-1).* Under early cutoff a spared child's record changes during a run
-(`dependencies`, `dependency_output_hashes`) while its `updated` stays. `track_run` then rewrites the
+(`dependencies[parent]` takes the parent's new `updated`; the recorded digest is equal by definition
+and stays) while its `updated` stays. `track_run` then rewrites the
 `metadata` of an EXISTING valid envelope to the new record and keeps the envelope's `environment`
 (the runtime that created the artifact, not the one that re-validated it), so `export` still sees
 envelope and record equal. It never creates an envelope: an entry that has none stays unknown.
@@ -106,13 +118,16 @@ envelope and record equal. It never creates an envelope: an entry that has none 
 
 - A migrated record differs from its envelope (the migration rewrote `pipeline.json`), so `export`
   copies the artifacts WITHOUT metadata and a `prime` from that store misses, until a later run under
-  `track_run` has refreshed the envelope.
+  `track_run` has refreshed the envelope and an EXPLICIT `export` (`skip_existing=False`, the CLI
+  default) shares the record again; the automatic export after a run uses `skip_existing=True` and
+  never rewrites an entry already in the store.
 - A store written before the semantic tokens (md5 module hashes) primes as a miss.
 - `braunschweig.freight.extraction_tool` is not in `cache_share_stages`, while the dependent
   `braunschweig.freight.extraction` is shared. The tool jar is not reproducible across Maven builds
   (the same holds for the eqasim jar), so a rebuilt jar changes its output digest: a primed
-  `freight.extraction` record whose recorded tool digest differs from the target's tool entry is
-  dropped as incoherent and recomputed. This is correct (the jar really differs) but means early
+  `freight.extraction` record whose recorded tool digest differs from the target's existing tool
+  entry is dropped as incoherent and recomputed, and in a fresh directory the record is kept and
+  recomputed at run time (see above). This is correct (the jar really differs) but means early
   cutoff cannot spare consumers of a rebuilt jar.
 
 Status: implemented and proven by synthetic tests (`tests/test_cache_share_synpp.py`,
