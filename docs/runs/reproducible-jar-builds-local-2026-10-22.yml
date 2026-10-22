@@ -1,0 +1,135 @@
+id: reproducible-jar-builds-local-2026-10-22
+date: '2026-10-22'
+repository:
+  commit: c2f0a46309800761dec931e25d29d7d04f1ad88b
+  branch: chore/i474-reproducible-jars
+  notes: >-
+    The gated tests with the fix ran from c2f0a463 (the fix commit of #474; its parent is the head of PR #473,
+    Phase 4 of #468). The three uncommitted .py files the log reports were the probe copies under
+    docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/, which no test imports. The baseline probes and
+    the gated tests without the fix ran on the same worktree before that commit (the eqasim test with the fix
+    replaced temporarily, see validation). The Java source was the local eqasim-java-bs work tree at
+    21c1045c4d6ffd55d362927cd485fd09f7cb1d0b (10 commits behind its origin/main 4c1af4a at the time) with one
+    modified tracked file, braunschweig/dependency-reduced-pom.xml (written by the shade plugin, excluded from the
+    stage token), and an untracked .claude/ directory (not copied by the stage). Both builds of a pair use the same
+    source, so the local commit choice does not matter for the comparison.
+configuration:
+  config: pytest.ini
+  notes: >-
+    No pipeline configuration. The gated tests are opted in with EQASIM_BS_FREIGHT_TOOL_BUILD=1 and
+    EQASIM_BS_EQASIM_SOURCE=<eqasim-java-bs work tree> (gated_tests.sh). The probes run Maven offline (-o) against
+    the local repository; the gated tests run Maven as matsim.runtime.maven run does. The freight tool pom takes the
+    MATSim version 2026.0-2026w12 and Java release 25 from the fork's root pom.
+sampling:
+  rate: not applicable (no population is involved)
+  scope: two Java build stages (braunschweig.freight.extraction_tool, matsim.runtime.eqasim), executed outside synpp
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. tests/jar_reproducibility.py calls each stage's execute() directly in two working
+    directories whose path lengths differ ("a" and "working_directory_with_a_longer_path", 35 characters), lays the
+    result out as synpp does (<hash>.cache plus the pickled return value in <hash>.p) and hashes it with
+    braunschweig/synpp_fork/output_hash.py hash_stage_output and the stage's _OUTPUT_HASH_EXCLUDE. The probes
+    (probe_tool.py, probe_eqasim.py) mirror the same execute() steps in "aaa" and "bbbbbbbbbbbb_longer" (16
+    characters) and list every differing file and jar entry.
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    All probes and the final gated tests completed; the first attempt of the gated tests failed before Maven
+    started (see the notes) and was repeated. This is a local proof on one machine (Windows) that the two jar builds
+    are byte-reproducible, NOT a validation: no observed data is involved. Not shown here: the same on felix (Maven
+    3.6.3, JDK 25.0.3+9) and a pipeline run in which the consumers of a rebuilt jar stay cached (issue #474, "Done
+    when").
+source: >-
+  Local runs on 2026-10-22 (workstation, Europe/Berlin) by the #474 session. Scripts and their outputs are in
+  docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/: probe_eqasim.py (eqasim_probe_baseline_then_fixed.txt),
+  probe_tool.py and tool_probes.sh (tool_probes.txt), gated_tests.sh and report_gated_dirs.py (gated_tests.txt,
+  gated_tests_attempt1_longpath.txt), and the output of the eqasim gated test without the fix
+  (eqasim_gated_test_without_fix.txt).
+environment: 'workstation (Windows 11 Pro 10.0.26200, 22 logical CPUs), conda eqasim (Python 3.10), Temurin JDK 25.0.4.1+1, Apache Maven 3.9.9'
+validation:
+- metric: root cause, eqasim jar (two builds of the source-build path of matsim.runtime.eqasim, without the fix)
+  reference: 'build A against build B from the same inputs; an equivalence reference, NOT observed data'
+  result: >-
+    12 of 1555 files differ. The 8 jars the build writes (core, its sources and tests jars, the shaded braunschweig
+    jar, original-braunschweig, the braunschweig sources and tests jars, the root tests jar) have the same size, the
+    same entry list and order and the same CRCs; only the DOS timestamps of the entries the build itself writes
+    differ (667 of 82757 entries of the shaded jar, which keeps the dependencies' own timestamps). The other 4
+    files are target/maven-status/maven-compiler-plugin/{compile,testCompile}/*/inputFiles.lst of core and
+    braunschweig, longer by 5920, 224, 752 and 288 bytes: 16 characters (the path difference) per listed source
+    file, for 370, 14, 47 and 18 files (449 in all; the line counts of these files in the fixed builds agree).
+    With -Dproject.build.outputTimestamp=2026-01-01T00:00:00Z only these 4 inputFiles.lst differ.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/eqasim_probe_baseline_then_fixed.txt
+  notes: >-
+    The probe script got its docstring and the environment overrides I474_MVN / I474_FORK after this run; the
+    defaults and the build steps are unchanged.
+- metric: root cause, freight tool jar (two builds of braunschweig.freight.extraction_tool, without the fix)
+  reference: 'build A against build B from the same inputs; an equivalence reference, NOT observed data'
+  result: >-
+    3 of 9 files differ: the shaded jar (same size 186626206 bytes, same 79979 entries and CRCs; the 12 entries
+    the build writes have other DOS timestamps), original-freight-tool (same size 3117 bytes, other bytes) and
+    inputFiles.lst (151 against 167 bytes: one source file, 16 characters). With the timestamp in the pom only
+    inputFiles.lst differs, and the jar is identical.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/tool_probes.txt
+- metric: arithmetic check of the byte counts measured on felix in the Phase 4 acceptance
+  reference: 'docs/runs/content-addressed-cache-acceptance-100pct-2026-10-22.yml: eqasim stage output 217807431 bytes in the cache copy against 217801443 in the fresh directory, tool stage 186636116 against 186636104'
+  result: >-
+    Consistent with cause 2. The working directories differ by 12 characters (cache_bs_100pct_allfeat_popsim, 30,
+    against cache_i468p4_fresh, 18). The fork at 4c1af4a (the commit of that run) has 499 .java files under
+    core/src/{main,test}/java and braunschweig/src/{main,test}/java (git ls-tree), and 499 x 12 = 5988 = 217807431
+    - 217801443; the tool has one source file, 1 x 12 = 12 = 186636116 - 186636104.
+  notes: >-
+    Assumes that inputFiles.lst lists exactly these .java files, which holds locally (449 lines = 449 such files
+    at 21c1045c4). The timestamps change bytes, not sizes, so they explain the digest change but not the byte
+    difference.
+- metric: gated tests WITHOUT the fix (they must fail)
+  reference: 'build A against build B through tests/jar_reproducibility.py; an equivalence reference, NOT observed data'
+  result: >-
+    FAIL as required. Freight tool (the pom without outputTimestamp, no exclusion): digests 729b6c2f... against
+    4afe491d..., 186636211 against 186636246 bytes. eqasim (REPRODUCIBLE_BUILD_ARGUMENT temporarily replaced by the
+    no-op property -DTEMP_RED_CHECK=..., _OUTPUT_HASH_EXCLUDE temporarily empty): digests 4c932a08... against
+    2c3adb40..., 276192372 against 276208087 bytes, a difference of 15715 = 449 x 35 characters.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/eqasim_gated_test_without_fix.txt
+  notes: >-
+    The freight tool numbers were read from the test output in the session; that output was not saved, so they
+    rest on this manifest only (the committed tool_probes.txt shows the same cause). The temporary eqasim edit was
+    reverted before the fix commit.
+- metric: gated tests WITH the fix, from commit c2f0a463
+  reference: 'build A against build B through tests/jar_reproducibility.py; an equivalence reference, NOT observed data'
+  result: >-
+    PASS for both. Freight tool: digest 0f50de8ee835ad29... in both working directories (7 files, 186636177 bytes
+    with the exclusion). eqasim: digest 563bacba44ff5dfd... in both (1547 files, 276047149 bytes with the
+    exclusion). Without the exclusion the two builds differ only in the inputFiles.lst files (1 for the tool, 4 for
+    eqasim). The same two digests also came out of build "a" of the failed first attempt in another directory.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/gated_tests.txt
+  notes: >-
+    The first attempt (gated_tests_attempt1_longpath.txt) used a 193-character pytest basetemp in the session's
+    scratch directory. The Maven working directory of the second build had 290 characters, above the Windows limit
+    of 258 for a process working directory (the first build's had 255); a diagnostic re-run of the tool test with
+    such a basetemp showed subprocess failing with NotADirectoryError (WinError 267) before Maven started (seen in
+    the session, not saved). The repeat used the basetemp C:\Users\bienzeisler\AppData\Local\Temp\i474.
+    tests/jar_reproducibility.py now refuses a cache directory longer than 240 characters on Windows with a clear
+    message.
+- metric: time zone independence of the fixed timestamp (freight tool jar)
+  reference: 'the jar of the gated test (default time zone W. Europe Standard Time); an equivalence reference, NOT observed data'
+  result: >-
+    PASS. A build with MAVEN_OPTS=-Duser.timezone=UTC gave the same jar sha256 896959761d988e07... as both builds of
+    the gated test.
+  artifact: docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/tool_probes.txt
+  notes: >-
+    Checked on the tool jar only; the eqasim build uses the same jar (3.5.0) and shade (3.6.2) plugin versions.
+    Another JDK, Maven plugin version or dependency set may change the bytes, and then the consumers recompute,
+    which is correct.
+artifacts:
+- docs/runs/artifacts/reproducible-jar-builds-local-2026-10-22/
+issues:
+- '#474'
+- '#468'
+decisions:
+- ADR-0149
+notes: >-
+  The fix keeps the jars and the copied sources hashed and excludes only target/maven-status/*. It changes the code
+  of both jar stages, so on the first run after the merge both rebuild and their consumers recompute once (ADR-0149
+  decision 8, Consequences).
