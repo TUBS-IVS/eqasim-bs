@@ -329,6 +329,11 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         # token), but its output is identical: the fork's early cutoff keeps the primed child, whose
         # record holds the parent's digest, cached. Upstream synpp would re-execute the child too.
         executions = ["executed", "child", "executed"]
+    if scenario in ("missing_parent", "forced_parent"):
+        # The parent is not primed (unshared or forced), so the target re-executes it; its output
+        # digest equals the one the primed child recorded, hence the child stays cached (spec 4.5,
+        # the dependency is in the registry, not in the target metadata).
+        executions = ["executed", "child", "executed"]
     if scenario == "older_target_parent":
         # Content decides (spec 4.5): the target's parent has the same output digest the primed
         # child recorded, so the child is a hit although the runs' timestamps differ.
@@ -336,7 +341,8 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
     if scenario == "older_target_parent_other_output":
         executions = ["executed", "executed", "child", "child"]
     if scenario == "newer_target_child":
-        executions = ["executed", "child", "executed", "child", "child"]
+        # The primed parent has the digest the target's own child recorded: the child stays cached.
+        executions = ["executed", "child", "executed", "child"]
     assert trace.read_text().splitlines() == executions
 
 
@@ -471,8 +477,8 @@ def test_prime_logs_how_many_copied_records_were_kept_and_why(tmp_path, monkeypa
     b.mkdir()
     with caplog.at_level(logging.INFO, logger="braunschweig.cache_share"):
         cache_share.prime(str(b), ["cs_parent", "cs_child"], str(store), [])
-    assert ("kept 2 copied records (output-hash match 1, legacy equal timestamps 0, no parents 1)"
-            in caplog.text)
+    assert ("kept 2 copied records (output-hash match 1, legacy equal timestamps 0, no parents 1, "
+            "absent parent decided by digest at run time 0)" in caplog.text)
     before = trace.read_text().splitlines()
     synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(b), rerun_required=False)
     assert trace.read_text().splitlines() == before                  # the primary path really hit
@@ -561,3 +567,75 @@ def test_envelope_refresh_never_invents_provenance_for_unknown_entries(tmp_path,
     payload.write_text("xyz", encoding="utf-8")
     _cs_run(wd, config)
     assert not sidecar.exists()
+
+
+# --- a primed record whose parent is absent from the target metadata (spec 4.5, ruling F1) ---------
+
+def _prime_only_the_child(tmp_path, monkeypatch, change_payload):
+    """Run A, share ONLY ``cs_child`` (its parent stays unshared) and prime it into a fresh directory."""
+    from braunschweig import synpp_fork
+    synpp_fork.install()
+    _two_stage_modules(tmp_path, monkeypatch, "cs_parent", "cs_child", _CS_PARENT, _CS_CHILD)
+    trace = tmp_path / "trace.txt"
+    payload = tmp_path / "payload.txt"
+    payload.write_text("abc", encoding="utf-8")
+    config = {"trace": str(trace), "payload": str(payload)}
+    a, b, store = tmp_path / "a", tmp_path / "b", tmp_path / "store"
+    _cs_run(a, config)
+    cache_share.export(str(a), ["cs_child"], str(store))
+    if change_payload:
+        payload.write_text("abcdef", encoding="utf-8")
+    b.mkdir()
+    cache_share.prime(str(b), ["cs_child"], str(store), [])
+    return config, trace, a, b, store
+
+
+def test_primed_child_with_an_unshared_parent_is_decided_by_digest_equal_output(
+        tmp_path, monkeypatch):
+    """The parent re-executes in the fresh directory; its output digest equals the one the child
+    recorded, so the child stays cached (spec 4.5: the dependency is in the registry)."""
+    config, trace, a, b, _ = _prime_only_the_child(tmp_path, monkeypatch, change_payload=False)
+    child = cache_share.find_stage_entries(str(b), "cs_child")[0]
+    assert child in json.loads((b / "pipeline.json").read_text(encoding="utf-8"))
+    assert trace.read_text().splitlines() == ["parent", "child"]            # only run A so far
+    synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(b), rerun_required=False)
+    assert trace.read_text().splitlines() == ["parent", "child", "parent"]
+
+
+def test_primed_child_with_an_unshared_parent_recomputes_when_the_parent_output_differs(
+        tmp_path, monkeypatch):
+    config, trace, a, b, _ = _prime_only_the_child(tmp_path, monkeypatch, change_payload=True)
+    synpp.run([{"descriptor": "cs_child"}], config, working_directory=str(b), rerun_required=False)
+    assert trace.read_text().splitlines() == ["parent", "child", "parent", "child"]
+
+
+def test_prime_logs_the_kept_with_absent_parent_basis(tmp_path, monkeypatch, caplog):
+    with caplog.at_level(logging.INFO, logger="braunschweig.cache_share"):
+        _prime_only_the_child(tmp_path, monkeypatch, change_payload=False)
+    assert "absent parent decided by digest at run time 1" in caplog.text
+
+
+def test_record_without_a_digest_for_an_absent_parent_is_dropped_as_missing_parent():
+    recorded = {"dependencies": {"gone": 1.0}, "dependency_output_hashes": {"gone": "d1"}}
+    assert cache_share._incoherence(recorded, {}) is None
+    assert cache_share._coherence_basis(recorded, {}) == "absent_parent_by_digest"
+    unrecorded = {"dependencies": {"gone": 1.0}}
+    assert cache_share._incoherence(unrecorded, {}) == "missing_parent"
+    metadata = {"c": dict(unrecorded)}
+    counts = {}
+    assert cache_share._drop_incoherent_metadata(metadata, ["c"], counts=counts) == 1
+    assert metadata == {} and counts == {"missing_parent": 1}
+
+
+def test_the_explainer_shows_a_primed_child_with_an_unshared_parent_as_stale_if(
+        tmp_path, monkeypatch):
+    from braunschweig.synpp_fork import metadata, staleness
+    config, trace, a, b, _ = _prime_only_the_child(tmp_path, monkeypatch, change_payload=False)
+    for name in ("cs_parent", "cs_child"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    registry = synpp.pipeline.process_stages([{"descriptor": "cs_child"}], config)
+    assessments = staleness.assess(registry, str(b), metadata.read_meta(str(b)), rerun_required=False)
+    by_name = {a.stage: a for a in assessments.values()}
+    assert by_name["cs_parent"].stale and "not_in_meta" in by_name["cs_parent"].reasons
+    child = by_name["cs_child"]
+    assert not child.stale and child.stale_if == ["cs_parent"] and not child.certain_recompute

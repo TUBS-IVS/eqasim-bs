@@ -771,3 +771,47 @@ def test_assess_names_exactly_the_stages_the_fork_cannot_spare(tmp_path, monkeyp
                                    str(working), metadata.read_meta(str(working)), rerun_required=False)
     assert {a.stage for a in assessments.values() if a.stale or a.certain_recompute} == expected
     assert _names(run()["stale"]) == expected
+
+
+# --- parity with pristine synpp 1.6.2 on a purely legacy cache (finding F10) ---------------------------
+
+def _updated_by_entry(directory):
+    import json
+    return {entry: record.get("updated") for entry, record in
+            json.loads((directory / "pipeline.json").read_text(encoding="utf-8")).items()}
+
+
+@pytest.mark.parametrize("scenario", [_scenario_none, _scenario_token_changed, _scenario_payload_changed,
+                                      _scenario_parent_timestamp, _scenario_pickle_removed])
+def test_the_fork_matches_pristine_synpp_on_a_purely_legacy_cache(tmp_path, monkeypatch, scenario):
+    """Legacy records carry no output digest, so early cutoff has nothing to compare: the fork's run()
+    must execute exactly the stages synpp 1.6.2's own run() executes and report the same stale set.
+
+    The fork is installed BEFORE the cache is written, so the (semantic) module hashes of the records
+    match what the fork computes; only the records stay legacy (written by upstream's run(), no digests).
+    An unmigrated md5 cache would devalidate every stage under the fork (staleness ruling H)."""
+    from braunschweig import synpp_fork
+    from braunschweig.synpp_fork import metadata
+    synpp_fork.install()
+    _, working, token, registry, run = _build_diamond(tmp_path, monkeypatch, _pristine_run)
+    metadata.write_meta(scenario(working, token, metadata.read_meta(str(working))), str(working))
+    fork_working = tmp_path / "cache_fork"
+    shutil.copytree(working, fork_working)
+    before = _updated_by_entry(working)
+    assert not any("output_hash" in record for record in metadata.read_meta(str(working)).values())
+
+    pristine_stale = set(run()["stale"])                            # upstream run() on ``working``
+    for name in DIAMOND:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    importlib.invalidate_caches()
+    config = {"token_file": str(token), "payload_file": str(token.parent / "payload.txt")}
+    fork_stale = set(_fork_run([{"descriptor": "dm_d"}], config, working_directory=str(fork_working),
+                               rerun_required=False, verbose=True)["stale"])
+
+    assert fork_stale == pristine_stale
+    executed = lambda directory: {e for e, u in _updated_by_entry(directory).items() if u != before.get(e)}
+    assert executed(fork_working) == executed(working)
+    if scenario is _scenario_none:
+        assert pristine_stale == set()
+    else:
+        assert pristine_stale                                       # the scenario really devalidates something

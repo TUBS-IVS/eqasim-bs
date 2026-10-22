@@ -24,28 +24,19 @@ matches ``...german_wide_xl``). No silent fallbacks: export/prime log explicit
 counts. See docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md.
 
 Coherence of a primed record with its parents is judged by CONTENT (spec
-2026-10-16 section 4.5): a child's record is kept when every parent is present and the
+2026-10-16 section 4.5): a child's record is kept when, for every parent present in the target metadata, the
 child's recorded ``dependency_output_hashes`` digest equals the parent's ``output_hash``
 digest, so an identical output primed from another run is a hit although timestamps
 differ. Two legacy (unhashed) records fall back to exact timestamp equality; a mixed
-pair is dropped (content cannot be compared). This is never more permissive than the
-fork's ``braunschweig.synpp_fork.staleness.assess``: it can drop a record the fork
-would still accept (a legacy parent older than the child's snapshot, or a mixed pair
-that assess judges by timestamp), which is a safe miss, never a false hit.
+pair is dropped (content cannot be compared). A parent ABSENT from the target metadata
+keeps the record when it carries that parent's recorded digest: the run re-executes the
+parent and the fork compares digests, so a mismatch never becomes a hit. This is never
+more permissive than the fork's ``braunschweig.synpp_fork.staleness.assess``: it can drop
+a record the fork would still accept, which is a safe miss, never a false hit.
 
-Known facts (documented, not changed):
-
-- ``export`` drops the metadata of a migrated record unless a later fork run under
-  ``track_run`` refreshed its envelope: the migration rewrote ``pipeline.json`` while the
-  sidecar envelope still holds the pre-migration record, so the two differ (a safe miss).
-  ``track_run`` rewrites the ``metadata`` of an existing envelope whenever it differs from
-  the record, so the next run covering that entry makes it shareable again.
-- A store written before the content-addressed cache (md5 module hashes) primes as a
-  miss.
-- ``braunschweig.freight.extraction_tool`` is not shared, unlike the shared
-  ``braunschweig.freight.extraction``. Its jar bytes are not reproducible across Maven
-  builds, so a primed ``freight.extraction`` record whose tool digest differs from the
-  target's tool entry is dropped as incoherent and recomputed (safe).
+The user-facing behaviour and the known safe misses (migrated records, pre-Phase-3 stores,
+the unshared ``braunschweig.freight.extraction_tool``) are in docs/features/cache-share.md;
+the decision text is ADR-0149.
 """
 from __future__ import annotations
 
@@ -92,8 +83,9 @@ def track_run(working_directory: str):
     Unchanged cache hits without a prior envelope stay unknown. In particular an
     explicit export cannot retrospectively label old artifacts with today's runtime.
 
-    An entry the fork's early cutoff spared keeps its ``updated`` but gets a refreshed
-    record (``dependencies``, ``dependency_output_hashes``). An EXISTING envelope then
+    An entry the fork's early cutoff spared keeps its ``updated`` but its record changes
+    (``dependencies[parent]`` takes the parent's new ``updated``; the recorded output digest
+    is equal by definition and stays). An EXISTING envelope then
     follows that record so ``export`` still sees them equal; its ``environment`` is kept
     (provenance is the runtime that created the artifact, not the one that re-validated it).
     """
@@ -153,10 +145,19 @@ _INCOHERENCE_REASONS = ("output_hash_mismatch", "legacy_timestamp_mismatch",
 def _incoherence(entry: dict, metadata: dict):
     """Return why ``entry`` is incoherent with its parents in ``metadata``, or ``None``.
 
-    The reason is one of ``_INCOHERENCE_REASONS``; the first failing parent decides."""
+    The reason is one of ``_INCOHERENCE_REASONS``; the first failing parent decides.
+
+    A parent that is ABSENT from ``metadata`` (not shared, so absent from a fresh directory) does
+    not make the record incoherent when the record carries ``dependency_output_hashes[parent]``:
+    the run then re-executes that parent (``not_in_meta``) and the fork compares the new output
+    digest with the recorded one, so a differing output recomputes the child and never becomes a
+    hit. Without a recorded digest the child would recompute for certain, so the record is
+    dropped as ``missing_parent``."""
     for dependency, timestamp in entry.get("dependencies", {}).items():
         parent = metadata.get(dependency)
         if parent is None:
+            if entry.get("dependency_output_hashes", {}).get(dependency) is not None:
+                continue
             return "missing_parent"
         recorded = entry.get("dependency_output_hashes", {}).get(dependency)
         current = (parent.get("output_hash") or {}).get("digest")
@@ -174,12 +175,15 @@ def _incoherence(entry: dict, metadata: dict):
 def _coherence_basis(entry: dict, metadata: dict) -> str:
     """Name the rule that accepted an entry already known to be coherent (``_incoherence`` is None).
 
-    ``no_parents``: nothing to compare; ``legacy_timestamp_match``: at least one parent was
-    judged by equal timestamps (legacy records); else ``output_hash_match``. Used only for the
-    kept counts that ``prime`` logs."""
+    ``no_parents``: nothing to compare; ``absent_parent_by_digest``: at least one parent is absent
+    from ``metadata`` and will be decided at run time by its recorded digest; ``legacy_timestamp_match``:
+    at least one parent was judged by equal timestamps (legacy records); else ``output_hash_match``.
+    Used only for the kept counts that ``prime`` logs."""
     dependencies = entry.get("dependencies", {})
     if not dependencies:
         return "no_parents"
+    if any(dependency not in metadata for dependency in dependencies):
+        return "absent_parent_by_digest"
     recorded = entry.get("dependency_output_hashes", {})
     if any(recorded.get(dependency) is None for dependency in dependencies):
         return "legacy_timestamp_match"
@@ -187,9 +191,9 @@ def _coherence_basis(entry: dict, metadata: dict) -> str:
 
 
 def _coherent(entry: dict, metadata: dict) -> bool:
-    """A child's record is coherent with its parents when every parent is present and either
-    both sides carry output hashes that agree, or both are legacy records with equal
-    timestamps. A mixed pair (one side hashed, the other not) is incoherent: content cannot be
+    """A child's record is coherent with its parents when every present parent either
+    agrees by output hash or, for two legacy records, by equal timestamps, and every absent
+    parent has a digest recorded in the child (decided at run time). A mixed pair (one side hashed, the other not) is incoherent: content cannot be
     compared, so synpp must recompute (spec 2026-10-16 section 4.5)."""
     return _incoherence(entry, metadata) is None
 
@@ -199,7 +203,10 @@ def _drop_incoherent_metadata(metadata: dict, copied: list, counts: dict = None)
 
     Content, not timestamps, decides (see ``_coherent``): a parent imported from another
     run keeps the child valid exactly when its output hash equals the one the child
-    recorded. Unrelated target entries are outside this check and remain untouched.
+    recorded. A parent absent from ``metadata`` keeps the child when the child recorded a
+    digest for it (the run recomputes the parent and compares digests, so a mismatch is never
+    a hit); without that digest the child is dropped as ``missing_parent``. Unrelated target
+    entries are outside this check and remain untouched.
     When ``counts`` is given it is filled with the number of dropped records per reason
     (``_INCOHERENCE_REASONS``) so the caller can log them.
     """
@@ -421,15 +428,17 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
                 counts.get("legacy_timestamp_mismatch", 0),
                 counts.get("mixed_hashed_legacy", 0), counts.get("missing_parent", 0))
         with_metadata = sum(entry in metadata for entry in primed)
-        kept = {"output_hash_match": 0, "legacy_timestamp_match": 0, "no_parents": 0}
+        kept = {"output_hash_match": 0, "legacy_timestamp_match": 0, "no_parents": 0,
+                "absent_parent_by_digest": 0}
         for entry in primed:
             if entry in metadata:
                 kept[_coherence_basis(metadata[entry], metadata)] += 1
         logger.info(
             "[cache_share] prime: kept %d copied records (output-hash match %d, "
-            "legacy equal timestamps %d, no parents %d)",
+            "legacy equal timestamps %d, no parents %d, "
+            "absent parent decided by digest at run time %d)",
             with_metadata, kept["output_hash_match"], kept["legacy_timestamp_match"],
-            kept["no_parents"])
+            kept["no_parents"], kept["absent_parent_by_digest"])
         for entry in primed:
             sidecar = os.path.join(working_directory, entry + _METADATA_SUFFIX)
             if entry in metadata:

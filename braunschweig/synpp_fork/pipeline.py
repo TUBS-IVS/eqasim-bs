@@ -406,8 +406,9 @@ def run(definitions, config = {}, working_directory = None, flowchart_path = Non
             progress += 1
             executed.append(hash)
             # The denominator is the number of stages KNOWN to be stale now: executing a stage can
-            # devalidate children, so the total may still grow (the line keeps its upstream prefix and
-            # shape "Pipeline progress: n/m (p%)" for scripts/monitor_run_health.sh).
+            # devalidate children, so the total may still grow (the line keeps the upstream prefix
+            # "Pipeline progress: " and the "n/m" pair (scripts/monitor_run_health.sh greps the prefix,
+            # scripts/monitor_server.ps1 matches "Pipeline progress: [0-9]+/[0-9]+"); the rest differs).
             logger.info("Pipeline progress: %d/%d known stale (%.2f%%)" % (
                 progress, len(stale_hashes), 100 * progress / len(stale_hashes)
             ))
