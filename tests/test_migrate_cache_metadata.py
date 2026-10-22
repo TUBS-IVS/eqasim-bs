@@ -24,6 +24,8 @@ import synpp
 import synpp.pipeline
 import yaml
 
+from tests.synpp_pristine import upstream_run
+
 _PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "migrate_cache_metadata.py"
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the migration proof needs git")
@@ -138,18 +140,6 @@ def _git(repo, *args):
                           capture_output=True, text=True, check=True).stdout.strip()
 
 
-def _upstream_run():
-    """synpp 1.6.2's pristine run(), executed from the installed file's text so the test does
-    not depend on whether another test already installed the fork in this interpreter."""
-    import synpp.pipeline as upstream
-    source = pathlib.Path(upstream.__file__).read_text(encoding="utf-8")
-    start = source.index("\ndef run(")
-    end = source.index("\ndef run_from_yaml(")
-    namespace = dict(vars(upstream))
-    exec(source[start:end], namespace)
-    return namespace["run"]
-
-
 def _md5_stage_hash(descriptor):
     return hashlib.md5(inspect.getsource(descriptor).encode("utf-8")).hexdigest()
 
@@ -182,7 +172,7 @@ class Project:
 
     def legacy_run(self, descriptor: str, config: dict = None) -> None:
         """synpp 1.6.2 pristine run() with the md5 module hash: the cache as it exists today."""
-        run = _upstream_run()
+        run = upstream_run()
         saved = synpp.pipeline.get_stage_hash
         synpp.pipeline.get_stage_hash = _md5_stage_hash
         try:
