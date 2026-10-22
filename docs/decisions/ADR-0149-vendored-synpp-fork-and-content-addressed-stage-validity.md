@@ -347,7 +347,7 @@ migration counters are in the manifest). So "zero recompute after migration" hol
 recomputes nothing the old code would not", not as "0 stale". Many entries stay legacy because their stored
 module hash matches neither the current source nor the legacy revision. Wording defect found on this run: the
 explainer's legacy md5 warning also fired after a migration; reworded in the same PR (the launcher keeps
-logging that line at ERROR, see `docs/codebase/notes/synpp-fork.md`).
+logging that line at ERROR, see `scripts/run_synpp.py` `explain_before_run`).
 
 Phase 4 tests committed on the branch (synthetic pipelines in `tmp_path`, no scientific claim;
 they pin the mechanics):
