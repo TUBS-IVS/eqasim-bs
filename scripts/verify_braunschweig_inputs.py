@@ -494,6 +494,18 @@ INPUTS: List[Input] = [
         optional=True,
         restricted=True,
     ),
+    # D20: the parking lots of the model region (issue #465, ADR-0165), read by matsim.simulation.prepare for the
+    # large-site access step; required because large_facility_access_enabled is on (its code default).
+    Input(
+        name="D20 Parking lots of the region from OSM 2026 (committed)",
+        rel_path="braunschweig/parking/parking_lots_osm_2026.csv",
+        source="Committed with the repository (docs/registry/data/parking_lots_osm_2026.yml); nothing to download.",
+        notes=(
+            "Config key large_facility_access_parking_lots_path. ODbL 1.0 (derived from OpenStreetMap), (c) OpenStreetMap "
+            "contributors. Regenerate with python scripts/build_parking_lots_from_osm.py from the pinned extract."
+        ),
+        matsim_only=True,
+    ),
 ]
 
 

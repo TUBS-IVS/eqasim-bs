@@ -1,0 +1,76 @@
+dataset: parking_lots_osm_2026
+title: Off-street parking lots of the model region with estimated spaces, one point per lot (OSM, September 2026)
+inventory_id: null
+provider: >-
+  Own derivation (issue #465, ADR-0165) from OpenStreetMap data: the pinned Geofabrik extract
+  niedersachsen-260929.osm.pbf (SHA-256 c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94, MD5
+  0c513947b19145d84afb0b3bc36d95f5 checked against its Geofabrik .md5 file; the same extract as the data record
+  parking_zones_2026)
+vintage: >-
+  OSM snapshot 2026-09-29T20:22:51Z (osmosis_replication_timestamp of the PBF header); derived on 2026-10-23.
+geography: >-
+  The bounding box south 51.52, west 9.819, north 52.927, east 11.34 (WGS84): the node extent of the prepared network of
+  the #465 1 % rerun (the ZGB model region) grown by 2 km, so lots up to the 1500 m selection radius of a site at the
+  region edge are included.
+crs: EPSG:25832
+roles:
+- supply_input
+used_by:
+- matsim.simulation.prepare
+acquisition:
+  method: derived
+  source: >-
+    niedersachsen-260929.osm.pbf (https://download.geofabrik.de/europe/germany/niedersachsen-260929.osm.pbf, with its
+    Geofabrik .md5), local and gitignored under eqasim-data/data/braunschweig/parking/raw_osm/
+  script: scripts/build_parking_lots_from_osm.py
+  notes: >-
+    python scripts/build_parking_lots_from_osm.py --extract
+    eqasim-data/data/braunschweig/parking/raw_osm/niedersachsen-260929.osm.pbf --bbox 51.52,9.819,52.927,11.34
+    --out-dir eqasim-data/data/braunschweig/parking (GDAL OSM driver through pyogrio; layer points with other_tags
+    LIKE '%"amenity"=>"parking"%' 1165 features in 33.2 s, layer multipolygons with amenity = 'parking' 19,991
+    features in 200.3 s). Of 21,156 objects: 14,905 lots kept with 704,603 spaces; 5376 street-side objects and 875
+    objects without a space (nodes without a capacity tag) dropped. Rules (module docstring of the script): every
+    off-street amenity=parking area or node of ANY access value (the employee lots of the large plants carry access=no,
+    private or no access tag), street-side types (braunschweig.parking.zone_geometry.STREET_SIDE_LOT_TYPES) dropped,
+    spaces by the parking module's capacity rule B2 (braunschweig.parking.supply_share.lot_capacity) rounded to whole
+    spaces, centroid coordinates. The script also writes parking_lots_osm_2026.json next to the CSV (digests, box,
+    filters, counts; local, not committed).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_lots_osm_2026.csv
+  committed: true
+  local_only: false
+  notes: >-
+    Force-added (git add -f) per the .gitignore allowlist of the parking release tables (parking_*_2026.csv).
+    Semicolon CSV, UTF-8, LF, sorted by lot_id, coordinates to 0.01 m; columns lot_id (way/<id>, relation/<id>,
+    node/<id>), x, y (EPSG:25832), spaces (integer >= 1), capacity_source (tag, area, area_levels), access, parking,
+    name. 849,570 bytes, SHA-256 1c54b010ff23283f6acf096d00c7c6deb8982e2e83a0c63749557f9d9c281859 (as written on
+    2026-10-23).
+verification:
+  verifier_entry: D20
+  script: null
+  notes: >-
+    Listed as D20 (matsim_only, required while large_facility_access_enabled is on) in
+    scripts/verify_braunschweig_inputs.py. matsim.simulation.prepare checks the file exists before the Java step and
+    hashes it into its validate() token; eqasim-java-bs ParkingLotReader validates the columns, finite coordinates,
+    whole spaces >= 1 and unique ids, and RunAdaptLargeFacilityAccess drops (and counts) lots outside the network
+    bounding box grown by 2 km and fails when none is left. tests/test_build_parking_lots_from_osm.py pins the rule.
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: ODbL 1.0, (c) OpenStreetMap contributors (every row is derived from OpenStreetMap data)
+  restricted: false
+  redistribution: allowed
+  notes: >-
+    Redistribution must keep the OpenStreetMap attribution and the ODbL share-alike terms.
+limitations: >-
+  The spaces rest mostly on ASSUMPTION B-d of the parking module: 592,874 of 704,603 spaces (84.1 %) from the lot area /
+  25 m2, 14,473 (2.1 %) area times levels, 97,256 (13.8 %) from a capacity tag; levels of multi-storey car parks are
+  often not tagged, so their spaces are underestimated. OSM does not record whom a lot serves: lots of shops, residents
+  and firms near a site all count, and a site's share is spread by spaces, not by ownership. Completeness of the OSM
+  mapping is not checked against a reference. Lots are points (centroids): a large lot with several exits gets one
+  access link.
+notes: >-
+  Read by the large-site access step (ADR-0165): in-scope large sites (work sites and universities) spread their car
+  access over the nearest lots that cover half of the site's activities, within 1500 m.

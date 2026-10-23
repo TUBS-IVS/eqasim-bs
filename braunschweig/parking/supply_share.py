@@ -364,6 +364,16 @@ def _capacity(kind: str, geometry: BaseGeometry, tags: Mapping, side: Optional[s
             "capacity_tag_invalid": text is not None, "levels": levels}
 
 
+def lot_capacity(geometry: BaseGeometry, tags: Mapping) -> tuple:
+    """(spaces, source) of an off-street lot under B2, for users outside the zone rule (the parking-lot release of
+    the large-site access, ADR-0165): ``source`` is ``tag`` (a whole-number ``capacity`` tag), ``area`` (lot area /
+    ``LOT_M2_PER_SPACE``, ASSUMPTION B-d), ``area_levels`` (times the tagged levels of a multi-storey car park) or
+    ``no_extent`` (a node or line without a capacity tag: 0 spaces). ``geometry`` must be in metres."""
+    capacity = _capacity("lot", geometry, tags, None, True)
+    source = "tag" if capacity["capacity_source"] == "tag" else capacity["capacity_basis"]
+    return capacity["capacity_spaces"], source
+
+
 # --------------------------------------------------------------------------- B1 + B2: the element frame
 
 
