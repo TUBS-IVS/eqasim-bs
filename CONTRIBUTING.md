@@ -64,6 +64,9 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
   a PR base to the upstream — always switch it, or just use the alias:
   `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
 - See open vs merged branches at a glance: `git branch-status`.
+- Bring `main` into a branch with `git sync-main`: it merges, rebuilds `docs/generated/*` and runs the
+  documentation check (setup: `git config alias.sync-main '!python scripts/sync_main.py'`;
+  [merging-main](docs/codebase/notes/merging-main.md), ADR-0165).
 - Auto-delete-on-merge is enabled; `main` requires a PR (admin override retained).
 
 ## Newly discovered work: fix it now, or issue it
