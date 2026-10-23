@@ -318,6 +318,24 @@ DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
 # stage through that stage dependency.
 KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.donor_match_fine_child_age_bands"
 DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
+# Keep the passenger access class (MiD P_VAUTO == 3 "never a car passenger" or not) as a soft match key
+# of the weekend and diary plan matches (ADR-0162, eqasim-bs#465). Without it a person whose own answer
+# is "never" (car_passenger_availability "none", ADR-0121) can inherit another respondent's diary with
+# lifts the mode choice can then never offer (measured in ADR-0162 and run manifest
+# docs/runs/donor-match-passenger-access-2026-10-23.yml). Effective only with
+# mid_passenger_availability on (P_VAUTO is loaded only then). Default ON; read ONLY by
+# braunschweig.popsim.completed_donor, like the fine child age bands.
+KEY_DONOR_MATCH_PASSENGER_ACCESS = "braunschweig.population.popsim.donor_match_passenger_access"
+DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
+# Refines the passenger access key (ADR-0166, eqasim-bs#465): a "never" passenger prefers a donor whose
+# handed-over diary has no car-passenger trip, in the weekend member alignment and in every person-level
+# match. The class key alone left "never" persons with a foreign lift diary (household alignment across the
+# class, and "never" donors who report a lift themselves); counts in run manifest
+# docs/runs/donor-match-passenger-residual-2026-10-23.yml. Effective only together with
+# donor_match_passenger_access (and therefore
+# mid_passenger_availability). Default ON; read ONLY by braunschweig.popsim.completed_donor.
+KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = "braunschweig.population.popsim.donor_match_lift_free_never_passenger"
+DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

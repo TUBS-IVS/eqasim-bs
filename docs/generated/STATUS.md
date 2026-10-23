@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 109 | stages: 132 | datasets: 104 | ADRs: 157 | run manifests: 72
+- Features: 108 | stages: 132 | datasets: 104 | ADRs: 161 | run manifests: 74
 
 ## Population synthesis
 
@@ -147,7 +147,6 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Mode balancer](../registry/features/cordon_mode_balancer.yml) | active | ON | A/A/- | unvalidated |  |
 | [Cordon network ring + cut](../registry/features/cordon_network_ring.yml) | active | ON | A/A/- | unvalidated |  |
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
-| [Cordon gate facilities linked to the carriageway feeding the inward gate link](../registry/features/gate_facility_links.yml) | active | ON | A/A/- | unvalidated (`freight-a2-east-turnaround-prod100-2026-10-23`, `gate-facility-links-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
 | [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Outside-tour modes judged against the regional survey](../registry/features/outside_tour_modes.yml) | active | ON | A/-/- | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | [#453](https://github.com/TUBS-IVS/eqasim-bs/issues/453) |

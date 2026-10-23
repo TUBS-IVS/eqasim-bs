@@ -1,0 +1,45 @@
+id: routed-last-arrival-i465-rerun-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: 2acab00c
+  branch: fix/i465-last-three-stuck
+  notes: >-
+    scripts/measure_routed_last_arrival.py as committed in 2acab00c, run with the system python3 on felix over the
+    prepared population of the 1 % rerun of the #465 fixes (local integration branch integration/i465-rerun2,
+    felix ~/wt-i487-rerun). This manifest is a MEASUREMENT of that run's prepared population, not a pipeline run.
+configuration:
+  base: configs/base_bs.yml
+  notes: The rerun's configuration, with the day-end margin of ADR-0154 (3600 s) applied by the population writer.
+sampling:
+  rate: 1 % (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on
+  notes: 12,562 agents (1,468 residents with a frozen tour, 10,573 in-region residents, 521 freight); sample counts.
+pipeline:
+  targets:
+  - matsim.simulation.prepare
+  notes: >-
+    python3 -I measure_routed_last_arrival.py ~/wt-i487-rerun/cache_rerun/braunschweig.matsim.simulation.prepare__b4c75863700204be34f47ab4ffba9947.cache/braunschweig_1pct_i465_rerun_population.xml.gz
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Counts the plans whose ROUTED last arrival is late after the survey-time margin of ADR-0154; the basis of
+    ADR-0160. A measurement over a cached run (classified smoke: the schema has no measurement class), not a
+    validation.
+validation:
+- metric: residents whose routed last arrival is after 29 h (30 h minus the 3600 s margin)
+  reference: none (measurement)
+  result: 19 of 1,468 with a frozen tour, 35 of 10,573 in the region (0.45 % of the residents); 0 of 521 freight.
+- metric: residents whose routed last arrival is after 30 h
+  reference: none (measurement)
+  result: 4 with a frozen tour, 16 in the region.
+issues:
+- '#465'
+decisions:
+- ADR-0160
+artifacts:
+- docs/runs/artifacts/routed-last-arrival-i465-rerun-2026-10-23/routed_last_arrival_i465_rerun.txt
+source: >-
+  docs/runs/artifacts/routed-last-arrival-i465-rerun-2026-10-23/routed_last_arrival_i465_rerun.txt (sha256
+  8b289315933f53f2f318551d54bd63bfdf3ac0d98f976f42edf1532cbbc75fb4), the printed output of the script.

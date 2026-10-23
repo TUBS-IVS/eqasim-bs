@@ -153,6 +153,8 @@ def build_completed_donor(
     passenger_availability_enabled: bool = False,
     diary_trace_path: Optional[Union[str, Path]] = None,
     precompute_matching: bool = True,
+    donor_match_passenger_access: bool = True,
+    donor_match_lift_free_never_passenger: bool = True,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
     diary plan match), and attach the plan-source diary facts.
@@ -231,6 +233,25 @@ def build_completed_donor(
     precompute_matching:
         Prepare invariant person donor features and candidate indexes once per
         matching pool. ``False`` retains the executable repeated-filter baseline.
+    donor_match_passenger_access:
+        When True (default) AND ``passenger_availability_enabled`` (the only case in
+        which the loader reads ``P_VAUTO``), the weekend match and the diary match keep
+        the person's passenger access class (``P_VAUTO`` "never" or not) when they give
+        it another respondent's diary (ADR-0162, eqasim-bs#465): a person whose own
+        answer is "never a car passenger" must not inherit a day with lifts that the
+        mode choice then cannot offer. A soft key (relaxed after the licence); the
+        surviving crossings are counted and logged by
+        :func:`count_passenger_class_crossings`. Same rng contract as the fine bands:
+        the assignment changes, the draw sequence does not.
+    donor_match_lift_free_never_passenger:
+        When True (default) and the passenger key above is effective, a "never" passenger
+        prefers a donor whose handed-over diary has no car-passenger trip
+        (``passenger_availability.car_passenger_diary_keys``), in both plan matches
+        (ADR-0166): the class key alone still hands a lift to a "never" person when the
+        donor household has no "never" member in the age band or when a "never" donor
+        reports a lift themselves. The persons that keep a lift in another respondent's
+        diary are counted and logged as a rate. Same rng contract: the assignment
+        changes, the draw sequence does not.
 
     Notes
     -----
@@ -255,31 +276,19 @@ def build_completed_donor(
     # days, overriding seed_day_filter (mirrors stage.execute exactly).
     day_filter = seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
 
+    passenger_key = bool(donor_match_passenger_access and passenger_availability_enabled)
+    if donor_match_passenger_access and not passenger_availability_enabled:
+        logger.info("[completed_donor] donor_match_passenger_access is on but the MiD passenger availability is "
+                    "off (P_VAUTO is not loaded): the plan-source matchers run without the passenger key")
+    lift_free_never = bool(donor_match_lift_free_never_passenger and passenger_key)
+    if donor_match_lift_free_never_passenger and not passenger_key:
+        logger.info("[completed_donor] donor_match_lift_free_never_passenger is on but the passenger key is not "
+                    "effective: the plan-source matchers run without the lift-free preference")
+
     households, persons, completeness_report, completion_report = mid_donor.load_completed_donor(
         mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
         fine_child_age_bands=donor_match_fine_child_age_bands,
         include_passenger_availability=passenger_availability_enabled,
-    )
-
-    weekend_report = None
-    if weekend_plan_match_on:
-        # completion_rng is DELIBERATELY shared with member completion above: the two
-        # draws form one entangled seeded stream -- do NOT reseed it.
-        persons, weekend_trace, weekend_report = weekend_plan_match.reassign_weekend_plan_sources(
-            households, persons, rng=completion_rng,
-            fine_child_age_bands=donor_match_fine_child_age_bands,
-            precompute_matching=precompute_matching,
-        )
-        if trace_path is not None:
-            weekend_trace.to_parquet(trace_path)
-        logger.info("[completed_donor] weekend_plan_match: %s", weekend_report)
-
-    logger.info(
-        "[completed_donor] built %d households / %d persons "
-        "(member completion: %d households filled, %d persons added; completeness %.3f).",
-        len(households), len(persons),
-        completion_report.n_households_filled, completion_report.n_persons_added,
-        completeness_report.completeness_rate,
     )
 
     # Fail fast BEFORE the ~1 min / ~2 GB Wege load below (R9): mobil is required
@@ -298,10 +307,40 @@ def build_completed_donor(
                 "to run without the diary plan match."
             )
 
+    # The lift-free preference needs the Wege table BEFORE the weekend match; the load draws no rng, so
+    # loading it earlier cannot shift the completion stream.
+    wege = mid_donor.load_mid_wege(mid_dir) if lift_free_never else None
+    car_passenger_diaries = (passenger_availability.car_passenger_diary_keys(wege)
+                             if lift_free_never else None)
+
+    weekend_report = None
+    if weekend_plan_match_on:
+        # completion_rng is DELIBERATELY shared with member completion above: the two
+        # draws form one entangled seeded stream -- do NOT reseed it.
+        persons, weekend_trace, weekend_report = weekend_plan_match.reassign_weekend_plan_sources(
+            households, persons, rng=completion_rng,
+            fine_child_age_bands=donor_match_fine_child_age_bands,
+            precompute_matching=precompute_matching,
+            passenger_key=passenger_key,
+            car_passenger_diaries=car_passenger_diaries,
+        )
+        if trace_path is not None:
+            weekend_trace.to_parquet(trace_path)
+        logger.info("[completed_donor] weekend_plan_match: %s", weekend_report)
+
+    logger.info(
+        "[completed_donor] built %d households / %d persons "
+        "(member completion: %d households filled, %d persons added; completeness %.3f).",
+        len(households), len(persons),
+        completion_report.n_households_filled, completion_report.n_persons_added,
+        completeness_report.completeness_rate,
+    )
+
     # Diary facts are derived from the MiD Wege table UNCONDITIONALLY (needed both
     # for the diary plan match below AND for the src_* fact columns attached
     # unconditionally further down -- see the docstring Notes).
-    wege = mid_donor.load_mid_wege(mid_dir)
+    if wege is None:
+        wege = mid_donor.load_mid_wege(mid_dir)
     facts = diary_facts.compute_diary_facts(wege)
 
     diary_report = None
@@ -317,10 +356,18 @@ def build_completed_donor(
             hard_employment=diary_match_hard_employment,
             fine_child_age_bands=donor_match_fine_child_age_bands,
             precompute_matching=precompute_matching,
+            passenger_key=passenger_key,
+            car_passenger_diaries=car_passenger_diaries,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
         logger.info("[completed_donor] diary_plan_match: %s", diary_report)
+
+    if "P_VAUTO" in persons.columns:
+        n_foreign, n_crossed = count_passenger_class_crossings(persons)
+        logger.info("[completed_donor] passenger access class (P_VAUTO never vs not) differs between person and "
+                    "plan source for %d of %d persons with another respondent's diary (%.2f%%); passenger key %s",
+                    n_crossed, n_foreign, 100.0 * n_crossed / max(n_foreign, 1), "on" if passenger_key else "off")
 
     # src_* plan-source fact columns are attached ALWAYS (facts, not behaviour).
     persons = diary_facts.attach_plan_source_facts(persons, facts)
@@ -328,6 +375,7 @@ def build_completed_donor(
         persons = passenger_availability.attach_car_passenger_diary_evidence(
             persons, wege
         )
+        log_never_passenger_foreign_lifts(persons, lift_free_never=lift_free_never)
 
     return CompletedDonor(
         households=households,
@@ -337,6 +385,45 @@ def build_completed_donor(
         weekend_report=weekend_report,
         diary_report=diary_report,
     )
+
+
+def count_passenger_class_crossings(persons: pd.DataFrame, household_id: str = "H_ID") -> tuple:
+    """``(n_foreign, n_crossed)``: persons whose plan source is another MiD row, and of those the ones whose
+    passenger access class (``weekend_plan_match.passenger_never_class`` of ``P_VAUTO``) differs from the class
+    of the real donor person whose diary they carry (ADR-0162). A plan source that does not resolve to a real
+    donor person is counted as crossed and warned, so a broken join cannot report "no crossings"."""
+    real = persons[~persons["member_imputed"].astype(bool)]
+    donor_class = weekend_plan_match.passenger_never_class(real["P_VAUTO"]).set_axis(
+        pd.MultiIndex.from_arrays([real[household_id], real["P_ID"]]))
+    foreign = ~(persons["source_H_ID"].eq(persons[household_id]) & persons["source_P_ID"].eq(persons["P_ID"]))
+    remapped = persons[foreign]
+    source_class = donor_class.reindex(pd.MultiIndex.from_arrays([remapped["source_H_ID"], remapped["source_P_ID"]]))
+    n_unresolved = int(source_class.isna().sum())
+    if n_unresolved:
+        logger.warning("[completed_donor] %d plan source(s) do not resolve to a real donor person; counted as "
+                       "passenger class crossings", n_unresolved)
+    person_class = weekend_plan_match.passenger_never_class(remapped["P_VAUTO"]).to_numpy()
+    resolved_class = source_class.astype("boolean").fillna(False).to_numpy(dtype=bool)
+    crossed = source_class.isna().to_numpy() | (resolved_class != person_class)
+    return int(foreign.sum()), int(crossed.sum())
+
+
+def log_never_passenger_foreign_lifts(persons: pd.DataFrame, *, lift_free_never: bool,
+                                      household_id: str = "H_ID") -> tuple:
+    """Log and return ``(n_never_foreign, n_with_lift)``: persons whose own ``P_VAUTO`` answer is "never" and
+    whose plan source is another MiD row, and of those the ones whose plan source reports a car-passenger trip
+    (``passenger_availability.DIARY_EVIDENCE_COLUMN``) -- the conflict ADR-0162/ADR-0166 address. Logged in both
+    arms of the lift-free preference so an A/B reads the residual directly; a member-completion filler copies
+    its mirror's answer and diary, so its share is the ADR-0121 own-answer conflict and not a matching defect."""
+    never = weekend_plan_match.passenger_never_class(persons["P_VAUTO"])
+    foreign = ~(persons["source_H_ID"].eq(persons[household_id]) & persons["source_P_ID"].eq(persons["P_ID"]))
+    lift = persons[passenger_availability.DIARY_EVIDENCE_COLUMN].astype(bool)
+    n_never_foreign = int((never & foreign).sum())
+    n_with_lift = int((never & foreign & lift).sum())
+    logger.info("[completed_donor] %d of %d 'never' car passengers (%.2f%%) carry a lift in a plan source of another "
+                "respondent; lift-free preference %s", n_with_lift, n_never_foreign,
+                100.0 * n_with_lift / max(n_never_foreign, 1), "on" if lift_free_never else "off")
+    return n_never_foreign, n_with_lift
 
 
 def validate(context):
@@ -385,7 +472,9 @@ def configure(context):
     )
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_PLAN_MATCH,
-        DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
+        DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS, DEFAULT_DONOR_MATCH_PASSENGER_ACCESS,
+        KEY_DONOR_MATCH_PASSENGER_ACCESS, DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER,
+        KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_SEED_DAY_FILTER, DEFAULT_WEEKEND_PLAN_MATCH,
     )
@@ -410,6 +499,11 @@ def configure(context):
     # diary-less child draws, so flipping them must rebuild the donor, not reuse the cache.
     context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
                    DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS)
+    # ADR-0162: the passenger access key changes which donor a remapped person draws, so it belongs in THIS
+    # stage's config hash like the fine child bands.
+    context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS, DEFAULT_DONOR_MATCH_PASSENGER_ACCESS)
+    # ADR-0166: the lift-free preference changes which donor a "never" passenger draws.
+    context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER)
     context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)
 
 
@@ -446,6 +540,11 @@ def execute(context) -> CompletedDonor:
     donor_match_fine_child_age_bands = bool(context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS))
     precompute_matching = bool(context.config(KEY_PERFORMANCE_DONOR_MATCHING))
     passenger_availability_enabled = bool(context.config(KEY_MID_PASSENGER_AVAILABILITY))
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, KEY_DONOR_MATCH_PASSENGER_ACCESS,
+    )
+    donor_match_passenger_access = bool(context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS))
+    donor_match_lift_free_never_passenger = bool(context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER))
 
     result = build_completed_donor(
         mid_dir,
@@ -462,6 +561,8 @@ def execute(context) -> CompletedDonor:
         passenger_availability_enabled=passenger_availability_enabled,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
         precompute_matching=precompute_matching,
+        donor_match_passenger_access=donor_match_passenger_access,
+        donor_match_lift_free_never_passenger=donor_match_lift_free_never_passenger,
     )
 
     # Surface the build reports as run info (also set on the consumer in popsim.stage

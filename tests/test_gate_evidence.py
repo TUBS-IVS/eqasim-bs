@@ -108,7 +108,7 @@ def test_documentation_check_writes_docs_evidence(repo, monkeypatch):
     class FakeContext:
         features = stages = datasets = adrs = manifests = ()
 
-        def __init__(self, repo_root, use_dag_extraction):
+        def __init__(self, repo_root, use_dag_extraction, strict_views=False):
             pass
 
     findings = [SimpleNamespace(severity=checks.WARN), SimpleNamespace(severity=checks.OK)]
@@ -135,7 +135,7 @@ def test_docs_check_writer_failure_keeps_the_check_exit_code(repo, monkeypatch):
     class FakeContext:
         features = stages = datasets = adrs = manifests = ()
 
-        def __init__(self, repo_root, use_dag_extraction):
+        def __init__(self, repo_root, use_dag_extraction, strict_views=False):
             pass
 
     def broken(*args, **kwargs):

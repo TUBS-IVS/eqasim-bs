@@ -25,7 +25,7 @@ may only name run manifests (no run, no claim).
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
 | [departure_time_model](../registry/features/departure_time_model.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
-| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 22 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
+| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 24 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [driving_licence_enrichment](../registry/features/driving_licence_enrichment.yml) | attributes | active | off | -/-/A | 1 | -- | none | committed | unvalidated | pending |
 | [economic_status_bayes](../registry/features/economic_status_bayes.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
@@ -52,7 +52,6 @@ may only name run manifests (no run, no claim).
 | [freight_boundary_links](../registry/features/freight_boundary_links.yml) | freight | active | ON | A/i/i | 2 | -- | marker | none | unvalidated (`freight-boundary-links-prod100-2026-10-15`, `freight-boundary-links-ab-1pct-2026-10-16`, `freight-junction-west-a2-prod100-2026-10-16`, `freight-a2-east-turnaround-prod100-2026-10-23`) | pending |
 | [freight_longhaul_v3](../registry/features/freight_longhaul_v3.yml) | freight | active | ON | A/-/- | 5 | not claimed | none | assumption | unvalidated (`freight-tool-jar-1pct-2026-10-21`) | pending |
 | [full_analysis](../registry/features/full_analysis.yml) | analysis | active | ON | A/s/s | 1 | -- | none | none | unvalidated | pending |
-| [gate_facility_links](../registry/features/gate_facility_links.yml) | cordon | active | ON | A/A/- | 2 | proven | marker | none | unvalidated (`freight-a2-east-turnaround-prod100-2026-10-23`, `gate-facility-links-1pct-2026-10-23`) | pending |
 | [general_day_absence](../registry/features/general_day_absence.yml) | behavior | active | ON | A/-/- | 10 | proven | marker | committed | measured_vs_reference (`general-day-absence-arm0-100pct-2026-09-09`, `general-day-absence-arm1-100pct-2026-09-09`, `general-day-absence-arm2-100pct-2026-09-09`, `general-day-absence-arm3-100pct-2026-09-18`, `general-day-absence-arm4-100pct-2026-09-18`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-23 |
 | [gravity_od](../registry/features/gravity_od.yml) | work | active | ON | A/A/A | 4 | -- | none | none | unvalidated | pending |
 | [gravity_slope_by_rs7](../registry/features/gravity_slope_by_rs7.yml) | work | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
