@@ -273,10 +273,9 @@ def _with_portal_person(portal_mode, availability="all"):
     return fixture
 
 
-def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_back():
-    # #465, ADR-0159 (persons 125291 / 905013 of the 1 % rerun): a pt leisure tour to a destination outside the
-    # extent whose return (22:00) leaves after the last service (21:00). The check runs after the re-moding, probes
-    # only the pt legs of non-portal outside tours, and the whole tour moves one hour earlier in the returned frame.
+def _fixture_with_an_unserved_pt_tour():
+    """The base fixture with times, plus person 5 (no car, no lift): a pt leisure tour to (30 km, 5 km), outside the
+    extent, leaving at 18:00 and returning at 22:00."""
     fixture = _fixture()
     hours = {1: (8.0, 8.5, 17.0, 17.5), 2: (9.0, 9.2, 10.0, 10.2), 3: (7.0, 7.5, 16.0, 16.5)}
     trips = fixture["trips"]
@@ -296,6 +295,14 @@ def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_
     fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
         "person_id": [5], "car_availability": ["none"], "has_license": [False], "bicycle_availability": ["none"],
         "car_passenger_availability": ["none"]})], ignore_index=True)
+    return fixture
+
+
+def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_back():
+    # #465, ADR-0159 (persons 125291 / 905013 of the 1 % rerun): a pt leisure tour to a destination outside the
+    # extent whose return (22:00) leaves after the last service (21:00). The check runs after the re-moding, probes
+    # only the pt legs of non-portal outside tours, and the whole tour moves one hour earlier in the returned frame.
+    fixture = _fixture_with_an_unserved_pt_tour()
     probed = []
 
     def probe(tasks):
@@ -334,6 +341,70 @@ def test_only_the_first_probe_of_the_pt_check_treats_a_batch_without_any_route_a
     probe(tasks)
     probe(tasks)
     assert calls == [False, True, True]
+
+
+def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monkeypatch):
+    # PR #505 review: the production probe (_pt_check) -- router config and work dir, the bound of the simulated day
+    # minus the day-end margin, the connection rule over ALL schedule stops, and the strict first call -- runs here
+    # with a fake batch router: a trip departing by 21:00 is a pt trip between two stops that exist only in the
+    # uncut schedule, a later one an only-walk of 25 km.
+    from braunschweig.data.transit import connections, schedule as schedule_module
+
+    fixture = _fixture_with_an_unserved_pt_tour()
+    municipalities = gpd.GeoDataFrame({"id": [1]}, geometry=[box(0.0, 0.0, 10000.0, 10000.0)], crs=CRS)
+    monkeypatch.setattr(stage, "_load_table", lambda srv_dir: fixture["table"])
+    monkeypatch.setattr(schedule_module, "read_schedule",
+                        lambda path: type("Schedule", (), {"stops": {"far_a": None, "far_b": None}})())
+    calls = []
+
+    def fake_route_batch(context, tasks, *, config_path, threads, work_dir, allow_no_route_at_all=False):
+        calls.append({"config": config_path, "work_dir": work_dir, "threads": threads,
+                      "allow": allow_no_route_at_all, "n": len(tasks)})
+        served = tasks["departure_time"].le(21 * 3600.0).to_numpy()
+        ids = tasks["identifier"].astype(str).to_numpy()
+        trips = pd.DataFrame({"identifier": ids, "is_only_walk": np.where(served, 0, 1),
+                              "access_distance_km": np.where(served, 0.2, 25.0), "egress_distance_km": 0.2,
+                              "transfer_distance_km": 0.0, "total_walk_distance_km": np.where(served, 0.4, 25.0)})
+        legs = pd.DataFrame({"identifier": ids[served], "access_stop_id": "far_a", "egress_stop_id": "far_b"})
+        return trips, legs
+
+    monkeypatch.setattr(connections, "route_batch", fake_route_batch)
+    supply_dir, gtfs_dir = tmp_path / "supply", tmp_path / "gtfs"
+    values = {keys.KEY_ENABLED: True, keys.KEY_MIN_SHARE: 0.01, keys.KEY_WARN_SHARE: 0.5, "random_seed": 7,
+              "data_path": str(tmp_path), "cordon_network_buffer_fraction": 0.0,
+              keys.KEY_LAST_RESORT: "car_passenger", keys.KEY_PT_CHECK_ENABLED: True,
+              keys.KEY_PT_SHIFT_WINDOW_S: 7200.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
+              keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, "matsim_threads": 3, "processes": 8,
+              "braunschweig.day_end_margin.enabled": True,
+              "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0}
+    stages = {keys.FINAL_TRIPS_STAGE: fixture["trips"], keys.LOCATIONS_STAGE: fixture["locations"],
+              keys.PERSONS_STAGE: fixture["persons"], keys.MUNICIPALITIES_STAGE: municipalities,
+              stage.SUPPLY_STAGE: {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
+              stage.GTFS_STAGE: {"vehicles_path": "vehicles.xml.gz"}}
+    paths = {None: str(tmp_path), stage.SUPPLY_STAGE: str(supply_dir), stage.GTFS_STAGE: str(gtfs_dir)}
+
+    class _Context:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            return stages[name]
+
+        def path(self, name=None):
+            return paths[name]
+
+    out = stage.execute(_Context())
+    person5 = out[out["person_id"] == 5]
+    assert person5["mode"].tolist() == ["pt", "pt"]
+    assert person5["departure_time"].tolist() == [17 * 3600.0, 21 * 3600.0]
+    assert [c["allow"] for c in calls] == [False] + [True] * (len(calls) - 1) and len(calls) >= 2
+    assert all(c["threads"] == 3 for c in calls)
+    assert calls[0]["config"] == os.path.join(str(tmp_path), stage.ROUTER_CONFIG_NAME)
+    assert calls[0]["work_dir"] == os.path.join(str(tmp_path), stage.ROUTER_WORK_DIR_NAME)
+    with open(os.path.join(str(tmp_path), keys.REPORT_FILE_NAME), encoding="utf-8") as handle:
+        report = json.load(handle)
+    assert report["pt_connection"]["bound_s"] == 29 * 3600.0
+    assert report["pt_connection"]["actions"]["tour_shifted"] == 1
 
 
 def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():
