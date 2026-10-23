@@ -1,7 +1,7 @@
 <!-- PRs ALWAYS target the fork TUBS-IVS/eqasim-bs (base: main), never the eqasim-org/eqasim-bavaria upstream. Use `git pr`.
      Naming + labels: docs/codebase/notes/issue-and-pr-conventions.md
      - branch  <fix|feature|analysis|docs|chore|test>/i<issue>-<slug>
-     - title   what the change does, <= ~90 chars, ending "(closes #NN)"
+     - title   what the change does, <= ~90 chars, ending "(#NN)", or "(closes #NN)" in the PR that closes the issue
      - labels  the issue's own step:* and area:* labels (never prio:*) -->
 
 **Stages:** <!-- registry stage ids this diff touches, e.g. `synthesis.population.trips`; `none` for tooling/docs -->
@@ -10,7 +10,7 @@
 <!-- Summary of the change and its purpose. -->
 
 ## Linked issue / ADR
-<!-- Closes #NN (mandatory when an issue exists) ; docs/decisions/ADR-NNNN-*.md -->
+<!-- Closes #NN only when this PR meets the issue's last open Done-when item (a required run manifest on main included), else Part of #NN ; docs/decisions/ADR-NNNN-*.md -->
 
 ## Behaviour change?
 <!-- Is a flag involved? Is the OFF path byte-identical to before? Does this alter

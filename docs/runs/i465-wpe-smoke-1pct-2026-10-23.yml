@@ -237,6 +237,8 @@ artifacts:
 - 'felix:~/wt-i465-wpe (worktrees, cache_wpe working directory, output_wpe, run1_matsim_simulation_run.cache, logs, analysis)'
 issues:
 - '#465'
+- '#487'
+- '#488'
 decisions:
 - ADR-0151
 - ADR-0152
@@ -248,14 +250,14 @@ notes: >-
   this run, and against arm 2 of the #453/#443 A/B (same seed and persons) the frozen residents stuck walking at
   the end of the day fall from 58 to 20, all stuck residents from 104 to 68, the planned-pt portal trips that become
   walks from 90 of 246 to 21 of 110. Issue #465 done-when item 3 ("stuck walkers at the end of the day gone or
-  bounded"): bounded, not gone; 20 remain, 10 of them incommuters whose plans the #465 work does not change (#467),
+  bounded"): bounded, not gone; 20 remain, 10 of them incommuters whose pt legs no #465 work package checks (#488),
   and 10 residents of whom the stuck-walker table shows 8 planned as pt (incommuters: 9 of 10). Fixes found by this run, both on the
   branch of this manifest: (1) the batch pt router config lacked the qsim values the eqasim injector requires, so
   the WP-C gate choice could not run on real data at all (the unit tests mocked the router); (2) the synpp fork's
   output hash (ADR-0149) refused the symlink the eqasim-java-bs SimWrapper linker leaves in the MATSim output, so
   every full run on main failed after MATSim. Open findings, recorded and not fixed here: the WP-B stamp
   walkFallbackFrom is missing on most planned-pt walks that reach the simulation (4 stamped among 17 planned-pt
-  stuck walkers), so the plan check undercounts; 84 of 123 pt portal stays have no timetable-aware gate (68 %); the
+  stuck walkers), so the plan check undercounts (#487); 84 of 123 pt portal stays have no timetable-aware gate (68 %); the
   share of non-monotonic frozen plans stays above its uncalibrated threshold. What it does not show: (1) no
   validation, no observed reference; (2) one draw per run; (3) the code differs from the baseline in everything
   merged between 3123cc4f and 3ebe789a, so no change is attributed to one work package; (4) the 100 % router
@@ -267,7 +269,7 @@ source: >-
   launch 2 gave identical stuck, plan-check and final-trip figures), portal_trips_*.txt (portal_trip_modes_i453.py of
   the baseline run, felix ~/wt-i453-ab), stuck_walkers_*.txt (stuck_walkers_i465.py on the stuck traces of
   stuck_trace_i453.py), schedule_hours.txt (schedule_hours_i465.py), the explain and migration logs and the overlay.
-  Baseline figures: the baseline manifest i453-i443-ab-1pct-2026-10-16 (branch runs/i453-i443-ab-1pct until its docs
-  PR merges) and its i453_metrics_arm2.json, and the same scripts re-run read-only on the baseline's files on felix.
+  Baseline figures: the baseline manifest docs/runs/i453-i443-ab-1pct-2026-10-16.yml and its
+  i453_metrics_arm2.json, and the same scripts re-run read-only on the baseline's files on felix.
   Log lines ([transit_next_day], [pt-router], [portal_trips], [PlanRouter], [plan_check]) are quoted from the run logs
   ~/wt-i465-wpe/logs/run_wpe_{20261022T230108,20261023T003208,20261023T031309}.log on felix, which are not committed.
