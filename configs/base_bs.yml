@@ -868,6 +868,19 @@ config:
   braunschweig.outside_tour_modes.enabled: true
   braunschweig.outside_tour_modes.min_share: 0.01
   braunschweig.outside_tour_modes.warn_share: 0.5
+  # Day-end margin of the written plans (#465): a day whose last planned arrival is later than the end of the
+  # simulated day (30 h) minus the margin moves earlier as a whole (durations kept) in the population writer.
+  # The margin is an ASSUMPTION (routed + congested last trips took up to 0.54 h longer than planned in the WP-E smoke).
+  braunschweig.day_end_margin.enabled: true
+  braunschweig.day_end_margin.last_arrival_margin_s: 3600
+  # Timetable check of the in-commuters' pt days (#488): both trips must be timetable connections (batch pt
+  # router); otherwise the whole day moves (earlier first, then later, in 30 min steps up to 2 h, ASSUMPTION as
+  # for the portal pt stays), else the in-commuter drives from its road gate. WARN above the share of days
+  # that are neither served as planned nor by a shift.
+  braunschweig.incommuters.pt_connection_check.enabled: true
+  braunschweig.incommuters.pt_shift_window_s: 7200
+  braunschweig.incommuters.pt_shift_step_s: 1800
+  braunschweig.incommuters.pt_no_connection_warn_share: 0.05
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen
