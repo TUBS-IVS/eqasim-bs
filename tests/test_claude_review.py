@@ -196,10 +196,10 @@ def test_post_refuses_a_failed_run(tmp_path, capsys):
 def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
     review_cfg = CONFIG["review"]
     prompt = cr.build_prompt((_REPO / review_cfg["prompt_file"]).read_text(encoding="utf-8"),
-                             "o/r", 7, "light", "abc123")
-    assert "PR NUMBER: 7" in prompt and "{{" not in prompt
+                             "o/r", 7, "light", "abc123", ".claude/review-pr.diff")
+    assert "PR NUMBER: 7" in prompt and ".claude/review-pr.diff" in prompt and "{{" not in prompt
     with pytest.raises(ValueError):
-        cr.build_prompt("{{TYPO}}", "o/r", 7, "light", "abc")
+        cr.build_prompt("{{TYPO}}", "o/r", 7, "light", "abc", "d")
     for tier in ("light", "full"):
         command = cr.claude_command("claude", CONFIG["tiers"][tier], review_cfg["allowed_tools"])
         value = {flag: command[i + 1] for i, flag in enumerate(command[:-1]) if flag.startswith("--")}
@@ -209,4 +209,4 @@ def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
         assert "--bare" in command
         # the variadic tool list must come last, and the model must have no write or shell access
         assert command[-2] == "--allowedTools"
-        assert not {"Write", "Edit", "Bash"} & set(command[-1].split(","))
+        assert set(command[-1].split(",")) <= {"Read", "Grep", "Glob"}

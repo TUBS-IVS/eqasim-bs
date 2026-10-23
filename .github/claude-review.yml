@@ -64,12 +64,11 @@ tiers:
     max_budget_usd: 5.0
 
 # The review run (scripts/claude_review.py review). The model only reads; posting is done
-# by the script. Placeholders in the prompt file: {{REPO}}, {{PR}}, {{TIER}}, {{SHA}}.
+# by the script, which also writes the PR diff to a file the model reads (no shell tools).
+# Placeholders in the prompt file: {{REPO}}, {{PR}}, {{TIER}}, {{SHA}}, {{DIFF_FILE}}.
 review:
   prompt_file: .github/claude-review-prompt.md
   allowed_tools:
     - Read
     - Grep
     - Glob
-    - "Bash(gh pr diff:*)"
-    - "Bash(gh pr view:*)"

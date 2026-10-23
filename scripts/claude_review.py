@@ -4,7 +4,7 @@
     python scripts/claude_review.py classify --config .github/claude-review.yml --numstat diff.tsv \
         --branch feature/i1-x [--labels a,b] [--draft] [--event-action labeled --event-label x]
     python scripts/claude_review.py review --config .github/claude-review.yml --tier full \
-        --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json
+        --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json [--diff-out .claude/review-pr.diff]
     python scripts/claude_review.py post --result result.json --repo OWNER/NAME --pr 12 \
         --tier full --sha <head sha> [--diff-file pr.diff] [--dry-run]
     python scripts/claude_review.py cost --execution-file result.json [--tier full] [--model m] [--json out.json]
@@ -213,9 +213,9 @@ def cost_summary(result: dict) -> dict:
     }
 
 
-def build_prompt(template: str, repo: str, pr: int, tier: str, sha: str) -> str:
-    """Fill the {{REPO}}, {{PR}}, {{TIER}} and {{SHA}} placeholders of the prompt file."""
-    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha}
+def build_prompt(template: str, repo: str, pr: int, tier: str, sha: str, diff_file: str) -> str:
+    """Fill the {{REPO}}, {{PR}}, {{TIER}}, {{SHA}} and {{DIFF_FILE}} placeholders of the prompt file."""
+    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha, "DIFF_FILE": diff_file}
     prompt = template
     for key, value in values.items():
         prompt = prompt.replace("{{" + key + "}}", value)
@@ -316,6 +316,11 @@ def summary_markdown(structured: dict, inline: list, summary_only: list, tier: s
     return "\n".join(parts) + "\n"
 
 
+def _pr_diff(repo: str, pr: int) -> str:
+    return subprocess.run(["gh", "pr", "diff", str(pr), "--repo", repo],
+                          check=True, capture_output=True, text=True, encoding="utf-8").stdout
+
+
 def _gh_api(args: list, payload: dict | None = None) -> str:
     command = ["gh", "api", *args]
     if payload is None:
@@ -400,8 +405,16 @@ def _cmd_review(args) -> int:
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     tier_cfg = config["tiers"][args.tier]
     review_cfg = config["review"]
+    # The model gets the diff as a file it pages through with Read, so it needs no shell at all
+    # (a local run showed the model piping `gh pr diff` into grep/awk, which the read-only tool
+    # list rightly denies, and the review then covered only part of the diff).
+    diff_text = _pr_diff(args.repo, args.pr)
+    diff_path = Path(args.diff_out)
+    diff_path.parent.mkdir(parents=True, exist_ok=True)
+    diff_path.write_text(diff_text, encoding="utf-8")
+    print(f"[claude-review] diff of PR {args.pr}: {len(diff_text.splitlines())} lines -> {diff_path.as_posix()}")
     prompt = build_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"),
-                          args.repo, args.pr, args.tier, args.sha)
+                          args.repo, args.pr, args.tier, args.sha, diff_path.as_posix())
     claude_bin = shutil.which(args.claude_bin) or args.claude_bin
     if not os.environ.get("ANTHROPIC_API_KEY"):
         # claude --bare authenticates only with this key; fail here with a clear message instead.
@@ -426,11 +439,7 @@ def _cmd_post(args) -> int:
     except ValueError as error:
         print(f"::error::Nothing to post: {error}")
         return 1
-    if args.diff_file:
-        diff_text = Path(args.diff_file).read_text(encoding="utf-8")
-    else:
-        diff_text = subprocess.run(["gh", "pr", "diff", str(args.pr), "--repo", args.repo],
-                                   check=True, capture_output=True, text=True, encoding="utf-8").stdout
+    diff_text = Path(args.diff_file).read_text(encoding="utf-8") if args.diff_file else _pr_diff(args.repo, args.pr)
     inline, summary_only = plan_comments(structured["findings"], commentable_lines(diff_text))
     total = len(inline) + len(summary_only)
     print(f"[claude-review] findings {total}: inline {len(inline)}, summary-only {len(summary_only)} "
@@ -487,6 +496,9 @@ def main(argv=None) -> int:
     p_review.add_argument("--pr", required=True, type=int)
     p_review.add_argument("--sha", required=True, help="PR head commit")
     p_review.add_argument("--out", required=True)
+    p_review.add_argument("--diff-out", default=".claude/review-pr.diff",
+                          help="where the PR diff is written for the model (inside the checkout, so Read may open "
+                               "it); pass the same file to post --diff-file")
     p_review.add_argument("--claude-bin", default="claude")
     p_review.set_defaults(func=_cmd_review)
 

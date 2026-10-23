@@ -70,8 +70,12 @@ decision, including a skip, is printed with its reason to the log and the job su
   schema `FINDINGS_SCHEMA`, `--bare` (authentication strictly by `ANTHROPIC_API_KEY`, never a
   Claude plan login; no user hooks, plugins, memory or automatic CLAUDE.md loading; the
   prompt names the rule files to read), `--permission-mode dontAsk` and only the read tools of
-  `review.allowed_tools` (Read, Grep, Glob, `gh pr diff`, `gh pr view`). The model cannot
-  write files or post anything. The prompt goes in on stdin; the JSON result goes to a file.
+  `review.allowed_tools` (Read, Grep, Glob). The model has no shell, cannot write files and
+  cannot post anything. The script fetches the PR diff itself (`gh pr diff`) and writes it
+  to `.claude/review-pr.diff` inside the checkout, which the model pages through with Read;
+  a local test run (2026-10-23) showed that with `gh pr diff` as a tool the model piped it
+  into grep/awk, which the read-only tool list denied, and reviewed only part of the diff.
+  The prompt goes in on stdin; the JSON result goes to a file.
 - `post` turns the findings into one PR review (`event: COMMENT`) whose inline comments sit
   on new-side lines of the diff (`commentable_lines`), ordered by severity. GitHub rejects
   inline comments outside the diff, so such findings go into the summary under "Not on a

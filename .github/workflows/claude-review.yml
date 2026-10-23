@@ -113,7 +113,7 @@ jobs:
       - name: Claude review (read-only, structured findings)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # For the model's read-only gh pr diff / gh pr view calls.
+          # For the script's gh pr diff (the model itself has no shell).
           GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/claude_review.py review --config .github/claude-review.yml \
@@ -129,7 +129,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/claude_review.py post --result "$RUNNER_TEMP/claude-review-result.json" \
-            --repo "$REPO" --pr "$PR_NUMBER" --tier "$TIER" --sha "$HEAD_SHA"
+            --repo "$REPO" --pr "$PR_NUMBER" --tier "$TIER" --sha "$HEAD_SHA" \
+            --diff-file .claude/review-pr.diff
       - name: Upload cost record
         if: always()
         uses: actions/upload-artifact@v4
