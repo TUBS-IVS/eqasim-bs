@@ -1,0 +1,91 @@
+{
+  "measurement": "donor_match_passenger_access_arms",
+  "scope_note": "Unweighted raw MiD donor counts (completed donor build), not synthetic-population estimates.",
+  "git_commit": "baff2789",
+  "random_seed": 1234,
+  "arms": {
+    "class_key": {
+      "donor_match_passenger_access": true,
+      "donor_match_lift_free_never_passenger": false
+    },
+    "lift_free": {
+      "donor_match_passenger_access": true,
+      "donor_match_lift_free_never_passenger": true
+    }
+  },
+  "class_key": {
+    "n_persons": 485709,
+    "n_foreign": 235158,
+    "n_crossed": 10825,
+    "n_never": 30497,
+    "n_never_with_foreign_lift": 1782,
+    "n_never_with_own_lift": 1254,
+    "never_foreign_lift_by_source": {
+      "weekend_hh_alignment": {
+        "crossed_class": 889,
+        "same_class_donor_lift": 82
+      },
+      "weekend_person_match": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 0
+      },
+      "diary_rematch": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 496
+      },
+      "member_completion_filler": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 315
+      },
+      "other": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 0
+      },
+      "total": {
+        "crossed_class": 889,
+        "same_class_donor_lift": 893
+      }
+    },
+    "weekend_report": "WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)",
+    "diary_report": "DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74879, 1: 2, 2: 2, 3: 1}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4686, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=0)"
+  },
+  "lift_free": {
+    "n_persons": 485709,
+    "n_foreign": 235158,
+    "n_crossed": 11260,
+    "n_never": 30497,
+    "n_never_with_foreign_lift": 1196,
+    "n_never_with_own_lift": 1254,
+    "never_foreign_lift_by_source": {
+      "weekend_hh_alignment": {
+        "crossed_class": 806,
+        "same_class_donor_lift": 75
+      },
+      "weekend_person_match": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 0
+      },
+      "diary_rematch": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 0
+      },
+      "member_completion_filler": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 315
+      },
+      "other": {
+        "crossed_class": 0,
+        "same_class_donor_lift": 0
+      },
+      "total": {
+        "crossed_class": 806,
+        "same_class_donor_lift": 390
+      }
+    },
+    "weekend_report": "WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)",
+    "diary_report": "DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74879, 1: 2, 2: 2, 3: 1}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4685, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=432)"
+  },
+  "plan_sources_moved": {
+    "class_key->lift_free": 65541
+  }
+}

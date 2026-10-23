@@ -45,6 +45,7 @@ decisions:
 - ADR-0118
 - ADR-0121
 - ADR-0162
+- ADR-0166
 notes: >-
   With mid_passenger_availability enabled, the stage additionally retains each
   person's P_VAUTO response and its protected attribute_source_H_ID/attribute_source_P_ID
@@ -90,7 +91,13 @@ notes: >-
   as a soft key after the licence to match_person and as a first tier of align_members in the weekend and diary
   matches, so a person whose own answer is "never" does not inherit a diary with lifts; same rng contract as the
   fine bands. Surviving crossings are counted in DiaryMatchReport.n_crossed_passenger_class and over all persons
-  with a foreign plan source by completed_donor.count_passenger_class_crossings, both logged as rates. The stage
+  with a foreign plan source by completed_donor.count_passenger_class_crossings, both logged as rates. Since ADR-0166
+  .donor_match_lift_free_never_passenger (default true, effective only with the ADR-0162 key) refines it: a "never"
+  person prefers a donor whose handed-over diary has no car-passenger trip
+  (passenger_availability.car_passenger_diary_keys; the Wege table is then loaded before the weekend match, which
+  draws no rng), as the donor-side class of match_person and as lift-free first tiers of align_members within the
+  age band; completed_donor.log_never_passenger_foreign_lifts logs the "never" persons that keep a foreign lift as a
+  rate (raw MiD, seed 1234: 1,782 -> 1,196 of 14,548, ADR-0166). The stage
   defines validate() as a structured token, one semantic digest per helper module (diary_facts, diary_plan_match,
   weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
   itself and a helper edit would otherwise serve a stale cached donor build.

@@ -1,6 +1,7 @@
 # ADR-0162 · 2026-10-23 · The plan-source matches keep the car-passenger access class
 
-- **Status:** accepted (implemented; measured on the raw MiD donor, not yet in a simulation run)
+- **Status:** accepted (implemented; measured on the raw MiD donor, not yet in a simulation run); refined by
+  ADR-0166, which closes most of the residual measured below
 - **Numbering:** 0153-0158 were taken by the sibling branches of #465 and 0159 by `fix/i465-outside-pt-walks`;
   0160-0162 checked free across all local and remote branches and worktrees on 2026-10-23 and claimed for branch
   `fix/i465-last-three-stuck` in the shared session notes (first claimed as 0159-0161, renumbered on the collision).
@@ -84,3 +85,7 @@ lift (the own-answer conflict of ADR-0121, 1,254 donors): a same-class diary is 
 - The remaining 50 own-diary conflicts are the ADR-0121 limitation, not changed here.
 - **Status:** implemented, tested (`tests/test_donor_match_passenger_access.py`) and measured on the raw donor;
   not yet measured in a simulation run.
+- **Residual follow-up (ADR-0166):** the split of the 1,782 showed 971 from the household alignment (889 across the
+  class, 82 from "never" members with a lift), 496 from "never" donors with a lift in the diary re-match and 315
+  member-completion fillers (the mirror's own conflict). ADR-0166 lets "never" persons prefer lift-free diaries
+  and lowers the count to 1,196.
