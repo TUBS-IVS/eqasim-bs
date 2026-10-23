@@ -386,6 +386,11 @@ config:
   # possible and are reported as a rate in BOTH arms
   # (DiaryMatchReport.n_crossed_fine_child_age_band).
   braunschweig.population.popsim.donor_match_fine_child_age_bands: true
+  # ADR-0161 (#465): the weekend and diary plan matches keep the passenger access class
+  # (MiD P_VAUTO == 3 "never a car passenger" or not) as a soft key right after the licence,
+  # so a person whose own answer is "never" does not inherit a diary with lifts that the
+  # mode choice can then never offer. Effective only with mid_passenger_availability on.
+  braunschweig.population.popsim.donor_match_passenger_access: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).

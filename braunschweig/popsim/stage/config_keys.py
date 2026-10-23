@@ -318,6 +318,15 @@ DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
 # stage through that stage dependency.
 KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.donor_match_fine_child_age_bands"
 DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
+# Keep the passenger access class (MiD P_VAUTO == 3 "never a car passenger" or not) as a soft match key
+# of the weekend and diary plan matches (ADR-0161, eqasim-bs#465). Without it a person whose own answer
+# is "never" (car_passenger_availability "none", ADR-0121) can inherit another respondent's diary with
+# lifts the mode choice can then never offer: 74 of 11 424 persons of the 1 % rerun of the #465 fixes,
+# one of them stuck at the end of the day on a night pt trip that replaced a lift. Effective only with
+# mid_passenger_availability on (P_VAUTO is loaded only then). Default ON; read ONLY by
+# braunschweig.popsim.completed_donor, like the fine child age bands.
+KEY_DONOR_MATCH_PASSENGER_ACCESS = "braunschweig.population.popsim.donor_match_passenger_access"
+DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

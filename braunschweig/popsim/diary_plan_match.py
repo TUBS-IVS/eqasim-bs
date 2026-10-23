@@ -41,7 +41,7 @@ from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
     AGE_BAND_EDGES, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
-    prepare_person_pool,
+    passenger_never_class, prepare_person_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +124,11 @@ class DiaryMatchReport:
     #: ladder may drop, so a residual is legitimate. Deliberately WITHOUT a default, for the
     #: same reason as the employment counter above.
     n_crossed_fine_child_age_band: int
+    #: Remapped persons whose NEW donor has the other passenger access class
+    #: (``weekend_plan_match.passenger_never_class``, ADR-0161), counted in BOTH arms whenever the
+    #: frames carry ``P_VAUTO`` (``None`` when they do not, i.e. with the MiD passenger availability
+    #: off). The class is a SOFT key, so a residual with the key on is a ladder relaxation.
+    n_crossed_passenger_class: "int | None" = None
 
 
 def _require(frame, columns, what):
@@ -223,6 +228,27 @@ def _count_employment_boundary_crossings(persons, donor_pool, remapped_index):
     return int((donor_employed.to_numpy().astype(bool) != person_employed).sum())
 
 
+def _count_passenger_class_crossings(persons, donor_pool, remapped_index):
+    """Count REMAPPED persons whose new donor has the other passenger access class; ``None`` when
+    the frames carry no ``P_VAUTO``. Raises when a source does not resolve in ``donor_pool`` (the
+    realisable "any" pool), like the employment count."""
+    if "P_VAUTO" not in persons.columns or "P_VAUTO" not in donor_pool.columns:
+        return None
+    if len(remapped_index) == 0:
+        return 0
+    remapped = persons.loc[remapped_index]
+    donor_class = (passenger_never_class(donor_pool["P_VAUTO"])
+                   .set_axis(pd.MultiIndex.from_frame(donor_pool[["H_ID", "P_ID"]]))
+                   .reindex(pd.MultiIndex.from_arrays([remapped["source_H_ID"], remapped["source_P_ID"]])))
+    n_unresolved = int(donor_class.isna().sum())
+    if n_unresolved:
+        raise ValueError(
+            f"diary_plan_match: {n_unresolved} remapped plan source(s) do not resolve to a donor "
+            "of the realisable pool; the passenger class count cannot be computed")
+    person_class = passenger_never_class(remapped["P_VAUTO"]).to_numpy()
+    return int((donor_class.to_numpy().astype(bool) != person_class).sum())
+
+
 def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
     """``(n_remapped_in_split_child_band, n_crossed_fine_child_age_band)``.
 
@@ -263,7 +289,7 @@ def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
                                     exclude_holidays, drop_leading_arrive_home_leg,
                                     hard_employment, fine_child_age_bands,
-                                    precompute_matching=True):
+                                    precompute_matching=True, passenger_key=False):
     """Remap every person whose plan source has no realisable weekday diary.
 
     ``hard_employment``: when True, ``employed`` is passed to ``match_person`` as an
@@ -285,6 +311,12 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
 
     ``precompute_matching`` prepares the invariant ``mobile`` and ``any`` donor
     pools once when remaps exist. ``False`` retains the repeated-filter baseline.
+
+    ``passenger_key`` (default False, ADR-0161): add the passenger access class (``P_VAUTO``
+    "never" or not) as a soft match key right after the licence, so a person who never rides
+    as a car passenger does not inherit a diary with lifts the mode choice cannot offer. Same
+    rng contract as the other keys; crossings are counted in both arms
+    (``DiaryMatchReport.n_crossed_passenger_class``).
     """
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
@@ -309,7 +341,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     prepared_pools = {}
     if precompute_matching and len(to_remap):
         prepared_pools = {
-            name: prepare_person_pool(pool, age_band_edges=age_band_edges)
+            name: prepare_person_pool(pool, age_band_edges=age_band_edges, passenger_key=passenger_key)
             for name, pool in pools.items()
         }
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
@@ -327,7 +359,8 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
         sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
                                      age_band_edges=age_band_edges,
                                      prepared_pool=prepared_pools.get(
-                                         "mobile" if pool is pools["mobile"] else "any"))
+                                         "mobile" if pool is pools["mobile"] else "any"),
+                                     passenger_key=passenger_key)
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level
@@ -336,11 +369,13 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     share = n_remapped / max(len(persons), 1)
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
+    crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)
     report = DiaryMatchReport(n_persons=len(persons), n_remapped=n_remapped, counts_by_reason=counts,
                               match_level_counts=match_level.dropna().astype(int).value_counts().sort_index().to_dict(),
                               share_remapped=share, n_crossed_employment_boundary=crossed,
                               n_remapped_in_split_child_band=n_split_band,
-                              n_crossed_fine_child_age_band=crossed_band)
+                              n_crossed_fine_child_age_band=crossed_band,
+                              n_crossed_passenger_class=crossed_passenger)
     logger.info("[diary_plan_match] %d/%d persons (%.2f%%) remapped to a realisable weekday diary; reasons %s; "
                 "match levels %s (levels count SOFT-key relaxations; hard_employment=%s)",
                 n_remapped, len(persons), 100.0 * share, counts, report.match_level_counts, hard_employment)
@@ -359,6 +394,10 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                 "so the OFF arm reports today's rate)",
                 crossed_band, n_split_band, SPLIT_CHILD_AGE_RANGE[0], SPLIT_CHILD_AGE_RANGE[1],
                 100.0 * crossed_band / max(n_split_band, 1), fine_child_age_bands)
+    if crossed_passenger is not None:
+        logger.info("[diary_plan_match] passenger access class crossed by %d/%d remaps (%.2f%%); "
+                    "passenger_key=%s (a soft key: a residual with it on is a ladder relaxation)",
+                    crossed_passenger, n_remapped, 100.0 * crossed_passenger / max(n_remapped, 1), passenger_key)
     if not (EXPECTED_SHARE_REMAPPED[0] <= share <= EXPECTED_SHARE_REMAPPED[1]) and len(persons) > 1000:
         logger.warning("[diary_plan_match] remapped share %.2f%% outside the expected band %s -- check the donor "
                        "columns anzwege1/mobil/feiertag and the Wege join", 100.0 * share, EXPECTED_SHARE_REMAPPED)

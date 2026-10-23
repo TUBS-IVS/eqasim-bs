@@ -124,7 +124,7 @@ def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
 
 
 def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
-                  age_band_edges=AGE_BAND_EDGES):
+                  age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False):
     """Greedily pair each target member to a distinct donor member by
     (age band, sex), falling back to age band only, then any free donor.
 
@@ -139,18 +139,32 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     therefore changes WHICH donor a member is paired with without changing how many
     person-level fallback draws the caller makes afterwards, i.e. without moving the
     shared completion rng stream.
+
+    ``passenger_key`` (ADR-0161): when True, each (age band, sex) and (age band) tier is
+    first tried among the donors of the target's passenger access class
+    (:func:`passenger_never_class`), so a member whose own answer is "never a car passenger"
+    is paired with the donor whose day has no lift whenever the household offers one. It
+    reorders the tiers only: the pair count and the rng are untouched.
     """
     d_band = age_band_index(donor_members["HP_ALTER"], edges=age_band_edges)
     d_sex = donor_members["HP_SEX"].to_numpy()
     used = np.zeros(len(donor_members), dtype=bool)
     t_band = age_band_index(target_members["HP_ALTER"], edges=age_band_edges)
     t_sex = target_members["HP_SEX"].to_numpy()
+    if passenger_key:
+        d_never = _require_passenger_class(donor_members, what="align_members donor members")
+        t_never = _require_passenger_class(target_members, what="align_members target members")
     pairs = []
     for tpos in range(len(target_members)):
         exact = np.flatnonzero(~used & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
         band_only = np.flatnonzero(~used & (d_band == t_band[tpos]))
         any_free = np.flatnonzero(~used)
-        for cand in (exact, band_only, any_free):
+        tiers = (exact, band_only, any_free)
+        if passenger_key:
+            same_class = d_never == t_never[tpos]
+            tiers = (np.flatnonzero(~used & same_class & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos])),
+                     np.flatnonzero(~used & same_class & (d_band == t_band[tpos]))) + tiers
+        for cand in tiers:
             if len(cand) > 0:
                 pairs.append((tpos, int(cand[0])))
                 used[cand[0]] = True
@@ -159,12 +173,42 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
 
 
 PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
+#: Person key of the passenger access class (ADR-0161): True when the person's own MiD answer to
+#: ``P_VAUTO`` (car available as driver OR passenger, ADR-0121) is 3 = "never".
+PASSENGER_KEY = "passenger_never"
+#: ``P_VAUTO`` code "never" (MiD 2023 B1 codebook, sheet Personen); 1/2 = anytime/occasionally.
+P_VAUTO_NEVER = 3
+#: :data:`PERSON_KEYS_BY_PRIORITY` with the passenger class right after the licence: both decide which
+#: car modes the mode choice may offer, so they are the last keys the ladder gives up.
+PERSON_KEYS_WITH_PASSENGER = ("has_license", PASSENGER_KEY, "sex", "age_band", "employed", "has_pt")
 _PERSON_POOL_COLUMNS = (
-    "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE", "P_GEW",
+    "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE", "P_GEW", "P_VAUTO",
 )
 
 
-def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES) -> pd.DataFrame:
+def passenger_never_class(p_vauto: pd.Series) -> pd.Series:
+    """True where ``P_VAUTO`` is 3 ("never"); False for 1/2 and for codes without an answer (9 item
+    nonresponse, 206 proxy, 402 child not asked, missing), whose availability is imputed or derived
+    later (ADR-0121): they are matched with the persons that do have access."""
+    return pd.to_numeric(p_vauto, errors="coerce").eq(P_VAUTO_NEVER)
+
+
+def _require_passenger_class(persons: pd.DataFrame, *, what: str) -> np.ndarray:
+    if "P_VAUTO" not in persons.columns:
+        raise KeyError(f"{what}: the passenger access key needs the MiD column P_VAUTO (loaded only with "
+                       "mid_passenger_availability on)")
+    return passenger_never_class(persons["P_VAUTO"]).to_numpy()
+
+
+def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES,
+                 passenger_key: bool = False) -> pd.DataFrame:
+    keys = _base_person_keys(persons, age_band_edges=age_band_edges)
+    if passenger_key:
+        keys[PASSENGER_KEY] = _require_passenger_class(persons, what="match_person")
+    return keys
+
+
+def _base_person_keys(persons: pd.DataFrame, *, age_band_edges) -> pd.DataFrame:
     return pd.DataFrame({
         "age_band": age_band_index(persons["HP_ALTER"], edges=age_band_edges),
         "sex": persons["HP_SEX"].to_numpy(),
@@ -194,10 +238,11 @@ class PreparedPersonPool:
     _weights: np.ndarray = field(repr=False)
     _snapshot_index: pd.Index = field(repr=False)
     _snapshot_columns: dict = field(repr=False)
+    passenger_key: bool = False
     _candidate_indexes: dict = field(default_factory=dict, repr=False)
 
-    def validate(self, weekday_persons: pd.DataFrame, age_band_edges) -> None:
-        """Reject a prepared pool whose source, content, or age bands changed."""
+    def validate(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False) -> None:
+        """Reject a prepared pool whose source, content, age bands or passenger key setting changed."""
         if weekday_persons is not self._source:
             raise ValueError(
                 "match_person: prepared_pool belongs to a different person pool")
@@ -205,6 +250,10 @@ class PreparedPersonPool:
             raise ValueError(
                 "match_person: prepared_pool age_band_edges do not match the requested "
                 "age_band_edges")
+        if bool(passenger_key) != self.passenger_key:
+            raise ValueError(
+                f"match_person: prepared_pool was prepared with passenger_key={self.passenger_key}, "
+                f"the call requests passenger_key={bool(passenger_key)}")
         current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
         if current_columns != tuple(self._snapshot_columns):
             raise ValueError(
@@ -242,11 +291,11 @@ class PreparedPersonPool:
                 self._weights[list(positions)])
 
 
-def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES):
+def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False):
     """Prepare invariant donor features for repeated :func:`match_person` calls."""
     edges = tuple(_validate_age_band_edges(
         age_band_edges, what="prepare_person_pool"))
-    keys = _person_keys(weekday_persons, age_band_edges=edges)
+    keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key)
     if len(weekday_persons):
         items = tuple(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]))
         weights = weekday_persons["P_GEW"].to_numpy(copy=True)
@@ -267,11 +316,12 @@ def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES):
         _weights=weights,
         _snapshot_index=weekday_persons.index.copy(deep=True),
         _snapshot_columns=snapshot_columns,
+        passenger_key=bool(passenger_key),
     )
 
 
 def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
-                 age_band_edges=AGE_BAND_EDGES, prepared_pool=None):
+                 age_band_edges=AGE_BAND_EDGES, prepared_pool=None, passenger_key: bool = False):
     """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
 
     Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
@@ -304,7 +354,13 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     ``weekday_persons`` object and identical age bands; otherwise matching fails
     rather than silently drawing from stale candidates.
 
-    BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()`` and
+    ``passenger_key`` (ADR-0161): when True the ladder is :data:`PERSON_KEYS_WITH_PASSENGER`, which
+    adds the passenger access class (:func:`passenger_never_class`, needs ``P_VAUTO``) as a soft key
+    right after the licence. Like the other parameters it changes WHICH donor is drawn, never HOW
+    MANY rng values are consumed; ``level`` then counts up to one more relaxation.
+
+    BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()``,
+    ``passenger_key=False`` and
     ``age_band_edges=AGE_BAND_EDGES`` this function takes the same branches, builds
     the same pools in the same order and
     makes the same number of ``weighted_choice`` calls (exactly one, whichever
@@ -318,26 +374,28 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     """
     if len(weekday_persons) == 0:
         raise ValueError("empty weekday person pool; cannot match weekend person")
+    keys_by_priority = PERSON_KEYS_WITH_PASSENGER if passenger_key else PERSON_KEYS_BY_PRIORITY
     if hard_keys:
         # A misspelled key would otherwise be silently dropped by the comprehensions
         # below, leaving the caller believing a boundary is guarded when it is not.
-        unknown_keys = sorted(set(hard_keys) - set(PERSON_KEYS_BY_PRIORITY))
+        unknown_keys = sorted(set(hard_keys) - set(keys_by_priority))
         if unknown_keys:
             raise ValueError(
                 f"match_person: unknown hard match key(s) {unknown_keys}; valid keys are "
-                f"{list(PERSON_KEYS_BY_PRIORITY)}")
+                f"{list(keys_by_priority)}")
     edges = _validate_age_band_edges(age_band_edges, what="match_person")
-    hard = [key for key in PERSON_KEYS_BY_PRIORITY if key in hard_keys]
-    soft = [key for key in PERSON_KEYS_BY_PRIORITY if key not in hard_keys]
+    hard = [key for key in keys_by_priority if key in hard_keys]
+    soft = [key for key in keys_by_priority if key not in hard_keys]
     if prepared_pool is not None:
         if not isinstance(prepared_pool, PreparedPersonPool):
             raise TypeError("match_person: prepared_pool must be a PreparedPersonPool")
-        prepared_pool.validate(weekday_persons, edges)
-        tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges).iloc[0]
+        prepared_pool.validate(weekday_persons, edges, passenger_key)
+        tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges,
+                             passenger_key=passenger_key).iloc[0]
         active = list(soft)
         while True:
             match_keys = tuple(
-                key for key in PERSON_KEYS_BY_PRIORITY if key in hard or key in active)
+                key for key in keys_by_priority if key in hard or key in active)
             positions = prepared_pool.candidate_positions(tkeys, match_keys)
             if positions:
                 items, weights = prepared_pool.weighted_candidates(positions)
@@ -355,8 +413,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                 return h, p, len(soft)
             active.pop()
 
-    keys = _person_keys(weekday_persons, age_band_edges=edges)
-    tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges).iloc[0]
+    keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key)
+    tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges,
+                         passenger_key=passenger_key).iloc[0]
     hard_mask = pd.Series(True, index=weekday_persons.index)
     for key in hard:
         hard_mask &= keys[key] == tkeys[key]
@@ -400,7 +459,8 @@ class WeekendMatchReport:
 
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
-                                  fine_child_age_bands=True, precompute_matching=True):
+                                  fine_child_age_bands=True, precompute_matching=True,
+                                  passenger_key=False):
     """Give every weekend-reporting donor a matched WEEKDAY plan source.
 
     ``fine_child_age_bands`` (default True, issue #386): band 6-13-year-olds finely
@@ -414,6 +474,11 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
 
     ``precompute_matching`` prepares the invariant weekday person pool once on
     first use. ``False`` retains the repeated-filter baseline for exact A/B checks.
+
+    ``passenger_key`` (default False, ADR-0161): keep the passenger access class
+    (``P_VAUTO`` "never" or not) in the household member alignment and in every
+    person-level match of this pass. Like the fine bands it changes the assignment, never
+    the draw sequence.
     """
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
@@ -455,7 +520,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         key = tuple(edges)
         if key not in prepared_pools:
             prepared_pools[key] = prepare_person_pool(
-                weekday_pool, age_band_edges=edges)
+                weekday_pool, age_band_edges=edges, passenger_key=passenger_key)
         return prepared_pools[key]
 
     persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
@@ -493,7 +558,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
             paired = align_members(target_members, donor_members,
-                                   age_band_edges=age_band_edges)
+                                   age_band_edges=age_band_edges, passenger_key=passenger_key)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
@@ -516,7 +581,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 trow = target_members.loc[tpos]
                 sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
                                               age_band_edges=age_band_edges,
-                                              prepared_pool=prepared_for(age_band_edges))
+                                              prepared_pool=prepared_for(age_band_edges),
+                                              passenger_key=passenger_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -528,7 +594,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 trow = target_members.loc[tpos]
                 sh, sp, plevel = match_person(
                     trow, weekday_pool, rng=rng,
-                    prepared_pool=prepared_for(AGE_BAND_EDGES))
+                    prepared_pool=prepared_for(AGE_BAND_EDGES), passenger_key=passenger_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -561,7 +627,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         trow = persons.loc[ridx]
         sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
                                       age_band_edges=age_band_edges,
-                                      prepared_pool=prepared_for(age_band_edges))
+                                      prepared_pool=prepared_for(age_band_edges),
+                                      passenger_key=passenger_key)
         persons.loc[ridx, "source_H_ID"] = sh
         persons.loc[ridx, "source_P_ID"] = sp
         resolution[ridx] = "mixed_person_sweep"
