@@ -44,6 +44,7 @@ decisions:
 - ADR-0109
 - ADR-0118
 - ADR-0121
+- ADR-0162
 notes: >-
   With mid_passenger_availability enabled, the stage additionally retains each
   person's P_VAUTO response and its protected attribute_source_H_ID/attribute_source_P_ID
@@ -84,7 +85,12 @@ notes: >-
   an A/B compares rates, not raw counts. Like its sibling
   .exclude_holiday_plan_sources the key is declared HERE only (no other stage reads it), which is
   what puts it into this stage's config hash: flipping it rebuilds the donor AND, as a descendant,
-  re-runs popsim. The stage
+  re-runs popsim. Since #465 (ADR-0162) .donor_match_passenger_access (default true, effective only with
+  mid_passenger_availability, which loads P_VAUTO) adds the car-passenger access class (P_VAUTO 3 "never" or not)
+  as a soft key after the licence to match_person and as a first tier of align_members in the weekend and diary
+  matches, so a person whose own answer is "never" does not inherit a diary with lifts; same rng contract as the
+  fine bands. Surviving crossings are counted in DiaryMatchReport.n_crossed_passenger_class and over all persons
+  with a foreign plan source by completed_donor.count_passenger_class_crossings, both logged as rates. The stage
   defines validate() as a structured token, one semantic digest per helper module (diary_facts, diary_plan_match,
   weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
   itself and a helper edit would otherwise serve a stale cached donor build.
