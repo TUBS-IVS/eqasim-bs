@@ -29,7 +29,7 @@ def test_final_schedule_departures_are_logged_with_vrb_fares_off(tmp_path, monke
         def config(self, key):
             return {"output_prefix": "bs_", prepare.VRB_FARES_KEY: False, "cordon_enabled": False,
                     "freight_enabled": False, prepare.PARKING_KEY: False,
-                    prepare.plan_check.KEY_ENABLED: False}[key]
+                    prepare.plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False}[key]
 
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare.eqasim, "run", lambda *args, **kwargs: None)

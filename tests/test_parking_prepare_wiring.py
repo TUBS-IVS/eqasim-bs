@@ -76,7 +76,9 @@ class _Context:
         # The plan check (ADR-0146, #443) is the last step of execute() and reads qsim.endTime and the population file of the
         # written config, which these parking fixtures do not carry; it is tested in test_plan_check*.py and
         # test_prepare_plan_check_wiring.py (which also pins that it runs after the parking inputs), so it is off here.
-        self.values = {plan_check.KEY_ENABLED: False, **values}
+        # The same for the first-replanning mode choice strategy (#465), which needs the replanning module these
+        # fixtures do not carry; tested in test_initial_mode_choice.py.
+        self.values = {plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False, **values}
         self.declared_config = {}
         self.declared_stages = []
         self.stages = {}
