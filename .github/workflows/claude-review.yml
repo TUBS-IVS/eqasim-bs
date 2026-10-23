@@ -6,8 +6,8 @@ name: Claude PR review
 # records its API cost in the job summary and as an artifact. The review posts comments
 # only; it is not a required check. See docs/codebase/notes/claude-pr-review.md.
 #
-# Prerequisite: repository secret ANTHROPIC_API_KEY. Comments are posted with the
-# workflow's GITHUB_TOKEN (as github-actions[bot]).
+# Prerequisite: repository secret ANTHROPIC_API_KEY (a workspace key). The review runs
+# `claude -p` read-only; the script posts its findings with GITHUB_TOKEN (github-actions[bot]).
 
 on:
   pull_request:
@@ -85,68 +85,51 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+    env:
+      # Claude Code CLI, pinned for reproducible review behaviour. 2.1.309 is the version
+      # claude-code-action v1.0.259 installed and that reached the API with Opus 5.5.
+      CLAUDE_CODE_VERSION: "2.1.309"
+      TIER: ${{ needs.classify.outputs.tier }}
+      MODEL: ${{ needs.classify.outputs.model }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Claude review
-        id: claude
-        # v1.0.259 (claude-agent-sdk 0.3.309), pinned by commit for reproducible review
-        # behaviour. v1.0.99 failed with Opus 5.5: its bundled CLI sent thinking.type
-        # "enabled", which the API rejects with 400 for that model (run 39949382111).
-        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6
+      - uses: actions/setup-python@v5
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # The workflow token instead of the Claude GitHub App's OIDC token exchange
-          # (src/github/token.ts of the action): no app installation is needed.
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            REVIEW TIER: ${{ needs.classify.outputs.tier }}
-
-            You review a pull request of eqasim-bs, MATSim/eqasim transport-simulation
-            research software. Correctness, reproducibility and traceability outrank
-            everything else. First read CLAUDE.md, .claude/rules/coding-standards.md and
-            .claude/rules/tests.md: they are the binding rules. Read the change with
-            `gh pr view` and `gh pr diff`; open surrounding code with Read/Grep/Glob where
-            a finding depends on it. Review only what this diff changes.
-
-            Look for, in this order:
-            1. Correctness bugs: wrong results, crashes, wrong joins/keys/units, broken
-               edge cases, a changed scientific output that the PR does not declare.
-            2. Silent fallbacks (CLAUDE.md "Fallback transparency"): a fallback without
-               primary/fallback rate logging, or a test that only exercises the fallback.
-            3. Invented reference values, or convergence reported as validation.
-            4. Tests that miss the primary path of the new behaviour.
-            5. Documentation governance: hand-edited docs/generated/*.md, one fact copied
-               into two files, code referenced by line number.
-
-            Rules for findings: report only what you are confident about, each with a
-            concrete failure scenario (input or state -> wrong outcome). No style nits,
-            no praise, no restating the diff. Light tier: keep it short and stop after
-            categories 1-3. Post each finding as an inline comment on the changed line.
-            Finish with exactly one top-level summary via
-            `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "<markdown>"`
-            (it replaces the summary of an earlier review run instead of adding a new one).
-            It starts with "Claude review (${{ needs.classify.outputs.tier }} tier, commit
-            ${{ github.event.pull_request.head.sha }})" and lists the findings by severity,
-            or says that none were found.
-          claude_args: |
-            --model ${{ needs.classify.outputs.model }}
-            --max-turns ${{ needs.classify.outputs.max_turns }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+          python-version: "3.10"
+      - name: Install review dependencies
+        run: |
+          pip install pyyaml
+          npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+      # Not anthropics/claude-code-action: runs started by that action count as Claude Code
+      # usage, which the monthly API credits of Claude Team/Max plans do not cover; claude -p
+      # run with an API key of the linked Console organization is covered (Claude Help Center,
+      # "Monthly API credits for Max and Team plans"). See docs/codebase/notes/claude-pr-review.md.
+      - name: Claude review (read-only, structured findings)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # For the model's read-only gh pr diff / gh pr view calls.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/claude_review.py review --config .github/claude-review.yml \
+            --tier "$TIER" --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" \
+            --out "$RUNNER_TEMP/claude-review-result.json"
       - name: Record review cost
         if: always()
-        env:
-          # The action sets no output when it fails, but still writes the file to its fixed
-          # path (base-action/src/execution-file.ts), so a failed run's cost is recorded too.
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file || format('{0}/claude-execution-output.json', runner.temp) }}
-          TIER: ${{ needs.classify.outputs.tier }}
-          MODEL: ${{ needs.classify.outputs.model }}
         run: |
-          python3 scripts/claude_review.py cost --execution-file "$EXECUTION_FILE" \
+          python scripts/claude_review.py cost --execution-file "$RUNNER_TEMP/claude-review-result.json" \
             --tier "$TIER" --model "$MODEL" --json claude-review-cost.json
+      - name: Post review comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/claude_review.py post --result "$RUNNER_TEMP/claude-review-result.json" \
+            --repo "$REPO" --pr "$PR_NUMBER" --tier "$TIER" --sha "$HEAD_SHA"
       - name: Upload cost record
         if: always()
         uses: actions/upload-artifact@v4

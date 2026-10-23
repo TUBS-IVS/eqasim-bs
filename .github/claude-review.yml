@@ -29,6 +29,7 @@ critical_paths:
   - "scripts/run_synpp.py"
   - ".github/workflows/**"
   - ".github/claude-review.yml"
+  - ".github/claude-review-prompt.md"
   - "scripts/claude_review.py"
 
 # Paths that never count towards the changed-line totals or the file count
@@ -50,10 +51,25 @@ thresholds:
   full_min_lines: 800           # changed lines for the full tier anywhere
 
 # A critical path touched with fewer lines than full_min_lines_critical gets the light tier.
+# max_budget_usd is a hard per-run cap (claude -p --max-budget-usd); ASSUMPTION, re-tune
+# from the cost records.
 tiers:
   light:
     model: claude-sonnet-5-5
     max_turns: 15
+    max_budget_usd: 1.0
   full:
     model: claude-opus-5-5
     max_turns: 30
+    max_budget_usd: 5.0
+
+# The review run (scripts/claude_review.py review). The model only reads; posting is done
+# by the script. Placeholders in the prompt file: {{REPO}}, {{PR}}, {{TIER}}, {{SHA}}.
+review:
+  prompt_file: .github/claude-review-prompt.md
+  allowed_tools:
+    - Read
+    - Grep
+    - Glob
+    - "Bash(gh pr diff:*)"
+    - "Bash(gh pr view:*)"

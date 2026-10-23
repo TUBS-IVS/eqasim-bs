@@ -1,8 +1,13 @@
-"""Gate and cost record for the automatic Claude PR review (.github/workflows/claude-review.yml).
+"""Gate, review run, posting and cost record of the automatic Claude PR review
+(.github/workflows/claude-review.yml).
 
     python scripts/claude_review.py classify --config .github/claude-review.yml --numstat diff.tsv \
         --branch feature/i1-x [--labels a,b] [--draft] [--event-action labeled --event-label x]
-    python scripts/claude_review.py cost --execution-file <path> [--tier full] [--model m] [--json out.json]
+    python scripts/claude_review.py review --config .github/claude-review.yml --tier full \
+        --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json
+    python scripts/claude_review.py post --result result.json --repo OWNER/NAME --pr 12 \
+        --tier full --sha <head sha> [--diff-file pr.diff] [--dry-run]
+    python scripts/claude_review.py cost --execution-file result.json [--tier full] [--model m] [--json out.json]
 
 classify decides WITHOUT calling a model whether the review runs and at which tier
 ("light" or "full"), from the `git diff --numstat` of the PR, its branch kind, labels and
@@ -10,8 +15,21 @@ draft state, against the thresholds in the config. It prints the decision with i
 and, under GitHub Actions, writes run/tier/model/max_turns/reason to $GITHUB_OUTPUT and a
 line to $GITHUB_STEP_SUMMARY, so a skipped review is never silent.
 
-cost reads the Claude Code execution file the action leaves behind and reports the API
-cost in USD, the token counts, turns and duration as the action itself recorded them.
+review runs `claude -p` (Claude Code in print mode) with the API key in ANTHROPIC_API_KEY,
+the tier's model, turn and budget limits, read-only tools and a JSON schema for the findings,
+and writes the CLI's JSON result to --out. It deliberately does not use
+anthropics/claude-code-action: runs started by that action count as Claude Code usage, which
+the monthly API credits of Claude Team/Max plans do not cover, whereas `claude -p` run with an
+API key of the linked Console organization is covered (Claude Help Center article 17154008,
+"Monthly API credits for Max and Team plans"). The model only reads; posting is done here.
+
+post turns the findings into one PR review with inline comments on changed lines, and keeps
+one summary comment per PR up to date (edited in place). A finding whose line is not part of
+the diff cannot be an inline comment; it is listed in the summary instead, and the
+inline/summary-only counts are logged. --dry-run prints the payloads and posts nothing.
+
+cost reads the result record (the `claude -p` JSON result, or an Agent SDK message list) and
+reports the API cost in USD, the token counts, turns and duration as the CLI recorded them.
 A missing or unparsable record is an error (exit 1), not a silent zero.
 
 See docs/codebase/notes/claude-pr-review.md.
@@ -22,9 +40,38 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+SUMMARY_MARKER = "<!-- claude-pr-review:summary -->"
+SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+# Structured output the model must return (claude -p --json-schema).
+FINDINGS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "two or three sentences on the change and the review"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "path": {"type": "string", "description": "repository-relative path of the changed file"},
+                    "line": {"type": "integer", "description": "line number in the NEW version of the file"},
+                    "title": {"type": "string", "description": "the defect in one short sentence"},
+                    "body": {"type": "string", "description": "concrete failure scenario and, if obvious, the fix"},
+                },
+                "required": ["severity", "path", "line", "title", "body"],
+            },
+        },
+    },
+    "required": ["summary", "findings"],
+}
 
 
 @dataclass
@@ -166,6 +213,119 @@ def cost_summary(result: dict) -> dict:
     }
 
 
+def build_prompt(template: str, repo: str, pr: int, tier: str, sha: str) -> str:
+    """Fill the {{REPO}}, {{PR}}, {{TIER}} and {{SHA}} placeholders of the prompt file."""
+    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha}
+    prompt = template
+    for key, value in values.items():
+        prompt = prompt.replace("{{" + key + "}}", value)
+    left = re.findall(r"\{\{[A-Z_]+\}\}", prompt)
+    if left:
+        raise ValueError(f"unknown placeholders in the prompt file: {sorted(set(left))}")
+    return prompt
+
+
+def claude_command(claude_bin: str, tier_cfg: dict, allowed_tools: list) -> list:
+    return [
+        claude_bin, "-p",
+        "--model", str(tier_cfg["model"]),
+        "--max-turns", str(int(tier_cfg["max_turns"])),
+        "--max-budget-usd", str(float(tier_cfg["max_budget_usd"])),
+        "--output-format", "json",
+        "--json-schema", json.dumps(FINDINGS_SCHEMA),
+        # dontAsk denies every tool that is not pre-allowed; there is nobody to ask in CI.
+        "--permission-mode", "dontAsk",
+        # Last, because the option takes a variadic list.
+        "--allowedTools", ",".join(allowed_tools),
+    ]
+
+
+def commentable_lines(diff_text: str) -> dict:
+    """Map each file of a unified diff to the NEW-side line numbers GitHub accepts inline comments on
+    (added and context lines inside hunks)."""
+    lines_by_path: dict = {}
+    path = None
+    new_line = 0
+    in_hunk = False
+    for raw in diff_text.splitlines():
+        if raw.startswith("diff --git "):
+            path, in_hunk = None, False
+        elif raw.startswith("+++ "):
+            target = raw[4:].strip()
+            path = None if target == "/dev/null" else (target[2:] if target.startswith("b/") else target)
+            in_hunk = False
+        elif raw.startswith("@@"):
+            match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
+            if not match:
+                raise ValueError(f"unparsable hunk header: {raw!r}")
+            new_line, in_hunk = int(match.group(1)), True
+        elif in_hunk and path is not None:
+            if raw.startswith("+") or raw.startswith(" "):
+                lines_by_path.setdefault(path, set()).add(new_line)
+                new_line += 1
+            # "-" lines exist only on the old side; "\ No newline at end of file" is no line.
+    return lines_by_path
+
+
+def read_findings(result: dict) -> dict:
+    """Return the structured findings of a `claude -p --json-schema` result."""
+    if result.get("is_error"):
+        raise ValueError(f"the review run failed: {' '.join(str(result.get('result', '')).split())[:500]}")
+    structured = result.get("structured_output")
+    if structured is None:
+        # Older CLI versions return the JSON only as the result text.
+        try:
+            structured = json.loads(result.get("result", ""))
+        except (TypeError, json.JSONDecodeError):
+            raise ValueError("the result carries no structured_output and no JSON result text") from None
+    if not isinstance(structured, dict) or not isinstance(structured.get("findings"), list):
+        raise ValueError("the structured output has no 'findings' list")
+    return structured
+
+
+def plan_comments(findings: list, commentable: dict) -> tuple:
+    """Split findings into inline review comments and summary-only ones (line not in the diff)."""
+    inline, summary_only = [], []
+    for finding in sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9)):
+        path, line = finding.get("path"), finding.get("line")
+        if isinstance(line, int) and line in commentable.get(path, set()):
+            inline.append({"path": path, "line": line, "side": "RIGHT",
+                           "body": f"**{finding['severity'].upper()}: {finding['title']}**\n\n{finding['body']}"})
+        else:
+            summary_only.append(finding)
+    return inline, summary_only
+
+
+def summary_markdown(structured: dict, inline: list, summary_only: list, tier: str, sha: str,
+                     cost_line: str) -> str:
+    findings = sorted(structured["findings"], key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))
+    parts = [SUMMARY_MARKER, f"## Claude review ({tier} tier, commit {sha[:12]})", "", structured["summary"], ""]
+    if findings:
+        parts += ["| Severity | Where | Finding |", "|---|---|---|"]
+        parts += [f"| {f['severity']} | `{f['path']}:{f['line']}` | {f['title']} |" for f in findings]
+    else:
+        parts.append("No findings.")
+    if summary_only:
+        parts += ["", "**Not on a changed line** (could not be posted inline):", ""]
+        parts += [f"- **{f['severity']}** `{f['path']}:{f['line']}`: {f['title']}. {f['body']}" for f in summary_only]
+    parts += ["", f"<sub>{len(inline)} inline, {len(summary_only)} summary-only. {cost_line} "
+                  "Advisory review, not a required check.</sub>"]
+    return "\n".join(parts) + "\n"
+
+
+def _gh_api(args: list, payload: dict | None = None) -> str:
+    command = ["gh", "api", *args]
+    if payload is None:
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+        json.dump(payload, handle)
+        name = handle.name
+    try:
+        return subprocess.run([*command, "--input", name], check=True, capture_output=True, text=True).stdout
+    finally:
+        os.unlink(name)
+
+
 def _append(env_var: str, text: str) -> None:
     target = os.environ.get(env_var)
     if target:
@@ -231,6 +391,76 @@ def _cmd_cost(args) -> int:
     return 0
 
 
+def _cmd_review(args) -> int:
+    import yaml
+
+    config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    tier_cfg = config["tiers"][args.tier]
+    review_cfg = config["review"]
+    prompt = build_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"),
+                          args.repo, args.pr, args.tier, args.sha)
+    claude_bin = shutil.which(args.claude_bin) or args.claude_bin
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        # Without the key the CLI falls back to its own login, which bills a Claude plan, not the API credits.
+        print("::warning::ANTHROPIC_API_KEY is not set; claude uses its own login, not the API key.")
+    command = claude_command(claude_bin, tier_cfg, review_cfg["allowed_tools"])
+    print(f"[claude-review] running claude -p: tier {args.tier}, model {tier_cfg['model']}, "
+          f"max {tier_cfg['max_turns']} turns, budget {tier_cfg['max_budget_usd']} USD")
+    # The prompt goes in on stdin: no argv length limit, and it is not echoed in process listings.
+    completed = subprocess.run(command, input=prompt, capture_output=True, text=True, encoding="utf-8")
+    Path(args.out).write_text(completed.stdout, encoding="utf-8")
+    if completed.stderr.strip():
+        print(completed.stderr.strip()[-2000:], file=sys.stderr)
+    print(f"[claude-review] claude exited with {completed.returncode}; result written to {args.out}")
+    return completed.returncode
+
+
+def _cmd_post(args) -> int:
+    result = json.loads(Path(args.result).read_text(encoding="utf-8"))
+    try:
+        structured = read_findings(result)
+    except ValueError as error:
+        print(f"::error::Nothing to post: {error}")
+        return 1
+    if args.diff_file:
+        diff_text = Path(args.diff_file).read_text(encoding="utf-8")
+    else:
+        diff_text = subprocess.run(["gh", "pr", "diff", str(args.pr), "--repo", args.repo],
+                                   check=True, capture_output=True, text=True, encoding="utf-8").stdout
+    inline, summary_only = plan_comments(structured["findings"], commentable_lines(diff_text))
+    total = len(inline) + len(summary_only)
+    print(f"[claude-review] findings {total}: inline {len(inline)}, summary-only {len(summary_only)} "
+          "(line not in the diff)")
+    if total and len(summary_only) == total:
+        # Every finding off the diff usually means wrong paths or old-side line numbers, not a real pattern.
+        print(f"::warning::All {total} findings point outside the diff; check path/line in the result.")
+    cost_line = (f"Cost {float(result.get('total_cost_usd', 0)):.4f} USD, {result.get('num_turns', '?')} turns."
+                 if "total_cost_usd" in result else "")
+    body = summary_markdown(structured, inline, summary_only, args.tier, args.sha, cost_line)
+    review = {"commit_id": args.sha, "event": "COMMENT",
+              "body": "Claude review: inline findings below; the summary is in the Claude review comment.",
+              "comments": inline}
+    if args.dry_run:
+        print("[claude-review] dry run, nothing posted. Review payload:")
+        print(json.dumps(review, indent=2))
+        print("[claude-review] Summary comment:")
+        print(body)
+        return 0
+    if inline:
+        _gh_api([f"repos/{args.repo}/pulls/{args.pr}/reviews", "--method", "POST"], review)
+    # Only a comment the workflow itself wrote counts as the summary, so nobody else's comment is edited.
+    select = (f'.[] | select(.user.login == "{args.bot_login}" and ((.body // "") | contains("{SUMMARY_MARKER}")))'
+              " | .id")
+    existing = _gh_api([f"repos/{args.repo}/issues/{args.pr}/comments", "--paginate", "--jq", select]).split()
+    if existing:
+        _gh_api([f"repos/{args.repo}/issues/comments/{existing[-1]}", "--method", "PATCH"], {"body": body})
+        print(f"[claude-review] summary comment {existing[-1]} updated")
+    else:
+        _gh_api([f"repos/{args.repo}/issues/{args.pr}/comments", "--method", "POST"], {"body": body})
+        print("[claude-review] summary comment created")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -245,6 +475,28 @@ def main(argv=None) -> int:
     p_classify.add_argument("--event-label", default="")
     p_classify.add_argument("--json", dest="json_out")
     p_classify.set_defaults(func=_cmd_classify)
+
+    p_review = sub.add_parser("review", help="run claude -p and write its JSON result")
+    p_review.add_argument("--config", required=True)
+    p_review.add_argument("--tier", required=True, choices=["light", "full"])
+    p_review.add_argument("--repo", required=True, help="OWNER/NAME")
+    p_review.add_argument("--pr", required=True, type=int)
+    p_review.add_argument("--sha", required=True, help="PR head commit")
+    p_review.add_argument("--out", required=True)
+    p_review.add_argument("--claude-bin", default="claude")
+    p_review.set_defaults(func=_cmd_review)
+
+    p_post = sub.add_parser("post", help="post the findings of a review result to the PR")
+    p_post.add_argument("--result", required=True)
+    p_post.add_argument("--repo", required=True)
+    p_post.add_argument("--pr", required=True, type=int)
+    p_post.add_argument("--tier", required=True)
+    p_post.add_argument("--sha", required=True)
+    p_post.add_argument("--diff-file", help="unified diff of the PR; default: `gh pr diff`")
+    p_post.add_argument("--dry-run", action="store_true", help="print the payloads, post nothing")
+    p_post.add_argument("--bot-login", default="github-actions[bot]",
+                        help="author of the summary comment to update (the workflow token's identity)")
+    p_post.set_defaults(func=_cmd_post)
 
     p_cost = sub.add_parser("cost", help="report the API cost of a finished review")
     p_cost.add_argument("--execution-file", required=True)
