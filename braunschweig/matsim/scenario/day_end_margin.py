@@ -51,6 +51,21 @@ def check_margin(margin_s, bound_s) -> float:
     return float(margin_s)
 
 
+def late_day_shift_s(first_departure_s, last_arrival_s, *, target_s: float):
+    """Per day: the whole-second shift (s, >= 0) that moves it earlier so it ends by ``target_s``, limited by its
+    first departure (no time before 0 s); also whether it was late and whether the shift falls short (unresolved).
+
+    The rule of :func:`shift_late_days`, on arrays, so that a synthesis stage that must check its days at their
+    written times (``braunschweig.synthesis.incommuters``, eqasim-bs#488) applies exactly the same move.
+    """
+    first_departure_s = np.asarray(first_departure_s, dtype=float)
+    excess = np.ceil(np.asarray(last_arrival_s, dtype=float) - target_s)
+    late = excess > 0
+    room = np.floor(np.clip(first_departure_s, 0.0, None))
+    shift = np.where(late, np.minimum(excess, room), 0.0)
+    return shift, late, late & (shift < excess)
+
+
 def shift_late_days(activities: pd.DataFrame, trips: pd.DataFrame, *, bound_s: float,
                     margin_s: float) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Move every day whose last arrival is after ``bound_s - margin_s`` earlier as a whole; return the report.
@@ -62,14 +77,13 @@ def shift_late_days(activities: pd.DataFrame, trips: pd.DataFrame, *, bound_s: f
     (moved less than their excess), mean and maximum applied shift (s), the bound and the margin.
     """
     margin_s = check_margin(margin_s, bound_s)
-    target_s = float(bound_s) - margin_s
     per_person = trips.groupby("person_id").agg(first_departure=("departure_time", "min"),
                                                 last_arrival=("arrival_time", "max"))
-    excess = np.ceil(per_person["last_arrival"] - target_s)
-    late = excess > 0
-    room = np.floor(per_person["first_departure"].clip(lower=0.0))
-    shift = pd.Series(np.where(late, np.minimum(excess, room), 0.0), index=per_person.index)
-    unresolved = late & (shift < excess)
+    shift_s, late, unresolved = late_day_shift_s(per_person["first_departure"].to_numpy(dtype=float),
+                                                 per_person["last_arrival"].to_numpy(dtype=float),
+                                                 target_s=float(bound_s) - margin_s)
+    shift = pd.Series(shift_s, index=per_person.index)
+    late, unresolved = pd.Series(late, index=per_person.index), pd.Series(unresolved, index=per_person.index)
 
     activities = activities.copy()
     trips = trips.copy()

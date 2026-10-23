@@ -610,6 +610,10 @@
   ],
   [
    "matsim.runtime.eqasim",
+   "braunschweig.synthesis.incommuters"
+  ],
+  [
+   "matsim.runtime.eqasim",
    "braunschweig.synthesis.portal_trips.stage"
   ],
   [
@@ -655,6 +659,10 @@
   [
    "matsim.runtime.java",
    "braunschweig.freight.extraction_tool"
+  ],
+  [
+   "matsim.runtime.java",
+   "braunschweig.synthesis.incommuters"
   ],
   [
    "matsim.runtime.java",
@@ -738,6 +746,10 @@
   ],
   [
    "matsim.scenario.supply.gtfs",
+   "braunschweig.synthesis.incommuters"
+  ],
+  [
+   "matsim.scenario.supply.gtfs",
    "braunschweig.synthesis.portal_trips.stage"
   ],
   [
@@ -759,6 +771,10 @@
   [
    "matsim.scenario.supply.processed",
    "braunschweig.data.cordon_pt_gates"
+  ],
+  [
+   "matsim.scenario.supply.processed",
+   "braunschweig.synthesis.incommuters"
   ],
   [
    "matsim.scenario.supply.processed",

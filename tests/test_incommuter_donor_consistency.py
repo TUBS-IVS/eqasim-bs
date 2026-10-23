@@ -151,7 +151,7 @@ class ConfigContext:
     def __init__(self, cfg):
         self.cfg = dict(cfg)
 
-    def config(self, key, *default):
+    def config(self, key, *default, **options):  # synpp also takes volatile=...
         if default:
             self.cfg.setdefault(key, default[0])
         return self.cfg[key]
@@ -177,6 +177,8 @@ def test_time_flag_is_declared_default_on(module):
         "cordon_enabled": True, "random_seed": 1234, "data_path": "unused",
         "sampling_rate": 0.01, "braunschweig.political_prefix": ["03101"],
         "cordon_network_source_buffer_m": 45000,
+        # the timetable check of the pt days (#488) declares the batch pt router; not this test's subject
+        incommuters._pt_connections.KEY_ENABLED: False,
     })
     module.configure(ctx)
     assert ctx.cfg["cordon_incommuter_time_chronology"] is True
@@ -246,6 +248,9 @@ def test_worker_execute_forwards_time_flag(monkeypatch, enabled):
         "cordon_incommuter_real_origin": False,
         "cordon_incommuter_mode_balance": False,
         "cordon_incommuter_mode_reference_by_bundesland": False,
+        # the timetable check of the pt days (#488) needs the batch pt router; tested in
+        # test_incommuter_pt_connections.py
+        incommuters._pt_connections.KEY_ENABLED: False,
     })
     incommuters.configure(ctx)
     stages = {
