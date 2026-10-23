@@ -77,14 +77,24 @@ validation:
 - metric: links of the facilities placed at the cordon road gates (#442 portal gates and in-commuter gate homes),
     1 % rerun
   reference: 'none; a comparison with the gate links of braunschweig.synthesis.cordon_gates'
-  result: '64 of 67 such facilities are not on their gate link. All 8 motorway gates land on non-motorway links,
-    6 on 600 veh/h residential or tertiary streets (A2-west gate_0000/0007 -> 501844, the #444 link; A2-east
-    gate_0004/0006 -> 647295, both directions on one street). The cutter turns the portal stays there into
-    outside_N on the same street (outside_20 on 501844: 28 activities, peak 6 activity ends per hour = 100 % of
-    the street''s simulated capacity at 1 %). The gate assignment gives the inward gate_0004 and the outward
-    gate_0006 identical counts for every municipality. Not fixed by this record: ADR-0144 covers freight only;
-    the person and in-commuter side is an open finding.'
+  result: '84 of the 90 facilities found at the 45 gates with a facility (44 portal_gate_*, 46 in-commuter gate
+    homes) are not on their gate link (same_link False in the CSV). All 9 gates whose gate link is a motorway
+    (gate_0000-0007, gate_0010) have their facilities on non-motorway links; 6 of them have a facility on a
+    600 veh/h residential street (A2-west gate_0000/0007 -> 501844, the #444 link; A2-east gate_0004/0006 ->
+    647295, both directions on one street; gate_0001 -> 509344; gate_0005 -> 324796). The cutter turns the
+    portal stays there into outside_N on the same street (outside_20 on 501844). The gate assignment gives the
+    inward gate_0004 and the outward gate_0006 identical counts for every municipality. Not fixed by this
+    record: ADR-0144 covers freight only; the person and in-commuter side is an open finding.'
   artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links_rerun.csv'
+- metric: network departures on the links of the gate facilities, 1 % rerun
+  reference: 'none; a count of departure and vehicle enters traffic events'
+  result: 'The snapping has no measured traffic effect at 1 %. Activity ends at outside_* facilities are not
+    street departures: a portal stay leaves by a teleported outside leg (outside_35 in prod100 has 0 person
+    departures on 450785). On 501844 there are 0 network departures (31 walk departures only). The highest peak
+    share of simulated capacity on any gate-facility link is 0.83 (unclassified 562665, 5 of 6 per hour), and
+    these counts include all local traffic of the link, not only the gate facilities. Whether the snapping
+    matters for traffic at 100 % is not measured here.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_departures_rerun.txt'
 features:
 - freight_boundary_links
 artifacts:
@@ -107,6 +117,8 @@ artifacts:
 - docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/portal_load_rerun.csv
 - docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links.py
 - docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links_rerun.csv
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_departures.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_departures_rerun.txt
 issues:
 - '#465'
 - '#444'
@@ -118,5 +130,6 @@ source: 'Scripts run in felix:~/i465-portal35 on 2026-10-23 with the commands in
   python3 blocking_probe.py <dir>/bbox_events.csv 450785;
   python3 upstream_probe.py <delayed_traversals.csv> <dir>/bbox_events.csv 38954,647288 450784,450785;
   python3 portal_inventory.py <run> <out.csv> [prefix]; python3 portal_load.py <run> <inventory.csv> <out.csv>
-  <flowCapacityFactor> [prefix]; python gate_links.py <run> <cordon_gates pickle> <out.csv>. An empty
+  <flowCapacityFactor> [prefix]; python gate_links.py <run> <cordon_gates pickle> <out.csv>;
+  python3 gate_departures.py <run> gate_links_rerun.csv 0.01 > gate_departures_rerun.txt. An empty
   return_detour_m in the portal_load CSVs means no return to the link start within 30 km of driving.'
