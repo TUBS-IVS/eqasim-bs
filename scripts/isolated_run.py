@@ -11,7 +11,8 @@ Every subcommand works on one run directory:
     RUN_DIR/eqasim-java-bs   detached worktree of the shared ~/eqasim-java-bs at --java; the base value
                              eqasim_source_path ../eqasim-java-bs resolves to it without a config change
     RUN_DIR/cache            synpp working_directory, a PHYSICAL copy (cp -a) of an earlier run's cache
-    RUN_DIR/output           output_path
+    RUN_DIR/output           output_path, unless the source overlay's relative output_path already lies
+                             inside the run (then it is kept: it enters the synthesis stage hashes)
     RUN_DIR/logs             explain, input-check and run logs
     RUN_DIR/run.yml          the run's overlay, composed with configs/base_bs.yml at launch
     RUN_DIR/run.json         provenance: refs, commits, cache source, overlay source, gate, launches
@@ -24,10 +25,10 @@ Every subcommand works on one run directory:
     python scripts/isolated_run.py status RUN_DIR
 
 Exit codes: 0 done; 1 refused or failed, the message says why and what to do; 2 the gate refused
-because braunschweig.popsim.stage would recompute. Run the tool with the eqasim conda env's
-interpreter: `gate` runs the run's own scripts/explain_stale_stages.py and
-scripts/verify_braunschweig_inputs.py with it. The shared checkouts are only fetched, never
-switched, reset or pulled. Why each rule exists: docs/codebase/notes/isolated-server-runs.md.
+a PopulationSim recompute. Run the tool with the eqasim conda env's interpreter: `gate` runs the
+run's own scripts/explain_stale_stages.py and scripts/verify_braunschweig_inputs.py with it. The
+shared checkouts are only fetched, never switched, reset or pulled. Why each rule exists:
+docs/codebase/notes/isolated-server-runs.md.
 """
 from __future__ import annotations
 
@@ -77,12 +78,12 @@ GATE_KEY = "synpp_expected_stale_stages"
 POPSIM_STAGE = "braunschweig.popsim.stage"
 POPSIM_WORK_DIR_KEY = "braunschweig.population.popsim.work_dir"
 
-# Paths written into run.yml, relative to RUN_DIR/eqasim-bs. Every isolated run carries the same
-# strings, so a cache copied from another isolated run stays valid: output_path enters the synthesis
-# stage hashes (synthesis.population.spatial.primary.candidates declares it), analysis_working_directory
+# run.yml paths, relative to RUN_DIR/eqasim-bs, so every isolated run carries the same strings and a
+# cache copied from one isolated run into the next stays valid. output_path enters the synthesis stage
+# hashes (synthesis.population.spatial.primary.candidates declares it), analysis_working_directory only
 # the hash of braunschweig.analysis.analysis_suite.
-RUN_TOP_LEVEL_PATHS = {"working_directory": f"../{CACHE_DIR}"}
-RUN_CONFIG_PATHS = {"output_path": f"../{OUTPUT_DIR}", "analysis_working_directory": f"../{CACHE_DIR}"}
+RUN_CACHE_PATH = f"../{CACHE_DIR}"
+RUN_OUTPUT_PATH = f"../{OUTPUT_DIR}"
 # No stage reads these; they steer only the launcher's prime/export of eqasim-data/cache_shared, so
 # switched off the run neither reads from nor writes into the shared store.
 RUN_CONFIG_SWITCHES = {"cache_share_enabled": False, "cache_share_export": False}
@@ -96,9 +97,13 @@ DEFAULT_SHARED_JAVA = "~/eqasim-java-bs"
 DEFAULT_JAVA_HOME = "~/tools/jdk-25.0.3+9"
 DEFAULT_CONDA_SH = "~/miniforge3/etc/profile.d/conda.sh"
 DEFAULT_CONDA_ENV = "eqasim"
-# Free space that must remain after the cache copy, for the run's own new stage outputs.
+# ASSUMPTION (operational default, not derived from a measured run size): GiB that must stay free after
+# the cache copy for the run's own new stage outputs. A 100 % run writes far more; raise it there.
 DEFAULT_RESERVE_GIB = 20.0
-# A cache source written to more recently than this may still belong to a live run.
+# ASSUMPTION: a live run writes into its working directory at least every few minutes; with monitoring on
+# (the default) the resource recorder appends a sample to <working_directory>/monitoring every 30 s. With
+# monitoring off a live run can stay silent for hours, so this window only backs up the process check
+# (find_runs_using).
 DEFAULT_ACTIVE_SOURCE_MINUTES = 15.0
 # How long `launch` watches the new log for the launcher's [explain] verdict.
 DEFAULT_WAIT_SECONDS = 120.0
@@ -141,6 +146,7 @@ class Host:
     run: Callable = _run_command
     popen: Callable = subprocess.Popen
     proc_root: Path = Path("/proc")
+    process_cwd: Callable = lambda entry: os.readlink(entry / "cwd")
     disk_free: Callable = lambda path: shutil.disk_usage(path).free
     now: Callable = lambda: datetime.datetime.now().astimezone()
     sleep: Callable = time.sleep
@@ -305,18 +311,55 @@ def _write_run_yml(path: Path, doc: dict, header: List[str]) -> str:
     return _sha256_file(path)
 
 
+def _effective_config_value(run_dir: Path, doc: dict, key: str):
+    """``key`` as the launcher sees it: run.yml's config value, else the run commit's base value."""
+    config = doc.get("config") or {}
+    if key in config:
+        return config[key]
+    base = run_dir / BS_DIR / BASE_CONFIG
+    if not base.is_file():
+        return None
+    with open(base, encoding="utf-8") as handle:
+        return ((yaml.safe_load(handle) or {}).get("config") or {}).get(key)
+
+
+def _launcher_gate_off(run_dir: Path, doc: dict) -> Optional[str]:
+    """Why the launcher would skip its explain step (and with it the gate list) for this run.yml."""
+    if doc.get("dryrun"):
+        return "run.yml sets dryrun: true, so the launcher skips its explain step"
+    if _effective_config_value(run_dir, doc, "synpp_explain_before_run") is False:
+        return "synpp_explain_before_run is false, so the launcher skips its explain step"
+    return None
+
+
+def _outside_popsim_work_dir(run_dir: Path, doc: dict) -> Optional[Path]:
+    """The popsim work dir when it resolves outside the run, else None."""
+    value = _effective_config_value(run_dir, doc, POPSIM_WORK_DIR_KEY)
+    if not value:
+        return None
+    resolved = _resolve_from_launch_dir(run_dir, value)
+    return None if _inside(resolved, run_dir) else resolved
+
+
 # ---------------------------------------------------------------------------------------------
 # overlay
 
-def transform_overlay(source: dict, prefix: Optional[str] = None) -> Tuple[dict, List[str]]:
-    """Return the run overlay derived from ``source`` and a list of what changed.
+def keeps_output_path(run_dir: Path, value) -> bool:
+    """A relative output_path that already resolves inside the run is kept: same string, same hashes."""
+    return (isinstance(value, str) and bool(value) and not os.path.isabs(value)
+            and _inside(_resolve_from_launch_dir(run_dir, value), run_dir))
 
-    working_directory, output_path and analysis_working_directory point into the run directory,
-    cache_share_enabled and cache_share_export are switched off, and a launcher gate list of the
-    source run is dropped (this run gets its own from `gate --write`). output_prefix changes only
-    when ``prefix`` is given: it enters the matsim.simulation.prepare stage hash. Every other key
-    stays as it is, the popsim work_dir string included: it enters the popsim stage hash, so it
-    must stay the source run's for PopulationSim to stay cached.
+
+def transform_overlay(source: dict, run_dir: Path, prefix: Optional[str] = None) -> Tuple[dict, List[str]]:
+    """Return the run overlay derived from ``source`` and a list of what changed and what that costs.
+
+    working_directory and analysis_working_directory point at RUN_DIR/cache. output_path is kept when it
+    is relative and already resolves inside the run, else it points at RUN_DIR/output: it enters the
+    synthesis stage hashes, so keeping it keeps those stages cached. cache_share_enabled and
+    cache_share_export are switched off, and a launcher gate list of the source run is dropped (this run
+    gets its own from `gate --write`). output_prefix changes only when ``prefix`` is given: it is part of
+    the matsim.simulation.prepare and .run configuration. Every other key stays as it is, the popsim
+    work_dir string included: it enters the popsim stage hash.
     """
     if not isinstance(source, dict):
         raise IsolatedRunError("the source overlay is not a YAML mapping")
@@ -328,35 +371,28 @@ def transform_overlay(source: dict, prefix: Optional[str] = None) -> Tuple[dict,
         raise IsolatedRunError("the source overlay's `config` is not a mapping")
     changes = []
 
-    def put(container, key, value, label):
+    def put(container, key, value, label, consequence=""):
         if key not in container:
-            changes.append(f"{label}: (added) {value!r}")
+            changes.append(f"{label}: (added) {value!r}{consequence}")
         elif container[key] != value:
-            changes.append(f"{label}: {container[key]!r} -> {value!r}")
+            changes.append(f"{label}: {container[key]!r} -> {value!r}{consequence}")
         container[key] = value
 
-    for key, value in RUN_TOP_LEVEL_PATHS.items():
-        put(doc, key, value, key)
-    for key, value in {**RUN_CONFIG_PATHS, **RUN_CONFIG_SWITCHES}.items():
+    put(doc, "working_directory", RUN_CACHE_PATH, "working_directory")
+    put(config, "analysis_working_directory", RUN_CACHE_PATH, "config.analysis_working_directory",
+        " (enters only the braunschweig.analysis.analysis_suite hash)")
+    if not keeps_output_path(run_dir, config.get("output_path")):
+        put(config, "output_path", RUN_OUTPUT_PATH, "config.output_path",
+            " (enters the synthesis stage hashes: a cache built with the old value recomputes synthesis once)")
+    for key, value in RUN_CONFIG_SWITCHES.items():
         put(config, key, value, f"config.{key}")
     if prefix is not None:
-        put(config, "output_prefix", prefix, "config.output_prefix")
+        put(config, "output_prefix", prefix, "config.output_prefix",
+            " (part of the matsim.simulation.prepare and .run configuration: MATSim reruns)")
     if GATE_KEY in config:
         changes.append(f"config.{GATE_KEY}: dropped (the source run's {len(config[GATE_KEY] or [])} stages)")
         del config[GATE_KEY]
     return doc, changes
-
-
-def _popsim_work_dir_value(run_dir: Path, doc: dict) -> Optional[str]:
-    """The popsim work_dir the run will use: run.yml's value, else the run commit's base value."""
-    config = doc.get("config") or {}
-    if POPSIM_WORK_DIR_KEY in config:
-        return config[POPSIM_WORK_DIR_KEY]
-    base = run_dir / BS_DIR / BASE_CONFIG
-    if not base.is_file():
-        return None
-    with open(base, encoding="utf-8") as handle:
-        return ((yaml.safe_load(handle) or {}).get("config") or {}).get(POPSIM_WORK_DIR_KEY)
 
 
 def cmd_overlay(args, host: Host) -> int:
@@ -375,7 +411,7 @@ def cmd_overlay(args, host: Host) -> int:
         raise IsolatedRunError(f"source overlay {source_path} not found")
     with open(source_path, encoding="utf-8") as handle:
         source = yaml.safe_load(handle) or {}
-    doc, changes = transform_overlay(source, args.prefix)
+    doc, changes = transform_overlay(source, run_dir, args.prefix)
     target = run_dir / RUN_YML
     if target.exists() and not args.force:
         raise IsolatedRunError(f"{target} exists; pass --force to replace it (the gate must then run again)")
@@ -388,20 +424,24 @@ def cmd_overlay(args, host: Host) -> int:
         "`launch` compares this file with its gate record: edit it only before `gate --write`.",
     ]
     digest = _write_run_yml(target, doc, header)
+    config = doc["config"]
+    output_dir = _resolve_from_launch_dir(run_dir, config["output_path"])
     record["overlay"] = {"time": _iso(host), "source": str(source_path), "source_sha256": source_sha256,
-                         "prefix": args.prefix, "changes": changes, "run_yml_sha256": digest,
-                         "tool_blob": _tool_blob()}
+                         "prefix": args.prefix, "changes": changes, "output_dir": str(output_dir),
+                         "run_yml_sha256": digest, "tool_blob": _tool_blob()}
     record.pop("gate", None)
     _save_record(run_dir, record)
 
     print(f"{target} written from {source_path}")
     for change in changes:
         print(f"  {change}")
-    config = doc["config"]
+    if keeps_output_path(run_dir, (source.get("config") or {}).get("output_path")):
+        print(f"  kept: config.output_path {config['output_path']!r}, inside the run at {output_dir} (it enters the "
+              "synthesis stage hashes, so keeping it keeps them)")
     if args.prefix is None:
-        print(f"  kept: config.output_prefix {config.get('output_prefix')!r} (enters the matsim.simulation.prepare "
-              "hash; --prefix changes it)")
-    work_dir = _popsim_work_dir_value(run_dir, doc)
+        print(f"  kept: config.output_prefix {config.get('output_prefix')!r} (part of the matsim.simulation.prepare "
+              "and .run configuration; --prefix changes it)")
+    work_dir = _effective_config_value(run_dir, doc, POPSIM_WORK_DIR_KEY)
     if work_dir:
         resolved = _resolve_from_launch_dir(run_dir, work_dir)
         print(f"  kept: config.{POPSIM_WORK_DIR_KEY} {work_dir!r} (enters the popsim hash), resolves to {resolved}")
@@ -464,34 +504,50 @@ class PopsimVerdict:
 
 
 def judge_popsim(report: ExplainReport, work_dir_value, run_dir: Path, allow_popsim: bool) -> PopsimVerdict:
-    """Refuse a launch that would recompute PopulationSim unless allowed, and always one whose
-    recompute would write outside the run (popsim purges stale batches in its work dir)."""
+    """Decide whether the run may launch with this PopulationSim status.
+
+    A recompute (STALE, RECOMPUTE) is refused unless allowed, and always when the work dir lies outside
+    the run: a recomputing popsim purges stale batch folders in its work dir, which would delete another
+    run's batches, and pointing the work dir into the run costs nothing when popsim recomputes anyway.
+    A possible recompute (STALE-IF: early cutoff decides; EPHEMERAL) into a work dir outside the run is
+    refused unless allowed.
+    """
     status = report.statuses.get(POPSIM_STAGE)
     if status is None:
         return PopsimVerdict(None, False, [f"{POPSIM_STAGE}: not in this run's stage graph"])
     if status == "HIT":
         return PopsimVerdict(status, False, [f"{POPSIM_STAGE}: HIT, PopulationSim stays cached"])
-    outside = None
+    lines, outside = [], None
     if work_dir_value:
         resolved = _resolve_from_launch_dir(run_dir, work_dir_value)
         if not _inside(resolved, run_dir):
             outside = resolved
+    else:
+        lines.append(f"WARNING: no config.{POPSIM_WORK_DIR_KEY} in run.yml or the base config: where PopulationSim "
+                     "would write cannot be checked")
     if status in ("STALE", "RECOMPUTE"):
+        if outside is not None:
+            return PopsimVerdict(status, True, lines + [
+                f"{POPSIM_STAGE} is {status}: PopulationSim WILL recompute and write its batches into {outside}, "
+                f"outside {run_dir}; its stale-batch purge would delete another run's batches there. Point "
+                f"config.{POPSIM_WORK_DIR_KEY} in run.yml into the run (e.g. ../popsim_work; popsim recomputes "
+                "anyway, so the hash change costs nothing) and gate again."])
         if not allow_popsim:
-            return PopsimVerdict(status, True, [
+            return PopsimVerdict(status, True, lines + [
                 f"{POPSIM_STAGE} is {status}: PopulationSim would recompute (hours). Check that --cache-from was "
                 "the cache of the run whose overlay went into `overlay` (the popsim work_dir string enters the "
                 "popsim hash), or pass --allow-popsim to accept the recompute."])
-        if outside is not None:
-            return PopsimVerdict(status, True, [
-                f"{POPSIM_STAGE} is {status} and would write its batches into {outside}, outside {run_dir}; its "
-                "stale-batch purge would delete another run's batches there. Point "
-                f"config.{POPSIM_WORK_DIR_KEY} in run.yml into the run (e.g. ../popsim_work) and gate again."])
-        return PopsimVerdict(status, False, [f"WARNING: {POPSIM_STAGE} is {status}: PopulationSim WILL recompute "
-                                             "(allowed by --allow-popsim)"])
-    lines = [f"WARNING: {POPSIM_STAGE} is {status}: it recomputes only if a stale ancestor's output changes"]
+        return PopsimVerdict(status, False, lines + [f"WARNING: {POPSIM_STAGE} is {status}: PopulationSim WILL "
+                                                     "recompute (allowed by --allow-popsim)"])
+    if outside is not None and not allow_popsim:
+        return PopsimVerdict(status, True, lines + [
+            f"{POPSIM_STAGE} is {status}: it recomputes if a stale ancestor's output changes, and would then write "
+            f"its batches into {outside}, outside {run_dir}, where its stale-batch purge would delete another "
+            "run's batches. Pass --allow-popsim to accept that risk, or point the work dir into the run (popsim "
+            "then recomputes for certain)."])
+    lines.append(f"WARNING: {POPSIM_STAGE} is {status}: it recomputes only if a stale ancestor's output changes")
     if outside is not None:
-        lines.append(f"WARNING: if it does, it writes its batches into {outside}, outside {run_dir}")
+        lines.append(f"WARNING: if it does, it writes into {outside}, outside {run_dir} (accepted by --allow-popsim)")
     return PopsimVerdict(status, False, lines)
 
 
@@ -512,6 +568,10 @@ def _isolation_problems(run_dir: Path, doc: dict) -> List[str]:
     return problems
 
 
+def _worktree_commits(host: Host, run_dir: Path) -> Dict[str, str]:
+    return {name: _git(host, run_dir / name, "rev-parse", "HEAD").strip() for name in (BS_DIR, JAVA_DIR)}
+
+
 def cmd_gate(args, host: Host) -> int:
     run_dir = _expand(args.run_dir)
     record = _load_record(run_dir)
@@ -520,6 +580,9 @@ def cmd_gate(args, host: Host) -> int:
     problems = _isolation_problems(run_dir, doc)
     if problems:
         raise IsolatedRunError("run.yml is not isolated: " + "; ".join(problems) + " (write it with `overlay`)")
+    gate_off = _launcher_gate_off(run_dir, doc)
+    if gate_off:
+        raise IsolatedRunError(f"{gate_off}, so no gate list would be enforced; remove that from run.yml and gate again")
     if args.write and find_run_processes(run_yml, host.proc_root):
         raise IsolatedRunError(f"{run_yml} is running: the gate list of a running launch stays as it is")
     logs.mkdir(exist_ok=True)
@@ -552,7 +615,8 @@ def cmd_gate(args, host: Host) -> int:
             print(f"ERROR: required inputs are missing (exit {result.returncode}), log {inputs_log}:\n"
                   f"{_tail(result.stdout + (result.stderr or ''))}", file=sys.stderr)
 
-    verdict = judge_popsim(report, _popsim_work_dir_value(run_dir, doc), run_dir, args.allow_popsim)
+    verdict = judge_popsim(report, _effective_config_value(run_dir, doc, POPSIM_WORK_DIR_KEY), run_dir,
+                           args.allow_popsim)
     for line in verdict.lines:
         print(line, file=sys.stderr if verdict.refused or line.startswith("WARNING") else sys.stdout)
     if verdict.refused:
@@ -574,9 +638,7 @@ def cmd_gate(args, host: Host) -> int:
         "time": _iso(host), "explain_log": str(explain_log),
         "inputs_log": None if inputs_log is None else str(inputs_log), "inputs_checked": not args.skip_input_check,
         "stale_stages": report.stale, "summary": report.summary, "popsim_status": verdict.status,
-        "allow_popsim": args.allow_popsim,
-        "commits": {BS_DIR: _git(host, bs_dir, "rev-parse", "HEAD").strip(),
-                    JAVA_DIR: _git(host, run_dir / JAVA_DIR, "rev-parse", "HEAD").strip()},
+        "allow_popsim": args.allow_popsim, "commits": _worktree_commits(host, run_dir),
         "run_yml_sha256": digest, "tool_blob": _tool_blob(),
     }
     _save_record(run_dir, record)
@@ -670,26 +732,34 @@ class TreeStats:
     links: int
     bytes: int
     newest_mtime: float
+    link_paths: List[str]
 
 
 def tree_stats(top: Path) -> TreeStats:
     """Regular files, symlinks, bytes (each inode once, as du counts) and the newest mtime under ``top``."""
-    files = links = size = 0
+    files = size = 0
     newest = os.lstat(top).st_mtime
-    seen = set()
+    seen, link_paths = set(), []
     for directory, names, file_names in os.walk(top):
         for name in names + file_names:
-            info = os.lstat(os.path.join(directory, name))
+            path = os.path.join(directory, name)
+            info = os.lstat(path)
             newest = max(newest, info.st_mtime)
             if stat.S_ISLNK(info.st_mode):
-                links += 1
+                link_paths.append(path)
             elif stat.S_ISREG(info.st_mode):
                 files += 1
-                key = (info.st_dev, info.st_ino) if info.st_ino else os.path.join(directory, name)
+                key = (info.st_dev, info.st_ino) if info.st_ino else path
                 if key not in seen:
                     seen.add(key)
                     size += info.st_size
-    return TreeStats(files, links, size, newest)
+    return TreeStats(files, len(link_paths), size, newest, link_paths)
+
+
+def _link_leaves_tree(link: str, top: Path) -> bool:
+    """True when cp -a's copy of ``link`` (the link text is kept) would not point inside the copy."""
+    target = os.readlink(link)
+    return os.path.isabs(target) or not _inside(os.path.join(os.path.dirname(link), target), top)
 
 
 @dataclasses.dataclass
@@ -704,7 +774,8 @@ class CacheCopyCheck:
 def check_cache_copy(source: Path, target: Path, *, free_bytes: int, reserve_bytes: int, now: float,
                      allow_active_source: bool = False,
                      active_window_seconds: float = DEFAULT_ACTIVE_SOURCE_MINUTES * 60) -> CacheCopyCheck:
-    """Refuse a cache copy that would overwrite, run out of space, or copy a cache still being written."""
+    """Refuse a cache copy that would overwrite, run out of space, stay linked to its source, or copy a
+    cache that is still being written."""
     partial = target.with_name(target.name + PARTIAL_SUFFIX)
     if not source.is_dir():
         raise IsolatedRunError(f"cache source {source} is not a directory")
@@ -714,6 +785,11 @@ def check_cache_copy(source: Path, target: Path, *, free_bytes: int, reserve_byt
     if partial.exists() or partial.is_symlink():
         raise IsolatedRunError(f"{partial} exists: an earlier copy did not finish; remove that path and set up again")
     stats = tree_stats(source)
+    leaving = [link for link in stats.link_paths if _link_leaves_tree(link, source)]
+    if leaving:
+        raise IsolatedRunError(f"{source} holds {len(leaving)} symlink(s) whose copy would still point into the source "
+                               f"or outside it ({', '.join(leaving[:3])}); a re-executed stage would write through "
+                               "them into another cache. Copy from a physical cache (cp -aL makes one) instead.")
     if free_bytes < stats.bytes + reserve_bytes:
         raise IsolatedRunError(f"not enough free space: the copy needs {_gib(stats.bytes)} GiB plus a reserve of "
                                f"{_gib(reserve_bytes)} GiB for the run's own outputs, {_gib(free_bytes)} GiB are free")
@@ -764,15 +840,37 @@ class RepositoryPlan:
 
 
 def shared_checkout_state(host: Host, repository: Path) -> dict:
-    """Branch, HEAD and dirty-entry count of a shared checkout (read-only, no optional index lock)."""
+    """Branch, HEAD and dirty entries of a shared checkout (read-only, no optional index lock)."""
     branch = _git(host, repository, "branch", "--show-current").strip()
     head = _git(host, repository, "rev-parse", "HEAD").strip()
     argv = ["git", "--no-optional-locks", "-C", str(repository), "status", "--porcelain"]
     result = host.run(argv)
     if result.returncode != 0:
         raise IsolatedRunError(f"`{shlex.join(argv)}` failed: {(result.stderr or '').strip()}")
-    dirty = sum(1 for line in result.stdout.splitlines() if line.strip())
-    return {"branch": branch or "(detached)", "head": head, "dirty": dirty}
+    entries = [line for line in result.stdout.splitlines() if line.strip()]
+    return {"branch": branch or "(detached)", "head": head, "dirty": len(entries), "entries": entries}
+
+
+def _state_record(states: dict) -> dict:
+    return {name: {key: state[key] for key in ("branch", "head", "dirty")} for name, state in states.items()}
+
+
+def _state_changes(before: dict, after: dict) -> List[str]:
+    """What differs between two snapshots of the shared checkouts, line by line."""
+    changes = []
+    for name in before:
+        old, new = before[name], after[name]
+        for key in ("branch", "head"):
+            if old[key] != new[key]:
+                changes.append(f"{name}: {key} {old[key]} -> {new[key]}")
+        appeared = sorted(set(new["entries"]) - set(old["entries"]))
+        vanished = sorted(set(old["entries"]) - set(new["entries"]))
+        changes += [f"{name}: now dirty: {line}" for line in appeared[:10]]
+        changes += [f"{name}: no longer dirty: {line}" for line in vanished[:10]]
+        hidden = max(0, len(appeared) - 10) + max(0, len(vanished) - 10)
+        if hidden:
+            changes.append(f"{name}: {hidden} further status changes")
+    return changes
 
 
 def _print_states(title: str, states: dict) -> None:
@@ -816,10 +914,15 @@ def _resolve_commit(host: Host, repository: RepositoryPlan, run_name: str, dry_r
     heads = _bundle_heads(_git(host, repository.shared, "bundle", "list-heads", repository.bundle))
     repository.bundle_ref = _pick_bundle_ref(heads, repository.ref, repository.bundle)
     repository.namespaced_ref = f"{BUNDLE_REF_NAMESPACE}/{run_name}/{repository.name}"
+    expected = heads[repository.bundle_ref]
+    existing = host.run(["git", "-C", str(repository.shared), "rev-parse", "--verify", "--quiet",
+                         f"{repository.namespaced_ref}^{{commit}}"])
+    if existing.returncode == 0 and existing.stdout.strip() != expected:
+        raise IsolatedRunError(f"{repository.namespaced_ref} exists at {existing.stdout.strip()[:12]}, not at the "
+                               f"bundle's {expected[:12]}: another run directory is called {run_name}; pick another name")
     _step(host, dry_run, ["git", "-C", repository.shared, "fetch", "--no-tags", repository.bundle,
                           f"+{repository.bundle_ref}:{repository.namespaced_ref}"],
           f"fetch {repository.bundle_ref} from the bundle into {repository.namespaced_ref}")
-    expected = heads[repository.bundle_ref]
     if not dry_run:
         fetched = _git(host, repository.shared, "rev-parse", "--verify", f"{repository.namespaced_ref}^{{commit}}").strip()
         if fetched != expected:
@@ -906,8 +1009,17 @@ def cmd_setup(args, host: Host) -> int:
 
     cache_check = None
     if args.cache_from:
+        source = _expand(args.cache_from)
+        using, unknown = find_runs_using(source, host)
+        if using:
+            raise IsolatedRunError(f"{source} is the working directory of a running launcher (pids "
+                                   f"{', '.join(map(str, using))}): a copy taken while it writes is no consistent "
+                                   "cache; wait until that run ends")
+        if unknown:
+            print(f"WARNING: running launcher(s) {', '.join(map(str, unknown))}: their working directory could not be "
+                  f"read; make sure none of them writes into {source}", file=sys.stderr)
         cache_check = check_cache_copy(
-            _expand(args.cache_from), run_dir / CACHE_DIR, free_bytes=host.disk_free(_existing_parent(run_dir)),
+            source, run_dir / CACHE_DIR, free_bytes=host.disk_free(_existing_parent(run_dir)),
             reserve_bytes=int(args.reserve_gib * GIB), now=host.now().timestamp(),
             allow_active_source=args.allow_active_source, active_window_seconds=args.active_source_minutes * 60)
         print(f"  cache source {cache_check.source}: {cache_check.stats.files} files, "
@@ -919,6 +1031,16 @@ def cmd_setup(args, host: Host) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
     for repository in repositories:
         _create_worktree(host, repository, dry_run)
+    # The shared repositories are touched last by the worktree adds: compare right after them, so that
+    # minutes of cache copying do not widen the window in which another session's work shows up.
+    after = None if dry_run else {repository.name: shared_checkout_state(host, repository.shared)
+                                  for repository in repositories}
+    changes = [] if after is None else _state_changes(before, after)
+    if changes:
+        print("ERROR: a shared checkout changed during setup; this tool only fetched and added worktrees, so another "
+              "session is probably working there; look before you rely on it:", file=sys.stderr)
+        for change in changes:
+            print(f"  {change}", file=sys.stderr)
     farm = _symlink_farm(host, repositories[0], shared_data, dry_run)
     copied = None if cache_check is None else copy_cache(cache_check, host, dry_run)
     if dry_run:
@@ -926,7 +1048,6 @@ def cmd_setup(args, host: Host) -> int:
         return EXIT_OK
 
     (run_dir / LOGS_DIR).mkdir(exist_ok=True)
-    after = {repository.name: shared_checkout_state(host, repository.shared) for repository in repositories}
     record = {
         "schema_version": RECORD_SCHEMA_VERSION,
         "run_name": name,
@@ -937,14 +1058,13 @@ def cmd_setup(args, host: Host) -> int:
             "symlink_farm": farm,
             "cache": None if cache_check is None else {"source": str(cache_check.source), "files": copied.files,
                                                        "links": copied.links, "bytes": copied.bytes},
-            "shared_checkouts": {"before": before, "after": after, "unchanged": after == before},
+            "shared_checkouts": {"before": _state_record(before), "after": _state_record(after),
+                                 "unchanged": not changes, "changes": changes},
         },
     }
     _save_record(run_dir, record)
-    _print_states("shared checkouts after", after)
-    if after != before:
-        print("ERROR: a shared checkout changed during setup (see above); this tool only fetched, so another "
-              "session is probably working there: look before you rely on it", file=sys.stderr)
+    _print_states("shared checkouts after the worktree adds", after)
+    if changes:
         return EXIT_REFUSED
     print(f"run directory ready: {run_dir}")
     print(f"next: python scripts/isolated_run.py overlay {run_dir} --from <overlay of the run whose cache this is>")
@@ -954,23 +1074,64 @@ def cmd_setup(args, host: Host) -> int:
 # ---------------------------------------------------------------------------------------------
 # processes, run log, launch and status
 
-def find_run_processes(run_yml: Path, proc_root: Path) -> List[Tuple[int, str]]:
-    """Processes running scripts/run_synpp.py on ``run_yml`` (the launch shell, the launcher, its workers)."""
+def _process_entries(proc_root: Path):
+    """(pid, argv) of every process in ``proc_root`` except this one."""
     if not proc_root.is_dir():
-        raise IsolatedRunError(f"process table {proc_root} not found: launch and status need Linux /proc")
-    needle = str(run_yml)
-    found = []
-    for entry in proc_root.iterdir():
+        raise IsolatedRunError(f"process table {proc_root} not found: this needs Linux /proc")
+    for entry in sorted(proc_root.iterdir()):
         if not entry.name.isdigit() or int(entry.name) == os.getpid():
             continue
         try:
             raw = (entry / "cmdline").read_bytes()
         except OSError:  # the process ended between the listing and the read
             continue
-        cmdline = raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        yield entry, [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
+
+
+def find_run_processes(run_yml: Path, proc_root: Path) -> List[Tuple[int, str]]:
+    """Processes running scripts/run_synpp.py on ``run_yml`` (the launch shell, the launcher, its workers).
+
+    The launch shell carries the path shell-quoted; where quoting changes its text (an apostrophe in a
+    parent directory) only the launcher and its workers match, which is enough to see the run.
+    """
+    needle = str(run_yml)
+    found = []
+    for entry, argv in _process_entries(proc_root):
+        cmdline = " ".join(argv)
         if "run_synpp.py" in cmdline and needle in cmdline:
             found.append((int(entry.name), cmdline))
     return sorted(found)
+
+
+def find_runs_using(directory: Path, host: Host) -> Tuple[List[int], List[int]]:
+    """PIDs of running launchers whose working_directory is ``directory``, and of launchers whose
+    working directory could not be read.
+
+    A launcher has a scripts/run_synpp.py argument; its working_directory is the last one set by its
+    config arguments (the overlay overrides the base), resolved from the process's cwd. Its
+    PopulationSim workers carry the same command line and are reported too.
+    """
+    wanted = os.path.normcase(os.path.realpath(directory))
+    using, unknown = [], []
+    for entry, argv in _process_entries(host.proc_root):
+        positions = [index for index, argument in enumerate(argv) if os.path.basename(argument) == "run_synpp.py"]
+        if not positions:
+            continue
+        pid = int(entry.name)
+        try:
+            cwd = host.process_cwd(entry)
+            working_directory = None
+            for config_path in argv[positions[0] + 1:]:
+                with open(os.path.join(cwd, config_path), encoding="utf-8") as handle:
+                    working_directory = (yaml.safe_load(handle) or {}).get("working_directory") or working_directory
+        except (OSError, yaml.YAMLError, AttributeError):
+            unknown.append(pid)
+            continue
+        if not working_directory:
+            unknown.append(pid)
+        elif os.path.normcase(os.path.realpath(os.path.join(cwd, working_directory))) == wanted:
+            using.append(pid)
+    return sorted(using), sorted(unknown)
 
 
 @dataclasses.dataclass
@@ -1045,7 +1206,11 @@ def build_launch_script(run_name: str, bs_dir: Path, run_yml: Path, java_home: P
     ]) + "\n"
 
 
-def _gate_problem(record: dict, doc: dict, run_yml: Path) -> Optional[str]:
+def _gate_problem(record: dict, doc: dict, run_yml: Path, run_dir: Path, commits: Dict[str, str]) -> Optional[str]:
+    """Why this run.yml is not covered by a current gate, or None."""
+    gate_off = _launcher_gate_off(run_dir, doc)
+    if gate_off:
+        return gate_off
     if not (doc.get("config") or {}).get(GATE_KEY):
         return f"run.yml has no {GATE_KEY} list, so the launcher would not gate the run"
     gate = record.get("gate")
@@ -1053,6 +1218,12 @@ def _gate_problem(record: dict, doc: dict, run_yml: Path) -> Optional[str]:
         return "run.json holds no gate record for this run.yml"
     if gate.get("run_yml_sha256") != _sha256_file(run_yml):
         return "run.yml changed after `gate --write`"
+    if gate.get("commits") != commits:
+        return f"the worktrees moved after the gate ({gate.get('commits')} -> {commits})"
+    launches = record.get("launches") or []
+    if launches and datetime.datetime.fromisoformat(gate["time"]) <= datetime.datetime.fromisoformat(
+            launches[-1]["time"]):
+        return "the gate predates the latest launch, whose completed stages changed the cache"
     return None
 
 
@@ -1076,6 +1247,8 @@ def _await_launch_check(log_path: Path, process, host: Host, wait_seconds: float
         if summary.explain_error:
             return False, [f"the launcher's [explain] block cannot be read: {summary.explain_error}"]
         if returncode is not None:
+            if returncode == 0 and summary.exit_code == 0:
+                return True, [f"the run finished within the check, exit 0 ({log_path})"]
             return False, [f"the run ended within the check (exit {returncode}, {summary.traceback_count} "
                            f"traceback(s)); see {log_path}:\n{_tail(_read_text(log_path))}"]
         if summary.explain is not None:
@@ -1099,15 +1272,26 @@ def cmd_launch(args, host: Host) -> int:
     if running:
         raise IsolatedRunError(f"{run_yml} is running already (pids {', '.join(str(pid) for pid, _ in running)}); "
                                "a second start would write into the same cache")
+    launches = record.get("launches") or []
+    if launches and summarise_run_log(_read_text(Path(launches[-1]["log"]))).exit_code == 0:
+        raise IsolatedRunError(f"the latest launch ({launches[-1]['log']}) finished with exit 0: this run is "
+                               "complete, and a relaunch would overwrite its outputs; a new run needs a new run "
+                               "directory")
     doc = _read_run_yml(run_yml)
     problems = _isolation_problems(run_dir, doc)
     if problems:
         raise IsolatedRunError("run.yml is not isolated: " + "; ".join(problems) + " (write it with `overlay`)")
-    gate_problem = _gate_problem(record, doc, run_yml)
+    commits = _worktree_commits(host, run_dir)
+    gate_problem = _gate_problem(record, doc, run_yml, run_dir, commits)
     if gate_problem and not args.force_no_gate:
         raise IsolatedRunError(f"{gate_problem}: run `gate {run_dir} --write`, or pass --force-no-gate to launch "
                                "without the launcher gate")
     if gate_problem:
+        outside = _outside_popsim_work_dir(run_dir, doc)
+        if outside is not None:
+            raise IsolatedRunError(f"with --force-no-gate nothing has checked PopulationSim, and its work dir {outside} "
+                                   f"lies outside {run_dir}: a recompute would purge another run's batches there; "
+                                   f"gate the run, or point config.{POPSIM_WORK_DIR_KEY} into the run")
         print(f"WARNING: launching WITHOUT a launcher gate ({gate_problem})", file=sys.stderr)
     java_home, conda_sh = _expand(args.java_home), _expand(args.conda_sh)
     if not (java_home / "bin" / "java").is_file():
@@ -1129,13 +1313,10 @@ def cmd_launch(args, host: Host) -> int:
             raise IsolatedRunError(f"cannot start the launch (setsid, nohup and bash must be on PATH): {error}")
     entry = {"time": _iso(host), "pid": process.pid, "log": str(log_path), "run_yml_sha256": _sha256_file(run_yml),
              "gate": "forced-off" if gate_problem else "gated", "java_home": str(java_home),
-             "conda_env": args.conda_env,
-             "commits": {BS_DIR: _git(host, bs_dir, "rev-parse", "HEAD").strip(),
-                         JAVA_DIR: _git(host, run_dir / JAVA_DIR, "rev-parse", "HEAD").strip()},
-             "tool_blob": _tool_blob()}
+             "conda_env": args.conda_env, "commits": commits, "tool_blob": _tool_blob()}
     record.setdefault("launches", []).append(entry)
     _save_record(run_dir, record)
-    print(f"launched {name}: pid {process.pid}, log {log_path}")
+    print(f"launched {name}: pid {process.pid} (the launch shell; the launcher runs as its child), log {log_path}")
     if args.wait_seconds <= 0:
         print("no launch check (--wait-seconds 0): run `status` within a minute")
         return EXIT_OK
@@ -1152,6 +1333,8 @@ def cmd_status(args, host: Host) -> int:
     record = _load_record(run_dir)
     run_yml = run_dir / RUN_YML
     print(f"run {run_dir.name} ({run_dir})")
+    if record.get("overlay"):
+        print(f"output: {record['overlay']['output_dir']}")
     gate = record.get("gate")
     if gate:
         current = run_yml.is_file() and _sha256_file(run_yml) == gate.get("run_yml_sha256")
@@ -1172,9 +1355,11 @@ def cmd_status(args, host: Host) -> int:
     last = launches[-1]
     log_path = Path(last["log"])
     print(f"launches: {len(launches)}; latest {last['time']}, pid {last['pid']}, log {log_path}")
-    if log_path.is_file():
-        age_minutes = (host.now().timestamp() - log_path.stat().st_mtime) / 60
-        print(f"log written {age_minutes:.1f} min ago (silent phases can be long: judge a stall by CPU, not log age)")
+    if not log_path.is_file():
+        print(f"ERROR: the log {log_path} is missing", file=sys.stderr)
+        return EXIT_OK if processes else EXIT_REFUSED
+    age_minutes = (host.now().timestamp() - log_path.stat().st_mtime) / 60
+    print(f"log written {age_minutes:.1f} min ago (silent phases can be long: judge a stall by CPU, not log age)")
     summary = summarise_run_log(_read_text(log_path))
     if summary.gate_aborted:
         print(f"launcher gate ABORTED: {summary.gate_aborted}")
@@ -1238,7 +1423,8 @@ def build_parser() -> argparse.ArgumentParser:
     gate = commands.add_parser("gate", help="explain + input check; --write stores the launcher gate list")
     gate.add_argument("run_dir", metavar="RUN_DIR")
     gate.add_argument("--write", action="store_true", help=f"store the STALE stages as config.{GATE_KEY}")
-    gate.add_argument("--allow-popsim", action="store_true", help="accept a PopulationSim recompute")
+    gate.add_argument("--allow-popsim", action="store_true",
+                      help="accept a PopulationSim recompute (never one into a work dir outside the run)")
     gate.add_argument("--skip-input-check", action="store_true", help=f"do not run {INPUTS_SCRIPT}")
     gate.add_argument("--python", default=sys.executable, help="interpreter of the eqasim env (default: this one)")
     gate.set_defaults(handler=cmd_gate)
@@ -1248,7 +1434,7 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--java-home", default=DEFAULT_JAVA_HOME, help="JDK for MATSim (default %(default)s)")
     launch.add_argument("--conda-sh", default=DEFAULT_CONDA_SH, help="conda hook script (default %(default)s)")
     launch.add_argument("--conda-env", default=DEFAULT_CONDA_ENV, help="conda env (default %(default)s)")
-    launch.add_argument("--force-no-gate", action="store_true", help="launch without a launcher gate list")
+    launch.add_argument("--force-no-gate", action="store_true", help="launch without a current gate")
     launch.add_argument("--wait-seconds", type=float, default=DEFAULT_WAIT_SECONDS,
                         help="watch the log this long for the launcher's [explain] verdict; 0 skips (default %(default)s)")
     launch.set_defaults(handler=cmd_launch)
