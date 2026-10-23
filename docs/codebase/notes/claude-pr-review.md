@@ -67,7 +67,9 @@ decision, including a skip, is printed with its reason to the log and the job su
 
 - `review` fills the placeholders of `.github/claude-review-prompt.md` and runs `claude -p`
   with the tier's `model`, `max_turns` and `max_budget_usd` (a hard cap per run), the JSON
-  schema `FINDINGS_SCHEMA`, `--permission-mode dontAsk` and only the read tools of
+  schema `FINDINGS_SCHEMA`, `--bare` (authentication strictly by `ANTHROPIC_API_KEY`, never a
+  Claude plan login; no user hooks, plugins, memory or automatic CLAUDE.md loading; the
+  prompt names the rule files to read), `--permission-mode dontAsk` and only the read tools of
   `review.allowed_tools` (Read, Grep, Glob, `gh pr diff`, `gh pr view`). The model cannot
   write files or post anything. The prompt goes in on stdin; the JSON result goes to a file.
 - `post` turns the findings into one PR review (`event: COMMENT`) whose inline comments sit

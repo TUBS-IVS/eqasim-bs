@@ -205,6 +205,8 @@ def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
         value = {flag: command[i + 1] for i, flag in enumerate(command[:-1]) if flag.startswith("--")}
         assert value["--model"] == CONFIG["tiers"][tier]["model"]
         assert float(value["--max-budget-usd"]) > 0 and int(value["--max-turns"]) > 0
+        # --bare: billed strictly to ANTHROPIC_API_KEY, never to a Claude plan login
+        assert "--bare" in command
         # the variadic tool list must come last, and the model must have no write or shell access
         assert command[-2] == "--allowedTools"
         assert not {"Write", "Edit", "Bash"} & set(command[-1].split(","))
