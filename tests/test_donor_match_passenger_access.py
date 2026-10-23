@@ -1,4 +1,4 @@
-"""The plan-source matchers keep a person's car-passenger access class (eqasim-bs#465, ADR-0161).
+"""The plan-source matchers keep a person's car-passenger access class (eqasim-bs#465, ADR-0162).
 
 The weekend plan match and the diary plan match give a person the diary of ANOTHER MiD respondent while the
 person keeps its own attributes (ADR-0106). The passenger availability is derived later from the attribute

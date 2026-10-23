@@ -125,7 +125,7 @@ class DiaryMatchReport:
     #: same reason as the employment counter above.
     n_crossed_fine_child_age_band: int
     #: Remapped persons whose NEW donor has the other passenger access class
-    #: (``weekend_plan_match.passenger_never_class``, ADR-0161), counted in BOTH arms whenever the
+    #: (``weekend_plan_match.passenger_never_class``, ADR-0162), counted in BOTH arms whenever the
     #: frames carry ``P_VAUTO`` (``None`` when they do not, i.e. with the MiD passenger availability
     #: off). The class is a SOFT key, so a residual with the key on is a ladder relaxation.
     n_crossed_passenger_class: "int | None" = None
@@ -312,7 +312,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     ``precompute_matching`` prepares the invariant ``mobile`` and ``any`` donor
     pools once when remaps exist. ``False`` retains the repeated-filter baseline.
 
-    ``passenger_key`` (default False, ADR-0161): add the passenger access class (``P_VAUTO``
+    ``passenger_key`` (default False, ADR-0162): add the passenger access class (``P_VAUTO``
     "never" or not) as a soft match key right after the licence, so a person who never rides
     as a car passenger does not inherit a diary with lifts the mode choice cannot offer. Same
     rng contract as the other keys; crossings are counted in both arms

@@ -236,7 +236,7 @@ def build_completed_donor(
         When True (default) AND ``passenger_availability_enabled`` (the only case in
         which the loader reads ``P_VAUTO``), the weekend match and the diary match keep
         the person's passenger access class (``P_VAUTO`` "never" or not) when they give
-        it another respondent's diary (ADR-0161, eqasim-bs#465): a person whose own
+        it another respondent's diary (ADR-0162, eqasim-bs#465): a person whose own
         answer is "never a car passenger" must not inherit a day with lifts that the
         mode choice then cannot offer. A soft key (relaxed after the licence); the
         surviving crossings are counted and logged by
@@ -366,7 +366,7 @@ def build_completed_donor(
 def count_passenger_class_crossings(persons: pd.DataFrame, household_id: str = "H_ID") -> tuple:
     """``(n_foreign, n_crossed)``: persons whose plan source is another MiD row, and of those the ones whose
     passenger access class (``weekend_plan_match.passenger_never_class`` of ``P_VAUTO``) differs from the class
-    of the real donor person whose diary they carry (ADR-0161). A plan source that does not resolve to a real
+    of the real donor person whose diary they carry (ADR-0162). A plan source that does not resolve to a real
     donor person is counted as crossed and warned, so a broken join cannot report "no crossings"."""
     real = persons[~persons["member_imputed"].astype(bool)]
     donor_class = weekend_plan_match.passenger_never_class(real["P_VAUTO"]).set_axis(
@@ -456,7 +456,7 @@ def configure(context):
     # diary-less child draws, so flipping them must rebuild the donor, not reuse the cache.
     context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
                    DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS)
-    # ADR-0161: the passenger access key changes which donor a remapped person draws, so it belongs in THIS
+    # ADR-0162: the passenger access key changes which donor a remapped person draws, so it belongs in THIS
     # stage's config hash like the fine child bands.
     context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS, DEFAULT_DONOR_MATCH_PASSENGER_ACCESS)
     context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)

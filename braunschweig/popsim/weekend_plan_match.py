@@ -140,7 +140,7 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     person-level fallback draws the caller makes afterwards, i.e. without moving the
     shared completion rng stream.
 
-    ``passenger_key`` (ADR-0161): when True, each (age band, sex) and (age band) tier is
+    ``passenger_key`` (ADR-0162): when True, each (age band, sex) and (age band) tier is
     first tried among the donors of the target's passenger access class
     (:func:`passenger_never_class`), so a member whose own answer is "never a car passenger"
     is paired with the donor whose day has no lift whenever the household offers one. It
@@ -173,7 +173,7 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
 
 
 PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
-#: Person key of the passenger access class (ADR-0161): True when the person's own MiD answer to
+#: Person key of the passenger access class (ADR-0162): True when the person's own MiD answer to
 #: ``P_VAUTO`` (car available as driver OR passenger, ADR-0121) is 3 = "never".
 PASSENGER_KEY = "passenger_never"
 #: ``P_VAUTO`` code "never" (MiD 2023 B1 codebook, sheet Personen); 1/2 = anytime/occasionally.
@@ -354,7 +354,7 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     ``weekday_persons`` object and identical age bands; otherwise matching fails
     rather than silently drawing from stale candidates.
 
-    ``passenger_key`` (ADR-0161): when True the ladder is :data:`PERSON_KEYS_WITH_PASSENGER`, which
+    ``passenger_key`` (ADR-0162): when True the ladder is :data:`PERSON_KEYS_WITH_PASSENGER`, which
     adds the passenger access class (:func:`passenger_never_class`, needs ``P_VAUTO``) as a soft key
     right after the licence. Like the other parameters it changes WHICH donor is drawn, never HOW
     MANY rng values are consumed; ``level`` then counts up to one more relaxation.
@@ -475,7 +475,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     ``precompute_matching`` prepares the invariant weekday person pool once on
     first use. ``False`` retains the repeated-filter baseline for exact A/B checks.
 
-    ``passenger_key`` (default False, ADR-0161): keep the passenger access class
+    ``passenger_key`` (default False, ADR-0162): keep the passenger access class
     (``P_VAUTO`` "never" or not) in the household member alignment and in every
     person-level match of this pass. Like the fine bands it changes the assignment, never
     the draw sequence.
