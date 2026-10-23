@@ -687,7 +687,8 @@ def _gate_values():
             keys.KEY_FALLBACK_WARN_SHARE: 0.1, "random_seed": 7, "cordon_network_buffer_fraction": 0.1,
             keys.KEY_PT_GATE_MODES: "all", keys.KEY_GATE_SERVICE_WINDOW_S: 3600.0, keys.KEY_GATE_CANDIDATES: 5,
             keys.KEY_SHIFT_WINDOW_S: 7200.0, keys.KEY_SHIFT_STEP_S: 1800.0, keys.KEY_MIN_STAY_S: 1800.0,
-            keys.KEY_NO_CONNECTION_WARN_SHARE: 0.05}
+            keys.KEY_NO_CONNECTION_WARN_SHARE: 0.05, keys.KEY_SHIFT_RETURN_EARLIER: True,
+            keys.KEY_NO_CONNECTION_LAST_RESORT: "car_passenger"}
 
 
 def _execute_context_with_municipality_crs(tmp_path, monkeypatch, municipality_crs):
