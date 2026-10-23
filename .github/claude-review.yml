@@ -9,14 +9,15 @@
 # not measured; re-tune them from the per-run cost records in the job summaries.
 
 labels:
-  force: claude-review        # always review at the full tier (adding it triggers a run)
-  skip: skip-claude-review    # never review
+  force: claude-review        # adding it starts ONE full-tier review; later pushes are gated normally
+  skip: skip-claude-review    # never review while set
 
-# Draft PRs are reviewed only when the force label is set.
+# Draft PRs are reviewed only when the force label is added.
 skip_drafts: true
 
-# Paths whose changes can alter model behaviour, scientific output or the
-# verification gate (glob syntax of fnmatch; "**" matches across directories).
+# Paths whose changes can alter model behaviour, scientific output, the
+# verification gate or this review gate itself. Glob syntax: "**" matches across
+# directories, "*" and "?" stay within one path segment (not fnmatch semantics).
 critical_paths:
   - "braunschweig/**"
   - "synthesis/**"
@@ -27,6 +28,8 @@ critical_paths:
   - "scripts/run_tests.py"
   - "scripts/run_synpp.py"
   - ".github/workflows/**"
+  - ".github/claude-review.yml"
+  - "scripts/claude_review.py"
 
 # Paths that never count towards the changed-line totals or the file count
 # (generated or machine-written; reviewing them costs tokens and finds nothing).

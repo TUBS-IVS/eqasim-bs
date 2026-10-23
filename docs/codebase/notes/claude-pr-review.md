@@ -10,7 +10,9 @@ Nothing here touches model code or scientific output.
 
 Prerequisite: the repository secret `ANTHROPIC_API_KEY`. Comments are posted with the
 workflow's `GITHUB_TOKEN` (as `github-actions[bot]`), so no GitHub App is needed. PRs
-from forks get no secrets and are skipped with a note in the job summary.
+from forks and from Dependabot get no Actions secrets and are skipped with a note in the
+job summary. The gate config and script are read from the PR itself, so a PR can change
+its own gate; both are critical paths, which makes such a PR reviewed.
 
 ## The gate: two jobs, the first without a model
 
@@ -24,15 +26,22 @@ code. Its values are starting assumptions (2026-10-23), not measured; re-tune th
 the cost records below. Decision order (`classify` in `scripts/claude_review.py`):
 
 1. Label `skip-claude-review` -> no review.
-2. A `labeled` event for any other label than `claude-review` -> no review (otherwise
-   adding `automerge` would start a paid review).
-3. Label `claude-review` -> full tier, also on drafts.
+2. Adding the label `claude-review` -> one full-tier review, also on drafts. Later pushes
+   are gated normally, so a label left on the PR cannot bill every push.
+3. A `labeled` event for any other label -> no review (otherwise adding `automerge`
+   would start a paid review).
 4. Draft PR -> no review.
 5. Branch kind in `skip_kinds` (`docs/`) without a critical path -> no review.
 6. Changed lines >= `full_min_lines`, or a critical path and >= `full_min_lines_critical`
    -> full tier.
 7. A critical path, or >= `light_min_lines` lines, or >= `light_min_files` files -> light.
 8. Otherwise no review.
+
+Runs queue per PR and a running review is never cancelled: its cost is already spent
+and is recorded only at the end. A newer push replaces a still-pending run. Label events
+for other labels run in their own concurrency group, so they cannot displace a review.
+Each review edits its previous summary comment (`gh pr comment --edit-last`) instead of
+adding a new one; inline comments accumulate.
 
 Changed lines are added + deleted lines of files outside `ignored_paths` (generated
 views, lock files, test baselines); binary files count as a file with 0 lines. Every
@@ -45,7 +54,9 @@ Code execution file (`$RUNNER_TEMP/claude-execution-output.json`, written by the
 and reports `total_cost_usd`, input/output/cache tokens, turns and duration **as the API
 reported them**. It writes a table to the job summary and uploads
 `claude-review-cost.json` as an artifact (90 days). A missing record fails the step
-instead of reporting a zero.
+instead of reporting a zero. A run that ended early (`subtype` other than `success`,
+e.g. `error_max_turns`) is marked partial with a workflow warning: its cost is real,
+its review incomplete.
 
 To compare tiers, collect the artifacts of several runs, e.g.
 `gh run download <run-id> -n claude-review-cost-pr<NN>-run<run-id>-1`.

@@ -108,11 +108,12 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
 
     if label_cfg["skip"] in labels:
         return decide("none", f"skipped: label '{label_cfg['skip']}' is set")
-    if event_action == "labeled" and event_label != label_cfg["force"]:
-        # Any label change re-triggers the workflow; only the force label may start a review.
+    if event_action == "labeled":
+        # Any label change re-triggers the workflow; only adding the force label starts a review,
+        # once. Later pushes are gated normally, so a forgotten force label cannot bill every push.
+        if event_label == label_cfg["force"]:
+            return decide("full", f"forced: label '{label_cfg['force']}' was added")
         return decide("none", f"skipped: label event for '{event_label}', not '{label_cfg['force']}'")
-    if label_cfg["force"] in labels:
-        return decide("full", f"forced: label '{label_cfg['force']}' is set")
     if draft and config.get("skip_drafts", True):
         return decide("none", "skipped: draft PR")
     if kind in config.get("skip_kinds", []) and not critical:
@@ -157,6 +158,7 @@ def cost_summary(result: dict) -> dict:
         "num_turns": int(result.get("num_turns", 0)),
         "duration_s": round(float(result.get("duration_ms", 0)) / 1000.0, 1),
         "is_error": bool(result.get("is_error", False)),
+        "subtype": str(result.get("subtype", "unknown")),
         "model_usage": result.get("modelUsage", {}),
     }
 
@@ -195,15 +197,19 @@ def _cmd_cost(args) -> int:
         _append("GITHUB_STEP_SUMMARY", f"### Claude review cost\n\n**No cost record:** {error}\n")
         return 1
     summary.update({"tier": args.tier, "model": args.model})
-    line = (f"[claude-review] cost ${summary['total_cost_usd']:.4f} USD, tier {args.tier or '-'}, "
+    # A run cut off by --max-turns or an API error still costs money but is not a complete review.
+    status = summary["subtype"] if summary["is_error"] or summary["subtype"] != "success" else "complete"
+    line = (f"[claude-review] {status}: cost ${summary['total_cost_usd']:.4f} USD, tier {args.tier or '-'}, "
             f"model {args.model or '-'}, {summary['num_turns']} turns, {summary['duration_s']} s, "
             f"tokens in {summary['input_tokens']} / out {summary['output_tokens']} / "
             f"cache write {summary['cache_creation_input_tokens']} / cache read {summary['cache_read_input_tokens']}")
     print(line)
+    if status != "complete":
+        print(f"::warning::Claude review did not complete ({status}); the cost is real, the review is partial.")
     _append("GITHUB_STEP_SUMMARY",
-            "### Claude review cost\n\n| Cost (USD) | Tier | Model | Turns | Duration (s) | Input | Output "
-            "| Cache write | Cache read |\n|---|---|---|---|---|---|---|---|---|\n"
-            f"| {summary['total_cost_usd']:.4f} | {args.tier or '-'} | {args.model or '-'} | {summary['num_turns']} "
+            "### Claude review cost\n\n| Status | Cost (USD) | Tier | Model | Turns | Duration (s) | Input | Output "
+            "| Cache write | Cache read |\n|---|---|---|---|---|---|---|---|---|---|\n"
+            f"| {status} | {summary['total_cost_usd']:.4f} | {args.tier or '-'} | {args.model or '-'} | {summary['num_turns']} "
             f"| {summary['duration_s']} | {summary['input_tokens']} | {summary['output_tokens']} "
             f"| {summary['cache_creation_input_tokens']} | {summary['cache_read_input_tokens']} |\n\n"
             "Source: the `result` record of the Claude Code execution file (as reported by the API).\n")

@@ -48,9 +48,11 @@ CONFIG = yaml.safe_load((_REPO / ".github" / "claude-review.yml").read_text(enco
     ([("scripts/report_x.py", 500), ("tests/test_report_x.py", 300)], "chore/x", [], False, "", "", "full"),
     # many small files outside critical paths -> light
     ([(f"docs/codebase/notes/n{i}.md", 3) for i in range(8)], "chore/x", [], False, "", "", "light"),
-    # draft PRs wait, unless forced
+    # draft PRs wait, unless the force label is added
     ([("braunschweig/x.py", 400)], "feature/i1-x", [], True, "", "", "none"),
-    ([("README.md", 1)], "chore/x", ["claude-review"], True, "", "", "full"),
+    ([("README.md", 1)], "chore/x", ["claude-review"], True, "labeled", "claude-review", "full"),
+    # a force label left on the PR does not bill every later push
+    ([("README.md", 1)], "chore/x", ["claude-review"], False, "synchronize", "", "none"),
     # skip label beats everything
     ([("braunschweig/x.py", 4000)], "feature/i1-x", ["skip-claude-review", "claude-review"], False, "", "", "none"),
     # adding an unrelated label must not start a paid review; adding the force label must
@@ -90,12 +92,12 @@ def test_classify_cli_writes_github_output(tmp_path, monkeypatch, capsys):
     assert "light" in summary.read_text(encoding="utf-8")
 
 
-def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeypatch):
+def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeypatch, capsys):
     execution = tmp_path / "exec.json"
     execution.write_text(json.dumps([
         {"type": "system", "subtype": "init"},
         {"type": "assistant", "message": {}},
-        {"type": "result", "total_cost_usd": 0.4213, "num_turns": 7, "duration_ms": 81500,
+        {"type": "result", "subtype": "error_max_turns", "is_error": False, "total_cost_usd": 0.4213, "num_turns": 7, "duration_ms": 81500,
          "usage": {"input_tokens": 120, "output_tokens": 3400,
                    "cache_creation_input_tokens": 40000, "cache_read_input_tokens": 150000}},
     ]), encoding="utf-8")
@@ -105,6 +107,9 @@ def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeyp
     assert summary["total_cost_usd"] == pytest.approx(0.4213)
     assert (summary["num_turns"], summary["duration_s"], summary["output_tokens"]) == (7, 81.5, 3400)
     assert summary["cache_read_input_tokens"] == 150000 and summary["tier"] == "full"
+    # a review cut off by --max-turns is reported as partial, not as a normal review
+    assert summary["subtype"] == "error_max_turns"
+    assert "::warning::" in capsys.readouterr().out
 
     execution.write_text(json.dumps([{"type": "assistant"}]), encoding="utf-8")
     step_summary = tmp_path / "summary.md"

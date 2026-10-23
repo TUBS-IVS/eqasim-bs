@@ -14,9 +14,16 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, labeled]
 
+# One queue per PR. A running review is never cancelled (its cost is already spent and
+# recorded only at the end); a newer push replaces a still-pending one. Label events for
+# any label other than the force label get their own group, so a triage label can neither
+# cancel nor displace a review. Keep 'claude-review' in sync with labels.force in the config.
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: >-
+    claude-review-${{ github.event.pull_request.number }}-${{
+    (github.event.action == 'labeled' && github.event.label.name != 'claude-review')
+    && format('label-{0}', github.event.label.name) || 'code' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -50,15 +57,17 @@ jobs:
           EVENT_ACTION: ${{ github.event.action }}
           EVENT_LABEL: ${{ github.event.label.name }}
           SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          ACTOR: ${{ github.actor }}
         run: |
-          # Secrets are not available to PRs from forks; say so instead of failing later.
-          if [ "$SAME_REPO" != "true" ]; then
+          # Fork and Dependabot PRs get no Actions secrets; say so instead of failing later.
+          if [ "$SAME_REPO" != "true" ] || [ "$ACTOR" = "dependabot[bot]" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "### Claude review gate" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Skipped: PR from a fork, no API secret available." >> "$GITHUB_STEP_SUMMARY"
+            echo "- Skipped: fork or Dependabot PR, no API secret available." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git diff --numstat "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/numstat.tsv"
+          # quotepath=false: non-ASCII paths stay literal, so they still match the globs.
+          git -c core.quotepath=false diff --numstat "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/numstat.tsv"
           draft_flag=""
           if [ "$IS_DRAFT" = "true" ]; then draft_flag="--draft"; fi
           python scripts/claude_review.py classify \
@@ -115,9 +124,12 @@ jobs:
             concrete failure scenario (input or state -> wrong outcome). No style nits,
             no praise, no restating the diff. Light tier: keep it short and stop after
             categories 1-3. Post each finding as an inline comment on the changed line.
-            Finish with exactly one top-level comment via `gh pr comment` that starts with
-            "Claude review (${{ needs.classify.outputs.tier }} tier)" and lists the findings
-            by severity, or says that none were found.
+            Finish with exactly one top-level summary via
+            `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "<markdown>"`
+            (it replaces the summary of an earlier review run instead of adding a new one).
+            It starts with "Claude review (${{ needs.classify.outputs.tier }} tier, commit
+            ${{ github.event.pull_request.head.sha }})" and lists the findings by severity,
+            or says that none were found.
           claude_args: |
             --model ${{ needs.classify.outputs.model }}
             --max-turns ${{ needs.classify.outputs.max_turns }}
