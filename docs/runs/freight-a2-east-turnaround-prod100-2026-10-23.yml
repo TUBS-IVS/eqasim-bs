@@ -1,0 +1,122 @@
+id: freight-a2-east-turnaround-prod100-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: unknown
+  branch: unknown
+  notes: 'Analysis of two existing runs on felix, no new simulation. (1) The 100 % production run prod100_20260925
+    (~/prod100_20260925/output/matsim_output, output_events.xml.gz md5 e9c13e732a186f796b455ba419a3e521), which
+    has no run manifest of its own and predates the boundary-link rule of ADR-0144; its commit is unknown for the
+    reasons recorded in freight-boundary-links-prod100-2026-10-15. (2) The 1 % #465 rerun
+    (~/wt-i487-rerun/output_rerun/matsim_output, output_events.xml.gz md5 bc929a27a7f05cf4fa5bcc8bb2e0a239;
+    eqasim-bs be886cc6, eqasim-java-bs ad3f7e22 per the session notes of that rerun), which has the rule. The
+    probe scripts are committed with this record.'
+configuration:
+  base: configs/base_bs.yml
+  notes: 'prod100: as in freight-boundary-links-prod100-2026-10-15 (sampling_rate 1.0, freight and cordon on,
+    qsim flowCapacityFactor 1.0). Rerun: sampling_rate 0.01, qsim flowCapacityFactor 0.01. Both runs use the
+    MATSim default qsim.insertingWaitingVehiclesBeforeDrivingVehicles = true.'
+sampling:
+  rate: 100% (prod100) and 1% (rerun)
+  scope: ZGB-8, full region, cordon on, freight on
+  notes: 'Counts of the final iteration of each run. 1 % counts are not scaled.'
+pipeline:
+  targets:
+  - matsim.output
+  notes: 'events_probe.py made one pass over each events file and kept the link events of the box
+    x 640000-660000, y 5780000-5792000 (EPSG:25832) and all actstart/actend at outside_* facilities.
+    analyse_portal.py, bbox_ends.py, blocking_probe.py and upstream_probe.py read that extract; net_probe.py,
+    portal_inventory.py, portal_load.py and gate_links.py read the network, facilities, activities and the
+    braunschweig.synthesis.cordon_gates cache of the rerun. upstream_probe.py also reads delayed_traversals.csv
+    of the #465 link probe (felix ~/i465-link/out_prod100, session i465-link-129867-bottleneck).'
+classification:
+- production
+status:
+  execution: completed
+  notes: 'Root cause of the up to 16 h delays on the A2-east links 450785, 38954 and 647288 in the run before
+    ADR-0144 (#465). It does not show a 100 % state with the rule; the 1 % rerun only shows that the trigger is
+    gone at 1 %.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), system python3 (eqasim conda env for gate_links.py)'
+validation:
+- metric: who departs on the outward A2-east carriageway 450785 (portal facility outside_35) and where they go
+  reference: 'none; a diagnosis of the MATSim output, no observed data'
+  result: '11,512 trucks start on 450785 (10,115 freight_transit, 1,397 other freight), 0 persons. 11,459 of them
+    drive 5.5 km east to the end of the clipped network and turn through the one-lane ramp loop that starts with
+    motorway_link 321213 (1,500 veh/h) back onto the westbound carriageway. ADR-0144 names this defect: the old
+    nearest-node snapping linked both A2-east directions to 450785.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_prod100.txt'
+- metric: throughput of the turnaround loop entry 321213
+  reference: 'none; capacity from the network (1,500 veh/h) and the truck PCE of 3.5 named in ADR-0144'
+  result: '425-429 vehicles per hour in every hour from 4 h to 27 h, all trucks, i.e. 1,500 PCE/h / 3.5 PCE per
+    truck: saturated all day. Truck departures on 450785 are 430-650 per hour (peak 8 h), so the queue on the
+    5.5 km between 450785 and the loop never drains.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_prod100.txt'
+- metric: why vehicles that only arrive at outside_35 wait up to 16 h on 450785
+  reference: 'none; MATSim QueueWithBuffer (arrivals leave from the queue head only) and the insertion priority of
+    waiting departures'
+  result: 'The waiting truck departures take the whole outflow of 450785 (insertion priority) and equal the loop
+    discharge. The first vehicle on the link that continues east (freight_incoming_7217, entered at 11.09 h) is
+    starved until 27.12 h, when the departures end; every vehicle behind it waits. Arrivals on 450785: 48 in
+    hour 11, 0 in hours 12-26, 8,905 in hour 27 (longest traversal 16.0 h). 11,396 arrivals on 450785 over the
+    day are persons (residents leaving east to outside_35), so persons reach their outside activity up to 16 h
+    late. The 4,861 traversals >= 1 h of the #465 link probe on 450785 are of kind through_arrival (these
+    arrivals); only 5 traversals that leave the link eastward take >= 1 h.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/blocking_prod100.txt'
+- metric: delays >= 1 h on motorway 38954 and motorway_link 647288
+  reference: 'none; a trip trace in the event extract'
+  result: 'Both lie 3.3-3.6 km upstream of 450785 on the eastbound carriageway and its interchange ramps.
+    7,360 of 7,364 (38954) and 3,179 of 3,182 (647288) delayed traversals continue to 450784/450785 in the same
+    trip: spillback of the same queue. Their delay windows start later (14.9 h and 16.1 h) than on 450785
+    (11.1 h).'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/upstream_prod100.txt'
+- metric: the same links in the 1 % rerun with ADR-0144
+  reference: 'none; a count in the event extract'
+  result: '0 departures on 450785, 0 trips through the loop entry 321213, 0 traversals >= 1 h on 450785; the
+    A2-east freight entries start on the westbound 430866. This is one 1 % run; a 100 % run with the rule is
+    still needed to confirm the A2-east queue is gone at full scale.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_rerun1pct.txt'
+- metric: links of the facilities placed at the cordon road gates (#442 portal gates and in-commuter gate homes),
+    1 % rerun
+  reference: 'none; a comparison with the gate links of braunschweig.synthesis.cordon_gates'
+  result: '64 of 67 such facilities are not on their gate link. All 8 motorway gates land on non-motorway links,
+    6 on 600 veh/h residential or tertiary streets (A2-west gate_0000/0007 -> 501844, the #444 link; A2-east
+    gate_0004/0006 -> 647295, both directions on one street). The cutter turns the portal stays there into
+    outside_N on the same street (outside_20 on 501844: 28 activities, peak 6 activity ends per hour = 100 % of
+    the street''s simulated capacity at 1 %). The gate assignment gives the inward gate_0004 and the outward
+    gate_0006 identical counts for every municipality. Not fixed by this record: ADR-0144 covers freight only;
+    the person and in-commuter side is an open finding.'
+  artifact: 'docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links_rerun.csv'
+features:
+- freight_boundary_links
+artifacts:
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/net_probe.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/net_450785_prod100.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/events_probe.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_portal.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_prod100.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/analyse_rerun1pct.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/bbox_ends.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/bbox_ends_prod100.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/bbox_ends_rerun1pct.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/blocking_probe.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/blocking_prod100.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/upstream_probe.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/upstream_prod100.txt
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/portal_inventory.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/portal_load.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/portal_load_prod100.csv
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/portal_load_rerun.csv
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links.py
+- docs/runs/artifacts/freight-a2-east-turnaround-prod100-2026-10-23/gate_links_rerun.csv
+issues:
+- '#465'
+- '#444'
+decisions:
+- ADR-0144
+source: 'Scripts run in felix:~/i465-portal35 on 2026-10-23 with the commands in the docstrings, e.g.
+  python3 events_probe.py --run <run> --out <dir> --bbox 640000,5780000,660000,5792000;
+  python3 analyse_portal.py <run> <dir> 450785 321213 <flowCapacityFactor>;
+  python3 blocking_probe.py <dir>/bbox_events.csv 450785;
+  python3 upstream_probe.py <delayed_traversals.csv> <dir>/bbox_events.csv 38954,647288 450784,450785;
+  python3 portal_inventory.py <run> <out.csv> [prefix]; python3 portal_load.py <run> <inventory.csv> <out.csv>
+  <flowCapacityFactor> [prefix]; python gate_links.py <run> <cordon_gates pickle> <out.csv>. An empty
+  return_detour_m in the portal_load CSVs means no return to the link start within 30 km of driving.'
