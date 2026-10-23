@@ -1,0 +1,5 @@
+gate facilities: 90
+on the expected link: 89
+facility link classes: {'motorway': 18, 'primary': 53, 'trunk': 18, 'motorway_link': 1}
+on a link below 1000 veh/h: 0
+not on the expected link: [('gate_0037', 'portal_gate_0037', '77050', 'primary/1500', '')]

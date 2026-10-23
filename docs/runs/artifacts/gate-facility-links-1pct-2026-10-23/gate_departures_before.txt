@@ -1,0 +1,53 @@
+link capacity sim_cap_per_h departures_by_legMode network_departures peak_hour peak_n peak_share_of_sim_cap
+578440 1500.0 15.0 {'walk': 96, 'car': 63, 'car_passenger': 10, 'outside': 23, 'bicycle': 1} 63 14 7 0.467
+37230 1500.0 15.0 {'walk': 76, 'car': 34, 'car_passenger': 18, 'outside': 24} 34 9 5 0.333
+534172 1000.0 10.0 {'walk': 76, 'car': 32, 'car_passenger': 6} 32 18 7 0.7
+482144 1500.0 15.0 {'walk': 112, 'car': 28, 'outside': 63, 'car_passenger': 4} 28 13 4 0.267
+513364 1500.0 15.0 {'walk': 66, 'car': 28, 'car_passenger': 5} 28 15 6 0.4
+404660 1500.0 15.0 {'walk': 33, 'car': 27, 'outside': 3, 'car_passenger': 2} 27 2 4 0.267
+184322 1500.0 15.0 {'walk': 72, 'car': 26, 'car_passenger': 10} 26 17 5 0.333
+184320 1500.0 15.0 {'walk': 31, 'car': 23, 'outside': 1, 'truck': 1, 'car_passenger': 6} 24 16 3 0.2
+404662 1500.0 15.0 {'walk': 50, 'car': 21, 'car_passenger': 4} 21 17 6 0.4
+77050 1500.0 15.0 {'walk': 44, 'car_passenger': 2, 'car': 20} 20 18 5 0.333
+204015 1500.0 15.0 {'walk': 42, 'car': 18, 'outside': 14, 'car_passenger': 10} 18 18 3 0.2
+220108 1500.0 15.0 {'walk': 39, 'car': 18, 'car_passenger': 1} 18 12 3 0.2
+328241 1500.0 15.0 {'walk': 48, 'car': 17, 'car_passenger': 7} 17 15 2 0.133
+562665 600.0 6.0 {'walk': 48, 'car': 16, 'car_passenger': 8} 16 12 4 0.667
+312475 1500.0 15.0 {'walk': 40, 'car': 15, 'car_passenger': 5} 15 16 3 0.2
+461344 1500.0 15.0 {'walk': 57, 'car': 15, 'outside': 34, 'car_passenger': 1} 15 17 4 0.267
+328391 1500.0 15.0 {'walk': 30, 'car': 13, 'car_passenger': 2} 13 7 2 0.133
+247335 1500.0 15.0 {'walk': 28, 'car': 13, 'car_passenger': 1} 13 16 2 0.133
+115554 600.0 6.0 {'walk': 24, 'car': 12, 'car_passenger': 4, 'outside': 5} 12 16 3 0.5
+702532 1500.0 15.0 {'walk': 30, 'car': 11, 'car_passenger': 4} 11 12 1 0.067
+616898 1500.0 15.0 {'walk': 34, 'car': 11, 'car_passenger': 5} 11 18 2 0.133
+154305 1000.0 10.0 {'walk': 17, 'car': 8, 'pt': 1} 8 18 3 0.3
+134715 1500.0 15.0 {'walk': 23, 'outside': 14, 'car': 7} 7 13 2 0.133
+639611 1500.0 15.0 {'walk': 31, 'outside': 21, 'car_passenger': 3, 'car': 6} 6 14 2 0.133
+378633 1500.0 15.0 {'walk': 34, 'outside': 24, 'car': 6, 'car_passenger': 2} 6 12 2 0.133
+509344 600.0 6.0 {'outside': 15, 'walk': 22, 'car_passenger': 1, 'car': 6} 6 14 1 0.167
+647295 600.0 6.0 {'walk': 14, 'car': 5, 'car_passenger': 2} 5 12 1 0.167
+232968 1500.0 15.0 {'walk': 29, 'outside': 23, 'car': 5, 'car_passenger': 1} 5 5 1 0.067
+270399 600.0 6.0 {'walk': 14, 'car': 5, 'car_passenger': 2} 5 25 2 0.333
+384220 1500.0 15.0 {'outside': 13, 'walk': 20, 'car': 5, 'car_passenger': 1} 5 11 1 0.067
+678334 1500.0 15.0 {'walk': 12, 'car_passenger': 2, 'car': 4} 4 16 2 0.133
+195146 600.0 6.0 {'outside': 1, 'walk': 6, 'car': 4} 4 5 1 0.167
+625384 1500.0 15.0 {'walk': 5, 'truck': 3, 'car': 1} 4 12 2 0.133
+220102 1500.0 15.0 {'walk': 33, 'car': 3, 'outside': 27} 3 3 1 0.067
+516908 1500.0 15.0 {'walk': 17, 'car': 2, 'outside': 9} 2 6 1 0.067
+324796 600.0 6.0 {'walk': 4, 'car': 2} 2 10 1 0.167
+21582 6000.0 60.0 {'walk': 27, 'outside': 18, 'car': 1, 'car_passenger': 1} 1 11 1 0.017
+514452 1500.0 15.0 {'walk': 4, 'car': 1, 'outside': 2} 1 6 1 0.067
+398701 600.0 6.0 {'walk': 2, 'car': 1} 1 19 1 0.167
+580649 600.0 6.0 {'walk': 6, 'car_passenger': 2, 'car': 1} 1 26 1 0.167
+514450 1500.0 15.0 {'walk': 4, 'car': 1, 'car_passenger': 1} 1 14 1 0.067
+672774 1500.0 15.0 {'walk': 4, 'car_passenger': 1, 'car': 1} 1 16 1 0.067
+481399 1500.0 15.0 {'walk': 3} 0  0 0.0
+604482 3000.0 30.0 {'walk': 2} 0  0 0.0
+145381 600.0 6.0 {'walk': 7} 0  0 0.0
+515146 1500.0 15.0 {'walk': 9} 0  0 0.0
+304166 1500.0 15.0 {'walk': 1} 0  0 0.0
+536267 600.0 6.0 {'walk': 5} 0  0 0.0
+501844 600.0 6.0 {'walk': 30} 0  0 0.0
+270401 600.0 6.0 {'walk': 4, 'outside': 2} 0  0 0.0
+12131 1000.0 10.0 {'walk': 1} 0  0 0.0
+545254 3000.0 30.0 {'walk': 3} 0  0 0.0
