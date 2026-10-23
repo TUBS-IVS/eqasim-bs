@@ -1,0 +1,14 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+641838,tertiary,Mittelstraße,,1.0,600.0,43.0,6.0,70,70,0,6.2,5.81-18.34 h,0,0.0,0.0,0,
+141265,tertiary,,,1.0,600.0,21.7,6.0,22,22,0,2.09,8.73-13.31 h,0,0.0,0.0,0,
+109946,unclassified,Beethovenstraße,,1.0,600.0,110.7,6.0,20,20,0,2.0,10.58-15.56 h,0,0.0,0.0,0,
+239286,unclassified,Weststraße,,1.0,600.0,169.0,6.0,17,17,0,2.03,9.35-13.06 h,0,0.0,0.0,3,sec_res_96245:2 work_101669:1
+352763,living_street,Am Bülten,,1.0,300.0,44.3,3.0,10,10,0,1.98,10.18-14.45 h,0,0.0,0.0,0,
+426596,tertiary,Mittelstraße,,1.0,600.0,90.4,6.0,8,8,0,3.31,13.56-20.37 h,35,5.14,0.86,71,work_102026:54 sec_b_110628:1 ic_work_1126293:1
+609524,tertiary,,,1.0,600.0,11.8,6.0,7,7,0,1.35,7.19-9.24 h,0,0.0,0.0,0,
+426591,tertiary,Mittelstraße,,1.0,600.0,17.1,6.0,6,6,0,1.18,8.47-10.32 h,0,0.0,0.0,0,
+272935,living_street,Am Bülten,,1.0,300.0,98.1,3.0,6,6,0,1.83,9.28-12.13 h,0,0.0,0.0,0,
+354834,unclassified,Sudetenstraße,2,1.0,600.0,720.4,6.0,3,3,0,3.99,18.00-22.19 h,24,5.73,0.96,89,work_105575:82 ic_work_1126126:1 ic_work_1126007:1
+293497,tertiary,Hermann-Blenk-Straße,2,1.0,600.0,506.7,6.0,2,2,0,1.03,16.91-18.11 h,6,4.96,0.83,51,uni_loc_171:37 work_130075:5 work_130147:2
+129867,tertiary,Guntherstraße,2,1.0,600.0,28.5,6.0,2,2,0,1.58,14.72-18.73 h,24,5.99,1.0,52,work_97721:44 sec_b_105716:2 ic_work_1126050:1
+108692,tertiary,Stellfelder Straße,3,1.0,600.0,66.7,6.0,1,1,0,1.13,17.28-18.41 h,0,0.0,0.0,0,

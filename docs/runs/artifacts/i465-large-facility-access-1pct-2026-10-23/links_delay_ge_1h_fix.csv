@@ -1,0 +1,16 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+517871,unclassified,,1,1.0,600.0,17.8,6.0,47,47,0,4.07,7.84-16.55 h,0,0.0,0.0,0,
+41615,tertiary,Nordstraße,2,2.0,1200.0,120.0,12.0,47,47,0,2.14,8.19-13.04 h,0,0.0,0.0,0,
+239286,unclassified,Weststraße,,1.0,600.0,169.0,6.0,45,45,0,2.12,7.46-15.89 h,0,0.0,0.0,3,sec_res_96245:2 work_101669:1
+243813,tertiary,Mittelstraße,,1.0,600.0,66.1,6.0,41,41,0,2.71,16.07-23.91 h,0,0.0,0.0,0,
+609524,tertiary,,,1.0,600.0,11.8,6.0,36,36,0,4.08,8.20-15.09 h,0,0.0,0.0,0,
+691952,unclassified,Straße 10,,1.0,600.0,20.0,6.0,27,27,0,1.62,18.33-23.71 h,0,0.0,0.0,0,
+239287,unclassified,Weststraße,,1.0,600.0,169.0,6.0,23,23,0,1.39,17.44-22.31 h,0,0.0,0.0,0,
+23957,residential,Gördelingerstraße,,1.0,600.0,79.6,6.0,11,11,0,1.42,12.08-14.83 h,0,0.0,0.0,2,home_282445:2
+549945,unclassified,,3,2.0,1200.0,32.5,12.0,8,8,0,1.12,8.97-10.69 h,0,0.0,0.0,0,
+243815,tertiary,Mittelstraße,,1.0,600.0,48.6,6.0,7,7,0,1.16,17.99-20.30 h,0,0.0,0.0,0,
+509589,residential,Ottenroder Straße,,1.0,600.0,18.2,6.0,3,3,0,1.26,10.03-11.47 h,0,0.0,0.0,0,
+352763,living_street,Am Bülten,,1.0,300.0,44.3,3.0,3,3,0,1.32,10.62-12.51 h,0,0.0,0.0,0,
+293502,tertiary,Hermann-Blenk-Straße,2,1.0,600.0,336.2,6.0,2,2,0,1.12,8.81-10.01 h,0,0.0,0.0,0,
+279871,unclassified,,1,1.0,600.0,34.1,6.0,1,1,0,1.04,9.27-10.31 h,0,0.0,0.0,0,
+428748,unclassified,Straße 52,,1.0,600.0,18.0,6.0,1,1,0,1.08,21.54-22.62 h,0,0.0,0.0,0,

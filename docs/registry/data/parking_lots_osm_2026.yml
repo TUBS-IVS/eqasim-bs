@@ -52,8 +52,11 @@ verification:
     Listed as D20 (matsim_only, required while large_facility_access_enabled is on) in
     scripts/verify_braunschweig_inputs.py. matsim.simulation.prepare checks the file exists before the Java step and
     hashes it into its validate() token; eqasim-java-bs ParkingLotReader validates the columns, finite coordinates,
-    whole spaces >= 1 and unique ids, and RunAdaptLargeFacilityAccess drops (and counts) lots outside the network
-    bounding box grown by 2 km and fails when none is left. tests/test_build_parking_lots_from_osm.py pins the rule.
+    whole spaces >= 1, unique ids and quoted fields, and RunAdaptLargeFacilityAccess drops (and counts) lots outside the
+    network bounding box grown by 2 km and fails when none is left; the stage also checks the header before the
+    preparation runs, and the production stage braunschweig.matsim.simulation.prepare hashes the file in its validate().
+    The curation script checks the extract against its Geofabrik MD5 and its pinned SHA-256.
+    tests/test_build_parking_lots_from_osm.py pins the rule.
 requirements:
   synthesis: not_needed
   matsim: required
@@ -70,7 +73,7 @@ limitations: >-
   often not tagged, so their spaces are underestimated. OSM does not record whom a lot serves: lots of shops, residents
   and firms near a site all count, and a site's share is spread by spaces, not by ownership. Completeness of the OSM
   mapping is not checked against a reference. Lots are points (centroids): a large lot with several exits gets one
-  access link.
+  access link. A lot mapped twice (an area and a node with a capacity tag) counts twice.
 notes: >-
   Read by the large-site access step (ADR-0165): in-scope large sites (work sites and universities) spread their car
   access over the nearest lots that cover half of the site's activities, within 1500 m.

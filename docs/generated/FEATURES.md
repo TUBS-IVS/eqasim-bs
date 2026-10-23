@@ -69,6 +69,7 @@ may only name run manifests (no run, no claim).
 | [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |
 | [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |
+| [large_facility_access_links](../registry/features/large_facility_access_links.yml) | matsim | active | ON | A/A/A | 3 | not claimed | marker | none | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | pending |
 | [leisure_unspecified_subtype](../registry/features/leisure_unspecified_subtype.yml) | secondary | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
@@ -91,6 +92,7 @@ may only name run manifests (no run, no claim).
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | pending |
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
+| [qsim_departures_yield](../registry/features/qsim_departures_yield.yml) | matsim | active | ON | A/A/A | 2 | not claimed | none | none | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) | pending |

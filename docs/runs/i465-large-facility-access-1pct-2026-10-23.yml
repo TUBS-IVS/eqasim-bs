@@ -1,0 +1,157 @@
+id: i465-large-facility-access-1pct-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: 09ef2444979e7c92fd97bc5a34b7920131ebd679
+  branch: claude/i465-link-129867-bottleneck-2a5b68
+  notes: >-
+    Diagnosis and A/B of the road side of #465 (ADR-0165). Base scenario: the 1 % rerun of #465 on felix
+    (~/wt-i487-rerun, eqasim-bs be886cc60c57ff61fb66778d22fcf87c33ce93e7, eqasim-java-bs
+    ad3f7e22d27d782620791dc1dbf1b6f0661d16cd, final iteration 49, run log ~/wt-i487-rerun/logs/run_*.log). Every arm
+    below re-ran the rerun's own MATSim jar (cache_rerun/matsim.runtime.eqasim__1c974c0f...) on that rerun's prepared
+    scenario (cache_rerun/braunschweig.matsim.simulation.prepare__b4c75863...), so the arms differ only in the facilities
+    and plans the access step wrote and in qsim.insertingWaitingVehiclesBeforeDrivingVehicles. The access step itself ran
+    from eqasim-java-bs branch feat/i465-large-facility-access: f91a6909f (the first, per-facility rule, arm fix_v1) and
+    a3b6f475d (the site and parking-lot rule, arm parking). The later commit 1e2fcc4b2 (final-review fixes: quote-aware
+    lot reader, an adequate site relinks its other facilities, warnings) does not change the four columns the reader
+    uses; the adequate-site relink only matters when facilities of one point have different links, which eqasim's
+    nearest-link placement does not produce. The pipeline smoke of the final code is recorded under "validation".
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - '~/wt-i487-rerun/i465_rerun.yml (felix, the rerun''s overlay; not committed here, recorded in the #465 rerun records)'
+  notes: >-
+    No pipeline overlay for the A/B arms: each arm is RunSimulation of the rerun's jar with the rerun's prepared
+    config, plans.inputPlansFile set to the rerun's final output_plans.xml.gz (or the access step's output),
+    controler.lastIteration 40 (one-iteration replays: 0), global/qsim threads 12, and
+    qsim.insertingWaitingVehiclesBeforeDrivingVehicles true (control) or false (the other arms) as a --config:
+    override (scripts replay.sh, replay_fix.sh, continue_ab.sh in the artifacts). The access step parameters were the
+    defaults of matsim.simulation.prepare (ADR-0165): sites from 1000 activities at 100 %, work share 0.5 or prefix
+    uni_loc_, lots nearest-first to 0.5 x size within 1500 m, lot links >= 1000 veh/h within 300 m, single-link rule
+    >= 1000 veh/h within 1000 m, excluded prefixes outside_,EXT,home_; fix_v1 used the first rule (per facility id,
+    >= 1000 activities, >= 1000 veh/h within 1000 m, excluded outside_ only).
+sampling:
+  rate: 1% (sampling_rate 0.01, flowCapacityFactor and storageCapacityFactor 0.01)
+  scope: ZGB-8, full region, cordon on, freight on (the rerun's configuration)
+  notes: >-
+    All counts are sample counts at 1 %, never expanded, except the site sizes, which the rule states at 100 %
+    (activities / 0.01). Diagnosis also reads the 100 % run prod100_20260925 (felix ~/prod100_20260925, September
+    2026 code state, final iteration).
+pipeline:
+  targets:
+  - matsim.simulation.run (by hand, see configuration)
+  notes: >-
+    Continued A/B: four arms of up to 40 further iterations from the rerun's final plans (replanning on: the eqasim
+    mode choice and ReRoute strategies of the config). control and insertion_only and parking ended at iteration 32
+    (the eqasim mode-share termination criterion, convergence, not validation); fix_v1 ran to 40. The arms ran on felix
+    between 19:20 and 21:28 on 2026-10-23, three of them in parallel, the parking arm alone.
+classification:
+- ab_test
+- smoke
+status:
+  execution: completed
+  notes: >-
+    A simulated 1 % A/B of one draw per arm, continued from equilibrated plans: no observed reference is compared, so
+    this is NOT a validation. The success criteria (a)-(c) are the owner-approved bars of the design (2026-10-23), not
+    reference values.
+source: >-
+  felix:~/i465-link (probe scripts and outputs; arm directories cont_control, cont_insertion_only, cont_fix,
+  cont_parking; access-step directories replay_fix, replay_parking). Figures from link_delay_probe.py (delay of a
+  traversal = time on the link minus length / freespeed; through traversals start with 'entered link'),
+  compare_arms.py, evaluate_ab.py and the arms' ph_modestats.csv / modestats.csv, all committed here.
+environment: 'server (felix, Linux, 64 cores, 94 GB), conda eqasim (Python 3.10.10), JDK 25.0.3+9 (~/tools)'
+validation:
+- metric: road delay pattern behind person 693334 (diagnosis, final iteration of the rerun and of prod100_20260925)
+  reference: 'none -- a diagnosis'
+  result: >-
+    Rerun: 138 through traversals delayed >= 1 h on 14 links (126 persons); 25 of them on or upstream of 5 links whose
+    outflow site departures used 87-99 % of the simulated capacity (129867 Guntherstrasse work_97721, 426596
+    Mittelstrasse work_102026, 354834 Sudetenstrasse work_105575, 671767, 708202); the other 113 are through demand
+    above 600 veh/h links. Iteration 0 of the rerun: 1964 on 33 links, nearly all through demand. prod100_20260925:
+    28 300 on 20 links; site departures at 70-110 % of capacity on 641800 (work_101999, 34 303 activities), 426596,
+    354834, 119321, 129393. Link 129867: OSM way 392379980, two-way, lanes=2 -> one lane per direction, 600 veh/h
+    (pt2matsim's default for tertiary); the network conversion is not the cause.
+  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_rerun_final.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_rerun_it0.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_prod100.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/link_delay_probe.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/spillback_probe.py'
+- metric: one-iteration replays of the rerun's final plans (qsim insertion rule; first access rule)
+  reference: 'the replay with the MATSim default (true), which reproduces the rerun (693334: 201.3 vs 201.2 min)'
+  result: >-
+    insertion false: 693334's car leg home 201.3 -> 41.9 min; through traversals >= 1 h 146 -> 135; the five
+    site-saturated links leave the list; insertion waits 768 -> 868 vehicle-hours; car and truck hours +0.12 %.
+    First access rule (fix_v1) in one iteration: insertion waits >= 1 h 160 -> 0, but through traversals >= 1 h
+    146 -> 480, because about 15 000 relinked legs are rerouted with free-flow times and nothing re-equilibrates: a
+    one-iteration replay cannot judge an access change, hence the continued A/B below.
+  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/one_iteration_replays_compare.txt, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/compare_arms.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay.sh, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay_fix.sh'
+- metric: access step on the rerun's prepared scenario and final plans (site and parking-lot rule)
+  reference: 'none -- a wiring and fallback-rate check against the bounds of ADR-0165 (0.10 no lot, 0.15 fallback)'
+  result: >-
+    13 651 of 14 905 lots inside the network extent + 2 km (656 304 spaces). 294 large sites (1 % sample: noisy), 39
+    in scope; all 39 distributed over lots (2 partly covered), 0 without a usable lot; single-link rule adequate 50,
+    moved 196, fallback 9 of 205 (4.4 %); 486 access groups, 240 sub-facilities, 1061 persons reassigned, 10 446 routes
+    removed; lot links on the >= 1000 veh/h rule 800 of 962 (83.2 %), 162 on the nearest rule, 4 lots skipped. VW
+    Wolfsburg site (620947.07_5810803.97): 62 facilities, 412 activities (41 200 at 100 %), 94 lots in 58 access groups,
+    20 657 spaces, spaces-weighted site-to-lot distance 1078 m, farthest lot 1340 m.
+  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/access_step_log_1pct.txt, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_summary_1pct.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_groups_1pct.csv'
+- metric: continued A/B, success criteria (a)-(c) of the design, last iteration of each arm
+  reference: 'the control arm of the same continuation (same plans, jar and seed; insertion rule true, no access step)'
+  result: >-
+    (a) car departures per access-group link and hour against the simulated capacity in the parking arm: 0 link-hours
+    above capacity on the 230 access links with departures. (b) through traversals delayed >= 1 h: control 171 on 13
+    links (among them the Mittelstrasse queue 641838 / 426591 / 426596 and 129867); insertion_only 205 on 12; fix_v1
+    302 on 15; parking 46 on 9, none of them an access-group, moved or former link of a large site and none with site
+    departures (through demand above capacity). (c) car travel hours (ph_modestats, last iteration): control 11 507,
+    insertion_only 11 515, fix_v1 11 705 (+1.7 %), parking 11 099 (-3.5 %; mean of the last five iterations 11 134
+    against 11 582, -3.9 %). Person 693334's car leg home: control 47.4 min, parking 18.6 min.
+  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluation_ab.json, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluate_ab.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/continue_ab.sh, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_parking.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_parking.csv'
+  notes: >-
+    All three criteria are met in this draw. Side effects, simulated, without a reference: walk hours 2603 -> 3163
+    (+21.5 %, the longer car access and egress walks to the lots); car share of all trips 53.00 % -> 53.85 %, pt
+    7.20 % -> 6.81 % (modestats, main mode per trip, last iteration); at the in-scope sites (2570 trips starting or ending there) the car
+    share rises from 54.9 % to 67.7 % (fix_v1 65.2 %): the car no longer queues at the site exit, which outweighs the
+    longer walk in the mode choice. Mean car trip distance at those sites 23.7 -> 24.1 km. stuckAndAbort: control car
+    1, walk 5; parking car 1, walk 5, pt 1 (one agent; fix_v1 the same).
+features:
+- large_facility_access_links
+- qsim_departures_yield
+artifacts:
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/link_delay_probe.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/spillback_probe.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/compare_arms.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluate_ab.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/lot_coverage_probe.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay.sh
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay_fix.sh
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/continue_ab.sh
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluation_ab.json
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/access_step_log_1pct.txt
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_summary_1pct.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_groups_1pct.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_control.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_insertion_only.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_fix.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_parking.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_rerun_final.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_rerun_it0.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_prod100.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/measure_large_facility_access_1pct_by_facility.json
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/measure_large_facility_access_100pct_by_facility.json
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/one_iteration_replays_compare.txt
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_control.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_insertion_only.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_fix.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_parking.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/modestats_control.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/modestats_insertion_only.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/modestats_fix.csv
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/modestats_parking.csv
+- 'felix:~/i465-link (arm outputs with events, about 6 GB; not committed, kept for re-reading until the PR is merged)'
+issues:
+- '#465'
+decisions:
+- ADR-0165
+notes: >-
+  What this run is evidence for: in a 1 % continuation from equilibrated plans, spreading the car access of the work
+  and university sites over their parking lots (with one high-capacity link for the other large sites and departing
+  vehicles yielding to traffic) removes the site-caused queues, including the one behind person 693334, without
+  raising the total car travel time (-3.5 %). What it does not show: (1) no validation (no observed counts, delays or
+  mode shares compared); (2) one draw per arm at 1 %, where a site holds few persons and an access group's share is
+  coarse; (3) no 100 % run with the rule; (4) the rise of the car share at the large work sites (54.9 % -> 67.7 %) is a
+  simulated reaction that needs a check against observed commute mode shares before it is relied on.

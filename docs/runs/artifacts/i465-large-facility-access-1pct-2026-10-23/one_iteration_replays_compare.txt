@@ -1,0 +1,24 @@
+== replay_true/simulation_output
+car/truck legs 21231 mean min 33.43 legs > 1 h 3007 legs > 2 h 525 total veh-h 11829.6
+insertion waits > 0 21232 >= 10 min 564 >= 1 h 160 max h 5.65 sum veh-h 768.2
+insertion waits >= 1 h by link [('641800', 75), ('442336', 30), ('380081', 29), ('354834', 25), ('119321', 1)]
+stuckAndAbort by legMode {'car': 1, 'walk': 5, 'pt': 1}
+693334 car legs (start h, duration min) [(7.65, 18.6), (15.64, 201.3)]
+== replay_false/simulation_output
+car/truck legs 21231 mean min 33.47 legs > 1 h 3030 legs > 2 h 519 total veh-h 11844.1
+insertion waits > 0 21232 >= 10 min 799 >= 1 h 184 max h 5.65 sum veh-h 867.9
+insertion waits >= 1 h by link [('641800', 75), ('354834', 32), ('380081', 30), ('442336', 30), ('426596', 7), ('129867', 3), ('379607', 2), ('503689', 1)]
+stuckAndAbort by legMode {'car': 1, 'walk': 5}
+693334 car legs (start h, duration min) [(7.65, 25.2), (15.64, 41.9)]
+== replay_access_true/simulation_output
+car/truck legs 21226 mean min 33.98 legs > 1 h 3129 legs > 2 h 656 total veh-h 12022.3
+insertion waits > 0 21230 >= 10 min 142 >= 1 h 0 max h 0.92 sum veh-h 203.6
+insertion waits >= 1 h by link []
+stuckAndAbort by legMode {'car': 4, 'walk': 4, 'pt': 1}
+693334 car legs (start h, duration min) [(7.69, 45.5), (15.64, 18.9)]
+== replay_access_false/simulation_output
+car/truck legs 21226 mean min 33.97 legs > 1 h 3123 legs > 2 h 637 total veh-h 12016.2
+insertion waits > 0 21229 >= 10 min 362 >= 1 h 21 max h 4.53 sum veh-h 309.5
+insertion waits >= 1 h by link [('379607', 9), ('641800', 3), ('261352', 1), ('18427', 1), ('561564', 1), ('671570', 1), ('53851', 1), ('334418', 1)]
+stuckAndAbort by legMode {'car': 3, 'walk': 5, 'pt': 1}
+693334 car legs (start h, duration min) [(7.69, 43.0), (15.64, 31.8)]

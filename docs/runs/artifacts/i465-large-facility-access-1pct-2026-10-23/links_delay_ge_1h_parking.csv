@@ -1,0 +1,10 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+657752,tertiary,Stellfelder Straße,3,1.0,600.0,32.1,6.0,12,12,0,1.46,11.02-13.94 h,0,0.0,0.0,0,
+354454,tertiary,Tappenbecker Landstraße,2,1.0,600.0,36.5,6.0,11,11,0,1.4,9.45-12.13 h,0,0.0,0.0,0,
+119308,tertiary,,2,1.0,600.0,250.0,6.0,8,8,0,1.06,9.83-12.04 h,0,0.0,0.0,0,
+23957,residential,Gördelingerstraße,,1.0,600.0,79.6,6.0,6,6,0,1.15,12.39-14.37 h,0,0.0,0.0,2,home_282445:2
+239286,unclassified,Weststraße,,1.0,600.0,169.0,6.0,4,4,0,1.16,10.35-11.93 h,0,0.0,0.0,3,sec_res_96245:2 work_101669:1
+621092,tertiary,Tappenbecker Landstraße,1,1.0,600.0,16.6,6.0,2,2,0,1.01,10.29-11.46 h,0,0.0,0.0,0,
+609524,tertiary,,,1.0,600.0,11.8,6.0,1,1,0,1.0,9.16-10.16 h,0,0.0,0.0,0,
+638609,tertiary,,3,1.0,600.0,185.1,6.0,1,1,0,1.0,7.23-8.23 h,0,0.0,0.0,0,
+467619,tertiary,Am Theater,,1.0,600.0,139.1,6.0,1,1,0,1.09,17.17-18.26 h,0,0.0,0.0,1,sec_res_45627:1

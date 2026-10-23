@@ -1,0 +1,1369 @@
+{
+  "sample_size": 0.01,
+  "facilities_with_activities": 13858,
+  "excluded_prefixes": [
+    "outside_"
+  ],
+  "size_classes": [
+    {
+      "minimum_activities": 500.0,
+      "facilities": 2790,
+      "current_link_capacity_veh_per_h": {
+        "300.0": 100,
+        "600.0": 2384,
+        "900.0": 3,
+        "1000.0": 122,
+        "1200.0": 42,
+        "1500.0": 51,
+        "1800.0": 6,
+        "2000.0": 34,
+        "2250.0": 1,
+        "3000.0": 33,
+        "4000.0": 5,
+        "4500.0": 5,
+        "6000.0": 3,
+        "7500.0": 1
+      }
+    },
+    {
+      "minimum_activities": 1000.0,
+      "facilities": 700,
+      "current_link_capacity_veh_per_h": {
+        "300.0": 19,
+        "600.0": 595,
+        "900.0": 2,
+        "1000.0": 30,
+        "1200.0": 17,
+        "1500.0": 10,
+        "1800.0": 3,
+        "2000.0": 9,
+        "2250.0": 1,
+        "3000.0": 11,
+        "4500.0": 2,
+        "6000.0": 1
+      }
+    },
+    {
+      "minimum_activities": 2000.0,
+      "facilities": 89,
+      "current_link_capacity_veh_per_h": {
+        "600.0": 73,
+        "1000.0": 3,
+        "1200.0": 5,
+        "1500.0": 2,
+        "1800.0": 1,
+        "2000.0": 1,
+        "3000.0": 3,
+        "4500.0": 1
+      }
+    },
+    {
+      "minimum_activities": 5000.0,
+      "facilities": 16,
+      "current_link_capacity_veh_per_h": {
+        "600.0": 13,
+        "1200.0": 1,
+        "1500.0": 1,
+        "3000.0": 1
+      }
+    }
+  ],
+  "sweep": [
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 2790,
+      "already_adequate": 303,
+      "moved": 870,
+      "fallback": 1617,
+      "fallback_share_of_needing": 0.6502,
+      "moved_activities_100pct": 752300,
+      "fallback_activities_100pct": 1433000,
+      "chosen_highway": {
+        "secondary": 396,
+        "primary": 201,
+        "tertiary": 205,
+        "unclassified": 12,
+        "residential": 56
+      },
+      "median_moved_distance_m": 118.1,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 2790,
+      "already_adequate": 303,
+      "moved": 1320,
+      "fallback": 1167,
+      "fallback_share_of_needing": 0.4692,
+      "moved_activities_100pct": 1130200,
+      "fallback_activities_100pct": 1055100,
+      "chosen_highway": {
+        "secondary": 567,
+        "primary": 319,
+        "tertiary": 338,
+        "residential": 79,
+        "unclassified": 17
+      },
+      "median_moved_distance_m": 159.8,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 2790,
+      "already_adequate": 303,
+      "moved": 1846,
+      "fallback": 641,
+      "fallback_share_of_needing": 0.2577,
+      "moved_activities_100pct": 1594000,
+      "fallback_activities_100pct": 591300,
+      "chosen_highway": {
+        "primary": 443,
+        "secondary": 779,
+        "tertiary": 481,
+        "residential": 122,
+        "unclassified": 21
+      },
+      "median_moved_distance_m": 208.8,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 2790,
+      "already_adequate": 303,
+      "moved": 2240,
+      "fallback": 247,
+      "fallback_share_of_needing": 0.0993,
+      "moved_activities_100pct": 1987800,
+      "fallback_activities_100pct": 197500,
+      "chosen_highway": {
+        "secondary": 926,
+        "tertiary": 600,
+        "primary": 553,
+        "residential": 140,
+        "unclassified": 21
+      },
+      "median_moved_distance_m": 250.9,
+      "largest_fallbacks": [
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ],
+        [
+          2900,
+          "sec_b_231399"
+        ],
+        [
+          2800,
+          "uni_loc_270"
+        ],
+        [
+          2500,
+          "sec_lu_3222"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 700,
+      "already_adequate": 84,
+      "moved": 223,
+      "fallback": 393,
+      "fallback_share_of_needing": 0.638,
+      "moved_activities_100pct": 328900,
+      "fallback_activities_100pct": 640900,
+      "chosen_highway": {
+        "primary": 38,
+        "tertiary": 59,
+        "unclassified": 5,
+        "secondary": 100,
+        "residential": 21
+      },
+      "median_moved_distance_m": 120.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 700,
+      "already_adequate": 84,
+      "moved": 342,
+      "fallback": 274,
+      "fallback_share_of_needing": 0.4448,
+      "moved_activities_100pct": 493600,
+      "fallback_activities_100pct": 476200,
+      "chosen_highway": {
+        "primary": 65,
+        "tertiary": 102,
+        "unclassified": 6,
+        "secondary": 144,
+        "residential": 25
+      },
+      "median_moved_distance_m": 162.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 700,
+      "already_adequate": 84,
+      "moved": 471,
+      "fallback": 145,
+      "fallback_share_of_needing": 0.2354,
+      "moved_activities_100pct": 698500,
+      "fallback_activities_100pct": 271300,
+      "chosen_highway": {
+        "primary": 94,
+        "secondary": 191,
+        "tertiary": 144,
+        "unclassified": 9,
+        "residential": 33
+      },
+      "median_moved_distance_m": 208.3,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 700,
+      "already_adequate": 84,
+      "moved": 563,
+      "fallback": 53,
+      "fallback_share_of_needing": 0.086,
+      "moved_activities_100pct": 894000,
+      "fallback_activities_100pct": 75800,
+      "chosen_highway": {
+        "tertiary": 182,
+        "secondary": 221,
+        "primary": 115,
+        "unclassified": 9,
+        "residential": 36
+      },
+      "median_moved_distance_m": 245.1,
+      "largest_fallbacks": [
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ],
+        [
+          2900,
+          "sec_b_231399"
+        ],
+        [
+          2800,
+          "uni_loc_270"
+        ],
+        [
+          2500,
+          "sec_lu_3222"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 89,
+      "already_adequate": 16,
+      "moved": 25,
+      "fallback": 48,
+      "fallback_share_of_needing": 0.6575,
+      "moved_activities_100pct": 86900,
+      "fallback_activities_100pct": 211000,
+      "chosen_highway": {
+        "primary": 3,
+        "tertiary": 10,
+        "secondary": 6,
+        "residential": 5,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 139.3,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 89,
+      "already_adequate": 16,
+      "moved": 34,
+      "fallback": 39,
+      "fallback_share_of_needing": 0.5342,
+      "moved_activities_100pct": 114800,
+      "fallback_activities_100pct": 183100,
+      "chosen_highway": {
+        "primary": 5,
+        "tertiary": 14,
+        "residential": 7,
+        "secondary": 7,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 159.5,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 89,
+      "already_adequate": 16,
+      "moved": 49,
+      "fallback": 24,
+      "fallback_share_of_needing": 0.3288,
+      "moved_activities_100pct": 177000,
+      "fallback_activities_100pct": 120900,
+      "chosen_highway": {
+        "secondary": 15,
+        "primary": 6,
+        "tertiary": 18,
+        "residential": 9,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 185.0,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 89,
+      "already_adequate": 16,
+      "moved": 67,
+      "fallback": 6,
+      "fallback_share_of_needing": 0.0822,
+      "moved_activities_100pct": 279600,
+      "fallback_activities_100pct": 18300,
+      "chosen_highway": {
+        "tertiary": 24,
+        "secondary": 23,
+        "primary": 10,
+        "residential": 9,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 273.7,
+      "largest_fallbacks": [
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ],
+        [
+          2900,
+          "sec_b_231399"
+        ],
+        [
+          2800,
+          "uni_loc_270"
+        ],
+        [
+          2500,
+          "sec_lu_3222"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 16,
+      "already_adequate": 3,
+      "moved": 4,
+      "fallback": 9,
+      "fallback_share_of_needing": 0.6923,
+      "moved_activities_100pct": 26400,
+      "fallback_activities_100pct": 89400,
+      "chosen_highway": {
+        "secondary": 2,
+        "residential": 1,
+        "tertiary": 1
+      },
+      "median_moved_distance_m": 174.5,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 16,
+      "already_adequate": 3,
+      "moved": 5,
+      "fallback": 8,
+      "fallback_share_of_needing": 0.6154,
+      "moved_activities_100pct": 31800,
+      "fallback_activities_100pct": 84000,
+      "chosen_highway": {
+        "secondary": 2,
+        "primary": 1,
+        "residential": 1,
+        "tertiary": 1
+      },
+      "median_moved_distance_m": 180.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 16,
+      "already_adequate": 3,
+      "moved": 8,
+      "fallback": 5,
+      "fallback_share_of_needing": 0.3846,
+      "moved_activities_100pct": 54200,
+      "fallback_activities_100pct": 61600,
+      "chosen_highway": {
+        "secondary": 4,
+        "primary": 1,
+        "residential": 2,
+        "tertiary": 1
+      },
+      "median_moved_distance_m": 228.1,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1000.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 16,
+      "already_adequate": 3,
+      "moved": 13,
+      "fallback": 0,
+      "fallback_share_of_needing": 0.0,
+      "moved_activities_100pct": 115800,
+      "fallback_activities_100pct": 0,
+      "chosen_highway": {
+        "tertiary": 3,
+        "secondary": 6,
+        "primary": 2,
+        "residential": 2
+      },
+      "median_moved_distance_m": 412.7,
+      "largest_fallbacks": []
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 2790,
+      "already_adequate": 139,
+      "moved": 502,
+      "fallback": 2149,
+      "fallback_share_of_needing": 0.8106,
+      "moved_activities_100pct": 431400,
+      "fallback_activities_100pct": 1903000,
+      "chosen_highway": {
+        "secondary": 193,
+        "primary": 237,
+        "tertiary": 62,
+        "residential": 9,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 120.3,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7600,
+          "sec_b_16926"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 2790,
+      "already_adequate": 139,
+      "moved": 846,
+      "fallback": 1805,
+      "fallback_share_of_needing": 0.6809,
+      "moved_activities_100pct": 729800,
+      "fallback_activities_100pct": 1604600,
+      "chosen_highway": {
+        "secondary": 311,
+        "primary": 392,
+        "tertiary": 126,
+        "residential": 16,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 172.8,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 2790,
+      "already_adequate": 139,
+      "moved": 1354,
+      "fallback": 1297,
+      "fallback_share_of_needing": 0.4892,
+      "moved_activities_100pct": 1192100,
+      "fallback_activities_100pct": 1142300,
+      "chosen_highway": {
+        "primary": 599,
+        "secondary": 508,
+        "tertiary": 223,
+        "residential": 23,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 251.6,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 500.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 2790,
+      "already_adequate": 139,
+      "moved": 1961,
+      "fallback": 690,
+      "fallback_share_of_needing": 0.2603,
+      "moved_activities_100pct": 1775100,
+      "fallback_activities_100pct": 559300,
+      "chosen_highway": {
+        "secondary": 798,
+        "primary": 815,
+        "tertiary": 320,
+        "residential": 27,
+        "unclassified": 1
+      },
+      "median_moved_distance_m": 348.9,
+      "largest_fallbacks": [
+        [
+          5900,
+          "EXT03241011"
+        ],
+        [
+          5200,
+          "uni_loc_316"
+        ],
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          4000,
+          "sec_b_118707"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 700,
+      "already_adequate": 37,
+      "moved": 126,
+      "fallback": 537,
+      "fallback_share_of_needing": 0.81,
+      "moved_activities_100pct": 188800,
+      "fallback_activities_100pct": 854400,
+      "chosen_highway": {
+        "primary": 46,
+        "secondary": 61,
+        "tertiary": 18,
+        "residential": 1
+      },
+      "median_moved_distance_m": 117.2,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7600,
+          "sec_b_16926"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 700,
+      "already_adequate": 37,
+      "moved": 212,
+      "fallback": 451,
+      "fallback_share_of_needing": 0.6802,
+      "moved_activities_100pct": 319400,
+      "fallback_activities_100pct": 723800,
+      "chosen_highway": {
+        "primary": 78,
+        "secondary": 97,
+        "tertiary": 35,
+        "residential": 2
+      },
+      "median_moved_distance_m": 169.0,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 700,
+      "already_adequate": 37,
+      "moved": 347,
+      "fallback": 316,
+      "fallback_share_of_needing": 0.4766,
+      "moved_activities_100pct": 538100,
+      "fallback_activities_100pct": 505100,
+      "chosen_highway": {
+        "primary": 127,
+        "tertiary": 69,
+        "secondary": 147,
+        "residential": 4
+      },
+      "median_moved_distance_m": 252.7,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 1000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 700,
+      "already_adequate": 37,
+      "moved": 509,
+      "fallback": 154,
+      "fallback_share_of_needing": 0.2323,
+      "moved_activities_100pct": 829500,
+      "fallback_activities_100pct": 213700,
+      "chosen_highway": {
+        "secondary": 227,
+        "primary": 181,
+        "tertiary": 97,
+        "residential": 4
+      },
+      "median_moved_distance_m": 355.9,
+      "largest_fallbacks": [
+        [
+          5900,
+          "EXT03241011"
+        ],
+        [
+          5200,
+          "uni_loc_316"
+        ],
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          4000,
+          "sec_b_118707"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 89,
+      "already_adequate": 8,
+      "moved": 16,
+      "fallback": 65,
+      "fallback_share_of_needing": 0.8025,
+      "moved_activities_100pct": 51200,
+      "fallback_activities_100pct": 271700,
+      "chosen_highway": {
+        "primary": 3,
+        "tertiary": 5,
+        "secondary": 7,
+        "residential": 1
+      },
+      "median_moved_distance_m": 77.8,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7600,
+          "sec_b_16926"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 89,
+      "already_adequate": 8,
+      "moved": 23,
+      "fallback": 58,
+      "fallback_share_of_needing": 0.716,
+      "moved_activities_100pct": 84600,
+      "fallback_activities_100pct": 238300,
+      "chosen_highway": {
+        "primary": 5,
+        "tertiary": 6,
+        "secondary": 10,
+        "residential": 2
+      },
+      "median_moved_distance_m": 122.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 89,
+      "already_adequate": 8,
+      "moved": 44,
+      "fallback": 37,
+      "fallback_share_of_needing": 0.4568,
+      "moved_activities_100pct": 160600,
+      "fallback_activities_100pct": 162300,
+      "chosen_highway": {
+        "primary": 10,
+        "tertiary": 12,
+        "secondary": 20,
+        "residential": 2
+      },
+      "median_moved_distance_m": 279.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 2000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 89,
+      "already_adequate": 8,
+      "moved": 68,
+      "fallback": 13,
+      "fallback_share_of_needing": 0.1605,
+      "moved_activities_100pct": 280400,
+      "fallback_activities_100pct": 42500,
+      "chosen_highway": {
+        "secondary": 31,
+        "primary": 18,
+        "tertiary": 17,
+        "residential": 2
+      },
+      "median_moved_distance_m": 406.8,
+      "largest_fallbacks": [
+        [
+          5900,
+          "EXT03241011"
+        ],
+        [
+          5200,
+          "uni_loc_316"
+        ],
+        [
+          4100,
+          "EXT15083411"
+        ],
+        [
+          4000,
+          "sec_b_118707"
+        ],
+        [
+          3800,
+          "EXT15085230"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 200.0,
+      "large_facilities": 16,
+      "already_adequate": 2,
+      "moved": 1,
+      "fallback": 13,
+      "fallback_share_of_needing": 0.9286,
+      "moved_activities_100pct": 8200,
+      "fallback_activities_100pct": 113800,
+      "chosen_highway": {
+        "secondary": 1
+      },
+      "median_moved_distance_m": 122.4,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7600,
+          "sec_b_16926"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 300.0,
+      "large_facilities": 16,
+      "already_adequate": 2,
+      "moved": 4,
+      "fallback": 10,
+      "fallback_share_of_needing": 0.7143,
+      "moved_activities_100pct": 27400,
+      "fallback_activities_100pct": 94600,
+      "chosen_highway": {
+        "secondary": 1,
+        "primary": 1,
+        "residential": 1,
+        "tertiary": 1
+      },
+      "median_moved_distance_m": 244.0,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          10000,
+          "uni_loc_15"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          7100,
+          "EXT03254032"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 500.0,
+      "large_facilities": 16,
+      "already_adequate": 2,
+      "moved": 8,
+      "fallback": 6,
+      "fallback_share_of_needing": 0.4286,
+      "moved_activities_100pct": 55200,
+      "fallback_activities_100pct": 66800,
+      "chosen_highway": {
+        "primary": 3,
+        "secondary": 2,
+        "residential": 1,
+        "tertiary": 2
+      },
+      "median_moved_distance_m": 288.7,
+      "largest_fallbacks": [
+        [
+          34800,
+          "work_101999"
+        ],
+        [
+          8200,
+          "work_105575"
+        ],
+        [
+          6800,
+          "sec_b_109821"
+        ],
+        [
+          5900,
+          "EXT03241018"
+        ],
+        [
+          5900,
+          "EXT03241011"
+        ]
+      ]
+    },
+    {
+      "minimum_capacity_veh_per_h": 1500.0,
+      "minimum_activities": 5000.0,
+      "maximum_distance_m": 1000.0,
+      "large_facilities": 16,
+      "already_adequate": 2,
+      "moved": 12,
+      "fallback": 2,
+      "fallback_share_of_needing": 0.1429,
+      "moved_activities_100pct": 110900,
+      "fallback_activities_100pct": 11100,
+      "chosen_highway": {
+        "secondary": 4,
+        "primary": 4,
+        "residential": 1,
+        "tertiary": 3
+      },
+      "median_moved_distance_m": 464.3,
+      "largest_fallbacks": [
+        [
+          5900,
+          "EXT03241011"
+        ],
+        [
+          5200,
+          "uni_loc_316"
+        ]
+      ]
+    }
+  ],
+  "inputs": {
+    "network": "/home/felix/wt-i487-rerun/output_rerun/matsim_output/output_network.xml.gz",
+    "facilities": "/home/felix/wt-i487-rerun/output_rerun/matsim_output/output_facilities.xml.gz",
+    "activities": "/home/felix/wt-i487-rerun/output_rerun/matsim_output/output_activities.csv.gz"
+  }
+}

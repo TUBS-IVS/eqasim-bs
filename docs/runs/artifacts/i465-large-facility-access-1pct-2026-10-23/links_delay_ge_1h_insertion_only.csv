@@ -1,0 +1,13 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+641838,tertiary,Mittelstraße,,1.0,600.0,43.0,6.0,72,72,0,5.71,5.64-18.50 h,0,0.0,0.0,0,
+426591,tertiary,Mittelstraße,,1.0,600.0,17.1,6.0,22,22,0,2.42,7.53-12.18 h,0,0.0,0.0,0,
+141265,tertiary,,,1.0,600.0,21.7,6.0,22,22,0,1.82,8.73-13.31 h,0,0.0,0.0,0,
+609524,tertiary,,,1.0,600.0,11.8,6.0,19,19,0,1.6,6.93-10.97 h,0,0.0,0.0,0,
+509589,residential,Ottenroder Straße,,1.0,600.0,18.2,6.0,18,18,0,2.23,9.00-12.84 h,0,0.0,0.0,0,
+109946,unclassified,Beethovenstraße,,1.0,600.0,110.7,6.0,14,14,0,1.44,11.54-14.83 h,0,0.0,0.0,0,
+239286,unclassified,Weststraße,,1.0,600.0,169.0,6.0,11,11,0,1.39,9.08-11.80 h,0,0.0,0.0,3,sec_res_96245:2 work_101669:1
+162990,residential,Hintern Brüdern,,1.0,600.0,100.5,6.0,11,11,0,1.31,11.04-14.23 h,0,0.0,0.0,1,work_128840:1
+517871,unclassified,,1,1.0,600.0,17.8,6.0,5,5,0,1.04,8.46-10.14 h,0,0.0,0.0,0,
+41615,tertiary,Nordstraße,2,2.0,1200.0,120.0,12.0,5,5,0,1.12,8.39-9.75 h,0,0.0,0.0,0,
+272935,living_street,Am Bülten,,1.0,300.0,98.1,3.0,4,4,0,1.35,9.69-11.87 h,0,0.0,0.0,0,
+583662,tertiary_link,,,1.0,600.0,18.7,6.0,2,2,0,1.05,17.42-18.64 h,0,0.0,0.0,0,

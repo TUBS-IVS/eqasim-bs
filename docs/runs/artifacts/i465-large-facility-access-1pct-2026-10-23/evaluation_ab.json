@@ -1,0 +1,282 @@
+{
+ "control": {
+  "last_iteration": 32,
+  "car_travel_h_last": 11507.0,
+  "car_travel_h_mean_last5": 11581.6,
+  "walk_travel_h_last": 2603.0,
+  "mode_shares_last": {
+   "iteration": 32.0,
+   "bicycle": 0.0904,
+   "car": 0.53,
+   "car_passenger": 0.1152,
+   "outside": 0.0393,
+   "pt": 0.072,
+   "truck": 0.0133,
+   "walk": 0.1398
+  },
+  "car_legs": 20727,
+  "car_legs_over_1h": 2750,
+  "car_leg_hours": 11507.4,
+  "stuck_by_mode": {
+   "car": 1,
+   "walk": 5
+  },
+  "through_traversals_ge_1h": 171,
+  "through_ge_1h_links": 13,
+  "through_ge_1h_top_links": [
+   [
+    "641838",
+    70
+   ],
+   [
+    "141265",
+    22
+   ],
+   [
+    "109946",
+    20
+   ],
+   [
+    "239286",
+    17
+   ],
+   [
+    "352763",
+    10
+   ],
+   [
+    "609524",
+    7
+   ],
+   [
+    "426591",
+    6
+   ],
+   [
+    "272935",
+    6
+   ],
+   [
+    "426596",
+    6
+   ],
+   [
+    "129867",
+    2
+   ]
+  ],
+  "in_scope_site_trips": 2570,
+  "in_scope_site_car_share": 0.5494,
+  "in_scope_site_car_trip_distance_m_mean": 23674.4
+ },
+ "insertion_only": {
+  "last_iteration": 32,
+  "car_travel_h_last": 11515.0,
+  "car_travel_h_mean_last5": 11606.6,
+  "walk_travel_h_last": 2605.0,
+  "mode_shares_last": {
+   "iteration": 32.0,
+   "bicycle": 0.0909,
+   "car": 0.53,
+   "car_passenger": 0.1145,
+   "outside": 0.0393,
+   "pt": 0.0719,
+   "truck": 0.0133,
+   "walk": 0.14
+  },
+  "car_legs": 20728,
+  "car_legs_over_1h": 2763,
+  "car_leg_hours": 11514.8,
+  "stuck_by_mode": {
+   "car": 1,
+   "walk": 5
+  },
+  "through_traversals_ge_1h": 205,
+  "through_ge_1h_links": 12,
+  "through_ge_1h_top_links": [
+   [
+    "641838",
+    72
+   ],
+   [
+    "426591",
+    22
+   ],
+   [
+    "141265",
+    22
+   ],
+   [
+    "609524",
+    19
+   ],
+   [
+    "509589",
+    18
+   ],
+   [
+    "109946",
+    14
+   ],
+   [
+    "239286",
+    11
+   ],
+   [
+    "162990",
+    11
+   ],
+   [
+    "41615",
+    5
+   ],
+   [
+    "517871",
+    5
+   ]
+  ],
+  "in_scope_site_trips": 2570,
+  "in_scope_site_car_share": 0.5471,
+  "in_scope_site_car_trip_distance_m_mean": 23701.3
+ },
+ "fix_v1": {
+  "last_iteration": 40,
+  "car_travel_h_last": 11705.0,
+  "car_travel_h_mean_last5": 11775.0,
+  "walk_travel_h_last": 3259.0,
+  "mode_shares_last": {
+   "iteration": 40.0,
+   "bicycle": 0.0912,
+   "car": 0.5347,
+   "car_passenger": 0.111,
+   "outside": 0.0393,
+   "pt": 0.0696,
+   "truck": 0.0133,
+   "walk": 0.1408
+  },
+  "car_legs": 20913,
+  "car_legs_over_1h": 2855,
+  "car_leg_hours": 11705.4,
+  "stuck_by_mode": {
+   "pt": 1,
+   "car": 1,
+   "walk": 5
+  },
+  "through_traversals_ge_1h": 302,
+  "through_ge_1h_links": 15,
+  "through_ge_1h_top_links": [
+   [
+    "517871",
+    47
+   ],
+   [
+    "41615",
+    47
+   ],
+   [
+    "239286",
+    45
+   ],
+   [
+    "243813",
+    41
+   ],
+   [
+    "609524",
+    36
+   ],
+   [
+    "691952",
+    27
+   ],
+   [
+    "239287",
+    23
+   ],
+   [
+    "23957",
+    11
+   ],
+   [
+    "549945",
+    8
+   ],
+   [
+    "243815",
+    7
+   ]
+  ],
+  "in_scope_site_trips": 2570,
+  "in_scope_site_car_share": 0.6521,
+  "in_scope_site_car_trip_distance_m_mean": 24086.2
+ },
+ "parking": {
+  "last_iteration": 32,
+  "car_travel_h_last": 11099.0,
+  "car_travel_h_mean_last5": 11133.8,
+  "walk_travel_h_last": 3163.0,
+  "mode_shares_last": {
+   "iteration": 32.0,
+   "bicycle": 0.0891,
+   "car": 0.5385,
+   "car_passenger": 0.1114,
+   "outside": 0.0393,
+   "pt": 0.0681,
+   "truck": 0.0133,
+   "walk": 0.1402
+  },
+  "car_legs": 21062,
+  "car_legs_over_1h": 2805,
+  "car_leg_hours": 11098.7,
+  "stuck_by_mode": {
+   "pt": 1,
+   "car": 1,
+   "walk": 5
+  },
+  "criterion_a_link_hours_over_capacity": [],
+  "access_links_with_departures": 230,
+  "through_traversals_ge_1h": 46,
+  "through_ge_1h_links": 9,
+  "through_ge_1h_top_links": [
+   [
+    "657752",
+    12
+   ],
+   [
+    "354454",
+    11
+   ],
+   [
+    "119308",
+    8
+   ],
+   [
+    "23957",
+    6
+   ],
+   [
+    "239286",
+    4
+   ],
+   [
+    "621092",
+    2
+   ],
+   [
+    "638609",
+    1
+   ],
+   [
+    "609524",
+    1
+   ],
+   [
+    "467619",
+    1
+   ]
+  ],
+  "in_scope_site_trips": 2570,
+  "in_scope_site_car_share": 0.677,
+  "in_scope_site_car_trip_distance_m_mean": 24125.4
+ }
+}
