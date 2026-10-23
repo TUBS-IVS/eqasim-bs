@@ -322,3 +322,63 @@ def test_persons_without_a_pt_stay_are_returned_unchanged():
     assert t.iloc[5:]["mode"].tolist() == ["car", "car"]
     assert t.iloc[5:]["departure_time"].tolist() == [3600.0, 40000.0]
     assert m["no_connection_action"].tolist() == [nc.ACTION_TOUR_TO_CAR]
+
+
+# eqasim-bs#465 (WP-E smoke): 14 of 123 pt stays were kept without a connection, mostly late returns (21-30 h) that a
+# LATER shift cannot serve, and the router turned them into walks of up to 125 km. Two additions, both off in the
+# function's defaults (the production config switches them on): an EARLIER return, and a lift as the last resort.
+
+def _probe_only(ret_dep_s):
+    def probe(positions, out_dep, ret_dep):
+        found = np.isclose(ret_dep, ret_dep_s) & np.isclose(out_dep, 40000)
+        return _gates(["s" if f else None for f in found])
+    return probe
+
+
+def test_an_earlier_return_is_tried_after_the_later_shifts_and_keeps_the_minimum_stay():
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    m, t, g = nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]),
+                                       _probe_only(60000 - 3600), fallback_gates=_fallback(1), **KW,
+                                       return_earlier=True)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_DEPARTURE_SHIFTED]
+    assert (t.loc[2, "departure_time"], t.loc[2, "arrival_time"]) == (56400.0, 56900.0)
+    assert t.loc[1, "departure_time"] == 40000 and g["gate_id"].tolist() == ["s"]
+    # off (the function default): the same stay stays kept
+    m, *_ = nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]),
+                                     _probe_only(60000 - 3600), fallback_gates=_fallback(1), **KW)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_KEPT]
+    # never closer than min_stay_s to the outbound arrival (40500): 60000 - 7200 = 52800 is allowed, so only a
+    # return that would leave less than 1800 s of stay is skipped
+    trips = _chain()
+    trips.loc[2, ["departure_time", "arrival_time"]] = [43000.0, 43500.0]
+    seen = []
+
+    def probe(positions, out_dep, ret_dep):
+        seen.extend(ret_dep.tolist())
+        return _gates([None] * len(positions))
+    nc.resolve_no_connection(stays, trips, _modes(1), _avail_int(False, False), _gates([None]), probe,
+                             fallback_gates=_fallback(1), **KW, return_earlier=True)
+    assert min(seen) >= 40500 + 1800
+
+
+def test_the_last_resort_lift_replaces_a_kept_stay_by_car_passenger_without_availability():
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+
+    def probe(positions, out_dep, ret_dep):
+        return _gates([None] * len(positions))
+
+    m, t, g = nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]),
+                                       probe, fallback_gates=_fallback(1), **KW, return_earlier=True,
+                                       last_resort=nc.LAST_RESORT_LIFT)
+    assert m["no_connection_action"].tolist() == [nc.ACTION_TOUR_TO_CAR_PASSENGER_LIFT]
+    assert t["mode"].tolist()[:3] == ["car_passenger"] * 3 and t["mode"].tolist()[3:] == ["walk"] * 2
+    row = m.iloc[0]
+    assert (row["mode"], row["substituted_from"]) == ("car_passenger", "pt")
+    assert len(g) == 0                                   # no longer a pt stay
+
+
+def test_an_unknown_last_resort_is_refused():
+    stays = pd.DataFrame([_stay(1, 1, 2)])
+    with pytest.raises(ValueError, match="last_resort"):
+        nc.resolve_no_connection(stays, _chain(), _modes(1), _avail_int(False, False), _gates([None]), _no_probe,
+                                 fallback_gates=_fallback(1), **KW, last_resort="walk")

@@ -14,8 +14,17 @@ A pt stay whose ``choose_pt_gates`` result has no gate is resolved by a counted 
    return leg: while the arrival stays within ``bound_s``); a return shift only while the shifted return
    arrival stays within ``bound_s`` and before the CURRENT departure of the person's next trip (shifts
    accepted at earlier grid steps are already applied, so two stays of one person never overlap);
-4. ``kept_no_connection``: the plan is kept, the stay takes its gate from ``fallback_gates`` and is
-   counted (the stage warns above a configurable share).
+   With ``return_earlier`` (#465, off in the function default, on in the production config) the grid is
+   walked a second time for the stays still unresolved, now moving only the RETURN earlier by
+   ``k * shift_step_s``, while ``min_stay_s`` remains between the outbound arrival and the shifted return
+   departure: a late return after the last connection (most kept stays of the WP-E smoke returned at 21-30 h)
+   cannot be served later, but often earlier;
+4. ``tour_to_car_passenger_lift``: with ``last_resort`` ``LAST_RESORT_LIFT`` (#465, the production config) the
+   tour becomes ``car_passenger`` WITHOUT the passenger availability (ASSUMPTION: an out-of-region trip that no
+   timetable serves is made as a lift, not as a walk of tens of kilometres); counted under its own label;
+5. ``kept_no_connection`` (``last_resort`` ``LAST_RESORT_KEEP``, the function default): the plan is kept, the
+   stay takes its gate from ``fallback_gates`` and is counted (the stage warns above a configurable share); the
+   router will realise its trips as walks.
 
 ``gate_found`` stays are untouched. A whole-tour switch also switches every other stay of the same
 home-based tour (its modes row changes; ``choose_gates`` later places it at a road gate), whatever its
@@ -42,9 +51,14 @@ ACTION_GATE_FOUND = "gate_found"
 ACTION_TOUR_TO_CAR = "tour_to_car"
 ACTION_TOUR_TO_CAR_PASSENGER = "tour_to_car_passenger"
 ACTION_DEPARTURE_SHIFTED = "departure_shifted"
+ACTION_TOUR_TO_CAR_PASSENGER_LIFT = "tour_to_car_passenger_lift"
 ACTION_KEPT = "kept_no_connection"
 ACTIONS = (ACTION_GATE_FOUND, ACTION_TOUR_TO_CAR, ACTION_TOUR_TO_CAR_PASSENGER, ACTION_DEPARTURE_SHIFTED,
-           ACTION_KEPT)
+           ACTION_TOUR_TO_CAR_PASSENGER_LIFT, ACTION_KEPT)
+#: What happens to a stay that nothing above resolves (``last_resort``).
+LAST_RESORT_KEEP = "keep"
+LAST_RESORT_LIFT = "car_passenger"
+LAST_RESORTS = (LAST_RESORT_KEEP, LAST_RESORT_LIFT)
 REASON_NO_PT_CONNECTION = "no_pt_connection"
 HOME = "home"
 
@@ -75,7 +89,8 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
                           availability: pd.DataFrame, pt_gates: pd.DataFrame,
                           probe: Callable[[np.ndarray, np.ndarray, np.ndarray], pd.DataFrame], *,
                           fallback_gates: pd.DataFrame, shift_window_s: float, shift_step_s: float,
-                          min_stay_s: float, bound_s: float) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                          min_stay_s: float, bound_s: float, return_earlier: bool = False,
+                          last_resort: str = LAST_RESORT_KEEP) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Resolve the pt stays without a gate; return ``(modes_out, trips_out, pt_gates_out)``.
 
     ``pt_gates`` and ``fallback_gates`` hold one row per pt stay (``modes["mode"] == "pt"``) in stays order
@@ -86,6 +101,8 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
     plus ``no_connection_action`` (None for stays that are not pt); ``pt_gates_out`` has one row per stay
     that is still pt.
     """
+    if last_resort not in LAST_RESORTS:
+        raise ValueError(f"[portal_trips] invalid last_resort {last_resort!r}; allowed: {list(LAST_RESORTS)}")
     if not shift_step_s > 0 or not shift_window_s >= 0 or not min_stay_s >= 0 or not np.isfinite(bound_s):
         raise ValueError(f"[portal_trips] invalid shift parameters: shift_step_s={shift_step_s} (must be > 0), "
                          f"shift_window_s={shift_window_s} (>= 0), min_stay_s={min_stay_s} (>= 0), "
@@ -225,6 +242,36 @@ def resolve_no_connection(stays: pd.DataFrame, trips: pd.DataFrame, modes: pd.Da
                 ):
                     dep[leg] += d  # later steps and later stays bound against the shifted trip
                     arr[leg] += d
+        unresolved = [k for k in unresolved if action[k] is None]
+
+    # Earlier returns (#465): a second walk over the grid for the stays still unresolved; only the return moves.
+    if return_earlier:
+        for step in range(1, n_steps + 1):
+            if not unresolved:
+                break
+            d = step * shift_step_s
+            positions = [k for k in unresolved
+                         if has_ret[k] and dep[ret_pos[k]] - d >= arr[out_pos[k]] + min_stay_s]
+            if not positions:
+                continue
+            result = probe(np.array(positions, dtype=int), np.array([dep[out_pos[k]] for k in positions], dtype=float),
+                           np.array([dep[ret_pos[k]] - d for k in positions], dtype=float))
+            if len(result) != len(positions):
+                raise ValueError(f"[portal_trips] probe returned {len(result)} rows for {len(positions)} requests")
+            result = result.reset_index(drop=True)
+            for row, k in enumerate(positions):
+                if action[k] is None and pd.notna(result["gate_id"].iat[row]):
+                    action[k] = ACTION_DEPARTURE_SHIFTED
+                    shifted[k] = ("ret", -d, result.iloc[row])
+                    dep[ret_pos[k]] -= d
+                    arr[ret_pos[k]] -= d
+            unresolved = [k for k in unresolved if action[k] is None]
+
+    # Last resort (#465): a lift instead of a walk; the tour switch also takes the other stays of the tour along.
+    if last_resort == LAST_RESORT_LIFT:
+        for k in unresolved:
+            if action[k] is None:
+                switch_tour(int(pt_rows[k]), "car_passenger", ACTION_TOUR_TO_CAR_PASSENGER_LIFT)
         unresolved = [k for k in unresolved if action[k] is None]
 
     for k, (variant, d, row) in shifted.items():

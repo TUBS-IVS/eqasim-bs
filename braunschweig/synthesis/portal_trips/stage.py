@@ -38,11 +38,11 @@ from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_ENABLED, DEFAULT_EXTERNAL_POINT_DISTANCE_TOLERANCE, DEFAULT_FALLBACK_WARN_SHARE,
     DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
     DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
-    DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_STEP_S, DEFAULT_SHIFT_WINDOW_S, KEY_ENABLED,
-    KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE, KEY_GATE_CANDIDATES,
-    KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S, KEY_MODE_SUBSTITUTION_WARN_SHARE,
-    KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, RNG_OFFSET,
-    validate_settings)
+    DEFAULT_NO_CONNECTION_LAST_RESORT, DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_STEP_S,
+    DEFAULT_SHIFT_WINDOW_S, KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
+    KEY_GATE_CANDIDATES, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S,
+    KEY_MODE_SUBSTITUTION_WARN_SHARE, KEY_NO_CONNECTION_LAST_RESORT, KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES,
+    KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, RNG_OFFSET, validate_settings)
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,10 @@ def _configure_gate_settings(context) -> dict:
             "shift_step_s": float(context.config(KEY_SHIFT_STEP_S, DEFAULT_SHIFT_STEP_S)),
             "min_stay_s": float(context.config(KEY_MIN_STAY_S, DEFAULT_MIN_STAY_S)),
             "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE,
-                                                             DEFAULT_NO_CONNECTION_WARN_SHARE))}
+                                                             DEFAULT_NO_CONNECTION_WARN_SHARE)),
+            "shift_return_earlier": context.config(KEY_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_RETURN_EARLIER),
+            "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT,
+                                                        DEFAULT_NO_CONNECTION_LAST_RESORT)}
 
 
 def assert_consistent_crs(frames: dict) -> None:
@@ -439,7 +442,9 @@ def _resolve_pt_stays(stays, trips, modes, availability, origin_xy, point_xy, ou
     walk_max_m = float(_plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
     bound_s = float(_plan_validation.MAX_PLAN_TIME_SECONDS)
     chain = dict(shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
-                 min_stay_s=gate_settings["min_stay_s"], bound_s=bound_s)
+                 min_stay_s=gate_settings["min_stay_s"], bound_s=bound_s,
+                 return_earlier=gate_settings.get("shift_return_earlier", False),
+                 last_resort=gate_settings.get("no_connection_last_resort", _no_connection.LAST_RESORT_KEEP))
     if n_pt == 0:
         empty = pd.DataFrame(columns=_gates.PT_GATE_COLUMNS)
         out_modes, out_trips, out_gates = _no_connection.resolve_no_connection(
@@ -614,7 +619,9 @@ def execute(context):
                        "shift_window_s": float(context.config(KEY_SHIFT_WINDOW_S)),
                        "shift_step_s": float(context.config(KEY_SHIFT_STEP_S)),
                        "min_stay_s": float(context.config(KEY_MIN_STAY_S)),
-                       "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE))},
+                       "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE)),
+                       "shift_return_earlier": bool(context.config(KEY_SHIFT_RETURN_EARLIER)),
+                       "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT)},
         cordon_polygon=cordon_polygon,
         threshold_m=float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M)),
         tolerance=float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE)),
