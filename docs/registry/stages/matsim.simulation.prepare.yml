@@ -54,6 +54,7 @@ code:
 - matsim/simulation/prepare.py
 - braunschweig/matsim/simulation/prepare.py
 - braunschweig/matsim/simulation/plan_check.py
+- braunschweig/matsim/initial_mode_choice.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -118,3 +119,8 @@ notes: >-
   [schedule] final schedule departures per hour {...}, max departure X h on the final, post-cordon-cut
   transit schedule on every run, independent of vrb_zone_fares_enabled; the VRB-fares path reuses that
   summary.
+  First-replanning mode choice (ADR-0155, issue 465): with braunschweig.initial_mode_choice.enabled the stage adds to
+  the final config, for every subpopulation with the in-the-loop DiscreteModeChoice strategy, a second
+  DiscreteModeChoice strategy with braunschweig.initial_mode_choice.weight (1e6) and disableAfterIteration 1
+  (braunschweig.matsim.initial_mode_choice), so almost every agent chooses its modes in iteration 1; the share is
+  logged as [initial mode choice].
