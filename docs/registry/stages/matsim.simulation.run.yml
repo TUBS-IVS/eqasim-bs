@@ -7,7 +7,9 @@ description: Runs RunSimulation from the eqasim-java-bs jar (mode choice per con
   contain the Java parking package before the run and the parking outcome report of the last
   iteration that ran after it (braunschweig.parking.runtime_checks), because MATSim would read the
   module of a jar without the package as an untyped group and price no parking; without the module
-  it checks nothing and calls MATSim as before.
+  it checks nothing and calls MATSim as before. The jar's schedule-based transit engine boards a pt passenger who
+  missed the planned departure on the first vehicle of ANY line serving the access and then the egress stop
+  (eqasim config transitStopPairFallback, default true, ADR-0161).
 lineage:
   type: extended
   upstream: null
@@ -27,3 +29,4 @@ decisions:
 - ADR-0033
 - ADR-0074
 - ADR-0139
+- ADR-0161

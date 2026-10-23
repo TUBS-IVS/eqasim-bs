@@ -3,6 +3,8 @@ import os.path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+from braunschweig.matsim.scenario import day_end_margin
+from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 _PASSENGER_AVAILABILITY_ADAPTER = (
     "org.eqasim.braunschweig.scenario.RunAdaptPassengerAvailabilityConfig")
@@ -23,6 +25,14 @@ def configure(context):
     # it.  Old/open configurations deliberately retain the legacy entrypoint.
     context.config("mid_passenger_availability", True)
     context.config("braunschweig.population.method", None)
+    # Routed day-end check (eqasim-bs#465, ADR-0160): the population writer moves late days earlier by their
+    # SURVEY travel times (ADR-0154); the routing repeats the rule with the ROUTED travel times.
+    context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED)
+    context.config(day_end_margin.KEY_ROUTED_CHECK, day_end_margin.DEFAULT_ROUTED_CHECK)
+    if context.config(day_end_margin.KEY_ENABLED) and context.config(day_end_margin.KEY_ROUTED_CHECK):
+        day_end_margin.check_margin(
+            context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S),
+            MAX_PLAN_TIME_SECONDS)
     
     context.stage("matsim.scenario.population")
     context.stage("matsim.scenario.households")
@@ -51,6 +61,22 @@ def configure(context):
     context.config("random_seed")
 
     context.config("output_prefix", "ile_de_france_")
+
+def population_routing_arguments(context, matsim_threads):
+    """Arguments of eqasim's ``RunPopulationRouting``. With the routed day-end check on (ADR-0160), plans whose
+    ROUTED last arrival is later than the end of the simulated day minus the margin move earlier as a whole day
+    and are routed again (``--latest-last-arrival``, logged by the router as a rate)."""
+    arguments = [
+        "--config-path", "%sconfig.xml" % context.config("output_prefix"),
+        "--output-path", "%spopulation.xml.gz" % context.config("output_prefix"),
+        "--threads", matsim_threads,
+        "--config:plans.inputPlansFile", "prepared_population.xml.gz"
+    ]
+    if context.config(day_end_margin.KEY_ENABLED) and context.config(day_end_margin.KEY_ROUTED_CHECK):
+        arguments += ["--latest-last-arrival", day_end_margin.latest_last_arrival_s(
+            context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), MAX_PLAN_TIME_SECONDS)]
+    return arguments
+
 
 def execute(context):
     # MATSim-phase thread count: explicit override or the global processes count.
@@ -155,12 +181,8 @@ def execute(context):
                     "%s/%spopulation.xml.gz" % (context.path(), context.config("output_prefix")))
     else:
         # Route population
-        eqasim.run(context, "org.eqasim.core.scenario.routing.RunPopulationRouting", [
-            "--config-path", "%sconfig.xml" % context.config("output_prefix"),
-            "--output-path", "%spopulation.xml.gz" % context.config("output_prefix"),
-            "--threads", matsim_threads,
-            "--config:plans.inputPlansFile", "prepared_population.xml.gz"
-        ])
+        eqasim.run(context, "org.eqasim.core.scenario.routing.RunPopulationRouting",
+                   population_routing_arguments(context, matsim_threads))
 
     assert os.path.exists("%s/%spopulation.xml.gz" % (context.path(), context.config("output_prefix")))
 
