@@ -17,11 +17,10 @@ line to $GITHUB_STEP_SUMMARY, so a skipped review is never silent.
 
 review runs `claude -p` (Claude Code in print mode) with the API key in ANTHROPIC_API_KEY,
 the tier's model, turn and budget limits, read-only tools and a JSON schema for the findings,
-and writes the CLI's JSON result to --out. It deliberately does not use
-anthropics/claude-code-action: runs started by that action count as Claude Code usage, which
-the monthly API credits of Claude Team/Max plans do not cover, whereas `claude -p` run with an
-API key of the linked Console organization is covered (Claude Help Center article 17154008,
-"Monthly API credits for Max and Team plans"). The model only reads; posting is done here.
+and writes the CLI's JSON result to --out. It hands the model the PR diff with the new-file
+line number in front of every line, so the model can cite lines GitHub accepts. Why it runs
+`claude -p` and not anthropics/claude-code-action: see the note below. The model only reads;
+posting is done here.
 
 post turns the findings into one PR review with inline comments on changed lines, and keeps
 one summary comment per PR up to date (edited in place). A finding whose line is not part of
@@ -114,10 +113,18 @@ def matches_any(path: str, patterns) -> bool:
     return any(glob_to_regex(pattern).match(path) for pattern in patterns)
 
 
+def git_lines(text: str, keepends: bool = False) -> list:
+    """Split git output on "\\n" only. str.splitlines() also splits on \\x0b, \\x0c, \\x1c-\\x1e,
+    \\x85 and \\u2028/\\u2029, which can occur INSIDE a source line, and would put the hunk line
+    counts out of step (Claude review finding on PR #497)."""
+    lines = re.split(r"(?<=\n)", text) if keepends else text.split("\n")
+    return lines[:-1] if lines and lines[-1] == "" else lines
+
+
 def parse_numstat(text: str) -> list:
     """Parse `git diff --numstat` lines into (path, changed_lines); binary files count 0 lines."""
     entries = []
-    for line in text.splitlines():
+    for line in git_lines(text):
         if not line.strip():
             continue
         parts = line.split("\t")
@@ -186,7 +193,7 @@ def read_result_record(execution_file: Path) -> dict:
         data = json.loads(text)
         messages = data if isinstance(data, list) else [data]
     except json.JSONDecodeError:
-        messages = [json.loads(line) for line in text.splitlines() if line.strip()]
+        messages = [json.loads(line) for line in git_lines(text) if line.strip()]
     results = [m for m in messages if isinstance(m, dict) and m.get("type") == "result"]
     if not results:
         raise ValueError(f"no 'result' message in {execution_file}")
@@ -244,28 +251,31 @@ def claude_command(claude_bin: str, tier_cfg: dict, allowed_tools: list) -> list
     ]
 
 
-def commentable_lines(diff_text: str) -> dict:
-    """Map each file of a unified diff to the NEW-side line numbers GitHub accepts inline comments on
-    (added and context lines inside hunks)."""
-    lines_by_path: dict = {}
+def walk_diff(diff_text: str):
+    """Yield ``(raw line, path, new-side line number or None)`` for every line of a unified diff.
+
+    The number is set for added and context lines inside a hunk (the lines GitHub accepts
+    inline comments on) and None for headers, deleted lines and "\\ No newline" markers. A hunk
+    ends when the line counts of its header are used up; only then are header lines read, so an
+    added line "++ x" (shown as "+++ x") is content, not a "+++ b/file" header (Claude review
+    finding on PR #497)."""
     path = None
     new_line = old_left = new_left = 0
-    for raw in diff_text.splitlines():
-        # A hunk ends when the line counts of its header are used up. Only then are header lines
-        # read: an added line "++i;" appears as "+++i;" and must not be taken for a "+++ b/file" header
-        # (Claude review finding on PR #497).
+    for raw in git_lines(diff_text):
         if old_left > 0 or new_left > 0:
             # A context line of an empty source line may arrive as "" when trailing blanks are stripped.
-            if path is not None and (raw.startswith("+") or raw.startswith(" ") or raw == ""):
-                lines_by_path.setdefault(path, set()).add(new_line)
             if raw.startswith("+"):
+                yield raw, path, new_line
                 new_line, new_left = new_line + 1, new_left - 1
             elif raw.startswith(" ") or raw == "":
+                yield raw, path, new_line
                 new_line, new_left, old_left = new_line + 1, new_left - 1, old_left - 1
-            elif raw.startswith("-"):
-                old_left -= 1
-            # "\ No newline at end of file" is no line on either side.
-        elif raw.startswith("diff --git "):
+            else:
+                if raw.startswith("-"):
+                    old_left -= 1
+                yield raw, path, None
+            continue
+        if raw.startswith("diff --git "):
             path = None
         elif raw.startswith("+++ "):
             target = raw[4:].strip()
@@ -277,7 +287,27 @@ def commentable_lines(diff_text: str) -> dict:
             old_left = int(match.group(1)) if match.group(1) is not None else 1
             new_line = int(match.group(2))
             new_left = int(match.group(3)) if match.group(3) is not None else 1
+        yield raw, path, None
+
+
+def commentable_lines(diff_text: str) -> dict:
+    """Map each file of a unified diff to the NEW-side line numbers GitHub accepts inline comments on
+    (added and context lines inside hunks)."""
+    lines_by_path: dict = {}
+    for _, path, number in walk_diff(diff_text):
+        if path is not None and number is not None:
+            lines_by_path.setdefault(path, set()).add(number)
     return lines_by_path
+
+
+def number_diff(diff_text: str) -> str:
+    """The diff as the model reads it: every added or context line carries its new-file line
+    number left of a "|", other lines a blank column. The first review runs cited line numbers
+    of the diff file itself (e.g. 723 in a 650-line script), so every finding landed off the diff."""
+    out = []
+    for raw, _, number in walk_diff(diff_text):
+        out.append(f"{number:>6} |{raw}" if number is not None else f"{'':>6} |{raw}")
+    return "\n".join(out) + ("\n" if out else "")
 
 
 def read_findings(result: dict) -> dict:
@@ -376,7 +406,7 @@ def filter_diff(diff_text: str, ignored_patterns) -> tuple:
             (dropped.append(section_path) if section_path and matches_any(section_path, ignored_patterns)
              else kept.extend(section))
 
-    for line in diff_text.splitlines(keepends=True):
+    for line in git_lines(diff_text, keepends=True):
         if line.startswith("diff --git "):
             flush()
             section = [line]
@@ -491,8 +521,12 @@ def _cmd_review(args) -> int:
                                      config.get("ignored_paths", []))
     diff_path = Path(args.diff_out)
     diff_path.parent.mkdir(parents=True, exist_ok=True)
+    # Raw diff for `post` (it maps findings onto diff lines); numbered copy for the model.
     diff_path.write_text(diff_text, encoding="utf-8")
-    print(f"[claude-review] diff of PR {args.pr}: {len(diff_text.splitlines())} lines -> {diff_path.as_posix()}; "
+    numbered_path = diff_path.with_name(diff_path.name + ".numbered")
+    numbered_path.write_text(number_diff(diff_text), encoding="utf-8")
+    print(f"[claude-review] diff of PR {args.pr}: {len(git_lines(diff_text))} lines -> {diff_path.as_posix()} "
+          f"(model reads {numbered_path.as_posix()}); "
           f"{len(dropped)} ignored file(s) left out" + (f": {', '.join(dropped[:10])}" if dropped else ""))
     if not diff_text.strip():
         print("::warning::Nothing left to review after dropping ignored paths; no model call.")
@@ -502,7 +536,7 @@ def _cmd_review(args) -> int:
                                                   "findings": []}}), encoding="utf-8")
         return 0
     prompt = build_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"),
-                          args.repo, args.pr, args.tier, args.sha, diff_path.as_posix())
+                          args.repo, args.pr, args.tier, args.sha, numbered_path.as_posix())
     claude_bin = shutil.which(args.claude_bin) or args.claude_bin
     if not os.environ.get("ANTHROPIC_API_KEY"):
         # claude --bare authenticates only with this key; fail here with a clear message instead.
@@ -564,7 +598,8 @@ def _cmd_post(args) -> int:
         print(f"[claude-review] findings record written to {args.record}")
     if args.dry_run:
         return 0
-    upsert_summary(args.repo, args.pr, args.bot_login, body)
+    head = _gh_api([f"repos/{args.repo}/pulls/{args.pr}", "--jq", ".head.sha"]).strip()
+    upsert_summary(args.repo, args.pr, args.bot_login, body, stale=bool(head) and head != args.sha)
     return 0
 
 
@@ -575,14 +610,19 @@ def _summary_ids(repo: str, pr: int, bot_login: str) -> list:
     return _gh_api([f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", select]).split()
 
 
-def upsert_summary(repo: str, pr: int, bot_login: str, body: str) -> None:
+def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = False) -> None:
     """Keep exactly one summary comment: edit the oldest, or create one.
 
     A forced review (label event) and a push review run in different concurrency groups and can
     post at the same time; both may then find no summary and create one each (Claude review
     finding on PR #497). After writing, the oldest summary is kept with this body and any later
-    duplicate is deleted, so whichever run finishes last leaves one current comment."""
+    duplicate is deleted. ``stale``: this run reviewed a commit that is no longer the PR head; it
+    then leaves an existing summary alone, so a slower review of an older commit cannot replace
+    the summary of the newer one (Claude review finding on PR #497). Its inline comments stay."""
     existing = _summary_ids(repo, pr, bot_login)
+    if stale and existing:
+        print("::notice::This review is of an older commit than the PR head; the summary is left as it is.")
+        return
     if existing:
         _gh_api([f"repos/{repo}/issues/comments/{existing[0]}", "--method", "PATCH"], {"body": body})
         written = existing[0]

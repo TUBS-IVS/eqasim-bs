@@ -77,11 +77,16 @@ decision, including a skip, is printed with its reason to the log and the job su
   cannot post anything. The script builds the PR diff itself (`git diff base...head` in CI,
   which has no API size limit; `gh pr diff` without `--base-sha`), drops the file sections
   that match `ignored_paths` (logged by count and path; a PR with only ignored files makes no
-  model call), and writes it to `.claude/review-pr.diff` inside the checkout, which the
-  model pages through with Read;
-  a local test run (2026-10-23) showed that with `gh pr diff` as a tool the model piped it
-  into grep/awk, which the read-only tool list denied, and reviewed only part of the diff.
-  The prompt goes in on stdin; the JSON result goes to a file.
+  model call), and writes it to `.claude/review-pr.diff` inside the checkout. The model pages
+  through a numbered copy (`.claude/review-pr.diff.numbered`, `number_diff`): every added
+  and context line carries its new-file line number, which is the `line` the model must
+  cite. A local test run (2026-10-23) showed that with `gh pr diff` as a tool the model piped
+  it into grep/awk, which the read-only tool list denied, and reviewed only part of the diff;
+  the first CI runs on the plain diff file cited line numbers of the diff file itself
+  (`claude_review.py:723` in a 650-line script), so every finding landed off the diff. Git
+  output is split on `\n` only (`git_lines`): `str.splitlines()` also splits on characters
+  such as ` ` that can occur inside a source line. The prompt goes in on stdin; the
+  JSON result goes to a file.
 - `post` turns the findings into one PR review (`event: COMMENT`) whose inline comments sit
   on new-side lines of the diff (`commentable_lines`, which follows the line counts of each
   hunk header, so an added line starting with `++ ` is content, not a file header), ordered
@@ -90,7 +95,9 @@ decision, including a skip, is printed with its reason to the log and the job su
   warning fires when every finding lies outside the diff. The summary comment carries a
   hidden marker; only a comment by `github-actions[bot]` with that marker is edited
   (`upsert_summary`). A forced and a push review can post at the same time, so after writing,
-  the oldest summary keeps the current body and any duplicate is deleted. A failed run
+  the oldest summary keeps the current body and any duplicate is deleted. A run whose commit
+  is no longer the PR head leaves an existing summary alone, so a slower review of an older
+  commit cannot replace the newer one; its inline comments are still posted. A failed run
   (`is_error`) posts nothing and fails the step with the API's error text. The diff is read
   with `errors="replace"`: a non-UTF-8 byte (e.g. in a Latin-1 data file) must not crash
   the review.

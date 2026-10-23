@@ -272,3 +272,36 @@ def test_upsert_summary_leaves_one_comment_when_a_parallel_run_also_created_one(
     cr.upsert_summary("o/r", 5, "github-actions[bot]", "body")
     assert store["comments"] == [101]
     assert ("repos/o/r/issues/comments/101", "PATCH") in calls     # the kept comment carries this run's body
+
+
+def test_number_diff_gives_the_model_new_file_line_numbers_that_post_accepts():
+    # The first real runs cited line numbers of the diff FILE (723 in a 650-line script), so every
+    # finding fell off the diff; each number the model sees must be a commentable line.
+    numbered = cr.number_diff(_DIFF)
+    cited = {}
+    for line in numbered.splitlines():
+        column, _, raw = line.partition("|")
+        if column.strip():
+            cited.setdefault(raw, int(column))
+    assert cited["+    added = 3"] == 12 and cited["     tail = 4"] == 13 and cited["+    x = 2"] == 41
+    assert set(cited.values()) <= cr.commentable_lines(_DIFF)["braunschweig/a.py"]
+    assert "      |-    old = 2" in numbered               # deleted lines carry no number
+
+
+def test_a_line_separator_inside_a_source_line_does_not_shift_the_hunk_counts():
+    # str.splitlines() would split "+a b" into two lines and push every later line off by one.
+    diff = ("diff --git a/x.md b/x.md\n--- a/x.md\n+++ b/x.md\n@@ -1,1 +1,3 @@\n"
+            " keep\n+a b\n+last\n")
+    assert cr.commentable_lines(diff) == {"x.md": {1, 2, 3}}
+
+
+def test_a_stale_review_leaves_the_newer_summary_alone(monkeypatch):
+    calls = []
+
+    def fake_gh_api(args, payload=None):
+        calls.append(args)
+        return "101" if args[0].endswith("/issues/5/comments") else "{}"
+
+    monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
+    cr.upsert_summary("o/r", 5, "github-actions[bot]", "older review", stale=True)
+    assert not any("PATCH" in call or "POST" in call for call in calls)
