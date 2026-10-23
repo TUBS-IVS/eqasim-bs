@@ -70,7 +70,9 @@ link) remains the tool for a long-lived server worktree that follows `main`.
 
 **The cache is copied physically, into `cache.partial` first.** `cp -a`, never `cp -al`: synpp
 rewrites a re-executed stage in place, and through a hard link that write lands in the source
-run's cache. The i409 smoke saw exactly that
+run's cache. The i409 smoke demonstrated the mechanism: a stage with an unchanged hash was
+re-executed and its artifact rewritten through the hard link; only because that source was
+itself a working copy did no production cache change
 ([run manifest](../../runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml), part 3).
 The copy goes into `RUN_DIR/cache.partial`, is compared with the source (files, links, bytes)
 and only then renamed, so an interrupted copy never looks complete. `setup` refuses an existing

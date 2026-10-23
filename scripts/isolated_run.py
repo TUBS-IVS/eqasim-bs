@@ -126,8 +126,12 @@ class IsolatedRunError(Exception):
 
 
 def _run_command(argv, cwd=None, env=None) -> subprocess.CompletedProcess:
-    return subprocess.run([str(item) for item in argv], cwd=None if cwd is None else str(cwd), env=env,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+    argv = [str(item) for item in argv]
+    try:
+        return subprocess.run(argv, cwd=None if cwd is None else str(cwd), env=env, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", check=False)
+    except OSError as error:  # program or cwd missing: reported by the caller like any failed command
+        return subprocess.CompletedProcess(argv, 127, "", str(error))
 
 
 @dataclasses.dataclass
@@ -859,7 +863,8 @@ def _symlink_farm(host: Host, repository: RepositoryPlan, shared_data: Path, dry
         entries = scan_target_entries(target)
     plan = plan_symlink_farm(shared_data, entries)
     print(f"  symlink farm {shared_data} -> {target}: {len(plan.links)} links, {len(plan.kept)} tracked entries "
-          f"of the commit kept, run state excluded: {', '.join(plan.excluded) or '-'}")
+          f"of the commit kept, {len(plan.excluded)} top-level run-state entries excluded (caches, outputs, popsim "
+          "work dirs, resolved configs, logs)")
     if not plan.links and "link" not in entries.values():
         print(f"WARNING: the symlink farm links nothing; the gitignored inputs of {shared_data} will be missing "
               "from the run (wrong --shared-data?)", file=sys.stderr)
@@ -1117,8 +1122,11 @@ def cmd_launch(args, host: Host) -> int:
 
     script = build_launch_script(name, bs_dir, run_yml, java_home, conda_sh, args.conda_env)
     with open(log_path, "ab") as log_handle:
-        process = host.popen(["setsid", "nohup", "bash", "-c", script], cwd=str(bs_dir), stdin=subprocess.DEVNULL,
-                             stdout=log_handle, stderr=subprocess.STDOUT, close_fds=True)
+        try:
+            process = host.popen(["setsid", "nohup", "bash", "-c", script], cwd=str(bs_dir),
+                                 stdin=subprocess.DEVNULL, stdout=log_handle, stderr=subprocess.STDOUT, close_fds=True)
+        except OSError as error:
+            raise IsolatedRunError(f"cannot start the launch (setsid, nohup and bash must be on PATH): {error}")
     entry = {"time": _iso(host), "pid": process.pid, "log": str(log_path), "run_yml_sha256": _sha256_file(run_yml),
              "gate": "forced-off" if gate_problem else "gated", "java_home": str(java_home),
              "conda_env": args.conda_env,
@@ -1252,6 +1260,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None, host: Optional[Host] = None) -> int:
+    # Warnings and errors go to stderr; line buffering keeps them in order with stdout in one log.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(line_buffering=True)
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args, host or Host())

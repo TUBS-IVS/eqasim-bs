@@ -257,6 +257,17 @@ def test_overlay_points_run_state_into_the_run_and_keeps_every_scientific_key(ro
     assert load_record(run_dir)["overlay"]["source"] == str(source)
 
 
+def test_gate_list_from_a_real_explain_report_equals_the_hand_made_one():
+    # The WP-E smoke's first launch: its committed explain report and the gate list the session built by hand
+    # from it. Guards the parser against the real report format (config-diff brackets, header noise).
+    artifacts = Path(__file__).resolve().parents[1] / "docs" / "runs" / "artifacts" / "i465-wpe-smoke-1pct-2026-10-23"
+    report = tool.parse_explain_report((artifacts / "explain_first_launch.txt").read_text(encoding="utf-8"))
+    hand_made = load_yaml(artifacts / "i465_wpe.yml")["config"][tool.GATE_KEY]
+
+    assert report.stale == sorted(hand_made)
+    assert report.statuses[tool.POPSIM_STAGE] == "HIT"
+
+
 def test_explain_report_that_does_not_add_up_is_refused():
     # a parser that silently missed STALE lines would write a gate list that lets those stages through
     with pytest.raises(tool.IsolatedRunError, match="does not add up"):
