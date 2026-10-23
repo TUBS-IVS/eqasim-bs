@@ -66,6 +66,12 @@ PT_MODE = "pt"
 #: The jar entry whose constant pool holds the attribute name when the Java fork stamps the fallback legs
 #: (``PlanRouter.WALK_FALLBACK_ATTRIBUTE``, eqasim-bs#465).
 PLAN_ROUTER_CLASS_ENTRY = "org/eqasim/core/scenario/routing/PlanRouter.class"
+#: The jar entry of the scenario cutter's plan cutter. It rebuilds every cut trip from fresh legs; when it keeps the
+#: stamp of a walk-fallback trip, javac inlines ``PlanRouter.WALK_FALLBACK_ATTRIBUTE`` into its constant pool. A
+#: cutter without the name drops the stamp of every trip it rebuilds (eqasim-bs#487).
+PLAN_CUTTER_CLASS_ENTRY = "org/eqasim/core/scenario/cutter/population/PlanCutter.class"
+#: The classes that must carry the stamp, with the issue that introduced each requirement.
+STAMP_CLASS_ENTRIES = ((PLAN_ROUTER_CLASS_ENTRY, "#465"), (PLAN_CUTTER_CLASS_ENTRY, "#487"))
 #: Leg modes that make a pt-intended trip "walk-only" (no pt leg was produced).
 WALK_MODES = frozenset({"walk", "non_network_walk"})
 #: Activity types ending like this are router-made trip stops (``pt interaction``); they do not end a trip.
@@ -391,34 +397,37 @@ def _log_summary(summary: dict) -> None:
 
 
 def require_walk_fallback_stamp(jar_path) -> None:
-    """Raise unless the eqasim jar at ``jar_path`` stamps the legs ``PlanRouter.fixOnlyWalk`` replaced (#465).
+    """Raise unless the eqasim jar at ``jar_path`` stamps the walk fallback and keeps the stamp through the cut.
 
-    A jar built before the stamp was added writes no ``walkFallbackFrom`` leg attribute, so ``n_pt_as_walk`` would
-    read 0 whatever the router did: a silent failure. The check opens ``PLAN_ROUTER_CLASS_ENTRY`` and requires the
-    attribute name ``WALK_FALLBACK_ATTRIBUTE`` (UTF-8, as the class constant pool holds it) in its bytes. Raises
-    ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a file that is no zip archive, a jar without
-    the class, or a class without the name; the message names the jar and the fix. Logs one INFO line on success.
+    A jar built before the stamp was added (#465) writes no ``walkFallbackFrom`` leg attribute, and a jar whose
+    scenario cutter rebuilds the cut trips without it (#487) keeps only the stamps of the cutter's own routing; in
+    both cases ``n_pt_as_walk`` undercounts whatever the router did: a silent failure. The check opens every entry
+    of ``STAMP_CLASS_ENTRIES`` and requires the attribute name ``WALK_FALLBACK_ATTRIBUTE`` (UTF-8, as the class
+    constant pool holds it) in its bytes. Raises ``FileNotFoundError`` for a missing jar and ``RuntimeError`` for a
+    file that is no zip archive, a jar without one of the classes, or a class without the name; the message names
+    the jar, the class, the issue and the fix. Logs one INFO line on success.
     """
     path = Path(jar_path)
     if not path.is_file():
         raise FileNotFoundError(f"{_LOG_TAG} the eqasim jar to check for the walk fallback stamp does not exist: {path}")
-    fix = ("rebuild the jar from an eqasim-java-bs revision with the walk fallback stamp (check it out in the tree "
-           "eqasim_source_path points to), see eqasim-bs#465")
     try:
         with zipfile.ZipFile(path) as jar:
-            try:
-                class_bytes = jar.read(PLAN_ROUTER_CLASS_ENTRY)
-            except KeyError:
-                raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} does not contain {PLAN_ROUTER_CLASS_ENTRY}; "
-                                   f"{fix}") from None
+            for entry, issue in STAMP_CLASS_ENTRIES:
+                fix = ("rebuild the jar from an eqasim-java-bs revision with the walk fallback stamp (check it out in "
+                       f"the tree eqasim_source_path points to), see eqasim-bs{issue}")
+                try:
+                    class_bytes = jar.read(entry)
+                except KeyError:
+                    raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} does not contain {entry}; {fix}") from None
+                if WALK_FALLBACK_ATTRIBUTE.encode("utf-8") not in class_bytes:
+                    raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} predates the walk fallback stamp: its "
+                                       f"{entry} does not contain {WALK_FALLBACK_ATTRIBUTE}, so pt-to-walk fallbacks "
+                                       f"would not be stamped or would lose the stamp and the pt-as-walk count would "
+                                       f"undercount; {fix}")
     except zipfile.BadZipFile as error:
         raise RuntimeError(f"{_LOG_TAG} cannot read the eqasim jar {path} as a zip archive: {error}") from error
-    if WALK_FALLBACK_ATTRIBUTE.encode("utf-8") not in class_bytes:
-        raise RuntimeError(f"{_LOG_TAG} the eqasim jar {path} predates the walk fallback stamp: its "
-                           f"{PLAN_ROUTER_CLASS_ENTRY} does not contain {WALK_FALLBACK_ATTRIBUTE}, so no pt-to-walk "
-                           f"fallback would be stamped and the pt-as-walk count would read 0 whatever happened; {fix}")
     logger.info("%s the eqasim jar %s stamps the walk fallback (%s found in %s)", _LOG_TAG, path,
-                WALK_FALLBACK_ATTRIBUTE, PLAN_ROUTER_CLASS_ENTRY)
+                WALK_FALLBACK_ATTRIBUTE, ", ".join(entry for entry, _ in STAMP_CLASS_ENTRIES))
 
 
 def run(context, config_name: str) -> dict:

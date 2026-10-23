@@ -291,10 +291,14 @@ RUN_POPULATION = """<?xml version="1.0" encoding="utf-8"?>
 JAR_NAME = "eqasim.jar"
 
 
-def _write_stub_jar(path, class_bytes=b"\xca\xfe\xba\xbe walkFallbackFrom", entry=C.PLAN_ROUTER_CLASS_ENTRY):
-    """A tiny zip standing in for the eqasim jar: one entry with the given bytes."""
+def _write_stub_jar(path, class_bytes=b"\xca\xfe\xba\xbe walkFallbackFrom", entry=None,
+                    cutter_bytes=b"\xca\xfe\xba\xbe walkFallbackFrom"):
+    """A tiny zip standing in for the eqasim jar: the plan router class with ``class_bytes`` (or, with ``entry``,
+    that entry instead) and the plan cutter class with ``cutter_bytes`` (``None`` leaves it out)."""
     with zipfile.ZipFile(path, "w") as jar:
-        jar.writestr(entry, class_bytes)
+        jar.writestr(entry or C.PLAN_ROUTER_CLASS_ENTRY, class_bytes)
+        if cutter_bytes is not None:
+            jar.writestr(C.PLAN_CUTTER_CLASS_ENTRY, cutter_bytes)
     return path
 
 
@@ -502,6 +506,20 @@ def test_require_walk_fallback_stamp_raises_naming_the_jar(tmp_path, make_jar, e
     with pytest.raises(error, match=match) as excinfo:
         C.require_walk_fallback_stamp(jar)
     assert str(jar) in str(excinfo.value)
+
+
+@pytest.mark.parametrize("cutter_bytes, match", [
+    (b"\xca\xfe\xba\xbe the cutter drops the stamp", "PlanCutter.class does not contain walkFallbackFrom"),
+    (None, "does not contain org/eqasim/core/scenario/cutter/population/PlanCutter.class"),
+])
+def test_require_walk_fallback_stamp_raises_on_a_jar_whose_cutter_drops_the_stamp(tmp_path, cutter_bytes, match):
+    # eqasim-bs#487: a jar whose PlanRouter stamps but whose PlanCutter rebuilds the cut trips without the stamp
+    # lets the plan check count only the fallbacks of the cutter's own routing; the cutter class must hold the
+    # attribute name too (javac inlines the PlanRouter constant into its constant pool).
+    jar = _write_stub_jar(tmp_path / "old_cutter.jar", cutter_bytes=cutter_bytes)
+    with pytest.raises(RuntimeError, match=match) as excinfo:
+        C.require_walk_fallback_stamp(jar)
+    assert str(jar) in str(excinfo.value) and "#487" in str(excinfo.value)
 
 
 def test_a_stale_jar_message_names_the_fix_and_the_issue(tmp_path):
