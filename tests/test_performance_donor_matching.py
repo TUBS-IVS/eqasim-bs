@@ -379,6 +379,8 @@ def test_completed_donor_execute_forwards_matching_performance_flag(
             "braunschweig.population.popsim.drop_leading_arrive_home_leg": True,
             "braunschweig.population.popsim.diary_match_hard_employment": True,
             "braunschweig.population.popsim.donor_match_fine_child_age_bands": True,
+            "braunschweig.population.popsim.donor_match_passenger_access": True,
+            "braunschweig.population.popsim.donor_match_lift_free_never_passenger": True,
             "braunschweig.performance.donor_matching": precompute_matching,
             "mid_passenger_availability": passenger_availability_enabled,
         }
@@ -396,3 +398,5 @@ def test_completed_donor_execute_forwards_matching_performance_flag(
     cd.execute(Context())
     assert captured["precompute_matching"] is precompute_matching
     assert captured["passenger_availability_enabled"] is passenger_availability_enabled
+    assert captured["donor_match_passenger_access"] is True
+    assert captured["donor_match_lift_free_never_passenger"] is True

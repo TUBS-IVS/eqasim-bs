@@ -25,7 +25,7 @@ may only name run manifests (no run, no claim).
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
 | [departure_time_model](../registry/features/departure_time_model.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
-| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 22 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
+| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 24 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [driving_licence_enrichment](../registry/features/driving_licence_enrichment.yml) | attributes | active | off | -/-/A | 1 | -- | none | committed | unvalidated | pending |
 | [economic_status_bayes](../registry/features/economic_status_bayes.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
@@ -76,7 +76,7 @@ may only name run manifests (no run, no claim).
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
-| [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 9 | proven | marker | committed | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | pending |
+| [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 8 | proven | marker | committed | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [parking_cost_zones](../registry/features/parking_cost_zones.yml) | matsim | experimental | ON | A/A/- | 36 | proven | marker | committed | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | pending |

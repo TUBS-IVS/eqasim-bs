@@ -117,3 +117,26 @@ def test_the_population_writer_applies_the_margin_only_when_enabled(tmp_path, mo
 
     expected_last_arrival = 29.0 * H if enabled else 30.0 * H
     assert written["trips"]["arrival_time"].max() == expected_last_arrival
+
+
+@pytest.mark.parametrize("enabled, routed_check, expected", [
+    (True, True, ["--latest-last-arrival", "104400"]),   # 30 h - 3600 s
+    (True, False, []),
+    (False, True, []),
+])
+def test_the_prepare_stage_passes_the_routed_day_end_to_the_population_routing(enabled, routed_check, expected):
+    """ADR-0160: the routing repeats the day-end rule with the ROUTED travel times (person 1125404 of the 1 %
+    rerun of the #465 fixes ended at 29:00 by its survey times and after 30 h by its routed 132 km car trip)."""
+    import matsim.simulation.prepare as prepare
+
+    config = {"output_prefix": "x_", M.KEY_ENABLED: enabled, M.KEY_ROUTED_CHECK: routed_check,
+              M.KEY_LAST_ARRIVAL_MARGIN_S: H}
+
+    class _Context:
+        def config(self, name, default=None):
+            return config[name]
+
+    arguments = prepare.population_routing_arguments(_Context(), 8)
+    assert arguments[:8] == ["--config-path", "x_config.xml", "--output-path", "x_population.xml.gz",
+                             "--threads", 8, "--config:plans.inputPlansFile", "prepared_population.xml.gz"]
+    assert arguments[8:] == expected

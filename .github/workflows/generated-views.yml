@@ -1,0 +1,77 @@
+name: Rebuild generated documentation views
+
+# ADR-0168: docs/generated/*.md are committed on main only. Pull requests leave
+# them at main's state (docs.yml fails one that changes them), so sibling pull
+# requests never conflict there on GitHub. After every push to main this
+# workflow rebuilds the views from the merged registries and, when they
+# changed, lands them through a bot pull request that it merges at once: the
+# main ruleset requires a pull request (0 approvals), so a direct push is
+# refused. Pushes made with the workflow token start no workflow, so the bot
+# merge does not re-trigger this one.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: generated-views
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    env:
+      BOT_BRANCH: bot/generated-views
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the newest main, not the triggering commit: a queued run must not land older views
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install metadata dependencies
+        run: pip install pyyaml
+      - name: Rebuild the generated views
+        run: python -m braunschweig.documentation build --no-dag
+      - name: Find changed views
+        id: changed
+        run: |
+          changed="$(git status --porcelain -- docs/generated)"
+          if [ -z "$changed" ]; then
+            echo "::notice::docs/generated/ on main is fresh; nothing to commit."
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$changed"
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Strict documentation check of the rebuilt tree
+        if: steps.changed.outputs.any == 'true'
+        run: python -m braunschweig.documentation check --quiet --no-dag --strict-views
+      - name: Land the rebuilt views through a bot pull request
+        if: steps.changed.outputs.any == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base="$(git rev-parse --short HEAD)"
+          git switch -c "$BOT_BRANCH"
+          git add -- docs/generated
+          git commit -m "Rebuild the generated documentation views from main (ADR-0168)" \
+                     -m "Built from main at ${base} by the generated-views workflow, run ${GITHUB_RUN_ID}."
+          git push --force origin "HEAD:refs/heads/$BOT_BRANCH"
+          head="$(git rev-parse HEAD)"
+          pr="$(gh pr list --head "$BOT_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            gh pr create --base main --head "$BOT_BRANCH" \
+              --title "Rebuild the generated documentation views (ADR-0168)" \
+              --body "Automatic rebuild of \`docs/generated/\` after a merge to main (workflow run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). It changes only generated views; \`documentation check --strict-views\` passed on this tree."
+          fi
+          gh pr merge "$BOT_BRANCH" --squash --delete-branch --match-head-commit "$head"
+          echo "::notice::Landed the rebuilt generated views on main."
