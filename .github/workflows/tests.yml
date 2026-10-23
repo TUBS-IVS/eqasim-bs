@@ -27,7 +27,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          miniforge-version: latest
+          # Pinned, not "latest": Miniforge3 26.9.4-0 (released 2026-10-22) fails on the Windows
+          # runner in setup-miniconda's conda init ("needs sudo ... conda.exe", exit 1) before any
+          # test runs (run 39978419378 on main); 26.7.2-1 was the last version green on both
+          # platforms (run 39966999531). Bump deliberately and watch the Windows job.
+          miniforge-version: 26.7.2-1
           activate-environment: lock-tools
           python-version: "3.11"
       - name: Install production Linux snapshot
