@@ -118,6 +118,10 @@ The outcome is read from the replies in the finding's review thread, so answer e
 - no such reply: `resolved` / `open`, recorded as tentative evidence only. A summary-only
   finding has no thread and stays `unknown`.
 
+With the desktop app's Auto-fix on for a PR, the session fixes the reported findings and
+pushes the fix without a separate yes; the scope of that standing exception is in
+`CLAUDE.md` ("Git and version control").
+
 ## Cost record
 
 After every review, `claude_review.py cost` reads the `claude -p` JSON result and reports
