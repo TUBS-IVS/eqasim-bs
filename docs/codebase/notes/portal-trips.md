@@ -86,6 +86,10 @@ other keys: `external_point_distance_tolerance` (0, 1), `mode_substitution_warn_
   in the stage's `gate_usage`.
 - **Same gate and same mode out and back.** Do not give the return leg its own mode or gate; the discrete mode
   choice's `VehicleContinuity` relies on it.
+- **The stay's mode fixes its gate class, so check soft modes here** (ADR-0163). outside_tour_modes (ADR-0145)
+  re-modes a tour only within its gate class (rail exit stop for pt, road gate otherwise). A walk / bicycle stay
+  beyond `walk_max_distance_m` / `bicycle_max_distance_m` of a person without car or car_passenger therefore has
+  to become pt in this stage; a later stage cannot move it to a rail gate.
 - **The OFF path is byte-identical.** With `braunschweig.portal.enabled: false` the stage returns the input frame
   and an empty anchors frame, the chain solver adds no anchors, the CDFs and candidates are unbounded and the
   population writer sets no marker. The tests that pin it are listed in the feature record.
@@ -258,6 +262,7 @@ primary method is broken" warns above `braunschweig.portal.fallback_warn_share`.
 | `stay persons have no has_license value` | Persons treated as unlicensed in the car check. |
 | `donor outbound mode the mode check does not know` | Modes outside the substitution table; kept unchecked. |
 | `mode substituted for a/b stays` | Mode substitutions by reason; warns above `mode_substitution_warn_share`. |
+| `soft-mode (walk/bicycle) stays beyond their maximum distance` | Far walk / bicycle stays (ADR-0163): those made pt for want of a car or car-passenger mode, and those left at a road gate for outside_tour_modes. |
 
 Outside the stage: the population writer logs `re-moded car -> car_passenger: a/b car legs ..., of which c
 portal legs` (the pre-existing carless re-mode shim, now counted), the distance-distribution stage logs the
