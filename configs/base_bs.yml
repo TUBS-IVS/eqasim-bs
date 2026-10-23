@@ -641,6 +641,12 @@ config:
   # RVB VISUM Verkehrszellen data (gitignored). Default OFF; set to true only
   # in configs where that proprietary parquet is present.
   taz_work_location_choice: false
+  # Persons <- sampled primary locations of one origin zone (ADR-0164, #465): the locations farther than
+  # primary_location_far_class_min_distance_m (straight line from the zone's mean home) go by rank to the persons
+  # with the longest donor commute distances; the rest keep the upstream greedy on exact home distances. false =
+  # the upstream greedy over the whole zone (byte-identical). The flows per origin zone are unchanged either way.
+  primary_location_far_class_rank: true
+  primary_location_far_class_min_distance_m: 30000
 
   # --- Education gravity (real NDS schools / Kita / Hochschule) ---
   education_gravity_enabled: true
@@ -653,6 +659,11 @@ config:
   education_bbs_share: 0.681
   education_university_slope: -0.1415
   education_university_max_radius_km: 150.0
+  # Adult education (#465): from 30 on, education activities are placed among all schools and universities (uniform
+  # weights) by distance decay instead of at a university. ASSUMPTIONS (age, slope, radius), not calibrated.
+  education_adult_min_age: 30
+  education_adult_slope: -0.15
+  education_adult_max_radius_km: 30.0
 
   # --- Vehicle fleet (all features ON) ---
   vehicles_method: household
@@ -865,6 +876,12 @@ config:
   braunschweig.portal.max_routable_distance_m: 45000
   braunschweig.portal.external_point_distance_tolerance: 0.2
   braunschweig.portal.mode_substitution_warn_share: 0.1
+  # Straight-line metres (stay origin -> destination) beyond which a walk / bicycle portal stay is implausible
+  # (ADR-0163, #465): the lower edge of the first SrV 2023 band (group all) where the mode's share falls below the
+  # outside_tour_modes.min_share of 0.01. Such a stay becomes pt when the person can use neither car nor
+  # car_passenger, otherwise outside_tour_modes re-modes it within its road gate class.
+  braunschweig.portal.walk_max_distance_m: 5000
+  braunschweig.portal.bicycle_max_distance_m: 30000
   # Outside-tour modes (ADR-0145, #453): a tour that touches an outside activity keeps its diary mode for
   # the whole run (OutsideFilter), so its mode is judged against the SrV share at its realised distance
   # before the plans are written; below min_share the whole tour gets a substitute drawn from the same

@@ -1,0 +1,64 @@
+id: i465-primary-assignment-measure-1pct-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: ee6f8731
+  branch: fix/i465-primary-rank-matching
+  notes: >-
+    The measured code is commit ee6f8731 of fix/i465-primary-rank-matching (local, not pushed at the time),
+    exported with git archive into felix:~/scratch_i465_portalwalk/repo_ee6f8731 (scripts/ and synthesis/ only).
+    The cached inputs were produced by the 1 % rerun of the #465 fixes (local integration branch
+    integration/i465-rerun2, felix working directory ~/wt-i487-rerun/cache_rerun), which uses the upstream greedy.
+    This manifest is a MEASUREMENT over that run's cached stage outputs, not a pipeline run of its own.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    The rerun's configuration (taz_work_location_choice false, education_gravity_enabled true); the far-class
+    distance of the measured variant is 30000 m (the default of ADR-0164).
+sampling:
+  rate: 1 % (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on
+  notes: >-
+    3,920 workers (persons with a work trip in the candidates stage); every count is a sample count, never
+    expanded.
+pipeline:
+  targets:
+  - synthesis.population.spatial.primary.locations
+  notes: 'scripts/measure_primary_location_assignment.py --cache-dir ~/wt-i487-rerun/cache_rerun with the pickles
+    synthesis.population.spatial.primary.candidates__80f34f2532fe7db67cd045fb706ad8f1.p,
+    braunschweig.synthesis.locations.home_cell__66c5a564795a5a523cbe65490547c7a2.p,
+    braunschweig.popsim.commute_distance__4ff0e9266af349c1b80d703948bdee29.p,
+    braunschweig.locations.work__1a0249bd0d48e888313eb41d7a4ec23b.p and the cached assignment
+    braunschweig.locations.synthesis.replacement_education_gravity__1c169e2c6a8839c0ac639ea52b2deb92.p; output
+    felix:~/scratch_i465_portalwalk/primary_location_assignment_ee6f8731.json (sha256
+    26e22dd17d290d30a7cc1e796fd3bb4dfbbad0b6f2ce18476b4e9dc405e9e0a3), generated 2026-10-23 14:48:16.'
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Offline before/after of the work-location assignment (ADR-0164) on identical inputs. Guards passed - the
+    upstream greedy reproduces the cached assignment for all 3,920 workers, and both variants give every origin
+    zone the same multiset of locations. A smoke-scale measurement, not a validation; no MATSim run was made with
+    the new assignment.
+validation:
+- metric: workers with a donor commute <= 5 km assigned a location > 45 km (straight line from home)
+  reference: none (measurement; the donor commute distance is the survey value of the matched MiD donor)
+  result: upstream greedy 91, far-class rank 0.
+- metric: workers with a donor commute > 45 km that are assigned a location > 45 km
+  reference: none (measurement)
+  result: 186 such workers; upstream greedy 152, far-class rank 177.
+- metric: workers with a donor commute <= 2 km assigned a location > 10 km
+  reference: none (measurement)
+  result: upstream greedy 126, far-class rank 102.
+- metric: absolute deviation |assigned - donor| over the 3,799 workers with a donor distance (121 without)
+  reference: none (measurement)
+  result: >-
+    median 1.824 -> 2.320 km, 90th percentile 27.181 -> 26.357 km, mean 16.128 -> 15.231 km; Pearson donor vs
+    assigned 0.403 -> 0.717; workers assigned beyond 45 km 427 -> 441.
+issues:
+- '#465'
+decisions:
+- ADR-0164
+source: >-
+  scripts/measure_primary_location_assignment.py at commit ee6f8731 over the cached stage pickles named under
+  pipeline.notes; its JSON output (sha256 under pipeline.notes) stays on felix, the figures above are copied from it.

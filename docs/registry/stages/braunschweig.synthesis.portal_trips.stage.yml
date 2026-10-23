@@ -45,6 +45,7 @@ decisions:
 - ADR-0027
 - ADR-0104
 - ADR-0152
+- ADR-0163
 notes: >-
   Reads braunschweig.synthesis.commute_day.trips_day_stage (the reporting-day trips),
   synthesis.population.enriched (persons with the availability columns the mode check needs),
@@ -73,7 +74,17 @@ notes: >-
   matsim.scenario.supply.processed. Config keys (portal_trips/config_keys.py, prefix braunschweig.portal.):
   pt_gate_modes, gate_service_window_s, gate_candidates, shift_window_s, shift_step_s, min_stay_s,
   no_connection_warn_share. Fallback transparency: the no-connection chain (gate_found, tour_to_car,
-  tour_to_car_passenger, departure_shifted, kept_no_connection) is counted and logged as rates over the pt stays
-  under [portal_trips]; the share of kept_no_connection warns above no_connection_warn_share.
+  tour_to_car_passenger, departure_shifted, tour_to_car_passenger_lift, kept_no_connection) is counted and logged
+  as rates over the pt stays under [portal_trips]; the share of kept_no_connection warns above
+  no_connection_warn_share. Since ADR-0156 (#465) the chain also tries an EARLIER return
+  (braunschweig.portal.shift_return_earlier, default true) and resolves what remains as a lift
+  (braunschweig.portal.no_connection_last_resort car_passenger, the default, ASSUMPTION; keep restores
+  kept_no_connection).
+  Soft modes beyond their distance (ADR-0163, #465): a walk / bicycle stay whose straight-line origin ->
+  destination distance exceeds braunschweig.portal.walk_max_distance_m (5000) / bicycle_max_distance_m (30000;
+  both derived from the committed SrV mode-by-distance-band table with the ADR-0145 min_share) becomes pt when the
+  person can use neither car nor car_passenger (reason soft_mode_beyond_distance_no_road_mode); otherwise it keeps
+  its road gate for outside_tour_modes. Report keys n_soft_mode_stays_beyond_distance, n_soft_mode_stays_to_pt and
+  n_soft_mode_stays_left_to_outside_tour_modes, logged under [portal_trips].
   Reading guide and maintenance rules: docs/codebase/notes/portal-trips.md. The validate() token
   hashes the helper modules and the cordon helper modules the stage imports inside execute.

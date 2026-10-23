@@ -102,6 +102,26 @@ DEFAULT_MIN_STAY_S = 1800.0
 KEY_NO_CONNECTION_WARN_SHARE = "braunschweig.portal.no_connection_warn_share"
 DEFAULT_NO_CONNECTION_WARN_SHARE = 0.05
 
+#: #465 (WP-E smoke: 14 of 123 pt stays kept, their trips became walks of up to 125 km): after the later shifts,
+#: try an EARLIER return of the stays still unresolved (same grid, min_stay_s kept), and resolve what remains as a
+#: lift (``car_passenger`` without the passenger availability, ASSUMPTION) instead of keeping it as pt.
+KEY_SHIFT_RETURN_EARLIER = "braunschweig.portal.shift_return_earlier"
+DEFAULT_SHIFT_RETURN_EARLIER = True
+KEY_NO_CONNECTION_LAST_RESORT = "braunschweig.portal.no_connection_last_resort"
+DEFAULT_NO_CONNECTION_LAST_RESORT = "car_passenger"
+NO_CONNECTION_LAST_RESORTS = ("car_passenger", "keep")
+
+#: Straight-line metres from the stay's origin to its destination beyond which a walk / bicycle stay is implausible
+#: (#465, ADR-0163). Derived from the committed SrV 2023 table eqasim-data/data/braunschweig/srv/
+#: srv2023_mode_by_distance_band.csv (group ``all``) with the plausibility rule of ADR-0145 (share < min_share 0.01):
+#: walk drops below 1 % from the 5-10 km band on (0.68 %), bicycle from the 30-45 km band on (0.30 %). The lower edge
+#: of that band is the maximum. A soft-mode stay beyond it whose person can use neither car nor car_passenger
+#: becomes pt; otherwise it is left at its road gate for the SrV-weighted draw of outside_tour_modes (counted).
+KEY_WALK_MAX_DISTANCE_M = "braunschweig.portal.walk_max_distance_m"
+DEFAULT_WALK_MAX_DISTANCE_M = 5000.0
+KEY_BICYCLE_MAX_DISTANCE_M = "braunschweig.portal.bicycle_max_distance_m"
+DEFAULT_BICYCLE_MAX_DISTANCE_M = 30000.0
+
 #: Added to random_seed for the external-point draw; disjoint from the in-commuter (100000)
 #: and student in-commuter (200000) offsets so the streams never overlap.
 RNG_OFFSET = 300000
@@ -128,7 +148,11 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
                       gate_service_window_s: float = DEFAULT_GATE_SERVICE_WINDOW_S,
                       shift_window_s: float = DEFAULT_SHIFT_WINDOW_S, shift_step_s: float = DEFAULT_SHIFT_STEP_S,
                       min_stay_s: float = DEFAULT_MIN_STAY_S,
-                      no_connection_warn_share: float = DEFAULT_NO_CONNECTION_WARN_SHARE) -> None:
+                      no_connection_warn_share: float = DEFAULT_NO_CONNECTION_WARN_SHARE,
+                      shift_return_earlier: bool = DEFAULT_SHIFT_RETURN_EARLIER,
+                      no_connection_last_resort: str = DEFAULT_NO_CONNECTION_LAST_RESORT,
+                      walk_max_distance_m: float = DEFAULT_WALK_MAX_DISTANCE_M,
+                      bicycle_max_distance_m: float = DEFAULT_BICYCLE_MAX_DISTANCE_M) -> None:
     """Raise ``ValueError`` naming the key when a setting is outside its valid range."""
     if not max_routable_distance_m > 0.0:
         raise ValueError(f"{KEY_MAX_ROUTABLE_DISTANCE_M} must be > 0 m, got {max_routable_distance_m!r}")
@@ -152,3 +176,12 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
         raise ValueError(f"{KEY_MIN_STAY_S} must be >= 0 s, got {min_stay_s!r}")
     if not 0.0 < no_connection_warn_share <= 1.0:
         raise ValueError(f"{KEY_NO_CONNECTION_WARN_SHARE} must lie in (0, 1], got {no_connection_warn_share!r}")
+    if not isinstance(shift_return_earlier, bool):
+        raise ValueError(f"{KEY_SHIFT_RETURN_EARLIER} must be true or false, got {shift_return_earlier!r}")
+    if no_connection_last_resort not in NO_CONNECTION_LAST_RESORTS:
+        raise ValueError(f"{KEY_NO_CONNECTION_LAST_RESORT} must be one of {list(NO_CONNECTION_LAST_RESORTS)}, "
+                         f"got {no_connection_last_resort!r}")
+    if not walk_max_distance_m > 0.0:
+        raise ValueError(f"{KEY_WALK_MAX_DISTANCE_M} must be > 0 m, got {walk_max_distance_m!r}")
+    if not bicycle_max_distance_m > 0.0:
+        raise ValueError(f"{KEY_BICYCLE_MAX_DISTANCE_M} must be > 0 m, got {bicycle_max_distance_m!r}")

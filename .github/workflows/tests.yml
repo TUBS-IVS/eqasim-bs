@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full_run:
+        description: "Run the suite even if these regression inputs already passed (ADR-0165)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,24 +32,51 @@ jobs:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          miniforge-version: latest
+          # Pinned, not "latest": Miniforge3 26.9.4-0 (released 2026-10-22) fails on the Windows
+          # runner in setup-miniconda's conda init ("needs sudo ... conda.exe", exit 1) before any
+          # test runs (run 39978419378 on main); 26.7.2-1 was the last version green on both
+          # platforms (run 39966999531). Bump deliberately and watch the Windows job.
+          miniforge-version: 26.7.2-1
           activate-environment: lock-tools
           python-version: "3.11"
+      # ADR-0165: the key hashes every tracked file except docs/generated/ and docs/decisions/, which no
+      # regression-only test reads. A commit whose key already passed on this OS (e.g. a docs-only follow-up
+      # or a merge of main that brought only ADRs and generated views) reuses that green result. The
+      # documentation workflow (docs.yml) still runs on every push and covers the documentation tests.
+      - name: Regression input key
+        id: key
+        run: echo "key=$(python scripts/regression_input_key.py --verbose)" >> "$GITHUB_OUTPUT"
+      - name: Look up a green regression result for these inputs
+        id: green
+        if: ${{ !inputs.full_run }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .regression-green
+          key: regression-green-${{ runner.os }}-${{ steps.key.outputs.key }}
+          lookup-only: true
+      - name: Reuse the green regression result
+        if: steps.green.outputs.cache-hit == 'true'
+        run: >
+          echo "::notice::Regression inputs ${{ steps.key.outputs.key }} already passed on ${{ runner.os }};
+          only docs/generated/ or docs/decisions/ differ (ADR-0165). The suite is not re-run."
       - name: Install production Linux snapshot
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.green.outputs.cache-hit != 'true'
         run: |
           conda create --yes --name eqasim --file environments/server-linux-64.lock
           conda run --no-capture-output -n eqasim python -m pip install --no-deps -r environments/requirements-server-linux-64.txt
       - name: Install locked Windows environment
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.green.outputs.cache-hit != 'true'
         run: |
           python -m pip install conda-lock==4.0.2
           conda-lock install --name eqasim environments/conda-lock.yml
       - name: Verify dependency consistency
+        if: steps.green.outputs.cache-hit != 'true'
         run: conda run --no-capture-output -n eqasim python -m pip check
       - name: Report actual environment
+        if: steps.green.outputs.cache-hit != 'true'
         run: conda run --no-capture-output -n eqasim python scripts/run_tests.py --check
       - name: Regression tests with duration report
+        if: steps.green.outputs.cache-hit != 'true'
         run: conda run --no-capture-output -n eqasim python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml
       - name: Upload test report
         if: always()
@@ -54,3 +86,12 @@ jobs:
           path: test-results.xml
           if-no-files-found: ignore
           retention-days: 14
+      - name: Record the green regression result
+        if: success() && steps.green.outputs.cache-hit != 'true'
+        run: mkdir -p .regression-green && echo "${{ github.run_id }} ${{ github.sha }}" > .regression-green/marker
+      - name: Store the green regression result
+        if: success() && steps.green.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .regression-green
+          key: regression-green-${{ runner.os }}-${{ steps.key.outputs.key }}
