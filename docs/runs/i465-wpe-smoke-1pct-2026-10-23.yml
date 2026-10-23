@@ -29,7 +29,7 @@ configuration:
     baseline's cache_arms12), own output_path and output_prefix. Every other key keeps the base value of 3ebe789a,
     including the new keys of WP-A/B/C (next_day_hours 6.0, plan_check.max_frozen_pt_as_walk_share 0.02, the
     braunschweig.portal.* gate keys). The overlay carries the launcher gate synpp_expected_stale_stages (the 35 stages
-    of explain_first_launch.log); run targets synthesis.output and matsim.output, like the baseline.
+    of explain_first_launch.txt); run targets synthesis.output and matsim.output, like the baseline.
 sampling:
   rate: 1% (sampling_rate 0.01)
   scope: ZGB-8, full region, cordon on (base configuration)
@@ -46,9 +46,9 @@ pipeline:
     Cache procedure: ~/wt-i465-wpe/cache_wpe is a physical copy (cp -a, 24 GB) of the baseline's
     ~/wt-i453-ab/cache_arms12. Because the copy predates ADR-0149, scripts/migrate_cache_metadata.py was run on the
     COPY with --legacy-source-rev 3123cc4f (the commit that wrote the arm-2 entries; the default revision 205a0fb7 is
-    later): 248 of 392 entries migrated, 144 kept legacy (log migrate_cache_metadata.log). The explainer then listed 35
+    later): 248 of 392 entries migrated, 144 kept legacy (log migrate_cache_metadata.txt). The explainer then listed 35
     stages stale for own reasons and 62 hits, popsim, mid_donor, completed_donor and trips_stage among the hits
-    (explain_first_launch.log): the supply chain (WP-A: supply_gtfs, supply.processed, cordon network, pt gates,
+    (explain_first_launch.txt): the supply chain (WP-A: supply_gtfs, supply.processed, cordon network, pt gates,
     cordon gates), the jar and freight (matsim.runtime.eqasim, freight extraction tool, extraction, trips), the location
     chain from synthesis.population.spatial.primary.candidates (output_path enters it), the portal stages (WP-C),
     prepare, MATSim and output, plus distance_distributions, secondary_candidates and parking.zones_stage (code changed
@@ -59,7 +59,7 @@ pipeline:
     fork's output hash: the eqasim-java-bs SimWrapperHouseholdsInputLinker leaves a symlink in simulation_output, and
     ADR-0149 refuses symlinks (fixed in b8564d02). Its MATSim output was moved aside to
     ~/wt-i465-wpe/run1_matsim_simulation_run.cache before launch 3. Launch 3 (03:13, b8564d02) recomputed only
-    output_day, matsim.simulation.run and matsim.output (explain_final_launch.log).
+    output_day, matsim.simulation.run and matsim.output (explain_final_launch.txt).
 classification:
 - smoke
 status:
@@ -221,9 +221,9 @@ artifacts:
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/setup_wpe.sh
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/launch_wpe.sh
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/i465_wpe.yml
-- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/migrate_cache_metadata.log
-- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_first_launch.log
-- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_final_launch.log
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/migrate_cache_metadata.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_first_launch.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_final_launch.txt
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_i465.py
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json
 - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/schedule_hours_i465.py
