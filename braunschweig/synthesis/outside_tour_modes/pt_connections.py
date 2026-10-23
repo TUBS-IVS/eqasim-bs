@@ -12,8 +12,9 @@ chain, in this order (owner order of ADR-0153 and ADR-0156):
 
 1. ``tour_shifted``: the WHOLE tour moves by the first offset of
    ``incommuter_pt_connections.shift_offsets_s`` (earlier first) at which every pt leg is a connection. The tour's
-   first departure never moves before the arrival of the person's previous trip (0 s for the first trip), its last
-   arrival never after the departure of the person's next trip nor after ``bound_s``. One probe call per offset.
+   first departure stays strictly after the arrival of the person's previous trip (at or after 0 s for the first
+   trip), its last arrival strictly before the departure of the person's next trip and at or before ``bound_s``,
+   so a shift never leaves a zero-duration activity next to the tour. One probe call per offset.
 2. ``tour_to_car`` (needs ``can_car``), then ``tour_to_car_passenger`` (needs ``can_car_passenger``): every leg of
    the tour switches.
 3. ``tour_to_car_passenger_lift`` (``last_resort`` ``LAST_RESORT_LIFT``): the tour becomes ``car_passenger`` WITHOUT
@@ -154,23 +155,24 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
             if all(served[int(p)] for p in tour["pt_legs"]):
                 actions[k] = ACTION_CONNECTION_FOUND
 
-    def window(tour) -> tuple[float, float]:
-        """(earliest first departure, latest last arrival) from the CURRENT times of the neighbouring trips."""
+    def fits(tour, offset) -> bool:
+        """Does the tour, moved by ``offset``, keep a positive stay before and after it (CURRENT neighbour times)?"""
         first, last = int(tour["legs"][0]), int(tour["legs"][-1])
-        previous_arrival = arrival[first - 1] if first > 0 and persons[first - 1] == persons[first] else 0.0
-        next_departure = departure[last + 1] if last + 1 < n and persons[last + 1] == persons[last] else np.inf
-        return previous_arrival, min(bound_s, next_departure)
+        new_departure, new_arrival = departure[first] + offset, arrival[last] + offset
+        if first > 0 and persons[first - 1] == persons[first]:
+            if not new_departure > arrival[first - 1]:
+                return False
+        elif new_departure < 0.0:
+            return False
+        if last + 1 < n and persons[last + 1] == persons[last] and not new_arrival < departure[last + 1]:
+            return False
+        return new_arrival <= bound_s
 
     unresolved = [k for k in range(len(checked)) if actions[k] is None]
     for offset in offsets:
         if not unresolved:
             break
-        candidates = []
-        for k in unresolved:
-            earliest, latest = window(checked[k])
-            legs = checked[k]["legs"]
-            if departure[legs[0]] + offset >= earliest and arrival[legs[-1]] + offset <= latest:
-                candidates.append(k)
+        candidates = [k for k in unresolved if fits(checked[k], offset)]
         if not candidates:
             continue
         positions = np.concatenate([checked[k]["pt_legs"] for k in candidates])

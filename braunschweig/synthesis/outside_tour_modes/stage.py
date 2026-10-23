@@ -225,9 +225,6 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     unchanged = substitutes[substitutes["unchanged_reason"] != ""]
     substitutes = substitutes[substitutes["unchanged_reason"] == ""]
     remoded, n_remoded, n_swept = _rule.apply_tour_modes(ordered, tour_ids, substitutes, implausible)
-    # Post-condition: outside legs whose FINAL mode is still below min_share in their cell (only the relaxed draws
-    # and the legs of tours the draw could not make plausible everywhere can remain).
-    implausible_after = _rule.implausible_legs(remoded, cells, min_share)
     donor_modes = ordered["mode"].astype(str)
     unknown_donor = outside & ~donor_modes.isin(_srv_table_module.MODES).to_numpy()
     pt_report = None
@@ -242,6 +239,10 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
         remoded = resolution.trips
         pt_report = resolution.report
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
+    # Post-condition: outside legs whose FINAL mode (after the draw and the pt check) is still below min_share in
+    # their cell (only the relaxed draws, the tours the draw could not make plausible everywhere and the tours the
+    # pt check switched to a mode the cell rarely uses can remain).
+    implausible_after = _rule.implausible_legs(remoded, cells, min_share)
     out = trips.copy()
     out.loc[remoded.index, "mode"] = remoded["mode"]
     if pt_report is not None and pt_report["actions"][_pt_connections.ACTION_TOUR_SHIFTED]:

@@ -872,7 +872,8 @@ config:
   # have no connection moves as a whole (earlier first, steps of pt_shift_step_s up to pt_shift_window_s; values
   # of ADR-0152/0153, ASSUMPTION, not calibrated), else drives, else rides along. last_resort car_passenger: a
   # tour nothing else resolves (and a road-gate portal tour without an admissible mode) becomes a lift without
-  # the passenger availability instead of a walk of tens of kilometres; keep = the former behaviour.
+  # the passenger availability instead of a walk of tens of kilometres. The former behaviour needs both
+  # pt_connection_check.enabled false and last_resort keep (last_resort also governs the portal-tour lift).
   braunschweig.outside_tour_modes.pt_connection_check.enabled: true
   braunschweig.outside_tour_modes.pt_shift_window_s: 7200
   braunschweig.outside_tour_modes.pt_shift_step_s: 1800

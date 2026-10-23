@@ -57,6 +57,29 @@ def test_chain_solver_still_reads_trips_final():
     assert keys.SIMULATED_TRIPS_ALIAS not in source
 
 
+def test_without_a_moved_tour_the_simulated_activities_equal_the_final_activities():
+    # ADR-0159 decision 4: with the outside-tour layer off (or no tour moved) the population writer must see the
+    # same activities as before the alias switch.
+    import pandas as pd
+
+    from braunschweig.synthesis.commute_day import activities_day_stage
+    from braunschweig.synthesis.outside_tour_modes import activities_stage
+
+    trips = pd.DataFrame({"person_id": [1, 1, 3], "trip_index": [0, 1, 0],
+                          "preceding_purpose": ["home", "work", "home"], "following_purpose": ["work", "home", "shop"],
+                          "departure_time": [8 * 3600.0, 17 * 3600.0, 9 * 3600.0],
+                          "arrival_time": [8.5 * 3600.0, 17.5 * 3600.0, 9.2 * 3600.0],
+                          "is_first_trip": [True, False, True], "is_last_trip": [False, True, True],
+                          "mode": ["car", "car", "walk"]})
+    persons = pd.DataFrame({"person_id": [1, 2, 3]})
+
+    class _Context:
+        def stage(self, name):
+            return {keys.SIMULATED_TRIPS_ALIAS: trips, keys.FINAL_TRIPS_STAGE: trips, keys.PERSONS_STAGE: persons}[name]
+
+    pd.testing.assert_frame_equal(activities_stage.execute(_Context()), activities_day_stage.execute(_Context()))
+
+
 def test_production_config_aliases_the_stage_and_enables_the_flag():
     document = _load(REPO / "configs" / "base_bs.yml")
     assert document["aliases"][keys.SIMULATED_TRIPS_ALIAS] == STAGE_NAME

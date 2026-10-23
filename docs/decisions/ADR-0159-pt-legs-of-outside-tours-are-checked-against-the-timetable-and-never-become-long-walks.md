@@ -51,10 +51,10 @@
    - `connection_found`: every pt leg of the tour is a connection; untouched.
    - `tour_shifted`: the WHOLE tour (every leg, so every activity inside it) moves by the first offset of -step,
      +step, -2 step, +2 step, ... up to the window (`incommuter_pt_connections.shift_offsets_s`, earlier first) at
-     which every pt leg is a connection. A shift never moves the tour's first departure before the arrival of the
-     person's previous trip (0 s for the first tour) nor its last arrival after the departure of the person's next
-     trip or after the bound (end of the simulated day minus the day-end margin, ADR-0154). The probe runs once per
-     offset for all unresolved tours.
+     which every pt leg is a connection. The tour's first departure stays strictly after the arrival of the
+     person's previous trip (at or after 0 s for the first tour) and its last arrival strictly before the departure
+     of the person's next trip (so no zero-duration activity arises) and at or before the bound (end of the
+     simulated day minus the day-end margin, ADR-0154). The probe runs once per offset for all unresolved tours.
    - `tour_to_car`, then `tour_to_car_passenger`: every leg of the tour switches, when the person has the car
      (respectively lift) availability of `portal_trips.modes.mode_availability`.
    - `tour_to_car_passenger_lift` (last resort `car_passenger`, the default): the tour becomes `car_passenger`
@@ -74,9 +74,13 @@
 5. **Config** (pinned in `configs/base_bs.yml`): `braunschweig.outside_tour_modes.pt_connection_check.enabled`
    (true), `pt_shift_window_s` 7200 and `pt_shift_step_s` 1800 (ASSUMPTION: the values of ADR-0152/0153, not
    calibrated), `pt_no_connection_warn_share` 0.05 (WARNING above that share of the checked tours switched, lifted
-   or kept), `last_resort` `car_passenger` | `keep`.
+   or kept), `last_resort` `car_passenger` | `keep`. The two switches are independent: `last_resort` also governs
+   decision 3 when the check is off, so the former modes need BOTH `pt_connection_check.enabled: false` and
+   `last_resort: keep`.
 6. **Report.** `outside_tour_modes_report.json` carries `pt_connection` (tours checked, actions, median shift, legs
-   probed) and `n_portal_tours_lifted`; one log line with the rates.
+   probed), `n_portal_tours_lifted` and `last_resort`; one log line with the rates. `n_outside_legs_implausible_after`
+   is judged after the pt check. A `connection_found` share near 0 % in a real run means a broken probe (the
+   unserved share then exceeds the warn share and warns).
 
 ## Rejected options
 

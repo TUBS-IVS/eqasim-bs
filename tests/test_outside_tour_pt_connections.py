@@ -83,14 +83,14 @@ def test_a_late_return_moves_the_whole_tour_earlier_first():
     assert result.report["shift_abs_s_median"] == H
 
 
-def test_a_shift_never_overlaps_the_previous_or_next_trip_of_the_person():
-    # Tour 1 (in-region, not outside) ends at 17:45; the outside tour leaves at 18:00 and returns at 22:00.
-    # Every earlier offset would overlap tour 1 or not be served, so the tour cannot move earlier; a later one
-    # is never served (service ends 21:00): the person has a car, so the tour drives.
-    trips = _trips([(1, 0, "home", "work", "car", 8.0, 8.5), (1, 1, "work", "home", "car", 17.0, 17.75),
-                    (1, 2, "home", "leisure", "pt", 18.0, 18.5), (1, 3, "leisure", "home", "pt", 22.0, 22.5)])
+def test_a_shift_never_overlaps_or_touches_the_previous_or_next_trip_of_the_person():
+    # Tour 1 (in-region, not outside) arrives home at 17:30; the outside tour leaves at 18:00 and returns at 21:30.
+    # -30 min would be served (return 21:00) but leaves the home stay between the tours at zero duration, -1 h
+    # overlaps tour 1, and every later offset misses the last service (21:00): the person has a car, so it drives.
+    trips = _trips([(1, 0, "home", "work", "car", 8.0, 8.5), (1, 1, "work", "home", "car", 17.0, 17.5),
+                    (1, 2, "home", "leisure", "pt", 18.0, 18.5), (1, 3, "leisure", "home", "pt", 21.5, 22.0)])
     outside = [False, False, True, True]
-    result = _resolve(trips, _service_probe(18.0 * H, 21 * H), outside=outside,
+    result = _resolve(trips, _service_probe(0.0, 21 * H), outside=outside,
                       availability=_availability([1], can_car=True))
     assert result.report["actions"][P.ACTION_TOUR_TO_CAR] == 1
     assert list(result.trips["mode"]) == ["car", "car", "car", "car"]
