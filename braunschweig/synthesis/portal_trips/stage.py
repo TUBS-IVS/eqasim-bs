@@ -39,10 +39,12 @@ from braunschweig.synthesis.portal_trips.config_keys import (
     DEFAULT_GATE_CANDIDATES, DEFAULT_GATE_SERVICE_WINDOW_S, DEFAULT_MAX_ROUTABLE_DISTANCE_M,
     DEFAULT_MIN_STAY_S, DEFAULT_MODE_SUBSTITUTION_WARN_SHARE, DEFAULT_NO_CONNECTION_WARN_SHARE,
     DEFAULT_NO_CONNECTION_LAST_RESORT, DEFAULT_PT_GATE_MODES, DEFAULT_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_STEP_S,
-    DEFAULT_SHIFT_WINDOW_S, KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
+    DEFAULT_SHIFT_WINDOW_S, DEFAULT_BICYCLE_MAX_DISTANCE_M, DEFAULT_WALK_MAX_DISTANCE_M, KEY_BICYCLE_MAX_DISTANCE_M,
+    KEY_ENABLED, KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE, KEY_FALLBACK_WARN_SHARE,
     KEY_GATE_CANDIDATES, KEY_GATE_SERVICE_WINDOW_S, KEY_MAX_ROUTABLE_DISTANCE_M, KEY_MIN_STAY_S,
     KEY_MODE_SUBSTITUTION_WARN_SHARE, KEY_NO_CONNECTION_LAST_RESORT, KEY_NO_CONNECTION_WARN_SHARE, KEY_PT_GATE_MODES,
-    KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, RNG_OFFSET, validate_settings)
+    KEY_SHIFT_RETURN_EARLIER, KEY_SHIFT_STEP_S, KEY_SHIFT_WINDOW_S, KEY_WALK_MAX_DISTANCE_M, RNG_OFFSET,
+    validate_settings)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,8 @@ _EMPTY_STAY_REPORT = {
     "n_stay_persons_missing_license": 0, "n_unknown_donor_mode": 0, "unknown_donor_modes": {},
     "n_pt_stays": 0, "pt_gate_reasons": {}, "no_connection_actions": {}, "n_departure_shifted_s_median": None,
     "n_kept_fallback_all_stops": 0,
+    "n_soft_mode_stays_beyond_distance": 0, "n_soft_mode_stays_to_pt": 0,
+    "n_soft_mode_stays_left_to_outside_tour_modes": 0,
 }
 
 
@@ -131,7 +135,7 @@ def configure(context):
 
 
 def _configure_gate_settings(context) -> dict:
-    """Declare the timetable-aware gate settings and return them as the keyword arguments of ``validate_settings``.
+    """Declare the timetable-aware gate and soft-mode distance settings; return them as ``validate_settings`` kwargs.
 
     Called from ``configure`` only: the two-argument ``context.config(key, default)`` form is invalid at execute.
     """
@@ -145,7 +149,10 @@ def _configure_gate_settings(context) -> dict:
                                                              DEFAULT_NO_CONNECTION_WARN_SHARE)),
             "shift_return_earlier": context.config(KEY_SHIFT_RETURN_EARLIER, DEFAULT_SHIFT_RETURN_EARLIER),
             "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT,
-                                                        DEFAULT_NO_CONNECTION_LAST_RESORT)}
+                                                        DEFAULT_NO_CONNECTION_LAST_RESORT),
+            "walk_max_distance_m": float(context.config(KEY_WALK_MAX_DISTANCE_M, DEFAULT_WALK_MAX_DISTANCE_M)),
+            "bicycle_max_distance_m": float(context.config(KEY_BICYCLE_MAX_DISTANCE_M,
+                                                           DEFAULT_BICYCLE_MAX_DISTANCE_M))}
 
 
 def assert_consistent_crs(frames: dict) -> None:
@@ -324,12 +331,15 @@ def _inside_stop_ids(schedule, cordon_polygon) -> set:
 
 def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates, links, external_points,
                        schedule, router, pt_gate_modes, gate_settings, cordon_polygon, threshold_m, tolerance,
-                       warn_share, fallback_warn_share, seed):
+                       warn_share, fallback_warn_share, seed,
+                       soft_mode_max_distance_m=None):
     """Pure entry point: classify, merge stays, draw points, choose gates, time, fix modes, rewrite.
 
     Coordinates are metres in the CRS of ``df_home``; times are seconds. ``warn_share`` bounds the
     mode-substitution rate and ``fallback_warn_share`` the rates of the two classification/draw
     fallbacks; exceeding either only changes the log level (the counts are always in the report).
+    ``soft_mode_max_distance_m`` (``{"walk": m, "bicycle": m}``, default the declared defaults) bounds the
+    straight-line origin -> destination distance of a walk / bicycle stay (ADR-0163, see ``modes``).
 
     The pt stays take a timetable-aware gate (#465): ``schedule`` is the pre-cut transit schedule
     (``braunschweig.data.transit.schedule.Schedule``), ``router`` the batch pt router
@@ -340,13 +350,17 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
     mode switch, time shift, kept with its nearest directional exit stop); every outcome is counted in the
     report and WARNed above ``no_connection_warn_share``.
     """
+    if soft_mode_max_distance_m is None:
+        soft_mode_max_distance_m = {"walk": DEFAULT_WALK_MAX_DISTANCE_M, "bicycle": DEFAULT_BICYCLE_MAX_DISTANCE_M}
     # A direct caller gets the same range checks as configure() (a zero shift step would silently disable the shift path).
     validate_settings(threshold_m, tolerance, warn_share, fallback_warn_share,
                       gate_candidates=gate_settings["n_candidates"],
                       gate_service_window_s=gate_settings["service_window_s"],
                       shift_window_s=gate_settings["shift_window_s"], shift_step_s=gate_settings["shift_step_s"],
                       min_stay_s=gate_settings["min_stay_s"],
-                      no_connection_warn_share=gate_settings["no_connection_warn_share"])
+                      no_connection_warn_share=gate_settings["no_connection_warn_share"],
+                      walk_max_distance_m=soft_mode_max_distance_m["walk"],
+                      bicycle_max_distance_m=soft_mode_max_distance_m["bicycle"])
     missing = [column for column in REQUIRED_TRIP_COLUMNS if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} trips frame lacks {missing}")
@@ -388,7 +402,15 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         band_miss[draw] = drawn_band_miss
 
     availability = _modes.mode_availability(persons)
-    modes = _modes.portal_modes(stays, trips, availability)
+    # The stay's own straight-line leg: origin (home or the assigned primary location) -> destination point.
+    leg_distance_m = np.hypot(point_xy[:, 0] - origin_xy[:, 0], point_xy[:, 1] - origin_xy[:, 1])
+    modes = _modes.portal_modes(stays, trips, availability, leg_distance_m=leg_distance_m,
+                                soft_mode_max_distance_m=soft_mode_max_distance_m)
+    # Counted before the no-connection chain, which may re-label a stay's substitution reason.
+    soft_mode_counts = {
+        "n_soft_mode_stays_beyond_distance": int(modes["soft_mode_beyond_distance"].sum()),
+        "n_soft_mode_stays_to_pt": int((modes["substitution_reason"] == _modes.REASON_SOFT_MODE_DISTANCE).sum()),
+        "n_soft_mode_stays_left_to_outside_tour_modes": int(modes["soft_mode_left_to_outside_tour_modes"].sum())}
     road_gates = _gates.gate_inside_points(gates, links, cordon_polygon)
     modes, trips, pt_gates, pt_report = _resolve_pt_stays(
         stays, trips, modes, availability, origin_xy, point_xy, outbound_positions, schedule, router,
@@ -423,6 +445,7 @@ def build_portal_trips(*, trips, persons, df_home, df_work, df_education, gates,
         "n_stay_persons_missing_license": int(licence.isna().sum()),
         "n_unknown_donor_mode": int(unknown_mode.sum()),
         "unknown_donor_modes": _counts(modes["outbound_mode"][unknown_mode]),
+        **soft_mode_counts,
         **pt_report,
     })
     _log_report(report, warn_share, fallback_warn_share, gate_settings["no_connection_warn_share"])
@@ -568,6 +591,12 @@ def _log_report(report, warn_share, fallback_warn_share, no_connection_warn_shar
             100.0 * no_connection_warn_share, found,
             {k: f"{v}/{n_pt} ({100.0 * v / n_pt:.1f}%)" for k, v in report["pt_gate_reasons"].items()},
             {k: f"{v}/{n_pt} ({100.0 * v / n_pt:.1f}%)" for k, v in report["no_connection_actions"].items()})
+    n_soft = report["n_soft_mode_stays_beyond_distance"]
+    n_left = report["n_soft_mode_stays_left_to_outside_tour_modes"]
+    logger.info("%s soft-mode (walk/bicycle) stays beyond their maximum distance %d/%d (%.2f%%): pt for want of a car "
+                "or car-passenger mode %d, left at a road gate for outside_tour_modes %d", _LOG_TAG, n_soft,
+                report["n_stays"], 100.0 * n_soft / n_stays,
+                report["n_soft_mode_stays_to_pt"], n_left)
     share = report["n_mode_substituted"] / n_stays
     log = logger.warning if share > warn_share else logger.info
     log("%s mode substituted for %d/%d stays (%.2f%%; warn above %.0f%%): %s", _LOG_TAG,
@@ -622,6 +651,8 @@ def execute(context):
                        "no_connection_warn_share": float(context.config(KEY_NO_CONNECTION_WARN_SHARE)),
                        "shift_return_earlier": bool(context.config(KEY_SHIFT_RETURN_EARLIER)),
                        "no_connection_last_resort": context.config(KEY_NO_CONNECTION_LAST_RESORT)},
+        soft_mode_max_distance_m={"walk": float(context.config(KEY_WALK_MAX_DISTANCE_M)),
+                                  "bicycle": float(context.config(KEY_BICYCLE_MAX_DISTANCE_M))},
         cordon_polygon=cordon_polygon,
         threshold_m=float(context.config(KEY_MAX_ROUTABLE_DISTANCE_M)),
         tolerance=float(context.config(KEY_EXTERNAL_POINT_DISTANCE_TOLERANCE)),

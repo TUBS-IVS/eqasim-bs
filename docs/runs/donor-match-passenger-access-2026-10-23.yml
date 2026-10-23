@@ -1,0 +1,53 @@
+id: donor-match-passenger-access-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: a2376306
+  branch: fix/i465-last-three-stuck
+  notes: >-
+    The measured code is commit a2376306 (local at the time), exported with git archive into felix:~/i465-last3/ebs
+    (braunschweig, synthesis, data, matsim, scripts, configs). This manifest is a MEASUREMENT of the completed MiD
+    donor build, not a pipeline run.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    The production defaults of config_keys (weekend and diary plan match on, holiday and rbW-only sources excluded,
+    hard employment, fine child age bands) with mid_passenger_availability on; one arm with
+    donor_match_passenger_access off, one with it on.
+sampling:
+  rate: none (raw MiD 2023 B1 donor, not sampled)
+  scope: the 485,709 completed donor persons (218,097 households) of the raw MiD delivery
+  notes: Unweighted donor counts, not synthetic-population estimates.
+pipeline:
+  targets:
+  - braunschweig.popsim.completed_donor
+  notes: >-
+    python -I scripts/measure_donor_match_passenger_access.py --mid-dir
+    /home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw --random-seed 1234 --git-commit a2376306;
+    both arms build_completed_donor in one process (about 25 min each).
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Offline OFF/ON measurement of the passenger access key of ADR-0162 on identical inputs. A measurement, not a
+    validation; no MATSim run was made with the key.
+validation:
+- metric: diary re-matches whose donor has the other passenger access class (P_VAUTO 3 never vs not)
+  reference: none (measurement)
+  result: key off 8,624 of 74,884 (11.52 %), key on 0 of 74,884.
+- metric: persons with another respondent's diary whose passenger access class differs from that respondent's
+  reference: none (measurement)
+  result: key off 19,781 of 235,158 (8.41 %), key on 10,825 of 235,158 (4.60 %); the rest from the weekend household
+    alignment.
+- metric: '"never" persons (P_VAUTO 3) whose foreign diary reports a car-passenger trip'
+  reference: none (measurement)
+  result: key off 2,064, key on 1,782; "never" persons with a lift in their own diary 1,254 in both arms.
+issues:
+- '#465'
+decisions:
+- ADR-0162
+artifacts:
+- docs/runs/artifacts/donor-match-passenger-access-2026-10-23/report.json
+source: >-
+  docs/runs/artifacts/donor-match-passenger-access-2026-10-23/report.json (sha256
+  15d3035dff80f3b7859ac092f6123a541033d1a04641e1f91a37c99f9882b174), written by the script named under pipeline.notes.

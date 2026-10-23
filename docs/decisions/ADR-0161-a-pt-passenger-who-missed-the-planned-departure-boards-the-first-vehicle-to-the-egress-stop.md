@@ -60,5 +60,8 @@
 - Output change by design for late passengers only: in the rerun 7 of 4,854 pt rides boarded later than planned.
   A late passenger may now arrive with another line; on-time passengers are unaffected.
 - The finder builds an index of the routes per stop facility once per mobsim (all lines of the schedule).
-- **Status:** implemented and tested (eqasim-java-bs `TestTransitBoardingFinder`, including the 693334 case) on
-  branch `fix/i465-stop-pair-boarding`; not yet measured in a simulation run.
+- **Deployment:** the behaviour lives in the jar only. eqasim-bs builds the jar from the eqasim-java-bs tree behind
+  `eqasim_source_path` and does not pin or check it, so a run on a tree without TUBS-IVS/eqasim-java-bs#44 runs without
+  error and without this rule (unlike ADR-0160, whose router option an older jar rejects). Check the tree before a run.
+- **Status:** implemented and tested (eqasim-java-bs `TestTransitBoardingFinder`, including the 693334 case) in
+  TUBS-IVS/eqasim-java-bs#44; not yet measured in a simulation run.

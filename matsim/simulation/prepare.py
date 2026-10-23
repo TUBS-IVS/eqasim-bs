@@ -1,3 +1,4 @@
+import logging
 import shutil
 import os.path
 
@@ -163,6 +164,11 @@ def execute(context):
     
     # Optionally, perform mode choice
     if context.config("mode_choice"):
+        if context.config(day_end_margin.KEY_ENABLED) and context.config(day_end_margin.KEY_ROUTED_CHECK):
+            # ADR-0160: the standalone mode choice routes the population itself, without the routed day-end check
+            logging.getLogger(__name__).warning(
+                "[day end margin] %s is on, but mode_choice routes the population with RunStandaloneModeChoice, "
+                "which does not apply it: no plan is checked by its routed last arrival", day_end_margin.KEY_ROUTED_CHECK)
         eqasim.run(context, "org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice", [
             "--config-path", "%sconfig.xml" % context.config("output_prefix"),
             "--config:standaloneModeChoice.outputDirectory", "mode_choice",

@@ -1,0 +1,67 @@
+feature: primary_location_far_class_rank
+title: Far primary locations assigned by rank
+area: work
+description: >-
+  The sampled work (and, on the base education path, education) locations of an origin zone are handed to its
+  persons in two classes (ADR-0164, #465). Locations farther than primary_location_far_class_min_distance_m
+  (straight-line metres from the zone's mean home, default 30000) go by rank to the same number of persons with
+  the longest donor commute distances; every other person takes the remaining locations with the upstream eqasim
+  greedy on exact home distances, in input order. The sampled flows per origin zone are unchanged (a permutation
+  inside the zone). A person without a donor distance takes the zone's median donor distance on this path
+  (ASSUMPTION). Replaces the upstream greedy over the whole zone, which left far locations to whoever came last
+  in the person order (person 343377 of the 1 % rerun, donor 0.38 km, got 168 km).
+stages:
+- synthesis.population.spatial.primary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - primary_location_far_class_rank
+  - primary_location_far_class_min_distance_m
+introduced:
+  issue: 465
+  pr: null
+  adr: ADR-0164
+detail_doc: null
+code_paths:
+- synthesis/population/spatial/primary/locations.py
+- braunschweig/locations/synthesis/replacement_education_gravity.py
+- eqasim_common/locations/synthesis/replacement.py
+- scripts/measure_primary_location_assignment.py
+evidence:
+  tests:
+  - tests/test_primary_location_far_class_rank.py
+  - tests/test_measure_primary_location_assignment.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_primary_location_far_class_rank.py
+    note: |
+      test_legacy_greedy_order_is_kept_when_the_far_class_rank_is_off pins the upstream greedy result with the flag off; the measurement script additionally requires the flag-off assignment to reproduce a run's cached assignment for every worker.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[primary locations] %s (%s): %d persons, without donor distance'
+    note: |
+      No fallback in the assignment itself. The stage logs per purpose the persons without a donor distance (imputed by the zone median), the median and p90 of |assigned - donor| and the persons whose donor commute is below a tenth of the far-class distance but whose location lies beyond it (log_assignment_quality).
+  reference:
+    kind: none
+    note: |
+      The comparison target is the matched donor's survey commute distance, not an observed distance of the synthetic person; no observed reference is compared.
+validation:
+  state: unvalidated
+  runs:
+  - i465-primary-assignment-measure-1pct-2026-10-23
+  metric: null
+  note: Offline before/after on the cached inputs of the 1 % rerun (smoke scale); no MATSim run with the new assignment yet.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Implemented and measured offline at 1 % (ADR-0164); not yet run end to end and not measured at 100 %.
+  source: ADR-0164
+notes: 'Measured at 1 %: donor <= 5 km assigned > 45 km 91 -> 0, donor > 45 km assigned > 45 km 152 -> 177 of 186,
+  median |assigned - donor| 1.82 -> 2.32 km (run manifest i465-primary-assignment-measure-1pct-2026-10-23).'

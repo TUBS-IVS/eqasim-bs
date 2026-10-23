@@ -264,3 +264,15 @@ def test_mode_availability_does_not_warn_when_the_passenger_column_is_present(ca
     with caplog.at_level(logging.WARNING, logger=m.logger.name):
         _availability()
     assert not [record for record in caplog.records if record.levelno == logging.WARNING]
+
+
+@pytest.mark.parametrize("mode, distance_m, expected", [("walk", 4999.0, "walk"), ("walk", 5001.0, "pt"),
+                                                         ("bicycle", 29999.0, "bicycle"), ("bicycle", 30001.0, "pt")])
+def test_portal_modes_substitute_a_soft_mode_only_beyond_its_maximum_distance(mode, distance_m, expected):
+    trips = _trips()
+    trips["mode"] = mode
+    out = m.portal_modes(_stays(), trips, _availability(car="none", passenger="none"),
+                         leg_distance_m=np.array([distance_m]),
+                         soft_mode_max_distance_m={"walk": 5000.0, "bicycle": 30000.0})
+    assert out.loc[0, "mode"] == expected
+    assert bool(out.loc[0, "soft_mode_beyond_distance"]) == (expected == "pt")

@@ -60,8 +60,8 @@
 ## Measurement (raw MiD 2023 B1 donor, seed 1234)
 
 `scripts/measure_donor_match_passenger_access.py` at commit a2376306 on felix, 2026-10-23 (unweighted counts of the
-485,709 completed donor persons, not synthetic-population estimates; aggregate report committed as
-`docs/runs/artifacts/donor-match-passenger-access-2026-10-23/report.json`):
+485,709 completed donor persons, not synthetic-population estimates; run manifest
+`docs/runs/donor-match-passenger-access-2026-10-23.yml`):
 
 | | key off | key on |
 |---|---|---|
