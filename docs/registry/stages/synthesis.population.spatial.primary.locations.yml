@@ -24,3 +24,11 @@ resolves_to:
   simple_ipf_open: eqasim_common.locations.synthesis.replacement
 features:
 - education_gravity
+- primary_location_far_class_rank
+decisions:
+- ADR-0164
+notes: >-
+  Work locations (and education on the base path) are handed to the persons of an origin zone in two classes since
+  ADR-0164 (#465): the locations beyond primary_location_far_class_min_distance_m (30 km from the zone mean home) by
+  rank to the longest donor commuters, the rest by the upstream greedy; primary_location_far_class_rank false is the
+  upstream greedy. The stage logs the assignment quality per purpose under [primary locations].

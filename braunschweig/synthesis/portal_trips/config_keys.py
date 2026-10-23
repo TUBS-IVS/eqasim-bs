@@ -111,6 +111,17 @@ KEY_NO_CONNECTION_LAST_RESORT = "braunschweig.portal.no_connection_last_resort"
 DEFAULT_NO_CONNECTION_LAST_RESORT = "car_passenger"
 NO_CONNECTION_LAST_RESORTS = ("car_passenger", "keep")
 
+#: Straight-line metres from the stay's origin to its destination beyond which a walk / bicycle stay is implausible
+#: (#465, ADR-0163). Derived from the committed SrV 2023 table eqasim-data/data/braunschweig/srv/
+#: srv2023_mode_by_distance_band.csv (group ``all``) with the plausibility rule of ADR-0145 (share < min_share 0.01):
+#: walk drops below 1 % from the 5-10 km band on (0.68 %), bicycle from the 30-45 km band on (0.30 %). The lower edge
+#: of that band is the maximum. A soft-mode stay beyond it whose person can use neither car nor car_passenger
+#: becomes pt; otherwise it is left at its road gate for the SrV-weighted draw of outside_tour_modes (counted).
+KEY_WALK_MAX_DISTANCE_M = "braunschweig.portal.walk_max_distance_m"
+DEFAULT_WALK_MAX_DISTANCE_M = 5000.0
+KEY_BICYCLE_MAX_DISTANCE_M = "braunschweig.portal.bicycle_max_distance_m"
+DEFAULT_BICYCLE_MAX_DISTANCE_M = 30000.0
+
 #: Added to random_seed for the external-point draw; disjoint from the in-commuter (100000)
 #: and student in-commuter (200000) offsets so the streams never overlap.
 RNG_OFFSET = 300000
@@ -139,7 +150,9 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
                       min_stay_s: float = DEFAULT_MIN_STAY_S,
                       no_connection_warn_share: float = DEFAULT_NO_CONNECTION_WARN_SHARE,
                       shift_return_earlier: bool = DEFAULT_SHIFT_RETURN_EARLIER,
-                      no_connection_last_resort: str = DEFAULT_NO_CONNECTION_LAST_RESORT) -> None:
+                      no_connection_last_resort: str = DEFAULT_NO_CONNECTION_LAST_RESORT,
+                      walk_max_distance_m: float = DEFAULT_WALK_MAX_DISTANCE_M,
+                      bicycle_max_distance_m: float = DEFAULT_BICYCLE_MAX_DISTANCE_M) -> None:
     """Raise ``ValueError`` naming the key when a setting is outside its valid range."""
     if not max_routable_distance_m > 0.0:
         raise ValueError(f"{KEY_MAX_ROUTABLE_DISTANCE_M} must be > 0 m, got {max_routable_distance_m!r}")
@@ -168,3 +181,7 @@ def validate_settings(max_routable_distance_m: float, external_point_distance_to
     if no_connection_last_resort not in NO_CONNECTION_LAST_RESORTS:
         raise ValueError(f"{KEY_NO_CONNECTION_LAST_RESORT} must be one of {list(NO_CONNECTION_LAST_RESORTS)}, "
                          f"got {no_connection_last_resort!r}")
+    if not walk_max_distance_m > 0.0:
+        raise ValueError(f"{KEY_WALK_MAX_DISTANCE_M} must be > 0 m, got {walk_max_distance_m!r}")
+    if not bicycle_max_distance_m > 0.0:
+        raise ValueError(f"{KEY_BICYCLE_MAX_DISTANCE_M} must be > 0 m, got {bicycle_max_distance_m!r}")

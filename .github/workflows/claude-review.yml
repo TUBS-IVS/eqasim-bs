@@ -108,10 +108,7 @@ jobs:
           pip install pyyaml
           npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
           claude --version
-      # Not anthropics/claude-code-action: runs started by that action count as Claude Code
-      # usage, which the monthly API credits of Claude Team/Max plans do not cover; claude -p
-      # run with an API key of the linked Console organization is covered (Claude Help Center,
-      # "Monthly API credits for Max and Team plans"). See docs/codebase/notes/claude-pr-review.md.
+      # Why claude -p and not anthropics/claude-code-action: docs/codebase/notes/claude-pr-review.md.
       - name: Claude review (read-only, structured findings)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
