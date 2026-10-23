@@ -12,15 +12,42 @@ from braunschweig.synthesis.outside_tour_modes import config_keys as keys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 STAGE_NAME = "braunschweig.synthesis.outside_tour_modes.stage"
+ACTIVITIES_STAGE_NAME = "braunschweig.synthesis.outside_tour_modes.activities_stage"
 
 
 def _load(path):
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_population_writer_and_output_day_read_the_simulated_alias():
+def test_population_writer_and_output_day_read_the_simulated_aliases():
+    # The activities follow the simulated trips, whose times the pt check of ADR-0159 may move.
     assert population_writer.DAY_TRIPS_STAGE == keys.SIMULATED_TRIPS_ALIAS
     assert output_day.DAY_TRIPS_STAGE == keys.SIMULATED_TRIPS_ALIAS
+    assert population_writer.DAY_ACTIVITIES_STAGE == keys.SIMULATED_ACTIVITIES_ALIAS
+    assert output_day.DAY_ACTIVITIES_STAGE == keys.SIMULATED_ACTIVITIES_ALIAS
+
+
+def test_the_simulated_activities_follow_the_shifted_trip_times():
+    import pandas as pd
+
+    from braunschweig.synthesis.outside_tour_modes import activities_stage
+
+    trips = pd.DataFrame({"person_id": [1, 1], "trip_index": [0, 1], "preceding_purpose": ["home", "leisure"],
+                          "following_purpose": ["leisure", "home"], "departure_time": [17 * 3600.0, 21 * 3600.0],
+                          "arrival_time": [17.5 * 3600.0, 21.5 * 3600.0], "is_first_trip": [True, False],
+                          "is_last_trip": [False, True], "mode": ["pt", "pt"]})
+    persons = pd.DataFrame({"person_id": [1, 2]})
+
+    class _Context:
+        def stage(self, name):
+            return {keys.SIMULATED_TRIPS_ALIAS: trips, keys.PERSONS_STAGE: persons}[name]
+
+    activities = activities_stage.execute(_Context())
+    leisure = activities[(activities["person_id"] == 1) & (activities["purpose"] == "leisure")].iloc[0]
+    assert (leisure["start_time"], leisure["end_time"]) == (17.5 * 3600.0, 21 * 3600.0)
+    assert set(activities["person_id"]) == {1, 2}            # a person without trips keeps a home activity
+    assert list(trips.columns) == ["person_id", "trip_index", "preceding_purpose", "following_purpose",
+                                   "departure_time", "arrival_time", "is_first_trip", "is_last_trip", "mode"]
 
 
 def test_chain_solver_still_reads_trips_final():
@@ -33,6 +60,7 @@ def test_chain_solver_still_reads_trips_final():
 def test_production_config_aliases_the_stage_and_enables_the_flag():
     document = _load(REPO / "configs" / "base_bs.yml")
     assert document["aliases"][keys.SIMULATED_TRIPS_ALIAS] == STAGE_NAME
+    assert document["aliases"][keys.SIMULATED_ACTIVITIES_ALIAS] == ACTIVITIES_STAGE_NAME
     assert document["config"][keys.KEY_ENABLED] is True
     keys.validate_settings(document["config"][keys.KEY_MIN_SHARE], document["config"][keys.KEY_WARN_SHARE])
 
@@ -46,5 +74,6 @@ def test_every_fixture_aliases_the_simulated_trips_to_its_final_target_and_disab
             continue
         checked += 1
         assert aliases[keys.SIMULATED_TRIPS_ALIAS] == aliases[keys.FINAL_TRIPS_STAGE], path.name
+        assert aliases[keys.SIMULATED_ACTIVITIES_ALIAS] == aliases[keys.FINAL_ACTIVITIES_STAGE], path.name
         assert document["config"][keys.KEY_ENABLED] is False, path.name
     assert checked > 0

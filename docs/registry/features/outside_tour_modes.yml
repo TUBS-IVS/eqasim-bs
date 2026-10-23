@@ -19,8 +19,16 @@ description: >-
   the MATSim population writer and the synthesis output read; the chain solver keeps reading
   synthesis.population.trips.final. With the flag off the trips frame is returned unchanged. No Java change
   is part of the feature. The feature changes results by design when enabled.
+  Since ADR-0159 (#465) the stage also checks every pt leg of an outside tour without a portal leg against the
+  timetable (batch pt router on the pre-cut supply) and resolves a tour without a connection by moving it as a
+  whole (earlier first, up to braunschweig.outside_tour_modes.pt_shift_window_s), then car, then a lift, and as
+  the last resort (braunschweig.outside_tour_modes.last_resort car_passenger) a lift without the passenger
+  availability; a road-gate portal tour without an admissible mode becomes such a lift too instead of keeping a
+  walk or bicycle leg of tens of kilometres. The activities of the simulated day are rebuilt from the simulated
+  trips (alias synthesis.population.activities.simulated) so a moved tour's times reach the plan.
 stages:
 - synthesis.population.trips.simulated
+- synthesis.population.activities.simulated
 - matsim.scenario.population
 - synthesis.output
 pipelines:
@@ -34,6 +42,11 @@ production:
   - braunschweig.outside_tour_modes.enabled
   - braunschweig.outside_tour_modes.min_share
   - braunschweig.outside_tour_modes.warn_share
+  - braunschweig.outside_tour_modes.pt_connection_check.enabled
+  - braunschweig.outside_tour_modes.pt_shift_window_s
+  - braunschweig.outside_tour_modes.pt_shift_step_s
+  - braunschweig.outside_tour_modes.pt_no_connection_warn_share
+  - braunschweig.outside_tour_modes.last_resort
 introduced:
   issue: 453
   pr: null
@@ -45,7 +58,9 @@ code_paths:
 - braunschweig/matsim/scenario/population.py
 - braunschweig/synthesis/commute_day/output_day.py
 - braunschweig/synthesis/outside_tour_modes/__init__.py
+- braunschweig/synthesis/outside_tour_modes/activities_stage.py
 - braunschweig/synthesis/outside_tour_modes/config_keys.py
+- braunschweig/synthesis/outside_tour_modes/pt_connections.py
 - braunschweig/synthesis/outside_tour_modes/rule.py
 - braunschweig/synthesis/outside_tour_modes/srv_table.py
 - braunschweig/synthesis/outside_tour_modes/stage.py
@@ -69,6 +84,7 @@ evidence:
   - tests/test_outside_tour_modes_stage.py
   - tests/test_outside_tour_modes_tours.py
   - tests/test_outside_tour_modes_wiring.py
+  - tests/test_outside_tour_pt_connections.py
   - tests/test_srv_mode_by_distance_band.py
   - tests/test_srv_mode_by_distance_band_pins.py
   off_path_byte_identical:
@@ -98,6 +114,13 @@ evidence:
       relaxation) and on a categorical mode column, instead of falling back; a portal tour without an
       admissible mode keeps its donor modes and is counted.
       The report is also written as outside_tour_modes_report.json in the stage's cache directory.
+      Timetable check (ADR-0159), tagged [outside_tour_modes.pt_connections] and under pt_connection in the
+      report: the checked tours and probed legs, per action connection_found (primary), tour_shifted,
+      tour_to_car, tour_to_car_passenger, tour_to_car_passenger_lift and kept_no_connection with rates and the
+      median shift; WARNING when a tour is kept or the switched, lifted and kept tours exceed
+      braunschweig.outside_tour_modes.pt_no_connection_warn_share. Road-gate portal tours lifted for want of an
+      admissible mode: n_portal_tours_lifted (WARNING when above zero). The batch router logs its own
+      connection and no-route rates ([pt-router]).
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_mode_by_distance_band.csv
@@ -137,4 +160,6 @@ notes: >-
   portal stay's legs are judged here in the group all at the top band and may be re-moded, see its record.
   Config invariant: any config that aliases synthesis.population.trips.final must also alias
   synthesis.population.trips.simulated to the same target and set braunschweig.outside_tour_modes.enabled false
-  (the fixtures do; tests/test_outside_tour_modes_wiring.py).
+  (the fixtures do; tests/test_outside_tour_modes_wiring.py). Since ADR-0159 the same holds for
+  synthesis.population.activities.simulated and synthesis.population.activities.final. The timetable check
+  (ADR-0159) is not measured yet; the next 1 % rerun of the #465 fixes is the first run with it.

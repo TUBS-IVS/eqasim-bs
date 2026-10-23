@@ -24,6 +24,14 @@ description: >-
   braunschweig.outside_tour_modes.enabled false the stage returns the synthesis.population.trips.final frame
   unchanged (no counters, no warning), so the alias is then a pure pass-through. Every configs/fixtures/*
   config aliases it to the same target as its synthesis.population.trips.final and switches the feature off.
+  Since ADR-0159 (#465), after the re-moding, every pt leg of an outside tour without a portal leg is probed
+  against the timetable (batch pt router on the pre-cut network and schedule, connection rule over all stops,
+  walk limit of the plan check); a tour without a connection moves as a whole (earlier first, steps of
+  pt_shift_step_s up to pt_shift_window_s, never across the person's neighbouring trips or past the end of the
+  day minus the day-end margin), else drives, else rides along, else (last_resort car_passenger) becomes a lift
+  without the passenger availability; a road-gate portal tour without an admissible mode becomes such a lift
+  too. So departure_time and arrival_time can change as well; synthesis.population.activities.simulated
+  rebuilds the activities from this frame.
 lineage:
   type: braunschweig_new
   upstream: null
@@ -37,6 +45,7 @@ lineage:
 code:
 - braunschweig/synthesis/outside_tour_modes/__init__.py
 - braunschweig/synthesis/outside_tour_modes/config_keys.py
+- braunschweig/synthesis/outside_tour_modes/pt_connections.py
 - braunschweig/synthesis/outside_tour_modes/srv_table.py
 - braunschweig/synthesis/outside_tour_modes/tours.py
 - braunschweig/synthesis/outside_tour_modes/rule.py
@@ -55,14 +64,20 @@ features:
 decisions:
 - ADR-0145
 - ADR-0141
+- ADR-0159
 notes: >-
   Consumers: matsim.scenario.population (braunschweig/matsim/scenario/population.py, DAY_TRIPS_STAGE) and
   synthesis.output (braunschweig/synthesis/commute_day/output_day.py, DAY_TRIPS_STAGE, declared through the
   _STAGE_MAP of that module so the configure-time edge and the execute-time read agree). The chain solver, the
   portal stage, synthesis.population.activities.final and the analyses keep reading
   synthesis.population.trips.final; reading the simulated alias there would close a cycle through
-  synthesis.population.spatial.locations. activities.final is unchanged because modes do not enter the
-  activity table.
+  synthesis.population.spatial.locations. The population writer and the synthesis output read the activities
+  from synthesis.population.activities.simulated (ADR-0159), built from this frame.
+  Timetable check inputs (ADR-0159, with braunschweig.outside_tour_modes.pt_connection_check.enabled):
+  matsim.scenario.supply.processed (pre-cut network and schedule), matsim.scenario.supply.gtfs (transit
+  vehicles), the eqasim jar and the Java runtime (matsim.runtime.eqasim, matsim.runtime.java); keys
+  pt_shift_window_s (7200), pt_shift_step_s (1800), pt_no_connection_warn_share (0.05), last_resort
+  (car_passenger | keep) and the day-end margin keys; the router work files go to the stage directory.
   Stage inputs: synthesis.population.trips.final (the day after the portal rewrite),
   synthesis.population.spatial.locations (realised activity locations), synthesis.population.enriched (the
   availability flags), data.spatial.municipalities (cordon polygon) and the committed SrV table

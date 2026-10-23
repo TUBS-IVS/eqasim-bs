@@ -15,7 +15,9 @@ rule reads is described by the data record `srv2023_mode_by_distance_band`. Noth
 | `srv_table.py` | `ModeShareTable`: the cell lookup over the committed SrV table (band of a distance, the top band, the plausible modes of a cell, the fail-early check that neither pt nor walk is implausible in any cell). |
 | `tours.py` | Home-based tours, leg endpoints and straight-line leg distances from the realised locations, the outside classification. Vectorised; a missing location raises. |
 | `rule.py` | Purpose group and cell per leg, the implausibility test, the allowed modes per person, the seeded substitute draw per tour (plausible on every leg, portal gate class, counted relaxation) and its application to every leg of the tour. |
-| `stage.py` | The synpp stage and its pure entry point `remode_outside_tours`, the report and the log line. |
+| `pt_connections.py` | The timetable check of ADR-0159: `resolve_pt_tours` probes the pt legs of the outside tours without a portal leg and resolves a tour without a connection (tour shift, car, lift, lift without availability or keep), `PtCheck`, `log_report`. Pure apart from the probe. |
+| `stage.py` | The synpp stage and its pure entry point `remode_outside_tours`, the probe of the timetable check (`_pt_check`, the batch pt router of `braunschweig.data.transit.connections`), the report and the log line. |
+| `activities_stage.py` | The stage behind `synthesis.population.activities.simulated` (ADR-0159): the vendored trips->activities transform on the simulated trips, through the shim of `commute_day.activities_day_stage`. |
 
 `synthesis.population.trips.simulated` resolves to `braunschweig.synthesis.outside_tour_modes.stage` in
 `configs/base_bs.yml`; the fixtures alias it to the same target as their `synthesis.population.trips.final`.
@@ -34,8 +36,17 @@ qualifies, plausibility is judged in the cell of the longest leg only (counted).
 
 ## Invariants a change must keep
 
-- **The alias has exactly two consumers**: `braunschweig/matsim/scenario/population.py` and
-  `braunschweig/synthesis/commute_day/output_day.py` (their `DAY_TRIPS_STAGE`). The synthesis output declares
+- **The pt check runs after the re-moding and skips portal tours.** A drawn pt substitute is checked too; a
+  tour with a portal leg keeps the check of the portal stage (ADR-0152/0156), so one tour never has two owners.
+  A shift moves the WHOLE tour and never crosses the person's neighbouring trips or the day bound; the
+  population writer reads the activities from `synthesis.population.activities.simulated`, so moved times
+  reach the plan (reading `activities.final` there would desynchronise a moved tour's activities).
+- **The last resort is one key for two cases.** `braunschweig.outside_tour_modes.last_resort` decides both what
+  happens to a pt tour without a connection and to a road-gate portal tour without an admissible mode;
+  `remode_outside_tours` and `tour_substitutes` keep the former behaviour (`keep`) in their own defaults, the
+  stage passes the configured value.
+- **The aliases have exactly two consumers**: `braunschweig/matsim/scenario/population.py` and
+  `braunschweig/synthesis/commute_day/output_day.py` (their `DAY_TRIPS_STAGE` and `DAY_ACTIVITIES_STAGE`). The synthesis output declares
   its trips stage through the `_STAGE_MAP` of `output_day.py`, because the default map of
   `ConfigureDayViewContext` would declare `trips.final` at configure time while `execute` reads the simulated
   alias, which synpp refuses.
@@ -66,7 +77,9 @@ qualifies, plausibility is judged in the cell of the longest leg only (counted).
   and its `config_keys`, the home of the portal flag column) and, with the flag on, the bytes of the committed
   SrV table; a new helper module imported by the stage must be added to its module tuple (the
   closure gate of ADR-0136 fails otherwise).
-- **Fixture config invariant.** Every config that aliases `synthesis.population.trips.final` aliases
+- **Fixture config invariant.** Every config that aliases `synthesis.population.activities.final` also aliases
+  `synthesis.population.activities.simulated` to the same target (ADR-0159).
+- **Fixture config invariant (trips).** Every config that aliases `synthesis.population.trips.final` aliases
   `synthesis.population.trips.simulated` to the same target and sets `braunschweig.outside_tour_modes.enabled:
   false` (the flag defaults to true and the stage requires the cordon). The aliases live in the top-level
   `aliases` section of a config file, the flags under `config`.

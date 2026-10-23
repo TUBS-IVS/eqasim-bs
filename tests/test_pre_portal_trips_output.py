@@ -149,14 +149,14 @@ class _ExecuteContext:
     """synpp ExecuteContext contract: stage(name) and SINGLE-argument config(name), failing on anything undeclared."""
 
     def __init__(self, tmp_path, portal_enabled, output_formats=("csv", "gpkg"), prefix="bs_"):
-        self.declared_stages = {DAY_TRIPS_STAGE, "synthesis.population.activities.final",
+        self.declared_stages = {DAY_TRIPS_STAGE, "synthesis.population.activities.simulated",
                                 "synthesis.population.enriched"}
         if portal_enabled:
             self.declared_stages.add(PRE_PORTAL_STAGE)
         self._stages = {
             DAY_TRIPS_STAGE: _post_portal_trips() if portal_enabled else _donor_trips(),
             PRE_PORTAL_STAGE: _donor_trips(),
-            "synthesis.population.activities.final": pd.DataFrame({"person_id": [1]}),
+            "synthesis.population.activities.simulated": pd.DataFrame({"person_id": [1]}),
             "synthesis.population.enriched": pd.DataFrame({"person_id": [1, 2]}),
         }
         if portal_enabled:

@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 107 | stages: 132 | datasets: 104 | ADRs: 153 | run manifests: 69
+- Features: 107 | stages: 133 | datasets: 104 | ADRs: 154 | run manifests: 69
 
 ## Population synthesis
 
@@ -138,7 +138,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Cordon / external demand
 
-10 stage(s), 10 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
+11 stage(s), 11 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

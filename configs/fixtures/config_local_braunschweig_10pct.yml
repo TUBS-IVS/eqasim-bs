@@ -195,6 +195,7 @@ aliases:
   synthesis.population.trips.final: synthesis.population.trips
   synthesis.population.trips.simulated: synthesis.population.trips
   synthesis.population.activities.final: synthesis.population.activities
+  synthesis.population.activities.simulated: synthesis.population.activities
 
   # Region-specific loader overrides: redirect selected eqasim_common.data.* stages
   # to their Braunschweig forks. Only stages whose input layout differs.
