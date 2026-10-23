@@ -688,7 +688,8 @@ def _gate_values():
             keys.KEY_PT_GATE_MODES: "all", keys.KEY_GATE_SERVICE_WINDOW_S: 3600.0, keys.KEY_GATE_CANDIDATES: 5,
             keys.KEY_SHIFT_WINDOW_S: 7200.0, keys.KEY_SHIFT_STEP_S: 1800.0, keys.KEY_MIN_STAY_S: 1800.0,
             keys.KEY_NO_CONNECTION_WARN_SHARE: 0.05, keys.KEY_SHIFT_RETURN_EARLIER: True,
-            keys.KEY_NO_CONNECTION_LAST_RESORT: "car_passenger"}
+            keys.KEY_NO_CONNECTION_LAST_RESORT: "car_passenger", keys.KEY_WALK_MAX_DISTANCE_M: 5000.0,
+            keys.KEY_BICYCLE_MAX_DISTANCE_M: 30000.0}
 
 
 def _execute_context_with_municipality_crs(tmp_path, monkeypatch, municipality_crs):
@@ -757,3 +758,31 @@ def test_build_portal_trips_rejects_a_frame_without_a_crs():
 def test_assert_consistent_crs_accepts_equal_crs_given_in_different_spellings():
     frames = {"a": gpd.GeoDataFrame(geometry=[], crs="EPSG:25832"), "b": gpd.GeoDataFrame(geometry=[], crs=25832)}
     stage.assert_consistent_crs(frames)
+
+
+# --------------------------------------------------------------------------------------------------
+# Walk / bicycle stays beyond the soft-mode distance (#465, ADR-0163)
+# --------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("soft_mode", ["walk", "bicycle"])
+def test_a_far_soft_mode_stay_without_a_road_mode_becomes_pt_and_one_with_a_road_mode_is_left_to_outside_tour_modes(
+        soft_mode):
+    # Regression of person 343377 (#465 rerun): the donor walked 0.38 km to work, the assigned work location lies
+    # 175 km away, and the person has neither car nor passenger seat. A soft-mode stay at a road gate leaves
+    # outside_tour_modes (ADR-0145) no plausible road-class mode, so the stay must become pt here. Person 1 can
+    # drive: its soft-mode stay stays at a road gate for the SrV-weighted draw of outside_tour_modes, counted.
+    fixture = _fixture()
+    fixture["df_work"] = gpd.GeoDataFrame({"person_id": [1, 2], "location_id": ["EXT1", "EXT1"]},
+                                          geometry=[Point(200000.0, 25000.0), Point(200000.0, 25000.0)], crs=CRS)
+    fixture["trips"]["following_purpose"] = ["work", "home", "work", "home"]
+    fixture["trips"]["preceding_purpose"] = ["home", "work", "home", "work"]
+    fixture["trips"]["mode"] = soft_mode
+    fixture["trips"]["euclidean_distance"] = 376.9
+    out = stage.build_portal_trips(**fixture)
+    report, anchors = out["report"], out["anchors"]
+    assert anchors["mode"].tolist() == [soft_mode, "pt"]
+    assert out["trips"].loc[out["trips"]["person_id"] == 2, "mode"].tolist() == ["pt", "pt"]
+    assert report["n_mode_substituted"] == 1
+    assert report["mode_substitution_reasons"] == {"soft_mode_beyond_distance_no_road_mode": 1}
+    assert report["n_soft_mode_stays_beyond_distance"] == 2 and report["n_soft_mode_stays_to_pt"] == 1
+    assert report["n_soft_mode_stays_left_to_outside_tour_modes"] == 1

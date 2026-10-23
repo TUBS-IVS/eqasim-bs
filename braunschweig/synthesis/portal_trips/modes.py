@@ -8,6 +8,13 @@ car_passenger needs carPassengerAvailability in {some, all} -- or, when the popu
 such column, car availability (the Java fallback). Substitution order on failure: car ->
 car_passenger -> pt; car_passenger -> pt; bicycle -> pt. pt and walk are always available; a mode
 outside MODE_FALLBACKS is not checked and kept as it is.
+
+Soft modes beyond their distance (#465, ADR-0163): a walk / bicycle stay whose straight-line leg (origin to
+destination) exceeds its configured maximum is implausible. The stay's mode fixes its gate class (pt -> rail exit
+stop, every other mode -> road gate), and outside_tour_modes (ADR-0145) re-modes an implausible tour only within
+that class. So a far soft-mode stay of a person who can use neither car nor car_passenger becomes pt here
+(reason ``soft_mode_beyond_distance_no_road_mode``); any other far soft-mode stay keeps its road gate and is left
+to the SrV-weighted draw of outside_tour_modes. Both are flagged per stay so the stage can count them.
 """
 from __future__ import annotations
 
@@ -28,6 +35,9 @@ REASON_NO_CAR = "no_car_availability"
 REASON_NO_LICENCE = "no_driving_licence"
 REASON_NO_BICYCLE = "no_bicycle_availability"
 REASON_NO_PASSENGER = "no_car_passenger_availability"
+REASON_SOFT_MODE_DISTANCE = "soft_mode_beyond_distance_no_road_mode"
+#: Per-stay flags of the soft-mode distance check (not part of MODE_COLUMNS, which the rewrite consumes).
+SOFT_MODE_COLUMNS = ["soft_mode_beyond_distance", "soft_mode_left_to_outside_tour_modes"]
 
 
 def mode_availability(persons: pd.DataFrame) -> pd.DataFrame:
@@ -56,7 +66,8 @@ def mode_availability(persons: pd.DataFrame) -> pd.DataFrame:
                         index=pd.Index(persons["person_id"].to_numpy(), name="person_id"))
 
 
-def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.DataFrame) -> pd.DataFrame:
+def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.DataFrame,
+                 leg_distance_m=None, soft_mode_max_distance_m=None) -> pd.DataFrame:
     """One row per stay, in the order of ``stays``, with the fixed mode and the substitution bookkeeping.
 
     ``substituted_from`` / ``substitution_reason`` are None where the donor's outbound mode is kept;
@@ -64,6 +75,10 @@ def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.Data
     a return leg exists and its donor mode differs from the outbound mode. Every stay person must
     have an availability row, every outbound trip a mode and every named return trip a mode in the
     trips table (ValueError otherwise).
+
+    ``leg_distance_m`` (straight-line metres origin -> destination per stay) and ``soft_mode_max_distance_m``
+    (``{"walk": m, "bicycle": m}``) switch on the soft-mode distance check (module docstring); without them no
+    soft-mode stay is flagged. The columns of ``SOFT_MODE_COLUMNS`` are appended after ``MODE_COLUMNS``.
     """
     mode_lookup = trips.set_index(["person_id", "trip_index"])["mode"]
     persons = stays["person_id"].to_numpy()
@@ -109,9 +124,27 @@ def portal_modes(stays: pd.DataFrame, trips: pd.DataFrame, availability: pd.Data
             chosen = np.where(take, candidate, chosen)
             resolved |= take
     chosen = np.where(substituted & ~resolved, FINAL_FALLBACK_MODE, chosen)
-    return pd.DataFrame({
+    # Soft modes beyond their distance; an availability substitution above takes precedence (it already left the
+    # soft mode). Without a road-class motorised mode the only plausible mode is pt (rail gate).
+    beyond = np.zeros(len(stays), dtype=bool)
+    if leg_distance_m is not None and soft_mode_max_distance_m:
+        distance = np.asarray(leg_distance_m, dtype=float)
+        if distance.shape != (len(stays),) or not np.isfinite(distance).all():
+            raise ValueError(f"[portal_trips] leg_distance_m must hold one finite distance per stay ({len(stays)}), "
+                             f"got shape {distance.shape}")
+        for mode, max_m in soft_mode_max_distance_m.items():
+            beyond |= (outbound == mode) & (distance > float(max_m))
+    no_road_mode = ~can_by_mode["car"] & ~can_by_mode["car_passenger"]
+    to_pt = beyond & no_road_mode & ~substituted
+    chosen = np.where(to_pt, FINAL_FALLBACK_MODE, chosen)
+    reason = np.where(to_pt, REASON_SOFT_MODE_DISTANCE, reason)
+    substituted |= to_pt
+    frame = pd.DataFrame({
         "mode": chosen, "outbound_mode": outbound, "return_mode": returning,
         "substituted_from": np.where(substituted, outbound, None),
         "substitution_reason": np.where(substituted, reason, None),
         "return_mode_differs": has_return & (returning != outbound),
     }, columns=MODE_COLUMNS)
+    frame["soft_mode_beyond_distance"] = beyond
+    frame["soft_mode_left_to_outside_tour_modes"] = beyond & ~substituted
+    return frame
