@@ -139,7 +139,9 @@ jobs:
       - name: Record review cost
         if: always()
         env:
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          # The action sets no output when it fails, but still writes the file to its fixed
+          # path (base-action/src/execution-file.ts), so a failed run's cost is recorded too.
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file || format('{0}/claude-execution-output.json', runner.temp) }}
           TIER: ${{ needs.classify.outputs.tier }}
           MODEL: ${{ needs.classify.outputs.model }}
         run: |

@@ -191,6 +191,8 @@ def _cmd_classify(args) -> int:
 
 def _cmd_cost(args) -> int:
     try:
+        if not args.execution_file:
+            raise ValueError("empty execution file path (the action set no output)")
         summary = cost_summary(read_result_record(Path(args.execution_file)))
     except (OSError, ValueError) as error:
         print(f"error: no cost record: {error}", file=sys.stderr)

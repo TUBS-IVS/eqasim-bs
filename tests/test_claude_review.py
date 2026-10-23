@@ -116,3 +116,6 @@ def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeyp
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     assert cr.main(["cost", "--execution-file", str(execution)]) == 1
     assert "No cost record" in step_summary.read_text(encoding="utf-8")
+    # an empty path (the action set no output) is named as such, not read as the cwd directory
+    assert cr.main(["cost", "--execution-file", ""]) == 1
+    assert "empty execution file path" in step_summary.read_text(encoding="utf-8")
