@@ -24,7 +24,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Where a new fact goes:** stage exists/changed → Stage Registry (+ `... dag` if the graph changed) · feature semantics/state → Feature Registry · dataset → Data Registry + `scripts/verify_braunschweig_inputs.py` + README · WHY a choice was made, incl. rejected options → ADR · what a run produced or proved → run manifest · work still to do → GitHub issue · module/package layout, or a rule maintainers must follow → `docs/codebase/notes/<slug>.md` · public setup contract → README. Every substantial PR → `documentation build` + `check` (the PR template carries this checklist). A chat summary, a PR body or `SESSION_LOG.md` is never a fact's only home. Never invent history: `unknown` is a valid value; convergence ≠ validation; a smoke ≠ validation.
 
-**Parallel branches:** merge `origin/main` into your branch before `git pr`, and let CI test the pushed merge; if `main` moves before merge, merge it again and push — a green run against a stale base says nothing about the merge state (#284 + #287 turned `main` red exactly this way, each green on its own). While sibling branches are open, do not edit a shared prose file at all.
+**Parallel branches:** merge `origin/main` into your branch before `git pr` with `git sync-main` (merges, rebuilds `docs/generated/*`, runs the documentation check; never hand-merge a generated view — `docs/codebase/notes/merging-main.md`, ADR-0165), and let CI test the pushed merge; if `main` moves before merge, merge it again and push — a green run against a stale base says nothing about the merge state (#284 + #287 turned `main` red exactly this way, each green on its own). While sibling branches are open, do not edit a shared prose file at all.
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around. Subagents: every dispatch names its model and a tool-call budget, per `docs/codebase/notes/subagent-budget.md`.
 
@@ -109,6 +109,13 @@ When generating analysis outputs, include enough information to reproduce the re
 **Never run `git push` without explicit user confirmation.** Committing locally is fine;
 every push to any branch or remote, `origin/main` included, needs an explicit "yes" /
 "push it" / equivalent asked for each time (a prior confirmation does not authorise later pushes).
+**One standing exception, Auto-fix** (user decision 2026-10-23): while the desktop app's Auto-fix
+is on for a PR, the fix for what Auto-fix reports on that PR (failing CI, merge conflict, review
+comments) is committed and pushed to that PR's branch without asking. The push gate still applies
+(`origin/main` merged, documentation check), and every review thread still gets its
+`Fixed ...` / `Rejected: ...` reply (`docs/codebase/notes/claude-pr-review.md`). It never covers a
+force-push, `main`, another branch or repository, or changes beyond fixing the reported items:
+those still need the explicit yes.
 
 **Newly discovered work: fix it now, or issue it.** Triage every finding that surfaces mid-session:
 - **Quick fix -> fix it now, no issue.** Small and self-contained: one concern, a few files, about an hour or less, no
