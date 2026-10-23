@@ -1,0 +1,58 @@
+feature: large_facility_access_links
+title: Large facilities on low-capacity links get a high-capacity access link
+area: matsim
+description: 'A facility of at least 1000 activities (selected plans scaled to 100 %) whose nearest-link
+  placement put it on a link below 1000 veh/h moves to the closest car link of at least 1000 veh/h within
+  1000 m that is not a motorway, trunk or ramp; its activities follow. Cordon portals (outside_) are excluded.
+  Replaces, for large sites only, eqasim''s capacity-blind nearest-link placement, under which all departures
+  of a site such as the VW Wolfsburg plant location entered on one 600 veh/h side street (issue #465, ADR-0165).'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - large_facility_access_enabled
+introduced:
+  issue: '#465'
+  pr: null
+  adr: ADR-0165
+detail_doc: null
+code_paths:
+- matsim/simulation/prepare.py
+- scripts/measure_large_facility_access.py
+evidence:
+  tests:
+  - tests/test_large_facility_access_prepare.py
+  - tests/test_measure_large_facility_access.py
+  off_path_byte_identical:
+    claimed: false
+    note: |
+      large_facility_access_enabled false skips the Java step, so facilities and population are those of RunPreparation; not asserted byte for byte against a run without this code. The Java side (eqasim-java-bs LargeFacilityAccessLinkSelectorTest, RunAdaptLargeFacilityAccessTest) is tested in its own repository.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[matsim.simulation.prepare] large facility access: moved'
+    note: |
+      RunAdaptLargeFacilityAccess logs already adequate / moved / fallback / excluded facilities with the moved and fallback rate, writes one row per large facility to large_facility_access_summary.csv in the prepare stage directory, and fails above large_facility_access_maximum_fallback_share (0.15). Measured with scripts/measure_large_facility_access.py: fallback 6.8 % (100 % run prod100_20260925) and 8.6 % (1 % rerun) of the facilities that need a new link; the Java step on the 1 % rerun's plans: moved 603 / 662, fallback 59 (8.9 %).
+  reference:
+    kind: none
+    note: |
+      No observed reference applies. The rule is a network-access correction; its parameters (1000 activities, 1000 veh/h, 1000 m) are measured engineering choices on this network (ADR-0165), not calibrated against data.
+validation:
+  state: unvalidated
+  runs:
+  - i465-large-facility-access-1pct-2026-10-23
+  metric: null
+  note: |
+    A simulated 1 % A/B (40 continued iterations from the #465 rerun's final plans), not a validation; no observed reference is compared. See the run manifest.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Implemented and measured at 1 % in a continued-iteration A/B; no full pipeline run and no 100 % run with the rule yet.
+  source: ADR-0165

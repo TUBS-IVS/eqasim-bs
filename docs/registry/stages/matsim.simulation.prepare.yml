@@ -44,7 +44,13 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   measured search time), so the module default 0.0 applies; with the flag off it declares
   no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
   (enable_urban_parking) has no preparation step (ADR-0039). The freight injection links every boundary
-  endpoint to a high-capacity link in the trip direction (ADR-0144).
+  endpoint to a high-capacity link in the trip direction (ADR-0144). After eqasim's RunPreparation, large
+  facilities (large_facility_access_minimum_activities, at 100 %) on links below
+  large_facility_access_minimum_capacity_veh_per_h move to the closest high-capacity link within
+  large_facility_access_maximum_distance_m (Java RunAdaptLargeFacilityAccess, summary
+  large_facility_access_summary.csv, fails above large_facility_access_maximum_fallback_share), and the prepared
+  config sets qsim.insertingWaitingVehiclesBeforeDrivingVehicles from
+  matsim_qsim_inserting_waiting_vehicles_first (default false) (ADR-0165).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -69,6 +75,8 @@ features:
 - cordon_network_ring
 - freight_assumptions
 - freight_boundary_links
+- large_facility_access_links
+- qsim_departures_yield
 - mode_choice
 - vrb_zone_fare_model
 - parking_cost_zones
@@ -85,6 +93,7 @@ decisions:
 - ADR-0144
 - ADR-0146
 - ADR-0151
+- ADR-0165
 notes: >-
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare

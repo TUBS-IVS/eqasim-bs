@@ -9,13 +9,17 @@ lines). An identical existing module is left as it is; a conflicting one is refu
 
 Only flat modules (``<param>`` children) are supported: a module with parameter sets or repeated parameter
 names cannot be compared parameter by parameter and is rejected.
+
+``set_param`` changes the value of one existing parameter of a module with the same byte-preserving text edit
+(used for ``qsim.insertingWaitingVehiclesBeforeDrivingVehicles``, ADR-0165).
 """
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Mapping
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape, quoteattr, unescape
 
 CLOSING_CONFIG_TAG = "</config>"
 
@@ -94,3 +98,36 @@ def write_module(config_path, name: str, params: Mapping[str, str]) -> Path:
     lines.append("\t</module>")
     path.write_bytes((text[:marker] + newline.join(lines) + newline + text[marker:]).encode("utf-8"))
     return path
+
+
+def set_param(config_path, module: str, name: str, value: str) -> str:
+    """Set the existing parameter ``name`` of module ``module`` to ``value`` (text); return the old value.
+
+    Edits only the ``value`` attribute of that one ``<param>`` element as text, so the XML declaration, the
+    DOCTYPE, comments, line endings and every other byte are kept. A parameter of the same name in another
+    module is not touched. Side effect: rewrites ``config_path``. Raises ``ValueError`` when the module or the
+    parameter is absent or appears more than once (nothing is written: a missing parameter means the config
+    was not generated the way the caller expects, and adding one silently would hide that), ``TypeError``
+    for a non-text value, and ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML.
+    """
+    _check_module_name(module)
+    _check_params({name: value})
+    path = Path(config_path)
+    ET.parse(str(path))  # fail early on a malformed file, before any text edit
+    text = path.read_bytes().decode("utf-8")
+    modules = list(re.finditer(r"<module\s+name=\"%s\"\s*>(.*?)</module>" % re.escape(module), text, re.DOTALL))
+    if not modules:
+        raise ValueError(f"{path}: no module {module!r}")
+    if len(modules) > 1:
+        raise ValueError(f"{path}: module {module!r} appears {len(modules)} times")
+    body_start, body_end = modules[0].span(1)
+    params = list(re.finditer(r"<param\s+name=\"%s\"\s+value=\"([^\"]*)\"" % re.escape(name),
+                              text[body_start:body_end]))
+    if not params:
+        raise ValueError(f"{path}: no parameter {name!r} in module {module!r}")
+    if len(params) > 1:
+        raise ValueError(f"{path}: parameter {name!r} appears {len(params)} times in module {module!r}")
+    value_start, value_end = (body_start + offset for offset in params[0].span(1))
+    old_value = unescape(text[value_start:value_end], {"&quot;": '"'})
+    path.write_bytes((text[:value_start] + escape(value, {'"': "&quot;"}) + text[value_end:]).encode("utf-8"))
+    return old_value

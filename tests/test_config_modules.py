@@ -105,3 +105,51 @@ def test_module_name_and_parameters_must_be_text(tmp_path):
     with pytest.raises(ValueError, match="module name"):
         cm.write_module(path, "", PARAMS)
     assert path.read_bytes() == CONFIG.encode("utf-8")
+
+
+QSIM_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
+               '<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">\n'
+               '<config>\n\t<module name="global">\n\t\t<param name="numberOfThreads" value="4" />\n\t</module>\n'
+               '\t<module name="qsim">\n\t\t<!-- decides if waiting vehicles enter first -->\n'
+               '\t\t<param name="insertingWaitingVehiclesBeforeDrivingVehicles" value="true" />\n'
+               '\t\t<param name="numberOfThreads" value="12" />\n\t</module>\n</config>\n')
+
+
+def test_set_param_changes_only_that_parameter_of_that_module(tmp_path):
+    path = _config(tmp_path, QSIM_CONFIG)
+    assert cm.set_param(path, "qsim", "insertingWaitingVehiclesBeforeDrivingVehicles", "false") == "true"
+    text = path.read_bytes().decode("utf-8")
+    assert text == QSIM_CONFIG.replace(
+        '"insertingWaitingVehiclesBeforeDrivingVehicles" value="true"',
+        '"insertingWaitingVehiclesBeforeDrivingVehicles" value="false"')
+    assert cm.read_module(path, "qsim")["numberOfThreads"] == "12"
+
+
+def test_set_param_does_not_touch_a_same_named_parameter_of_another_module(tmp_path):
+    path = _config(tmp_path, QSIM_CONFIG)
+    assert cm.set_param(path, "qsim", "numberOfThreads", "8") == "12"
+    assert cm.read_module(path, "global") == {"numberOfThreads": "4"}
+    assert cm.read_module(path, "qsim")["numberOfThreads"] == "8"
+
+
+def test_set_param_keeps_crlf_line_endings(tmp_path):
+    path = _config(tmp_path, QSIM_CONFIG.replace("\n", "\r\n"))
+    cm.set_param(path, "qsim", "insertingWaitingVehiclesBeforeDrivingVehicles", "false")
+    assert path.read_bytes().decode("utf-8") == QSIM_CONFIG.replace("\n", "\r\n").replace(
+        '"insertingWaitingVehiclesBeforeDrivingVehicles" value="true"',
+        '"insertingWaitingVehiclesBeforeDrivingVehicles" value="false"')
+
+
+def test_set_param_refuses_a_missing_module_or_parameter_and_writes_nothing(tmp_path):
+    path = _config(tmp_path, QSIM_CONFIG)
+    with pytest.raises(ValueError, match="no module 'missing'"):
+        cm.set_param(path, "missing", "x", "1")
+    with pytest.raises(ValueError, match="no parameter 'endTime' in module 'qsim'"):
+        cm.set_param(path, "qsim", "endTime", "30:00:00")
+    assert path.read_bytes().decode("utf-8") == QSIM_CONFIG
+
+
+def test_set_param_value_must_be_text(tmp_path):
+    path = _config(tmp_path, QSIM_CONFIG)
+    with pytest.raises(TypeError):
+        cm.set_param(path, "qsim", "numberOfThreads", 8)
