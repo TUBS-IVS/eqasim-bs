@@ -1,0 +1,1 @@
+delayed >= 1 h traversals, (link, continued to a target link in the same trip): {('38954', False): 4, ('38954', True): 7360, ('647288', False): 3, ('647288', True): 3179}

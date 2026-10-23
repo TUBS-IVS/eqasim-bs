@@ -1,0 +1,12 @@
+trips in bbox 483
+departures on portal link 450785: 0; of these through turnaround entry 321213: 0
+trips through turnaround entry 321213: 0; origin: []
+  their end in bbox: []
+  vehicle kinds: []
+link 450785 bus,car,car_passenger,motorcycle,pt,truck sim cap 60/h: hour:left(maxdelay_h) 
+link 321213 car,car_passenger,motorcycle,truck sim cap 15/h: hour:left(maxdelay_h) 
+through traversals >= 1 h on 450785: 0; via turnaround 321213: 0 ; ending in bbox: [] ; origin: []
+departures on portal link per hour: {}
+departures on portal link by kind: Counter()
+portal-link departures that never reached the turnaround entry and never left traffic: 0
+turnaround users by kind: Counter()
