@@ -44,7 +44,12 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   alias, attaches no parking column, so its own configure declares parking_zones_enabled and rejects it
   when true, naming the alias the zones need; the wrapper declares the writer''s inputs through
   declare_writer_inputs instead, so the check never fires there. Mechanism:
-  docs/codebase/notes/parking-cost-zones.md.'
+  docs/codebase/notes/parking-cost-zones.md. Since ADR-0154 (issue #465) the wrapper moves every day whose last
+  planned arrival is later than the end of the simulated day (MAX_PLAN_TIME_SECONDS, 30 h) minus
+  braunschweig.day_end_margin.last_arrival_margin_s (ASSUMPTION, 3600 s) earlier as a whole, after the in-commuter
+  merge (braunschweig.matsim.scenario.day_end_margin; every duration kept, no time before 0 s, a day that cannot move
+  far enough counted as unresolved with a WARNING); braunschweig.day_end_margin.enabled false writes the synthesis
+  times (byte-identical plans).'
 lineage:
   type: overridden
   upstream: matsim.scenario.population
@@ -53,6 +58,7 @@ lineage:
 code:
 - matsim/scenario/population.py
 - braunschweig/matsim/scenario/population.py
+- braunschweig/matsim/scenario/day_end_margin.py
 pipelines:
   popsim_mid: active
   popsim_open: active
