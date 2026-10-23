@@ -91,8 +91,10 @@ jobs:
           fetch-depth: 1
       - name: Claude review
         id: claude
-        # v1.0.99, pinned by commit for reproducible review behaviour.
-        uses: anthropics/claude-code-action@c3d45e8e941e1b2ad7b278c57482d9c5bf1f35b3
+        # v1.0.259 (claude-agent-sdk 0.3.309), pinned by commit for reproducible review
+        # behaviour. v1.0.99 failed with Opus 5.5: its bundled CLI sent thinking.type
+        # "enabled", which the API rejects with 400 for that model (run 39949382111).
+        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # The workflow token instead of the Claude GitHub App's OIDC token exchange
