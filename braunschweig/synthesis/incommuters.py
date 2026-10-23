@@ -49,6 +49,9 @@ from braunschweig.data.cordon.plans import (
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
 from braunschweig.data.mikrozensus import reference as _mikrozensus_reference
 from braunschweig.data.mikrozensus.reference import bundesland_of_ars
+# Timetable check of the pt days (#488) and the day-end rule it shares with the population writer.
+from braunschweig.matsim.scenario import day_end_margin as _day_end_margin
+from braunschweig.synthesis import incommuter_pt_connections as _pt_connections
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +328,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             zgb_polygon=None, source_buffer_m=45000.0,
                             mode_balance=False,
                             mode_reference_by_bundesland=None,
-                            repair_chronology=True):
+                            repair_chronology=True,
+                            pt_check=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -385,6 +389,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     station draw step (byte-identical to the pre-balancer behaviour for the same seed).
     The balancer logs its stats (n_pt_target, n_forced, n_promoted, residual) and warns
     if the residual > 0 (rail access too scarce to fully restore the target).
+
+    ``pt_check`` (default ``None``: no check, byte-identical): a
+    :class:`~braunschweig.synthesis.incommuter_pt_connections.PtCheck`. Then, after the
+    donor times are imputed, every day whose return arrival is after ``pt_check.bound_s``
+    first moves earlier as a whole (the rule of the population writer's day-end margin,
+    ``day_end_margin.late_day_shift_s``), and the pt days are checked against the
+    timetable and resolved by ``incommuter_pt_connections.resolve_pt_days`` (#488): a
+    shifted day keeps its durations; a pt in-commuter without a connection within the
+    shift window drives and boards at its road gate (real in-ring origins keep their
+    home), exactly like the pt in-commuters without a station above. The frames then
+    carry the report under ``pt_connection``.
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     # OD validation target for the per-run cordon analysis (#134): the full-population
@@ -666,6 +681,43 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         donors, hts_trips, person_col, dist_km, home_to_gate_km,
         gate_speed_kmh, detour_factor)
 
+    # 4b) Timetable check of the pt days (#488). Only with a check, so the default path stays byte-identical.
+    pt_report = None
+    if pt_check is not None:
+        # The times the frames will carry (assemble_incommuter_core_frames imputes the same way; on complete
+        # times the second imputation changes nothing).
+        depart_home, arrive_work, depart_work, arrive_home = impute_incommuter_times(
+            depart_home, arrive_work, depart_work, arrive_home, middle_purpose="work",
+            repair_chronology=repair_chronology)
+        # A day that ends after the bound moves earlier first, as the population writer would move it; the
+        # timetable is then asked at the times that are finally written.
+        move_s, _late, _unresolved = _day_end_margin.late_day_shift_s(
+            depart_home, arrive_home, target_s=float(pt_check.bound_s))
+        depart_home, arrive_work, depart_work, arrive_home = (
+            depart_home - move_s, arrive_work - move_s, depart_work - move_s, arrive_home - move_s)
+        resolution = _pt_connections.resolve_pt_days(
+            person_ids=person_ids, is_pt=modes == "pt", home_xy=np.column_stack([home_x, home_y]),
+            work_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_work_s=arrive_work,
+            depart_work_s=depart_work, arrive_home_s=arrive_home, probe=pt_check.probe,
+            shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
+            bound_s=pt_check.bound_s, car_allowed=pt_check.car_allowed and "car" in commute_modes)
+        offset = resolution.offsets_s
+        depart_home, arrive_work, depart_work, arrive_home = (
+            depart_home + offset, arrive_work + offset, depart_work + offset, arrive_home + offset)
+        to_car = resolution.actions == _pt_connections.ACTION_TO_CAR
+        if to_car.any():
+            modes = np.where(to_car, "car", modes)
+            # Board at the road gate like the pt in-commuters without a station; a real in-ring origin stays.
+            at_gate = to_car if is_in_ring is None else to_car & ~is_in_ring
+            home_x = np.where(at_gate, gate_x, home_x)
+            home_y = np.where(at_gate, gate_y, home_y)
+            # The home departure follows the new access distance, as _agent_times seeds it.
+            new_access_km = straight_line_distance_km(home_x, home_y, gate_x, gate_y)
+            travel_s = (dist_km + new_access_km) * detour_factor / gate_speed_kmh * 3600.0
+            depart_home = np.where(to_car, np.maximum(0.0, arrive_work - travel_s), depart_home)
+        pt_report = dict(resolution.report, n_days_moved_before_bound=int((move_s > 0).sum()))
+        _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
+
     # Home stays a normal "home" activity here. The eqasim scenario cutter converts
     # it to an "outside" activity (its location is at the gate / beyond the cordon),
     # which is the native point where outside activities are created -- creating them
@@ -773,11 +825,14 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         ("ein", "car", _car_target_share_pct),
     ], columns=["direction", "mode", "share_pct_target"])
 
-    return dict(persons=persons, trips=trips, activities=activities,
-                locations=locations, vehicles=vehicles,
-                vehicle_types=vehicle_types, households=households,
-                validation=validation, mode_target=mode_target,
-                od_target=od_target)
+    frames = dict(persons=persons, trips=trips, activities=activities,
+                  locations=locations, vehicles=vehicles,
+                  vehicle_types=vehicle_types, households=households,
+                  validation=validation, mode_target=mode_target,
+                  od_target=od_target)
+    if pt_report is not None:
+        frames["pt_connection"] = pt_report
+    return frames
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
@@ -1144,7 +1199,7 @@ def _empty_frames(crs):
 #: mode reference is applied, and ``constants`` carries ``ROUTED_DETOUR_FACTOR``, with which
 #: every straight-line distance here is converted.
 _HELPER_MODULES = (_plans, _constants, _demand, _gate_assignment, _mode_balancer,
-                   _mode_reference, _mikrozensus_reference)
+                   _mode_reference, _mikrozensus_reference, _pt_connections, _day_end_margin)
 
 #: The same requirement for the five helpers reached through FUNCTION-LEVEL imports, hashed by
 #: dotted NAME because no module object exists at this file's top level: ``pt_reachability``
@@ -1170,6 +1225,15 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.vehicles.hbefa",
     "braunschweig.synthesis.vehicles.segment",
     "braunschweig.synthesis.vehicles.wohnmobile_age",
+    # The timetable check of the pt days (#488, function-level imports of _pt_check): the batch pt router and
+    # its connection rule, the schedule reader, the walk limit (plan_check) and the end of the simulated day
+    # (plan_validation, with its own imports).
+    "braunschweig.data.transit.connections",
+    "braunschweig.data.transit.schedule",
+    "braunschweig.matsim.simulation.plan_check",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.closure_dwell",
+    "data.hts.hts",
 )
 
 
@@ -1242,6 +1306,25 @@ def configure(context):
     context.config("cordon_network_source_buffer_m", 45000.0)
     context.config("osm_path", "osm")
     context.config("data_path")
+    # Timetable check of the pt days (#488): the batch pt router on the pre-cut network and schedule, as for the
+    # portal pt stays. The day-end margin keys are read for the bound of the shift (the population writer moves a
+    # day that ends later than the end of the simulated day minus the margin).
+    context.config(_pt_connections.KEY_ENABLED, _pt_connections.DEFAULT_ENABLED)
+    if context.config(_pt_connections.KEY_ENABLED):
+        _pt_connections.shift_offsets_s(
+            float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S, _pt_connections.DEFAULT_SHIFT_WINDOW_S)),
+            float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
+        context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
+        context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
+        context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
+        from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
+        _connections.configure(context)
+        context.stage("matsim.runtime.eqasim")
+        context.stage("matsim.runtime.java")
+        context.config("processes", volatile=True)
+        context.config("matsim_threads", None, volatile=True)
+        context.stage("matsim.scenario.supply.processed")
+        context.stage("matsim.scenario.supply.gtfs")
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -1373,7 +1456,50 @@ def execute(context):
         mode_balance=mode_balance,
         mode_reference_by_bundesland=mode_reference_by_bundesland,
         repair_chronology=context.config("cordon_incommuter_time_chronology"),
+        pt_check=_pt_check(context) if context.config(_pt_connections.KEY_ENABLED) else None,
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
     return frames
+
+
+def _pt_check(context):
+    """The timetable check of the pt days (#488): the batch pt router of ``braunschweig.data.transit.connections``
+    on the pre-cut network and schedule, its connection rule over all stops of the schedule (an in-commuter's home
+    station may lie outside the cut extent), and the shift bound = end of the simulated day minus the day-end margin.
+    """
+    import functools
+    import os
+    from braunschweig.data.transit import connections  # noqa: PLC0415
+    from braunschweig.data.transit.schedule import read_schedule  # noqa: PLC0415
+    from braunschweig.matsim.simulation import plan_check  # noqa: PLC0415
+    from braunschweig.popsim import plan_validation  # noqa: PLC0415
+
+    supply = context.stage("matsim.scenario.supply.processed")
+    supply_dir = context.path("matsim.scenario.supply.processed")
+    schedule_path = os.path.join(supply_dir, supply["schedule_path"])
+    vehicles_path = os.path.join(context.path("matsim.scenario.supply.gtfs"),
+                                 context.stage("matsim.scenario.supply.gtfs")["vehicles_path"])
+    config_path = connections.write_router_config(
+        os.path.join(context.path(), "incommuter_pt_router_config.xml"),
+        network_path=os.path.join(supply_dir, supply["network_path"]), schedule_path=schedule_path,
+        vehicles_path=vehicles_path)
+    router = functools.partial(
+        connections.route_batch, context, config_path=config_path,
+        threads=int(context.config("matsim_threads") or context.config("processes")),
+        work_dir=os.path.join(context.path(), "incommuter_pt_router"))
+    all_stop_ids = set(read_schedule(schedule_path).stops)
+    walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+
+    def probe(tasks):
+        trips, legs = router(tasks)
+        return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
+                                           task_ids=tasks["identifier"].astype(str))
+
+    bound_s = float(plan_validation.MAX_PLAN_TIME_SECONDS)
+    if context.config(_day_end_margin.KEY_ENABLED):
+        bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
+    return _pt_connections.PtCheck(
+        probe=probe, shift_window_s=float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S)),
+        shift_step_s=float(context.config(_pt_connections.KEY_SHIFT_STEP_S)), bound_s=bound_s,
+        warn_share=float(context.config(_pt_connections.KEY_WARN_SHARE)))
