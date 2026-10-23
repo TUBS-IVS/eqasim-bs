@@ -30,6 +30,8 @@ _SCHOOL_BANDS = [
     ("university", 20, 200),
 ]
 _NDS_LEVELS = ("grundschule", "sekundar_1", "oberstufe", "bbs")
+#: Level of the persons aged ``education_adult_min_age`` and older (#465); they choose among all education facilities.
+ADULT_EDUCATION = "adult_education"
 
 
 def slope_vector_for_level(level, home_rs7, by_level_rs7, scalar_by_level):
@@ -146,6 +148,11 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
     # elementwise comparison). When an age->share dict is supplied, each pupil is
     # compared against its age-resolved share instead (real BBS enrollment rises
     # steeply with age 16->19), with the scalar as the per-age fallback.
+    # Adult education (#465): from the configured minimum age on, an education activity is no longer a university one.
+    adult_min_age = cfg.get("adult_education_min_age")
+    if adult_min_age is not None:
+        df.loc[(df["level"] == "university") & (df["age"] >= adult_min_age), "level"] = ADULT_EDUCATION
+
     us = df["level"] == "upper_secondary"
     if us.any():
         share = bbs_share_vector(
@@ -232,6 +239,41 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
             "geometry": picked["geometry"].values,
         }))
 
+    # Adult education (#465, age >= cfg["adult_education_min_age"], off when the key is absent or None): every
+    # education facility (NDS schools of all levels and the universities) is a candidate with the SAME weight, so
+    # neither pupil capacities nor university enrolments decide; the distance decay alone does. Adult courses
+    # (Volkshochschule, further education) are not in the facility data and often take place in school buildings.
+    sel = df[df["level"] == ADULT_EDUCATION]
+    if not sel.empty:
+        facilities = pd.concat([
+            pd.DataFrame({"location_id": df_nds["school_id"].values, "commune_id": df_nds["commune_id"].values,
+                          "geometry": df_nds["geometry"].values, "kind": "school"}),
+            pd.DataFrame({"location_id": df_universities["location_id"].values, "commune_id": "",
+                          "geometry": df_universities["geometry"].values, "kind": "university"}),
+        ], ignore_index=True)
+        facilities = gpd.GeoDataFrame(facilities, geometry="geometry", crs=df_nds.crs)
+        choice = assign_by_decay(
+            _xy(sel), _xy(facilities), np.ones(len(facilities)),
+            slope=cfg["adult_education_slope"],
+            max_radius_km=cfg["adult_education_max_radius_km"], rng=rng,
+            label="education:adult_education",
+        )
+        picked = facilities.iloc[choice]
+        distance_km = np.hypot(*(_xy(picked) - _xy(sel)).T) / 1000.0
+        n_university = int((picked["kind"] == "university").sum())
+        print("[education:adult_education] %d persons aged %d+ placed among %d education facilities (schools and "
+              "universities, uniform weights, slope %g per km, radius %g km): straight-line distance median %.1f km, "
+              "mean %.1f km, p90 %.1f km; at a university %d (%.1f%%)" % (
+                  len(sel), cfg["adult_education_min_age"], len(facilities), cfg["adult_education_slope"],
+                  cfg["adult_education_max_radius_km"], np.median(distance_km), distance_km.mean(),
+                  np.percentile(distance_km, 90), n_university, 100.0 * n_university / len(sel)))
+        parts.append(pd.DataFrame({
+            "person_id": sel["person_id"].values,
+            "location_id": picked["location_id"].values,
+            "commune_id": picked["commune_id"].values,
+            "geometry": picked["geometry"].values,
+        }))
+
     out = pd.concat(parts, ignore_index=True)
     return out[["person_id", "commune_id", "location_id", "geometry"]]
 
@@ -284,11 +326,33 @@ def configure(context):
     # value; re-run scripts/calibrate_education_slopes.py to update it.
     context.config("education_university_slope", -0.1415)
     context.config("education_university_max_radius_km", 150.0)
+    # Adult education (#465): from this age on an education activity is placed among ALL education facilities
+    # (schools and universities, uniform weights) by distance decay instead of at a university. ASSUMPTIONS, not
+    # calibrated: the age (30; null switches the band off and every person aged 20+ goes to a university), the slope
+    # and the radius (the scalar Sekundarstufe I values: adult courses often take place in school buildings).
+    check_adult_education_settings(context.config("education_adult_min_age", 30),
+                                   context.config("education_adult_slope", -0.15),
+                                   context.config("education_adult_max_radius_km", 30.0))
     context.config("education_gravity_max_iterations", 50)
     context.config("education_gravity_tolerance", 1e-3)
     # None (not {}) so synpp flatten() does not drop this key; per-RS7 dict is
     # set by the calibration script and mirrors gravity_slope_by_regiostar7.
     context.config("education_gravity_slope_by_level_rs7", None)
+
+
+def check_adult_education_settings(min_age, slope, max_radius_km) -> None:
+    """Raise ValueError naming the key for an invalid adult education setting (checked at configure time).
+
+    ``education_adult_min_age``: None (band off) or a whole number of years in [20, 120], no bool;
+    ``education_adult_slope``: a finite number < 0 (per km); ``education_adult_max_radius_km``: a finite number > 0.
+    """
+    if min_age is not None and (isinstance(min_age, bool) or not isinstance(min_age, int) or not 20 <= min_age <= 120):
+        raise ValueError(f"education_adult_min_age must be null or a whole number of years in [20, 120], got {min_age!r}")
+    for key, value, valid in (("education_adult_slope", slope, lambda v: v < 0),
+                              ("education_adult_max_radius_km", max_radius_km, lambda v: v > 0)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or not valid(value):
+            raise ValueError(f"{key} must be a finite number ({'< 0 per km' if key.endswith('slope') else '> 0 km'}), "
+                             f"got {value!r}")
 
 
 def _resolve_bbs_share_by_age(context):
@@ -360,6 +424,9 @@ def execute(context):
         "tolerance": context.config("education_gravity_tolerance"),
         "bbs_share": context.config("education_bbs_share"),
         "bbs_share_by_age": _resolve_bbs_share_by_age(context),
+        "adult_education_min_age": context.config("education_adult_min_age"),
+        "adult_education_slope": context.config("education_adult_slope"),
+        "adult_education_max_radius_km": context.config("education_adult_max_radius_km"),
     }
     out = assign_education_locations(
         df_persons, df_nds, df_universities, df_kita, cfg, rng)

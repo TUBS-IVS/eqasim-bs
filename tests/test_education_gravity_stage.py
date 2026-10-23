@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -293,3 +294,47 @@ def test_bbs_split_by_age_missing_age_falls_back_to_scalar():
     by_pid = out.set_index("person_id")["location_id"].to_dict()
     assert all(by_pid[p] == "o1" for p in range(1, n + 1))           # age 16
     assert all(by_pid[p] == "b1" for p in range(n + 1, 2 * n + 1))   # age 18
+
+
+# #465: adults from education_adult_min_age on choose among ALL education facilities (schools and universities, uniform
+# weights) by distance; before, every person aged 20+ went to a university (in run i465-wpe-smoke-1pct-2026-10-23 a
+# 43-year-old with a 5-minute survey walk to education walked 4 x 28 km to a university 22 km away; 45 % of the adult
+# education trips ended over 15 km from home).
+
+def _adults(n, age):
+    return gpd.GeoDataFrame({"person_id": range(100, 100 + n), "age": [age] * n, "home_rs7": [72] * n,
+                             "geometry": [Point(0.0, 0.0)] * n}, crs="EPSG:25832")
+
+
+def _adult_cfg():
+    return dict(_base_cfg(), adult_education_min_age=30, adult_education_slope=-0.15,
+                adult_education_max_radius_km=30.0)
+
+
+def test_adults_from_the_minimum_age_choose_among_all_education_facilities_by_distance(capsys):
+    students = assign_education_locations(_adults(200, 25), _nds_schools(), _universities(), _kita(), _adult_cfg(),
+                                          rng=np.random.RandomState(1))
+    adults = assign_education_locations(_adults(400, 43), _nds_schools(), _universities(), _kita(), _adult_cfg(),
+                                        rng=np.random.RandomState(1))
+    assert set(students["location_id"]) <= {"uni_a", "uni_b"}               # below the minimum age: universities
+    chosen = adults["location_id"].value_counts()
+    assert "uni_b" not in chosen                                             # 60 km, beyond the 30 km radius
+    # uniform weights and exp(-0.15 d): the four schools at 0.5-1.5 km hold 82 % of the attraction, uni_a (2 km) 18 %
+    assert chosen.reindex(["g1", "s1", "o1", "b1"]).fillna(0).sum() / len(adults) > 0.7
+    assert "adult_education" in capsys.readouterr().out                     # the split is logged
+
+
+def test_without_the_minimum_age_every_adult_still_goes_to_a_university():
+    out = assign_education_locations(_adults(50, 43), _nds_schools(), _universities(), _kita(), _base_cfg(),
+                                     rng=np.random.RandomState(1))
+    assert set(out["location_id"]) <= {"uni_a", "uni_b"}
+
+
+@pytest.mark.parametrize("min_age, slope, radius, key", [
+    (True, -0.15, 30.0, "education_adult_min_age"), (19, -0.15, 30.0, "education_adult_min_age"),
+    (30.5, -0.15, 30.0, "education_adult_min_age"), (30, 0.0, 30.0, "education_adult_slope"),
+    (30, float("nan"), 30.0, "education_adult_slope"), (30, -0.15, 0.0, "education_adult_max_radius_km")])
+def test_invalid_adult_education_settings_are_refused(min_age, slope, radius, key):
+    from braunschweig.synthesis.locations.education_gravity import check_adult_education_settings
+    with pytest.raises(ValueError, match=key):
+        check_adult_education_settings(min_age, slope, radius)

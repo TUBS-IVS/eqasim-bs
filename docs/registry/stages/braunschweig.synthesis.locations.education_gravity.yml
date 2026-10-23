@@ -1,8 +1,11 @@
 stage: braunschweig.synthesis.locations.education_gravity
 title: Education gravity assignment
 layer: education
-description: Assigns students to school/Kita/university facilities by the calibrated per-level,
-  per-RS7 gravity models (ADR-0024).
+description: 'Assigns students to school/Kita/university facilities by the calibrated per-level,
+  per-RS7 gravity models (ADR-0024). Since ADR-0157 (issue #465) persons aged education_adult_min_age (30) and
+  older choose among all education facilities (schools and universities, uniform weights) by distance decay
+  (education_adult_slope -0.15 per km, education_adult_max_radius_km 30, ASSUMPTIONS) instead of a university;
+  null switches the band off.'
 lineage:
   type: braunschweig_new
   upstream: null
