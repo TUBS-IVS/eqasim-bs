@@ -921,7 +921,7 @@ def test_configure_defaults_real_origin_and_mode_balance_true():
         _MISSING but do NOT overwrite a previously stored default so the first
         declared default (the meaningful one) always wins.
         """
-        def config(self, key, *args):
+        def config(self, key, *args, **options):  # synpp also takes volatile=...
             # args[0] is the default if provided; only update when a default is given.
             if args:
                 defaults_captured[key] = args[0]
