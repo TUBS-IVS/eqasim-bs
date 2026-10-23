@@ -1,0 +1,60 @@
+## #465 WP-E smoke, 1 % (throwaway server overlay, recorded in the run manifest). Derived from the overlay of
+## arm 2 of the i453/i443 A/B (docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm2.yml): same sampling,
+## iterations, popsim settings and popsim work-dir string (it enters the popsim hash; popsim must stay cached),
+## own working directory (a physical copy of cache_arms12), own output directory and prefix.
+working_directory: /home/felix/wt-i465-wpe/cache_wpe
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  sampling_rate: 0.01
+  output_path: /home/felix/wt-i465-wpe/output_wpe
+  analysis_working_directory: /home/felix/wt-i465-wpe/cache_wpe
+  output_prefix: braunschweig_1pct_i465_wpe_
+  matsim_last_iteration: 100
+  braunschweig.population.popsim.work_dir: /home/felix/wt-i453-ab/popsim_work
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 1
+  cache_share_enabled: false
+  cache_share_export: false
+  cache_share_recompute: []
+  braunschweig.outside_tour_modes.enabled: true
+  # launcher gate: abort before any stage runs if a stage outside this list is stale for own reasons
+  synpp_expected_stale_stages:
+    - braunschweig.data.cordon_network
+    - braunschweig.data.cordon_pt_gates
+    - braunschweig.freight.extraction
+    - braunschweig.freight.extraction_tool
+    - braunschweig.freight.trips
+    - braunschweig.locations.synthesis.replacement_education_gravity
+    - braunschweig.matsim.scenario.facilities
+    - braunschweig.matsim.scenario.households
+    - braunschweig.matsim.scenario.population
+    - braunschweig.matsim.scenario.supply_gtfs
+    - braunschweig.matsim.scenario.vehicles
+    - braunschweig.matsim.simulation.prepare
+    - braunschweig.parking.zones_stage
+    - braunschweig.popsim.distance_distributions
+    - braunschweig.synthesis.commute_day.activities_day_stage
+    - braunschweig.synthesis.commute_day.output_day
+    - braunschweig.synthesis.commute_day.spatial_locations_day
+    - braunschweig.synthesis.commute_day.state_stage
+    - braunschweig.synthesis.commute_day.trips_day_stage
+    - braunschweig.synthesis.cordon_gates
+    - braunschweig.synthesis.incommuters
+    - braunschweig.synthesis.locations.education_gravity
+    - braunschweig.synthesis.locations.secondary_candidates
+    - braunschweig.synthesis.locations.secondary_chainsolvers
+    - braunschweig.synthesis.outside_tour_modes.stage
+    - braunschweig.synthesis.portal_trips.anchors
+    - braunschweig.synthesis.portal_trips.stage
+    - braunschweig.synthesis.portal_trips.trips_final
+    - braunschweig.synthesis.student_incommuters
+    - documentation.meta_output
+    - matsim.output
+    - matsim.runtime.eqasim
+    - matsim.scenario.supply.processed
+    - matsim.simulation.run
+    - synthesis.population.spatial.primary.candidates

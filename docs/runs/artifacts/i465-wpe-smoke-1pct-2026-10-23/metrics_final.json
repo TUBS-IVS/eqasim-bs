@@ -1,0 +1,732 @@
+{
+ "label": "final",
+ "output_prefix": "braunschweig_1pct_i465_wpe_",
+ "archive": "/home/felix/wt-i465-wpe/output_wpe/matsim_output",
+ "last_iteration": 87,
+ "stuck": {
+  "available": true,
+  "simulation_end_s": 108000.0,
+  "n_stuck": 68,
+  "by_subpopulation": {
+   "residents": {
+    "n_persons": 12041,
+    "n_stuck": 68,
+    "share_stuck": 0.005647371480774022,
+    "at_end": {
+     "frozen": 28,
+     "in_region": 18
+    },
+    "during_day": {
+     "frozen": 6,
+     "in_region": 16
+    },
+    "by_mode": {
+     "car": 16,
+     "car_passenger": 4,
+     "none": 2,
+     "pt": 22,
+     "walk": 24
+    }
+   },
+   "freight": {
+    "n_persons": 521,
+    "n_stuck": 0,
+    "share_stuck": 0.0,
+    "at_end": {
+     "frozen": 0,
+     "in_region": 0
+    },
+    "during_day": {
+     "frozen": 0,
+     "in_region": 0
+    },
+    "by_mode": {}
+   }
+  },
+  "warn_share": 0.01,
+  "warning": false
+ },
+ "plan_check_input": {
+  "config": "/home/felix/wt-i465-wpe/cache_wpe/braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4.cache/braunschweig_1pct_i465_wpe_config.xml",
+  "population": "/home/felix/wt-i465-wpe/cache_wpe/braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4.cache/braunschweig_1pct_i465_wpe_population.xml.gz"
+ },
+ "plan_check": {
+  "simulation_end_s": 108000.0,
+  "n_legs_with_routing_mode": 90287,
+  "n_pt_or_stamped_legs": 4902,
+  "thresholds": {
+   "walk_max_distance_m": 5000.0,
+   "bicycle_max_distance_m": 30000.0,
+   "leg_max_duration_s": 10800.0
+  },
+  "subpopulations": {
+   "residents": {
+    "frozen": {
+     "n_persons": 1468,
+     "n_legs": 15817,
+     "n_plans_late": 2,
+     "n_plans_arrival_late": 19,
+     "n_plans_non_monotonic": 21,
+     "n_walk_legs_over": 71,
+     "n_bicycle_legs_over": 1,
+     "n_legs_over_duration": 56,
+     "n_pt_trips": 461,
+     "n_pt_as_walk": 33,
+     "n_pt_as_walk_attr_without_walk": 0,
+     "pt_as_walk_by_hour": {
+      "14": 2,
+      "20": 4,
+      "8": 2,
+      "17": 3,
+      "3": 3,
+      "5": 2,
+      "18": 4,
+      "21": 2,
+      "1": 1,
+      "19": 1,
+      "15": 1,
+      "16": 3,
+      "22": 2,
+      "11": 1,
+      "9": 1,
+      "10": 1
+     },
+     "share_plans_late": 0.0013623978201634877,
+     "share_plans_arrival_late": 0.012942779291553134,
+     "share_plans_non_monotonic": 0.01430517711171662,
+     "share_pt_as_walk": 0.07158351409978309
+    },
+    "in_region": {
+     "n_persons": 10573,
+     "n_legs": 74470,
+     "n_plans_late": 1,
+     "n_plans_arrival_late": 4,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 1015,
+     "n_bicycle_legs_over": 43,
+     "n_legs_over_duration": 385,
+     "n_pt_trips": 2166,
+     "n_pt_as_walk": 0,
+     "n_pt_as_walk_attr_without_walk": 0,
+     "pt_as_walk_by_hour": {},
+     "share_plans_late": 9.458053532582995e-05,
+     "share_plans_arrival_late": 0.0003783221413033198,
+     "share_plans_non_monotonic": 0.0,
+     "share_pt_as_walk": 0.0
+    }
+   },
+   "freight": {
+    "frozen": {
+     "n_persons": 0,
+     "n_legs": 0,
+     "n_plans_late": 0,
+     "n_plans_arrival_late": 0,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 0,
+     "n_bicycle_legs_over": 0,
+     "n_legs_over_duration": 0,
+     "n_pt_trips": 0,
+     "n_pt_as_walk": 0,
+     "n_pt_as_walk_attr_without_walk": 0,
+     "pt_as_walk_by_hour": {},
+     "share_plans_late": 0.0,
+     "share_plans_arrival_late": 0.0,
+     "share_plans_non_monotonic": 0.0,
+     "share_pt_as_walk": 0.0
+    },
+    "in_region": {
+     "n_persons": 521,
+     "n_legs": 521,
+     "n_plans_late": 0,
+     "n_plans_arrival_late": 0,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 0,
+     "n_bicycle_legs_over": 0,
+     "n_legs_over_duration": 0,
+     "n_pt_trips": 0,
+     "n_pt_as_walk": 0,
+     "n_pt_as_walk_attr_without_walk": 0,
+     "pt_as_walk_by_hour": {},
+     "share_plans_late": 0.0,
+     "share_plans_arrival_late": 0.0,
+     "share_plans_non_monotonic": 0.0,
+     "share_pt_as_walk": 0.0
+    }
+   }
+  }
+ },
+ "n_residents": 12041,
+ "final_trips": {
+  "n_resident_trips": 38447,
+  "n_trips_in_frozen_tours": 6045,
+  "frozen": {
+   "walk": 247,
+   "walk_over_5km": 46,
+   "walk_over_20km": 13,
+   "bicycle": 26,
+   "bicycle_over_30km": 1,
+   "travel_time_over_3h": 147
+  },
+  "in_region": {
+   "walk_over_5km": 55,
+   "walk_over_20km": 8,
+   "bicycle_over_30km": 9
+  },
+  "mode_share_pct_frozen_tours": {
+   "car": 72.74,
+   "car_passenger": 12.05,
+   "pt": 9.18,
+   "walk": 5.45,
+   "bicycle": 0.57
+  },
+  "mode_share_pct_in_region_tours": {
+   "car": 53.41,
+   "walk": 16.26,
+   "car_passenger": 11.97,
+   "bicycle": 10.93,
+   "pt": 7.42
+  }
+ },
+ "executed_stages": [
+  "braunschweig.data.cordon_network__4dce13c683a6cc2017996fd709fa2c6e",
+  "braunschweig.data.cordon_pt_gates__2deda5175627e65110f6684bd5e82845",
+  "braunschweig.freight.extraction__19be2f3c06d45763669113ddede7019e",
+  "braunschweig.freight.extraction_tool__780b08cebcffa7cf01d8682865522b61",
+  "braunschweig.freight.trips__19be2f3c06d45763669113ddede7019e",
+  "braunschweig.locations.synthesis.replacement_education_gravity__0f6c3a4985922e050ed6e413a7137be4",
+  "braunschweig.matsim.scenario.facilities__dbd66e5769a691e30ddb961f8137876f",
+  "braunschweig.matsim.scenario.households__d5c8a3217c13e38d00e398be2caf3dee",
+  "braunschweig.matsim.scenario.population__0f63be8c8ba5d64505fe5a6f62cee964",
+  "braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e",
+  "braunschweig.matsim.scenario.vehicles__490ef80dad349348df0f6d7cea4646a2",
+  "braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4",
+  "braunschweig.parking.zones_stage__ac37fe69b148a4c211a3fa801ba443ab",
+  "braunschweig.popsim.distance_distributions__9741273ebd5e3c56ac5ddb2b944ffadb",
+  "braunschweig.synthesis.commute_day.activities_day_stage__f19f2d15ddc5414759d8e8957d6f005f",
+  "braunschweig.synthesis.commute_day.output_day__b303024984888a6ed6ff459d1f0226fa",
+  "braunschweig.synthesis.commute_day.spatial_locations_day__e0df315bc458a6abeb6e68e27eaac52c",
+  "braunschweig.synthesis.commute_day.state_stage__1a21c2d12cf713e382e1de07b3e1a011",
+  "braunschweig.synthesis.commute_day.trips_day_stage__ce36f6eee2a64fa3a61d8d0c16603766",
+  "braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c",
+  "braunschweig.synthesis.incommuters__eb7c0115dd21c57c6217e1a46806e44a",
+  "braunschweig.synthesis.locations.education_gravity__ecacf0c60c558fc2d4634d9214937f6e",
+  "braunschweig.synthesis.locations.secondary_candidates__3cda094106133ce8d0e184f555dfe441",
+  "braunschweig.synthesis.locations.secondary_chainsolvers__e0df315bc458a6abeb6e68e27eaac52c",
+  "braunschweig.synthesis.outside_tour_modes.stage__f6443a03b41578a7719c953800996c9d",
+  "braunschweig.synthesis.portal_trips.anchors__f19f2d15ddc5414759d8e8957d6f005f",
+  "braunschweig.synthesis.portal_trips.stage__f19f2d15ddc5414759d8e8957d6f005f",
+  "braunschweig.synthesis.portal_trips.trips_final__f19f2d15ddc5414759d8e8957d6f005f",
+  "braunschweig.synthesis.student_incommuters__46f9900997c72112e68a6d067023e185",
+  "documentation.meta_output__28c5b27d5d989dd26d0d00caf07613fa",
+  "matsim.output__f40be70281bf1166a213f6dd33042089",
+  "matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f",
+  "matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e",
+  "matsim.simulation.run__bb5451ee2f61d6ae794a0ed5ea25f3da",
+  "synthesis.population.spatial.primary.candidates__1f9ca928a5e3e1095faec14cc7608854"
+ ],
+ "stage_reports": {
+  "braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4.cache/braunschweig_1pct_i465_wpe_parking_inputs_report.json": {
+   "garage_decay_commute_m": 69.69,
+   "garage_decay_m": 575.27,
+   "garage_max_distance_m": 1000.0,
+   "garage_monthly_imputation": true,
+   "garage_monthly_products": {
+    "03101000": {
+     "imputed": 10,
+     "median_eur": 107.48,
+     "municipality": "Braunschweig",
+     "none": 0,
+     "published": 2,
+     "surface_lots": 11
+    },
+    "03102000": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Salzgitter",
+     "none": 1,
+     "published": 0,
+     "surface_lots": 9
+    },
+    "03103000": {
+     "imputed": 5,
+     "median_eur": 60.0,
+     "municipality": "Wolfsburg",
+     "none": 0,
+     "published": 5,
+     "surface_lots": 11
+    },
+    "03151009": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Gifhorn",
+     "none": 1,
+     "published": 0,
+     "surface_lots": 3
+    },
+    "03153002": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Bad Harzburg",
+     "none": 0,
+     "published": 0,
+     "surface_lots": 1
+    },
+    "03153012": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Seesen",
+     "none": 1,
+     "published": 0,
+     "surface_lots": 0
+    },
+    "03153017": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Goslar",
+     "none": 3,
+     "published": 1,
+     "surface_lots": 9
+    },
+    "03154028": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Helmstedt",
+     "none": 3,
+     "published": 1,
+     "surface_lots": 5
+    },
+    "03157006": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Peine",
+     "none": 0,
+     "published": 2,
+     "surface_lots": 4
+    },
+    "03158037": {
+     "imputed": 0,
+     "median_eur": null,
+     "municipality": "Wolfenbuettel",
+     "none": 1,
+     "published": 1,
+     "surface_lots": 7
+    }
+   },
+   "garages_listed": 97,
+   "garages_priced": 97,
+   "minimum_stay_min": 15,
+   "option_price_beta_u_per_eur": 0.310998,
+   "parking_cost_utility_factor": 1.0,
+   "parking_input_files": [
+    "braunschweig_1pct_i465_wpe_parking_tariffs_2026-10-14.json",
+    "braunschweig_1pct_i465_wpe_parking_inputs_report.json"
+   ],
+   "resident_districts": 29,
+   "sources": [
+    {
+     "path": "braunschweig/parking/parking_zones_2026.geojson",
+     "sha256": "7b200b87963e59c365c257591c92e7cea938e5ed3ccbb90f63c7970a45567504",
+     "source_id": "parking_zones_2026"
+    },
+    {
+     "path": "braunschweig/parking/parking_tariffs_2026.csv",
+     "sha256": "7de2d35e1808df5dcf98837019921ed9e5d361ded12603e233f8737501604c82",
+     "source_id": "parking_tariffs_2026"
+    },
+    {
+     "path": "braunschweig/parking/parking_coverage_register_2026.csv",
+     "sha256": "df4589aea744c682a2798b8e1bb2194e4f4549621069dcb9a0718ab49b8743aa",
+     "source_id": "parking_coverage_register_2026"
+    },
+    {
+     "path": "braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv",
+     "sha256": "bff6aa4eade4c8617204adf01867d1591197f9399eb11ad749655e8037e4c8be",
+     "source_id": "srv2023_commute_parking_by_workplace_class"
+    },
+    {
+     "path": "braunschweig/parking/parking_resident_districts_2026.geojson",
+     "sha256": "5cc8d31d6b78285adf8d5c7c990cf29f00b5e1fa88f0b7c74eab6aa0ef807dda",
+     "source_id": "parking_resident_districts_2026"
+    },
+    {
+     "path": "braunschweig/parking/parking_garages_2026.geojson",
+     "sha256": "e6a8768c5b5a223ca415eebc29bd01c7ef203f110e73c212a8704a8377ab0ca4",
+     "source_id": "parking_garages_2026"
+    }
+   ],
+   "terminal_stay_rule": "until_fee_end",
+   "zone_types": {
+    "campus": 6,
+    "resident_zone": 1,
+    "street_paid": 48
+   },
+   "zones": 55
+  },
+  "braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4.cache/braunschweig_1pct_i465_wpe_vrb_fare_inputs_report.json": {
+   "fare_input_files": [
+    "braunschweig_1pct_i465_wpe_vrb_fare_model_2026-06-20.json",
+    "braunschweig_1pct_i465_wpe_vrb_line_scopes.csv",
+    "braunschweig_1pct_i465_wpe_vrb_fare_inputs_report.json"
+   ],
+   "facility_zone_coverage": 0.7530289812930115,
+   "facilities": 10317,
+   "zoned_facilities": 7769,
+   "zoned_facilities_by_zone": {
+    "10": 280,
+    "11": 148,
+    "12": 104,
+    "13": 146,
+    "14": 156,
+    "15": 148,
+    "16": 341,
+    "17": 191,
+    "20": 737,
+    "30": 187,
+    "31": 66,
+    "32": 47,
+    "33": 62,
+    "35": 143,
+    "36": 69,
+    "37": 142,
+    "38": 48,
+    "40": 997,
+    "50": 397,
+    "51": 102,
+    "52": 102,
+    "53": 192,
+    "54": 111,
+    "55": 4,
+    "56": 4,
+    "60": 592,
+    "70": 308,
+    "71": 105,
+    "72": 135,
+    "73": 168,
+    "74": 89,
+    "75": 41,
+    "76": 64,
+    "77": 22,
+    "78": 128,
+    "79": 48,
+    "80": 275,
+    "81": 59,
+    "82": 60,
+    "83": 63,
+    "84": 136,
+    "85": 93,
+    "86": 10,
+    "87": 137,
+    "88": 104,
+    "89": 9,
+    "90": 199
+   },
+   "pre_cut_zone_tool": {
+    "facilities": 31022,
+    "zoned": 7771,
+    "unzoned": 23251,
+    "boundary_ties": 0,
+    "by_mode": {
+     "bus": {
+      "facilities": 29165,
+      "zoned": 7491
+     },
+     "ferry": {
+      "facilities": 4,
+      "zoned": 0
+     },
+     "funicular": {
+      "facilities": 4,
+      "zoned": 0
+     },
+     "rail": {
+      "facilities": 912,
+      "zoned": 112
+     },
+     "subway": {
+      "facilities": 396,
+      "zoned": 0
+     },
+     "tram": {
+      "facilities": 541,
+      "zoned": 168
+     }
+    }
+   },
+   "schedule_lines": 473,
+   "lines_with_scope": 473,
+   "line_scope_coverage": 1.0,
+   "lines_without_scope": []
+  },
+  "braunschweig.matsim.simulation.prepare__3a3f9815a537572d69177bc1eda25ce4.cache/vrb_tariff_zone_report.json": {
+   "facilities": 31022,
+   "zoned": 7771,
+   "unzoned": 23251,
+   "boundary_ties": 0,
+   "by_mode": {
+    "bus": {
+     "facilities": 29165,
+     "zoned": 7491
+    },
+    "ferry": {
+     "facilities": 4,
+     "zoned": 0
+    },
+    "funicular": {
+     "facilities": 4,
+     "zoned": 0
+    },
+    "rail": {
+     "facilities": 912,
+     "zoned": 112
+    },
+    "subway": {
+     "facilities": 396,
+     "zoned": 0
+    },
+    "tram": {
+     "facilities": 541,
+     "zoned": 168
+    }
+   }
+  },
+  "braunschweig.synthesis.outside_tour_modes.stage__f6443a03b41578a7719c953800996c9d.cache/outside_tour_modes_report.json": {
+   "enabled": true,
+   "min_share": 0.01,
+   "warn_share": 0.5,
+   "n_persons": 9563,
+   "n_legs": 34861,
+   "n_tours": 14496,
+   "n_outside_tours": 891,
+   "n_outside_tours_by_group": {
+    "all": 552,
+    "other": 200,
+    "work": 113,
+    "education": 26
+   },
+   "n_outside_tours_remoded": 132,
+   "share_outside_tours_remoded": 0.14814814814814814,
+   "substitution_matrix": {
+    "car_passenger,walk->pt": 2,
+    "bicycle->car": 25,
+    "car,walk->car": 24,
+    "walk->car": 12,
+    "pt,walk->pt": 3,
+    "walk->car_passenger": 4,
+    "bicycle->car_passenger": 13,
+    "walk->pt": 4,
+    "bicycle,car->car_passenger": 2,
+    "car,car_passenger,walk->car": 6,
+    "car_passenger,walk->car": 7,
+    "bicycle,car,walk->car_passenger": 2,
+    "bicycle,car->car": 3,
+    "bicycle,car_passenger,walk->car_passenger": 1,
+    "car_passenger,walk->car_passenger": 11,
+    "pt,walk->car_passenger": 1,
+    "pt,walk->car": 1,
+    "car,walk->car_passenger": 4,
+    "bicycle,car,walk->pt": 1,
+    "bicycle,walk->car": 2,
+    "car,pt,walk->car": 1,
+    "bicycle->pt": 1,
+    "car,walk->pt": 1,
+    "bicycle,walk->bicycle": 1
+   },
+   "n_legs_remoded": 304,
+   "n_legs_swept": 213,
+   "n_portal_legs_as_all_group": 1164,
+   "n_draws_restricted_by_availability": 27,
+   "n_removed_by_availability_by_mode": {
+    "car_passenger": 3,
+    "car": 24,
+    "bicycle": 1
+   },
+   "n_outside_legs": 2416,
+   "n_draws_relaxed_to_longest_leg": 0,
+   "share_draws_relaxed_to_longest_leg": 0.0,
+   "n_outside_legs_implausible_after": 5,
+   "portal_leg_column_present": true,
+   "n_portal_tours_remoded": 97,
+   "n_portal_tours_class_restricted": 96,
+   "n_portal_tours_left_unchanged": 2,
+   "portal_tours_left_unchanged_by_reason": {
+    "mixed_gate_class": 0,
+    "no_candidate_in_gate_class": 2
+   },
+   "share_portal_tours_left_unchanged": 0.020202020202020204,
+   "n_unknown_donor_mode": 0,
+   "unknown_donor_modes": {},
+   "cells_used": {
+    "all/45_plus": 47,
+    "other/20_30": 23,
+    "other/15_20": 22,
+    "other/10_15": 13,
+    "other/30_45": 9,
+    "work/30_45": 7,
+    "education/20_30": 5,
+    "education/30_plus": 4,
+    "work/20_30": 1,
+    "education/10_15": 1
+   }
+  },
+  "braunschweig.synthesis.portal_trips.stage__f19f2d15ddc5414759d8e8957d6f005f.cache/portal_trips_report.json": {
+   "n_persons": 9563,
+   "n_portal_legs": 683,
+   "n_stays": 582,
+   "n_removed_legs": 101,
+   "n_primary_legs": 7062,
+   "n_primary_legs_assigned": 7062,
+   "n_primary_legs_reported_distance_fallback": 0,
+   "n_nonprimary_legs": 13404,
+   "n_nonprimary_legs_bounded": 679,
+   "n_portal_legs_lost_through_bound": 35,
+   "n_nonprimary_legs_without_bound": 3178,
+   "n_nonprimary_legs_without_reported_distance": 0,
+   "n_persons_with_stay": 567,
+   "n_stays_without_return": 0,
+   "n_stays_by_kind": {
+    "road": 527,
+    "pt": 55
+   },
+   "n_stays_by_mode": {
+    "car": 382,
+    "car_passenger": 94,
+    "pt": 55,
+    "bicycle": 36,
+    "walk": 15
+   },
+   "gate_usage": {
+    "gate_0034": 37,
+    "gate_0010": 36,
+    "gate_0046": 32,
+    "gate_0023": 27,
+    "gate_0032": 25,
+    "gate_0027": 25,
+    "gate_0042": 24,
+    "gate_0026": 23,
+    "gate_0037": 22,
+    "gate_0038": 22,
+    "gate_0030": 22,
+    "gate_0040": 20,
+    "gate_0000": 18,
+    "gate_0024": 14,
+    "gate_0017": 14,
+    "gate_0003": 14,
+    "gate_0035": 12,
+    "gate_0007": 10,
+    "gate_0020": 10,
+    "gate_0002": 9,
+    "gate_0036": 9,
+    "gate_0033": 9,
+    "gate_0022": 8,
+    "gate_0041": 8,
+    "273565.link:599256": 8,
+    "gate_0001": 7,
+    "gate_0044": 7,
+    "gate_0013": 7,
+    "gate_0029": 6,
+    "gate_0045": 6,
+    "gate_0011": 6,
+    "gate_0009": 5,
+    "gate_0021": 5,
+    "gate_0004": 5,
+    "gate_0006": 4,
+    "451939.link:646982": 4,
+    "179747.link:21888": 4,
+    "gate_0025": 4,
+    "gate_0039": 3,
+    "658568.link:663467": 3,
+    "gate_0019": 2,
+    "558958.link:45585": 2,
+    "gate_0005": 2,
+    "gate_0031": 2,
+    "299426.link:265738": 2,
+    "gate_0015": 2,
+    "576490.link:413745": 2,
+    "463863.link:8841": 2,
+    "639133.link:110445": 2,
+    "513058.link:188282": 1,
+    "362218.link:681683": 1,
+    "354343.link:444670": 1,
+    "360823.link:673707": 1,
+    "581954.link:615278": 1,
+    "360823.link:673708": 1,
+    "gate_0008": 1,
+    "581954.link:615279": 1,
+    "gate_0043": 1,
+    "339813.link:706406": 1,
+    "612935.link:537008": 1,
+    "53865.link:588035": 1,
+    "194895.link:354906": 1,
+    "409884.link:84583": 1,
+    "327512.link:78301": 1,
+    "76061.link:411648": 1,
+    "10286.link:382762": 1,
+    "570564.link:69310": 1,
+    "191229.link:134092": 1,
+    "646153.link:265005": 1,
+    "382331.link:95870": 1,
+    "522078.link:278284": 1,
+    "453250.link:539199": 1,
+    "gate_0014": 1,
+    "192588.link:204942": 1,
+    "664217.link:497599": 1,
+    "154975.link:113998": 1,
+    "gate_0012": 1,
+    "519099.link:209115": 1,
+    "459215.link:457495": 1
+   },
+   "n_mode_substituted": 88,
+   "mode_substitution_reasons": {
+    "no_pt_connection": 68,
+    "no_driving_licence": 10,
+    "no_car_availability": 6,
+    "no_car_passenger_availability": 3,
+    "no_bicycle_availability": 1
+   },
+   "n_return_mode_differs": 86,
+   "n_external_point_drawn": 241,
+   "n_external_band_miss": 0,
+   "n_origin_proxied_by_home": 101,
+   "n_reentry_clamped": 0,
+   "n_return_share_degenerate": 0,
+   "n_outbound_share_degenerate": 0,
+   "return_share_out_median": 0.5744317020867209,
+   "n_stay_persons_missing_license": 0,
+   "n_unknown_donor_mode": 0,
+   "unknown_donor_modes": {},
+   "n_pt_stays": 123,
+   "pt_gate_reasons": {
+    "no_connection": 46,
+    "gate_found": 41,
+    "no_gate_served": 36
+   },
+   "no_connection_actions": {
+    "tour_to_car": 60,
+    "gate_found": 39,
+    "kept_no_connection": 14,
+    "tour_to_car_passenger": 8,
+    "departure_shifted": 2
+   },
+   "n_departure_shifted_s_median": 3600.0,
+   "n_kept_fallback_all_stops": 0,
+   "enabled": true
+  }
+ },
+ "batch_router": [
+  {
+   "work_dir": "braunschweig.synthesis.portal_trips.stage__f19f2d15ddc5414759d8e8957d6f005f.cache/pt_router",
+   "trips_rows": 2,
+   "tasks": 5,
+   "no_route_tasks": 3,
+   "pt_trips": 2,
+   "only_walk_trips": 0,
+   "pt_trips_zero_egress": 0,
+   "pt_egress_km_min_median_max": [
+    0.477,
+    0.866,
+    1.254
+   ],
+   "pt_transfer_km_max": 0.219
+  }
+ ]
+}
