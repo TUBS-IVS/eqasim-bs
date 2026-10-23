@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 108 stages, 297 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 107 stages, 291 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -225,7 +225,6 @@ flowchart LR
 | `synthesis.output` | infrastructure | x | x | x |
 | `synthesis.population.activities` | behavior | x | x | x |
 | `synthesis.population.activities.final` | behavior | x | -- | -- |
-| `synthesis.population.activities.simulated` | cordon | x | -- | -- |
 | `synthesis.population.enriched` | attributes | x | x | x |
 | `synthesis.population.income.selected` | attributes | -- | -- | x |
 | `synthesis.population.matched` | behavior | -- | -- | x |
