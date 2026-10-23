@@ -23,7 +23,7 @@
   the events of `output_rerun/matsim_output` and the prepared population of the rerun
   (`braunschweig_1pct_i465_rerun_population.xml.gz`).
 - Measured on that prepared (routed) population with `scripts/measure_routed_last_arrival.py` (replays every
-  selected plan as the QSim plans it): routed last arrival after 29 h for 19 of 1,468 residents with a frozen tour
+  selected plan as the QSim plans it; run manifest `docs/runs/routed-last-arrival-i465-rerun-2026-10-23.yml`): routed last arrival after 29 h for 19 of 1,468 residents with a frozen tour
   and 35 of 10,573 in-region residents (0.45 % of the residents), after 30 h for 4 and 16; 0 of 521 freight agents.
   The writer had already shifted the days by their survey times. The extreme values (46-52 h) are pt trips the
   router replaced by long walks, the defect class of the walk-fallback stamp (#487), not of the margin.
