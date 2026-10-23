@@ -8,7 +8,10 @@ the run among them.
 
 :func:`resolve_pt_tours` probes every pt leg of an outside tour WITHOUT a portal leg (portal stays have their own
 check, ADR-0152/0156) at its departure time. A tour whose pt legs are not all connections is resolved by a counted
-chain, in this order (owner order of ADR-0153 and ADR-0156):
+chain, in this order (owner order of ADR-0153 and ADR-0156). First, as for the in-commuters (ADR-0153), the day
+of every person with a checked tour that ends after ``bound_s`` moves earlier as a whole by the population writer's
+rule (``day_end_margin.late_day_shift_s``), so the timetable is asked at the times that are finally written and the
+writer does not move a checked day again (counted as ``n_persons_day_end_shifted``).
 
 1. ``tour_shifted``: the WHOLE tour moves by the first offset of
    ``incommuter_pt_connections.shift_offsets_s`` (earlier first) at which every pt leg is a connection. The tour's
@@ -32,6 +35,7 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+from braunschweig.matsim.scenario.day_end_margin import late_day_shift_s
 from braunschweig.synthesis.incommuter_pt_connections import shift_offsets_s
 
 logger = logging.getLogger(__name__)
@@ -64,8 +68,9 @@ Probe = Callable[[pd.DataFrame], pd.Series]
 class PtCheck:
     """What ``stage.remode_outside_tours`` needs to check the pt legs: the probe and the chain parameters.
 
-    ``bound_s`` is the latest allowed last arrival of a shifted tour (s): the end of the simulated day minus the
-    day-end margin of the population writer (ADR-0154), so that the writer does not move a checked day again.
+    ``bound_s`` is the latest allowed last arrival (s): the end of the simulated day minus the day-end margin of the
+    population writer (ADR-0154). A checked person's day that ends later first moves earlier by the writer's rule,
+    and a shifted tour stays within it, so the writer does not move a checked day again.
     """
 
     probe: Probe
@@ -144,6 +149,22 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
         raise ValueError(f"{_LOG_TAG} {len(unknown)} persons of checked tours have no availability row "
                          f"(first: {unknown[:5]})")
 
+    # The writer's day-end rule first (ADR-0153 decision 2): a checked person's whole day moves earlier when it ends
+    # after bound_s, so every probe below asks the timetable at the times that are finally written.
+    n_day_end_shifted = 0
+    if checked:
+        checked_persons = {t["person_id"] for t in checked}
+        rows = np.flatnonzero(np.isin(persons, list(checked_persons)))
+        days = pd.DataFrame({"person_id": persons[rows], "departure": departure[rows], "arrival": arrival[rows]})
+        per_person = days.groupby("person_id", sort=False).agg(first=("departure", "min"), last=("arrival", "max"))
+        move_s, _late, _unresolved = late_day_shift_s(per_person["first"].to_numpy(), per_person["last"].to_numpy(),
+                                                      target_s=float(bound_s))
+        move_by_person = dict(zip(per_person.index, move_s))
+        moves = np.array([move_by_person[p] for p in persons[rows]], dtype=float)
+        departure[rows] -= moves
+        arrival[rows] -= moves
+        n_day_end_shifted = int((move_s > 0).sum())
+
     actions = [None] * len(checked)
     applied = np.zeros(len(checked), dtype=float)
     n_legs_probed = 0
@@ -210,6 +231,7 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
     actions_array = np.array(actions, dtype=object)
     shifted = actions_array == ACTION_TOUR_SHIFTED
     report = {"n_tours_checked": len(checked), "n_legs_probed": int(n_legs_probed),
+              "n_persons_day_end_shifted": n_day_end_shifted,
               "actions": {action: int((actions_array == action).sum()) for action in ACTIONS},
               "shift_abs_s_median": float(np.median(np.abs(applied[shifted]))) if shifted.any() else None,
               "shift_window_s": float(shift_window_s), "shift_step_s": float(shift_step_s),

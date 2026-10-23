@@ -245,7 +245,8 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     implausible_after = _rule.implausible_legs(remoded, cells, min_share)
     out = trips.copy()
     out.loc[remoded.index, "mode"] = remoded["mode"]
-    if pt_report is not None and pt_report["actions"][_pt_connections.ACTION_TOUR_SHIFTED]:
+    if pt_report is not None and (pt_report["actions"][_pt_connections.ACTION_TOUR_SHIFTED]
+                                  or pt_report["n_persons_day_end_shifted"]):
         out.loc[remoded.index, "departure_time"] = remoded["departure_time"]
         out.loc[remoded.index, "arrival_time"] = remoded["arrival_time"]
 

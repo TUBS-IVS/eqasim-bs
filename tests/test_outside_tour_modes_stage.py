@@ -445,7 +445,7 @@ def test_road_gate_walk_portal_tour_of_a_person_with_only_pt_and_walk_is_left_un
 
 
 def test_road_gate_walk_portal_tour_without_a_candidate_becomes_a_lift_with_the_lift_last_resort():
-    # #465, ADR-0159 decision 3 (person 343377 of the 1 % rerun: an 82.5 km walk to a road gate, stuck at the end of
+    # #465, ADR-0159 decision 4 (person 343377 of the 1 % rerun: an 82.5 km walk to a road gate, stuck at the end of
     # the day): with the lift last resort the tour becomes car_passenger (a road mode, so the gate class holds)
     # although the person has no passenger availability; it is counted, not left unchanged.
     fixture = _with_portal_person("walk", availability="none")

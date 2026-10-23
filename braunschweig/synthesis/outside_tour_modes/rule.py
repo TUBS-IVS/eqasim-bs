@@ -46,7 +46,7 @@ PORTAL_CLASS_RAIL = "pt"
 PORTAL_CLASS_ROAD = "road"
 PORTAL_CLASS_MIXED = "mixed"
 RAIL_GATE_MODE = "pt"
-#: The lift of a road-gate tour without a candidate (ADR-0159 decision 3).
+#: The lift of a road-gate tour without a candidate (ADR-0159 decision 4).
 LIFT_MODE = "car_passenger"
 #: The ``cell`` of such a row (no SrV cell weighted the choice).
 LIFT_CELL = "lift_without_candidate"

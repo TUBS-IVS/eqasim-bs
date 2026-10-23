@@ -26,7 +26,8 @@ description: >-
   config aliases it to the same target as its synthesis.population.trips.final and switches the feature off.
   Since ADR-0159 (#465), after the re-moding, every pt leg of an outside tour without a portal leg is probed
   against the timetable (batch pt router on the pre-cut network and schedule, connection rule over all stops,
-  walk limit of the plan check); a tour without a connection moves as a whole (earlier first, steps of
+  walk limit of the plan check), after a checked person's late day has moved earlier by the population writer's
+  day-end rule (so the probe asks at the written times); a tour without a connection moves as a whole (earlier first, steps of
   pt_shift_step_s up to pt_shift_window_s, never across the person's neighbouring trips or past the end of the
   day minus the day-end margin), else drives, else rides along, else (last_resort car_passenger) becomes a lift
   without the passenger availability; a road-gate portal tour without an admissible mode becomes such a lift

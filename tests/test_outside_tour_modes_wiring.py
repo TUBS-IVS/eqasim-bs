@@ -58,7 +58,7 @@ def test_chain_solver_still_reads_trips_final():
 
 
 def test_without_a_moved_tour_the_simulated_activities_equal_the_final_activities():
-    # ADR-0159 decision 4: with the outside-tour layer off (or no tour moved) the population writer must see the
+    # ADR-0159 decision 5: with the outside-tour layer off (or no tour moved) the population writer must see the
     # same activities as before the alias switch.
     import pandas as pd
 

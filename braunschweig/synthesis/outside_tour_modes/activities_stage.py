@@ -1,4 +1,4 @@
-"""synpp stage: the activities of the simulated day (eqasim-bs#465, ADR-0159 decision 4).
+"""synpp stage: the activities of the simulated day (eqasim-bs#465, ADR-0159 decision 5).
 
 Aliased to ``synthesis.population.activities.simulated``: the vendored eqasim trips->activities transform
 (``synthesis.population.activities``) applied to ``synthesis.population.trips.simulated``, so that the population

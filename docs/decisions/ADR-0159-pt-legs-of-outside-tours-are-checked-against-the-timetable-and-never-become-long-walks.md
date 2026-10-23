@@ -46,7 +46,12 @@
    the pre-cut network and schedule that the prepare routing uses) and its connection rule over ALL stops of the
    schedule (the destination lies outside the cut extent, as for ADR-0153), walk limit
    `plan_check.DEFAULT_WALK_MAX_DISTANCE_M`. Portal tours keep the check of ADR-0152/0156.
-2. **Chain** (`braunschweig.synthesis.outside_tour_modes.pt_connections.resolve_pt_tours`), counted per tour, in this
+2. **Day-end rule first** (as ADR-0153 decision 2; found in the review of PR #505). The day of every person with a
+   checked tour that ends after the bound moves earlier as a whole by the population writer's rule
+   (`day_end_margin.late_day_shift_s`, ADR-0154) before anything is probed, so the timetable is asked at the
+   times that are finally written; otherwise a tour found connected at 28:30 could be moved by the writer to a
+   time nobody checked. Counted as `n_persons_day_end_shifted`.
+3. **Chain** (`braunschweig.synthesis.outside_tour_modes.pt_connections.resolve_pt_tours`), counted per tour, in this
    order (owner order of ADR-0153 and ADR-0156):
    - `connection_found`: every pt leg of the tour is a connection; untouched.
    - `tour_shifted`: the WHOLE tour (every leg, so every activity inside it) moves by the first offset of -step,
@@ -61,7 +66,7 @@
      WITHOUT the passenger availability. ASSUMPTION (as ADR-0156): an out-of-region trip that no timetable serves is
      made as a lift or a taxi, not as a walk of tens of kilometres.
    - `kept_no_connection` (last resort `keep`): kept and warned about; the router will realise it as a walk.
-3. **Portal tours without an admissible mode** (`no_candidate_in_gate_class`, a road-gate tour of a person who may
+4. **Portal tours without an admissible mode** (`no_candidate_in_gate_class`, a road-gate tour of a person who may
    use neither car, lift nor bicycle): with last resort `car_passenger` they become a lift (`car_passenger`, a road
    mode, so the gate class holds) instead of keeping a walk or bicycle leg of tens of kilometres; counted as
    `n_portal_tours_lifted`. A rail-gate tour always has pt (always available), a mixed-class tour stays unchanged
@@ -69,18 +74,18 @@
    far walk or bicycle stay of a person without a road mode becomes pt there and then takes the pt chain of
    ADR-0152/0156. With both in place this lift is the safety net for whatever still reaches the outside-tour stage
    without an admissible road mode; the two do not contradict each other (pt first, the lift last).
-4. **Times reach the plan.** The population writer and the synthesis output build the activities from the same trips
+5. **Times reach the plan.** The population writer and the synthesis output build the activities from the same trips
    they write: a new stage `braunschweig.synthesis.outside_tour_modes.activities_stage` (alias
    `synthesis.population.activities.simulated`) runs the vendored eqasim trips->activities transform on
    `synthesis.population.trips.simulated`. Without a shifted tour it equals `activities.final` (modes do not enter the
    activities). The chain solver, the portal stage and the analyses keep reading `trips.final` / `activities.final`.
-5. **Config** (pinned in `configs/base_bs.yml`): `braunschweig.outside_tour_modes.pt_connection_check.enabled`
+6. **Config** (pinned in `configs/base_bs.yml`): `braunschweig.outside_tour_modes.pt_connection_check.enabled`
    (true), `pt_shift_window_s` 7200 and `pt_shift_step_s` 1800 (ASSUMPTION: the values of ADR-0152/0153, not
    calibrated), `pt_no_connection_warn_share` 0.05 (WARNING above that share of the checked tours switched, lifted
    or kept), `last_resort` `car_passenger` | `keep`. The two switches are independent: `last_resort` also governs
-   decision 3 when the check is off, so the former modes need BOTH `pt_connection_check.enabled: false` and
+   decision 4 when the check is off, so the former modes need BOTH `pt_connection_check.enabled: false` and
    `last_resort: keep`.
-6. **Report.** `outside_tour_modes_report.json` carries `pt_connection` (tours checked, actions, median shift, legs
+7. **Report.** `outside_tour_modes_report.json` carries `pt_connection` (tours checked, actions, median shift, legs
    probed), `n_portal_tours_lifted` and `last_resort`; one log line with the rates. `n_outside_legs_implausible_after`
    is judged after the pt check. A `connection_found` share near 0 % in a real run means a broken probe (the
    unserved share then exceeds the warn share and warns).

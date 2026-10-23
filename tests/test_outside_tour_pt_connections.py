@@ -155,6 +155,25 @@ def test_a_shift_never_moves_the_last_arrival_past_the_bound():
     assert all(trips["arrival_time"].iloc[1] + offset <= 29 * H for offset in offsets)
 
 
+def test_a_late_day_is_moved_by_the_writer_rule_before_it_is_probed():
+    # PR #505 review: the return leaves at 28:30 and arrives at 29:40, after the bound of 29 h. The population
+    # writer moves such a day 40 min earlier (day_end_margin.late_day_shift_s), so the timetable must be asked at
+    # 27:50, not at 28:30, where the only service runs. Probed at 27:50 there is no connection: the tour is lifted
+    # instead of being written as connection_found and then walked at a time nobody checked.
+    trips = _trips([(1, 0, "home", "leisure", "pt", 20.0, 20.5), (1, 1, "leisure", "home", "pt", 28.5, 29 + 40 / 60)])
+
+    def probe(tasks):
+        served = tasks["departure_time"].lt(21 * H) | tasks["departure_time"].between(28.4 * H, 28.6 * H)
+        return pd.Series(served.to_numpy(), index=tasks["identifier"].astype(str).to_numpy())
+
+    seen = []
+    result = _resolve(trips, lambda tasks: (seen.append(tasks.copy()), probe(tasks))[1])
+    assert sorted(seen[0]["departure_time"]) == [20 * H - 40 * 60, 28.5 * H - 40 * 60]
+    assert result.report["actions"][P.ACTION_CONNECTION_FOUND] == 0
+    assert result.report["n_persons_day_end_shifted"] == 1
+    assert result.trips["arrival_time"].max() <= 29 * H
+
+
 def test_the_probe_must_answer_every_task():
     trips = _trips([(1, 0, "home", "leisure", "pt", 18.0, 18.5), (1, 1, "leisure", "home", "pt", 22.0, 22.5)])
     with pytest.raises(ValueError, match="no result"):
