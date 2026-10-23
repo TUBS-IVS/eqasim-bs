@@ -52,7 +52,8 @@
    checked tour that ends after the bound moves earlier as a whole by the population writer's rule
    (`day_end_margin.late_day_shift_s`, ADR-0154) before anything is probed, so the timetable is asked at the
    times that are finally written; otherwise a tour found connected at 28:30 could be moved by the writer to a
-   time nobody checked. Counted as `n_persons_day_end_shifted`.
+   time nobody checked. Counted as `n_persons_day_end_shifted`. With `braunschweig.day_end_margin.enabled` false the
+   writer moves no day, so this step is skipped too.
 3. **Chain** (`braunschweig.synthesis.outside_tour_modes.pt_connections.resolve_pt_tours`), counted per tour, in this
    order (owner order of ADR-0153 and ADR-0156):
    - `connection_found`: every pt leg of the tour is a connection; untouched.

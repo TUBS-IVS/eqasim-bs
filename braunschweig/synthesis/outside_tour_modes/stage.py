@@ -174,7 +174,8 @@ def _pt_check(context) -> _pt_connections.PtCheck:
     return _pt_connections.PtCheck(
         probe=probe, shift_window_s=float(context.config(_config_keys.KEY_PT_SHIFT_WINDOW_S)),
         shift_step_s=float(context.config(_config_keys.KEY_PT_SHIFT_STEP_S)), bound_s=bound_s,
-        warn_share=float(context.config(_config_keys.KEY_PT_NO_CONNECTION_WARN_SHARE)))
+        warn_share=float(context.config(_config_keys.KEY_PT_NO_CONNECTION_WARN_SHARE)),
+        day_end_shift=bool(context.config(_day_end_margin.KEY_ENABLED)))
 
 
 def _load_table(srv_dir) -> ModeShareTable:
@@ -253,7 +254,7 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
             trips=remoded, tour_ids=tour_ids, outside=outside, portal_tour=portal_tour.to_numpy(dtype=bool),
             endpoints=endpoints, availability=_portal_modes.mode_availability(persons), probe=pt_check.probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s,
-            last_resort=last_resort)
+            last_resort=last_resort, day_end_shift=pt_check.day_end_shift)
         remoded = resolution.trips
         pt_report = resolution.report
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)

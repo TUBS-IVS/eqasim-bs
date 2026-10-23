@@ -174,6 +174,20 @@ def test_a_late_day_is_moved_by_the_writer_rule_before_it_is_probed():
     assert result.trips["arrival_time"].max() <= 29 * H
 
 
+def test_without_the_day_end_rule_a_late_day_is_probed_at_its_own_times():
+    # PR #505 review: with braunschweig.day_end_margin.enabled false the population writer moves no day, so the check
+    # must not move one either; the late return is probed at 28:30, where the service runs.
+    trips = _trips([(1, 0, "home", "leisure", "pt", 20.0, 20.5), (1, 1, "leisure", "home", "pt", 28.5, 29 + 40 / 60)])
+    seen = []
+    result = P.resolve_pt_tours(
+        trips=trips, tour_ids=home_based_tour_ids(trips), outside=np.ones(2, bool), portal_tour=np.zeros(2, bool),
+        endpoints=_endpoints(2), availability=_availability([1]), shift_window_s=2 * H, shift_step_s=0.5 * H,
+        bound_s=30 * H, probe=_service_probe(0.0, 28.6 * H, seen), day_end_shift=False)
+    assert sorted(seen[0]["departure_time"]) == [20 * H, 28.5 * H]
+    assert result.report["n_persons_day_end_shifted"] == 0
+    assert result.report["actions"][P.ACTION_CONNECTION_FOUND] == 1
+
+
 def test_the_probe_must_answer_every_task():
     trips = _trips([(1, 0, "home", "leisure", "pt", 18.0, 18.5), (1, 1, "leisure", "home", "pt", 22.0, 22.5)])
     with pytest.raises(ValueError, match="no result"):

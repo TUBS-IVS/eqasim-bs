@@ -10,7 +10,7 @@ the run among them.
 check, ADR-0152/0156) at its departure time. A tour whose pt legs are not all connections is resolved by a counted
 chain, in this order (owner order of ADR-0153 and ADR-0156). First, as for the in-commuters (ADR-0153), the day
 of every person with a checked tour that ends after ``bound_s`` moves earlier as a whole by the population writer's
-rule (``day_end_margin.late_day_shift_s``), so the timetable is asked at the times that are finally written and the
+rule (only while that rule is on, ``day_end_shift``) (``day_end_margin.late_day_shift_s``), so the timetable is asked at the times that are finally written and the
 writer does not move a checked day again (counted as ``n_persons_day_end_shifted``).
 
 1. ``tour_shifted``: the WHOLE tour moves by the first offset of
@@ -78,6 +78,9 @@ class PtCheck:
     shift_step_s: float = 1800.0
     bound_s: float = 29.0 * 3600.0
     warn_share: float = 0.05
+    #: Apply the writer's day-end rule before probing; False when ``braunschweig.day_end_margin.enabled`` is false,
+    #: because the writer then moves no day either.
+    day_end_shift: bool = True
 
 
 @dataclasses.dataclass
@@ -107,7 +110,8 @@ def _connected(probe: Probe, tasks: pd.DataFrame) -> dict:
 
 def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.ndarray, portal_tour: np.ndarray,
                      endpoints: pd.DataFrame, availability: pd.DataFrame, probe: Probe, shift_window_s: float,
-                     shift_step_s: float, bound_s: float, last_resort: str = LAST_RESORT_LIFT) -> Resolution:
+                     shift_step_s: float, bound_s: float, last_resort: str = LAST_RESORT_LIFT,
+                     day_end_shift: bool = True) -> Resolution:
     """Check and resolve the pt legs of the outside tours; see the module docstring. Pure apart from the probe.
 
     ``trips`` must be sorted by ``person_id, trip_index`` (``tours.require_sorted``); ``tour_ids``, ``outside``
@@ -150,9 +154,10 @@ def resolve_pt_tours(*, trips: pd.DataFrame, tour_ids: np.ndarray, outside: np.n
                          f"(first: {unknown[:5]})")
 
     # The writer's day-end rule first (ADR-0153 decision 2): a checked person's whole day moves earlier when it ends
-    # after bound_s, so every probe below asks the timetable at the times that are finally written.
+    # after bound_s, so every probe below asks the timetable at the times that are finally written. Without the
+    # writer's rule (day_end_shift False) no day is moved here either.
     n_day_end_shifted = 0
-    if checked:
+    if checked and day_end_shift:
         checked_persons = {t["person_id"] for t in checked}
         rows = np.flatnonzero(np.isin(persons, list(checked_persons)))
         days = pd.DataFrame({"person_id": persons[rows], "departure": departure[rows], "arrival": arrival[rows]})
