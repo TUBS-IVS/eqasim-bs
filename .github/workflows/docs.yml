@@ -5,6 +5,10 @@ name: Model registry / documentation check
 # generated views WITHOUT the scientific stack, proprietary data or synpp
 # (DAG re-extraction reports SKIP; data-file checks resolve committed paths
 # only). See docs/DOCUMENTATION_GOVERNANCE.md.
+#
+# ADR-0168: a pull request must not change docs/generated/ (only main's
+# generated-views workflow commits the rebuilt views), so sibling pull
+# requests never conflict there on GitHub. A stale view is WARN here.
 
 on:
   push:
@@ -17,11 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # the generated-views guard needs the merge base of the pull request
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - name: Install metadata dependencies
         run: pip install pyyaml pytest
+      - name: Generated views untouched by the pull request (ADR-0168)
+        if: github.event_name == 'pull_request' && github.head_ref != 'bot/generated-views'
+        run: python scripts/check_generated_views_untouched.py --base ${{ github.event.pull_request.base.sha }}
       - name: Documentation check (FAIL findings fail the job)
         run: python -m braunschweig.documentation check --quiet --no-dag
       - name: Registry guard tests
@@ -30,3 +40,4 @@ jobs:
           tests/test_documentation_schema.py
           tests/test_documentation_registry.py
           tests/test_documentation_checks.py
+          tests/test_generated_views_untouched.py

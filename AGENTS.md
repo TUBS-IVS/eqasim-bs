@@ -54,8 +54,9 @@ provenance in `docs/registry/data/`, decisions in `docs/decisions/ADR-*.md`,
 and significant runs and validation evidence in `docs/runs/*.yml`. Assess
 `README.md` when setup, dependencies, data paths, commands or outputs change.
 Never claim validation without an observed reference, run and comparison
-record. Never hand-edit `docs/generated/*`; regenerate it with the documentation
-build command. Keep each per-instance fact in one record; shared prose is an
+record. Never hand-edit or commit `docs/generated/*`; the documentation build command
+regenerates it locally, and only main's `generated-views` workflow commits it
+(ADR-0168). Keep each per-instance fact in one record; shared prose is an
 overview, not an append-only log. Do not revive retired status or backlog files.
 
 ## Working in this repository
@@ -75,8 +76,8 @@ overview, not an append-only log. Do not revive retired status or backlog files.
   suites in its place. Write a test only for a defect it
   can plausibly catch ([.claude/rules/tests.md](.claude/rules/tests.md)).
 - Update the applicable registries, ADRs and run manifests before declaring a
-  model change done; regenerate and check generated docs when those sources
-  change. Report what was verified and whether scientific outputs may change.
+  model change done; run the documentation check when those sources change
+  (the generated docs are rebuilt on main, never committed on a branch). Report what was verified and whether scientific outputs may change.
 - Stage explicit paths. Never run `git push` without explicit confirmation for
   that push. Open PRs only with `git pr`, whose base is the fork
   `TUBS-IVS/eqasim-bs`, and merge only when the maintainer asks. Newly

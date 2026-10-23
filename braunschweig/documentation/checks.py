@@ -133,9 +133,13 @@ def _flatten_values(node, prefix: str = "") -> Iterable:
 class CheckContext:
     """Repository facts, read once and reused across all checks."""
 
-    def __init__(self, repo_root: str, use_dag_extraction: bool = True):
+    def __init__(self, repo_root: str, use_dag_extraction: bool = True,
+                 strict_views: bool = False):
         self.repo_root = repo_root
         self.use_dag_extraction = use_dag_extraction
+        #: D1: a stale generated view is FAIL only in strict mode (main, ADR-0168);
+        #: on a branch the views deliberately stay at main's state and D1 warns.
+        self.strict_views = strict_views
         self._tracked_files = None
         self._config_values = None
         self._source_text = None
@@ -814,9 +818,17 @@ def check_no_retired_dependencies(context: CheckContext) -> List[Finding]:
 
 
 def check_generated_freshness(context: CheckContext) -> List[Finding]:
-    """D1 -- docs/generated/* match a fresh render of the current registries."""
+    """D1 -- docs/generated/* match a fresh render of the current registries.
+
+    The views are committed on main only (ADR-0168): a pull request leaves them at
+    main's state and the generated-views workflow rebuilds them after the merge. On a
+    branch a stale view is therefore expected and only WARNs; ``strict_views`` (the
+    workflow's check after its rebuild) makes it FAIL. A missing view always FAILs,
+    and every view is rendered either way, so a registry that cannot render fails.
+    """
     from braunschweig.documentation import render
     findings = []
+    stale_severity = FAIL if context.strict_views else WARN
     for name, text in render.render_all(context).items():
         path = os.path.join("docs", "generated", name)
         if not context.exists(path):
@@ -826,9 +838,10 @@ def check_generated_freshness(context: CheckContext) -> List[Finding]:
             continue
         committed = context.read_repo_text(path)
         if committed.replace("\r\n", "\n") != text:
-            findings.append(Finding(path, "D1-generated", FAIL,
-                                    "stale -- run 'python -m "
-                                    "braunschweig.documentation build'"))
+            findings.append(Finding(path, "D1-generated", stale_severity,
+                                    "stale against the registries -- expected on a "
+                                    "branch, main rebuilds it after the merge "
+                                    "(ADR-0168); never commit a rebuilt view"))
     if not findings:
         findings.append(Finding("(generated)", "D1-generated", OK,
                                 "all generated views are fresh"))

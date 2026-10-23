@@ -38,6 +38,17 @@ def test_no_fail_findings(findings):
     assert not failures, f"documentation check FAILs:\n{details}"
 
 
+@pytest.mark.parametrize("strict, severity", [(False, checks.WARN), (True, checks.FAIL)])
+def test_a_stale_view_warns_on_a_branch_and_fails_in_strict_mode(context, monkeypatch, strict, severity):
+    # ADR-0168: a branch keeps main's views, so staleness there is expected; main's workflow
+    # checks with strict_views after its rebuild, where a stale view is a defect.
+    monkeypatch.setattr(context, "strict_views", strict)
+    monkeypatch.setattr(context, "read_repo_text", lambda path: "stale\n")
+    stale = checks.check_generated_freshness(context)
+    assert len(stale) == len(render.render_all(context))
+    assert {finding.severity for finding in stale} == {severity}
+
+
 def test_registry_counts_hold_the_migration_baseline(context):
     assert len(context.features) >= 69
     assert len(context.stages) >= 114
