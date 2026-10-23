@@ -84,10 +84,10 @@ may only name run manifests (no run, no claim).
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |
-| [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 7 | -- | marker | assumption | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | pending |
+| [plan_feasibility_check](../registry/features/plan_feasibility_check.yml) | matsim | active | ON | A/A/A | 7 | -- | marker | assumption | unvalidated (`i453-i443-ab-1pct-2026-10-16`, `i465-wpe-smoke-1pct-2026-10-23`) | pending |
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
-| [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 27 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`) | pending |
+| [portal_trips](../registry/features/portal_trips.yml) | cordon | active | ON | A/-/- | 27 | proven | marker | none | unvalidated (`portal-trips-ab-1pct-2026-10-09`, `i465-wpe-smoke-1pct-2026-10-23`) | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | pending |
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
@@ -111,7 +111,7 @@ may only name run manifests (no run, no claim).
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [tier3_kreis_controls](../registry/features/tier3_kreis_controls.yml) | attributes | active | ON | A/i/- | 3 | -- | none | committed | unvalidated | pending |
 | [tier_ab_caching](../registry/features/tier_ab_caching.yml) | infrastructure | active | ON | A/s/s | 5 | -- | none | none | unvalidated (`cache-migration-100pct-2026-10-22`, `content-addressed-cache-acceptance-100pct-2026-10-22`) | pending |
-| [transit_next_day](../registry/features/transit_next_day.yml) | matsim | active | ON | A/A/A | 3 | proven | marker | assumption | unvalidated | pending |
+| [transit_next_day](../registry/features/transit_next_day.yml) | matsim | active | ON | A/A/A | 3 | proven | marker | assumption | unvalidated (`i465-wpe-smoke-1pct-2026-10-23`) | pending |
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | supported | off | i/i/i | 5 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |

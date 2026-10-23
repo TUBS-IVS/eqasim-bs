@@ -63,17 +63,19 @@ evidence:
       is compared with observed data.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - i465-wpe-smoke-1pct-2026-10-23
   metric: null
   note: >-
-    Unit-tested only; no run has used the extended schedule yet and nothing has been compared with
-    observed pt use after midnight.
+    One 1 % smoke (i465-wpe-smoke-1pct-2026-10-23): 2,560 of 49,906 departures duplicated; after the cordon cut
+    the extension adds departures only at 27 to 29 h (39 -> 42, 12 -> 163, 0 -> 552 per hour), no doubling at
+    24 to 26 h. Nothing has been compared with observed pt use after midnight.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: >-
-    Implemented and unit-tested for issue 465; no run has exercised it and no owner verdict exists.
+    Implemented, unit-tested and smoked once at 1 % for issue 465; no owner verdict exists.
   source: null
 notes: >-
   The final-schedule summary of braunschweig.matsim.simulation.prepare (_summarise_final_schedule) prints

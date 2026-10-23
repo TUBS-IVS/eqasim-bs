@@ -1,6 +1,7 @@
 # ADR-0152 · 2026-10-22 · Portal pt gates are chosen against the timetable, and a pt stay without a connection is resolved by a counted chain
 
-- **Status:** accepted (implemented, effect not yet measured; the WP-E run manifest is owed)
+- **Status:** accepted (implemented; measured once at 1 %, run manifest `docs/runs/i465-wpe-smoke-1pct-2026-10-23.yml`,
+  a smoke, not a validation; see the status line at the end)
 - **Design:** `docs/superpowers/specs/2026-10-22-outside-cell-realism-wave-design.md` (work package C),
   plan `docs/superpowers/plans/2026-10-22-outside-cell-wave-wp-c-timetable-aware-gates.md`.
 - **Numbering:** ADR-0152 because 0150 is taken by `chore/ci-is-the-test-gate` (PR #477) and 0151 by the
@@ -101,9 +102,15 @@
 - The stage also depends on `matsim.scenario.supply.gtfs` (the transit vehicles file the router config names)
   besides `matsim.scenario.supply.processed`.
 - Runtime of the batch router at 100 %: ASSUMPTION, under 15 min at 25,000 stays x 5 candidates x 2 directions;
-  not measured, to be measured in WP-E.
+  not measured at 100 %; estimated in WP-E at about 9 min (see the status line below).
 - The result changes by design: pt stays without a connection become car, car passenger, shifted or counted
   kept stays, so the mode shares of portal stays move. No committed observed reference exists for that share.
-- **Status:** implemented, effect not yet measured; a WP-E run manifest is owed. Whether the stuck walkers at the
-  end of the day are gone or bounded (the issue's done-when) is shown by no run yet. Convergence of the mode
-  shares would not be validation.
+- **Status:** implemented and measured once, 1 % smoke `docs/runs/i465-wpe-smoke-1pct-2026-10-23.yml` against arm 2
+  of the #453/#443 A/B (same seed and persons, one draw each, no observed reference). The first real router call
+  failed until the router config got the qsim values the eqasim injector needs (fixed with that run). Of 123 pt
+  portal stays, 39 kept a timetable-aware gate, 68 were switched to car or car passenger, 2 shifted and 14 kept
+  without a connection (warned: 68 % without a gate). Frozen residents stuck walking at the end of the day fell from
+  58 to 20 (bounded, not gone; 10 of the 20 are incommuters, whom this ADR does not touch). Router runtime: 10 calls
+  of about 30 s at 1 %; 18,300 tasks (the task count of a 100 % sample) took 55 s by hand, so the 100 % assumption
+  above holds as an estimate (about 9 min), not as a 100 % measurement. Convergence of the mode shares is not
+  validation.
