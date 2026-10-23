@@ -1,0 +1,53 @@
+id: donor-match-passenger-residual-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: baff2789
+  branch: claude/i465-passenger-key-residual-eb868b
+  notes: >-
+    Two measurements of the completed MiD donor build with scripts/measure_donor_match_passenger_access.py, each
+    exported with git archive to felix: the split baseline at commit 96ff2cc8 (arms off and on = passenger key off
+    and on), and the decision arms at commit baff2789 (arms off, class_key, lift_free). A MEASUREMENT, not a
+    pipeline run.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    The production defaults of config_keys with mid_passenger_availability on. Arms - off (no passenger key),
+    class_key (donor_match_passenger_access, ADR-0162), lift_free (plus donor_match_lift_free_never_passenger,
+    ADR-0166).
+sampling:
+  rate: none (raw MiD 2023 B1 donor, not sampled)
+  scope: the 485,709 completed donor persons of the raw MiD delivery
+  notes: Unweighted donor counts, not synthetic-population estimates.
+pipeline:
+  targets:
+  - braunschweig.popsim.completed_donor
+  notes: >-
+    python -I scripts/measure_donor_match_passenger_access.py --mid-dir
+    /home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw --random-seed 1234 --git-commit <commit>,
+    at 96ff2cc8 with --arms off on (output report_split_baseline.json) and at baff2789 with the default
+    --arms off class_key lift_free (output report.json).
+classification:
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    Splits the "never" passengers that keep a foreign lift diary by matching step and donor class and measures the
+    lift-free preference of ADR-0166 on identical inputs; the class_key arm reproduces the ADR-0162 measurement
+    (run manifest donor-match-passenger-access-2026-10-23). A measurement, not a validation; no MATSim run.
+validation:
+- metric: '"never" persons (P_VAUTO 3) whose foreign diary reports a car-passenger trip, over the 14,548 "never"
+    persons with a foreign diary'
+  reference: none (measurement)
+  result: off 2,064, class_key 1,782 (12.25 %), lift_free 1,196 (8.22 %); per matching step see ADR-0166.
+issues:
+- '#465'
+decisions:
+- ADR-0162
+- ADR-0166
+artifacts:
+- docs/runs/artifacts/donor-match-passenger-residual-2026-10-23/report_split_baseline.json
+- docs/runs/artifacts/donor-match-passenger-residual-2026-10-23/report.json
+source: >-
+  report_split_baseline.json (sha256 58b8bf99bb114cf9f5888906f080b581a6eed5469033addeb185d50017e355f2) and
+  report.json (sha256 a131d75b39f560cd7bca5f4430bd07b000a1e855ef171059c84763a89274ff65) under
+  docs/runs/artifacts/donor-match-passenger-residual-2026-10-23/, written by the script named under pipeline.notes.

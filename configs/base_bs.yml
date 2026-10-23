@@ -386,6 +386,15 @@ config:
   # possible and are reported as a rate in BOTH arms
   # (DiaryMatchReport.n_crossed_fine_child_age_band).
   braunschweig.population.popsim.donor_match_fine_child_age_bands: true
+  # ADR-0162 (#465): the weekend and diary plan matches keep the passenger access class
+  # (MiD P_VAUTO == 3 "never a car passenger" or not) as a soft key right after the licence,
+  # so a person whose own answer is "never" does not inherit a diary with lifts that the
+  # mode choice can then never offer. Effective only with mid_passenger_availability on.
+  braunschweig.population.popsim.donor_match_passenger_access: true
+  # ADR-0166 (#465): on top of the class key, a "never" passenger prefers a donor whose
+  # handed-over diary has no car-passenger trip (a "never" respondent may report a lift
+  # themselves, and a household may have no "never" member in the age band).
+  braunschweig.population.popsim.donor_match_lift_free_never_passenger: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
@@ -885,6 +894,9 @@ config:
   # The margin is an ASSUMPTION (routed + congested last trips took up to 0.54 h longer than planned in the WP-E smoke).
   braunschweig.day_end_margin.enabled: true
   braunschweig.day_end_margin.last_arrival_margin_s: 3600
+  # ADR-0160: the prepare stage repeats the rule after the routing with the ROUTED travel times (a long trip can
+  # take longer routed than reported); eqasim's RunPopulationRouting moves and re-routes those plans.
+  braunschweig.day_end_margin.routed_check: true
   # Timetable check of the in-commuters' pt days (#488): both trips must be timetable connections (batch pt
   # router); otherwise the whole day moves (earlier first, then later, in 30 min steps up to 2 h, ASSUMPTION as
   # for the portal pt stays), else the in-commuter drives from its road gate. WARN above the share of days

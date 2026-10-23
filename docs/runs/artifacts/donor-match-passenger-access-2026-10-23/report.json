@@ -1,0 +1,27 @@
+{
+  "measurement": "donor_match_passenger_access_off_vs_on",
+  "scope_note": "Unweighted raw MiD donor counts (completed donor build), not synthetic-population estimates.",
+  "git_commit": "a23763062f4a15b2b4c00490bd98b9ad54b8aa11",
+  "random_seed": 1234,
+  "off": {
+    "n_persons": 485709,
+    "n_foreign": 235158,
+    "n_crossed": 19781,
+    "n_never": 30497,
+    "n_never_with_foreign_lift": 2064,
+    "n_never_with_own_lift": 1254,
+    "weekend_report": "WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)",
+    "diary_report": "DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74882, 2: 2}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4688, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=8624)"
+  },
+  "on": {
+    "n_persons": 485709,
+    "n_foreign": 235158,
+    "n_crossed": 10825,
+    "n_never": 30497,
+    "n_never_with_foreign_lift": 1782,
+    "n_never_with_own_lift": 1254,
+    "weekend_report": "WeekendMatchReport(n_weekend_households=62572, n_hh_matched=62572, n_person_fallback_households=0, n_persons_remapped=138777, hh_match_level_counts={0: 62239, 1: 295, 2: 32, 3: 6}, n_swept=0)",
+    "diary_report": "DiaryMatchReport(n_persons=485709, n_remapped=74884, counts_by_reason={'realisable': 407545, 'nodiary_mobile': 40582, 'holiday': 22964, 'only_rbw': 7022, 'nodiary_unknown': 4042, 'nodiary_immobile_keep': 3280, 'emptied_by_arrive_home_drop': 274}, match_level_counts={0: 74879, 1: 2, 2: 2, 3: 1}, share_remapped=0.15417461895908868, n_crossed_employment_boundary=0, n_remapped_in_split_child_band=4686, n_crossed_fine_child_age_band=0, n_crossed_passenger_class=0)"
+  },
+  "plan_sources_moved_by_the_key": 74819
+}
