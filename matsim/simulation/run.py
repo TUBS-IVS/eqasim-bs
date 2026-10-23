@@ -1,8 +1,36 @@
+import logging
 import shutil
 import os.path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+
+logger = logging.getLogger(__name__)
+
+def materialise_output_symlinks(directory):
+    """Replace every symlink under ``directory`` by a copy of its target; return how many were replaced.
+
+    The eqasim-java-bs SimWrapperHouseholdsInputLinker links ``<prefix>households.xml.gz`` to MATSim's
+    ``output_households.xml.gz`` so that the in-run SimWrapper analyses find their input. The synpp fork
+    hashes every executed stage's cache directory and refuses symlinks (ADR-0149), so the links must not
+    outlive the run. A link whose target lies outside ``directory`` (or is no file) raises ``ValueError``.
+    """
+    root = os.path.realpath(directory)
+    replaced = 0
+    for current, dirnames, filenames in os.walk(directory):
+        for name in dirnames + filenames:
+            path = os.path.join(current, name)
+            if not os.path.islink(path):
+                continue
+            target = os.path.realpath(path)
+            if os.path.commonpath([root, target]) != root or not os.path.isfile(target):
+                raise ValueError("symlink %s points outside %s or not to a file (%s)" % (path, directory, target))
+            os.unlink(path)
+            shutil.copy2(target, path)
+            replaced += 1
+    logger.info("[matsim.simulation.run] replaced %d symlink(s) under %s by copies of their targets",
+                replaced, directory)
+    return replaced
 
 def configure(context):
     context.stage("matsim.simulation.prepare")
@@ -104,5 +132,6 @@ def execute(context):
         run_args += ["--simwrapper", "true"]
     eqasim.run(context, "org.eqasim.braunschweig.RunSimulation", run_args)
     assert os.path.exists("%s/simulation_output/output_events.xml.gz" % context.path())
+    materialise_output_symlinks("%s/simulation_output" % context.path())
     if parking_enabled:
         parking_run_checks.require_parking_outcomes("%s/simulation_output" % context.path())
