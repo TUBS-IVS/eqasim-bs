@@ -20,6 +20,8 @@ def configure(context):
     # it without raising PipelineError ("config option not requested").
     # The default is False (OFF), preserving byte-identical OFF behaviour.
     context.config("taz_work_location_choice", False)
+    # ADR-0164: the work/education assignment keys that base.execute() reads.
+    base.configure_assignment(context)
 
     if context.config("education_gravity_enabled", False):
         context.stage("braunschweig.synthesis.locations.education_gravity",
