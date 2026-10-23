@@ -65,7 +65,10 @@
    use neither car, lift nor bicycle): with last resort `car_passenger` they become a lift (`car_passenger`, a road
    mode, so the gate class holds) instead of keeping a walk or bicycle leg of tens of kilometres; counted as
    `n_portal_tours_lifted`. A rail-gate tour always has pt (always available), a mixed-class tour stays unchanged
-   (counted, as before).
+   (counted, as before). ADR-0163 (PR #500, sibling branch) resolves the same case earlier, in the portal stage: a
+   far walk or bicycle stay of a person without a road mode becomes pt there and then takes the pt chain of
+   ADR-0152/0156. With both in place this lift is the safety net for whatever still reaches the outside-tour stage
+   without an admissible road mode; the two do not contradict each other (pt first, the lift last).
 4. **Times reach the plan.** The population writer and the synthesis output build the activities from the same trips
    they write: a new stage `braunschweig.synthesis.outside_tour_modes.activities_stage` (alias
    `synthesis.population.activities.simulated`) runs the vendored eqasim trips->activities transform on
