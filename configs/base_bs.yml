@@ -643,6 +643,11 @@ config:
   education_bbs_share: 0.681
   education_university_slope: -0.1415
   education_university_max_radius_km: 150.0
+  # Adult education (#465): from 30 on, education activities are placed among all schools and universities (uniform
+  # weights) by distance decay instead of at a university. ASSUMPTIONS (age, slope, radius), not calibrated.
+  education_adult_min_age: 30
+  education_adult_slope: -0.15
+  education_adult_max_radius_km: 30.0
 
   # --- Vehicle fleet (all features ON) ---
   vehicles_method: household
