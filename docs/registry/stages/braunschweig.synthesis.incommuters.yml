@@ -1,14 +1,21 @@
 stage: braunschweig.synthesis.incommuters
 title: In-commuter agents
 layer: cordon
-description: Generates the cordon-crossing worker agents from BA Pendleratlas flows with donor-timed
-  home-work-home plans and the Mikrozensus mode balance (ADR-0029).
+description: 'Generates the cordon-crossing worker agents from BA Pendleratlas flows with donor-timed home-work-home
+  plans and the Mikrozensus mode balance (ADR-0029). Since ADR-0153 (issue #488) the pt days are checked against the
+  timetable with the batch pt router (braunschweig.synthesis.incommuter_pt_connections,
+  braunschweig.incommuters.pt_connection_check.enabled). A day that ends after the day-end bound moves earlier first
+  (ADR-0154), a day without two connections moves as a whole (earlier first, 30 min steps up to 2 h, ASSUMPTION),
+  else the in-commuter drives from its road gate; counted and logged, reported as pt_connection. The stage therefore
+  depends on matsim.runtime.eqasim, matsim.runtime.java, matsim.scenario.supply.processed and
+  matsim.scenario.supply.gtfs.'
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/synthesis/incommuters.py
+- braunschweig/synthesis/incommuter_pt_connections.py
 pipelines:
   popsim_mid: active
   popsim_open: active

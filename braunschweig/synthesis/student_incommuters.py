@@ -144,6 +144,23 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.vehicles.hbefa",
     "braunschweig.synthesis.vehicles.segment",
     "braunschweig.synthesis.vehicles.wohnmobile_age",
+    # Reached through braunschweig.synthesis.incommuters since its timetable check of the pt days (#488): this
+    # stage never runs that check, but its closure gate (ADR-0136) follows every import of the shared module.
+    "braunschweig.data.transit.connections",
+    "braunschweig.data.transit.schedule",
+    "braunschweig.matsim.scenario.day_end_margin",
+    "braunschweig.matsim.simulation.plan_check",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.population.methods",
+    "braunschweig.resources",
+    "braunschweig.synthesis.incommuter_pt_connections",
+    "data.hts.hts",
+    "matsim.runtime.eqasim",
+    "matsim.runtime.git",
+    "matsim.runtime.java",
+    "matsim.runtime.maven",
+    "matsim.runtime.process_watchdog",
 )
 
 
