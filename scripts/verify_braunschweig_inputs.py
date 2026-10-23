@@ -494,7 +494,7 @@ INPUTS: List[Input] = [
         optional=True,
         restricted=True,
     ),
-    # D20: the parking lots of the model region (issue #465, ADR-0165), read by matsim.simulation.prepare for the
+    # D20: the parking lots of the model region (issue #465, ADR-0169), read by matsim.simulation.prepare for the
     # large-site access step; required because large_facility_access_enabled is on (its code default).
     Input(
         name="D20 Parking lots of the region from OSM 2026 (committed)",

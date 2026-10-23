@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Issue #465 A/B replay of the ADR-0165 fix: one QSim iteration of the 1 % rerun's final plans after the
+# Issue #465 A/B replay of the ADR-0169 fix: one QSim iteration of the 1 % rerun's final plans after the
 # large-facility access rule (plans_fixed.xml.gz, relinked facilities). Usage: replay_fix.sh <arm> <true|false>
 set -euo pipefail
 ARM=$1

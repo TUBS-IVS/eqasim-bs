@@ -1,4 +1,4 @@
-"""Issue #465 / ADR-0165: evaluate the continued 1 % A/B arms against the success criteria of the design (spec 7).
+"""Issue #465 / ADR-0169: evaluate the continued 1 % A/B arms against the success criteria of the design (spec 7).
 
 Per arm (a directory holding simulation_output/): last iteration and car travel hours (ph_modestats.csv, last
 iteration and mean of the last five), mode shares (modestats.csv, last iteration), car legs and stuck agents from the

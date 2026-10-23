@@ -1,6 +1,6 @@
 """The independent re-implementation of the large-facility access rule in scripts/measure_large_facility_access.py.
 
-It is the cross-check of the Java rule (eqasim-java-bs LargeFacilityAccessLinkSelector, ADR-0165) and the
+It is the cross-check of the Java rule (eqasim-java-bs LargeFacilityAccessLinkSelector, ADR-0169) and the
 source of the rule's default parameters, so a defect here would mis-state both. The synthetic layout mirrors
 the Java test: a 600 veh/h side street 10 m from the site, a 1000 veh/h secondary road 200 m away and a
 motorway, a trunk and a ramp that are closer but not eligible.

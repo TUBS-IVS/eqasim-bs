@@ -52,7 +52,7 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   link; the step writes large_facility_access_summary.csv and large_facility_access_groups.csv and fails above its
   no-lot and fallback bounds. The prepared config sets
   qsim.insertingWaitingVehiclesBeforeDrivingVehicles from matsim_qsim_inserting_waiting_vehicles_first (default
-  false) (ADR-0165).
+  false) (ADR-0169).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -95,7 +95,7 @@ decisions:
 - ADR-0144
 - ADR-0146
 - ADR-0151
-- ADR-0165
+- ADR-0169
 notes: >-
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare

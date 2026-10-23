@@ -8,7 +8,7 @@ description: 'Sites are all facilities at one coordinate (incommuter workplaces 
   <id>__access_<n>, the activity coordinates stay. Every other large site moves to the closest car link of at
   least 1000 veh/h within 1000 m that is not a motorway, trunk or ramp. Replaces, for large sites, eqasim''s
   capacity-blind nearest-link placement, under which all departures of a site such as the VW Wolfsburg plant
-  location entered on one 600 veh/h side street (issue #465, ADR-0165).'
+  location entered on one 600 veh/h side street (issue #465, ADR-0169).'
 stages:
 - matsim.simulation.prepare
 pipelines:
@@ -23,7 +23,7 @@ production:
 introduced:
   issue: '#465'
   pr: null
-  adr: ADR-0165
+  adr: ADR-0169
 detail_doc: null
 code_paths:
 - matsim/simulation/prepare.py
@@ -46,7 +46,7 @@ evidence:
   reference:
     kind: none
     note: |
-      No observed reference applies. The rule is a network-access correction; its parameters (1000 activities, 0.5 spaces per activity, 1500 m, 300 m, 1000 veh/h, 1000 m) are owner decisions and measured engineering choices on this network (ADR-0165), not calibrated against data.
+      No observed reference applies. The rule is a network-access correction; its parameters (1000 activities, 0.5 spaces per activity, 1500 m, 300 m, 1000 veh/h, 1000 m) are owner decisions and measured engineering choices on this network (ADR-0169), not calibrated against data.
 validation:
   state: unvalidated
   runs:
@@ -60,4 +60,4 @@ assessment:
   date: null
   pending_reason: |
     Implemented and measured at 1 % in a continued-iteration A/B; no full pipeline run and no 100 % run with the rule yet.
-  source: ADR-0165
+  source: ADR-0169

@@ -4,7 +4,7 @@ repository:
   commit: 09ef2444979e7c92fd97bc5a34b7920131ebd679
   branch: claude/i465-link-129867-bottleneck-2a5b68
   notes: >-
-    Diagnosis and A/B of the road side of #465 (ADR-0165). Base scenario: the 1 % rerun of #465 on felix
+    Diagnosis and A/B of the road side of #465 (ADR-0169). Base scenario: the 1 % rerun of #465 on felix
     (~/wt-i487-rerun, eqasim-bs be886cc60c57ff61fb66778d22fcf87c33ce93e7, eqasim-java-bs
     ad3f7e22d27d782620791dc1dbf1b6f0661d16cd, final iteration 49, run log ~/wt-i487-rerun/logs/run_*.log). Every arm
     below re-ran the rerun's own MATSim jar (cache_rerun/matsim.runtime.eqasim__1c974c0f...) on that rerun's prepared
@@ -25,7 +25,7 @@ configuration:
     controler.lastIteration 40 (one-iteration replays: 0), global/qsim threads 12, and
     qsim.insertingWaitingVehiclesBeforeDrivingVehicles true (control) or false (the other arms) as a --config:
     override (scripts replay.sh, replay_fix.sh, continue_ab.sh in the artifacts). The access step parameters were the
-    defaults of matsim.simulation.prepare (ADR-0165): sites from 1000 activities at 100 %, work share 0.5 or prefix
+    defaults of matsim.simulation.prepare (ADR-0169): sites from 1000 activities at 100 %, work share 0.5 or prefix
     uni_loc_, lots nearest-first to 0.5 x size within 1500 m, lot links >= 1000 veh/h within 300 m, single-link rule
     >= 1000 veh/h within 1000 m, excluded prefixes outside_,EXT,home_; fix_v1 used the first rule (per facility id,
     >= 1000 activities, >= 1000 veh/h within 1000 m, excluded outside_ only).
@@ -81,7 +81,7 @@ validation:
     one-iteration replay cannot judge an access change, hence the continued A/B below.
   artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/one_iteration_replays_compare.txt, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/compare_arms.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay.sh, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay_fix.sh'
 - metric: access step on the rerun's prepared scenario and final plans (site and parking-lot rule)
-  reference: 'none -- a wiring and fallback-rate check against the bounds of ADR-0165 (0.10 no lot, 0.15 fallback)'
+  reference: 'none -- a wiring and fallback-rate check against the bounds of ADR-0169 (0.10 no lot, 0.15 fallback)'
   result: >-
     13 651 of 14 905 lots inside the network extent + 2 km (656 304 spaces). 294 large sites (1 % sample: noisy), 39
     in scope; all 39 distributed over lots (2 partly covered), 0 without a usable lot; single-link rule adequate 50,
@@ -146,7 +146,7 @@ artifacts:
 issues:
 - '#465'
 decisions:
-- ADR-0165
+- ADR-0169
 notes: >-
   What this run is evidence for: in a 1 % continuation from equilibrated plans, spreading the car access of the work
   and university sites over their parking lots (with one high-capacity link for the other large sites and departing

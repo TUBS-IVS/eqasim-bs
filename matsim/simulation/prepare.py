@@ -13,14 +13,14 @@ _PASSENGER_AVAILABILITY_ADAPTER = (
     "org.eqasim.braunschweig.scenario.RunAdaptPassengerAvailabilityConfig")
 _LEGACY_ADAPTER = "org.eqasim.braunschweig.scenario.RunAdaptConfig"
 
-# Large-site access rule (issue #465, ADR-0165), Java RunAdaptLargeFacilityAccess between RunPreparation and the
+# Large-site access rule (issue #465, ADR-0169), Java RunAdaptLargeFacilityAccess between RunPreparation and the
 # routing. eqasim's FacilityPlacement attaches every facility to its nearest non-motorway link whatever its capacity.
 # The rule works on SITES (all facilities at one coordinate, incommuter workplaces included) of at least
 # ``minimum_activities`` activities at 100 %: work sites and universities spread their car access over the parking
 # lots around them (nearest first until ``parking_demand_share`` x size spaces, within ``parking_maximum_distance_m``;
 # each lot on the closest link of ``minimum_capacity_veh_per_h`` within ``lot_link_maximum_distance_m``, else the
 # closest link within that distance); every other large site gets the closest link of ``minimum_capacity_veh_per_h``
-# within ``maximum_distance_m``. Owner decisions of 2026-10-23 (ADR-0165); the bounds fail the step when the lots
+# within ``maximum_distance_m``. Owner decisions of 2026-10-23 (ADR-0169); the bounds fail the step when the lots
 # file or the network is broken.
 _LARGE_FACILITY_ACCESS_RUNNER = "org.eqasim.braunschweig.scenario.RunAdaptLargeFacilityAccess"
 _LARGE_FACILITY_ACCESS_SUMMARY = "large_facility_access_summary.csv"
@@ -116,7 +116,7 @@ def _log_large_facility_access_summary(summary_path):
     """Log the site outcome rates of the large-site access step from its summary CSV; return the counts.
 
     The Java step logs the same rates; this line puts them into the pipeline log under the stage's own prefix and
-    warns when a site kept its low-capacity link or was only partly covered by lots (ADR-0165).
+    warns when a site kept its low-capacity link or was only partly covered by lots (ADR-0169).
     """
     counts = {outcome: 0 for outcome in _LARGE_FACILITY_ACCESS_OUTCOMES}
     counts["in_scope"] = 0
@@ -138,7 +138,7 @@ def _log_large_facility_access_summary(summary_path):
 
     logger.info("[matsim.simulation.prepare] large facility access: %d large sites, %d in scope; distributed over parking "
                 "lots %d/%d (%.1f %%), of them partly covered %d; in scope without a usable lot %d/%d (%.1f %%); "
-                "single-link rule: adequate %d, moved %d, fallback %d/%d (%.1f %%) (ADR-0165, %s)", sites,
+                "single-link rule: adequate %d, moved %d, fallback %d/%d (%.1f %%) (ADR-0169, %s)", sites,
                 counts["in_scope"], distributed, counts["in_scope"], share(distributed, counts["in_scope"]),
                 counts["distributed_partial"], counts["in_scope_without_lot"], counts["in_scope"],
                 share(counts["in_scope_without_lot"], counts["in_scope"]), counts["adequate"], counts["moved"],
@@ -318,7 +318,7 @@ def execute(context):
     insertion = "true" if context.config(_QSIM_INSERTION_KEY) else "false"
     previous = config_modules.set_param("%s/%sconfig.xml" % (context.path(), context.config("output_prefix")),
                                         "qsim", _QSIM_INSERTION_PARAM, insertion)
-    logger.info("[matsim.simulation.prepare] qsim.%s = %s (generated value %s; ADR-0165)",
+    logger.info("[matsim.simulation.prepare] qsim.%s = %s (generated value %s; ADR-0169)",
                 _QSIM_INSERTION_PARAM, insertion, previous)
     
     # Optionally, perform mode choice

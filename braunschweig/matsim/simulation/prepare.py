@@ -189,7 +189,7 @@ def validate(context):
     # whose own token hashes them and whose change synpp propagates to this stage.
     token["files"] = {Path(path).name: fare_model_export.content_sha256(path)
                       for path in fare_model_export.committed_input_paths()}
-    # The parking-lot release of the large-site access (ADR-0165) is read by the delegate's execute(): a rebuilt
+    # The parking-lot release of the large-site access (ADR-0169) is read by the delegate's execute(): a rebuilt
     # or corrected release must recompute the prepared scenario. The key and its data_path are declared by
     # delegate.configure in this stage's context; "absent" when the file is missing (execute() then names the key).
     lots_path = Path(context.config("data_path")) / context.config(delegate.LARGE_FACILITY_ACCESS_LOTS_KEY)

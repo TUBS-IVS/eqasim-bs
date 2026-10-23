@@ -1,11 +1,12 @@
-# ADR-0165 · 2026-10-23 · Large sites spread their car access over their parking lots, and departing vehicles wait for driving traffic
+# ADR-0169 · 2026-10-23 · Large sites spread their car access over their parking lots, and departing vehicles wait for driving traffic
 
 - **Status:** accepted (owner decisions of 2026-10-23, listed under "Decision"). Implemented; measured on the 1 %
   rerun of #465 in a continued-iteration A/B (run manifest `docs/runs/i465-large-facility-access-1pct-2026-10-23.yml`),
   a simulated effect, not a validation; see "Measured effect".
-- **Numbering:** ADR-0165; 0153 to 0162 are on main or open branches, 0163 and 0164 are claimed by the sibling
-  #465 session `in-commuter-car-trips` (shared session notes); re-checked across all local and remote branches and
-  worktrees on 2026-10-23.
+- **Numbering:** ADR-0169. Drafted as ADR-0165 (claimed in the shared session notes); main merged another
+  ADR-0165 (generated views merge by rebuild) first, so this record was renumbered before its merge. 0166 to 0168 are
+  taken by sibling #465 sessions or branches; 0169 re-checked free across all local and remote branches, worktrees,
+  open pull requests and the shared session notes on 2026-10-23.
 - **Issue:** #465 (road side of the stuck person 693334). **Relates to:** ADR-0144 (the capacity-aware link rule for
   freight boundary endpoints, reused here), ADR-0161 (the transit side of the same stuck).
 - **Design:** `docs/superpowers/specs/2026-10-23-large-site-parking-access-design.md`, plan

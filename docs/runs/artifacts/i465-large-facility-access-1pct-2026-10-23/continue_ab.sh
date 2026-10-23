@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Issue #465 / ADR-0165 A/B continuation: 40 more iterations (replanning on) from the 1 % rerun's final plans.
+# Issue #465 / ADR-0169 A/B continuation: 40 more iterations (replanning on) from the 1 % rerun's final plans.
 # Usage: continue_ab.sh <arm> <scenario dir: replay_true (old facilities) | replay_fix (relinked)> <plans> <insertion>
 set -euo pipefail
 ARM=$1

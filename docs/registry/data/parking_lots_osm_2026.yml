@@ -2,7 +2,7 @@ dataset: parking_lots_osm_2026
 title: Off-street parking lots of the model region with estimated spaces, one point per lot (OSM, September 2026)
 inventory_id: null
 provider: >-
-  Own derivation (issue #465, ADR-0165) from OpenStreetMap data: the pinned Geofabrik extract
+  Own derivation (issue #465, ADR-0169) from OpenStreetMap data: the pinned Geofabrik extract
   niedersachsen-260929.osm.pbf (SHA-256 c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94, MD5
   0c513947b19145d84afb0b3bc36d95f5 checked against its Geofabrik .md5 file; the same extract as the data record
   parking_zones_2026)
@@ -75,5 +75,5 @@ limitations: >-
   mapping is not checked against a reference. Lots are points (centroids): a large lot with several exits gets one
   access link. A lot mapped twice (an area and a node with a capacity tag) counts twice.
 notes: >-
-  Read by the large-site access step (ADR-0165): in-scope large sites (work sites and universities) spread their car
+  Read by the large-site access step (ADR-0169): in-scope large sites (work sites and universities) spread their car
   access over the nearest lots that cover half of the site's activities, within 1500 m.

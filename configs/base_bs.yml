@@ -534,7 +534,7 @@ config:
   matsim_threads: 56
   matsim_qsim_threads: 16
 
-  # --- Road access of large sites and departure priority (issue #465, ADR-0165) ---
+  # --- Road access of large sites and departure priority (issue #465, ADR-0169) ---
   # Sites = all facilities at one coordinate (incommuter workplaces included), large from 1000 activities
   # at 100 %. Work sites and universities spread their car access over the parking lots around them
   # (release braunschweig/parking/parking_lots_osm_2026.csv, preflight D20; nearest lots until 0.5 x size

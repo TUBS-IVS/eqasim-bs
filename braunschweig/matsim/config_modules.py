@@ -11,7 +11,7 @@ Only flat modules (``<param>`` children) are supported: a module with parameter 
 names cannot be compared parameter by parameter and is rejected.
 
 ``set_param`` changes the value of one existing parameter of a module with the same byte-preserving text edit
-(used for ``qsim.insertingWaitingVehiclesBeforeDrivingVehicles``, ADR-0165).
+(used for ``qsim.insertingWaitingVehiclesBeforeDrivingVehicles``, ADR-0169).
 """
 from __future__ import annotations
 

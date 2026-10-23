@@ -1,4 +1,4 @@
-"""The parking-lot release rule of scripts/build_parking_lots_from_osm.py (issue #465, ADR-0165).
+"""The parking-lot release rule of scripts/build_parking_lots_from_osm.py (issue #465, ADR-0169).
 
 The release feeds the large-site access step: a lot that is wrongly dropped or gets the wrong number of spaces
 shifts the share of a site's car access to the wrong road. The spaces follow the parking module's capacity rule

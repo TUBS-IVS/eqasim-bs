@@ -1,4 +1,4 @@
-"""Derive the parking-lot release ``parking_lots_osm_2026`` from the pinned OSM extract (issue #465, ADR-0165).
+"""Derive the parking-lot release ``parking_lots_osm_2026`` from the pinned OSM extract (issue #465, ADR-0169).
 
 The large-site access step of ``matsim.simulation.prepare`` (eqasim-java-bs ``RunAdaptLargeFacilityAccess``) spreads
 the car access of large work and university sites over the parking lots around them, weighted by their spaces. This
