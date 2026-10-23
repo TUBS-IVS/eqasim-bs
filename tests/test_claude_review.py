@@ -111,6 +111,16 @@ def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeyp
     assert summary["subtype"] == "error_max_turns"
     assert "::warning::" in capsys.readouterr().out
 
+    # an API error on the first call: the SDK says subtype "success" with is_error; the error
+    # text must reach the log, and the status must not read as a successful review
+    execution.write_text(json.dumps([{"type": "result", "subtype": "success", "is_error": True,
+                                      "total_cost_usd": 0, "num_turns": 1,
+                                      "result": "API Error: 400 model not supported"}]), encoding="utf-8")
+    assert cr.main(["cost", "--execution-file", str(execution), "--json", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "[claude-review] error:" in printed and "::error::Claude run error: API Error: 400" in printed
+    assert json.loads(out.read_text(encoding="utf-8"))["error_text"].startswith("API Error: 400")
+
     execution.write_text(json.dumps([{"type": "assistant"}]), encoding="utf-8")
     step_summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
