@@ -40,8 +40,8 @@ onto the `superpowers` skill chain, named in brackets.)
    `docs/registry/data/` + `scripts/verify_braunschweig_inputs.py` + README data setup),
    add an **ADR** (`docs/decisions/ADR-NNNN-*.md`) for any substantive decision, add a
    **run manifest** (`docs/runs/<run_id>.yml`) if a significant run happened, then
-   `python -m braunschweig.documentation build && python -m braunschweig.documentation check`
-   and commit the regenerated `docs/generated/*`. Update `SESSION_LOG.md` (local), sync the
+   `python -m braunschweig.documentation check` (0 FAIL). Never commit `docs/generated/*`:
+   main's `generated-views` workflow rebuilds and commits them after the merge (ADR-0168). Update `SESSION_LOG.md` (local), sync the
    GitHub Project board, and close the issue. See
    [docs/DOCUMENTATION_GOVERNANCE.md](docs/DOCUMENTATION_GOVERNANCE.md) for the full
    ownership model.
@@ -64,9 +64,9 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
   a PR base to the upstream — always switch it, or just use the alias:
   `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
 - See open vs merged branches at a glance: `git branch-status`.
-- Bring `main` into a branch with `git sync-main`: it merges, rebuilds `docs/generated/*` and runs the
-  documentation check (setup: `git config alias.sync-main '!python scripts/sync_main.py'`;
-  [merging-main](docs/codebase/notes/merging-main.md), ADR-0165).
+- Bring `main` into a branch with `git sync-main`: it merges, sets `docs/generated/*` to main's state and runs
+  the documentation check (setup: `git config alias.sync-main '!python scripts/sync_main.py'`;
+  [merging-main](docs/codebase/notes/merging-main.md), ADR-0165, ADR-0168).
 - Auto-delete-on-merge is enabled; `main` requires a PR (admin override retained).
 
 ## Newly discovered work: fix it now, or issue it
