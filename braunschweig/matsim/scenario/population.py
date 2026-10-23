@@ -51,7 +51,9 @@ import pandas as pd
 
 import matsim.scenario.population as base
 from braunschweig import synpp_tokens
+from braunschweig.matsim.scenario import day_end_margin as _day_end_margin
 from braunschweig.parking import free_draw_options as _free_draw_options
+from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
 from braunschweig.synthesis.incommuter_merge import _base as _incommuter_merge_base
@@ -74,7 +76,9 @@ _LOG_TAG = "[commute day population]"
 #: id collisions are rejected. Both therefore decide the CONTENT of the written plans while
 #: leaving this file's own source untouched; both were module-level imports outside the token
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
-_HELPER_MODULES = (base, _day_view, _incommuter_merge_base, _free_draw_options)
+#: ``day_end_margin`` moves the days that end too close to the end of the simulated day earlier, and
+#: ``plan_validation`` owns that end (``MAX_PLAN_TIME_SECONDS``): both decide the written times (eqasim-bs#465).
+_HELPER_MODULES = (base, _day_view, _incommuter_merge_base, _free_draw_options, _day_end_margin, _plan_validation)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
@@ -84,10 +88,14 @@ _HELPER_MODULES = (base, _day_view, _incommuter_merge_base, _free_draw_options)
 #: ``braunschweig.parking.zones`` supplies its point-in-polygon test (``assign_zones``), so both shape
 #: the CONTENT of the parking attributes written here. Hashed unconditionally, like the module
 #: objects above: a token must not depend on a flag.
+#: ``braunschweig.popsim.closure_dwell`` and ``data.hts.hts`` are imported by ``plan_validation`` (hashed above for
+#: the end of the simulated day the day-end margin uses, eqasim-bs#465).
 _DEFERRED_HELPER_MODULE_NAMES = (
     "matsim.writers",
     "braunschweig.parking.attach",
     "braunschweig.parking.zones",
+    "braunschweig.popsim.closure_dwell",
+    "data.hts.hts",
 )
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
@@ -220,6 +228,12 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
         context.stage("braunschweig.synthesis.student_incommuters")
+    # Day-end margin (eqasim-bs#465): checked here, before any stage runs.
+    context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
+    if context.config(_day_end_margin.KEY_ENABLED):
+        _day_end_margin.check_margin(
+            context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S),
+            _plan_validation.MAX_PLAN_TIME_SECONDS)
     # Zone-based parking costs (issue #436), declared only when on -- the same trade-off as the
     # blocks above: a workflow with the model off carries neither the zones stage nor its keys.
     context.config(KEY_PARKING_ZONES_ENABLED, DEFAULT_PARKING_ZONES_ENABLED)
@@ -577,6 +591,17 @@ def execute(context):
         # effective_person_fields are unchanged -> no parking attribute -> byte-identical plans.
         logger.info("%s %s is false -- no parkingZone, parkingFree, parkingDistrict, residentParkingZone, "
                     "residentParkingDistrict or parkingEvExempt attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
+
+    # Day-end margin (eqasim-bs#465): after the in-commuter merge, so residents, portal trips and both in-commuter
+    # sources follow one rule. Off -> the frames are untouched -> byte-identical plans.
+    if context.config(_day_end_margin.KEY_ENABLED):
+        raw["activities"], raw["trips"], day_end_report = _day_end_margin.shift_late_days(
+            raw["activities"], raw["trips"], bound_s=float(_plan_validation.MAX_PLAN_TIME_SECONDS),
+            margin_s=context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S))
+        _day_end_margin.log_report(day_end_report)
+    else:
+        logger.info("%s %s is false -- the days are written with the synthesis times.", _LOG_TAG,
+                    _day_end_margin.KEY_ENABLED)
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
