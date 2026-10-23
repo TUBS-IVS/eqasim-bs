@@ -172,7 +172,9 @@ def log_report(report: dict, warn_share: float) -> None:
                                for a in ACTIONS),
         "n/a" if report["shift_abs_s_median"] is None else "%.0f" % report["shift_abs_s_median"])
     if counts[ACTION_KEPT] or (n and unserved / n > warn_share):
-        logger.warning("%s -- above %.1f%% of the days have no timetable connection within the shift window "
-                       "(%s: the router will turn their trips into walks)", message, 100.0 * warn_share, ACTION_KEPT)
+        logger.warning("%s -- %.1f%% of the days have no timetable connection within the shift window (warn share "
+                       "%.1f%%): %s %d drive instead, %s %d are routed as walks", message,
+                       100.0 * unserved / n if n else 0.0, 100.0 * warn_share, ACTION_TO_CAR, counts[ACTION_TO_CAR],
+                       ACTION_KEPT, counts[ACTION_KEPT])
     else:
         logger.info(message)
