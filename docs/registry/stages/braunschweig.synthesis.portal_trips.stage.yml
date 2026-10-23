@@ -73,7 +73,11 @@ notes: >-
   matsim.scenario.supply.processed. Config keys (portal_trips/config_keys.py, prefix braunschweig.portal.):
   pt_gate_modes, gate_service_window_s, gate_candidates, shift_window_s, shift_step_s, min_stay_s,
   no_connection_warn_share. Fallback transparency: the no-connection chain (gate_found, tour_to_car,
-  tour_to_car_passenger, departure_shifted, kept_no_connection) is counted and logged as rates over the pt stays
-  under [portal_trips]; the share of kept_no_connection warns above no_connection_warn_share.
+  tour_to_car_passenger, departure_shifted, tour_to_car_passenger_lift, kept_no_connection) is counted and logged
+  as rates over the pt stays under [portal_trips]; the share of kept_no_connection warns above
+  no_connection_warn_share. Since ADR-0156 (#465) the chain also tries an EARLIER return
+  (braunschweig.portal.shift_return_earlier, default true) and resolves what remains as a lift
+  (braunschweig.portal.no_connection_last_resort car_passenger, the default, ASSUMPTION; keep restores
+  kept_no_connection).
   Reading guide and maintenance rules: docs/codebase/notes/portal-trips.md. The validate() token
   hashes the helper modules and the cordon helper modules the stage imports inside execute.
