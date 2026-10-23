@@ -157,10 +157,19 @@ reviewer sees which registry stages the diff touches without reading the diff. E
 of an issue names it. `Closes #NN` belongs only in the PR that meets the last open
 `Done when` item of #NN; every other PR of that issue writes `Part of #NN`. A `Done when`
 item that asks for a run manifest is met only when that manifest is on `main`, so a code
-PR whose run is still owed writes `Part of #NN`. On 2026-10-22, `Closes #465` in #481
-closed #465 while its run manifest was still owed. A PR without an issue is for hygiene
+PR whose run is still owed writes `Part of #NN`. On 2026-10-22 the closing keyword in #481
+shut #465 while its run manifest was still owed. A PR without an issue is for hygiene
 commits and for the quick fixes that the fix-now-or-issue triage (CLAUDE.md, "Newly
 discovered work") fixes without an issue.
+
+**Never quote a closing keyword with an issue number.** GitHub acts on `close`, `fix` or
+`resolve`, in any of their forms, followed by an issue number wherever it stands in a PR
+description, also inside code formatting, and in every commit message that reaches `main`,
+including the merge commit's copy of the PR title. To mention a closing, describe it ("the
+closing keyword in #481") instead of quoting it. After a merge,
+`gh pr view <n> --json closingIssuesReferences` lists the issues the PR closed. On
+2026-10-23 the merge of #485 shut #465 a second time, because that PR's description quoted
+the keyword of #481.
 
 ```
 git pr --label step:generation --label area:behavior \
