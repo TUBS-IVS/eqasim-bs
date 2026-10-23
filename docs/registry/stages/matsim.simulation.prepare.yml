@@ -74,6 +74,7 @@ features:
 - parking_cost_zones
 - plan_feasibility_check
 - transit_next_day
+- gate_facility_links
 decisions:
 - ADR-0121
 - ADR-0030
@@ -85,7 +86,15 @@ decisions:
 - ADR-0144
 - ADR-0146
 - ADR-0151
+- ADR-0167
 notes: >-
+  Gate facility links (ADR-0167, issue #465, feature record gate_facility_links). With cordon_enabled,
+  right after the delegated eqasim preparation and before the cut, _verify_gate_facility_links compares every
+  facility that carries a linkId in the written facilities file with the prepared facilities file
+  (braunschweig.data.cordon.gate_facility_links.verify_preset_links_kept) and raises on any difference: an
+  eqasim-java-bs jar without the FacilityPlacement preset-link change would otherwise replace the pinned gate
+  links silently.
+
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare
   inputs, calls braunschweig.matsim.simulation.plan_check.run when braunschweig.plan_check.enabled is
