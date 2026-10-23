@@ -1,0 +1,74 @@
+# Gate for the automatic Claude PR review (.github/workflows/claude-review.yml).
+#
+# scripts/claude_review.py classify reads this file and the PR diff and decides,
+# without calling any model, whether the review runs and at which tier. Every
+# decision is written with its reason to the job summary, so a skipped review is
+# never silent. See docs/codebase/notes/claude-pr-review.md.
+#
+# ASSUMPTION: all thresholds below are starting values chosen on 2026-10-23,
+# not measured; re-tune them from the per-run cost records in the job summaries.
+
+labels:
+  force: claude-review        # adding it starts ONE full-tier review; later pushes are gated normally
+  skip: skip-claude-review    # never review while set
+
+# Draft PRs are reviewed only when the force label is added.
+skip_drafts: true
+
+# Paths whose changes can alter model behaviour, scientific output, the
+# verification gate or this review gate itself. Glob syntax: "**" matches across
+# directories, "*" and "?" stay within one path segment (not fnmatch semantics).
+critical_paths:
+  - "braunschweig/**"
+  - "synthesis/**"
+  - "matsim/**"
+  - "data/**"
+  - "eqasim_common/**"
+  - "configs/**"
+  - "scripts/run_tests.py"
+  - "scripts/run_synpp.py"
+  - ".github/workflows/**"
+  - ".github/claude-review.yml"
+  - ".github/claude-review-prompt.md"
+  - "scripts/claude_review.py"
+
+# Paths that never count towards the changed-line totals or the file count
+# (generated or machine-written; reviewing them costs tokens and finds nothing).
+ignored_paths:
+  - "docs/generated/**"
+  - "environments/**"
+  - "**/*.lock"
+  - "tests/baselines/**"
+
+# Branch kinds (prefix before "/") that skip the review unless a critical path is touched.
+skip_kinds:
+  - docs
+
+thresholds:
+  light_min_lines: 150          # changed lines (added + deleted) for the light tier
+  light_min_files: 8            # changed files for the light tier
+  full_min_lines_critical: 300  # changed lines for the full tier when a critical path is touched
+  full_min_lines: 800           # changed lines for the full tier anywhere
+
+# A critical path touched with fewer lines than full_min_lines_critical gets the light tier.
+# max_budget_usd is a hard per-run cap (claude -p --max-budget-usd); ASSUMPTION, re-tune
+# from the cost records.
+tiers:
+  light:
+    model: claude-sonnet-5-5
+    max_turns: 15
+    max_budget_usd: 1.0
+  full:
+    model: claude-opus-5-5
+    max_turns: 30
+    max_budget_usd: 5.0
+
+# The review run (scripts/claude_review.py review). The model only reads; posting is done
+# by the script, which also writes the PR diff to a file the model reads (no shell tools).
+# Placeholders in the prompt file: {{REPO}}, {{PR}}, {{TIER}}, {{SHA}}, {{DIFF_FILE}}.
+review:
+  prompt_file: .github/claude-review-prompt.md
+  allowed_tools:
+    - Read
+    - Grep
+    - Glob

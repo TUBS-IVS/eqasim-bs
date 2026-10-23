@@ -48,7 +48,11 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    documentation check must pass on the PR's latest commit. Inspect failures
    rather than disabling a platform or weakening assertions. Pending CI is pending
    evidence. If `main` moved since the last CI run, merge `origin/main` into the
-   branch and push again: re-running a workflow does not pick up a newer `main`.
+   branch (`git sync-main`, [merging-main](notes/merging-main.md)) and push again:
+   re-running a workflow does not pick up a newer `main`. A green `regression` result
+   counts for a later commit whose regression inputs are identical (only
+   `docs/generated/` or `docs/decisions/` differ); the workflow then reuses it instead
+   of re-running the suite (ADR-0165).
 7. **When scientific behavior or pipeline wiring changes:** additionally run the
    relevant real-data smoke with its preflight and record a run manifest. The
    regression suite does not replace that evidence. Never launch a production
