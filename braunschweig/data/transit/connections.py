@@ -15,10 +15,14 @@ connection when
   ``plausible_walk_m`` (the origin is within plausible walking distance of the
   destination, so no timetable connection is needed).
 
-Walk legs of a pt trip. For a pt trip the Java tool books the EGRESS walk as transfer walking
-(``Worker.run`` compares a leg counter ``isLastLeg`` with ``planElements.size()``, which also counts the
-interaction activities, so the last walk leg is never recognised as the last leg). The rule is
-unaffected because access, egress and transfer share the one limit ``walk_max_m``.
+Walk legs of a pt trip. The Java tool books the first walk leg as access, the last as egress and every
+other walk leg as transfer walking. Up to eqasim-java-bs 863c09a ``Worker.run`` found the last leg by comparing
+a leg counter with ``planElements.size()``, which would also count interaction activities; SwissRailRaptor
+without intermodal access returns legs only, so the comparison was right in practice: every pt trip
+(``is_only_walk == 0``) of the #465 router probe on felix has a positive egress distance (``trips_out.csv`` 8,838
+and ``gate_out.csv`` 192 in ``~/wt-i453-ab/router_probe``; minimum 0.011 km). The
+eqasim-java-bs fix "classify batch router walk legs by their position among the legs" makes the
+classification independent of interaction activities (no change for legs-only router output).
 
 A task for which the router finds no route gets NO trips row (``Worker.run`` adds a row only when
 ``calcRoute`` returns a result): that is a router outcome "no route", not a broken run, and counts as
@@ -39,6 +43,7 @@ import pandas as pd
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,10 @@ _CONFIG_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" ?>
 			<param name="teleportedModeSpeed" value="{walk_speed}" />
 		</parameterset>
 	</module>
+	<module name="qsim">
+		<param name="personInitializedEvents" value="all" />
+		<param name="endTime" value="{end_time}" />
+	</module>
 	<module name="transitRouter">
 	</module>
 </config>
@@ -102,11 +111,21 @@ def configure(context) -> None:
     java.configure(context)
 
 
+def _hhmmss(seconds: int) -> str:
+    """MATSim time string ``HH:MM:SS`` (hours may exceed 24)."""
+    return "%02d:%02d:%02d" % (seconds // 3600, seconds % 3600 // 60, seconds % 60)
+
+
 def write_router_config(path: str, *, network_path: str, schedule_path: str, vehicles_path: str) -> str:
     """Write a minimal MATSim config for the batch pt router and return ``path``.
 
     Only network, transit schedule and transit vehicles are named; ``transitRouter`` keeps
     its MATSim defaults. An existing file at ``path`` is overwritten (the config is derived).
+
+    The ``qsim`` values do not affect routing; the tool needs them because it builds the full eqasim
+    injector: ``EqasimAnalysisModule`` refuses ``personInitializedEvents`` other than ``all``, and
+    ``TravelTimeRecorder`` sizes its time bins by ``endTime`` (unset means ``Double.MAX_VALUE`` and an
+    ``OutOfMemoryError``). ``endTime`` is the simulated day, ``MAX_PLAN_TIME_SECONDS`` (30 h).
     """
     for label, file in (("network", network_path), ("schedule", schedule_path), ("vehicles", vehicles_path)):
         if not file:
@@ -116,7 +135,8 @@ def write_router_config(path: str, *, network_path: str, schedule_path: str, veh
     text = _CONFIG_TEMPLATE.format(network=quoteattr(network_path), schedule=quoteattr(schedule_path),
                                    vehicles=quoteattr(vehicles_path),
                                    walk_factor=WALK_BEELINE_DISTANCE_FACTOR,
-                                   walk_speed=WALK_TELEPORTED_SPEED_M_S)
+                                   walk_speed=WALK_TELEPORTED_SPEED_M_S,
+                                   end_time=_hhmmss(MAX_PLAN_TIME_SECONDS))
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
     return path

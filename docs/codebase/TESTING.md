@@ -15,6 +15,14 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    through the same runner, using paths, node ids or `-k`. Preserve scientific
    invariants and measure repeated work before consolidating tests. This focused
    local run is the whole local duty; a local full suite is not required (ADR-0150).
+   A selection by module name misses the repository-wide contract scans, because
+   they find their subjects in the source and name no module. When a change touches
+   a stage's `configure` or `execute`, reads configuration, or adds a helper that
+   calls `eqasim.run`, `java.run` or `pt2matsim.run`, add
+   `tests/test_execute_context_config_contract.py`,
+   `tests/test_runtime_config_declares.py` and
+   `tests/test_audit_synpp_helper_hash.py` to the focused run. #481 went red in CI
+   on the first two although its focused local run had passed.
 3. **Data-gated tests run locally.** CI carries no restricted input data, so tests
    that declare such a dependency skip there
    ([test-data-dependencies](notes/test-data-dependencies.md)). When the change
