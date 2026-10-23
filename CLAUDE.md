@@ -32,7 +32,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). Recreate it on a new machine with
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
-A PR mirrors its issue (branch `<kind>/i<issue>-<slug>`, labels, `(closes #NN)` title, `**Stages:**` line) per `docs/codebase/notes/issue-and-pr-conventions.md`.
+A PR mirrors its issue (branch `<kind>/i<issue>-<slug>`, labels, `(#NN)` or `(closes #NN)` title, `**Stages:**` line) per `docs/codebase/notes/issue-and-pr-conventions.md`.
 
 No size budgets. CLAUDE.md, MEMORY.md and SESSION_LOG.md have no KB or entry limit, and nothing is ever shortened, archived, or left unwritten just to hit a number. Keep them lean the only way that is safe: one fact in one place, dedupe before adding, topic rules in path-scoped `.claude/rules/`, and archive at /close what actually merged or was parked.
 

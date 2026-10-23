@@ -1,0 +1,301 @@
+id: i453-i443-ab-1pct-2026-10-16
+date: '2026-10-16'
+repository:
+  commit: 'ec825087 (arm0); 3123cc4f (arm1 and arm2)'
+  branch: main
+  notes: >-
+    arm0 = eqasim-bs ec825087 (main before PR #455, i.e. before #453 and #443); arm1 = 3123cc4f (main after PR #457; its
+    tree is identical to the tested tip 494f84a5 of PR C) with braunschweig.outside_tour_modes.enabled false; arm2 =
+    3123cc4f with the flag true. Same random seed (base value 1234), same 1 % sample, same jar in all three arms. The run
+    provenance files on felix (cache_arm0/run_provenance_20261016T161453Z.json for the final arm0 launch,
+    cache_arms12/run_provenance_20261016T180147Z.json for arm1, cache_arms12/run_provenance_20261016T200040Z.json for arm2)
+    record pipeline_commit ec825087+dirty (arm0), 3123cc4f+dirty (arm1) and 3123cc4f (arm2). Cause, checked with
+    git status on felix on 2026-10-17: in the arm0 and arms12 worktrees eqasim-data was an untracked symlink to the
+    shared data directory (`?? eqasim-data`, no tracked file modified); for arm2 it had been replaced by a real
+    directory of symlinks (to add the SrV table, see pipeline), which the sparse checkout hides, so arm2 is clean. The
+    commits named are the checked-out HEADs with no tracked change. Java: eqasim-java-bs 923d3d7 (main, including #32
+    freight boundary links; the provenance files record eqasim_java_commit 923d3d7+dirty in all three arms because the
+    Maven shade build rewrites braunschweig/dependency-reduced-pom.xml — the only modified file; no source changed), shaded jar
+    braunschweig-2.3.1.jar built from that clone, md5 0578f6efc52ed4326942ee81f97337c9. The jar cached from earlier
+    sessions (md5 starting eb2fa4cb) lacked the boundary-link options that main's prepare stage passes, so the new jar
+    was copied into the runtime entry of the copied cache (cache_arm0) and the modification times of the Java sources were
+    set to the validation token stored there (1792067967.7454255) so that the runtime stage hit and no supply or
+    freight cascade was triggered. Run logs on felix are ~/wt-i453-ab/logs/run_arm{0,1,2}_{20261016T181450,20261016T200146,20261016T220039}.log
+    (final launches).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm0.yml
+  - docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm1.yml
+  - docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm2.yml
+  notes: >-
+    Throwaway server overlays (committed here as artifacts, not as configs/overlays), derived from
+    configs/overlays/test_1pct.yml. Per arm: own working directory (cache_arm0 for arm0, cache_arms12 for arm1 and
+    arm2), own output directory output_arm{0,1,2} and own output prefix braunschweig_1pct_i453_arm{0,1,2}_,
+    sampling_rate 0.01, matsim_last_iteration 100 (MATSim iterates until the eqasim mode-share termination criterion
+    or 100 iterations), braunschweig.population.popsim.max_cells 750, num_workers 1 (a resource budget next to
+    another session's run, not a model parameter), a physical copy of the popsim work directory
+    (~/wt-i453-ab/popsim_work, because a shared work directory would purge another session's batches on a signature
+    mismatch), cache_share_enabled false. run targets are synthesis.output and matsim.output only (the analysis
+    targets were dropped, see the pipeline notes). The arms differ in code (arm0 versus arm1/arm2) and, between arm1
+    and arm2, ONLY in braunschweig.outside_tour_modes.enabled (false, true). The plan check of the prepare stage ran
+    with the base values of braunschweig.plan_check (walk 5,000 m, bicycle 30,000 m, leg duration 10,800 s,
+    max_frozen_defect_share 0.005, fail_on_threshold false); arm0's code has no plan check, so for arm0 the same
+    thresholds were applied afterwards by ab_metrics_i453.py to its written population.
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: >-
+    Every count is a sample count at sampling_rate 0.01, never expanded. Residents in the MATSim output: 12,046
+    (arm0), 12,041 (arm1), 12,041 (arm2); freight agents 521 in every arm. The resident count of arm0 differs by 5
+    from arms 1 and 2; the difference was not decomposed here. The synthesis stage of the mode feature worked on 9,563
+    persons and 34,861 legs (arm2 stage report). All metrics are taken from the FINAL iteration of each arm (iteration
+    79 for arm0, 84 for arm1 and arm2) or from the prepared input population of that arm; the arms therefore compare
+    final iterations of different length.
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  notes: >-
+    Recomputed stages of the FINAL launch of each arm (lists in devalidated_arm{0,1,2}.txt, read from synpp's
+    "Devalidating N stages" block by launch_guarded.sh): arm0 4 stages (output_day, prepare, matsim.simulation.run,
+    matsim.output; it follows launch 2, whose 45 stages included popsim, the locations, population and facilities and
+    were cached before the out-of-memory kill; the list of the 45 is not committed), arm1 28 stages, arm2 22 stages.
+    Cache procedure: cache_arm0 is a physical copy (cp -a, 21 GB) of ~/eqasim-bs/eqasim-data/cache_bs_1pct_allfeat_popsim.
+    A hash pre-check found no felix cache holding a 1 % popsim for the configuration of main, so popsim ran once in
+    arm0 (launch 2, 17:02 server time). Launch 1 of arm0 (17:01) was killed by the guard of launch_guarded.sh because
+    mid_donor, completed_donor and home_office_donors_stage would recompute (main's own code changes since the copied
+    cache); they were allowed and launch 2 started with 45 stages. Launch 2 was OOM-killed at 18:11 (58 GB anonymous
+    RSS) inside braunschweig.analysis.analysis_suite, next to another session's 25 % MATSim run (the same place as the
+    portal A/B of 2026-10-09). The analysis targets were removed from all three overlays (targets do not enter stage
+    hashes), the final launch of arm0 started at 18:14 with 4 stages. As a consequence the analysis suite, its stuck
+    sub-analysis and the dashboard did not run in any arm; every metric of this manifest comes from
+    ab_metrics_i453.py, which calls the committed braunschweig.analysis.stuck_agents.stuck_summary and
+    braunschweig.matsim.simulation.plan_check.summarise with the arms12 code on all three arms. METHODOLOGICAL CHOICE
+    the reader must see: arm1 and arm2 did NOT recompute popsim, mid_donor and completed_donor. cache_arms12 is a
+    physical copy of cache_arm0 after arm0 finished. token_diff.py (arms12 code, arm1 overlay) found six stages whose
+    stored validation token differs (mid_donor, completed_donor, distance_distributions, popsim.stage, trips_stage,
+    home_office_donors_stage). Only the stored tokens of mid_donor, completed_donor and popsim.stage were patched in
+    cache_arms12/pipeline.json (backup pipeline.json.before_token_patch); distance_distributions, trips_stage and
+    home_office_donors_stage recompute. The justification is a static call-site proof recorded in the controller's
+    ledger and not an empirical equality test: PlanValidator, build_validated_trip_table, impute_chain_times,
+    resample_chains and apply_departure_time_model are called only from braunschweig/popsim/trips_stage.py (including
+    the sources.*.build_trips reached through trips_stage), braunschweig/synthesis/commute_day/donor_pool.py and
+    plan_replacement.py, while mid_donor, completed_donor and popsim.stage list plan_validation only in their token
+    closures; per the ledger the 30 h constant is read only by trips_stage, departure_time_model, plan_check and
+    stuck_agents. The persons and donor tables of arm1 and arm2 are
+    therefore the products of the arm0 code (ec825087); arm1 differs from arm0 in everything downstream of
+    trips_stage and in the merged code of #455 to #457 with the mode flag off. Arm1 launch 1 (about 20:01) was killed by the guard
+    (the trips cascade commute_distance, absence_stage, synthesis.population.activities) and relaunched with them
+    allowed. Arm2 launch 1 failed in outside_tour_modes.validate because the shared ~/eqasim-bs/eqasim-data (a
+    checkout of another session on a parking branch) lacks srv2023_mode_by_distance_band.csv; the file was not
+    written into the shared directory (an untracked allowlisted file could block that checkout's next merge). Instead
+    cache_arms12's eqasim-data became a symlink farm (every entry of the shared directory linked, plus the committed
+    CSV from 3123cc4f, md5 starting bed3786c), and arm2 was relaunched at 22:00 with 22 stages.
+classification:
+- smoke
+- ab_test
+status:
+  execution: completed
+  notes: >-
+    All three arms finished with exit 0. Run windows (server clock, CEST, 2026-10-16): arm0 17:02 to 19:55 (three
+    launches: killed by the guard, OOM-killed in the analysis suite, completed), arm1 20:01 to 21:58, arm2 22:00 to
+    23:54. MATSim was stopped by the eqasim mode-share termination criterion at iteration 79 (arm0), 84 (arm1) and 84
+    (arm2) of at most 100: the mode shares stabilised (change below the threshold). This is convergence, NOT
+    validation, and it was not compared with any observed reference. CAVEAT: another session's 25 % parking MATSim run
+    (35 to 37 GB) ran on the same server (Linux, 64 cores, 94 GB) the whole time, so the runtimes are not a
+    performance measurement. The "Unsupported class file major version 69" log lines are class-scan warnings under
+    Java 25; the runs completed. A 1 % sample with one draw per arm, no observed reference compared: this is not a
+    validation.
+environment: 'server felix (Linux, 64 cores, 94 GB), conda env eqasim (Python 3.10.10), JAVA_HOME ~/tools/jdk-25.0.3+9 (set by launch_guarded.sh)'
+validation:
+- metric: stuck resident agents of the final iteration (stuckAndAbort events), total and by category
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    Residents stuck, arm0 -> arm1 -> arm2: 153 (1.27 % of 12,046, above the warn share 0.01) -> 116 (0.96 % of 12,041)
+    -> 104 (0.86 % of 12,041). By category (frozen = tour touches an outside activity, in region = other). Stuck at
+    the simulation end (108,000 s), frozen: 87 -> 78 -> 66; in region: 51 -> 17 -> 17. Stuck during the day, frozen:
+    4 -> 4 -> 4; in region: 11 -> 17 -> 17. The four categories add up to the totals in every arm.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm0.json, docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm1.json, docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm2.json (key stuck.by_subpopulation.residents)'
+  notes: >-
+    Measured by ab_metrics_i453.py (committed). One draw per arm; the counts are 100 to 150 agents, so differences of
+    a few agents (for example in region during the day 11 -> 17, or total 116 -> 104) cannot be separated from
+    run-to-run variation, which this run does not estimate. The drop of the in-region stuck at the end between arm0
+    and arm1 (51 -> 17) coincides with the 30 h bound and the merged code; this run does not split the two.
+- metric: stuck resident agents by the mode of the last leg
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    Last leg mode, arm0 -> arm1 -> arm2: walk 74 -> 72 -> 61, none 57 -> 3 -> 3, pt 15 -> 21 -> 21, car 7 -> 13 -> 16, car_passenger 0 -> 6 -> 3, bicycle 0 -> 1 -> 0.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key stuck.by_subpopulation.residents.by_mode)'
+  notes: >-
+    The group none is the one that shrinks between arm0 and arm1; car, pt and car_passenger rise in absolute count
+    between arm0 and arm1. The meaning of none follows the stuck-agent module and was not re-derived here.
+- metric: stuck freight agents of the final iteration
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: '0 of 521 freight agents stuck in each of the three arms (arm0, arm1, arm2).'
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key stuck.by_subpopulation.freight)'
+  notes: >-
+    Freight is not touched by the two features; the jar of all arms contains the freight boundary-link change of
+    eqasim-java-bs #32 (923d3d7).
+- metric: plan check of the prepared input population, FROZEN residents (plans with a tour touching an outside activity)
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    Frozen residents 1,466 (arm0), 1,468 (arm1), 1,468 (arm2). Activity end after the simulated day (108,000 s):
+    15 (1.02 %) -> 4 (0.27 %) -> 4 (0.27 %). Planned last arrival after the simulated day (report only): 66 (4.50 %) ->
+    58 (3.95 %) -> 58 (3.95 %). Non-monotonic activity end times: 42 (2.86 %) -> 30 (2.04 %) -> 22 (1.50 %). Walk legs
+    over 5 km: 260 -> 249 -> 129. Bicycle legs over 30 km: 45 -> 49 -> 1. Legs over 3 h: 245 -> 260 -> 108. Legs of the
+    frozen tours: 14,668 -> 14,787 -> 15,593.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key plan_check.subpopulations.residents.frozen)'
+  notes: >-
+    The late plan ends and the planned last arrivals are identical in arm1 and arm2, so the mode flag did not change
+    them in this run; the non-monotonic end times, the long walk and bicycle legs and the long legs are the counts that
+    fall with the flag on. The leg count of the frozen tours differs between arm1 and arm2 by 806 with the same persons;
+    this was not analysed here.
+- metric: plan check of the prepared input population, IN-REGION residents (informational)
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    In-region residents 10,580 (arm0), 10,573 (arm1), 10,573 (arm2). Activity end after the simulated day: 47 (0.44 %) ->
+    1 (0.009 %) -> 1 (0.009 %). Planned last arrival after the simulated day: 21 (0.20 %) -> 9 (0.09 %) -> 9 (0.09 %).
+    Non-monotonic end times 0 in every arm. Walk legs over 5 km: 997 -> 1,020 -> 1,020. Bicycle legs over 30 km: 45 ->
+    43 -> 43. Legs over 3 h: 371 -> 386 -> 386.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key plan_check.subpopulations.residents.in_region)'
+  notes: >-
+    Arm1 and arm2 are identical in this class, as expected: the mode feature only acts on frozen tours. Freight: no
+    plan with a defect in any arm (plan_check.subpopulations.freight).
+- metric: plan check threshold on the frozen residents (calibration evidence asked for by ADR-0146)
+  reference: 'braunschweig.plan_check.max_frozen_defect_share 0.005, an uncalibrated ASSUMPTION of ADR-0146; no observed reference'
+  result: >-
+    The prepare stage's plan check logged ERROR in arm1 and arm2 because the share of non-monotonic frozen plans is
+    2.04 % (arm1) and 1.50 % (arm2), above 0.5 %; fail_on_threshold is false (production value), so the runs continued.
+    The share of frozen plans with an activity end after the day is 0.27 % in both arms, below 0.5 %. In arm0, measured
+    afterwards with the same thresholds, the shares are 2.86 % non-monotonic and 1.02 % late.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key plan_check.subpopulations.residents.frozen.share_plans_*)'
+  notes: >-
+    This records the measured shares against the threshold of the feature record; it proposes no new threshold.
+    The ERROR in arm1 and arm2 comes from the run logs of the prepare stage (arm1 recorded in the controller's ledger,
+    arm2 as reported to the author of this manifest), the shares from the JSONs.
+- metric: frozen-tour walk and bicycle legs in the FINAL iteration (trips of residents in tours touching an outside activity)
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    Resident trips 38,086 (arm0), 38,083 (arm1), 38,270 (arm2); trips in frozen tours 5,709 -> 5,702 -> 5,871. Frozen walk
+    trips 400 -> 388 -> 290, of which over 5 km straight-line 175 -> 168 -> 63 and over 20 km 57 -> 61 -> 22. Frozen
+    bicycle trips 140 -> 146 -> 26, of which over 30 km 45 -> 47 -> 1. Frozen trips with a travel time over 3 h:
+    261 -> 293 -> 164.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (keys final_trips.frozen, final_trips.n_trips_in_frozen_tours)'
+  notes: >-
+    Frozen is defined by ab_metrics_i453.py as a home-based tour of the final-iteration trips with a trip whose
+    preceding or following purpose is outside (it is a different leg set and distance basis than the plan check on the
+    written plans). Arm0 and arm1 have similar counts over the thresholds (walk over 5 km 175 and 168, bicycle over 30
+    km 45 and 47); with the flag on they are 63 and 1. 63 walk trips over 5 km (22 of them over 20 km) remain in frozen tours of arm2. What the data allow about
+    their cause: the stage report of arm2 counts only 5 outside legs still implausible after the draw (min_share
+    0.01), 0 draws relaxed to the longest leg and 2 portal tours left unchanged, so the stage's own post-condition
+    does not account for 63, and the 22 over 20 km are not explained by it either; the stage works on the 34,861
+    synthetic legs of the reporting day while this count is on the simulated final-iteration trips, and the run
+    records no split of the 63 by purpose group, distance band or portal membership. The cause is therefore not
+    determined by this run.
+- metric: walk and bicycle trips over the thresholds in IN-REGION tours in the FINAL iteration
+  reference: 'the other arms of the same run (same seed); no observed reference'
+  result: >-
+    Walk trips over 5 km: 47 (arm0) -> 65 (arm1) -> 64 (arm2); over 20 km: 5 -> 9 -> 9. Bicycle trips over 30 km: 6 ->
+    11 -> 11.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key final_trips.in_region)'
+  notes: >-
+    These counts are higher in arm1 and arm2 than in arm0. The in-region tours are chosen by the mode choice and the
+    mode feature does not act on them (arm1 and arm2 differ by one walk trip over 5 km); the difference between arm0
+    and arm1 was not decomposed and one draw per arm cannot separate it from run-to-run variation.
+- metric: mode shares of the FINAL iteration, frozen tours versus in-region tours (outside pseudo-mode excluded)
+  reference: 'none -- a change between the arms, NOT a comparison with any survey or other observed reference'
+  result: >-
+    Frozen tours, arm0 -> arm1 -> arm2 in percent: car 65.12 -> 66.41 -> 69.58, car_passenger 11.35 -> 10.28 -> 11.92, pt
+    11.05 -> 11.02 -> 11.38, walk 9.25 -> 8.93 -> 6.53, bicycle 3.24 -> 3.36 -> 0.59. In-region tours: car 51.67 ->
+    51.98 -> 52.13, walk 16.48 -> 16.36 -> 16.36, car_passenger 13.18 -> 12.96 -> 12.99, bicycle 11.17 -> 11.00 ->
+    10.86, pt 7.50 -> 7.70 -> 7.65.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (keys final_trips.mode_share_pct_frozen_tours, final_trips.mode_share_pct_in_region_tours)'
+  notes: >-
+    The frozen shares move toward car (about +3.2 points from arm1 to arm2) and away from walk and bicycle when the flag
+    is on; the in-region shares move by at most 0.15 points between arm1 and arm2 and at most 0.31 points between arm0
+    and arm1. No survey share is compared here; the SrV table that the rule uses is the plausibility reference of the
+    rule, not a validation target of these shares.
+- metric: outside-tour-modes stage report, arm2 (flag on)
+  reference: 'none -- the stage report counts its own rule; min_share 0.01 and warn_share 0.5 are ASSUMPTIONS of ADR-0145, not accuracy targets'
+  result: >-
+    9,563 persons, 34,861 legs, 14,496 tours, 891 outside tours (group all 550, other 202, work 113, education 26); 136
+    outside tours re-moded (15.26 %, below the warn share 0.5); 309 legs re-moded, 222 swept along; 1,164 portal legs
+    judged in the group all; 2,416 outside legs; draws restricted by the person's availability 28 (removed modes car 25,
+    car_passenger 3, bicycle 1); draws relaxed to the longest leg 0 (0.0 %); outside legs still implausible after the
+    draw 5; portal tours re-moded 101, class-restricted 100, left unchanged 2 (1.94 %, both for no candidate in the gate
+    class, none for a mixed gate class); donor modes unknown to the table 0. Substitutes, summed over the substitution
+    matrix (136 tours): car 83, car_passenger 38, pt 15, walk 0, bicycle 0. Most used cells: all/45_plus 47 tours,
+    other/20_30 25, other/15_20 23, other/10_15 13, other/30_45 9.
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/outside_tour_modes_report_arm2.json'
+  notes: >-
+    The report is the stage's own counter output and is identical to the outside_tour_modes_report key of
+    i453_metrics_arm2.json. By ADR-0145 the stage logs a WARNING when implausible outside legs remain after the draw
+    and when a portal tour is left unchanged; both counts are above zero here (5 and 2). The log lines themselves were
+    not inspected for this manifest. No relaxation to the longest leg was needed.
+- metric: MATSim termination and iterations (convergence, not validation)
+  reference: 'none'
+  result: 'Last iteration 79 (arm0), 84 (arm1), 84 (arm2) of at most 100, stopped by the eqasim mode-share termination criterion.'
+  artifact: 'docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm{0,1,2}.json (key last_iteration)'
+  notes: >-
+    The criterion stops when the smoothed change of the mode shares between iterations falls below its threshold; it has
+    no real-world reference. The arms stopped at different iterations, so the compared final iterations are not at the
+    same iteration.
+features:
+- outside_tour_modes
+- plan_feasibility_check
+artifacts:
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/ab_metrics_i453.py
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm0.json
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm1.json
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_metrics_arm2.json
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/outside_tour_modes_report_arm2.json
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm0.yml
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm1.yml
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/i453_arm2.yml
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/launch_guarded.sh
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/token_diff.py
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/devalidated_arm0.txt
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/devalidated_arm1.txt
+- docs/runs/artifacts/i453-i443-ab-1pct-2026-10-16/devalidated_arm2.txt
+- 'felix:~/wt-i453-ab/output_arm{0,1,2}/matsim_output (MATSim outputs of the final iterations)'
+- 'felix:~/wt-i453-ab/cache_arm0 and cache_arms12 (working directories; cache_arms12 is a copy of cache_arm0 taken after arm0, with three patched stage tokens)'
+issues:
+- '#453'
+- '#443'
+decisions:
+- ADR-0145
+- ADR-0146
+notes: >-
+  What this run is evidence for: the direction of the indicators at a 1 % sample, with one draw per arm. With the mode
+  flag on (arm2 against arm1, same code, same persons and donors, same seed), the walk trips over 5 km in frozen
+  tours fall from 168 to 63, the bicycle trips over 30 km from 47 to 1, the frozen trips over 3 h from 293 to 164, the
+  non-monotonic frozen plan ends from 30 to 22 plans, the residents stuck at the end of the day in frozen tours from 78
+  to 66 and all stuck residents from 116 to 104; the in-region metrics do not change between these arms. Between arm0
+  and arm1 (the merged code with the flag off, chiefly the 30 h plan-time bound by decision) the plans with an activity
+  end after the day fall (frozen 15 -> 4, in region 47 -> 1), the stuck residents fall from 153 to 116 (mostly in region
+  at the end of the day, 51 -> 17, and the group none, 57 -> 3), while the in-region stuck during the day (11 -> 17),
+  the in-region walk trips over 5 km (47 -> 65) and the frozen trips over 3 h (261 -> 293) rise. What it does not
+  show: (1) no validation of any kind; no observed reference was compared, the thresholds of the plan check and the
+  min_share of the rule are assumptions, and the stabilised mode shares are convergence, not agreement with
+  observed behaviour; (2) one random seed and one draw per arm, so differences of a few agents or trips are not
+  distinguishable from run-to-run variation, which was not estimated; (3) a 1 % equilibrium is not the 100 %
+  equilibrium on which the findings of ADR-0145 and ADR-0146 were made (prod100_20260925), and the 1 % counts are
+  not expanded; (4) arm1 and arm2 reused the popsim, mid_donor and completed_donor results of arm0 through a token
+  patch (static call-site proof, no empirical equality test), see the pipeline notes; (5) the analysis suite, its
+  stuck sub-analysis and the dashboard did not run in any arm (OOM, targets dropped), the stuck metrics come from
+  the committed stuck_agents module called by ab_metrics_i453.py. Open findings, recorded and not treated as
+  defects of the run: 63 walk trips over 5 km (22 over 20 km) remain in frozen tours of arm2 with a cause the run
+  does not determine; the share of non-monotonic frozen plans (2.04 % and 1.50 %) exceeds the uncalibrated threshold
+  0.5 % in arm1 and arm2 (plan check ERROR, run continued). Caveats: another session's 25 % MATSim run on the same
+  server the whole time (runtimes not comparable); arm0 and arm1 provenance records carry +dirty (an untracked eqasim-data
+  symlink, no tracked change; see repository). Server-only data:
+  the MATSim outputs and the working directories listed in the artifacts.
+source: >-
+  The figures come from the committed i453_metrics_arm{0,1,2}.json (output of ab_metrics_i453.py, run read-only
+  against each arm from the arms12 worktree, argument order <arm> <output_path> <working_directory>), the stage report
+  outside_tour_modes_report_arm2.json (copied from the stage cache directory of arm2), the committed overlays,
+  devalidated lists, launch_guarded.sh and token_diff.py, the provenance JSONs on felix (read only) and the
+  controller's ledger of the run (the setup steps, the reasons for each relaunch and the static call-site proof).
+  The run windows, the iteration counts and the ERROR of the plan check come from the run logs and the ledger as
+  reported to the author of this manifest, not from a file committed here.

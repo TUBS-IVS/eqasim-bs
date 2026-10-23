@@ -1,0 +1,149 @@
+{
+ "arm": "arm0",
+ "archive": "../output_arm0/matsim_output",
+ "last_iteration": 79,
+ "stuck": {
+  "available": true,
+  "simulation_end_s": 108000.0,
+  "n_stuck": 153,
+  "by_subpopulation": {
+   "residents": {
+    "n_persons": 12046,
+    "n_stuck": 153,
+    "share_stuck": 0.012701311638718247,
+    "at_end": {
+     "frozen": 87,
+     "in_region": 51
+    },
+    "during_day": {
+     "frozen": 4,
+     "in_region": 11
+    },
+    "by_mode": {
+     "car": 7,
+     "none": 57,
+     "pt": 15,
+     "walk": 74
+    }
+   },
+   "freight": {
+    "n_persons": 521,
+    "n_stuck": 0,
+    "share_stuck": 0.0,
+    "at_end": {
+     "frozen": 0,
+     "in_region": 0
+    },
+    "during_day": {
+     "frozen": 0,
+     "in_region": 0
+    },
+    "by_mode": {}
+   }
+  },
+  "warn_share": 0.01,
+  "warning": true
+ },
+ "plan_check_input": {
+  "config": "../cache_arm0/braunschweig.matsim.simulation.prepare__909ce7922e1dd39c7b9472a25140ecd8.cache/braunschweig_1pct_i453_arm0_config.xml",
+  "population": "/home/felix/wt-i453-ab/cache_arm0/braunschweig.matsim.simulation.prepare__909ce7922e1dd39c7b9472a25140ecd8.cache/braunschweig_1pct_i453_arm0_population.xml.gz"
+ },
+ "plan_check": {
+  "simulation_end_s": 108000.0,
+  "thresholds": {
+   "walk_max_distance_m": 5000.0,
+   "bicycle_max_distance_m": 30000.0,
+   "leg_max_duration_s": 10800.0
+  },
+  "subpopulations": {
+   "residents": {
+    "frozen": {
+     "n_persons": 1466,
+     "n_legs": 14668,
+     "n_plans_late": 15,
+     "n_plans_arrival_late": 66,
+     "n_plans_non_monotonic": 42,
+     "n_walk_legs_over": 260,
+     "n_bicycle_legs_over": 45,
+     "n_legs_over_duration": 245,
+     "share_plans_late": 0.010231923601637109,
+     "share_plans_arrival_late": 0.045020463847203276,
+     "share_plans_non_monotonic": 0.0286493860845839
+    },
+    "in_region": {
+     "n_persons": 10580,
+     "n_legs": 74480,
+     "n_plans_late": 47,
+     "n_plans_arrival_late": 21,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 997,
+     "n_bicycle_legs_over": 45,
+     "n_legs_over_duration": 371,
+     "share_plans_late": 0.00444234404536862,
+     "share_plans_arrival_late": 0.0019848771266540643,
+     "share_plans_non_monotonic": 0.0
+    }
+   },
+   "freight": {
+    "frozen": {
+     "n_persons": 0,
+     "n_legs": 0,
+     "n_plans_late": 0,
+     "n_plans_arrival_late": 0,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 0,
+     "n_bicycle_legs_over": 0,
+     "n_legs_over_duration": 0,
+     "share_plans_late": 0.0,
+     "share_plans_arrival_late": 0.0,
+     "share_plans_non_monotonic": 0.0
+    },
+    "in_region": {
+     "n_persons": 521,
+     "n_legs": 521,
+     "n_plans_late": 0,
+     "n_plans_arrival_late": 0,
+     "n_plans_non_monotonic": 0,
+     "n_walk_legs_over": 0,
+     "n_bicycle_legs_over": 0,
+     "n_legs_over_duration": 0,
+     "share_plans_late": 0.0,
+     "share_plans_arrival_late": 0.0,
+     "share_plans_non_monotonic": 0.0
+    }
+   }
+  }
+ },
+ "final_trips": {
+  "n_resident_trips": 38086,
+  "n_trips_in_frozen_tours": 5709,
+  "frozen": {
+   "walk": 400,
+   "walk_over_5km": 175,
+   "walk_over_20km": 57,
+   "bicycle": 140,
+   "bicycle_over_30km": 45,
+   "travel_time_over_3h": 261
+  },
+  "in_region": {
+   "walk_over_5km": 47,
+   "walk_over_20km": 5,
+   "bicycle_over_30km": 6
+  },
+  "mode_share_pct_frozen_tours": {
+   "car": 65.12,
+   "car_passenger": 11.35,
+   "pt": 11.05,
+   "walk": 9.25,
+   "bicycle": 3.24
+  },
+  "mode_share_pct_in_region_tours": {
+   "car": 51.67,
+   "walk": 16.48,
+   "car_passenger": 13.18,
+   "bicycle": 11.17,
+   "pt": 7.5
+  }
+ },
+ "outside_tour_modes_report": null
+}
