@@ -501,7 +501,7 @@ INPUTS: List[Input] = [
         rel_path="braunschweig/parking/parking_lots_osm_2026.csv",
         source="Committed with the repository (docs/registry/data/parking_lots_osm_2026.yml); nothing to download.",
         notes=(
-            "Config key large_facility_access_parking_lots_path. ODbL 1.0 (derived from OpenStreetMap), (c) OpenStreetMap "
+            "Config key large_facility_access_lots_path. ODbL 1.0 (derived from OpenStreetMap), (c) OpenStreetMap "
             "contributors. Regenerate with python scripts/build_parking_lots_from_osm.py from the pinned extract."
         ),
         matsim_only=True,

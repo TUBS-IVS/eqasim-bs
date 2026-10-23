@@ -66,11 +66,11 @@ the 2 % car-time criterion"; the 2 % itself is an ASSUMPTION, not a reference).
    `large_facility_access_minimum_activities` (1000).
 2. **Work sites and universities: parking-lot access** (eqasim-java-bs `LargeSiteAccessAssignment`, run by
    `RunAdaptLargeFacilityAccess` in `matsim.simulation.prepare` between eqasim's `RunPreparation` and the routing).
-   In scope: `work` activities >= `large_facility_access_parking_scope_work_share` (0.5) of the site's activities, or
-   a facility id with a prefix of `large_facility_access_parking_scope_prefixes` (`uni_loc_`).
+   In scope: `work` activities >= `large_facility_access_scope_work_share` (0.5) of the site's activities, or
+   a facility id with a prefix of `large_facility_access_scope_prefixes` (`uni_loc_`).
    - Lots from the release `parking_lots_osm_2026` (data record; preflight D20): nearest first (ties: lot id) within
-     `large_facility_access_parking_maximum_distance_m` (1500 m) until their spaces reach
-     `large_facility_access_parking_demand_share` (0.5, ASSUMPTION of the owner: half of the activities park at once)
+     `large_facility_access_lot_maximum_distance_m` (1500 m) until their spaces reach
+     `large_facility_access_lot_demand_share` (0.5, ASSUMPTION of the owner: half of the activities park at once)
      x size; fewer spaces in reach = `distributed_partial`, all lots in reach used.
    - Access link of a lot: the closest link of >= `large_facility_access_minimum_capacity_veh_per_h` (1000 veh/h)
      within `large_facility_access_lot_link_maximum_distance_m` (300 m), else the closest eligible link of any

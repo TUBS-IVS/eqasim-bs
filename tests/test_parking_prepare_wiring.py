@@ -565,21 +565,38 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
 
 @pytest.mark.parametrize("module_name", ["braunschweig.parking.tariff_export", "braunschweig.matsim.config_modules",
                                          "braunschweig.parking.cost"])
-def test_prepare_token_changes_when_a_module_that_shapes_the_parking_inputs_changes(monkeypatch, module_name):
+def test_prepare_token_changes_when_a_module_that_shapes_the_parking_inputs_changes(tmp_path, monkeypatch,
+                                                                                  module_name):
     # tariff_export builds and writes the model, config_modules writes the module, and cost.ZoneTariff decides
     # every zone entry of the model: an edit to any of them must invalidate a cached prepared scenario.
-    before = prepare.validate(None)
+    before = prepare.validate(_TokenContext(tmp_path))
     getsource = inspect.getsource
     monkeypatch.setattr(inspect, "getsource", lambda obj: getsource(obj) + (
         "\nZ_PROBE = 1\n" if getattr(obj, "__name__", None) == module_name else ""))
-    assert prepare.validate(None) != before
+    assert prepare.validate(_TokenContext(tmp_path)) != before
 
 
-def test_prepare_token_holds_the_committed_fare_model_tables_by_file_name():
+def test_prepare_token_holds_the_committed_fare_model_tables_by_file_name(tmp_path):
     from braunschweig.data.vrb import fare_model_export
-    token = prepare.validate(None)
+    token = prepare.validate(_TokenContext(tmp_path))
     assert token["format"] == 2
-    assert set(token["files"]) == {Path(path).name for path in fare_model_export.committed_input_paths()}
+    # The fare tables by file name, plus the lots release of the large-site access (absent here; ADR-0169).
+    assert set(token["files"]) == ({Path(path).name for path in fare_model_export.committed_input_paths()}
+                                   | {prepare.delegate.LARGE_FACILITY_ACCESS_LOTS_DATASET})
+    assert token["files"][prepare.delegate.LARGE_FACILITY_ACCESS_LOTS_DATASET] == "absent"
+
+
+class _TokenContext:
+    """validate() reads the data path of the large-site access lots release (ADR-0169) from the stage context;
+    with no file under ``data_path`` the token records it as "absent"."""
+
+    def __init__(self, data_path):
+        self.data_path = str(data_path)
+
+    def config(self, key, default=None):
+        values = {"data_path": self.data_path,
+                  prepare.delegate.LARGE_FACILITY_ACCESS_LOTS_KEY: "braunschweig/parking/parking_lots_osm_2026.csv"}
+        return values.get(key, default)
 
 
 def _output_context(tmp_path, prepare_dir, **values):

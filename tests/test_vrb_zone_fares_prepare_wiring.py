@@ -188,6 +188,19 @@ def test_prepare_token_changes_when_a_committed_tariff_input_changes(tmp_path, m
         copy = tmp_path / original.name
         copy.write_bytes(original.read_bytes())
         monkeypatch.setattr(prepare.fare_model_export, name, copy)
-        before = prepare.validate(None)
+        before = prepare.validate(_TokenContext(tmp_path))
         copy.write_bytes(copy.read_bytes() + b"\n")
-        assert prepare.validate(None) != before, name
+        assert prepare.validate(_TokenContext(tmp_path)) != before, name
+
+
+class _TokenContext:
+    """validate() reads the data path of the large-site access lots release (ADR-0169) from the stage context;
+    with no file under ``data_path`` the token records it as "absent"."""
+
+    def __init__(self, data_path):
+        self.data_path = str(data_path)
+
+    def config(self, key, default=None):
+        values = {"data_path": self.data_path,
+                  prepare.delegate.LARGE_FACILITY_ACCESS_LOTS_KEY: "braunschweig/parking/parking_lots_osm_2026.csv"}
+        return values.get(key, default)

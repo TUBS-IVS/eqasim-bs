@@ -28,7 +28,7 @@ _LARGE_FACILITY_ACCESS_RUNNER = "org.eqasim.braunschweig.scenario.RunAdaptLargeF
 _LARGE_FACILITY_ACCESS_SUMMARY = "large_facility_access_summary.csv"
 _LARGE_FACILITY_ACCESS_GROUPS = "large_facility_access_groups.csv"
 #: Public: the production wrapper braunschweig.matsim.simulation.prepare hashes the release in its validate().
-LARGE_FACILITY_ACCESS_LOTS_KEY = "large_facility_access_parking_lots_path"
+LARGE_FACILITY_ACCESS_LOTS_KEY = "large_facility_access_lots_path"
 #: The parking-lot release relative to data_path (data record parking_lots_osm_2026, preflight D20).
 _LARGE_FACILITY_ACCESS_LOTS_DEFAULT = "braunschweig/parking/parking_lots_osm_2026.csv"
 LARGE_FACILITY_ACCESS_LOTS_DATASET = "parking_lots_osm_2026"
@@ -41,22 +41,22 @@ _LARGE_FACILITY_ACCESS_NUMBERS = (
     ("large_facility_access_maximum_fallback_share", 0.15, "maximum-fallback-share", lambda v: 0.0 <= v <= 1.0,
      "in [0, 1]"),
     # ASSUMPTION of the owner: half of a site's activities need a parking space at the same time.
-    ("large_facility_access_parking_demand_share", 0.5, "parking-demand-share", lambda v: 0.0 < v <= 10.0,
+    ("large_facility_access_lot_demand_share", 0.5, "parking-demand-share", lambda v: 0.0 < v <= 10.0,
      "in (0, 10]"),
-    ("large_facility_access_parking_maximum_distance_m", 1500.0, "parking-maximum-distance-m", lambda v: v > 0.0,
+    ("large_facility_access_lot_maximum_distance_m", 1500.0, "parking-maximum-distance-m", lambda v: v > 0.0,
      "> 0"),
     ("large_facility_access_lot_link_maximum_distance_m", 300.0, "lot-link-maximum-distance-m", lambda v: v > 0.0,
      "> 0"),
     ("large_facility_access_maximum_no_lot_share", 0.10, "maximum-no-lot-share", lambda v: 0.0 <= v <= 1.0,
      "in [0, 1]"),
-    ("large_facility_access_parking_scope_work_share", 0.5, "scope-work-share", lambda v: 0.0 <= v <= 1.0,
+    ("large_facility_access_scope_work_share", 0.5, "scope-work-share", lambda v: 0.0 <= v <= 1.0,
      "in [0, 1]"),
 )
 #: Text keys (comma-separated prefix lists) with their defaults and Java options. Never sites: the cordon portals
 #: (placed by the portal stages on purpose), the external Gemeinde centroids and homes. In scope: universities.
 _LARGE_FACILITY_ACCESS_PREFIXES = (
     ("large_facility_access_excluded_prefixes", "outside_,EXT,home_", "excluded-facility-prefixes"),
-    ("large_facility_access_parking_scope_prefixes", "uni_loc_", "scope-facility-prefixes"),
+    ("large_facility_access_scope_prefixes", "uni_loc_", "scope-facility-prefixes"),
 )
 _LARGE_FACILITY_ACCESS_OUTCOMES = ("distributed", "distributed_partial", "moved", "fallback", "adequate")
 

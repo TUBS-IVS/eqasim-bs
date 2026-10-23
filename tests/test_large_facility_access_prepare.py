@@ -94,13 +94,13 @@ def test_configure_declares_the_rule_keys_with_their_defaults(data_path):
         "large_facility_access_maximum_distance_m": 1000.0,
         "large_facility_access_maximum_fallback_share": 0.15,
         "large_facility_access_excluded_prefixes": "outside_,EXT,home_",
-        "large_facility_access_parking_lots_path": LOTS_REL_PATH,
-        "large_facility_access_parking_demand_share": 0.5,
-        "large_facility_access_parking_maximum_distance_m": 1500.0,
+        "large_facility_access_lots_path": LOTS_REL_PATH,
+        "large_facility_access_lot_demand_share": 0.5,
+        "large_facility_access_lot_maximum_distance_m": 1500.0,
         "large_facility_access_lot_link_maximum_distance_m": 300.0,
         "large_facility_access_maximum_no_lot_share": 0.10,
-        "large_facility_access_parking_scope_work_share": 0.5,
-        "large_facility_access_parking_scope_prefixes": "uni_loc_",
+        "large_facility_access_scope_work_share": 0.5,
+        "large_facility_access_scope_prefixes": "uni_loc_",
         "matsim_qsim_inserting_waiting_vehicles_first": False,
     }
     assert {key: context.declared[key] for key in expected} == expected
@@ -134,9 +134,9 @@ def test_the_access_step_runs_between_preparation_and_routing_with_every_option(
 
 def test_configured_values_reach_the_java_step(monkeypatch, data_path):
     calls, _ = _execute(monkeypatch, _base_config(
-        data_path, large_facility_access_parking_demand_share=0.7, large_facility_access_parking_maximum_distance_m=900.0,
+        data_path, large_facility_access_lot_demand_share=0.7, large_facility_access_lot_maximum_distance_m=900.0,
         large_facility_access_lot_link_maximum_distance_m=150.0, large_facility_access_maximum_no_lot_share=0.2,
-        large_facility_access_parking_scope_work_share=0.6, large_facility_access_parking_scope_prefixes="uni_loc_,fh_",
+        large_facility_access_scope_work_share=0.6, large_facility_access_scope_prefixes="uni_loc_,fh_",
         large_facility_access_excluded_prefixes="outside_,EXT,home_,ic_"))
     args = next(args for runner, args in calls if runner == ACCESS_RUNNER)
     assert float(_option(args, "parking-demand-share")) == 0.7
@@ -149,7 +149,7 @@ def test_configured_values_reach_the_java_step(monkeypatch, data_path):
 
 
 def test_a_missing_lots_file_fails_before_any_java_step(monkeypatch, tmp_path):
-    with pytest.raises(FileNotFoundError, match="large_facility_access_parking_lots_path"):
+    with pytest.raises(FileNotFoundError, match="large_facility_access_lots_path"):
         _execute(monkeypatch, _base_config(tmp_path))
 
 
@@ -173,12 +173,12 @@ def test_the_matsim_default_can_be_restored(monkeypatch, data_path):
     ("large_facility_access_minimum_capacity_veh_per_h", -1.0),
     ("large_facility_access_maximum_distance_m", 0.0),
     ("large_facility_access_maximum_fallback_share", 1.5),
-    ("large_facility_access_parking_demand_share", 0.0),
-    ("large_facility_access_parking_demand_share", 11.0),
-    ("large_facility_access_parking_maximum_distance_m", 0.0),
+    ("large_facility_access_lot_demand_share", 0.0),
+    ("large_facility_access_lot_demand_share", 11.0),
+    ("large_facility_access_lot_maximum_distance_m", 0.0),
     ("large_facility_access_lot_link_maximum_distance_m", -5.0),
     ("large_facility_access_maximum_no_lot_share", 1.5),
-    ("large_facility_access_parking_scope_work_share", 1.5),
+    ("large_facility_access_scope_work_share", 1.5),
 ])
 def test_invalid_rule_parameters_fail_at_configure(key, value, data_path):
     with pytest.raises(ValueError, match=key):
@@ -205,7 +205,7 @@ def test_the_summary_rates_are_logged_from_the_java_summary_file(tmp_path, caplo
 def test_prefix_lists_reach_java_as_comma_text_and_other_types_fail(monkeypatch, data_path):
     calls, _ = _execute(monkeypatch, _base_config(
         data_path, large_facility_access_excluded_prefixes=["outside_", "EXT", "home_"],
-        large_facility_access_parking_scope_prefixes=("uni_loc_",)))
+        large_facility_access_scope_prefixes=("uni_loc_",)))
     args = next(args for runner, args in calls if runner == ACCESS_RUNNER)
     assert _option(args, "excluded-facility-prefixes") == "outside_,EXT,home_"
     assert _option(args, "scope-facility-prefixes") == "uni_loc_"
