@@ -1,0 +1,50 @@
+scenario portal trips 1164 prepared 1164
+both          1164
+left_only        0
+right_only       0
+Name: _merge, dtype: int64
+
+planned mode x realised mode (portal trips):
+mode_prep                bicycle  outside  pt  walk
+direction mode_scn                                 
+outbound  bicycle              1        0   0     0
+          car                  0       73   0   346
+          car_passenger        0       11   0    95
+          pt                   0        0  50     5
+          walk                 0        0   0     1
+return    bicycle              1        0   0     0
+          car                  0       47   0   372
+          car_passenger        0       17   0    89
+          pt                   0        0  39    16
+          walk                 0        0   0     1
+
+planned-pt portal trips that became walk, by planned departure hour:
+                     size  sum   mean
+direction dep_h_bin                  
+outbound  [0, 6)       12    0  0.000
+          [6, 9)       26    2  0.077
+          [9, 12)       6    0  0.000
+          [12, 15)      7    2  0.286
+          [15, 18)      3    1  0.333
+          [18, 21)      1    0  0.000
+return    [6, 9)        2    0  0.000
+          [9, 12)       3    1  0.333
+          [12, 15)      7    2  0.286
+          [15, 18)     12    1  0.083
+          [18, 21)     19    2  0.105
+          [21, 23)      6    5  0.833
+          [24, 25)      1    1  1.000
+          [26, 28)      2    2  1.000
+          [28, 30)      3    2  0.667
+
+became walk: distance km describe
+count    21.0
+mean     18.7
+std      23.7
+min       0.0
+25%       0.0
+50%       9.1
+75%      35.5
+max      83.2
+Name: distance_m_prep, dtype: float64
+routing mode of the walk legs: {'walk': 21}

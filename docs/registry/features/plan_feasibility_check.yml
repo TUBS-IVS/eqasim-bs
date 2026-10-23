@@ -101,11 +101,14 @@ evidence:
       stuck analysis counts stuck agents in its output; neither compares anything with observed behaviour.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - i465-wpe-smoke-1pct-2026-10-23
   metric: null
   note: >-
-    Not run yet; the 1 % A/B with iterations of the plan's task 14 measures the direction (plan-check figures
-    and stuck categories from the last iteration), never a validation.
+    The 1 % smoke i465-wpe-smoke-1pct-2026-10-23 ran the check with the pt-as-walk count (WP-B): frozen residents
+    33 of 461 pt-intended trips walk (7.16 %, above max_frozen_pt_as_walk_share 0.02, ERROR, continued),
+    in-region 0 of 2,166. Open finding there: only 4 of the 20 frozen residents stuck walking at the end of the day
+    carry the walkFallbackFrom stamp although 17 were planned as pt, so the count undercounts. Never a validation.
 assessment:
   status: pending
   by: null

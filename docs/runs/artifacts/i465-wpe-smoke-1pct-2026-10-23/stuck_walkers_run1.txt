@@ -1,0 +1,25 @@
+ person  stuck_leg_dep_h planned_mode planned_from planned_to  planned_dep_h  dt_h  prepared_plan_stamped_pt
+1053481            20.73           pt      outside       home          19.88  0.85                      True
+1125708            28.50           pt         work       home          28.50  0.00                     False
+1125877            22.50           pt         work       home          22.50  0.00                     False
+1125941            17.18           pt         work       home          16.50  0.68                      True
+1125978            18.25           pt         work       home          18.25  0.00                      True
+1125988            28.14          car         work       home          17.00 11.14                     False
+1126132            21.01           pt         work       home          23.33  2.33                     False
+1126214            21.00           pt         work       home          21.00  0.00                     False
+1126218            21.70           pt         home       work          20.28  1.42                     False
+1126256            23.00           pt         work       home          23.00  0.00                     False
+1126281            29.33           pt         work       home          29.33  0.00                     False
+ 125291            25.37           pt      leisure       home          22.55  2.82                     False
+ 202312            27.19           pt      outside       home          27.19  0.00                     False
+ 343377            28.15         walk      outside       home          18.47  9.68                     False
+ 696091            22.76           pt      outside       home          22.76  0.00                     False
+ 696094            29.05           pt      outside       home          29.05  0.00                     False
+ 769106            27.21           pt      outside       home          27.21  0.00                     False
+ 859796            29.23           pt      outside       home          29.23  0.00                      True
+ 905013            26.81           pt      leisure       home          22.37  4.44                     False
+ 963065            29.38          car        other       home          21.02  8.36                     False
+stuck walkers at end, frozen: 20
+prepared plan with walkFallbackFrom=pt: 4
+planned mode (nearest departure): {'pt': 17, 'car': 2, 'walk': 1}
+planned pt with an exact departure match (dt_h == 0): 11

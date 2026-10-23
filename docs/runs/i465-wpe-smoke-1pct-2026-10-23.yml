@@ -1,0 +1,273 @@
+id: i465-wpe-smoke-1pct-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: 'b8564d02 (final launch); a485104e (second launch); 3ebe789a (first launch, origin/main)'
+  branch: fix/i465-wp-e-smoke
+  notes: >-
+    eqasim-bs: origin/main 3ebe789a (after the merges of #478 WP-A, #480 WP-B and #481 WP-C) plus the two fixes this
+    run needed, both on the branch of this manifest: a485104e (the batch pt router config gets the qsim values the
+    eqasim injector requires) and b8564d02 (matsim.simulation.run replaces the symlinks of the MATSim output before
+    synpp hashes it). The commits reached felix as a git bundle, not by a push; the felix worktree was checked out
+    detached at exactly these commits. If the PR is squash-merged, main gets one commit with the same tree. Java:
+    eqasim-java-bs main 863c09a (after #36 WP-B and #37 WP-C), detached worktree ~/wt-i465-wpe/eqasim-java-bs; the jar
+    was built by matsim.runtime.eqasim from that tree (braunschweig-2.3.1.jar, stamps walkFallbackFrom, checked by the
+    plan check at 00:52:05). The eqasim-java-bs fix "classify batch router walk legs by their position among the legs"
+    (branch fix/batch-router-egress-walk, not merged at the time of the run) is NOT in this jar; it changes no output
+    for legs-only router results, see the validation entry "batch router walk-leg classification". The shared checkouts
+    ~/eqasim-bs (branch feature/i436-v3-b-data) and ~/eqasim-java-bs (feature/i436-v3-a-mechanics) were only fetched,
+    never switched or pulled (scripts/update_server.sh was not run because it pulls whatever branch is checked out).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/i465_wpe.yml
+  notes: >-
+    Throwaway server overlay, derived from the overlay of arm 2 of the baseline A/B (i453_arm2.yml of
+    i453-i443-ab-1pct-2026-10-16): sampling_rate 0.01, matsim_last_iteration 100 (MATSim iterates until the eqasim
+    mode-share termination criterion or 100 iterations), braunschweig.population.popsim.max_cells 750, num_workers 1,
+    the same popsim work-dir STRING as arm 2 (it enters the popsim hash; popsim stayed cached and never ran),
+    cache_share off, braunschweig.outside_tour_modes.enabled true. Own working directory (a physical copy of the
+    baseline's cache_arms12), own output_path and output_prefix. Every other key keeps the base value of 3ebe789a,
+    including the new keys of WP-A/B/C (next_day_hours 6.0, plan_check.max_frozen_pt_as_walk_share 0.02, the
+    braunschweig.portal.* gate keys). The overlay carries the launcher gate synpp_expected_stale_stages (the 35 stages
+    of explain_first_launch.log); run targets synthesis.output and matsim.output, like the baseline.
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: ZGB-8, full region, cordon on (base configuration)
+  notes: >-
+    Sample counts at sampling_rate 0.01, never expanded. Residents in the MATSim output 12,041 (baseline arm 2:
+    12,041), freight agents 521 (521). Same random seed (base value), same synthetic persons, donors and trips as
+    baseline arm 2 (popsim, mid_donor, completed_donor and popsim.trips_stage were cache hits of the copied working
+    directory, see pipeline).
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  notes: >-
+    Cache procedure: ~/wt-i465-wpe/cache_wpe is a physical copy (cp -a, 24 GB) of the baseline's
+    ~/wt-i453-ab/cache_arms12. Because the copy predates ADR-0149, scripts/migrate_cache_metadata.py was run on the
+    COPY with --legacy-source-rev 3123cc4f (the commit that wrote the arm-2 entries; the default revision 205a0fb7 is
+    later): 248 of 392 entries migrated, 144 kept legacy (log migrate_cache_metadata.log). The explainer then listed 35
+    stages stale for own reasons and 62 hits, popsim, mid_donor, completed_donor and trips_stage among the hits
+    (explain_first_launch.log): the supply chain (WP-A: supply_gtfs, supply.processed, cordon network, pt gates,
+    cordon gates), the jar and freight (matsim.runtime.eqasim, freight extraction tool, extraction, trips), the location
+    chain from synthesis.population.spatial.primary.candidates (output_path enters it), the portal stages (WP-C),
+    prepare, MATSim and output, plus distance_distributions, secondary_candidates and parking.zones_stage (code changed
+    on main). Three launches. Launch 1 (23:01, 3ebe789a) failed at 00:25 in braunschweig.synthesis.portal_trips.stage:
+    RunBatchPublicTransportRouter builds the full eqasim injector, and the minimal router config of WP-C lacked
+    qsim.personInitializedEvents=all and qsim.endTime (fixed in a485104e, see the validation entry "gate choice").
+    Launch 2 (00:32, a485104e) ran the gate choice, prepare and 87 MATSim iterations and failed at 03:08 in the synpp
+    fork's output hash: the eqasim-java-bs SimWrapperHouseholdsInputLinker leaves a symlink in simulation_output, and
+    ADR-0149 refuses symlinks (fixed in b8564d02). Its MATSim output was moved aside to
+    ~/wt-i465-wpe/run1_matsim_simulation_run.cache before launch 3. Launch 3 (03:13, b8564d02) recomputed only
+    output_day, matsim.simulation.run and matsim.output (explain_final_launch.log).
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Final launch completed with exit 0 (server clock, CEST): launch 1 2026-10-22 23:01 to 2026-10-23 00:25 (exit 1,
+    portal stage), launch 2 00:32 to 03:08 (exit 1 after MATSim, output hash), launch 3 03:13 to 05:27 (exit 0). MATSim
+    was stopped by the eqasim mode-share termination criterion after iteration 87 of at most 100 in launches 2 and 3:
+    the mode shares stabilised (change below the threshold), which is convergence, NOT validation. Launches 2 and 3
+    simulated the same prepared scenario; their modestats.csv are identical and every metric of this manifest is
+    identical between them (metrics computed on both), while output_events.xml.gz is not byte-identical (the first
+    differences are the order of events with the same time stamp). The figures below come from launch 3 (output
+    ~/wt-i465-wpe/output_wpe); stuck_walkers_run1.txt and portal_trips_run1.txt were computed on launch 2 and the
+    prepared population both launches share. After the run the explainer reports only the two run targets stale
+    (always recomputed), 95 hits. No other job ran on the server.
+environment: 'server felix (Linux, 64 cores, 94 GB), conda env eqasim (Python 3.10.10), JAVA_HOME ~/tools/jdk-25.0.3+9 (set by launch_wpe.sh); no other job ran on the server during the run'
+validation:
+- metric: residents stuck walking at the end of the simulated day in frozen tours (issue #465, done-when item 3)
+  reference: 'baseline arm 2 of i453-i443-ab-1pct-2026-10-16 (same seed and persons, code 3123cc4f, jar 923d3d7); no observed reference'
+  result: >-
+    Frozen residents stuck at the simulation end (108,000 s) with legMode walk: 58 (baseline) -> 20 (this run). Of
+    these, planned as pt in the scenario population (leg with the nearest planned departure): 56 (49 exact departure
+    matches) -> 17 (11 exact). The 20 are 10 incommuters (persons of braunschweig.synthesis.incommuters, ids 1125708
+    to 1126281, all with a work <-> outside or work <-> home leg) and 10 synthesis residents; 19 of the 20 stuck legs
+    are 24.7 to 125.3 km long (plan distance of the final iteration), one 8.3 km, and they depart between 17:11 and
+    29:23 (stuck_trace columns plan_leg_dist_km, plan_leg_dep_h; computed on launch 2, identical metrics). The
+    incommuters are not touched by the timetable-aware gate choice (WP-C works on the portal stays of residents);
+    the same 10 incommuter legs, with identical planned times and distances, are stuck in the baseline too. No #465
+    work package checks the timetable for incommuter pt legs (#467 concerns incommuter plans beyond 30 h).
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/stuck_walkers_run1.txt, stuck_walkers_baseline_arm2.txt (stuck_walkers_i465.py on the stuck traces of stuck_trace_i453.py)'
+  notes: >-
+    Bounded, not gone: 20 remain. This is the done-when wording "gone or bounded" read as a fall from 58 to 20 in one
+    draw; no bound was fixed in advance, so "bounded" here means only "counted and much smaller", not "below a target".
+    One draw per run; differences of a few agents are not separable from run-to-run variation, which is not estimated.
+    The code differs from the baseline in everything merged between 3123cc4f and 3ebe789a, not only in WP-A/B/C, so
+    the fall is not attributed to one work package.
+- metric: planned-pt portal trips realised as walk after prepare (routing plus cordon cut)
+  reference: 'baseline arm 2, the same script portal_trip_modes_i453.py on both runs; no observed reference'
+  result: >-
+    Planned-pt portal trips (outside activity with portalGate=true) 246 -> 110, of which walk after prepare 90 (36.6 %)
+    -> 21 (19.1 %). Outbound 123 -> 55 planned pt, walk 28 -> 5; return 123 -> 55, walk 62 -> 16. Departing at 23:00
+    or later: 33 of 33 walk (baseline) -> 5 of 6 walk (this run; 24 h 1 of 1, 26 to 28 h 2 of 2, 28 to 30 h 2 of 3).
+    Distance of the trips that became walk: median 8.7 -> 9.1 km, maximum 111.5 -> 83.2 km.
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/portal_trips_baseline_arm2.txt, portal_trips_run1.txt'
+  notes: >-
+    The denominator falls because the no-connection chain switched 68 portal stays to car or car passenger (see the
+    gate-choice entry), so the share and the count both fall for two reasons: fewer pt trips planned, and fewer of the
+    remaining ones without a connection. The baseline table reproduces the figures of issue #465 (246, 90, 33 of 33).
+- metric: plan check of the prepared population, pt trips replaced by a walk (WP-B), per class and hour, against braunschweig.plan_check.max_frozen_pt_as_walk_share
+  reference: 'max_frozen_pt_as_walk_share 0.02, an ASSUMPTION (base value of #480); no observed reference. The baseline jar 923d3d7 writes no walkFallbackFrom stamp, so the baseline has no comparable count'
+  result: >-
+    Frozen residents: 33 of 461 pt-intended trips are walks (7.16 %, above 2 %); by departure hour {1: 1, 3: 3, 5: 2,
+    8: 2, 9: 1, 10: 1, 11: 1, 14: 2, 15: 1, 16: 3, 17: 3, 18: 4, 19: 1, 20: 4, 21: 2, 22: 2}. In-region residents: 0
+    of 2,166. Freight: no pt trips. The prepare stage logged ERROR for the frozen share and continued
+    (fail_on_threshold false, production value). The eqasim PlanRouter log of prepare counts two routing passes:
+    before the cordon cut pt 852 of 3,432 trips replaced by a walk (24.8 %), and the re-routing inside the cut 33 of
+    2,627 (1.3 %); the plan check reads the cut population.
+  artifact: 'felix:~/wt-i465-wpe/logs/run_wpe_20261023T003208.log (lines [plan_check] and [PlanRouter] walk fallback); docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key plan_check.subpopulations.residents)'
+  notes: >-
+    OPEN FINDING: the stamp count undercounts the walks that matter. Of the 20 frozen residents stuck walking at the
+    end of the day, only 4 have a leg stamped walkFallbackFrom=pt in the prepared plan, while 17 were planned as pt
+    (stuck_walkers_run1.txt). The walk legs of the other planned-pt trips reach the simulation without the stamp, so
+    the threshold check sees 33 trips where more planned-pt trips run as walks. Where the stamp is lost (presumably in
+    the cordon cutter's re-routing of crossing trips) was not determined in this run.
+- metric: next-day departures (WP-A, ADR-0151), departures per hour before and after the cordon cut
+  reference: 'baseline arm 2 output schedule; ADR-0151 consequence "doubled service between 24 h and about 26 h" is an ASSUMPTION; no observed reference'
+  result: >-
+    Full pt2matsim schedule (log [transit_next_day]): 2,560 of 49,906 departures (5.1 %) duplicated up to 6 h, 2,560
+    vehicles added; per hour before -> after: 24 h 293 -> 339, 25 h 151 -> 175, 26 h 116 -> 135, 27 h 110 -> 173, 28 h
+    46 -> 668, 29 h 1 -> 1,787. Schedule after the cordon cut (output_transitSchedule of the final iteration), baseline
+    -> this run: 23 h 167 -> 167, 24 h 87 -> 87, 25 h 56 -> 56, 26 h 42 -> 42, 27 h 39 -> 42, 28 h 12 -> 163, 29 h 0
+    -> 552; total 14,923 -> 15,629, every hour before 27 h unchanged.
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/schedule_hours.txt (schedule_hours_i465.py); felix:~/wt-i465-wpe/logs/run_wpe_20261022T230108.log (lines [transit_next_day])'
+  notes: >-
+    The doubling the ADR expected between 24 and 26 h is small in the full schedule (+46, +24, +19 departures) and
+    absent after the cut: the cut extent has no departure before 03:00, so nothing is repeated at 24 to 26 h there.
+    What the extension adds in the study area are the morning departures of the next day at 27 to 29 h (03:00 to
+    05:59 + 24 h). Whether the next day's timetable equals the service day (the ADR's assumption) is not checked.
+- metric: timetable-aware gate choice and no-connection chain (WP-C, ADR-0152), batch router runtime and no-route behaviour
+  reference: 'ADR-0152 ASSUMPTION "under 15 min at 100 %" and no_connection_warn_share 0.05 (an ASSUMPTION); no observed reference'
+  result: >-
+    123 pt portal stays. Gate reasons: gate_found 41, no_gate_served 36, no_connection 46. Chain: gate_found 39,
+    tour_to_car 60, tour_to_car_passenger 8, departure_shifted 2 (median shift 3,600 s), kept_no_connection 14;
+    68 stays switched for the reason no_pt_connection; 55 pt stays remain. The stage logged WARNING: 84 of 123 pt stays
+    (68.3 %) without a timetable-aware gate, above the warn share 5 %. Runtime: the stage took 5 min 23 s
+    (00:32:25 to 00:37:48) with 10 router calls of 29 to 34 s each (183, 88, 68, 23, 54, 10, 40, 13, 35 and 5 tasks,
+    56 threads); tasks without a route per call 4, 8, 0, 5, 0, 6, 0, 4, 1, 3 (largest shares 6 of 10 and 3 of 5, logged
+    as WARNING above NO_ROUTE_WARN_SHARE 0.5). By hand with the same jar: the 183 tasks of the first call in 31 s
+    (5.1 GB RSS), the same tasks replicated 100 times (18,300 tasks, 32 threads) in 55 s, of which 20 s routing
+    (about 915 tasks per s), 11.3 GB RSS.
+  artifact: 'felix:~/wt-i465-wpe/cache_wpe/braunschweig.synthesis.portal_trips.stage__f19f2d15ddc5414759d8e8957d6f005f.cache/portal_trips_report.json (copied into metrics_final.json, key stage_reports); docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/router_probe_i465.sh; felix:~/wt-i465-wpe/analysis/router_try, router_x100'
+  notes: >-
+    The 100 % runtime is NOT measured by a 100 % run. Estimate from these numbers: 10 calls at the task count of a
+    100 % sample are at most about 10 x 55 s = 9 min, because the later calls are smaller; this supports the ADR's
+    assumption as an estimate only. Most of a 1 % call is JVM start and schedule loading. The high kept and switched
+    shares mean that most pt portal stays of this sample have no connection at their planned times; whether that is
+    realistic is not checked against observed data. Launch 1 failed in this stage (missing qsim values in the router
+    config); the unit tests had mocked the router, so the first real call was in this run.
+- metric: batch router walk-leg classification (task step 1; #465 done-when item 4), connections changed by the eqasim-java-bs fix
+  reference: 'none; a property of the router output'
+  result: >-
+    0 connections change. The fix only matters when the router output contains interaction activities. Every pt
+    trip with a positive egress distance proves the opposite for that trip (the old comparison of the leg index with
+    planElements.size() then classifies like the fix). pt trips with egress_distance_km <= 0: 0 of 179 in the first
+    gate-choice call of this run (router_try, minimum 0.003 km), 0 of 2 in the stage's last call, 0 of 8,838 and 0 of
+    192 in the #465 router probe (felix ~/wt-i453-ab/router_probe trips_out.csv, gate_out.csv; minimum 0.011 km).
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key batch_router); felix:~/wt-i465-wpe/analysis/router_try/router_trips.csv'
+  notes: >-
+    SwissRailRaptor without intermodal access returns legs only (RaptorUtils.convertRouteToLegs adds activities only
+    from intermodal route parts; MATSim 2026.0-2026w12), so the defect is latent. The fix (eqasim-java-bs branch
+    fix/batch-router-egress-walk) was not in this run's jar.
+- metric: stuck resident agents of the final iteration, total and by category
+  reference: 'baseline arm 2; no observed reference'
+  result: >-
+    Residents stuck 104 (0.86 % of 12,041) -> 68 (0.56 % of 12,041), below the warn share 0.01 in both. At the end of
+    the day: frozen 66 -> 28, in region 17 -> 18. During the day: frozen 4 -> 6, in region 17 -> 16. By the mode of the
+    last leg: walk 61 -> 24, pt 21 -> 22, car 16 -> 16, car_passenger 3 -> 4, none 3 -> 2. Freight: 0 of 521 in both.
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key stuck); baseline i453_metrics_arm2.json of the baseline run'
+  notes: >-
+    The whole fall is in the frozen residents stuck at the end of the day (66 -> 28), which is where the walkers were
+    (58 -> 20). The other categories move by one or two agents, within what one draw cannot separate.
+- metric: plan check of the prepared population, other frozen-resident indicators
+  reference: 'baseline arm 2; thresholds are ASSUMPTIONS of ADR-0146; no observed reference'
+  result: >-
+    Frozen residents 1,468 -> 1,468. Activity end after the day 4 -> 2; planned last arrival after the day 58 -> 19;
+    non-monotonic end times 22 (1.50 %) -> 21 (1.43 %, above max_frozen_defect_share 0.005, ERROR logged, continued);
+    walk legs over 5 km 129 -> 71; bicycle legs over 30 km 1 -> 1; legs over 3 h 108 -> 56; legs of the frozen
+    tours 15,593 -> 15,817. In-region residents 10,573: activity end after the day 1 -> 1, last arrival after the day
+    9 -> 4, walk legs over 5 km 1,020 -> 1,015.
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key plan_check)'
+  notes: >-
+    The late arrivals (58 -> 19) and the long frozen walk legs (129 -> 71) fall most; the non-monotonic share stays
+    above its uncalibrated threshold, as in the baseline.
+- metric: frozen-tour trips of the final iteration (definition of ab_metrics_i453.py)
+  reference: 'baseline arm 2; no observed reference'
+  result: >-
+    Resident trips 38,270 -> 38,447, in frozen tours 5,871 -> 6,045. Frozen walk trips 290 -> 247, of which over 5 km
+    63 -> 46 and over 20 km 22 -> 13; bicycle over 30 km 1 -> 1; frozen trips over 3 h 164 -> 147. In-region: walk over
+    5 km 64 -> 55, over 20 km 9 -> 8, bicycle over 30 km 11 -> 9. Mode shares of the frozen tours in percent: car
+    69.58 -> 72.74, car_passenger 11.92 -> 12.05, pt 11.38 -> 9.18, walk 6.53 -> 5.45, bicycle 0.59 -> 0.57. In-region
+    tours: car 52.13 -> 53.41, walk 16.36 -> 16.26, car_passenger 12.99 -> 11.97, bicycle 10.86 -> 10.93, pt 7.65 -> 7.42.
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key final_trips)'
+  notes: >-
+    The frozen shares move from pt to car, consistent with the 68 stays switched by the no-connection chain. The
+    in-region car share rises by 1.3 points and car_passenger falls by 1.0 point; the in-region tours are not touched
+    by WP-C, and the change was not decomposed (other merged code, one draw). No survey share is compared.
+- metric: MATSim termination (convergence, not validation)
+  reference: 'none'
+  result: 'Last iteration 87 (baseline 84) of at most 100, stopped by the eqasim mode-share termination criterion.'
+  artifact: 'docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json (key last_iteration)'
+  notes: >-
+    The criterion stops when the smoothed change of the mode shares falls below its threshold; it has no real-world
+    reference.
+features:
+- transit_next_day
+- portal_trips
+- plan_feasibility_check
+artifacts:
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/setup_wpe.sh
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/launch_wpe.sh
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/i465_wpe.yml
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/migrate_cache_metadata.log
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_first_launch.log
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/explain_final_launch.log
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_i465.py
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/metrics_final.json
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/schedule_hours_i465.py
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/schedule_hours.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/stuck_walkers_i465.py
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/router_probe_i465.sh
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/portal_trips_baseline_arm2.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/portal_trips_run1.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/stuck_walkers_baseline_arm2.txt
+- docs/runs/artifacts/i465-wpe-smoke-1pct-2026-10-23/stuck_walkers_run1.txt
+- 'felix:~/wt-i465-wpe (worktrees, cache_wpe working directory, output_wpe, run1_matsim_simulation_run.cache, logs, analysis)'
+issues:
+- '#465'
+decisions:
+- ADR-0151
+- ADR-0152
+- ADR-0146
+- ADR-0149
+notes: >-
+  What this run is evidence for: the merged #465 work (WP-A next-day departures, WP-B counted walk fallback, WP-C
+  timetable-aware gates and the no-connection chain) runs end to end on real data at 1 % after two fixes found by
+  this run, and against arm 2 of the #453/#443 A/B (same seed and persons) the frozen residents stuck walking at
+  the end of the day fall from 58 to 20, all stuck residents from 104 to 68, the planned-pt portal trips that become
+  walks from 90 of 246 to 21 of 110. Issue #465 done-when item 3 ("stuck walkers at the end of the day gone or
+  bounded"): bounded, not gone; 20 remain, 10 of them incommuters whose plans the #465 work does not change (#467),
+  and 10 residents of whom the stuck-walker table shows 8 planned as pt (incommuters: 9 of 10). Fixes found by this run, both on the
+  branch of this manifest: (1) the batch pt router config lacked the qsim values the eqasim injector requires, so
+  the WP-C gate choice could not run on real data at all (the unit tests mocked the router); (2) the synpp fork's
+  output hash (ADR-0149) refused the symlink the eqasim-java-bs SimWrapper linker leaves in the MATSim output, so
+  every full run on main failed after MATSim. Open findings, recorded and not fixed here: the WP-B stamp
+  walkFallbackFrom is missing on most planned-pt walks that reach the simulation (4 stamped among 17 planned-pt
+  stuck walkers), so the plan check undercounts; 84 of 123 pt portal stays have no timetable-aware gate (68 %); the
+  share of non-monotonic frozen plans stays above its uncalibrated threshold. What it does not show: (1) no
+  validation, no observed reference; (2) one draw per run; (3) the code differs from the baseline in everything
+  merged between 3123cc4f and 3ebe789a, so no change is attributed to one work package; (4) the 100 % router
+  runtime is an estimate from a replicated-task measurement, not a 100 % run; (5) a 1 % equilibrium is not the 100 %
+  one. The task step "batch router books the egress walk as a transfer" turned out to be a latent defect: 0 of the
+  routed pt trips have a zero egress walk, so the eqasim-java-bs fix changes no connection in this run.
+source: >-
+  The figures come from the committed artifacts: metrics_final.json (metrics_i465.py on launch 3; the same script on
+  launch 2 gave identical stuck, plan-check and final-trip figures), portal_trips_*.txt (portal_trip_modes_i453.py of
+  the baseline run, felix ~/wt-i453-ab), stuck_walkers_*.txt (stuck_walkers_i465.py on the stuck traces of
+  stuck_trace_i453.py), schedule_hours.txt (schedule_hours_i465.py), the explain and migration logs and the overlay.
+  Baseline figures: the baseline manifest i453-i443-ab-1pct-2026-10-16 (branch runs/i453-i443-ab-1pct until its docs
+  PR merges) and its i453_metrics_arm2.json, and the same scripts re-run read-only on the baseline's files on felix.
+  Log lines ([transit_next_day], [pt-router], [portal_trips], [PlanRouter], [plan_check]) are quoted from the run logs
+  ~/wt-i465-wpe/logs/run_wpe_{20261022T230108,20261023T003208,20261023T031309}.log on felix, which are not committed.
