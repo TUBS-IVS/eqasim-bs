@@ -137,7 +137,7 @@ _DIFF = """diff --git a/braunschweig/a.py b/braunschweig/a.py
 index 1111111..2222222 100644
 --- a/braunschweig/a.py
 +++ b/braunschweig/a.py
-@@ -10,4 +10,5 @@ def f():
+@@ -10,3 +10,4 @@ def f():
      keep = 1
 -    old = 2
 +    new = 2
@@ -171,8 +171,9 @@ def test_post_dry_run_places_findings_on_diff_lines_and_keeps_the_rest_in_the_su
         ]}}), encoding="utf-8")
     diff = tmp_path / "pr.diff"
     diff.write_text(_DIFF, encoding="utf-8")
+    record_path = tmp_path / "findings.json"
     rc = cr.main(["post", "--result", str(result), "--repo", "o/r", "--pr", "5", "--tier", "full",
-                  "--sha", "abcdef1234567890", "--diff-file", str(diff), "--dry-run"])
+                  "--sha", "abcdef1234567890", "--diff-file", str(diff), "--dry-run", "--record", str(record_path)])
     assert rc == 0
     out = capsys.readouterr().out
     review = json.loads(out.split("Review payload:\n", 1)[1].split("\n[claude-review] Summary comment:", 1)[0])
@@ -182,6 +183,22 @@ def test_post_dry_run_places_findings_on_diff_lines_and_keeps_the_rest_in_the_su
     summary = out.split("[claude-review] Summary comment:\n", 1)[1]
     assert cr.SUMMARY_MARKER in summary and "Off diff" in summary.split("Not on a changed line", 1)[1]
     assert "inline 2, summary-only 1" in out and "0.8100 USD" in summary
+    # the record the session retro learns from: every finding, its placement, no ids in a dry run
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert (record["repo"], record["pr"], record["head_sha"], record["cost_usd"]) == ("o/r", 5, "abcdef1234567890", 0.81)
+    assert [(f["title"], f["placement"], f["comment_id"]) for f in record["findings"]] == [
+        ("Wrong x", "inline", None), ("Off diff", "summary", None), ("Context line", "inline", None)]
+
+
+def test_match_comment_ids_pairs_posted_comments_with_planned_ones():
+    # The retro reads a finding's outcome from its thread, so the id must belong to the same finding,
+    # also when two findings share a line, and a comment GitHub did not return stays unmatched.
+    planned = [{"path": "a.py", "line": 3, "body": "**HIGH: x**\n\nb"},
+               {"path": "a.py", "line": 3, "body": "**LOW: y**\n\nc"},
+               {"path": "b.py", "line": 9, "body": "**LOW: z**\n\nd"}]
+    posted = [{"id": 22, "path": "a.py", "line": 3, "body": "**LOW: y**\n\nc"},
+              {"id": 11, "path": "a.py", "line": 3, "body": "**HIGH: x**\n\nb"}]
+    assert cr.match_comment_ids(planned, posted) == [11, 22, None]
 
 
 def test_post_refuses_a_failed_run(tmp_path, capsys):
@@ -223,3 +240,35 @@ def test_filter_diff_drops_ignored_files_for_the_model():
     kept, dropped = cr.filter_diff(diff, CONFIG["ignored_paths"])
     assert dropped == ["docs/generated/STAGES.md", "environments/conda-lock.yml"]
     assert kept == _DIFF
+
+
+def test_commentable_lines_reads_an_added_plus_plus_line_as_content_not_as_a_header():
+    # "++ x" added inside a hunk is "+++ x" in the diff; taking it for a file header would drop the
+    # rest of the file from the commentable lines and push its findings off the diff.
+    diff = ("diff --git a/notes.md b/notes.md\n--- a/notes.md\n+++ b/notes.md\n@@ -1,2 +1,3 @@\n"
+            " first\n+++ counter\n last\n"
+            "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@ -5 +5 @@\n-x\n+y\n")
+    assert cr.commentable_lines(diff) == {"notes.md": {1, 2, 3}, "b.py": {5}}
+
+
+def test_upsert_summary_leaves_one_comment_when_a_parallel_run_also_created_one(monkeypatch):
+    # A forced and a push review can post at the same time; both find no summary and create one.
+    store = {"comments": []}
+    calls = []
+
+    def fake_gh_api(args, payload=None):
+        calls.append((args[0], args[2] if len(args) > 2 and args[1] == "--method" else "GET"))
+        path = args[0]
+        if path.endswith("/issues/5/comments") and "--method" not in args:
+            return "\n".join(str(c) for c in store["comments"])
+        if path.endswith("/issues/5/comments") and "POST" in args:
+            store["comments"] += [101, 102]          # the parallel run's comment lands first
+            return json.dumps({"id": 102})
+        if "DELETE" in args:
+            store["comments"].remove(int(path.rsplit("/", 1)[1]))
+        return "{}"
+
+    monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
+    cr.upsert_summary("o/r", 5, "github-actions[bot]", "body")
+    assert store["comments"] == [101]
+    assert ("repos/o/r/issues/comments/101", "PATCH") in calls     # the kept comment carries this run's body

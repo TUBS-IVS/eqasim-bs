@@ -83,13 +83,40 @@ decision, including a skip, is printed with its reason to the log and the job su
   into grep/awk, which the read-only tool list denied, and reviewed only part of the diff.
   The prompt goes in on stdin; the JSON result goes to a file.
 - `post` turns the findings into one PR review (`event: COMMENT`) whose inline comments sit
-  on new-side lines of the diff (`commentable_lines`), ordered by severity. GitHub rejects
-  inline comments outside the diff, so such findings go into the summary under "Not on a
-  changed line"; the inline/summary-only counts are logged, and a warning fires when every
-  finding lies outside the diff. The summary comment carries a hidden marker and is edited in
-  place on later runs; only a comment by `github-actions[bot]` with that marker is edited. A
-  failed run (`is_error`) posts nothing and fails the step with the API's error text.
+  on new-side lines of the diff (`commentable_lines`, which follows the line counts of each
+  hunk header, so an added line starting with `++ ` is content, not a file header), ordered
+  by severity. GitHub rejects inline comments outside the diff, so such findings go into the
+  summary under "Not on a changed line"; the inline/summary-only counts are logged, and a
+  warning fires when every finding lies outside the diff. The summary comment carries a
+  hidden marker; only a comment by `github-actions[bot]` with that marker is edited
+  (`upsert_summary`). A forced and a push review can post at the same time, so after writing,
+  the oldest summary keeps the current body and any duplicate is deleted. A failed run
+  (`is_error`) posts nothing and fails the step with the API's error text. The diff is read
+  with `errors="replace"`: a non-UTF-8 byte (e.g. in a Latin-1 data file) must not crash
+  the review.
 - `post --dry-run` prints both payloads and posts nothing, for local tests.
+
+## Learning from the findings (session retro)
+
+`post --record` writes `claude-review-findings.json`, uploaded per run as the artifact
+`claude-review-findings-pr<NN>-run<id>-<attempt>` (90 days): every finding with severity,
+path, line, title, body, placement and, for an inline comment, its GitHub comment id
+(`match_comment_ids`). The maintainer's personal session retro (`~/.claude/retro`,
+`retro_reviews.py`, outside this repository) downloads these records from both repositories,
+reads each inline finding's thread and feeds the findings to its judge, which matches them
+against the lessons it already knows (memory notes, ledger). Only a finding the author
+**confirmed** counts towards a lesson; two confirmed sightings on different PRs make the
+retro propose a rule (`.claude/rules/<topic>.md`) for a one-click yes. Since the prompt makes
+the review read every file in `.claude/rules/`, an accepted rule then guides both the next
+author and the next review.
+
+The outcome is read from the replies in the finding's review thread, so answer each one:
+
+- **`Fixed ...`** (e.g. `Fixed in <sha>: <what changed>`) when the finding was right and is
+  fixed: a confirmed defect, it counts;
+- **`Rejected: <reason>`** (or `Not changed: ...`) when it is not a defect: it never counts;
+- no such reply: `resolved` / `open`, recorded as tentative evidence only. A summary-only
+  finding has no thread and stays `unknown`.
 
 ## Cost record
 

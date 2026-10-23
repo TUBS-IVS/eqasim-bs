@@ -37,6 +37,7 @@ See docs/codebase/notes/claude-pr-review.md.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -248,25 +249,34 @@ def commentable_lines(diff_text: str) -> dict:
     (added and context lines inside hunks)."""
     lines_by_path: dict = {}
     path = None
-    new_line = 0
-    in_hunk = False
+    new_line = old_left = new_left = 0
     for raw in diff_text.splitlines():
-        if raw.startswith("diff --git "):
-            path, in_hunk = None, False
+        # A hunk ends when the line counts of its header are used up. Only then are header lines
+        # read: an added line "++i;" appears as "+++i;" and must not be taken for a "+++ b/file" header
+        # (Claude review finding on PR #497).
+        if old_left > 0 or new_left > 0:
+            # A context line of an empty source line may arrive as "" when trailing blanks are stripped.
+            if path is not None and (raw.startswith("+") or raw.startswith(" ") or raw == ""):
+                lines_by_path.setdefault(path, set()).add(new_line)
+            if raw.startswith("+"):
+                new_line, new_left = new_line + 1, new_left - 1
+            elif raw.startswith(" ") or raw == "":
+                new_line, new_left, old_left = new_line + 1, new_left - 1, old_left - 1
+            elif raw.startswith("-"):
+                old_left -= 1
+            # "\ No newline at end of file" is no line on either side.
+        elif raw.startswith("diff --git "):
+            path = None
         elif raw.startswith("+++ "):
             target = raw[4:].strip()
             path = None if target == "/dev/null" else (target[2:] if target.startswith("b/") else target)
-            in_hunk = False
         elif raw.startswith("@@"):
-            match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
+            match = re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", raw)
             if not match:
                 raise ValueError(f"unparsable hunk header: {raw!r}")
-            new_line, in_hunk = int(match.group(1)), True
-        elif in_hunk and path is not None:
-            if raw.startswith("+") or raw.startswith(" "):
-                lines_by_path.setdefault(path, set()).add(new_line)
-                new_line += 1
-            # "-" lines exist only on the old side; "\ No newline at end of file" is no line.
+            old_left = int(match.group(1)) if match.group(1) is not None else 1
+            new_line = int(match.group(2))
+            new_left = int(match.group(3)) if match.group(3) is not None else 1
     return lines_by_path
 
 
@@ -297,6 +307,41 @@ def plan_comments(findings: list, commentable: dict) -> tuple:
         else:
             summary_only.append(finding)
     return inline, summary_only
+
+
+def match_comment_ids(inline: list, posted: list) -> list:
+    """Return the GitHub id of each planned inline comment (None where no posted comment matches)."""
+    by_key: dict = {}
+    for comment in posted:
+        key = (comment.get("path"), comment.get("line"), (comment.get("body") or "").strip())
+        by_key.setdefault(key, []).append(comment.get("id"))
+    ids = []
+    for comment in inline:
+        candidates = by_key.get((comment["path"], comment["line"], comment["body"].strip()), [])
+        ids.append(candidates.pop(0) if candidates else None)
+    return ids
+
+
+def findings_record(structured: dict, inline: list, comment_ids: list, args, result: dict) -> dict:
+    """The machine-readable record of one review run that the session retro learns from
+    (~/.claude/retro, retro_reviews.py): every finding with its placement and, when inline,
+    its comment id, so the retro can read whether the finding was fixed or rejected."""
+    placed = {(c["path"], c["line"], c["body"]): cid for c, cid in zip(inline, comment_ids)}
+    findings = []
+    for index, finding in enumerate(sorted(structured["findings"],
+                                           key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))):
+        body = f"**{finding['severity'].upper()}: {finding['title']}**\n\n{finding['body']}"
+        key = (finding.get("path"), finding.get("line"), body)
+        findings.append({"index": index, "severity": finding.get("severity"), "path": finding.get("path"),
+                         "line": finding.get("line"), "title": finding.get("title"),
+                         "body": str(finding.get("body", ""))[:1500],
+                         "placement": "inline" if key in placed else "summary",
+                         "comment_id": placed.get(key)})
+    return {"schema": 1, "repo": args.repo, "pr": args.pr, "head_sha": args.sha, "tier": args.tier,
+            "run_id": os.environ.get("GITHUB_RUN_ID"), "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+            "created": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
+            "cost_usd": result.get("total_cost_usd"), "num_turns": result.get("num_turns"),
+            "summary": structured.get("summary", ""), "findings": findings}
 
 
 def summary_markdown(structured: dict, inline: list, summary_only: list, tier: str, sha: str,
@@ -344,12 +389,15 @@ def filter_diff(diff_text: str, ignored_patterns) -> tuple:
 
 
 def _pr_diff(repo: str, pr: int, base_sha: str = "", head_sha: str = "") -> str:
+    # errors="replace": a diff can carry bytes that are not UTF-8 (a Latin-1 data file); a strict
+    # decode would crash the whole review on such a PR. Only the replaced characters are lost.
     if base_sha:
         # Local git, as the gate does: no API diff size limit (gh pr diff fails on very large diffs).
         return subprocess.run(["git", "-c", "core.quotepath=false", "diff", f"{base_sha}...{head_sha}"],
-                              check=True, capture_output=True, text=True, encoding="utf-8").stdout
+                              check=True, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace").stdout
     return subprocess.run(["gh", "pr", "diff", str(pr), "--repo", repo],
-                          check=True, capture_output=True, text=True, encoding="utf-8").stdout
+                          check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
 
 
 def _gh_api(args: list, payload: dict | None = None) -> str:
@@ -493,25 +541,64 @@ def _cmd_post(args) -> int:
     review = {"commit_id": args.sha, "event": "COMMENT",
               "body": "Claude review: inline findings below; the summary is in the Claude review comment.",
               "comments": inline}
+    comment_ids = [None] * len(inline)
     if args.dry_run:
         print("[claude-review] dry run, nothing posted. Review payload:")
         print(json.dumps(review, indent=2))
         print("[claude-review] Summary comment:")
         print(body)
+    elif inline:
+        posted = json.loads(_gh_api([f"repos/{args.repo}/pulls/{args.pr}/reviews", "--method", "POST"], review))
+        # One page of 100 (not --paginate, which would concatenate JSON arrays); a review posts far fewer.
+        comments = json.loads(_gh_api([f"repos/{args.repo}/pulls/{args.pr}/reviews/{posted['id']}/comments"
+                                       "?per_page=100"]) or "[]")
+        comment_ids = match_comment_ids(inline, comments)
+        matched = sum(1 for cid in comment_ids if cid is not None)
+        print(f"[claude-review] inline comment ids matched {matched}/{len(inline)}")
+        if matched < len(inline):
+            # Without the id the retro cannot read the thread's outcome; the finding then stays "unknown".
+            print(f"::warning::{len(inline) - matched} posted inline comment(s) could not be matched to a finding.")
+    if args.record:
+        record = findings_record(structured, inline, comment_ids, args, result)
+        Path(args.record).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        print(f"[claude-review] findings record written to {args.record}")
+    if args.dry_run:
         return 0
-    if inline:
-        _gh_api([f"repos/{args.repo}/pulls/{args.pr}/reviews", "--method", "POST"], review)
-    # Only a comment the workflow itself wrote counts as the summary, so nobody else's comment is edited.
-    select = (f'.[] | select(.user.login == "{args.bot_login}" and ((.body // "") | contains("{SUMMARY_MARKER}")))'
-              " | .id")
-    existing = _gh_api([f"repos/{args.repo}/issues/{args.pr}/comments", "--paginate", "--jq", select]).split()
-    if existing:
-        _gh_api([f"repos/{args.repo}/issues/comments/{existing[-1]}", "--method", "PATCH"], {"body": body})
-        print(f"[claude-review] summary comment {existing[-1]} updated")
-    else:
-        _gh_api([f"repos/{args.repo}/issues/{args.pr}/comments", "--method", "POST"], {"body": body})
-        print("[claude-review] summary comment created")
+    upsert_summary(args.repo, args.pr, args.bot_login, body)
     return 0
+
+
+def _summary_ids(repo: str, pr: int, bot_login: str) -> list:
+    # Only a comment the workflow itself wrote counts as the summary, so nobody else's comment is edited.
+    select = (f'.[] | select(.user.login == "{bot_login}" and ((.body // "") | contains("{SUMMARY_MARKER}")))'
+              " | .id")
+    return _gh_api([f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", select]).split()
+
+
+def upsert_summary(repo: str, pr: int, bot_login: str, body: str) -> None:
+    """Keep exactly one summary comment: edit the oldest, or create one.
+
+    A forced review (label event) and a push review run in different concurrency groups and can
+    post at the same time; both may then find no summary and create one each (Claude review
+    finding on PR #497). After writing, the oldest summary is kept with this body and any later
+    duplicate is deleted, so whichever run finishes last leaves one current comment."""
+    existing = _summary_ids(repo, pr, bot_login)
+    if existing:
+        _gh_api([f"repos/{repo}/issues/comments/{existing[0]}", "--method", "PATCH"], {"body": body})
+        written = existing[0]
+    else:
+        written = str(json.loads(_gh_api([f"repos/{repo}/issues/{pr}/comments", "--method", "POST"],
+                                         {"body": body}))["id"])
+    now = _summary_ids(repo, pr, bot_login)
+    if now and now[0] != written:
+        _gh_api([f"repos/{repo}/issues/comments/{now[0]}", "--method", "PATCH"], {"body": body})
+    for duplicate in now[1:]:
+        try:
+            _gh_api([f"repos/{repo}/issues/comments/{duplicate}", "--method", "DELETE"])
+        except subprocess.CalledProcessError:
+            pass  # the parallel run deleted it first
+    print(f"[claude-review] summary comment {now[0] if now else written} up to date"
+          + (f"; removed {len(now) - 1} duplicate(s) from a parallel run" if len(now) > 1 else ""))
 
 
 def main(argv=None) -> int:
@@ -552,6 +639,7 @@ def main(argv=None) -> int:
     p_post.add_argument("--sha", required=True)
     p_post.add_argument("--diff-file", help="unified diff of the PR; default: `gh pr diff`")
     p_post.add_argument("--dry-run", action="store_true", help="print the payloads, post nothing")
+    p_post.add_argument("--record", help="write the machine-readable findings record (for the session retro) here")
     p_post.add_argument("--bot-login", default="github-actions[bot]",
                         help="author of the summary comment to update (the workflow token's identity)")
     p_post.set_defaults(func=_cmd_post)

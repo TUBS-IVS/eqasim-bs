@@ -130,12 +130,22 @@ jobs:
         run: |
           python scripts/claude_review.py post --result "$RUNNER_TEMP/claude-review-result.json" \
             --repo "$REPO" --pr "$PR_NUMBER" --tier "$TIER" --sha "$HEAD_SHA" \
-            --diff-file .claude/review-pr.diff
+            --diff-file .claude/review-pr.diff --record "$RUNNER_TEMP/claude-review-findings.json"
       - name: Upload cost record
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: claude-review-cost-pr${{ github.event.pull_request.number }}-run${{ github.run_id }}-${{ github.run_attempt }}
           path: claude-review-cost.json
+          if-no-files-found: warn
+          retention-days: 90
+      # The session retro (~/.claude/retro, retro_reviews.py) downloads this record to learn
+      # from confirmed findings; see docs/codebase/notes/claude-pr-review.md.
+      - name: Upload findings record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-review-findings-pr${{ github.event.pull_request.number }}-run${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/claude-review-findings.json
           if-no-files-found: warn
           retention-days: 90
