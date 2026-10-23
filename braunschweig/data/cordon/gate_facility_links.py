@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import re
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -208,3 +209,48 @@ def attach_gate_facility_links(df_homes, df_portal, gates, selection, maximum_fa
             "%s exceeds the maximum fallback share %.3f: the gate link rule is broken (a wrong CRS, a minimum capacity "
             "above the network's major roads, or a too small maximum distance)." % (message, maximum_fallback_share))
     return df_homes, df_portal, summary
+
+
+_FACILITY_ID = re.compile(r'<facility\b[^>]*\bid="([^"]*)"')
+_FACILITY_LINK = re.compile(r'<facility\b[^>]*\blinkId="([^"]*)"')
+
+
+def _preset_links(path):
+    """Map facility id -> linkId for every facility line of a facilities XML(.gz) that carries a link."""
+    opener = gzip.open if str(path).endswith(".gz") else open
+    links = {}
+    with opener(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            link = _FACILITY_LINK.search(line)
+            if link:
+                links[_FACILITY_ID.search(line).group(1)] = link.group(1)
+    return links
+
+
+def verify_preset_links_kept(written_facilities_path, prepared_facilities_path):
+    """Fail when eqasim's preparation did not keep the links the facilities stage pinned.
+
+    An eqasim-java-bs jar without the preset-link change of ``FacilityPlacement`` overwrites every link with the
+    nearest non-motorway link: the gate facilities would silently fall back to the old placement. Compares each
+    facility that carries a ``linkId`` in the written file with the prepared file; returns the number checked.
+    """
+    pinned = _preset_links(written_facilities_path)
+    if not pinned:
+        return 0
+    opener = gzip.open if str(prepared_facilities_path).endswith(".gz") else open
+    prepared = {}
+    with opener(prepared_facilities_path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            facility = _FACILITY_ID.search(line)
+            if facility and facility.group(1) in pinned:
+                link = _FACILITY_LINK.search(line)
+                prepared[facility.group(1)] = link.group(1) if link else None
+    changed = sorted(f for f, link in pinned.items() if prepared.get(f) != link)
+    if changed:
+        raise RuntimeError(
+            "[gate_facility_links] %d of %d pinned gate facilities lost their preset link in the eqasim preparation "
+            "(sample: %s): the eqasim-java-bs jar does not keep preset facility links (ADR-0167); rebuild it from a "
+            "commit with the FacilityPlacement change." % (len(changed), len(pinned),
+                                                           [(f, pinned[f], prepared.get(f)) for f in changed[:5]]))
+    logger.info("[gate_facility_links] preparation kept all %d pinned gate facility links", len(pinned))
+    return len(pinned)

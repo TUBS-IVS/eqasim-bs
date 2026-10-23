@@ -280,3 +280,25 @@ def test_the_facilities_stage_pins_the_gate_facilities_and_writes_nothing_when_o
     else:
         assert all(v is None for v in links.values())
         assert not (tmp_path / "facilities" / "gate_facility_links.csv").exists()
+
+
+def test_the_preparation_check_fails_when_the_jar_replaced_a_pinned_link(tmp_path):
+    # The written file pins one gate facility; a prepared file that kept it passes, one in which eqasim's old
+    # FacilityPlacement put it on the nearest street fails (the silent Java-side fallback of an outdated jar).
+    def _write(path, home_link):
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write('<facilities>\n<facility id="home_1" linkId="%s" x="1.0" y="2.0">\n</facility>\n'
+                         '<facility id="home_2" linkId="street" x="3.0" y="4.0">\n</facility>\n</facilities>\n'
+                         % home_link)
+
+    written = tmp_path / "written.xml.gz"
+    with gzip.open(written, "wt", encoding="utf-8") as handle:
+        handle.write('<facilities>\n<facility id="home_1" linkId="feed_in" x="1.0" y="2.0">\n</facility>\n'
+                     '<facility id="home_2" x="3.0" y="4.0">\n</facility>\n</facilities>\n')
+    kept, replaced = tmp_path / "kept.xml.gz", tmp_path / "replaced.xml.gz"
+    _write(kept, "feed_in")
+    _write(replaced, "street")
+
+    assert gfl.verify_preset_links_kept(str(written), str(kept)) == 1
+    with pytest.raises(RuntimeError, match="does not keep preset facility links"):
+        gfl.verify_preset_links_kept(str(written), str(replaced))
