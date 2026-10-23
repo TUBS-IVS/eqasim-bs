@@ -109,6 +109,13 @@ When generating analysis outputs, include enough information to reproduce the re
 **Never run `git push` without explicit user confirmation.** Committing locally is fine;
 every push to any branch or remote, `origin/main` included, needs an explicit "yes" /
 "push it" / equivalent asked for each time (a prior confirmation does not authorise later pushes).
+**One standing exception, Auto-fix** (user decision 2026-10-23): while the desktop app's Auto-fix
+is on for a PR, the fix for what Auto-fix reports on that PR (failing CI, merge conflict, review
+comments) is committed and pushed to that PR's branch without asking. The push gate still applies
+(`origin/main` merged, documentation check), and every review thread still gets its
+`Fixed ...` / `Rejected: ...` reply (`docs/codebase/notes/claude-pr-review.md`). It never covers a
+force-push, `main`, another branch or repository, or changes beyond fixing the reported items:
+those still need the explicit yes.
 
 **Newly discovered work: fix it now, or issue it.** Triage every finding that surfaces mid-session:
 - **Quick fix -> fix it now, no issue.** Small and self-contained: one concern, a few files, about an hour or less, no

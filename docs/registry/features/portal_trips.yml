@@ -234,7 +234,9 @@ notes: >-
   (i465-wpe-smoke-1pct-2026-10-23): of 123 pt stays 39 kept a timetable-aware gate, 68 were switched to car or car
   passenger, 2 shifted, 14 kept without a connection; frozen residents stuck walking at the end of the day 58 -> 20
   against the #453/#443 baseline. A smoke, no observed reference; the validation note above predates it. Fallback rate of the no-connection chain: logged as rates
-  under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share.
+  under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share. Since ADR-0156 (#465) a stay
+  without a connection may also return earlier, and the last resort is a lift (car_passenger) instead of a kept pt
+  stay that the router walks.
   Config invariant: any config that aliases synthesis.population.trips.final to something other than the portal
   trips_final must set braunschweig.portal.enabled false (the fixtures do; docs/codebase/notes/portal-trips.md).
   The outside-tour-modes stage (ADR-0145) runs after the location choice and may re-mode a portal stay's
