@@ -327,6 +327,14 @@ DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
 # braunschweig.popsim.completed_donor, like the fine child age bands.
 KEY_DONOR_MATCH_PASSENGER_ACCESS = "braunschweig.population.popsim.donor_match_passenger_access"
 DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
+# Refines the passenger access key (ADR-0166, eqasim-bs#465): a "never" passenger prefers a donor whose
+# handed-over diary has no car-passenger trip, in the weekend member alignment and in every person-level
+# match. The class key alone left 1,782 "never" donor persons with a foreign lift diary on the raw MiD
+# (seed 1234): 889 aligned across the class in the household match and 496 + 82 given a "never" donor who
+# reports a lift themselves. Effective only together with donor_match_passenger_access (and therefore
+# mid_passenger_availability). Default ON; read ONLY by braunschweig.popsim.completed_donor.
+KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = "braunschweig.population.popsim.donor_match_lift_free_never_passenger"
+DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

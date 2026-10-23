@@ -187,8 +187,10 @@ def test_count_passenger_class_crossings_compares_person_and_plan_source():
     assert (n_remapped, n_crossed) == (2, 2)
 
 
-def test_completed_donor_configure_declares_the_passenger_key_default_on():
-    from braunschweig.popsim.stage import KEY_DONOR_MATCH_PASSENGER_ACCESS
+def test_completed_donor_configure_declares_the_passenger_keys_default_on():
+    from braunschweig.popsim.stage import (
+        KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, KEY_DONOR_MATCH_PASSENGER_ACCESS,
+    )
 
     calls = {}
 
@@ -199,21 +201,26 @@ def test_completed_donor_configure_declares_the_passenger_key_default_on():
 
     cd.configure(_Context())
     assert calls[KEY_DONOR_MATCH_PASSENGER_ACCESS] is True
+    assert calls[KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER] is True
 
 
-def test_build_completed_donor_logs_the_crossing_rate_when_passenger_availability_is_on(
-        tmp_path, monkeypatch, caplog):
-    """The stage wires the key into both matchers only with the MiD passenger availability on (P_VAUTO is
-    loaded only then), and logs the surviving crossing rate."""
+def test_build_completed_donor_wires_the_passenger_keys_and_logs_their_rates(tmp_path, monkeypatch, caplog):
+    """The stage wires the class key into both matchers only with the MiD passenger availability on (P_VAUTO is
+    loaded only then), the lift-free preference (ADR-0166) only on top of the class key, and logs the surviving
+    crossing rate and the residual lift rate."""
     seen = {}
 
-    def fake_weekend(households, persons, *, rng, fine_child_age_bands, precompute_matching, passenger_key):
-        seen["weekend"] = passenger_key
+    def fake_weekend(households, persons, *, rng, fine_child_age_bands, precompute_matching, passenger_key,
+                     car_passenger_diaries):
+        seen["weekend"] = (passenger_key, _keys(car_passenger_diaries))
         return persons, pd.DataFrame(), None
 
     def fake_diary(persons, donors, facts, **kwargs):
-        seen["diary"] = kwargs["passenger_key"]
+        seen["diary"] = (kwargs["passenger_key"], _keys(kwargs["car_passenger_diaries"]))
         return persons, pd.DataFrame(), None
+
+    def _keys(index):
+        return None if index is None else sorted(index.tolist())
 
     persons = _weekend_persons().assign(mobil=1)
     monkeypatch.setattr(cd.mid_donor, "load_completed_donor",
@@ -222,20 +229,165 @@ def test_build_completed_donor_logs_the_crossing_rate_when_passenger_availabilit
     monkeypatch.setattr(cd.weekend_plan_match, "reassign_weekend_plan_sources", fake_weekend)
     monkeypatch.setattr(cd.diary_plan_match, "reassign_diaryless_plan_sources", fake_diary)
     monkeypatch.setattr(cd.diary_facts, "attach_plan_source_facts", lambda p, f: p)
-    monkeypatch.setattr(cd.passenger_availability, "attach_car_passenger_diary_evidence", lambda p, w: p)
+    monkeypatch.setattr(cd.passenger_availability, "attach_car_passenger_diary_evidence",
+                        lambda p, w: p.assign(src_has_car_passenger_trip=False))
+    lifts = [(2, 1), (3, 1)]
+    monkeypatch.setattr(cd.passenger_availability, "car_passenger_diary_keys",
+                        lambda wege: pd.MultiIndex.from_tuples(lifts))
     caplog.set_level(logging.INFO)
 
-    cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None, weekend_plan_match_on=True,
-                             diary_plan_match_on=True, exclude_holiday_plan_sources=False,
-                             passenger_availability_enabled=True, donor_match_passenger_access=True)
-    assert seen == {"weekend": True, "diary": True}
-    assert "[completed_donor] passenger access class" in caplog.text
+    def build(**flags):
+        seen.clear()
+        cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None, weekend_plan_match_on=True,
+                                 diary_plan_match_on=True, exclude_holiday_plan_sources=False, **flags)
+        return dict(seen)
 
-    seen.clear()
-    cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None, weekend_plan_match_on=True,
-                             diary_plan_match_on=True, exclude_holiday_plan_sources=False,
-                             passenger_availability_enabled=False, donor_match_passenger_access=True)
-    assert seen == {"weekend": False, "diary": False}
+    assert build(passenger_availability_enabled=True) == {"weekend": (True, lifts), "diary": (True, lifts)}
+    assert "[completed_donor] passenger access class" in caplog.text
+    assert "lift in a plan source of another respondent" in caplog.text
+    assert (build(passenger_availability_enabled=True, donor_match_lift_free_never_passenger=False)
+            == {"weekend": (True, None), "diary": (True, None)})
+    assert (build(passenger_availability_enabled=True, donor_match_passenger_access=False)
+            == {"weekend": (False, None), "diary": (False, None)})
+    assert build(passenger_availability_enabled=False) == {"weekend": (False, None), "diary": (False, None)}
+
+
+# --- ADR-0166: "never" passengers prefer a donor whose diary is lift-free -------------------------------------
+# A same-class donor is not always a consistent donor: a "never" respondent may report a lift themselves (the
+# own-answer conflict of ADR-0121). On the raw MiD donor 496 of the 1,782 residual cases of ADR-0162 came from
+# such donors in the diary re-match and 889 from the household alignment handing a lift diary across the class.
+
+LIFT = wpm.DONOR_LIFT_COLUMN
+
+
+def _never_pool_with_one_lift():
+    """Two "never" donors identical in every key; the HEAVIER one reports a lift in its own diary."""
+    return _weekday_pool().assign(P_VAUTO=[3, 3], **{LIFT: [True, False]})
+
+
+def test_lift_free_preference_gives_a_never_passenger_the_lift_free_never_donor():
+    pool, target = _never_pool_with_one_lift(), _never_passenger_target()
+    off_rng, on_rng = np.random.RandomState(0), np.random.RandomState(0)
+
+    class_only = wpm.match_person(target, pool, rng=off_rng, passenger_key=True)
+    lift_free = wpm.match_person(target, pool, rng=on_rng, passenger_key=True, lift_free_never=True)
+
+    assert class_only[:2] == (10, 1)                 # ADR-0162: both are "never", the heavier lift donor wins
+    assert lift_free == (11, 1, 0)                   # the lift-free never donor, without relaxing a key
+    assert (off_rng.get_state()[1] == on_rng.get_state()[1]).all()   # one draw either way
+
+
+def test_lift_free_preference_leaves_a_passenger_capable_person_with_its_own_class():
+    pool = _never_pool_with_one_lift().assign(P_VAUTO=[1, 3], **{LIFT: [False, False]})
+    target = _never_passenger_target().copy()
+    target["P_VAUTO"] = 1
+    assert wpm.match_person(target, pool, rng=np.random.RandomState(0), passenger_key=True,
+                            lift_free_never=True) == (10, 1, 0)
+
+
+def test_prepared_pool_with_lift_free_preference_matches_the_unprepared_path():
+    pool, target = _never_pool_with_one_lift(), _never_passenger_target()
+    prepared = wpm.prepare_person_pool(pool, passenger_key=True, lift_free_never=True)
+    kwargs = dict(passenger_key=True, lift_free_never=True)
+    assert (wpm.match_person(target, pool, rng=np.random.RandomState(0), prepared_pool=prepared, **kwargs)
+            == wpm.match_person(target, pool, rng=np.random.RandomState(0), **kwargs))
+    with pytest.raises(ValueError, match="lift_free_never"):
+        wpm.match_person(target, pool, rng=np.random.RandomState(0), passenger_key=True, prepared_pool=prepared)
+
+
+@pytest.mark.parametrize("kwargs, error", [
+    (dict(passenger_key=False, lift_free_never=True), ValueError),   # the preference refines the class key
+    (dict(passenger_key=True, lift_free_never=True), KeyError),      # the pool lacks the lift column
+])
+def test_lift_free_preference_fails_fast_on_an_unusable_call(kwargs, error):
+    with pytest.raises(error):
+        wpm.match_person(_never_passenger_target(), _weekday_pool(), rng=np.random.RandomState(0), **kwargs)
+
+
+def test_align_members_gives_a_never_passenger_a_lift_free_day_of_its_age_band_before_a_lift():
+    """The household offers no lift-free "never" donor: a lift-free donor of the other class in the age band
+    beats the same-sex donor whose day has a lift; the pair count is unchanged."""
+    donor = pd.DataFrame({"HP_ALTER": [40, 42, 8], "HP_SEX": [1, 2, 1], "P_VAUTO": [1, 1, 402],
+                          LIFT: [True, False, False]})
+    target = pd.DataFrame({"HP_ALTER": [41, 9], "HP_SEX": [1, 1], "P_VAUTO": [3, 402]})
+
+    assert wpm.align_members(target, donor, passenger_key=True) == [(0, 0), (1, 2)]
+    assert wpm.align_members(target, donor, passenger_key=True, lift_free_never=True) == [(0, 1), (1, 2)]
+
+
+def test_align_members_prefers_the_lift_free_never_donor_over_the_never_donor_with_a_lift():
+    donor = pd.DataFrame({"HP_ALTER": [40, 43], "HP_SEX": [1, 1], "P_VAUTO": [3, 3], LIFT: [True, False]})
+    target = pd.DataFrame({"HP_ALTER": [41], "HP_SEX": [1], "P_VAUTO": [3]})
+    assert wpm.align_members(target, donor, passenger_key=True) == [(0, 0)]
+    assert wpm.align_members(target, donor, passenger_key=True, lift_free_never=True) == [(0, 1)]
+
+
+def _lift_keys(*pairs):
+    return pd.MultiIndex.from_tuples(list(pairs), names=["H_ID", "P_ID"])
+
+
+def test_weekend_household_match_uses_the_lift_of_the_diary_the_donor_hands_over():
+    """Weekday HH 1 has two "never" adults; only P1's own day carries a lift. The weekend "never" adult P1 of
+    HH 2 is paired with HH 1's P1 by the class key alone and with P2's lift-free day under the preference; the
+    returned frame keeps its columns (the lift column is internal)."""
+    persons = _weekend_persons().assign(P_VAUTO=[3, 3, 3, 1])
+
+    def sources(car_passenger_diaries):
+        out, _trace, _report = wpm.reassign_weekend_plan_sources(
+            _weekend_households(), persons, rng=np.random.RandomState(0), passenger_key=True,
+            car_passenger_diaries=car_passenger_diaries)
+        assert list(out.columns) == list(persons.columns)
+        weekend = out.loc[out["H_ID"] == 2].set_index("P_ID")
+        return {p: (row["source_H_ID"], row["source_P_ID"]) for p, row in weekend.iterrows()}
+
+    assert sources(None)[1] == (1, 1)
+    assert sources(_lift_keys((1, 1)))[1] == (1, 2)
+
+
+def test_diary_match_prefers_the_lift_free_never_donor():
+    donors = _diary_donors().assign(P_VAUTO=[3, 3, 3])     # donor 2 (heavy) and donor 3 are both "never"
+
+    def source(car_passenger_diaries):
+        out, _trace, report = dpm.reassign_diaryless_plan_sources(
+            donors, donors, dfm.compute_diary_facts(_diary_wege()), rng=np.random.RandomState(0),
+            hard_employment=True, fine_child_age_bands=True, passenger_key=True,
+            car_passenger_diaries=car_passenger_diaries, **FLAGS)
+        assert list(out.columns) == list(donors.columns)
+        row = out.loc[out["H_ID"] == 1].iloc[0]
+        return row["source_H_ID"], row["source_P_ID"]
+
+    assert source(None) == (2, 1)
+    assert source(_lift_keys((2, 1))) == (3, 1)
+
+
+def test_lift_free_preference_without_any_lift_reproduces_the_class_key_assignment():
+    """With no lift in any diary the preference must reduce exactly to ADR-0162 (same sources, same rng state):
+    it may only reorder candidates by the lift flag, never by anything else."""
+    persons = _weekend_persons().assign(P_VAUTO=[3, 3, 3, 1])
+    donors = _diary_donors().assign(P_VAUTO=[3, 3, 3])
+    facts = dfm.compute_diary_facts(_diary_wege())
+    results = {}
+    for name, lifts in (("class_key", None), ("no_lift", _lift_keys())):
+        rng = np.random.RandomState(7)
+        weekend, _t, _r = wpm.reassign_weekend_plan_sources(
+            _weekend_households(), persons, rng=rng, passenger_key=True, car_passenger_diaries=lifts)
+        diary, _t, _r = dpm.reassign_diaryless_plan_sources(
+            donors, donors, facts, rng=rng, hard_employment=True, fine_child_age_bands=True, passenger_key=True,
+            car_passenger_diaries=lifts, **FLAGS)
+        results[name] = (weekend, diary, rng.get_state()[1])
+    for off, on in zip(results["class_key"], results["no_lift"]):
+        if isinstance(off, pd.DataFrame):
+            pd.testing.assert_frame_equal(off, on)
+        else:
+            assert (off == on).all()
+
+
+def test_car_passenger_diary_keys_follow_the_evidence_rule():
+    """A non-rbW trip with main mode 3 (car passenger) counts; an rbW summary row or another mode does not."""
+    wege = pd.DataFrame({"H_ID": [1, 2, 3, 3], "P_ID": [1, 1, 1, 1], "hvm_imp": [3, 3, 1, 3],
+                         "W_RBW": [0, 1, 0, 0]})
+    keys = cd.passenger_availability.car_passenger_diary_keys(wege)
+    assert sorted(keys.tolist()) == [(1, 1), (3, 1)]
 
 
 class _Report:

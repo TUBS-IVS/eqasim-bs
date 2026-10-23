@@ -40,7 +40,7 @@ import pandas as pd
 from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
-    AGE_BAND_EDGES, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
+    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
     passenger_never_class, prepare_person_pool,
 )
 
@@ -289,7 +289,8 @@ def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
                                     exclude_holidays, drop_leading_arrive_home_leg,
                                     hard_employment, fine_child_age_bands,
-                                    precompute_matching=True, passenger_key=False):
+                                    precompute_matching=True, passenger_key=False,
+                                    car_passenger_diaries=None):
     """Remap every person whose plan source has no realisable weekday diary.
 
     ``hard_employment``: when True, ``employed`` is passed to ``match_person`` as an
@@ -317,6 +318,12 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     as a car passenger does not inherit a diary with lifts the mode choice cannot offer. Same
     rng contract as the other keys; crossings are counted in both arms
     (``DiaryMatchReport.n_crossed_passenger_class``).
+
+    ``car_passenger_diaries`` (default None = off, ADR-0166, only together with ``passenger_key``):
+    the (H_ID, P_ID) keys of the MiD diaries with a non-rbW car-passenger trip. A pool donor hands
+    over its OWN diary, so each donor is flagged by its own keys, and a "never" passenger prefers a
+    "never" donor whose diary is lift-free (``match_person(lift_free_never=True)``). The flag is set
+    on the pools only; ``persons`` keeps its columns.
     """
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
@@ -326,6 +333,10 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     _require(persons, PERSON_MATCH_COLUMNS, "persons frame")
     reasons = classify_plan_sources(persons, donor_persons, facts, **flags)
     pools = {m: build_realisable_pool(donor_persons, facts, mobility=m, **flags) for m in ("mobile", "any")}
+    lift_free_never = car_passenger_diaries is not None
+    if lift_free_never:
+        pools = {m: pool.assign(**{DONOR_LIFT_COLUMN: pd.MultiIndex.from_arrays(
+            [pool["H_ID"], pool["P_ID"]]).isin(car_passenger_diaries)}) for m, pool in pools.items()}
     for name, pool in pools.items():
         if len(pool) == 0:
             raise ValueError(f"diary_plan_match: no realisable weekday diary in the '{name}' pool; cannot remap")
@@ -341,7 +352,8 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     prepared_pools = {}
     if precompute_matching and len(to_remap):
         prepared_pools = {
-            name: prepare_person_pool(pool, age_band_edges=age_band_edges, passenger_key=passenger_key)
+            name: prepare_person_pool(pool, age_band_edges=age_band_edges, passenger_key=passenger_key,
+                                      lift_free_never=lift_free_never)
             for name, pool in pools.items()
         }
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
@@ -360,7 +372,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                                      age_band_edges=age_band_edges,
                                      prepared_pool=prepared_pools.get(
                                          "mobile" if pool is pools["mobile"] else "any"),
-                                     passenger_key=passenger_key)
+                                     passenger_key=passenger_key, lift_free_never=lift_free_never)
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level

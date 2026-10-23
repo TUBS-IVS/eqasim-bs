@@ -51,6 +51,34 @@ def _require_columns(frame: pd.DataFrame, columns, *, frame_name: str) -> None:
         )
 
 
+def car_passenger_diary_keys(
+    wege: pd.DataFrame,
+    *,
+    household_id_col: str = "H_ID",
+    person_id_col: str = "P_ID",
+    mode_col: str = "hvm_imp",
+    rbw_col: str = "W_RBW",
+) -> pd.MultiIndex:
+    """(household, person) keys of the MiD diaries with at least one reported car-passenger trip.
+
+    A trip counts when its main mode ``hvm_imp`` is 3 (car passenger) and it is not a
+    regular work-related summary row (``W_RBW == 1``), which is not an observed diary trip.
+    The single definition behind :func:`attach_car_passenger_diary_evidence` and the
+    lift-free donor preference of the plan matches (ADR-0166).
+    """
+    _require_columns(
+        wege,
+        (household_id_col, person_id_col, mode_col, rbw_col),
+        frame_name="MiD Wege frame",
+    )
+    mode = pd.to_numeric(wege[mode_col], errors="coerce")
+    rbw = pd.to_numeric(wege[rbw_col], errors="coerce")
+    reported = wege.loc[
+        mode.eq(3) & ~rbw.eq(1), [household_id_col, person_id_col]
+    ].drop_duplicates()
+    return pd.MultiIndex.from_frame(reported)
+
+
 def attach_car_passenger_diary_evidence(
     persons: pd.DataFrame,
     wege: pd.DataFrame,
@@ -73,10 +101,9 @@ def attach_car_passenger_diary_evidence(
     _require_columns(
         persons, (household_id_col, person_id_col), frame_name="persons frame"
     )
-    _require_columns(
-        wege,
-        (household_id_col, person_id_col, mode_col, rbw_col),
-        frame_name="MiD Wege frame",
+    reported_keys = car_passenger_diary_keys(
+        wege, household_id_col=household_id_col, person_id_col=person_id_col,
+        mode_col=mode_col, rbw_col=rbw_col,
     )
     has_source_household = source_household_id_col in persons.columns
     has_source_person = source_person_id_col in persons.columns
@@ -88,12 +115,6 @@ def attach_car_passenger_diary_evidence(
     lookup_household = source_household_id_col if has_source_household else household_id_col
     lookup_person = source_person_id_col if has_source_person else person_id_col
 
-    mode = pd.to_numeric(wege[mode_col], errors="coerce")
-    rbw = pd.to_numeric(wege[rbw_col], errors="coerce")
-    reported = wege.loc[
-        mode.eq(3) & ~rbw.eq(1), [household_id_col, person_id_col]
-    ].drop_duplicates()
-    reported_keys = pd.MultiIndex.from_frame(reported)
     lookup_keys = pd.MultiIndex.from_arrays(
         [persons[lookup_household], persons[lookup_person]]
     )

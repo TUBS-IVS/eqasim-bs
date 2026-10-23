@@ -391,6 +391,10 @@ config:
   # so a person whose own answer is "never" does not inherit a diary with lifts that the
   # mode choice can then never offer. Effective only with mid_passenger_availability on.
   braunschweig.population.popsim.donor_match_passenger_access: true
+  # ADR-0166 (#465): on top of the class key, a "never" passenger prefers a donor whose
+  # handed-over diary has no car-passenger trip (a "never" respondent may report a lift
+  # themselves, and a household may have no "never" member in the age band).
+  braunschweig.population.popsim.donor_match_lift_free_never_passenger: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
