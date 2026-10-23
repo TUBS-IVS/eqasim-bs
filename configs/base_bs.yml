@@ -631,6 +631,12 @@ config:
   # RVB VISUM Verkehrszellen data (gitignored). Default OFF; set to true only
   # in configs where that proprietary parquet is present.
   taz_work_location_choice: false
+  # Persons <- sampled primary locations of one origin zone (ADR-0164, #465): the locations farther than
+  # primary_location_far_class_min_distance_m (straight line from the zone's mean home) go by rank to the persons
+  # with the longest donor commute distances; the rest keep the upstream greedy on exact home distances. false =
+  # the upstream greedy over the whole zone (byte-identical). The flows per origin zone are unchanged either way.
+  primary_location_far_class_rank: true
+  primary_location_far_class_min_distance_m: 30000
 
   # --- Education gravity (real NDS schools / Kita / Hochschule) ---
   education_gravity_enabled: true
