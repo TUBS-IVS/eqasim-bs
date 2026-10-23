@@ -46,6 +46,8 @@
    the pre-cut network and schedule that the prepare routing uses) and its connection rule over ALL stops of the
    schedule (the destination lies outside the cut extent, as for ADR-0153), walk limit
    `plan_check.DEFAULT_WALK_MAX_DISTANCE_M`. Portal tours keep the check of ADR-0152/0156.
+   Only the first probe (every checked leg) treats "no route for any task" as a broken router; the narrowed
+   per-offset batches count such tasks as not connected (`route_batch(allow_no_route_at_all=True)`, PR #505 review).
 2. **Day-end rule first** (as ADR-0153 decision 2; found in the review of PR #505). The day of every person with a
    checked tour that ends after the bound moves earlier as a whole by the population writer's rule
    (`day_end_margin.late_day_shift_s`, ADR-0154) before anything is probed, so the timetable is asked at the

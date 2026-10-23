@@ -121,6 +121,24 @@ def configure(context):
         context.stage(GTFS_STAGE)
 
 
+def _probe_from(router, mask):
+    """The probe of the timetable check: ``mask(*router(tasks), tasks)``.
+
+    Only the FIRST call, which covers every checked pt leg, treats a batch in which no task gets a route as a
+    broken router (``route_batch`` raises). The later calls probe the narrowed per-offset batches, often one or two
+    tours, where no route at all is a normal outcome: those tasks count as not connected and the chain goes on to
+    car, lift or keep (PR #505 review).
+    """
+    calls = {"n": 0}
+
+    def probe(tasks):
+        trips, legs = router(tasks, allow_no_route_at_all=calls["n"] > 0)
+        calls["n"] += 1
+        return mask(trips, legs, tasks)
+
+    return probe
+
+
 def _pt_check(context) -> _pt_connections.PtCheck:
     """The timetable check of ADR-0159: the batch pt router on the pre-cut network and schedule, its connection rule
     over ALL stops of the schedule (the destination of an outside tour lies outside the cut extent), the walk limit
@@ -145,11 +163,11 @@ def _pt_check(context) -> _pt_connections.PtCheck:
     all_stop_ids = set(read_schedule(schedule_path).stops)
     walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
 
-    def probe(tasks):
-        trips, legs = router(tasks)
+    def mask(trips, legs, tasks):
         return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
                                            task_ids=tasks["identifier"].astype(str))
 
+    probe = _probe_from(router, mask)
     bound_s = float(plan_validation.MAX_PLAN_TIME_SECONDS)
     if context.config(_day_end_margin.KEY_ENABLED):
         bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)

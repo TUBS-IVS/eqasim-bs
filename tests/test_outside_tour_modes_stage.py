@@ -319,6 +319,23 @@ def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_
     assert report["pt_connection"]["actions"]["kept_no_connection"] == 0
 
 
+def test_only_the_first_probe_of_the_pt_check_treats_a_batch_without_any_route_as_a_broken_run():
+    # PR #505 review: the first probe covers every checked pt leg, so no route at all there means a broken router;
+    # the narrowed per-offset batches that follow may legitimately find no route for their one or two tours.
+    calls = []
+
+    def router(tasks, allow_no_route_at_all=False):
+        calls.append(allow_no_route_at_all)
+        return "trips", "legs"
+
+    probe = stage._probe_from(router, lambda trips, legs, tasks: pd.Series(dtype=bool))
+    tasks = pd.DataFrame({"identifier": ["0"]})
+    probe(tasks)
+    probe(tasks)
+    probe(tasks)
+    assert calls == [False, True, True]
+
+
 def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():
     for seed in range(25):
         fixture = _with_portal_person("car")
