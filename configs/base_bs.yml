@@ -876,6 +876,11 @@ config:
   braunschweig.plan_check.max_frozen_defect_share: 0.005
   braunschweig.plan_check.max_frozen_pt_as_walk_share: 0.02
   braunschweig.plan_check.fail_on_threshold: false
+  # Every agent chooses its modes once at the first replanning (#465): a second DiscreteModeChoice strategy with
+  # this weight (against 0.05 + 0.95 of the loop) that MATSim disables after iteration 1. With 5 % per iteration
+  # alone, about 1.2 % of the residents never chose in the 86 replanning rounds of the WP-E smoke.
+  braunschweig.initial_mode_choice.enabled: true
+  braunschweig.initial_mode_choice.weight: 1000000.0
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1
