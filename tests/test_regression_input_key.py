@@ -91,8 +91,10 @@ def test_key_counts_included_and_excluded_paths(repo, capsys):
 DOCS_WORKFLOW = REPO / ".github" / "workflows" / "docs.yml"
 #: Mentions that are not reads: test_no_german_pt_ticket_literals names docs/decisions/ only to explain why
 #: it does NOT scan it (it scans docs/features/), this file names the prefixes to test the key, and
-#: test_sync_main writes docs/generated/ only inside throw-away repositories and reads .gitattributes.
-NOT_A_READ = {"test_no_german_pt_ticket_literals.py", "test_regression_input_key.py", "test_sync_main.py"}
+#: test_sync_main writes docs/generated/ only inside throw-away repositories and reads .gitattributes, and
+#: test_claude_review uses docs/generated/STAGES.md only as a path string in synthetic diff fixtures.
+NOT_A_READ = {"test_no_german_pt_ticket_literals.py", "test_regression_input_key.py", "test_sync_main.py",
+              "test_claude_review.py"}
 
 
 def _docs_workflow_test_files() -> set:
