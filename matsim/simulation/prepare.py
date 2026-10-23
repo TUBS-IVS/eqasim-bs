@@ -1,17 +1,11 @@
 import csv
-import hashlib
 import logging
 import shutil
 import os.path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
-from braunschweig import synpp_tokens
 from braunschweig.matsim import config_modules
-
-#: Helper modules whose source decides the prepared scenario (hashed by validate()).
-_HELPER_MODULES = (config_modules,)
-_DEFERRED_HELPER_MODULE_NAMES = ()
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +25,11 @@ _LEGACY_ADAPTER = "org.eqasim.braunschweig.scenario.RunAdaptConfig"
 _LARGE_FACILITY_ACCESS_RUNNER = "org.eqasim.braunschweig.scenario.RunAdaptLargeFacilityAccess"
 _LARGE_FACILITY_ACCESS_SUMMARY = "large_facility_access_summary.csv"
 _LARGE_FACILITY_ACCESS_GROUPS = "large_facility_access_groups.csv"
-_LARGE_FACILITY_ACCESS_LOTS_KEY = "large_facility_access_parking_lots_path"
+#: Public: the production wrapper braunschweig.matsim.simulation.prepare hashes the release in its validate().
+LARGE_FACILITY_ACCESS_LOTS_KEY = "large_facility_access_parking_lots_path"
 #: The parking-lot release relative to data_path (data record parking_lots_osm_2026, preflight D20).
 _LARGE_FACILITY_ACCESS_LOTS_DEFAULT = "braunschweig/parking/parking_lots_osm_2026.csv"
-_LARGE_FACILITY_ACCESS_LOTS_DATASET = "parking_lots_osm_2026"
+LARGE_FACILITY_ACCESS_LOTS_DATASET = "parking_lots_osm_2026"
 #: Numeric keys with their defaults, the Java option they feed, and their valid range.
 _LARGE_FACILITY_ACCESS_NUMBERS = (
     ("large_facility_access_minimum_activities", 1000.0, "minimum-activities", lambda v: v >= 0.0, ">= 0"),
@@ -70,14 +65,51 @@ _QSIM_INSERTION_KEY = "matsim_qsim_inserting_waiting_vehicles_first"
 _QSIM_INSERTION_PARAM = "insertingWaitingVehiclesBeforeDrivingVehicles"
 
 
+#: Columns the Java step reads from the parking-lot release (eqasim-java-bs ParkingLotReader).
+_LARGE_FACILITY_ACCESS_LOTS_COLUMNS = ("lot_id", "x", "y", "spaces")
+
+
 def _parking_lots_path(context):
-    """Absolute path of the parking-lot release; FileNotFoundError naming the config key when it is missing."""
-    path = os.path.join(context.config("data_path"), context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY))
+    """Absolute path of the parking-lot release, checked before the preparation runs: FileNotFoundError naming the
+    config key when the file is missing, ValueError when its header lacks a column the Java step reads (the rows are
+    validated by the Java step)."""
+    path = os.path.join(context.config("data_path"), context.config(LARGE_FACILITY_ACCESS_LOTS_KEY))
     if not os.path.isfile(path):
         raise FileNotFoundError("%s: the parking-lot release %s is missing (data record %s, preflight D20; "
                                 "regenerate it with scripts/build_parking_lots_from_osm.py)"
-                                % (_LARGE_FACILITY_ACCESS_LOTS_KEY, path, _LARGE_FACILITY_ACCESS_LOTS_DATASET))
+                                % (LARGE_FACILITY_ACCESS_LOTS_KEY, path, LARGE_FACILITY_ACCESS_LOTS_DATASET))
+    with open(path, encoding="utf-8") as handle:
+        header = [column.strip().strip('"') for column in handle.readline().strip().split(";")]
+    missing = [column for column in _LARGE_FACILITY_ACCESS_LOTS_COLUMNS if column not in header]
+    if missing:
+        raise ValueError("%s: the parking-lot release %s lacks the columns %s (header: %s)"
+                         % (LARGE_FACILITY_ACCESS_LOTS_KEY, path, missing, ";".join(header)))
     return os.path.abspath(path)
+
+
+def _prefix_text(value, key):
+    """A prefix-list config value as the comma-separated text the Java step reads.
+
+    Accepts a comma-separated string or a YAML list / tuple of strings; ValueError naming ``key`` for any other
+    type or an empty entry (``str()`` of a list would reach Java as one prefix that matches nothing, which would turn
+    portals and homes into sites)."""
+    if isinstance(value, str):
+        entries = [entry.strip() for entry in value.split(",")] if value.strip() else []
+    elif isinstance(value, (list, tuple)) and all(isinstance(entry, str) for entry in value):
+        entries = [entry.strip() for entry in value]
+    else:
+        raise ValueError("%s must be a comma-separated text or a list of texts, got %r" % (key, value))
+    if any(not entry or "," in entry for entry in entries):
+        raise ValueError("%s has an empty or malformed entry: %r" % (key, value))
+    return ",".join(entries)
+
+
+def _require_bool(value, key):
+    """``value`` when it is a boolean; ValueError naming ``key`` for any other type (the text "false" is truthy in
+    Python). ``None`` passes: synpp returns the declared default, only configure-time test doubles return None."""
+    if value is not None and not isinstance(value, bool):
+        raise ValueError("%s must be true or false, got %r" % (key, value))
+    return value
 
 
 def _log_large_facility_access_summary(summary_path):
@@ -88,12 +120,15 @@ def _log_large_facility_access_summary(summary_path):
     """
     counts = {outcome: 0 for outcome in _LARGE_FACILITY_ACCESS_OUTCOMES}
     counts["in_scope"] = 0
+    counts["in_scope_without_lot"] = 0
     with open(summary_path, newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle, delimiter=";"):
             if row["outcome"] not in _LARGE_FACILITY_ACCESS_OUTCOMES:
                 raise ValueError("%s: unknown outcome %r for site %s" % (summary_path, row["outcome"], row["site_key"]))
             counts[row["outcome"]] += 1
-            counts["in_scope"] += row["in_scope"] == "true"
+            in_scope = row["in_scope"] == "true"
+            counts["in_scope"] += in_scope
+            counts["in_scope_without_lot"] += in_scope and int(row["lots_used"]) == 0
     sites = sum(counts[outcome] for outcome in _LARGE_FACILITY_ACCESS_OUTCOMES)
     distributed = counts["distributed"] + counts["distributed_partial"]
     needing = counts["moved"] + counts["fallback"]
@@ -102,33 +137,17 @@ def _log_large_facility_access_summary(summary_path):
         return 100.0 * count / total if total else 0.0
 
     logger.info("[matsim.simulation.prepare] large facility access: %d large sites, %d in scope; distributed over parking "
-                "lots %d/%d (%.1f %%), of them partly covered %d; single-link rule: adequate %d, moved %d, fallback %d/%d "
-                "(%.1f %%) (ADR-0165, %s)", sites, counts["in_scope"], distributed, counts["in_scope"],
-                share(distributed, counts["in_scope"]), counts["distributed_partial"], counts["adequate"],
-                counts["moved"], counts["fallback"], needing, share(counts["fallback"], needing), summary_path)
-    if counts["fallback"] or counts["distributed_partial"]:
-        logger.warning("[matsim.simulation.prepare] large facility access: %d sites kept their low-capacity link and %d "
-                       "in-scope sites found fewer parking spaces than wanted, see %s", counts["fallback"],
-                       counts["distributed_partial"], summary_path)
+                "lots %d/%d (%.1f %%), of them partly covered %d; in scope without a usable lot %d/%d (%.1f %%); "
+                "single-link rule: adequate %d, moved %d, fallback %d/%d (%.1f %%) (ADR-0165, %s)", sites,
+                counts["in_scope"], distributed, counts["in_scope"], share(distributed, counts["in_scope"]),
+                counts["distributed_partial"], counts["in_scope_without_lot"], counts["in_scope"],
+                share(counts["in_scope_without_lot"], counts["in_scope"]), counts["adequate"], counts["moved"],
+                counts["fallback"], needing, share(counts["fallback"], needing), summary_path)
+    if counts["fallback"] or counts["distributed_partial"] or counts["in_scope_without_lot"]:
+        logger.warning("[matsim.simulation.prepare] large facility access: %d sites kept their low-capacity link, %d "
+                       "in-scope sites found fewer parking spaces than wanted and %d none, see %s", counts["fallback"],
+                       counts["distributed_partial"], counts["in_scope_without_lot"], summary_path)
     return counts
-
-
-def _content_sha256(path):
-    """sha256 of a committed text file as git stores it (CRLF read as LF), the convention of
-    ``braunschweig.parking.tariff_export.content_sha256``: a CRLF and an LF checkout give one token."""
-    with open(path, "rb") as handle:
-        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
-
-
-def validate(context):
-    """Cache token: the source digest of the helper modules (``_HELPER_MODULES``) and the LF-normalised sha256 of the
-    parking-lot release, so a rebuilt release recomputes the prepared scenario (a path key alone changes the hash
-    only when the path string changes). ``absent`` when the release is missing; execute() then names the key."""
-    token = synpp_tokens.source_token(_HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-                                      stage_label=__name__ + ".validate()")
-    path = os.path.join(context.config("data_path"), context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY))
-    token["files"] = {_LARGE_FACILITY_ACCESS_LOTS_DATASET: _content_sha256(path) if os.path.isfile(path) else "absent"}
-    return token
 
 
 def configure(context):
@@ -175,18 +194,18 @@ def configure(context):
 
     context.config("output_prefix", "ile_de_france_")
 
-    context.config("large_facility_access_enabled", True)
+    enabled = _require_bool(context.config("large_facility_access_enabled", True), "large_facility_access_enabled")
     context.config("data_path")
-    context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY, _LARGE_FACILITY_ACCESS_LOTS_DEFAULT)
-    if context.config("large_facility_access_enabled"):
+    context.config(LARGE_FACILITY_ACCESS_LOTS_KEY, _LARGE_FACILITY_ACCESS_LOTS_DEFAULT)
+    if enabled:
         # Fail at configure time on a value the Java step would reject only after the preparation ran.
         for key, default, _option, valid, expected in _LARGE_FACILITY_ACCESS_NUMBERS:
             value = float(context.config(key, default))
             if not valid(value) or value == float("inf"):
                 raise ValueError("%s must be a finite number %s, got %r" % (key, expected, value))
         for key, default, _option in _LARGE_FACILITY_ACCESS_PREFIXES:
-            context.config(key, default)
-    context.config(_QSIM_INSERTION_KEY, False)
+            _prefix_text(context.config(key, default), key)
+    _require_bool(context.config(_QSIM_INSERTION_KEY, False), _QSIM_INSERTION_KEY)
 
 def execute(context):
     # MATSim-phase thread count: explicit override or the global processes count.
@@ -240,7 +259,7 @@ def execute(context):
         for key, _default, option, _valid, _expected in _LARGE_FACILITY_ACCESS_NUMBERS:
             arguments += ["--" + option, context.config(key)]
         for key, _default, option in _LARGE_FACILITY_ACCESS_PREFIXES:
-            arguments += ["--" + option, context.config(key)]
+            arguments += ["--" + option, _prefix_text(context.config(key), key)]
         eqasim.run(context, _LARGE_FACILITY_ACCESS_RUNNER, arguments)
         summary_path = "%s/%s" % (context.path(), _LARGE_FACILITY_ACCESS_SUMMARY)
         assert os.path.exists(summary_path)

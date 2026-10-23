@@ -187,24 +187,56 @@ def test_invalid_rule_parameters_fail_at_configure(key, value, data_path):
 
 def test_the_summary_rates_are_logged_from_the_java_summary_file(tmp_path, caplog):
     summary = tmp_path / "large_facility_access_summary.csv"
-    rows = [("a", "true", "distributed"), ("b", "true", "distributed"), ("c", "true", "distributed_partial"),
-            ("d", "true", "moved"), ("e", "false", "moved"), ("f", "false", "fallback"), ("g", "false", "adequate")]
-    summary.write_text("site_key;in_scope;outcome\n" + "".join(f"{key};{scope};{outcome}\n" for key, scope, outcome in rows),
-                       encoding="utf-8")
+    rows = [("a", "true", "distributed", 4), ("b", "true", "distributed", 2), ("c", "true", "distributed_partial", 1),
+            ("d", "true", "moved", 0), ("e", "false", "moved", 0), ("f", "false", "fallback", 0),
+            ("g", "false", "adequate", 0)]
+    summary.write_text("site_key;in_scope;outcome;lots_used\n" + "".join(
+        f"{key};{scope};{outcome};{lots}\n" for key, scope, outcome, lots in rows), encoding="utf-8")
     with caplog.at_level("INFO"):
         counts = prepare._log_large_facility_access_summary(str(summary))
     assert counts == {"distributed": 2, "distributed_partial": 1, "moved": 2, "fallback": 1, "adequate": 1,
-                      "in_scope": 4}
-    assert "7 large sites, 4 in scope; distributed over parking lots 3/4 (75.0 %), of them partly covered 1" in caplog.text
+                      "in_scope": 4, "in_scope_without_lot": 1}
+    assert ("7 large sites, 4 in scope; distributed over parking lots 3/4 (75.0 %), of them partly covered 1; "
+            "in scope without a usable lot 1/4 (25.0 %)") in caplog.text
     assert "single-link rule: adequate 1, moved 2, fallback 1/3 (33.3 %)" in caplog.text
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
-def test_the_validate_token_follows_the_lots_file(data_path):
+def test_prefix_lists_reach_java_as_comma_text_and_other_types_fail(monkeypatch, data_path):
+    calls, _ = _execute(monkeypatch, _base_config(
+        data_path, large_facility_access_excluded_prefixes=["outside_", "EXT", "home_"],
+        large_facility_access_parking_scope_prefixes=("uni_loc_",)))
+    args = next(args for runner, args in calls if runner == ACCESS_RUNNER)
+    assert _option(args, "excluded-facility-prefixes") == "outside_,EXT,home_"
+    assert _option(args, "scope-facility-prefixes") == "uni_loc_"
+    for bad in (7, ["outside_", 3], "outside_,,EXT"):
+        with pytest.raises(ValueError, match="large_facility_access_excluded_prefixes"):
+            prepare.configure(_Context(_base_config(data_path, large_facility_access_excluded_prefixes=bad)))
+
+
+@pytest.mark.parametrize("key", ["large_facility_access_enabled", "matsim_qsim_inserting_waiting_vehicles_first"])
+def test_switches_must_be_booleans(key, data_path):
+    with pytest.raises(ValueError, match=key):
+        prepare.configure(_Context(_base_config(data_path, **{key: "false"})))
+
+
+def test_a_lots_file_without_the_required_columns_fails_before_any_java_step(monkeypatch, data_path):
+    (data_path / LOTS_REL_PATH).write_text("lot_id;x;y\nway/1;1;2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="spaces"):
+        _execute(monkeypatch, _base_config(data_path))
+
+
+def test_the_production_stage_token_follows_the_lots_file(data_path):
+    """The pipeline runs this stage through its alias braunschweig.matsim.simulation.prepare (configs/base_bs.yml),
+    whose validate() is the token synpp uses; a rebuilt lots release must change it."""
+    from braunschweig.matsim.simulation import prepare as production
+
     context = _Context(_base_config(data_path))
     prepare.configure(context)
-    first = prepare.validate(context)
+    first = production.validate(context)
     (data_path / LOTS_REL_PATH).write_text(LOTS_TEXT + "way/2;600010.00;5800000.00;5;tag;;;\n", encoding="utf-8")
-    second = prepare.validate(context)
+    second = production.validate(context)
     assert first["files"]["parking_lots_osm_2026"] != second["files"]["parking_lots_osm_2026"]
     assert first["modules"] == second["modules"]
+    (data_path / LOTS_REL_PATH).unlink()
+    assert production.validate(context)["files"]["parking_lots_osm_2026"] == "absent"

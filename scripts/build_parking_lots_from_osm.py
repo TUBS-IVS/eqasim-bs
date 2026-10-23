@@ -3,7 +3,8 @@
 The large-site access step of ``matsim.simulation.prepare`` (eqasim-java-bs ``RunAdaptLargeFacilityAccess``) spreads
 the car access of large work and university sites over the parking lots around them, weighted by their spaces. This
 curation script writes those lots, region-wide, from the same pinned Geofabrik extract the parking module uses
-(``niedersachsen-260929.osm.pbf``, data record ``parking_zones_2026``), checked against its Geofabrik MD5:
+(``niedersachsen-260929.osm.pbf``, data record ``parking_zones_2026``), checked against its Geofabrik MD5 and
+its pinned SHA-256:
 
 * every ``amenity=parking`` area (GDAL layer ``multipolygons``) and node (layer ``points``) inside ``--bbox``;
   ``amenity=parking`` lines are not read (an unclosed parking way has no area and is street parking in practice);
@@ -23,7 +24,10 @@ box, layer filters, counts and the share of spaces resting on the area heuristic
 Usage:
     python scripts/build_parking_lots_from_osm.py \
         --extract eqasim-data/data/braunschweig/parking/raw_osm/niedersachsen-260929.osm.pbf \
-        --bbox 51.70,9.95,52.85,11.25 --out-dir eqasim-data/data/braunschweig/parking
+        --bbox 51.52,9.819,52.927,11.34 --out-dir eqasim-data/data/braunschweig/parking
+
+(the box of the committed release: the node extent of the prepared #465 1 % network grown by 2 km, data record
+parking_lots_osm_2026).
 """
 from __future__ import annotations
 
@@ -45,6 +49,8 @@ if str(REPO_ROOT) not in sys.path:
 from braunschweig.parking import supply_share  # noqa: E402
 
 RELEASE_STEM = "parking_lots_osm_2026"
+#: SHA-256 of the pinned Geofabrik extract niedersachsen-260929.osm.pbf (data record parking_zones_2026).
+PINNED_EXTRACT_SHA256 = "c2b33b8414584686f9320971300de17f66ba66f92b45b23b24ad0a51b0218a94"
 METRIC_CRS = "EPSG:25832"
 COLUMNS = ("lot_id", "x", "y", "spaces", "capacity_source", "access", "parking", "name")
 #: GDAL OSM driver layers and attribute filters: ``amenity`` is a column of the multipolygons layer and sits in
@@ -102,6 +108,14 @@ def lots_from_objects(objects: gpd.GeoDataFrame) -> pd.DataFrame:
     return lots
 
 
+def check_extract_sha256(digests: dict, expected: str) -> None:
+    """SystemExit when the extract's SHA-256 (``digests`` of the MD5 check) is not the pinned one: another extract
+    would give another release under the same name."""
+    if digests["sha256"] != expected:
+        raise SystemExit(f"{digests['file']}: SHA-256 {digests['sha256']} is not the pinned {expected}; "
+                         "use the pinned extract or pass --expected-sha256 for a deliberate new release")
+
+
 def _zones_script():
     """The parking-zone curation script, whose extract checks and OSM readers this script reuses."""
     path = Path(__file__).resolve().parent / "build_parking_zones_from_osm.py"
@@ -153,6 +167,8 @@ def main(argv=None) -> int:
     parser.add_argument("--bbox", required=True, help="south,west,north,east in WGS84 degrees")
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--expected-sha256", default=PINNED_EXTRACT_SHA256,
+                        help="SHA-256 the extract must have (default: the pinned niedersachsen-260929)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -164,6 +180,7 @@ def main(argv=None) -> int:
         if path.exists() and not args.overwrite:
             raise SystemExit(f"{path} exists; pass --overwrite to replace it")
     digests = zones.check_extract_md5(args.extract, args.md5)
+    check_extract_sha256(digests, args.expected_sha256)
     header = zones.pbf_header(args.extract)
 
     objects, layers = read_parking_objects(args.extract, bbox, zones)

@@ -51,3 +51,14 @@ def test_lots_from_objects_keeps_off_street_lots_with_their_spaces():
     assert lots.set_index("lot_id").loc["way/1", "name"] == "VW WOB MA P6"
     assert lots.set_index("lot_id").loc["way/2", "access"] == ""
     assert str(lots["spaces"].dtype).startswith("int")
+
+
+def test_the_extract_must_be_the_pinned_one():
+    pinned = build.PINNED_EXTRACT_SHA256
+    build.check_extract_sha256({"file": "x.osm.pbf", "sha256": pinned}, pinned)
+    try:
+        build.check_extract_sha256({"file": "x.osm.pbf", "sha256": "0" * 64}, pinned)
+    except SystemExit as error:
+        assert "x.osm.pbf" in str(error)
+    else:
+        raise AssertionError("a different extract must stop the curation")
