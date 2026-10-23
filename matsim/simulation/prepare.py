@@ -1,11 +1,17 @@
 import csv
+import hashlib
 import logging
 import shutil
 import os.path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
+from braunschweig import synpp_tokens
 from braunschweig.matsim import config_modules
+
+#: Helper modules whose source decides the prepared scenario (hashed by validate()).
+_HELPER_MODULES = (config_modules,)
+_DEFERRED_HELPER_MODULE_NAMES = ()
 
 logger = logging.getLogger(__name__)
 
@@ -13,22 +19,49 @@ _PASSENGER_AVAILABILITY_ADAPTER = (
     "org.eqasim.braunschweig.scenario.RunAdaptPassengerAvailabilityConfig")
 _LEGACY_ADAPTER = "org.eqasim.braunschweig.scenario.RunAdaptConfig"
 
-# Large-facility access rule (issue #465, ADR-0165). eqasim's FacilityPlacement attaches every facility to its
-# nearest non-motorway link whatever its capacity; facilities of at least ``minimum_activities`` activities
-# (scaled to 100 %) on a link below ``minimum_capacity_veh_per_h`` move to the closest eligible link of that
-# capacity within ``maximum_distance_m`` (Java RunAdaptLargeFacilityAccess). Defaults from
-# scripts/measure_large_facility_access.py on the 1 % rerun and the 100 % run (ADR-0165): fallback 8.6 % / 6.8 %
-# of the facilities that need a new link, so a share above 0.15 means the rule is broken.
+# Large-site access rule (issue #465, ADR-0165), Java RunAdaptLargeFacilityAccess between RunPreparation and the
+# routing. eqasim's FacilityPlacement attaches every facility to its nearest non-motorway link whatever its capacity.
+# The rule works on SITES (all facilities at one coordinate, incommuter workplaces included) of at least
+# ``minimum_activities`` activities at 100 %: work sites and universities spread their car access over the parking
+# lots around them (nearest first until ``parking_demand_share`` x size spaces, within ``parking_maximum_distance_m``;
+# each lot on the closest link of ``minimum_capacity_veh_per_h`` within ``lot_link_maximum_distance_m``, else the
+# closest link within that distance); every other large site gets the closest link of ``minimum_capacity_veh_per_h``
+# within ``maximum_distance_m``. Owner decisions of 2026-10-23 (ADR-0165); the bounds fail the step when the lots
+# file or the network is broken.
 _LARGE_FACILITY_ACCESS_RUNNER = "org.eqasim.braunschweig.scenario.RunAdaptLargeFacilityAccess"
 _LARGE_FACILITY_ACCESS_SUMMARY = "large_facility_access_summary.csv"
-_LARGE_FACILITY_ACCESS_DEFAULTS = {
-    "large_facility_access_minimum_activities": 1000.0,
-    "large_facility_access_minimum_capacity_veh_per_h": 1000.0,
-    "large_facility_access_maximum_distance_m": 1000.0,
-    "large_facility_access_maximum_fallback_share": 0.15,
-}
-# Cordon portals (``outside_*``) are placed by the portal stages on purpose, often on motorways.
-_LARGE_FACILITY_ACCESS_EXCLUDED_PREFIXES = "outside_"
+_LARGE_FACILITY_ACCESS_GROUPS = "large_facility_access_groups.csv"
+_LARGE_FACILITY_ACCESS_LOTS_KEY = "large_facility_access_parking_lots_path"
+#: The parking-lot release relative to data_path (data record parking_lots_osm_2026, preflight D20).
+_LARGE_FACILITY_ACCESS_LOTS_DEFAULT = "braunschweig/parking/parking_lots_osm_2026.csv"
+_LARGE_FACILITY_ACCESS_LOTS_DATASET = "parking_lots_osm_2026"
+#: Numeric keys with their defaults, the Java option they feed, and their valid range.
+_LARGE_FACILITY_ACCESS_NUMBERS = (
+    ("large_facility_access_minimum_activities", 1000.0, "minimum-activities", lambda v: v >= 0.0, ">= 0"),
+    ("large_facility_access_minimum_capacity_veh_per_h", 1000.0, "minimum-capacity-veh-per-h", lambda v: v >= 0.0,
+     ">= 0"),
+    ("large_facility_access_maximum_distance_m", 1000.0, "maximum-distance-m", lambda v: v > 0.0, "> 0"),
+    ("large_facility_access_maximum_fallback_share", 0.15, "maximum-fallback-share", lambda v: 0.0 <= v <= 1.0,
+     "in [0, 1]"),
+    # ASSUMPTION of the owner: half of a site's activities need a parking space at the same time.
+    ("large_facility_access_parking_demand_share", 0.5, "parking-demand-share", lambda v: 0.0 < v <= 10.0,
+     "in (0, 10]"),
+    ("large_facility_access_parking_maximum_distance_m", 1500.0, "parking-maximum-distance-m", lambda v: v > 0.0,
+     "> 0"),
+    ("large_facility_access_lot_link_maximum_distance_m", 300.0, "lot-link-maximum-distance-m", lambda v: v > 0.0,
+     "> 0"),
+    ("large_facility_access_maximum_no_lot_share", 0.10, "maximum-no-lot-share", lambda v: 0.0 <= v <= 1.0,
+     "in [0, 1]"),
+    ("large_facility_access_parking_scope_work_share", 0.5, "scope-work-share", lambda v: 0.0 <= v <= 1.0,
+     "in [0, 1]"),
+)
+#: Text keys (comma-separated prefix lists) with their defaults and Java options. Never sites: the cordon portals
+#: (placed by the portal stages on purpose), the external Gemeinde centroids and homes. In scope: universities.
+_LARGE_FACILITY_ACCESS_PREFIXES = (
+    ("large_facility_access_excluded_prefixes", "outside_,EXT,home_", "excluded-facility-prefixes"),
+    ("large_facility_access_parking_scope_prefixes", "uni_loc_", "scope-facility-prefixes"),
+)
+_LARGE_FACILITY_ACCESS_OUTCOMES = ("distributed", "distributed_partial", "moved", "fallback", "adequate")
 
 # MATSim's QSim moves departing vehicles onto a link BEFORE the vehicles already driving on it by default
 # (insertingWaitingVehiclesBeforeDrivingVehicles = true), so a stream of departures can take every flow slot
@@ -37,47 +70,65 @@ _QSIM_INSERTION_KEY = "matsim_qsim_inserting_waiting_vehicles_first"
 _QSIM_INSERTION_PARAM = "insertingWaitingVehiclesBeforeDrivingVehicles"
 
 
-def _check_large_facility_access_parameters(minimum_activities, minimum_capacity_veh_per_h, maximum_distance_m,
-                                            maximum_fallback_share):
-    """Fail at configure time on a value the Java step would reject only after the preparation ran."""
-    checks = (
-        ("large_facility_access_minimum_activities", minimum_activities, lambda v: v >= 0.0, ">= 0"),
-        ("large_facility_access_minimum_capacity_veh_per_h", minimum_capacity_veh_per_h, lambda v: v >= 0.0, ">= 0"),
-        ("large_facility_access_maximum_distance_m", maximum_distance_m, lambda v: v > 0.0, "> 0"),
-        ("large_facility_access_maximum_fallback_share", maximum_fallback_share, lambda v: 0.0 <= v <= 1.0,
-         "in [0, 1]"),
-    )
-    for key, value, valid, expected in checks:
-        if not valid(float(value)) or float(value) == float("inf"):
-            raise ValueError("%s must be a finite number %s, got %r" % (key, expected, value))
+def _parking_lots_path(context):
+    """Absolute path of the parking-lot release; FileNotFoundError naming the config key when it is missing."""
+    path = os.path.join(context.config("data_path"), context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY))
+    if not os.path.isfile(path):
+        raise FileNotFoundError("%s: the parking-lot release %s is missing (data record %s, preflight D20; "
+                                "regenerate it with scripts/build_parking_lots_from_osm.py)"
+                                % (_LARGE_FACILITY_ACCESS_LOTS_KEY, path, _LARGE_FACILITY_ACCESS_LOTS_DATASET))
+    return os.path.abspath(path)
+
 
 def _log_large_facility_access_summary(summary_path):
-    """Log the moved / fallback rate of the large-facility access step from its summary CSV; return the counts.
+    """Log the site outcome rates of the large-site access step from its summary CSV; return the counts.
 
-    The Java step logs the same rates; this line puts them into the pipeline log under the stage's own prefix,
-    and warns when any large facility kept its low-capacity link (the fallback of ADR-0165).
+    The Java step logs the same rates; this line puts them into the pipeline log under the stage's own prefix and
+    warns when a site kept its low-capacity link or was only partly covered by lots (ADR-0165).
     """
-    counts = {"moved": 0, "fallback": 0, "adequate": 0, "excluded": 0}
+    counts = {outcome: 0 for outcome in _LARGE_FACILITY_ACCESS_OUTCOMES}
+    counts["in_scope"] = 0
     with open(summary_path, newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle, delimiter=";"):
-            if row["outcome"] not in counts:
-                raise ValueError("%s: unknown outcome %r for facility %s" % (summary_path, row["outcome"],
-                                                                             row["facility_id"]))
+            if row["outcome"] not in _LARGE_FACILITY_ACCESS_OUTCOMES:
+                raise ValueError("%s: unknown outcome %r for site %s" % (summary_path, row["outcome"], row["site_key"]))
             counts[row["outcome"]] += 1
+            counts["in_scope"] += row["in_scope"] == "true"
+    sites = sum(counts[outcome] for outcome in _LARGE_FACILITY_ACCESS_OUTCOMES)
+    distributed = counts["distributed"] + counts["distributed_partial"]
     needing = counts["moved"] + counts["fallback"]
 
-    def share(count):
-        return 100.0 * count / needing if needing else 0.0
+    def share(count, total):
+        return 100.0 * count / total if total else 0.0
 
-    logger.info("[matsim.simulation.prepare] large facility access: moved %d/%d (%.1f %%), fallback %d/%d (%.1f %%),"
-                " already adequate %d, excluded %d (ADR-0165, %s)", counts["moved"], needing, share(counts["moved"]),
-                counts["fallback"], needing, share(counts["fallback"]), counts["adequate"], counts["excluded"],
-                summary_path)
-    if counts["fallback"]:
-        logger.warning("[matsim.simulation.prepare] large facility access: %d large facilities kept their"
-                       " low-capacity link (no eligible link within the maximum distance), see %s",
-                       counts["fallback"], summary_path)
+    logger.info("[matsim.simulation.prepare] large facility access: %d large sites, %d in scope; distributed over parking "
+                "lots %d/%d (%.1f %%), of them partly covered %d; single-link rule: adequate %d, moved %d, fallback %d/%d "
+                "(%.1f %%) (ADR-0165, %s)", sites, counts["in_scope"], distributed, counts["in_scope"],
+                share(distributed, counts["in_scope"]), counts["distributed_partial"], counts["adequate"],
+                counts["moved"], counts["fallback"], needing, share(counts["fallback"], needing), summary_path)
+    if counts["fallback"] or counts["distributed_partial"]:
+        logger.warning("[matsim.simulation.prepare] large facility access: %d sites kept their low-capacity link and %d "
+                       "in-scope sites found fewer parking spaces than wanted, see %s", counts["fallback"],
+                       counts["distributed_partial"], summary_path)
     return counts
+
+
+def _content_sha256(path):
+    """sha256 of a committed text file as git stores it (CRLF read as LF), the convention of
+    ``braunschweig.parking.tariff_export.content_sha256``: a CRLF and an LF checkout give one token."""
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def validate(context):
+    """Cache token: the source digest of the helper modules (``_HELPER_MODULES``) and the LF-normalised sha256 of the
+    parking-lot release, so a rebuilt release recomputes the prepared scenario (a path key alone changes the hash
+    only when the path string changes). ``absent`` when the release is missing; execute() then names the key."""
+    token = synpp_tokens.source_token(_HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
+                                      stage_label=__name__ + ".validate()")
+    path = os.path.join(context.config("data_path"), context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY))
+    token["files"] = {_LARGE_FACILITY_ACCESS_LOTS_DATASET: _content_sha256(path) if os.path.isfile(path) else "absent"}
+    return token
 
 
 def configure(context):
@@ -125,15 +176,23 @@ def configure(context):
     context.config("output_prefix", "ile_de_france_")
 
     context.config("large_facility_access_enabled", True)
+    context.config("data_path")
+    context.config(_LARGE_FACILITY_ACCESS_LOTS_KEY, _LARGE_FACILITY_ACCESS_LOTS_DEFAULT)
     if context.config("large_facility_access_enabled"):
-        values = [context.config(key, default) for key, default in _LARGE_FACILITY_ACCESS_DEFAULTS.items()]
-        _check_large_facility_access_parameters(*values)
-        context.config("large_facility_access_excluded_prefixes", _LARGE_FACILITY_ACCESS_EXCLUDED_PREFIXES)
+        # Fail at configure time on a value the Java step would reject only after the preparation ran.
+        for key, default, _option, valid, expected in _LARGE_FACILITY_ACCESS_NUMBERS:
+            value = float(context.config(key, default))
+            if not valid(value) or value == float("inf"):
+                raise ValueError("%s must be a finite number %s, got %r" % (key, expected, value))
+        for key, default, _option in _LARGE_FACILITY_ACCESS_PREFIXES:
+            context.config(key, default)
     context.config(_QSIM_INSERTION_KEY, False)
 
 def execute(context):
     # MATSim-phase thread count: explicit override or the global processes count.
     matsim_threads = context.config("matsim_threads") or context.config("processes")
+    # Fail before the long preparation when the large-site access cannot run.
+    parking_lots_path = _parking_lots_path(context) if context.config("large_facility_access_enabled") else None
 
     # Prepare input files
     facilities_path = "%s/%s" % (
@@ -167,22 +226,25 @@ def execute(context):
 
     if context.config("large_facility_access_enabled"):
         # Rewrites the prepared facilities and population in place, before the population is routed.
-        eqasim.run(context, _LARGE_FACILITY_ACCESS_RUNNER, [
+        arguments = [
             "--network-path", "%snetwork.xml.gz" % context.config("output_prefix"),
             "--input-facilities-path", "%sfacilities.xml.gz" % context.config("output_prefix"),
             "--output-facilities-path", "%sfacilities.xml.gz" % context.config("output_prefix"),
             "--input-population-path", "prepared_population.xml.gz",
             "--output-population-path", "prepared_population.xml.gz",
+            "--parking-lots-path", parking_lots_path,
             "--summary-path", _LARGE_FACILITY_ACCESS_SUMMARY,
+            "--groups-path", _LARGE_FACILITY_ACCESS_GROUPS,
             "--sample-size", context.config("sampling_rate"),
-            "--minimum-activities", context.config("large_facility_access_minimum_activities"),
-            "--minimum-capacity-veh-per-h", context.config("large_facility_access_minimum_capacity_veh_per_h"),
-            "--maximum-distance-m", context.config("large_facility_access_maximum_distance_m"),
-            "--maximum-fallback-share", context.config("large_facility_access_maximum_fallback_share"),
-            "--excluded-facility-prefixes", context.config("large_facility_access_excluded_prefixes"),
-        ])
+        ]
+        for key, _default, option, _valid, _expected in _LARGE_FACILITY_ACCESS_NUMBERS:
+            arguments += ["--" + option, context.config(key)]
+        for key, _default, option in _LARGE_FACILITY_ACCESS_PREFIXES:
+            arguments += ["--" + option, context.config(key)]
+        eqasim.run(context, _LARGE_FACILITY_ACCESS_RUNNER, arguments)
         summary_path = "%s/%s" % (context.path(), _LARGE_FACILITY_ACCESS_SUMMARY)
         assert os.path.exists(summary_path)
+        assert os.path.exists("%s/%s" % (context.path(), _LARGE_FACILITY_ACCESS_GROUPS))
         _log_large_facility_access_summary(summary_path)
 
     # Copy remaining input files

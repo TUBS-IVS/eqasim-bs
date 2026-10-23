@@ -38,7 +38,7 @@ def test_sweep_moves_large_sites_to_the_closest_eligible_link_and_counts_the_res
     counts = {"work_big": 10, "work_far": 10, "work_main": 10, "work_small": 9, "outside_1": 50}
 
     report = measure.measure(nodes, links, 3600.0, facilities, counts, 0.01, [1000.0], [1000.0], [500.0],
-                             ["outside_"])
+                             ["outside_"], group_by="facility")
 
     assert report["facilities_with_activities"] == 4
     assert report["size_classes"] == [{"minimum_activities": 1000.0, "facilities": 3,
@@ -49,3 +49,22 @@ def test_sweep_moves_large_sites_to_the_closest_eligible_link_and_counts_the_res
     assert row["chosen_highway"] == {"secondary": 1}
     assert row["median_moved_distance_m"] == 200.0
     assert row["largest_fallbacks"] == [(1000, "work_far")]
+
+
+def test_sites_pool_the_facilities_of_one_coordinate():
+    nodes, links = {}, {}
+    _link(nodes, links, "side_street", (-100.0, 10.0), (100.0, 10.0), 600.0, "tertiary")
+    _link(nodes, links, "secondary", (-100.0, 200.0), (100.0, 200.0), 1000.0, "secondary")
+    # A workplace and an incommuter workplace at one point: 6 + 5 activities at 1 % = 1100, neither alone is large.
+    facilities = {"work_a": (0.0, 0.0, "side_street"), "ic_work_1": (0.0, 0.0, "side_street"),
+                  "home_1": (5.0, 5.0, "side_street")}
+    counts = {"work_a": 6, "ic_work_1": 5, "home_1": 20}
+
+    by_site = measure.measure(nodes, links, 3600.0, facilities, counts, 0.01, [1000.0], [1000.0], [500.0],
+                              ["outside_", "EXT", "home_"], group_by="site")
+    by_facility = measure.measure(nodes, links, 3600.0, facilities, counts, 0.01, [1000.0], [1000.0], [500.0],
+                                  ["outside_", "EXT", "home_"], group_by="facility")
+
+    assert by_site["sweep"][0]["large_facilities"] == 1
+    assert by_site["sweep"][0]["moved"] == 1
+    assert by_facility["sweep"][0]["large_facilities"] == 0

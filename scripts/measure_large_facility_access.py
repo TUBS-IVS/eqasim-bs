@@ -39,7 +39,7 @@ HIGHWAY_ATTRIBUTE = "osm:way:highway"
 DEFAULT_MINIMUM_ACTIVITIES = (500.0, 1000.0, 2000.0, 5000.0)
 DEFAULT_MINIMUM_CAPACITIES_VEH_PER_HOUR = (1000.0, 1500.0)
 DEFAULT_DISTANCES_M = (200.0, 300.0, 500.0, 1000.0)
-DEFAULT_EXCLUDED_PREFIXES = ("outside_",)
+DEFAULT_EXCLUDED_PREFIXES = ("outside_", "EXT", "home_")
 
 
 def placement_eligible(highway):
@@ -126,12 +126,34 @@ def closest_link(point, ids, start, end, maximum_distance_m):
     return ids[best], float(distance[best])
 
 
+def size_units(facilities, counts, sample_size, excluded_prefixes, group_by):
+    """({unit id: size at 100 %}, {unit id: (x, y, link id)}) per facility or per site.
+
+    A site is every non-excluded facility at one coordinate (x, y rounded to 0.01 m), as in the Java step: the
+    incommuter workplaces are copies of their workplace's coordinate. A site's link is that of its facility with
+    most activities (ties: lower id), its id ``<x>_<y>``."""
+    kept = {fid: n for fid, n in counts.items() if fid in facilities and not fid.startswith(tuple(excluded_prefixes))}
+    if group_by == "facility":
+        return {fid: n / sample_size for fid, n in kept.items()}, {fid: facilities[fid] for fid in kept}
+    if group_by != "site":
+        raise ValueError(f"group_by must be 'site' or 'facility', got {group_by!r}")
+    members = collections.defaultdict(list)
+    for fid in kept:
+        x, y, _link = facilities[fid]
+        members[f"{x:.2f}_{y:.2f}"].append(fid)
+    sizes, places = {}, {}
+    for key, fids in members.items():
+        representative = min(fids, key=lambda fid: (-kept[fid], fid))
+        sizes[key] = sum(kept[fid] for fid in fids) / sample_size
+        places[key] = facilities[representative]
+    return sizes, places
+
+
 def measure(nodes, links, period, facilities, counts, sample_size, minimum_activities, minimum_capacities,
-            distances, excluded_prefixes):
+            distances, excluded_prefixes, group_by="site"):
     vehicles_per_hour_per_unit = 3600.0 / period
-    scaled = {fid: n / sample_size for fid, n in counts.items()
-              if fid in facilities and not fid.startswith(tuple(excluded_prefixes))}
-    report = {"sample_size": sample_size, "facilities_with_activities": len(scaled),
+    scaled, facilities = size_units(facilities, counts, sample_size, excluded_prefixes, group_by)
+    report = {"sample_size": sample_size, "group_by": group_by, "facilities_with_activities": len(scaled),
               "excluded_prefixes": list(excluded_prefixes), "size_classes": [], "sweep": []}
     for threshold in minimum_activities:
         large = [fid for fid, n in scaled.items() if n >= threshold]
@@ -179,6 +201,8 @@ def main():
                         default=list(DEFAULT_MINIMUM_CAPACITIES_VEH_PER_HOUR))
     parser.add_argument("--distances", type=float, nargs="+", default=list(DEFAULT_DISTANCES_M))
     parser.add_argument("--excluded-prefixes", nargs="*", default=list(DEFAULT_EXCLUDED_PREFIXES))
+    parser.add_argument("--group-by", choices=("site", "facility"), default="site",
+                        help="size per site (all facilities at one coordinate, the Java rule) or per facility id")
     args = parser.parse_args()
     if not 0.0 < args.sample_size <= 1.0:
         parser.error("--sample-size must lie in (0, 1]")
@@ -187,7 +211,7 @@ def main():
     facilities = read_facilities(args.facilities)
     counts = count_activities(args.activities)
     report = measure(nodes, links, period, facilities, counts, args.sample_size, args.minimum_activities,
-                     args.minimum_capacities, args.distances, args.excluded_prefixes)
+                     args.minimum_capacities, args.distances, args.excluded_prefixes, group_by=args.group_by)
     report["inputs"] = {"network": args.network, "facilities": args.facilities, "activities": args.activities}
     with open(args.output, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2)

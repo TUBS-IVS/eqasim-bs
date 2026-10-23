@@ -534,11 +534,13 @@ config:
   matsim_threads: 56
   matsim_qsim_threads: 16
 
-  # --- Road access of large facilities and departure priority (issue #465, ADR-0165) ---
-  # Large facilities (>= 1000 activities at 100 %) on links below 1000 veh/h move to the closest
-  # high-capacity link within 1000 m (defaults in matsim/simulation/prepare.py, measured with
-  # scripts/measure_large_facility_access.py). Departing vehicles wait for the traffic already on the link
-  # (false; true restores the MATSim default insertingWaitingVehiclesBeforeDrivingVehicles).
+  # --- Road access of large sites and departure priority (issue #465, ADR-0165) ---
+  # Sites = all facilities at one coordinate (incommuter workplaces included), large from 1000 activities
+  # at 100 %. Work sites and universities spread their car access over the parking lots around them
+  # (release braunschweig/parking/parking_lots_osm_2026.csv, preflight D20; nearest lots until 0.5 x size
+  # spaces, within 1500 m); every other large site moves to the closest link of >= 1000 veh/h within 1000 m.
+  # The parameters and their defaults are in matsim/simulation/prepare.py. Departing vehicles wait for the
+  # traffic already on the link (false; true restores MATSim's insertingWaitingVehiclesBeforeDrivingVehicles).
   large_facility_access_enabled: true
   matsim_qsim_inserting_waiting_vehicles_first: false
 
