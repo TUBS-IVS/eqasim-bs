@@ -66,6 +66,11 @@
 
 - Output change by design: about 0.45 % of the residents of the 1 % rerun start their day earlier, by at most the
   excess of their routed last arrival (in-region and frozen tours alike; the mode choice later keeps the times).
+- The shift is sized by the FIRST-pass routes. Before the second routing, a trip the first pass replaced by a walk
+  gets its requested mode back (only when the routing routes that mode), so a late pt trip that walked may be routed
+  by pt after the shift; such a plan may then have moved more than its new routes need. The router logs how many
+  walk-fallback trips of shifted plans were restored and how many were routed by their mode afterwards (eqasim-java-bs
+  `DayEndShift`, review of TUBS-IVS/eqasim-java-bs#45).
 - The scenario cutter routes cut trips again without the option; a cut plan keeps the times the routing gave it.
 - The prepare stage needs an eqasim-java-bs jar with `DayEndShift` (branch `fix/i465-routed-day-end`); an older jar
   rejects the unknown option and the stage fails.
