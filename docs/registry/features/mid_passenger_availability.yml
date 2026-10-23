@@ -78,4 +78,11 @@ assessment:
 notes: >-
   Requires the coordinated eqasim-java-bs consumer and capability entrypoint
   RunAdaptPassengerAvailabilityConfig. An older JAR must fail on the enabled
-  path rather than silently retaining the household-ownership gate.
+  path rather than silently retaining the household-ownership gate. Since ADR-0162 (#465) the weekend and diary
+  plan matches keep the P_VAUTO "never" class when they give a person another
+  respondent's diary (braunschweig.population.popsim.donor_match_passenger_access),
+  so the gate meets fewer lifts of a foreign diary; since ADR-0166
+  (braunschweig.population.popsim.donor_match_lift_free_never_passenger) a "never"
+  person also prefers a donor whose diary is lift-free (residual measured in run
+  manifest donor-match-passenger-residual-2026-10-23); own-diary conflicts stay as
+  described in ADR-0121.

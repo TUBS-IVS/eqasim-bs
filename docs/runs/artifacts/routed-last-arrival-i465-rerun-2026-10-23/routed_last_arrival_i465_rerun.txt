@@ -1,0 +1,6 @@
+('freight', 'in_region') persons 521 {'>27h': 0, '>28h': 0, '>29h': 0, '>30h': 0}
+   examples (id, routed last arrival h, written start of the last activity h) []
+('residents', 'frozen') persons 1468 {'>27h': 49, '>28h': 32, '>29h': 19, '>30h': 4}
+   examples (id, routed last arrival h, written start of the last activity h) [('1025955', 29.14, 28.25), ('1125404', 29.62, 29.0), ('1125708', 29.17, None), ('1125988', 52.04, None), ('1126281', 29.13, None), ('125291', 31.95, 23.22), ('292771', 29.09, 29.0), ('343377', 46.49, 18.57)]
+('residents', 'in_region') persons 10573 {'>27h': 92, '>28h': 61, '>29h': 35, '>30h': 16}
+   examples (id, routed last arrival h, written start of the last activity h) [('1058514', 45.51, 19.03), ('1065071', 32.97, 21.64), ('1087676', 29.06, 29.0), ('1094261', 30.54, 23.14), ('1125779', 29.95, 20.0), ('11668', 29.32, 29.58), ('124130', 29.15, 29.0), ('134266', 30.08, 22.51)]

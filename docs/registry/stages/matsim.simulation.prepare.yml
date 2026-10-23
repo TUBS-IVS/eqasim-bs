@@ -44,7 +44,11 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   measured search time), so the module default 0.0 applies; with the flag off it declares
   no parking key and leaves the prepared config byte-identical. The legacy 8 km parking ring
   (enable_urban_parking) has no preparation step (ADR-0039). The freight injection links every boundary
-  endpoint to a high-capacity link in the trip direction (ADR-0144).
+  endpoint to a high-capacity link in the trip direction (ADR-0144). With braunschweig.day_end_margin.enabled
+  and .routed_check (both default true) the population routing receives --latest-last-arrival (the end of the
+  simulated day minus braunschweig.day_end_margin.last_arrival_margin_s, ASSUMPTION 3600 s), and eqasim's
+  RunPopulationRouting moves every plan whose ROUTED last arrival is later earlier as a whole day and routes it
+  again (DayEndShift, ADR-0160), logged as a rate with the unresolved plans.
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -55,6 +59,7 @@ code:
 - braunschweig/matsim/simulation/prepare.py
 - braunschweig/matsim/simulation/plan_check.py
 - braunschweig/matsim/initial_mode_choice.py
+- braunschweig/matsim/scenario/day_end_margin.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -85,6 +90,7 @@ decisions:
 - ADR-0144
 - ADR-0146
 - ADR-0151
+- ADR-0160
 notes: >-
   Plan feasibility check (ADR-0146, issue #443, feature record plan_feasibility_check). The last step of
   braunschweig.matsim.simulation.prepare.execute, after the cut, the freight injection and the VRB fare

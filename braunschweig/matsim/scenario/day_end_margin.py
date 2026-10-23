@@ -15,6 +15,11 @@ does not leave room for the full shift it moves as far as it can and is counted 
 is applied by the population writer (``braunschweig.matsim.scenario.population``) after the in-commuter merge, so
 residents, portal trips and both in-commuter sources are all covered by one rule.
 
+The survey travel times are shorter than the routed ones for some long trips (a 132 km car trip home reported with
+45 min, routed with 1.35 h: person 1125404 of the 1 % rerun of the #465 fixes), so the prepare stage repeats the rule
+after the routing with the ROUTED times (``KEY_ROUTED_CHECK``, ADR-0160, eqasim's ``DayEndShift``); the two steps
+share the margin.
+
 The margin is an ASSUMPTION (``KEY_LAST_ARRIVAL_MARGIN_S``, default 3600 s): the largest excess of a routed last
 arrival over 30 h among the stuck car residents of the run above was 0.54 h, and congestion comes on top. It is a
 technical margin, not a behavioural reference value.
@@ -38,6 +43,12 @@ DEFAULT_ENABLED = True
 KEY_LAST_ARRIVAL_MARGIN_S = "braunschweig.day_end_margin.last_arrival_margin_s"
 DEFAULT_LAST_ARRIVAL_MARGIN_S = 3600.0
 
+#: Repeat the rule after the routing with the ROUTED travel times (ADR-0160): the prepare stage passes
+#: :func:`latest_last_arrival_s` to eqasim's ``RunPopulationRouting`` (``--latest-last-arrival``), which moves a
+#: plan whose routed last arrival is later earlier as a whole day and routes it again. Needs ``KEY_ENABLED``.
+KEY_ROUTED_CHECK = "braunschweig.day_end_margin.routed_check"
+DEFAULT_ROUTED_CHECK = True
+
 _TRIP_TIME_COLUMNS = ("departure_time", "arrival_time")
 _ACTIVITY_TIME_COLUMNS = ("start_time", "end_time")
 
@@ -49,6 +60,11 @@ def check_margin(margin_s, bound_s) -> float:
         raise ValueError(f"{_LOG_TAG} {KEY_LAST_ARRIVAL_MARGIN_S} must be a finite number of seconds in "
                          f"[0, {bound_s:g}) (the end of the simulated day), got {margin_s!r}")
     return float(margin_s)
+
+
+def latest_last_arrival_s(margin_s, bound_s) -> str:
+    """The latest allowed last arrival (s) as the whole-second string the Java router option takes."""
+    return "%d" % math.floor(float(bound_s) - check_margin(margin_s, bound_s))
 
 
 def late_day_shift_s(first_departure_s, last_arrival_s, *, target_s: float):
