@@ -38,7 +38,7 @@
 - [ ] ADR added/updated for substantive decisions (`docs/decisions/`)
 - [ ] Run manifest recorded if a significant run backs this PR (`docs/runs/`)
 - [ ] README/setup impact assessed (new inputs, paths, commands)
-- [ ] `python -m braunschweig.documentation build` re-run; generated docs committed
+- [ ] `docs/generated/` left untouched (main's `generated-views` workflow rebuilds it, ADR-0168)
 - [ ] `python -m braunschweig.documentation check` passes (0 FAIL)
 
 ## Reviewer checklist (CLAUDE.md)

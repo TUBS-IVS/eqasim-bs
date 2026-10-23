@@ -46,7 +46,7 @@ local data tree; never a silent pass).
 ```bash
 python -m braunschweig.documentation check            # verify every pointer (exit 1 on FAIL)
 python -m braunschweig.documentation check --no-dag   # metadata-only (CI without synpp)
-python -m braunschweig.documentation build            # regenerate docs/generated/*
+python -m braunschweig.documentation build            # regenerate docs/generated/* locally (never commit; ADR-0168)
 python -m braunschweig.documentation dag              # re-extract the DAG snapshots
 python scripts/verify_braunschweig_inputs.py          # canonical DATA preflight
 ```
@@ -65,7 +65,7 @@ The registry loaders and checker are also exercised by the test suite
 | complete a significant run | add `docs/runs/<run_id>.yml`; point feature `validation.runs` at it — **no validation claim without a manifest + committed reference** |
 | discover open work | quick fix: fix it now (no issue); larger work: open a GitHub issue on the fork after proposing it (fix-now-or-issue triage, CLAUDE.md; no parallel backlog files) |
 | change repo dependencies, env, inputs, paths, downloaders, canonical config, run commands, or outputs | assess README impact (checker D2–D4 cover scripts/configs/data paths) |
-| finish any of the above | `python -m braunschweig.documentation build && … check` and commit the regenerated views |
+| finish any of the above | `python -m braunschweig.documentation check` at 0 FAIL; leave `docs/generated/` untouched, main's `generated-views` workflow commits the rebuilt views (ADR-0168) |
 
 The PR template carries this as a checklist; CI runs the metadata-only check.
 
