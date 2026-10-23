@@ -1,0 +1,23 @@
+## i453/i443 1 % A/B, arm1 (throwaway server overlay, not committed; derived from configs/overlays/test_1pct.yml).
+## arm0 = code ec825087 (before #455); arm1/arm2 = code 3123cc4f (after #457), arm1 with the outside-tour
+## modes off, arm2 on. Analysis targets dropped after an OOM of the analysis suite next to another
+## session's 25 % run; the A/B metrics come from ab_metrics_i453.py. MATSim iterates until the eqasim termination criterion or 100 iterations.
+working_directory: /home/felix/wt-i453-ab/cache_arms12
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  sampling_rate: 0.01
+  output_path: /home/felix/wt-i453-ab/output_arm1
+  analysis_working_directory: /home/felix/wt-i453-ab/cache_arms12
+  output_prefix: braunschweig_1pct_i453_arm1_
+  matsim_last_iteration: 100
+  braunschweig.population.popsim.work_dir: /home/felix/wt-i453-ab/popsim_work
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 1
+  cache_share_enabled: false
+  cache_share_export: false
+  cache_share_recompute: []
+  braunschweig.outside_tour_modes.enabled: false

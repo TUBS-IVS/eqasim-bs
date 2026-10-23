@@ -148,13 +148,19 @@ way. `prio:` never goes on a PR.
 name (`.claude/worktrees/<slug>`). One worktree per task, branched off `origin/main`.
 
 **PR title:** what the change does, imperative or nominal, at most about 90 characters,
-ending in `(#NN)` or `(closes #NN)`. No `[fix]` prefix, no bare `fix` / `update` / `changes`.
+ending in `(#NN)`, or in `(closes #NN)` for the PR that closes the issue (see PR body).
+No `[fix]` prefix, no bare `fix` / `update` / `changes`.
 Good: `Survive a killed chainsolver shard worker instead of waiting forever (#344)`.
 
 **PR body:** the template's sections, and the same `**Stages:**` line as the issue, so a
-reviewer sees which registry stages the diff touches without reading the diff. `Closes #NN`
-is mandatory whenever an issue exists — a PR without an issue is for hygiene commits and for the quick fixes
-that the fix-now-or-issue triage (CLAUDE.md, "Newly discovered work") fixes without an issue.
+reviewer sees which registry stages the diff touches without reading the diff. Every PR
+of an issue names it. `Closes #NN` belongs only in the PR that meets the last open
+`Done when` item of #NN; every other PR of that issue writes `Part of #NN`. A `Done when`
+item that asks for a run manifest is met only when that manifest is on `main`, so a code
+PR whose run is still owed writes `Part of #NN`. On 2026-10-22, `Closes #465` in #481
+closed #465 while its run manifest was still owed. A PR without an issue is for hygiene
+commits and for the quick fixes that the fix-now-or-issue triage (CLAUDE.md, "Newly
+discovered work") fixes without an issue.
 
 ```
 git pr --label step:generation --label area:behavior \

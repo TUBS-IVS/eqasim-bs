@@ -199,6 +199,7 @@ validation:
   state: unvalidated
   runs:
   - portal-trips-ab-1pct-2026-10-09
+  - i465-wpe-smoke-1pct-2026-10-23
   metric: null
   note: >-
     Smoke and A/B direction only (run portal-trips-ab-1pct-2026-10-09: 1 % sample, 0 MATSim iterations, flag OFF
@@ -229,8 +230,10 @@ notes: >-
   synthesis.population.trips.final and everything downstream once, and the distance CDFs and the external
   candidates recompute too. Not in scope (tracked elsewhere): the plan feasibility check and stuck KPI (#443),
   the freight gate connector (#444), a sampler conditioned on the reported distance class (a possible later A/B).
-  Timetable-aware pt gates (ADR-0152, #465): implemented, effect not yet measured; the WP-E run manifest is owed,
-  so the validation block above does not cover them. Fallback rate of the no-connection chain: logged as rates
+  Timetable-aware pt gates (ADR-0152, #465): smoked once at 1 % with 87 MATSim iterations
+  (i465-wpe-smoke-1pct-2026-10-23): of 123 pt stays 39 kept a timetable-aware gate, 68 were switched to car or car
+  passenger, 2 shifted, 14 kept without a connection; frozen residents stuck walking at the end of the day 58 -> 20
+  against the #453/#443 baseline. A smoke, no observed reference; the validation note above predates it. Fallback rate of the no-connection chain: logged as rates
   under [portal_trips] and warned above braunschweig.portal.no_connection_warn_share. Since ADR-0156 (#465) a stay
   without a connection may also return earlier, and the last resort is a lift (car_passenger) instead of a kept pt
   stay that the router walks.
