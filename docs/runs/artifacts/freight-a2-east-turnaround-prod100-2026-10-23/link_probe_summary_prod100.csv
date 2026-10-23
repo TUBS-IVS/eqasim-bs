@@ -1,0 +1,4 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+38954,motorway,,4,4.0,8000.0,55.6,8000.0,7364,7364,0,5.9,14.92-28.02 h,0,0.0,0.0,0,
+450785,motorway,,3,3.0,6000.0,514.3,6000.0,4861,4861,0,16.03,11.09-27.13 h,6891,429.61,0.07,31180,outside_35:13308
+647288,motorway_link,,2,1.0,1500.0,37.3,1500.0,3182,3182,0,5.26,16.05-28.10 h,0,0.0,0.0,0,

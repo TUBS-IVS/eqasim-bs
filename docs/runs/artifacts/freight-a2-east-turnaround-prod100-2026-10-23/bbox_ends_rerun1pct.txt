@@ -1,0 +1,12 @@
+vehicles passing the portal link eastward (450785 -> 450786): {}
+starts/ends east of the portal link end (x > 649683):
+96 ('leaves_traffic', 'resident/other', '450785', 'motorway', 649684)
+80 ('leaves_traffic', 'freight_transit', '450785', 'motorway', 649684)
+20 ('enters_traffic', 'resident/other', '328241', 'primary', 650002)
+20 ('leaves_traffic', 'resident/other', '328241', 'primary', 650002)
+19 ('leaves_traffic', 'freight_other', '450785', 'motorway', 649684)
+17 ('enters_traffic', 'resident/other', '664672', 'primary', 650049)
+17 ('leaves_traffic', 'resident/other', '664673', 'primary', 650320)
+2 ('enters_traffic', 'resident/other', '182571', 'tertiary', 649695)
+1 ('enters_traffic', 'freight_transit', '664672', 'primary', 650049)
+1 ('leaves_traffic', 'resident/other', '182570', 'tertiary', 650015)
