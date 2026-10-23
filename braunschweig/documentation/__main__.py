@@ -1,13 +1,15 @@
 """CLI for the model registry and documentation system.
 
-    python -m braunschweig.documentation check [--quiet] [--no-dag]
+    python -m braunschweig.documentation check [--quiet] [--no-dag] [--strict-views]
     python -m braunschweig.documentation build
     python -m braunschweig.documentation dag [pipeline ...]
 
 ``check`` resolves every declared pointer (registries, ADRs, run manifests,
 resolved production config, DAG snapshots, README references) and exits 1 when
 any finding is FAIL; WARN and SKIP never fail the command -- an honest "not
-measured yet" must stay reportable. ``build`` regenerates docs/generated/*.
+measured yet" must stay reportable. A stale generated view is WARN on a branch
+and FAIL with ``--strict-views`` (ADR-0168). ``build`` regenerates
+docs/generated/*; only main's generated-views workflow commits them.
 ``dag`` re-extracts the synpp DAG snapshots (requires the scientific env).
 """
 from __future__ import annotations
@@ -32,6 +34,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="check: print only WARN and FAIL findings")
     parser.add_argument("--no-dag", action="store_true",
                         help="check: skip the DAG-freshness re-extraction (CI mode)")
+    parser.add_argument("--strict-views", action="store_true",
+                        help="check: a stale generated view is FAIL, not WARN (main, ADR-0168)")
     return parser
 
 
@@ -54,7 +58,8 @@ def main(argv=None) -> int:
     from braunschweig.documentation.checks import (FAIL, OK, SKIP, WARN,
                                                    CheckContext, run_all_checks)
 
-    context = CheckContext(args.repo_root, use_dag_extraction=not args.no_dag)
+    context = CheckContext(args.repo_root, use_dag_extraction=not args.no_dag,
+                           strict_views=args.strict_views)
 
     if args.command == "build":
         from braunschweig.documentation import render

@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 110 | stages: 132 | datasets: 105 | ADRs: 157 | run manifests: 72
+- Features: 108 | stages: 132 | datasets: 104 | ADRs: 161 | run manifests: 74
 
 ## Population synthesis
 
@@ -171,11 +171,9 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
-| [Large sites spread their car access over their parking lots or get one high-capacity link](../registry/features/large_facility_access_links.yml) | active | ON | A/A/A | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
 | [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
 | [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated (`i453-i443-ab-1pct-2026-10-16`, `i465-wpe-smoke-1pct-2026-10-23`) | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
-| [Departing vehicles wait for the traffic already driving on a link](../registry/features/qsim_departures_yield.yml) | active | ON | A/A/A | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
 | [Next-day departures in the transit schedule for the 30 h simulated day](../registry/features/transit_next_day.yml) | active | ON | A/A/A | unvalidated (`i465-wpe-smoke-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
 | [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/i/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |

@@ -169,6 +169,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",
     "data.hts.hts",
+    # The routed day-end check (ADR-0160) of the delegate reads its keys, margin rule and router option from here.
+    "braunschweig.matsim.scenario.day_end_margin",
 )
 
 
