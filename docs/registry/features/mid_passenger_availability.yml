@@ -83,6 +83,6 @@ notes: >-
   respondent's diary (braunschweig.population.popsim.donor_match_passenger_access),
   so the gate meets fewer lifts of a foreign diary; since ADR-0166
   (braunschweig.population.popsim.donor_match_lift_free_never_passenger) a "never"
-  person also prefers a donor whose diary is lift-free (raw MiD: 1,196 "never" persons
-  keep a foreign lift, 315 of them member-completion copies of their mirror's own
-  conflict); own-diary conflicts stay as described in ADR-0121.
+  person also prefers a donor whose diary is lift-free (residual measured in run
+  manifest donor-match-passenger-residual-2026-10-23); own-diary conflicts stay as
+  described in ADR-0121.

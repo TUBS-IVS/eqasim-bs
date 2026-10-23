@@ -291,8 +291,24 @@ def build_completed_donor(
         include_passenger_availability=passenger_availability_enabled,
     )
 
+    # Fail fast BEFORE the ~1 min / ~2 GB Wege load below (R9): mobil is required
+    # whenever the diary plan match runs; feiertag is required ONLY when holiday
+    # exclusion is active (that is the only consumer of it, diary_plan_match.
+    # classify_plan_sources). mobil_diff is an optional diagnostic column that
+    # diary_plan_match never reads, so it is deliberately NOT required here.
+    if diary_plan_match_on:
+        required_mobility_cols = ["mobil"] + (["feiertag"] if exclude_holiday_plan_sources else [])
+        missing_mobility_cols = [c for c in required_mobility_cols if c not in persons.columns]
+        if missing_mobility_cols:
+            raise KeyError(
+                f"[completed_donor] diary_plan_match requires MiD person column(s) {missing_mobility_cols} "
+                "(see mid.donor.MID_PERSON_OPTIONAL_COLS); the MiD delivery in "
+                f"{mid_dir} lacks them -- set braunschweig.population.popsim.diary_plan_match: false "
+                "to run without the diary plan match."
+            )
+
     # The lift-free preference needs the Wege table BEFORE the weekend match; the load draws no rng, so
-    # loading it earlier cannot shift the completion stream (it then precedes the mobil/feiertag check).
+    # loading it earlier cannot shift the completion stream.
     wege = mid_donor.load_mid_wege(mid_dir) if lift_free_never else None
     car_passenger_diaries = (passenger_availability.car_passenger_diary_keys(wege)
                              if lift_free_never else None)
@@ -319,22 +335,6 @@ def build_completed_donor(
         completion_report.n_households_filled, completion_report.n_persons_added,
         completeness_report.completeness_rate,
     )
-
-    # Fail fast BEFORE the ~1 min / ~2 GB Wege load below (R9): mobil is required
-    # whenever the diary plan match runs; feiertag is required ONLY when holiday
-    # exclusion is active (that is the only consumer of it, diary_plan_match.
-    # classify_plan_sources). mobil_diff is an optional diagnostic column that
-    # diary_plan_match never reads, so it is deliberately NOT required here.
-    if diary_plan_match_on:
-        required_mobility_cols = ["mobil"] + (["feiertag"] if exclude_holiday_plan_sources else [])
-        missing_mobility_cols = [c for c in required_mobility_cols if c not in persons.columns]
-        if missing_mobility_cols:
-            raise KeyError(
-                f"[completed_donor] diary_plan_match requires MiD person column(s) {missing_mobility_cols} "
-                "(see mid.donor.MID_PERSON_OPTIONAL_COLS); the MiD delivery in "
-                f"{mid_dir} lacks them -- set braunschweig.population.popsim.diary_plan_match: false "
-                "to run without the diary plan match."
-            )
 
     # Diary facts are derived from the MiD Wege table UNCONDITIONALLY (needed both
     # for the diary plan match below AND for the src_* fact columns attached

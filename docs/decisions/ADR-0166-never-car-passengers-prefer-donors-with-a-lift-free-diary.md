@@ -72,9 +72,9 @@
 ## Measurement (raw MiD 2023 B1 donor, seed 1234)
 
 `scripts/measure_donor_match_passenger_access.py` on felix, 2026-10-23; unweighted counts of the 485,709 completed
-donor persons, not synthetic-population estimates. Split baseline at commit 96ff2cc8 (arms `off`/`on` = key off/on,
-`docs/runs/artifacts/donor-match-passenger-residual-2026-10-23/report_split_baseline.json`), decision arms at commit
-baff2789 (`docs/runs/artifacts/donor-match-passenger-residual-2026-10-23/report.json`). The `class_key` arm reproduces
+donor persons, not synthetic-population estimates. Split baseline at commit 96ff2cc8 (arms `off`/`on` = key off/on),
+decision arms at commit baff2789; commands, arms, artifacts and hashes in run manifest
+`docs/runs/donor-match-passenger-residual-2026-10-23.yml`. The `class_key` arm reproduces
 the ADR-0162 numbers exactly (1,782; 10,825 crossings).
 
 | "never" persons whose FOREIGN diary has a lift | key off | class key (ADR-0162) | + lift-free (ADR-0166) |

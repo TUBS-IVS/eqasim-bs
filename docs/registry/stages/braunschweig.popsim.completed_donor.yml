@@ -97,7 +97,7 @@ notes: >-
   (passenger_availability.car_passenger_diary_keys; the Wege table is then loaded before the weekend match, which
   draws no rng), as the donor-side class of match_person and as lift-free first tiers of align_members within the
   age band; completed_donor.log_never_passenger_foreign_lifts logs the "never" persons that keep a foreign lift as a
-  rate (raw MiD, seed 1234: 1,782 -> 1,196 of 14,548, ADR-0166). The stage
+  rate (measured in run manifest donor-match-passenger-residual-2026-10-23, ADR-0166). The stage
   defines validate() as a structured token, one semantic digest per helper module (diary_facts, diary_plan_match,
   weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
   itself and a helper edit would otherwise serve a stale cached donor build.
