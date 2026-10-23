@@ -4,3 +4,10 @@
 
 # The legacy writer byte fixture must retain the exact LF bytes on Windows too.
 tests/fixtures/population_passenger_availability_legacy.xml text eol=lf
+
+# Generated documentation views (ADR-0165): documentation build writes them with LF, so they are
+# checked out with LF too (no line-ending-only dirt after a rebuild on Windows), and a merge keeps
+# the current branch's side instead of writing conflict markers. scripts/sync_main.py registers the
+# driver and rebuilds the views from the merged registries; check D1-generated fails any view that
+# was not rebuilt.
+docs/generated/*.md text eol=lf merge=generated-view
