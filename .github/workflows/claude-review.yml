@@ -14,15 +14,15 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, labeled]
 
-# One queue per PR. A running review is never cancelled (its cost is already spent and
-# recorded only at the end); a newer push replaces a still-pending one. Label events for
-# any label other than the force label get their own group, so a triage label can neither
-# cancel nor displace a review. Keep 'claude-review' in sync with labels.force in the config.
+# One queue per PR and event kind. A running review is never cancelled (its cost is already
+# spent and recorded only at the end); a newer push replaces a still-pending push run. Every
+# label event gets a group of its own label, so a triage label can neither cancel nor displace
+# a review, and a pending forced review (label claude-review) is not displaced by a later
+# push (Claude review finding on PR #497).
 concurrency:
   group: >-
     claude-review-${{ github.event.pull_request.number }}-${{
-    (github.event.action == 'labeled' && github.event.label.name != 'claude-review')
-    && format('label-{0}', github.event.label.name) || 'code' }}
+    github.event.action == 'labeled' && format('label-{0}', github.event.label.name) || 'code' }}
   cancel-in-progress: false
 
 permissions:
@@ -93,11 +93,13 @@ jobs:
       MODEL: ${{ needs.classify.outputs.model }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history: the script diffs base...head with local git, as the gate does.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -113,11 +115,9 @@ jobs:
       - name: Claude review (read-only, structured findings)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # For the script's gh pr diff (the model itself has no shell).
-          GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/claude_review.py review --config .github/claude-review.yml \
-            --tier "$TIER" --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" \
+            --tier "$TIER" --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" --base-sha "$BASE_SHA" \
             --out "$RUNNER_TEMP/claude-review-result.json"
       - name: Record review cost
         if: always()

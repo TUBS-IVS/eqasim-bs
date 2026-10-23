@@ -210,3 +210,16 @@ def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
         # the variadic tool list must come last, and the model must have no write or shell access
         assert command[-2] == "--allowedTools"
         assert set(command[-1].split(",")) <= {"Read", "Grep", "Glob"}
+
+
+def test_filter_diff_drops_ignored_files_for_the_model():
+    # A generated view or lock refresh must not reach the model: it would spend the light
+    # tier's turns and budget and starve the review of the real change (PR #497 finding).
+    diff = _DIFF + (
+        "diff --git a/docs/generated/STAGES.md b/docs/generated/STAGES.md\n"
+        "--- a/docs/generated/STAGES.md\n+++ b/docs/generated/STAGES.md\n@@ -1 +1 @@\n-x\n+y\n"
+        "diff --git a/environments/conda-lock.yml b/environments/conda-lock.yml\n"
+        "--- a/environments/conda-lock.yml\n+++ b/environments/conda-lock.yml\n@@ -1 +1 @@\n-a\n+b\n")
+    kept, dropped = cr.filter_diff(diff, CONFIG["ignored_paths"])
+    assert dropped == ["docs/generated/STAGES.md", "environments/conda-lock.yml"]
+    assert kept == _DIFF

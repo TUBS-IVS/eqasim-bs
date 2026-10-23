@@ -316,7 +316,38 @@ def summary_markdown(structured: dict, inline: list, summary_only: list, tier: s
     return "\n".join(parts) + "\n"
 
 
-def _pr_diff(repo: str, pr: int) -> str:
+def filter_diff(diff_text: str, ignored_patterns) -> tuple:
+    """Drop the file sections of a unified diff whose path matches the gate's ignored_paths.
+
+    Returns (kept diff text, dropped paths). The gate already leaves these files out of its
+    line counts; handing them to the model as well would spend turns and budget on generated
+    views and lock files (Claude review finding on PR #497)."""
+    kept, dropped = [], []
+    section: list = []
+    section_path = None
+
+    def flush():
+        if section:
+            (dropped.append(section_path) if section_path and matches_any(section_path, ignored_patterns)
+             else kept.extend(section))
+
+    for line in diff_text.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            flush()
+            section = [line]
+            match = re.match(r"diff --git a/(.*) b/(.*)$", line.rstrip("\r\n"))
+            section_path = match.group(2) if match else None
+        else:
+            section.append(line)
+    flush()
+    return "".join(kept), dropped
+
+
+def _pr_diff(repo: str, pr: int, base_sha: str = "", head_sha: str = "") -> str:
+    if base_sha:
+        # Local git, as the gate does: no API diff size limit (gh pr diff fails on very large diffs).
+        return subprocess.run(["git", "-c", "core.quotepath=false", "diff", f"{base_sha}...{head_sha}"],
+                              check=True, capture_output=True, text=True, encoding="utf-8").stdout
     return subprocess.run(["gh", "pr", "diff", str(pr), "--repo", repo],
                           check=True, capture_output=True, text=True, encoding="utf-8").stdout
 
@@ -408,11 +439,20 @@ def _cmd_review(args) -> int:
     # The model gets the diff as a file it pages through with Read, so it needs no shell at all
     # (a local run showed the model piping `gh pr diff` into grep/awk, which the read-only tool
     # list rightly denies, and the review then covered only part of the diff).
-    diff_text = _pr_diff(args.repo, args.pr)
+    diff_text, dropped = filter_diff(_pr_diff(args.repo, args.pr, args.base_sha, args.sha),
+                                     config.get("ignored_paths", []))
     diff_path = Path(args.diff_out)
     diff_path.parent.mkdir(parents=True, exist_ok=True)
     diff_path.write_text(diff_text, encoding="utf-8")
-    print(f"[claude-review] diff of PR {args.pr}: {len(diff_text.splitlines())} lines -> {diff_path.as_posix()}")
+    print(f"[claude-review] diff of PR {args.pr}: {len(diff_text.splitlines())} lines -> {diff_path.as_posix()}; "
+          f"{len(dropped)} ignored file(s) left out" + (f": {', '.join(dropped[:10])}" if dropped else ""))
+    if not diff_text.strip():
+        print("::warning::Nothing left to review after dropping ignored paths; no model call.")
+        Path(args.out).write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                                              "total_cost_usd": 0.0, "num_turns": 0, "structured_output": {
+                                                  "summary": "Only ignored (generated or lock) files changed.",
+                                                  "findings": []}}), encoding="utf-8")
+        return 0
     prompt = build_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"),
                           args.repo, args.pr, args.tier, args.sha, diff_path.as_posix())
     claude_bin = shutil.which(args.claude_bin) or args.claude_bin
@@ -496,6 +536,8 @@ def main(argv=None) -> int:
     p_review.add_argument("--pr", required=True, type=int)
     p_review.add_argument("--sha", required=True, help="PR head commit")
     p_review.add_argument("--out", required=True)
+    p_review.add_argument("--base-sha", default="",
+                          help="PR base commit: diff with local git (needs full history) instead of gh pr diff")
     p_review.add_argument("--diff-out", default=".claude/review-pr.diff",
                           help="where the PR diff is written for the model (inside the checkout, so Read may open "
                                "it); pass the same file to post --diff-file")

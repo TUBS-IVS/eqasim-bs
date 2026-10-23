@@ -55,9 +55,12 @@ The thresholds, paths, labels, models, turn and budget limits live in
 7. A critical path, or >= `light_min_lines` lines, or >= `light_min_files` files -> light.
 8. Otherwise no review.
 
-Runs queue per PR and a running review is never cancelled: its cost is already spent
-and is recorded only at the end. A newer push replaces a still-pending run. Label events
-for other labels run in their own concurrency group, so they cannot displace a review.
+Runs queue per PR and event kind, and a running review is never cancelled: its cost is
+already spent and is recorded only at the end. A newer push replaces a still-pending push
+run. Every label event runs in a concurrency group of its own label, so a triage label
+cannot displace a review, and a pending forced review is not displaced by a later push
+(a Claude review finding on PR #497: with one shared group, the push replaced the pending
+forced run and the push run was then gated normally).
 
 Changed lines are added + deleted lines of files outside `ignored_paths` (generated
 views, lock files, test baselines); binary files count as a file with 0 lines. Every
@@ -71,8 +74,11 @@ decision, including a skip, is printed with its reason to the log and the job su
   Claude plan login; no user hooks, plugins, memory or automatic CLAUDE.md loading; the
   prompt names the rule files to read), `--permission-mode dontAsk` and only the read tools of
   `review.allowed_tools` (Read, Grep, Glob). The model has no shell, cannot write files and
-  cannot post anything. The script fetches the PR diff itself (`gh pr diff`) and writes it
-  to `.claude/review-pr.diff` inside the checkout, which the model pages through with Read;
+  cannot post anything. The script builds the PR diff itself (`git diff base...head` in CI,
+  which has no API size limit; `gh pr diff` without `--base-sha`), drops the file sections
+  that match `ignored_paths` (logged by count and path; a PR with only ignored files makes no
+  model call), and writes it to `.claude/review-pr.diff` inside the checkout, which the
+  model pages through with Read;
   a local test run (2026-10-23) showed that with `gh pr diff` as a tool the model piped it
   into grep/awk, which the read-only tool list denied, and reviewed only part of the diff.
   The prompt goes in on stdin; the JSON result goes to a file.
