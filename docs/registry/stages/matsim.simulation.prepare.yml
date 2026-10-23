@@ -107,8 +107,9 @@ notes: >-
   key .max_frozen_pt_as_walk_share (0.02, ASSUMPTION, default declared in configure() and pinned in configs/base_bs.yml) fails the
   stage for the frozen residents only when fail_on_threshold is true. The attribute needs the eqasim-java-bs
   PlanRouter change, so a jar built before it would make n_pt_as_walk read 0 whatever the router did: plan_check.require_walk_fallback_stamp
-  therefore RAISES (before any counting, only when the check runs) unless PlanRouter.class of the eqasim jar of matsim.runtime.eqasim contains
-  walkFallbackFrom (fix: rebuild from eqasim_source_path, #465); a WARNING is logged when pt or stamped legs exist but no leg carries a
+  therefore RAISES (before any counting, only when the check runs) unless PlanRouter.class (#465) and the scenario cutter's PlanCutter.class (#487: a cutter that rebuilds the cut trips
+  without the stamp left only the stamps of its own routing, 33 of the 852 pre-cut fallbacks in run i465-wpe-smoke-1pct-2026-10-23)
+  of the eqasim jar of matsim.runtime.eqasim contain walkFallbackFrom (fix: rebuild from eqasim_source_path); a WARNING is logged when pt or stamped legs exist but no leg carries a
   routingMode attribute (n_pt_trips meaningless). in_region, in-commuter and freight figures are reported, never failed on. plan_check is part of
   _HELPER_MODULES, and braunschweig.popsim.plan_validation, braunschweig.popsim.closure_dwell and
   data.hts.hts (its import closure) are in the deferred helper names, so the validate token covers
