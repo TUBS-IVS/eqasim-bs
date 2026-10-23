@@ -231,6 +231,24 @@ def test_write_router_config(tmp_path):
         assert p in text
 
 
+def test_write_router_config_sets_the_qsim_values_the_eqasim_injector_requires(tmp_path):
+    # RunBatchPublicTransportRouter builds the full eqasim injector. EqasimAnalysisModule refuses a config whose
+    # qsim.personInitializedEvents is not "all", and TravelTimeRecorder sizes its bins by qsim.endTime (unset ->
+    # Double.MAX_VALUE -> OutOfMemoryError). Both failed the first real-data run of the gate choice (#465 WP-E smoke).
+    import xml.etree.ElementTree as ET
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+    connections.write_router_config(str(tmp_path / "c.xml"), network_path="n.xml", schedule_path="s.xml",
+                                    vehicles_path="v.xml")
+    root = ET.parse(tmp_path / "c.xml").getroot()
+    qsim = [m for m in root.iter("module") if m.get("name") == "qsim"]
+    assert len(qsim) == 1
+    values = {p.get("name"): p.get("value") for p in qsim[0].iter("param")}
+    assert values["personInitializedEvents"] == "all"
+    hours, minutes, seconds = (int(x) for x in values["endTime"].split(":"))
+    assert hours * 3600 + minutes * 60 + seconds == MAX_PLAN_TIME_SECONDS
+
+
 def test_write_router_config_escapes_xml_attribute_values(tmp_path):
     import xml.etree.ElementTree as ET
     connections.write_router_config(str(tmp_path / "c.xml"), network_path='a&b "net".xml',

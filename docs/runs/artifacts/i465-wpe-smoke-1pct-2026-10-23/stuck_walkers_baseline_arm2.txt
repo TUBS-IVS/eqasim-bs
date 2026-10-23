@@ -1,0 +1,63 @@
+ person  stuck_leg_dep_h planned_mode planned_from planned_to  planned_dep_h  dt_h  prepared_plan_stamped_pt
+1017523            28.57           pt      outside       home          28.57  0.00                     False
+1102939            20.42           pt      outside       home          20.42  0.00                     False
+1124536            15.05           pt      outside       home          15.05  0.00                     False
+1124856            15.70           pt      outside       home          15.70  0.00                     False
+1125708            28.50           pt         work       home          28.50  0.00                     False
+1125711            18.33           pt         work       home          18.33  0.00                     False
+1125814            21.33           pt         work       home          21.33  0.00                     False
+1125831            18.00           pt         work       home          18.00  0.00                     False
+1125877            22.50           pt         work       home          22.50  0.00                     False
+1125879            17.83           pt         work       home          17.83  0.00                     False
+1125940            16.92           pt         work       home          16.92  0.00                     False
+1125941            17.18           pt         work       home          16.50  0.68                     False
+1125978            18.25           pt         work       home          18.25  0.00                     False
+1125988            28.14          car         work       home          17.00 11.14                     False
+1126132            21.01           pt         work       home          23.33  2.33                     False
+1126214            21.00           pt         work       home          21.00  0.00                     False
+1126218            21.70           pt         home       work          20.28  1.42                     False
+1126228            18.17           pt         work       home          18.17  0.00                     False
+1126255            17.50           pt         work       home          17.50  0.00                     False
+1126256            23.00           pt         work       home          23.00  0.00                     False
+1126275            22.17           pt         work       home          22.17  0.00                     False
+1126281            29.33           pt         work       home          29.33  0.00                     False
+ 122960            25.07           pt      outside       home          25.07  0.00                     False
+ 125291            25.37           pt      leisure       home          22.55  2.82                     False
+ 167967            23.15           pt      outside       home          23.15  0.00                     False
+ 168230            21.27           pt      outside       home          22.48  1.21                     False
+  17136            22.30           pt      outside       home          22.30  0.00                     False
+ 202312            27.21           pt      outside       home          27.21  0.00                     False
+ 209206            26.39           pt      outside       home          26.39  0.00                     False
+ 293239            25.35           pt      outside       home          25.35  0.00                     False
+ 343377            28.15         walk      outside       home          18.47  9.68                     False
+ 354731            25.68           pt      outside       home          25.68  0.00                     False
+ 394200            25.90           pt      outside       home          25.90  0.00                     False
+ 394275            28.63           pt      outside       home          28.63  0.00                     False
+ 395862            24.16           pt      outside       home          24.16  0.00                     False
+ 407135            29.71           pt      outside       home          29.71  0.00                     False
+ 527923            23.38           pt      leisure       home          23.38  0.00                     False
+ 529412            26.68           pt      outside       home          26.68  0.00                     False
+ 542946            27.07           pt      outside       home          27.07  0.00                     False
+ 562451            26.64           pt      outside       home          26.64  0.00                     False
+ 566863            28.13           pt      outside       home          28.13  0.00                     False
+ 666404            27.42           pt      outside       home          27.41  0.00                     False
+ 677408            25.68           pt      outside       home          25.68  0.00                     False
+ 696091            22.90           pt      outside       home          22.90  0.00                     False
+ 696094            29.07           pt      outside       home          29.07  0.00                     False
+ 727386            27.42           pt      outside       home          27.42  0.00                     False
+ 769106            27.89           pt      outside       home          27.89  0.00                     False
+ 782793            26.68           pt      outside       home          26.68  0.00                     False
+ 785430            26.53           pt      outside       home          26.53  0.00                     False
+ 826569            26.53           pt      outside       home          26.53  0.00                     False
+ 827368            27.57           pt      leisure       home          23.24  4.33                     False
+ 834837            25.99           pt      outside       home          25.99  0.00                     False
+ 859796            29.85           pt      outside       home          29.85  0.00                     False
+ 905013            26.81           pt      leisure       home          22.37  4.44                     False
+ 907925            25.99           pt      outside       home          25.99  0.00                     False
+ 938621            23.83           pt      outside       home          23.83  0.00                     False
+ 954933            29.84           pt      outside       home          29.84  0.00                     False
+ 985398            26.61           pt      outside       home          26.61  0.00                     False
+stuck walkers at end, frozen: 58
+prepared plan with walkFallbackFrom=pt: 0
+planned mode (nearest departure): {'pt': 56, 'car': 1, 'walk': 1}
+planned pt with an exact departure match (dt_h == 0): 49
