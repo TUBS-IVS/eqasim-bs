@@ -889,6 +889,17 @@ config:
   braunschweig.outside_tour_modes.enabled: true
   braunschweig.outside_tour_modes.min_share: 0.01
   braunschweig.outside_tour_modes.warn_share: 0.5
+  # Timetable check of the pt legs of outside tours without a portal leg (ADR-0159, #465): a tour whose pt legs
+  # have no connection moves as a whole (earlier first, steps of pt_shift_step_s up to pt_shift_window_s; values
+  # of ADR-0152/0153, ASSUMPTION, not calibrated), else drives, else rides along. last_resort car_passenger: a
+  # tour nothing else resolves (and a road-gate portal tour without an admissible mode) becomes a lift without
+  # the passenger availability instead of a walk of tens of kilometres. The former behaviour needs both
+  # pt_connection_check.enabled false and last_resort keep (last_resort also governs the portal-tour lift).
+  braunschweig.outside_tour_modes.pt_connection_check.enabled: true
+  braunschweig.outside_tour_modes.pt_shift_window_s: 7200
+  braunschweig.outside_tour_modes.pt_shift_step_s: 1800
+  braunschweig.outside_tour_modes.pt_no_connection_warn_share: 0.05
+  braunschweig.outside_tour_modes.last_resort: car_passenger
   # Day-end margin of the written plans (#465): a day whose last planned arrival is later than the end of the
   # simulated day (30 h) minus the margin moves earlier as a whole (durations kept) in the population writer.
   # The margin is an ASSUMPTION (routed + congested last trips took up to 0.54 h longer than planned in the WP-E smoke).
@@ -990,6 +1001,9 @@ aliases:
   # outside judged against SrV (ADR-0145, issue #453). Read by the population writer and the synthesis
   # output only; the chain solver, the portal stage and the SrV comparisons keep reading trips.final.
   synthesis.population.trips.simulated: braunschweig.synthesis.outside_tour_modes.stage
+  # The activities of the simulated day (ADR-0159): built from trips.simulated, whose outside tours the timetable
+  # check may move; read by the population writer and the synthesis output only.
+  synthesis.population.activities.simulated: braunschweig.synthesis.outside_tour_modes.activities_stage
   synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
   # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
   synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day

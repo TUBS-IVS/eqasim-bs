@@ -70,7 +70,8 @@ TRIPS_STAGE = "synthesis.population.trips"
 ACTIVITIES_STAGE = "synthesis.population.activities"
 #: The simulated day (trips.final with the outside-tour modes judged against SrV, ADR-0145).
 DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
-DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
+#: The activities of the simulated trips (ADR-0159): the pt check of the outside tours may move a tour's times.
+DAY_ACTIVITIES_STAGE = "synthesis.population.activities.simulated"
 
 #: The vendored configure declares the pre-assignment names; they are substituted by the simulated trips and the
 #: reporting-day activities, so the DAG edge and execute() read the same stages (the default map of

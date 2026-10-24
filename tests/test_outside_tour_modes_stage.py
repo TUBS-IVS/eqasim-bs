@@ -22,7 +22,7 @@ class _RecordingConfigureContext:
     def __init__(self, values=None):
         self.calls, self.stages, self._values = {}, [], values or {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, **kwargs):
         self.calls[key] = default
         return self._values.get(key, default)
 
@@ -37,8 +37,14 @@ def test_configure_declares_the_keys_and_the_inputs():
                 "cordon_enabled", "cordon_network_buffer_fraction"):
         assert key in context.calls
     assert context.calls[keys.KEY_MIN_SHARE] == keys.DEFAULT_MIN_SHARE
-    assert context.stages == [keys.FINAL_TRIPS_STAGE, keys.LOCATIONS_STAGE, keys.PERSONS_STAGE,
-                              keys.MUNICIPALITIES_STAGE]
+    assert context.stages[:4] == [keys.FINAL_TRIPS_STAGE, keys.LOCATIONS_STAGE, keys.PERSONS_STAGE,
+                                  keys.MUNICIPALITIES_STAGE]
+    # The timetable check (ADR-0159, on by default) routes on the pre-cut supply with the eqasim jar.
+    assert {stage.SUPPLY_STAGE, stage.GTFS_STAGE, "matsim.runtime.eqasim"} <= set(context.stages[4:])
+    assert context.calls[keys.KEY_LAST_RESORT] == "car_passenger"
+    without_check = _RecordingConfigureContext({"cordon_enabled": True, keys.KEY_PT_CHECK_ENABLED: False})
+    stage.configure(without_check)
+    assert stage.SUPPLY_STAGE not in without_check.stages
 
 
 def test_configure_off_declares_only_the_flag_and_the_trips_stage():
@@ -194,7 +200,8 @@ def test_execute_on_writes_the_report_and_returns_the_re_moded_frame(tmp_path, m
     fixture = _fixture()
     municipalities = gpd.GeoDataFrame({"id": [1]}, geometry=[box(0.0, 0.0, 10000.0, 10000.0)], crs=CRS)
     values = {keys.KEY_ENABLED: True, keys.KEY_MIN_SHARE: 0.01, keys.KEY_WARN_SHARE: 0.5, "random_seed": 1,
-              "data_path": str(tmp_path), "cordon_network_buffer_fraction": 0.0}
+              "data_path": str(tmp_path), "cordon_network_buffer_fraction": 0.0,
+              keys.KEY_LAST_RESORT: "car_passenger", keys.KEY_PT_CHECK_ENABLED: False}
     stages = {keys.FINAL_TRIPS_STAGE: fixture["trips"], keys.LOCATIONS_STAGE: fixture["locations"],
               keys.PERSONS_STAGE: fixture["persons"], keys.MUNICIPALITIES_STAGE: municipalities}
     monkeypatch.setattr(stage, "_load_table", lambda srv_dir: fixture["table"])
@@ -264,6 +271,140 @@ def _with_portal_person(portal_mode, availability="all"):
         "bicycle_availability": [availability], "car_passenger_availability": [availability]})],
         ignore_index=True)
     return fixture
+
+
+def _fixture_with_an_unserved_pt_tour():
+    """The base fixture with times, plus person 5 (no car, no lift): a pt leisure tour to (30 km, 5 km), outside the
+    extent, leaving at 18:00 and returning at 22:00."""
+    fixture = _fixture()
+    hours = {1: (8.0, 8.5, 17.0, 17.5), 2: (9.0, 9.2, 10.0, 10.2), 3: (7.0, 7.5, 16.0, 16.5)}
+    trips = fixture["trips"]
+    trips["departure_time"] = [hours[p][0 if i == 0 else 2] * 3600.0 for p, i in zip(trips["person_id"],
+                                                                                       trips["trip_index"])]
+    trips["arrival_time"] = [hours[p][1 if i == 0 else 3] * 3600.0 for p, i in zip(trips["person_id"],
+                                                                                     trips["trip_index"])]
+    extra = pd.DataFrame({"person_id": [5, 5], "trip_index": [0, 1], "preceding_purpose": ["home", "leisure"],
+                          "following_purpose": ["leisure", "home"], "mode": ["pt", "pt"],
+                          "portal_leg": [False, False], "departure_time": [18 * 3600.0, 22 * 3600.0],
+                          "arrival_time": [18.5 * 3600.0, 22.5 * 3600.0]})
+    fixture["trips"] = pd.concat([trips, extra], ignore_index=True)
+    points = {(5, 0): (5000.0, 5000.0), (5, 1): (30000.0, 5000.0), (5, 2): (5000.0, 5000.0)}
+    fixture["locations"] = pd.concat([fixture["locations"], gpd.GeoDataFrame(
+        {"person_id": [k[0] for k in points], "activity_index": [k[1] for k in points]},
+        geometry=[Point(*xy) for xy in points.values()], crs=CRS)], ignore_index=True)
+    fixture["persons"] = pd.concat([fixture["persons"], pd.DataFrame({
+        "person_id": [5], "car_availability": ["none"], "has_license": [False], "bicycle_availability": ["none"],
+        "car_passenger_availability": ["none"]})], ignore_index=True)
+    return fixture
+
+
+def test_the_pt_check_moves_an_unserved_non_portal_pt_tour_and_writes_its_times_back():
+    # #465, ADR-0159 (persons 125291 / 905013 of the 1 % rerun): a pt leisure tour to a destination outside the
+    # extent whose return (22:00) leaves after the last service (21:00). The check runs after the re-moding, probes
+    # only the pt legs of non-portal outside tours, and the whole tour moves one hour earlier in the returned frame.
+    fixture = _fixture_with_an_unserved_pt_tour()
+    probed = []
+
+    def probe(tasks):
+        probed.append(tasks.copy())
+        return pd.Series(tasks["departure_time"].le(21 * 3600.0).to_numpy(),
+                         index=tasks["identifier"].astype(str).to_numpy())
+
+    from braunschweig.synthesis.outside_tour_modes import pt_connections
+
+    out, report = stage.remode_outside_tours(**fixture, last_resort="car_passenger",
+                                             pt_check=pt_connections.PtCheck(probe=probe))
+    person5 = out[out["person_id"] == 5]
+    assert person5["mode"].tolist() == ["pt", "pt"]
+    assert person5["departure_time"].tolist() == [17 * 3600.0, 21 * 3600.0]
+    assert person5["arrival_time"].tolist() == [17.5 * 3600.0, 21.5 * 3600.0]
+    others = out["person_id"] != 5
+    assert out.loc[others, "departure_time"].tolist() == fixture["trips"].loc[others, "departure_time"].tolist()
+    assert out.loc[out["person_id"] == 3, "mode"].tolist() == ["car", "car"]       # portal tour: never probed
+    assert all(9900.0 not in set(tasks["origin_x"]) for tasks in probed)        # the gate end of person 3
+    assert report["pt_connection"]["actions"]["tour_shifted"] == 1
+    assert report["pt_connection"]["actions"]["kept_no_connection"] == 0
+
+
+def test_only_the_first_probe_of_the_pt_check_treats_a_batch_without_any_route_as_a_broken_run():
+    # PR #505 review: the first probe covers every checked pt leg, so no route at all there means a broken router;
+    # the narrowed per-offset batches that follow may legitimately find no route for their one or two tours.
+    calls = []
+
+    def router(tasks, allow_no_route_at_all=False):
+        calls.append(allow_no_route_at_all)
+        return "trips", "legs"
+
+    probe = stage._probe_from(router, lambda trips, legs, tasks: pd.Series(dtype=bool))
+    tasks = pd.DataFrame({"identifier": ["0"]})
+    probe(tasks)
+    probe(tasks)
+    probe(tasks)
+    assert calls == [False, True, True]
+
+
+def test_execute_with_the_pt_check_on_wires_the_production_probe(tmp_path, monkeypatch):
+    # PR #505 review: the production probe (_pt_check) -- router config and work dir, the bound of the simulated day
+    # minus the day-end margin, the connection rule over ALL schedule stops, and the strict first call -- runs here
+    # with a fake batch router: a trip departing by 21:00 is a pt trip between two stops that exist only in the
+    # uncut schedule, a later one an only-walk of 25 km.
+    from braunschweig.data.transit import connections, schedule as schedule_module
+
+    fixture = _fixture_with_an_unserved_pt_tour()
+    municipalities = gpd.GeoDataFrame({"id": [1]}, geometry=[box(0.0, 0.0, 10000.0, 10000.0)], crs=CRS)
+    monkeypatch.setattr(stage, "_load_table", lambda srv_dir: fixture["table"])
+    monkeypatch.setattr(schedule_module, "read_schedule",
+                        lambda path: type("Schedule", (), {"stops": {"far_a": None, "far_b": None}})())
+    calls = []
+
+    def fake_route_batch(context, tasks, *, config_path, threads, work_dir, allow_no_route_at_all=False):
+        calls.append({"config": config_path, "work_dir": work_dir, "threads": threads,
+                      "allow": allow_no_route_at_all, "n": len(tasks)})
+        served = tasks["departure_time"].le(21 * 3600.0).to_numpy()
+        ids = tasks["identifier"].astype(str).to_numpy()
+        trips = pd.DataFrame({"identifier": ids, "is_only_walk": np.where(served, 0, 1),
+                              "access_distance_km": np.where(served, 0.2, 25.0), "egress_distance_km": 0.2,
+                              "transfer_distance_km": 0.0, "total_walk_distance_km": np.where(served, 0.4, 25.0)})
+        legs = pd.DataFrame({"identifier": ids[served], "access_stop_id": "far_a", "egress_stop_id": "far_b"})
+        return trips, legs
+
+    monkeypatch.setattr(connections, "route_batch", fake_route_batch)
+    supply_dir, gtfs_dir = tmp_path / "supply", tmp_path / "gtfs"
+    values = {keys.KEY_ENABLED: True, keys.KEY_MIN_SHARE: 0.01, keys.KEY_WARN_SHARE: 0.5, "random_seed": 7,
+              "data_path": str(tmp_path), "cordon_network_buffer_fraction": 0.0,
+              keys.KEY_LAST_RESORT: "car_passenger", keys.KEY_PT_CHECK_ENABLED: True,
+              keys.KEY_PT_SHIFT_WINDOW_S: 7200.0, keys.KEY_PT_SHIFT_STEP_S: 1800.0,
+              keys.KEY_PT_NO_CONNECTION_WARN_SHARE: 0.05, "matsim_threads": 3, "processes": 8,
+              "braunschweig.day_end_margin.enabled": True,
+              "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0}
+    stages = {keys.FINAL_TRIPS_STAGE: fixture["trips"], keys.LOCATIONS_STAGE: fixture["locations"],
+              keys.PERSONS_STAGE: fixture["persons"], keys.MUNICIPALITIES_STAGE: municipalities,
+              stage.SUPPLY_STAGE: {"schedule_path": "schedule.xml.gz", "network_path": "network.xml.gz"},
+              stage.GTFS_STAGE: {"vehicles_path": "vehicles.xml.gz"}}
+    paths = {None: str(tmp_path), stage.SUPPLY_STAGE: str(supply_dir), stage.GTFS_STAGE: str(gtfs_dir)}
+
+    class _Context:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            return stages[name]
+
+        def path(self, name=None):
+            return paths[name]
+
+    out = stage.execute(_Context())
+    person5 = out[out["person_id"] == 5]
+    assert person5["mode"].tolist() == ["pt", "pt"]
+    assert person5["departure_time"].tolist() == [17 * 3600.0, 21 * 3600.0]
+    assert [c["allow"] for c in calls] == [False] + [True] * (len(calls) - 1) and len(calls) >= 2
+    assert all(c["threads"] == 3 for c in calls)
+    assert calls[0]["config"] == os.path.join(str(tmp_path), stage.ROUTER_CONFIG_NAME)
+    assert calls[0]["work_dir"] == os.path.join(str(tmp_path), stage.ROUTER_WORK_DIR_NAME)
+    with open(os.path.join(str(tmp_path), keys.REPORT_FILE_NAME), encoding="utf-8") as handle:
+        report = json.load(handle)
+    assert report["pt_connection"]["bound_s"] == 29 * 3600.0
+    assert report["pt_connection"]["actions"]["tour_shifted"] == 1
 
 
 def test_portal_tour_at_a_road_gate_is_never_moved_to_pt_and_is_reported():
@@ -388,6 +529,18 @@ def test_road_gate_walk_portal_tour_of_a_person_with_only_pt_and_walk_is_left_un
     assert report["n_outside_tours_remoded"] == 1                       # person 1 only
     assert report["n_outside_legs_implausible_after"] == 3              # the unchanged tour's walk legs
     assert [r for r in caplog.records if r.levelno == logging.WARNING and "left unchanged" in r.getMessage()]
+    assert report["n_portal_tours_lifted"] == 0
+
+
+def test_road_gate_walk_portal_tour_without_a_candidate_becomes_a_lift_with_the_lift_last_resort():
+    # #465, ADR-0159 decision 4 (person 343377 of the 1 % rerun: an 82.5 km walk to a road gate, stuck at the end of
+    # the day): with the lift last resort the tour becomes car_passenger (a road mode, so the gate class holds)
+    # although the person has no passenger availability; it is counted, not left unchanged.
+    fixture = _with_portal_person("walk", availability="none")
+    out, report = stage.remode_outside_tours(**fixture, last_resort="car_passenger")
+    assert out[out["person_id"] == 4]["mode"].tolist() == ["car_passenger"] * 3
+    assert report["n_portal_tours_lifted"] == 1 and report["n_portal_tours_left_unchanged"] == 0
+    assert report["n_portal_tours_remoded"] == 1
 
 
 def test_portal_tour_with_both_gate_classes_is_left_unchanged_at_stage_level():

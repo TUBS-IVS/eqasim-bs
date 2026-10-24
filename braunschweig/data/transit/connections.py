@@ -150,7 +150,7 @@ def _require_columns(frame: pd.DataFrame, required: list[str], label: str, calle
 
 
 def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
-                work_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+                work_dir: str, allow_no_route_at_all: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Route ``tasks`` with the Java batch pt router; return ``(trips, legs)`` frames.
 
     ``tasks`` must carry ``TASK_COLUMNS`` (metric coordinates, ``departure_time`` in seconds).
@@ -164,7 +164,10 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
     A task without a trips row is a router outcome, not an error: Java adds a trips row only when
     ``calcRoute`` returns a result, so "no route" leaves no row. Their count is logged as a rate (INFO,
     WARNING above ``NO_ROUTE_WARN_SHARE``); pass the task identifiers to ``connection_mask(task_ids=...)``
-    to count them as not connected. If EVERY task lacks a row the run is broken and raises.
+    to count them as not connected. If EVERY task lacks a row the run is broken and raises, unless
+    ``allow_no_route_at_all``: a caller that re-probes a narrowed batch (one or two tasks left after a first full
+    probe, eqasim-bs#465 PR #505) may legitimately get no route at all; that case is then logged at WARNING and
+    returned like any other missing rows.
 
     Router settings. The batch router's ``transitRouter`` / SwissRailRaptor parameters are the MATSim
     defaults, equal to the Braunschweig simulation's (checked 2026-10-22: no transitRouter or
@@ -218,7 +221,7 @@ def route_batch(context, tasks: pd.DataFrame, *, config_path: str, threads: int,
         share = len(missing) / len(expected)
         message = (f"[pt-router] {len(missing)}/{len(expected)} task(s) ({100.0 * share:.1f}%) have no trips row "
                    f"(the router found no route; examples {sorted(missing)[:3]})")
-        if len(missing) == len(expected):
+        if len(missing) == len(expected) and not allow_no_route_at_all:
             raise ValueError(f"route_batch: router output has missing {len(missing)} of {len(expected)} tasks, "
                              f"i.e. no trips row at all; the run is broken, see {trips_path}")
         (logger.warning if share > NO_ROUTE_WARN_SHARE else logger.info)(message)

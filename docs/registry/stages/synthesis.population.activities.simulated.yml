@@ -1,0 +1,45 @@
+stage: synthesis.population.activities.simulated
+title: Simulated-day activities
+layer: cordon
+description: >-
+  The activities of the day the simulation starts with (ADR-0159, issue #465): the same eqasim
+  trips->activities transform as synthesis.population.activities.final, applied to
+  synthesis.population.trips.simulated instead of synthesis.population.trips.final. The timetable check of the
+  outside-tour stage may move a whole outside tour whose pt legs have no connection (earlier first, up to 2 h);
+  this stage gives the activities inside that tour the moved start and end times, so the plan the population
+  writer builds from activities and trips stays consistent. Without a moved tour the frame equals
+  activities.final, because modes do not enter the activity table. The transform is not re-implemented: the
+  stage calls the vendored synthesis.population.activities.execute through the shim of
+  braunschweig.synthesis.commute_day.activities_day_stage (which hands it a copy of the trips, as the vendored
+  module mutates its input).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    No eqasim precedent; a third view of the activities table, next to the pre-assignment one and the reporting
+    day of ADR-0104, needed because the outside-tour stage runs after the location choice and may change trip
+    times. Every configs/fixtures/* config aliases it to the same target as its
+    synthesis.population.activities.final.
+code:
+- braunschweig/synthesis/outside_tour_modes/activities_stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.outside_tour_modes.activities_stage
+features:
+- outside_tour_modes
+decisions:
+- ADR-0159
+- ADR-0104
+notes: >-
+  Consumers: matsim.scenario.population (braunschweig/matsim/scenario/population.py, DAY_ACTIVITIES_STAGE) and
+  synthesis.output (braunschweig/synthesis/commute_day/output_day.py, DAY_ACTIVITIES_STAGE through its
+  _STAGE_MAP). The location join (synthesis.population.spatial.locations), the chain solver and the analyses keep
+  reading synthesis.population.activities.final: the locations are keyed by person and activity index, which a
+  time shift does not change. No threshold or fallback of its own; tests/test_outside_tour_modes_wiring.py checks
+  that the activity times follow shifted trips, that a person without trips keeps a home activity and that the
+  input trips frame is not mutated. The validate() token hashes the vendored transform, the shim module and the
+  outside-tour config_keys module (home of the alias names).

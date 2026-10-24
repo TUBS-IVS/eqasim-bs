@@ -157,4 +157,5 @@ aliases:
   synthesis.population.trips.final: synthesis.population.trips
   synthesis.population.trips.simulated: synthesis.population.trips
   synthesis.population.activities.final: synthesis.population.activities
+  synthesis.population.activities.simulated: synthesis.population.activities
   synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance

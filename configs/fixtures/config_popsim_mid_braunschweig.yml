@@ -383,6 +383,7 @@ aliases:
   synthesis.population.trips.final: braunschweig.popsim.trips_stage
   synthesis.population.trips.simulated: braunschweig.popsim.trips_stage
   synthesis.population.activities.final: synthesis.population.activities
+  synthesis.population.activities.simulated: synthesis.population.activities
 
   # Cross-cordon einpendler injection: terminal injection at the MATSim writers
   # (no-op when cordon_enabled=false). Resident synthesis chain untouched.

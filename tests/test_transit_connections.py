@@ -181,6 +181,16 @@ def test_route_batch_raises_when_all_tasks_have_no_trips_row(monkeypatch, tmp_pa
         connections.route_batch(None, _tasks(), config_path="c", threads=1, work_dir=str(tmp_path))
 
 
+def test_route_batch_can_return_a_narrowed_batch_without_any_route(monkeypatch, tmp_path):
+    # PR #505 review: a follow-up batch of one or two tasks with no route at all is a router outcome, not a broken run;
+    # the caller allows it explicitly and the tasks count as not connected (reason no_route).
+    monkeypatch.setattr(connections.eqasim, "run", _fake_run(TRIPS_HEADER + "\n", LEGS_HEADER + "\n"))
+    trips, legs = connections.route_batch(None, _tasks(), config_path="c", threads=1, work_dir=str(tmp_path),
+                                          allow_no_route_at_all=True)
+    mask = connections.connection_mask(trips, legs, inside_stop_ids=set(), walk_max_m=5000.0, task_ids=["t1"])
+    assert mask.to_dict() == {"t1": False}
+
+
 def test_route_batch_rejects_legs_without_stop_id_columns(monkeypatch, tmp_path):
     monkeypatch.setattr(connections.eqasim, "run", _fake_run(
         TRIPS_HEADER + "\nt1,0,0.3,0.3,0,0.6\n", "identifier,leg_index\nt1,0\n"))
