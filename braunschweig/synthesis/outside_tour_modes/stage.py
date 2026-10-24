@@ -21,6 +21,7 @@ import pandas as pd
 from braunschweig import synpp_tokens
 from braunschweig.calibration import srv_mode_by_distance_band_table as _srv_table_module
 from braunschweig.synthesis.outside_tour_modes import config_keys as _config_keys
+from braunschweig.synthesis.outside_tour_modes import pt_connections as _pt_connections
 from braunschweig.synthesis.outside_tour_modes import rule as _rule
 from braunschweig.synthesis.outside_tour_modes import srv_table as _srv_table
 from braunschweig.synthesis.outside_tour_modes import tours as _tours
@@ -29,6 +30,8 @@ from braunschweig.synthesis.outside_tour_modes.config_keys import (
     KEY_WARN_SHARE, LOCATIONS_STAGE, MUNICIPALITIES_STAGE, PERSONS_STAGE, REPORT_FILE_NAME, RNG_OFFSET,
     validate_settings)
 from braunschweig.synthesis.outside_tour_modes.srv_table import ModeShareTable
+from braunschweig.matsim.scenario import day_end_margin as _day_end_margin
+from braunschweig.synthesis import incommuter_pt_connections as _incommuter_pt_connections
 from braunschweig.synthesis.portal_trips import config_keys as _portal_config_keys
 from braunschweig.synthesis.portal_trips import modes as _portal_modes
 from braunschweig.synthesis.portal_trips import rewrite as _portal_rewrite
@@ -39,12 +42,22 @@ logger = logging.getLogger(__name__)
 _LOG_TAG = "[outside_tour_modes]"
 SRV_SUBDIR = ("braunschweig", "srv")
 REQUIRED_TRIP_COLUMNS = ("person_id", "trip_index", "preceding_purpose", "following_purpose", "mode")
+#: The pre-cut supply the timetable check routes on (the prepare routing uses the same network and schedule).
+SUPPLY_STAGE = "matsim.scenario.supply.processed"
+GTFS_STAGE = "matsim.scenario.supply.gtfs"
+#: Work files of the batch pt router in the stage directory.
+ROUTER_CONFIG_NAME = "outside_tour_pt_router_config.xml"
+ROUTER_WORK_DIR_NAME = "outside_tour_pt_router"
 
 #: Own-package helpers and the shared modules whose source shapes this stage's output (hashed by validate()).
 _HELPER_MODULES = (_config_keys, _rule, _srv_table, _tours, _srv_table_module, _portal_modes, _portal_rewrite,
-                   _portal_config_keys)
+                   _portal_config_keys, _pt_connections, _incommuter_pt_connections, _day_end_margin)
 #: Cross-package modules imported inside execute() (hashed by dotted name).
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon",)
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschweig.data.transit.connections",
+                                 "braunschweig.data.transit.schedule", "braunschweig.matsim.simulation.plan_check",
+                                 "braunschweig.popsim.plan_validation",
+                                 # reached through the plan check's imports (the closure gate of ADR-0136)
+                                 "braunschweig.popsim.closure_dwell", "data.hts.hts")
 
 
 def validate(context):
@@ -75,7 +88,10 @@ def configure(context):
     if not enabled:
         return
     validate_settings(float(context.config(KEY_MIN_SHARE, DEFAULT_MIN_SHARE)),
-                      float(context.config(KEY_WARN_SHARE, DEFAULT_WARN_SHARE)))
+                      float(context.config(KEY_WARN_SHARE, DEFAULT_WARN_SHARE)),
+                      context.config(_config_keys.KEY_LAST_RESORT, _config_keys.DEFAULT_LAST_RESORT),
+                      float(context.config(_config_keys.KEY_PT_NO_CONNECTION_WARN_SHARE,
+                                           _config_keys.DEFAULT_PT_NO_CONNECTION_WARN_SHARE)))
     context.config("random_seed")
     context.config("data_path")
     # The cut extent IS the cordon: without one there is no outside tour to judge.
@@ -86,6 +102,80 @@ def configure(context):
     context.stage(LOCATIONS_STAGE)
     context.stage(PERSONS_STAGE)
     context.stage(MUNICIPALITIES_STAGE)
+    # Timetable check of the pt legs of outside tours (#465, ADR-0159): the batch pt router of
+    # braunschweig.data.transit.connections on the pre-cut supply (the network and schedule the prepare routing uses).
+    if context.config(_config_keys.KEY_PT_CHECK_ENABLED, _config_keys.DEFAULT_PT_CHECK_ENABLED):
+        _incommuter_pt_connections.shift_offsets_s(
+            float(context.config(_config_keys.KEY_PT_SHIFT_WINDOW_S, _config_keys.DEFAULT_PT_SHIFT_WINDOW_S)),
+            float(context.config(_config_keys.KEY_PT_SHIFT_STEP_S, _config_keys.DEFAULT_PT_SHIFT_STEP_S)))
+        context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
+        context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
+        from braunschweig.data.transit import connections  # noqa: PLC0415
+        connections.configure(context)
+        context.stage("matsim.runtime.eqasim")
+        context.stage("matsim.runtime.java")
+        # Execution details, not scientific config: the thread count must not devalidate cached stages.
+        context.config("processes", volatile=True)
+        context.config("matsim_threads", None, volatile=True)
+        context.stage(SUPPLY_STAGE)
+        context.stage(GTFS_STAGE)
+
+
+def _probe_from(router, mask):
+    """The probe of the timetable check: ``mask(*router(tasks), tasks)``.
+
+    Only the FIRST call, which covers every checked pt leg, treats a batch in which no task gets a route as a
+    broken router (``route_batch`` raises). The later calls probe the narrowed per-offset batches, often one or two
+    tours, where no route at all is a normal outcome: those tasks count as not connected and the chain goes on to
+    car, lift or keep (PR #505 review).
+    """
+    calls = {"n": 0}
+
+    def probe(tasks):
+        trips, legs = router(tasks, allow_no_route_at_all=calls["n"] > 0)
+        calls["n"] += 1
+        return mask(trips, legs, tasks)
+
+    return probe
+
+
+def _pt_check(context) -> _pt_connections.PtCheck:
+    """The timetable check of ADR-0159: the batch pt router on the pre-cut network and schedule, its connection rule
+    over ALL stops of the schedule (the destination of an outside tour lies outside the cut extent), the walk limit
+    of the plan check, and the shift bound = end of the simulated day minus the day-end margin (ADR-0154)."""
+    import functools  # noqa: PLC0415
+    from braunschweig.data.transit import connections  # noqa: PLC0415
+    from braunschweig.data.transit.schedule import read_schedule  # noqa: PLC0415
+    from braunschweig.matsim.simulation import plan_check  # noqa: PLC0415
+    from braunschweig.popsim import plan_validation  # noqa: PLC0415
+
+    supply = context.stage(SUPPLY_STAGE)
+    supply_dir = context.path(SUPPLY_STAGE)
+    schedule_path = os.path.join(supply_dir, supply["schedule_path"])
+    vehicles_path = os.path.join(context.path(GTFS_STAGE), context.stage(GTFS_STAGE)["vehicles_path"])
+    config_path = connections.write_router_config(
+        os.path.join(context.path(), ROUTER_CONFIG_NAME), network_path=os.path.join(supply_dir, supply["network_path"]),
+        schedule_path=schedule_path, vehicles_path=vehicles_path)
+    router = functools.partial(
+        connections.route_batch, context, config_path=config_path,
+        threads=int(context.config("matsim_threads") or context.config("processes")),
+        work_dir=os.path.join(context.path(), ROUTER_WORK_DIR_NAME))
+    all_stop_ids = set(read_schedule(schedule_path).stops)
+    walk_max_m = float(plan_check.DEFAULT_WALK_MAX_DISTANCE_M)
+
+    def mask(trips, legs, tasks):
+        return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
+                                           task_ids=tasks["identifier"].astype(str))
+
+    probe = _probe_from(router, mask)
+    bound_s = float(plan_validation.MAX_PLAN_TIME_SECONDS)
+    if context.config(_day_end_margin.KEY_ENABLED):
+        bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
+    return _pt_connections.PtCheck(
+        probe=probe, shift_window_s=float(context.config(_config_keys.KEY_PT_SHIFT_WINDOW_S)),
+        shift_step_s=float(context.config(_config_keys.KEY_PT_SHIFT_STEP_S)), bound_s=bound_s,
+        warn_share=float(context.config(_config_keys.KEY_PT_NO_CONNECTION_WARN_SHARE)),
+        day_end_shift=bool(context.config(_day_end_margin.KEY_ENABLED)))
 
 
 def _load_table(srv_dir) -> ModeShareTable:
@@ -102,13 +192,21 @@ def _json_default(value):
 
 
 def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFrame, polygon, table: ModeShareTable,
-                         min_share: float, warn_share: float, seed: int, municipalities_crs=None) -> tuple:
-    """The re-moded trips frame and the report (pure; see the module docstring).
+                         min_share: float, warn_share: float, seed: int, municipalities_crs=None,
+                         last_resort: str = _pt_connections.LAST_RESORT_KEEP,
+                         pt_check: _pt_connections.PtCheck | None = None) -> tuple:
+    """The re-moded trips frame and the report (pure apart from the ``pt_check`` probe; see the module docstring).
 
     The returned frame keeps the input's row order, index and columns; only ``mode`` values of re-moded tours
-    change. The computation runs on a ``person_id, trip_index``-sorted view (stable sort) and writes back by
-    index. ``municipalities_crs``, when given, must equal the CRS of ``locations`` (pyproj equality).
+    change, and with ``pt_check`` the modes and times of the outside tours whose pt legs have no timetable
+    connection (``pt_connections.resolve_pt_tours``, ADR-0159). The computation runs on a ``person_id,
+    trip_index``-sorted view (stable sort) and writes back by index. ``municipalities_crs``, when given, must equal
+    the CRS of ``locations`` (pyproj equality). ``last_resort`` (``keep`` in this function, the stage passes the
+    configured value) decides what happens to a road-gate portal tour without an admissible mode and to a pt tour
+    without a connection: ``car_passenger`` makes it a lift, ``keep`` keeps it.
     """
+    if last_resort not in _pt_connections.LAST_RESORTS:
+        raise ValueError(f"{_LOG_TAG} invalid last_resort {last_resort!r}; allowed: {list(_pt_connections.LAST_RESORTS)}")
     missing = [column for column in REQUIRED_TRIP_COLUMNS if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} trips frame lacks the columns {missing}")
@@ -141,17 +239,35 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
     portal_leg = (ordered[PORTAL_LEG_COLUMN].eq(True).to_numpy(dtype=bool) if portal_column_present
                   else np.zeros(len(ordered), dtype=bool))
     substitutes = _rule.tour_substitutes(ordered, tour_ids, outside, implausible, leg_km, cells, allowed, min_share,
-                                         rng, portal_leg=portal_leg)
+                                         rng, portal_leg=portal_leg,
+                                         lift_without_candidate=last_resort == _pt_connections.LAST_RESORT_LIFT)
     unchanged = substitutes[substitutes["unchanged_reason"] != ""]
     substitutes = substitutes[substitutes["unchanged_reason"] == ""]
     remoded, n_remoded, n_swept = _rule.apply_tour_modes(ordered, tour_ids, substitutes, implausible)
-    # Post-condition: outside legs whose FINAL mode is still below min_share in their cell (only the relaxed draws
-    # and the legs of tours the draw could not make plausible everywhere can remain).
-    implausible_after = _rule.implausible_legs(remoded, cells, min_share)
     donor_modes = ordered["mode"].astype(str)
     unknown_donor = outside & ~donor_modes.isin(_srv_table_module.MODES).to_numpy()
+    pt_report = None
+    if pt_check is not None:
+        # After the re-moding, so a drawn pt substitute is checked too; portal tours keep their own check.
+        portal_tour = pd.Series(portal_leg).groupby([ordered["person_id"].to_numpy(), tour_ids]).transform("any")
+        resolution = _pt_connections.resolve_pt_tours(
+            trips=remoded, tour_ids=tour_ids, outside=outside, portal_tour=portal_tour.to_numpy(dtype=bool),
+            endpoints=endpoints, availability=_portal_modes.mode_availability(persons), probe=pt_check.probe,
+            shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s,
+            last_resort=last_resort, day_end_shift=pt_check.day_end_shift)
+        remoded = resolution.trips
+        pt_report = resolution.report
+        _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
+    # Post-condition: outside legs whose FINAL mode (after the draw and the pt check) is still below min_share in
+    # their cell (only the relaxed draws, the tours the draw could not make plausible everywhere and the tours the
+    # pt check switched to a mode the cell rarely uses can remain).
+    implausible_after = _rule.implausible_legs(remoded, cells, min_share)
     out = trips.copy()
     out.loc[remoded.index, "mode"] = remoded["mode"]
+    if pt_report is not None and (pt_report["actions"][_pt_connections.ACTION_TOUR_SHIFTED]
+                                  or pt_report["n_persons_day_end_shifted"]):
+        out.loc[remoded.index, "departure_time"] = remoded["departure_time"]
+        out.loc[remoded.index, "arrival_time"] = remoded["arrival_time"]
 
     legs = pd.DataFrame({"person_id": ordered["person_id"].to_numpy(), "tour": tour_ids, "outside": outside,
                          "group": groups.to_numpy(), "km": leg_km})
@@ -183,6 +299,9 @@ def remode_outside_tours(*, trips: pd.DataFrame, locations, persons: pd.DataFram
         "n_portal_tours_class_restricted": int((substitutes["portal_tour"]
                                                 & (substitutes["n_removed_by_portal_class"] > 0)).sum()),
         "n_portal_tours_left_unchanged": int(len(unchanged)),
+        "n_portal_tours_lifted": int(substitutes["lifted_without_availability"].sum()),
+        "last_resort": last_resort,
+        "pt_connection": pt_report,
         "portal_tours_left_unchanged_by_reason": {
             reason: int((unchanged["unchanged_reason"] == reason).sum()) for reason in _rule.UNCHANGED_REASONS},
         "share_portal_tours_left_unchanged": float(
@@ -211,6 +330,10 @@ def _log_report(report: dict) -> None:
                 "of the longest leg %d (%.2f%% of the draws)", _LOG_TAG, report["n_portal_tours_remoded"],
                 report["n_portal_tours_class_restricted"], report["n_draws_relaxed_to_longest_leg"],
                 100.0 * report["share_draws_relaxed_to_longest_leg"])
+    if report["n_portal_tours_lifted"]:
+        logger.warning("%s %d road-gate portal tours had no admissible mode and became a lift (car_passenger without "
+                       "the passenger availability, last resort %s)", _LOG_TAG, report["n_portal_tours_lifted"],
+                       report["last_resort"])
     if report["n_portal_tours_left_unchanged"]:
         logger.warning("%s %d portal tours left unchanged (%.2f%% of the portal tours with an implausible leg; the "
                        "gate class left no admissible mode or the tour has portal legs at both gate classes): %s",
@@ -245,7 +368,9 @@ def execute(context):
     out, report = remode_outside_tours(
         trips=trips, locations=locations, persons=context.stage(PERSONS_STAGE), polygon=polygon, table=table,
         min_share=float(context.config(KEY_MIN_SHARE)), warn_share=float(context.config(KEY_WARN_SHARE)),
-        seed=int(context.config("random_seed")), municipalities_crs=municipalities.crs)
+        seed=int(context.config("random_seed")), municipalities_crs=municipalities.crs,
+        last_resort=context.config(_config_keys.KEY_LAST_RESORT),
+        pt_check=_pt_check(context) if context.config(_config_keys.KEY_PT_CHECK_ENABLED) else None)
     report_path = os.path.join(context.path(), REPORT_FILE_NAME)
     with open(report_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, default=_json_default)

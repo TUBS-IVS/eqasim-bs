@@ -49,6 +49,8 @@ ENRICHED_STAGE = "synthesis.population.enriched"
 # The synthesis output reads the simulated day (trips.final with the outside-tour modes, ADR-0145).
 DAY_TRIPS_STAGE = "synthesis.population.trips.simulated"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
+#: The synthesis output and the population writer read the activities of the SIMULATED trips (ADR-0159).
+SIMULATED_ACTIVITIES_STAGE = "synthesis.population.activities.simulated"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
 
 
@@ -195,7 +197,7 @@ def _output_context(enabled, states=None, absence_enabled=False, absence=None):
     recorder = _recorder(OUTPUT, config={"mode_choice": False})
     stages = {
         DAY_TRIPS_STAGE: pd.DataFrame({"person_id": [1], "trip_index": [0]}),
-        DAY_ACTIVITIES_STAGE: pd.DataFrame({"person_id": [1], "activity_index": [0]}),
+        SIMULATED_ACTIVITIES_STAGE: pd.DataFrame({"person_id": [1], "activity_index": [0]}),
         ENRICHED_STAGE: _enriched_persons(),
         STATE_STAGE: {"states": states if states is not None else _states()},
         OUTPUT.ABSENCE_STAGE: {"absence": absence if absence is not None else _absence()},
@@ -211,7 +213,7 @@ def _output_context(enabled, states=None, absence_enabled=False, absence=None):
 def test_output_day_declares_the_reporting_day_view_and_the_state_stage():
     recorder = _recorder(OUTPUT, config={"mode_choice": False})
     assert DAY_TRIPS_STAGE in recorder.stages
-    assert DAY_ACTIVITIES_STAGE in recorder.stages
+    assert SIMULATED_ACTIVITIES_STAGE in recorder.stages
     assert STATE_STAGE in recorder.stages
     assert OUTPUT.ABSENCE_STAGE in recorder.stages
     assert TRIPS_STAGE not in recorder.stages
@@ -265,7 +267,7 @@ def test_output_day_on_appends_the_state_column_last(monkeypatch):
     assert columns[-1] == OUTPUT.STATE_COLUMN
     # The day view reaches the vendored writer under the PRE-ASSIGNMENT names it reads.
     assert shim.stage(TRIPS_STAGE) is context.stage(DAY_TRIPS_STAGE)
-    assert shim.stage(ACTIVITIES_STAGE) is context.stage(DAY_ACTIVITIES_STAGE)
+    assert shim.stage(ACTIVITIES_STAGE) is context.stage(SIMULATED_ACTIVITIES_STAGE)
 
 
 def test_output_day_on_appends_the_day_absence_state_column_last(monkeypatch):

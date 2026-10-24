@@ -629,6 +629,10 @@
    "matsim.simulation.run"
   ],
   [
+   "matsim.runtime.eqasim",
+   "synthesis.population.trips.simulated"
+  ],
+  [
    "matsim.runtime.git",
    "documentation.meta_output"
   ],
@@ -697,6 +701,10 @@
    "matsim.simulation.run"
   ],
   [
+   "matsim.runtime.java",
+   "synthesis.population.trips.simulated"
+  ],
+  [
    "matsim.runtime.maven",
    "braunschweig.freight.extraction_tool"
   ],
@@ -761,6 +769,10 @@
    "matsim.simulation.prepare"
   ],
   [
+   "matsim.scenario.supply.gtfs",
+   "synthesis.population.trips.simulated"
+  ],
+  [
    "matsim.scenario.supply.osm",
    "matsim.scenario.supply.processed"
   ],
@@ -783,6 +795,10 @@
   [
    "matsim.scenario.supply.processed",
    "matsim.simulation.prepare"
+  ],
+  [
+   "matsim.scenario.supply.processed",
+   "synthesis.population.trips.simulated"
   ],
   [
    "matsim.scenario.vehicles",
@@ -846,15 +862,15 @@
   ],
   [
    "synthesis.population.activities.final",
+   "synthesis.population.spatial.locations"
+  ],
+  [
+   "synthesis.population.activities.simulated",
    "matsim.scenario.population"
   ],
   [
-   "synthesis.population.activities.final",
+   "synthesis.population.activities.simulated",
    "synthesis.output"
-  ],
-  [
-   "synthesis.population.activities.final",
-   "synthesis.population.spatial.locations"
   ],
   [
    "synthesis.population.enriched",
@@ -923,6 +939,10 @@
   [
    "synthesis.population.enriched",
    "synthesis.population.activities.final"
+  ],
+  [
+   "synthesis.population.enriched",
+   "synthesis.population.activities.simulated"
   ],
   [
    "synthesis.population.enriched",
@@ -1153,6 +1173,10 @@
    "synthesis.output"
   ],
   [
+   "synthesis.population.trips.simulated",
+   "synthesis.population.activities.simulated"
+  ],
+  [
    "synthesis.vehicles.passengers.default",
    "synthesis.vehicles.vehicles"
   ],
@@ -1262,6 +1286,7 @@
   "synthesis.output",
   "synthesis.population.activities",
   "synthesis.population.activities.final",
+  "synthesis.population.activities.simulated",
   "synthesis.population.enriched",
   "synthesis.population.sampled",
   "synthesis.population.spatial.commute_distance",

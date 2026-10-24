@@ -23,7 +23,9 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: whose validate() hashes source: 30"). The design spec's 26 was the 2026-10-16 count. Update this
 #: number deliberately, together with the audit note, when a source-hashing stage is added or removed.
 #: Re-measured 2026-10-22 on branch fix/i465-next-day-departures: 31 (+1 = braunschweig.matsim.scenario.supply_gtfs, #465).
-EXPECTED_SOURCE_HASHING_STAGES = 31
+#: 2026-10-23 on branch fix/i465-outside-pt-walks: 32 (+1 = braunschweig.synthesis.outside_tour_modes.activities_stage,
+#: ADR-0159).
+EXPECTED_SOURCE_HASHING_STAGES = 32
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
