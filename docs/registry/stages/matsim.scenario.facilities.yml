@@ -10,6 +10,7 @@ lineage:
 code:
 - matsim/scenario/facilities.py
 - braunschweig/matsim/scenario/facilities.py
+- braunschweig/data/cordon/gate_facility_links.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -20,8 +21,10 @@ resolves_to:
   popsim_open: braunschweig.matsim.scenario.facilities
 features:
 - portal_trips
+- gate_facility_links
 decisions:
 - ADR-0141
+- ADR-0167
 notes: >-
   PORTAL GATE FACILITIES (ADR-0141, issue #442, feature record portal_trips): every portal gate is a real
   facility. The realised secondary locations carry location_id portal_<gate_id> for the outside activities;
@@ -32,3 +35,11 @@ notes: >-
   byte-identical). validate_secondary_coverage accepts exactly these registered ids and logs how many portal
   gate facilities were registered; any other dangling id, a portal_* id that was not registered included,
   raises. Reason: eqasim core's Java LinkAssignment throws for an activity whose facility does not exist.
+
+  GATE FACILITY LINKS (ADR-0167, issue #465, feature record gate_facility_links): with cordon_enabled and
+  cordon_gate_facility_links_enabled (default true) the stage also reads braunschweig.synthesis.cordon_gates, the
+  pre-cut network of matsim.scenario.supply.processed and data.spatial.municipalities (the cut extent), and gives the
+  portal gate facilities and the in-commuter homes at a gate point a preset linkId: the car link of at least
+  cordon_gate_facility_link_minimum_capacity_veh_per_h that feeds the inward gate link, outside the extent. The
+  per-gate selection is written to gate_facility_links.csv; the primary/fallback rate is logged and the stage fails
+  above cordon_gate_facility_link_maximum_fallback_share. OFF writes no link (byte-identical file).

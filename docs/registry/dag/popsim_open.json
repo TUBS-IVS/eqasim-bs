@@ -157,6 +157,10 @@
    "braunschweig.synthesis.student_incommuters"
   ],
   [
+   "braunschweig.synthesis.cordon_gates",
+   "matsim.scenario.facilities"
+  ],
+  [
    "braunschweig.synthesis.incommuters",
    "matsim.scenario.facilities"
   ],
@@ -335,6 +339,10 @@
   [
    "data.spatial.municipalities",
    "eqasim_common.data.osm.locations"
+  ],
+  [
+   "data.spatial.municipalities",
+   "matsim.scenario.facilities"
   ],
   [
    "data.spatial.municipalities",
@@ -531,6 +539,10 @@
   [
    "matsim.scenario.supply.processed",
    "braunschweig.synthesis.incommuters"
+  ],
+  [
+   "matsim.scenario.supply.processed",
+   "matsim.scenario.facilities"
   ],
   [
    "matsim.scenario.supply.processed",

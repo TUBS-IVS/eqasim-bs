@@ -1,0 +1,67 @@
+feature: gate_facility_links
+title: Cordon gate facilities linked to the carriageway feeding the inward gate link
+area: cordon
+description: 'The portal gate facilities (portal_<gate_id>) and the in-commuter homes at a gate point get a
+  preset link: the car link of at least 1,000 veh/h that feeds the inward gate link (the closest link crossing
+  into the cut extent within 300 m of the gate point), lying wholly outside the extent. eqasim-java-bs
+  FacilityPlacement keeps it. Before, eqasim placed them on the nearest non-motorway link: in the 1 % rerun
+  84 of 90 gate facilities were off their gate link, the A2-west ones on the 600 veh/h street of #444. A placement
+  defect: no traffic effect was measured at 1 %, a 100 % effect is unmeasured (issue #465, ADR-0167).'
+stages:
+- matsim.scenario.facilities
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_enabled
+  - cordon_gate_facility_links_enabled
+introduced:
+  issue: '#465'
+  pr: null
+  adr: ADR-0167
+detail_doc: null
+code_paths:
+- braunschweig/data/cordon/gate_facility_links.py
+- braunschweig/matsim/scenario/facilities.py
+- braunschweig/matsim/simulation/prepare.py
+- matsim/scenario/facilities.py
+- matsim/writers.py
+- scripts/measure_gate_facility_links.py
+evidence:
+  tests:
+  - tests/test_cordon_gate_facility_links.py
+  - tests/test_parking_prepare_wiring.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_cordon_gate_facility_links.py::test_the_facilities_stage_pins_the_gate_facilities_and_writes_nothing_when_off
+    note: |
+      The named test (parameter links_enabled=False) runs the real facilities stage with cordon_gate_facility_links_enabled false and asserts that no facility carries a linkId and no gate_facility_links.csv is written; the writer test asserts that every facility without a link is written unchanged. The Java side (eqasim-java-bs FacilityPlacementPresetLinkTest) asserts that a file without links is placed as before.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[gate_facility_links] gate facilities: primary'
+    note: |
+      attach_gate_facility_links logs primary vs fallback gate facilities as a rate (warning, with the fallback gates and their reasons, when any falls back), the facilities stage writes the per-gate selection to gate_facility_links.csv and fails above cordon_gate_facility_link_maximum_fallback_share (0.05). Measured on the pre-cut network of the 1 % rerun2 cache: 45 of 47 gates linked at every swept parameter pair; the two fallback gates are one place where a primary road leaves the extent for one node (no_feeding_link). matsim.simulation.prepare fails when the eqasim jar did not keep a pinned link (the Java-side fallback).
+  reference:
+    kind: none
+    note: |
+      No observed reference applies. The rule is a network-assignment correction; its parameters (1,000 veh/h, 300 m, mirroring ADR-0144) are measured on the network, not calibrated: the result does not change between 600 and 1,500 veh/h or between 50 and 500 m.
+validation:
+  state: unvalidated
+  runs:
+  - freight-a2-east-turnaround-prod100-2026-10-23
+  - gate-facility-links-1pct-2026-10-23
+  metric: null
+  note: |
+    The defect was measured in run freight-a2-east-turnaround-prod100-2026-10-23 (gate_links_rerun.csv, gate_departures_rerun.txt: no traffic effect measured at 1 %). gate-facility-links-1pct-2026-10-23 is the 1 % smoke with the rule; see its manifest for the gate-link counts. A smoke is not a validation; no observed reference is compared, and no 100 % run with the rule exists yet.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Implemented and shown in a 1 % smoke. No review of the feature yet and no 100 % run with the rule.
+  source: ADR-0167
