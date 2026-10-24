@@ -543,6 +543,14 @@ config:
   matsim_threads: 56
   matsim_qsim_threads: 16
 
+  # --- Road access of large sites and departure priority (issue #465, ADR-0169) ---
+  # Large work sites and universities spread their car access over the parking lots around them; other large
+  # sites move to one high-capacity link. The rule and its parameters: ADR-0169; their defaults:
+  # matsim/simulation/prepare.py _LARGE_FACILITY_ACCESS_NUMBERS and _LARGE_FACILITY_ACCESS_PREFIXES. Departing
+  # vehicles wait for the traffic already on the link (false; true restores MATSim's default).
+  large_facility_access_enabled: true
+  matsim_qsim_inserting_waiting_vehicles_first: false
+
   # --- Population method: popsim_mid ---
   braunschweig.population.method: popsim_mid
   mid_passenger_availability: true

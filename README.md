@@ -322,7 +322,10 @@ paid-parking share per 25 m cell of the majority rule over the parking supply
 (`braunschweig/parking/parking_paid_share_2026.csv.gz`, preflight D9, optional: no stage reads it yet) ships as well;
 re-deriving it needs the pinned Geofabrik extract `niedersachsen-260929.osm.pbf` in
 `eqasim-data/data/braunschweig/parking/raw_osm/` and `python scripts/build_parking_zones_from_osm.py --supply-share`
-(the pipeline's own OSM input D1 is not used for it). The garage dataset ships with its QA table
+(the pipeline's own OSM input D1 is not used for it). The parking lots of the model region
+(`braunschweig/parking/parking_lots_osm_2026.csv`, preflight D20, ODbL 1.0) ship as well; `matsim.simulation.prepare`
+spreads the car access of large work and university sites over them (ADR-0169), and
+`python scripts/build_parking_lots_from_osm.py` re-derives them from the same extract. The garage dataset ships with its QA table
 `braunschweig/parking/parking_garages_2026_qa.csv`, and `validate_parking_zones.py` cross-checks it with the tariff
 table; the config keys `parking_garage_decay_m` and `parking_garage_decay_commute_m` (the decay lengths of the garage weights,
 metres) equal the `decay_length_m` and the `decay_commute_length_m` of

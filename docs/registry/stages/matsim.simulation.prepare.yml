@@ -49,6 +49,15 @@ description: Prepares the MATSim run (config, freight injection, subpopulations)
   simulated day minus braunschweig.day_end_margin.last_arrival_margin_s, ASSUMPTION 3600 s), and eqasim's
   RunPopulationRouting moves every plan whose ROUTED last arrival is later earlier as a whole day and routes it
   again (DayEndShift, ADR-0160), logged as a rate with the unresolved plans.
+  After eqasim's RunPreparation, the
+  Java step RunAdaptLargeFacilityAccess works on large sites (all facilities at one coordinate, from
+  large_facility_access_minimum_activities at 100 %). Work sites and universities spread their car access over
+  the parking lots of the release parking_lots_osm_2026 (key large_facility_access_lots_path, hashed by
+  the validate() of braunschweig.matsim.simulation.prepare), every other large site moves to one high-capacity
+  link; the step writes large_facility_access_summary.csv and large_facility_access_groups.csv and fails above its
+  no-lot and fallback bounds. The prepared config sets
+  qsim.insertingWaitingVehiclesBeforeDrivingVehicles from matsim_qsim_inserting_waiting_vehicles_first (default
+  false) (ADR-0169).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -74,6 +83,8 @@ features:
 - cordon_network_ring
 - freight_assumptions
 - freight_boundary_links
+- large_facility_access_links
+- qsim_departures_yield
 - mode_choice
 - vrb_zone_fare_model
 - parking_cost_zones
@@ -93,6 +104,7 @@ decisions:
 - ADR-0151
 - ADR-0160
 - ADR-0167
+- ADR-0169
 notes: >-
   Gate facility links (ADR-0167, issue #465, feature record gate_facility_links). With cordon_enabled,
   right after the delegated eqasim preparation and before the cut, _verify_gate_facility_links compares every

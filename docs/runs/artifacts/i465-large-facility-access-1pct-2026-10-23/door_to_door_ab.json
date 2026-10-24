@@ -1,0 +1,92 @@
+{
+  "source": "output_trips.csv.gz, last iteration; trav_time door to door",
+  "in_scope_sites": 39,
+  "cont_control": {
+    "car": {
+      "trips": 20727,
+      "hours": 12246.7,
+      "mean_min": 35.45
+    },
+    "all": {
+      "trips": 39105,
+      "hours": 18956.0,
+      "mean_min": 29.08
+    },
+    "car_at_sites": {
+      "trips": 1412,
+      "hours": 2311.0,
+      "mean_min": 98.2
+    },
+    "all_at_sites": {
+      "trips": 2570,
+      "hours": 3098.7,
+      "mean_min": 72.34
+    }
+  },
+  "cont_insertion_only": {
+    "car": {
+      "trips": 20728,
+      "hours": 12253.3,
+      "mean_min": 35.47
+    },
+    "all": {
+      "trips": 39105,
+      "hours": 18952.3,
+      "mean_min": 29.08
+    },
+    "car_at_sites": {
+      "trips": 1406,
+      "hours": 2312.0,
+      "mean_min": 98.66
+    },
+    "all_at_sites": {
+      "trips": 2570,
+      "hours": 3106.7,
+      "mean_min": 72.53
+    }
+  },
+  "cont_fix": {
+    "car": {
+      "trips": 20913,
+      "hours": 12994.0,
+      "mean_min": 37.28
+    },
+    "all": {
+      "trips": 39103,
+      "hours": 19592.5,
+      "mean_min": 30.06
+    },
+    "car_at_sites": {
+      "trips": 1676,
+      "hours": 2562.0,
+      "mean_min": 91.72
+    },
+    "all_at_sites": {
+      "trips": 2570,
+      "hours": 3089.9,
+      "mean_min": 72.14
+    }
+  },
+  "cont_parking": {
+    "car": {
+      "trips": 21062,
+      "hours": 12363.6,
+      "mean_min": 35.22
+    },
+    "all": {
+      "trips": 39103,
+      "hours": 18803.4,
+      "mean_min": 28.85
+    },
+    "car_at_sites": {
+      "trips": 1740,
+      "hours": 2042.4,
+      "mean_min": 70.43
+    },
+    "all_at_sites": {
+      "trips": 2570,
+      "hours": 2501.7,
+      "mean_min": 58.41
+    }
+  }
+}

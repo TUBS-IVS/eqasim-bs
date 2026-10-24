@@ -1,0 +1,55 @@
+feature: qsim_departures_yield
+title: Departing vehicles wait for the traffic already driving on a link
+area: matsim
+description: 'The prepared config sets qsim.insertingWaitingVehiclesBeforeDrivingVehicles to false (key
+  matsim_qsim_inserting_waiting_vehicles_first, default false). The MATSim default true moves departing
+  vehicles onto a link before the vehicles already on it, so a stream of departures from a large site took
+  every flow slot and held through traffic for hours (issue #465, person 693334; ADR-0169).'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: '#465'
+  pr: null
+  adr: ADR-0169
+detail_doc: null
+code_paths:
+- matsim/simulation/prepare.py
+- braunschweig/matsim/config_modules.py
+evidence:
+  tests:
+  - tests/test_large_facility_access_prepare.py
+  - tests/test_config_modules.py
+  off_path_byte_identical:
+    claimed: false
+    note: |
+      matsim_qsim_inserting_waiting_vehicles_first true writes the MATSim default value back into the generated qsim parameter; the edit touches only that value, so the config equals the generated one (tests/test_config_modules.py pins the single-value edit), but no byte comparison against a run without this code was made.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No fallback: a config value. The prepare stage logs the value it writes and the generated one.
+  reference:
+    kind: none
+    note: |
+      No observed reference applies; the yield rule is a behavioural assumption (a vehicle leaving a site yields to road traffic).
+validation:
+  state: unvalidated
+  runs:
+  - i465-large-facility-access-1pct-2026-10-23
+  metric: null
+  note: |
+    One-iteration replay and a 40-iteration continued A/B at 1 %, simulated effects only; see the run manifest.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Implemented and measured at 1 %; a pipeline smoke through matsim.simulation.prepare is recorded (the prepared config carries the value), but no full simulation run of a pipeline-built scenario and no 100 % run with the rule yet. Production state: configs/base_bs.yml sets matsim_qsim_inserting_waiting_vehicles_first false (the feature is ON when the key is false, so it is not listed as a production flag).
+  source: ADR-0169

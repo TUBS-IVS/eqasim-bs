@@ -59,6 +59,7 @@ def test_prepare_selects_config_adapter_at_real_java_boundary(monkeypatch, metho
     monkeypatch.setattr(prepare.shutil, "copy", lambda *args: None)
     monkeypatch.setattr(prepare.os.path, "exists", lambda *args: True)
     monkeypatch.setattr(prepare.os, "remove", lambda *args: None)
+    monkeypatch.setattr(prepare.config_modules, "set_param", lambda *args: "true")
 
     prepare.execute(context)
 

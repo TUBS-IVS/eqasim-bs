@@ -1,0 +1,15 @@
+link,highway,name,osm_lanes,permlanes,capacity,length,sim_capacity_veh_h,n_delay_ge_threshold,n_through_ge_threshold,n_departure_ge_threshold,max_delay_h,window,departures_in_window,departures_per_h_in_window,departure_share_of_capacity,activities_on_link,top_facilities
+641838,tertiary,Mittelstraße,,1.0,600.0,43.0,6.0,67,67,0,5.65,5.94-18.07 h,0,0.0,0.0,0,
+141265,tertiary,,,1.0,600.0,21.7,6.0,20,20,0,1.77,8.96-13.14 h,0,0.0,0.0,0,
+352763,living_street,Am Bülten,,1.0,300.0,44.3,3.0,12,12,0,1.44,9.70-14.49 h,0,0.0,0.0,0,
+239286,unclassified,Weststraße,,1.0,600.0,169.0,6.0,10,10,0,1.45,9.76-12.34 h,0,0.0,0.0,3,sec_res_96245:2 work_101669:1
+687670,residential,Beethovenstraße,3,1.0,600.0,35.7,6.0,8,8,0,1.45,8.70-11.18 h,0,0.0,0.0,0,
+426596,tertiary,Mittelstraße,,1.0,600.0,90.4,6.0,6,6,0,1.96,16.45-20.08 h,19,5.23,0.87,71,work_102026:54 sec_b_110628:1 ic_work_1126293:1
+609524,tertiary,,,1.0,600.0,11.8,6.0,4,4,0,1.14,9.19-10.70 h,0,0.0,0.0,0,
+129867,tertiary,Guntherstraße,2,1.0,600.0,28.5,6.0,4,4,0,2.58,14.55-19.29 h,25,5.28,0.88,52,work_97721:44 sec_b_105716:2 ic_work_1126050:1
+354834,unclassified,Sudetenstraße,2,1.0,600.0,720.4,6.0,3,3,0,5.69,16.14-21.86 h,34,5.95,0.99,89,work_105575:82 ic_work_1126126:1 ic_work_1126007:1
+72858,living_street,Händelstraße,,1.0,300.0,143.3,3.0,3,3,0,1.44,10.89-12.68 h,0,0.0,0.0,0,
+517871,unclassified,,1,1.0,600.0,17.8,6.0,1,1,0,1.07,9.62-10.69 h,0,0.0,0.0,0,
+267017,tertiary,,1,1.0,600.0,28.8,6.0,1,1,0,1.01,9.81-10.81 h,0,0.0,0.0,0,
+671767,unclassified,Lehmkuhlenfeld,2,1.0,600.0,503.5,6.0,1,1,0,1.25,15.42-16.68 h,7,5.55,0.93,77,sec_b_109821:68 work_101346:8 ic_work_1126028:1
+708202,residential,Zum Ölpersee,,1.0,600.0,125.4,6.0,1,1,0,1.0,15.92-16.93 h,6,5.94,0.99,82,sec_b_141438:82
