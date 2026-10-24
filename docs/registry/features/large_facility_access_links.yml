@@ -59,5 +59,5 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    Implemented and measured at 1 % in a continued-iteration A/B; no full pipeline run and no 100 % run with the rule yet.
+    Implemented and measured at 1 % in a continued-iteration A/B; a pipeline smoke through matsim.simulation.prepare is recorded (wiring only), but no full simulation run of a pipeline-built scenario and no 100 % run with the rule yet.
   source: ADR-0169

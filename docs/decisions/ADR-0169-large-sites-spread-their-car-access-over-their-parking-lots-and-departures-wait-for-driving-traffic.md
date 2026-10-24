@@ -148,17 +148,24 @@ Run manifest `docs/runs/i465-large-facility-access-1pct-2026-10-23.yml`: a 1 % c
 plans (replanning on; control, insertion rule only, the first per-facility rule, and this decision), one draw per arm, a
 simulated A/B and not a validation.
 
-| arm (last iteration) | car travel hours | through traversals delayed >= 1 h | car share at the in-scope sites |
-|---|---|---|---|
-| control (32) | 11 507 | 171 on 13 links | 54.9 % |
-| insertion rule only (32) | 11 515 | 205 on 12 links | 54.7 % |
-| first per-facility rule + insertion (40) | 11 705 (+1.7 %) | 302 on 15 links | 65.2 % |
-| this decision (32) | 11 099 (-3.5 %) | 46 on 9 links | 67.7 % |
+| arm (last iteration) | car leg hours | car trip hours, door to door | through traversals delayed >= 1 h | car share at the in-scope sites |
+|---|---|---|---|---|
+| control (32) | 11 507 | 12 247 | 171 on 13 links | 54.9 % |
+| insertion rule only (32) | 11 515 | 12 253 (+0.1 %) | 205 on 12 links | 54.7 % |
+| first per-facility rule + insertion (40) | 11 705 (+1.7 %) | 12 994 (+6.1 %) | 302 on 15 links | 65.2 % |
+| this decision (32) | 11 099 (-3.5 %) | 12 364 (+1.0 %) | 46 on 9 links | 67.7 % |
+
+Car leg hours (`ph_modestats`) count only the time in the car. Car trip hours (`output_trips` `trav_time` of the trips
+with main mode car) run from activity to activity and so include the access and egress walks that this decision
+lengthens, plus the car trips the mode shift adds (20 727 -> 21 062, +1.6 %).
 
 - The design's criteria are met in this draw: (a) no access-group link carries more car departures than its simulated
   capacity in any hour (230 links with departures); (b) the site-caused queues are gone (Mittelstrasse 641838 / 426591 /
   426596, Guntherstrasse 129867); the 46 remaining traversals lie on links with no site departures and no access role
-  (through demand above capacity); (c) car travel time -3.5 % against the control (limit +2 %). Person 693334 drives
+  (through demand above capacity); (c) car time against the control within the +2 % limit on both measures: car legs
+  -3.5 %, car trips door to door +1.0 % in total and -0.6 % per trip (35.5 -> 35.2 min). All trips of all modes
+  together: 18 956 -> 18 803 h (-0.8 %); the 2570 trips that start or end at an in-scope site: 3099 -> 2502 h
+  (-19.3 %). Person 693334 drives
   home in 18.6 min (control 47.4 min).
 - Side effects without a reference: walk hours +21.5 % (the longer access walks), car share of all trips 53.0 % ->
   53.9 %, and at the in-scope sites 54.9 % -> 67.7 % (the car no longer queues at the site exit). This shift needs a

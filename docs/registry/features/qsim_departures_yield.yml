@@ -51,5 +51,5 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    Implemented and measured at 1 %; no full pipeline or 100 % run with the rule yet. Production state: configs/base_bs.yml sets matsim_qsim_inserting_waiting_vehicles_first false (the feature is ON when the key is false, so it is not listed as a production flag).
+    Implemented and measured at 1 %; a pipeline smoke through matsim.simulation.prepare is recorded (the prepared config carries the value), but no full simulation run of a pipeline-built scenario and no 100 % run with the rule yet. Production state: configs/base_bs.yml sets matsim_qsim_inserting_waiting_vehicles_first false (the feature is ON when the key is false, so it is not listed as a production flag).
   source: ADR-0169

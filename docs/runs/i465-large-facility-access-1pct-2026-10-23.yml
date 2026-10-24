@@ -14,7 +14,9 @@ repository:
     a3b6f475d (the site and parking-lot rule, arm parking). The later commit 1e2fcc4b2 (final-review fixes: quote-aware
     lot reader, an adequate site relinks its other facilities, warnings) does not change the four columns the reader
     uses; the adequate-site relink only matters when facilities of one point have different links, which eqasim's
-    nearest-link placement does not produce. The pipeline smoke of the final code is recorded under "validation".
+    nearest-link placement does not produce. A pipeline smoke through matsim.simulation.prepare is recorded under
+    "validation" (eqasim-bs 09ef2444 and eqasim-java-bs 1e2fcc4b2, before the branch's second merge of main and the
+    rename of the access keys); no full simulation run with the pipeline-built scenario exists.
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -97,10 +99,16 @@ validation:
     above capacity on the 230 access links with departures. (b) through traversals delayed >= 1 h: control 171 on 13
     links (among them the Mittelstrasse queue 641838 / 426591 / 426596 and 129867); insertion_only 205 on 12; fix_v1
     302 on 15; parking 46 on 9, none of them an access-group, moved or former link of a large site and none with site
-    departures (through demand above capacity). (c) car travel hours (ph_modestats, last iteration): control 11 507,
-    insertion_only 11 515, fix_v1 11 705 (+1.7 %), parking 11 099 (-3.5 %; mean of the last five iterations 11 134
-    against 11 582, -3.9 %). Person 693334's car leg home: control 47.4 min, parking 18.6 min.
-  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluation_ab.json, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluate_ab.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/continue_ab.sh, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_parking.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_parking.csv'
+    departures (through demand above capacity). (c) car time, last iteration, on two measures. Car legs only
+    (ph_modestats, the time in the car): control 11 507 h, insertion_only 11 515, fix_v1 11 705 (+1.7 %), parking 11 099
+    (-3.5 %; mean of the last five iterations 11 134 against 11 582, -3.9 %). Car trips door to door (output_trips
+    trav_time of main mode car, activity to activity, so including the access and egress walks the rule lengthens):
+    control 12 247 h on 20 727 trips, insertion_only 12 253 (+0.1 %), fix_v1 12 994 (+6.1 %), parking 12 364 (+1.0 %)
+    on 21 062 trips (+1.6 % trips from the mode shift; per trip 35.45 -> 35.22 min, -0.6 %). Both measures stay within
+    the +2 % limit. All trips of all modes: 18 956 -> 18 803 h (-0.8 %); the 2570 trips starting or ending at an
+    in-scope site: 3099 -> 2502 h (-19.3 %), their car trips 98.2 -> 70.4 min per trip. Person 693334's car leg home:
+    control 47.4 min, parking 18.6 min.
+  artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluation_ab.json, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluate_ab.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/door_to_door_ab.json, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/door_to_door_probe.py, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/continue_ab.sh, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/links_delay_ge_1h_parking.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_control.csv, docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/ph_modestats_parking.csv'
   notes: >-
     All three criteria are met in this draw. Side effects, simulated, without a reference: walk hours 2603 -> 3163
     (+21.5 %, the longer car access and egress walks to the lots); car share of all trips 53.00 % -> 53.85 %, pt
@@ -137,6 +145,8 @@ artifacts:
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/replay_fix.sh
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/continue_ab.sh
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/evaluation_ab.json
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/door_to_door_probe.py
+- docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/door_to_door_ab.json
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/access_step_log_1pct.txt
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_summary_1pct.csv
 - docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/large_facility_access_groups_1pct.csv
@@ -167,8 +177,9 @@ decisions:
 notes: >-
   What this run is evidence for: in a 1 % continuation from equilibrated plans, spreading the car access of the work
   and university sites over their parking lots (with one high-capacity link for the other large sites and departing
-  vehicles yielding to traffic) removes the site-caused queues, including the one behind person 693334, without
-  raising the total car travel time (-3.5 %). What it does not show: (1) no validation (no observed counts, delays or
+  vehicles yielding to traffic) removes the site-caused queues, including the one behind person 693334, while the car
+  time stays within the +2 % limit (car legs -3.5 %; car trips door to door, with the longer walks, +1.0 % in total and
+  -0.6 % per trip). What it does not show: (1) no validation (no observed counts, delays or
   mode shares compared); (2) one draw per arm at 1 %, where a site holds few persons and an access group's share is
   coarse; (3) no 100 % run with the rule; (4) the rise of the car share at the large work sites (54.9 % -> 67.7 %) is a
   simulated reaction that needs a check against observed commute mode shares before it is relied on.
