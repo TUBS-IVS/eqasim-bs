@@ -1,0 +1,108 @@
+id: gate-facility-links-1pct-2026-10-23
+date: '2026-10-23'
+repository:
+  commit: 7a3a655070269f78b179435590b5991e57e2b4a8
+  branch: fix/i465-gate-facility-links
+  notes: 'Isolated run i465_gl_smoke on felix (scripts/isolated_run.py), eqasim-bs 7a3a6550 (the rule of ADR-0167,
+    before the later commit that adds the prepare-stage check verify_preset_links_kept) and eqasim-java-bs 6c26bec1
+    (branch fix/i465-keep-preset-facility-links, FacilityPlacement keeps a preset link), both from git bundles, not
+    pushed at run time. Cache: a physical copy of ~/wt-i487-rerun2/cache_rerun2. Before-arm: that run itself
+    (1 % rerun2, eqasim-bs a154c42e, an #465 integration branch; eqasim-java-bs ad3f7e22), not a controlled A/B:
+    the two runs also differ by the code between a154c42e and origin/main e7db8972 (the portal stage among it).
+    output_events.xml.gz md5: smoke 8ac9f888541c2e2749da8c0a47ed29a6, rerun2 66d56f067d010ed49bb314b692011f8d.'
+configuration:
+  base: configs/base_bs.yml
+  notes: 'Overlay of rerun2 as rewritten by isolated_run.py overlay (working_directory ../cache, output_path
+    ../output, output_prefix braunschweig_1pct_i465_rerun2_ kept, popsim work_dir kept); the gate options at their
+    defaults (cordon_gate_facility_link_minimum_capacity_veh_per_h 1000, maximum_distance_m 300, maximum_fallback_share
+    0.05). matsim_last_iteration 100; the eqasim mode-share termination stopped the smoke after iteration 46 and
+    rerun2 after iteration 48 (convergence of the mode shares, not a validation).'
+sampling:
+  rate: 1%
+  scope: ZGB-8, full region, cordon on, freight on
+  notes: 'Counts are unscaled 1 % counts of the final iteration.'
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  notes: 'The gate found 25 stale stages (output_path change, the portal stage code, the facilities, the prepare
+    and the run); popsim stayed cached. Analyses (read only): gate_facility_table.py on the cut output facilities
+    and on the facilities file written by the facilities stage; gate_outside_links.py on the final plans
+    (output_activities.csv.gz) of the persons with a gate facility in the uncut population; gate_departures.py
+    (from run freight-a2-east-turnaround-prod100-2026-10-23) on the events; the parameter sweep of
+    scripts/measure_gate_facility_links.py on the pre-cut network of the rerun2 cache.'
+classification:
+- smoke
+status:
+  execution: completed
+  notes: 'Pipeline exit 0 (2026-10-23 20:25-22:19). The facilities stage logged primary 120/121 (99.2 %), fallback
+    1 (gate_0028/gate_0037, no_feeding_link), gates linked 45/47; eqasim FacilityPlacement logged "120 of 766937
+    facilities kept their preset link".'
+environment: 'server (felix, Linux, 64 cores, 94 GB), eqasim conda env, JDK 25.0.3'
+validation:
+- metric: parameter sensitivity of the rule on the pre-cut network (47 road gates)
+  reference: 'none; a property of the network'
+  result: 'Fallback gates 2 of 47 at every pair of minimum capacity {600, 1000, 1500} veh/h and maximum distance
+    {50, 100, 200, 300, 500} m. Every entry link lies within 24 m of its gate point; every selected facility link is
+    a motorway, motorway_link, trunk or primary link of >= 1,500 veh/h. The two fallback gates are one node where a
+    primary road leaves the extent and re-enters (both links into it come from inside).'
+  artifact: 'docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_links_sweep_summary.csv'
+- metric: facility link of the gate facilities (homes at a gate point, portal_<gate_id>) against the link the rule selects
+  reference: 'none; the rule itself (gate_facility_links.csv of the facilities stage)'
+  result: 'Before (rerun2, cut output facilities): 90 gate facilities, 0 on the selected link, 28 on links below
+    1,000 veh/h, none on a motorway or trunk link (residential 20, tertiary 7, secondary 3, unclassified 1, primary
+    59). After (smoke, cut output facilities): 90 gate facilities, 89 on the selected link, 0 below 1,000 veh/h
+    (motorway 18, motorway_link 1, trunk 18, primary 53); the one other is portal_gate_0037 at the fallback gate
+    (primary 1,500 veh/h, eqasim placement). In the uncut file written by the facilities stage: 120 of 121.'
+  artifact: 'docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_after.txt'
+- metric: links of the outside activities that the cutter made for the trips of these persons within 500 m of a road gate point
+  reference: 'none; a departure is on the right link when it sits on an inward crossing link, an arrival on an outward
+    one, both >= 1,000 veh/h'
+  result: 'Arrivals and departures: before 671 of 750 (89.5 %) on the right link, 20 on residential/tertiary/
+    unclassified links; after 1,050 of 1,108 (94.8 %), 9 on such links. All near-gate outside activities below
+    1,000 veh/h: 195 of 2,126 before, 91 of 3,042 after. The number of outside activities grows because a portal stay
+    reached by car now becomes the cutter pair outward/inward (ADR-0167, Consequences). Remaining wrong: 58, of them
+    50 of in-commuter gate homes (25 departures on an outward link, 19 arrivals on an inward link, mostly primary and
+    trunk) and 8 of portal persons. Their cause is not analysed here (open finding; candidates: crossings at a
+    different gate than the home gate, plans with several crossings).'
+  artifact: 'docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links_after.txt'
+- metric: departures on the facility links (events)
+  reference: 'none; capacity x flowCapacityFactor 0.01 of the network'
+  result: 'Before: the gate-facility links carried car departures (e.g. 578440 primary 63 car, peak 0.47 of the
+    simulated capacity; 534172 1,000 veh/h, peak 0.70). After: the busiest facility link 469845 (motorway, 6,000
+    veh/h) has 48 network departures, all trucks (the freight boundary rule of ADR-0144), peak 0.083; 77050 (the
+    fallback portal) 20 car departures, peak 0.33; every other facility link 0-2 network departures. The 86 walk
+    departures on 469845 are teleported walk legs of portal stays that stay inside (ADR-0167, Consequences). At 1 %
+    neither arm shows a capacity problem; this smoke shows no traffic effect and claims none.'
+  artifact: 'docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_departures_after.txt'
+features:
+- gate_facility_links
+artifacts:
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_links_sweep.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_links_sweep_summary.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table.py
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_before.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_before.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_after.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_after.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_table_written_after.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_facility_links_after.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links.py
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links_before.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links_before.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links_after.csv
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_outside_links_after.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_departures_before.txt
+- docs/runs/artifacts/gate-facility-links-1pct-2026-10-23/gate_departures_after.txt
+issues:
+- '#465'
+decisions:
+- ADR-0167
+source: 'felix:~/i465-gatelinks on 2026-10-23 (eqasim env): python scripts/measure_gate_facility_links.py --network
+  <rerun2 supply.processed>/network.xml.gz --gates <cordon_gates>.p --municipalities <data.spatial.municipalities>.p
+  --buffer-fraction 0.10 --out out_sweep; python gate_facility_table.py <run>/output_facilities.xml.gz
+  <run>/output_network.xml.gz <cordon_gates>.p <out.csv> <gate_facility_links.csv>; python gate_outside_links.py
+  <run> <uncut population.xml.gz> <cordon_gates>.p <prepare cache>/cordon_extent.gpkg <out>; python
+  gate_departures.py <run> <gate_facility_table.csv> 0.01. Inputs: the cordon_gates pickle 11eceeb4 (identical gate
+  geometries in both caches), the population caches 51cb1018 (rerun2) and 356e614d (smoke), the prepare caches
+  feada469 (rerun2) and 7bcdd9a6 (smoke).'

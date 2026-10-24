@@ -156,6 +156,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.parking.zones",
     "braunschweig.data.cordon.extent",
     "braunschweig.data.spatial.cordon",
+    # _verify_gate_facility_links: decides whether the prepared gate facility links are accepted (ADR-0167).
+    "braunschweig.data.cordon.gate_facility_links",
+    "braunschweig.synthesis.portal_trips.config_keys",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.population.methods",
@@ -349,6 +352,12 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_mi
 def execute(context):
     result = delegate.execute(context)
 
+    # The facilities stage pins the cordon gate facilities to a link (#465, ADR-0167); fail when the eqasim jar's
+    # FacilityPlacement replaced those links (an older jar does so silently). Before the cut: the cutter rewrites
+    # the facilities file.
+    if context.config("cordon_enabled"):
+        _verify_gate_facility_links(context)
+
     if context.config(VRB_FARES_KEY):
         _attach_vrb_tariff_zones(context)
     else:
@@ -397,6 +406,14 @@ def execute(context):
         plan_check.run(context, result)
 
     return result
+
+
+def _verify_gate_facility_links(context):
+    from braunschweig.data.cordon.gate_facility_links import verify_preset_links_kept
+
+    written = "%s/%s" % (context.path("matsim.scenario.facilities"), context.stage("matsim.scenario.facilities"))
+    prepared = "%s/%sfacilities.xml.gz" % (context.path(), context.config("output_prefix"))
+    verify_preset_links_kept(written, prepared)
 
 
 def _attach_vrb_tariff_zones(context):

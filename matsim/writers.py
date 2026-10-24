@@ -328,11 +328,18 @@ class FacilitiesWriter(XmlWriter):
         self._write_line('</facilities>')
         self.scope = self.FINISHED_SCOPE
 
-    def start_facility(self, facility_id, x, y):
+    def start_facility(self, facility_id, x, y, link_id = None):
+        # link_id (eqasim-bs#465, ADR-0167): a preset link that eqasim's FacilityPlacement keeps; None writes the
+        # unchanged coordinate-only facility.
         self._require_scope(self.FACILITIES_SCOPE)
-        self._write_line('<facility id="%s" x="%f" y="%f">' % (
-            str(facility_id), x, y
-        ))
+        if link_id is None:
+            self._write_line('<facility id="%s" x="%f" y="%f">' % (
+                str(facility_id), x, y
+            ))
+        else:
+            self._write_line('<facility id="%s" linkId="%s" x="%f" y="%f">' % (
+                str(facility_id), str(link_id), x, y
+            ))
 
         self.indent += 1
         self.scope = self.FACILITY_SCOPE

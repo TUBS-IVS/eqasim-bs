@@ -548,6 +548,7 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
 
     write_parking_inputs = prepare._write_parking_inputs
     monkeypatch.setattr(prepare.delegate, "execute", lambda ctx: events.append("delegate") or CONFIG_NAME)
+    monkeypatch.setattr(prepare, "_verify_gate_facility_links", lambda ctx: events.append("gate_links"))
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda ctx: events.append("vrb_zones"))
     monkeypatch.setattr(prepare, "_cut_to_cordon", cut_to_cordon)
     monkeypatch.setattr(prepare, "_inject_freight", lambda ctx, name: events.append(("freight", name)))
@@ -557,7 +558,7 @@ def test_parking_inputs_are_written_last_into_the_final_config(tmp_path, monkeyp
     monkeypatch.setattr(prepare, "_write_parking_inputs",
                         lambda ctx, name: (events.append(("parking", name)), write_parking_inputs(ctx, name)))
     assert prepare.execute(context) == cut_config
-    assert events == ["delegate", "vrb_zones", "cordon_cut", ("freight", cut_config), ("vrb_inputs", cut_config),
+    assert events == ["delegate", "gate_links", "vrb_zones", "cordon_cut", ("freight", cut_config), ("vrb_inputs", cut_config),
                       ("parking", cut_config)]
     module = config_modules.read_module(Path(context.path()) / cut_config, prepare.PARKING_MODULE)
     assert module["tariffsPath"] == TARIFFS_NAME

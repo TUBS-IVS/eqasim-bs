@@ -39,6 +39,14 @@ Overrides matsim.scenario.facilities twice over the base behaviour:
    core's Java ``LinkAssignment`` throws ``Facility ... does not exist`` for any activity without a facility.
    No portal rows (feature off, or no stay) -> nothing is registered and the file is byte-identical.
 
+4. **Gate facility links (#465, ADR-0167).** With the cordon on and ``cordon_gate_facility_links_enabled``
+   (default ON), the portal gate facilities and the in-commuter homes at a gate point carry a preset ``linkId``: the
+   carriageway that feeds the inward gate link, outside the cut extent
+   (``braunschweig.data.cordon.gate_facility_links``). eqasim's ``FacilityPlacement`` keeps it (eqasim-java-bs) and
+   would otherwise put the facility on the nearest non-motorway link. The rule's primary/fallback rate is logged and
+   written to ``gate_facility_links.csv``; the stage fails above the configured fallback share. OFF -> no link is
+   written and the file is byte-identical.
+
 Additionally a flag-independent coverage validation compares the REALISED
 secondary location ids against the written secondary facility ids and raises
 before writing if any id would be dangling (fail-early instead of a Java
@@ -52,6 +60,7 @@ import geopandas as gpd
 import pandas as pd
 
 import matsim.scenario.facilities as base
+from braunschweig.data.cordon import gate_facility_links
 from braunschweig.synthesis.portal_trips.config_keys import PORTAL_LOCATION_ID_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -63,6 +72,20 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
         context.stage("braunschweig.synthesis.student_incommuters")
+        # Gate facility links (#465, ADR-0167): the rule needs the gates, the pre-cut network the cutter runs on,
+        # and the cut extent (the same polygon matsim.simulation.prepare writes for RunScenarioCutter).
+        context.config("cordon_gate_facility_links_enabled", True)
+        if context.config("cordon_gate_facility_links_enabled"):
+            context.config("cordon_gate_facility_link_minimum_capacity_veh_per_h",
+                           gate_facility_links.DEFAULT_MINIMUM_CAPACITY_VEH_PER_H)
+            context.config("cordon_gate_facility_link_maximum_distance_m",
+                           gate_facility_links.DEFAULT_MAXIMUM_DISTANCE_M)
+            context.config("cordon_gate_facility_link_maximum_fallback_share",
+                           gate_facility_links.DEFAULT_MAXIMUM_FALLBACK_SHARE)
+            context.config("cordon_network_buffer_fraction", 0.10)
+            context.stage("braunschweig.synthesis.cordon_gates")
+            context.stage("matsim.scenario.supply.processed")
+            context.stage("data.spatial.municipalities")
 
     # Default mirrors secondary_chainsolvers.configure (True there).
     if context.config("secondary_building_potentials", True):
@@ -344,5 +367,34 @@ def execute(context):
             df_primary = pd.concat([df_primary, student_edu[base.PRIMARY_FIELDS]],
                                    ignore_index=True)
 
+    if context.config("cordon_enabled") and context.config("cordon_gate_facility_links_enabled"):
+        df_homes, df_portal = _attach_gate_facility_links(context, df_homes, df_portal)
+
     return base.write_facilities(output_path, df_homes, df_primary, df_secondary, context,
                                  df_portal=df_portal)
+
+
+def _attach_gate_facility_links(context, df_homes, df_portal):
+    """Pin the gate facilities to the carriageway feeding the inward gate link (#465, ADR-0167).
+
+    Writes one row per gate to ``gate_facility_links.csv`` in the stage directory (the selection with its status and
+    reason) and returns the home and portal frames with a ``link_id`` column.
+    """
+    from braunschweig.data.spatial.cordon import build_cordon_polygon, buffer_m_from_fraction
+
+    gates = context.stage("braunschweig.synthesis.cordon_gates")["gates"]
+    df_muni = context.stage("data.spatial.municipalities")
+    extent = build_cordon_polygon(
+        df_muni, buffer_m_from_fraction(df_muni, float(context.config("cordon_network_buffer_fraction"))))
+    supply = context.stage("matsim.scenario.supply.processed")
+    network_path = "%s/%s" % (context.path("matsim.scenario.supply.processed"), supply["network_path"])
+    links = gate_facility_links.read_car_links(network_path)
+    selection = gate_facility_links.select_gate_facility_links(
+        gates, links, extent,
+        minimum_capacity_veh_per_h=float(context.config("cordon_gate_facility_link_minimum_capacity_veh_per_h")),
+        maximum_distance_m=float(context.config("cordon_gate_facility_link_maximum_distance_m")))
+    selection.to_csv("%s/gate_facility_links.csv" % context.path(), index=False)
+    df_homes, df_portal, _summary = gate_facility_links.attach_gate_facility_links(
+        df_homes, df_portal, gates, selection,
+        maximum_fallback_share=float(context.config("cordon_gate_facility_link_maximum_fallback_share")))
+    return df_homes, df_portal

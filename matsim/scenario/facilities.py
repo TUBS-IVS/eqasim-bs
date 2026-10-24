@@ -49,11 +49,21 @@ def load_facility_frames(context):
     return df_homes, df_primary, df_secondary
 
 
+def _optional_links(df):
+    """The preset link per row (eqasim-bs#465, ADR-0167): the optional ``link_id`` column, None where it is missing
+    or absent. eqasim's FacilityPlacement keeps a written link and places every facility without one."""
+    if "link_id" not in df.columns:
+        return [None] * len(df)
+    return [None if pd.isna(link_id) else str(link_id) for link_id in df["link_id"]]
+
+
 def write_facilities(output_path, df_homes, df_primary, df_secondary, context, df_portal = None):
     """Write the facilities XML from prepared (homes, primary, secondary) frames.
 
     ``df_portal`` (eqasim-bs#442, optional, PORTAL_FIELDS) holds one row per portal gate; each is written
     as a facility offering the single activity type "outside". None or empty writes nothing (unchanged output).
+    An optional ``link_id`` column of ``df_homes`` or ``df_portal`` (eqasim-bs#465, ADR-0167) is written as the
+    facility's ``linkId``; rows without one are written unchanged.
     """
     escort_enabled = bool(context.config("escort_purpose"))
     with gzip.open(output_path, 'wb+') as writer:
@@ -62,11 +72,12 @@ def write_facilities(output_path, df_homes, df_primary, df_secondary, context, d
             writer.start_facilities()
 
             with context.progress(total = len(df_homes), label = "Writing home facilities ...") as progress:
-                for item in df_homes.itertuples(index = False):
+                home_links = _optional_links(df_homes)
+                for item, link_id in zip(df_homes[HOME_FIELDS].itertuples(index = False), home_links):
                     geometry = item[HOME_FIELDS.index("geometry")]
                     writer.start_facility(
                         "home_%s" % item[HOME_FIELDS.index("household_id")],
-                        geometry.x, geometry.y
+                        geometry.x, geometry.y, link_id
                     )
                     writer.add_activity("home")
                     writer.end_facility()
@@ -99,11 +110,12 @@ def write_facilities(output_path, df_homes, df_primary, df_secondary, context, d
 
             if df_portal is not None and len(df_portal) > 0:
                 with context.progress(total = len(df_portal), label = "Writing portal gate facilities ...") as progress:
-                    for item in df_portal[PORTAL_FIELDS].itertuples(index = False):
+                    portal_links = _optional_links(df_portal)
+                    for item, link_id in zip(df_portal[PORTAL_FIELDS].itertuples(index = False), portal_links):
                         geometry = item[PORTAL_FIELDS.index("geometry")]
                         writer.start_facility(
                             str(item[PORTAL_FIELDS.index("location_id")]),
-                            geometry.x, geometry.y
+                            geometry.x, geometry.y, link_id
                         )
                         writer.add_activity(PORTAL_ACTIVITY_TYPE)
                         writer.end_facility()

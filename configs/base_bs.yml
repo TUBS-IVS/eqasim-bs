@@ -948,6 +948,14 @@ config:
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1
   cordon_network_buffer_fraction: 0.10
+  # Gate facility links (#465, ADR-0167): the portal gate facilities and the in-commuter homes at a gate point get the
+  # car link that feeds the inward gate link, outside the cut extent, instead of eqasim's nearest non-motorway link.
+  # Eligible links carry >= the minimum capacity; the inward gate link lies within the maximum distance of the gate
+  # point. The facilities stage fails when more than the maximum share of the gate facilities falls back.
+  cordon_gate_facility_links_enabled: true
+  cordon_gate_facility_link_minimum_capacity_veh_per_h: 1000.0
+  cordon_gate_facility_link_maximum_distance_m: 300.0
+  cordon_gate_facility_link_maximum_fallback_share: 0.05
   osm_path: osm/cordon
   osm_network_path: osm/germany-latest.zgb_ring.osm.pbf
   eqasim_source_path: ../eqasim-java-bs
