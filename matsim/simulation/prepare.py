@@ -52,10 +52,11 @@ _LARGE_FACILITY_ACCESS_NUMBERS = (
     ("large_facility_access_scope_work_share", 0.5, "scope-work-share", lambda v: 0.0 <= v <= 1.0,
      "in [0, 1]"),
 )
-#: Text keys (comma-separated prefix lists) with their defaults and Java options. Never sites: the cordon portals
-#: (placed by the portal stages on purpose), the external Gemeinde centroids and homes. In scope: universities.
+#: Text keys (comma-separated prefix lists) with their defaults and Java options. Never sites: the outside
+#: activities of cut trips, the external Gemeinde centroids, homes, and the portal gates, whose link the facilities
+#: stage pins and this stage verifies (ADR-0167). In scope: universities.
 _LARGE_FACILITY_ACCESS_PREFIXES = (
-    ("large_facility_access_excluded_prefixes", "outside_,EXT,home_", "excluded-facility-prefixes"),
+    ("large_facility_access_excluded_prefixes", "outside_,EXT,home_,portal_", "excluded-facility-prefixes"),
     ("large_facility_access_scope_prefixes", "uni_loc_", "scope-facility-prefixes"),
 )
 _LARGE_FACILITY_ACCESS_OUTCOMES = ("distributed", "distributed_partial", "moved", "fallback", "adequate")

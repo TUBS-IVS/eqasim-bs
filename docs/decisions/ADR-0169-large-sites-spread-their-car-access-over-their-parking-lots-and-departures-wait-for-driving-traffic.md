@@ -61,8 +61,9 @@ most +2 % car travel time against the control (the owner's approval of the desig
 the 2 % car-time criterion"; the 2 % itself is an ASSUMPTION, not a reference).
 
 1. **Sites.** A site is every facility at one coordinate (x, y to 0.01 m), except those whose id starts with
-   `large_facility_access_excluded_prefixes` (default `outside_,EXT,home_`: portals, external Gemeinde centroids,
-   homes). Size = activities at its facilities in the selected plans / `sampling_rate` (at 100 %); large from
+   `large_facility_access_excluded_prefixes` (default `outside_,EXT,home_,portal_`: outside activities of cut
+   trips, external Gemeinde centroids, homes, and the portal gates, whose link the facilities stage pins and
+   prepare verifies, ADR-0167). Size = activities at its facilities in the selected plans / `sampling_rate` (at 100 %); large from
    `large_facility_access_minimum_activities` (1000).
 2. **Work sites and universities: parking-lot access** (eqasim-java-bs `LargeSiteAccessAssignment`, run by
    `RunAdaptLargeFacilityAccess` in `matsim.simulation.prepare` between eqasim's `RunPreparation` and the routing).

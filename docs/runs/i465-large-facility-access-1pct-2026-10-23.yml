@@ -131,7 +131,9 @@ validation:
   artifact: 'docs/runs/artifacts/i465-large-facility-access-1pct-2026-10-23/pipeline_smoke_prepare_log.txt'
   notes: >-
     The synthesis stages recomputed with this branch's code, so the population differs from the rerun's: the site
-    counts (317 / 41) are not comparable one to one with the A/B application above (294 / 39).
+    counts (317 / 41) are not comparable one to one with the A/B application above (294 / 39). The smoke and the A/B
+    predate main's pinned portal gate links (ADR-0167): they excluded outside_,EXT,home_ only, so a busy portal_ gate
+    could be moved by the single-link rule; the default now also excludes portal_, which neither run exercised.
 features:
 - large_facility_access_links
 - qsim_departures_yield

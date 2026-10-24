@@ -1,7 +1,7 @@
 feature: large_facility_access_links
 title: Large sites spread their car access over their parking lots or get one high-capacity link
 area: matsim
-description: 'Sites are all facilities at one coordinate (incommuter workplaces included; portals, external
+description: 'Sites are all facilities at one coordinate (incommuter workplaces included; portal gates, cut-trip outside activities, external
   centroids and homes excluded), large from 1000 activities at 100 %. Work sites and universities spread their
   car access over the nearest OSM parking lots that cover 0.5 x their size within 1500 m, weighted by spaces:
   every person gets one lot group, facilities with persons in several groups get same-point sub-facilities

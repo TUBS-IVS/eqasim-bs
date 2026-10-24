@@ -93,7 +93,7 @@ def test_configure_declares_the_rule_keys_with_their_defaults(data_path):
         "large_facility_access_minimum_capacity_veh_per_h": 1000.0,
         "large_facility_access_maximum_distance_m": 1000.0,
         "large_facility_access_maximum_fallback_share": 0.15,
-        "large_facility_access_excluded_prefixes": "outside_,EXT,home_",
+        "large_facility_access_excluded_prefixes": "outside_,EXT,home_,portal_",
         "large_facility_access_lots_path": LOTS_REL_PATH,
         "large_facility_access_lot_demand_share": 0.5,
         "large_facility_access_lot_maximum_distance_m": 1500.0,
@@ -104,6 +104,17 @@ def test_configure_declares_the_rule_keys_with_their_defaults(data_path):
         "matsim_qsim_inserting_waiting_vehicles_first": False,
     }
     assert {key: context.declared[key] for key in expected} == expected
+
+
+def test_the_default_exclusion_keeps_the_pinned_portal_gate_facilities(data_path):
+    # The facilities stage pins every portal gate facility to the carriageway feeding its inward gate link and
+    # prepare fails when that link changes (ADR-0167). A busy gate is a large site, so the single-link rule of
+    # ADR-0169 would move it: the default exclusion must cover the portal prefix.
+    from braunschweig.synthesis.portal_trips.config_keys import PORTAL_LOCATION_ID_PREFIX
+    context = _Context({"data_path": str(data_path)})
+    prepare.configure(context)
+    excluded = context.declared["large_facility_access_excluded_prefixes"].split(",")
+    assert PORTAL_LOCATION_ID_PREFIX in excluded
 
 
 def test_the_access_step_runs_between_preparation_and_routing_with_every_option(monkeypatch, data_path):
@@ -128,7 +139,7 @@ def test_the_access_step_runs_between_preparation_and_routing_with_every_option(
                "parking-maximum-distance-m": 1500.0, "lot-link-maximum-distance-m": 300.0,
                "maximum-no-lot-share": 0.10, "scope-work-share": 0.5}
     assert {name: float(_option(args, name)) for name in numbers} == numbers
-    assert _option(args, "excluded-facility-prefixes") == "outside_,EXT,home_"
+    assert _option(args, "excluded-facility-prefixes") == "outside_,EXT,home_,portal_"
     assert _option(args, "scope-facility-prefixes") == "uni_loc_"
 
 

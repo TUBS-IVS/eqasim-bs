@@ -39,7 +39,7 @@ HIGHWAY_ATTRIBUTE = "osm:way:highway"
 DEFAULT_MINIMUM_ACTIVITIES = (500.0, 1000.0, 2000.0, 5000.0)
 DEFAULT_MINIMUM_CAPACITIES_VEH_PER_HOUR = (1000.0, 1500.0)
 DEFAULT_DISTANCES_M = (200.0, 300.0, 500.0, 1000.0)
-DEFAULT_EXCLUDED_PREFIXES = ("outside_", "EXT", "home_")
+DEFAULT_EXCLUDED_PREFIXES = ("outside_", "EXT", "home_", "portal_")
 
 
 def placement_eligible(highway):
