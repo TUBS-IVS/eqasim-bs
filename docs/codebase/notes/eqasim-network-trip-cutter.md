@@ -52,8 +52,9 @@ logs the counts once after the population cut, as a line starting with `[cutter]
 border-crossing network trips`. A rising "cross the border on an access/egress leg" count is
 expected wherever homes lie close to the extent border; it is not a fallback.
 
-Pinned by `TestNetworkTripProcessor` in the core tests of eqasim-java-bs (branch
-`fix/i465-cutter-access-walk-mode`).
+Pinned by `TestNetworkTripProcessor` in the core tests of eqasim-java-bs (TUBS-IVS/eqasim-java-bs#48,
+branch `fix/i465-cutter-car-trip-mode`). The rule holds only with a jar built from a fork commit that
+contains that change; the effect of the fix has not been measured in a run yet.
 
 ## Rules for maintainers
 
