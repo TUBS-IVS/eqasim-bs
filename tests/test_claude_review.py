@@ -10,6 +10,7 @@ an empty review, a prompt placeholder left unfilled, and an unbounded review run
 import importlib.util
 import json
 import pathlib
+import re
 import sys
 
 import pytest
@@ -692,3 +693,21 @@ def test_a_re_review_result_without_previous_still_posts_and_warns(tmp_path, cap
                     "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "::warning::" in out and "previous" in out and "Still open from earlier rounds" in out
+
+
+def test_committed_workflow_wires_the_rounds_and_ignores_the_generated_views():
+    # String checks, like the bounded-run test on the config: the workflow is not executed here.
+    text = (_REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8")
+    on_block = text.split("\njobs:", 1)[0]
+    assert "paths-ignore:" in on_block and '"docs/generated/**"' in on_block
+    assert "claude_review.py state " in text and "claude_review.py interdiff " in text
+    assert "--state" in text.split("claude_review.py classify", 1)[1].split("\n\n", 1)[0]
+    for step in ("review", "post"):
+        assert "--state" in text.split(f"claude_review.py {step} ", 1)[1].split("\n\n", 1)[0]
+    classify_job = text.split("  classify:", 1)[1].split("  review:", 1)[0]
+    assert "pull-requests: read" in classify_job
+    # Label names stay in .github/claude-review.yml only. Match them as standalone words: the workflow
+    # legitimately contains "claude-review" inside the config path, the concurrency group and the
+    # artifact names (the session retro downloads "claude-review-findings-*").
+    for label in (CONFIG["labels"]["force"], CONFIG["labels"]["skip"]):
+        assert not re.search(rf"(?<![\w./-]){re.escape(label)}(?![\w./-])", text), label
