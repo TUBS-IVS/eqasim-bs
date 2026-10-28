@@ -63,7 +63,7 @@ and Windows, and its green result on the latest commit is the final-code evidenc
 
 If the gate blocks, its message names each missing item and the exact command that
 produces it. A command prefixed with `EQASIM_GATE_OVERRIDE="<reason>"` passes. Every
-override is logged and counted, and repeated overrides lead to a proposal to fix or relax
+override is logged and counted, and repeated overrides lead to an issue to fix or relax
 the gate. The hook cannot see the chat, so CLAUDE.md's rule still applies: every push
 needs the user's explicit yes.
 
@@ -79,23 +79,51 @@ needs the user's explicit yes.
   1. A script extracts cited trouble spots.
   2. One cheap judge model classifies them.
   3. A script records the results.
-- **Ledger and proposals.** The ledger, proposals and run packs live in
-  `~/.claude/retro/eqasim-bs/`.
-- **What is automatic.** The ledger, the counters, a `SESSION_LOG.md` entry and memory
-  notes need no confirmation.
-- **What needs a yes.** Anything that changes future behaviour needs one click from the
-  user: a rule, test, skill, hook or gate change, a GitHub issue or board move, or
-  archiving memory notes. Accepted repository changes are bundled into one `chore/retro-*`
-  PR.
+- **Ledger and runs.** The ledger, run packs, usage counters, archive and outbox live in
+  `~/.claude/retro/eqasim-bs/`; every run is committed there, so the memory directory and
+  the learned files have a history (the memory directory itself is not versioned).
+- **Everything is automatic (ADR-0170).** Nothing waits for a decision. A deterministic
+  promoter lints each lesson the judge proposes and lands it at once, or rejects it and
+  writes nothing:
+
+  | Lesson | Lands as |
+  |---|---|
+  | a new mistake | a memory note (`feedback-*.md`, index line of at most 90 characters) |
+  | a mistake seen in 2 sessions | a personal rule `~/.claude/rules/learned-*.md` (at most 25 lines; loads in every session) |
+  | a recurring mistake a pattern can catch | a guard that WARNS on the matching command or file; learned guards never block |
+  | a procedure done by hand 3 times | a personal skill `~/.claude/skills/learned-*/` |
+  | LARGER work that needs code or a repository change (a test, a real hook, a run manifest, a CI review rule, unfiled larger work, per CLAUDE.md "Newly discovered work") | a GitHub issue on the fork, filed without asking: the open issues are searched first and a duplicate gets a comment instead; at most two per run; titles and bodies are redacted. A quick fix never gets an issue: the judge names it in the run summary instead, so the board does not fill up |
+
+  The promoter only touches what the retro wrote itself; hand-written files are never
+  changed.
+- **Bounded library.** Each learned member (note, rule, skill, guard) is counted: read
+  (`view`) and relevant again (`use`: invoked, fired, or its lesson seen again). A new
+  member has a probation of 50 retro'd sessions (guards 30); after it, a member with neither
+  view nor use moves to the archive, and beyond the capacity (80 notes, 30 rules, 20
+  skills, 20 guards) the lowest-use ones go first. While `MEMORY.md` is over 150 lines or
+  25 KB, further mature notes go too (Claude Code loads only 200 lines / 25 KB). These
+  numbers are assumptions, tuned in `config.json` under `autopilot`.
+- **Archive, never delete.** An archived member is moved, not deleted, and comes back by
+  itself when its mistake recurs, or with `retro.py restore <name>`. A note absorbed by a
+  rule or by a merge records what absorbed it. The 44 notes an older version deleted on
+  2026-10-23 are archive records now: 18 with the full text recovered from transcripts,
+  26 with only their one-line summary.
+- **Curator.** Every 20 retro'd sessions, one background pass over the whole library folds
+  near-duplicates into one member, after a snapshot.
+- **Informed, never asked.** The next session start reports once what landed, was archived,
+  revived, filed or rejected, and repeats health warnings (an issue that cannot be filed,
+  `MEMORY.md` over its load limit) until they are resolved. `retro.py metrics` shows the
+  library's health.
 - **After a PR.** After `git pr`, the hook injects the CONTRIBUTING step 9 record
   checklist.
 
 ## Install on a new machine
 
 1. Clone the private tooling repository to `~/.claude/retro/`.
-2. Run `python ~/.claude/retro/bin/retro.py install`. This merges the hook entries
+2. Run `python ~/.claude/retro/bin/retro.py migrate-autopilot` once (idempotent).
+3. Run `python ~/.claude/retro/bin/retro.py install`. This merges the hook entries
    into `~/.claude/settings.json`.
-3. Check the result with `python ~/.claude/retro/bin/retro.py status`.
+4. Check the result with `python ~/.claude/retro/bin/retro.py status`.
 
 The hooks run under the system Python with the standard library only. They do not
 depend on the `eqasim` environment.
@@ -103,4 +131,4 @@ depend on the `eqasim` environment.
 ## Relation to `/close`
 
 `/close` stays available. Where the retro runs, the retro covers its record duties
-through proposals, so a forgotten `/close` no longer loses the session's lessons.
+automatically, so a forgotten `/close` no longer loses the session's lessons.
