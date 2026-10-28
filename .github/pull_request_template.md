@@ -1,4 +1,4 @@
-<!-- PRs ALWAYS target the fork TUBS-IVS/eqasim-bs (base: main), never the eqasim-org/eqasim-bavaria upstream. Use `git pr`.
+<!-- PRs ALWAYS target the fork TUBS-IVS/eqasim-bs (base: main), never the eqasim-org/eqasim-bavaria upstream. Open it with `gh pr create --repo TUBS-IVS/eqasim-bs --base main`.
      Naming + labels: docs/codebase/notes/issue-and-pr-conventions.md
      - branch  <fix|feature|analysis|docs|chore|test>/i<issue>-<slug>
      - title   what the change does, <= ~90 chars, ending "(#NN)", or "(closes #NN)" in the PR that closes the issue

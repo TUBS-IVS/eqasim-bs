@@ -172,12 +172,25 @@ closing keyword in #481") instead of quoting it. After a merge,
 the keyword of #481.
 
 ```
-git pr --label step:generation --label area:behavior \
+gh pr create --repo TUBS-IVS/eqasim-bs --base main \
+  --label step:generation --label area:behavior \
   --title "<what the change does> (closes #NN)" --body-file pr.md
 ```
 
-(`git pr` is the alias pinning base `main` on the fork; extra flags pass straight through
-to `gh pr create`.) Merging is the user's action, never ours.
+`--repo` and `--base` pin the fork: the GitHub web UI defaults a PR base to the
+`eqasim-org/eqasim-bavaria` upstream, which is never the target. Merging is the user's
+action, never ours.
+
+**Write `gh pr create` out; do not use the former `git pr` alias.** The alias ran the same
+command, but the Claude desktop app recognises a session's PR as *created* by that session
+only from a literal `gh pr create` in the command: in its log (`main.log`,
+`code_change_published ... action=created`) every `gh pr create` PR since 2026-09-25 is booked
+as created, every `git pr` PR only as pushed (about 40 PRs, no exception). Since app version
+4.29.0 (installed 2026-10-28) a session may switch Auto-fix on only for a PR booked as
+created, so the alias made every Auto-fix call fail with "only for a PR the app is sure this
+session opened" (#518, #521, #522), while the eqasim-java-bs PR #50, opened with
+`gh pr create`, worked. Before 4.29.0 both forms worked. Auto-fix is the user's standing
+choice for every PR (CLAUDE.md "Git and version control").
 
 ## Triage check (part of `/close`)
 

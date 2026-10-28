@@ -79,8 +79,8 @@ overview, not an append-only log. Do not revive retired status or backlog files.
   model change done; run the documentation check when those sources change
   (the generated docs are rebuilt on main, never committed on a branch). Report what was verified and whether scientific outputs may change.
 - Stage explicit paths. Never run `git push` without explicit confirmation for
-  that push. Open PRs only with `git pr`, whose base is the fork
-  `TUBS-IVS/eqasim-bs`, and merge only when the maintainer asks. Newly
+  that push. Open PRs only with `gh pr create --repo TUBS-IVS/eqasim-bs --base main`
+  (the fork; written out, see CLAUDE.md), and merge only when the maintainer asks. Newly
   discovered work: fix a quick fix now (bugs root cause first, failing test
   first); propose larger work before opening an issue for it (CLAUDE.md,
   "Newly discovered work").
