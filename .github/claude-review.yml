@@ -54,6 +54,17 @@ thresholds:
   full_min_lines_critical: 300  # changed lines for the full tier when a critical path is touched
   full_min_lines: 800           # changed lines for the full tier anywhere
 
+# Further rounds on the same PR (after a push to a PR the review has already seen). The gate
+# then measures only the files whose change against main differs from the last complete round
+# (scripts/claude_review.py interdiff), with the thresholds above; a push below every threshold
+# still gets verify_tier while findings of earlier rounds are open, so a fix is checked.
+# After max_rounds automatic rounds the review stops; adding the force label reads the whole PR
+# again and does not count. ASSUMPTION: starting values chosen on 2026-10-28, re-tune from the
+# cost records.
+rereview:
+  max_rounds: 3
+  verify_tier: light
+
 # A critical path touched with fewer lines than full_min_lines_critical gets the light tier.
 # max_budget_usd is a hard per-run cap (claude -p --max-budget-usd); ASSUMPTION, re-tune
 # from the cost records.
