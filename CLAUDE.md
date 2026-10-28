@@ -6,7 +6,7 @@ MATSim + eqasim scientific transport-simulation research. Treat the codebase as 
 
 ## Where the rules live
 
-This file holds only what EVERY session needs. Topic rules live in `.claude/rules/` and load when a file matching their `paths:` frontmatter is read or edited (ADR-0143): `coding-standards.md` (all code and configs) and `tests.md` (writing tests). Their headings were moved verbatim from here, so a comment citing `CLAUDE.md "<heading>"` finds it there. Add a rule here only if every session needs it.
+This file holds only what EVERY session needs. Topic rules live in `.claude/rules/` and load when a file matching their `paths:` frontmatter is read or edited (ADR-0143): `coding-standards.md` (all code and configs) and `tests.md` (writing tests). Their headings were moved verbatim from here, so a comment citing `CLAUDE.md "<heading>"` finds it there. Add a rule here only if every session needs it. Personal rules the session retro learns on its own live outside the repo in `~/.claude/rules/learned-*.md` and load in every session (`docs/codebase/notes/agent-process-automation.md`, ADR-0170).
 
 ## Model documentation governance (read this first)
 
@@ -28,13 +28,13 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around. Subagents: every dispatch names its model and a tool-call budget, per `docs/codebase/notes/subagent-budget.md`.
 
-**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check"). Where the session-retro automation of `docs/codebase/notes/agent-process-automation.md` is installed, it covers these duties through proposals.
+**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check"). Where the session-retro automation of `docs/codebase/notes/agent-process-automation.md` is installed, it covers these duties automatically: nothing it learns waits for a decision (ADR-0170).
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). Recreate it on a new machine with
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
 A PR mirrors its issue (branch `<kind>/i<issue>-<slug>`, labels, `(#NN)` or `(closes #NN)` title, `**Stages:**` line) per `docs/codebase/notes/issue-and-pr-conventions.md`.
 
-No size budgets. CLAUDE.md, MEMORY.md and SESSION_LOG.md have no KB or entry limit, and nothing is ever shortened, archived, or left unwritten just to hit a number. Keep them lean the only way that is safe: one fact in one place, dedupe before adding, topic rules in path-scoped `.claude/rules/`, and archive at /close what actually merged or was parked.
+**Size caps.** Claude Code loads only the first 200 lines or 25 KB of `MEMORY.md` and advises keeping a CLAUDE.md under 200 lines (code.claude.com/docs/en/memory). The session retro enforces caps on what it learns (memory notes, personal learned rules and skills, guards; numbers in `autopilot` of `~/.claude/retro/config.json`): a new member gets a probation, then a dormant or lowest-use one moves to the retro's archive, which never deletes and brings a member back on demand or when its mistake recurs (ADR-0170). Stay under the caps the safe way first: one fact in one place, dedupe before adding, topic rules in path-scoped `.claude/rules/`, and archive at /close what actually merged or was parked.
 
 ## Language policy
 
@@ -129,6 +129,8 @@ those still need the explicit yes.
   `eqasim-org/eqasim-bavaria` upstream) — typed, labelled, titled and opened with the plain-language head (`In short`,
   `## Problem`, `## Why it matters`, `## Done when`) exactly per `docs/codebase/notes/issue-and-pr-conventions.md`.
 - **Unsure?** Ask in one line: "fix now or issue?". No issue for anything that was fixed in the same session.
+- **The session retro is the one exception:** it files the work it finds in finished sessions on its own, without
+  asking (it searches the open issues first and comments on a duplicate instead; a few per run; ADR-0170).
 All issues, PRs, and the Project board live on the fork only.
 
 **Working hygiene (reasons and incidents: `docs/codebase/notes/git-working-hygiene.md`):**
