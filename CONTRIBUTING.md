@@ -32,8 +32,9 @@ onto the `superpowers` skill chain, named in brackets.)
    relevant real-data smoke when model changes require it
    `[verification-before-completion]`.
 7. **Review** — request a review before merging `[requesting-code-review]`.
-8. **Land** — open the PR **always via `git pr`** (base = the fork `TUBS-IVS/eqasim-bs`,
-   never the `eqasim-org/eqasim-bavaria` upstream); after merge, delete the branch + prune
+8. **Land** — open the PR **always with `gh pr create --repo TUBS-IVS/eqasim-bs --base main`**,
+   written out (base = the fork, never the `eqasim-org/eqasim-bavaria` upstream; why not the
+   old `git pr` alias: `docs/codebase/notes/issue-and-pr-conventions.md`); after merge, delete the branch + prune
    the worktree `[finishing-a-development-branch]`.
 9. **Record** — update the **model registries** for what changed (new/changed stage →
    `docs/registry/stages/`, feature → `docs/registry/features/`, dataset →
@@ -61,8 +62,8 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
   line. Full rule:
   [docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 - **PRs and issues live only on the fork `TUBS-IVS/eqasim-bs`.** The GitHub web UI defaults
-  a PR base to the upstream — always switch it, or just use the alias:
-  `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
+  a PR base to the upstream — always switch it there; on the command line use
+  `gh pr create --repo TUBS-IVS/eqasim-bs --base main`.
 - See open vs merged branches at a glance: `git branch-status`.
 - Bring `main` into a branch with `git sync-main`: it merges, sets `docs/generated/*` to main's state and runs
   the documentation check (setup: `git config alias.sync-main '!python scripts/sync_main.py'`;

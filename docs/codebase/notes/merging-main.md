@@ -20,7 +20,7 @@ the project environment active (`documentation check` needs `pyyaml`; the script
 
 | Situation | Command |
 |---|---|
-| bring `main` in before `git pr`, or when GitHub reports a conflict | `git sync-main` |
+| bring `main` in before opening the PR, or when GitHub reports a conflict | `git sync-main` |
 | the `docs.yml` step "Generated views untouched" fails | `git sync-main` (also when already up to date), push |
 | it stopped with "conflicts outside the generated views" (exit 2) | resolve, `git add <files>`, `python scripts/sync_main.py --finish` |
 | the DAG check is too slow or synpp is missing | add `--no-dag` (CI's `docs.yml` uses it too) |

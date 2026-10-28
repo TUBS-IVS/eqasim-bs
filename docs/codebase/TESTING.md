@@ -30,7 +30,7 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    carries the data and report their pass and skip counts. A worktree carries no
    gitignored data unless it is linked in.
 4. **Final-code evidence comes from CI.** Merge the current `origin/main`, push the
-   branch and open the PR (`git pr`). The `regression` workflow then runs
+   branch and open the PR (`gh pr create --repo TUBS-IVS/eqasim-bs --base main`). The `regression` workflow then runs
    `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml` on
    Linux (the captured server snapshot, as in WSL) and on Windows, in parallel on
    GitHub's machines. Do not start local full suites to replace it. Only when CI
