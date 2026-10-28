@@ -451,3 +451,68 @@ def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_no
                     "--base-sha", "b" * 40, "--head-sha", "d" * 40, "--out-dir", str(out_dir)]) == 0
     meta = json.loads((out_dir / "interdiff.json").read_text(encoding="utf-8"))
     assert meta["last_sha"] == "" and meta["fallback"] == ""
+
+
+def _ctx(auto=1, open_=0, changed=None, fallback=""):
+    return cr.RoundContext(automatic_rounds=auto, open_findings=open_, last_sha="c" * 40, changed_entries=changed,
+                           fallback=fallback)
+
+
+@pytest.mark.parametrize("entries, branch, action, label, ctx, tier, mode, diff", [
+    # cap reached -> nothing, whatever the push
+    ([("braunschweig/x.py", 900)], "fix/i1-x", "synchronize", "", _ctx(auto=3, open_=2, changed=[("braunschweig/x.py", 900)]), "none", "none", "none"),
+    # nothing changed against main (a merge of main only) and nothing open -> nothing
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[]), "none", "none", "none"),
+    # nothing changed but open findings (a revert as the fix) -> verify tier without a diff
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[]), "light", "verify", "none"),
+    # a small non-critical fix push with open findings -> verify tier on the interdiff
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("scripts/report_x.py", 12)]), "light", "verify", "interdiff"),
+    # a small non-critical push, nothing open -> nothing
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("scripts/report_x.py", 12)]), "none", "none", "none"),
+    # a small critical push -> light re-review; a large one -> full re-review
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("braunschweig/x.py", 12)]), "light", "rereview", "interdiff"),
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("braunschweig/x.py", 350)]), "full", "rereview", "interdiff"),
+    # the force label reads the whole PR again, cap or not
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "labeled", "claude-review", _ctx(auto=3, open_=1, changed=[]), "full", "forced", "pr"),
+    # the interdiff fell back (rebase): first-round rules on the whole PR
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=None, fallback="reviewed commit c is not an ancestor of head"), "full", "first", "pr"),
+    # dismissed findings are not in the open count: a small docs push then triggers nothing
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=0, changed=[("docs/codebase/notes/n.md", 3)]), "none", "none", "none"),
+])
+def test_classify_gates_further_rounds_from_the_committed_config(entries, branch, action, label, ctx, tier, mode, diff):
+    labels = ["claude-review"] if label else []
+    decision = cr.classify(CONFIG, entries, branch, labels, False, action, label, context=ctx)
+    assert (decision.tier, decision.mode, decision.diff_source) == (tier, mode, diff), decision.reason
+    assert decision.run == (tier != "none")
+    if mode == "verify":
+        assert decision.model == CONFIG["tiers"][CONFIG["rereview"]["verify_tier"]]["model"]
+    if ctx.fallback:
+        assert decision.reason.startswith("fallback:")
+
+
+def test_classify_without_a_context_is_the_first_round():
+    decision = cr.classify(CONFIG, [("braunschweig/x.py", 40)], "fix/i1-x", [], False)
+    assert (decision.mode, decision.diff_source, decision.round, decision.tier) == ("first", "pr", 1, "light")
+
+
+def test_classify_cli_reads_state_and_interdiff_and_writes_mode_and_round(tmp_path, monkeypatch):
+    state = cr.empty_state()
+    state["rounds"].append({"round": 1, "sha": "c" * 40, "tier": "full", "run_id": "1", "automatic": True,
+                            "complete": True, "cost_usd": 1.0, "findings": 1})
+    state["findings"].append({"id": "cccccccccccc-0", "path": "braunschweig/x.py", "line": 3, "severity": "high",
+                              "scope": "introduced", "title": "t", "body": "b", "author_note": "", "comment_id": 1,
+                              "status": "open"})
+    (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    (tmp_path / "interdiff.json").write_text(json.dumps({"last_sha": "c" * 40, "fallback": "", "changed": ["scripts/x.py"],
+                                                         "unchanged": ["braunschweig/x.py"], "reverted": []}),
+                                             encoding="utf-8")
+    (tmp_path / "interdiff.numstat").write_text("5\t1\tscripts/x.py\n", encoding="utf-8")
+    (tmp_path / "numstat.tsv").write_text("300\t10\tbraunschweig/x.py\n6\t0\tscripts/x.py\n", encoding="utf-8")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out.txt"))
+    rc = cr.main(["classify", "--config", str(_REPO / ".github" / "claude-review.yml"),
+                  "--numstat", str(tmp_path / "numstat.tsv"), "--branch", "fix/i1-x", "--event-action", "synchronize",
+                  "--state", str(tmp_path / "state.json"), "--interdiff-json", str(tmp_path / "interdiff.json"),
+                  "--interdiff-numstat", str(tmp_path / "interdiff.numstat")])
+    assert rc == 0
+    values = dict(line.split("=", 1) for line in (tmp_path / "out.txt").read_text(encoding="utf-8").splitlines())
+    assert (values["tier"], values["mode"], values["diff_source"], values["round"]) == ("light", "verify", "interdiff", "2")

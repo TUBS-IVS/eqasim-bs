@@ -204,6 +204,27 @@ class Decision:
     changed_lines: int
     changed_files: int
     critical_files: list
+    mode: str = "first"  # "first", "rereview", "verify", "forced" or "none"
+    diff_source: str = "pr"  # what the model reads: "pr" (whole PR), "interdiff" or "none"
+    round: int = 1
+
+
+@dataclass
+class RoundContext:
+    """What a further round is gated on (from `state` and `interdiff`)."""
+    automatic_rounds: int
+    open_findings: int
+    last_sha: str  # last complete round; "" on a PR the review has not seen
+    changed_entries: list | None  # numstat entries since last_sha; None without a usable interdiff
+    fallback: str = ""  # why the interdiff could not be used (then the whole PR is reviewed)
+    round: int = 1
+
+
+def round_context(state: dict, meta: dict, changed_entries: list) -> RoundContext:
+    usable = bool(meta.get("last_sha")) and not meta.get("fallback")
+    return RoundContext(automatic_rounds(state), len(open_findings(state)), str(meta.get("last_sha", "")),
+                        changed_entries if usable else None, str(meta.get("fallback", "")),
+                        len(state["rounds"]) + 1)
 
 
 def glob_to_regex(pattern: str) -> re.Pattern:
@@ -260,50 +281,90 @@ def parse_numstat(text: str) -> list:
     return entries
 
 
-def classify(config: dict, entries: list, branch: str, labels: list, draft: bool,
-             event_action: str = "", event_label: str = "") -> Decision:
-    label_cfg = config["labels"]
-    tiers = config["tiers"]
-    limits = config["thresholds"]
-
+def _measure(config: dict, entries: list) -> tuple:
+    """(changed lines, changed files, critical paths, printable size) of numstat entries outside
+    the ignored paths."""
     counted = [(path, lines) for path, lines in entries if not matches_any(path, config.get("ignored_paths", []))]
     changed_lines = sum(lines for _, lines in counted)
-    changed_files = len(counted)
     critical = sorted(path for path, _ in counted if matches_any(path, config.get("critical_paths", [])))
-    kind = branch.split("/", 1)[0] if "/" in branch else ""
-    size = f"{changed_lines} changed lines in {changed_files} files"
+    size = f"{changed_lines} changed lines in {len(counted)} files"
     if critical:
         size += f", critical: {', '.join(critical[:5])}" + (f" (+{len(critical) - 5} more)" if len(critical) > 5 else "")
+    return changed_lines, len(counted), critical, size
 
-    def decide(tier: str, why: str) -> Decision:
-        model = tiers[tier]["model"] if tier != "none" else ""
-        max_turns = int(tiers[tier]["max_turns"]) if tier != "none" else 0
-        return Decision(tier != "none", tier, model, max_turns, f"{why} ({size})",
-                        changed_lines, changed_files, critical)
+
+def _size_tier(config: dict, changed_lines: int, changed_files: int, critical: list, kind: str) -> tuple:
+    """(tier, why) from the size rules shared by a first and a further round."""
+    limits = config["thresholds"]
+    if kind in config.get("skip_kinds", []) and not critical:
+        return "none", f"skipped: branch kind '{kind}/' touches no critical path"
+    if changed_lines >= limits["full_min_lines"]:
+        return "full", f"full: >= {limits['full_min_lines']} changed lines"
+    if critical and changed_lines >= limits["full_min_lines_critical"]:
+        return "full", f"full: critical path and >= {limits['full_min_lines_critical']} changed lines"
+    if critical:
+        return "light", "light: critical path touched"
+    if changed_lines >= limits["light_min_lines"]:
+        return "light", f"light: >= {limits['light_min_lines']} changed lines"
+    if changed_files >= limits["light_min_files"]:
+        return "light", f"light: >= {limits['light_min_files']} changed files"
+    return "none", "skipped: below every threshold, no critical path"
+
+
+def classify(config: dict, entries: list, branch: str, labels: list, draft: bool,
+             event_action: str = "", event_label: str = "", context: RoundContext | None = None) -> Decision:
+    """Decide whether and how the review runs. Without a usable ``context`` (no earlier complete
+    round, or the interdiff fell back) the first-round rules apply to the whole PR (``entries``).
+    With one, a push is measured by ``context.changed_entries`` only: the files whose change
+    against main differs from the last complete round."""
+    label_cfg = config["labels"]
+    tiers = config["tiers"]
+    rereview = config["rereview"]
+    kind = branch.split("/", 1)[0] if "/" in branch else ""
+    round_number = context.round if context else 1
+    further = (context is not None and bool(context.last_sha) and not context.fallback
+               and context.changed_entries is not None)
+    measured = _measure(config, context.changed_entries if further else entries)
+    prefix = f"fallback: {context.fallback}; " if context and context.fallback else ""
+    if further:
+        prefix += (f"round {round_number}, {context.automatic_rounds}/{rereview['max_rounds']} automatic rounds used, "
+                   f"{context.open_findings} open finding(s), since {context.last_sha[:12]}: ")
+
+    def decide(tier: str, why: str, mode: str, diff_source: str, size: str = measured[3]) -> Decision:
+        run = tier != "none"
+        return Decision(run, tier, tiers[tier]["model"] if run else "", int(tiers[tier]["max_turns"]) if run else 0,
+                        f"{prefix}{why} ({size})", measured[0], measured[1], measured[2],
+                        mode if run else "none", diff_source if run else "none", round_number)
 
     if label_cfg["skip"] in labels:
-        return decide("none", f"skipped: label '{label_cfg['skip']}' is set")
+        return decide("none", f"skipped: label '{label_cfg['skip']}' is set", "none", "none")
     if event_action == "labeled":
         # Any label change re-triggers the workflow; only adding the force label starts a review,
         # once. Later pushes are gated normally, so a forgotten force label cannot bill every push.
+        # A forced round reads the whole PR again, whatever the round cap and the interdiff say.
         if event_label == label_cfg["force"]:
-            return decide("full", f"forced: label '{label_cfg['force']}' was added")
-        return decide("none", f"skipped: label event for '{event_label}', not '{label_cfg['force']}'")
+            return decide("full", f"forced: label '{label_cfg['force']}' was added", "forced", "pr",
+                          _measure(config, entries)[3])
+        return decide("none", f"skipped: label event for '{event_label}', not '{label_cfg['force']}'", "none", "none")
     if draft and config.get("skip_drafts", True):
-        return decide("none", "skipped: draft PR")
-    if kind in config.get("skip_kinds", []) and not critical:
-        return decide("none", f"skipped: branch kind '{kind}/' touches no critical path")
-    if changed_lines >= limits["full_min_lines"]:
-        return decide("full", f"full: >= {limits['full_min_lines']} changed lines")
-    if critical and changed_lines >= limits["full_min_lines_critical"]:
-        return decide("full", f"full: critical path and >= {limits['full_min_lines_critical']} changed lines")
-    if critical:
-        return decide("light", "light: critical path touched")
-    if changed_lines >= limits["light_min_lines"]:
-        return decide("light", f"light: >= {limits['light_min_lines']} changed lines")
-    if changed_files >= limits["light_min_files"]:
-        return decide("light", f"light: >= {limits['light_min_files']} changed files")
-    return decide("none", "skipped: below every threshold, no critical path")
+        return decide("none", "skipped: draft PR", "none", "none")
+    if not further:
+        tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
+        return decide(tier, why, "first", "pr")
+    if context.automatic_rounds >= int(rereview["max_rounds"]):
+        return decide("none", f"round cap: {context.automatic_rounds} automatic rounds; "
+                              f"add label '{label_cfg['force']}' for another", "none", "none")
+    verify = rereview["verify_tier"]
+    if not context.changed_entries:
+        if context.open_findings:
+            return decide(verify, "verify: nothing changed against main since the last complete round, "
+                                  "open findings are checked at head", "verify", "none")
+        return decide("none", "skipped: nothing changed against main since the last complete round", "none", "none")
+    tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
+    if tier == "none" and context.open_findings:
+        return decide(verify, f"verify: {context.open_findings} open finding(s), change below every threshold",
+                      "verify", "interdiff")
+    return decide(tier, why, "rereview", "interdiff")
 
 
 def read_result_record(execution_file: Path) -> dict:
@@ -659,13 +720,23 @@ def _cmd_classify(args) -> int:
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     entries = parse_numstat(Path(args.numstat).read_text(encoding="utf-8"))
     labels = [label.strip() for label in (args.labels or "").split(",") if label.strip()]
+    context = None
+    if args.state:
+        state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+        meta = json.loads(Path(args.interdiff_json).read_text(encoding="utf-8")) if args.interdiff_json else {}
+        changed = (parse_numstat(Path(args.interdiff_numstat).read_text(encoding="utf-8"))
+                   if args.interdiff_numstat else [])
+        context = round_context(state, meta, changed)
     decision = classify(config, entries, args.branch, labels, args.draft,
-                        args.event_action or "", args.event_label or "")
+                        args.event_action or "", args.event_label or "", context)
     print(f"[claude-review] {decision.reason}")
-    print(f"[claude-review] run={str(decision.run).lower()} tier={decision.tier} model={decision.model or '-'}")
+    print(f"[claude-review] run={str(decision.run).lower()} tier={decision.tier} model={decision.model or '-'} "
+          f"mode={decision.mode} diff={decision.diff_source} round={decision.round}")
     _append("GITHUB_OUTPUT", f"run={str(decision.run).lower()}\ntier={decision.tier}\nmodel={decision.model}\n"
-                             f"max_turns={decision.max_turns}\nreason={decision.reason}\n")
-    _append("GITHUB_STEP_SUMMARY", f"### Claude review gate\n\n- Decision: **{decision.tier}**\n"
+                             f"max_turns={decision.max_turns}\nmode={decision.mode}\n"
+                             f"diff_source={decision.diff_source}\nround={decision.round}\nreason={decision.reason}\n")
+    _append("GITHUB_STEP_SUMMARY", f"### Claude review gate\n\n- Decision: **{decision.tier}** "
+                                   f"(round {decision.round}, mode {decision.mode})\n"
                                    f"- Reason: {decision.reason}\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(asdict(decision), indent=2), encoding="utf-8")
@@ -925,6 +996,9 @@ def main(argv=None) -> int:
     p_classify.add_argument("--draft", action="store_true")
     p_classify.add_argument("--event-action", default="")
     p_classify.add_argument("--event-label", default="")
+    p_classify.add_argument("--state", default="", help="state.json of the `state` command (further rounds)")
+    p_classify.add_argument("--interdiff-json", default="", help="interdiff.json of the `interdiff` command")
+    p_classify.add_argument("--interdiff-numstat", default="", help="interdiff.numstat of the `interdiff` command")
     p_classify.add_argument("--json", dest="json_out")
     p_classify.set_defaults(func=_cmd_classify)
 
