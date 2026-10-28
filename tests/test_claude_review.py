@@ -44,6 +44,9 @@ CONFIG = yaml.safe_load((_REPO / ".github" / "claude-review.yml").read_text(enco
     ([("configs/base_bs.yml", 10)], "docs/adr-0150", [], False, "", "", "light"),
     # small critical-path change -> light
     ([("braunschweig/population/x.py", 40)], "fix/i1-x", [], False, "", "", "light"),
+    # the agent rules are critical: a small CLAUDE.md or rule edit is reviewed, also on a docs branch
+    ([("CLAUDE.md", 6)], "chore/x", [], False, "", "", "light"),
+    ([(".claude/rules/tests.md", 4)], "docs/adr-x", [], False, "", "", "light"),
     # large critical-path change -> full
     ([("braunschweig/population/x.py", 250), ("tests/test_x.py", 60)], "feature/i1-x", [], False, "", "", "full"),
     # large change anywhere -> full

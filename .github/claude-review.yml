@@ -16,9 +16,13 @@ labels:
 skip_drafts: true
 
 # Paths whose changes can alter model behaviour, scientific output, the
-# verification gate or this review gate itself. Glob syntax: "**" matches across
-# directories, "*" and "?" stay within one path segment (not fnmatch semantics).
+# verification gate, this review gate itself, or the rules every agent session
+# follows (CLAUDE.md and .claude/rules/ hold the push rule and the test gate).
+# Glob syntax: "**" matches across directories, "*" and "?" stay within one path
+# segment (not fnmatch semantics).
 critical_paths:
+  - "CLAUDE.md"
+  - ".claude/rules/**"
   - "braunschweig/**"
   - "synthesis/**"
   - "matsim/**"

@@ -15,7 +15,9 @@ Console organization (an organization-level key fails with "not scoped to a work
 Comments are posted with the workflow's `GITHUB_TOKEN` (as `github-actions[bot]`). PRs
 from forks and from Dependabot get no Actions secrets and are skipped with a note in the
 job summary. The gate config, prompt and script are read from the PR itself, so a PR can
-change its own gate; all three are critical paths, which makes such a PR reviewed.
+change its own gate; all three are critical paths, which makes such a PR reviewed. So are
+`CLAUDE.md` and `.claude/rules/` (since 2026-10-28): they steer every agent session, the
+push rule and the verification gate included, so even a small edit there is reviewed.
 
 ## Why `claude -p` and not `anthropics/claude-code-action`
 
