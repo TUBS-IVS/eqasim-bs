@@ -47,7 +47,13 @@ Rules shared by both (helpers in `braunschweig/gate_evidence.py`):
 ## What the push gate requires
 
 The gate is a personal `PreToolUse` hook. It intercepts `git push`, `git pr` and
-`gh pr create` in an eqasim-bs checkout and allows the command only when both hold:
+`gh pr create` in an eqasim-bs checkout and allows the command only when both hold
+(a push in another repository, such as eqasim-java-bs, passes untouched). The checkout is
+the one the push runs in (`retro_gate.target_dir`): the session directory, moved by every
+`cd` / `Set-Location` / `pushd` before the push, then by the push's own `git -C`. A
+`git -C` of any other git command does not count, because it never moves the shell (until
+2026-10-28 it did: a `git -C <eqasim-bs> show` that only read a file made the gate judge
+eqasim-bs for a push in the eqasim-java-bs clone).
 
 1. `docs-check.json` has `head == HEAD`, `dirty == false`, `fail_count == 0`,
    `no_dag == false`. CI's `--no-dag` mode skips the DAG-freshness check, so its output
@@ -62,10 +68,17 @@ and Windows, and its green result on the latest commit is the final-code evidenc
 `tests-linux.json` and `tests-windows.json` are shown as information when present.
 
 If the gate blocks, its message names each missing item and the exact command that
-produces it. A command prefixed with `EQASIM_GATE_OVERRIDE="<reason>"` passes. Every
-override is logged and counted, and repeated overrides lead to an issue to fix or relax
-the gate. The hook cannot see the chat, so CLAUDE.md's rule still applies: every push
-needs the user's explicit yes.
+produces it. If the gate is wrong (it judged the wrong checkout, or the evidence cannot be
+produced), the agent stops and shows the block to the user (`retro_gate.OVERRIDE_ADVICE`);
+it never sets an override on its own. A command prefixed with
+`EQASIM_GATE_OVERRIDE="<reason>"` passes the gate, but it needs the user's explicit yes to
+the override itself: approving a push does not approve bypassing the gate. Claude Code's
+auto-mode classifier denied every override an agent set on its own, 3 of 3 attempts
+(2026-10-22 twice, 2026-10-28; checked in the local session transcripts), two of them while
+the user had approved the push. An override is counted only once the push has run (the
+retro's `post-tool-use` hook; a call the classifier denies never gets there), and repeated
+overrides lead to an issue to fix or relax the gate. The hook cannot see the chat, so
+CLAUDE.md's rule still applies: every push needs the user's explicit yes.
 
 ## The session retro (personal tooling)
 
