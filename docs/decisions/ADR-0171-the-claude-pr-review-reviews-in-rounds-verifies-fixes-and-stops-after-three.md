@@ -31,7 +31,9 @@
    nothing). A non-ancestor last commit falls back to the whole PR, logged; the round cap still applies, so a
    force-push after the last round cannot buy a fresh full review.
 3. **Gate on further rounds.** Tier from the interdiff with the unchanged thresholds; at most
-   `rereview.max_rounds` (3) automatic complete rounds; nothing changed and nothing open -> no run; a change below
+   `rereview.max_rounds` (3) automatic rounds that called the model, complete or not (otherwise a PR the model never
+   reads in full would be reviewed on every push); nothing changed -> no run, unless findings are open and a file was
+   reverted to `main` (a merge of `main` alone cannot fix anything, so it uses up no round); a change below
    every threshold with open findings -> `rereview.verify_tier` (light). The force label still reads the whole PR,
    full tier, uncounted, cap or not.
 4. **Verification.** The model reports for every open finding whether it is resolved at this commit; resolved ones get

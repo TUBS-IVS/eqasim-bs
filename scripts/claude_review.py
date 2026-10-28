@@ -158,9 +158,12 @@ def last_complete_sha(state: dict) -> str:
 
 
 def automatic_rounds(state: dict) -> int:
-    """Rounds that count against rereview.max_rounds: automatic and complete (a forced round or a
-    run cut off by its turn limit does not use one up)."""
-    return sum(1 for r in state["rounds"] if r.get("automatic") and r.get("complete"))
+    """Rounds that count against rereview.max_rounds: every automatic round that called the model
+    (cost above zero), complete or not. A forced round and a round without a model call do not use
+    one up. ``complete`` only decides whether the reviewed commit moves (last_complete_sha):
+    counting complete rounds only would let a PR the model never reads in full be reviewed on
+    every push without limit (Claude review finding on PR #521)."""
+    return sum(1 for r in state["rounds"] if r.get("automatic") and float(r.get("cost_usd") or 0) > 0)
 
 
 def open_findings(state: dict) -> list:
@@ -237,13 +240,14 @@ class RoundContext:
     changed_entries: list | None  # numstat entries since last_sha; None without a usable interdiff
     fallback: str = ""  # why the interdiff could not be used (then the whole PR is reviewed)
     round: int = 1
+    reverted: tuple = ()  # files the PR changed at last_sha and no longer changes (reverted to main)
 
 
 def round_context(state: dict, meta: dict, changed_entries: list) -> RoundContext:
     usable = bool(meta.get("last_sha")) and not meta.get("fallback")
     return RoundContext(automatic_rounds(state), len(open_findings(state)), str(meta.get("last_sha", "")),
                         changed_entries if usable else None, str(meta.get("fallback", "")),
-                        len(state["rounds"]) + 1)
+                        len(state["rounds"]) + 1, tuple(meta.get("reverted", [])))
 
 
 def glob_to_regex(pattern: str) -> re.Pattern:
@@ -377,9 +381,11 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
         return decide(tier, why, "first", "pr")
     verify = rereview["verify_tier"]
     if not context.changed_entries:
-        if context.open_findings:
-            return decide(verify, "verify: nothing changed against main since the last complete round, "
-                                  "open findings are checked at head", "verify", "none")
+        # Only a revert (a file back to main's state) can fix a finding without a changed file; a
+        # merge of main alone cannot, so it gets no verify run (Claude review finding on PR #521).
+        if context.open_findings and context.reverted:
+            return decide(verify, f"verify: {len(context.reverted)} file(s) reverted to main since the last "
+                                  "complete round, open findings are checked at head", "verify", "none")
         return decide("none", "skipped: nothing changed against main since the last complete round", "none", "none")
     tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
     if tier == "none" and context.open_findings:

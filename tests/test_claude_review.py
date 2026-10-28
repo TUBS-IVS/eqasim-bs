@@ -453,7 +453,12 @@ def test_merge_state_keys_rounds_by_commit_and_run_and_findings_by_id():
     merged = cr.merge_state(existing, delta)
     assert [r["round"] for r in merged["rounds"]] == [1, 2]
     assert merged["findings"][0]["status"] == "resolved" and "body" not in merged["findings"][0]
-    assert cr.last_complete_sha(merged) == "a" * 40 and cr.automatic_rounds(merged) == 1
+    # An incomplete round does not move the reviewed commit, but it called the model and counts
+    # against the cap: otherwise a PR the model never reads in full is reviewed on every push
+    # without limit (Claude review finding on PR #521). A round without a model call is free.
+    assert cr.last_complete_sha(merged) == "a" * 40 and cr.automatic_rounds(merged) == 2
+    free = dict(delta["rounds"][0], sha="c" * 40, run_id="3", cost_usd=0.0)
+    assert cr.automatic_rounds(cr.merge_state(merged, dict(delta, rounds=[free]))) == 2
     # the same round posted twice (a retry) is one round
     assert len(cr.merge_state(merged, delta)["rounds"]) == 2
 
@@ -529,9 +534,9 @@ def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_no
     assert meta["last_sha"] == "" and meta["fallback"] == ""
 
 
-def _ctx(auto=1, open_=0, changed=None, fallback=""):
+def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=()):
     return cr.RoundContext(automatic_rounds=auto, open_findings=open_, last_sha="c" * 40, changed_entries=changed,
-                           fallback=fallback)
+                           fallback=fallback, reverted=tuple(reverted))
 
 
 @pytest.mark.parametrize("entries, branch, action, label, ctx, tier, mode, diff", [
@@ -540,7 +545,10 @@ def _ctx(auto=1, open_=0, changed=None, fallback=""):
     # nothing changed against main (a merge of main only) and nothing open -> nothing
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[]), "none", "none", "none"),
     # nothing changed but open findings (a revert as the fix) -> verify tier without a diff
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[]), "light", "verify", "none"),
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[], reverted=["braunschweig/z.py"]), "light", "verify", "none"),
+    # nothing changed and nothing reverted (only a merge of main): no fix can have happened -> nothing,
+    # so merges of main cannot use up the rounds before the fix arrives (Claude review finding on PR #521)
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[]), "none", "none", "none"),
     # a small non-critical fix push with open findings -> verify tier on the interdiff
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("scripts/report_x.py", 12)]), "light", "verify", "interdiff"),
     # a small non-critical push, nothing open -> nothing

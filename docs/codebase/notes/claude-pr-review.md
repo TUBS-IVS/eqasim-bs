@@ -76,7 +76,7 @@ Why the review works in rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-p
 
 **State.** The bot's summary comment carries a second hidden block, `STATE_MARKER`
 (`<!-- claude-pr-review:state <json> -->`), written by `post` (`encode_state`, which escapes
-`>` as `>` so the JSON never contains `-->`) and read by `decode_state`. Schema 1:
+`>` as the JSON escape `\u003e` so the JSON never contains `-->`) and read by `decode_state`. Schema 1:
 `rounds` (`round`, `sha`, `tier`, `run_id`, `automatic`, `complete`, `cost_usd`, `findings`)
 and `findings` (`id` = `<sha12>-<run id>-<index>`, so two rounds on the same commit, e.g. a
 forced round after the cap, never share an id; `path`, `line`, `severity`, `scope`, `title`,
@@ -100,9 +100,11 @@ reverted paths; a renamed file is changed). `last` is the last round with `compl
 
 **Decision order of a further round** (a state with a complete round, a push-like event):
 skip label, other label events and drafts as in the first round; then
-`rereview.max_rounds` automatic complete rounds reached -> none (`round cap`); nothing changed
-and no open finding -> none; nothing changed but open findings -> `rereview.verify_tier`
-with no diff (the model verifies at head); otherwise the tier of the interdiff numstat with
+`rereview.max_rounds` automatic rounds that called the model (`automatic_rounds`: complete or
+not, cost above zero; `complete` only moves the reviewed commit) reached -> none (`round cap`);
+nothing changed -> none, unless findings are open and a file was reverted to `main` (a revert
+can fix a finding, a merge of `main` cannot) -> `rereview.verify_tier` with no diff (the model
+verifies at head); otherwise the tier of the interdiff numstat with
 the normal thresholds and critical paths, raised to `rereview.verify_tier` when that is none
 but findings are open. The `docs/` branch rule applies as in the first round.
 
@@ -120,7 +122,8 @@ but findings are open. The `docs/` branch rule applies as in the first round.
 - A PR with more than 100 review threads: `::warning::`; findings beyond the first page keep
   their status (the same single page the session retro reads).
 - No model call (only ignored files changed, nothing open): the round is recorded with
-  `complete: false`, so it neither uses up an automatic round nor moves the reviewed commit.
+  `complete: false` and a cost of 0, so it neither uses up an automatic round nor moves the
+  reviewed commit.
 - A result without `coverage_complete` is counted as complete, with a `::warning::`; a result
   with `coverage_complete: false` is recorded with `complete: false` and does not advance
   the reviewed commit.
