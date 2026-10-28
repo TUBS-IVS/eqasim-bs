@@ -191,6 +191,9 @@ def test_post_dry_run_places_findings_on_diff_lines_and_keeps_the_rest_in_the_su
     assert (record["repo"], record["pr"], record["head_sha"], record["cost_usd"]) == ("o/r", 5, "abcdef1234567890", 0.81)
     assert [(f["title"], f["placement"], f["comment_id"]) for f in record["findings"]] == [
         ("Wrong x", "inline", None), ("Off diff", "summary", None), ("Context line", "inline", None)]
+    # schema 2 only adds fields; a result from before the scope field reads as "introduced"
+    assert record["schema"] == 2 and record["round"] == 1 and record["previous"] == []
+    assert {f["scope"] for f in record["findings"]} == {"introduced"}
 
 
 def test_match_comment_ids_pairs_posted_comments_with_planned_ones():
@@ -588,3 +591,104 @@ def test_classify_cli_reads_state_and_interdiff_and_writes_mode_and_round(tmp_pa
     assert rc == 0
     values = dict(line.split("=", 1) for line in (tmp_path / "out.txt").read_text(encoding="utf-8").splitlines())
     assert (values["tier"], values["mode"], values["diff_source"], values["round"]) == ("light", "verify", "interdiff", "2")
+
+
+def _state_with_open():
+    state = cr.empty_state()
+    state["rounds"].append({"round": 1, "sha": "c" * 40, "tier": "full", "run_id": "1", "automatic": True,
+                            "complete": True, "cost_usd": 1.0, "findings": 2})
+    state["findings"] += [
+        {"id": "cccccccccccc-0", "path": "braunschweig/a.py", "line": 41, "severity": "high", "scope": "introduced",
+         "title": "Wrong x", "body": "x is 1", "author_note": "Fixed in 1a2b3c", "comment_id": 11, "status": "open"},
+        {"id": "cccccccccccc-1", "path": "braunschweig/a.py", "line": 13, "severity": "low", "scope": "pre-existing",
+         "title": "Tail unused", "body": "b", "author_note": "", "comment_id": 12, "status": "open"}]
+    return state
+
+
+def test_post_on_a_further_round_verifies_replies_resolves_and_never_repeats(tmp_path, monkeypatch, capsys):
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(_state_with_open()), encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.write_text(json.dumps({
+        "type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.2, "num_turns": 5,
+        "structured_output": {"summary": "Fix verified.", "coverage_complete": True,
+                              "previous": [{"id": "cccccccccccc-0", "resolved": True, "note": "x is read from config now"},
+                                           {"id": "cccccccccccc-1", "resolved": False, "note": "still unused"},
+                                           {"id": "nope-9", "resolved": True, "note": ""}],
+                              "findings": [
+                                  # a reworded repeat of the still-open finding on the same line and severity -> dropped
+                                  {"severity": "low", "scope": "pre-existing", "path": "braunschweig/a.py", "line": 13,
+                                   "title": "tail is never used", "body": "b"},
+                                  {"severity": "medium", "scope": "introduced", "path": "braunschweig/a.py", "line": 12,
+                                   "title": "added shadows", "body": "b2"}]}}),
+        encoding="utf-8")
+    diff = tmp_path / "pr.diff"
+    diff.write_text(_DIFF, encoding="utf-8")
+    monkeypatch.setattr(cr, "_fetch_threads", lambda repo, pr: {11: {"thread_id": "T11", "resolved": False, "replies": []}})
+    monkeypatch.setenv("GITHUB_RUN_ID", "77")
+    record_path = tmp_path / "findings.json"
+    rc = cr.main(["post", "--config", str(_REPO / ".github" / "claude-review.yml"), "--result", str(result),
+                  "--repo", "o/r", "--pr", "5", "--tier", "light", "--sha", "d" * 40, "--diff-file", str(diff),
+                  "--state", str(state_path), "--mode", "verify", "--round", "2", "--dry-run", "--record", str(record_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    review = json.loads(out.split("Review payload:\n", 1)[1].split("\n[claude-review] Summary comment:", 1)[0])
+    assert [(c["line"], c["body"].split("\n")[0]) for c in review["comments"]] == [(12, "**MEDIUM: added shadows**")]
+    assert "duplicate of cccccccccccc-1" in out and "unknown previous id nope-9" in out
+    assert "would reply on 11: Re-review at dddddddddddd: no longer present. x is read from config now" in out
+    assert "would resolve thread T11" in out
+    summary = out.split("[claude-review] Summary comment:\n", 1)[1]
+    assert "Still open from earlier rounds" in summary and "Tail unused" in summary and "Resolved in this round" in summary
+    assert "| 2 |" in summary                                                    # the rounds table
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["schema"] == 2 and record["round"] == 2 and record["dropped_duplicates"] == 1
+    assert [(p["id"], p["resolved"]) for p in record["previous"]] == [("cccccccccccc-0", True), ("cccccccccccc-1", False)]
+    assert record["findings"][0]["scope"] == "introduced"
+
+
+def test_plan_comments_tags_pre_existing_findings():
+    inline, _ = cr.plan_comments([{"severity": "low", "scope": "pre-existing", "path": "braunschweig/a.py", "line": 13,
+                                   "title": "Old", "body": "b"}], cr.commentable_lines(_DIFF))
+    assert inline[0]["body"].startswith("**LOW (pre-existing): Old**")
+
+
+def test_upsert_summary_merges_the_state_and_a_stale_run_keeps_the_visible_text(monkeypatch):
+    existing = "## Claude review (round 2)\n\nnewer text\n" + cr.encode_state(_state_with_open())
+    calls = []
+
+    def fake_gh_api(args, payload=None):
+        calls.append((args, payload))
+        if args[0].endswith("/issues/5/comments") and "--method" not in args:
+            return "101"
+        if args[0].endswith("/issues/comments/101") and "--method" not in args:
+            return json.dumps({"body": existing})
+        return "{}"
+
+    monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
+    delta = {"schema": 1, "rounds": [{"round": 3, "sha": "e" * 40, "tier": "light", "run_id": "9", "automatic": True,
+                                       "complete": False, "cost_usd": 0.1, "findings": 1}],
+             "findings": [{"id": "eeeeeeeeeeee-0", "path": "a.py", "line": 1, "severity": "low", "scope": "introduced",
+                           "title": "t", "body": "b", "author_note": "", "comment_id": 5, "status": "open"}]}
+    cr.upsert_summary("o/r", 5, "github-actions[bot]", "## Claude review (round 3)\n\nolder commit\n", stale=True,
+                      state_delta=delta)
+    written = [p["body"] for a, p in calls if p and "PATCH" in a][-1]
+    assert written.startswith("## Claude review (round 2)\n\nnewer text\n")          # visible text of the newer run kept
+    merged = cr.decode_state(written)
+    assert [r["round"] for r in merged["rounds"]] == [1, 2] and len(merged["findings"]) == 3
+    assert cr.last_complete_sha(merged) == "c" * 40                                    # an incomplete round does not advance it
+
+
+def test_a_re_review_result_without_previous_still_posts_and_warns(tmp_path, capsys):
+    # Review Focus 4: a model result that omits `previous` on a round with open findings must not crash
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(_state_with_open()), encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.1,
+                                  "structured_output": {"summary": "s", "findings": []}}), encoding="utf-8")
+    diff = tmp_path / "pr.diff"
+    diff.write_text(_DIFF, encoding="utf-8")
+    assert cr.main(["post", "--result", str(result), "--repo", "o/r", "--pr", "5", "--tier", "light", "--sha", "d" * 40,
+                    "--diff-file", str(diff), "--state", str(state_path), "--mode", "rereview", "--round", "2",
+                    "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "::warning::" in out and "previous" in out and "Still open from earlier rounds" in out

@@ -582,17 +582,74 @@ def read_findings(result: dict) -> dict:
     return structured
 
 
+def _scope(finding: dict) -> str:
+    # A result written before the scope field existed reads as "introduced", as every finding was then.
+    return finding.get("scope") or "introduced"
+
+
+def comment_body(finding: dict) -> str:
+    """The inline comment text; a pre-existing defect is tagged so it does not read as the author's."""
+    tag = " (pre-existing)" if _scope(finding) == "pre-existing" else ""
+    return f"**{finding['severity'].upper()}{tag}: {finding['title']}**\n\n{finding['body']}"
+
+
+def _by_severity(findings: list) -> list:
+    return sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))
+
+
 def plan_comments(findings: list, commentable: dict) -> tuple:
     """Split findings into inline review comments and summary-only ones (line not in the diff)."""
     inline, summary_only = [], []
-    for finding in sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9)):
+    for finding in _by_severity(findings):
         path, line = finding.get("path"), finding.get("line")
         if isinstance(line, int) and line in commentable.get(path, set()):
-            inline.append({"path": path, "line": line, "side": "RIGHT",
-                           "body": f"**{finding['severity'].upper()}: {finding['title']}**\n\n{finding['body']}"})
+            inline.append({"path": path, "line": line, "side": "RIGHT", "body": comment_body(finding)})
         else:
             summary_only.append(finding)
     return inline, summary_only
+
+
+def normalise_title(title: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", str(title).casefold()).split())
+
+
+def drop_duplicates(findings: list, open_previous: list) -> tuple:
+    """Drop new findings that repeat an open finding of an earlier round: same path and either the
+    same normalised title or the same line and severity. The prompt already forbids repeats; this
+    is the safety net, so a reworded repeat is not posted twice. The price: a genuinely new finding
+    on the same line with the same severity is dropped too. Returns (kept, [(dropped, previous id)])."""
+    kept, dropped = [], []
+    for finding in findings:
+        match = next((p for p in open_previous if p.get("path") == finding.get("path") and (
+            normalise_title(p.get("title", "")) == normalise_title(finding.get("title", ""))
+            or (p.get("line") == finding.get("line") and p.get("severity") == finding.get("severity")))), None)
+        (dropped.append((finding, match["id"])) if match else kept.append(finding))
+    return kept, dropped
+
+
+def previous_outcomes(structured: dict, open_previous: list) -> tuple:
+    """(resolved, still open, unknown ids) of the open findings the model was asked to verify. An
+    open finding the model did not answer for stays open."""
+    by_id = {f["id"]: f for f in open_previous}
+    answers = {}
+    unknown = []
+    for entry in structured.get("previous") or []:
+        if entry.get("id") in by_id:
+            answers[entry["id"]] = entry
+        else:
+            unknown.append(str(entry.get("id")))
+    resolved, still_open = [], []
+    for finding in open_previous:
+        answer = answers.get(finding["id"])
+        note = " ".join(str((answer or {}).get("note", "")).split())
+        (resolved if answer and answer.get("resolved") else still_open).append(dict(finding, verify_note=note))
+    return resolved, still_open, unknown
+
+
+def verification_reply(sha: str, note: str) -> str:
+    """The bot's reply on a finding the re-review found fixed. It never starts with "Fixed",
+    "Rejected" or "Not changed": the session retro reads those words as the AUTHOR's outcome."""
+    return f"Re-review at {sha[:12]}: no longer present. {note}".strip()
 
 
 def match_comment_ids(inline: list, posted: list) -> list:
@@ -608,42 +665,80 @@ def match_comment_ids(inline: list, posted: list) -> list:
     return ids
 
 
-def findings_record(structured: dict, inline: list, comment_ids: list, args, result: dict) -> dict:
+def placed_findings(findings: list, inline: list, comment_ids: list) -> list:
+    """The findings in severity order, each with its placement and, when inline, its comment id."""
+    placed = {(c["path"], c["line"], c["body"]): cid for c, cid in zip(inline, comment_ids)}
+    out = []
+    for finding in _by_severity(findings):
+        key = (finding.get("path"), finding.get("line"), comment_body(finding))
+        out.append(dict(finding, placement="inline" if key in placed else "summary", comment_id=placed.get(key)))
+    return out
+
+
+def findings_record(placed: list, args, result: dict, summary: str, previous: list = (),
+                    dropped_duplicates: int = 0) -> dict:
     """The machine-readable record of one review run that the session retro learns from
     (~/.claude/retro, retro_reviews.py): every finding with its placement and, when inline,
-    its comment id, so the retro can read whether the finding was fixed or rejected."""
-    placed = {(c["path"], c["line"], c["body"]): cid for c, cid in zip(inline, comment_ids)}
-    findings = []
-    for index, finding in enumerate(sorted(structured["findings"],
-                                           key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))):
-        body = f"**{finding['severity'].upper()}: {finding['title']}**\n\n{finding['body']}"
-        key = (finding.get("path"), finding.get("line"), body)
-        findings.append({"index": index, "severity": finding.get("severity"), "path": finding.get("path"),
-                         "line": finding.get("line"), "title": finding.get("title"),
-                         "body": str(finding.get("body", ""))[:1500],
-                         "placement": "inline" if key in placed else "summary",
-                         "comment_id": placed.get(key)})
-    return {"schema": 1, "repo": args.repo, "pr": args.pr, "head_sha": args.sha, "tier": args.tier,
+    its comment id, so the retro can read whether the finding was fixed or rejected. Schema 2
+    adds round, mode, scope, the verification of earlier findings and the dropped repeats; no
+    field of schema 1 changed."""
+    findings = [{"index": index, "severity": f.get("severity"), "path": f.get("path"), "line": f.get("line"),
+                 "title": f.get("title"), "body": str(f.get("body", ""))[:1500], "scope": _scope(f),
+                 "placement": f["placement"], "comment_id": f["comment_id"]} for index, f in enumerate(placed)]
+    return {"schema": 2, "repo": args.repo, "pr": args.pr, "head_sha": args.sha, "tier": args.tier,
+            "round": args.round, "mode": args.mode,
             "run_id": os.environ.get("GITHUB_RUN_ID"), "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
             "created": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
             "cost_usd": result.get("total_cost_usd"), "num_turns": result.get("num_turns"),
-            "summary": structured.get("summary", ""), "findings": findings}
+            "summary": summary, "findings": findings, "previous": list(previous),
+            "dropped_duplicates": dropped_duplicates}
+
+
+def round_delta(args, placed: list, resolved: list, result: dict, complete: bool) -> dict:
+    """The state of this round, to be merged into the stored state by upsert_summary."""
+    round_entry = {"round": args.round, "sha": args.sha, "tier": args.tier,
+                   "run_id": os.environ.get("GITHUB_RUN_ID", ""), "automatic": args.mode != "forced",
+                   "complete": complete, "cost_usd": result.get("total_cost_usd"), "findings": len(placed)}
+    findings = [{"id": f"{args.sha[:12]}-{index}", "path": f.get("path"), "line": f.get("line"),
+                 "severity": f.get("severity"), "scope": _scope(f), "title": str(f.get("title", ""))[:TITLE_CHARS],
+                 "body": " ".join(str(f.get("body", "")).split())[:BODY_CHARS], "author_note": "",
+                 "comment_id": f["comment_id"], "status": "open"} for index, f in enumerate(placed)]
+    findings += [{k: v for k, v in dict(f, status="resolved").items() if k != "verify_note"} for f in resolved]
+    return {"schema": 1, "rounds": [round_entry], "findings": findings}
 
 
 def summary_markdown(structured: dict, inline: list, summary_only: list, tier: str, sha: str,
-                     cost_line: str) -> str:
-    findings = sorted(structured["findings"], key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))
-    parts = [SUMMARY_MARKER, f"## Claude review ({tier} tier, commit {sha[:12]})", "", structured["summary"], ""]
+                     cost_line: str, state: dict | None = None, round_number: int = 1, still_open: list = (),
+                     resolved: list = (), cap_reached: bool = False, dropped: int = 0,
+                     force_label: str = "claude-review") -> str:
+    findings = _by_severity(structured["findings"])
+    parts = [SUMMARY_MARKER, f"## Claude review (round {round_number}, {tier} tier, commit {sha[:12]})", "",
+             structured["summary"], ""]
     if findings:
-        parts += ["| Severity | Where | Finding |", "|---|---|---|"]
-        parts += [f"| {f['severity']} | `{f['path']}:{f['line']}` | {f['title']} |" for f in findings]
+        parts += ["| Severity | Scope | Where | Finding |", "|---|---|---|---|"]
+        parts += [f"| {f['severity']} | {_scope(f)} | `{f['path']}:{f['line']}` | {f['title']} |" for f in findings]
     else:
-        parts.append("No findings.")
+        parts.append("No new findings." if round_number > 1 else "No findings.")
     if summary_only:
         parts += ["", "**Not on a changed line** (could not be posted inline):", ""]
         parts += [f"- **{f['severity']}** `{f['path']}:{f['line']}`: {f['title']}. {f['body']}" for f in summary_only]
-    parts += ["", f"<sub>{len(inline)} inline, {len(summary_only)} summary-only. {cost_line} "
-                  "Advisory review, not a required check.</sub>"]
+    if resolved:
+        parts += ["", "**Resolved in this round:**", ""]
+        parts += [f"- `{f['path']}:{f['line']}`: {f['title']}. {f.get('verify_note', '')}".rstrip() for f in resolved]
+    if still_open:
+        parts += ["", "**Still open from earlier rounds:**", ""]
+        parts += [f"- **{f['severity']}** `{f['path']}:{f['line']}`: {f['title']}" for f in still_open]
+    if state and state.get("rounds"):
+        parts += ["", "| Round | Commit | Tier | Cost (USD) | New findings | Complete |", "|---|---|---|---|---|---|"]
+        parts += [f"| {r['round']} | `{str(r['sha'])[:12]}` | {r['tier']}{'' if r.get('automatic') else ' (forced)'} "
+                  f"| {float(r.get('cost_usd') or 0):.4f} | {r.get('findings', 0)} | {'yes' if r.get('complete') else 'no'} |"
+                  for r in state["rounds"]]
+    if cap_reached:
+        parts += ["", f"Automatic rounds used up: later pushes are not reviewed. Add the label `{force_label}` "
+                      "for another review of the whole PR."]
+    parts += ["", f"<sub>{len(inline)} inline, {len(summary_only)} summary-only"
+                  + (f", {dropped} repeat(s) of open findings dropped" if dropped else "")
+                  + f". {cost_line} Advisory review, not a required check.</sub>"]
     return "\n".join(parts) + "\n"
 
 
@@ -1002,8 +1097,32 @@ def _cmd_post(args) -> int:
     except ValueError as error:
         print(f"::error::Nothing to post: {error}")
         return 1
+    config = {}
+    if args.config:
+        import yaml
+        config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    state = json.loads(Path(args.state).read_text(encoding="utf-8")) if args.state else empty_state()
+    open_previous = open_findings(state)
+    if "coverage_complete" not in structured:
+        print("::warning::The result does not say whether the whole diff was read; the round counts as complete.")
+    complete = bool(structured.get("coverage_complete", True))
+    if not complete:
+        print("::warning::The model did not read the whole diff; this round does not move the reviewed commit, "
+              "so the next round reviews the same files again.")
+    if open_previous and "previous" not in structured:
+        print(f"::warning::The result has no 'previous' list; the {len(open_previous)} open finding(s) stay open.")
+    resolved, still_open, unknown = previous_outcomes(structured, open_previous)
+    for finding_id in unknown:
+        print(f"::warning::The model reported unknown previous id {finding_id}; ignored.")
+    findings, dropped = drop_duplicates(structured["findings"], open_previous)
+    for finding, previous_id in dropped:
+        print(f"[claude-review] dropped `{finding.get('path')}:{finding.get('line')}` {finding.get('title')!r}: "
+              f"duplicate of {previous_id}")
+    if open_previous:
+        print(f"[claude-review] earlier findings: {len(open_previous)} open -> {len(resolved)} resolved, "
+              f"{len(still_open)} still open")
     diff_text = Path(args.diff_file).read_text(encoding="utf-8") if args.diff_file else _pr_diff(args.repo, args.pr)
-    inline, summary_only = plan_comments(structured["findings"], commentable_lines(diff_text))
+    inline, summary_only = plan_comments(findings, commentable_lines(diff_text))
     total = len(inline) + len(summary_only)
     print(f"[claude-review] findings {total}: inline {len(inline)}, summary-only {len(summary_only)} "
           "(line not in the diff)")
@@ -1012,7 +1131,6 @@ def _cmd_post(args) -> int:
         print(f"::warning::All {total} findings point outside the diff; check path/line in the result.")
     cost_line = (f"Cost {float(result.get('total_cost_usd', 0)):.4f} USD, {result.get('num_turns', '?')} turns."
                  if "total_cost_usd" in result else "")
-    body = summary_markdown(structured, inline, summary_only, args.tier, args.sha, cost_line)
     review = {"commit_id": args.sha, "event": "COMMENT",
               "body": "Claude review: inline findings below; the summary is in the Claude review comment.",
               "comments": inline}
@@ -1020,8 +1138,6 @@ def _cmd_post(args) -> int:
     if args.dry_run:
         print("[claude-review] dry run, nothing posted. Review payload:")
         print(json.dumps(review, indent=2))
-        print("[claude-review] Summary comment:")
-        print(body)
     elif inline:
         posted = json.loads(_gh_api([f"repos/{args.repo}/pulls/{args.pr}/reviews", "--method", "POST"], review))
         # One page of 100 (not --paginate, which would concatenate JSON arrays); a review posts far fewer.
@@ -1033,15 +1149,58 @@ def _cmd_post(args) -> int:
         if matched < len(inline):
             # Without the id the retro cannot read the thread's outcome; the finding then stays "unknown".
             print(f"::warning::{len(inline) - matched} posted inline comment(s) could not be matched to a finding.")
+    placed = placed_findings(findings, inline, comment_ids)
+    delta = round_delta(args, placed, resolved, result, complete)
+    preview = merge_state(state, delta)
+    max_rounds = int(config.get("rereview", {}).get("max_rounds", 0) or 0)
+    cap_reached = bool(max_rounds) and args.mode != "forced" and automatic_rounds(preview) >= max_rounds
+    body = summary_markdown(dict(structured, findings=findings), inline, summary_only, args.tier, args.sha,
+                            cost_line, preview, args.round, still_open, resolved, cap_reached, len(dropped),
+                            config.get("labels", {}).get("force", "claude-review"))
+    if args.dry_run:
+        print("[claude-review] Summary comment:")
+        print(body)
+    _close_resolved(args, resolved)
     if args.record:
-        record = findings_record(structured, inline, comment_ids, args, result)
+        previous = [{"id": f["id"], "comment_id": f.get("comment_id"), "resolved": f in resolved,
+                     "note": f.get("verify_note", "")} for f in resolved + still_open]
+        previous.sort(key=lambda p: p["id"])
+        record = findings_record(placed, args, result, structured.get("summary", ""), previous, len(dropped))
         Path(args.record).write_text(json.dumps(record, indent=2), encoding="utf-8")
         print(f"[claude-review] findings record written to {args.record}")
     if args.dry_run:
         return 0
     head = _gh_api([f"repos/{args.repo}/pulls/{args.pr}", "--jq", ".head.sha"]).strip()
-    upsert_summary(args.repo, args.pr, args.bot_login, body, stale=bool(head) and head != args.sha)
+    upsert_summary(args.repo, args.pr, args.bot_login, body, stale=bool(head) and head != args.sha, state_delta=delta)
     return 0
+
+
+def _close_resolved(args, resolved: list) -> None:
+    """Reply on the thread of every finding the re-review found fixed and resolve the thread. A
+    failure here is logged, never fatal: the state still records the finding as resolved."""
+    with_thread = [f for f in resolved if f.get("comment_id")]
+    if not with_thread:
+        return
+    threads = _fetch_threads(args.repo, args.pr)
+    for finding in with_thread:
+        reply = verification_reply(args.sha, finding.get("verify_note", ""))
+        thread_id = (threads.get(finding["comment_id"]) or {}).get("thread_id")
+        if args.dry_run:
+            print(f"[claude-review] would reply on {finding['comment_id']}: {reply}")
+            if thread_id:
+                print(f"[claude-review] would resolve thread {thread_id}")
+            continue
+        try:
+            _gh_api([f"repos/{args.repo}/pulls/{args.pr}/comments/{finding['comment_id']}/replies", "--method", "POST"],
+                    {"body": reply})
+            if thread_id:
+                _gh_graphql(_RESOLVE_MUTATION, {"thread": thread_id})
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
+            print(f"::warning::Could not reply on or resolve finding {finding['id']}: {error}")
+    print(f"[claude-review] resolved {len(with_thread)} earlier finding(s) on the PR")
+
+
+_RESOLVE_MUTATION = """mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { id } } }"""
 
 
 def _summary_ids(repo: str, pr: int, bot_login: str) -> list:
@@ -1059,7 +1218,8 @@ def _summary_comment(repo: str, pr: int, bot_login: str) -> tuple:
     return ids[0], json.loads(_gh_api([f"repos/{repo}/issues/comments/{ids[0]}"])).get("body") or ""
 
 
-def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = False) -> None:
+def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = False,
+                   state_delta: dict | None = None) -> None:
     """Keep exactly one summary comment: edit the oldest, or create one.
 
     A forced review (label event) and a push review run in different concurrency groups and can
@@ -1067,9 +1227,25 @@ def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = 
     finding on PR #497). After writing, the oldest summary is kept with this body and any later
     duplicate is deleted. ``stale``: this run reviewed a commit that is no longer the PR head; it
     then leaves an existing summary alone, so a slower review of an older commit cannot replace
-    the summary of the newer one (Claude review finding on PR #497). Its inline comments stay."""
+    the summary of the newer one (Claude review finding on PR #497). Its inline comments stay.
+
+    ``state_delta``: the state of this round. It is merged into the state block that is in the
+    comment NOW (read here, not at the start of the run), so a parallel run's round is not lost,
+    and the rounds are numbered in order. A stale run keeps the visible text but still merges its
+    round and findings: they are on the PR and must be verified, never repeated."""
     existing = _summary_ids(repo, pr, bot_login)
-    if stale and existing:
+    if state_delta is not None:
+        current = (json.loads(_gh_api([f"repos/{repo}/issues/comments/{existing[0]}"])).get("body") or ""
+                   if existing else "")
+        merged = merge_state(decode_state(current) or empty_state(), state_delta)
+        for number, round_ in enumerate(merged["rounds"], start=1):
+            round_["round"] = number
+        visible = strip_state(current if stale and existing else body).rstrip("\n") + "\n"
+        body = visible + "\n" + encode_state(merged) + "\n"
+        if stale and existing:
+            print("::notice::This review is of an older commit than the PR head; the visible summary is left as it "
+                  "is, its round and findings are added to the state.")
+    elif stale and existing:
         print("::notice::This review is of an older commit than the PR head; the summary is left as it is.")
         return
     if existing:
@@ -1154,6 +1330,10 @@ def main(argv=None) -> int:
     p_post.add_argument("--diff-file", help="unified diff of the PR; default: `gh pr diff`")
     p_post.add_argument("--dry-run", action="store_true", help="print the payloads, post nothing")
     p_post.add_argument("--record", help="write the machine-readable findings record (for the session retro) here")
+    p_post.add_argument("--config", default="", help="gate config (round cap and force label for the summary)")
+    p_post.add_argument("--state", default="", help="state.json of the `state` command (open earlier findings)")
+    p_post.add_argument("--mode", default="first", help="the gate's mode output")
+    p_post.add_argument("--round", default=1, type=int, help="the gate's round output")
     p_post.add_argument("--bot-login", default="github-actions[bot]",
                         help="author of the summary comment to update (the workflow token's identity)")
     p_post.set_defaults(func=_cmd_post)
