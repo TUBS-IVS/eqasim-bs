@@ -36,6 +36,7 @@ See docs/codebase/notes/claude-pr-review.md.
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime
 import json
 import os
@@ -49,6 +50,21 @@ from pathlib import Path
 
 SUMMARY_MARKER = "<!-- claude-pr-review:summary -->"
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+# The review history lives in a hidden block at the end of the bot's summary comment: one place
+# that survives re-runs and needs no artifact or database (ADR-0171). The JSON never contains the
+# comment end "-->" (encode_state escapes ">"), so the block cannot close the comment early.
+STATE_MARKER = "<!-- claude-pr-review:state "
+STATE_END = " -->"
+# Outcome words of an author's reply, read the way the session retro reads them
+# (~/.claude/retro/bin/retro_reviews.py): whitespace collapsed, casefolded, "*_ " stripped.
+REJECTED_PREFIXES = ("rejected", "not changed")
+# Our own verification replies; they must never be taken for the author's answer.
+BOT_REPLY_PREFIX = "re-review at"
+# The state is kept small: a finding that is no longer open keeps no text.
+TITLE_CHARS = 200
+BODY_CHARS = 600
+NOTE_CHARS = 300
 
 # Structured output the model must return (claude -p --json-schema).
 FINDINGS_SCHEMA = {
@@ -72,6 +88,110 @@ FINDINGS_SCHEMA = {
     },
     "required": ["summary", "findings"],
 }
+
+
+def empty_state() -> dict:
+    return {"schema": 1, "rounds": [], "findings": []}
+
+
+def encode_state(state: dict) -> str:
+    """The hidden block for the summary comment. ">" is written as the JSON escape \\u003e so the
+    block never contains "-->" (a finding title may), which would end the HTML comment early."""
+    return STATE_MARKER + json.dumps(state, separators=(",", ":")).replace(">", "\\u003e") + STATE_END
+
+
+def _state_span(body: str):
+    start = body.find(STATE_MARKER)
+    if start < 0:
+        return None
+    end = body.find(STATE_END, start + len(STATE_MARKER))
+    return None if end < 0 else (start, end + len(STATE_END))
+
+
+def decode_state(body: str) -> dict | None:
+    """The state of a summary comment, or None for no block or a block that is not valid state
+    (hand-edited): the caller logs the fallback instead of crashing the gate."""
+    span = _state_span(body)
+    if span is None:
+        return None
+    try:
+        state = json.loads(body[span[0] + len(STATE_MARKER):span[1] - len(STATE_END)])
+    except json.JSONDecodeError:
+        return None
+    if (not isinstance(state, dict) or not isinstance(state.get("rounds"), list)
+            or not isinstance(state.get("findings"), list)):
+        return None
+    return state
+
+
+def strip_state(body: str) -> str:
+    """The visible comment without the state block."""
+    span = _state_span(body)
+    return body if span is None else body[:span[0]] + body[span[1]:]
+
+
+def last_complete_sha(state: dict) -> str:
+    """Commit of the newest round that reviewed everything it set out to (else "")."""
+    for round_ in reversed(state["rounds"]):
+        if round_.get("complete"):
+            return str(round_.get("sha", ""))
+    return ""
+
+
+def automatic_rounds(state: dict) -> int:
+    """Rounds that count against rereview.max_rounds: automatic and complete (a forced round or a
+    run cut off by its turn limit does not use one up)."""
+    return sum(1 for r in state["rounds"] if r.get("automatic") and r.get("complete"))
+
+
+def open_findings(state: dict) -> list:
+    return [f for f in state["findings"] if f.get("status") == "open"]
+
+
+def _outcome_text(text: str) -> str:
+    return " ".join(str(text).split()).casefold().lstrip("*_ ")
+
+
+def refresh_state(state: dict, threads: dict) -> dict:
+    """Bring the open findings up to date with what happened in their threads since the last round.
+
+    Only findings that are still "open" change: a reply that starts with a rejection outcome word,
+    or a thread resolved by a human, makes the finding "dismissed" (the author closed it, so it is
+    not verified again); otherwise it stays open and the author's last reply is kept as a note for
+    the model. A finding the bot itself resolved stays "resolved", although GitHub shows its
+    thread as resolved too."""
+    out = copy.deepcopy(state)
+    for finding in out["findings"]:
+        thread = threads.get(finding.get("comment_id"))
+        if finding.get("status") != "open" or thread is None:
+            continue
+        author_replies = [r for r in thread.get("replies", []) if not _outcome_text(r).startswith(BOT_REPLY_PREFIX)]
+        if any(_outcome_text(r).startswith(REJECTED_PREFIXES) for r in author_replies) or thread.get("resolved"):
+            finding["status"] = "dismissed"
+        elif author_replies:
+            finding["author_note"] = " ".join(author_replies[-1].split())[:NOTE_CHARS]
+    return out
+
+
+def merge_state(existing: dict, delta: dict) -> dict:
+    """Merge the state of one round into the stored one: rounds keyed by (commit, run id), findings
+    by id, the delta wins. A retry of the same run therefore replaces its round instead of adding one.
+    Findings that are not open keep no body or note, so the comment stays small."""
+    merged = copy.deepcopy(existing)
+    for key, identify in (("rounds", lambda r: (r.get("sha"), r.get("run_id"))),
+                          ("findings", lambda f: f.get("id"))):
+        position = {identify(item): index for index, item in enumerate(merged[key])}
+        for item in delta[key]:
+            if identify(item) in position:
+                merged[key][position[identify(item)]] = copy.deepcopy(item)
+            else:
+                position[identify(item)] = len(merged[key])
+                merged[key].append(copy.deepcopy(item))
+    for finding in merged["findings"]:
+        if finding.get("status") != "open":
+            finding.pop("body", None)
+            finding.pop("author_note", None)
+    return merged
 
 
 @dataclass
@@ -443,6 +563,33 @@ def _gh_api(args: list, payload: dict | None = None) -> str:
         os.unlink(name)
 
 
+def _gh_graphql(query: str, variables: dict) -> dict:
+    """One GraphQL call through `gh api graphql` (_gh_api has no -F for typed variables)."""
+    command = ["gh", "api", "graphql", "-f", f"query={query}"]
+    for name, value in variables.items():
+        command += ["-F" if isinstance(value, int) else "-f", f"{name}={value}"]
+    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True).stdout)
+
+
+_THREADS_QUERY = """query($owner: String!, $name: String!, $pr: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+    reviewThreads(first: 100) { nodes { id isResolved comments(first: 30) { nodes { databaseId body } } } } } } }"""
+
+
+def _fetch_threads(repo: str, pr: int) -> dict:
+    """The review threads of a PR keyed by the databaseId of their first comment (the id the state
+    stores): ``{comment_id: {"thread_id", "resolved", "replies": [text of every later comment]}}``."""
+    owner, name = repo.split("/", 1)
+    data = _gh_graphql(_THREADS_QUERY, {"owner": owner, "name": name, "pr": pr})
+    threads = {}
+    for node in data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]:
+        comments = node["comments"]["nodes"]
+        if comments:
+            threads[comments[0]["databaseId"]] = {"thread_id": node["id"], "resolved": bool(node["isResolved"]),
+                                                  "replies": [c.get("body") or "" for c in comments[1:]]}
+    return threads
+
+
 def _append(env_var: str, text: str) -> None:
     target = os.environ.get(env_var)
     if target:
@@ -466,6 +613,28 @@ def _cmd_classify(args) -> int:
                                    f"- Reason: {decision.reason}\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(asdict(decision), indent=2), encoding="utf-8")
+    return 0
+
+
+def _cmd_state(args) -> int:
+    """Read the review history (summary comment and finding threads); no model, no cost."""
+    comment_id, body = _summary_comment(args.repo, args.pr, args.bot_login)
+    state = decode_state(body) if comment_id else None
+    if state is None:
+        state = empty_state()
+        if comment_id:
+            note = ("fallback: no state block in the existing summary; first-round review, "
+                    "earlier findings unknown")
+            print(f"[claude-review] {note}")
+            _append("GITHUB_STEP_SUMMARY", f"- Review state: {note}\n")
+    elif any(f.get("status") == "open" and f.get("comment_id") for f in state["findings"]):
+        state = refresh_state(state, _fetch_threads(args.repo, args.pr))
+    counts = {status: sum(1 for f in state["findings"] if f.get("status") == status)
+              for status in ("open", "resolved", "dismissed")}
+    print(f"[claude-review] state: {len(state['rounds'])} rounds ({automatic_rounds(state)} automatic complete), "
+          f"open {counts['open']}, resolved {counts['resolved']}, dismissed {counts['dismissed']}, "
+          f"last complete {last_complete_sha(state)[:12] or '-'}")
+    Path(args.out).write_text(json.dumps(state, indent=2), encoding="utf-8")
     return 0
 
 
@@ -610,6 +779,14 @@ def _summary_ids(repo: str, pr: int, bot_login: str) -> list:
     return _gh_api([f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", select]).split()
 
 
+def _summary_comment(repo: str, pr: int, bot_login: str) -> tuple:
+    """(id, body) of the oldest summary comment of the bot, or (None, "")."""
+    ids = _summary_ids(repo, pr, bot_login)
+    if not ids:
+        return None, ""
+    return ids[0], json.loads(_gh_api([f"repos/{repo}/issues/comments/{ids[0]}"])).get("body") or ""
+
+
 def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = False) -> None:
     """Keep exactly one summary comment: edit the oldest, or create one.
 
@@ -655,6 +832,14 @@ def main(argv=None) -> int:
     p_classify.add_argument("--event-label", default="")
     p_classify.add_argument("--json", dest="json_out")
     p_classify.set_defaults(func=_cmd_classify)
+
+    p_state = sub.add_parser("state", help="read the review history of the PR (summary comment and threads)")
+    p_state.add_argument("--repo", required=True, help="OWNER/NAME")
+    p_state.add_argument("--pr", required=True, type=int)
+    p_state.add_argument("--out", required=True, help="state JSON for classify, interdiff and review")
+    p_state.add_argument("--bot-login", default="github-actions[bot]",
+                         help="author of the summary comment (the workflow token's identity)")
+    p_state.set_defaults(func=_cmd_state)
 
     p_review = sub.add_parser("review", help="run claude -p and write its JSON result")
     p_review.add_argument("--config", required=True)

@@ -308,3 +308,75 @@ def test_a_stale_review_leaves_the_newer_summary_alone(monkeypatch):
     monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
     cr.upsert_summary("o/r", 5, "github-actions[bot]", "older review", stale=True)
     assert not any("PATCH" in call or "POST" in call for call in calls)
+
+
+def test_state_block_round_trips_through_the_summary_comment_and_escapes_the_comment_end():
+    state = cr.empty_state()
+    state["findings"].append({"id": "abcdef123456-0", "path": "a.py", "line": 3, "severity": "high",
+                              "scope": "introduced", "title": "x --> y breaks", "body": "b", "author_note": "",
+                              "comment_id": 11, "status": "open"})
+    body = "## Claude review\n\ntext\n" + cr.encode_state(state)
+    assert "-->" not in cr.encode_state(state)[len(cr.STATE_MARKER):-len(cr.STATE_END)]
+    assert cr.decode_state(body) == state
+    assert cr.strip_state(body) == "## Claude review\n\ntext\n"
+    assert cr.decode_state("## Claude review\n\nno block") is None
+    assert cr.decode_state(cr.STATE_MARKER + "{not json" + cr.STATE_END) is None
+
+
+def test_refresh_state_dismisses_what_the_author_closed_and_keeps_the_bot_resolution():
+    state = cr.empty_state()
+    mk = lambda i, status="open": {"id": f"s-{i}", "path": "a.py", "line": i, "severity": "low", "scope": "introduced",
+                                   "title": f"t{i}", "body": "b", "author_note": "", "comment_id": i, "status": status}
+    state["findings"] = [mk(1), mk(2), mk(3), mk(4, "resolved"), mk(5)]
+    threads = {1: {"thread_id": "T1", "resolved": False, "replies": ["**Rejected:** the fallback is the API's."]},
+               2: {"thread_id": "T2", "resolved": True, "replies": []},                       # resolved by a human
+               3: {"thread_id": "T3", "resolved": False, "replies": ["Fixed in 1a2b3c: guarded the join"]},
+               4: {"thread_id": "T4", "resolved": True, "replies": ["Re-review at 1a2b3c4d5e6f: no longer present."]},
+               5: {"thread_id": "T5", "resolved": False, "replies": ["Not changed: pre-existing, out of scope"]}}
+    out = cr.refresh_state(state, threads)
+    assert [f["status"] for f in out["findings"]] == ["dismissed", "dismissed", "open", "resolved", "dismissed"]
+    assert out["findings"][2]["author_note"] == "Fixed in 1a2b3c: guarded the join"
+    assert [f["id"] for f in cr.open_findings(out)] == ["s-3"]
+
+
+def test_state_cli_reads_the_summary_and_logs_the_fallback_for_a_summary_without_a_block(tmp_path, monkeypatch, capsys):
+    bodies = {"101": "## Claude review (full tier, commit 1234)\n\nold-format summary\n" + cr.SUMMARY_MARKER}
+
+    def fake_gh_api(args, payload=None):
+        if args[0].endswith("/issues/5/comments"):
+            return "101"
+        if args[0].endswith("/issues/comments/101"):
+            return json.dumps({"body": bodies["101"]})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(cr, "_fetch_threads", lambda repo, pr: {})
+    out = tmp_path / "state.json"
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    assert cr.main(["state", "--repo", "o/r", "--pr", "5", "--out", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8")) == cr.empty_state()
+    printed = capsys.readouterr().out
+    assert "fallback: no state block" in printed and "no state block" in summary.read_text(encoding="utf-8")
+    # a hand-edited (corrupt) state block is the same fallback, never a crash of the gate
+    bodies["101"] += cr.STATE_MARKER + "{not json" + cr.STATE_END
+    assert cr.main(["state", "--repo", "o/r", "--pr", "5", "--out", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8")) == cr.empty_state()
+    assert "fallback: no state block" in capsys.readouterr().out
+
+
+def test_merge_state_keys_rounds_by_commit_and_run_and_findings_by_id():
+    existing = {"schema": 1, "rounds": [{"round": 1, "sha": "a" * 40, "run_id": "1", "automatic": True, "complete": True,
+                                          "tier": "full", "cost_usd": 1.0, "findings": 1}],
+                "findings": [{"id": "aaaaaaaaaaaa-0", "status": "open", "body": "b", "author_note": "n", "path": "a.py",
+                              "line": 1, "severity": "high", "scope": "introduced", "title": "t", "comment_id": 7}]}
+    delta = {"schema": 1, "rounds": [{"round": 2, "sha": "b" * 40, "run_id": "2", "automatic": True, "complete": False,
+                                       "tier": "light", "cost_usd": 0.2, "findings": 0}],
+             "findings": [{"id": "aaaaaaaaaaaa-0", "status": "resolved", "body": "b", "author_note": "n", "path": "a.py",
+                           "line": 1, "severity": "high", "scope": "introduced", "title": "t", "comment_id": 7}]}
+    merged = cr.merge_state(existing, delta)
+    assert [r["round"] for r in merged["rounds"]] == [1, 2]
+    assert merged["findings"][0]["status"] == "resolved" and "body" not in merged["findings"][0]
+    assert cr.last_complete_sha(merged) == "a" * 40 and cr.automatic_rounds(merged) == 1
+    # the same round posted twice (a retry) is one round
+    assert len(cr.merge_state(merged, delta)["rounds"]) == 2
