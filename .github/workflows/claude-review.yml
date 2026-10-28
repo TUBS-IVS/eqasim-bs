@@ -169,7 +169,8 @@ jobs:
           python scripts/claude_review.py post --result "$RUNNER_TEMP/claude-review-result.json" \
             --repo "$REPO" --pr "$PR_NUMBER" --tier "$TIER" --sha "$HEAD_SHA" \
             --diff-file .claude/review-pr.diff --config .github/claude-review.yml \
-            --state "$RUNNER_TEMP/state.json" --mode "$MODE" --round "$ROUND" \
+            --state "$RUNNER_TEMP/state.json" --interdiff-dir "$RUNNER_TEMP/interdiff" \
+            --mode "$MODE" --round "$ROUND" \
             --record "$RUNNER_TEMP/claude-review-findings.json"
       - name: Upload cost record
         if: always()

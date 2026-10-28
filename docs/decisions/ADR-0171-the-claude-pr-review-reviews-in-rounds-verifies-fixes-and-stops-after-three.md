@@ -28,7 +28,8 @@
    at write time.
 2. **File-level interdiff.** A further round reviews only the file sections whose change against `main` differs from
    the last complete round (`git diff base...last` against `base...head`, normalised, so a merge of `main` changes
-   nothing). A non-ancestor last commit falls back to the whole PR, logged.
+   nothing). A non-ancestor last commit falls back to the whole PR, logged; the round cap still applies, so a
+   force-push after the last round cannot buy a fresh full review.
 3. **Gate on further rounds.** Tier from the interdiff with the unchanged thresholds; at most
    `rereview.max_rounds` (3) automatic complete rounds; nothing changed and nothing open -> no run; a change below
    every threshold with open findings -> `rereview.verify_tier` (light). The force label still reads the whole PR,

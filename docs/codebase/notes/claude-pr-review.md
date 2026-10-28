@@ -78,14 +78,17 @@ Why the review works in rounds: [ADR-0171](../../decisions/ADR-0171-the-claude-p
 (`<!-- claude-pr-review:state <json> -->`), written by `post` (`encode_state`, which escapes
 `>` as `>` so the JSON never contains `-->`) and read by `decode_state`. Schema 1:
 `rounds` (`round`, `sha`, `tier`, `run_id`, `automatic`, `complete`, `cost_usd`, `findings`)
-and `findings` (`id` = `<sha12>-<index>`, `path`, `line`, `severity`, `scope`, `title`,
+and `findings` (`id` = `<sha12>-<run id>-<index>`, so two rounds on the same commit, e.g. a
+forced round after the cap, never share an id; `path`, `line`, `severity`, `scope`, `title`,
 `comment_id`, `status`, and for open ones `body` and `author_note`; caps `TITLE_CHARS`,
 `BODY_CHARS`, `NOTE_CHARS`). `status` is `open`, `resolved` (a later round verified the fix)
 or `dismissed` (`refresh_state`: a thread reply starting with `REJECTED_PREFIXES`, or a thread
 resolved by a human; the bot's own `Re-review at ...` reply never dismisses, and only `open`
 findings change status). Only `open` findings go to the model. `post` re-reads the comment
 and merges rounds and findings (`merge_state`) before writing, so a run for a commit that is no
-longer the head still records its findings but leaves the visible summary text alone.
+longer the head still records its findings but leaves the visible summary text alone; its
+round is marked `stale` and never becomes the last reviewed commit. Threads of resolved
+findings are closed only after the state is written.
 
 **Commands, both model-free.** `state --repo --pr --out` reads the comment and the threads of
 open findings and writes `state.json`. `interdiff --config --state --base-sha --head-sha
@@ -112,15 +115,20 @@ but findings are open. The `docs/` branch rule applies as in the first round.
   summary; first-round review, earlier findings unknown`; the state starts empty.
 - `last` not an ancestor of head (rebase, force-push): `fallback: reviewed commit <sha12> is
   not an ancestor of head (rebase or force-push?); the whole PR is reviewed`; the round counter
-  and the open findings are kept.
+  and the open findings are kept, the cap still applies, and the prompt tells the model that
+  the line numbers of the open findings may have moved.
+- A PR with more than 100 review threads: `::warning::`; findings beyond the first page keep
+  their status (the same single page the session retro reads).
+- No model call (only ignored files changed, nothing open): the round is recorded with
+  `complete: false`, so it neither uses up an automatic round nor moves the reviewed commit.
 - A result without `coverage_complete` is counted as complete, with a `::warning::`; a result
   with `coverage_complete: false` is recorded with `complete: false` and does not advance
   the reviewed commit.
 
 **The run.** `review` also gets `--state`, `--interdiff-dir`, `--diff-source`, `--mode`,
 `--round` and `GH_TOKEN`: it fetches the PR title and body (`gh api`) and `review_prompt`
-puts them in a four-backtick fenced block headed "PR description" (data, not instructions;
-a fence inside the body cannot close it, and `build_prompt` fills values in one pass, so a
+puts them in a fenced block headed "PR description" (data, not instructions; `fence_for`
+makes the fence longer than any backtick run in the body, so the body cannot close it, and `build_prompt` fills values in one pass, so a
 placeholder in the body stays text). The prompt asks for the intent check (does the diff do
 what "What & why" says, does "Behaviour change?" match, does "Validation evidence" name
 evidence the diff could have produced), the open findings (do not report them again; for each

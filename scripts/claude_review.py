@@ -148,9 +148,11 @@ def strip_state(body: str) -> str:
 
 
 def last_complete_sha(state: dict) -> str:
-    """Commit of the newest round that reviewed everything it set out to (else "")."""
+    """Commit of the newest round that reviewed everything it set out to (else ""). A stale round
+    (a slow run of a commit that was no longer the head when it posted) is skipped: it is newer
+    in the list but older in the history, and the next interdiff would re-review files again."""
     for round_ in reversed(state["rounds"]):
-        if round_.get("complete"):
+        if round_.get("complete") and not round_.get("stale"):
             return str(round_.get("sha", ""))
     return ""
 
@@ -365,12 +367,14 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
         return decide("none", f"skipped: label event for '{event_label}', not '{label_cfg['force']}'", "none", "none")
     if draft and config.get("skip_drafts", True):
         return decide("none", "skipped: draft PR", "none", "none")
+    # The cap holds for every push once rounds exist, also after a rebase (interdiff fallback):
+    # otherwise a force-push after the last round would buy a full review of the whole PR.
+    if context is not None and context.automatic_rounds >= int(rereview["max_rounds"]):
+        return decide("none", f"round cap: {context.automatic_rounds} automatic rounds; "
+                              f"add label '{label_cfg['force']}' for another", "none", "none")
     if not further:
         tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
         return decide(tier, why, "first", "pr")
-    if context.automatic_rounds >= int(rereview["max_rounds"]):
-        return decide("none", f"round cap: {context.automatic_rounds} automatic rounds; "
-                              f"add label '{label_cfg['force']}' for another", "none", "none")
     verify = rereview["verify_tier"]
     if not context.changed_entries:
         if context.open_findings:
@@ -455,8 +459,10 @@ def diff_block(diff_source: str, diff_file: str, changed: list, reverted: list) 
             "files at head with Read/Grep/Glob.")
 
 
-def round_block(state: dict, mode: str, round_number: int) -> str:
-    """The prompt section with the open findings of earlier rounds ("" when there are none)."""
+def round_block(state: dict, mode: str, round_number: int, moved: bool = False) -> str:
+    """The prompt section with the open findings of earlier rounds ("" when there are none).
+    ``moved``: the whole PR is read again (forced round, or the interdiff fell back after a
+    rebase), so the cited line numbers may no longer match."""
     findings = open_findings(state)
     if not findings:
         return ""
@@ -473,19 +479,28 @@ def round_block(state: dict, mode: str, round_number: int) -> str:
                   "`resolved` (true only if the defect is gone at this commit) and a one-line `note` with the "
                   "evidence. A finding whose code only moved is still open. Report only NEW defects in "
                   "`findings`."]
-    if mode == "forced":
+    if moved or mode == "forced":
         lines.append("The line numbers above are from an earlier commit and may have moved.")
     return "\n".join(lines)
+
+
+def fence_for(text: str) -> str:
+    """A backtick fence longer than the longest backtick run in ``text`` (at least four), so the
+    text cannot close it."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    return "`" * max(4, longest + 1)
 
 
 def review_prompt(template: str, repo: str, pr: int, tier: str, sha: str, diff_source: str, diff_file: str,
                   meta: dict, state: dict, mode: str, round_number: int, title: str, body: str) -> str:
     """The complete prompt of one review run. The PR body is the author's text: it goes in verbatim
-    inside a four-backtick fence (a ``` block in it cannot close the fence) and fills no placeholder."""
-    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha,
+    inside a backtick fence longer than any backtick run in it (so it cannot close the fence) and
+    fills no placeholder."""
+    body = body.strip() or "(empty)"
+    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha, "FENCE": fence_for(body),
               "DIFF_BLOCK": diff_block(diff_source, diff_file, meta.get("changed", []), meta.get("reverted", []))}
-    verbatim = {"PR_TITLE": " ".join(str(title).split()), "PR_BODY": body.strip() or "(empty)",
-                "ROUND_BLOCK": round_block(state, mode, round_number)}
+    verbatim = {"PR_TITLE": " ".join(str(title).split()), "PR_BODY": body,
+                "ROUND_BLOCK": round_block(state, mode, round_number, moved=bool(meta.get("fallback")))}
     return build_prompt(template, values, verbatim)
 
 
@@ -699,7 +714,10 @@ def round_delta(args, placed: list, resolved: list, result: dict, complete: bool
     round_entry = {"round": args.round, "sha": args.sha, "tier": args.tier,
                    "run_id": os.environ.get("GITHUB_RUN_ID", ""), "automatic": args.mode != "forced",
                    "complete": complete, "cost_usd": result.get("total_cost_usd"), "findings": len(placed)}
-    findings = [{"id": f"{args.sha[:12]}-{index}", "path": f.get("path"), "line": f.get("line"),
+    # The run id is part of the finding id: two rounds on the same commit (a forced round after the
+    # cap) must not give the same ids, or the newer finding replaces the older one in the state.
+    run = os.environ.get("GITHUB_RUN_ID", "") or "local"
+    findings = [{"id": f"{args.sha[:12]}-{run}-{index}", "path": f.get("path"), "line": f.get("line"),
                  "severity": f.get("severity"), "scope": _scope(f), "title": str(f.get("title", ""))[:TITLE_CHARS],
                  "body": " ".join(str(f.get("body", "")).split())[:BODY_CHARS], "author_note": "",
                  "comment_id": f["comment_id"], "status": "open"} for index, f in enumerate(placed)]
@@ -710,10 +728,12 @@ def round_delta(args, placed: list, resolved: list, result: dict, complete: bool
 def summary_markdown(structured: dict, inline: list, summary_only: list, tier: str, sha: str,
                      cost_line: str, state: dict | None = None, round_number: int = 1, still_open: list = (),
                      resolved: list = (), cap_reached: bool = False, dropped: int = 0,
-                     force_label: str = "claude-review") -> str:
+                     force_label: str = "claude-review", fallback: str = "") -> str:
     findings = _by_severity(structured["findings"])
     parts = [SUMMARY_MARKER, f"## Claude review (round {round_number}, {tier} tier, commit {sha[:12]})", "",
              structured["summary"], ""]
+    if fallback:
+        parts += [f"**Fallback:** {fallback}.", ""]
     if findings:
         parts += ["| Severity | Scope | Where | Finding |", "|---|---|---|---|"]
         parts += [f"| {f['severity']} | {_scope(f)} | `{f['path']}:{f['line']}` | {f['title']} |" for f in findings]
@@ -872,7 +892,8 @@ def _gh_graphql(query: str, variables: dict) -> dict:
 
 _THREADS_QUERY = """query($owner: String!, $name: String!, $pr: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-    reviewThreads(first: 100) { nodes { id isResolved comments(first: 30) { nodes { databaseId body } } } } } } }"""
+    reviewThreads(first: 100) { pageInfo { hasNextPage }
+      nodes { id isResolved comments(first: 30) { nodes { databaseId body } } } } } } }"""
 
 
 def _fetch_threads(repo: str, pr: int) -> dict:
@@ -880,8 +901,13 @@ def _fetch_threads(repo: str, pr: int) -> dict:
     stores): ``{comment_id: {"thread_id", "resolved", "replies": [text of every later comment]}}``."""
     owner, name = repo.split("/", 1)
     data = _gh_graphql(_THREADS_QUERY, {"owner": owner, "name": name, "pr": pr})
+    page = data["data"]["repository"]["pullRequest"]["reviewThreads"]
+    if (page.get("pageInfo") or {}).get("hasNextPage"):
+        # One page of 100, as the session retro reads it; findings in later threads keep their status.
+        print("::warning::This PR has more than 100 review threads; findings beyond the first 100 are "
+              "neither dismissed nor resolved from their threads.")
     threads = {}
-    for node in data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]:
+    for node in page["nodes"]:
         comments = node["comments"]["nodes"]
         if comments:
             threads[comments[0]["databaseId"]] = {"thread_id": node["id"], "resolved": bool(node["isResolved"]),
@@ -1066,7 +1092,10 @@ def _cmd_review(args) -> int:
         Path(args.out).write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False,
                                               "total_cost_usd": 0.0, "num_turns": 0, "structured_output": {
                                                   "summary": "Only ignored (generated or lock) files changed.",
-                                                  "findings": [], "previous": [], "coverage_complete": True}}),
+                                                  # Not complete: no review happened, so this round
+                                                  # neither uses up an automatic round nor moves
+                                                  # the reviewed commit.
+                                                  "findings": [], "previous": [], "coverage_complete": False}}),
                                   encoding="utf-8")
         return 0
     title, body = _pr_description(args.repo, args.pr)
@@ -1154,13 +1183,16 @@ def _cmd_post(args) -> int:
     preview = merge_state(state, delta)
     max_rounds = int(config.get("rereview", {}).get("max_rounds", 0) or 0)
     cap_reached = bool(max_rounds) and args.mode != "forced" and automatic_rounds(preview) >= max_rounds
+    fallback = ""
+    if args.interdiff_dir and (Path(args.interdiff_dir) / "interdiff.json").exists():
+        fallback = json.loads((Path(args.interdiff_dir) / "interdiff.json").read_text(encoding="utf-8")).get("fallback", "")
     body = summary_markdown(dict(structured, findings=findings), inline, summary_only, args.tier, args.sha,
                             cost_line, preview, args.round, still_open, resolved, cap_reached, len(dropped),
-                            config.get("labels", {}).get("force", "claude-review"))
+                            config.get("labels", {}).get("force", "claude-review"), fallback)
     if args.dry_run:
         print("[claude-review] Summary comment:")
         print(body)
-    _close_resolved(args, resolved)
+        _close_resolved(args, resolved)
     if args.record:
         previous = [{"id": f["id"], "comment_id": f.get("comment_id"), "resolved": f in resolved,
                      "note": f.get("verify_note", "")} for f in resolved + still_open]
@@ -1172,6 +1204,9 @@ def _cmd_post(args) -> int:
         return 0
     head = _gh_api([f"repos/{args.repo}/pulls/{args.pr}", "--jq", ".head.sha"]).strip()
     upsert_summary(args.repo, args.pr, args.bot_login, body, stale=bool(head) and head != args.sha, state_delta=delta)
+    # Only after the state is written: a thread resolved before a failed state write would read as
+    # resolved by a human next time, i.e. "dismissed" instead of "resolved".
+    _close_resolved(args, resolved)
     return 0
 
 
@@ -1182,22 +1217,28 @@ def _close_resolved(args, resolved: list) -> None:
     if not with_thread:
         return
     threads = _fetch_threads(args.repo, args.pr)
+    closed = 0
     for finding in with_thread:
         reply = verification_reply(args.sha, finding.get("verify_note", ""))
         thread_id = (threads.get(finding["comment_id"]) or {}).get("thread_id")
+        if not thread_id:
+            print(f"::warning::No review thread found for finding {finding['id']} (comment {finding['comment_id']}); "
+                  "it is replied to but its thread stays open.")
         if args.dry_run:
             print(f"[claude-review] would reply on {finding['comment_id']}: {reply}")
             if thread_id:
                 print(f"[claude-review] would resolve thread {thread_id}")
+                closed += 1
             continue
         try:
             _gh_api([f"repos/{args.repo}/pulls/{args.pr}/comments/{finding['comment_id']}/replies", "--method", "POST"],
                     {"body": reply})
             if thread_id:
                 _gh_graphql(_RESOLVE_MUTATION, {"thread": thread_id})
+                closed += 1
         except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
             print(f"::warning::Could not reply on or resolve finding {finding['id']}: {error}")
-    print(f"[claude-review] resolved {len(with_thread)} earlier finding(s) on the PR")
+    print(f"[claude-review] earlier findings resolved: {closed}/{len(with_thread)} threads closed on the PR")
 
 
 _RESOLVE_MUTATION = """mutation($thread: ID!) { resolveReviewThread(input: {threadId: $thread}) { thread { id } } }"""
@@ -1237,6 +1278,10 @@ def upsert_summary(repo: str, pr: int, bot_login: str, body: str, stale: bool = 
     if state_delta is not None:
         current = (json.loads(_gh_api([f"repos/{repo}/issues/comments/{existing[0]}"])).get("body") or ""
                    if existing else "")
+        if stale:
+            state_delta = copy.deepcopy(state_delta)
+            for round_ in state_delta["rounds"]:
+                round_["stale"] = True
         merged = merge_state(decode_state(current) or empty_state(), state_delta)
         for number, round_ in enumerate(merged["rounds"], start=1):
             round_["round"] = number
@@ -1332,6 +1377,7 @@ def main(argv=None) -> int:
     p_post.add_argument("--record", help="write the machine-readable findings record (for the session retro) here")
     p_post.add_argument("--config", default="", help="gate config (round cap and force label for the summary)")
     p_post.add_argument("--state", default="", help="state.json of the `state` command (open earlier findings)")
+    p_post.add_argument("--interdiff-dir", default="", help="output of `interdiff` (its fallback reaches the summary)")
     p_post.add_argument("--mode", default="first", help="the gate's mode output")
     p_post.add_argument("--round", default=1, type=int, help="the gate's round output")
     p_post.add_argument("--bot-login", default="github-actions[bot]",
