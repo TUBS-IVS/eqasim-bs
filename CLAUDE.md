@@ -129,8 +129,9 @@ those still need the explicit yes.
   `eqasim-org/eqasim-bavaria` upstream) — typed, labelled, titled and opened with the plain-language head (`In short`,
   `## Problem`, `## Why it matters`, `## Done when`) exactly per `docs/codebase/notes/issue-and-pr-conventions.md`.
 - **Unsure?** Ask in one line: "fix now or issue?". No issue for anything that was fixed in the same session.
-- **The session retro is the one exception:** it files the work it finds in finished sessions on its own, without
-  asking (it searches the open issues first and comments on a duplicate instead; a few per run; ADR-0170).
+- **The session retro is the one exception:** it files the LARGER work it finds in finished sessions on its own,
+  without asking; a quick fix gets no issue there either, so the board does not fill up (it searches the open issues
+  first and comments on a duplicate instead; at most two per run; ADR-0170).
 All issues, PRs, and the Project board live on the fork only.
 
 **Working hygiene (reasons and incidents: `docs/codebase/notes/git-working-hygiene.md`):**

@@ -9,8 +9,9 @@
   a yes" list in the automation note).
 - **Owner decision (2026-10-28):** "ich will das das alles automatisch passiert und ich nicht zustimmen muss im
   Hintergrund"; caps from autoharness adopted and "No size budgets" removed from CLAUDE.md; learned rules personal
-  and active at once; issues "alles automatisch, irgendwie smart"; learned hooks only warn; the 44 deleted notes go
-  into a restorable archive and revive on recurrence.
+  and active at once; issues "alles automatisch, irgendwie smart", but only for larger work ("sachen die wir schnell
+  fixen brauchen keins, sonst spamt das ganze Board"); learned hooks only warn; the 44 deleted notes go into a
+  restorable archive and revive on recurrence.
 
 ## Context
 
@@ -37,9 +38,11 @@
    `~/.claude/rules/learned-*.md` (at most 25 non-blank lines; they load in every session); personal skills
    `~/.claude/skills/learned-*/`; warn-only guards for patterns a regex catches; everything that needs code or a
    repository change becomes a GitHub issue on the fork. Only self-authored files are ever written.
-3. **Smart issues:** the outbox searches the open issues first and comments on a duplicate instead of filing a second
-   one, files at most two per run, redacts secrets, personal data and home paths, and keeps a failed filing pending and
-   reported until it goes through.
+3. **Smart issues, larger work only:** an issue is filed only for larger work in the sense of CLAUDE.md "Newly
+   discovered work" (multi-step, a design or owner decision, missing data); a quick fix gets no issue and is named in
+   the run summary instead. The outbox searches the open issues first and comments on a duplicate instead of filing a
+   second one, files at most two per run, redacts secrets, personal data and home paths, and keeps a failed filing
+   pending and reported until it goes through.
 4. **Bounded library:** probation of 50 retro'd sessions (guards 30); after it, no view and no use means archive;
    beyond the capacity (80 notes, 30 rules, 20 skills, 20 guards) the lowest use rate goes first; while `MEMORY.md` is
    above 150 lines or 25 KB, further mature notes go. The clock counts retro'd sessions, not days. All numbers except

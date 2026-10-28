@@ -92,7 +92,7 @@ needs the user's explicit yes.
   | a mistake seen in 2 sessions | a personal rule `~/.claude/rules/learned-*.md` (at most 25 lines; loads in every session) |
   | a recurring mistake a pattern can catch | a guard that WARNS on the matching command or file; learned guards never block |
   | a procedure done by hand 3 times | a personal skill `~/.claude/skills/learned-*/` |
-  | work that needs code or a repository change (a test, a real hook, a run manifest, a CI review rule, unfiled work) | a GitHub issue on the fork, filed without asking: the open issues are searched first and a duplicate gets a comment instead; a few per run; titles and bodies are redacted |
+  | LARGER work that needs code or a repository change (a test, a real hook, a run manifest, a CI review rule, unfiled larger work, per CLAUDE.md "Newly discovered work") | a GitHub issue on the fork, filed without asking: the open issues are searched first and a duplicate gets a comment instead; at most two per run; titles and bodies are redacted. A quick fix never gets an issue: the judge names it in the run summary instead, so the board does not fill up |
 
   The promoter only touches what the retro wrote itself; hand-written files are never
   changed.
