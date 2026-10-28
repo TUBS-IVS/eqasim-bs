@@ -4,7 +4,8 @@
     python scripts/claude_review.py classify --config .github/claude-review.yml --numstat diff.tsv \
         --branch feature/i1-x [--labels a,b] [--draft] [--event-action labeled --event-label x]
     python scripts/claude_review.py review --config .github/claude-review.yml --tier full \
-        --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json [--diff-out .claude/review-pr.diff]
+        --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json [--diff-out .claude/review-pr.diff] \
+        [--state state.json --interdiff-dir DIR --diff-source pr|interdiff|none --mode M --round N]
     python scripts/claude_review.py post --result result.json --repo OWNER/NAME --pr 12 \
         --tier full --sha <head sha> [--diff-file pr.diff] [--dry-run]
     python scripts/claude_review.py cost --execution-file result.json [--tier full] [--model m] [--json out.json]
@@ -81,12 +82,28 @@ FINDINGS_SCHEMA = {
                     "line": {"type": "integer", "description": "line number in the NEW version of the file"},
                     "title": {"type": "string", "description": "the defect in one short sentence"},
                     "body": {"type": "string", "description": "concrete failure scenario and, if obvious, the fix"},
+                    "scope": {"type": "string", "enum": ["introduced", "pre-existing"],
+                              "description": "introduced by this PR, or a defect that was there before it"},
                 },
-                "required": ["severity", "path", "line", "title", "body"],
+                "required": ["severity", "path", "line", "title", "body", "scope"],
             },
         },
+        "previous": {
+            "type": "array",
+            "description": "one entry per open finding of an earlier round (empty on a first round)",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "resolved": {"type": "boolean"},
+                    "note": {"type": "string", "description": "one line of evidence"},
+                },
+                "required": ["id", "resolved", "note"],
+            },
+        },
+        "coverage_complete": {"type": "boolean", "description": "true only if the whole diff handed in was read"},
     },
-    "required": ["summary", "findings"],
+    "required": ["summary", "findings", "previous", "coverage_complete"],
 }
 
 
@@ -402,16 +419,74 @@ def cost_summary(result: dict) -> dict:
     }
 
 
-def build_prompt(template: str, repo: str, pr: int, tier: str, sha: str, diff_file: str) -> str:
-    """Fill the {{REPO}}, {{PR}}, {{TIER}}, {{SHA}} and {{DIFF_FILE}} placeholders of the prompt file."""
-    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha, "DIFF_FILE": diff_file}
+def build_prompt(template: str, values: dict, verbatim: dict | None = None) -> str:
+    """Fill the {{KEY}} placeholders of the prompt file. ``values`` are filled first and a
+    placeholder left over is an error; ``verbatim`` values (author-written text such as the PR
+    body, or finding titles) are filled last, so a "{{X}}" inside them is neither filled nor an
+    error."""
     prompt = template
     for key, value in values.items():
         prompt = prompt.replace("{{" + key + "}}", value)
-    left = re.findall(r"\{\{[A-Z_]+\}\}", prompt)
+    left = sorted(set(re.findall(r"\{\{[A-Z_]+\}\}", prompt)) - {"{{" + key + "}}" for key in (verbatim or {})})
     if left:
-        raise ValueError(f"unknown placeholders in the prompt file: {sorted(set(left))}")
+        raise ValueError(f"unknown placeholders in the prompt file: {left}")
+    if verbatim:
+        # One pass, so a "{{ROUND_BLOCK}}" written inside the PR body is not filled in turn.
+        prompt = re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: verbatim.get(m.group(1), m.group(0)), prompt)
     return prompt
+
+
+def diff_block(diff_source: str, diff_file: str, changed: list, reverted: list) -> str:
+    """The prompt paragraph that says what the model reads: the whole PR diff, the files changed
+    since the last complete round, or no diff at all (only open findings to verify)."""
+    reading = ("Read ALL of it with Read, page by page (offset/limit) when it is long, before you conclude. "
+               "Left of the `|` every added (`+`) and context (` `) line carries its line number in the NEW "
+               "version of the file; deleted (`-`) lines and headers carry none.")
+    gone = (f" These files were in the PR's change at the last reviewed commit and are not any more "
+            f"(reverted to main or renamed): {', '.join(reverted)}." if reverted else "")
+    if diff_source == "pr":
+        return f"The complete diff of the PR is in the file {diff_file}. {reading}"
+    if diff_source == "interdiff":
+        return (f"This is a further round. The file {diff_file} holds the PR's diff against main for only "
+                f"the files whose change differs from the last reviewed commit: {', '.join(changed)}. "
+                f"{reading} The other files of the PR were reviewed before and did not change.{gone}")
+    return ("This is a further round and there is no diff file: nothing in the PR's change against main "
+            f"differs from the last reviewed commit.{gone} Verify the open findings below by reading the "
+            "files at head with Read/Grep/Glob.")
+
+
+def round_block(state: dict, mode: str, round_number: int) -> str:
+    """The prompt section with the open findings of earlier rounds ("" when there are none)."""
+    findings = open_findings(state)
+    if not findings:
+        return ""
+    lines = [f"RE-REVIEW, ROUND {round_number}. These findings of earlier rounds are already posted on the PR "
+             "and still open:", ""]
+    for f in findings:
+        lines.append(f"- id `{f['id']}`, `{f['path']}:{f['line']}`, {f['severity']}, {f.get('scope', 'introduced')}: "
+                     f"{f['title']}")
+        if f.get("body"):
+            lines.append(f"  Failure scenario: {' '.join(str(f['body']).split())}")
+        if f.get("author_note"):
+            lines.append(f"  Author's reply: {f['author_note']}")
+    lines += ["", "Do not report these again. For each one, return an entry in `previous` with its `id`, "
+                  "`resolved` (true only if the defect is gone at this commit) and a one-line `note` with the "
+                  "evidence. A finding whose code only moved is still open. Report only NEW defects in "
+                  "`findings`."]
+    if mode == "forced":
+        lines.append("The line numbers above are from an earlier commit and may have moved.")
+    return "\n".join(lines)
+
+
+def review_prompt(template: str, repo: str, pr: int, tier: str, sha: str, diff_source: str, diff_file: str,
+                  meta: dict, state: dict, mode: str, round_number: int, title: str, body: str) -> str:
+    """The complete prompt of one review run. The PR body is the author's text: it goes in verbatim
+    inside a four-backtick fence (a ``` block in it cannot close the fence) and fills no placeholder."""
+    values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha,
+              "DIFF_BLOCK": diff_block(diff_source, diff_file, meta.get("changed", []), meta.get("reverted", []))}
+    verbatim = {"PR_TITLE": " ".join(str(title).split()), "PR_BODY": body.strip() or "(empty)",
+                "ROUND_BLOCK": round_block(state, mode, round_number)}
+    return build_prompt(template, values, verbatim)
 
 
 def claude_command(claude_bin: str, tier_cfg: dict, allowed_tools: list) -> list:
@@ -656,6 +731,18 @@ def _pr_diff(repo: str, pr: int, base_sha: str = "", head_sha: str = "") -> str:
                           check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
 
 
+def _pr_description(repo: str, pr: int) -> tuple:
+    """(title, body) of the PR, so the review can check the diff against its stated intent. A
+    failed read is logged and the prompt says the description is unavailable; the review still
+    runs (the description is an extra check, not the review's input)."""
+    try:
+        data = json.loads(_gh_api([f"repos/{repo}/pulls/{pr}"]))
+    except (subprocess.CalledProcessError, json.JSONDecodeError, OSError) as error:
+        print(f"::warning::PR description unavailable ({error}); the intent check is skipped.")
+        return "", "PR description unavailable."
+    return str(data.get("title") or ""), str(data.get("body") or "")
+
+
 def _git(args: list) -> str:
     # errors="replace" and unquoted paths, as in _pr_diff: a non-UTF-8 byte must not crash the review.
     return subprocess.run(["git", "-c", "core.quotepath=false", *args], check=True, capture_output=True,
@@ -849,29 +936,48 @@ def _cmd_review(args) -> int:
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     tier_cfg = config["tiers"][args.tier]
     review_cfg = config["review"]
+    state = json.loads(Path(args.state).read_text(encoding="utf-8")) if args.state else empty_state()
+    interdiff_dir = Path(args.interdiff_dir) if args.interdiff_dir else None
+    meta = (json.loads((interdiff_dir / "interdiff.json").read_text(encoding="utf-8"))
+            if interdiff_dir and (interdiff_dir / "interdiff.json").exists() else {})
     # The model gets the diff as a file it pages through with Read, so it needs no shell at all
     # (a local run showed the model piping `gh pr diff` into grep/awk, which the read-only tool
-    # list rightly denies, and the review then covered only part of the diff).
-    diff_text, dropped = filter_diff(_pr_diff(args.repo, args.pr, args.base_sha, args.sha),
-                                     config.get("ignored_paths", []))
+    # list rightly denies, and the review then covered only part of the diff). A further round
+    # reads only the files whose change differs from the last complete round (`interdiff`), a
+    # verify round without such files reads none.
+    dropped: list = []
+    if args.diff_source == "interdiff":
+        if interdiff_dir is None:
+            print("::error::--diff-source interdiff needs --interdiff-dir")
+            return 1
+        diff_text = (interdiff_dir / "interdiff.diff").read_text(encoding="utf-8")
+    elif args.diff_source == "none":
+        diff_text = ""
+    else:
+        diff_text, dropped = filter_diff(_pr_diff(args.repo, args.pr, args.base_sha, args.sha),
+                                         config.get("ignored_paths", []))
     diff_path = Path(args.diff_out)
     diff_path.parent.mkdir(parents=True, exist_ok=True)
     # Raw diff for `post` (it maps findings onto diff lines); numbered copy for the model.
     diff_path.write_text(diff_text, encoding="utf-8")
     numbered_path = diff_path.with_name(diff_path.name + ".numbered")
     numbered_path.write_text(number_diff(diff_text), encoding="utf-8")
-    print(f"[claude-review] diff of PR {args.pr}: {len(git_lines(diff_text))} lines -> {diff_path.as_posix()} "
-          f"(model reads {numbered_path.as_posix()}); "
-          f"{len(dropped)} ignored file(s) left out" + (f": {', '.join(dropped[:10])}" if dropped else ""))
-    if not diff_text.strip():
-        print("::warning::Nothing left to review after dropping ignored paths; no model call.")
+    print(f"[claude-review] round {args.round} ({args.mode}), diff source {args.diff_source}: "
+          f"{len(git_lines(diff_text))} lines -> {diff_path.as_posix()} (model reads {numbered_path.as_posix()}); "
+          f"{len(dropped)} ignored file(s) left out" + (f": {', '.join(dropped[:10])}" if dropped else "")
+          + f"; {len(open_findings(state))} open finding(s) of earlier rounds")
+    if not diff_text.strip() and not open_findings(state):
+        print("::warning::Nothing left to review after dropping ignored paths and no open finding; no model call.")
         Path(args.out).write_text(json.dumps({"type": "result", "subtype": "success", "is_error": False,
                                               "total_cost_usd": 0.0, "num_turns": 0, "structured_output": {
                                                   "summary": "Only ignored (generated or lock) files changed.",
-                                                  "findings": []}}), encoding="utf-8")
+                                                  "findings": [], "previous": [], "coverage_complete": True}}),
+                                  encoding="utf-8")
         return 0
-    prompt = build_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"),
-                          args.repo, args.pr, args.tier, args.sha, numbered_path.as_posix())
+    title, body = _pr_description(args.repo, args.pr)
+    prompt = review_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"), args.repo, args.pr,
+                           args.tier, args.sha, args.diff_source if diff_text.strip() else "none",
+                           numbered_path.as_posix(), meta, state, args.mode, args.round, title, body)
     claude_bin = shutil.which(args.claude_bin) or args.claude_bin
     if not os.environ.get("ANTHROPIC_API_KEY"):
         # claude --bare authenticates only with this key; fail here with a clear message instead.
@@ -1030,6 +1136,12 @@ def main(argv=None) -> int:
     p_review.add_argument("--diff-out", default=".claude/review-pr.diff",
                           help="where the PR diff is written for the model (inside the checkout, so Read may open "
                                "it); pass the same file to post --diff-file")
+    p_review.add_argument("--state", default="", help="state.json of the `state` command")
+    p_review.add_argument("--interdiff-dir", default="", help="output directory of the `interdiff` command")
+    p_review.add_argument("--diff-source", default="pr", choices=["pr", "interdiff", "none"],
+                          help="what the model reads (the gate's diff_source output)")
+    p_review.add_argument("--mode", default="first", help="the gate's mode output")
+    p_review.add_argument("--round", default=1, type=int, help="the gate's round output")
     p_review.add_argument("--claude-bin", default="claude")
     p_review.set_defaults(func=_cmd_review)
 
