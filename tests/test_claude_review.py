@@ -380,3 +380,74 @@ def test_merge_state_keys_rounds_by_commit_and_run_and_findings_by_id():
     assert cr.last_complete_sha(merged) == "a" * 40 and cr.automatic_rounds(merged) == 1
     # the same round posted twice (a retry) is one round
     assert len(cr.merge_state(merged, delta)["rounds"]) == 2
+
+
+_THEN = """diff --git a/braunschweig/a.py b/braunschweig/a.py
+index 1111111..2222222 100644
+--- a/braunschweig/a.py
++++ b/braunschweig/a.py
+@@ -10,3 +10,4 @@ def f():
+     keep = 1
+-    old = 2
++    new = 2
++    added = 3
+     tail = 4
+diff --git a/braunschweig/b.py b/braunschweig/b.py
+--- a/braunschweig/b.py
++++ b/braunschweig/b.py
+@@ -1 +1 @@
+-x
++y
+"""
+
+
+def test_interdiff_ignores_shifted_hunks_and_reports_changed_new_and_reverted_files():
+    # a merge of main added 7 lines above the hunk of a.py and changed nothing of the PR's own change;
+    # b.py was reverted to main; c.py is new; a.py's second hunk is edited
+    now = (_THEN.split("diff --git a/braunschweig/b.py")[0]
+           .replace("@@ -10,3 +10,4 @@", "@@ -17,3 +17,4 @@").replace("index 1111111..2222222", "index 1111111..3333333")
+           + "diff --git a/braunschweig/c.py b/braunschweig/c.py\n--- /dev/null\n+++ b/braunschweig/c.py\n@@ -0,0 +1 @@\n+z\n")
+    unchanged = cr.interdiff(_THEN, now)
+    assert (unchanged.changed, unchanged.unchanged, unchanged.reverted) == (["braunschweig/c.py"], ["braunschweig/a.py"], ["braunschweig/b.py"])
+    assert unchanged.diff_text.startswith("diff --git a/braunschweig/c.py") and "a.py" not in unchanged.diff_text
+    edited = cr.interdiff(_THEN, now.replace("+    added = 3", "+    added = 4"))
+    assert edited.changed == ["braunschweig/a.py", "braunschweig/c.py"]
+    assert cr.commentable_lines(edited.diff_text)["braunschweig/a.py"] == {17, 18, 19, 20}   # head line numbers
+    # a renamed file is a changed new path and a reverted old one, never a crash
+    renamed = cr.interdiff(_THEN, _THEN.replace("diff --git a/braunschweig/b.py b/braunschweig/b.py",
+                                                "diff --git a/braunschweig/b.py b/braunschweig/b2.py\nsimilarity index 90%\nrename from braunschweig/b.py\nrename to braunschweig/b2.py"))
+    assert "braunschweig/b2.py" in renamed.changed and "braunschweig/b.py" in renamed.reverted
+
+
+def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_not_an_ancestor(tmp_path, monkeypatch, capsys):
+    state = cr.empty_state()
+    state["rounds"].append({"round": 1, "sha": "c" * 40, "tier": "full", "run_id": "1", "automatic": True,
+                            "complete": True, "cost_usd": 1.0, "findings": 0})
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    calls = []
+
+    def fake_git(args):
+        calls.append(args)
+        if args[0] == "diff" and "--numstat" in args:
+            return "3\t1\tbraunschweig/a.py\n"
+        return _THEN
+
+    monkeypatch.setattr(cr, "_git", fake_git)
+    monkeypatch.setattr(cr, "_is_ancestor", lambda older, newer: False)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    out_dir = tmp_path / "idiff"
+    assert cr.main(["interdiff", "--config", str(_REPO / ".github" / "claude-review.yml"), "--state", str(state_path),
+                    "--base-sha", "b" * 40, "--head-sha", "d" * 40, "--out-dir", str(out_dir)]) == 0
+    meta = json.loads((out_dir / "interdiff.json").read_text(encoding="utf-8"))
+    assert meta["last_sha"] == "c" * 40 and "not an ancestor" in meta["fallback"]
+    assert meta["changed"] == ["braunschweig/a.py", "braunschweig/b.py"] and meta["reverted"] == []
+    assert (out_dir / "interdiff.diff").read_text(encoding="utf-8") == _THEN
+    assert "fallback" in capsys.readouterr().out and "not an ancestor" in summary.read_text(encoding="utf-8")
+    # no previous round: the whole PR, no fallback, numstat of base...head
+    state_path.write_text(json.dumps(cr.empty_state()), encoding="utf-8")
+    assert cr.main(["interdiff", "--config", str(_REPO / ".github" / "claude-review.yml"), "--state", str(state_path),
+                    "--base-sha", "b" * 40, "--head-sha", "d" * 40, "--out-dir", str(out_dir)]) == 0
+    meta = json.loads((out_dir / "interdiff.json").read_text(encoding="utf-8"))
+    assert meta["last_sha"] == "" and meta["fallback"] == ""

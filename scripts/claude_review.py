@@ -511,6 +511,22 @@ def summary_markdown(structured: dict, inline: list, summary_only: list, tier: s
     return "\n".join(parts) + "\n"
 
 
+def split_sections(diff_text: str) -> list:
+    """Split a unified diff into ``(path, text)`` per file section; the path is the NEW path of the
+    ``diff --git a/x b/y`` header (``y``), None for text before the first header or an unparsable one.
+    Joining the texts gives the diff back."""
+    sections: list = []
+    for line in git_lines(diff_text, keepends=True):
+        if line.startswith("diff --git "):
+            match = re.match(r"diff --git a/(.*) b/(.*)$", line.rstrip("\r\n"))
+            sections.append([match.group(2) if match else None, [line]])
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            sections.append([None, [line]])
+    return [(path, "".join(lines)) for path, lines in sections]
+
+
 def filter_diff(diff_text: str, ignored_patterns) -> tuple:
     """Drop the file sections of a unified diff whose path matches the gate's ignored_paths.
 
@@ -518,24 +534,53 @@ def filter_diff(diff_text: str, ignored_patterns) -> tuple:
     line counts; handing them to the model as well would spend turns and budget on generated
     views and lock files (Claude review finding on PR #497)."""
     kept, dropped = [], []
-    section: list = []
-    section_path = None
-
-    def flush():
-        if section:
-            (dropped.append(section_path) if section_path and matches_any(section_path, ignored_patterns)
-             else kept.extend(section))
-
-    for line in git_lines(diff_text, keepends=True):
-        if line.startswith("diff --git "):
-            flush()
-            section = [line]
-            match = re.match(r"diff --git a/(.*) b/(.*)$", line.rstrip("\r\n"))
-            section_path = match.group(2) if match else None
+    for path, text in split_sections(diff_text):
+        if path and matches_any(path, ignored_patterns):
+            dropped.append(path)
         else:
-            section.append(line)
-    flush()
+            kept.append(text)
     return "".join(kept), dropped
+
+
+def normalise_section(text: str) -> str:
+    """A file section with what a merge of main changes but the PR's own change does not: the blob
+    ids of the ``index`` line and the line numbers of the hunk headers (the hunk's code is kept)."""
+    out = []
+    for line in git_lines(text, keepends=True):
+        if line.startswith("index "):
+            continue
+        out.append(re.sub(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", "@@", line) if line.startswith("@@") else line)
+    return "".join(out)
+
+
+@dataclass
+class Interdiff:
+    diff_text: str  # the head sections of the changed files, in head order
+    changed: list  # paths new in the PR diff since the last round or different there
+    unchanged: list  # paths whose section is the same, ignoring shifted hunks and blob ids
+    reverted: list  # paths the last round's PR diff had and the head's has not
+
+
+def interdiff(then_diff: str, now_diff: str) -> Interdiff:
+    """Compare the PR diff (base...commit) at the last reviewed commit with the one at head, per file.
+
+    A file-level comparison is enough here and needs no patch algebra: a merge of main shifts
+    hunks and changes blob ids, which normalise_section removes, so what is left as "changed" is
+    what the author's own commits changed. A renamed file shows as a new path (changed) and a
+    vanished old one (reverted)."""
+    then = {path: normalise_section(text) for path, text in split_sections(then_diff) if path}
+    changed, unchanged, kept = [], [], []
+    seen = set()
+    for path, text in split_sections(now_diff):
+        if not path:
+            continue
+        seen.add(path)
+        if then.get(path) == normalise_section(text):
+            unchanged.append(path)
+        else:
+            changed.append(path)
+            kept.append(text)
+    return Interdiff("".join(kept), changed, unchanged, [path for path in then if path not in seen])
 
 
 def _pr_diff(repo: str, pr: int, base_sha: str = "", head_sha: str = "") -> str:
@@ -548,6 +593,17 @@ def _pr_diff(repo: str, pr: int, base_sha: str = "", head_sha: str = "") -> str:
                               errors="replace").stdout
     return subprocess.run(["gh", "pr", "diff", str(pr), "--repo", repo],
                           check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
+
+
+def _git(args: list) -> str:
+    # errors="replace" and unquoted paths, as in _pr_diff: a non-UTF-8 byte must not crash the review.
+    return subprocess.run(["git", "-c", "core.quotepath=false", *args], check=True, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace").stdout
+
+
+def _is_ancestor(older: str, newer: str) -> bool:
+    """True when ``older`` is an ancestor of ``newer`` (False after a rebase or force-push)."""
+    return subprocess.run(["git", "merge-base", "--is-ancestor", older, newer], capture_output=True).returncode == 0
 
 
 def _gh_api(args: list, payload: dict | None = None) -> str:
@@ -635,6 +691,45 @@ def _cmd_state(args) -> int:
           f"open {counts['open']}, resolved {counts['resolved']}, dismissed {counts['dismissed']}, "
           f"last complete {last_complete_sha(state)[:12] or '-'}")
     Path(args.out).write_text(json.dumps(state, indent=2), encoding="utf-8")
+    return 0
+
+
+def _cmd_interdiff(args) -> int:
+    """What changed in the PR since the last complete round; no model, no cost."""
+    import yaml
+
+    config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    ignored = config.get("ignored_paths", [])
+    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    last = last_complete_sha(state)
+    base, head = args.base_sha, args.head_sha
+    now, _ = filter_diff(_git(["diff", f"{base}...{head}"]), ignored)
+    fallback = ""
+    result = None
+    if last and not _is_ancestor(last, head):
+        fallback = (f"reviewed commit {last[:12]} is not an ancestor of head (rebase or force-push?); "
+                    "the whole PR is reviewed")
+        print(f"[claude-review] fallback: {fallback}")
+        _append("GITHUB_STEP_SUMMARY", f"- Interdiff: fallback, {fallback}\n")
+    elif last:
+        then, _ = filter_diff(_git(["diff", f"{base}...{last}"]), ignored)
+        result = interdiff(then, now)
+    if result is None:
+        paths = [path for path, _ in split_sections(now) if path]
+        result = Interdiff(now, paths, [], [])
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "interdiff.diff").write_text(result.diff_text, encoding="utf-8")
+    if last and not fallback:
+        numstat = _git(["diff", "--numstat", last, head, "--", *result.changed]) if result.changed else ""
+    else:
+        numstat = _git(["diff", "--numstat", f"{base}...{head}"])
+    (out_dir / "interdiff.numstat").write_text(numstat, encoding="utf-8")
+    (out_dir / "interdiff.json").write_text(json.dumps(
+        {"last_sha": last, "fallback": fallback, "changed": result.changed, "unchanged": result.unchanged,
+         "reverted": result.reverted}, indent=2), encoding="utf-8")
+    print(f"[claude-review] interdiff: last complete round {last[:12] or '-'}, changed {len(result.changed)}, "
+          f"unchanged {len(result.unchanged)}, reverted {len(result.reverted)}")
     return 0
 
 
@@ -840,6 +935,14 @@ def main(argv=None) -> int:
     p_state.add_argument("--bot-login", default="github-actions[bot]",
                          help="author of the summary comment (the workflow token's identity)")
     p_state.set_defaults(func=_cmd_state)
+
+    p_interdiff = sub.add_parser("interdiff", help="compare the PR diff at the last reviewed commit and at head")
+    p_interdiff.add_argument("--config", required=True)
+    p_interdiff.add_argument("--state", required=True, help="state JSON written by the state command")
+    p_interdiff.add_argument("--base-sha", required=True, help="PR base commit")
+    p_interdiff.add_argument("--head-sha", required=True, help="PR head commit")
+    p_interdiff.add_argument("--out-dir", required=True, help="receives interdiff.diff, .numstat and .json")
+    p_interdiff.set_defaults(func=_cmd_interdiff)
 
     p_review = sub.add_parser("review", help="run claude -p and write its JSON result")
     p_review.add_argument("--config", required=True)
