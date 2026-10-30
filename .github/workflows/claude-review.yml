@@ -52,6 +52,7 @@ jobs:
       mode: ${{ steps.gate.outputs.mode }}
       diff_source: ${{ steps.gate.outputs.diff_source }}
       round: ${{ steps.gate.outputs.round }}
+      temporary_model: ${{ steps.temporary_model.outputs.active }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,6 +62,32 @@ jobs:
           python-version: "3.10"
       - name: Install gate dependencies
         run: pip install pyyaml
+      # TEMPORARY until 2026-10-31 (the owner's choice): every review tier uses the model set
+      # below, with 25/250 turns and a cap of 100 USD per run. The step rewrites only this run's
+      # copy of the gate config and decides once per run; the review job applies the same
+      # decision from the `temporary_model` output, so a run that straddles midnight keeps one
+      # setting. From 2026-11-01 (Europe/Berlin) the committed tiers apply again; then delete
+      # this step, its twin in the review job and the `temporary_model` output.
+      - name: Temporary review model until 2026-10-31
+        id: temporary_model
+        run: |
+          if [[ "$(TZ=Europe/Berlin date +%F)" < "2026-11-01" ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            python - <<'PY'
+          import yaml
+          path = ".github/claude-review.yml"
+          with open(path, encoding="utf-8") as handle:
+              config = yaml.safe_load(handle)
+          for tier, max_turns in (("light", 25), ("full", 250)):
+              config["tiers"][tier].update(model="claude-fable-5-1", max_turns=max_turns, max_budget_usd=100.0)
+          with open(path, "w", encoding="utf-8") as handle:
+              yaml.safe_dump(config, handle, sort_keys=False)
+          PY
+            echo "Temporary review model until 2026-10-31: 25/250 turns, 100 USD cap per run." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Decide whether and how to review (no model call)
         id: gate
         env:
@@ -137,6 +164,26 @@ jobs:
           pip install pyyaml
           npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
           claude --version
+      # The classify job's decision on the temporary model (see the step there), applied to this
+      # job's checkout.
+      - name: Temporary review model until 2026-10-31
+        env:
+          TEMPORARY_MODEL: ${{ needs.classify.outputs.temporary_model }}
+        run: |
+          if [[ "$TEMPORARY_MODEL" == "true" ]]; then
+            python - <<'PY'
+          import yaml
+          path = ".github/claude-review.yml"
+          with open(path, encoding="utf-8") as handle:
+              config = yaml.safe_load(handle)
+          for tier, max_turns in (("light", 25), ("full", 250)):
+              config["tiers"][tier].update(model="claude-fable-5-1", max_turns=max_turns, max_budget_usd=100.0)
+          with open(path, "w", encoding="utf-8") as handle:
+              yaml.safe_dump(config, handle, sort_keys=False)
+          PY
+            echo "Temporary review model until 2026-10-31: 25/250 turns, 100 USD cap per run." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
       # State and interdiff are recomputed here: no artifacts travel between the jobs.
       - name: Read the review history and compute the interdiff (no model call)
         env:
