@@ -816,3 +816,20 @@ def test_restrict_to_weekday_diary_legs_drop_reasons_partition_the_dropped_legs(
     assert len(kept) == 2
     assert "kept 2/5" in caplog.text
     assert "2 non-weekday" in caplog.text and "1 rbW" in caplog.text
+
+
+def test_build_validated_trip_table_returns_a_consistent_purpose_chain_on_a_departure_tie():
+    """Issue #258: the closure on a tied departure must not break the purpose chain."""
+    from braunschweig.popsim import plan_validation as pv
+
+    persons = pd.DataFrame({"person_id": ["A"], "H_ID": [1], "P_ID": [1]})
+    # 08:50 -> 08:50 (0-minute leg) to leisure, then 08:50 -> 09:30 home: ends at home.
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [7, 8], "hvm_imp": [1, 1],
+        "W_SZS": [8, 8], "W_SZM": [50, 50], "W_AZS": [8, 9], "W_AZM": [50, 30],
+    })
+    table, report = trips.build_validated_trip_table(persons, wege, require_home_closure=True)
+    assert pv.count_inconsistent_purpose_links(table) == 0
+    assert not table["is_synthetic_closure"].any()
+    assert report.is_valid

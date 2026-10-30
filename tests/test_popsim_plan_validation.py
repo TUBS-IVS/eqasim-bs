@@ -828,3 +828,112 @@ def test_repair_trips_does_not_warn_when_no_person_exceeds_the_bound(caplog):
     with caplog.at_level(logging.INFO):
         PlanValidator(require_home_closure=True).repair_trips(df)
     assert not [r for r in caplog.records if r.levelno == logging.WARNING and "plan-time bound" in r.getMessage()]
+
+
+# ---------------------------------------------------------------------------
+# Issue #258: purpose-chain consistency (following_purpose[i] == preceding_purpose[i+1]).
+# ---------------------------------------------------------------------------
+
+def _tied_departure_trips(second_destination: str):
+    """One person whose two trips share a departure time (MiD reports a 0-minute first leg).
+
+    Real MiD case (probe on the 2023 B1 delivery, 2 of 60,000 sampled donors): the
+    diary-order last trip is the SECOND row, but both rows have the same departure_time.
+    """
+    return pd.DataFrame({
+        "person_id": [1, 1],
+        "trip_id": [0, 1],
+        "departure_time": [31800.0, 31800.0],
+        "arrival_time": [31800.0, 34200.0],
+        "trip_duration": [0.0, 2400.0],
+        "preceding_purpose": ["home", "leisure"],
+        "following_purpose": ["leisure", second_destination],
+        "is_first_trip": [True, False],
+        "is_last_trip": [False, True],
+        "mode": ["walk", "walk"],
+    })
+
+
+def test_append_return_home_takes_the_diary_last_trip_on_a_departure_tie():
+    """A day already ending at home gets NO closure, even when its last two trips tie on time."""
+    out = pv._append_return_home(_tied_departure_trips("home"), pv.HOME_CLOSURE_DWELL_S)
+    assert not out["is_synthetic_closure"].any()
+    assert len(out) == 2
+
+
+def test_append_return_home_anchors_the_closure_on_the_diary_last_trip_on_a_tie():
+    out = pv._append_return_home(_tied_departure_trips("other"), pv.HOME_CLOSURE_DWELL_S)
+    closure = out[out["is_synthetic_closure"]]
+    assert len(closure) == 1
+    # Anchored on the real last trip (arrives 34200 at "other"), not on the tied first one.
+    assert closure["preceding_purpose"].iloc[0] == "other"
+    assert closure["departure_time"].iloc[0] == 34200.0 + pv.HOME_CLOSURE_DWELL_S
+
+
+def test_repair_trips_keeps_the_purpose_chain_consistent_on_a_departure_tie():
+    fixed, _ = pv.PlanValidator().repair_trips(_tied_departure_trips("other"))
+    fixed = fixed.sort_values(["person_id", "trip_index"])
+    assert pv.count_inconsistent_purpose_links(fixed) == 0
+
+
+def _reordered_chain():
+    """Two persons in time order; person 1's purposes still follow the DIARY order.
+
+    Real MiD case: W_ID 7 (home->home) departs after W_ID 8 (home->other), so the time sort
+    in repair_trips leaves "other" followed by a trip that claims to start at "home".
+    """
+    return pd.DataFrame({
+        "person_id": [1, 1, 1, 2, 2],
+        "trip_index": [0, 1, 2, 0, 1],
+        "departure_time": [28800.0, 84000.0, 84900.0, 28800.0, 61200.0],
+        "arrival_time": [29700.0, 84900.0, 86100.0, 30600.0, 63000.0],
+        "preceding_purpose": ["home", "home", "home", "home", "work"],
+        "following_purpose": ["home", "other", "home", "work", "home"],
+        "is_first_trip": [True, False, False, True, False],
+        "is_last_trip": [False, False, True, False, True],
+    })
+
+
+def test_count_inconsistent_purpose_links_counts_within_person_links_only():
+    df = _reordered_chain()
+    # person 1: link 1->2 (other vs home) is broken; the person boundary 1|2 is not a link.
+    assert pv.count_inconsistent_purpose_links(df) == 1
+
+
+def test_enforce_purpose_chain_consistency_repairs_and_logs_the_rate(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        out = pv.enforce_purpose_chain_consistency(_reordered_chain(), log_tag="[test]")
+    assert pv.count_inconsistent_purpose_links(out) == 0
+    # eqasim rule: the later trip's origin is rewritten to the earlier trip's destination.
+    assert out["preceding_purpose"].tolist() == ["home", "home", "other", "home", "work"]
+    # The first trip of each person is never touched (home-start convention).
+    assert (out.loc[out["is_first_trip"], "preceding_purpose"] == "home").all()
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("1/3" in m and "purpose" in m for m in messages), messages
+
+
+def test_enforce_purpose_chain_consistency_warns_above_the_rate_threshold(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        pv.enforce_purpose_chain_consistency(_reordered_chain(), log_tag="[test]",
+                                             warn_rate=0.1)
+    assert [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_enforce_purpose_chain_consistency_is_a_no_op_on_a_consistent_chain(caplog):
+    import logging
+    df = pv.enforce_purpose_chain_consistency(_reordered_chain(), log_tag="[test]")
+    caplog.clear()  # the first call legitimately WARNs (1 of 3 links rewritten)
+    with caplog.at_level(logging.INFO):
+        again = pv.enforce_purpose_chain_consistency(df, log_tag="[test]")
+    pd.testing.assert_frame_equal(again, df)
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_enforce_purpose_chain_consistency_raises_on_stale_first_last_flags():
+    """Stale flags would make the eqasim rewrite copy a purpose ACROSS persons: refuse."""
+    df = _reordered_chain()
+    df.loc[3, "is_first_trip"] = False
+    with pytest.raises(ValueError, match="is_first_trip"):
+        pv.enforce_purpose_chain_consistency(df, log_tag="[test]")

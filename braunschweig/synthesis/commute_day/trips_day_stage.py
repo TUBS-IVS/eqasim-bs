@@ -394,6 +394,10 @@ def execute(context):
                                              general_absence=general_absence,
                                              persons=persons,
                                              departure_time=departure_time)
+    # Issue #258 (ADR-0174): this stage is the last one that changes chains on the Phase B
+    # path (absent days removed, donor days spliced in), so the purpose chain is enforced and
+    # asserted here once more, as eqasim's hts.check does after its last cleaning step.
+    day_trips = _plan_validation.enforce_purpose_chain_consistency(day_trips, log_tag=_LOG_TAG)
     logger.info("%s reporting-day trips: %d rows for %d persons (from %d rows for %d persons); "
                 "%s=%s, %s=%s; diagnostics: %s", _LOG_TAG, len(day_trips),
                 day_trips["person_id"].nunique(), len(trips), trips["person_id"].nunique(),
