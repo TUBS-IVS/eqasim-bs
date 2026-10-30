@@ -66,17 +66,18 @@ rereview:
   verify_tier: light
 
 # A critical path touched with fewer lines than full_min_lines_critical gets the light tier.
-# max_budget_usd is a hard per-run cap (claude -p --max-budget-usd); ASSUMPTION, re-tune
-# from the cost records.
+# max_budget_usd is a hard per-run cap (claude -p --max-budget-usd): 10 / 50 USD since
+# 2026-10-30, the owner's choice (1 / 5 USD before); the turn limits are an ASSUMPTION,
+# re-tune them from the cost records.
 tiers:
   light:
     model: claude-sonnet-5-5
     max_turns: 15
-    max_budget_usd: 1.0
+    max_budget_usd: 10.0
   full:
     model: claude-opus-5-5
     max_turns: 30
-    max_budget_usd: 5.0
+    max_budget_usd: 50.0
 
 # The review run (scripts/claude_review.py review). The model only reads; posting is done
 # by the script, which also writes the PR diff to a file the model reads (no shell tools).
