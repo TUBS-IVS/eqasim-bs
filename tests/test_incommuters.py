@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -956,3 +957,363 @@ def test_configure_defaults_real_origin_and_mode_balance_true():
         f"cordon_incommuter_mode_balance default must be True (new feature default-on), "
         f"got {defaults_captured['cordon_incommuter_mode_balance']!r}"
     )
+
+
+def _late_donor_frames(time_bound_s, pt_check=None, mode="car"):
+    """Frames from a donor pool of one normal and one 35 h-late donor."""
+    gates, assignment, flows, zgb_work, _hp, _ht = _minimal_inputs()
+    hts_persons = pd.DataFrame({"person_id": [1, 2], "employed": [True, True],
+                                "age": [42, 30], "sex": ["female", "male"]})
+    cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0), (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+        (2, "home", "work", 30 * 3600.0, 31 * 3600.0), (2, "work", "home", 34 * 3600.0, 35 * 3600.0),
+    ], columns=cols)
+    return build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {mode: 1.0}}, band_edges=(10,),
+        hts_persons=hts_persons, hts_trips=hts_trips, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=np.random.default_rng(3),
+        gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema() if mode == "pt" else None,
+        time_bound_s=time_bound_s, pt_check=pt_check)
+
+
+def test_late_donor_days_fit_the_time_bound_with_and_without_pt_check():
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    bound = 29 * 3600.0
+
+    def probe(tasks):
+        return pd.Series(True, index=tasks["identifier"].astype(str).to_numpy())
+
+    for kwargs in ({}, {"pt_check": PtCheck(probe=probe, bound_s=bound), "mode": "pt"}):
+        frames = _late_donor_frames(bound, **kwargs)
+        assert len(frames["trips"]) > 0
+        # the re-draw happened: every person follows the fitting donor (age 42), not the 35 h donor
+        assert (frames["persons"]["age"] == 42).all()
+        assert frames["trips"]["arrival_time"].max() <= bound
+        assert frames["activities"]["end_time"].dropna().max() <= bound
+
+
+def test_day_too_long_for_the_whole_day_shift_is_kept_and_moved_as_far_as_possible(caplog):
+    # One donor leaves at 1 h and returns at 40 h: even moved to 0 h it ends after the 29 h bound, so no re-draw
+    # and no shift fits. The agent is never dropped; its day moves earlier by the room it has.
+    gates, assignment, flows, zgb_work, hp, _ht = _minimal_inputs()
+    cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
+    ht = pd.DataFrame([(1, "home", "work", 1 * 3600.0, 2 * 3600.0), (1, "work", "home", 39 * 3600.0, 40 * 3600.0)],
+                      columns=cols)
+    with caplog.at_level("INFO"):
+        frames = build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+            zgb_work=zgb_work, mode_reference={">=10": {"car": 1.0}}, band_edges=(10,), hts_persons=hp,
+            hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+            rng=np.random.default_rng(3), gate_speed_kmh=30.0, time_bound_s=29 * 3600.0,
+            time_redraw_max_attempts=2)
+    assert len(frames["persons"]) > 0
+    report = frames["day_bound"]
+    assert report["n_still_late"] == report["n_days_moved"] == report["n_unfit"] == len(frames["persons"])
+    assert any(r.levelname == "WARNING" and "still late" in r.getMessage() and "day bound" in r.getMessage()
+               for r in caplog.records)
+    assert frames["trips"]["arrival_time"].max() > 29 * 3600.0
+    assert frames["trips"]["arrival_time"].max() < 40 * 3600.0
+    assert frames["trips"].groupby("person_id")["departure_time"].min().min() >= 0.0
+
+
+# Iterative pt re-balancing after the timetable check (#467, D3): a pt in-commuter the timetable switched to car is
+# replaced by a promoted car in-commuter that the timetable serves; a promoted one it does not serve stays car.
+
+def _rebalance_frames(refused_ids, *, serve_nobody=False, with_check=True, **kwargs):
+    """Frames with the balancer ON (unless overridden in ``kwargs``), one station (railA) and a probe serving every
+    person not in ``refused_ids`` (nobody with ``serve_nobody``); ``with_check=False`` passes no check."""
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+
+    def probe(tasks):
+        ids = tasks["identifier"].astype(str)
+        person = ids.str.split(":").str[0].astype(int)
+        served = np.zeros(len(ids), dtype=bool) if serve_nobody else ~person.isin(refused_ids).to_numpy()
+        return pd.Series(served, index=ids.to_numpy())
+
+    return build_incommuter_frames(**{
+        **dict(flows=flows, zgb_kreise={"03101"}, sampling_rate=0.02, gates=gates, assignment=assignment,
+               zgb_work=zgb_work, mode_reference={">=10": {"pt": 0.5, "car": 0.5}}, band_edges=(10,),
+               hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+               rng=np.random.default_rng(11), gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema(),
+               mode_balance=True, pt_check=PtCheck(probe=probe, bound_s=29 * 3600.0) if with_check else None,
+               time_bound_s=29 * 3600.0),
+        **kwargs})
+
+
+def _first_trips(frames):
+    return frames["trips"][frames["trips"]["trip_index"] == 0].set_index("person_id")
+
+
+def _home_xy(frames):
+    home = frames["locations"][frames["locations"]["activity_index"] == 0].set_index("person_id")
+    return home.geometry.x, home.geometry.y
+
+
+def test_a_pt_in_commuter_switched_to_car_is_replaced_by_a_connected_promoted_car_in_commuter():
+    base = _rebalance_frames(set())
+    base_modes = _first_trips(base)["mode"]
+    pt_ids = sorted(base_modes.index[base_modes == "pt"])
+    assert 0 < len(pt_ids) < len(base_modes)
+    assert base["pt_rebalance"]["n_iterations"] == 0                    # nothing switched -> nothing re-balanced
+
+    frames = _rebalance_frames({pt_ids[0]})
+    first = _first_trips(frames)
+    hx, hy = _home_xy(frames)
+    assert first.loc[pt_ids[0], "mode"] == "car"                        # switched by the chain, never promoted
+    assert (hx[pt_ids[0]], hy[pt_ids[0]]) == (605000.0, 5840000.0)     # boards at the road gate
+    assert frames["pt_connection"]["actions"]["to_car"] == 1
+    assert frames["pt_connection"]["n_pt_days"] == len(pt_ids)          # promotion attempts are reported apart
+    promoted = sorted(set(first.index[first["mode"] == "pt"]) - set(pt_ids))
+    assert len(promoted) == 1 and (first["mode"] == "pt").sum() == len(pt_ids)   # back at the target
+    assert (hx[promoted[0]], hy[promoted[0]]) == (604000.0, 5841000.0) # placed at the station
+    # same donor, same station: the promoted agent leaves home when the original pt agents do
+    assert first.loc[promoted[0], "departure_time"] == first.loc[pt_ids[1], "departure_time"]
+    report = frames["pt_rebalance"]
+    assert (report["n_pt_target"], report["n_pt_final"], report["n_iterations"], report["n_promoted"],
+            report["n_promoted_unconnected"], report["residual"], report["met"]) == (
+        len(pt_ids), len(pt_ids), 1, 1, 0, 0, True)
+    assert report["promotion_actions"]["connection_found"] == 1
+    validation = frames["validation"].set_index(frames["persons"]["person_id"].to_numpy())
+    assert validation.loc[promoted[0], "entry_kind"] == "rail_station"
+    cars = set(frames["vehicles"].loc[frames["vehicles"]["mode"] == "car", "owner_id"])
+    assert pt_ids[0] in cars and promoted[0] not in cars
+
+
+def test_promoted_car_in_commuters_without_a_connection_stay_car_at_the_road_gate():
+    base = _rebalance_frames(set())
+    base_modes = _first_trips(base)["mode"]
+    pt_ids = sorted(base_modes.index[base_modes == "pt"])
+    frames = _rebalance_frames({pt_ids[0], *base_modes.index[base_modes == "car"]}, rebalance_max_iterations=3)
+    first = _first_trips(frames)
+    hx, hy = _home_xy(frames)
+    assert sorted(first.index[first["mode"] == "pt"]) == pt_ids[1:]
+    cars = first.index[first["mode"] == "car"]
+    assert np.allclose(hx[cars], 605000.0) and np.allclose(hy[cars], 5840000.0)
+    # a failed attempt leaves no trace: every car in-commuter keeps the road-gate home departure of the base run
+    base_car_departure = _first_trips(base).loc[base_modes == "car", "departure_time"]
+    assert base_car_departure.nunique() == 1
+    assert (first.loc[cars, "departure_time"] == base_car_departure.iloc[0]).all()
+    report = frames["pt_rebalance"]
+    assert report["met"] is False and report["residual"] == 1
+    n_car = len(base_modes) - len(pt_ids)
+    assert n_car > 3                                                    # the cap, not the pool, ends the loop
+    assert report["n_iterations"] == 3 and report["max_iterations"] == 3
+    assert report["n_promoted"] == report["n_promoted_unconnected"] == 3
+
+
+@pytest.mark.parametrize("variant", [
+    dict(with_check=False),                         # no timetable check -> nothing to re-balance against
+    dict(mode_balance=False, serve_nobody=True),    # balancer off: the chain switches every pt agent, no re-balancing
+])
+def test_without_a_check_or_without_the_balancer_the_rebalancing_never_runs(monkeypatch, variant):
+    import braunschweig.synthesis.incommuters as incommuters_module
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("rebalance_with_timetable must not run (it would consume rng draws)")
+
+    expected = _rebalance_frames(set(), **variant)
+    monkeypatch.setattr(incommuters_module, "rebalance_with_timetable", must_not_run)
+    frames = _rebalance_frames(set(), **variant)
+    assert "pt_rebalance" not in frames
+    for key in ("persons", "trips", "activities", "vehicles"):
+        pd.testing.assert_frame_equal(frames[key], expected[key])
+    if variant.get("serve_nobody"):
+        assert frames["pt_connection"]["actions"]["to_car"] > 0        # a deficit existed, still no re-balancing
+
+
+# Promotion path of the re-balancing (#467, final review F3): how a promoted car in-commuter ends up pt.
+
+def _promotion_frames(serves, stops=None, **kwargs):
+    """Frames of the re-balancing set-up with a custom probe. ``serves(person, kind, row)`` -> bool is asked per
+    routed task: ``kind`` is "out"/"ret", ``row`` the task row (origin/destination, departure_time)."""
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+
+    def probe(tasks):
+        served = [serves(int(row.identifier.split(":")[0]), row.identifier.rsplit(":", 1)[1], row)
+                  for row in tasks.itertuples()]
+        return pd.Series(served, index=tasks["identifier"].astype(str).to_numpy())
+
+    return build_incommuter_frames(**{
+        **dict(flows=flows, zgb_kreise={"03101"}, sampling_rate=0.02, gates=gates, assignment=assignment,
+               zgb_work=zgb_work, mode_reference={">=10": {"pt": 0.5, "car": 0.5}}, band_edges=(10,),
+               hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+               rng=np.random.default_rng(11), gate_speed_kmh=30.0,
+               pt_entry_stops=_pt_entry_stops_new_schema() if stops is None else stops, mode_balance=True,
+               pt_check=PtCheck(probe=probe, bound_s=29 * 3600.0), time_bound_s=29 * 3600.0),
+        **kwargs})
+
+
+def _base_pt_ids():
+    base = _rebalance_frames(set())
+    modes = _first_trips(base)["mode"]
+    return sorted(modes.index[modes == "pt"])
+
+
+def _promoted_ids(frames, pt_ids):
+    first = _first_trips(frames)
+    return sorted(set(first.index[first["mode"] == "pt"]) - set(pt_ids))
+
+
+def test_promoted_agent_ends_station_redrawn_when_only_another_station_is_connected():
+    # Two stations of the Kreis; railB has a negligible weight, so the draw is railA, but only railB is connected.
+    stops = pd.concat([_pt_entry_stops_new_schema(),
+                       _pt_entry_stops_new_schema(stop_id="railB", x=603000.0, y=5842000.0)], ignore_index=True)
+    stops.loc[1, "ewz"] = 1.0
+    pt_ids = _base_pt_ids()
+    refused = pt_ids[0]
+    frames = _promotion_frames(
+        lambda person, kind, row: person != refused and (row.origin_x if kind == "out" else row.destination_x)
+        == 603000.0, stops=stops)
+    promoted = _promoted_ids(frames, pt_ids)
+    assert len(promoted) == 1
+    assert frames["pt_rebalance"]["promotion_actions"]["station_redrawn"] == 1
+    hx, hy = _home_xy(frames)
+    assert (hx[promoted[0]], hy[promoted[0]]) == (603000.0, 5842000.0)       # boards at the connected station
+
+
+def test_promoted_agent_ends_day_shifted_when_only_an_earlier_day_is_connected():
+    pt_ids = _base_pt_ids()
+    refused = pt_ids[0]
+    # the donor's work departure is 17 h: only a day moved earlier is served
+    frames = _promotion_frames(
+        lambda person, kind, row: person != refused and (kind == "out" or row.departure_time < 17 * 3600.0))
+    promoted = _promoted_ids(frames, pt_ids)
+    assert len(promoted) == 1
+    assert frames["pt_rebalance"]["promotion_actions"]["day_shifted"] == 1
+    hx, hy = _home_xy(frames)
+    assert (hx[promoted[0]], hy[promoted[0]]) == (604000.0, 5841000.0)
+    work_departure = frames["trips"][frames["trips"]["trip_index"] == 1].set_index("person_id")["departure_time"]
+    assert work_departure[promoted[0]] < 17 * 3600.0                          # the whole day moved earlier
+    assert frames["trips"]["arrival_time"].max() <= 29 * 3600.0
+
+
+def test_promoted_in_ring_agent_keeps_its_home():
+    in_ring = dict(real_origin=True, gemeinden=_gemeinden_for_origin_test(), zgb_polygon=_zgb_polygon_for_test(),
+                   source_buffer_m=5000.0)
+    base = _promotion_frames(lambda person, kind, row: True, **in_ring)
+    base_pt = sorted(_first_trips(base)["mode"].index[_first_trips(base)["mode"] == "pt"])
+    refused = base_pt[0]
+    frames = _promotion_frames(lambda person, kind, row: person != refused, **in_ring)
+    promoted = _promoted_ids(frames, base_pt)
+    assert len(promoted) == 1 and frames["pt_rebalance"]["promotion_actions"]["connection_found"] == 1
+    hx, hy = _home_xy(frames)
+    assert 606000 <= hx[promoted[0]] <= 608000 and 5841000 <= hy[promoted[0]] <= 5843000   # Gemeinde, no station
+    validation = frames["validation"].set_index(frames["persons"]["person_id"].to_numpy())
+    assert validation.loc[promoted[0], "entry_kind"] == "real_origin"
+
+
+def test_promoted_agents_that_draw_no_station_are_counted_and_stay_car(caplog):
+    # can_board_pt is true (the Kreis has a station) but a promotion draw returns no station; the first draw call
+    # places the original pt agents normally, every later call is a promotion round.
+    import logging
+    stops = _pt_entry_stops_new_schema()
+    pt_ids = _base_pt_ids()
+    refused = pt_ids[0]
+    import braunschweig.data.cordon.pt_reachability as reach
+
+    original = reach.sample_pt_station_per_agent
+    calls = {"n": 0}
+
+    def draws_nothing_when_promoting(orig_ars, weighted, rng):
+        calls["n"] += 1
+        return original(orig_ars, weighted, rng) if calls["n"] == 1 else [None] * len(orig_ars)
+
+    import pytest as _pytest
+    caplog.clear()   # only this run's records: _base_pt_ids above may log, captured when INFO is already on (CI)
+    with _pytest.MonkeyPatch.context() as mp, caplog.at_level(logging.INFO):
+        mp.setattr(reach, "sample_pt_station_per_agent", draws_nothing_when_promoting)
+        frames = _promotion_frames(lambda person, kind, row: person != refused, stops=stops)
+    report = frames["pt_rebalance"]
+    assert report["n_promotion_without_station"] > 0
+    assert report["n_promotion_without_station"] == report["n_promoted_unconnected"] == report["n_promoted"]
+    assert report["promotion_actions"]["unconnected"] == report["n_promoted"]
+    assert _promoted_ids(frames, pt_ids) == []
+    # M4: the promotion-action log line, with the 5 % no-station WARN
+    lines = [r for r in caplog.records
+             if "pt re-balancing:" in r.getMessage() and "promotion attempts" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].levelno == logging.WARNING
+    assert "without a station" in lines[0].getMessage() and "router probe calls" in lines[0].getMessage()
+
+
+def test_a_pt_check_bound_lowers_the_day_bound_of_a_direct_caller():
+    # One donor day ends at 29.5 h; the caller keeps the default 30 h time_bound_s but passes a 29 h PtCheck: the
+    # day must still move earlier (the #488 trap), and the frames report the bound that was applied.
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    gates, assignment, flows, zgb_work, hp, _ht = _minimal_inputs()
+    cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
+    ht = pd.DataFrame([(1, "home", "work", 20 * 3600.0, 21 * 3600.0),
+                       (1, "work", "home", 28.5 * 3600.0, 29.5 * 3600.0)], columns=cols)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {"car": 1.0}}, band_edges=(10,), hts_persons=hp, hts_trips=ht,
+        person_col="person_id", n_residents=100, n_resident_households=40, rng=np.random.default_rng(3),
+        gate_speed_kmh=30.0, time_redraw_max_attempts=0,
+        pt_check=PtCheck(probe=lambda tasks: pd.Series(True, index=tasks["identifier"].astype(str).to_numpy()),
+                         bound_s=29 * 3600.0))
+    assert frames["day_bound"]["bound_s"] == 29 * 3600.0
+    assert frames["day_bound"]["n_days_moved"] == len(frames["persons"]) > 0
+    assert frames["trips"]["arrival_time"].max() <= 29 * 3600.0
+
+
+def test_day_bound_report_is_always_carried_in_the_frames():
+    frames = _late_donor_frames(29 * 3600.0)           # no check
+    report = frames["day_bound"]
+    assert report["n"] == len(frames["persons"]) and report["n_redrawn"] > 0 and report["n_unfit"] == 0
+    assert report["n_still_late"] == 0 and report["bound_s"] == 29 * 3600.0
+    assert {"n_attempts_max", "n_days_moved"} <= set(report)
+    assert "pt_connection" not in frames
+
+
+def test_empty_frames_carry_the_zero_day_bound_report():
+    """The stage-off and zero-agent paths carry day_bound too (ADR-0172: always present)."""
+    from braunschweig.synthesis import incommuters as incommuters_module  # noqa: PLC0415
+    off = incommuters_module._empty_frames("EPSG:25832")["day_bound"]
+    assert off["n"] == 0 and off["n_redrawn"] == 0 and off["n_days_moved"] == 0 and off["bound_s"] is None
+    no_agents = incommuters_module._empty_frames("EPSG:25832", bound_s=29 * 3600.0)["day_bound"]
+    assert no_agents["bound_s"] == 29 * 3600.0 and no_agents["n_still_late"] == 0
+
+
+@pytest.mark.parametrize("key,bad", [
+    ("braunschweig.incommuters.time_redraw_max_attempts", -1),
+    ("braunschweig.incommuters.time_redraw_max_attempts", 1.5),
+    ("braunschweig.incommuters.pt_station_candidates", 1.5),
+    ("braunschweig.incommuters.pt_station_candidates", 0),
+])
+def test_configure_rejects_invalid_redraw_and_station_counts(key, bad):
+    from braunschweig.synthesis.incommuters import configure
+
+    class Spy:
+        def config(self, name, *args, **options):
+            if name == key:
+                return bad
+            if name in ("cordon_enabled", "braunschweig.incommuters.pt_connection_check.enabled"):
+                return True
+            return args[0] if args else None
+
+        def stage(self, *args, **kwargs):
+            pass
+
+    with pytest.raises(ValueError, match=key.rsplit(".", 1)[1]):
+        configure(Spy())
+
+
+def test_pt_check_rejects_a_non_integer_station_candidate_count():
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    for bad in (1.5, 0):
+        with pytest.raises(ValueError, match="pt_station_candidates"):
+            PtCheck(probe=lambda tasks: None, station_candidates=bad)
+
+
+def test_rebalancing_reports_the_router_probe_calls_per_round_and_in_total():
+    pt_ids = _base_pt_ids()
+    refused = pt_ids[0]
+    frames = _promotion_frames(lambda person, kind, row: person != refused)
+    report = frames["pt_rebalance"]
+    assert len(report["router_probe_rounds"]) == report["n_iterations"] == 1
+    # one round: the planned day only (a connected promoted agent needs no shift or station probe)
+    assert report["router_probe_rounds"][0]["router_probe_calls"] == 1
+    assert report["n_router_probe_calls"] == 1 and report["n_router_probe_tasks"] == 2

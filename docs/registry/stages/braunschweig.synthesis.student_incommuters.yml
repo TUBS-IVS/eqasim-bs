@@ -1,8 +1,10 @@
 stage: braunschweig.synthesis.student_incommuters
 title: Student in-commuters
 layer: cordon
-description: Adds university student in-commuters from LSN enrollment with DESTATIS origin structure
-  (#140).
+description: "Adds university student in-commuters from LSN enrollment with DESTATIS origin structure
+  (#140). Since ADR-0172 (#467) the student days are re-drawn from the donor pool until they fit the effective
+  bound (braunschweig.incommuters.time_redraw_max_attempts, shared key, ASSUMPTION; value in configs/base_bs.yml); the whole-day shift of ADR-0154
+  is the counted last resort."
 lineage:
   type: braunschweig_new
   upstream: null
@@ -23,3 +25,6 @@ features:
 - incommuter_time_chronology
 decisions:
 - ADR-0120
+- ADR-0146
+- ADR-0154
+- ADR-0172

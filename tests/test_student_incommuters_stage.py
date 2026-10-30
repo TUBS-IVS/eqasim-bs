@@ -189,6 +189,9 @@ def _full_ctx():
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_gate_speed_kmh": 30.0,
            "cordon_incommuter_time_chronology": True,
+           "braunschweig.incommuters.time_redraw_max_attempts": 20,
+           "braunschweig.day_end_margin.enabled": True,
+           "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
            "cordon_network_source_buffer_m": 45000.0,
            "braunschweig.political_prefix": ["03101"],
            "data_path": "eqasim-data/data",
@@ -311,6 +314,120 @@ def test_injection_attaches_orig_ars5_and_dest_commune(monkeypatch):
     # the muni fixture) are configured, so every agent must resolve to that pair.
     assert set(persons["orig_ars5"]) == {"03402"}
     assert set(persons["dest_commune"]) == {"03101"}
+
+
+def _patch_mocked_geodata(monkeypatch, ctx):
+    fake_gem = ctx._stages["_fake_gemeinden"]
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden", lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+
+
+def _with_late_donor(ctx, *, keep_fitting_donor):
+    """Add HTS donor 11 whose return arrival lies after the simulated day; optionally drop the fitting donor 10."""
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    _hh, _persons, hts_trips = ctx._stages["hts"]
+    ids = [10, 11] if keep_fitting_donor else [11]
+    hts_persons = pd.DataFrame({
+        "person_id": ids, "studies": [True] * len(ids), "employed": [False] * len(ids)})
+    late = pd.DataFrame({
+        "person_id": [11, 11],
+        "departure_time": [30000.0, MAX_PLAN_TIME_SECONDS + 10000.0],
+        "arrival_time": [32000.0, MAX_PLAN_TIME_SECONDS + 12000.0],
+        "preceding_purpose": ["home", "education"],
+        "following_purpose": ["education", "home"]})
+    ctx._stages["hts"] = (None, hts_persons, pd.concat([hts_trips, late], ignore_index=True))
+
+
+def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
+    """#467 D4: half of the education donors return after the simulated day. Their agents are re-drawn onto
+    the fitting donor, so every trip ends inside the bound and the persons follow the donor."""
+    import logging
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    baseline_ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, baseline_ctx)
+    n_baseline = len(si.execute(baseline_ctx)["persons"])   # the same agent count without any late donor
+
+    ctx = _mocked_full_ctx()
+    _with_late_donor(ctx, keep_fitting_donor=True)
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(ctx)
+
+    bound_s = MAX_PLAN_TIME_SECONDS - 3600.0
+    assert len(frames["persons"]) == n_baseline
+    assert frames["trips"]["arrival_time"].max() <= bound_s
+    assert frames["trips"]["departure_time"].max() <= bound_s
+    assert set(frames["persons"]["hts_id"]) == {10}   # persons follow the fitting donor
+    redraw_lines = [r.message for r in caplog.records if "redrawn" in r.message or "re-drawn" in r.message]
+    assert redraw_lines, [r.message for r in caplog.records]
+    report = frames["day_bound"]          # the re-draw and shift counts travel with the frames (F2)
+    assert report["n"] == n_baseline and report["n_redrawn"] > 0 and report["n_unfit"] == 0
+    assert report["n_still_late"] == 0 and report["bound_s"] == bound_s
+
+
+def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
+    """#467 D4 last resort: every donor ends after the bound, so no re-draw can fit. No agent is dropped; every
+    day moves earlier as a whole to end by the bound and the moved share is logged as a WARN."""
+    import logging
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    baseline_ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, baseline_ctx)
+    n_baseline = len(si.execute(baseline_ctx)["persons"])
+
+    ctx = _mocked_full_ctx()
+    _with_late_donor(ctx, keep_fitting_donor=False)
+    # Only the late run's records count: the baseline run above also logs a shift line, which is captured when the
+    # suite's logging configuration already records INFO (it does on CI, depending on test order).
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(ctx)
+
+    bound_s = MAX_PLAN_TIME_SECONDS - 3600.0
+    assert len(frames["persons"]) == n_baseline   # nobody dropped
+    trips = frames["trips"]
+    assert trips["arrival_time"].max() <= bound_s
+    # the donor's return arrival is moved earlier (it was MAX_PLAN_TIME_SECONDS + 12000 s)
+    assert (trips["arrival_time"].max() < MAX_PLAN_TIME_SECONDS + 12000.0)
+    shift_lines = [r for r in caplog.records if "days moved earlier as a whole" in r.message]
+    assert len(shift_lines) == 1
+    assert shift_lines[0].levelno == logging.WARNING
+    assert f"{n_baseline}/{n_baseline} days moved" in shift_lines[0].message
+    assert "0 still late" in shift_lines[0].message
+    assert frames["day_bound"]["n_days_moved"] == n_baseline and frames["day_bound"]["n_unfit"] == n_baseline
+
+
+def test_configure_declares_the_day_bound_keys():
+    requested: list[str] = []
+
+    class _Rec(_RecordingCtx):
+        def config(self, key, default=si._SENTINEL):
+            requested.append(key)
+            return super().config(key, default)
+
+    si.configure(_Rec())
+    for key in ("braunschweig.incommuters.time_redraw_max_attempts",
+                "braunschweig.day_end_margin.enabled",
+                "braunschweig.day_end_margin.last_arrival_margin_s"):
+        assert key in requested, requested
+
+
+@pytest.mark.parametrize("bad", [-1, 2.5])
+def test_configure_rejects_an_invalid_redraw_attempt_count(bad):
+    class _Bad(_RecordingCtx):
+        def config(self, key, default=si._SENTINEL):
+            if key == "braunschweig.incommuters.time_redraw_max_attempts":
+                return bad
+            return super().config(key, default)
+
+    with pytest.raises(ValueError, match="time_redraw_max_attempts"):
+        si.configure(_Bad())
 
 
 def test_injection_seeds_distance_consistent_departure(monkeypatch):
@@ -559,3 +676,10 @@ def test_facilities_and_vehicles_off_path_registers_nothing_for_students(monkeyp
             vehicles=vehicles) or "vehicles.xml.gz")
     veh_mod.execute(veh_ctx)
     assert len(veh_written["vehicles"]) == 0
+
+
+def test_empty_frames_carry_the_zero_day_bound_report():
+    """The off / zero-agent paths carry day_bound too, so frames["day_bound"] is always present (ADR-0172)."""
+    report = si._empty_frames()["day_bound"]
+    assert report["n"] == 0 and report["n_redrawn"] == 0 and report["n_days_moved"] == 0
+    assert report["bound_s"] is None

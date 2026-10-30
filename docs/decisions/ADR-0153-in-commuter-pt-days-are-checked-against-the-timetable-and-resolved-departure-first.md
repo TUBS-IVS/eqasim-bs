@@ -1,6 +1,7 @@
 # ADR-0153 · 2026-10-23 · The pt days of in-commuters are checked against the timetable and resolved departure first
 
 - **Status:** accepted (implemented; measured in the 1 % rerun of the #465 fixes, see the status line at the end)
+- **Amended by ADR-0172:** the chain gains `station_redrawn` after `day_shifted` and before `to_car`; the rejected option "Choose another home station" below is overturned there (#467).
 - **Numbering:** 0153 checked free across all local and remote branches on 2026-10-23 (the sibling branches of
   #465 take 0154-0157).
 - **Issue:** #488 (part of #465). **Relates to:** ADR-0152 (the same check for the portal pt stays of residents),

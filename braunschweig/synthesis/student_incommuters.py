@@ -85,7 +85,11 @@ _STUDENT_PERSON_DEFAULTS = dict(
 
 def _empty_frames(crs=CRS_METRIC):
     import geopandas as gpd
+
+    from braunschweig.data.cordon import plans  # noqa: PLC0415 (function-level like _inject's import)
     return {
+        # The zero day-bound report, so frames["day_bound"] is always present (ADR-0172).
+        "day_bound": plans.empty_day_bound(),
         "persons": pd.DataFrame(),
         "households": pd.DataFrame(),
         "trips": pd.DataFrame(),
@@ -188,6 +192,14 @@ def configure(context):
     context.config("cordon_network_source_buffer_m")
     context.config("cordon_gate_speed_kmh", 30.0)
     context.config("cordon_incommuter_time_chronology", True)
+    # Day bound of the education days (#467): the same donor re-draw key and the same day-end margin keys as the
+    # commuter in-commuter stage, so both stages share one effective bound (incommuters._time_bound_s).
+    from braunschweig.matsim.scenario import day_end_margin
+    from braunschweig.synthesis import incommuters
+    incommuters.validate_time_redraw_max_attempts(
+        context.config(incommuters.KEY_TIME_REDRAW_MAX_ATTEMPTS, incommuters.DEFAULT_TIME_REDRAW_MAX_ATTEMPTS))
+    context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED)
+    context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
     context.config("data_path")
     # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
     # (as braunschweig.synthesis.incommuters.configure() also does) so that
@@ -406,9 +418,10 @@ def _inject(context):
     from braunschweig.data.education import student_origins as so
     from braunschweig.data.external_workplaces import _load_gemeinden
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
+    from braunschweig.matsim.scenario import day_end_margin
     from braunschweig.synthesis.incommuters import (
-        _build_incommuter_passenger_vehicles, _build_legacy_vehicles,
-        assemble_incommuter_core_frames)
+        KEY_TIME_REDRAW_MAX_ATTEMPTS, _build_incommuter_passenger_vehicles, _build_legacy_vehicles,
+        _time_bound_s, assemble_incommuter_core_frames)
 
     sampling_rate = float(context.config("sampling_rate"))
     slope = float(context.config("education_university_slope"))
@@ -525,9 +538,15 @@ def _inject(context):
     # 8. Donors + education-leg timings (memoised per unique donor id) + fixed
     #    commute mode from the Mikrozensus distance-band reference.
     donors_pool = plans.select_student_donors(hts_persons, hts_trips, "person_id")
-    donors = plans.sample_donors(donors_pool, n, rng)
-    _donor_depart_home, arrive_mid, depart_mid, arrive_home = _donor_education_times(
-        donors, hts_trips, "person_id")
+    # A donor whose day ends after the bound (the simulated day minus the day-end margin) is re-drawn up to
+    # ``time_redraw_max_attempts`` times and the persons follow the final donor (#467); the donor's own
+    # home-departure time is replaced below by the distance-consistent seed, so the chain end is the return arrival.
+    time_bound_s = _time_bound_s(context)
+    donors, (_donor_depart_home, arrive_mid, depart_mid, arrive_home), redraw_stats = (
+        plans.redraw_times_within_bound(
+            donors_pool, n, rng,
+            lambda d, _pos: _donor_education_times(d, hts_trips, "person_id"),
+            bound_s=time_bound_s, max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS))))
 
     dist_km = plans.straight_line_distance_km(home_x, home_y, dest_x, dest_y)
 
@@ -542,6 +561,28 @@ def _inject(context):
     # only fixes the seed plan (see docs/features/student-incommuters.md timing note).
     travel_s = (dist_km * ROUTED_DETOUR_FACTOR / gate_speed_kmh) * 3600.0
     depart_home = np.maximum(0.0, arrive_mid - travel_s)
+
+    # The re-draw above sees the chain ends BEFORE imputation (a NaN end counts as fitting); the shift below sees
+    # them AFTER imputation (D1 design). Last resort for days no re-draw fitted: impute missing donor times, then
+    # move a day that still ends after the bound earlier as a whole (as the commuter builder does; never drops an
+    # agent), counted and logged.
+    depart_home, arrive_mid, depart_mid, arrive_home = plans.impute_incommuter_times(
+        depart_home, arrive_mid, depart_mid, arrive_home, middle_purpose="education",
+        repair_chronology=context.config("cordon_incommuter_time_chronology"))
+    move_s, _late, unresolved = day_end_margin.late_day_shift_s(
+        depart_home, arrive_home, target_s=time_bound_s)
+    depart_home, arrive_mid, depart_mid, arrive_home = (
+        depart_home - move_s, arrive_mid - move_s, depart_mid - move_s, arrive_home - move_s)
+    n_days_moved = int((move_s > 0).sum())
+    n_still_late = int(unresolved.sum())
+    shift_message = (f"[student_incommuters] day bound {time_bound_s:.0f} s: {n_days_moved}/{n} days moved "
+                     f"earlier as a whole ({100.0 * n_days_moved / n:.1f}%), {n_still_late} still late")
+    if n_days_moved / n > 0.05 or n_still_late:
+        _log.warning(shift_message)
+    else:
+        _log.info(shift_message)
+    day_bound = dict(redraw_stats, bound_s=float(time_bound_s), n_days_moved=n_days_moved,
+                     n_still_late=n_still_late)
     reference = restrict_to_modes(
         load_commute_mode_by_distance(data_path), allowed=("car", "pt"))
     band_fn = lambda d: route_distance_band(  # noqa: E731
@@ -601,4 +642,5 @@ def _inject(context):
         "trips": core["trips"], "activities": core["activities"],
         "locations": core["locations"],
         "vehicles": vehicles, "vehicle_types": vehicle_types,
+        "day_bound": day_bound,
     }
