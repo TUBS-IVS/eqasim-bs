@@ -42,7 +42,8 @@
    station); unconnected ones stay car and leave the pool. The re-balancing is global over all in-commuters, as
    `balance_incommuter_modes` is today (not per Bundesland), and is skipped without any rng draw when `mode_balance`
    is off, no pt check is configured, or the deficit is within the tolerance.
-5. **Config** (pinned in `configs/base_bs.yml`; all four are ASSUMPTIONs, not calibrated):
+5. **Config** (all four are ASSUMPTIONs, not calibrated; the table gives the module defaults chosen by this
+   decision, the values a run uses are the ones in `configs/base_bs.yml`, the only place to retune them):
 
    | key | default | meaning |
    |---|---|---|

@@ -85,7 +85,11 @@ _STUDENT_PERSON_DEFAULTS = dict(
 
 def _empty_frames(crs=CRS_METRIC):
     import geopandas as gpd
+
+    from braunschweig.data.cordon import plans  # noqa: PLC0415 (function-level like _inject's import)
     return {
+        # The zero day-bound report, so frames["day_bound"] is always present (ADR-0172).
+        "day_bound": plans.empty_day_bound(),
         "persons": pd.DataFrame(),
         "households": pd.DataFrame(),
         "trips": pd.DataFrame(),

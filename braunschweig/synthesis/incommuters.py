@@ -468,10 +468,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     agents = expand_to_agents(inbound, sampling_rate)
     n = len(agents)
     if n == 0:
-        empty = _empty_frames(zgb_work.crs)
-        empty["day_bound"] = dict(n=0, n_redrawn=0, n_attempts_max=0, n_unfit=0, bound_s=float(time_bound_s),
-                                  n_days_moved=0, n_still_late=0)
-        return empty
+        return _empty_frames(zgb_work.crs, bound_s=time_bound_s)
 
     ids = make_incommuter_ids(n, n_residents, n_resident_households)
     person_ids = ids["person_id"].to_numpy()
@@ -1430,9 +1427,14 @@ def _build_incommuter_passenger_vehicles(person_ids):
     })
 
 
-def _empty_frames(crs):
-    """Zero-row frames (the flag-OFF / no-agent path) so the merge is a perfect no-op."""
+def _empty_frames(crs, bound_s=None):
+    """Zero-row frames (the flag-OFF / no-agent path) so the merge is a perfect no-op.
+
+    They carry the zero ``day_bound`` report too (``bound_s`` None when the stage is off), so the key is always
+    present (ADR-0172).
+    """
     return dict(
+        day_bound=_plans.empty_day_bound(bound_s),
         persons=pd.DataFrame(columns=["person_id"]),
         trips=pd.DataFrame(columns=["person_id"]),
         activities=pd.DataFrame(columns=["person_id"]),

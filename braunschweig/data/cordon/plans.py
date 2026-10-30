@@ -138,6 +138,16 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
     return donors, tuple(times), stats
 
 
+def empty_day_bound(bound_s=None):
+    """The ``day_bound`` report of a stage that built no agents (stage off, or zero agents drawn).
+
+    Same keys as the report on the normal path, all counts 0, so a consumer can always read
+    ``frames["day_bound"]``; ``bound_s`` is ``None`` when the stage did not resolve its bound (stage off).
+    """
+    return {"n": 0, "n_redrawn": 0, "n_attempts_max": 0, "n_unfit": 0,
+            "bound_s": None if bound_s is None else float(bound_s), "n_days_moved": 0, "n_still_late": 0}
+
+
 def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
                             middle_purpose="work", *, repair_chronology=True):
     """Complete item-nonresponse in donor Home->MIDDLE->Home timings.

@@ -9,11 +9,12 @@ description: 'Generates the cordon-crossing worker agents from BA Pendleratlas f
   else the in-commuter drives from its road gate; counted and logged, reported as pt_connection. The stage therefore
   depends on matsim.runtime.eqasim, matsim.runtime.java, matsim.scenario.supply.processed and
   matsim.scenario.supply.gtfs. Since ADR-0172 (issue #467) the donor days are re-drawn until they fit the effective
-  bound (MAX_PLAN_TIME_SECONDS minus the day-end margin; braunschweig.incommuters.time_redraw_max_attempts, 20,
+  bound (MAX_PLAN_TIME_SECONDS minus the day-end margin; braunschweig.incommuters.time_redraw_max_attempts,
   ASSUMPTION), the whole-day shift of ADR-0154 is the counted last resort and now always runs; the pt chain tries
-  other stations of the Kreis (station_redrawn, braunschweig.incommuters.pt_station_candidates, 5, ASSUMPTION; far
+  other stations of the Kreis (station_redrawn, braunschweig.incommuters.pt_station_candidates, ASSUMPTION; far
   agents only) before to_car; the pt share is re-balanced iteratively with timetable-connected car agents
-  (braunschweig.incommuters.pt_share_tolerance 0.01 relative and rebalance_max_iterations 10, ASSUMPTIONs; global,
+  (braunschweig.incommuters.pt_share_tolerance, relative, and rebalance_max_iterations, ASSUMPTIONs; values in
+  configs/base_bs.yml, defaults and reasons in ADR-0172; global,
   skipped without rng draw when mode_balance or the check is off). Report keys: pt_connection (actions incl.
   station_redrawn, n_station_candidate_days), pt_rebalance (n_pt_target, n_pt_start, n_pt_final, n_iterations,
   n_promoted, n_promoted_unconnected, residual, met, promotion_actions). The realised pt share has no observed

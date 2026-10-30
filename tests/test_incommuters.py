@@ -1223,6 +1223,7 @@ def test_promoted_agents_that_draw_no_station_are_counted_and_stay_car(caplog):
         return original(orig_ars, weighted, rng) if calls["n"] == 1 else [None] * len(orig_ars)
 
     import pytest as _pytest
+    caplog.clear()   # only this run's records: _base_pt_ids above may log, captured when INFO is already on (CI)
     with _pytest.MonkeyPatch.context() as mp, caplog.at_level(logging.INFO):
         mp.setattr(reach, "sample_pt_station_per_agent", draws_nothing_when_promoting)
         frames = _promotion_frames(lambda person, kind, row: person != refused, stops=stops)
@@ -1265,6 +1266,15 @@ def test_day_bound_report_is_always_carried_in_the_frames():
     assert report["n_still_late"] == 0 and report["bound_s"] == 29 * 3600.0
     assert {"n_attempts_max", "n_days_moved"} <= set(report)
     assert "pt_connection" not in frames
+
+
+def test_empty_frames_carry_the_zero_day_bound_report():
+    """The stage-off and zero-agent paths carry day_bound too (ADR-0172: always present)."""
+    from braunschweig.synthesis import incommuters as incommuters_module  # noqa: PLC0415
+    off = incommuters_module._empty_frames("EPSG:25832")["day_bound"]
+    assert off["n"] == 0 and off["n_redrawn"] == 0 and off["n_days_moved"] == 0 and off["bound_s"] is None
+    no_agents = incommuters_module._empty_frames("EPSG:25832", bound_s=29 * 3600.0)["day_bound"]
+    assert no_agents["bound_s"] == 29 * 3600.0 and no_agents["n_still_late"] == 0
 
 
 @pytest.mark.parametrize("key,bad", [

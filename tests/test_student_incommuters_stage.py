@@ -383,6 +383,9 @@ def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
 
     ctx = _mocked_full_ctx()
     _with_late_donor(ctx, keep_fitting_donor=False)
+    # Only the late run's records count: the baseline run above also logs a shift line, which is captured when the
+    # suite's logging configuration already records INFO (it does on CI, depending on test order).
+    caplog.clear()
     with caplog.at_level(logging.INFO, logger="braunschweig"):
         frames = si.execute(ctx)
 
@@ -673,3 +676,10 @@ def test_facilities_and_vehicles_off_path_registers_nothing_for_students(monkeyp
             vehicles=vehicles) or "vehicles.xml.gz")
     veh_mod.execute(veh_ctx)
     assert len(veh_written["vehicles"]) == 0
+
+
+def test_empty_frames_carry_the_zero_day_bound_report():
+    """The off / zero-agent paths carry day_bound too, so frames["day_bound"] is always present (ADR-0172)."""
+    report = si._empty_frames()["day_bound"]
+    assert report["n"] == 0 and report["n_redrawn"] == 0 and report["n_days_moved"] == 0
+    assert report["bound_s"] is None
