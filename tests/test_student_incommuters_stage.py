@@ -325,18 +325,14 @@ def _patch_mocked_geodata(monkeypatch, ctx):
         lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
 
 
-def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
-    """#467 D4: half of the education donors return after the simulated day. Their agents are re-drawn onto
-    the fitting donor, so every trip and activity ends inside the bound and the persons follow the donor."""
-    import logging
-
+def _with_late_donor(ctx, *, keep_fitting_donor):
+    """Add HTS donor 11 whose return arrival lies after the simulated day; optionally drop the fitting donor 10."""
     from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
-    ctx = _mocked_full_ctx()
-    _patch_mocked_geodata(monkeypatch, ctx)
-    _hh, hts_persons, hts_trips = ctx._stages["hts"]
+    _hh, _persons, hts_trips = ctx._stages["hts"]
+    ids = [10, 11] if keep_fitting_donor else [11]
     hts_persons = pd.DataFrame({
-        "person_id": [10, 11], "studies": [True, True], "employed": [False, False]})
+        "person_id": ids, "studies": [True] * len(ids), "employed": [False] * len(ids)})
     late = pd.DataFrame({
         "person_id": [11, 11],
         "departure_time": [30000.0, MAX_PLAN_TIME_SECONDS + 10000.0],
@@ -345,16 +341,59 @@ def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
         "following_purpose": ["education", "home"]})
     ctx._stages["hts"] = (None, hts_persons, pd.concat([hts_trips, late], ignore_index=True))
 
+
+def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
+    """#467 D4: half of the education donors return after the simulated day. Their agents are re-drawn onto
+    the fitting donor, so every trip ends inside the bound and the persons follow the donor."""
+    import logging
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    baseline_ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, baseline_ctx)
+    n_baseline = len(si.execute(baseline_ctx)["persons"])   # the same agent count without any late donor
+
+    ctx = _mocked_full_ctx()
+    _with_late_donor(ctx, keep_fitting_donor=True)
     with caplog.at_level(logging.INFO, logger="braunschweig"):
         frames = si.execute(ctx)
 
     bound_s = MAX_PLAN_TIME_SECONDS - 3600.0
-    assert len(frames["persons"]) == 498
+    assert len(frames["persons"]) == n_baseline
     assert frames["trips"]["arrival_time"].max() <= bound_s
     assert frames["trips"]["departure_time"].max() <= bound_s
     assert set(frames["persons"]["hts_id"]) == {10}   # persons follow the fitting donor
     redraw_lines = [r.message for r in caplog.records if "redrawn" in r.message or "re-drawn" in r.message]
     assert redraw_lines, [r.message for r in caplog.records]
+
+
+def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
+    """#467 D4 last resort: every donor ends after the bound, so no re-draw can fit. No agent is dropped; every
+    day moves earlier as a whole to end by the bound and the moved share is logged as a WARN."""
+    import logging
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    baseline_ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, baseline_ctx)
+    n_baseline = len(si.execute(baseline_ctx)["persons"])
+
+    ctx = _mocked_full_ctx()
+    _with_late_donor(ctx, keep_fitting_donor=False)
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(ctx)
+
+    bound_s = MAX_PLAN_TIME_SECONDS - 3600.0
+    assert len(frames["persons"]) == n_baseline   # nobody dropped
+    trips = frames["trips"]
+    assert trips["arrival_time"].max() <= bound_s
+    # the donor's return arrival is moved earlier (it was MAX_PLAN_TIME_SECONDS + 12000 s)
+    assert (trips["arrival_time"].max() < MAX_PLAN_TIME_SECONDS + 12000.0)
+    shift_lines = [r for r in caplog.records if "days moved earlier as a whole" in r.message]
+    assert len(shift_lines) == 1
+    assert shift_lines[0].levelno == logging.WARNING
+    assert f"{n_baseline}/{n_baseline} days moved" in shift_lines[0].message
+    assert "0 still late" in shift_lines[0].message
 
 
 def test_configure_declares_the_day_bound_keys():
