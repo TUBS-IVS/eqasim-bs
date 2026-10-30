@@ -209,7 +209,10 @@ jobs:
         run: |
           python scripts/claude_review.py cost --execution-file "$RUNNER_TEMP/claude-review-result.json" \
             --tier "$TIER" --model "$MODEL" --json claude-review-cost.json
+      # Also after a failed review step: a run that cost money is then recorded as an incomplete round,
+      # so it counts against the round cap; without a result the step only says so.
       - name: Post review comments
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
