@@ -33,9 +33,10 @@ evidence:
     note: |
       The flag is tri-state (unset = default ON when education_gravity_enabled is on). The named test file is the declared evidence; the byte-identity test function still has to be pinned.
   fallback_rate:
-    instrumented: false
+    instrumented: true
+    log_marker: '[student_incommuters] home placement: in-ring primary'
     note: |
-      No primary-vs-fallback rate log was found in the student in-commuter builder, although the module documents itself as deliberately simpler than the SvB in-commuter path.
+      Two fallbacks, both logged as rates: the home placement (in-ring origin point vs nearest road gate, one INFO line "[student_incommuters] home placement") and, since ADR-0173 (#528), the timetable check of the pt days (connection_found / day_shifted / to_car / kept_no_connection over the pt days, WARNING above braunschweig.incommuters.pt_no_connection_warn_share, reported as frames["pt_connection"]; tests/test_student_incommuters_stage.py test_student_pt_days_*).
   reference:
     kind: none
     note: |

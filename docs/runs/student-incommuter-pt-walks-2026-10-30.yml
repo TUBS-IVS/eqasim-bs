@@ -1,0 +1,73 @@
+id: student-incommuter-pt-walks-2026-10-30
+date: '2026-10-30'
+repository:
+  commit: unknown
+  branch: fix/i528-student-incommuter-pt-check
+  notes: >-
+    scripts/measure_incommuter_pt_walks.py as committed with this manifest (sha256
+    6ccdee1171a548f9d7feb1dad00692981313def09e92fb7c62e269a527834297), copied to felix:~/scratch_i528 and run with the
+    system python3 -I. This manifest is a MEASUREMENT over the prepared (routed) populations of three earlier runs, not
+    a pipeline run. The measured code of each population is the commit in its meta.json: WP-E smoke 3ebe789a
+    (manifest i465-wpe-smoke-1pct-2026-10-23, final launch b8564d02), the 1 % rerun2 a154c42e (an #465 integration
+    branch, the before-arm of gate-facility-links-1pct-2026-10-23), the 25 % parking-v3 arm v3 69fc8fc4 (manifest
+    parking-v3-arms-2026-10-15). None of the three has a timetable check of the student in-commuters' pt days; the
+    25 % run also predates WP-A, WP-B, WP-C (#478, #480, #481) and the #488 check of the employee in-commuters.
+configuration:
+  base: configs/base_bs.yml
+  notes: The configurations of the three measured runs (see their manifests); the measurement has no configuration.
+sampling:
+  rate: 1 % (WP-E smoke, rerun2) and 25 % (parking-v3 arm v3)
+  scope: ZGB-8, full region, cordon on
+  notes: >-
+    Sample counts, never expanded. Student in-commuters (persons with an ic_edu_ facility): 18 in the WP-E smoke,
+    72 in rerun2, 701 in the 25 % run. The WP-E smoke and rerun2 differ in their student count although both are 1 %
+    samples; the cause was not examined here.
+pipeline:
+  targets:
+  - matsim.simulation.prepare
+  notes: >-
+    python3 -I measure_incommuter_pt_walks.py <population> --prefix ic_edu_ over
+    ~/wt-i465-wpe/output_wpe/braunschweig_1pct_i465_wpe_population.xml.gz,
+    ~/wt-i487-rerun2/output_rerun2/braunschweig_1pct_i465_rerun2_population.xml.gz and
+    ~/eqasim-bs/eqasim-data/output_bs_pv3_v3_25pct/braunschweig_pv3_v3_25pct_population.xml.gz (output
+    docs/runs/artifacts/student-incommuter-pt-walks-2026-10-30/student_incommuter_pt_walks.txt, sha256
+    e657c5e849a7073788262e49dfea05b7d04632ea34015b8f3cde4537d49397e2). Method check: the same script with --prefix
+    ic_work_ over the WP-E smoke population reproduces the employee in-commuter figures of the #488 analysis
+    (felix ~/wt-i487/analysis/incommuter_walks_wpe.txt) exactly - 599 in-commuters, 27 long walks of 22 persons
+    (19 of pt commuters, 8 of walk-only plans), the same hours and 8.3 / 51.8 / 107.5 km (output
+    employee_incommuter_pt_walks_wpe_crosscheck.txt, sha256
+    d92f0c2dcc36835810627bbd1e3ab71e77f0bf51db69e2cbc7b5bd61000b260c). Generated 2026-10-30 12:03 CET.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Counts the trips of student in-commuters with a pt commute that the router realised as walks longer than 5 km
+    (the bound of the #488 analysis); a walk trip is attributed to the person's commute mode from the person's other
+    trips, because the router rewrites an unserved pt trip to routing mode walk. A measurement over cached runs
+    (classified smoke: the schema has no measurement class), not a validation. The 1 % samples hold 4 and 7 pt
+    students, too few to estimate a rate on the current code.
+validation:
+- metric: student in-commuters with a pt commute that have at least one walk trip longer than 5 km
+  reference: none (measurement)
+  result: >-
+    WP-E smoke 1 %: 0 of 4. Rerun2 1 %: 1 of 7 (home->outside, departure 06:11, 8.3 km, stamped walkFallbackFrom).
+    25 % parking-v3 arm v3 (older code, see repository.notes): 10 of 100 pt students, 10 long walks.
+- metric: long walks of pt student in-commuters in the 25 % run, by direction, hour and distance
+  reference: none (measurement)
+  result: >-
+    8 education->outside, 1 education->home, 1 outside->home; departures 14 to 23 h (14:1, 15:1, 17:2, 18:2, 19:2,
+    22:1, 23:1); 6.3 / 30.5 / 69.4 km (min / median / max); none stamped walkFallbackFrom (the stamp came with WP-B,
+    after this run). 21 walk trips of 15 pt students in total, 11 of them up to 5 km.
+- metric: student in-commuters whose every trip is a walk (walk_only)
+  reference: none (measurement)
+  result: 0 in all three populations.
+issues:
+- '#528'
+- '#488'
+- '#465'
+decisions:
+- ADR-0153
+source: >-
+  scripts/measure_incommuter_pt_walks.py (sha256 under repository.notes) over the three prepared populations under
+  pipeline.notes; its outputs are committed under docs/runs/artifacts/student-incommuter-pt-walks-2026-10-30/.

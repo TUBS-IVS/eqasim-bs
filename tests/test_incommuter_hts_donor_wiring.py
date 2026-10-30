@@ -8,8 +8,9 @@ class _Rec:
     def __init__(self):
         self.staged = []
 
-    def config(self, k, d=None):
-        # cordon_enabled must return True so both configure()s don't exit early.
+    def config(self, k, d=None, **kw):
+        # cordon_enabled must return True so both configure()s don't exit early. **kw takes synpp's volatile=, which
+        # the timetable check's router declarations pass (incommuters.configure_pt_check, #528).
         if k == "cordon_enabled":
             return True
         return d if d is not None else 0
