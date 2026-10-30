@@ -759,10 +759,10 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         if redrawn.any():
             # Board at the chosen station: home = station, home departure recomputed for its access distance (the
             # candidate carries it, computed with home_departure_s); the day is not shifted (offset 0).
-            home_x, home_y, depart_home = home_x.copy(), home_y.copy(), depart_home.copy()
-            for i in np.flatnonzero(redrawn):
-                station = resolution.stations[i]
-                home_x[i], home_y[i], depart_home[i] = station.x, station.y, station.depart_home_s
+            chosen = resolution.stations
+            home_x = np.where(redrawn, [np.nan if s is None else s.x for s in chosen], home_x)
+            home_y = np.where(redrawn, [np.nan if s is None else s.y for s in chosen], home_y)
+            depart_home = np.where(redrawn, [np.nan if s is None else s.depart_home_s for s in chosen], depart_home)
         pt_report = dict(resolution.report, n_days_moved_before_bound=n_days_moved)
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
 
@@ -1414,7 +1414,11 @@ def configure(context):
             float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
         context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
         # Station re-draw before the switch to car (#467): entry stations tried in total per pt in-commuter.
-        context.config(_pt_connections.KEY_STATION_CANDIDATES, _pt_connections.DEFAULT_STATION_CANDIDATES)
+        n_station_candidates = context.config(_pt_connections.KEY_STATION_CANDIDATES,
+                                              _pt_connections.DEFAULT_STATION_CANDIDATES)
+        if int(n_station_candidates) < 1:
+            raise ValueError(f"{_pt_connections.KEY_STATION_CANDIDATES} must be >= 1 (1 = no station re-draw), "
+                             f"got {n_station_candidates}")
         from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
         _connections.configure(context)
         context.stage("matsim.runtime.eqasim")

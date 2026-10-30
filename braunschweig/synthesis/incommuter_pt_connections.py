@@ -112,7 +112,7 @@ class Resolution:
     actions: np.ndarray       # per agent: one of ACTIONS for a pt agent, None otherwise
     offsets_s: np.ndarray     # per agent: the applied day shift (s), 0 unless day_shifted
     report: dict
-    stations: np.ndarray = None   # per agent: the chosen StationCandidate when station_redrawn, None otherwise
+    stations: np.ndarray | None = None   # per agent: the chosen StationCandidate when station_redrawn, None otherwise
 
 
 def shift_offsets_s(shift_window_s: float, shift_step_s: float) -> list[float]:
@@ -236,14 +236,14 @@ def resolve_pt_days(*, person_ids, is_pt, home_xy, work_xy, depart_home_s, arriv
     report = {"n_pt_days": int(len(pt_positions)),
               "actions": {action: int((actions == action).sum()) for action in ACTIONS},
               "shift_abs_s_median": float(np.median(np.abs(applied[shifted]))) if shifted.any() else None,
-              "n_station_redraw_days": int(len(redraw_positions)),
+              "n_station_candidate_days": int(len(redraw_positions)),
               "shift_window_s": float(shift_window_s), "shift_step_s": float(shift_step_s), "bound_s": float(bound_s)}
     return Resolution(actions=actions, offsets_s=applied, report=report, stations=stations)
 
 
 def log_report(report: dict, warn_share: float) -> None:
-    """One line with the rates over the pt days; WARNING when to_car + kept exceed ``warn_share``, any day is kept,
-    or the station re-draws exceed ``warn_share``."""
+    """One line with the rates over the pt days. Two independent WARNINGs, each with the line: (a) to_car + kept
+    exceed ``warn_share`` or any day is kept; (b) the station re-draws exceed ``warn_share``."""
     n = report["n_pt_days"]
     counts = report["actions"]
     unserved = counts[ACTION_TO_CAR] + counts[ACTION_KEPT]
@@ -252,15 +252,17 @@ def log_report(report: dict, warn_share: float) -> None:
         _LOG_TAG, n, ", ".join("%s %d (%.1f%%)" % (a, counts[a], 100.0 * counts[a] / n if n else 0.0)
                                for a in ACTIONS),
         "n/a" if report["shift_abs_s_median"] is None else "%.0f" % report["shift_abs_s_median"],
-        report.get("n_station_redraw_days", 0))
-    if counts[ACTION_KEPT] or (n and unserved / n > warn_share):
+        report.get("n_station_candidate_days", 0))
+    warn_unserved = bool(counts[ACTION_KEPT] or (n and unserved / n > warn_share))
+    warn_redrawn = bool(n and redrawn / n > warn_share)
+    if warn_unserved:
         logger.warning("%s -- %.1f%% of the days have no timetable connection within the shift window (warn share "
                        "%.1f%%): %s %d drive instead, %s %d are routed as walks", message,
                        100.0 * unserved / n if n else 0.0, 100.0 * warn_share, ACTION_TO_CAR, counts[ACTION_TO_CAR],
                        ACTION_KEPT, counts[ACTION_KEPT])
-    elif n and redrawn / n > warn_share:
+    if warn_redrawn:
         logger.warning("%s -- %.1f%% of the days board at another station of their Kreis than drawn (warn share "
                        "%.1f%%): check the station weighting and the schedule extent", message,
                        100.0 * redrawn / n, 100.0 * warn_share)
-    else:
+    if not (warn_unserved or warn_redrawn):
         logger.info(message)
