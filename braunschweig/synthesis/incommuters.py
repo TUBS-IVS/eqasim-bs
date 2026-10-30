@@ -403,9 +403,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     first moves earlier as a whole (the rule of the population writer's day-end margin,
     ``day_end_margin.late_day_shift_s``), and the pt days are checked against the
     timetable and resolved by ``incommuter_pt_connections.resolve_pt_days`` (#488): a
-    shifted day keeps its durations; a pt in-commuter without a connection within the
-    shift window drives and boards at its road gate (real in-ring origins keep their
-    home), exactly like the pt in-commuters without a station above. The frames then
+    shifted day keeps its durations; a far pt in-commuter (not a real in-ring origin)
+    whose day no shift serves then tries up to ``pt_check.station_candidates - 1`` other
+    stations of its source Kreis in weight order (#467) and boards at the first connected
+    one; one without any connection drives and boards at its road gate (real in-ring
+    origins keep their home), exactly like the pt in-commuters without a station above
+    (the day-bound shift itself always runs, with or without a check). The frames then
     carry the report under ``pt_connection``.
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
@@ -587,6 +590,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     n_pt = len(pt_indices)
     n_pt_at_station = 0   # primary: placed at a real rail station
     n_pt_to_car = 0       # fallback: reassigned to car (no station in source Kreis)
+    # The drawn station per agent, for the station re-draw of the timetable check (#467): its alternatives exclude it.
+    pt_station_ids = np.full(n, None, dtype=object)
 
     if n_pt > 0 and weighted is not None:
         pt_orig_ars = [orig_ars[i] for i in pt_indices]
@@ -598,6 +603,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                 sx, sy = _stop_xy[stop_id]
                 home_x[i] = sx
                 home_y[i] = sy
+                pt_station_ids[i] = stop_id
                 n_pt_at_station += 1
             else:
                 # FALLBACK: source Kreis has no eligible rail station; reassign to car so
@@ -716,12 +722,24 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # 4b) Timetable check of the pt days (#488). Only with a check, so the default path stays byte-identical.
     pt_report = None
     if pt_check is not None:
+        # Station re-draw (#467): the other eligible stations of a far pt agent's source Kreis, in weight order, with
+        # the home departure recomputed for each station's access distance. None when re-drawing is off (1 candidate)
+        # or no station table exists; in-ring origins get none (their home is a Gemeinde point, not a station).
+        station_candidates = None
+        if weighted is not None and int(pt_check.station_candidates) > 1:
+            pt_positions = np.flatnonzero(modes == "pt")
+            station_candidates = _station_candidates(
+                positions=pt_positions, orig_ars=orig_ars, drawn_stop_ids=pt_station_ids, weighted=weighted,
+                gate_xy=np.column_stack([gate_x, gate_y]), arrive_work_s=arrive_work, dist_km=dist_km,
+                is_in_ring=is_in_ring, n_candidates=int(pt_check.station_candidates), speed_kmh=gate_speed_kmh,
+                detour_factor=detour_factor)
         resolution = _pt_connections.resolve_pt_days(
             person_ids=person_ids, is_pt=modes == "pt", home_xy=np.column_stack([home_x, home_y]),
             work_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_work_s=arrive_work,
             depart_work_s=depart_work, arrive_home_s=arrive_home, probe=pt_check.probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
-            bound_s=pt_check.bound_s, car_allowed=pt_check.car_allowed and "car" in commute_modes)
+            bound_s=pt_check.bound_s, car_allowed=pt_check.car_allowed and "car" in commute_modes,
+            station_candidates=station_candidates)
         offset = resolution.offsets_s
         depart_home, arrive_work, depart_work, arrive_home = (
             depart_home + offset, arrive_work + offset, depart_work + offset, arrive_home + offset)
@@ -734,8 +752,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             home_y = np.where(at_gate, gate_y, home_y)
             # The home departure follows the new access distance, as _agent_times seeds it.
             new_access_km = straight_line_distance_km(home_x, home_y, gate_x, gate_y)
-            travel_s = (dist_km + new_access_km) * detour_factor / gate_speed_kmh * 3600.0
-            depart_home = np.where(to_car, np.maximum(0.0, arrive_work - travel_s), depart_home)
+            depart_home = np.where(
+                to_car, home_departure_s(arrive_work, dist_km, new_access_km, gate_speed_kmh, detour_factor),
+                depart_home)
+        redrawn = resolution.actions == _pt_connections.ACTION_STATION_REDRAWN
+        if redrawn.any():
+            # Board at the chosen station: home = station, home departure recomputed for its access distance (the
+            # candidate carries it, computed with home_departure_s); the day is not shifted (offset 0).
+            home_x, home_y, depart_home = home_x.copy(), home_y.copy(), depart_home.copy()
+            for i in np.flatnonzero(redrawn):
+                station = resolution.stations[i]
+                home_x[i], home_y[i], depart_home[i] = station.x, station.y, station.depart_home_s
         pt_report = dict(resolution.report, n_days_moved_before_bound=n_days_moved)
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
 
@@ -897,6 +924,59 @@ def _sample_workplaces(dest_ars, zgb_work, rng):
 
 
 
+def home_departure_s(arrive_work, dist_km, home_to_gate_km, speed_kmh, detour_factor):
+    """Home departure (s) of an in-commuter: the work arrival minus the total teleported travel time.
+
+    The travel time is (home->gate outside access ``home_to_gate_km``) + (gate->work inside estimate ``dist_km``),
+    both straight-line km, times ``detour_factor`` at ``speed_kmh``; never before 0 s. For car ``home_to_gate_km``
+    is 0 (home == gate); for pt it is the boarding-station->gate access, so the departure follows the actual home.
+    MATSim re-times the simulated gate->work leg over the iterations.
+    """
+    if speed_kmh <= 0:
+        raise ValueError("home_departure_s: speed_kmh must be > 0")
+    travel_s = ((np.asarray(dist_km, dtype=float) + np.asarray(home_to_gate_km, dtype=float))
+                * detour_factor) / speed_kmh * 3600.0
+    return np.maximum(0.0, np.asarray(arrive_work, dtype=float) - travel_s)
+
+
+def _station_candidates(*, positions, orig_ars, drawn_stop_ids, weighted, gate_xy, arrive_work_s, dist_km,
+                        is_in_ring, n_candidates, speed_kmh, detour_factor):
+    """Alternative entry stations per far pt agent for the station re-draw of the timetable check (#467).
+
+    For each agent position: the eligible stations (positive weight) of its source Kreis in ``weighted`` (the output
+    of ``weight_entry_stations``, columns ``source_ars5, stop_id, weight, x, y``) without its drawn station, in
+    descending weight (ties by stop id, deterministic), at most ``n_candidates - 1``; each as a
+    :class:`~braunschweig.synthesis.incommuter_pt_connections.StationCandidate` with the home departure recomputed by
+    :func:`home_departure_s` for the station->gate access. Agents with a real in-ring origin (``is_in_ring``) and
+    agents without another station get no entry. Pure (no rng).
+    """
+    n_alternatives = int(n_candidates) - 1
+    if n_alternatives < 1:
+        return {}
+    eligible = weighted[weighted["weight"] > 0].assign(source_ars5=lambda df: df["source_ars5"].astype(str))
+    eligible = (eligible.sort_values(["source_ars5", "weight", "stop_id"], ascending=[True, False, True],
+                                     kind="mergesort")
+                .drop_duplicates(["source_ars5", "stop_id"]))
+    by_kreis = {ars5: list(zip(sub["stop_id"], sub["x"].astype(float), sub["y"].astype(float)))
+                for ars5, sub in eligible.groupby("source_ars5", sort=False)}
+    out = {}
+    for i in positions:
+        i = int(i)
+        if is_in_ring is not None and bool(is_in_ring[i]):
+            continue
+        stations = [st for st in by_kreis.get(str(orig_ars[i]), []) if st[0] != drawn_stop_ids[i]][:n_alternatives]
+        if not stations:
+            continue
+        sx = np.array([st[1] for st in stations])
+        sy = np.array([st[2] for st in stations])
+        access_km = straight_line_distance_km(sx, sy, np.full(len(sx), gate_xy[i, 0]), np.full(len(sy), gate_xy[i, 1]))
+        depart = home_departure_s(np.full(len(sx), arrive_work_s[i]), np.full(len(sx), dist_km[i]), access_km,
+                                  speed_kmh, detour_factor)
+        out[i] = [_pt_connections.StationCandidate(str(st[0]), float(st[1]), float(st[2]), float(d))
+                  for st, d in zip(stations, depart)]
+    return out
+
+
 def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
                  speed_kmh, detour_factor):
     """Per-agent (arrive_work, depart_work, depart_home, arrive_home) seconds.
@@ -923,17 +1003,10 @@ def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
     arrive_work = np.array([times_by_id[pid][1] for pid in donor_ids], dtype=float)
     depart_work = np.array([times_by_id[pid][2] for pid in donor_ids], dtype=float)
     arrive_home = np.array([times_by_id[pid][3] for pid in donor_ids], dtype=float)
-    # Home departure = work arrival minus the total teleported travel time:
-    # (home->gate outside access) + (gate->work inside estimate), each at gate speed
-    # with the detour factor. For car home_to_gate_km is 0, so this is identical to
-    # the previous gate->work-only seed; for PT it adds the boarding-stop->gate
-    # access so the departure is consistent with the actual (moved) home coordinate.
+    # Home departure = work arrival minus the total teleported travel time (home_departure_s).
     if speed_kmh <= 0:
         raise ValueError("_agent_times: speed_kmh must be > 0")
-    dist_km = np.asarray(dist_km, dtype=float)
-    home_to_gate_km = np.asarray(home_to_gate_km, dtype=float)
-    travel_s = ((dist_km + home_to_gate_km) * detour_factor) / speed_kmh * 3600.0
-    depart_home = np.maximum(0.0, arrive_work - travel_s)
+    depart_home = home_departure_s(arrive_work, dist_km, home_to_gate_km, speed_kmh, detour_factor)
     return arrive_work, depart_work, depart_home, arrive_home
 
 
@@ -1340,6 +1413,8 @@ def configure(context):
             float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S, _pt_connections.DEFAULT_SHIFT_WINDOW_S)),
             float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
         context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
+        # Station re-draw before the switch to car (#467): entry stations tried in total per pt in-commuter.
+        context.config(_pt_connections.KEY_STATION_CANDIDATES, _pt_connections.DEFAULT_STATION_CANDIDATES)
         from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
         _connections.configure(context)
         context.stage("matsim.runtime.eqasim")
@@ -1533,4 +1608,5 @@ def _pt_check(context):
     return _pt_connections.PtCheck(
         probe=probe, shift_window_s=float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S)),
         shift_step_s=float(context.config(_pt_connections.KEY_SHIFT_STEP_S)), bound_s=bound_s,
-        warn_share=float(context.config(_pt_connections.KEY_WARN_SHARE)))
+        warn_share=float(context.config(_pt_connections.KEY_WARN_SHARE)),
+        station_candidates=int(context.config(_pt_connections.KEY_STATION_CANDIDATES)))
