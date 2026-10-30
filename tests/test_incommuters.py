@@ -987,5 +987,26 @@ def test_late_donor_days_fit_the_time_bound_with_and_without_pt_check():
     for kwargs in ({}, {"pt_check": PtCheck(probe=probe, bound_s=bound), "mode": "pt"}):
         frames = _late_donor_frames(bound, **kwargs)
         assert len(frames["trips"]) > 0
+        # the re-draw happened: every person follows the fitting donor (age 42), not the 35 h donor
+        assert (frames["persons"]["age"] == 42).all()
         assert frames["trips"]["arrival_time"].max() <= bound
         assert frames["activities"]["end_time"].dropna().max() <= bound
+
+
+def test_day_too_long_for_the_whole_day_shift_is_kept_and_moved_as_far_as_possible():
+    # One donor leaves at 1 h and returns at 40 h: even moved to 0 h it ends after the 29 h bound, so no re-draw
+    # and no shift fits. The agent is never dropped; its day moves earlier by the room it has.
+    gates, assignment, flows, zgb_work, hp, _ht = _minimal_inputs()
+    cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
+    ht = pd.DataFrame([(1, "home", "work", 1 * 3600.0, 2 * 3600.0), (1, "work", "home", 39 * 3600.0, 40 * 3600.0)],
+                      columns=cols)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {"car": 1.0}}, band_edges=(10,), hts_persons=hp,
+        hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+        rng=np.random.default_rng(3), gate_speed_kmh=30.0, time_bound_s=29 * 3600.0,
+        time_redraw_max_attempts=2)
+    assert len(frames["persons"]) > 0
+    assert frames["trips"]["arrival_time"].max() > 29 * 3600.0
+    assert frames["trips"]["arrival_time"].max() < 40 * 3600.0
+    assert frames["trips"].groupby("person_id")["departure_time"].min().min() >= 0.0

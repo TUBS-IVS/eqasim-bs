@@ -115,7 +115,13 @@ def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_atte
         attempts += 1
         fresh = sample_donors(donor_pool, len(late), rng)
         fresh_times = times_of(fresh, late)
-        donors.iloc[late] = fresh.to_numpy()
+        # Column-wise positional write keeps each column's dtype (a row-wise object array would upcast).
+        columns = {}
+        for col in donors.columns:
+            values = donors[col].to_numpy(copy=True)
+            values[late] = fresh[col].to_numpy()
+            columns[col] = values
+        donors = pd.DataFrame(columns, index=donors.index)
         for old, new in zip(times, fresh_times):
             old[late] = np.asarray(new, dtype=float)
         redrawn[late] = True

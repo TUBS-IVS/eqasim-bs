@@ -98,15 +98,15 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
 )
 
 
+#: Re-draws of an in-commuter donor whose day ends after the simulated-day bound (#467); count, >= 0.
+KEY_TIME_REDRAW_MAX_ATTEMPTS = "braunschweig.incommuters.time_redraw_max_attempts"
+DEFAULT_TIME_REDRAW_MAX_ATTEMPTS = 20
+
 # Base monthly household income (EUR) for cross-cordon in-commuters, scaled per agent
 # by the INKAR Kreis factor of the agent's ORIGIN Kreis. This replaces the legacy
 # hardcoded constant "3000" (which gave every in-commuter the same income regardless
 # of where they live). The base equals the former constant so the regional mean is
 # unchanged; only the per-Kreis spread is added.
-#: Re-draws of an in-commuter donor whose day ends after the simulated-day bound (#467); count, >= 0.
-KEY_TIME_REDRAW_MAX_ATTEMPTS = "braunschweig.incommuters.time_redraw_max_attempts"
-DEFAULT_TIME_REDRAW_MAX_ATTEMPTS = 20
-
 INCOMMUTER_BASE_INCOME_EUR = 3000.0
 
 # Fallback-rate threshold above which the INKAR origin-Kreis miss is escalated to a
