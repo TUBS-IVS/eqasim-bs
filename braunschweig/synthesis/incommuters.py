@@ -44,13 +44,14 @@ from braunschweig.data.cordon.plans import (
     assign_fixed_mode, assign_fixed_mode_per_agent, build_incommuter_activities,
     build_incommuter_locations, build_incommuter_trips, extract_commute_times,
     impute_incommuter_times,
-    sample_donors, select_commuter_donors, straight_line_distance_km)
+    redraw_times_within_bound, sample_donors, select_commuter_donors, straight_line_distance_km)
 # Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
 from braunschweig.data.mikrozensus import reference as _mikrozensus_reference
 from braunschweig.data.mikrozensus.reference import bundesland_of_ars
 # Timetable check of the pt days (#488) and the day-end rule it shares with the population writer.
 from braunschweig.matsim.scenario import day_end_margin as _day_end_margin
+from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 from braunschweig.synthesis import incommuter_pt_connections as _pt_connections
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,10 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
 # hardcoded constant "3000" (which gave every in-commuter the same income regardless
 # of where they live). The base equals the former constant so the regional mean is
 # unchanged; only the per-Kreis spread is added.
+#: Re-draws of an in-commuter donor whose day ends after the simulated-day bound (#467); count, >= 0.
+KEY_TIME_REDRAW_MAX_ATTEMPTS = "braunschweig.incommuters.time_redraw_max_attempts"
+DEFAULT_TIME_REDRAW_MAX_ATTEMPTS = 20
+
 INCOMMUTER_BASE_INCOME_EUR = 3000.0
 
 # Fallback-rate threshold above which the INKAR origin-Kreis miss is escalated to a
@@ -329,7 +334,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             mode_balance=False,
                             mode_reference_by_bundesland=None,
                             repair_chronology=True,
-                            pt_check=None):
+                            pt_check=None,
+                            time_bound_s=float(MAX_PLAN_TIME_SECONDS),
+                            time_redraw_max_attempts=DEFAULT_TIME_REDRAW_MAX_ATTEMPTS):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -676,25 +683,39 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # 4) timings from HTS donors. depart_home is seeded so that the outside access
     # (home->gate) plus the inside leg (gate->work) lands at the donor work arrival;
     # MATSim then re-times the simulated gate->work leg over the iterations.
-    donors = sample_donors(select_commuter_donors(hts_persons, hts_trips, person_col), n, rng)
-    arrive_work, depart_work, depart_home, arrive_home = _agent_times(
-        donors, hts_trips, person_col, dist_km, home_to_gate_km,
-        gate_speed_kmh, detour_factor)
+    # A donor whose day ends after the bound (``time_bound_s``: the simulated day minus the day-end margin) is
+    # re-drawn up to ``time_redraw_max_attempts`` times (#467); the persons follow the final donor.
+    dist_km_all, home_to_gate_km_all = np.asarray(dist_km, dtype=float), np.asarray(home_to_gate_km, dtype=float)
+    donors, (arrive_work, depart_work, depart_home, arrive_home), redraw_stats = redraw_times_within_bound(
+        select_commuter_donors(hts_persons, hts_trips, person_col), n, rng,
+        lambda d, pos: _agent_times(d, hts_trips, person_col, dist_km_all[pos], home_to_gate_km_all[pos],
+                                    gate_speed_kmh, detour_factor),
+        bound_s=float(time_bound_s), max_attempts=int(time_redraw_max_attempts))
+
+    # 4a) Impute the missing donor times (assemble_incommuter_core_frames imputes the same way; on complete times
+    # the second imputation changes nothing). A day that still ends after the bound moves earlier as a whole, as
+    # the population writer would move it (always, not only with a timetable check): the last resort for days no
+    # re-draw fitted. The timetable is then asked at the times that are finally written. Never drops an agent.
+    depart_home, arrive_work, depart_work, arrive_home = impute_incommuter_times(
+        depart_home, arrive_work, depart_work, arrive_home, middle_purpose="work",
+        repair_chronology=repair_chronology)
+    move_s, _late, _unresolved = _day_end_margin.late_day_shift_s(
+        depart_home, arrive_home, target_s=float(time_bound_s))
+    depart_home, arrive_work, depart_work, arrive_home = (
+        depart_home - move_s, arrive_work - move_s, depart_work - move_s, arrive_home - move_s)
+    n_days_moved = int((move_s > 0).sum())
+    n_still_late = int(_unresolved.sum())
+    shift_message = (f"[braunschweig.incommuters] day bound {float(time_bound_s):.0f} s: "
+                     f"{n_days_moved}/{n} days moved earlier as a whole "
+                     f"({100.0 * n_days_moved / max(n, 1):.1f}%), {n_still_late} still late")
+    if n_days_moved / max(n, 1) > 0.05 or n_still_late:
+        logger.warning(shift_message)
+    else:
+        logger.info(shift_message)
 
     # 4b) Timetable check of the pt days (#488). Only with a check, so the default path stays byte-identical.
     pt_report = None
     if pt_check is not None:
-        # The times the frames will carry (assemble_incommuter_core_frames imputes the same way; on complete
-        # times the second imputation changes nothing).
-        depart_home, arrive_work, depart_work, arrive_home = impute_incommuter_times(
-            depart_home, arrive_work, depart_work, arrive_home, middle_purpose="work",
-            repair_chronology=repair_chronology)
-        # A day that ends after the bound moves earlier first, as the population writer would move it; the
-        # timetable is then asked at the times that are finally written.
-        move_s, _late, _unresolved = _day_end_margin.late_day_shift_s(
-            depart_home, arrive_home, target_s=float(pt_check.bound_s))
-        depart_home, arrive_work, depart_work, arrive_home = (
-            depart_home - move_s, arrive_work - move_s, depart_work - move_s, arrive_home - move_s)
         resolution = _pt_connections.resolve_pt_days(
             person_ids=person_ids, is_pt=modes == "pt", home_xy=np.column_stack([home_x, home_y]),
             work_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_work_s=arrive_work,
@@ -715,7 +736,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             new_access_km = straight_line_distance_km(home_x, home_y, gate_x, gate_y)
             travel_s = (dist_km + new_access_km) * detour_factor / gate_speed_kmh * 3600.0
             depart_home = np.where(to_car, np.maximum(0.0, arrive_work - travel_s), depart_home)
-        pt_report = dict(resolution.report, n_days_moved_before_bound=int((move_s > 0).sum()))
+        pt_report = dict(resolution.report, n_days_moved_before_bound=n_days_moved)
         _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
 
     # Home stays a normal "home" activity here. The eqasim scenario cutter converts
@@ -1310,13 +1331,15 @@ def configure(context):
     # portal pt stays. The day-end margin keys are read for the bound of the shift (the population writer moves a
     # day that ends later than the end of the simulated day minus the margin).
     context.config(_pt_connections.KEY_ENABLED, _pt_connections.DEFAULT_ENABLED)
+    # Donor re-draw until the day fits the bound (#467); the bound needs the day-end margin keys in any case.
+    context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS, DEFAULT_TIME_REDRAW_MAX_ATTEMPTS)
+    context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
+    context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
     if context.config(_pt_connections.KEY_ENABLED):
         _pt_connections.shift_offsets_s(
             float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S, _pt_connections.DEFAULT_SHIFT_WINDOW_S)),
             float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
         context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
-        context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
-        context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
         from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
         _connections.configure(context)
         context.stage("matsim.runtime.eqasim")
@@ -1457,10 +1480,21 @@ def execute(context):
         mode_reference_by_bundesland=mode_reference_by_bundesland,
         repair_chronology=context.config("cordon_incommuter_time_chronology"),
         pt_check=_pt_check(context) if context.config(_pt_connections.KEY_ENABLED) else None,
+        time_bound_s=_time_bound_s(context),
+        time_redraw_max_attempts=int(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS)),
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
     return frames
+
+
+def _time_bound_s(context):
+    """The latest allowed return arrival (s) of an in-commuter day: the end of the simulated day minus the day-end
+    margin when it is enabled. One number for the donor re-draw (``time_bound_s``) and ``PtCheck.bound_s``."""
+    bound_s = float(MAX_PLAN_TIME_SECONDS)
+    if context.config(_day_end_margin.KEY_ENABLED):
+        bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
+    return bound_s
 
 
 def _pt_check(context):
@@ -1473,7 +1507,6 @@ def _pt_check(context):
     from braunschweig.data.transit import connections  # noqa: PLC0415
     from braunschweig.data.transit.schedule import read_schedule  # noqa: PLC0415
     from braunschweig.matsim.simulation import plan_check  # noqa: PLC0415
-    from braunschweig.popsim import plan_validation  # noqa: PLC0415
 
     supply = context.stage("matsim.scenario.supply.processed")
     supply_dir = context.path("matsim.scenario.supply.processed")
@@ -1496,9 +1529,7 @@ def _pt_check(context):
         return connections.connection_mask(trips, legs, inside_stop_ids=all_stop_ids, walk_max_m=walk_max_m,
                                            task_ids=tasks["identifier"].astype(str))
 
-    bound_s = float(plan_validation.MAX_PLAN_TIME_SECONDS)
-    if context.config(_day_end_margin.KEY_ENABLED):
-        bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
+    bound_s = _time_bound_s(context)
     return _pt_connections.PtCheck(
         probe=probe, shift_window_s=float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S)),
         shift_step_s=float(context.config(_pt_connections.KEY_SHIFT_STEP_S)), bound_s=bound_s,

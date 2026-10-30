@@ -85,6 +85,54 @@ def sample_donors(donors, n, rng):
     return donors.iloc[idx].reset_index(drop=True)
 
 
+def redraw_times_within_bound(donor_pool, n, rng, times_of, *, bound_s, max_attempts):
+    """Draw ``n`` donors and re-draw those whose day ends after ``bound_s`` (s).
+
+    ``times_of(donors, positions)`` returns the per-agent time arrays of the donor frame ``donors`` standing for
+    the agent ``positions`` (int array); the LAST array is the chain end (return arrival, s). The initial draw is
+    ``sample_donors(donor_pool, n, rng)`` (same rng consumption as a plain draw when nothing is late). Late means a
+    finite end after ``bound_s``; NaN ends count as fitting (imputation runs later). Late agents are re-sampled
+    with ``sample_donors`` for up to ``max_attempts`` rounds; the re-drawn donors REPLACE those agents' rows in the
+    returned donor frame, so persons follow the final donor. What is still late afterwards is left unchanged
+    (no clamp) and counted ``n_unfit``; the caller moves such days as a whole.
+
+    Returns ``(donors, times, stats)`` with stats ``{"n", "n_redrawn", "n_attempts_max", "n_unfit"}``.
+    """
+    if max_attempts < 0:
+        raise ValueError(f"redraw_times_within_bound: max_attempts must be >= 0, got {max_attempts}")
+    donors = sample_donors(donor_pool, n, rng)
+    positions = np.arange(n)
+    times = [np.asarray(a, dtype=float).copy() for a in times_of(donors, positions)]
+
+    def _late():
+        with np.errstate(invalid="ignore"):
+            return np.flatnonzero(times[-1] > bound_s)
+
+    late = _late()
+    redrawn = np.zeros(n, dtype=bool)
+    attempts = 0
+    while len(late) and attempts < max_attempts:
+        attempts += 1
+        fresh = sample_donors(donor_pool, len(late), rng)
+        fresh_times = times_of(fresh, late)
+        donors.iloc[late] = fresh.to_numpy()
+        for old, new in zip(times, fresh_times):
+            old[late] = np.asarray(new, dtype=float)
+        redrawn[late] = True
+        late = _late()
+    stats = {"n": int(n), "n_redrawn": int(redrawn.sum()), "n_attempts_max": int(attempts),
+             "n_unfit": int(len(late))}
+    rate = 100.0 * stats["n_redrawn"] / n if n else 0.0
+    message = (f"[braunschweig.cordon.plans] in-commuter day bound {bound_s:.0f} s: primary "
+               f"{n - stats['n_redrawn']}/{n} fit at the first draw, re-drawn {stats['n_redrawn']} ({rate:.1f}%, "
+               f"max attempts used {attempts}/{max_attempts}), still unfit {stats['n_unfit']}")
+    if stats["n_unfit"] or rate > 5.0:
+        LOGGER.warning(message)
+    else:
+        LOGGER.info(message)
+    return donors, tuple(times), stats
+
+
 def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
                             middle_purpose="work", *, repair_chronology=True):
     """Complete item-nonresponse in donor Home->MIDDLE->Home timings.

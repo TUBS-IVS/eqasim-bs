@@ -124,3 +124,41 @@ def test_assign_fixed_mode_per_agent_length_mismatch_raises():
     band_of = lambda d: "any"
     with pytest.raises(ValueError):
         assign_fixed_mode_per_agent([1.0, 2.0], [ref], band_of, np.random.default_rng(0))
+
+
+def _late_pool_times_of(donors, positions):
+    """Chain end per donor: donor 1 ends at 20 h, donor 2 at 35 h (seconds)."""
+    ends = np.where(donors["person_id"].to_numpy() == 1, 20 * 3600.0, 35 * 3600.0)
+    return (ends - 3600.0, ends)
+
+
+def test_redraw_times_within_bound_replaces_late_donors():
+    from braunschweig.data.cordon.plans import redraw_times_within_bound
+    pool = pd.DataFrame({"person_id": [1, 2]})
+    bound = 30 * 3600.0
+    donors, times, stats = redraw_times_within_bound(
+        pool, 50, np.random.default_rng(1), _late_pool_times_of, bound_s=bound, max_attempts=20)
+    assert len(donors) == 50 and times[-1].max() <= bound
+    # persons follow the final donor
+    assert (donors["person_id"].to_numpy() == 1).all()
+    assert stats["n"] == 50 and stats["n_redrawn"] > 0 and stats["n_unfit"] == 0
+
+
+def test_redraw_times_within_bound_counts_unfit_and_does_not_clamp():
+    from braunschweig.data.cordon.plans import redraw_times_within_bound
+    pool = pd.DataFrame({"person_id": [2]})
+    donors, times, stats = redraw_times_within_bound(
+        pool, 50, np.random.default_rng(1), _late_pool_times_of, bound_s=30 * 3600.0, max_attempts=3)
+    assert stats["n_unfit"] == 50
+    assert (times[-1] == 35 * 3600.0).all()
+
+
+def test_redraw_times_within_bound_nan_end_fits_and_rng_unchanged_when_nothing_late():
+    from braunschweig.data.cordon.plans import redraw_times_within_bound
+    pool = pd.DataFrame({"person_id": [1, 2, 3]})
+    times_of = lambda d, pos: (np.full(len(d), np.nan),)  # noqa: E731
+    rng, ref = np.random.default_rng(5), np.random.default_rng(5)
+    donors, _, stats = redraw_times_within_bound(pool, 10, rng, times_of, bound_s=1.0, max_attempts=5)
+    assert stats["n_redrawn"] == 0 and stats["n_unfit"] == 0
+    assert donors.equals(sample_donors(pool, 10, ref))
+    assert rng.integers(0, 1000) == ref.integers(0, 1000)

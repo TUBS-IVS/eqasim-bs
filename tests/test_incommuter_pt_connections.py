@@ -96,7 +96,8 @@ def _frames(probe, *, mode_reference, return_h=(17.0, 18.0)):
         flows=flows, zgb_kreise={"03101"}, sampling_rate=0.005, gates=gates, assignment=assignment,
         zgb_work=zgb_work, mode_reference=mode_reference, band_edges=(10,), hts_persons=hp, hts_trips=ht,
         person_col="person_id", n_residents=100, n_resident_households=40, rng=np.random.default_rng(1),
-        gate_speed_kmh=30.0, pt_entry_stops=pt_stops, pt_check=pt_check)
+        gate_speed_kmh=30.0, pt_entry_stops=pt_stops, pt_check=pt_check,
+        time_bound_s=29 * H)  # the stage passes the same number as PtCheck.bound_s
 
 
 def test_the_frames_carry_the_shifted_day_of_a_pt_in_commuter():

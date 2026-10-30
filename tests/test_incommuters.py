@@ -956,3 +956,36 @@ def test_configure_defaults_real_origin_and_mode_balance_true():
         f"cordon_incommuter_mode_balance default must be True (new feature default-on), "
         f"got {defaults_captured['cordon_incommuter_mode_balance']!r}"
     )
+
+
+def _late_donor_frames(time_bound_s, pt_check=None, mode="car"):
+    """Frames from a donor pool of one normal and one 35 h-late donor."""
+    gates, assignment, flows, zgb_work, _hp, _ht = _minimal_inputs()
+    hts_persons = pd.DataFrame({"person_id": [1, 2], "employed": [True, True],
+                                "age": [42, 30], "sex": ["female", "male"]})
+    cols = ["person_id", "preceding_purpose", "following_purpose", "departure_time", "arrival_time"]
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0), (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+        (2, "home", "work", 30 * 3600.0, 31 * 3600.0), (2, "work", "home", 34 * 3600.0, 35 * 3600.0),
+    ], columns=cols)
+    return build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {mode: 1.0}}, band_edges=(10,),
+        hts_persons=hts_persons, hts_trips=hts_trips, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=np.random.default_rng(3),
+        gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema() if mode == "pt" else None,
+        time_bound_s=time_bound_s, pt_check=pt_check)
+
+
+def test_late_donor_days_fit_the_time_bound_with_and_without_pt_check():
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    bound = 29 * 3600.0
+
+    def probe(tasks):
+        return pd.Series(True, index=tasks["identifier"].astype(str).to_numpy())
+
+    for kwargs in ({}, {"pt_check": PtCheck(probe=probe, bound_s=bound), "mode": "pt"}):
+        frames = _late_donor_frames(bound, **kwargs)
+        assert len(frames["trips"]) > 0
+        assert frames["trips"]["arrival_time"].max() <= bound
+        assert frames["activities"]["end_time"].dropna().max() <= bound
