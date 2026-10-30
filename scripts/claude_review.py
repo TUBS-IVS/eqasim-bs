@@ -734,16 +734,16 @@ def round_delta(args, placed: list, resolved: list, result: dict, complete: bool
 def summary_markdown(structured: dict, inline: list, summary_only: list, tier: str, sha: str,
                      cost_line: str, state: dict | None = None, round_number: int = 1, still_open: list = (),
                      resolved: list = (), cap_reached: bool = False, dropped: int = 0,
-                     force_label: str = "claude-review", fallback: str = "") -> str:
+                     force_label: str = "claude-review", fallback: str = "", failure: str = "") -> str:
     findings = _by_severity(structured["findings"])
     parts = [SUMMARY_MARKER, f"## Claude review (round {round_number}, {tier} tier, commit {sha[:12]})", "",
-             structured["summary"], ""]
+             f"**Review failed:** {failure}" if failure else structured["summary"], ""]
     if fallback:
         parts += [f"**Fallback:** {fallback}.", ""]
     if findings:
         parts += ["| Severity | Scope | Where | Finding |", "|---|---|---|---|"]
         parts += [f"| {f['severity']} | {_scope(f)} | `{f['path']}:{f['line']}` | {f['title']} |" for f in findings]
-    else:
+    elif not failure:
         parts.append("No new findings." if round_number > 1 else "No findings.")
     if summary_only:
         parts += ["", "**Not on a changed line** (could not be posted inline):", ""]
@@ -1126,12 +1126,27 @@ def _cmd_review(args) -> int:
 
 
 def _cmd_post(args) -> int:
-    result = json.loads(Path(args.result).read_text(encoding="utf-8"))
+    try:
+        result = json.loads(Path(args.result).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        # The workflow runs `post` after a failed review step too, which may have written no result.
+        print(f"::error::Nothing to post: no review result ({error})")
+        return 1
+    failure = ""
     try:
         structured = read_findings(result)
     except ValueError as error:
         print(f"::error::Nothing to post: {error}")
-        return 1
+        if float(result.get("total_cost_usd") or 0) <= 0:
+            return 1
+        # The run cost money but returned no findings (turn or budget cap, API error). It is still
+        # recorded, as an incomplete round with its cost, so it counts against rereview.max_rounds:
+        # otherwise a PR whose review fails every time is reviewed, and billed, again on every push
+        # (Claude review finding on a copy of this script). The step still fails.
+        subtype = str(result.get("subtype") or "unknown")
+        failure = (f"the run ended without a review ({'error' if subtype == 'success' else subtype}): {error}. "
+                   "Its cost counts against the automatic rounds; earlier findings stay open.")
+        structured = {"summary": "", "findings": [], "previous": [], "coverage_complete": False}
     config = {}
     if args.config:
         import yaml
@@ -1141,7 +1156,7 @@ def _cmd_post(args) -> int:
     if "coverage_complete" not in structured:
         print("::warning::The result does not say whether the whole diff was read; the round counts as complete.")
     complete = bool(structured.get("coverage_complete", True))
-    if not complete:
+    if not complete and not failure:
         print("::warning::The model did not read the whole diff; this round does not move the reviewed commit, "
               "so the next round reviews the same files again.")
     if open_previous and "previous" not in structured:
@@ -1194,7 +1209,7 @@ def _cmd_post(args) -> int:
         fallback = json.loads((Path(args.interdiff_dir) / "interdiff.json").read_text(encoding="utf-8")).get("fallback", "")
     body = summary_markdown(dict(structured, findings=findings), inline, summary_only, args.tier, args.sha,
                             cost_line, preview, args.round, still_open, resolved, cap_reached, len(dropped),
-                            config.get("labels", {}).get("force", "claude-review"), fallback)
+                            config.get("labels", {}).get("force", "claude-review"), fallback, failure)
     if args.dry_run:
         print("[claude-review] Summary comment:")
         print(body)
@@ -1207,13 +1222,13 @@ def _cmd_post(args) -> int:
         Path(args.record).write_text(json.dumps(record, indent=2), encoding="utf-8")
         print(f"[claude-review] findings record written to {args.record}")
     if args.dry_run:
-        return 0
+        return 1 if failure else 0
     head = _gh_api([f"repos/{args.repo}/pulls/{args.pr}", "--jq", ".head.sha"]).strip()
     upsert_summary(args.repo, args.pr, args.bot_login, body, stale=bool(head) and head != args.sha, state_delta=delta)
     # Only after the state is written: a thread resolved before a failed state write would read as
     # resolved by a human next time, i.e. "dismissed" instead of "resolved".
     _close_resolved(args, resolved)
-    return 0
+    return 1 if failure else 0
 
 
 def _close_resolved(args, resolved: list) -> None:

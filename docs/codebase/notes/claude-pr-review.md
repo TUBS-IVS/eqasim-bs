@@ -6,9 +6,10 @@
 requests to `main`. It posts one PR review with inline comments and keeps one summary
 comment per PR up to date. It is **not** a required check: it never blocks a merge and
 never replaces the [verification gate](../TESTING.md#required-agent-verification-gate).
-Nothing here touches model code or scientific output. `TUBS-IVS/eqasim-java-bs` runs the
-same mechanism with its own config and prompt and a copy of the script
-(`.github/scripts/claude_review.py` there; change it here first, then copy it).
+Nothing here touches model code or scientific output. `TUBS-IVS/eqasim-java-bs` and
+private repositories of the group run the same mechanism with their own config and prompt and a
+copy of the script (`.github/scripts/claude_review.py` there; change it here first, then copy it
+to each of them).
 
 Prerequisite: the repository secret `ANTHROPIC_API_KEY`, a key of a **workspace** of the
 Console organization (an organization-level key fails with "not scoped to a workspace").
@@ -127,6 +128,12 @@ but findings are open. The `docs/` branch rule applies as in the first round.
 - A result without `coverage_complete` is counted as complete, with a `::warning::`; a result
   with `coverage_complete: false` is recorded with `complete: false` and does not advance
   the reviewed commit.
+- A run that cost money but returned no findings (turn or budget cap, API error): `post`
+  (which the workflow runs `if: always()`) records it as a round with `complete: false` and its
+  cost, so it counts against the cap; the summary says `**Review failed:**` with the reason, the
+  open findings stay open, and the step still fails. A failed run without cost records nothing
+  (Claude review finding on a copy of this script: such runs were never recorded, so a
+  review that failed every time ran, and billed, on every push).
 
 **The run.** `review` also gets `--state`, `--interdiff-dir`, `--diff-source`, `--mode`,
 `--round` and `GH_TOKEN`: it fetches the PR title and body (`gh api`) and `review_prompt`
@@ -186,7 +193,8 @@ the bot PRs of the generated views (ADR-0168) create no run. Label events still 
   the oldest summary keeps the current body and any duplicate is deleted. A run whose commit
   is no longer the PR head leaves an existing summary alone, so a slower review of an older
   commit cannot replace the newer one; its inline comments are still posted. A failed run
-  (`is_error`) posts nothing and fails the step with the API's error text. The diff is read
+  (`is_error`, or no structured output) posts no findings and fails the step with the error
+  text; when it cost money its round is still recorded (see the fallbacks above). The diff is read
   with `errors="replace"`: a non-UTF-8 byte (e.g. in a Latin-1 data file) must not crash
   the review.
   On a further round the model reads the numbered interdiff (`diff_source` `interdiff`,

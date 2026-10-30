@@ -217,6 +217,48 @@ def test_post_refuses_a_failed_run(tmp_path, capsys):
     assert "Credit balance is too low" in capsys.readouterr().out
 
 
+def test_a_failed_run_that_cost_money_is_recorded_and_counts_against_the_cap(tmp_path, monkeypatch, capsys):
+    # Claude review finding on a copy of this script: a run cut off by its turn or budget cap (or
+    # an API error) never reached the state, so the round cap did not bound failing runs and a PR whose
+    # review failed every time was reviewed, and billed, again on every push.
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(_state_with_open()), encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.write_text(json.dumps({"type": "result", "subtype": "error_max_turns", "is_error": False,
+                                  "total_cost_usd": 0.42, "num_turns": 30}), encoding="utf-8")
+    written = []
+
+    def fake_gh_api(args, payload=None):
+        if args[0].endswith("/pulls/5") and "--jq" in args:
+            return "d" * 40
+        if args[0].endswith("/issues/5/comments") and "--method" not in args:
+            return "101"
+        if args[0].endswith("/issues/comments/101") and "--method" not in args:
+            return json.dumps({"body": cr.SUMMARY_MARKER + "\nround 1 text\n" + cr.encode_state(_state_with_open())})
+        if "PATCH" in args:
+            written.append(payload["body"])
+        return "{}"
+
+    monkeypatch.setattr(cr, "_gh_api", fake_gh_api)
+    monkeypatch.setenv("GITHUB_RUN_ID", "78")
+    post = ["post", "--config", str(_REPO / ".github" / "claude-review.yml"), "--repo", "o/r", "--pr", "5",
+            "--tier", "full", "--sha", "d" * 40, "--diff-file", str(result), "--state", str(state_path),
+            "--mode", "rereview", "--round", "2"]
+    assert cr.main(post + ["--result", str(result)]) == 1          # the failure stays visible in CI
+    state = cr.decode_state(written[-1])
+    assert state["rounds"][-1] == {"round": 2, "sha": "d" * 40, "tier": "full", "run_id": "78", "automatic": True,
+                                   "complete": False, "cost_usd": 0.42, "findings": 0}
+    assert cr.automatic_rounds(state) == 2 and cr.last_complete_sha(state) == "c" * 40
+    assert [f["status"] for f in state["findings"]] == ["open", "open"]
+    visible = cr.strip_state(written[-1])
+    assert "error_max_turns" in visible and "Tail unused" in visible  # names the failure, keeps the open findings
+
+    # The workflow now runs `post` after a failed review step too, also when no result was written.
+    written.clear()
+    assert cr.main(post + ["--result", str(tmp_path / "missing.json")]) == 1
+    assert "no review result" in capsys.readouterr().out and not written
+
+
 def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
     review_cfg = CONFIG["review"]
     template = (_REPO / review_cfg["prompt_file"]).read_text(encoding="utf-8")
@@ -858,6 +900,9 @@ def test_committed_workflow_wires_the_rounds_and_ignores_the_generated_views():
         assert "--state" in step_text and "--interdiff-dir" in step_text   # post shows the fallback in the summary
     classify_job = text.split("  classify:", 1)[1].split("  review:", 1)[0]
     assert "pull-requests: read" in classify_job
+    # A failed review step must still reach `post`, which records the round so it counts against the cap.
+    post_step = next(s for s in yaml.safe_load(text)["jobs"]["review"]["steps"] if "claude_review.py post " in s.get("run", ""))
+    assert post_step.get("if") == "always()"
     # Label names stay in .github/claude-review.yml only. Match them as standalone words: the workflow
     # legitimately contains "claude-review" inside the config path, the concurrency group and the
     # artifact names (the session retro downloads "claude-review-findings-*").
