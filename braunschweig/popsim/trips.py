@@ -1384,7 +1384,9 @@ def build_validated_trip_table(
         The built (and optionally repaired/resampled) trip table and the
         validation report reflecting the final state.
     """
-    from braunschweig.popsim.plan_validation import PlanValidator, resample_chains
+    from braunschweig.popsim.plan_validation import (
+        PlanValidator, enforce_purpose_chain_consistency, resample_chains,
+    )
 
     if resample and not repair:
         raise ValueError(
@@ -1441,6 +1443,11 @@ def build_validated_trip_table(
             random_seed=random_seed,
             resample_chains=resample_chains,
         )
+
+    # Issue #258 (ADR-0174): repair, closure append and resample all ran AFTER the
+    # diary build's fix_activity_types and can re-break the purpose chain; enforce it
+    # once more on the final chain order and assert it, as eqasim's hts.check does.
+    table = enforce_purpose_chain_consistency(table, log_tag="[popsim.trips]")
 
     report = validator.validate_trips(table)
     return table, report

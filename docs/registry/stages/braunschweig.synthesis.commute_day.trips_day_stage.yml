@@ -43,6 +43,7 @@ decisions:
 - ADR-0114
 - ADR-0128
 - ADR-0141
+- ADR-0174
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
