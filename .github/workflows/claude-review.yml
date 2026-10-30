@@ -52,6 +52,7 @@ jobs:
       mode: ${{ steps.gate.outputs.mode }}
       diff_source: ${{ steps.gate.outputs.diff_source }}
       round: ${{ steps.gate.outputs.round }}
+      fable: ${{ steps.fable.outputs.active }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,11 +65,15 @@ jobs:
       # TEMPORARY until 2026-10-31 (the owner's choice: spend the month's leftover API credits):
       # every review tier runs on Claude Fable 5.1 (10/50 USD per million tokens, 2.5x Opus 5.5)
       # with 25/50 turns and a cap of 100 USD per run. The step rewrites only this run's copy of
-      # the gate config; from 2026-11-01 (Europe/Berlin) it does nothing, the committed tiers
-      # apply again, and the step can be deleted.
+      # the gate config, and it decides once per run: the review job applies the same decision from
+      # the `fable` output, so a run that straddles midnight keeps one model and its cost record
+      # names it. From 2026-11-01 (Europe/Berlin) the committed tiers apply again; then delete this
+      # step, its twin in the review job and the `fable` output.
       - name: Fable tiers until 2026-10-31
+        id: fable
         run: |
           if [[ "$(TZ=Europe/Berlin date +%F)" < "2026-11-01" ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
             python - <<'PY'
           import yaml
           path = ".github/claude-review.yml"
@@ -80,6 +85,8 @@ jobs:
               yaml.safe_dump(config, handle, sort_keys=False)
           PY
             echo "Fable tiers until 2026-10-31: claude-fable-5-1, 25/50 turns, 100 USD cap per run." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Decide whether and how to review (no model call)
@@ -158,14 +165,12 @@ jobs:
           pip install pyyaml
           npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
           claude --version
-      # TEMPORARY until 2026-10-31 (the owner's choice: spend the month's leftover API credits):
-      # every review tier runs on Claude Fable 5.1 (10/50 USD per million tokens, 2.5x Opus 5.5)
-      # with 25/50 turns and a cap of 100 USD per run. The step rewrites only this run's copy of
-      # the gate config; from 2026-11-01 (Europe/Berlin) it does nothing, the committed tiers
-      # apply again, and the step can be deleted.
+      # The classify job's Fable decision (see the step there), applied to this job's checkout.
       - name: Fable tiers until 2026-10-31
+        env:
+          FABLE: ${{ needs.classify.outputs.fable }}
         run: |
-          if [[ "$(TZ=Europe/Berlin date +%F)" < "2026-11-01" ]]; then
+          if [[ "$FABLE" == "true" ]]; then
             python - <<'PY'
           import yaml
           path = ".github/claude-review.yml"
