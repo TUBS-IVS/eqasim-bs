@@ -626,6 +626,10 @@
   ],
   [
    "matsim.runtime.eqasim",
+   "braunschweig.synthesis.student_incommuters"
+  ],
+  [
+   "matsim.runtime.eqasim",
    "matsim.output"
   ],
   [
@@ -679,6 +683,10 @@
   [
    "matsim.runtime.java",
    "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "matsim.runtime.java",
+   "braunschweig.synthesis.student_incommuters"
   ],
   [
    "matsim.runtime.java",
@@ -770,6 +778,10 @@
   ],
   [
    "matsim.scenario.supply.gtfs",
+   "braunschweig.synthesis.student_incommuters"
+  ],
+  [
+   "matsim.scenario.supply.gtfs",
    "matsim.scenario.supply.processed"
   ],
   [
@@ -799,6 +811,10 @@
   [
    "matsim.scenario.supply.processed",
    "braunschweig.synthesis.portal_trips.stage"
+  ],
+  [
+   "matsim.scenario.supply.processed",
+   "braunschweig.synthesis.student_incommuters"
   ],
   [
    "matsim.scenario.supply.processed",

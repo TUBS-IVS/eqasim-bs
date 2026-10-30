@@ -4,13 +4,18 @@ layer: cordon
 description: "Adds university student in-commuters from LSN enrollment with DESTATIS origin structure
   (#140). Since ADR-0172 (#467) the student days are re-drawn from the donor pool until they fit the effective
   bound (braunschweig.incommuters.time_redraw_max_attempts, shared key, ASSUMPTION; value in configs/base_bs.yml); the whole-day shift of ADR-0154
-  is the counted last resort."
+  is the counted last resort. Since ADR-0173 (#528) the pt days are checked against the timetable with the chain
+  of the commuter in-commuters (braunschweig.synthesis.incommuter_pt_connections.check_pt_days, the same switch
+  braunschweig.incommuters.pt_connection_check.enabled): the whole day moves first, else the student drives from
+  its home; counted and logged, reported as pt_connection. The stage therefore depends on the eqasim jar, the Java
+  runtime and the supply stages."
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/synthesis/student_incommuters.py
+- braunschweig/synthesis/incommuter_pt_connections.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -28,3 +33,4 @@ decisions:
 - ADR-0146
 - ADR-0154
 - ADR-0172
+- ADR-0173

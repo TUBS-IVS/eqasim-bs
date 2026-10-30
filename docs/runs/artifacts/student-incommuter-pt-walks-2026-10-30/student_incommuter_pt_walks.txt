@@ -1,0 +1,46 @@
+population: /home/felix/wt-i465-wpe/output_wpe/braunschweig_1pct_i465_wpe_population.xml.gz
+in-commuters (facility prefix ic_edu_): 18
+  by routing modes of their plan: {'car': 14, 'pt': 4}
+  by commute mode (from the trips that are not walks): {'car': 14, 'pt': 4}
+walk-only trips: 0 of 0 persons, by commute mode {}
+  of which long (> 5000 m): 0 of 0 persons, by commute mode {}
+  pt persons with at least one long walk: 0 of 4
+  walk_only persons with at least one long walk: 0 of 0
+
+population: /home/felix/wt-i487-rerun2/output_rerun2/braunschweig_1pct_i465_rerun2_population.xml.gz
+in-commuters (facility prefix ic_edu_): 72
+  by routing modes of their plan: {'car': 54, 'car+outside': 11, 'outside+pt+walk': 1, 'pt': 6}
+  by commute mode (from the trips that are not walks): {'car': 54, 'car+outside': 11, 'pt': 7}
+walk-only trips: 1 of 1 persons, by commute mode {'pt': 1}
+  of which long (> 5000 m): 1 of 1 persons, by commute mode {'pt': 1}
+  pt persons with at least one long walk: 1 of 7
+  walk_only persons with at least one long walk: 0 of 0
+  long walks stamped walkFallbackFrom: 1
+  long walks by direction: {('home', 'outside'): 1}
+  long walks by departure hour: [(6, 1)]
+  long walk distance km min/median/max: 8.3 / 8.3 / 8.3
+  examples (person, commute mode, direction, departure h, km):
+    11125702 pt home->outside 6.19 8.3
+
+population: /home/felix/eqasim-bs/eqasim-data/output_bs_pv3_v3_25pct/braunschweig_pv3_v3_25pct_population.xml.gz
+in-commuters (facility prefix ic_edu_): 701
+  by routing modes of their plan: {'car': 519, 'car+outside': 82, 'outside+pt': 2, 'outside+pt+walk': 8, 'pt': 83, 'pt+walk': 7}
+  by commute mode (from the trips that are not walks): {'car': 519, 'car+outside': 82, 'pt': 100}
+walk-only trips: 21 of 15 persons, by commute mode {'pt': 21}
+  of which long (> 5000 m): 10 of 10 persons, by commute mode {'pt': 10}
+  pt persons with at least one long walk: 10 of 100
+  walk_only persons with at least one long walk: 0 of 0
+  long walks stamped walkFallbackFrom: 0
+  long walks by direction: {('outside', 'home'): 1, ('education', 'outside'): 8, ('education', 'home'): 1}
+  long walks by departure hour: [(14, 1), (15, 1), (17, 2), (18, 2), (19, 2), (22, 1), (23, 1)]
+  long walk distance km min/median/max: 6.3 / 30.5 / 69.4
+  examples (person, commute mode, direction, departure h, km):
+    11125865 pt outside->home 23.18 6.3
+    11125921 pt education->outside 14.00 49.0
+    11126015 pt education->outside 17.00 30.5
+    11126020 pt education->outside 18.50 25.2
+    11126072 pt education->outside 19.50 30.5
+    11126215 pt education->outside 18.50 31.5
+    11126236 pt education->outside 17.58 29.0
+    11126356 pt education->home 15.50 31.4
+

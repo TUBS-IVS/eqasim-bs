@@ -18,7 +18,9 @@ description: 'Generates the cordon-crossing worker agents from BA Pendleratlas f
   skipped without rng draw when mode_balance or the check is off). Report keys: pt_connection (actions incl.
   station_redrawn, n_station_candidate_days), pt_rebalance (n_pt_target, n_pt_start, n_pt_final, n_iterations,
   n_promoted, n_promoted_unconnected, residual, met, promotion_actions). The realised pt share has no observed
-  reference; a smoke is not a validation.'
+  reference; a smoke is not a validation. Since ADR-0173 (issue #528) the check, the day shifts, the switch to car
+  and the rate log run in incommuter_pt_connections.check_pt_days and the configure declarations in
+  configure_pt_check, both shared with braunschweig.synthesis.student_incommuters (no output change here).'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -48,3 +50,4 @@ decisions:
 - ADR-0153
 - ADR-0154
 - ADR-0172
+- ADR-0173

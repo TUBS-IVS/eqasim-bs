@@ -1,0 +1,21 @@
+population: /home/felix/wt-i465-wpe/output_wpe/braunschweig_1pct_i465_wpe_population.xml.gz
+in-commuters (facility prefix ic_work_): 599
+  by routing modes of their plan: {'car': 429, 'car+outside': 53, 'car+outside+walk': 26, 'outside+pt': 2, 'outside+pt+walk': 8, 'pt': 61, 'pt+walk': 16, 'walk': 4}
+  by commute mode (from the trips that are not walks): {'car': 429, 'car+outside': 79, 'pt': 87, 'walk_only': 4}
+walk-only trips: 87 of 54 persons, by commute mode {'car+outside': 47, 'pt': 32, 'walk_only': 8}
+  of which long (> 5000 m): 27 of 22 persons, by commute mode {'pt': 19, 'walk_only': 8}
+  pt persons with at least one long walk: 18 of 87
+  walk_only persons with at least one long walk: 4 of 4
+  long walks stamped walkFallbackFrom: 4
+  long walks by direction: {('work', 'outside'): 16, ('outside', 'home'): 3, ('work', 'home'): 3, ('outside', 'work'): 4, ('home', 'work'): 1}
+  long walks by departure hour: [(4, 2), (8, 1), (15, 1), (16, 3), (17, 4), (18, 4), (20, 1), (21, 5), (22, 1), (23, 2), (28, 1), (29, 1), (35, 1)]
+  long walk distance km min/median/max: 8.3 / 51.8 / 107.5
+  examples (person, commute mode, direction, departure h, km):
+    1125708 pt work->outside 28.50 90.8
+    1125748 pt work->outside 16.50 45.2
+    1125776 pt work->outside 18.42 51.8
+    1125877 pt work->outside 22.50 54.4
+    1125910 pt outside->home 21.78 8.3
+    1125941 pt work->home 16.50 79.4
+    1125951 pt work->outside 17.50 29.1
+    1125958 walk_only outside->work 8.22 19.1

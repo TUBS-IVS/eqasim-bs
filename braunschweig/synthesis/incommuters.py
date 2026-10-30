@@ -786,19 +786,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                 gate_xy=np.column_stack([gate_x, gate_y]), arrive_work_s=arrive_work, dist_km=dist_km,
                 is_in_ring=is_in_ring, n_candidates=int(pt_check.station_candidates), speed_kmh=gate_speed_kmh,
                 detour_factor=detour_factor)
-        resolution = _pt_connections.resolve_pt_days(
-            person_ids=person_ids, is_pt=modes == "pt", home_xy=np.column_stack([home_x, home_y]),
-            work_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_work_s=arrive_work,
-            depart_work_s=depart_work, arrive_home_s=arrive_home, probe=counting_probe,
-            shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
-            bound_s=pt_check.bound_s, car_allowed=pt_check.car_allowed and "car" in commute_modes,
-            station_candidates=station_candidates)
-        offset = resolution.offsets_s
+        checked = _pt_connections.check_pt_days(
+            pt_check, person_ids=person_ids, modes=modes, home_xy=np.column_stack([home_x, home_y]),
+            mid_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_mid_s=arrive_work,
+            depart_mid_s=depart_work, arrive_home_s=arrive_home, probe=counting_probe,
+            car_allowed=pt_check.car_allowed and "car" in commute_modes, station_candidates=station_candidates,
+            report_extra={"n_days_moved_before_bound": n_days_moved})
+        resolution, modes, pt_report = checked.resolution, checked.modes, checked.report
         depart_home, arrive_work, depart_work, arrive_home = (
-            depart_home + offset, arrive_work + offset, depart_work + offset, arrive_home + offset)
+            checked.depart_home_s, checked.arrive_mid_s, checked.depart_mid_s, checked.arrive_home_s)
         to_car = resolution.actions == _pt_connections.ACTION_TO_CAR
         if to_car.any():
-            modes = np.where(to_car, "car", modes)
             # Board at the road gate like the pt in-commuters without a station; a real in-ring origin stays.
             at_gate = to_car if is_in_ring is None else to_car & ~is_in_ring
             home_x = np.where(at_gate, gate_x, home_x)
@@ -816,8 +814,6 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             home_x = np.where(redrawn, [np.nan if s is None else s.x for s in chosen], home_x)
             home_y = np.where(redrawn, [np.nan if s is None else s.y for s in chosen], home_y)
             depart_home = np.where(redrawn, [np.nan if s is None else s.depart_home_s for s in chosen], depart_home)
-        pt_report = dict(resolution.report, n_days_moved_before_bound=n_days_moved)
-        _pt_connections.log_report(pt_report, warn_share=pt_check.warn_share)
 
     # 4c) Re-balancing of the pt count with timetable-connected agents (#467, owner decision). Only with the balancer
     # and a check, so every other path stays byte-identical (no rng draw).
@@ -1567,10 +1563,6 @@ def configure(context):
     context.config("cordon_network_source_buffer_m", 45000.0)
     context.config("osm_path", "osm")
     context.config("data_path")
-    # Timetable check of the pt days (#488): the batch pt router on the pre-cut network and schedule, as for the
-    # portal pt stays. The day-end margin keys are read for the bound of the shift (the population writer moves a
-    # day that ends later than the end of the simulated day minus the margin).
-    context.config(_pt_connections.KEY_ENABLED, _pt_connections.DEFAULT_ENABLED)
     # Donor re-draw until the day fits the bound (#467); the bound needs the day-end margin keys in any case.
     validate_time_redraw_max_attempts(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS, DEFAULT_TIME_REDRAW_MAX_ATTEMPTS))
     # Re-balancing of the in-commuter pt count after the timetable check (#467; active with the balancer and the check).
@@ -1582,23 +1574,7 @@ def configure(context):
         raise ValueError(f"{KEY_REBALANCE_MAX_ITERATIONS} must be >= 0, got {rebalance_max_iterations}")
     context.config(_day_end_margin.KEY_ENABLED, _day_end_margin.DEFAULT_ENABLED)
     context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, _day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
-    if context.config(_pt_connections.KEY_ENABLED):
-        _pt_connections.shift_offsets_s(
-            float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S, _pt_connections.DEFAULT_SHIFT_WINDOW_S)),
-            float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
-        context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
-        # Station re-draw before the switch to car (#467): entry stations tried in total per pt in-commuter.
-        n_station_candidates = context.config(_pt_connections.KEY_STATION_CANDIDATES,
-                                              _pt_connections.DEFAULT_STATION_CANDIDATES)
-        _pt_connections.validate_station_candidates(n_station_candidates)
-        from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
-        _connections.configure(context)
-        context.stage("matsim.runtime.eqasim")
-        context.stage("matsim.runtime.java")
-        context.config("processes", volatile=True)
-        context.config("matsim_threads", None, volatile=True)
-        context.stage("matsim.scenario.supply.processed")
-        context.stage("matsim.scenario.supply.gtfs")
+    configure_pt_check(context)
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -1748,6 +1724,32 @@ def _time_bound_s(context):
     if context.config(_day_end_margin.KEY_ENABLED):
         bound_s -= _day_end_margin.check_margin(context.config(_day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S), bound_s)
     return bound_s
+
+
+def configure_pt_check(context):
+    """Declare what :func:`_pt_check` reads, for every in-commuter stage that checks its pt days (employees #488,
+    students #528): the switch, the shift window and step, the warn share, the station candidates (validated; unused
+    by the students), the batch pt router and its supply stages. The day-end margin keys of the shift bound
+    (:func:`_time_bound_s`) are declared by each stage itself, because its donor re-draw needs them anyway."""
+    # The batch pt router on the pre-cut network and schedule, as for the portal pt stays.
+    if not context.config(_pt_connections.KEY_ENABLED, _pt_connections.DEFAULT_ENABLED):
+        return
+    _pt_connections.shift_offsets_s(
+        float(context.config(_pt_connections.KEY_SHIFT_WINDOW_S, _pt_connections.DEFAULT_SHIFT_WINDOW_S)),
+        float(context.config(_pt_connections.KEY_SHIFT_STEP_S, _pt_connections.DEFAULT_SHIFT_STEP_S)))
+    context.config(_pt_connections.KEY_WARN_SHARE, _pt_connections.DEFAULT_WARN_SHARE)
+    # Station re-draw before the switch to car (#467): entry stations tried in total per pt in-commuter.
+    n_station_candidates = context.config(_pt_connections.KEY_STATION_CANDIDATES,
+                                          _pt_connections.DEFAULT_STATION_CANDIDATES)
+    _pt_connections.validate_station_candidates(n_station_candidates)
+    from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
+    _connections.configure(context)
+    context.stage("matsim.runtime.eqasim")
+    context.stage("matsim.runtime.java")
+    context.config("processes", volatile=True)
+    context.config("matsim_threads", None, volatile=True)
+    context.stage("matsim.scenario.supply.processed")
+    context.stage("matsim.scenario.supply.gtfs")
 
 
 def _pt_check(context):

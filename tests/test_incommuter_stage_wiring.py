@@ -30,7 +30,7 @@ def test_configure_declares_default_on_flag():
     seen = {}
 
     class _Ctx:
-        def config(self, key, default=None):
+        def config(self, key, default=None, **kwargs):   # **kwargs: synpp's volatile= (configure_pt_check, #528)
             seen[key] = default
             # cordon must be enabled so configure() proceeds past the early return.
             if key == "cordon_enabled":
