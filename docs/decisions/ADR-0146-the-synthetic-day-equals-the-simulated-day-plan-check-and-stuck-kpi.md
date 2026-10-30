@@ -1,4 +1,5 @@
 # ADR-0146 · 2026-10-15 · The synthetic day equals the simulated day; plan feasibility check and stuck-agent KPI
+- **Amended by ADR-0172:** the in-commuter and student in-commuter days are re-drawn from the donor pool until they fit the effective bound (this bound minus the day-end margin); the whole-day shift is the counted last resort (#467).
 
 - **Status:** active (the 30 h bound and the plan check are implemented on branch `feature/i443-plan-bound-and-check`; the stuck-agent KPI is decided here and implemented on branch `feature/i443-stuck-kpi-and-ab` (issue #443, part 2); the direction of the effect was measured once at 1 % in the run `i453-i443-ab-1pct-2026-10-16`, which is NOT a validation)
 - **Numbering:** ADR-0146 is the next free id after ADR-0145. Checked on 2026-10-16 across all local and remote branches: the highest record anywhere is ADR-0145 (outside-tour modes, on the sibling branch of the same plan); ADR-0146 is not used on any branch.
