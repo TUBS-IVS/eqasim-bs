@@ -313,3 +313,11 @@ def test_rebalance_promotes_zero_propensity_agents_only_after_the_weighted_ones(
                                             max_iterations=10)
     assert modes[4] == "pt" and stats["n_pt_final"] == 4 and stats["met"]
     assert any("zero" in r.getMessage() and r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_balancer_with_all_zero_propensities_draws_uniformly_without_a_warning(caplog):
+    # All weights 0 is the balancer's defined uniform case, not a fallback: no WARNING (only the mixed case warns).
+    modes, stats = balance_incommuter_modes(["pt", "car", "car", "car"], [False, True, True, True], [0.0] * 4,
+                                            np.random.default_rng(3))
+    assert stats["n_promoted"] == 1 and stats["n_pt_final"] == 1
+    assert not any(r.levelname == "WARNING" for r in caplog.records)

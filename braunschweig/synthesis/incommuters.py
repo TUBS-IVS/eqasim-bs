@@ -864,6 +864,21 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         rebalance_report = dict(rebalance_stats, promotion_actions=promotion_actions,
                                 n_promotion_without_station=n_promotion_without_station,
                                 tolerance=float(pt_share_tolerance), max_iterations=int(rebalance_max_iterations))
+        # The actions of the promotion attempts as rates over the promoted agents (CLAUDE.md fallback transparency);
+        # WARN when more than 5 % found no station to board at (can_board_pt and the station weights disagree).
+        n_attempts = rebalance_stats["n_promoted"]
+        if n_attempts:
+            no_station_share = n_promotion_without_station / n_attempts
+            promotion_message = (
+                "[braunschweig.incommuters] pt re-balancing: %d promotion attempts: %s; without a station %d (%.1f%%)"
+                % (n_attempts, ", ".join("%s %d (%.1f%%)" % (action, count, 100.0 * count / n_attempts)
+                                         for action, count in promotion_actions.items()),
+                   n_promotion_without_station, 100.0 * no_station_share))
+            if no_station_share > _mode_balancer.UNCONNECTED_WARN_SHARE:
+                logger.warning("%s -- promoted agents of a Kreis with can_board_pt drew no entry station: check "
+                               "the cordon_pt_gates station weights", promotion_message)
+            else:
+                logger.info(promotion_message)
 
     # Home stays a normal "home" activity here. The eqasim scenario cutter converts
     # it to an "outside" activity (its location is at the gate / beyond the cordon),

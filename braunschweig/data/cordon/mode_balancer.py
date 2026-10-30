@@ -36,11 +36,11 @@ UNCONNECTED_WARN_SHARE = 0.05
 def _draw_by_propensity(pool_idx, n_draw, prop, rng):
     """Draw ``n_draw`` of ``pool_idx`` without replacement, weighted by ``prop`` (negatives clipped to 0).
 
-    The whole pool is returned without an rng draw when ``n_draw`` covers it. Two counted, warned fallbacks for
-    agents whose pt propensity is 0 (a distance band without pt): all weights 0 -> a uniform draw; fewer
+    The whole pool is returned without an rng draw when ``n_draw`` covers it. Agents whose pt propensity is 0 (a
+    distance band without pt): all weights 0 -> a uniform draw (the defined behaviour, logged at INFO); fewer
     positive-weight agents than ``n_draw`` -> all of them plus a uniform draw of the rest among the zero-weight
-    ones (a weighted draw without replacement cannot pick more agents than have a positive weight). Every other
-    input is drawn exactly as before (one ``rng.choice``)."""
+    ones (a weighted draw without replacement cannot pick more agents than have a positive weight; counted and
+    WARNED, the only fallback here). Every other input is drawn exactly as before (one ``rng.choice``)."""
     if n_draw == len(pool_idx):
         return pool_idx
     w = prop[pool_idx].copy()
@@ -51,9 +51,15 @@ def _draw_by_propensity(pool_idx, n_draw, prop, rng):
         return rng.choice(pool_idx, size=n_draw, replace=False, p=w / total_w)
     zero_idx = pool_idx[w == 0.0]
     n_zero = n_draw - n_positive
-    logger.warning("%s: only %d of %d pool agents have a positive pt propensity for %d promotions: %d (%.1f%%) are "
-                   "drawn uniformly among the zero-propensity agents", _LOG_TAG, n_positive, len(pool_idx), n_draw,
-                   n_zero, 100.0 * n_zero / n_draw)
+    if total_w == 0.0:
+        # All weights 0: the uniform draw is the defined behaviour (the balancer's since its introduction), not a
+        # fallback from a weighted draw; logged at INFO for traceability.
+        logger.info("%s: all %d pool agents have pt propensity 0: %d promotions drawn uniformly", _LOG_TAG,
+                    len(pool_idx), n_draw)
+    else:
+        logger.warning("%s: only %d of %d pool agents have a positive pt propensity for %d promotions: %d (%.1f%%) "
+                       "are drawn uniformly among the zero-propensity agents", _LOG_TAG, n_positive, len(pool_idx),
+                       n_draw, n_zero, 100.0 * n_zero / n_draw)
     # The explicit uniform p keeps the all-zero case on the exact rng call of the former balancer code.
     return np.concatenate([pool_idx[w > 0.0], rng.choice(zero_idx, size=n_zero, replace=False,
                                                           p=np.full(len(zero_idx), 1.0 / len(zero_idx)))])

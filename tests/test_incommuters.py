@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -1015,22 +1016,26 @@ def test_day_too_long_for_the_whole_day_shift_is_kept_and_moved_as_far_as_possib
 # Iterative pt re-balancing after the timetable check (#467, D3): a pt in-commuter the timetable switched to car is
 # replaced by a promoted car in-commuter that the timetable serves; a promoted one it does not serve stays car.
 
-def _rebalance_frames(refused_ids):
-    """Frames with the balancer ON, one station (railA) and a probe serving every person not in ``refused_ids``."""
+def _rebalance_frames(refused_ids, *, serve_nobody=False, with_check=True, **kwargs):
+    """Frames with the balancer ON (unless overridden in ``kwargs``), one station (railA) and a probe serving every
+    person not in ``refused_ids`` (nobody with ``serve_nobody``); ``with_check=False`` passes no check."""
     from braunschweig.synthesis.incommuter_pt_connections import PtCheck
     gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
 
     def probe(tasks):
         ids = tasks["identifier"].astype(str)
         person = ids.str.split(":").str[0].astype(int)
-        return pd.Series(~person.isin(refused_ids).to_numpy(), index=ids.to_numpy())
+        served = np.zeros(len(ids), dtype=bool) if serve_nobody else ~person.isin(refused_ids).to_numpy()
+        return pd.Series(served, index=ids.to_numpy())
 
-    return build_incommuter_frames(
-        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.02, gates=gates, assignment=assignment,
-        zgb_work=zgb_work, mode_reference={">=10": {"pt": 0.5, "car": 0.5}}, band_edges=(10,),
-        hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
-        rng=np.random.default_rng(11), gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema(),
-        mode_balance=True, pt_check=PtCheck(probe=probe, bound_s=29 * 3600.0), time_bound_s=29 * 3600.0)
+    return build_incommuter_frames(**{
+        **dict(flows=flows, zgb_kreise={"03101"}, sampling_rate=0.02, gates=gates, assignment=assignment,
+               zgb_work=zgb_work, mode_reference={">=10": {"pt": 0.5, "car": 0.5}}, band_edges=(10,),
+               hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+               rng=np.random.default_rng(11), gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema(),
+               mode_balance=True, pt_check=PtCheck(probe=probe, bound_s=29 * 3600.0) if with_check else None,
+               time_bound_s=29 * 3600.0),
+        **kwargs})
 
 
 def _first_trips(frames):
@@ -1076,7 +1081,7 @@ def test_promoted_car_in_commuters_without_a_connection_stay_car_at_the_road_gat
     base = _rebalance_frames(set())
     base_modes = _first_trips(base)["mode"]
     pt_ids = sorted(base_modes.index[base_modes == "pt"])
-    frames = _rebalance_frames({pt_ids[0], *base_modes.index[base_modes == "car"]})
+    frames = _rebalance_frames({pt_ids[0], *base_modes.index[base_modes == "car"]}, rebalance_max_iterations=3)
     first = _first_trips(frames)
     hx, hy = _home_xy(frames)
     assert sorted(first.index[first["mode"] == "pt"]) == pt_ids[1:]
@@ -1088,4 +1093,27 @@ def test_promoted_car_in_commuters_without_a_connection_stay_car_at_the_road_gat
     assert (first.loc[cars, "departure_time"] == base_car_departure.iloc[0]).all()
     report = frames["pt_rebalance"]
     assert report["met"] is False and report["residual"] == 1
-    assert report["n_promoted"] == report["n_promoted_unconnected"] == min(10, len(base_modes) - len(pt_ids))
+    n_car = len(base_modes) - len(pt_ids)
+    assert n_car > 3                                                    # the cap, not the pool, ends the loop
+    assert report["n_iterations"] == 3 and report["max_iterations"] == 3
+    assert report["n_promoted"] == report["n_promoted_unconnected"] == 3
+
+
+@pytest.mark.parametrize("variant", [
+    dict(with_check=False),                         # no timetable check -> nothing to re-balance against
+    dict(mode_balance=False, serve_nobody=True),    # balancer off: the chain switches every pt agent, no re-balancing
+])
+def test_without_a_check_or_without_the_balancer_the_rebalancing_never_runs(monkeypatch, variant):
+    import braunschweig.synthesis.incommuters as incommuters_module
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("rebalance_with_timetable must not run (it would consume rng draws)")
+
+    expected = _rebalance_frames(set(), **variant)
+    monkeypatch.setattr(incommuters_module, "rebalance_with_timetable", must_not_run)
+    frames = _rebalance_frames(set(), **variant)
+    assert "pt_rebalance" not in frames
+    for key in ("persons", "trips", "activities", "vehicles"):
+        pd.testing.assert_frame_equal(frames[key], expected[key])
+    if variant.get("serve_nobody"):
+        assert frames["pt_connection"]["actions"]["to_car"] > 0        # a deficit existed, still no re-balancing
