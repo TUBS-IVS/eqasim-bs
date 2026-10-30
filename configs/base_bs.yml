@@ -924,6 +924,15 @@ config:
   braunschweig.incommuters.pt_shift_window_s: 7200
   braunschweig.incommuters.pt_shift_step_s: 1800
   braunschweig.incommuters.pt_no_connection_warn_share: 0.05
+  # Day bound, station re-draw and pt-share re-balancing of the in-commuters (#467, ADR-0172); all ASSUMPTIONs, not calibrated.
+  # Max. donor re-draws per agent until the day fits the bound (the whole-day shift of ADR-0154 is the counted last resort).
+  braunschweig.incommuters.time_redraw_max_attempts: 20
+  # Stations tried for a pt in-commuter without a connection (drawn one + others of its Kreis) before it drives; 1 disables.
+  braunschweig.incommuters.pt_station_candidates: 5
+  # Relative tolerance of the realised pt share against the Mikrozensus target of the balancer.
+  braunschweig.incommuters.pt_share_tolerance: 0.01
+  # Max. promotion rounds of car in-commuters to timetable-connected pt; 0 disables the re-balancing.
+  braunschweig.incommuters.rebalance_max_iterations: 10
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen

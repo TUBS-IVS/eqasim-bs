@@ -96,7 +96,8 @@ def _frames(probe, *, mode_reference, return_h=(17.0, 18.0)):
         flows=flows, zgb_kreise={"03101"}, sampling_rate=0.005, gates=gates, assignment=assignment,
         zgb_work=zgb_work, mode_reference=mode_reference, band_edges=(10,), hts_persons=hp, hts_trips=ht,
         person_col="person_id", n_residents=100, n_resident_households=40, rng=np.random.default_rng(1),
-        gate_speed_kmh=30.0, pt_entry_stops=pt_stops, pt_check=pt_check)
+        gate_speed_kmh=30.0, pt_entry_stops=pt_stops, pt_check=pt_check,
+        time_bound_s=29 * H)  # the stage passes the same number as PtCheck.bound_s
 
 
 def test_the_frames_carry_the_shifted_day_of_a_pt_in_commuter():
@@ -135,3 +136,166 @@ def test_a_late_day_moves_before_the_bound_before_its_trips_are_checked():
 def test_without_a_check_the_frames_are_unchanged():
     base = _frames(None, mode_reference={">=10": {"pt": 1.0}})
     assert (base["trips"]["mode"] == "pt").all() and "pt_connection" not in base
+
+
+# --- Station re-draw (#467, D2): a pt day that no shift serves tries the other stations of the source Kreis ---------
+
+STATION_A = (604000.0, 5841000.0)      # the drawn station of the frame tests
+STATION_B = (603000.0, 5842000.0)      # a second station of the same Kreis
+
+
+def _station_probe(served_xy, seen=None):
+    """A probe whose timetable serves exactly the stations at ``served_xy`` (out: origin, ret: destination)."""
+    served_xy = {tuple(map(float, xy)) for xy in served_xy}
+
+    def probe(tasks):
+        if seen is not None:
+            seen.append(tasks.copy())
+        is_out = tasks["identifier"].astype(str).str.endswith(":out").to_numpy()
+        x = np.where(is_out, tasks["origin_x"], tasks["destination_x"])
+        y = np.where(is_out, tasks["origin_y"], tasks["destination_y"])
+        ok = [(float(a), float(b)) in served_xy for a, b in zip(x, y)]
+        return pd.Series(ok, index=tasks["identifier"].astype(str).to_numpy())
+    return probe
+
+
+def test_an_unserved_day_takes_the_first_connected_station_of_its_kreis_in_one_probe_call():
+    n = 4
+    dh, aw, dw, ah = _days([(7.0, 8.0, 16.0, 17.0)] * n)
+    home_xy = np.array([[10.0, 10.0], [20.0, 20.0], [30.0, 30.0], [40.0, 40.0]])
+    cand = {1: [P.StationCandidate("s1", 21.0, 21.0, 6.5 * H), P.StationCandidate("s2", 22.0, 22.0, 6.4 * H)],
+            2: [P.StationCandidate("s3", 31.0, 31.0, 6.5 * H)]}
+    # agent 0: served as drawn; agent 1: s2 is served; agent 2: no candidate served; agent 3: no candidates (in-ring)
+    seen = []
+    result = P.resolve_pt_days(
+        person_ids=np.arange(100, 100 + n), is_pt=np.ones(n, bool), home_xy=home_xy, work_xy=np.ones((n, 2)) * 1e3,
+        depart_home_s=dh, arrive_work_s=aw, depart_work_s=dw, arrive_home_s=ah,
+        probe=_station_probe([(10.0, 10.0), (22.0, 22.0)], seen),
+        shift_window_s=2 * H, shift_step_s=0.5 * H, bound_s=29 * H, station_candidates=cand)
+
+    assert list(result.actions) == [P.ACTION_CONNECTION_FOUND, P.ACTION_STATION_REDRAWN, P.ACTION_TO_CAR,
+                                    P.ACTION_TO_CAR]
+    assert result.stations[1] == cand[1][1] and result.stations[0] is None and result.stations[2] is None
+    np.testing.assert_array_equal(result.offsets_s, np.zeros(n))
+    assert result.report["actions"][P.ACTION_STATION_REDRAWN] == 1
+    assert result.report["n_station_candidate_days"] == 2
+    station_calls = [t for t in seen if t["identifier"].str.count(":").eq(3).any()]
+    assert len(station_calls) == 1                                    # all candidates of all agents in ONE call
+    tasks = station_calls[0].set_index("identifier")
+    assert len(tasks) == 2 * 3                                         # both trips of each of the 3 candidates
+    assert tasks.loc["101:1:s2:out", "departure_time"] == 6.4 * H      # the candidate's own home departure
+    assert tasks.loc["101:1:s2:ret", "departure_time"] == 16.0 * H     # the unshifted work departure
+    assert tasks.loc["101:1:s2:out", ["origin_x", "origin_y"]].to_list() == [22.0, 22.0]
+    assert not station_calls[0]["identifier"].str.startswith(("100:", "103:")).any()
+
+
+def test_a_day_the_shift_serves_never_reaches_the_station_step():
+    dh, aw, dw, ah = _days([(7.0, 8.0, 21.5, 22.5)])
+    seen = []
+    result = P.resolve_pt_days(
+        person_ids=np.array([100]), is_pt=np.ones(1, bool), home_xy=np.zeros((1, 2)), work_xy=np.ones((1, 2)),
+        depart_home_s=dh, arrive_work_s=aw, depart_work_s=dw, arrive_home_s=ah,
+        probe=_service_probe(5 * H, 21 * H, seen), shift_window_s=2 * H, shift_step_s=0.5 * H, bound_s=29 * H,
+        station_candidates={0: [P.StationCandidate("s1", 1.0, 1.0, 7 * H)]})
+    assert list(result.actions) == [P.ACTION_DAY_SHIFTED]
+    assert not any(t["identifier"].str.contains(":s1:").any() for t in seen)
+
+
+@pytest.mark.parametrize("to_car, redrawn, n_warnings", [(0, 2, 1), (2, 0, 1), (2, 2, 2), (0, 0, 0)])
+def test_the_station_redraw_warning_fires_independently_of_the_no_connection_warning(caplog, to_car, redrawn,
+                                                                                    n_warnings):
+    report = {"n_pt_days": 10, "actions": {P.ACTION_CONNECTION_FOUND: 10 - to_car - redrawn, P.ACTION_DAY_SHIFTED: 0,
+                                           P.ACTION_STATION_REDRAWN: redrawn, P.ACTION_TO_CAR: to_car,
+                                           P.ACTION_KEPT: 0},
+              "shift_abs_s_median": None, "n_station_candidate_days": to_car + redrawn}
+    with caplog.at_level("INFO"):
+        P.log_report(report, warn_share=0.05)
+    assert sum(r.levelname == "WARNING" for r in caplog.records) == n_warnings
+    assert len(caplog.records) == max(n_warnings, 1)                    # always exactly the line, never silent
+
+
+def test_of_two_connected_candidates_the_first_in_weight_order_wins():
+    dh, aw, dw, ah = _days([(7.0, 8.0, 16.0, 17.0)])
+    cand = {0: [P.StationCandidate("heavy", 21.0, 21.0, 6.5 * H), P.StationCandidate("light", 22.0, 22.0, 6.4 * H)]}
+    result = P.resolve_pt_days(
+        person_ids=np.array([100]), is_pt=np.ones(1, bool), home_xy=np.zeros((1, 2)), work_xy=np.ones((1, 2)) * 1e3,
+        depart_home_s=dh, arrive_work_s=aw, depart_work_s=dw, arrive_home_s=ah,
+        probe=_station_probe([(21.0, 21.0), (22.0, 22.0)]), shift_window_s=2 * H, shift_step_s=0.5 * H,
+        bound_s=29 * H, station_candidates=cand)
+    assert list(result.actions) == [P.ACTION_STATION_REDRAWN]
+    assert result.stations[0].stop_id == "heavy"
+
+
+def test_station_candidates_follow_the_weight_order_without_the_drawn_station():
+    # Tested on the helper: the builder frames do not show which candidates were offered, nor in which order.
+    from braunschweig.synthesis.incommuters import _station_candidates
+    weighted = pd.DataFrame({"source_ars5": ["03241"] * 4 + ["03153"],
+                             "stop_id": ["a", "b", "c", "d", "e"], "weight": [0.4, 0.1, 0.3, 0.2, 1.0],
+                             "x": [3000.0, 2000.0, 3000.0, 4000.0, 5000.0], "y": [0.0] * 5})
+    out = _station_candidates(
+        positions=[0, 1], orig_ars=["03241", "03153"], drawn_stop_ids=["a", "e"],
+        weighted=weighted, gate_xy=np.zeros((2, 2)), arrive_work_s=np.full(2, 8 * H), dist_km=np.full(2, 10.0),
+        is_in_ring=None, n_candidates=3, speed_kmh=30.0, detour_factor=1.0)
+    assert [c.stop_id for c in out[0]] == ["c", "d"]       # without the drawn "a", descending weight, at most n-1
+    assert 1 not in out                                     # the Kreis has no other station
+    # home departure recomputed for the candidate's access distance (3 km + 10 km at 30 km/h, detour 1)
+    assert out[0][0].depart_home_s == pytest.approx(8 * H - 13.0 / 30.0 * H)
+    assert (out[0][0].x, out[0][0].y) == (3000.0, 0.0)
+
+
+def _two_station_frames(probe, *, n_candidates=P.DEFAULT_STATION_CANDIDATES, **origin):
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    pt_stops = pd.DataFrame({"source_ars5": ["03241", "03241"], "stop_id": ["stopA", "stopB"],
+                             "x": [STATION_A[0], STATION_B[0]], "y": [STATION_A[1], STATION_B[1]],
+                             "reach": ["direct", "direct"], "ewz": [90000.0, 10000.0]})
+    pt_check = None if probe is None else P.PtCheck(probe=probe, shift_window_s=2 * H, shift_step_s=0.5 * H,
+                                                    bound_s=29 * H, station_candidates=n_candidates)
+    return build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.005, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,), hts_persons=hp, hts_trips=ht,
+        person_col="person_id", n_residents=100, n_resident_households=40, rng=np.random.default_rng(1),
+        gate_speed_kmh=30.0, pt_entry_stops=pt_stops, pt_check=pt_check, time_bound_s=29 * H, **origin)
+
+
+def test_a_pt_in_commuter_whose_station_has_no_connection_boards_at_another_station_of_its_kreis():
+    frames = _two_station_frames(_station_probe([STATION_B]))
+    actions = frames["pt_connection"]["actions"]
+    assert actions[P.ACTION_STATION_REDRAWN] >= 1                       # most draw the heavier stopA
+    assert actions[P.ACTION_CONNECTION_FOUND] + actions[P.ACTION_STATION_REDRAWN] == len(frames["persons"])
+    assert (frames["trips"]["mode"] == "pt").all()
+    home = frames["locations"][frames["locations"]["activity_index"] == 0]
+    assert np.allclose(home.geometry.x, STATION_B[0]) and np.allclose(home.geometry.y, STATION_B[1])
+    # one gate, one workplace, one donor: the home departure recomputed for stopB equals the drawn stopB one
+    assert frames["trips"].loc[frames["trips"]["trip_index"] == 0, "departure_time"].nunique() == 1
+    assert np.allclose(frames["validation"]["entry_x"], STATION_B[0])
+
+
+def test_without_a_connected_station_the_in_commuter_drives_from_the_road_gate():
+    frames = _two_station_frames(_station_probe([]))
+    assert frames["pt_connection"]["actions"][P.ACTION_TO_CAR] == len(frames["persons"])
+    assert (frames["trips"]["mode"] == "car").all()
+    home = frames["locations"][frames["locations"]["activity_index"] == 0]
+    assert np.allclose(home.geometry.x, 605000.0) and np.allclose(home.geometry.y, 5840000.0)   # home_x == gate_x
+    cars = frames["vehicles"][frames["vehicles"]["mode"] == "car"]
+    assert len(cars) == len(frames["persons"])                          # the legacy vehicles frame carries the cars
+
+
+def test_a_single_station_candidate_disables_the_redraw():
+    frames = _two_station_frames(_station_probe([STATION_B]), n_candidates=1)
+    assert frames["pt_connection"]["actions"][P.ACTION_STATION_REDRAWN] == 0
+
+
+def test_an_in_ring_pt_in_commuter_is_never_station_redrawn():
+    # Real origin ON: Kreis 03241 has a Gemeinde inside the ring, so every agent's home is a Gemeinde point. The
+    # timetable serves only stopB (not the Gemeinde point): the far-agent re-draw would move them to stopB; an
+    # in-ring agent must keep its Gemeinde home and drive instead.
+    from tests.test_incommuters import _gemeinden_for_origin_test, _zgb_polygon_for_test
+    frames = _two_station_frames(_station_probe([STATION_B]), real_origin=True,
+                                 gemeinden=_gemeinden_for_origin_test(), zgb_polygon=_zgb_polygon_for_test(),
+                                 source_buffer_m=5000.0)
+    assert (frames["validation"]["entry_kind"] == "real_origin").all()
+    report = frames["pt_connection"]
+    assert report["actions"][P.ACTION_STATION_REDRAWN] == 0 and report["n_station_candidate_days"] == 0
+    assert report["actions"][P.ACTION_TO_CAR] == len(frames["persons"])
+    home = frames["locations"][frames["locations"]["activity_index"] == 0]
+    assert home.geometry.x.between(606000.0, 608000.0).all() and home.geometry.y.between(5841000.0, 5843000.0).all()
