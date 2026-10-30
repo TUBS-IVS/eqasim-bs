@@ -189,6 +189,9 @@ def _full_ctx():
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_gate_speed_kmh": 30.0,
            "cordon_incommuter_time_chronology": True,
+           "braunschweig.incommuters.time_redraw_max_attempts": 20,
+           "braunschweig.day_end_margin.enabled": True,
+           "braunschweig.day_end_margin.last_arrival_margin_s": 3600.0,
            "cordon_network_source_buffer_m": 45000.0,
            "braunschweig.political_prefix": ["03101"],
            "data_path": "eqasim-data/data",
@@ -311,6 +314,62 @@ def test_injection_attaches_orig_ars5_and_dest_commune(monkeypatch):
     # the muni fixture) are configured, so every agent must resolve to that pair.
     assert set(persons["orig_ars5"]) == {"03402"}
     assert set(persons["dest_commune"]) == {"03101"}
+
+
+def _patch_mocked_geodata(monkeypatch, ctx):
+    fake_gem = ctx._stages["_fake_gemeinden"]
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden", lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+
+
+def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
+    """#467 D4: half of the education donors return after the simulated day. Their agents are re-drawn onto
+    the fitting donor, so every trip and activity ends inside the bound and the persons follow the donor."""
+    import logging
+
+    from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
+
+    ctx = _mocked_full_ctx()
+    _patch_mocked_geodata(monkeypatch, ctx)
+    _hh, hts_persons, hts_trips = ctx._stages["hts"]
+    hts_persons = pd.DataFrame({
+        "person_id": [10, 11], "studies": [True, True], "employed": [False, False]})
+    late = pd.DataFrame({
+        "person_id": [11, 11],
+        "departure_time": [30000.0, MAX_PLAN_TIME_SECONDS + 10000.0],
+        "arrival_time": [32000.0, MAX_PLAN_TIME_SECONDS + 12000.0],
+        "preceding_purpose": ["home", "education"],
+        "following_purpose": ["education", "home"]})
+    ctx._stages["hts"] = (None, hts_persons, pd.concat([hts_trips, late], ignore_index=True))
+
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(ctx)
+
+    bound_s = MAX_PLAN_TIME_SECONDS - 3600.0
+    assert len(frames["persons"]) == 498
+    assert frames["trips"]["arrival_time"].max() <= bound_s
+    assert frames["trips"]["departure_time"].max() <= bound_s
+    assert set(frames["persons"]["hts_id"]) == {10}   # persons follow the fitting donor
+    redraw_lines = [r.message for r in caplog.records if "redrawn" in r.message or "re-drawn" in r.message]
+    assert redraw_lines, [r.message for r in caplog.records]
+
+
+def test_configure_declares_the_day_bound_keys():
+    requested: list[str] = []
+
+    class _Rec(_RecordingCtx):
+        def config(self, key, default=si._SENTINEL):
+            requested.append(key)
+            return super().config(key, default)
+
+    si.configure(_Rec())
+    for key in ("braunschweig.incommuters.time_redraw_max_attempts",
+                "braunschweig.day_end_margin.enabled",
+                "braunschweig.day_end_margin.last_arrival_margin_s"):
+        assert key in requested, requested
 
 
 def test_injection_seeds_distance_consistent_departure(monkeypatch):
