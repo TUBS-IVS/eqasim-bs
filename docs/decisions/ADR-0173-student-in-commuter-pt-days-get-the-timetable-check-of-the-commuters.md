@@ -29,14 +29,17 @@
 3. **No station step for students.** Students board at no drawn entry station (home = a real in-ring origin point or
    the nearest road gate), so `station_redrawn` cannot occur. A student switched to car drives from the home it
    already has; its home departure is unchanged (the seed does not depend on the mode).
-4. **Report.** The frames carry `pt_connection` (same keys as the commuter stage), one log line with the rates, and a
-   WARNING above `pt_no_connection_warn_share`.
+4. **Report.** The frames carry `pt_connection` (same keys as the commuter stage), one log line with the rates
+   ("pt student in-commuter days", apart from the commuters' "pt in-commuter days"), and a WARNING above
+   `pt_no_connection_warn_share`.
 
 ## Rejected options
 
 - **A student copy of the chain:** duplicated logic that drifts; the chain is already mode- and purpose-agnostic.
 - **Give students drawn entry stations, to allow the station re-draw:** a new model element (station weighting by
-  origin Kreis for students) with no measured need; owner decision pending if the counts after this change call for it.
+  origin Kreis for students) with no measured need: in the three measured populations no pt student had a plan of
+  walks only, so every pt student's home (in-ring point or road gate) reached a stop on at least one trip. Revisit
+  if the `to_car` share of the next run is high.
 - **Re-balance the student pt share after `to_car` (as ADR-0172 does for commuters):** the student stage has no mode
   balancer; the `to_car` count is reported so the loss of pt share is visible. Revisit if a run shows a material loss.
 
@@ -46,7 +49,14 @@
 - Output change by design: pt students whose day no timetable serves within the window move in time or drive; the
   realised student pt share falls below the Mikrozensus draw by the `to_car` count (logged; no observed reference of
   the realised share exists).
-- The commuter stage is refactored onto `check_pt_days` without a change of its output (its tests are unchanged).
+- The commuter stage is refactored onto `check_pt_days` without a change of its output: its frame tests
+  (`tests/test_incommuters.py`, `tests/test_incommuter_pt_connections.py`) pass unchanged, and its configure
+  declares the same keys with the same values (synpp keeps a declared default, so the former second read of the
+  switch without a default returned the same value). Only the recording stub of
+  `tests/test_incommuter_hts_donor_wiring.py` had to accept synpp's `volatile=` keyword. Its log line is unchanged.
+- A far student sits at the nearest road gate; where no stop is reachable from a gate the check sends the pt
+  students there to car for the geometry, not the timetable. Observable as the `to_car` share (see the rejected
+  station option).
 - **Status:** implemented and unit-tested; not yet run. The next run should repeat
   `scripts/measure_incommuter_pt_walks.py --prefix ic_edu_` on its prepared population and record the
   `pt_connection` counts of the student stage. A smoke, not a validation.

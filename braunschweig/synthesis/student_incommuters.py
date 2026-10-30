@@ -604,7 +604,7 @@ def _inject(context):
             incommuters._pt_check(context), person_ids=person_ids, modes=modes,
             home_xy=np.column_stack([home_x, home_y]), mid_xy=np.column_stack([dest_x, dest_y]),
             depart_home_s=depart_home, arrive_mid_s=arrive_mid, depart_mid_s=depart_mid, arrive_home_s=arrive_home,
-            car_allowed=True)
+            car_allowed=True, subject="student in-commuter")
         modes, pt_report = list(checked.modes), checked.report
         depart_home, arrive_mid, depart_mid, arrive_home = (
             checked.depart_home_s, checked.arrive_mid_s, checked.depart_mid_s, checked.arrive_home_s)

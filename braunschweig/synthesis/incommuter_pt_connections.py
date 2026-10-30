@@ -273,14 +273,16 @@ class CheckedDays:
 
 def check_pt_days(pt_check: PtCheck, *, person_ids, modes, home_xy, mid_xy, depart_home_s, arrive_mid_s,
                   depart_mid_s, arrive_home_s, car_allowed: bool, probe: Probe | None = None,
-                  station_candidates: dict | None = None, report_extra: dict | None = None) -> CheckedDays:
+                  station_candidates: dict | None = None, report_extra: dict | None = None,
+                  subject: str = "in-commuter") -> CheckedDays:
     """Check the pt days of one in-commuter stage, apply the day shifts and the switch to car, and log the rates.
 
     The common part of every in-commuter stage (employees #488, students #528): :func:`resolve_pt_days` on the days
     whose mode is ``"pt"`` (the middle activity is work or education), every ``day_shifted`` day moved by its offset,
     every ``to_car`` day's mode set to ``"car"``, and :func:`log_report` over the report (``report_extra`` merged in
-    first). What a switch or a station re-draw means for the home point stays with the caller (the employee stage
-    boards a car at its road gate or the pt agent at the chosen station). ``probe`` defaults to ``pt_check.probe``.
+    first; ``subject`` names the stage's agents in the log line). What a switch or a station re-draw means for the
+    home point stays with the caller (the employee stage boards a car at its road gate or the pt agent at the chosen
+    station). ``probe`` defaults to ``pt_check.probe``.
     """
     modes = np.asarray(modes)
     resolution = resolve_pt_days(
@@ -291,7 +293,7 @@ def check_pt_days(pt_check: PtCheck, *, person_ids, modes, home_xy, mid_xy, depa
         station_candidates=station_candidates)
     offset = resolution.offsets_s
     report = dict(resolution.report, **(report_extra or {}))
-    log_report(report, warn_share=pt_check.warn_share)
+    log_report(report, warn_share=pt_check.warn_share, subject=subject)
     return CheckedDays(
         resolution=resolution, modes=np.where(resolution.actions == ACTION_TO_CAR, "car", modes),
         depart_home_s=np.asarray(depart_home_s, dtype=float) + offset,
@@ -300,15 +302,17 @@ def check_pt_days(pt_check: PtCheck, *, person_ids, modes, home_xy, mid_xy, depa
         arrive_home_s=np.asarray(arrive_home_s, dtype=float) + offset, report=report)
 
 
-def log_report(report: dict, warn_share: float) -> None:
-    """One line with the rates over the pt days. Two independent WARNINGs, each with the line: (a) to_car + kept
-    exceed ``warn_share`` or any day is kept; (b) the station re-draws exceed ``warn_share``."""
+def log_report(report: dict, warn_share: float, subject: str = "in-commuter") -> None:
+    """One line with the rates over the pt days of the ``subject`` agents ("in-commuter" for the employee stage,
+    "student in-commuter" for the student stage, so the two lines stay apart). Two independent WARNINGs, each with
+    the line: (a) to_car + kept exceed ``warn_share`` or any day is kept; (b) the station re-draws exceed
+    ``warn_share``."""
     n = report["n_pt_days"]
     counts = report["actions"]
     unserved = counts[ACTION_TO_CAR] + counts[ACTION_KEPT]
     redrawn = counts[ACTION_STATION_REDRAWN]
-    message = "%s %d pt in-commuter days: %s; median shift %s s; %d days tried other stations" % (
-        _LOG_TAG, n, ", ".join("%s %d (%.1f%%)" % (a, counts[a], 100.0 * counts[a] / n if n else 0.0)
+    message = "%s %d pt %s days: %s; median shift %s s; %d days tried other stations" % (
+        _LOG_TAG, n, subject, ", ".join("%s %d (%.1f%%)" % (a, counts[a], 100.0 * counts[a] / n if n else 0.0)
                                for a in ACTIONS),
         "n/a" if report["shift_abs_s_median"] is None else "%.0f" % report["shift_abs_s_median"],
         report.get("n_station_candidate_days", 0))

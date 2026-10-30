@@ -30,7 +30,7 @@ class FakeContext:
         self._config = config
         self.stages: list[str] = []
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, **kwargs):   # **kwargs: synpp's volatile= (configure_pt_check, #528)
         return self._config.get(key, default)
 
     def stage(self, name, alias=None, **kwargs):

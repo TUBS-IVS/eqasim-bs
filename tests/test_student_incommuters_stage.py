@@ -735,32 +735,70 @@ def _served_between(first_s, last_s):
     return probe
 
 
-def test_student_pt_days_without_a_return_connection_move_earlier_as_a_whole(monkeypatch):
-    # The donor leaves campus at 55000 s (15:16:40); the timetable ends at 15:00, so the whole day moves 30 min
-    # earlier and both trips stay pt.
+def _served_by_person_class(tasks):
+    """Every student's day is the same (one donor, one gate, one campus), so the outcome is set per person id:
+    id % 3 == 0 is always served, == 1 only at departures in [05:00, 15:00], == 2 never."""
+    person = tasks["identifier"].str.split(":").str[0].astype(int)
+    served = (person % 3 == 0) | ((person % 3 == 1) & tasks["departure_time"].between(5 * _H, 15 * _H))
+    return pd.Series(served.to_numpy(), index=tasks["identifier"].astype(str).to_numpy())
+
+
+def test_student_pt_days_are_kept_shifted_or_switched_to_car_per_student(monkeypatch, caplog):
+    # The donor arrives on campus at 32000 s and leaves at 55000 s (15:16:40). Class 1 has no return connection
+    # after 15:00, so its whole day moves 30 min earlier; class 2 has none at all and drives from its home.
+    import logging
+
     seen = []
-    frames = si.execute(_pt_student_ctx(monkeypatch, _served_between(5 * _H, 15 * _H), seen))
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig"):
+        frames = si.execute(_pt_student_ctx(monkeypatch, _served_by_person_class, seen))
 
-    n = len(frames["persons"])
+    persons = frames["persons"].set_index("person_id")
+    person_class = persons.index.to_series() % 3
+    n_class = person_class.value_counts()
+    assert set(n_class.index) == {0, 1, 2}
     trips = frames["trips"]
-    assert n > 0 and (trips["mode"] == "pt").all()
-    assert set(trips.loc[trips["trip_index"] == 1, "departure_time"]) == {55000.0 - 1800.0}
+    trips = trips.assign(person_class=trips["person_id"] % 3)
+    by_class = {c: trips[trips["person_class"] == c] for c in (0, 1, 2)}
+    out_0 = set(by_class[0].loc[by_class[0]["trip_index"] == 0, "departure_time"])
+    assert len(out_0) == 1                                              # one donor, one gate: one seeded departure
+
+    # connection_found (the primary path): pt, times untouched
+    assert (by_class[0]["mode"] == "pt").all()
+    assert set(by_class[0].loc[by_class[0]["trip_index"] == 1, "departure_time"]) == {55000.0}
+    # day_shifted: pt, the WHOLE day 1800 s earlier, the time on campus kept
+    assert (by_class[1]["mode"] == "pt").all()
+    assert set(by_class[1].loc[by_class[1]["trip_index"] == 0, "departure_time"]) == {min(out_0) - 1800.0}
+    assert set(by_class[1].loc[by_class[1]["trip_index"] == 1, "departure_time"]) == {55000.0 - 1800.0}
     education = frames["activities"][frames["activities"]["purpose"] == "education"]
-    assert set(education["end_time"] - education["start_time"]) == {55000.0 - 32000.0}   # duration kept
-    assert frames["pt_connection"]["actions"]["day_shifted"] == n
-    assert frames["pt_connection"]["n_pt_days"] == n
-    assert (frames["persons"]["car_availability"] == "none").all()
-    assert set(pd.concat(seen)["identifier"].str.rsplit(":", n=1).str[1]) == {"out", "ret"}
+    assert set(education["end_time"] - education["start_time"]) == {55000.0 - 32000.0}
+    # to_car: car, times untouched, a car and car availability
+    assert (by_class[2]["mode"] == "car").all()
+    assert set(by_class[2].loc[by_class[2]["trip_index"] == 1, "departure_time"]) == {55000.0}
+    assert (persons["car_availability"] == np.where(person_class == 2, "all", "none")).all()
+    car_owners = set(frames["vehicles"].loc[frames["vehicles"]["mode"] == "car", "owner_id"])
+    assert car_owners == set(person_class.index[person_class == 2])
 
+    # the probe routes home -> campus and back from the written locations
+    locations = frames["locations"]
+    home = locations[locations["activity_index"] == 0].set_index("person_id").geometry
+    campus = locations[locations["activity_index"] == 1].set_index("person_id").geometry
+    first_call = seen[0]
+    assert len(first_call) == 2 * len(persons)                          # both trips of every pt day, unshifted
+    person = first_call["identifier"].str.split(":").str[0].astype(int).to_numpy()
+    outbound = first_call["identifier"].str.endswith(":out").to_numpy()
+    origin = np.where(outbound[:, None], np.column_stack([home.x[person], home.y[person]]),
+                      np.column_stack([campus.x[person], campus.y[person]]))
+    np.testing.assert_allclose(first_call[["origin_x", "origin_y"]].to_numpy(), origin)
 
-def test_student_pt_days_without_any_connection_drive(monkeypatch):
-    frames = si.execute(_pt_student_ctx(monkeypatch, _served_between(0.0, -1.0)))
-
-    n = len(frames["persons"])
-    assert n > 0 and (frames["trips"]["mode"] == "car").all()
-    assert (frames["persons"]["car_availability"] == "all").all()
-    assert (frames["vehicles"]["mode"] == "car").sum() == n                  # a car for every switched student
-    assert frames["pt_connection"]["actions"]["to_car"] == n
+    report = frames["pt_connection"]
+    assert report["n_pt_days"] == len(persons)
+    assert report["actions"]["connection_found"] == n_class[0]
+    assert report["actions"]["day_shifted"] == n_class[1] and report["actions"]["to_car"] == n_class[2]
+    # a third of the days drive: the fallback rate is logged as a WARNING of the student stage
+    warnings = [r.getMessage() for r in caplog.records
+                if r.levelno == logging.WARNING and r.name.endswith("incommuter_pt_connections")]
+    assert any("pt student in-commuter days" in message for message in warnings), warnings
 
 
 def test_student_pt_days_are_not_checked_when_the_check_is_off(monkeypatch):

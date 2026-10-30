@@ -183,6 +183,18 @@ the home it already has. Students board at no drawn entry station, so the statio
 re-draw of ADR-0172 does not apply. Counted, logged and reported as `pt_connection`;
 the measurement that motivated it is `docs/runs/student-incommuter-pt-walks-2026-10-30.yml`.
 
+Consequences to watch in the next run (neither is measured yet):
+
+- The realised student pt share falls below the Mikrozensus draw by the `to_car`
+  count; the student stage has no mode balancer that pulls it back (the commuter
+  stage re-balances, ADR-0172).
+- A far student's home is the nearest road gate, not a station. If no stop is
+  reachable from a gate, every pt student there goes `to_car` for the geometry,
+  not the timetable. In the three measured populations no pt student had a plan
+  of walks only (`walk_only` 0), so every pt student's home reached a stop on at
+  least one trip; a high `to_car` share in the WARNING line is the signal to look
+  at the gates.
+
 ## OD / distance analysis outputs
 
 `braunschweig/analysis/simwrapper/student_commuters.py` (mirrors the SvB
