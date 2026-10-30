@@ -73,6 +73,20 @@ DEFAULT_WARN_SHARE = 0.05
 Probe = Callable[[pd.DataFrame], pd.Series]
 
 
+def validate_station_candidates(value) -> int:
+    """``KEY_STATION_CANDIDATES`` as an int: an integral number >= 1 (1 = no station re-draw), else ValueError.
+
+    A non-integral value (1.5) is rejected instead of being truncated by ``int()``."""
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError):
+        as_float = float("nan")
+    if isinstance(value, bool) or not np.isfinite(as_float) or as_float != int(as_float) or int(as_float) < 1:
+        raise ValueError(f"{_LOG_TAG} {KEY_STATION_CANDIDATES} must be an integer >= 1 (1 = no station re-draw), "
+                         f"got {value!r}")
+    return int(as_float)
+
+
 @dataclasses.dataclass(frozen=True)
 class PtCheck:
     """What ``build_incommuter_frames`` needs to check the pt days: the probe and the chain parameters.
@@ -91,9 +105,7 @@ class PtCheck:
     station_candidates: int = DEFAULT_STATION_CANDIDATES
 
     def __post_init__(self):
-        if int(self.station_candidates) < 1:
-            raise ValueError(f"{_LOG_TAG} {KEY_STATION_CANDIDATES} must be >= 1 (1 = no station re-draw), got "
-                             f"{self.station_candidates}")
+        validate_station_candidates(self.station_candidates)
 
 
 @dataclasses.dataclass(frozen=True)

@@ -22,7 +22,9 @@
 
 1. **Day bound by re-draw.** The days of in-commuters and student in-commuters are re-drawn from the donor pool
    (`braunschweig.data.cordon.plans.redraw_times_within_bound`) until the chain ends within the effective bound
-   (`MAX_PLAN_TIME_SECONDS` minus the day-end margin when enabled, the same bound as the pt check). Persons and
+   (`MAX_PLAN_TIME_SECONDS` minus the day-end margin when enabled, the same bound as the pt check; a direct caller of
+   `build_incommuter_frames` that passes both a `time_bound_s` and a `PtCheck` gets `min(time_bound_s, pt_check.bound_s)`,
+   so a later default can never leave the days between the two bounds unmoved: the #488 trap). Persons and
    demographics follow the final donor. A missing end time counts as fitting (it is imputed later). Re-draws are
    limited by `braunschweig.incommuters.time_redraw_max_attempts`; the remainder is counted (`n_unfit`).
 2. **Last resort: the whole-day shift of ADR-0154**, which now always runs after the imputation (not only with the pt
@@ -50,11 +52,16 @@
    | `braunschweig.incommuters.rebalance_max_iterations` | 10 | promotion rounds (0 disables) |
 
 6. **Counters and report keys.** `redraw_times_within_bound` stats: n, n_redrawn, n_attempts_max, n_unfit. Frame
-   `pt_connection`: actions (now incl. `station_redrawn`), `n_station_candidate_days`, median shift, days moved before
+   `day_bound` (in-commuter and student frames, always present, with and without a check): those four stats plus
+   `bound_s`, `n_days_moved` and `n_still_late`. Frame `pt_connection`: actions (now incl. `station_redrawn`), `n_station_candidate_days`, median shift, days moved before
    the bound. Frame `pt_rebalance`: n_pt_target, n_pt_start, n_pt_final, n_iterations, n_promoted,
    n_promoted_unconnected, residual, met, `promotion_actions`, `n_promotion_without_station`, tolerance,
-   max_iterations; one log line each with rates (WARN when the target is missed, when more than 5 % of the promoted
-   have no connection or no station, or when `station_redrawn` exceeds the warn share).
+   max_iterations, and the router load: `n_router_probe_calls`, `n_router_probe_tasks` and `router_probe_rounds`
+   (calls and routed trips per round; a round costs 1 + shift offsets + 1 station probe), also logged per round and in
+   total. One log line each with rates (WARN when the target is missed, when more than 5 % of the promoted have no
+   connection or no station, or when `station_redrawn` exceeds the warn share). The 5 % WARN thresholds are fixed log
+   constants, not config keys, except the `station_redrawn` WARN, which uses the configurable
+   `braunschweig.incommuters.pt_no_connection_warn_share`.
 
 ## Rejected options
 

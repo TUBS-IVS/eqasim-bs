@@ -192,7 +192,8 @@ def configure(context):
     # commuter in-commuter stage, so both stages share one effective bound (incommuters._time_bound_s).
     from braunschweig.matsim.scenario import day_end_margin
     from braunschweig.synthesis import incommuters
-    context.config(incommuters.KEY_TIME_REDRAW_MAX_ATTEMPTS, incommuters.DEFAULT_TIME_REDRAW_MAX_ATTEMPTS)
+    incommuters.validate_time_redraw_max_attempts(
+        context.config(incommuters.KEY_TIME_REDRAW_MAX_ATTEMPTS, incommuters.DEFAULT_TIME_REDRAW_MAX_ATTEMPTS))
     context.config(day_end_margin.KEY_ENABLED, day_end_margin.DEFAULT_ENABLED)
     context.config(day_end_margin.KEY_LAST_ARRIVAL_MARGIN_S, day_end_margin.DEFAULT_LAST_ARRIVAL_MARGIN_S)
     context.config("data_path")
@@ -537,7 +538,7 @@ def _inject(context):
     # ``time_redraw_max_attempts`` times and the persons follow the final donor (#467); the donor's own
     # home-departure time is replaced below by the distance-consistent seed, so the chain end is the return arrival.
     time_bound_s = _time_bound_s(context)
-    donors, (_donor_depart_home, arrive_mid, depart_mid, arrive_home), _redraw_stats = (
+    donors, (_donor_depart_home, arrive_mid, depart_mid, arrive_home), redraw_stats = (
         plans.redraw_times_within_bound(
             donors_pool, n, rng,
             lambda d, _pos: _donor_education_times(d, hts_trips, "person_id"),
@@ -558,8 +559,9 @@ def _inject(context):
     depart_home = np.maximum(0.0, arrive_mid - travel_s)
 
     # The re-draw above sees the chain ends BEFORE imputation (a NaN end counts as fitting); the shift below sees
-    # them AFTER imputation (D1 design). Last resort for days no re-draw fitted: impute missing donor times, then move a day that still ends after
-    # the bound earlier as a whole (as the commuter builder does; never drops an agent), counted and logged.
+    # them AFTER imputation (D1 design). Last resort for days no re-draw fitted: impute missing donor times, then
+    # move a day that still ends after the bound earlier as a whole (as the commuter builder does; never drops an
+    # agent), counted and logged.
     depart_home, arrive_mid, depart_mid, arrive_home = plans.impute_incommuter_times(
         depart_home, arrive_mid, depart_mid, arrive_home, middle_purpose="education",
         repair_chronology=context.config("cordon_incommuter_time_chronology"))
@@ -575,6 +577,8 @@ def _inject(context):
         _log.warning(shift_message)
     else:
         _log.info(shift_message)
+    day_bound = dict(redraw_stats, bound_s=float(time_bound_s), n_days_moved=n_days_moved,
+                     n_still_late=n_still_late)
     reference = restrict_to_modes(
         load_commute_mode_by_distance(data_path), allowed=("car", "pt"))
     band_fn = lambda d: route_distance_band(  # noqa: E731
@@ -634,4 +638,5 @@ def _inject(context):
         "trips": core["trips"], "activities": core["activities"],
         "locations": core["locations"],
         "vehicles": vehicles, "vehicle_types": vehicle_types,
+        "day_bound": day_bound,
     }

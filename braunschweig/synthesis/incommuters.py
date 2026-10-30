@@ -101,6 +101,20 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
 #: Re-draws of an in-commuter donor whose day ends after the simulated-day bound (#467); count, >= 0.
 KEY_TIME_REDRAW_MAX_ATTEMPTS = "braunschweig.incommuters.time_redraw_max_attempts"
 DEFAULT_TIME_REDRAW_MAX_ATTEMPTS = 20
+
+
+def validate_time_redraw_max_attempts(value) -> int:
+    """``KEY_TIME_REDRAW_MAX_ATTEMPTS`` as an int: an integral number >= 0 (0 = no re-draw), else ValueError.
+
+    Matches the check of ``plans.redraw_times_within_bound`` (>= 0); a non-integral value is rejected, not truncated."""
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError):
+        as_float = float("nan")
+    if isinstance(value, bool) or not np.isfinite(as_float) or as_float != int(as_float) or int(as_float) < 0:
+        raise ValueError(f"{KEY_TIME_REDRAW_MAX_ATTEMPTS} must be an integer >= 0 (0 = no re-draw), got {value!r}")
+    return int(as_float)
+
 #: ASSUMPTION (#467): relative tolerance of the pt re-balancing after the timetable check; the in-commuter pt count is
 #: pulled back until it is at least (1 - tolerance) times the balancer's Mikrozensus target. In [0, 1); not calibrated.
 KEY_PT_SHARE_TOLERANCE = "braunschweig.incommuters.pt_share_tolerance"
@@ -420,6 +434,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     (the day-bound shift itself always runs, with or without a check). The frames then
     carry the report under ``pt_connection``.
 
+    The effective day bound is ``time_bound_s``, or ``min(time_bound_s, pt_check.bound_s)`` when a check is given:
+    the donor re-draw and the whole-day shift never use a later bound than the check, so a direct caller with a
+    29 h ``PtCheck`` and the default 30 h ``time_bound_s`` still moves the 29-30 h days (the #488 trap). The frames
+    always carry the re-draw and shift counts under ``day_bound`` (n, n_redrawn, n_attempts_max, n_unfit, bound_s,
+    n_days_moved, n_still_late), with and without a check.
+
     With ``mode_balance`` AND ``pt_check`` the pt count is then pulled back towards the
     balancer's Mikrozensus target (#467, owner decision; global, not per Bundesland) by
     :func:`~braunschweig.data.cordon.mode_balancer.rebalance_with_timetable`: car
@@ -448,7 +468,10 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     agents = expand_to_agents(inbound, sampling_rate)
     n = len(agents)
     if n == 0:
-        return _empty_frames(zgb_work.crs)
+        empty = _empty_frames(zgb_work.crs)
+        empty["day_bound"] = dict(n=0, n_redrawn=0, n_attempts_max=0, n_unfit=0, bound_s=float(time_bound_s),
+                                  n_days_moved=0, n_still_late=0)
+        return empty
 
     ids = make_incommuter_ids(n, n_residents, n_resident_households)
     person_ids = ids["person_id"].to_numpy()
@@ -713,12 +736,13 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # MATSim then re-times the simulated gate->work leg over the iterations.
     # A donor whose day ends after the bound (``time_bound_s``: the simulated day minus the day-end margin) is
     # re-drawn up to ``time_redraw_max_attempts`` times (#467); the persons follow the final donor.
+    bound_s = float(time_bound_s) if pt_check is None else min(float(time_bound_s), float(pt_check.bound_s))
     dist_km_all, home_to_gate_km_all = np.asarray(dist_km, dtype=float), np.asarray(home_to_gate_km, dtype=float)
     donors, (arrive_work, depart_work, depart_home, arrive_home), redraw_stats = redraw_times_within_bound(
         select_commuter_donors(hts_persons, hts_trips, person_col), n, rng,
         lambda d, pos: _agent_times(d, hts_trips, person_col, dist_km_all[pos], home_to_gate_km_all[pos],
                                     gate_speed_kmh, detour_factor),
-        bound_s=float(time_bound_s), max_attempts=int(time_redraw_max_attempts))
+        bound_s=bound_s, max_attempts=validate_time_redraw_max_attempts(time_redraw_max_attempts))
 
     # 4a) Impute the missing donor times (assemble_incommuter_core_frames imputes the same way; on complete times
     # the second imputation changes nothing). A day that still ends after the bound moves earlier as a whole, as
@@ -728,12 +752,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         depart_home, arrive_work, depart_work, arrive_home, middle_purpose="work",
         repair_chronology=repair_chronology)
     move_s, _late, _unresolved = _day_end_margin.late_day_shift_s(
-        depart_home, arrive_home, target_s=float(time_bound_s))
+        depart_home, arrive_home, target_s=bound_s)
     depart_home, arrive_work, depart_work, arrive_home = (
         depart_home - move_s, arrive_work - move_s, depart_work - move_s, arrive_home - move_s)
     n_days_moved = int((move_s > 0).sum())
     n_still_late = int(_unresolved.sum())
-    shift_message = (f"[braunschweig.incommuters] day bound {float(time_bound_s):.0f} s: "
+    shift_message = (f"[braunschweig.incommuters] day bound {bound_s:.0f} s: "
                      f"{n_days_moved}/{n} days moved earlier as a whole "
                      f"({100.0 * n_days_moved / max(n, 1):.1f}%), {n_still_late} still late")
     if n_days_moved / max(n, 1) > 0.05 or n_still_late:
@@ -741,9 +765,19 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     else:
         logger.info(shift_message)
 
+    day_bound = dict(redraw_stats, bound_s=bound_s, n_days_moved=n_days_moved, n_still_late=n_still_late)
+
     # 4b) Timetable check of the pt days (#488). Only with a check, so the default path stays byte-identical.
     pt_report = None
+    probe_calls = {"calls": 0, "tasks": 0}
     if pt_check is not None:
+        # Router probe calls are counted (one call = one batch routed; tasks = routed trips) for the log and the
+        # ``pt_rebalance`` report: a re-balancing round costs 1 + shift offsets + 1 station probe (ADR-0172).
+        def counting_probe(tasks):
+            probe_calls["calls"] += 1
+            probe_calls["tasks"] += len(tasks)
+            return pt_check.probe(tasks)
+
         # Station re-draw (#467): the other eligible stations of a far pt agent's source Kreis, in weight order, with
         # the home departure recomputed for each station's access distance. None when re-drawing is off (1 candidate)
         # or no station table exists; in-ring origins get none (their home is a Gemeinde point, not a station).
@@ -758,7 +792,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         resolution = _pt_connections.resolve_pt_days(
             person_ids=person_ids, is_pt=modes == "pt", home_xy=np.column_stack([home_x, home_y]),
             work_xy=np.column_stack([work_x, work_y]), depart_home_s=depart_home, arrive_work_s=arrive_work,
-            depart_work_s=depart_work, arrive_home_s=arrive_home, probe=pt_check.probe,
+            depart_work_s=depart_work, arrive_home_s=arrive_home, probe=counting_probe,
             shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
             bound_s=pt_check.bound_s, car_allowed=pt_check.car_allowed and "car" in commute_modes,
             station_candidates=station_candidates)
@@ -796,6 +830,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             (_pt_connections.ACTION_CONNECTION_FOUND, _pt_connections.ACTION_DAY_SHIFTED,
              _pt_connections.ACTION_STATION_REDRAWN, "unconnected"), 0)
         n_promotion_without_station = 0
+        probe_rounds = []
+        probe_calls_before_rebalance = (probe_calls["calls"], probe_calls["tasks"])
         connected_actions = (_pt_connections.ACTION_CONNECTION_FOUND, _pt_connections.ACTION_DAY_SHIFTED,
                              _pt_connections.ACTION_STATION_REDRAWN)
 
@@ -803,6 +839,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             """Place the promoted car agents at ``indices`` as pt and run the chain without the switch to car;
             write the placement and times of the connected ones into the final arrays, leave the others as car."""
             nonlocal n_promotion_without_station
+            calls_before, tasks_before = probe_calls["calls"], probe_calls["tasks"]
             indices = np.asarray(indices, dtype=int)
             cand_x, cand_y, cand_stop = home_x.copy(), home_y.copy(), pt_station_ids.copy()
             placed = np.zeros(n, dtype=bool)
@@ -836,9 +873,15 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                 person_ids=person_ids, is_pt=placed, home_xy=np.column_stack([cand_x, cand_y]),
                 work_xy=np.column_stack([work_x, work_y]), depart_home_s=cand_depart_home,
                 arrive_work_s=arrive_work, depart_work_s=depart_work, arrive_home_s=arrive_home,
-                probe=pt_check.probe, shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
+                probe=counting_probe, shift_window_s=pt_check.shift_window_s, shift_step_s=pt_check.shift_step_s,
                 bound_s=pt_check.bound_s, car_allowed=False, station_candidates=candidates)
             connected = np.isin(attempt.actions[indices], connected_actions)
+            round_calls = probe_calls["calls"] - calls_before
+            round_tasks = probe_calls["tasks"] - tasks_before
+            probe_rounds.append({"n_promoted": int(len(indices)), "router_probe_calls": round_calls,
+                                 "router_probe_tasks": round_tasks})
+            logger.info("[braunschweig.incommuters] pt re-balancing round %d: %d promoted, %d router probe calls "
+                        "(%d routed trips)", len(probe_rounds), len(indices), round_calls, round_tasks)
             for i, ok in zip(indices, connected):
                 if not ok:
                     promotion_actions["unconnected"] += 1
@@ -863,6 +906,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
             tolerance=float(pt_share_tolerance), max_iterations=int(rebalance_max_iterations))
         rebalance_report = dict(rebalance_stats, promotion_actions=promotion_actions,
                                 n_promotion_without_station=n_promotion_without_station,
+                                n_router_probe_calls=probe_calls["calls"] - probe_calls_before_rebalance[0],
+                                n_router_probe_tasks=probe_calls["tasks"] - probe_calls_before_rebalance[1],
+                                router_probe_rounds=probe_rounds,
                                 tolerance=float(pt_share_tolerance), max_iterations=int(rebalance_max_iterations))
         # The actions of the promotion attempts as rates over the promoted agents (CLAUDE.md fallback transparency);
         # WARN when more than 5 % found no station to board at (can_board_pt and the station weights disagree).
@@ -874,6 +920,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                 % (n_attempts, ", ".join("%s %d (%.1f%%)" % (action, count, 100.0 * count / n_attempts)
                                          for action, count in promotion_actions.items()),
                    n_promotion_without_station, 100.0 * no_station_share))
+            promotion_message += "; router probe calls %d (%d routed trips)" % (
+                rebalance_report["n_router_probe_calls"], rebalance_report["n_router_probe_tasks"])
             if no_station_share > _mode_balancer.UNCONNECTED_WARN_SHARE:
                 logger.warning("%s -- promoted agents of a Kreis with can_board_pt drew no entry station: check "
                                "the cordon_pt_gates station weights", promotion_message)
@@ -992,6 +1040,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                   vehicle_types=vehicle_types, households=households,
                   validation=validation, mode_target=mode_target,
                   od_target=od_target)
+    frames["day_bound"] = day_bound
     if pt_report is not None:
         frames["pt_connection"] = pt_report
     if rebalance_report is not None:
@@ -1521,7 +1570,7 @@ def configure(context):
     # day that ends later than the end of the simulated day minus the margin).
     context.config(_pt_connections.KEY_ENABLED, _pt_connections.DEFAULT_ENABLED)
     # Donor re-draw until the day fits the bound (#467); the bound needs the day-end margin keys in any case.
-    context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS, DEFAULT_TIME_REDRAW_MAX_ATTEMPTS)
+    validate_time_redraw_max_attempts(context.config(KEY_TIME_REDRAW_MAX_ATTEMPTS, DEFAULT_TIME_REDRAW_MAX_ATTEMPTS))
     # Re-balancing of the in-commuter pt count after the timetable check (#467; active with the balancer and the check).
     pt_share_tolerance = context.config(KEY_PT_SHARE_TOLERANCE, DEFAULT_PT_SHARE_TOLERANCE)
     if not 0.0 <= float(pt_share_tolerance) < 1.0:
@@ -1539,9 +1588,7 @@ def configure(context):
         # Station re-draw before the switch to car (#467): entry stations tried in total per pt in-commuter.
         n_station_candidates = context.config(_pt_connections.KEY_STATION_CANDIDATES,
                                               _pt_connections.DEFAULT_STATION_CANDIDATES)
-        if int(n_station_candidates) < 1:
-            raise ValueError(f"{_pt_connections.KEY_STATION_CANDIDATES} must be >= 1 (1 = no station re-draw), "
-                             f"got {n_station_candidates}")
+        _pt_connections.validate_station_candidates(n_station_candidates)
         from braunschweig.data.transit import connections as _connections  # noqa: PLC0415
         _connections.configure(context)
         context.stage("matsim.runtime.eqasim")

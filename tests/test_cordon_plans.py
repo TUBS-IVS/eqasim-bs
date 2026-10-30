@@ -167,7 +167,9 @@ def test_redraw_times_within_bound_nan_end_fits_and_rng_unchanged_when_nothing_l
 def test_redraw_times_within_bound_keeps_donor_dtypes():
     from braunschweig.data.cordon.plans import redraw_times_within_bound
     pool = pd.DataFrame({"person_id": [1, 2], "employed": [True, True], "sex": ["f", "m"],
-                         "age": [42.5, 30.5]})
+                         "age": [42.5, 30.5],
+                         "region": pd.Categorical(["a", "b"], categories=["a", "b", "c"]),
+                         "visits": pd.array([3, None], dtype="Int64")})
     donors, _, stats = redraw_times_within_bound(
         pool, 50, np.random.default_rng(1), _late_pool_times_of, bound_s=30 * 3600.0, max_attempts=20)
     assert stats["n_redrawn"] > 0

@@ -365,6 +365,9 @@ def test_student_days_are_bounded_to_the_simulated_day(monkeypatch, caplog):
     assert set(frames["persons"]["hts_id"]) == {10}   # persons follow the fitting donor
     redraw_lines = [r.message for r in caplog.records if "redrawn" in r.message or "re-drawn" in r.message]
     assert redraw_lines, [r.message for r in caplog.records]
+    report = frames["day_bound"]          # the re-draw and shift counts travel with the frames (F2)
+    assert report["n"] == n_baseline and report["n_redrawn"] > 0 and report["n_unfit"] == 0
+    assert report["n_still_late"] == 0 and report["bound_s"] == bound_s
 
 
 def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
@@ -394,6 +397,7 @@ def test_student_days_no_donor_fits_are_moved_as_a_whole(monkeypatch, caplog):
     assert shift_lines[0].levelno == logging.WARNING
     assert f"{n_baseline}/{n_baseline} days moved" in shift_lines[0].message
     assert "0 still late" in shift_lines[0].message
+    assert frames["day_bound"]["n_days_moved"] == n_baseline and frames["day_bound"]["n_unfit"] == n_baseline
 
 
 def test_configure_declares_the_day_bound_keys():
@@ -409,6 +413,18 @@ def test_configure_declares_the_day_bound_keys():
                 "braunschweig.day_end_margin.enabled",
                 "braunschweig.day_end_margin.last_arrival_margin_s"):
         assert key in requested, requested
+
+
+@pytest.mark.parametrize("bad", [-1, 2.5])
+def test_configure_rejects_an_invalid_redraw_attempt_count(bad):
+    class _Bad(_RecordingCtx):
+        def config(self, key, default=si._SENTINEL):
+            if key == "braunschweig.incommuters.time_redraw_max_attempts":
+                return bad
+            return super().config(key, default)
+
+    with pytest.raises(ValueError, match="time_redraw_max_attempts"):
+        si.configure(_Bad())
 
 
 def test_injection_seeds_distance_consistent_departure(monkeypatch):
