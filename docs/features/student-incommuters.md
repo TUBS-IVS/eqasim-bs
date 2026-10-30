@@ -173,6 +173,16 @@ only fixes the initial plan. Verified by
 `tests/test_student_incommuters_stage.py::test_injection_seeds_distance_consistent_departure`
 (implied outbound speed is the constant `gate_speed_kmh / detour` for all agents).
 
+### Timetable check of the pt days (ADR-0173, #528)
+
+A pt student's two trips are checked against the timetable with the chain of the
+commuter in-commuters (ADR-0153; `incommuter_pt_connections.check_pt_days`, switch
+`braunschweig.incommuters.pt_connection_check.enabled`): a day without a connection
+moves as a whole (earlier first) within the shift window, else the student drives from
+the home it already has. Students board at no drawn entry station, so the station
+re-draw of ADR-0172 does not apply. Counted, logged and reported as `pt_connection`;
+the measurement that motivated it is `docs/runs/student-incommuter-pt-walks-2026-10-30.yml`.
+
 ## OD / distance analysis outputs
 
 `braunschweig/analysis/simwrapper/student_commuters.py` (mirrors the SvB

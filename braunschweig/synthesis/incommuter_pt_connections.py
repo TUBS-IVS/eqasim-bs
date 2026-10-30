@@ -27,6 +27,10 @@ resolved by a counted chain, in this order (owner decision for #488: the departu
    so this is counted and warned about.
 
 ``connection_found`` days are untouched. All actions are counted and logged as rates over the pt days.
+
+:func:`check_pt_days` is the entry point of the stages: the employee in-commuters of
+``braunschweig.synthesis.incommuters`` (#488, with the station re-draw) and the student in-commuters of
+``braunschweig.synthesis.student_incommuters`` (#528; they board at no drawn station, so steps 1, 3 and 4 apply).
 """
 from __future__ import annotations
 
@@ -251,6 +255,49 @@ def resolve_pt_days(*, person_ids, is_pt, home_xy, work_xy, depart_home_s, arriv
               "n_station_candidate_days": int(len(redraw_positions)),
               "shift_window_s": float(shift_window_s), "shift_step_s": float(shift_step_s), "bound_s": float(bound_s)}
     return Resolution(actions=actions, offsets_s=applied, report=report, stations=stations)
+
+
+@dataclasses.dataclass
+class CheckedDays:
+    """The pt days after :func:`check_pt_days`: the resolution, the modes with ``to_car`` days switched to ``"car"``,
+    the four day times (s) with each ``day_shifted`` offset applied, and the logged report."""
+
+    resolution: Resolution
+    modes: np.ndarray
+    depart_home_s: np.ndarray
+    arrive_mid_s: np.ndarray
+    depart_mid_s: np.ndarray
+    arrive_home_s: np.ndarray
+    report: dict
+
+
+def check_pt_days(pt_check: PtCheck, *, person_ids, modes, home_xy, mid_xy, depart_home_s, arrive_mid_s,
+                  depart_mid_s, arrive_home_s, car_allowed: bool, probe: Probe | None = None,
+                  station_candidates: dict | None = None, report_extra: dict | None = None) -> CheckedDays:
+    """Check the pt days of one in-commuter stage, apply the day shifts and the switch to car, and log the rates.
+
+    The common part of every in-commuter stage (employees #488, students #528): :func:`resolve_pt_days` on the days
+    whose mode is ``"pt"`` (the middle activity is work or education), every ``day_shifted`` day moved by its offset,
+    every ``to_car`` day's mode set to ``"car"``, and :func:`log_report` over the report (``report_extra`` merged in
+    first). What a switch or a station re-draw means for the home point stays with the caller (the employee stage
+    boards a car at its road gate or the pt agent at the chosen station). ``probe`` defaults to ``pt_check.probe``.
+    """
+    modes = np.asarray(modes)
+    resolution = resolve_pt_days(
+        person_ids=person_ids, is_pt=modes == "pt", home_xy=home_xy, work_xy=mid_xy, depart_home_s=depart_home_s,
+        arrive_work_s=arrive_mid_s, depart_work_s=depart_mid_s, arrive_home_s=arrive_home_s,
+        probe=pt_check.probe if probe is None else probe, shift_window_s=pt_check.shift_window_s,
+        shift_step_s=pt_check.shift_step_s, bound_s=pt_check.bound_s, car_allowed=car_allowed,
+        station_candidates=station_candidates)
+    offset = resolution.offsets_s
+    report = dict(resolution.report, **(report_extra or {}))
+    log_report(report, warn_share=pt_check.warn_share)
+    return CheckedDays(
+        resolution=resolution, modes=np.where(resolution.actions == ACTION_TO_CAR, "car", modes),
+        depart_home_s=np.asarray(depart_home_s, dtype=float) + offset,
+        arrive_mid_s=np.asarray(arrive_mid_s, dtype=float) + offset,
+        depart_mid_s=np.asarray(depart_mid_s, dtype=float) + offset,
+        arrive_home_s=np.asarray(arrive_home_s, dtype=float) + offset, report=report)
 
 
 def log_report(report: dict, warn_share: float) -> None:
