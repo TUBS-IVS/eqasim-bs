@@ -214,3 +214,102 @@ def test_every_final_pt_can_board():
     assert len(modes_final) == n
     # All values are valid modes
     assert set(modes_final).issubset({"car", "pt"})
+
+
+# ---------------------------------------------------------------------------
+# 7. Iterative re-balancing with timetable-connected agents (#467, D3)
+# ---------------------------------------------------------------------------
+# After the timetable chain switched some pt in-commuters to car, rebalance_with_timetable promotes car agents back
+# to pt until the pt count is within the tolerance of the balancer's target; a promoted agent the timetable does not
+# serve goes back to car and leaves the pool.
+
+from braunschweig.data.cordon.mode_balancer import rebalance_with_timetable  # noqa: E402
+
+# 12 agents: 0-3 Mikrozensus pt (target 4); the chain switched 2 and 3 to car; 10 and 11 cannot board pt.
+_MIKRO = ["pt"] * 4 + ["car"] * 8
+_CAN = [True] * 10 + [False] * 2
+_PROP = [0.5, 0.5, 0.5, 0.5, 0.9, 0.1, 0.7, 0.3, 0.6, 0.2, 0.9, 0.9]
+_SWITCHED = np.zeros(12, dtype=bool)
+_SWITCHED[[2, 3]] = True
+
+
+def _after_chain():
+    modes = np.array(_MIKRO, dtype=object)
+    modes[_SWITCHED] = "car"
+    return modes.astype(str)
+
+
+def _rebalance(connect, rng, *, max_iterations=10, tolerance=0.01, modes=None):
+    return rebalance_with_timetable(_after_chain() if modes is None else modes, 4, _CAN, _PROP, connect, rng,
+                                    excluded=_SWITCHED, tolerance=tolerance, max_iterations=max_iterations)
+
+
+def test_rebalance_with_always_connected_agents_equals_the_balancer():
+    # The chain-switched agents act like the balancer's forced ones: same pool, same weighted draw, same seed.
+    expected, _ = balance_incommuter_modes(_MIKRO, np.array(_CAN) & ~_SWITCHED, _PROP, np.random.default_rng(5))
+    modes, stats = _rebalance(lambda idx: np.ones(len(idx), dtype=bool), np.random.default_rng(5))
+    np.testing.assert_array_equal(modes, expected)
+    assert stats == {"n_pt_target": 4, "n_pt_start": 2, "n_pt_final": 4, "n_iterations": 1, "n_promoted": 2,
+                     "n_promoted_unconnected": 0, "residual": 0, "met": True}
+    assert not (modes[_SWITCHED] == "pt").any()          # the chain's switches are final
+
+
+def test_an_unconnected_promoted_agent_goes_back_to_car_and_another_is_promoted():
+    tried, refused = [], []
+
+    def connect(idx):
+        tried.append(list(idx))
+        ok = np.ones(len(idx), dtype=bool)
+        if not refused:                                  # the very first promoted agent has no connection
+            ok[0] = False
+            refused.append(int(idx[0]))
+        return ok
+
+    modes, stats = _rebalance(connect, np.random.default_rng(5))
+    assert stats["n_iterations"] == 2 and stats["met"] and stats["n_pt_final"] == 4
+    assert stats["n_promoted"] == 3 and stats["n_promoted_unconnected"] == 1 and stats["residual"] == 0
+    assert modes[refused[0]] == "car"
+    assert refused[0] not in tried[1]                    # out of the pool after its failed attempt
+    assert all(_CAN[i] and not _SWITCHED[i] for batch in tried for i in batch)
+
+
+def test_rebalance_stops_at_the_iteration_cap_when_the_timetable_serves_nobody(caplog):
+    calls = []
+    modes, stats = _rebalance(lambda idx: calls.append(len(idx)) or np.zeros(len(idx), dtype=bool),
+                              np.random.default_rng(5), max_iterations=3)
+    assert len(calls) == 3 and stats["n_iterations"] == 3
+    assert stats["met"] is False and stats["residual"] == 2 and stats["n_pt_final"] == 2
+    np.testing.assert_array_equal(modes, _after_chain())
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_rebalance_stops_when_the_pool_is_exhausted():
+    modes, stats = _rebalance(lambda idx: np.zeros(len(idx), dtype=bool), np.random.default_rng(5),
+                              max_iterations=100)
+    assert stats["n_promoted"] == 6                      # the six flexible car agents 4-9, each tried once
+    assert stats["met"] is False and stats["residual"] == 2
+
+
+@pytest.mark.parametrize("modes, tolerance", [
+    (np.array(["pt"] * 4 + ["car"] * 8), 0.01),          # no deficit
+    (np.array(["pt"] * 3 + ["car"] * 9), 0.3),           # deficit 1 of 4 within a 30 % tolerance
+])
+def test_rebalance_within_tolerance_draws_nothing(modes, tolerance):
+    rng = np.random.default_rng(5)
+    state = rng.bit_generator.state
+    out, stats = _rebalance(lambda idx: pytest.fail("connect must not be called"), rng, modes=modes,
+                            tolerance=tolerance)
+    assert rng.bit_generator.state == state
+    np.testing.assert_array_equal(out, modes)
+    assert stats["n_iterations"] == 0 and stats["met"] is True
+
+
+def test_rebalance_promotes_zero_propensity_agents_only_after_the_weighted_ones(caplog):
+    # Deficit 2, but only agent 4 has a positive pt propensity: a weighted draw without replacement cannot pick 2
+    # (numpy raises); agent 4 is promoted and the second agent comes from the zero-weight rest, counted and warned.
+    prop = [0.5] * 4 + [0.8] + [0.0] * 7
+    modes, stats = rebalance_with_timetable(_after_chain(), 4, _CAN, prop, lambda idx: np.ones(len(idx), bool),
+                                            np.random.default_rng(5), excluded=_SWITCHED, tolerance=0.01,
+                                            max_iterations=10)
+    assert modes[4] == "pt" and stats["n_pt_final"] == 4 and stats["met"]
+    assert any("zero" in r.getMessage() and r.levelname == "WARNING" for r in caplog.records)

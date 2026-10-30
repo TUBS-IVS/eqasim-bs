@@ -1010,3 +1010,82 @@ def test_day_too_long_for_the_whole_day_shift_is_kept_and_moved_as_far_as_possib
     assert frames["trips"]["arrival_time"].max() > 29 * 3600.0
     assert frames["trips"]["arrival_time"].max() < 40 * 3600.0
     assert frames["trips"].groupby("person_id")["departure_time"].min().min() >= 0.0
+
+
+# Iterative pt re-balancing after the timetable check (#467, D3): a pt in-commuter the timetable switched to car is
+# replaced by a promoted car in-commuter that the timetable serves; a promoted one it does not serve stays car.
+
+def _rebalance_frames(refused_ids):
+    """Frames with the balancer ON, one station (railA) and a probe serving every person not in ``refused_ids``."""
+    from braunschweig.synthesis.incommuter_pt_connections import PtCheck
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+
+    def probe(tasks):
+        ids = tasks["identifier"].astype(str)
+        person = ids.str.split(":").str[0].astype(int)
+        return pd.Series(~person.isin(refused_ids).to_numpy(), index=ids.to_numpy())
+
+    return build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.02, gates=gates, assignment=assignment,
+        zgb_work=zgb_work, mode_reference={">=10": {"pt": 0.5, "car": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id", n_residents=100, n_resident_households=40,
+        rng=np.random.default_rng(11), gate_speed_kmh=30.0, pt_entry_stops=_pt_entry_stops_new_schema(),
+        mode_balance=True, pt_check=PtCheck(probe=probe, bound_s=29 * 3600.0), time_bound_s=29 * 3600.0)
+
+
+def _first_trips(frames):
+    return frames["trips"][frames["trips"]["trip_index"] == 0].set_index("person_id")
+
+
+def _home_xy(frames):
+    home = frames["locations"][frames["locations"]["activity_index"] == 0].set_index("person_id")
+    return home.geometry.x, home.geometry.y
+
+
+def test_a_pt_in_commuter_switched_to_car_is_replaced_by_a_connected_promoted_car_in_commuter():
+    base = _rebalance_frames(set())
+    base_modes = _first_trips(base)["mode"]
+    pt_ids = sorted(base_modes.index[base_modes == "pt"])
+    assert 0 < len(pt_ids) < len(base_modes)
+    assert base["pt_rebalance"]["n_iterations"] == 0                    # nothing switched -> nothing re-balanced
+
+    frames = _rebalance_frames({pt_ids[0]})
+    first = _first_trips(frames)
+    hx, hy = _home_xy(frames)
+    assert first.loc[pt_ids[0], "mode"] == "car"                        # switched by the chain, never promoted
+    assert (hx[pt_ids[0]], hy[pt_ids[0]]) == (605000.0, 5840000.0)     # boards at the road gate
+    assert frames["pt_connection"]["actions"]["to_car"] == 1
+    assert frames["pt_connection"]["n_pt_days"] == len(pt_ids)          # promotion attempts are reported apart
+    promoted = sorted(set(first.index[first["mode"] == "pt"]) - set(pt_ids))
+    assert len(promoted) == 1 and (first["mode"] == "pt").sum() == len(pt_ids)   # back at the target
+    assert (hx[promoted[0]], hy[promoted[0]]) == (604000.0, 5841000.0) # placed at the station
+    # same donor, same station: the promoted agent leaves home when the original pt agents do
+    assert first.loc[promoted[0], "departure_time"] == first.loc[pt_ids[1], "departure_time"]
+    report = frames["pt_rebalance"]
+    assert (report["n_pt_target"], report["n_pt_final"], report["n_iterations"], report["n_promoted"],
+            report["n_promoted_unconnected"], report["residual"], report["met"]) == (
+        len(pt_ids), len(pt_ids), 1, 1, 0, 0, True)
+    assert report["promotion_actions"]["connection_found"] == 1
+    validation = frames["validation"].set_index(frames["persons"]["person_id"].to_numpy())
+    assert validation.loc[promoted[0], "entry_kind"] == "rail_station"
+    cars = set(frames["vehicles"].loc[frames["vehicles"]["mode"] == "car", "owner_id"])
+    assert pt_ids[0] in cars and promoted[0] not in cars
+
+
+def test_promoted_car_in_commuters_without_a_connection_stay_car_at_the_road_gate():
+    base = _rebalance_frames(set())
+    base_modes = _first_trips(base)["mode"]
+    pt_ids = sorted(base_modes.index[base_modes == "pt"])
+    frames = _rebalance_frames({pt_ids[0], *base_modes.index[base_modes == "car"]})
+    first = _first_trips(frames)
+    hx, hy = _home_xy(frames)
+    assert sorted(first.index[first["mode"] == "pt"]) == pt_ids[1:]
+    cars = first.index[first["mode"] == "car"]
+    assert np.allclose(hx[cars], 605000.0) and np.allclose(hy[cars], 5840000.0)
+    # a failed attempt leaves no trace: every car in-commuter keeps the road-gate home departure of the base run
+    base_car_departure = _first_trips(base).loc[base_modes == "car", "departure_time"]
+    assert base_car_departure.nunique() == 1
+    assert (first.loc[cars, "departure_time"] == base_car_departure.iloc[0]).all()
+    report = frames["pt_rebalance"]
+    assert report["met"] is False and report["residual"] == 1
+    assert report["n_promoted"] == report["n_promoted_unconnected"] == min(10, len(base_modes) - len(pt_ids))
