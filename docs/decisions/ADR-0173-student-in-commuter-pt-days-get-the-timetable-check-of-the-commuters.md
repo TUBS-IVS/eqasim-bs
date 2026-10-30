@@ -52,8 +52,14 @@
 - The commuter stage is refactored onto `check_pt_days` without a change of its output: its frame tests
   (`tests/test_incommuters.py`, `tests/test_incommuter_pt_connections.py`) pass unchanged, and its configure
   declares the same keys with the same values (synpp keeps a declared default, so the former second read of the
-  switch without a default returned the same value). Only the recording stub of
-  `tests/test_incommuter_hts_donor_wiring.py` had to accept synpp's `volatile=` keyword. Its log line is unchanged.
+  switch without a default returned the same value). Its log line is unchanged.
+- Every configure-recording test stub that reaches `configure_pt_check` must accept synpp's `volatile=` keyword
+  (`**kwargs`), because the router declarations pass it. This PR changed the stubs in
+  `tests/test_incommuter_hts_donor_wiring.py`, `tests/test_incommuter_stage_wiring.py`,
+  `tests/test_cordon_incommuters_enriched_alias.py` and `tests/test_student_incommuters_stage.py`. The first three
+  record the commuter stage's configure. They stayed out of the router declarations before only because its former
+  second read of the switch had no default, and the stubs returned a falsy value for it. The student stage declared
+  no router before this PR.
 - A far student sits at the nearest road gate; where no stop is reachable from a gate the check sends the pt
   students there to car for the geometry, not the timetable. Observable as the `to_car` share (see the rejected
   station option).
