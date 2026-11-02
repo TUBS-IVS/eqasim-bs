@@ -444,7 +444,7 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
         return decide("none", "skipped: nothing changed against main since the last complete round", "none", "none")
     tier, why = _size_tier(config, measured, structure, kind)
     if tier == "none" and context.open_findings:
-        return decide(verify, f"verify: {context.open_findings} open finding(s), no counted change",
+        return decide(verify, f"verify: {context.open_findings} open finding(s), the push itself is not reviewed ({why})",
                       "verify", "interdiff")
     return decide(tier, why, "rereview", "interdiff")
 

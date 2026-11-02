@@ -672,10 +672,12 @@ def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=(), events=()):
     # nothing changed and nothing reverted (only a merge of main): no fix can have happened -> nothing,
     # so merges of main cannot use up the rounds before the fix arrives (Claude review finding on PR #521)
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[]), "none", "none", "none"),
-    # a push of only ignored files with open findings -> verify tier on the (empty) interdiff
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("docs/generated/STAGES.md", 12)]), "light", "verify", "interdiff"),
-    # ... and with nothing open -> nothing
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("docs/generated/STAGES.md", 12)]), "none", "none", "none"),
+    # a push of ignored files alone never reaches the interdiff (it filters them out): like a merge of
+    # main it cannot fix a finding, so no verify run (the case "nothing changed" above; Claude review
+    # finding on a copy: the config promised a verify run here). A docs/ push the rules would not
+    # review still gets the verify tier while findings are open, and nothing without open findings.
+    ([("braunschweig/x.py", 400)], "docs/x", "synchronize", "", _ctx(open_=2, changed=[("docs/codebase/notes/n.md", 12)]), "light", "verify", "interdiff"),
+    ([("braunschweig/x.py", 400)], "docs/x", "synchronize", "", _ctx(changed=[("docs/codebase/notes/n.md", 12)]), "none", "none", "none"),
     # a small non-critical push -> light re-review, open findings or not
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("scripts/report_x.py", 12)]), "light", "rereview", "interdiff"),
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=0, changed=[("docs/codebase/notes/n.md", 3)]), "light", "rereview", "interdiff"),

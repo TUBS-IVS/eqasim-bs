@@ -117,7 +117,8 @@ nothing changed -> none, unless findings are open and a file was reverted to `ma
 can fix a finding, a merge of `main` cannot) -> `rereview.verify_tier` with no diff (the model
 verifies at head); otherwise the tier of the interdiff numstat with
 the normal thresholds, critical and structure paths, raised to `rereview.verify_tier` when that
-is none (only ignored files changed) but findings are open. A structure change of a further
+is none (a `docs/` branch without a critical path) but findings are open; a push of ignored files
+alone gets no run, like a merge of `main`, since it cannot fix a finding. A structure change of a further
 round is a file added, deleted or renamed against `main` at head that was not so at the last
 complete round (`interdiff` writes these as `events` in `interdiff.json`), so a stage file added
 in round 1 does not make every later round deep. The `docs/` branch rule applies as in the first round.

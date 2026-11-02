@@ -100,12 +100,12 @@ thresholds:
 # Further rounds on the same PR (after a push to a PR the review has already seen). The gate
 # then measures only the files whose change against main differs from the last complete round
 # (scripts/claude_review.py interdiff), with the thresholds above; a file added, deleted or
-# renamed since the last complete round counts as a structure change. A push that changes only
-# ignored files still gets verify_tier while findings of earlier rounds are open, so a fix is
-# checked.
-# After max_rounds automatic rounds the review stops; adding the force label reads the whole PR
-# again and does not count. ASSUMPTION: starting values chosen on 2026-10-28, re-tune from the
-# cost records.
+# renamed since the last complete round counts as a structure change. A push the rules above
+# would not review (a docs/ branch without a critical path) still gets verify_tier while
+# findings of earlier rounds are open, so a fix is checked; a push of ignored files alone gets
+# no run, like a merge of the base branch: it cannot fix a finding. After max_rounds automatic
+# rounds the review stops; adding the force label reads the whole PR again and does not count.
+# ASSUMPTION: starting values chosen on 2026-10-28, re-tune from the cost records.
 rereview:
   max_rounds: 3
   verify_tier: light
