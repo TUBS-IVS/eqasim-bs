@@ -348,6 +348,9 @@ def test_a_further_round_lists_the_open_findings_and_the_missing_diff():
     assert cr.round_block(cr.empty_state(), "first", 1) == ""
     none = cr.diff_block("none", "", [], ["braunschweig/z.py"])
     assert "no diff file" in none.lower() and "braunschweig/z.py" in none
+    # a changed ignored file is named on every kind of round, not only on the first (finding on a copy)
+    for source in ("pr", "interdiff", "none"):
+        assert "environments/env.yml" in cr.diff_block(source, "d", ["x.py"], [], ["environments/env.yml"])
     template = (_REPO / CONFIG["review"]["prompt_file"]).read_text(encoding="utf-8")
     prompt = cr.review_prompt(template, "o/r", 7, "light", "abc123", "none", "", {"changed": [], "reverted": ["braunschweig/z.py"]},
                               state, "verify", 2, "T", "")
@@ -617,6 +620,10 @@ def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_no
     assert meta["last_sha"] == "" and meta["fallback"] == ""
 
 
+_LOCK = "diff --git a/environments/conda-lock.yml b/environments/conda-lock.yml\n--- a/environments/conda-lock.yml\n+++ b/environments/conda-lock.yml\n@@ -1 +1 @@\n-x\n+y\n"
+_ENV = "diff --git a/environments/env.yml b/environments/env.yml\n--- a/environments/env.yml\n+++ b/environments/env.yml\n@@ -1 +1 @@\n-a\n+b\n"
+
+
 def test_interdiff_cli_reports_the_structure_changes_since_the_last_round(tmp_path, monkeypatch):
     # synthesis/old.py was added before the last round (already reviewed); new_stage.py is added
     # since, and matsim/gone.py is deleted since: only these two are structure changes of this round
@@ -636,7 +643,9 @@ def test_interdiff_cli_reports_the_structure_changes_since_the_last_round(tmp_pa
             return then_status if args[-1].endswith("c" * 40) else now_status
         if "--numstat" in args:
             return "3\t1\tbraunschweig/a.py\n"
-        return _THEN
+        # the lock file (an ignored path) is the same at the last round as at head, the environment
+        # file changed since: only that one is a changed ignored file of this round
+        return _THEN + (_LOCK + _ENV.replace("+b", "+a") if args[-1].endswith("c" * 40) else _LOCK + _ENV)
 
     monkeypatch.setattr(cr, "_git", fake_git)
     monkeypatch.setattr(cr, "_is_ancestor", lambda older, newer: True)
@@ -645,6 +654,7 @@ def test_interdiff_cli_reports_the_structure_changes_since_the_last_round(tmp_pa
                     "--base-sha", "b" * 40, "--head-sha", "d" * 40, "--out-dir", str(out_dir)]) == 0
     meta = json.loads((out_dir / "interdiff.json").read_text(encoding="utf-8"))
     assert meta["events"] == [["A", "synthesis/population/new_stage.py"], ["D", "matsim/gone.py"]]
+    assert meta["ignored_changed"] == ["environments/env.yml"]
 
 
 def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=(), events=()):

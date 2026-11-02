@@ -519,9 +519,9 @@ def diff_block(diff_source: str, diff_file: str, changed: list, reverted: list, 
     if diff_source == "interdiff":
         return (f"This is a further round. The file {diff_file} holds the PR's diff against main for only "
                 f"the files whose change differs from the last reviewed commit: {', '.join(changed)}. "
-                f"{reading} The other files of the PR were reviewed before and did not change.{gone}")
+                f"{reading} The other files of the PR were reviewed before and did not change.{gone}{left_out}")
     return ("This is a further round and there is no diff file: nothing in the PR's change against main "
-            f"differs from the last reviewed commit.{gone} Verify the open findings below by reading the "
+            f"differs from the last reviewed commit.{gone}{left_out} Verify the open findings below by reading the "
             "files at head with Read/Grep/Glob.")
 
 
@@ -1051,7 +1051,8 @@ def _cmd_interdiff(args) -> int:
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     last = last_complete_sha(state)
     base, head = args.base_sha, args.head_sha
-    now, _ = filter_diff(_git(["diff", f"{base}...{head}"]), ignored)
+    full_now = _git(["diff", f"{base}...{head}"])
+    now, ignored_changed = filter_diff(full_now, ignored)
     fallback = ""
     result = None
     if last and not _is_ancestor(last, head):
@@ -1060,8 +1061,14 @@ def _cmd_interdiff(args) -> int:
         print(f"[claude-review] fallback: {fallback}")
         _append("GITHUB_STEP_SUMMARY", f"- Interdiff: fallback, {fallback}\n")
     elif last:
-        then, _ = filter_diff(_git(["diff", f"{base}...{last}"]), ignored)
+        full_then = _git(["diff", f"{base}...{last}"])
+        then, _ = filter_diff(full_then, ignored)
         result = interdiff(then, now)
+        # The ignored files whose change differs from the last round, named to the model like on round 1.
+        ignored_then = {path: normalise_section(text) for path, text in split_sections(full_then)
+                        if path and matches_any(path, ignored)}
+        ignored_changed = [path for path, text in split_sections(full_now) if path in ignored_changed
+                           and ignored_then.get(path) != normalise_section(text)]
     if result is None:
         paths = [path for path, _ in split_sections(now) if path]
         result = Interdiff(now, paths, [], [])
@@ -1084,7 +1091,8 @@ def _cmd_interdiff(args) -> int:
     (out_dir / "interdiff.numstat").write_text(numstat, encoding="utf-8")
     (out_dir / "interdiff.json").write_text(json.dumps(
         {"last_sha": last, "fallback": fallback, "changed": result.changed, "unchanged": result.unchanged,
-         "reverted": result.reverted, "events": [list(event) for event in events]}, indent=2), encoding="utf-8")
+         "reverted": result.reverted, "events": [list(event) for event in events],
+         "ignored_changed": ignored_changed}, indent=2), encoding="utf-8")
     print(f"[claude-review] interdiff: last complete round {last[:12] or '-'}, changed {len(result.changed)}, "
           f"unchanged {len(result.unchanged)}, reverted {len(result.reverted)}, "
           f"added/deleted/renamed {len(events)}")
@@ -1151,8 +1159,10 @@ def _cmd_review(args) -> int:
             print("::error::--diff-source interdiff needs --interdiff-dir")
             return 1
         diff_text = (interdiff_dir / "interdiff.diff").read_text(encoding="utf-8")
+        dropped = list(meta.get("ignored_changed", []))
     elif args.diff_source == "none":
         diff_text = ""
+        dropped = list(meta.get("ignored_changed", []))
     else:
         diff_text, dropped = filter_diff(_pr_diff(args.repo, args.pr, args.base_sha, args.sha),
                                          config.get("ignored_paths", []))
