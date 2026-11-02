@@ -37,7 +37,10 @@ Look for, in this order:
 
 Rules for findings: report only what you are confident about, each with a concrete
 failure scenario (input or state -> wrong outcome). No style nits, no praise, no
-restating the diff. On the light tier keep it short and stop after categories 1-3. When a
+restating the diff. On the light tier keep it short and stop after categories 1-3. On the
+deep tier the change restructures the repository or is large: also read beyond the diff,
+for the callers of a moved, renamed or removed file or symbol, the code that reads a changed
+config key, and wiring the diff alone does not show. When a
 finding is one instance of a class (the same mistake in several places), say so in the
 body and name the other places, so one fix covers all of them. Set `scope` to
 `introduced` when this PR adds or changes the defective code, and to `pre-existing` when
