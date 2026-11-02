@@ -34,39 +34,54 @@ cr = _load()
 CONFIG = yaml.safe_load((_REPO / ".github" / "claude-review.yml").read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize("entries, branch, labels, draft, action, label, tier", [
-    # small change outside critical paths -> no review
-    ([("README.md", 20)], "chore/x", [], False, "", "", "none"),
+_ADDED_STAGE = [("A", "synthesis/population/new_stage.py")]
+
+
+@pytest.mark.parametrize("entries, branch, labels, draft, action, label, tier, events", [
+    # small change outside critical paths -> light (every counted change is reviewed)
+    ([("README.md", 20)], "chore/x", [], False, "", "", "light", []),
     # generated views and lock files never count, however large
-    ([("docs/generated/STAGES.md", 5000), ("environments/conda-lock.yml", 9000)], "chore/x", [], False, "", "", "none"),
+    ([("docs/generated/STAGES.md", 5000), ("environments/conda-lock.yml", 9000)], "chore/x", [], False, "", "", "none", []),
     # docs branch without a critical path -> skipped despite its size
-    ([("docs/adr/0150.md", 900)], "docs/adr-0150", [], False, "", "", "none"),
+    ([("docs/adr/0150.md", 900)], "docs/adr-0150", [], False, "", "", "none", []),
     # docs branch that touches a critical path is still reviewed
-    ([("configs/base_bs.yml", 10)], "docs/adr-0150", [], False, "", "", "light"),
-    # small critical-path change -> light
-    ([("braunschweig/population/x.py", 40)], "fix/i1-x", [], False, "", "", "light"),
+    ([("configs/base_bs.yml", 10)], "docs/adr-0150", [], False, "", "", "full", []),
+    # small critical-path change -> full
+    ([("braunschweig/population/x.py", 40)], "fix/i1-x", [], False, "", "", "full", []),
     # the agent rules are critical: a small CLAUDE.md or rule edit is reviewed, also on a docs branch
-    ([("CLAUDE.md", 6)], "chore/x", [], False, "", "", "light"),
-    ([(".claude/rules/tests.md", 4)], "docs/adr-x", [], False, "", "", "light"),
-    # large critical-path change -> full
-    ([("braunschweig/population/x.py", 250), ("tests/test_x.py", 60)], "feature/i1-x", [], False, "", "", "full"),
-    # large change anywhere -> full
-    ([("scripts/report_x.py", 500), ("tests/test_report_x.py", 300)], "chore/x", [], False, "", "", "full"),
-    # many small files outside critical paths -> light
-    ([(f"docs/codebase/notes/n{i}.md", 3) for i in range(8)], "chore/x", [], False, "", "", "light"),
-    # draft PRs wait, unless the force label is added
-    ([("braunschweig/x.py", 400)], "feature/i1-x", [], True, "", "", "none"),
-    ([("README.md", 1)], "chore/x", ["claude-review"], True, "labeled", "claude-review", "full"),
-    # a force label left on the PR does not bill every later push
-    ([("README.md", 1)], "chore/x", ["claude-review"], False, "synchronize", "", "none"),
+    ([("CLAUDE.md", 6)], "chore/x", [], False, "", "", "full", []),
+    ([(".claude/rules/tests.md", 4)], "docs/adr-x", [], False, "", "", "full", []),
+    # medium change anywhere -> full; many small files -> full
+    ([("scripts/report_x.py", 120), ("tests/test_report_x.py", 40)], "chore/x", [], False, "", "", "full", []),
+    ([(f"docs/codebase/notes/n{i}.md", 3) for i in range(8)], "chore/x", [], False, "", "", "full", []),
+    # large critical-path change outside the structure paths -> full
+    ([("braunschweig/population/x.py", 700), ("tests/test_x.py", 200)], "feature/i1-x", [], False, "", "", "full", []),
+    # large change anywhere, by lines or by files -> deep
+    ([("scripts/report_x.py", 700), ("tests/test_report_x.py", 300)], "chore/x", [], False, "", "", "deep", []),
+    ([(f"scripts/r{i}.py", 4) for i in range(25)], "chore/x", [], False, "", "", "deep", []),
+    # a structure file added (also renamed or deleted) -> deep, however small
+    ([("synthesis/population/new_stage.py", 30)], "feature/i1-x", [], False, "", "", "deep", _ADDED_STAGE),
+    ([("braunschweig/synpp_tokens.py", 2)], "fix/i1-x", [], False, "", "", "deep",
+     [("R", "braunschweig/synpp_tokens_old.py", "braunschweig/synpp_tokens.py")]),
+    # ... but an added file outside the structure paths is no structure change
+    ([("braunschweig/population/y.py", 30)], "fix/i1-x", [], False, "", "", "full", [("A", "braunschweig/population/y.py")]),
+    # many structure files, or many lines in them -> deep
+    ([(f"braunschweig/matsim/m{i}.py", 3) for i in range(5)], "fix/i1-x", [], False, "", "", "deep", []),
+    ([("configs/base_bs.yml", 200), ("synthesis/output.py", 100)], "fix/i1-x", [], False, "", "", "deep", []),
+    ([("configs/base_bs.yml", 200), ("synthesis/output.py", 99)], "fix/i1-x", [], False, "", "", "full", []),
+    # draft PRs wait, unless the force label is added, which asks for the deep tier
+    ([("braunschweig/x.py", 400)], "feature/i1-x", [], True, "", "", "none", []),
+    ([("README.md", 1)], "chore/x", ["claude-review"], True, "labeled", "claude-review", "deep", []),
+    # a force label left on the PR does not bill every later push beyond the push's own tier
+    ([("README.md", 1)], "chore/x", ["claude-review"], False, "synchronize", "", "light", []),
     # skip label beats everything
-    ([("braunschweig/x.py", 4000)], "feature/i1-x", ["skip-claude-review", "claude-review"], False, "", "", "none"),
+    ([("braunschweig/x.py", 4000)], "feature/i1-x", ["skip-claude-review", "claude-review"], False, "", "", "none", []),
     # adding an unrelated label must not start a paid review; adding the force label must
-    ([("braunschweig/x.py", 400)], "feature/i1-x", ["automerge"], False, "labeled", "automerge", "none"),
-    ([("README.md", 1)], "chore/x", ["claude-review"], False, "labeled", "claude-review", "full"),
+    ([("braunschweig/x.py", 400)], "feature/i1-x", ["automerge"], False, "labeled", "automerge", "none", []),
+    ([("README.md", 1)], "chore/x", ["claude-review"], False, "labeled", "claude-review", "deep", []),
 ])
-def test_classify_decides_tier_from_committed_config(entries, branch, labels, draft, action, label, tier):
-    decision = cr.classify(CONFIG, entries, branch, labels, draft, action, label)
+def test_classify_decides_tier_from_committed_config(entries, branch, labels, draft, action, label, tier, events):
+    decision = cr.classify(CONFIG, entries, branch, labels, draft, action, label, events=events)
     assert decision.tier == tier, decision.reason
     assert decision.run == (tier != "none")
     assert decision.model == (CONFIG["tiers"][tier]["model"] if tier != "none" else "")
@@ -81,21 +96,40 @@ def test_parse_numstat_handles_renames_and_binaries():
         cr.parse_numstat("garbage line\n")
 
 
+def test_parse_name_status_keeps_only_added_deleted_renamed_and_copied_files():
+    text = ("M\tbraunschweig/a.py\nA\tsynthesis/new.py\nD\tmatsim/old.py\n"
+            "R087\tbraunschweig/x.py\tbraunschweig/y.py\nC075\tconfigs/a.yml\tconfigs/b.yml\nT\tlink\n")
+    assert cr.parse_name_status(text) == [
+        ("A", "synthesis/new.py"), ("D", "matsim/old.py"), ("R", "braunschweig/x.py", "braunschweig/y.py"),
+        ("C", "configs/a.yml", "configs/b.yml")]
+    with pytest.raises(ValueError):
+        cr.parse_name_status("garbage line\n")
+
+
 def test_classify_cli_writes_github_output(tmp_path, monkeypatch, capsys):
     numstat = tmp_path / "diff.tsv"
     numstat.write_text("40\t5\tconfigs/base_bs.yml\n", encoding="utf-8")
+    name_status = tmp_path / "name-status.tsv"
+    name_status.write_text("M\tconfigs/base_bs.yml\n", encoding="utf-8")
     output, summary = tmp_path / "out.txt", tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    rc = cr.main(["classify", "--config", str(_REPO / ".github" / "claude-review.yml"),
-                  "--numstat", str(numstat), "--branch", "fix/i1-x", "--labels", "step:generation"])
-    assert rc == 0
+    args = ["classify", "--config", str(_REPO / ".github" / "claude-review.yml"), "--numstat", str(numstat),
+            "--name-status", str(name_status), "--branch", "fix/i1-x", "--labels", "step:generation"]
+    assert cr.main(args) == 0
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
-    assert values["run"] == "true" and values["tier"] == "light"
-    assert values["model"] == CONFIG["tiers"]["light"]["model"]
-    assert int(values["max_turns"]) == CONFIG["tiers"]["light"]["max_turns"]
+    assert values["run"] == "true" and values["tier"] == "full"
+    assert values["model"] == CONFIG["tiers"]["full"]["model"]
+    assert int(values["max_turns"]) == CONFIG["tiers"]["full"]["max_turns"]
     assert "configs/base_bs.yml" in values["reason"]
-    assert "light" in summary.read_text(encoding="utf-8")
+    assert "full" in summary.read_text(encoding="utf-8")
+    # the same change as a new overlay file is a structure change: the name-status file reaches the gate
+    name_status.write_text("A\tconfigs/base_bs.yml\n", encoding="utf-8")
+    output.write_text("", encoding="utf-8")
+    assert cr.main(args) == 0
+    values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert values["tier"] == "deep" and values["model"] == CONFIG["tiers"]["deep"]["model"]
+    assert "added" in values["reason"] and "configs/base_bs.yml" in values["reason"]
 
 
 def test_cost_reads_result_record_and_fails_loudly_without_one(tmp_path, monkeypatch, capsys):
@@ -271,11 +305,13 @@ def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
     schema = cr.FINDINGS_SCHEMA
     assert set(schema["required"]) >= {"summary", "findings", "previous", "coverage_complete"}
     assert "scope" in schema["properties"]["findings"]["items"]["required"]
-    for tier in ("light", "full"):
+    assert set(CONFIG["tiers"]) == {"light", "full", "deep"}
+    for tier in CONFIG["tiers"]:
         command = cr.claude_command("claude", CONFIG["tiers"][tier], review_cfg["allowed_tools"])
         value = {flag: command[i + 1] for i, flag in enumerate(command[:-1]) if flag.startswith("--")}
         assert value["--model"] == CONFIG["tiers"][tier]["model"]
-        assert float(value["--max-budget-usd"]) > 0 and int(value["--max-turns"]) > 0
+        # the owner's per-run cap: no tier may cost more than 50 USD per run
+        assert 0 < float(value["--max-budget-usd"]) <= 50 and int(value["--max-turns"]) > 0
         # --bare: billed strictly to ANTHROPIC_API_KEY, never to a Claude plan login
         assert "--bare" in command
         # the variadic tool list must come last, and the model must have no write or shell access
@@ -554,6 +590,8 @@ def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_no
         calls.append(args)
         if args[0] == "diff" and "--numstat" in args:
             return "3\t1\tbraunschweig/a.py\n"
+        if args[0] == "diff" and "--name-status" in args:
+            return "M\tbraunschweig/a.py\n"
         return _THEN
 
     monkeypatch.setattr(cr, "_git", fake_git)
@@ -576,9 +614,36 @@ def test_interdiff_cli_falls_back_to_the_whole_pr_when_the_reviewed_commit_is_no
     assert meta["last_sha"] == "" and meta["fallback"] == ""
 
 
-def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=()):
+def test_interdiff_cli_reports_the_structure_changes_since_the_last_round(tmp_path, monkeypatch):
+    # synthesis/old.py was added before the last round (already reviewed); new_stage.py is added
+    # since, and matsim/gone.py is deleted since: only these two are structure changes of this round
+    state = cr.empty_state()
+    state["rounds"].append({"round": 1, "sha": "c" * 40, "tier": "full", "run_id": "1", "automatic": True,
+                            "complete": True, "cost_usd": 1.0, "findings": 0})
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    then_status = "M\tbraunschweig/a.py\nA\tsynthesis/old.py\n"
+    now_status = then_status + "A\tsynthesis/population/new_stage.py\nD\tmatsim/gone.py\n"
+
+    def fake_git(args):
+        if "--name-status" in args:
+            return then_status if args[-1].endswith("c" * 40) else now_status
+        if "--numstat" in args:
+            return "3\t1\tbraunschweig/a.py\n"
+        return _THEN
+
+    monkeypatch.setattr(cr, "_git", fake_git)
+    monkeypatch.setattr(cr, "_is_ancestor", lambda older, newer: True)
+    out_dir = tmp_path / "idiff"
+    assert cr.main(["interdiff", "--config", str(_REPO / ".github" / "claude-review.yml"), "--state", str(state_path),
+                    "--base-sha", "b" * 40, "--head-sha", "d" * 40, "--out-dir", str(out_dir)]) == 0
+    meta = json.loads((out_dir / "interdiff.json").read_text(encoding="utf-8"))
+    assert meta["events"] == [["A", "synthesis/population/new_stage.py"], ["D", "matsim/gone.py"]]
+
+
+def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=(), events=()):
     return cr.RoundContext(automatic_rounds=auto, open_findings=open_, last_sha="c" * 40, changed_entries=changed,
-                           fallback=fallback, reverted=tuple(reverted))
+                           fallback=fallback, reverted=tuple(reverted), events=tuple(events))
 
 
 @pytest.mark.parametrize("entries, branch, action, label, ctx, tier, mode, diff", [
@@ -591,21 +656,25 @@ def _ctx(auto=1, open_=0, changed=None, fallback="", reverted=()):
     # nothing changed and nothing reverted (only a merge of main): no fix can have happened -> nothing,
     # so merges of main cannot use up the rounds before the fix arrives (Claude review finding on PR #521)
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=1, changed=[]), "none", "none", "none"),
-    # a small non-critical fix push with open findings -> verify tier on the interdiff
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("scripts/report_x.py", 12)]), "light", "verify", "interdiff"),
-    # a small non-critical push, nothing open -> nothing
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("scripts/report_x.py", 12)]), "none", "none", "none"),
-    # a small critical push -> light re-review; a large one -> full re-review
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("braunschweig/x.py", 12)]), "light", "rereview", "interdiff"),
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("braunschweig/x.py", 350)]), "full", "rereview", "interdiff"),
-    # the force label reads the whole PR again, cap or not
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "labeled", "claude-review", _ctx(auto=3, open_=1, changed=[]), "full", "forced", "pr"),
-    # the interdiff fell back (rebase): first-round rules on the whole PR
+    # a push of only ignored files with open findings -> verify tier on the (empty) interdiff
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("docs/generated/STAGES.md", 12)]), "light", "verify", "interdiff"),
+    # ... and with nothing open -> nothing
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("docs/generated/STAGES.md", 12)]), "none", "none", "none"),
+    # a small non-critical push -> light re-review, open findings or not
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=2, changed=[("scripts/report_x.py", 12)]), "light", "rereview", "interdiff"),
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=0, changed=[("docs/codebase/notes/n.md", 3)]), "light", "rereview", "interdiff"),
+    # a small critical push -> full re-review; a large structure push -> deep re-review
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("braunschweig/x.py", 12)]), "full", "rereview", "interdiff"),
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=[("matsim/runtime/r.py", 350)]), "deep", "rereview", "interdiff"),
+    # a structure file added since the last complete round -> deep re-review
+    ([("synthesis/population/new_stage.py", 40)], "fix/i1-x", "synchronize", "",
+     _ctx(changed=[("synthesis/population/new_stage.py", 40)], events=_ADDED_STAGE), "deep", "rereview", "interdiff"),
+    # the force label reads the whole PR again on the deep tier, cap or not
+    ([("braunschweig/x.py", 400)], "fix/i1-x", "labeled", "claude-review", _ctx(auto=3, open_=1, changed=[]), "deep", "forced", "pr"),
+    # the interdiff fell back (rebase): first-round rules on the whole PR, with its own structure changes
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(changed=None, fallback="reviewed commit c is not an ancestor of head"), "full", "first", "pr"),
     # ... but a rebase does not reset the cap: 3 rounds used -> nothing (final review finding)
     ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(auto=3, changed=None, fallback="reviewed commit c is not an ancestor of head"), "none", "none", "none"),
-    # dismissed findings are not in the open count: a small docs push then triggers nothing
-    ([("braunschweig/x.py", 400)], "fix/i1-x", "synchronize", "", _ctx(open_=0, changed=[("docs/codebase/notes/n.md", 3)]), "none", "none", "none"),
 ])
 def test_classify_gates_further_rounds_from_the_committed_config(entries, branch, action, label, ctx, tier, mode, diff):
     labels = ["claude-review"] if label else []
@@ -620,7 +689,7 @@ def test_classify_gates_further_rounds_from_the_committed_config(entries, branch
 
 def test_classify_without_a_context_is_the_first_round():
     decision = cr.classify(CONFIG, [("braunschweig/x.py", 40)], "fix/i1-x", [], False)
-    assert (decision.mode, decision.diff_source, decision.round, decision.tier) == ("first", "pr", 1, "light")
+    assert (decision.mode, decision.diff_source, decision.round, decision.tier) == ("first", "pr", 1, "full")
 
 
 def test_classify_cli_reads_state_and_interdiff_and_writes_mode_and_round(tmp_path, monkeypatch):
@@ -631,19 +700,26 @@ def test_classify_cli_reads_state_and_interdiff_and_writes_mode_and_round(tmp_pa
                               "scope": "introduced", "title": "t", "body": "b", "author_note": "", "comment_id": 1,
                               "status": "open"})
     (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
-    (tmp_path / "interdiff.json").write_text(json.dumps({"last_sha": "c" * 40, "fallback": "", "changed": ["scripts/x.py"],
-                                                         "unchanged": ["braunschweig/x.py"], "reverted": []}),
-                                             encoding="utf-8")
+    meta = {"last_sha": "c" * 40, "fallback": "", "changed": ["scripts/x.py"], "unchanged": ["braunschweig/x.py"],
+            "reverted": [], "events": []}
+    (tmp_path / "interdiff.json").write_text(json.dumps(meta), encoding="utf-8")
     (tmp_path / "interdiff.numstat").write_text("5\t1\tscripts/x.py\n", encoding="utf-8")
     (tmp_path / "numstat.tsv").write_text("300\t10\tbraunschweig/x.py\n6\t0\tscripts/x.py\n", encoding="utf-8")
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out.txt"))
-    rc = cr.main(["classify", "--config", str(_REPO / ".github" / "claude-review.yml"),
-                  "--numstat", str(tmp_path / "numstat.tsv"), "--branch", "fix/i1-x", "--event-action", "synchronize",
-                  "--state", str(tmp_path / "state.json"), "--interdiff-json", str(tmp_path / "interdiff.json"),
-                  "--interdiff-numstat", str(tmp_path / "interdiff.numstat")])
-    assert rc == 0
+    args = ["classify", "--config", str(_REPO / ".github" / "claude-review.yml"),
+            "--numstat", str(tmp_path / "numstat.tsv"), "--branch", "fix/i1-x", "--event-action", "synchronize",
+            "--state", str(tmp_path / "state.json"), "--interdiff-json", str(tmp_path / "interdiff.json"),
+            "--interdiff-numstat", str(tmp_path / "interdiff.numstat")]
+    assert cr.main(args) == 0
     values = dict(line.split("=", 1) for line in (tmp_path / "out.txt").read_text(encoding="utf-8").splitlines())
-    assert (values["tier"], values["mode"], values["diff_source"], values["round"]) == ("light", "verify", "interdiff", "2")
+    assert (values["tier"], values["mode"], values["diff_source"], values["round"]) == ("light", "rereview", "interdiff", "2")
+    # a structure file added since the last round, recorded by `interdiff`, makes the round deep
+    meta["events"] = [["A", "synthesis/population/new_stage.py"]]
+    (tmp_path / "interdiff.json").write_text(json.dumps(meta), encoding="utf-8")
+    (tmp_path / "out.txt").write_text("", encoding="utf-8")
+    assert cr.main(args) == 0
+    values = dict(line.split("=", 1) for line in (tmp_path / "out.txt").read_text(encoding="utf-8").splitlines())
+    assert values["tier"] == "deep" and "new_stage.py" in values["reason"]
 
 
 def _state_with_open():
@@ -894,7 +970,9 @@ def test_committed_workflow_wires_the_rounds_and_ignores_the_generated_views():
     on_block = text.split("\njobs:", 1)[0]
     assert "paths-ignore:" in on_block and '"docs/generated/**"' in on_block
     assert "claude_review.py state " in text and "claude_review.py interdiff " in text
-    assert "--state" in text.split("claude_review.py classify", 1)[1].split("\n\n", 1)[0]
+    classify_call = text.split("claude_review.py classify", 1)[1].split("\n\n", 1)[0]
+    # without the name-status file the gate never sees a structure change and the deep tier is dead
+    assert "--state" in classify_call and "--name-status" in classify_call and "diff --name-status" in text
     for step in ("review", "post"):
         step_text = text.split(f"claude_review.py {step} ", 1)[1].split("\n\n", 1)[0]
         assert "--state" in step_text and "--interdiff-dir" in step_text   # post shows the fallback in the summary

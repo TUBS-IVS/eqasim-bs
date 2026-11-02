@@ -38,7 +38,7 @@ work again; the reasons above then no longer apply.
 
 | Job | Calls the API | Does |
 |---|---|---|
-| `classify` | no | `scripts/claude_review.py state` and `interdiff` (see "Rounds"), then `classify`: reads `git diff --numstat base...head`, the branch kind, labels, draft state, the state and the interdiff numstat, and decides `none` / `light` / `full` plus the outputs `mode`, `diff_source`, `round` |
+| `classify` | no | `scripts/claude_review.py state` and `interdiff` (see "Rounds"), then `classify`: reads `git diff --numstat base...head` and `--name-status -M base...head`, the branch kind, labels, draft state, the state and the interdiff, and decides `none` / `light` / `full` / `deep` plus the outputs `mode`, `diff_source`, `round` |
 | `review` | yes, only if `classify` says so | installs the pinned Claude Code CLI, recomputes `state` and `interdiff` (no artifact travels between the jobs), `claude_review.py review` (runs `claude -p`), `cost`, `post` |
 
 The thresholds, paths, labels, models, turn and budget limits live in
@@ -48,17 +48,27 @@ The thresholds, paths, labels, models, turn and budget limits live in
 round on record, is below, the further-round order is in "Rounds"):
 
 1. Label `skip-claude-review` -> no review.
-2. Adding the label `claude-review` -> one full-tier review of the whole PR, also on drafts
+2. Adding the label `claude-review` -> one deep-tier review of the whole PR, also on drafts
    and whatever the round cap says (the force label, see "Rounds"). Later pushes
    are gated normally, so a label left on the PR cannot bill every push.
 3. A `labeled` event for any other label -> no review (otherwise adding `automerge`
    would start a paid review).
 4. Draft PR -> no review.
 5. Branch kind in `skip_kinds` (`docs/`) without a critical path -> no review.
-6. Changed lines >= `full_min_lines`, or a critical path and >= `full_min_lines_critical`
-   -> full tier.
-7. A critical path, or >= `light_min_lines` lines, or >= `light_min_files` files -> light.
-8. Otherwise no review.
+6. Deep tier: a file of `structure_paths` added, deleted, renamed or copied (either path of
+   a rename counts); or >= `deep_min_structure_files` structure files or
+   >= `deep_min_structure_lines` changed lines in them; or >= `deep_min_lines` changed lines
+   or >= `deep_min_files` changed files anywhere.
+7. Full tier: a critical path (every structure path is also critical), or
+   >= `full_min_lines` lines, or >= `full_min_files` files.
+8. Light tier: any other counted change.
+9. Nothing counted changed (only ignored files) -> no review.
+
+The three tiers and why the deep one exists:
+[ADR-0175](../../decisions/ADR-0175-the-claude-pr-review-sends-structure-changes-and-large-changes-to-a-deep-tier.md).
+`structure_paths` names the backbone of the repository (agent rules, base config, pipeline
+machinery, simulation setup, the workflows and this gate); it is a short list on purpose, so
+that adding a stage file in a topic package stays a full-tier change.
 
 Runs queue per PR and event kind, and a running review is never cancelled: its cost is
 already spent and is recorded only at the end. A newer push replaces a still-pending push
@@ -106,10 +116,13 @@ not, cost above zero; `complete` only moves the reviewed commit) reached -> none
 nothing changed -> none, unless findings are open and a file was reverted to `main` (a revert
 can fix a finding, a merge of `main` cannot) -> `rereview.verify_tier` with no diff (the model
 verifies at head); otherwise the tier of the interdiff numstat with
-the normal thresholds and critical paths, raised to `rereview.verify_tier` when that is none
-but findings are open. The `docs/` branch rule applies as in the first round.
+the normal thresholds, critical and structure paths, raised to `rereview.verify_tier` when that
+is none (only ignored files changed) but findings are open. A structure change of a further
+round is a file added, deleted or renamed against `main` at head that was not so at the last
+complete round (`interdiff` writes these as `events` in `interdiff.json`), so a stage file added
+in round 1 does not make every later round deep. The `docs/` branch rule applies as in the first round.
 
-**The force label** reads the whole PR again: a full-tier round over the complete PR diff
+**The force label** reads the whole PR again: a deep-tier round over the complete PR diff
 (`mode` `forced`, `diff_source` `pr`), whatever the cap and the interdiff, recorded with
 `automatic: false` and not counted against the cap. It still gets the open findings.
 

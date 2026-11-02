@@ -2,7 +2,8 @@
 (.github/workflows/claude-review.yml).
 
     python scripts/claude_review.py classify --config .github/claude-review.yml --numstat diff.tsv \
-        --branch feature/i1-x [--labels a,b] [--draft] [--event-action labeled --event-label x]
+        [--name-status status.tsv] --branch feature/i1-x [--labels a,b] [--draft] \
+        [--event-action labeled --event-label x]
     python scripts/claude_review.py review --config .github/claude-review.yml --tier full \
         --repo OWNER/NAME --pr 12 --sha <head sha> --out result.json [--diff-out .claude/review-pr.diff] \
         [--state state.json --interdiff-dir DIR --diff-source pr|interdiff|none --mode M --round N]
@@ -11,8 +12,9 @@
     python scripts/claude_review.py cost --execution-file result.json [--tier full] [--model m] [--json out.json]
 
 classify decides WITHOUT calling a model whether the review runs and at which tier
-("light" or "full"), from the `git diff --numstat` of the PR, its branch kind, labels and
-draft state, against the thresholds in the config. It prints the decision with its reason
+("light", "full" or "deep"), from the `git diff --numstat` and `--name-status` of the PR (how
+much changed, and whether files of the structure paths were added, deleted or renamed), its
+branch kind, labels and draft state, against the thresholds in the config. It prints the decision with its reason
 and, under GitHub Actions, writes run/tier/model/max_turns/reason to $GITHUB_OUTPUT and a
 line to $GITHUB_STEP_SUMMARY, so a skipped review is never silent.
 
@@ -219,7 +221,7 @@ def merge_state(existing: dict, delta: dict) -> dict:
 @dataclass
 class Decision:
     run: bool
-    tier: str  # "light", "full" or "none"
+    tier: str  # "light", "full", "deep" or "none"
     model: str
     max_turns: int
     reason: str
@@ -241,13 +243,15 @@ class RoundContext:
     fallback: str = ""  # why the interdiff could not be used (then the whole PR is reviewed)
     round: int = 1
     reverted: tuple = ()  # files the PR changed at last_sha and no longer changes (reverted to main)
+    events: tuple = ()  # (status, path, ...) of files added, deleted or renamed since last_sha
 
 
 def round_context(state: dict, meta: dict, changed_entries: list) -> RoundContext:
     usable = bool(meta.get("last_sha")) and not meta.get("fallback")
     return RoundContext(automatic_rounds(state), len(open_findings(state)), str(meta.get("last_sha", "")),
                         changed_entries if usable else None, str(meta.get("fallback", "")),
-                        len(state["rounds"]) + 1, tuple(meta.get("reverted", [])))
+                        len(state["rounds"]) + 1, tuple(meta.get("reverted", [])),
+                        tuple(tuple(event) for event in meta.get("events", [])))
 
 
 def glob_to_regex(pattern: str) -> re.Pattern:
@@ -304,42 +308,90 @@ def parse_numstat(text: str) -> list:
     return entries
 
 
+def parse_name_status(text: str) -> list:
+    """Parse `git diff --name-status` lines into (status, path, ...) for the files that were added,
+    deleted, renamed or copied ("A", "D", "R", "C"; a rename or copy carries the old and the new
+    path). Modified files and type changes are not structure changes and are left out."""
+    events = []
+    for line in git_lines(text):
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[0][:1].isalpha():
+            raise ValueError(f"not a name-status line: {line!r}")
+        status = parts[0][0]
+        if status in "ADRC":
+            events.append((status, *parts[1:]))
+    return events
+
+
+STATUS_WORDS = {"A": "added", "D": "deleted", "R": "renamed", "C": "copied"}
+
+
 def _measure(config: dict, entries: list) -> tuple:
     """(changed lines, changed files, critical paths, printable size) of numstat entries outside
     the ignored paths."""
     counted = [(path, lines) for path, lines in entries if not matches_any(path, config.get("ignored_paths", []))]
     changed_lines = sum(lines for _, lines in counted)
-    critical = sorted(path for path, _ in counted if matches_any(path, config.get("critical_paths", [])))
+    # A structure path is always critical too (the structure paths are the backbone of the critical ones).
+    critical_patterns = [*config.get("critical_paths", []), *config.get("structure_paths", [])]
+    critical = sorted(path for path, _ in counted if matches_any(path, critical_patterns))
     size = f"{changed_lines} changed lines in {len(counted)} files"
     if critical:
         size += f", critical: {', '.join(critical[:5])}" + (f" (+{len(critical) - 5} more)" if len(critical) > 5 else "")
     return changed_lines, len(counted), critical, size
 
 
-def _size_tier(config: dict, changed_lines: int, changed_files: int, critical: list, kind: str) -> tuple:
-    """(tier, why) from the size rules shared by a first and a further round."""
+def _structure(config: dict, entries: list, events) -> tuple:
+    """(changed structure files, their changed lines, structure changes) of numstat entries and
+    name-status events outside the ignored paths. A structure change is a file of the structure
+    paths that was added, deleted, renamed or copied; for a rename either path counts."""
+    ignored, structure = config.get("ignored_paths", []), config.get("structure_paths", [])
+    touched = [(path, lines) for path, lines in entries
+               if matches_any(path, structure) and not matches_any(path, ignored)]
+    changes = [f"{STATUS_WORDS[event[0]]} {event[-1]}" for event in events
+               if any(matches_any(path, structure) and not matches_any(path, ignored) for path in event[1:])]
+    return len(touched), sum(lines for _, lines in touched), changes
+
+
+def _size_tier(config: dict, measured: tuple, structure: tuple, kind: str) -> tuple:
+    """(tier, why) from the size and structure rules shared by a first and a further round."""
+    changed_lines, changed_files, critical = measured[:3]
+    structure_files, structure_lines, structure_changes = structure
     limits = config["thresholds"]
     if kind in config.get("skip_kinds", []) and not critical:
         return "none", f"skipped: branch kind '{kind}/' touches no critical path"
+    if structure_changes:
+        shown = ", ".join(structure_changes[:3]) + (f" (+{len(structure_changes) - 3} more)"
+                                                     if len(structure_changes) > 3 else "")
+        return "deep", f"deep: structure changed: {shown}"
+    if structure_files >= limits["deep_min_structure_files"]:
+        return "deep", f"deep: >= {limits['deep_min_structure_files']} structure files changed"
+    if structure_lines >= limits["deep_min_structure_lines"]:
+        return "deep", f"deep: >= {limits['deep_min_structure_lines']} changed lines in structure files"
+    if changed_lines >= limits["deep_min_lines"]:
+        return "deep", f"deep: >= {limits['deep_min_lines']} changed lines"
+    if changed_files >= limits["deep_min_files"]:
+        return "deep", f"deep: >= {limits['deep_min_files']} changed files"
+    if critical:
+        return "full", "full: critical path touched"
     if changed_lines >= limits["full_min_lines"]:
         return "full", f"full: >= {limits['full_min_lines']} changed lines"
-    if critical and changed_lines >= limits["full_min_lines_critical"]:
-        return "full", f"full: critical path and >= {limits['full_min_lines_critical']} changed lines"
-    if critical:
-        return "light", "light: critical path touched"
-    if changed_lines >= limits["light_min_lines"]:
-        return "light", f"light: >= {limits['light_min_lines']} changed lines"
-    if changed_files >= limits["light_min_files"]:
-        return "light", f"light: >= {limits['light_min_files']} changed files"
-    return "none", "skipped: below every threshold, no critical path"
+    if changed_files >= limits["full_min_files"]:
+        return "full", f"full: >= {limits['full_min_files']} changed files"
+    if changed_files:
+        return "light", "light: a small change"
+    return "none", "skipped: nothing counted changed (only ignored files)"
 
 
 def classify(config: dict, entries: list, branch: str, labels: list, draft: bool,
-             event_action: str = "", event_label: str = "", context: RoundContext | None = None) -> Decision:
+             event_action: str = "", event_label: str = "", context: RoundContext | None = None,
+             events=()) -> Decision:
     """Decide whether and how the review runs. Without a usable ``context`` (no earlier complete
-    round, or the interdiff fell back) the first-round rules apply to the whole PR (``entries``).
-    With one, a push is measured by ``context.changed_entries`` only: the files whose change
-    against main differs from the last complete round."""
+    round, or the interdiff fell back) the first-round rules apply to the whole PR (``entries``
+    and its name-status ``events``). With one, a push is measured by ``context.changed_entries``
+    and ``context.events`` only: the files whose change against main differs from the last
+    complete round, and the files added, deleted or renamed since then."""
     label_cfg = config["labels"]
     tiers = config["tiers"]
     rereview = config["rereview"]
@@ -348,6 +400,8 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
     further = (context is not None and bool(context.last_sha) and not context.fallback
                and context.changed_entries is not None)
     measured = _measure(config, context.changed_entries if further else entries)
+    structure = _structure(config, context.changed_entries if further else entries,
+                           context.events if further else events)
     prefix = f"fallback: {context.fallback}; " if context and context.fallback else ""
     if further:
         prefix += (f"round {round_number}, {context.automatic_rounds}/{rereview['max_rounds']} automatic rounds used, "
@@ -364,9 +418,10 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
     if event_action == "labeled":
         # Any label change re-triggers the workflow; only adding the force label starts a review,
         # once. Later pushes are gated normally, so a forgotten force label cannot bill every push.
-        # A forced round reads the whole PR again, whatever the round cap and the interdiff say.
+        # A forced round reads the whole PR again, whatever the round cap and the interdiff say, on
+        # the deep tier: whoever adds the label asks for the most thorough review.
         if event_label == label_cfg["force"]:
-            return decide("full", f"forced: label '{label_cfg['force']}' was added", "forced", "pr",
+            return decide("deep", f"forced: label '{label_cfg['force']}' was added", "forced", "pr",
                           _measure(config, entries)[3])
         return decide("none", f"skipped: label event for '{event_label}', not '{label_cfg['force']}'", "none", "none")
     if draft and config.get("skip_drafts", True):
@@ -377,7 +432,7 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
         return decide("none", f"round cap: {context.automatic_rounds} automatic rounds; "
                               f"add label '{label_cfg['force']}' for another", "none", "none")
     if not further:
-        tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
+        tier, why = _size_tier(config, measured, structure, kind)
         return decide(tier, why, "first", "pr")
     verify = rereview["verify_tier"]
     if not context.changed_entries:
@@ -387,9 +442,9 @@ def classify(config: dict, entries: list, branch: str, labels: list, draft: bool
             return decide(verify, f"verify: {len(context.reverted)} file(s) reverted to main since the last "
                                   "complete round, open findings are checked at head", "verify", "none")
         return decide("none", "skipped: nothing changed against main since the last complete round", "none", "none")
-    tier, why = _size_tier(config, measured[0], measured[1], measured[2], kind)
+    tier, why = _size_tier(config, measured, structure, kind)
     if tier == "none" and context.open_findings:
-        return decide(verify, f"verify: {context.open_findings} open finding(s), change below every threshold",
+        return decide(verify, f"verify: {context.open_findings} open finding(s), no counted change",
                       "verify", "interdiff")
     return decide(tier, why, "rereview", "interdiff")
 
@@ -933,6 +988,7 @@ def _cmd_classify(args) -> int:
 
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     entries = parse_numstat(Path(args.numstat).read_text(encoding="utf-8"))
+    events = parse_name_status(Path(args.name_status).read_text(encoding="utf-8")) if args.name_status else []
     labels = [label.strip() for label in (args.labels or "").split(",") if label.strip()]
     context = None
     if args.state:
@@ -942,7 +998,7 @@ def _cmd_classify(args) -> int:
                    if args.interdiff_numstat else [])
         context = round_context(state, meta, changed)
     decision = classify(config, entries, args.branch, labels, args.draft,
-                        args.event_action or "", args.event_label or "", context)
+                        args.event_action or "", args.event_label or "", context, events)
     print(f"[claude-review] {decision.reason}")
     print(f"[claude-review] run={str(decision.run).lower()} tier={decision.tier} model={decision.model or '-'} "
           f"mode={decision.mode} diff={decision.diff_source} round={decision.round}")
@@ -1005,16 +1061,23 @@ def _cmd_interdiff(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "interdiff.diff").write_text(result.diff_text, encoding="utf-8")
+    # Structure changes of this round: files added, deleted or renamed against main at head that were
+    # not so at the last complete round (a file added before that round was already reviewed as such).
+    events_now = parse_name_status(_git(["diff", "--name-status", "-M", f"{base}...{head}"]))
     if last and not fallback:
         numstat = _git(["diff", "--numstat", last, head, "--", *result.changed]) if result.changed else ""
+        events_then = set(parse_name_status(_git(["diff", "--name-status", "-M", f"{base}...{last}"])))
+        events = [event for event in events_now if event not in events_then]
     else:
         numstat = _git(["diff", "--numstat", f"{base}...{head}"])
+        events = events_now
     (out_dir / "interdiff.numstat").write_text(numstat, encoding="utf-8")
     (out_dir / "interdiff.json").write_text(json.dumps(
         {"last_sha": last, "fallback": fallback, "changed": result.changed, "unchanged": result.unchanged,
-         "reverted": result.reverted}, indent=2), encoding="utf-8")
+         "reverted": result.reverted, "events": [list(event) for event in events]}, indent=2), encoding="utf-8")
     print(f"[claude-review] interdiff: last complete round {last[:12] or '-'}, changed {len(result.changed)}, "
-          f"unchanged {len(result.unchanged)}, reverted {len(result.reverted)}")
+          f"unchanged {len(result.unchanged)}, reverted {len(result.reverted)}, "
+          f"added/deleted/renamed {len(events)}")
     return 0
 
 
@@ -1339,6 +1402,8 @@ def main(argv=None) -> int:
     p_classify = sub.add_parser("classify", help="decide whether and how the review runs")
     p_classify.add_argument("--config", required=True)
     p_classify.add_argument("--numstat", required=True, help="file holding `git diff --numstat base...head`")
+    p_classify.add_argument("--name-status", default="",
+                            help="file holding `git diff --name-status -M base...head` (structure changes)")
     p_classify.add_argument("--branch", required=True, help="PR head branch, e.g. feature/i1-slug")
     p_classify.add_argument("--labels", default="", help="comma-separated PR labels")
     p_classify.add_argument("--draft", action="store_true")
@@ -1368,7 +1433,7 @@ def main(argv=None) -> int:
 
     p_review = sub.add_parser("review", help="run claude -p and write its JSON result")
     p_review.add_argument("--config", required=True)
-    p_review.add_argument("--tier", required=True, choices=["light", "full"])
+    p_review.add_argument("--tier", required=True, choices=["light", "full", "deep"])
     p_review.add_argument("--repo", required=True, help="OWNER/NAME")
     p_review.add_argument("--pr", required=True, type=int)
     p_review.add_argument("--sha", required=True, help="PR head commit")
