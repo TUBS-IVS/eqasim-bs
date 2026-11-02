@@ -501,16 +501,21 @@ def build_prompt(template: str, values: dict, verbatim: dict | None = None) -> s
     return prompt
 
 
-def diff_block(diff_source: str, diff_file: str, changed: list, reverted: list) -> str:
+def diff_block(diff_source: str, diff_file: str, changed: list, reverted: list, ignored=()) -> str:
     """The prompt paragraph that says what the model reads: the whole PR diff, the files changed
-    since the last complete round, or no diff at all (only open findings to verify)."""
+    since the last complete round, or no diff at all (only open findings to verify). ``ignored``
+    names the changed files left out of the diff as ignored paths, so an undeclared change to one
+    of them (a regenerated input, say) can still be held against the PR description."""
     reading = ("Read ALL of it with Read, page by page (offset/limit) when it is long, before you conclude. "
                "Left of the `|` every added (`+`) and context (` `) line carries its line number in the NEW "
                "version of the file; deleted (`-`) lines and headers carry none.")
     gone = (f" These files were in the PR's change at the last reviewed commit and are not any more "
             f"(reverted to main or renamed): {', '.join(reverted)}." if reverted else "")
+    left_out = (f" These changed files are left out of the diff as ignored paths (generated, binary or "
+                f"machine-written): {', '.join(ignored)}. Check against the PR description that their change "
+                f"is declared." if ignored else "")
     if diff_source == "pr":
-        return f"The complete diff of the PR is in the file {diff_file}. {reading}"
+        return f"The complete diff of the PR is in the file {diff_file}. {reading}{left_out}"
     if diff_source == "interdiff":
         return (f"This is a further round. The file {diff_file} holds the PR's diff against main for only "
                 f"the files whose change differs from the last reviewed commit: {', '.join(changed)}. "
@@ -553,13 +558,15 @@ def fence_for(text: str) -> str:
 
 
 def review_prompt(template: str, repo: str, pr: int, tier: str, sha: str, diff_source: str, diff_file: str,
-                  meta: dict, state: dict, mode: str, round_number: int, title: str, body: str) -> str:
+                  meta: dict, state: dict, mode: str, round_number: int, title: str, body: str,
+                  ignored=()) -> str:
     """The complete prompt of one review run. The PR body is the author's text: it goes in verbatim
     inside a backtick fence longer than any backtick run in it (so it cannot close the fence) and
     fills no placeholder."""
     body = body.strip() or "(empty)"
     values = {"REPO": repo, "PR": str(pr), "TIER": tier, "SHA": sha, "FENCE": fence_for(body),
-              "DIFF_BLOCK": diff_block(diff_source, diff_file, meta.get("changed", []), meta.get("reverted", []))}
+              "DIFF_BLOCK": diff_block(diff_source, diff_file, meta.get("changed", []), meta.get("reverted", []),
+                                       ignored)}
     verbatim = {"PR_TITLE": " ".join(str(title).split()), "PR_BODY": body,
                 "ROUND_BLOCK": round_block(state, mode, round_number, moved=bool(meta.get("fallback")))}
     return build_prompt(template, values, verbatim)
@@ -1061,13 +1068,16 @@ def _cmd_interdiff(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "interdiff.diff").write_text(result.diff_text, encoding="utf-8")
-    # Structure changes of this round: files added, deleted or renamed against main at head that were
-    # not so at the last complete round (a file added before that round was already reviewed as such).
+    # Structure changes of this round: files added, deleted or renamed against main at head whose paths
+    # were not in such a change at the last complete round (a file added before that round was already
+    # reviewed as such). Paths, not whole events, are compared: git's rename pairing (-M, similarity
+    # >= 50 %) can turn a rename into a delete plus an add, or back, when the file is edited later.
     events_now = parse_name_status(_git(["diff", "--name-status", "-M", f"{base}...{head}"]))
     if last and not fallback:
         numstat = _git(["diff", "--numstat", last, head, "--", *result.changed]) if result.changed else ""
-        events_then = set(parse_name_status(_git(["diff", "--name-status", "-M", f"{base}...{last}"])))
-        events = [event for event in events_now if event not in events_then]
+        paths_then = {path for event in parse_name_status(_git(["diff", "--name-status", "-M", f"{base}...{last}"]))
+                      for path in event[1:]}
+        events = [event for event in events_now if not set(event[1:]) <= paths_then]
     else:
         numstat = _git(["diff", "--numstat", f"{base}...{head}"])
         events = events_now
@@ -1170,7 +1180,8 @@ def _cmd_review(args) -> int:
     title, body = _pr_description(args.repo, args.pr)
     prompt = review_prompt(Path(review_cfg["prompt_file"]).read_text(encoding="utf-8"), args.repo, args.pr,
                            args.tier, args.sha, args.diff_source if diff_text.strip() else "none",
-                           numbered_path.as_posix(), meta, state, args.mode, args.round, title, body)
+                           numbered_path.as_posix(), meta, state, args.mode, args.round, title, body,
+                           ignored=dropped)
     claude_bin = shutil.which(args.claude_bin) or args.claude_bin
     if not os.environ.get("ANTHROPIC_API_KEY"):
         # claude --bare authenticates only with this key; fail here with a clear message instead.

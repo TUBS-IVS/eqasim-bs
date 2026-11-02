@@ -297,8 +297,11 @@ def test_committed_prompt_and_tiers_give_a_bounded_read_only_run():
     review_cfg = CONFIG["review"]
     template = (_REPO / review_cfg["prompt_file"]).read_text(encoding="utf-8")
     prompt = cr.review_prompt(template, "o/r", 7, "light", "abc123", "pr", ".claude/review-pr.diff.numbered",
-                              {"changed": [], "reverted": []}, cr.empty_state(), "first", 1, "Title", "body")
+                              {"changed": [], "reverted": []}, cr.empty_state(), "first", 1, "Title", "body",
+                              ignored=["environments/conda-lock.yml"])
     assert "PR NUMBER: 7" in prompt and ".claude/review-pr.diff.numbered" in prompt and "{{" not in prompt
+    # an ignored file the gate left out is still named, so an undeclared change to it can be noticed
+    assert "environments/conda-lock.yml" in prompt
     assert "Behaviour change?" in prompt and "Validation evidence" in prompt      # the intent check is in the prompt
     with pytest.raises(ValueError):
         cr.build_prompt("{{TYPO}}", {"REPO": "o/r"})
@@ -622,8 +625,11 @@ def test_interdiff_cli_reports_the_structure_changes_since_the_last_round(tmp_pa
                             "complete": True, "cost_usd": 1.0, "findings": 0})
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state), encoding="utf-8")
-    then_status = "M\tbraunschweig/a.py\nA\tsynthesis/old.py\n"
-    now_status = then_status + "A\tsynthesis/population/new_stage.py\nD\tmatsim/gone.py\n"
+    # matsim/x.py was renamed to matsim/y.py before the last round; edited since, git now pairs it as
+    # a delete plus an add, which is no new structure change (Claude review finding on PR #536)
+    then_status = "M\tbraunschweig/a.py\nA\tsynthesis/old.py\nR087\tmatsim/x.py\tmatsim/y.py\n"
+    now_status = ("M\tbraunschweig/a.py\nA\tsynthesis/old.py\nD\tmatsim/x.py\nA\tmatsim/y.py\n"
+                  "A\tsynthesis/population/new_stage.py\nD\tmatsim/gone.py\n")
 
     def fake_git(args):
         if "--name-status" in args:

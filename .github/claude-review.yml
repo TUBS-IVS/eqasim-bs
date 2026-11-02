@@ -5,8 +5,9 @@
 # decision is written with its reason to the job summary, so a skipped review is
 # never silent. See docs/codebase/notes/claude-pr-review.md.
 #
-# ASSUMPTION: all thresholds below are starting values chosen on 2026-10-23,
-# not measured; re-tune them from the per-run cost records in the job summaries.
+# ASSUMPTION: all thresholds below are starting values, not measured; each block names
+# the date its values were chosen. Re-tune them from the per-run cost records in the job
+# summaries.
 
 labels:
   force: claude-review        # adding it starts ONE deep-tier review; later pushes are gated normally
