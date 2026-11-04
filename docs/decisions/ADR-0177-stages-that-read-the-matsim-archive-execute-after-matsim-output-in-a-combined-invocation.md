@@ -54,8 +54,8 @@
 3. **The two archive readers declare `matsim.output`.** `analysis_suite` and `simwrapper_export` declare
    `_ORDER_AFTER_STAGES = ("matsim.output",)`, the producer name single-sourced in
    `braunschweig.analysis.matsim_archive`. A contract test requires the declaration of every stage module of the
-   repository whose static import closure imports `braunschweig.analysis.matsim_archive` or holds the archive
-   directory name as a string constant (an archive read that builds the path from other strings is not detected).
+   repository that reads the archive; its detection rule and limits are in `docs/codebase/notes/synpp-fork.md`
+   ("The `_ORDER_AFTER_STAGES` hook").
 4. **The missing modal split is a named skip.** When `analysis_suite` has no archive, it records
    `mid_validation.modal_split` under `skipped` in `analysis_suite_summary.json` with the archive reason and logs it
    as a WARNING (fallback transparency; raised in the review of PR #543).

@@ -118,10 +118,21 @@ def _archive_reading_stage_modules():
                 found.update("%s.%s" % (base, alias.name) for alias in node.names)
         return frozenset(candidate for candidate in found if candidate in modules)
 
+    import re
+    # The directory name as a whole path component of any string constant or f-string part:
+    # "matsim_output", "%s/matsim_output" (the producer's idiom), f"{path}/matsim_output/x".
+    component = re.compile(r"(^|[/\\])%s([/\\]|$)" % re.escape(ARCHIVE_DIR_NAME))
+
     @functools.lru_cache(maxsize=None)
     def touches(name):
         tree, _ = modules[name]
-        return any(isinstance(node, ast.Constant) and node.value == ARCHIVE_DIR_NAME for node in ast.walk(tree))
+        docstrings = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body \
+                    and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant):
+                docstrings.add(id(node.body[0].value))     # prose that mentions the path reads nothing
+        return any(isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings
+                   and component.search(node.value) for node in ast.walk(tree))
 
     archive_module = "braunschweig.analysis.matsim_archive"
     readers = set()

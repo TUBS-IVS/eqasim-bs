@@ -212,8 +212,10 @@ added (logged as `not part of this invocation`). A malformed value raises `TypeE
 order `PipelineError`, both before any stage executes. Declared by `braunschweig.analysis.analysis_suite`
 and `braunschweig.analysis.simwrapper_export` on `matsim.output`
 (`braunschweig.analysis.matsim_archive.ARCHIVE_PRODUCER_STAGE`); `tests/test_synpp_fork_order_after.py`
-requires it of every stage module whose static import closure imports `braunschweig.analysis.matsim_archive`
-or holds the archive directory name as a string constant (a path built from other strings is not detected).
+requires it of every stage module whose static import closure (module- and function-level imports) imports
+`braunschweig.analysis.matsim_archive` or has a string constant or f-string part with `matsim_output` as a whole
+path component (`"%s/matsim_output"`, `f"{path}/matsim_output"`); docstrings are ignored. Not detected: a
+path whose directory name is itself assembled from other strings.
 
 ## Re-basing the copy when synpp is upgraded
 
