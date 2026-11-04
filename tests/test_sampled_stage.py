@@ -6,8 +6,8 @@ numpy 1.23 only warns, numpy 1.24 and later raise a ValueError, so the first num
 pipeline at this stage). Evidence that the output did not change: run manifest
 ``docs/runs/prod100-sampled-ragged-array-2026-11-04.yml``.
 
-The member ORDER inside a household is deliberately not asserted anywhere: the stage sorts by ``household_id``
-with numpy's default, unstable sort, so the order of equal keys belongs to numpy, not to this contract.
+The member order inside a household is the input order (the stage sorts stably); one test pins that, the others
+compare members as sorted lists so that each keeps to its own contract.
 """
 from __future__ import annotations
 

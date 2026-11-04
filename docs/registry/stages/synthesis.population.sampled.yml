@@ -5,9 +5,10 @@ description: Upstream sampling_rate downsampling of the synthetic population.
 lineage:
   type: inherited
   upstream: null
-  notes: Vendored eqasim stage with one local edit. The household blocks are repeated as a Python list, so no
-    ragged numpy array is built (a VisibleDeprecationWarning in numpy 1.23, a ValueError from numpy 1.24 on). The
-    output is unchanged, see docs/runs/prod100-sampled-ragged-array-2026-11-04.yml.
+  notes: Vendored eqasim stage with three local edits for newer numpy and pandas. The household blocks are repeated
+    as a Python list (no ragged numpy array), household_id is assigned as a column (no pandas .loc deprecation), and
+    the sort by household_id is stable, so members keep their input order whatever the numpy version. The first two
+    leave the output unchanged, the stable sort reorders members; see docs/runs/prod100-sampled-ragged-array-2026-11-04.yml.
 code:
 - synthesis/population/sampled.py
 pipelines:

@@ -123,11 +123,16 @@ notes: >-
   the cleverer code and a larger edit to a vendored stage. zip(strict=True) keeps the error np.repeat raised when the
   numbers of blocks and multiplicators differ.
 
-  Seen in passing, NOT touched. (1) The stage sorts by household_id with numpy's default, unstable sort, and the input
-  is not sorted by household_id: 376,969 of 1,130,422 rows land at another place than a stable sort would put them, so
-  the order of the members inside a household is numpy's choice (which households and members are kept does not depend
-  on it). A numpy upgrade may order them differently; making the order explicit would change the output and is the
-  owner's decision. (2) The pandas DeprecationWarning at the household_id assignment (pandas 1.5.3) announces an
-  in-place write in a later pandas version. (3) Every household weight is 1.0, so at the production input the rounding
-  and the replication of this stage change nothing: the stage only sorts the rows by household_id and renumbers
-  households and persons.
+  Found by this replay and fixed on the same branch, at the owner's request, AFTER it ran (so the replay above covers
+  the ragged-array change only). (1) The stage sorted by household_id with numpy's default, unstable sort, and the input
+  is not sorted by household_id: 376,969 of 1,130,422 rows land at another place than a stable sort puts them, so the
+  order of the members inside a household was numpy's choice and could change with a numpy upgrade. The sort is now
+  stable. This CHANGES the output: those rows move inside their household and get other person ids (which households
+  and members are kept does not change; the seeded test still passes), so the output digest changes and the 30
+  STALE-IF stages above recompute once, with everything behind them, on the next launch. That figure of moved rows is
+  the measurement in results.json, not a replay of the stable-sort code. (2) The pandas DeprecationWarning at the
+  household_id assignment (pandas 1.5.3, an in-place write announced for a later pandas) is gone: the column is
+  assigned directly; output unchanged (random_equivalence.py against the previous commit: 500 of 500 trials identical
+  in frame and pickle bytes; that rerun's log was not kept). Still true and not touched: every household weight is
+  1.0, so at the production input the rounding and the replication of this stage change nothing; the stage only sorts
+  the rows by household_id and renumbers households and persons.
