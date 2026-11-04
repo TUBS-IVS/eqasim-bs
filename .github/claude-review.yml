@@ -1,9 +1,9 @@
 # Gate for the automatic Claude PR review (.github/workflows/claude-review.yml).
 #
-# scripts/claude_review.py classify reads this file and the PR diff and decides,
-# without calling any model, whether the review runs and at which tier. Every
-# decision is written with its reason to the job summary, so a skipped review is
-# never silent. See docs/codebase/notes/claude-pr-review.md.
+# The central gate (claude_review.py check-config and classify in TUBS-IVS/claude-pr-review)
+# checks this file and decides from it and the PR diff, without calling any model, whether the
+# review runs and at which tier. Every decision is written with its reason to the job summary,
+# so a skipped review is never silent. See docs/codebase/notes/claude-pr-review.md.
 #
 # ASSUMPTION: all thresholds below are starting values, not measured; each block names
 # the date its values were chosen. Re-tune them from the per-run cost records in the job
@@ -35,7 +35,6 @@ critical_paths:
   - ".github/workflows/**"
   - ".github/claude-review.yml"
   - ".github/claude-review-prompt.md"
-  - "scripts/claude_review.py"
 
 # Paths that never count towards the changed-line totals or the file count
 # (generated or machine-written; reviewing them costs tokens and finds nothing).
@@ -75,13 +74,12 @@ structure_paths:
   - ".github/workflows/**"
   - ".github/claude-review.yml"
   - ".github/claude-review-prompt.md"
-  - "scripts/claude_review.py"
 
 # Branch kinds (prefix before "/") that skip the review unless a critical path is touched.
 skip_kinds:
   - docs
 
-# Three tiers (scripts/claude_review.py classify, first match wins):
+# Three tiers (claude_review.py classify, first match wins):
 #   deep  - a structure file added, deleted or renamed; or >= deep_min_structure_files structure
 #           files or >= deep_min_structure_lines changed lines in structure files; or a large
 #           change anywhere (>= deep_min_lines lines or >= deep_min_files files)
@@ -99,7 +97,7 @@ thresholds:
 
 # Further rounds on the same PR (after a push to a PR the review has already seen). The gate
 # then measures only the files whose change against main differs from the last complete round
-# (scripts/claude_review.py interdiff), with the thresholds above; a file added, deleted or
+# (claude_review.py interdiff), with the thresholds above; a file added, deleted or
 # renamed since the last complete round counts as a structure change. A push the rules above
 # would not review (a docs/ branch without a critical path) still gets verify_tier while
 # findings of earlier rounds are open, so a fix is checked; a push of ignored files alone gets
@@ -127,9 +125,9 @@ tiers:
     max_turns: 250
     max_budget_usd: 50.0
 
-# The review run (scripts/claude_review.py review). The model only reads; posting is done
-# by the script, which also writes the PR diff to a file the model reads (no shell tools).
-# Placeholders in the prompt file: {{REPO}}, {{PR}}, {{TIER}}, {{SHA}}, {{DIFF_FILE}}.
+# The review run (claude_review.py review in TUBS-IVS/claude-pr-review). The model only reads;
+# posting is done by the script, which also writes the PR diff to a file the model reads (no
+# shell tools). The placeholders of the prompt file: README.md of TUBS-IVS/claude-pr-review.
 review:
   prompt_file: .github/claude-review-prompt.md
   allowed_tools:

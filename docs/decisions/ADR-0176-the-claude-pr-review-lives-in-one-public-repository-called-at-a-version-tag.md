@@ -1,6 +1,6 @@
 # ADR-0176 · 2026-11-04 · The Claude PR review lives in one public repository that every repository calls at a version tag
 
-- **Status:** accepted (implemented in `TUBS-IVS/claude-pr-review` and on `chore/claude-review-central-repo`)
+- **Status:** accepted (implemented in `TUBS-IVS/claude-pr-review` v1.0.0 and on `chore/claude-review-central-repo`)
 - **Numbering:** 0176 checked free across all local and remote branches and all issues on 2026-11-04.
 - **Origin (2026-11-04):** after one bug fix of the review script had to be made six times, the owner asked whether
   one central, referenced project for the review makes sense; this record is the design. The owner chose to do it
@@ -10,17 +10,16 @@
 
 - The automatic Claude PR review (`docs/codebase/notes/claude-pr-review.md`, ADR-0171, ADR-0175) ran in six
   repositories: here (`scripts/claude_review.py`, its tests `tests/test_claude_review.py`) and as a copy at
-  `.github/scripts/claude_review.py` in `TUBS-IVS/eqasim-java-bs` (public) and in the private
-  `matsim-cablecar`, `matsim-siouxfalls-2026`, `matsim-siouxfalls-cablecar` and `matsim-siouxfalls-ptopt`. Each copy's
-  header said: change it in eqasim-bs first, then copy it everywhere.
+  `.github/scripts/claude_review.py` in `TUBS-IVS/eqasim-java-bs` (public) and in four private repositories of the
+  group (not named here, as before). Each copy's header said: change it in eqasim-bs first, then copy it everywhere.
 - The comment-id fix (`match_comment_ids` keyed on a `line` field that GitHub's listing of a review's comments does not
   return, so every findings record carried `comment_id` None) therefore needed six branches, one per repository
-  (here: `fix/claude-review-comment-ids`, cb9d6671).
+  (here: `fix/claude-review-comment-ids`).
 - Only this repository tested the script and its gate config; the five copies ran a config and a prompt no test had
   read. Measured on 2026-11-04 by comparing each default branch's file with `gh api
   repos/TUBS-IVS/<repo>/contents/<path>`: the code of all five copies equalled this repository's `main` as of PR #536
-  apart from a header comment, and the five workflow files differed only in comments and, for
-  `matsim-siouxfalls-ptopt`, the base branch (`master`).
+  apart from a header comment, and the five workflow files differed only in comments and, for one of them, the base
+  branch (`master`).
 - The maintainer's session retro (`~/.claude/retro`, `retro_reviews.py`, outside this repository) finds the review runs
   of each repository by the workflow file name `claude-review.yml` and downloads the artifacts
   `claude-review-findings-*`; it reads the findings record (`schema: 2`) and the state block of the summary comment.
@@ -72,10 +71,21 @@
 - A pull request can no longer change the script that reviews it (before, the script was read from the pull request
   itself). Config and prompt are still read from the pull request and stay critical paths.
 - Only `ANTHROPIC_API_KEY` reaches the central code. `secrets: inherit` would also hand it every other secret of the
-  calling repository (e.g. `SUBMODULES_TOKEN` in matsim-siouxfalls-cablecar).
+  calling repository (one of the private repositories holds a token for its submodules).
 - Whoever can move the `v1` tag changes the code that runs with the API key and with permission to comment in six
-  repositories. A ruleset on the central repository that lets only administrators create, move or delete `v*` tags
-  closes this; it is the owner's setting.
+  repositories. A ruleset on the central repository lets only administrators create, move or delete `v*` tags
+  ("Release tags: administrators only", set on 2026-11-04 with the owner's yes).
+
+## Evidence
+
+- First run of the central workflow: the migration pull request of eqasim-java-bs (TUBS-IVS/eqasim-java-bs #56, run
+  41803438108, 2026-11-04). The gate fetched `TUBS-IVS/claude-pr-review@40fe49cb08f0` (so `job.workflow_sha`
+  resolves in a called workflow), `check-config` passed, the gate chose the deep tier (1,703 changed lines), and the
+  review cost 1.11 USD, posted one inline finding whose comment id was matched (1/1; before the fix no record carried
+  one) and uploaded both artifacts under their unchanged names; `gh run list --workflow claude-review.yml` lists the
+  run as the retro expects. That finding argued for pinning a commit instead of `v1`, the rejected option below; its
+  thread was answered with that reason.
+- `check-config` passed on the gate configs and prompts of all six repositories before their migration.
 
 ## Rejected options
 
