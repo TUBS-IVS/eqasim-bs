@@ -76,6 +76,8 @@ def test_households_are_replicated_block_wise_without_a_ragged_array():
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", VisibleDeprecationWarning)
+        # pandas announces behaviour changes with DeprecationWarning (the .loc column assignment did), so they fail too.
+        warnings.simplefilter("error", DeprecationWarning)
         result = sampled.execute(_ExecuteContext(census, random_seed=0, sampling_rate=1.0))
 
     members = _members_by_replica(result)

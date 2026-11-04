@@ -55,7 +55,9 @@ def execute(context):
 
     household_sizes = np.repeat(household_sizes, household_multiplicators)
     household_count = np.sum(household_multiplicators)
-    df_census.loc[:, "household_id"] = np.repeat(np.arange(household_count), household_sizes)
+    # Column assignment, not df.loc[:, column] = ...: pandas 1.5 warns that the .loc form will write in place in a
+    # later version; this form keeps replacing the column, which is what the stage did all along.
+    df_census["household_id"] = np.repeat(np.arange(household_count), household_sizes)
 
     # Select sample from 100% population
     selector = random.random_sample(household_count) < sampling_rate
