@@ -54,6 +54,9 @@ GTFS_STAGE = "matsim.scenario.supply.gtfs"
 _HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export,
                    config_modules, plan_check, initial_mode_choice)
 
+#: ADR-0149: MATSim logs carry timestamps and the summary the Java wall time; a re-run must not change the digest.
+_OUTPUT_HASH_EXCLUDE = ("mode_choice/*.log", "initial_mode_choice.json")
+
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
 #: Assumption parameters of the fare model, declared only when the flag is on (ADR-0133 D7/D8).

@@ -119,9 +119,10 @@ def run(context, config_name: str) -> dict:
     """Run eqasim's standalone mode choice on the final population and replace the population with the result.
 
     ``config_name`` is the MATSim config in the stage directory; the population is the file its
-    ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if the
-    population is outside the stage directory, RuntimeError if it is empty or the choice removed persons (no feasible alternative) and FileNotFoundError if the runner wrote no output; the
-    population is replaced only after all checks passed. Writes ``initial_mode_choice.json`` to the stage directory,
+    ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if
+    the population is outside the stage directory, RuntimeError if it is empty or the choice removed persons (no
+    feasible alternative) and FileNotFoundError if the runner wrote no output; the population is replaced only after
+    all checks passed. Logs a warning if the choice changed no trip or the trips CSVs are empty. Writes ``initial_mode_choice.json`` to the stage directory,
     leaves the before/after trips CSVs in ``mode_choice/`` and returns the summary.
     """
     stage_path = context.path()
@@ -142,7 +143,9 @@ def run(context, config_name: str) -> dict:
     threads = int(context.config("matsim_threads") or context.config("processes"))
 
     started = time.monotonic()
-    eqasim.run(context, RUNNER, arguments(config_name, population_path, threads))
+    # Like every other Java call of the repo, pass the plans file relative to the config (the stage directory).
+    relative_population = os.path.relpath(population_path, stage_path).replace(os.sep, "/")
+    eqasim.run(context, RUNNER, arguments(config_name, relative_population, threads))
     java_wall_time_s = time.monotonic() - started
 
     output_directory = os.path.join(stage_path, OUTPUT_DIRECTORY)
@@ -160,6 +163,12 @@ def run(context, config_name: str) -> dict:
 
     summary = summarise(pd.read_csv(paths[INPUT_TRIPS], sep=CSV_DELIMITER, dtype=str),
                         pd.read_csv(paths[OUTPUT_TRIPS], sep=CSV_DELIMITER, dtype=str))
+    if summary["n_trips"] == 0:
+        logger.warning("%s no trips in the trips CSVs although the population has %d persons; the summary is empty "
+                       "(check the logs in %s/)", _LOG_TAG, persons_before, OUTPUT_DIRECTORY)
+    elif summary["n_trips_mode_changed"] == 0:
+        logger.warning("%s the choice changed no trip of %d: an ignored configurator or a filter freezing every tour "
+                       "is the likely cause (check the logs in %s/)", _LOG_TAG, summary["n_trips"], OUTPUT_DIRECTORY)
     summary.update({
         "persons_before": persons_before,
         "persons_after": persons_after,

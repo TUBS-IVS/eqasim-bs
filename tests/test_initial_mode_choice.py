@@ -1,15 +1,19 @@
 """The initial mode choice runs before iteration 0 (eqasim-bs#542, ADR-0178)."""
 from __future__ import annotations
 
+import fnmatch
 import gzip
 import json
-import os
+from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 
-from braunschweig.matsim import initial_mode_choice as I
 import matsim.runtime.eqasim as eqasim
+from braunschweig.matsim import initial_mode_choice as I
+from braunschweig.matsim.simulation import plan_check as C
+from braunschweig.matsim.simulation import prepare
 
 
 def test_arguments_mirror_the_eqasim_france_call_on_the_final_scenario():
@@ -42,8 +46,8 @@ def test_refuse_retired_weight_accepts_an_absent_key():
     assert I.refuse_retired_weight(None) is None
 
 
-def _plans(persons):
-    body = "".join(f'\t<person id="{p}">\n\t\t<plan selected="yes"/>\n\t</person>\n' for p in persons)
+def _plans(persons, score="1"):
+    body = "".join(f'\t<person id="{p}">\n\t\t<plan selected="yes" score="{score}"/>\n\t</person>\n' for p in persons)
     return f'<?xml version="1.0" encoding="utf-8"?>\n<population>\n{body}</population>\n'.encode("utf-8")
 
 
@@ -145,7 +149,10 @@ def _write_trips(path, rows):
     _trips(rows).to_csv(path, sep=";", index=False, compression="gzip")
 
 
-def _fake_java(stage, persons_after, skip=None):
+CHOSEN_PLANS_SCORE = "42"  # differs from the input plans, so a replacement is distinguishable from a no-op
+
+
+def _fake_java(stage, persons_after, skip=None, trips_before=None, trips_after=None):
     """A stand-in for eqasim.run that writes what RunStandaloneModeChoice writes, except the file named ``skip``."""
     def fake(context, command, arguments):
         fake.calls.append((command, list(arguments)))
@@ -153,11 +160,13 @@ def _fake_java(stage, persons_after, skip=None):
         out.mkdir()
         if skip != I.OUTPUT_PLANS:
             with gzip.open(out / I.OUTPUT_PLANS, "wb") as handle:
-                handle.write(_plans(persons_after))
+                handle.write(_plans(persons_after, score=CHOSEN_PLANS_SCORE))
         if skip != I.INPUT_TRIPS:
-            _write_trips(out / I.INPUT_TRIPS, [("1", "0", "walk"), ("2", "0", "car")])
+            _write_trips(out / I.INPUT_TRIPS,
+                         [("1", "0", "walk"), ("2", "0", "car")] if trips_before is None else trips_before)
         if skip != I.OUTPUT_TRIPS:
-            _write_trips(out / I.OUTPUT_TRIPS, [("1", "0", "pt"), ("2", "0", "car")])
+            _write_trips(out / I.OUTPUT_TRIPS,
+                         [("1", "0", "pt"), ("2", "0", "car")] if trips_after is None else trips_after)
     fake.calls = []
     return fake
 
@@ -177,13 +186,13 @@ def test_run_calls_eqasim_on_the_population_the_config_names_and_replaces_it(tmp
         summary = I.run(_Context(stage, threads=8), "bs_config.xml")
     (command, arguments), = fake.calls
     assert command == I.RUNNER
-    assert arguments == I.arguments("bs_config.xml", os.path.join(str(stage), "bs_population.xml.gz"), 8)
+    assert arguments == I.arguments("bs_config.xml", "bs_population.xml.gz", 8)
     assert summary["persons_before"] == summary["persons_after"] == 2
     assert summary["n_trips"] == 2 and summary["share_mode_changed"] == pytest.approx(0.5)
     assert summary["travel_times"] == "free_flow"
     # the chosen plans replaced the population under its name; no second copy remains
     with gzip.open(stage / "bs_population.xml.gz", "rb") as handle:
-        assert handle.read() == _plans(["1", "2"])
+        assert handle.read() == _plans(["1", "2"], score=CHOSEN_PLANS_SCORE) != _plans(["1", "2"])
     assert not (stage / "mode_choice" / "output_plans.xml.gz").exists()
     assert json.loads((stage / "initial_mode_choice.json").read_text(encoding="utf-8")) == summary
     assert any(I._LOG_TAG in record.message and "50.0" in record.message for record in caplog.records)
@@ -195,6 +204,34 @@ def test_run_uses_processes_when_matsim_threads_is_unset(tmp_path, monkeypatch):
     monkeypatch.setattr(eqasim, "run", fake)
     I.run(_Context(stage, threads=None, processes=4), "bs_config.xml")
     assert "4" == fake.calls[0][1][fake.calls[0][1].index("--config:global.numberOfThreads") + 1]
+
+
+def test_run_warns_when_the_choice_changed_no_trip(tmp_path, monkeypatch, caplog):
+    stage = _stage(tmp_path)
+    same = [("1", "0", "walk"), ("2", "0", "car")]
+    monkeypatch.setattr(eqasim, "run", _fake_java(stage, ["1", "2"], trips_before=same, trips_after=same))
+    with caplog.at_level("WARNING"):
+        I.run(_Context(stage), "bs_config.xml")
+    assert any(r.levelname == "WARNING" and I._LOG_TAG in r.message and "no trip" in r.message
+               for r in caplog.records)
+
+
+def test_run_warns_when_the_csvs_hold_no_trips_for_a_non_empty_population(tmp_path, monkeypatch, caplog):
+    stage = _stage(tmp_path)
+    monkeypatch.setattr(eqasim, "run", _fake_java(stage, ["1", "2"], trips_before=[], trips_after=[]))
+    with caplog.at_level("WARNING"):
+        I.run(_Context(stage), "bs_config.xml")
+    assert any(r.levelname == "WARNING" and I._LOG_TAG in r.message and "no trips" in r.message
+               for r in caplog.records)
+
+
+def test_prepare_output_hash_excludes_only_timestamped_files():
+    excluded = prepare._OUTPUT_HASH_EXCLUDE
+    matches = lambda name: any(fnmatch.fnmatchcase(name, pattern) for pattern in excluded)
+    assert matches("mode_choice/logfile.log") and matches("mode_choice/logfileWarningsErrors.log")
+    assert matches("initial_mode_choice.json")
+    assert not matches("bs_population.xml.gz") and not matches("plan_check.json")
+    assert not matches("mode_choice/output_trips.csv.gz")
 
 
 def test_run_raises_when_persons_were_removed(tmp_path, monkeypatch):
@@ -240,10 +277,6 @@ def test_run_refuses_a_population_outside_the_stage(tmp_path, monkeypatch):
     assert fake.calls == []
     with gzip.open(outside, "rb") as handle:
         assert handle.read() == _plans(["1", "2"])
-
-
-from braunschweig.matsim.simulation import plan_check as C
-from braunschweig.matsim.simulation import prepare
 
 
 class _RecordingContext:
@@ -297,8 +330,6 @@ def test_execute_runs_the_mode_choice_after_the_parking_inputs_and_before_the_pl
 
 
 def test_base_config_pins_the_switch_and_no_retired_weight():
-    import yaml
-    from pathlib import Path
     base = Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
     config = yaml.safe_load(base.read_text(encoding="utf-8"))["config"]
     assert config[I.KEY_ENABLED] is True
