@@ -33,6 +33,14 @@ _log = logging.getLogger(__name__)
 DEFAULT_MID_RAW_PATH = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
 KEY_DEMOGRAPHICS = "cordon_incommuter_donor_demographics"
 
+# ASSUMPTION (a warn bound, not a published reference value): the share of donor persons whose HP_SEX
+# is neither 1 (male) nor 2 (female) above which ``_map_donor_demographics`` reads the imputation as a
+# coding problem and warns. MiD 2023 itself carries such codes by construction (3 'divers', 9 'keine
+# Angabe'), so a small share is information, not a fallback to worry about. The share measured on the
+# raw file is recorded in docs/runs/prod100-expected-message-levels-2026-11-04.yml; the bound leaves a
+# margin of several times over it, so only a change of the coding or of the file reaches it.
+SEX_IMPUTED_WARN_SHARE = 0.01
+
 # Module-level dependencies whose source can change this stage's result without
 # changing this file. Keep these as module objects to match their import site.
 _HELPER_MODULES = (
@@ -103,8 +111,13 @@ def validate(context):
         stage_label=__name__ + ".validate()")
 
 
-def _map_donor_demographics(persons, rng):
-    """Use the resident MiD coding, without accepting an all-default donor pool."""
+def _map_donor_demographics(persons, rng, *, sex_imputed_warn_share=SEX_IMPUTED_WARN_SHARE):
+    """Use the resident MiD coding, without accepting an all-default donor pool.
+
+    The rate of persons whose sex is imputed (HP_SEX other than 1 / 2) is always logged. It is a
+    warning only above ``sex_imputed_warn_share`` (see :data:`SEX_IMPUTED_WARN_SHARE`): MiD 2023 carries
+    such codes by construction, so a share within the bound is information.
+    """
     from braunschweig.popsim.expand import map_demographics
 
     required = {"HP_ALTER", "HP_SEX"}
@@ -117,11 +130,16 @@ def _map_donor_demographics(persons, rng):
     observed = persons["HP_SEX"].isin([1, 2])
     n, n_primary = len(persons), int(observed.sum())
     n_fallback = n - n_primary
-    log = _log.warning if n_fallback else _log.info
+    above_bound = n_fallback > sex_imputed_warn_share * n
+    log = _log.warning if above_bound else _log.info
     log("[mid_donor] sex: primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%); "
-        "non-binary/missing codes use the observed MiD pool, seeded by random_seed",
+        "non-binary/missing codes use the observed MiD pool, seeded by random_seed; %s %.1f%%%s",
         n_primary, n, 100.0 * n_primary / max(n, 1),
-        n_fallback, n, 100.0 * n_fallback / max(n, 1))
+        n_fallback, n, 100.0 * n_fallback / max(n, 1),
+        "ABOVE the expected bound of" if above_bound else "within the expected bound of",
+        100.0 * sex_imputed_warn_share,
+        ": check the HP_SEX coding of the MiD person file" if above_bound
+        else " (MiD 2023 carries such codes by construction)")
     if n and not n_primary:
         raise ValueError("[mid_donor] HP_SEX has no observed binary-sex pool for imputation")
     # A missing age-band key must use the global observed pool, not be skipped by
