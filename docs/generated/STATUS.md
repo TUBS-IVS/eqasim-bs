@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 111 | stages: 133 | datasets: 105 | ADRs: 172 | run manifests: 79
+- Features: 112 | stages: 133 | datasets: 105 | ADRs: 173 | run manifests: 79
 
 ## Population synthesis
 
@@ -172,6 +172,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
+| [Initial mode choice before iteration 0 with free-flow travel times](../registry/features/initial_mode_choice.yml) | active | ON | A/A/A | unvalidated | [#542](https://github.com/TUBS-IVS/eqasim-bs/issues/542) |
 | [Large sites spread their car access over their parking lots or get one high-capacity link](../registry/features/large_facility_access_links.yml) | active | ON | A/A/A | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
 | [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
